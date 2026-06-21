@@ -118,7 +118,8 @@ export async function fetchFilteredUsersByPage(
   favoriteUsers = {},
   dislikedUsers = {},
   filterMainFnParam,
-  onProgress
+  onProgress,
+  debugOptions = {}
 ) {
   const today = new Date();
   const target = startOffset + PAGE_SIZE;
@@ -135,6 +136,11 @@ export async function fetchFilteredUsersByPage(
   const seenIds = new Set();
   let filtered = [];
   let backendHasMore = false;
+  const debugLog = typeof debugOptions?.debugLog === 'function' ? debugOptions.debugLog : null;
+  const emitDebug = (step, payload = {}) => {
+    if (!debugLog) return;
+    debugLog(step, payload);
+  };
 
   const emitProgress = () => {
     if (!onProgress) return;
@@ -158,13 +164,30 @@ export async function fetchFilteredUsersByPage(
       const extra = extras[i];
       combined.push([id, extra ? { ...data, ...extra } : data]);
     });
+    const rejectReasons = {};
+    const collectFilterDebug = (step, payload = {}) => {
+      if (step !== 'filterMain:reject') return;
+      Object.entries(payload.reasons || {}).forEach(([reason, check]) => {
+        if (check?.passed) return;
+        rejectReasons[reason] = (rejectReasons[reason] || 0) + 1;
+      });
+    };
     filtered = filterMainFn(
       combined,
       'DATE2',
       filterSettings,
       favoriteUsers,
-      dislikedUsers
+      dislikedUsers,
+      debugLog ? { debugLog: collectFilterDebug } : undefined,
     );
+    emitDebug('fetchFilteredUsersByPage:filter-summary', {
+      entriesLength: entries.length,
+      newEntriesLength: newEntries.length,
+      combinedLength: combined.length,
+      filteredLength: filtered.length,
+      filterRejected: Math.max(0, combined.length - filtered.length),
+      rejectReasons,
+    });
     emitProgress();
   };
 
@@ -175,14 +198,40 @@ export async function fetchFilteredUsersByPage(
 
     while (filtered.length < target && dateHasMore) {
       const fetchLimit = limit - filtered.length;
+      emitDebug('fetchFilteredUsersByPage:scan-date:start', {
+        dateStr,
+        fetchLimit,
+        combinedLength: combined.length,
+        filteredLength: filtered.length,
+        target,
+        afterKey,
+        afterKeys,
+      });
       // eslint-disable-next-line no-await-in-loop
       const batchResult = normalizeDateFetchResult(
         await fetchDateFn(dateStr, fetchLimit, { afterKey, afterKeys })
       );
       const { entries } = batchResult;
+      emitDebug('fetchFilteredUsersByPage:scan-date:entries', {
+        dateStr,
+        entriesLength: entries.length,
+        combinedLength: combined.length,
+        filteredLength: filtered.length,
+        target,
+        batchHasMore: Boolean(batchResult.hasMore),
+        lastKey: batchResult.lastKey ?? null,
+        afterKeys: batchResult.afterKeys ?? null,
+      });
 
       if (entries.length === 0) {
         dateHasMore = false;
+        emitDebug('fetchFilteredUsersByPage:scan-date:stop', {
+          dateStr,
+          reason: 'no-entries-for-date',
+          combinedLength: combined.length,
+          filteredLength: filtered.length,
+          target,
+        });
         break;
       }
 
@@ -191,10 +240,27 @@ export async function fetchFilteredUsersByPage(
       afterKey = batchResult.lastKey ?? entries[entries.length - 1][0];
       afterKeys = batchResult.afterKeys ?? afterKeys;
       dateHasMore = Boolean(batchResult.hasMore && (afterKey || afterKeys));
+      emitDebug('fetchFilteredUsersByPage:scan-date:after-filter', {
+        dateStr,
+        entriesLength: entries.length,
+        combinedLength: combined.length,
+        filteredLength: filtered.length,
+        target,
+        dateHasMore,
+        nextAfterKey: afterKey,
+        nextAfterKeys: afterKeys,
+      });
     }
 
     if (filtered.length >= target && dateHasMore) {
       backendHasMore = true;
+      emitDebug('fetchFilteredUsersByPage:scan-date:stop', {
+        dateStr,
+        reason: 'target-reached-backend-has-more',
+        combinedLength: combined.length,
+        filteredLength: filtered.length,
+        target,
+      });
     }
   };
 
@@ -205,9 +271,29 @@ export async function fetchFilteredUsersByPage(
     const date = new Date(today);
     date.setDate(today.getDate() - dayOffset);
     const dateStr = date.toISOString().split('T')[0];
+    emitDebug('fetchFilteredUsersByPage:scan-progress', {
+      dateStr,
+      dayOffset,
+      invalidIndex: null,
+      entriesLength: null,
+      combinedLength: combined.length,
+      filteredLength: filtered.length,
+      target,
+      maxLoadDays: MAX_LOAD_DAYS,
+    });
     // eslint-disable-next-line no-await-in-loop
     await loadDateUntilEnough(dateStr);
     dayOffset += 1;
+  }
+  if (filtered.length < target && dayOffset >= MAX_LOAD_DAYS) {
+    emitDebug('fetchFilteredUsersByPage:scan-stop', {
+      reason: 'max-lookback-reached',
+      dayOffset,
+      maxLoadDays: MAX_LOAD_DAYS,
+      combinedLength: combined.length,
+      filteredLength: filtered.length,
+      target,
+    });
   }
 
   let invalidIndex = 0;
@@ -215,6 +301,16 @@ export async function fetchFilteredUsersByPage(
     filtered.length < target &&
     invalidIndex < INVALID_DATE_TOKENS.length
   ) {
+    emitDebug('fetchFilteredUsersByPage:scan-progress', {
+      dateStr: INVALID_DATE_TOKENS[invalidIndex],
+      dayOffset,
+      invalidIndex,
+      entriesLength: null,
+      combinedLength: combined.length,
+      filteredLength: filtered.length,
+      target,
+      maxLoadDays: MAX_LOAD_DAYS,
+    });
     // eslint-disable-next-line no-await-in-loop
     await loadDateUntilEnough(INVALID_DATE_TOKENS[invalidIndex]);
     invalidIndex += 1;
@@ -229,6 +325,26 @@ export async function fetchFilteredUsersByPage(
 
   const nextOffset = startOffset + slice.length;
   const hasMore = filtered.length > startOffset + PAGE_SIZE || backendHasMore;
+  const stopReason = slice.length >= PAGE_SIZE
+    ? 'target-reached'
+    : backendHasMore
+      ? 'backend-has-more'
+      : invalidIndex >= INVALID_DATE_TOKENS.length
+        ? 'invalid-tokens-exhausted'
+        : dayOffset >= MAX_LOAD_DAYS
+          ? 'max-lookback-reached'
+          : 'unknown';
+
+  emitDebug('fetchFilteredUsersByPage:result', {
+    usersLength: Object.keys(users).length,
+    combinedLength: combined.length,
+    filteredLength: filtered.length,
+    dayOffset,
+    invalidIndex,
+    lastKey: nextOffset,
+    hasMore,
+    stopReason,
+  });
 
   return { users, lastKey: nextOffset, hasMore };
 }

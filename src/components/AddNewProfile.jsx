@@ -2989,6 +2989,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
         })
+        .catch(error => {
+          appendLoadDebugLog('reload-effect:DATE2-error', {
+            message: error?.message || String(error),
+            stack: error?.stack || null,
+          });
+          setCacheCount(0);
+          setBackendCount(0);
+        })
         .finally(() => setSearchLoading(false));
       return;
     }
@@ -3681,38 +3689,80 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const loadedIds = [];
     const loadDropReasons = {};
-    const res = await fetchFilteredUsersByPage(
+    appendLoadDebugLog('loadMoreUsersGitSimple:before-fetchFilteredUsersByPage', {
+      queryMode: 'DATE2',
       dateOffset2,
-      undefined,
-      id => fetchUserById(id),
-      currentFilters,
-      fav,
-      dislikedUsersMap,
-      filterMain,
-      partial => {
-        const normalizedPartial = Object.entries(partial || {}).reduce((acc, [id, user]) => {
-          const userId = user?.userId || id;
-          if (!userId) return acc;
-          acc[userId] = { ...user, userId };
-          return acc;
-        }, {});
-        const partialIds = Object.keys(normalizedPartial);
-        if (!partialIds.length) return;
-        cacheFetchedUsers(normalizedPartial, cacheLoad2Users, currentFilters);
-        if (canApplyLoadResultsToUsers()) {
-          setUsers(prev => mergeWithoutOverwrite(prev, normalizedPartial));
-        }
-        partialIds.forEach(id => {
-          if (!loadedIds.includes(id)) loadedIds.push(id);
-        });
-        appendLoadDebugLog('loadMoreUsersGitSimple:progress', {
-          queryMode: 'DATE2',
-          partialCount: partialIds.length,
-          loadedIdsCount: loadedIds.length,
-          targetVisibleCount: PAGE_SIZE,
-        });
-      }
-    );
+      pageSize: PAGE_SIZE,
+      filters: summarizeLoadFiltersForLog(currentFilters),
+    });
+    let res;
+    try {
+      res = await fetchFilteredUsersByPage(
+        dateOffset2,
+        undefined,
+        id => fetchUserById(id),
+        currentFilters,
+        fav,
+        dislikedUsersMap,
+        filterMain,
+        partial => {
+          const normalizedPartial = Object.entries(partial || {}).reduce((acc, [id, user]) => {
+            const userId = user?.userId || id;
+            if (!userId) return acc;
+            acc[userId] = { ...user, userId };
+            return acc;
+          }, {});
+          const partialIds = Object.keys(normalizedPartial);
+          if (!partialIds.length) {
+            appendLoadDebugLog('loadMoreUsersGitSimple:progress-empty', {
+              queryMode: 'DATE2',
+              reason: 'onProgress received no visible users after filterMain',
+              dateOffset2,
+              targetVisibleCount: PAGE_SIZE,
+            });
+            return;
+          }
+          cacheFetchedUsers(normalizedPartial, cacheLoad2Users, currentFilters);
+          if (canApplyLoadResultsToUsers()) {
+            setUsers(prev => mergeWithoutOverwrite(prev, normalizedPartial));
+          } else {
+            appendLoadDebugLog('loadMoreUsersGitSimple:apply-blocked', {
+              queryMode: 'DATE2',
+              isEditing: isEditingRef.current,
+              searchListIsolated: searchListIsolationRef.current,
+              usersToApply: partialIds.length,
+              source: 'progress',
+            });
+          }
+          partialIds.forEach(id => {
+            if (!loadedIds.includes(id)) loadedIds.push(id);
+          });
+          appendLoadDebugLog('loadMoreUsersGitSimple:progress', {
+            queryMode: 'DATE2',
+            partialCount: partialIds.length,
+            loadedIdsCount: loadedIds.length,
+            targetVisibleCount: PAGE_SIZE,
+          });
+        },
+        {
+          debugLog: (step, payload) => appendLoadDebugLog(step, payload),
+        },
+      );
+      appendLoadDebugLog('loadMoreUsersGitSimple:after-fetchFilteredUsersByPage', {
+        queryMode: 'DATE2',
+        hasResponse: Boolean(res),
+        rawUsersCount: countObjectKeys(res?.users || {}),
+        lastKey: res?.lastKey ?? null,
+        hasMore: Boolean(res?.hasMore),
+      });
+    } catch (error) {
+      appendLoadDebugLog('loadMoreUsersGitSimple:error', {
+        queryMode: 'DATE2',
+        message: error?.message || String(error),
+        stack: error?.stack || null,
+      });
+      throw error;
+    }
 
     const backendEntries = Object.entries(res?.users || {});
     const normalizedUsers = backendEntries.reduce((acc, [id, user]) => {
@@ -3729,6 +3779,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
     if (canApplyLoadResultsToUsers()) {
       setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
+    } else if (backendIds.length) {
+      appendLoadDebugLog('loadMoreUsersGitSimple:apply-blocked', {
+        queryMode: 'DATE2',
+        isEditing: isEditingRef.current,
+        searchListIsolated: searchListIsolationRef.current,
+        usersToApply: backendIds.length,
+        source: 'result',
+      });
     }
     backendIds.forEach(id => {
       if (!loadedIds.includes(id)) loadedIds.push(id);
