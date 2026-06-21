@@ -1,9 +1,10 @@
 import React from 'react';
 import { loadQueries, normalizeQueryKey } from 'utils/cardIndex';
 
-export const OFFLINE_LOAD_FILTER = 'OFLINE';
-export const OFFLINE_LOAD_MODE = 'ofline';
+export const OFFLINE_LOAD_FILTER = 'OFFLINE';
+export const OFFLINE_LOAD_MODE = 'offline';
 export const OFFLINE_LOAD_BACKEND_PAGE_SIZE = 20;
+export const OFFLINE_FILTER_MAIN_OPTIONS = { requireCurrentOrPastGetInTouch: true };
 
 export const AddNewProfileOfflineLoadControls = ({
   SortModeLabel,
@@ -25,7 +26,7 @@ export const AddNewProfileOfflineLoadControls = ({
         checked={loadSortMode === OFFLINE_LOAD_MODE}
         onChange={event => onModeChange(event.target.value)}
       />
-      ofline
+      offline
     </SortModeLabel>
     {loadSortMode === OFFLINE_LOAD_MODE && (
       <LocalIndexActions>
@@ -68,6 +69,7 @@ export const getOfflineFilteredIds = ({
     currentFilters,
     favoriteUsersData,
     dislikeUsersData,
+    OFFLINE_FILTER_MAIN_OPTIONS,
   );
 
   return filteredEntries
@@ -106,6 +108,7 @@ export const filterBackendHydratedOfflineUsers = ({
         currentFilters,
         favoriteUsersData,
         dislikeUsersData,
+        OFFLINE_FILTER_MAIN_OPTIONS,
       ),
     ),
   );
@@ -144,7 +147,7 @@ export const hydrateOfflineIdsPage = async ({
   return filteredUsers;
 };
 
-export const loadMoreUsersOfline = async ({
+export const loadMoreUsersOffline = async ({
   currentFilters,
   reset = false,
   targetLoadedCount,
@@ -184,8 +187,8 @@ export const loadMoreUsersOfline = async ({
   });
 
   if (!localIds) {
-    toast.error('Оберіть локальні users.json та newUsers.json для ofline load');
-    appendLoadDebugLog('loadMoreUsersOfline:missing-local-files', { queryKey });
+    toast.error('Оберіть локальні users.json та newUsers.json для offline load');
+    appendLoadDebugLog('loadMoreUsersOffline:missing-local-files', { queryKey });
     setHasMore(false);
     return { cacheCount: 0, backendCount: 0, hasMore: false };
   }
@@ -201,7 +204,7 @@ export const loadMoreUsersOfline = async ({
   let hydratedUsers = {};
   const attemptedIds = [];
 
-  appendLoadDebugLog('loadMoreUsersOfline:start', {
+  appendLoadDebugLog('loadMoreUsersOffline:start', {
     queryKey,
     localIdsCount: localIds.length,
     previousPassedIdsCount: previousPassedIds.length,
@@ -249,7 +252,7 @@ export const loadMoreUsersOfline = async ({
   setDateOffset21(nextPassedIds.length);
   setHasMore(nextHasMore);
 
-  appendLoadDebugLog('loadMoreUsersOfline:result', {
+  appendLoadDebugLog('loadMoreUsersOffline:result', {
     queryKey,
     hydratedIdsCount: hydratedIds.length,
     attemptedIdsCount: attemptedIds.length,
