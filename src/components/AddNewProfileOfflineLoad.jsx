@@ -12,6 +12,7 @@ export const AddNewProfileOfflineLoadControls = ({
   onModeChange,
   onPickUsersFile,
   onPickNewUsersFile,
+  onClearSavedFiles,
   hasUsersFile,
   hasNewUsersFile,
 }) => (
@@ -34,6 +35,11 @@ export const AddNewProfileOfflineLoadControls = ({
         <button type="button" onClick={onPickNewUsersFile}>
           Обрати newUsers.json {hasNewUsersFile ? '✅' : ''}
         </button>
+        {(hasUsersFile || hasNewUsersFile) && onClearSavedFiles && (
+          <button type="button" onClick={onClearSavedFiles}>
+            Очистити збережені offline-файли
+          </button>
+        )}
       </LocalIndexActions>
     )}
   </>
