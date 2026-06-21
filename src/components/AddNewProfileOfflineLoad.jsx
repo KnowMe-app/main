@@ -77,12 +77,42 @@ export const getOfflineFilteredIds = ({
     .map(item => item.id);
 };
 
+export const sortOfflineUsersByGetInTouch = users =>
+  Object.fromEntries(
+    Object.entries(users || {}).sort(([leftId, left], [rightId, right]) => {
+      const byGetInTouch = String(left?.getInTouch || '').localeCompare(String(right?.getInTouch || ''));
+      return byGetInTouch || String(left?.userId || leftId).localeCompare(String(right?.userId || rightId));
+    }),
+  );
+
+export const filterBackendHydratedOfflineUsers = ({
+  users,
+  currentFilters,
+  filterMain,
+  favoriteUsersData,
+  dislikeUsersData,
+}) =>
+  sortOfflineUsersByGetInTouch(
+    Object.fromEntries(
+      filterMain(
+        Object.entries(users || {}),
+        OFFLINE_LOAD_FILTER,
+        currentFilters,
+        favoriteUsersData,
+        dislikeUsersData,
+      ),
+    ),
+  );
+
 export const hydrateOfflineIdsPage = async ({
   ids,
   currentFilters,
   fetchUsersByIds,
   cacheFetchedUsers,
   cacheLoad2Users,
+  filterMain,
+  favoriteUsersData,
+  dislikeUsersData,
 }) => {
   const pageIds = [...new Set((ids || []).filter(Boolean).map(String))].slice(0, OFFLINE_LOAD_BACKEND_PAGE_SIZE);
   if (pageIds.length === 0) return {};
@@ -94,8 +124,18 @@ export const hydrateOfflineIdsPage = async ({
     return acc;
   }, {});
 
-  cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
-  return normalizedUsers;
+  const filteredUsers = filterMain
+    ? filterBackendHydratedOfflineUsers({
+        users: normalizedUsers,
+        currentFilters,
+        filterMain,
+        favoriteUsersData,
+        dislikeUsersData,
+      })
+    : sortOfflineUsersByGetInTouch(normalizedUsers);
+
+  cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
+  return filteredUsers;
 };
 
 export const loadMoreUsersOfline = async ({
@@ -150,36 +190,47 @@ export const loadMoreUsersOfline = async ({
 
   const previousPassedIds = reset ? [] : getRawOfflineIdsByQuery(queryKey);
   const previousPassedSet = new Set(previousPassedIds);
-  const startIndex = reset ? 0 : previousPassedIds.length;
-  const idsToHydrate = localIds.slice(startIndex, startIndex + requestedCount).slice(0, OFFLINE_LOAD_BACKEND_PAGE_SIZE);
+  const nextPassedIds = [...previousPassedIds];
+  let cursor = reset ? 0 : previousPassedIds.length;
+  let hydratedUsers = {};
+  const attemptedIds = [];
 
   appendLoadDebugLog('loadMoreUsersOfline:start', {
     queryKey,
     localIdsCount: localIds.length,
     previousPassedIdsCount: previousPassedIds.length,
-    hydrateIdsCount: idsToHydrate.length,
     requestedCount,
     reset,
     filters: summarizeLoadFiltersForLog(currentFilters),
   });
 
-  const hydratedUsers = await hydrateOfflineIdsPage({
-    ids: idsToHydrate,
-    currentFilters,
-    fetchUsersByIds,
-    cacheFetchedUsers,
-    cacheLoad2Users,
-  });
+  while (Object.keys(hydratedUsers).length < requestedCount && cursor < localIds.length) {
+    const idsToHydrate = localIds.slice(cursor, cursor + OFFLINE_LOAD_BACKEND_PAGE_SIZE);
+    cursor += idsToHydrate.length;
+    attemptedIds.push(...idsToHydrate);
 
-  if (filtersKey !== getActiveFiltersKey()) {
-    return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+    const hydratedPageUsers = await hydrateOfflineIdsPage({
+      ids: idsToHydrate,
+      currentFilters,
+      fetchUsersByIds,
+      cacheFetchedUsers,
+      cacheLoad2Users,
+      filterMain,
+      favoriteUsersData,
+      dislikeUsersData,
+    });
+
+    idsToHydrate.forEach(id => {
+      if (!previousPassedSet.has(id) && !nextPassedIds.includes(id)) nextPassedIds.push(id);
+    });
+
+    hydratedUsers = sortOfflineUsersByGetInTouch({ ...hydratedUsers, ...hydratedPageUsers });
+
+    if (filtersKey !== getActiveFiltersKey()) {
+      return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+    }
   }
 
-  const hydratedIds = Object.keys(hydratedUsers);
-  const nextPassedIds = [...previousPassedIds];
-  idsToHydrate.forEach(id => {
-    if (!previousPassedSet.has(id) && !nextPassedIds.includes(id)) nextPassedIds.push(id);
-  });
   setIdsForQuery(queryKey, nextPassedIds);
 
   if (canApplyLoadResultsToUsers() || forceVisibleUpdate) {
@@ -187,6 +238,7 @@ export const loadMoreUsersOfline = async ({
     else setUsers(prev => mergeWithoutOverwrite(prev, hydratedUsers));
   }
 
+  const hydratedIds = Object.keys(hydratedUsers);
   const nextHasMore = nextPassedIds.length < localIds.length;
   setDateOffset21(nextPassedIds.length);
   setHasMore(nextHasMore);
@@ -194,6 +246,7 @@ export const loadMoreUsersOfline = async ({
   appendLoadDebugLog('loadMoreUsersOfline:result', {
     queryKey,
     hydratedIdsCount: hydratedIds.length,
+    attemptedIdsCount: attemptedIds.length,
     passedIdsCount: nextPassedIds.length,
     localIdsCount: localIds.length,
     hasMore: nextHasMore,
