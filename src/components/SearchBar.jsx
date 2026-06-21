@@ -507,6 +507,12 @@ const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   };
 };
 
+const getTelegramPrefixMatchOptions = (value, prefix) => {
+  if (prefix !== 'telegram') return {};
+  const parsedUkTrigger = parseUkTriggerQuery(String(value || ''));
+  return parsedUkTrigger?.handle ? { allowTelegramPrefixMatches: true } : {};
+};
+
 const parseSearchIdExact = input => {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
@@ -880,7 +886,12 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
           : '';
         if (
           normalizedFieldValue === normalizedUkTrigger ||
-          (normalizedHandle && normalizedFieldValue === normalizedHandle)
+          (normalizedHandle && normalizedFieldValue === normalizedHandle) ||
+          (
+            options.allowTelegramPrefixMatches &&
+            normalizedHandle &&
+            normalizedFieldValue.startsWith(normalizedHandle)
+          )
         ) {
           return true;
         }
@@ -1511,6 +1522,7 @@ const SearchBar = ({
             {
               forceEqualToAllCards: false,
               searchIdPrefixes: [prefix],
+              ...getTelegramPrefixMatchOptions(searchIdInput, prefix),
             },
           )
         )
@@ -1745,6 +1757,7 @@ const SearchBar = ({
             cachedSearch(result, {
               forceEqualToAllCards: false,
               searchIdPrefixes: [prefix],
+              ...getTelegramPrefixMatchOptions(id, prefix),
             })
           )
         );
