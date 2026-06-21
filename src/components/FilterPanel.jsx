@@ -129,6 +129,7 @@ const FilterPanel = ({
   nonAdminAllActive = false,
   allowedFilterNames,
   bloodSearchKeyMode = false,
+  reactionFilterOptions,
 }) => {
   const defaultFilters = useMemo(
     () => getDefaultFilters({ mode, nonAdminAllActive }),
@@ -177,6 +178,7 @@ const FilterPanel = ({
       hideCommentLength={hideCommentLength}
       mode={mode}
       bloodSearchKeyMode={bloodSearchKeyMode}
+      reactionFilterOptions={reactionFilterOptions}
       allowedFilterNames={allowedFilterNames}
     />
   );

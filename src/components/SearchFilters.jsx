@@ -24,10 +24,11 @@ export const SearchFilters = ({
   mode = 'default',
   allowedFilterNames,
   bloodSearchKeyMode = false,
+  reactionFilterOptions,
 }) => {
   let groups = [];
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
-  const reactionOptions = bloodSearchKeyMode
+  const reactionOptions = reactionFilterOptions || (bloodSearchKeyMode
     ? [
         { key: 'pastGetInTouch', label: 'past' },
         { key: 'futureGetInTouch', label: 'future' },
@@ -36,7 +37,7 @@ export const SearchFilters = ({
         { key: 'question', label: '?' },
         { key: 'none', label: 'no' },
       ]
-    : REACTION_FILTER_OPTIONS;
+    : REACTION_FILTER_OPTIONS);
 
   if (mode === 'matching') {
     groups = [
