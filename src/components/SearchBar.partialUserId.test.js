@@ -155,6 +155,29 @@ describe('SearchBar result validation', () => {
     )).toBe(false);
   });
 
+  it('allows partial UK-trigger telegram value prefix matches only when prefix matching is enabled', () => {
+    const result = {
+      exact: { userId: 'exact', telegram: 'УК СМ Оксана' },
+      longer: { userId: 'longer', telegram: 'УК СМ Оксана Кошель @Oksana_Koshel' },
+      other: { userId: 'other', telegram: 'УК СМ Інша' },
+    };
+
+    expect(filterSearchResultByParams(
+      result,
+      { telegram: 'УК СМ Оксана' },
+      { allowTelegramPrefixMatches: true },
+    )).toEqual({
+      exact: result.exact,
+      longer: result.longer,
+    });
+    expect(filterSearchResultByParams(
+      result,
+      { telegram: 'УК СМ Оксана' },
+    )).toEqual({
+      exact: result.exact,
+    });
+  });
+
   it('keeps partial userId validation as a prefix match', () => {
     expect(doesCardMatchSearchParams(
       { userId: 'Anna123' },
@@ -320,6 +343,64 @@ describe('SearchBar cache-first search', () => {
     );
     expect(setUsers).toHaveBeenCalledWith({
       oksana: expect.objectContaining({ userId: 'oksana' }),
+    });
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('enables telegram prefix matching for partial UK-trigger searchId searches without handles', async () => {
+    const searchFunc = jest.fn().mockResolvedValue({
+      exact: { userId: 'exact', telegram: 'УК СМ Оксана' },
+      longer: { userId: 'longer', telegram: 'УК СМ Оксана Кошель @Oksana_Koshel' },
+    });
+    const setUsers = jest.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.render(React.createElement(SearchBar, {
+        searchFunc,
+        search: 'УК СМ Оксана',
+        setSearch: jest.fn(),
+        setUsers,
+        setState: jest.fn(),
+        setUserNotFound: jest.fn(),
+        enabledSearchKeys: {
+          searchId: true,
+          partialUserId: false,
+          searchKey: false,
+          equalToAllCards: false,
+        },
+        searchOptions: {
+          enabledSearchKeys: {
+            searchId: true,
+            partialUserId: false,
+            searchKey: false,
+            equalToAllCards: false,
+          },
+          searchIdPrefixes: ['telegram'],
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    expect(searchFunc).toHaveBeenCalledWith(
+      { searchId: 'УК СМ Оксана' },
+      expect.objectContaining({
+        searchIdPrefixes: ['telegram'],
+        allowTelegramPrefixMatches: true,
+      }),
+    );
+    expect(setUsers).toHaveBeenCalledWith({
+      exact: expect.objectContaining({ userId: 'exact' }),
+      longer: expect.objectContaining({ userId: 'longer' }),
     });
 
     // eslint-disable-next-line testing-library/no-unnecessary-act

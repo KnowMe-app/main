@@ -510,7 +510,7 @@ const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
 const getTelegramPrefixMatchOptions = (value, prefix) => {
   if (prefix !== 'telegram') return {};
   const parsedUkTrigger = parseUkTriggerQuery(String(value || ''));
-  return parsedUkTrigger?.handle ? { allowTelegramPrefixMatches: true } : {};
+  return parsedUkTrigger?.searchPair?.telegram ? { allowTelegramPrefixMatches: true } : {};
 };
 
 const parseSearchIdExact = input => {
@@ -886,6 +886,10 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
           : '';
         if (
           normalizedFieldValue === normalizedUkTrigger ||
+          (
+            options.allowTelegramPrefixMatches &&
+            normalizedFieldValue.startsWith(normalizedUkTrigger)
+          ) ||
           (normalizedHandle && normalizedFieldValue === normalizedHandle) ||
           (
             options.allowTelegramPrefixMatches &&
