@@ -3,6 +3,15 @@ import { loadQueries, normalizeQueryKey } from 'utils/cardIndex';
 
 export const OFFLINE_LOAD_FILTER = 'OFFLINE';
 export const OFFLINE_LOAD_MODE = 'offline';
+export const LEGACY_OFFLINE_LOAD_FILTER = 'OFLINE';
+export const LEGACY_OFFLINE_LOAD_MODE = 'ofline';
+export const OFFLINE_REACTION_FILTER_OPTIONS = [
+  { key: 'pastGetInTouch', label: 'past' },
+  { key: 'like', label: '❤️' },
+  { key: 'dislike', label: '✖' },
+];
+export const normalizeOfflineLoadFilter = filter => (filter === LEGACY_OFFLINE_LOAD_FILTER ? OFFLINE_LOAD_FILTER : filter);
+export const normalizeOfflineLoadMode = mode => (mode === LEGACY_OFFLINE_LOAD_MODE ? OFFLINE_LOAD_MODE : mode);
 export const OFFLINE_LOAD_BACKEND_PAGE_SIZE = 20;
 export const OFFLINE_FILTER_MAIN_OPTIONS = { requireCurrentOrPastGetInTouch: true };
 
@@ -23,12 +32,12 @@ export const AddNewProfileOfflineLoadControls = ({
         type="radio"
         name="load-sort-mode"
         value={OFFLINE_LOAD_MODE}
-        checked={loadSortMode === OFFLINE_LOAD_MODE}
+        checked={normalizeOfflineLoadMode(loadSortMode) === OFFLINE_LOAD_MODE}
         onChange={event => onModeChange(event.target.value)}
       />
       offline
     </SortModeLabel>
-    {loadSortMode === OFFLINE_LOAD_MODE && (
+    {normalizeOfflineLoadMode(loadSortMode) === OFFLINE_LOAD_MODE && (
       <LocalIndexActions>
         <button type="button" onClick={onPickUsersFile}>
           Обрати users.json {hasUsersFile ? '✅' : ''}
@@ -69,7 +78,6 @@ export const getOfflineFilteredIds = ({
     currentFilters,
     favoriteUsersData,
     dislikeUsersData,
-    OFFLINE_FILTER_MAIN_OPTIONS,
   );
 
   return filteredEntries

@@ -45,6 +45,9 @@ import {
   AddNewProfileOfflineLoadControls,
   OFFLINE_LOAD_FILTER,
   OFFLINE_LOAD_MODE,
+  OFFLINE_REACTION_FILTER_OPTIONS,
+  normalizeOfflineLoadFilter,
+  normalizeOfflineLoadMode,
   loadMoreUsersOffline as loadMoreUsersOfflineMode,
 } from './AddNewProfileOfflineLoad';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -2667,7 +2670,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const buildListQueryKey = (mode, currentFilters = {}) => buildQueryKey(mode, currentFilters, '');
 
   const resolveFilterByLoadSortMode = mode => {
-    switch (mode) {
+    switch (normalizeOfflineLoadMode(mode)) {
       case LOAD_SORT_MODES.LAST_ACTION:
         return 'LAST_ACTION';
       case LOAD_SORT_MODES.LAST_ACTION2:
@@ -2709,7 +2712,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     : enabledSearchKeys;
 
   const handleLoadSortModeChange = useCallback(mode => {
-    setLoadSortMode(mode);
+    setLoadSortMode(normalizeOfflineLoadMode(mode));
   }, []);
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -6186,7 +6189,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setUserNotFound(false);
     }
 
-    setCurrentFilter(snapshot.currentFilter || '');
+    const restoredCurrentFilter = normalizeOfflineLoadFilter(snapshot.currentFilter || '');
+    const restoredLoadSortMode = normalizeOfflineLoadMode(snapshot.loadSortMode || 'GITnew');
+
+    setCurrentFilter(restoredCurrentFilter);
     setCurrentPage(snapshot.currentPage || 1);
     setHasMore(typeof snapshot.hasMore === 'boolean' ? snapshot.hasMore : true);
     setLastKey(snapshot.lastKey ?? null);
@@ -6197,7 +6203,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (snapshot.la2State) {
       la2StateRef.current = restoreLA2State(snapshot.la2State);
     }
-    setLoadSortMode(snapshot.loadSortMode || 'GITnew');
+    setLoadSortMode(restoredLoadSortMode);
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
     logProfileRestoreStep('previous-list:restore-complete-clear-profile-state', {
@@ -6754,6 +6760,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       onChange={handleFilterChange}
                       storageKey={filterStorageKey}
                       bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
+                      reactionFilterOptions={offlineLoadMode ? OFFLINE_REACTION_FILTER_OPTIONS : undefined}
                       allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch'] : undefined}
                     />
                   </LoadOptionsPopover>
