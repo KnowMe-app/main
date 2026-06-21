@@ -1167,6 +1167,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [localExportUsersData, setLocalExportUsersData] = useState(null);
   const [localExportNewUsersData, setLocalExportNewUsersData] = useState(null);
   const [isOfflineCollectionsRestoring, setIsOfflineCollectionsRestoring] = useState(true);
+  const offlineCollectionsChangeVersionRef = useRef(0);
   const localUsersFileInputRef = useRef(null);
   const localNewUsersFileInputRef = useRef(null);
   const localExportUsersFileInputRef = useRef(null);
@@ -1936,6 +1937,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setState({});
       setIsLoggedIn(false);
       setShowInfoModal(false);
+      await clearOfflineCollections(auth.currentUser?.uid);
       await signOut(auth);
       navigate('/my-profile');
     } catch (error) {
@@ -5495,10 +5497,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const openLocalIndexModal = useCallback(indexTypes => {
     setPendingLocalIndexTypes(indexTypes);
-    setPendingLocalUsersData(null);
-    setPendingLocalNewUsersData(null);
+    setPendingLocalUsersData(localExportUsersData);
+    setPendingLocalNewUsersData(localExportNewUsersData);
     setShowLocalIndexModal(true);
-  }, []);
+  }, [localExportNewUsersData, localExportUsersData]);
 
   const handleDownloadCollectionsForLocalIndex = useCallback(async () => {
     const toastId = 'download-local-index-collections';
@@ -5535,6 +5537,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const file = event?.target?.files?.[0];
     if (!file) return;
 
+    offlineCollectionsChangeVersionRef.current += 1;
+
     try {
       const parsed = JSON.parse(await file.text());
       if (!parsed || typeof parsed !== 'object') {
@@ -5544,14 +5548,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       if (collection === 'users') {
         setPendingLocalUsersData(parsed);
+        setLocalExportUsersData(parsed);
       } else {
         setPendingLocalNewUsersData(parsed);
+        setLocalExportNewUsersData(parsed);
       }
+      await saveOfflineCollection(ownerId, collection, parsed);
       toast.success(`Файл ${collection}.json прочитано`);
     } catch (error) {
       toast.error(`Не вдалося прочитати ${collection}.json: ${error?.message || 'невідома помилка'}`);
     }
-  }, []);
+  }, [ownerId]);
 
   const handlePickUsersFileForLocalExport = useCallback(() => {
     if (localExportUsersFileInputRef.current) {
@@ -5569,13 +5576,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     let isCancelled = false;
+    const restoreChangeVersion = offlineCollectionsChangeVersionRef.current;
 
-    loadOfflineCollections()
+    loadOfflineCollections(ownerId)
       .then(({ users: savedUsers, newUsers: savedNewUsers }) => {
-        if (isCancelled) return;
+        if (isCancelled || restoreChangeVersion !== offlineCollectionsChangeVersionRef.current) return;
 
-        if (savedUsers) setLocalExportUsersData(savedUsers);
-        if (savedNewUsers) setLocalExportNewUsersData(savedNewUsers);
+        if (savedUsers) {
+          setLocalExportUsersData(savedUsers);
+          setPendingLocalUsersData(savedUsers);
+        }
+        if (savedNewUsers) {
+          setLocalExportNewUsersData(savedNewUsers);
+          setPendingLocalNewUsersData(savedNewUsers);
+        }
 
         if (savedUsers || savedNewUsers) {
           toast.success('Offline-файли відновлено зі сховища браузера');
@@ -5591,7 +5605,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [ownerId]);
 
   const handleLocalExportCollectionFileSelected = useCallback(async (event, collection) => {
     const file = event?.target?.files?.[0];
@@ -5604,26 +5618,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       if (collection === 'users') {
         setLocalExportUsersData(parsed);
+        setPendingLocalUsersData(parsed);
       } else {
         setLocalExportNewUsersData(parsed);
+        setPendingLocalNewUsersData(parsed);
       }
-      await saveOfflineCollection(collection, parsed);
+      offlineCollectionsChangeVersionRef.current += 1;
+      await saveOfflineCollection(ownerId, collection, parsed);
       toast.success(`Локальний файл для експорту ${collection}.json прочитано`);
     } catch (error) {
       toast.error(`Не вдалося прочитати ${collection}.json: ${error?.message || 'невідома помилка'}`);
     }
-  }, []);
+  }, [ownerId]);
 
   const handleClearSavedOfflineCollections = useCallback(async () => {
     try {
-      await clearOfflineCollections();
+      offlineCollectionsChangeVersionRef.current += 1;
+      await clearOfflineCollections(ownerId);
       setLocalExportUsersData(null);
       setLocalExportNewUsersData(null);
+      setPendingLocalUsersData(null);
+      setPendingLocalNewUsersData(null);
       toast.success('Збережені offline-файли очищено');
     } catch (error) {
       toast.error(`Не вдалося очистити offline-файли: ${error?.message || 'невідома помилка'}`);
     }
-  }, []);
+  }, [ownerId]);
 
   const handleApplyLocalIndexing = useCallback(async () => {
     if (!pendingLocalUsersData || !pendingLocalNewUsersData) {

@@ -3,6 +3,14 @@ const DB_VERSION = 1;
 const STORE_NAME = 'collections';
 const COLLECTION_KEYS = ['users', 'newUsers'];
 
+const getScopedCollectionKey = (ownerId, collection) => {
+  if (!ownerId) {
+    throw new Error('Owner ID is required for offline collections');
+  }
+
+  return `${ownerId}:${collection}`;
+};
+
 const openOfflineCollectionsDb = () =>
   new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -45,36 +53,53 @@ const runCollectionStoreRequest = async (mode, requestFactory) => {
   });
 };
 
-export const saveOfflineCollection = (collection, data) => {
+export const saveOfflineCollection = (ownerId, collection, data) => {
   if (!COLLECTION_KEYS.includes(collection)) {
     return Promise.reject(new Error(`Unsupported offline collection: ${collection}`));
   }
 
+  let scopedCollection;
+  try {
+    scopedCollection = getScopedCollectionKey(ownerId, collection);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
   return runCollectionStoreRequest('readwrite', store =>
     store.put({
-      collection,
+      collection: scopedCollection,
+      ownerId,
+      collectionName: collection,
       data,
       savedAt: new Date().toISOString(),
     }),
   );
 };
 
-export const loadOfflineCollection = async collection => {
-  if (!COLLECTION_KEYS.includes(collection)) return null;
+export const loadOfflineCollection = async (ownerId, collection) => {
+  if (!COLLECTION_KEYS.includes(collection) || !ownerId) return null;
 
-  const record = await runCollectionStoreRequest('readonly', store => store.get(collection));
+  const record = await runCollectionStoreRequest('readonly', store => store.get(getScopedCollectionKey(ownerId, collection)));
   return record?.data || null;
 };
 
-export const loadOfflineCollections = async () => {
+export const loadOfflineCollections = async ownerId => {
+  if (!ownerId) return { users: null, newUsers: null };
+
   const [users, newUsers] = await Promise.all([
-    loadOfflineCollection('users'),
-    loadOfflineCollection('newUsers'),
+    loadOfflineCollection(ownerId, 'users'),
+    loadOfflineCollection(ownerId, 'newUsers'),
   ]);
 
   return { users, newUsers };
 };
 
-export const clearOfflineCollections = async () => {
-  await runCollectionStoreRequest('readwrite', store => store.clear());
+export const clearOfflineCollections = async ownerId => {
+  if (!ownerId) return;
+
+  await Promise.all(
+    COLLECTION_KEYS.map(collection =>
+      runCollectionStoreRequest('readwrite', store => store.delete(getScopedCollectionKey(ownerId, collection))),
+    ),
+  );
 };
