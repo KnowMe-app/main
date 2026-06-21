@@ -114,6 +114,11 @@ import {
   setBackendDownloadToastsEnabled,
   withAdminDownloadToast,
 } from 'utils/backendDownloadToast';
+import {
+  clearOfflineCollections,
+  loadOfflineCollections,
+  saveOfflineCollection,
+} from 'utils/offlineCollectionsStorage';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 import {
@@ -1161,6 +1166,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [localExportUsersData, setLocalExportUsersData] = useState(null);
   const [localExportNewUsersData, setLocalExportNewUsersData] = useState(null);
+  const [isOfflineCollectionsRestoring, setIsOfflineCollectionsRestoring] = useState(true);
   const localUsersFileInputRef = useRef(null);
   const localNewUsersFileInputRef = useRef(null);
   const localExportUsersFileInputRef = useRef(null);
@@ -5561,6 +5567,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, []);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    loadOfflineCollections()
+      .then(({ users: savedUsers, newUsers: savedNewUsers }) => {
+        if (isCancelled) return;
+
+        if (savedUsers) setLocalExportUsersData(savedUsers);
+        if (savedNewUsers) setLocalExportNewUsersData(savedNewUsers);
+
+        if (savedUsers || savedNewUsers) {
+          toast.success('Offline-файли відновлено зі сховища браузера');
+        }
+      })
+      .catch(error => {
+        console.warn('[AddNewProfile] Failed to restore offline collections from IndexedDB', error);
+      })
+      .finally(() => {
+        if (!isCancelled) setIsOfflineCollectionsRestoring(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   const handleLocalExportCollectionFileSelected = useCallback(async (event, collection) => {
     const file = event?.target?.files?.[0];
     if (!file) return;
@@ -5575,9 +5607,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       } else {
         setLocalExportNewUsersData(parsed);
       }
+      await saveOfflineCollection(collection, parsed);
       toast.success(`Локальний файл для експорту ${collection}.json прочитано`);
     } catch (error) {
       toast.error(`Не вдалося прочитати ${collection}.json: ${error?.message || 'невідома помилка'}`);
+    }
+  }, []);
+
+  const handleClearSavedOfflineCollections = useCallback(async () => {
+    try {
+      await clearOfflineCollections();
+      setLocalExportUsersData(null);
+      setLocalExportNewUsersData(null);
+      toast.success('Збережені offline-файли очищено');
+    } catch (error) {
+      toast.error(`Не вдалося очистити offline-файли: ${error?.message || 'невідома помилка'}`);
     }
   }, []);
 
@@ -6680,6 +6724,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         onModeChange={handleLoadSortModeChange}
                         onPickUsersFile={handlePickUsersFileForLocalExport}
                         onPickNewUsersFile={handlePickNewUsersFileForLocalExport}
+                        onClearSavedFiles={handleClearSavedOfflineCollections}
                         hasUsersFile={Boolean(localExportUsersData)}
                         hasNewUsersFile={Boolean(localExportNewUsersData)}
                       />
@@ -6933,6 +6978,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <button type="button" onClick={handlePickNewUsersFileForLocalExport}>
                     Обрати newUsers.json {localExportNewUsersData ? '✅' : ''}
                   </button>
+                  {(localExportUsersData || localExportNewUsersData) && (
+                    <button type="button" onClick={handleClearSavedOfflineCollections}>
+                      Очистити збережені offline-файли
+                    </button>
+                  )}
+                  {isOfflineCollectionsRestoring && (
+                    <SaveModalComment>Перевіряємо збережені offline-файли...</SaveModalComment>
+                  )}
                 </LocalIndexActions>
               )}
             </SaveModalSection>
