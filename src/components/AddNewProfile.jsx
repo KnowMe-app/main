@@ -45,6 +45,7 @@ import {
   AddNewProfileOfflineLoadControls,
   OFFLINE_LOAD_FILTER,
   OFFLINE_LOAD_MODE,
+  LEGACY_OFFLINE_LOAD_FILTER,
   OFFLINE_REACTION_FILTER_OPTIONS,
   normalizeOfflineLoadFilter,
   normalizeOfflineLoadMode,
@@ -6191,6 +6192,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const restoredCurrentFilter = normalizeOfflineLoadFilter(snapshot.currentFilter || '');
     const restoredLoadSortMode = normalizeOfflineLoadMode(snapshot.loadSortMode || 'GITnew');
+
+    if (snapshot.currentFilter === LEGACY_OFFLINE_LOAD_FILTER && restoredCurrentFilter === OFFLINE_LOAD_FILTER) {
+      const legacyQueryKey = buildListQueryKey(LEGACY_OFFLINE_LOAD_FILTER, filters);
+      const restoredQueryKey = buildListQueryKey(restoredCurrentFilter, filters);
+      const legacyOfflineIds = getIdsByQuery(legacyQueryKey);
+      if (legacyOfflineIds.length && !getIdsByQuery(restoredQueryKey).length) {
+        setIdsForQuery(restoredQueryKey, legacyOfflineIds);
+        logProfileRestoreStep('previous-list:migrate-legacy-offline-query-ids', {
+          legacyQueryKey,
+          restoredQueryKey,
+          idsCount: legacyOfflineIds.length,
+        });
+      }
+    }
 
     setCurrentFilter(restoredCurrentFilter);
     setCurrentPage(snapshot.currentPage || 1);

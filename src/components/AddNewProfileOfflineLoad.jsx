@@ -7,6 +7,7 @@ export const LEGACY_OFFLINE_LOAD_FILTER = 'OFLINE';
 export const LEGACY_OFFLINE_LOAD_MODE = 'ofline';
 export const OFFLINE_REACTION_FILTER_OPTIONS = [
   { key: 'pastGetInTouch', label: 'past' },
+  { key: 'futureGetInTouch', label: 'today/future' },
   { key: 'like', label: '❤️' },
   { key: 'dislike', label: '✖' },
 ];
@@ -78,6 +79,7 @@ export const getOfflineFilteredIds = ({
     currentFilters,
     favoriteUsersData,
     dislikeUsersData,
+    OFFLINE_FILTER_MAIN_OPTIONS,
   );
 
   return filteredEntries
@@ -221,7 +223,9 @@ export const loadMoreUsersOffline = async ({
     filters: summarizeLoadFiltersForLog(currentFilters),
   });
 
-  while (Object.keys(hydratedUsers).length < requestedCount && cursor < localIds.length) {
+  const lookaheadCount = requestedCount + 1;
+
+  while (Object.keys(hydratedUsers).length < lookaheadCount && cursor < localIds.length) {
     const idsToHydrate = localIds.slice(cursor, cursor + OFFLINE_LOAD_BACKEND_PAGE_SIZE);
     cursor += idsToHydrate.length;
     attemptedIds.push(...idsToHydrate);
@@ -256,7 +260,7 @@ export const loadMoreUsersOffline = async ({
   }
 
   const hydratedIds = Object.keys(hydratedUsers);
-  const nextHasMore = nextPassedIds.length < localIds.length;
+  const nextHasMore = hydratedIds.length > requestedCount;
   setDateOffset21(nextPassedIds.length);
   setHasMore(nextHasMore);
 
