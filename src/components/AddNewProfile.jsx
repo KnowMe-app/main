@@ -45,7 +45,7 @@ import {
   AddNewProfileOfflineLoadControls,
   OFFLINE_LOAD_FILTER,
   OFFLINE_LOAD_MODE,
-  loadMoreUsersOfline as loadMoreUsersOflineMode,
+  loadMoreUsersOffline as loadMoreUsersOfflineMode,
 } from './AddNewProfileOfflineLoad';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -1089,7 +1089,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     LAST_ACTION2: LAST_ACTION2_SORT_MODE,
     NO_GIT: 'NoGIT',
     SEARCH_ID_KEY_ONLY: 'SearchIdKeyOnly',
-    OFLINE: OFFLINE_LOAD_MODE,
+    OFFLINE: OFFLINE_LOAD_MODE,
   };
   const SEARCH_KEY_INDEX_OPTIONS = [
     { key: 'blood', label: 'blood' },
@@ -1654,7 +1654,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return true;
   };
 
-  const hideOflineCardAndLoadNext = submittedState => {
+  const hideOfflineCardAndLoadNext = submittedState => {
     const userId = submittedState?.userId;
     if (currentFilter !== OFFLINE_LOAD_FILTER || !userId) {
       return false;
@@ -1668,17 +1668,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return restUsers;
     });
 
-    appendLoadDebugLog('handleSubmit:ofline-remove-from-query-and-refill', {
+    appendLoadDebugLog('handleSubmit:offline-remove-from-query-and-refill', {
       queryKey,
       userId,
       currentPage,
     });
 
-    loadMoreUsersOfline(filters, {
+    loadMoreUsersOffline(filters, {
       targetLoadedCount: PAGE_SIZE,
       forceVisibleUpdate: true,
     }).catch(error => {
-      appendLoadDebugLog('handleSubmit:ofline-load-next-error', {
+      appendLoadDebugLog('handleSubmit:offline-load-next-error', {
         queryKey,
         userId,
         message: error?.message || String(error),
@@ -1777,8 +1777,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       });
       cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
       const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(optimisticCard);
-      const oflineCardHidden = hideOflineCardAndLoadNext(optimisticCard);
-      if (!gitNewCardHidden && !oflineCardHidden) {
+      const offlineCardHidden = hideOfflineCardAndLoadNext(optimisticCard);
+      if (!gitNewCardHidden && !offlineCardHidden) {
         setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
       }
 
@@ -2675,7 +2675,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       case LOAD_SORT_MODES.NO_GIT:
       case LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY:
         return 'DATE2.1';
-      case LOAD_SORT_MODES.OFLINE:
+      case LOAD_SORT_MODES.OFFLINE:
         return OFFLINE_LOAD_FILTER;
       case LOAD_SORT_MODES.GIT:
       default:
@@ -2691,7 +2691,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       : 'addFilters';
 
   const gitNewMode = loadSortMode === LOAD_SORT_MODES.GIT_NEW;
-  const offlineLoadMode = loadSortMode === LOAD_SORT_MODES.OFLINE;
+  const offlineLoadMode = loadSortMode === LOAD_SORT_MODES.OFFLINE;
   const searchIdAndSearchKeyOnlyMode = loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY || gitNewMode;
 
   const effectiveEnabledSearchKeys = searchIdAndSearchKeyOnlyMode
@@ -3054,8 +3054,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (currentFilter === OFFLINE_LOAD_FILTER) {
-      appendLoadDebugLog('reload-effect:branch', { branch: OFFLINE_LOAD_FILTER, loader: 'loadMoreUsersOfline' });
-      loadMoreUsersOfline(filters, { reset: true })
+      appendLoadDebugLog('reload-effect:branch', { branch: OFFLINE_LOAD_FILTER, loader: 'loadMoreUsersOffline' });
+      loadMoreUsersOffline(filters, { reset: true })
         .then(({ cacheCount, backendCount, ignored }) => {
           if (ignored) return;
           setCacheCount(cacheCount);
@@ -4559,7 +4559,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { cacheCount, backendCount, hasMore: more };
   };
 
-  const loadMoreUsersOfline = async (currentFilters = filters, options = {}) => loadMoreUsersOflineMode({
+  const loadMoreUsersOffline = async (currentFilters = filters, options = {}) => loadMoreUsersOfflineMode({
     currentFilters,
     ...options,
     pageSize: PAGE_SIZE,
@@ -4887,7 +4887,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ? await loadMoreUsersSearchKey()
             : await loadMoreUsers21()
           : currentFilter === OFFLINE_LOAD_FILTER
-          ? await loadMoreUsersOfline()
+          ? await loadMoreUsersOffline()
           : currentFilter === 'LAST_ACTION'
           ? await loadMoreUsersLastAction()
           : currentFilter === LAST_ACTION2_FILTER
