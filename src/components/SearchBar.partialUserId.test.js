@@ -329,6 +329,59 @@ describe('SearchBar cache-first search', () => {
     document.body.removeChild(container);
   });
 
+  it('renders UK-trigger telegram prefix matches as a list even when one match is returned', async () => {
+    const searchFunc = jest.fn().mockResolvedValue({
+      userId: 'oksana',
+      telegram: 'УК СМ Оксана',
+    });
+    const setUsers = jest.fn();
+    const setState = jest.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.render(React.createElement(SearchBar, {
+        searchFunc,
+        search: 'УК СМ Оксана',
+        setSearch: jest.fn(),
+        setUsers,
+        setState,
+        setUserNotFound: jest.fn(),
+        enabledSearchKeys: {
+          telegram: true,
+          searchId: false,
+          partialUserId: false,
+          searchKey: false,
+          equalToAllCards: false,
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    expect(searchFunc).toHaveBeenCalledWith(
+      { telegram: 'УК СМ Оксана' },
+      expect.objectContaining({
+        allowTelegramPrefixMatches: true,
+      }),
+    );
+    expect(setState).not.toHaveBeenCalledWith(expect.objectContaining({ userId: 'oksana' }));
+    expect(setUsers).toHaveBeenLastCalledWith({
+      oksana: expect.objectContaining({
+        userId: 'oksana',
+        telegram: 'УК СМ Оксана',
+      }),
+    });
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
   it('keeps scoped searchId prefix cache entries isolated for repeated searches', () => {
     updateCard('ig-user', { userId: 'ig-user', name: 'Instagram Match' });
     updateCard('tg-user', { userId: 'tg-user', name: 'Telegram Match' });

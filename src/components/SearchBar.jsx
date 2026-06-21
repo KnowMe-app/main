@@ -1646,6 +1646,7 @@ const SearchBar = ({
       if (ukTrigger?.searchPair?.telegram) {
         const normalizedTelegram = ukTrigger.searchPair.telegram;
         const searchCandidates = [normalizedTelegram];
+        const ukTriggerResultMap = {};
         if (ukTrigger.handle) {
           searchCandidates.push(ukTrigger.handle);
         }
@@ -1653,10 +1654,6 @@ const SearchBar = ({
         for (const [index, candidate] of searchCandidates.entries()) {
           const telegramValue = candidate?.trim();
           if (!telegramValue) continue;
-
-          const cacheOptions = { allowTelegramPrefixMatches: true };
-          const hasCache = loadCachedResult('telegram', telegramValue, requestId, cacheOptions);
-          const freshCache = hasCache && isCacheFresh('telegram', telegramValue, cacheOptions);
 
           if (index === 0) {
             emitSearchLabel({ telegram: telegramValue }, {
@@ -1666,31 +1663,34 @@ const SearchBar = ({
             });
           }
 
-          if (freshCache) return true;
-
-          if (!hasCache) {
-            applyState({}, requestId);
-            applyUsers({}, requestId);
-          }
+          applyState({}, requestId);
+          applyUsers({}, requestId);
 
           const res = await cachedSearch(
             { telegram: telegramValue },
             { allowTelegramPrefixMatches: true },
           );
           if (res && Object.keys(res).length > 0) {
+            mergeSearchResultMap(ukTriggerResultMap, res, {
+              mode: 'telegram',
+              stage: 'uk-trigger',
+              key: 'telegram',
+              value: telegramValue,
+              candidateIndex: index,
+            });
             notifySearchResult(
               { telegram: telegramValue },
               res,
               { preferredKeys: ['telegram'] },
             );
-            applyUserNotFound(false, requestId);
-            if ('userId' in res) {
-              applyState(res, requestId);
-            } else {
-              applyUsers(res, requestId);
-            }
-            return true;
           }
+        }
+
+        if (Object.keys(ukTriggerResultMap).length > 0) {
+          applyUserNotFound(false, requestId);
+          applyState({}, requestId);
+          applyUsers(ukTriggerResultMap, requestId);
+          return true;
         }
 
         applyUserNotFound(true, requestId);
