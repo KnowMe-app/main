@@ -11,7 +11,7 @@ import {
 } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
-import { PAGE_SIZE, INVALID_DATE_TOKENS, MAX_LOOKBACK_DAYS } from './constants';
+import { PAGE_SIZE } from './constants';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -19,6 +19,76 @@ const get = (...args) =>
     source: 'dateLoad',
     path: args[0],
   });
+
+
+const isCurrentPastOrNonDateGetInTouch = (value, todayIso) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  return !/^\d{4}-\d{2}-\d{2}$/.test(normalized) || normalized <= todayIso;
+};
+
+async function defaultFetchGetInTouchOrdered(limit, options = {}) {
+  const db = getDatabase();
+  const collections = ['newUsers', 'users'];
+  const combined = {};
+  const orderedEntries = [];
+  const nextCursors = {};
+  let hasMore = false;
+  const fetchLimit = Math.max(1, Number(limit) || PAGE_SIZE) + 1;
+  const { afterKeys = null } = options || {};
+
+  for (const col of collections) {
+    const collectionRef = ref2(db, col);
+    const collectionCursor = afterKeys?.[col];
+    const q = collectionCursor?.value !== undefined
+      ? query(
+          collectionRef,
+          orderByChild('getInTouch'),
+          startAfter(collectionCursor.value, collectionCursor.key || ''),
+          limitToFirst(fetchLimit),
+        )
+      : query(
+          collectionRef,
+          orderByChild('getInTouch'),
+          limitToFirst(fetchLimit),
+        );
+
+    // eslint-disable-next-line no-await-in-loop
+    const snap = await get(q);
+    let collectionCount = 0;
+    if (snap.exists()) {
+      if (typeof snap.forEach === 'function') {
+        snap.forEach(childSnap => {
+          const id = childSnap.key;
+          const data = childSnap.val();
+          collectionCount += 1;
+          nextCursors[col] = { value: data?.getInTouch ?? '', key: id };
+          if (!combined[id]) {
+            combined[id] = data;
+            orderedEntries.push([id, data]);
+          }
+        });
+      } else {
+        Object.entries(snap.val()).forEach(([id, data]) => {
+          collectionCount += 1;
+          nextCursors[col] = { value: data?.getInTouch ?? '', key: id };
+          if (!combined[id]) {
+            combined[id] = data;
+            orderedEntries.push([id, data]);
+          }
+        });
+      }
+    }
+    if (collectionCount >= fetchLimit) hasMore = true;
+  }
+
+  orderedEntries.sort(([, a], [, b]) => String(a?.getInTouch || '').localeCompare(String(b?.getInTouch || '')));
+  const entries = orderedEntries.slice(0, fetchLimit);
+  const limitedEntries = entries.slice(0, Math.max(1, Number(limit) || PAGE_SIZE));
+  hasMore = hasMore || entries.length > limitedEntries.length;
+
+  return { entries: limitedEntries, hasMore, afterKeys: nextCursors };
+}
 
 const normalizeDateFetchResult = result => {
   if (Array.isArray(result)) {
@@ -112,7 +182,7 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
 
 export async function fetchFilteredUsersByPage(
   startOffset = 0,
-  fetchDateFn = defaultFetchByDate,
+  fetchDateFn,
   fetchUserByIdFn,
   filterSettings = {},
   favoriteUsers = {},
@@ -122,6 +192,9 @@ export async function fetchFilteredUsersByPage(
   debugOptions = {}
 ) {
   const today = new Date();
+  const todayIso = today.toISOString().split('T')[0];
+  const hasCustomFetchDateFn = typeof fetchDateFn === 'function';
+  if (!fetchDateFn) fetchDateFn = defaultFetchByDate;
   const target = startOffset + PAGE_SIZE;
   const limit = target + 1;
 
@@ -191,129 +264,69 @@ export async function fetchFilteredUsersByPage(
     emitProgress();
   };
 
-  const loadDateUntilEnough = async dateStr => {
+
+  if (hasCustomFetchDateFn) {
     let afterKey = null;
     let afterKeys = null;
     let dateHasMore = true;
-
     while (filtered.length < target && dateHasMore) {
       const fetchLimit = limit - filtered.length;
-      emitDebug('fetchFilteredUsersByPage:scan-date:start', {
-        dateStr,
-        fetchLimit,
-        combinedLength: combined.length,
-        filteredLength: filtered.length,
-        target,
-        afterKey,
-        afterKeys,
-      });
-      // eslint-disable-next-line no-await-in-loop
       const batchResult = normalizeDateFetchResult(
-        await fetchDateFn(dateStr, fetchLimit, { afterKey, afterKeys })
+        await fetchDateFn(todayIso, fetchLimit, { afterKey, afterKeys })
       );
       const { entries } = batchResult;
-      emitDebug('fetchFilteredUsersByPage:scan-date:entries', {
-        dateStr,
-        entriesLength: entries.length,
-        combinedLength: combined.length,
-        filteredLength: filtered.length,
-        target,
-        batchHasMore: Boolean(batchResult.hasMore),
-        lastKey: batchResult.lastKey ?? null,
-        afterKeys: batchResult.afterKeys ?? null,
-      });
-
       if (entries.length === 0) {
         dateHasMore = false;
-        emitDebug('fetchFilteredUsersByPage:scan-date:stop', {
-          dateStr,
-          reason: 'no-entries-for-date',
-          combinedLength: combined.length,
-          filteredLength: filtered.length,
-          target,
-        });
         break;
       }
-
       // eslint-disable-next-line no-await-in-loop
       await appendFetchedEntries(entries);
       afterKey = batchResult.lastKey ?? entries[entries.length - 1][0];
       afterKeys = batchResult.afterKeys ?? afterKeys;
       dateHasMore = Boolean(batchResult.hasMore && (afterKey || afterKeys));
-      emitDebug('fetchFilteredUsersByPage:scan-date:after-filter', {
-        dateStr,
-        entriesLength: entries.length,
-        combinedLength: combined.length,
-        filteredLength: filtered.length,
-        target,
-        dateHasMore,
-        nextAfterKey: afterKey,
-        nextAfterKeys: afterKeys,
-      });
     }
 
-    if (filtered.length >= target && dateHasMore) {
-      backendHasMore = true;
-      emitDebug('fetchFilteredUsersByPage:scan-date:stop', {
-        dateStr,
-        reason: 'target-reached-backend-has-more',
-        combinedLength: combined.length,
-        filteredLength: filtered.length,
-        target,
-      });
-    }
-  };
-
-  const MAX_LOAD_DAYS = MAX_LOOKBACK_DAYS; // safety cap
-  let dayOffset = 0;
-
-  while (filtered.length < target && dayOffset < MAX_LOAD_DAYS) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - dayOffset);
-    const dateStr = date.toISOString().split('T')[0];
-    emitDebug('fetchFilteredUsersByPage:scan-progress', {
-      dateStr,
-      dayOffset,
-      invalidIndex: null,
-      entriesLength: null,
-      combinedLength: combined.length,
-      filteredLength: filtered.length,
-      target,
-      maxLoadDays: MAX_LOAD_DAYS,
+    const customSlice = filtered.slice(startOffset, startOffset + PAGE_SIZE);
+    const customUsers = {};
+    customSlice.forEach(([id, data]) => {
+      customUsers[id] = data;
     });
-    // eslint-disable-next-line no-await-in-loop
-    await loadDateUntilEnough(dateStr);
-    dayOffset += 1;
-  }
-  if (filtered.length < target && dayOffset >= MAX_LOAD_DAYS) {
-    emitDebug('fetchFilteredUsersByPage:scan-stop', {
-      reason: 'max-lookback-reached',
-      dayOffset,
-      maxLoadDays: MAX_LOAD_DAYS,
-      combinedLength: combined.length,
-      filteredLength: filtered.length,
-      target,
-    });
+    const customNextOffset = startOffset + customSlice.length;
+    return {
+      users: customUsers,
+      lastKey: customNextOffset,
+      hasMore: filtered.length > startOffset + PAGE_SIZE || dateHasMore,
+    };
   }
 
-  let invalidIndex = 0;
-  while (
-    filtered.length < target &&
-    invalidIndex < INVALID_DATE_TOKENS.length
-  ) {
+  const dayOffset = null;
+  const invalidIndex = null;
+
+  let orderedAfterKeys = null;
+  while (filtered.length < target) {
     emitDebug('fetchFilteredUsersByPage:scan-progress', {
-      dateStr: INVALID_DATE_TOKENS[invalidIndex],
+      dateStr: null,
       dayOffset,
       invalidIndex,
       entriesLength: null,
       combinedLength: combined.length,
       filteredLength: filtered.length,
       target,
-      maxLoadDays: MAX_LOAD_DAYS,
+      source: 'ordered-getInTouch-full-scan',
     });
     // eslint-disable-next-line no-await-in-loop
-    await loadDateUntilEnough(INVALID_DATE_TOKENS[invalidIndex]);
-    invalidIndex += 1;
+    const batchResult = normalizeDateFetchResult(
+      await defaultFetchGetInTouchOrdered(limit - filtered.length, { afterKeys: orderedAfterKeys })
+    );
+    orderedAfterKeys = batchResult.afterKeys ?? null;
+    const rawEntries = batchResult.entries || [];
+    const entries = rawEntries.filter(([, user]) => (
+      isCurrentPastOrNonDateGetInTouch(user?.getInTouch, todayIso)
+    ));
+    // eslint-disable-next-line no-await-in-loop
+    await appendFetchedEntries(entries);
+    backendHasMore = Boolean(batchResult.hasMore);
+    if (!batchResult.hasMore || rawEntries.length === 0) break;
   }
 
   const slice = filtered.slice(startOffset, startOffset + PAGE_SIZE);
@@ -329,11 +342,7 @@ export async function fetchFilteredUsersByPage(
     ? 'target-reached'
     : backendHasMore
       ? 'backend-has-more'
-      : invalidIndex >= INVALID_DATE_TOKENS.length
-        ? 'invalid-tokens-exhausted'
-        : dayOffset >= MAX_LOAD_DAYS
-          ? 'max-lookback-reached'
-          : 'unknown';
+      : 'full-scan-exhausted';
 
   emitDebug('fetchFilteredUsersByPage:result', {
     usersLength: Object.keys(users).length,
