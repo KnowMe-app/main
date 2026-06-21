@@ -38,8 +38,15 @@ import {
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
   fetchUsersBySearchKeyBloodPaged,
+  fetchUsersByIds,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
+import {
+  AddNewProfileOfflineLoadControls,
+  OFFLINE_LOAD_FILTER,
+  OFFLINE_LOAD_MODE,
+  loadMoreUsersOfline as loadMoreUsersOflineMode,
+} from './AddNewProfileOfflineLoad';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -1077,6 +1084,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     LAST_ACTION2: LAST_ACTION2_SORT_MODE,
     NO_GIT: 'NoGIT',
     SEARCH_ID_KEY_ONLY: 'SearchIdKeyOnly',
+    OFLINE: OFFLINE_LOAD_MODE,
   };
   const SEARCH_KEY_INDEX_OPTIONS = [
     { key: 'blood', label: 'blood' },
@@ -1640,6 +1648,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return true;
   };
 
+  const hideOflineCardAndLoadNext = submittedState => {
+    const userId = submittedState?.userId;
+    if (currentFilter !== OFFLINE_LOAD_FILTER || !userId) {
+      return false;
+    }
+
+    const queryKey = buildListQueryKey(OFFLINE_LOAD_FILTER, filters);
+    removeUserIdFromQuery(queryKey, userId);
+    setUsers(prevUsers => {
+      if (!prevUsers || !prevUsers[userId]) return prevUsers;
+      const { [userId]: _hiddenUser, ...restUsers } = prevUsers;
+      return restUsers;
+    });
+
+    appendLoadDebugLog('handleSubmit:ofline-remove-from-query-and-refill', {
+      queryKey,
+      userId,
+      currentPage,
+    });
+
+    loadMoreUsersOfline(filters, {
+      targetLoadedCount: PAGE_SIZE,
+      forceVisibleUpdate: true,
+    }).catch(error => {
+      appendLoadDebugLog('handleSubmit:ofline-load-next-error', {
+        queryKey,
+        userId,
+        message: error?.message || String(error),
+      });
+    });
+
+    return true;
+  };
+
   const refillGitAfterGetInTouchChange = (submittedState, previousData = null) => {
     if (currentFilter !== 'DATE2' || !submittedState?.userId) return;
     if (previousData && previousData.getInTouch === submittedState.getInTouch) return;
@@ -1729,7 +1771,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       });
       cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
       const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(optimisticCard);
-      if (!gitNewCardHidden) {
+      const oflineCardHidden = hideOflineCardAndLoadNext(optimisticCard);
+      if (!gitNewCardHidden && !oflineCardHidden) {
         setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
       }
 
@@ -2626,6 +2669,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       case LOAD_SORT_MODES.NO_GIT:
       case LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY:
         return 'DATE2.1';
+      case LOAD_SORT_MODES.OFLINE:
+        return OFFLINE_LOAD_FILTER;
       case LOAD_SORT_MODES.GIT:
       default:
         return 'DATE2';
@@ -2640,6 +2685,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       : 'addFilters';
 
   const gitNewMode = loadSortMode === LOAD_SORT_MODES.GIT_NEW;
+  const offlineLoadMode = loadSortMode === LOAD_SORT_MODES.OFLINE;
   const searchIdAndSearchKeyOnlyMode = loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY || gitNewMode;
 
   const effectiveEnabledSearchKeys = searchIdAndSearchKeyOnlyMode
@@ -2996,6 +3042,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           });
           setCacheCount(0);
           setBackendCount(0);
+        })
+        .finally(() => setSearchLoading(false));
+      return;
+    }
+
+    if (currentFilter === OFFLINE_LOAD_FILTER) {
+      appendLoadDebugLog('reload-effect:branch', { branch: OFFLINE_LOAD_FILTER, loader: 'loadMoreUsersOfline' });
+      loadMoreUsersOfline(filters, { reset: true })
+        .then(({ cacheCount, backendCount, ignored }) => {
+          if (ignored) return;
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
         })
         .finally(() => setSearchLoading(false));
       return;
@@ -4495,6 +4553,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { cacheCount, backendCount, hasMore: more };
   };
 
+  const loadMoreUsersOfline = async (currentFilters = filters, options = {}) => loadMoreUsersOflineMode({
+    currentFilters,
+    ...options,
+    pageSize: PAGE_SIZE,
+    hasMore,
+    buildListQueryKey,
+    serializeQueryFilters,
+    getActiveFiltersKey: () => serializeQueryFilters(filtersRef.current),
+    getMergedUsersFromLocalExportCollections,
+    filterMain,
+    favoriteUsersData,
+    dislikeUsersData,
+    fetchUsersByIds,
+    cacheFetchedUsers,
+    cacheLoad2Users,
+    setIdsForQuery,
+    canApplyLoadResultsToUsers,
+    setUsers,
+    mergeWithoutOverwrite,
+    setDateOffset21,
+    setHasMore,
+    appendLoadDebugLog,
+    summarizeLoadFiltersForLog,
+    toast,
+  });
+
   const loadMoreUsersLastAction = async (currentFilters = filters) => {
     appendLoadDebugLog('loadMoreUsersLastAction:start', {
       dateOffsetLA,
@@ -4796,6 +4880,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ? searchIdAndSearchKeyOnlyMode
             ? await loadMoreUsersSearchKey()
             : await loadMoreUsers21()
+          : currentFilter === OFFLINE_LOAD_FILTER
+          ? await loadMoreUsersOfline()
           : currentFilter === 'LAST_ACTION'
           ? await loadMoreUsersLastAction()
           : currentFilter === LAST_ACTION2_FILTER
@@ -6587,13 +6673,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         />
                         NoGIT+IdKey
                       </SortModeLabel>
+                      <AddNewProfileOfflineLoadControls
+                        SortModeLabel={SortModeLabel}
+                        LocalIndexActions={LocalIndexActions}
+                        loadSortMode={loadSortMode}
+                        onModeChange={handleLoadSortModeChange}
+                        onPickUsersFile={handlePickUsersFileForLocalExport}
+                        onPickNewUsersFile={handlePickNewUsersFileForLocalExport}
+                        hasUsersFile={Boolean(localExportUsersData)}
+                        hasNewUsersFile={Boolean(localExportNewUsersData)}
+                      />
                     </SortModeContainer>
                     <FilterPanel
                       key={filterStorageKey}
                       onChange={handleFilterChange}
                       storageKey={filterStorageKey}
-                      bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-                      allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch'] : undefined}
+                      bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
+                      allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch'] : undefined}
                     />
                   </LoadOptionsPopover>
                 )}
