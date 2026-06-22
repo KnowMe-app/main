@@ -32,10 +32,12 @@ async function defaultFetchGetInTouchOrdered(limit, options = {}) {
   const collections = ['newUsers', 'users'];
   const combined = {};
   const orderedEntries = [];
-  const nextCursors = {};
+  const { afterKeys = null, cursorLimit = null } = options || {};
+  const nextCursors = { ...(afterKeys || {}) };
   let hasMore = false;
-  const fetchLimit = Math.max(1, Number(limit) || PAGE_SIZE) + 1;
-  const { afterKeys = null } = options || {};
+  const requestedLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+  const cursorEntryLimit = Math.max(1, Number(cursorLimit) || requestedLimit);
+  const fetchLimit = requestedLimit + 1;
 
   for (const col of collections) {
     const collectionRef = ref2(db, col);
@@ -62,19 +64,17 @@ async function defaultFetchGetInTouchOrdered(limit, options = {}) {
           const id = childSnap.key;
           const data = childSnap.val();
           collectionCount += 1;
-          nextCursors[col] = { value: data?.getInTouch ?? '', key: id };
           if (!combined[id]) {
             combined[id] = data;
-            orderedEntries.push([id, data]);
+            orderedEntries.push([id, data, col]);
           }
         });
       } else {
         Object.entries(snap.val()).forEach(([id, data]) => {
           collectionCount += 1;
-          nextCursors[col] = { value: data?.getInTouch ?? '', key: id };
           if (!combined[id]) {
             combined[id] = data;
-            orderedEntries.push([id, data]);
+            orderedEntries.push([id, data, col]);
           }
         });
       }
@@ -83,10 +83,12 @@ async function defaultFetchGetInTouchOrdered(limit, options = {}) {
   }
 
   orderedEntries.sort(([, a], [, b]) => String(a?.getInTouch || '').localeCompare(String(b?.getInTouch || '')));
-  // Return every row that advanced a collection cursor. Slicing the merged list
-  // after advancing per-collection cursors skips unreturned rows from the other
-  // collection on the next request.
-  return { entries: orderedEntries, hasMore, afterKeys: nextCursors };
+  const limitedEntries = orderedEntries.slice(0, cursorEntryLimit);
+  limitedEntries.forEach(([id, data, col]) => {
+    nextCursors[col] = { value: data?.getInTouch ?? '', key: id };
+  });
+  hasMore = hasMore || orderedEntries.length > limitedEntries.length;
+  return { entries: orderedEntries.map(([id, data]) => [id, data]), hasMore, afterKeys: nextCursors };
 }
 
 const normalizeDateFetchResult = result => {
@@ -113,12 +115,14 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
   const collections = ['newUsers', 'users'];
   const combined = {};
   const orderedEntries = [];
-  const nextCursors = {};
   let hasMore = false;
   let lastKey = null;
-  const { afterKey = null, afterKeys = null } = options || {};
+  const { afterKey = null, afterKeys = null, cursorLimit = null } = options || {};
+  const nextCursors = { ...(afterKeys || {}) };
   const hasCollectionCursors = afterKeys && typeof afterKeys === 'object';
-  const fetchLimit = Math.max(1, Number(limit) || PAGE_SIZE) + 1;
+  const requestedLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+  const cursorEntryLimit = Math.max(1, Number(cursorLimit) || requestedLimit);
+  const fetchLimit = requestedLimit + 1;
 
   // Iterate through both collections and gather matching records.
   // Keep reading one extra row so DATE2 can know whether the same date still
@@ -147,18 +151,16 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
         snap.forEach(childSnap => {
           const id = childSnap.key;
           const data = childSnap.val();
-          nextCursors[col] = id;
           if (!combined[id]) {
             combined[id] = data;
-            orderedEntries.push([id, data]);
+            orderedEntries.push([id, data, col]);
           }
         });
       } else {
         Object.entries(snap.val()).forEach(([id, data]) => {
-          nextCursors[col] = id;
           if (!combined[id]) {
             combined[id] = data;
-            orderedEntries.push([id, data]);
+            orderedEntries.push([id, data, col]);
           }
         });
       }
@@ -171,11 +173,19 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
   }
 
   const entries = orderedEntries.slice(0, fetchLimit);
-  const limitedEntries = entries.slice(0, Math.max(1, Number(limit) || PAGE_SIZE));
+  const limitedEntries = entries.slice(0, cursorEntryLimit);
+  limitedEntries.forEach(([id, , col]) => {
+    nextCursors[col] = id;
+  });
   hasMore = hasMore || entries.length > limitedEntries.length;
   lastKey = limitedEntries.length > 0 ? limitedEntries[limitedEntries.length - 1][0] : null;
 
-  return { entries: limitedEntries, hasMore, lastKey, afterKeys: nextCursors };
+  return {
+    entries: entries.map(([id, data]) => [id, data]),
+    hasMore,
+    lastKey,
+    afterKeys: nextCursors,
+  };
 }
 
 
@@ -275,7 +285,11 @@ export async function fetchFilteredUsersByPage(
     while (filtered.length < target && dateHasMore) {
       const fetchLimit = limit - filtered.length;
       const batchResult = normalizeDateFetchResult(
-        await fetchDateFn(todayIso, fetchLimit, { afterKey, afterKeys })
+        await fetchDateFn(todayIso, fetchLimit, {
+          afterKey,
+          afterKeys,
+          cursorLimit: target - filtered.length,
+        })
       );
       const { entries } = batchResult;
       if (entries.length === 0) {
@@ -321,7 +335,10 @@ export async function fetchFilteredUsersByPage(
     });
     // eslint-disable-next-line no-await-in-loop
     const batchResult = normalizeDateFetchResult(
-      await defaultFetchGetInTouchOrdered(limit - filtered.length, { afterKeys: orderedAfterKeys })
+      await defaultFetchGetInTouchOrdered(limit - filtered.length, {
+        afterKeys: orderedAfterKeys,
+        cursorLimit: target - filtered.length,
+      })
     );
     orderedAfterKeys = batchResult.afterKeys ?? null;
     const rawEntries = batchResult.entries || [];
