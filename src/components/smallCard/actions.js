@@ -7,6 +7,7 @@ import {
 import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
+import { getUserStateShape, markUserPendingRemove, updateUserInState } from "./userStateUpdate";
 
 export const handleChange = (
   setUsers,
@@ -88,41 +89,18 @@ export const handleChange = (
     }
 
     const applyUpdates = prevState => {
-      const keys = prevState && typeof prevState === 'object' && !Array.isArray(prevState)
-        ? Object.keys(prevState)
-        : [];
-
-      const isMultiple =
-        keys.length > 0 &&
-        keys.every(id => prevState[id] && typeof prevState[id] === 'object');
-
-      if (!isMultiple) {
-        const newState = { ...prevState, ...formattedWithAction };
+      return updateUserInState(prevState, userId, currentUser => {
+        const updatedUser = { ...currentUser, ...formattedWithAction };
         removeKeys.forEach(key => {
-          delete newState[key];
+          delete updatedUser[key];
         });
         clickFlag &&
           submitWithHistory(
-            { ...newState, userId: userId || newState.userId },
+            { ...updatedUser, userId: userId || updatedUser.userId },
             removeKeys,
           );
-        return newState;
-      } else {
-        const newState = {
-          ...prevState,
-          [userId]: {
-            ...prevState[userId],
-            ...formattedWithAction,
-          },
-        };
-        removeKeys.forEach(key => {
-          if (newState[userId]) {
-            delete newState[userId][key];
-          }
-        });
-        clickFlag && submitWithHistory({ ...newState[userId], userId }, removeKeys);
-        return newState;
-      }
+        return updatedUser;
+      });
     };
 
     invokeSetUsers(applyUpdates);
@@ -133,16 +111,7 @@ export const handleChange = (
       opts.isDateInRange &&
       !opts.isDateInRange(formatted.getInTouch)
     ) {
-      invokeSetUsers(prev => {
-        if (!prev || typeof prev !== 'object') {
-          return prev;
-        }
-        const copy = { ...prev };
-        if (copy[userId]) {
-          copy[userId]._pendingRemove = true;
-        }
-        return copy;
-      });
+      invokeSetUsers(prev => markUserPendingRemove(prev, userId));
     }
     return;
   }
@@ -175,39 +144,7 @@ export const handleChange = (
 
   if (setState) {
     invokeSetUsers(prevState => {
-      // console.log('prevState!!!!!!!!! :>> ', prevState);
-      // Зроблено в основному для видалення юзера серед масиву карточок, а не з середини
-
-      const keys = prevState && typeof prevState === 'object' && !Array.isArray(prevState)
-        ? Object.keys(prevState)
-        : [];
-
-      const isMultiple =
-        keys.length > 0 &&
-        keys.every(id => prevState[id] && typeof prevState[id] === 'object');
-
-      if (!isMultiple) {
-        const newState = { ...prevState };
-        if ((key === 'lastDelivery' || key === 'getInTouch') && !newValue) {
-          delete newState[key];
-        } else {
-          newState[key] = newValue;
-        }
-        if (click) {
-          newState.lastAction = Date.now();
-        }
-        click &&
-          submitWithHistory(
-            { ...newState, userId: userId || newState.userId },
-            removalKeys,
-          );
-        return newState;
-      } else {
-        const currentUser = prevState?.[userId];
-        if (!currentUser || typeof currentUser !== 'object') {
-          return prevState;
-        }
-
+      return updateUserInState(prevState, userId, currentUser => {
         const updatedUser =
           (key === 'lastDelivery' || key === 'getInTouch') && !newValue
             ? (() => {
@@ -218,51 +155,34 @@ export const handleChange = (
         if (click) {
           updatedUser.lastAction = Date.now();
         }
-
-        const newState = {
-          ...prevState,
-          [userId]: updatedUser,
-        };
         click &&
           submitWithHistory(
-            { ...newState[userId], userId },
+            { ...updatedUser, userId: userId || updatedUser.userId },
             removalKeys,
           );
-        return newState;
-      }
+        return updatedUser;
+      });
     });
   } else {
     invokeSetUsers(prevState => {
-      if (!prevState || typeof prevState !== 'object') {
-        return prevState;
-      }
-
-      const currentUser = prevState[userId];
-      if (!currentUser || typeof currentUser !== 'object') {
-        return prevState;
-      }
-
-      const updatedUser =
-        (key === 'lastDelivery' || key === 'getInTouch') && !newValue
-          ? (() => {
-              const { [key]: _, ...rest } = currentUser;
-              return rest;
-            })()
-          : { ...currentUser, [key]: newValue };
-      if (click) {
-        updatedUser.lastAction = Date.now();
-      }
-
-      const newState = {
-        ...prevState,
-        [userId]: updatedUser,
-      };
-      click &&
-        submitWithHistory(
-          { ...newState[userId], userId },
-          removalKeys,
-        );
-      return newState;
+      return updateUserInState(prevState, userId, currentUser => {
+        const updatedUser =
+          (key === 'lastDelivery' || key === 'getInTouch') && !newValue
+            ? (() => {
+                const { [key]: _, ...rest } = currentUser;
+                return rest;
+              })()
+            : { ...currentUser, [key]: newValue };
+        if (click) {
+          updatedUser.lastAction = Date.now();
+        }
+        click &&
+          submitWithHistory(
+            { ...updatedUser, userId: userId || updatedUser.userId },
+            removalKeys,
+          );
+        return updatedUser;
+      });
     });
   }
 
@@ -276,11 +196,7 @@ export const handleChange = (
       if (!prev || typeof prev !== 'object') {
         return prev;
       }
-      const copy = { ...prev };
-      if (copy[userId]) {
-        copy[userId]._pendingRemove = true;
-      }
-      return copy;
+      return markUserPendingRemove(prev, userId);
     });
   }
 };
@@ -383,37 +299,26 @@ export const removeField = (
   };
 
   setUsers(prev => {
-    const isMultiple =
-      prev &&
-      typeof prev === 'object' &&
-      !Array.isArray(prev) &&
-      Object.keys(prev).every(id => typeof prev[id] === 'object');
-
-    if (isMultiple) {
-      const targetUser = prev[userId];
-      const { changed, value } = removePath(targetUser);
-      if (!changed) {
-        return prev;
+    const shape = getUserStateShape(prev);
+    let submitted = false;
+    const next = updateUserInState(prev, userId, currentUser => {
+      const { changed, value } = removePath(currentUser);
+      if (!changed) return currentUser;
+      const updated = value ?? {};
+      const resolvedUserId = userId || updated.userId;
+      if (resolvedUserId) {
+        submitted = true;
+        triggerHistorySnapshot({ ...updated, userId: resolvedUserId });
+        handleSubmit({ ...updated, userId: resolvedUserId }, 'overwrite', removalList);
       }
-      const updatedUser = value ?? {};
-      const newState = { ...prev, [userId]: updatedUser };
-      triggerHistorySnapshot({ ...updatedUser, userId });
-      handleSubmit({ ...updatedUser, userId }, 'overwrite', removalList);
-      return newState;
+      return updated;
+    });
+
+    if (shape === 'unknown' || submitted || next !== prev) {
+      return next;
     }
 
-    const { changed, value } = removePath(prev);
-    if (!changed) {
-      return prev;
-    }
-    const updated = value ?? {};
-    const resolvedUserId = userId || updated.userId;
-    if (!resolvedUserId) {
-      return updated;
-    }
-    triggerHistorySnapshot({ ...updated, userId: resolvedUserId });
-    handleSubmit({ ...updated, userId: resolvedUserId }, 'overwrite', removalList);
-    return updated;
+    return prev;
   });
 };
 

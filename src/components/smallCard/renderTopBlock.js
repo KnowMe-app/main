@@ -9,6 +9,7 @@ import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
 import { fieldGetInTouch } from './fieldGetInTouch';
 import { handleChange } from './actions';
+import { updateUserInState } from './userStateUpdate';
 import { fieldRole } from './fieldRole';
 import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
@@ -518,7 +519,7 @@ const extractMultiDataComments = cardData => {
   return normalized.filter(comment => comment.text);
 };
 
-const TopBlock = ({
+export const TopBlock = ({
   userData,
   setUsers,
   setShowInfoModal,
@@ -646,17 +647,9 @@ const TopBlock = ({
     if (typeof setUsers === 'function') {
       setUsers(prev => {
         if (Array.isArray(prev)) {
-          return prev.map(item => (item?.userId === cardData.userId ? optimisticCard : item));
+          return updateUserInState(prev, cardData.userId, () => optimisticCard);
         }
-        if (prev && typeof prev === 'object') {
-          const current = prev[cardData.userId];
-          if (!current) return prev;
-          return {
-            ...prev,
-            [cardData.userId]: optimisticCard,
-          };
-        }
-        return prev;
+        return updateUserInState(prev, cardData.userId, () => optimisticCard);
       });
     }
     if (typeof setState === 'function' && !isFromListOfUsers) {
@@ -751,13 +744,7 @@ const TopBlock = ({
 
         if (setUsers) {
           setUsers(prev => {
-            if (Array.isArray(prev)) {
-              return prev.map(u => (u.userId === cardData.userId ? backendCard : u));
-            }
-            if (typeof prev === 'object' && prev !== null) {
-              return { ...prev, [cardData.userId]: backendCard };
-            }
-            return prev;
+            return updateUserInState(prev, cardData.userId, () => backendCard);
           });
         }
 
@@ -793,7 +780,20 @@ const TopBlock = ({
   const cardRole = cardData.role || cardData.userRole;
   const displayRole = cardRole || 'role';
   const identityMeta = renderIdentityMeta(cardData);
-  const deliveryInfo = fieldDeliveryInfo(setUsers, setState, cardData, submitOptions);
+  const updateContext = {
+    mode: isFromListOfUsers ? 'list' : 'single',
+    userId: cardData.userId,
+    setCurrentUser: setState,
+    setUserCollection: setUsers,
+  };
+
+  const deliveryInfo = fieldDeliveryInfo({
+    userData: cardData,
+    setUsers,
+    setState,
+    submitOptions,
+    updateContext,
+  });
 
   const handleDetailsRefresh = async event => {
     event.stopPropagation();
@@ -1054,7 +1054,7 @@ const TopBlock = ({
         </div>
         {isRoleEditorOpen && (
           <div style={roleEditorStyle} onClick={event => event.stopPropagation()}>
-            {fieldRole(cardData, setUsers, setState, submitOptions)}
+            {fieldRole({ userData: cardData, setUsers, setState, submitOptions, updateContext })}
           </div>
         )}
         {renderOverlayEntries(['surname', 'name', 'fathersname'])}
@@ -1110,15 +1110,16 @@ const TopBlock = ({
       </div>
       <div style={statusRowStyle}>
         <div style={getInTouchStatusItemStyle}>
-          {fieldGetInTouch(
-            cardData,
+          {fieldGetInTouch({
+            userData: cardData,
             setUsers,
             setState,
             currentFilter,
             isDateInRange,
             submitOptions,
-            getInTouchReactionActions,
-          )}
+            trailingActions: getInTouchReactionActions,
+            updateContext,
+          })}
         </div>
         {!hasHiddenCycleFieldRole && (
           <div style={statusItemStyle}>
@@ -1148,7 +1149,7 @@ const TopBlock = ({
         {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'ameblo', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'vk'])}
       </div>
       <div style={commentsSectionStyle}>
-        {fieldWriter(cardData, setUsers, setState, submitOptions)}
+        {fieldWriter({ userData: cardData, setUsers, setState, submitOptions, updateContext })}
         <FieldComment
           userData={cardData}
           setUsers={setUsers}

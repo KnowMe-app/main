@@ -95,7 +95,7 @@ import {
 } from 'utils/stimulationShortcutStorage';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact, saveToContactCsv } from './ExportContact';
-import { renderTopBlock } from './smallCard/renderTopBlock';
+import { TopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
 import { ReactComponent as BabyIcon } from 'assets/icons/baby.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
@@ -6533,21 +6533,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {isResolvingEditMode ? null : state.userId ? (
           <>
             <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-              {renderTopBlock({
-                userData: state,
-                setUsers,
-                setShowInfoModal,
-                setState,
-                setUserIdToDelete,
-                isFromListOfUsers: false,
-                favoriteUsers: favoriteUsersData,
-                setFavoriteUsers: setFavoriteUsersData,
-                dislikeUsers: dislikeUsersData,
-                setDislikeUsers: setDislikeUsersData,
-                currentFilter,
-                isDateInRange,
-                onOpenMedications: openMedicationsModal,
-                topBlueAction: {
+              <TopBlock
+                userData={state}
+                setUsers={setUsers}
+                setShowInfoModal={setShowInfoModal}
+                setState={setState}
+                setUserIdToDelete={setUserIdToDelete}
+                isFromListOfUsers={false}
+                favoriteUsers={favoriteUsersData}
+                setFavoriteUsers={setFavoriteUsersData}
+                dislikeUsers={dislikeUsersData}
+                setDislikeUsers={setDislikeUsersData}
+                currentFilter={currentFilter}
+                isDateInRange={isDateInRange}
+                onOpenMedications={openMedicationsModal}
+                topBlueAction={{
                   onClick: handleBackToPreviousList,
                   title: 'Назад до попереднього списку',
                   ariaLabel: 'Назад до попереднього списку',
@@ -6569,16 +6569,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       />
                     </svg>
                   ),
-                },
-                overlayFieldAdditions: {},
-                onSubmitHistorySnapshot: handleTopBlockSubmitHistorySnapshot,
-                stimulationScheduleToggle: shouldShowSchedule
+                }}
+                overlayFieldAdditions={{}}
+                onSubmitHistorySnapshot={handleTopBlockSubmitHistorySnapshot}
+                stimulationScheduleToggle={shouldShowSchedule
                   ? {
                       visible: isStimulationScheduleVisible,
                       onToggle: () => setIsStimulationScheduleVisible(prev => !prev),
                     }
-                  : null,
-              })}
+                  : null}
+              />
             </div>
             {shouldShowSchedule && isStimulationScheduleVisible && state && (
               <div style={{ ...coloredCard(), marginBottom: '8px' }}>

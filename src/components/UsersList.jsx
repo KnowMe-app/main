@@ -1,7 +1,7 @@
 import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
-import { renderTopBlock } from './smallCard/renderTopBlock';
+import { TopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnMore } from './smallCard/btnMore';
 import { renderAllFields } from './ProfileForm';
@@ -53,29 +53,29 @@ const UserCard = ({
   return (
     <div>
       <div style={{ ...coloredCard(role), marginBottom: '8px' }}>
-        {renderTopBlock({
-          userData,
-          setUsers,
-          setShowInfoModal,
-          setState,
-          setUserIdToDelete,
-          isFromListOfUsers: true,
-          favoriteUsers,
-          setFavoriteUsers,
-          dislikeUsers,
-          setDislikeUsers,
-          currentFilter,
-          isDateInRange,
-          onOpenMedications,
-          setSearch,
-          additionalActions: actions,
-          stimulationScheduleToggle: shouldShowSchedule
+        <TopBlock
+          userData={userData}
+          setUsers={setUsers}
+          setShowInfoModal={setShowInfoModal}
+          setState={setState}
+          setUserIdToDelete={setUserIdToDelete}
+          isFromListOfUsers={true}
+          favoriteUsers={favoriteUsers}
+          setFavoriteUsers={setFavoriteUsers}
+          dislikeUsers={dislikeUsers}
+          setDislikeUsers={setDislikeUsers}
+          currentFilter={currentFilter}
+          isDateInRange={isDateInRange}
+          onOpenMedications={onOpenMedications}
+          setSearch={setSearch}
+          additionalActions={actions}
+          stimulationScheduleToggle={shouldShowSchedule
             ? {
                 visible: isStimulationScheduleVisible,
                 onToggle: () => setIsStimulationScheduleVisible(prev => !prev),
               }
-            : null,
-        })}
+            : null}
+        />
       </div>
       {shouldShowSchedule && isStimulationScheduleVisible && (
         <div style={{ ...coloredCard(role), marginBottom: '8px' }}>

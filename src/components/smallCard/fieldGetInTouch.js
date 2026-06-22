@@ -1,4 +1,5 @@
 import { handleChange } from './actions';
+import { updateUserInState } from './userStateUpdate';
 import {
   formatDateToDisplay,
   formatDateAndFormula,
@@ -13,14 +14,33 @@ import {
 } from './compactDateRowStyles';
 
 export const fieldGetInTouch = (
-  userData,
-  setUsers,
-  setState,
-  currentFilter,
-  isDateInRange,
-  submitOptions = {},
-  trailingActions = null,
+  args,
+  legacySetUsers,
+  legacySetState,
+  legacyCurrentFilter,
+  legacyIsDateInRange,
+  legacySubmitOptions = {},
+  legacyTrailingActions = null,
 ) => {
+  const {
+    userData,
+    setUsers,
+    setState,
+    currentFilter,
+    isDateInRange,
+    submitOptions = {},
+    trailingActions = null,
+  } = args && typeof args === 'object' && 'userData' in args
+    ? args
+    : {
+        userData: args,
+        setUsers: legacySetUsers,
+        setState: legacySetState,
+        currentFilter: legacyCurrentFilter,
+        isDateInRange: legacyIsDateInRange,
+        submitOptions: legacySubmitOptions,
+        trailingActions: legacyTrailingActions,
+      };
   const handleAddDays = days => {
     const currentDate = new Date();
     currentDate.setDate(currentDate.getDate() + days);
@@ -62,26 +82,10 @@ export const fieldGetInTouch = (
           return prev;
         }
 
-        if (Array.isArray(prev)) {
-          return prev.map(item =>
-            item?.userId === targetId
-              ? { ...item, getInTouch: nextValue }
-              : item,
-          );
-        }
-
-        if (typeof prev === 'object') {
-          const current = prev[targetId];
-          if (!current || typeof current !== 'object') {
-            return prev;
-          }
-          return {
-            ...prev,
-            [targetId]: { ...current, getInTouch: nextValue },
-          };
-        }
-
-        return prev;
+        return updateUserInState(prev, targetId, current => ({
+          ...current,
+          getInTouch: nextValue,
+        }));
       });
     }
   };

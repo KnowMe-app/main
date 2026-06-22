@@ -1,7 +1,20 @@
 import { handleChange } from './actions';
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
-export const fieldWriter = (userData, setUsers, setState, submitOptions = {}) => {
+export const fieldWriter = (args, legacySetUsers, legacySetState, legacySubmitOptions = {}) => {
+  const {
+    userData,
+    setUsers,
+    setState,
+    submitOptions = {},
+  } = args && typeof args === 'object' && 'userData' in args
+    ? args
+    : {
+        userData: args,
+        setUsers: legacySetUsers,
+        setState: legacySetState,
+        submitOptions: legacySubmitOptions,
+      };
   const handleCodeClick = code => {
     let currentWriter = userData.writer || '';
     let updatedCodes = currentWriter?.split(', ').filter(item => item !== code); // Видаляємо, якщо є

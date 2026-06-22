@@ -3,7 +3,20 @@ import { utilCalculateMonthsAgo } from './utilCalculateMonthsAgo';
 import { AttentionButton } from 'components/styles';
 import { formatDateToDisplay } from 'components/inputValidations';
 
-export const fieldDeliveryInfo = (setUsers, setState, userData, submitOptions = {}) => {
+export const fieldDeliveryInfo = (args, legacySetState, legacyUserData, legacySubmitOptions = {}) => {
+  const {
+    setUsers,
+    setState,
+    userData,
+    submitOptions = {},
+  } = args && typeof args === 'object' && 'userData' in args
+    ? args
+    : {
+        setUsers: args,
+        setState: legacySetState,
+        userData: legacyUserData,
+        submitOptions: legacySubmitOptions,
+      };
   const { ownKids, lastDelivery, csection } = userData;
   const formattedLastDelivery = formatDateToDisplay(lastDelivery);
 

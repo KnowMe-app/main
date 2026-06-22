@@ -1,7 +1,20 @@
 import { handleChange } from './actions';
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
-export const fieldRole = (userData, setUsers, setState, submitOptions = {}) => {
+export const fieldRole = (args, legacySetUsers, legacySetState, legacySubmitOptions = {}) => {
+  const {
+    userData,
+    setUsers,
+    setState,
+    submitOptions = {},
+  } = args && typeof args === 'object' && 'userData' in args
+    ? args
+    : {
+        userData: args,
+        setUsers: legacySetUsers,
+        setState: legacySetState,
+        submitOptions: legacySubmitOptions,
+      };
   const handleSetRole = role => {
     handleChange(setUsers, setState, userData.userId, 'role', role, true, submitOptions);
   };

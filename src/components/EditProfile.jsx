@@ -13,7 +13,7 @@ import {
 import { ProfileForm } from './ProfileForm';
 import { newUsersMirrorFieldNames } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
-import { renderTopBlock } from './smallCard/renderTopBlock';
+import { TopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
 import { coloredCard } from './styles';
 import { updateCachedUser } from '../utils/cache';
@@ -961,21 +961,21 @@ const EditProfile = () => {
         <TopBlockSkeleton />
       ) : (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-          {renderTopBlock({
-            userData: state,
-            setUsers: () => {},
-            setShowInfoModal: () => {},
-            setState,
-            setUserIdToDelete: () => {},
-            onOpenMedications: handleOpenMedications,
-            overlayFieldAdditions,
-            stimulationScheduleToggle: shouldShowSchedule
+          <TopBlock
+            userData={state}
+            setUsers={() => {}}
+            setShowInfoModal={() => {}}
+            setState={setState}
+            setUserIdToDelete={() => {}}
+            onOpenMedications={handleOpenMedications}
+            overlayFieldAdditions={overlayFieldAdditions}
+            stimulationScheduleToggle={shouldShowSchedule
               ? {
                   visible: isStimulationScheduleVisible,
                   onToggle: () => setIsStimulationScheduleVisible(prev => !prev),
                 }
-              : null,
-          })}
+              : null}
+          />
         </div>
       )}
       {shouldShowSchedule && isStimulationScheduleVisible && state && (
