@@ -210,7 +210,7 @@ describe('fetchFilteredUsersByPage', () => {
 
     expect(Object.keys(first.users)).toEqual(firstNewUsersPage.slice(0, 20).map(([id]) => id));
     expect(first.hasMore).toBe(true);
-    expect(first.afterKeys?.newUsers).toEqual({ value: '2026-06-19', key: 'u22' });
+    expect(first.afterKeys?.newUsers).toEqual({ value: '2026-06-19', key: 'u20' });
     expect(Object.keys(second.users)).toEqual(['u23']);
   });
 
