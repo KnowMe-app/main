@@ -155,6 +155,64 @@ describe('fetchFilteredUsersByPage', () => {
     expect(Object.keys(result.users)).toHaveLength(20);
     expect(result.hasMore).toBe(true);
   });
+
+  it('continues GIT scanning from returned backend afterKeys instead of visible offset only', async () => {
+    const database = await import('firebase/database');
+    database.getDatabase.mockReturnValue('db');
+    database.ref.mockImplementation((db, col) => `${db}/${col}`);
+    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.startAfter.mockImplementation((value, key) => ['startAfter', value, key]);
+    database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
+    database.query.mockImplementation((...args) => args);
+
+    const makeSnapshot = entries => ({
+      exists: () => entries.length > 0,
+      forEach: callback => {
+        entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
+      },
+    });
+    const firstNewUsersPage = Array.from({ length: 22 }, (_, index) => {
+      const id = `u${String(index + 1).padStart(2, '0')}`;
+      return [id, { userId: id, getInTouch: '2026-06-19', keep: true }];
+    });
+    const secondNewUsersPage = [
+      ['u23', { userId: 'u23', getInTouch: '2026-06-19', keep: true }],
+    ];
+
+    database.get.mockImplementation(async queryArgs => {
+      const path = queryArgs[0];
+      if (path === 'db/users') return makeSnapshot([]);
+      const hasCursor = queryArgs.some(arg => Array.isArray(arg) && arg[0] === 'startAfter');
+      return makeSnapshot(hasCursor ? secondNewUsersPage : firstNewUsersPage);
+    });
+
+    const { fetchFilteredUsersByPage } = await import('./dateLoad');
+    const first = await fetchFilteredUsersByPage(
+      0,
+      undefined,
+      async id => ({ hydrated: id }),
+      {},
+      {},
+      {},
+      source => source.filter(([, user]) => user.keep),
+    );
+    const second = await fetchFilteredUsersByPage(
+      0,
+      undefined,
+      async id => ({ hydrated: id }),
+      {},
+      {},
+      {},
+      source => source.filter(([, user]) => user.keep),
+      undefined,
+      { afterKeys: first.afterKeys },
+    );
+
+    expect(Object.keys(first.users)).toEqual(firstNewUsersPage.slice(0, 20).map(([id]) => id));
+    expect(first.hasMore).toBe(true);
+    expect(first.afterKeys?.newUsers).toEqual({ value: '2026-06-19', key: 'u22' });
+    expect(Object.keys(second.users)).toEqual(['u23']);
+  });
 });
 
 describe('defaultFetchByDate', () => {

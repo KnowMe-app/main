@@ -210,6 +210,9 @@ export async function fetchFilteredUsersByPage(
   let filtered = [];
   let backendHasMore = false;
   const debugLog = typeof debugOptions?.debugLog === 'function' ? debugOptions.debugLog : null;
+  const initialAfterKeys = debugOptions?.afterKeys && typeof debugOptions.afterKeys === 'object'
+    ? debugOptions.afterKeys
+    : null;
   const emitDebug = (step, payload = {}) => {
     if (!debugLog) return;
     debugLog(step, payload);
@@ -267,7 +270,7 @@ export async function fetchFilteredUsersByPage(
 
   if (hasCustomFetchDateFn) {
     let afterKey = null;
-    let afterKeys = null;
+    let afterKeys = initialAfterKeys;
     let dateHasMore = true;
     while (filtered.length < target && dateHasMore) {
       const fetchLimit = limit - filtered.length;
@@ -296,13 +299,14 @@ export async function fetchFilteredUsersByPage(
       users: customUsers,
       lastKey: customNextOffset,
       hasMore: filtered.length > startOffset + PAGE_SIZE || dateHasMore,
+      afterKeys,
     };
   }
 
   const dayOffset = null;
   const invalidIndex = null;
 
-  let orderedAfterKeys = null;
+  let orderedAfterKeys = initialAfterKeys;
   while (filtered.length < target) {
     emitDebug('fetchFilteredUsersByPage:scan-progress', {
       dateStr: null,
@@ -355,5 +359,5 @@ export async function fetchFilteredUsersByPage(
     stopReason,
   });
 
-  return { users, lastKey: nextOffset, hasMore };
+  return { users, lastKey: nextOffset, hasMore, afterKeys: orderedAfterKeys };
 }
