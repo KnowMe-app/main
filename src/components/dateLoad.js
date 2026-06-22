@@ -83,11 +83,10 @@ async function defaultFetchGetInTouchOrdered(limit, options = {}) {
   }
 
   orderedEntries.sort(([, a], [, b]) => String(a?.getInTouch || '').localeCompare(String(b?.getInTouch || '')));
-  const entries = orderedEntries.slice(0, fetchLimit);
-  const limitedEntries = entries.slice(0, Math.max(1, Number(limit) || PAGE_SIZE));
-  hasMore = hasMore || entries.length > limitedEntries.length;
-
-  return { entries: limitedEntries, hasMore, afterKeys: nextCursors };
+  // Return every row that advanced a collection cursor. Slicing the merged list
+  // after advancing per-collection cursors skips unreturned rows from the other
+  // collection on the next request.
+  return { entries: orderedEntries, hasMore, afterKeys: nextCursors };
 }
 
 const normalizeDateFetchResult = result => {
@@ -210,6 +209,9 @@ export async function fetchFilteredUsersByPage(
   let filtered = [];
   let backendHasMore = false;
   const debugLog = typeof debugOptions?.debugLog === 'function' ? debugOptions.debugLog : null;
+  const initialAfterKeys = debugOptions?.afterKeys && typeof debugOptions.afterKeys === 'object'
+    ? debugOptions.afterKeys
+    : null;
   const emitDebug = (step, payload = {}) => {
     if (!debugLog) return;
     debugLog(step, payload);
@@ -262,12 +264,13 @@ export async function fetchFilteredUsersByPage(
       rejectReasons,
     });
     emitProgress();
+    return newEntries.length;
   };
 
 
   if (hasCustomFetchDateFn) {
     let afterKey = null;
-    let afterKeys = null;
+    let afterKeys = initialAfterKeys;
     let dateHasMore = true;
     while (filtered.length < target && dateHasMore) {
       const fetchLimit = limit - filtered.length;
@@ -280,10 +283,11 @@ export async function fetchFilteredUsersByPage(
         break;
       }
       // eslint-disable-next-line no-await-in-loop
-      await appendFetchedEntries(entries);
+      const appendedCount = await appendFetchedEntries(entries);
       afterKey = batchResult.lastKey ?? entries[entries.length - 1][0];
       afterKeys = batchResult.afterKeys ?? afterKeys;
       dateHasMore = Boolean(batchResult.hasMore && (afterKey || afterKeys));
+      if (appendedCount === 0) break;
     }
 
     const customSlice = filtered.slice(startOffset, startOffset + PAGE_SIZE);
@@ -296,13 +300,14 @@ export async function fetchFilteredUsersByPage(
       users: customUsers,
       lastKey: customNextOffset,
       hasMore: filtered.length > startOffset + PAGE_SIZE || dateHasMore,
+      afterKeys,
     };
   }
 
   const dayOffset = null;
   const invalidIndex = null;
 
-  let orderedAfterKeys = null;
+  let orderedAfterKeys = initialAfterKeys;
   while (filtered.length < target) {
     emitDebug('fetchFilteredUsersByPage:scan-progress', {
       dateStr: null,
@@ -324,9 +329,9 @@ export async function fetchFilteredUsersByPage(
       isCurrentPastOrNonDateGetInTouch(user?.getInTouch, todayIso)
     ));
     // eslint-disable-next-line no-await-in-loop
-    await appendFetchedEntries(entries);
+    const appendedCount = await appendFetchedEntries(entries);
     backendHasMore = Boolean(batchResult.hasMore);
-    if (!batchResult.hasMore || rawEntries.length === 0) break;
+    if (!batchResult.hasMore || rawEntries.length === 0 || appendedCount === 0) break;
   }
 
   const slice = filtered.slice(startOffset, startOffset + PAGE_SIZE);
@@ -355,5 +360,5 @@ export async function fetchFilteredUsersByPage(
     stopReason,
   });
 
-  return { users, lastKey: nextOffset, hasMore };
+  return { users, lastKey: nextOffset, hasMore, afterKeys: orderedAfterKeys };
 }

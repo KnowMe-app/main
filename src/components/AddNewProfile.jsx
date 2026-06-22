@@ -2128,6 +2128,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
   const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
+  const [dateAfterKeys2, setDateAfterKeys2] = useState(null);
   const [dateOffset21, setDateOffset21] = useState(0);
   const [dateOffsetLA, setDateOffsetLA] = useState(0);
   const la2StateRef = useRef(createInitialLA2State());
@@ -2168,6 +2169,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       lastKey,
       lastKey21,
       dateOffset2,
+      dateAfterKeys2,
       dateOffset21,
       dateOffsetLA,
       usersCount: countObjectKeys(users),
@@ -2181,6 +2183,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [
     currentFilter,
     dateOffset2,
+    dateAfterKeys2,
     dateOffset21,
     dateOffsetLA,
     downloadJsonFile,
@@ -2217,6 +2220,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       lastKey: lastKey ?? null,
       lastKey21: lastKey21 ?? null,
       dateOffset2,
+      dateAfterKeys2,
       dateOffset21,
       dateOffsetLA,
       la2State: currentFilter === LAST_ACTION2_FILTER ? serializeLA2State(la2StateRef.current) : undefined,
@@ -2247,6 +2251,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     lastKey,
     lastKey21,
     dateOffset2,
+    dateAfterKeys2,
     dateOffset21,
     dateOffsetLA,
     loadSortMode,
@@ -3029,6 +3034,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setCacheCount(0);
     setBackendCount(0);
     setDateOffsetLA(0);
+    setDateOffset2(0);
+    setDateAfterKeys2(null);
     setDateOffset21(0);
 
     if (!currentFilter) {
@@ -3720,6 +3727,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     appendLoadDebugLog('loadMoreUsersGitSimple:start', {
       queryMode: 'DATE2',
       dateOffset2,
+      hasBackendCursor: Boolean(dateAfterKeys2),
       pageSize: PAGE_SIZE,
       hasMore,
       filters: summarizeLoadFiltersForLog(currentFilters),
@@ -3765,13 +3773,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     appendLoadDebugLog('loadMoreUsersGitSimple:before-fetchFilteredUsersByPage', {
       queryMode: 'DATE2',
       dateOffset2,
+      hasBackendCursor: Boolean(dateAfterKeys2),
       pageSize: PAGE_SIZE,
       filters: summarizeLoadFiltersForLog(currentFilters),
     });
     let res;
     try {
       res = await fetchFilteredUsersByPage(
-        dateOffset2,
+        dateAfterKeys2 ? 0 : dateOffset2,
         undefined,
         id => fetchUserById(id),
         currentFilters,
@@ -3819,6 +3828,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         },
         {
           debugLog: (step, payload) => appendLoadDebugLog(step, payload),
+          afterKeys: dateAfterKeys2,
         },
       );
       appendLoadDebugLog('loadMoreUsersGitSimple:after-fetchFilteredUsersByPage', {
@@ -3866,8 +3876,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
 
     const nextOffset = Number.isFinite(Number(res?.lastKey)) ? Number(res.lastKey) : dateOffset2 + backendIds.length;
+    const nextVisibleOffset = dateAfterKeys2 ? dateOffset2 + backendIds.length : nextOffset;
     const nextHasMore = Boolean(res?.hasMore);
-    setDateOffset2(nextOffset);
+    setDateOffset2(nextVisibleOffset);
+    setDateAfterKeys2(res?.afterKeys || null);
     setHasMore(nextHasMore);
 
     const queryKey = buildListQueryKey('DATE2', currentFilters);
@@ -3880,7 +3892,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       backendCount: backendIds.length,
       loadedIdsCount: loadedIds.length,
       previousOffset: dateOffset2,
-      nextOffset,
+      nextOffset: nextVisibleOffset,
+      backendCursorOffset: nextOffset,
+      hasBackendCursor: Boolean(res?.afterKeys),
       hasMore: nextHasMore,
       targetVisibleCount: PAGE_SIZE,
       stopReason: backendIds.length >= PAGE_SIZE
@@ -4862,6 +4876,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let more = hasMore;
     let cacheLoaded = 0;
     let backendLoaded = 0;
+    let emptyDate2Batches = 0;
 
     if (currentFilter === 'GITnew') {
       setCurrentPage(page);
@@ -4908,7 +4923,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       loaded += cacheCount + backendCount;
       more = nextMore;
       if (cacheCount + backendCount === 0 && nextMore) {
-        more = false;
+        if (currentFilter === 'DATE2') {
+          emptyDate2Batches += 1;
+          appendLoadDebugLog('handlePageChange:DATE2-empty-batch', {
+            page,
+            needed,
+            emptyDate2Batches,
+            hasMore: nextMore,
+          });
+          if (emptyDate2Batches >= 3) break;
+        } else {
+          more = false;
+        }
+      } else {
+        emptyDate2Batches = 0;
       }
     }
     setCacheCount(cacheLoaded);
@@ -6112,6 +6140,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setCurrentPage(1);
     setLastKey(null);
     setDateOffset2(0);
+    setDateAfterKeys2(null);
     setDateOffset21(0);
     setDateOffsetLA(0);
     resetLA2StateRef(la2StateRef);
@@ -6216,6 +6245,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastKey(snapshot.lastKey ?? null);
     setLastKey21(snapshot.lastKey21 ?? null);
     setDateOffset2(snapshot.dateOffset2 || 0);
+    setDateAfterKeys2(snapshot.dateAfterKeys2 || null);
     setDateOffset21(snapshot.dateOffset21 || 0);
     setDateOffsetLA(snapshot.dateOffsetLA || 0);
     if (snapshot.la2State) {
