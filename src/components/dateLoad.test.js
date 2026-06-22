@@ -213,6 +213,52 @@ describe('fetchFilteredUsersByPage', () => {
     expect(first.afterKeys?.newUsers).toEqual({ value: '2026-06-19', key: 'u22' });
     expect(Object.keys(second.users)).toEqual(['u23']);
   });
+
+  it('does not skip users rows when merged newUsers rows fill the first ordered batch', async () => {
+    const database = await import('firebase/database');
+    database.getDatabase.mockReturnValue('db');
+    database.ref.mockImplementation((db, col) => `${db}/${col}`);
+    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
+    database.query.mockImplementation((...args) => args);
+
+    const makeSnapshot = entries => ({
+      exists: () => entries.length > 0,
+      forEach: callback => {
+        entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
+      },
+    });
+    const newUsersPage = Array.from({ length: 22 }, (_, index) => {
+      const id = `new${String(index + 1).padStart(2, '0')}`;
+      return [id, { userId: id, getInTouch: '2026-06-01', keep: false }];
+    });
+    const usersPage = Array.from({ length: 3 }, (_, index) => {
+      const id = `user${String(index + 1).padStart(2, '0')}`;
+      return [id, { userId: id, getInTouch: '2026-06-19', keep: true }];
+    });
+
+    database.get.mockImplementation(async queryArgs => {
+      const path = queryArgs[0];
+      const hasCursor = queryArgs.some(arg => Array.isArray(arg) && arg[0] === 'startAfter');
+      if (hasCursor) return makeSnapshot([]);
+      if (path === 'db/newUsers') return makeSnapshot(newUsersPage);
+      if (path === 'db/users') return makeSnapshot(usersPage);
+      return makeSnapshot([]);
+    });
+
+    const { fetchFilteredUsersByPage } = await import('./dateLoad');
+    const result = await fetchFilteredUsersByPage(
+      0,
+      undefined,
+      async id => ({ hydrated: id }),
+      {},
+      {},
+      {},
+      source => source.filter(([, user]) => user.keep),
+    );
+
+    expect(Object.keys(result.users)).toEqual(['user01', 'user02', 'user03']);
+  });
 });
 
 describe('defaultFetchByDate', () => {
