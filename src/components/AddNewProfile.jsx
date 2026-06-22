@@ -2664,11 +2664,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [filters]
   );
 
-  const buildQueryKey = (mode, currentFilters = {}, term = '') =>
+  const buildQueryKey = useCallback((mode, currentFilters = {}, term = '') =>
     normalizeQueryKey(
       `${mode || 'all'}:${term || ''}:${serializeQueryFilters(currentFilters)}`,
-    );
-  const buildListQueryKey = (mode, currentFilters = {}) => buildQueryKey(mode, currentFilters, '');
+    ), []);
+  const buildListQueryKey = useCallback(
+    (mode, currentFilters = {}) => buildQueryKey(mode, currentFilters, ''),
+    [buildQueryKey],
+  );
 
   const resolveFilterByLoadSortMode = mode => {
     switch (normalizeOfflineLoadMode(mode)) {
@@ -6226,7 +6229,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       restoredUsersCount: Object.keys(restoredUsers).length,
     });
     setState({});
-  }, [location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
+  }, [buildListQueryKey, filters, location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
 
   useEffect(() => {
     if (!state?.userId) {
