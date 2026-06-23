@@ -870,9 +870,11 @@ const countLoadFilterDrop = (acc, reason) => {
   return acc;
 };
 
+const EXCLUDED_GET_IN_TOUCH_DATES = ['2099-99-99', '9999-99-99', '99.99.2099', '99.99.9999'];
+
 const isFutureGetInTouchDate = value => {
   const normalized = String(value ?? '').trim();
-  if (['', '2099-99-99', '9999-99-99', '99.99.2099', '99.99.9999'].includes(normalized)) return false;
+  if (!normalized || EXCLUDED_GET_IN_TOUCH_DATES.includes(normalized)) return false;
 
   const today = new Date().toISOString().split('T')[0];
   if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized > today;
@@ -882,6 +884,30 @@ const isFutureGetInTouchDate = value => {
 
   const [, day, month, year] = dottedMatch;
   return `${year}-${month}-${day}` > today;
+};
+
+const isExistingIsoDate = value => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+
+const shouldShowGetInTouchInGit = value => {
+  const normalized = String(value ?? '').trim();
+  if (EXCLUDED_GET_IN_TOUCH_DATES.includes(normalized)) return false;
+  if (!normalized) return true;
+
+  const today = new Date().toISOString().split('T')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return !isExistingIsoDate(normalized) || normalized <= today;
+  }
+
+  const dottedMatch = normalized.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!dottedMatch) return true;
+
+  const [, day, month, year] = dottedMatch;
+  const isoDate = `${year}-${month}-${day}`;
+  return !isExistingIsoDate(isoDate) || isoDate <= today;
 };
 
 const removeUserIdFromQuery = (queryKey, userId) => {
@@ -3927,7 +3953,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const loadMoreUsers21 = async (currentFilters = filters) => {
     return loadMoreUsers2Base(currentFilters, {
-      validateGetInTouchDate: false,
+      validateGetInTouchDate: true,
       useDateByDateBackendFetch: false,
       queryMode: 'DATE2.1',
     });
@@ -4324,14 +4350,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let cacheCount = 0;
     let backendCount = 0;
 
-    const today = new Date().toISOString().split('T')[0];
-    const isValid = d => {
-      if (!d) return true;
-      if (d === '2099-99-99' || d === '9999-99-99') {
-        return true;
-      }
-      return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
-    };
+    const isValid = shouldShowGetInTouchInGit;
     const cacheDropReasons = {};
     const filteredArr = cachedArr.filter(u => {
       if (validateGetInTouchDate && !isValid(u.getInTouch)) {
