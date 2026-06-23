@@ -247,7 +247,9 @@ export async function fetchFilteredUsersByPage(
     const extras = await Promise.all(ids.map(id => fetchUserByIdFn(id)));
     newEntries.forEach(([id, data], i) => {
       const extra = extras[i];
-      combined.push([id, extra ? { ...data, ...extra } : data]);
+      const mergedUser = extra ? { ...data, ...extra } : data;
+      if (!isCurrentPastOrNonDateGetInTouch(mergedUser?.getInTouch, todayIso)) return;
+      combined.push([id, mergedUser]);
     });
     const rejectReasons = {};
     const collectFilterDebug = (step, payload = {}) => {

@@ -259,6 +259,50 @@ describe('fetchFilteredUsersByPage', () => {
 
     expect(Object.keys(result.users)).toEqual(['user01', 'user02', 'user03']);
   });
+
+  it('drops a GIT row when longId hydration changes getInTouch to a future date', async () => {
+    const database = await import('firebase/database');
+    database.getDatabase.mockReturnValue('db');
+    database.ref.mockImplementation((db, col) => `${db}/${col}`);
+    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
+    database.query.mockImplementation((...args) => args);
+
+    const makeSnapshot = entries => ({
+      exists: () => entries.length > 0,
+      forEach: callback => {
+        entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
+      },
+    });
+
+    database.get.mockImplementation(async queryArgs => {
+      const path = queryArgs[0];
+      if (path === 'db/newUsers') {
+        return makeSnapshot([
+          ['long-id-future', { userId: 'long-id-future', getInTouch: '2026-06-19', keep: true }],
+          ['long-id-current', { userId: 'long-id-current', getInTouch: '2026-06-19', keep: true }],
+        ]);
+      }
+      return makeSnapshot([]);
+    });
+
+    const { fetchFilteredUsersByPage } = await import('./dateLoad');
+    const result = await fetchFilteredUsersByPage(
+      0,
+      undefined,
+      async id => (
+        id === 'long-id-future'
+          ? { getInTouch: '2026-08-04' }
+          : { getInTouch: '2026-06-19' }
+      ),
+      {},
+      {},
+      {},
+      source => source.filter(([, user]) => user.keep),
+    );
+
+    expect(Object.keys(result.users)).toEqual(['long-id-current']);
+  });
 });
 
 describe('defaultFetchByDate', () => {
