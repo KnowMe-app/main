@@ -410,6 +410,68 @@ describe('SearchBar cache-first search', () => {
     document.body.removeChild(container);
   });
 
+  it('does not search date buckets when searchKeyFields is explicitly empty', async () => {
+    const searchFunc = jest.fn().mockResolvedValue({});
+    const setUsers = jest.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.render(React.createElement(SearchBar, {
+        searchFunc,
+        search: 'УК СМ Марія Бекер 02.06.2026',
+        setSearch: jest.fn(),
+        setUsers,
+        setState: jest.fn(),
+        setUserNotFound: jest.fn(),
+        enabledSearchKeys: {
+          telegram: true,
+          searchId: false,
+          partialUserId: false,
+          searchKey: true,
+          equalToAllCards: true,
+        },
+        searchOptions: {
+          enabledSearchKeys: {
+            telegram: true,
+            searchId: false,
+            partialUserId: false,
+            searchKey: true,
+            equalToAllCards: true,
+          },
+          equalToKeys: ['telegram'],
+          searchKeyFields: [],
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    expect(searchFunc).toHaveBeenCalledWith(
+      { telegram: 'УК СМ Марія Бекер 02.06.2026' },
+      expect.objectContaining({
+        forceEqualToAllCards: true,
+        equalToKeys: ['telegram'],
+      }),
+    );
+    expect(searchFunc).not.toHaveBeenCalledWith(
+      expect.objectContaining({ lastAction: expect.anything() }),
+      expect.anything(),
+    );
+    expect(searchFunc).not.toHaveBeenCalledWith(
+      expect.objectContaining({ getInTouch: expect.anything() }),
+      expect.anything(),
+    );
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
   it('renders UK-trigger telegram prefix matches as a list even when one match is returned', async () => {
     const searchFunc = jest.fn().mockResolvedValue({
       userId: 'oksana',

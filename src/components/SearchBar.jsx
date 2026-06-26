@@ -1449,7 +1449,13 @@ const SearchBar = ({
 
   const runSearchKeyBucketSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
     const allSearchKeyFields = Object.keys(SEARCH_KEY_BUCKET_SEARCH_PARSERS);
+    const hasExplicitSearchKeyFields = Array.isArray(searchOptions?.searchKeyFields);
     const selectedSearchKeyFields = resolveSelectedSearchKeys(searchOptions, 'searchKeyFields', allSearchKeyFields);
+
+    if (hasExplicitSearchKeyFields && selectedSearchKeyFields.length === 0) {
+      return { found: false, results: resultMap };
+    }
+
     const executionPlan = resolveExecutionPlan({
       allKeys: allSearchKeyFields,
       selectedKeys: selectedSearchKeyFields,
