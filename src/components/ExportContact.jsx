@@ -209,11 +209,18 @@ const getContactName = user => {
   const surnames = Array.isArray(user.surname) ? user.surname : [user.surname];
   const fathersNames = Array.isArray(user.fathersname) ? user.fathersname : [user.fathersname];
 
-  const fullNameParts = [
-    ...cleanedNameParts(names),
-    ...getContactNameMarkers(user),
+  const primaryNameParts = cleanedNameParts(names);
+  const secondaryNameParts = [
     ...cleanedNameParts(surnames),
     ...cleanedNameParts(fathersNames),
+  ];
+  const markerParts = getContactNameMarkers(user);
+  const hasPersonalName = primaryNameParts.length || secondaryNameParts.length;
+  const fullNameParts = [
+    ...primaryNameParts,
+    ...markerParts,
+    ...secondaryNameParts,
+    ...(!hasPersonalName && firstPhone ? [String(firstPhone).trim()] : []),
   ];
   const fullName = fullNameParts.join(' ').trim();
 
