@@ -49,8 +49,7 @@ const topButtonsRowStyle = {
   alignItems: 'center',
   gap: '5px',
   flexWrap: 'wrap',
-  paddingBottom: '5px',
-  borderBottom: '1px solid rgba(255,255,255,0.07)',
+  marginBottom: '5px',
   minWidth: 0,
 };
 
@@ -147,10 +146,9 @@ const cardNameRowStyle = {
 };
 
 const cardNameStyle = {
-  fontSize: '16px',
+  fontSize: '15px',
   fontWeight: 700,
   lineHeight: 1.2,
-  letterSpacing: '-0.2px',
   minWidth: 0,
   overflowWrap: 'anywhere',
 };
@@ -169,33 +167,29 @@ const cardIdRowStyle = {
 const roleBadgeStyle = role => ({
   display: 'inline-flex',
   alignItems: 'center',
-  padding: '2px 8px',
+  padding: '1px 7px',
   borderRadius: '10px',
   fontSize: '10px',
   fontWeight: 700,
   letterSpacing: '0.6px',
   textTransform: 'uppercase',
-  background: 'linear-gradient(135deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.12) 100%)',
-  backdropFilter: 'blur(4px)',
+  background: 'rgba(255,255,255,0.22)',
   color: '#fff',
   flexShrink: 0,
-  border: '1px solid rgba(255,255,255,0.32)',
+  border: `1px solid rgba(255,255,255,0.3)`,
   cursor: 'pointer',
   lineHeight: 1.4,
-  transition: 'opacity 0.15s ease',
 });
 
 const statusRowStyle = {
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'stretch',
-  gap: '5px',
-  padding: '6px 7px',
+  gap: '6px',
+  padding: '6px',
   borderRadius: '8px',
-  background: 'rgba(255,255,255,0.09)',
-  border: '1px solid rgba(255,255,255,0.13)',
-  boxShadow: '0 1px 6px rgba(0,0,0,0.08)',
-  backdropFilter: 'blur(6px)',
+  background: 'rgba(255,255,255,0.08)',
+  border: '1px solid rgba(255,255,255,0.1)',
   margin: '5px 0',
   boxSizing: 'border-box',
   width: '100%',
@@ -212,8 +206,6 @@ const statusItemStyle = {
 
 const getInTouchStatusItemStyle = {
   ...statusItemStyle,
-  borderLeft: '2px solid rgba(255,255,255,0.18)',
-  paddingLeft: '4px',
 };
 
 const roleEditorStyle = {
@@ -248,11 +240,10 @@ const factChipStyle = {
   gap: '3px',
   minWidth: 0,
   maxWidth: '100%',
-  padding: '2px 7px',
+  padding: '1px 5px',
   borderRadius: '999px',
-  background: 'rgba(255,255,255,0.11)',
-  border: '1px solid rgba(255,255,255,0.15)',
-  fontSize: '11px',
+  background: 'rgba(255,255,255,0.08)',
+  border: '1px solid rgba(255,255,255,0.08)',
   lineHeight: 1.35,
   overflowWrap: 'anywhere',
 };
@@ -273,8 +264,7 @@ const commentsSectionStyle = {
   marginTop: '5px',
   padding: '4px 6px',
   borderRadius: '7px',
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.08)',
+  background: 'rgba(255,255,255,0.07)',
   display: 'flex',
   flexDirection: 'column',
   gap: '3px',
@@ -1193,7 +1183,7 @@ export const TopBlock = ({
                 setIsCommentModalOpen(true);
               }}
             >
-              {`${formatCommentDate(comment.lastAction) || '--.--.----'} · ${comment.text}`}
+              {`${formatCommentDate(comment.lastAction) || '--.--.----'} - ${comment.text}`}
             </div>
             {isAdmin && comment.ownerId && (
               <button
