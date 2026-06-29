@@ -49,6 +49,21 @@ const topBlockContainerStyle = {
   isolation: 'isolate',
 };
 
+const topBlockPhotoStyle = {
+  position: 'absolute',
+  right: '8px',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  width: '44px',
+  height: '44px',
+  borderRadius: '50%',
+  objectFit: 'cover',
+  border: '2px solid rgba(255, 255, 255, 0.9)',
+  boxShadow: '0 4px 12px rgba(17, 24, 39, 0.28)',
+  backgroundColor: 'rgba(255, 255, 255, 0.85)',
+  pointerEvents: 'none',
+};
+
 const topButtonsRowStyle = {
   display: 'flex',
   alignItems: 'center',
@@ -434,21 +449,6 @@ const getUserPhotoUrl = data => {
   return filterOutMedicationPhotos(photos, data?.userId)[0] || '';
 };
 
-const getTopBlockBackgroundStyle = photoUrl => {
-  if (!photoUrl) return topBlockContainerStyle;
-
-  return {
-    ...topBlockContainerStyle,
-    color: '#fff',
-    textShadow: '0 1px 3px rgba(0, 0, 0, 0.75)',
-    backgroundColor: '#111827',
-    backgroundImage: [
-      'linear-gradient(135deg, rgba(6, 11, 25, 0.78), rgba(17, 24, 39, 0.58) 48%, rgba(6, 11, 25, 0.82))',
-      `url(${JSON.stringify(photoUrl)})`,
-    ].join(', '),
-  };
-};
-
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
@@ -644,7 +644,7 @@ export const TopBlock = ({
 
   if (!cardData) return null;
 
-  const topBlockStyle = getTopBlockBackgroundStyle(getUserPhotoUrl(cardData));
+  const userPhotoUrl = getUserPhotoUrl(cardData);
 
   const renderOverlayEntries = fieldNames => {
     const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
@@ -1082,7 +1082,15 @@ export const TopBlock = ({
   ].filter(action => action && action.content);
 
   return (
-    <div style={topBlockStyle}>
+    <div style={topBlockContainerStyle}>
+      {userPhotoUrl && (
+        <img
+          src={userPhotoUrl}
+          alt={buildName(cardData) || 'Фото користувача'}
+          style={topBlockPhotoStyle}
+          loading="lazy"
+        />
+      )}
       <div style={cardHeaderStyle}>
         <div style={cardNameRowStyle}>
           <div style={cardNameStyle}>{buildName(cardData)}</div>
