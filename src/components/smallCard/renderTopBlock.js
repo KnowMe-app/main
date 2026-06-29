@@ -30,6 +30,7 @@ import {
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { filterOutMedicationPhotos } from 'utils/photoFilters';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
@@ -42,6 +43,10 @@ const topBlockContainerStyle = {
   width: '100%',
   minWidth: 0,
   overflow: 'hidden',
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
+  backgroundRepeat: 'no-repeat',
+  isolation: 'isolate',
 };
 
 const topButtonsRowStyle = {
@@ -403,6 +408,47 @@ const deleteModalTextStyle = {
   lineHeight: 1.35,
 };
 
+const normalizePhotoList = value => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(normalizePhotoList);
+  if (typeof value === 'object') return Object.values(value).flatMap(normalizePhotoList);
+  if (typeof value !== 'string') return [];
+  const photo = value.trim();
+  return photo ? [photo] : [];
+};
+
+const getUserPhotoUrl = data => {
+  const photos = normalizePhotoList([
+    data?.photos,
+    data?.photoUrls,
+    data?.avatarUrls,
+    data?.photoURL,
+    data?.photoUrl,
+    data?.mainPhoto,
+    data?.userPhoto,
+    data?.avatar,
+    data?.photo,
+    data?.image,
+    data?.picture,
+  ]);
+  return filterOutMedicationPhotos(photos, data?.userId)[0] || '';
+};
+
+const getTopBlockBackgroundStyle = photoUrl => {
+  if (!photoUrl) return topBlockContainerStyle;
+
+  return {
+    ...topBlockContainerStyle,
+    color: '#fff',
+    textShadow: '0 1px 3px rgba(0, 0, 0, 0.75)',
+    backgroundColor: '#111827',
+    backgroundImage: [
+      'linear-gradient(135deg, rgba(6, 11, 25, 0.78), rgba(17, 24, 39, 0.58) 48%, rgba(6, 11, 25, 0.82))',
+      `url(${JSON.stringify(photoUrl)})`,
+    ].join(', '),
+  };
+};
+
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
@@ -597,6 +643,8 @@ export const TopBlock = ({
   }, [cardData?.userId]);
 
   if (!cardData) return null;
+
+  const topBlockStyle = getTopBlockBackgroundStyle(getUserPhotoUrl(cardData));
 
   const renderOverlayEntries = fieldNames => {
     const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
@@ -1034,7 +1082,7 @@ export const TopBlock = ({
   ].filter(action => action && action.content);
 
   return (
-    <div style={topBlockContainerStyle}>
+    <div style={topBlockStyle}>
       <div style={cardHeaderStyle}>
         <div style={cardNameRowStyle}>
           <div style={cardNameStyle}>{buildName(cardData)}</div>
