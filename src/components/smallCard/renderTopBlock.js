@@ -43,6 +43,10 @@ const topBlockContainerStyle = {
   width: '100%',
   minWidth: 0,
   overflow: 'hidden',
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
+  backgroundRepeat: 'no-repeat',
+  isolation: 'isolate',
 };
 
 const topBlockPhotoStyle = {
