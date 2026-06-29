@@ -30,6 +30,7 @@ import {
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { filterOutMedicationPhotos } from 'utils/photoFilters';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
@@ -42,6 +43,21 @@ const topBlockContainerStyle = {
   width: '100%',
   minWidth: 0,
   overflow: 'hidden',
+};
+
+const topBlockPhotoStyle = {
+  position: 'absolute',
+  right: '8px',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  width: '44px',
+  height: '44px',
+  borderRadius: '50%',
+  objectFit: 'cover',
+  border: '2px solid rgba(255, 255, 255, 0.9)',
+  boxShadow: '0 4px 12px rgba(17, 24, 39, 0.28)',
+  backgroundColor: 'rgba(255, 255, 255, 0.85)',
+  pointerEvents: 'none',
 };
 
 const topButtonsRowStyle = {
@@ -403,6 +419,32 @@ const deleteModalTextStyle = {
   lineHeight: 1.35,
 };
 
+const normalizePhotoList = value => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(normalizePhotoList);
+  if (typeof value === 'object') return Object.values(value).flatMap(normalizePhotoList);
+  if (typeof value !== 'string') return [];
+  const photo = value.trim();
+  return photo ? [photo] : [];
+};
+
+const getUserPhotoUrl = data => {
+  const photos = normalizePhotoList([
+    data?.photos,
+    data?.photoUrls,
+    data?.avatarUrls,
+    data?.photoURL,
+    data?.photoUrl,
+    data?.mainPhoto,
+    data?.userPhoto,
+    data?.avatar,
+    data?.photo,
+    data?.image,
+    data?.picture,
+  ]);
+  return filterOutMedicationPhotos(photos, data?.userId)[0] || '';
+};
+
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
@@ -597,6 +639,8 @@ export const TopBlock = ({
   }, [cardData?.userId]);
 
   if (!cardData) return null;
+
+  const userPhotoUrl = getUserPhotoUrl(cardData);
 
   const renderOverlayEntries = fieldNames => {
     const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
@@ -1035,6 +1079,14 @@ export const TopBlock = ({
 
   return (
     <div style={topBlockContainerStyle}>
+      {userPhotoUrl && (
+        <img
+          src={userPhotoUrl}
+          alt={buildName(cardData) || 'Фото користувача'}
+          style={topBlockPhotoStyle}
+          loading="lazy"
+        />
+      )}
       <div style={cardHeaderStyle}>
         <div style={cardNameRowStyle}>
           <div style={cardNameStyle}>{buildName(cardData)}</div>
