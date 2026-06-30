@@ -9,7 +9,7 @@ import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
 import { fieldGetInTouch } from './fieldGetInTouch';
 import { handleChange } from './actions';
-import { updateUserInState } from './userStateUpdate';
+import { getUserStateShape, updateUserInState } from './userStateUpdate';
 import { fieldRole } from './fieldRole';
 import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
@@ -542,8 +542,21 @@ const hasRoleWithoutCycle = data =>
 const buildRtdbLink = userId =>
   `https://console.firebase.google.com/u/0/project/webringitapp/database/webringitapp-default-rtdb/data/~2FnewUsers~2F${encodeURIComponent(userId || '')}`;
 
-const resolveUserPhotoCollection = data =>
-  data?.__sourceCollection === 'users' ? 'users' : 'newUsers';
+const resolveUserPhotoCollection = data => {
+  if (data?.__sourceCollection === 'users' || data?.__sourceCollection === 'newUsers') {
+    return data.__sourceCollection;
+  }
+  return null;
+};
+
+const stateContainsUser = (state, userId) => {
+  if (!state || !userId) return false;
+  const shape = getUserStateShape(state);
+  if (shape === 'array') return state.some(item => item?.userId === userId);
+  if (shape === 'map') return Boolean(state[userId]);
+  if (shape === 'single') return state.userId === userId;
+  return false;
+};
 
 const buildName = data => {
   const nameParts = [];
@@ -680,6 +693,7 @@ export const TopBlock = ({
   const [isRoleEditorOpen, setIsRoleEditorOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
+  const [resolvedPhotosCollection, setResolvedPhotosCollection] = React.useState(null);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
     if (!userData) return null;
@@ -730,10 +744,65 @@ export const TopBlock = ({
     };
   }, [cardData?.userId]);
 
+  React.useEffect(() => {
+    const sourceCollection = resolveUserPhotoCollection(cardData);
+    setResolvedPhotosCollection(sourceCollection);
+
+    if (!isPhotosModalOpen || sourceCollection || !cardData?.userId) {
+      return undefined;
+    }
+
+    let isMounted = true;
+    const resolveCollection = async () => {
+      try {
+        const fresh = await fetchUserById(cardData.userId);
+        if (!isMounted) return;
+
+        const freshCollection = resolveUserPhotoCollection(fresh);
+        if (!freshCollection) {
+          toast.error('Не вдалося визначити джерело фото профілю');
+          return;
+        }
+
+        setResolvedPhotosCollection(freshCollection);
+        const withCollection = { ...cardData, __sourceCollection: freshCollection };
+
+        if (typeof setState === 'function' && !isFromListOfUsers) {
+          setState(withCollection, {
+            source: 'userChange',
+            caller: 'renderTopBlock.resolvePhotosCollection',
+            reason: 'photos-source-resolved',
+          });
+        }
+
+        if (typeof setUsers === 'function') {
+          setUsers(prev => (
+            isFromListOfUsers || stateContainsUser(prev, cardData.userId)
+              ? updateUserInState(prev, cardData.userId, currentCard => ({
+                ...currentCard,
+                __sourceCollection: freshCollection,
+              }))
+              : prev
+          ));
+        }
+      } catch (error) {
+        if (isMounted) {
+          console.error('Error resolving photo source:', error);
+          toast.error('Не вдалося визначити джерело фото профілю');
+        }
+      }
+    };
+
+    resolveCollection();
+    return () => {
+      isMounted = false;
+    };
+  }, [cardData, isFromListOfUsers, isPhotosModalOpen, setState, setUsers]);
+
   if (!cardData) return null;
 
   const userPhotoUrl = getUserPhotoUrl(cardData);
-  const photosCollection = resolveUserPhotoCollection(cardData);
+  const photosCollection = resolvedPhotosCollection;
   const setCardPhotosState = updater => {
     const resolveNextCard = currentCard => {
       const baseCard = currentCard || cardData;
@@ -741,7 +810,11 @@ export const TopBlock = ({
     };
 
     if (typeof setUsers === 'function' && cardData.userId) {
-      setUsers(prev => updateUserInState(prev, cardData.userId, currentCard => resolveNextCard(currentCard)));
+      setUsers(prev => (
+        isFromListOfUsers || stateContainsUser(prev, cardData.userId)
+          ? updateUserInState(prev, cardData.userId, currentCard => resolveNextCard(currentCard))
+          : prev
+      ));
     }
 
     if (typeof setState === 'function' && !isFromListOfUsers) {
@@ -1402,7 +1475,8 @@ export const TopBlock = ({
               <div>
                 <h3 style={photosModalTitleStyle}>Фото профілю</h3>
                 <p style={photosModalSubtitleStyle}>
-                  {buildName(cardData) || cardData.userId || 'Користувач'} · {photosCollection}
+                  {buildName(cardData) || cardData.userId || 'Користувач'}
+                  {photosCollection ? ` · ${photosCollection}` : ' · визначаємо джерело фото…'}
                 </p>
               </div>
               <button
@@ -1415,12 +1489,16 @@ export const TopBlock = ({
                 ×
               </button>
             </div>
-            <Photos
-              state={cardData}
-              setState={setCardPhotosState}
-              collection={photosCollection}
-              uploadInputId={`file-upload-${cardData.userId || 'card'}`}
-            />
+            {photosCollection ? (
+              <Photos
+                state={cardData}
+                setState={setCardPhotosState}
+                collection={photosCollection}
+                uploadInputId={`file-upload-${cardData.userId || 'card'}`}
+              />
+            ) : (
+              <p style={photosModalSubtitleStyle}>Визначаємо джерело фото перед збереженням…</p>
+            )}
           </div>
         </div>
       )}
