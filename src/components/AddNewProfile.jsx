@@ -39,6 +39,7 @@ import {
   buildSearchKeyIndexPayloadFromCollections,
   fetchUsersBySearchKeyBloodPaged,
   fetchUsersByIds,
+  lazyLoadProfilePhotos,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import {
@@ -176,6 +177,22 @@ const getLocalStorageCardsDebugSnapshot = () => {
 const logRenderSource = (source, card) => {
   if (!card?.userId) return;
   console.log('[RENDER SOURCE]', source, card.userId, card.getInTouch);
+};
+
+const hasProfilePhotos = card => {
+  if (!card) return false;
+  if (Array.isArray(card.photos)) return card.photos.some(Boolean);
+  if (card.photos && typeof card.photos === 'object') return Object.values(card.photos).some(Boolean);
+  return Boolean(
+    card.photoURL ||
+      card.photoUrl ||
+      card.mainPhoto ||
+      card.userPhoto ||
+      card.avatar ||
+      card.photo ||
+      card.image ||
+      card.picture
+  );
 };
 
 const normalizeTruthyMap = value =>
@@ -2143,6 +2160,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state]);
 
   const [users, setUsers] = useState({});
+  const [listPhotoCacheByUserId, setListPhotoCacheByUserId] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [lastKey21, setLastKey21] = useState(null);
@@ -6092,6 +6110,62 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (mergedCard) acc[id] = mergedCard;
     return acc;
   }, {});
+  const paginatedUsersWithPhotos = displayedUserIds.reduce((acc, id) => {
+    const user = paginatedUsers[id];
+    if (!user) return acc;
+
+    const cachedPhotos = listPhotoCacheByUserId[id];
+    acc[id] = cachedPhotos
+      ? {
+        ...user,
+        photos: cachedPhotos,
+        __photosHydrated: true,
+      }
+      : user;
+    return acc;
+  }, {});
+
+  useEffect(() => {
+    const visibleIds = displayedUserIdsKey.split('|').filter(Boolean);
+    const idsToLoad = visibleIds.filter(id => {
+      const user = paginatedUsers[id];
+      if (!user?.userId) return false;
+      if (hasProfilePhotos(user)) return false;
+      if (user.__photosHydrated === true) return false;
+      return !listPhotoCacheByUserId[id];
+    });
+
+    if (idsToLoad.length === 0) return undefined;
+
+    let cancelled = false;
+
+    Promise.all(
+      idsToLoad.map(async id => {
+        const photos = await lazyLoadProfilePhotos(id);
+        return [id, Array.isArray(photos) ? photos : []];
+      }),
+    )
+      .then(entries => {
+        if (cancelled) return;
+        setListPhotoCacheByUserId(prev => {
+          const next = { ...prev };
+          entries.forEach(([id, photos]) => {
+            next[id] = photos;
+          });
+          return next;
+        });
+      })
+      .catch(error => {
+        console.error('[RENDER] failed to lazy load list photos', {
+          ids: idsToLoad,
+          message: error?.message || String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayedUserIdsKey, listPhotoCacheByUserId, paginatedUsers]);
 
   useEffect(() => {
     const idsToHydrate = displayedUserIdsKey.split('|').filter(id => {
@@ -6145,7 +6219,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   console.log('[CACHE] cards source:', renderCardsById);
   console.log('[QUERIES] ids:', sortedQueryIds);
-  console.log('[RENDER] visible cards:', Object.values(paginatedUsers).map(c => ({
+  console.log('[RENDER] visible cards:', Object.values(paginatedUsersWithPhotos).map(c => ({
     userId: c.userId,
     getInTouch: c.getInTouch,
     lastAction: c.lastAction,
@@ -7015,7 +7089,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCompare={setCompare}
                   setShowInfoModal={setShowInfoModal}
                   onOpenMoreActions={openMoreActionsModal}
-                  users={paginatedUsers}
+                  users={paginatedUsersWithPhotos}
                   onOpenMedications={openMedicationsModal}
                   favoriteUsers={favoriteUsersData}
                   setFavoriteUsers={setFavoriteUsersData}
