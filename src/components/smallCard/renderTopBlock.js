@@ -20,6 +20,7 @@ import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
+import { getCurrentValue } from '../getCurrentValue';
 import {
   fetchUserById,
   setUserComment as persistUserComment,
@@ -31,6 +32,7 @@ import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { filterOutMedicationPhotos } from 'utils/photoFilters';
+import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
@@ -423,29 +425,38 @@ const deleteModalTextStyle = {
   lineHeight: 1.35,
 };
 
+const normalizePhotoValue = value => {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+};
+
 const normalizePhotoList = value => {
   if (!value) return [];
   if (Array.isArray(value)) return value.flatMap(normalizePhotoList);
   if (typeof value === 'object') return Object.values(value).flatMap(normalizePhotoList);
-  if (typeof value !== 'string') return [];
-  const photo = value.trim();
+  const photo = normalizePhotoValue(value);
+  return photo ? [photo] : [];
+};
+
+const normalizeCurrentPhoto = value => {
+  const photo = normalizePhotoValue(getCurrentValue(value));
   return photo ? [photo] : [];
 };
 
 const getUserPhotoUrl = data => {
-  const photos = normalizePhotoList([
-    data?.photos,
-    data?.photoUrls,
-    data?.avatarUrls,
-    data?.photoURL,
-    data?.photoUrl,
-    data?.mainPhoto,
-    data?.userPhoto,
-    data?.avatar,
-    data?.photo,
-    data?.image,
-    data?.picture,
-  ]);
+  const photos = [
+    ...normalizePhotoList([data?.photos, data?.photoUrls, data?.avatarUrls]),
+    ...[
+      data?.photoURL,
+      data?.photoUrl,
+      data?.mainPhoto,
+      data?.userPhoto,
+      data?.avatar,
+      data?.photo,
+      data?.image,
+      data?.picture,
+    ].flatMap(normalizeCurrentPhoto),
+  ].map(convertDriveLinkToImage);
   return filterOutMedicationPhotos(photos, data?.userId)[0] || '';
 };
 
@@ -1081,8 +1092,12 @@ export const TopBlock = ({
     },
   ].filter(action => action && action.content);
 
+  const topBlockStyle = userPhotoUrl
+    ? { ...topBlockContainerStyle, paddingRight: '64px' }
+    : topBlockContainerStyle;
+
   return (
-    <div style={topBlockContainerStyle}>
+    <div style={topBlockStyle}>
       {userPhotoUrl && (
         <img
           src={userPhotoUrl}
