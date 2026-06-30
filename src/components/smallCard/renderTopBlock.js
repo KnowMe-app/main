@@ -1092,12 +1092,12 @@ export const TopBlock = ({
     },
   ].filter(action => action && action.content);
 
-  const topBlockStyle = userPhotoUrl
-    ? { ...topBlockContainerStyle, paddingRight: '64px' }
-    : topBlockContainerStyle;
+  const statusRowWithPhotoStyle = userPhotoUrl
+    ? { ...statusRowStyle, paddingRight: '64px' }
+    : statusRowStyle;
 
   return (
-    <div style={topBlockStyle}>
+    <div style={topBlockContainerStyle}>
       {userPhotoUrl && (
         <img
           src={userPhotoUrl}
@@ -1179,7 +1179,7 @@ export const TopBlock = ({
           </button>
         </div>
       </div>
-      <div style={statusRowStyle}>
+      <div style={statusRowWithPhotoStyle}>
         <div style={getInTouchStatusItemStyle}>
           {fieldGetInTouch({
             userData: cardData,
