@@ -13,6 +13,7 @@ import { updateUserInState } from './userStateUpdate';
 import { fieldRole } from './fieldRole';
 import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
+import Photos from '../Photos';
 import { compactDateButtonStyle } from './compactDateRowStyles';
 import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
@@ -52,18 +53,44 @@ const topBlockContainerStyle = {
 };
 
 const topBlockPhotoStyle = {
-  position: 'absolute',
-  right: '8px',
-  top: '50%',
-  transform: 'translateY(-50%)',
   width: '44px',
   height: '44px',
   borderRadius: '50%',
   objectFit: 'cover',
+  display: 'block',
+};
+
+const topBlockAvatarButtonStyle = {
+  position: 'absolute',
+  right: '8px',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  width: '48px',
+  height: '48px',
+  borderRadius: '50%',
+  padding: '2px',
   border: '2px solid rgba(255, 255, 255, 0.9)',
   boxShadow: '0 4px 12px rgba(17, 24, 39, 0.28)',
-  backgroundColor: 'rgba(255, 255, 255, 0.85)',
-  pointerEvents: 'none',
+  background: 'rgba(255, 255, 255, 0.9)',
+  color: '#e8791a',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  overflow: 'hidden',
+  zIndex: 2,
+};
+
+const emptyAvatarStyle = {
+  width: '100%',
+  height: '100%',
+  borderRadius: '50%',
+  background: 'linear-gradient(145deg, #fffdf9 0%, #fff1e2 100%)',
+  border: '2px dashed #f5a24b',
+  boxShadow: 'inset 0 0 0 4px #fff8f0',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const topButtonsRowStyle = {
@@ -372,6 +399,52 @@ const inlineModalCardStyle = {
   boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
 };
 
+const photosModalCardStyle = {
+  width: 'min(94vw, 560px)',
+  maxHeight: 'min(88vh, 720px)',
+  overflowY: 'auto',
+  background: 'linear-gradient(180deg, #fffaf4 0%, #ffffff 42%)',
+  color: '#111827',
+  borderRadius: '20px',
+  padding: '18px',
+  boxShadow: '0 24px 70px rgba(0, 0, 0, 0.38)',
+  border: '1px solid rgba(245, 162, 75, 0.24)',
+};
+
+const photosModalHeaderStyle = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: '12px',
+  marginBottom: '14px',
+};
+
+const photosModalTitleStyle = {
+  margin: 0,
+  color: '#111827',
+  fontSize: '18px',
+  lineHeight: 1.2,
+};
+
+const photosModalSubtitleStyle = {
+  margin: '4px 0 0',
+  color: '#6b7280',
+  fontSize: '12px',
+  lineHeight: 1.35,
+};
+
+const photosModalCloseButtonStyle = {
+  width: '34px',
+  height: '34px',
+  borderRadius: '50%',
+  border: '1px solid #f0d8c2',
+  background: '#fff',
+  color: '#7a4b23',
+  cursor: 'pointer',
+  fontSize: '22px',
+  lineHeight: 1,
+};
+
 const inlineModalTextareaStyle = {
   width: '100%',
   minHeight: '120px',
@@ -468,6 +541,9 @@ const hasRoleWithoutCycle = data =>
 
 const buildRtdbLink = userId =>
   `https://console.firebase.google.com/u/0/project/webringitapp/database/webringitapp-default-rtdb/data/~2FnewUsers~2F${encodeURIComponent(userId || '')}`;
+
+const resolveUserPhotoCollection = data =>
+  data?.__sourceCollection === 'users' ? 'users' : 'newUsers';
 
 const buildName = data => {
   const nameParts = [];
@@ -602,6 +678,7 @@ export const TopBlock = ({
   const [selectedComment, setSelectedComment] = React.useState(null);
   const [commentToDelete, setCommentToDelete] = React.useState(null);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = React.useState(false);
+  const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
@@ -656,6 +733,25 @@ export const TopBlock = ({
   if (!cardData) return null;
 
   const userPhotoUrl = getUserPhotoUrl(cardData);
+  const photosCollection = resolveUserPhotoCollection(cardData);
+  const setCardPhotosState = updater => {
+    const resolveNextCard = currentCard => {
+      const baseCard = currentCard || cardData;
+      return typeof updater === 'function' ? updater(baseCard) : updater;
+    };
+
+    if (typeof setUsers === 'function' && cardData.userId) {
+      setUsers(prev => updateUserInState(prev, cardData.userId, currentCard => resolveNextCard(currentCard)));
+    }
+
+    if (typeof setState === 'function' && !isFromListOfUsers) {
+      setState(prev => resolveNextCard(prev), {
+        source: 'userChange',
+        caller: 'renderTopBlock.photosModal',
+        reason: 'photos-updated',
+      });
+    }
+  };
 
   const renderOverlayEntries = fieldNames => {
     const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
@@ -1092,9 +1188,22 @@ export const TopBlock = ({
     },
   ].filter(action => action && action.content);
 
-  const statusRowWithPhotoStyle = userPhotoUrl
-    ? { ...statusRowStyle, position: 'relative', paddingRight: '64px' }
-    : statusRowStyle;
+  const statusRowWithPhotoStyle = { ...statusRowStyle, position: 'relative', paddingRight: '64px' };
+  const avatarLabel = userPhotoUrl ? 'Відкрити фото користувача' : 'Додати фото користувача';
+  const avatarContent = userPhotoUrl ? (
+    <img
+      src={userPhotoUrl}
+      alt={buildName(cardData) || 'Фото користувача'}
+      style={topBlockPhotoStyle}
+      loading="lazy"
+    />
+  ) : (
+    <span style={emptyAvatarStyle} aria-hidden="true">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
 
   return (
     <div style={topBlockContainerStyle}>
@@ -1172,14 +1281,18 @@ export const TopBlock = ({
         </div>
       </div>
       <div style={statusRowWithPhotoStyle}>
-        {userPhotoUrl && (
-          <img
-            src={userPhotoUrl}
-            alt={buildName(cardData) || 'Фото користувача'}
-            style={topBlockPhotoStyle}
-            loading="lazy"
-          />
-        )}
+        <button
+          type="button"
+          style={topBlockAvatarButtonStyle}
+          onClick={event => {
+            event.stopPropagation();
+            setIsPhotosModalOpen(true);
+          }}
+          aria-label={avatarLabel}
+          title={avatarLabel}
+        >
+          {avatarContent}
+        </button>
         <div style={getInTouchStatusItemStyle}>
           {fieldGetInTouch({
             userData: cardData,
@@ -1273,6 +1386,44 @@ export const TopBlock = ({
           </div>
         ))}
       </div>
+      {isPhotosModalOpen && (
+        <div
+          style={inlineModalOverlayStyle}
+          onClick={event => {
+            event.stopPropagation();
+            setIsPhotosModalOpen(false);
+          }}
+        >
+          <div
+            style={photosModalCardStyle}
+            onClick={event => event.stopPropagation()}
+          >
+            <div style={photosModalHeaderStyle}>
+              <div>
+                <h3 style={photosModalTitleStyle}>Фото профілю</h3>
+                <p style={photosModalSubtitleStyle}>
+                  {buildName(cardData) || cardData.userId || 'Користувач'} · {photosCollection}
+                </p>
+              </div>
+              <button
+                type="button"
+                style={photosModalCloseButtonStyle}
+                onClick={() => setIsPhotosModalOpen(false)}
+                aria-label="Закрити фото"
+                title="Закрити"
+              >
+                ×
+              </button>
+            </div>
+            <Photos
+              state={cardData}
+              setState={setCardPhotosState}
+              collection={photosCollection}
+              uploadInputId={`file-upload-${cardData.userId || 'card'}`}
+            />
+          </div>
+        </div>
+      )}
       {isCommentModalOpen && (
         <div
           style={inlineModalOverlayStyle}

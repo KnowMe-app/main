@@ -3,7 +3,6 @@ import styled, { css } from 'styled-components';
 import { endAt, get as firebaseGet, orderByKey, query, ref as refDb, startAt } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
-import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { color, OrangeBtn, uiTokens } from './styles';
@@ -1010,7 +1009,6 @@ export const ProfileForm = ({
   const additionalAccessRulesRef = useRef(null);
   const multiDataAccessUserIdsRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
-  const [collection, setCollection] = useState('newUsers');
   const [selectedField, setSelectedField] = useState(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ppTechnicalInput, setPpTechnicalInput] = useState('');
@@ -3252,16 +3250,6 @@ ${entries.join('\n')}`;
         />
         <Button onClick={handleAddCustomField}>+</Button>
       </KeyValueRow>
-      <PhotosBlock>
-        <CollectionToggle
-          value={collection}
-          onChange={e => setCollection(e.target.value)}
-        >
-          <option value="users">users</option>
-          <option value="newUsers">newUsers</option>
-        </CollectionToggle>
-        <Photos state={state} setState={setState} collection={collection} />
-      </PhotosBlock>
       {(canManageAccessLevel || !isAdmin) && (
         <OverlayDebugButton type="button" onClick={handleOverlayDebugAlert}>
           Оверлей
@@ -3437,26 +3425,6 @@ const FormCard = styled.div`
 `;
 
 
-const PhotosBlock = styled.div`
-  position: relative;
-  max-width: 420px;
-  margin: 0 auto;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-`;
-
-const CollectionToggle = styled.select`
-  align-self: flex-end;
-  border: 1px solid ${uiTokens.colors.border};
-  border-radius: 999px;
-  padding: 6px 28px 6px 10px;
-  font-size: ${uiTokens.typography.fontSizeSm};
-  background: ${uiTokens.colors.cardBg};
-  color: ${uiTokens.colors.textPrimary};
-`;
 
 const PickerContainer = styled.div`
   display: flex;
