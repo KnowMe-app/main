@@ -39,9 +39,11 @@ const PhotoItem = styled.div`
   height: ${({ $compact }) => ($compact ? '72px' : '100px')};
   position: relative;
   flex-shrink: 0;
-  border: ${({ $compact }) => ($compact ? 'none' : '3px solid')};
-  border-image: ${({ $compact }) => ($compact ? 'none' : 'linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1')};
-  border-radius: ${({ $compact }) => ($compact ? '50%' : '5px')};
+  box-sizing: border-box;
+  border: ${({ $compact }) => ($compact ? '2px solid #E8E8E2' : '3px solid #E8E8E2')};
+  border-radius: ${({ $compact }) => ($compact ? '50%' : '8px')};
+  overflow: hidden;
+  background: #fff;
 `;
 
 const PhotoImage = styled.img`
@@ -49,14 +51,14 @@ const PhotoImage = styled.img`
   width: 100%;
   height: 100%;
   display: block;
-  border-radius: ${({ $compact }) => ($compact ? '50%' : 0)};
+  border-radius: ${({ $compact }) => ($compact ? '50%' : '6px')};
   cursor: pointer;
 `;
 
 const DeleteButton = styled.button`
   position: absolute;
-  top: ${({ $compact }) => ($compact ? '-3px' : '5px')};
-  right: ${({ $compact }) => ($compact ? '-3px' : '5px')};
+  top: ${({ $compact }) => ($compact ? '0' : '5px')};
+  right: ${({ $compact }) => ($compact ? '0' : '5px')};
   background-color: ${({ $compact }) => ($compact ? '#fff' : 'red')};
   color: ${({ $compact }) => ($compact ? '#7A7A72' : 'white')};
   border: ${({ $compact }) => ($compact ? '1px solid #E8E8E2' : 'none')};
@@ -92,11 +94,11 @@ const UploadButtonLabel = styled.label`
   height: ${({ $compact }) => ($compact ? '72px' : 'auto')};
   box-sizing: border-box;
   padding: ${({ $compact }) => ($compact ? 0 : '10px 20px')};
-  background: ${({ $compact }) => ($compact ? 'linear-gradient(145deg, #FFFDF9 0%, #FFF1E2 100%)' : color.accent5)};
-  color: ${({ $compact }) => ($compact ? '#E8791A' : 'white')};
-  border: ${({ $compact }) => ($compact ? '2px dashed #F5A24B' : 'none')};
+  background: ${({ $compact }) => ($compact ? '#fff' : color.accent5)};
+  color: ${({ $compact }) => ($compact ? '#7A7A72' : 'white')};
+  border: ${({ $compact }) => ($compact ? '2px solid #E8E8E2' : 'none')};
   border-radius: ${({ $compact }) => ($compact ? '50%' : '5px')};
-  box-shadow: ${({ $compact }) => ($compact ? '0 4px 12px rgba(232, 121, 26, 0.14), inset 0 0 0 4px #FFF8F0' : 'none')};
+  box-shadow: none;
   cursor: pointer;
   text-align: center;
   font-size: ${({ $compact }) => ($compact ? '32px' : '16px')};
@@ -107,9 +109,9 @@ const UploadButtonLabel = styled.label`
   transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
 
   &:hover {
-    background: ${({ $compact }) => ($compact ? 'linear-gradient(145deg, #FFF8F0 0%, #FFE4C7 100%)' : color.accent)};
-    border-color: ${({ $compact }) => ($compact ? '#E8791A' : 'transparent')};
-    box-shadow: ${({ $compact }) => ($compact ? '0 6px 16px rgba(232, 121, 26, 0.22), inset 0 0 0 4px #FFF8F0' : '0 4px 12px rgba(0, 0, 0, 0.1)')};
+    background: ${({ $compact }) => ($compact ? '#FFF8F0' : color.accent)};
+    border-color: ${({ $compact }) => ($compact ? '#F5A24B' : 'transparent')};
+    box-shadow: ${({ $compact }) => ($compact ? 'none' : '0 4px 12px rgba(0, 0, 0, 0.1)')};
     transform: translateY(-1px);
   }
 
