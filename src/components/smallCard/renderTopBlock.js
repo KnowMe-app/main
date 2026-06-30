@@ -765,10 +765,15 @@ export const TopBlock = ({
         }
 
         setResolvedPhotosCollection(freshCollection);
-        const withCollection = { ...cardData, __sourceCollection: freshCollection };
-
         if (typeof setState === 'function' && !isFromListOfUsers) {
-          setState(withCollection, {
+          setState(prev => {
+            const currentCard = prev && typeof prev === 'object' ? prev : cardData;
+            if (currentCard?.userId && currentCard.userId !== cardData.userId) return prev;
+            return {
+              ...currentCard,
+              __sourceCollection: freshCollection,
+            };
+          }, {
             source: 'userChange',
             caller: 'renderTopBlock.resolvePhotosCollection',
             reason: 'photos-source-resolved',
@@ -777,7 +782,7 @@ export const TopBlock = ({
 
         if (typeof setUsers === 'function') {
           setUsers(prev => (
-            isFromListOfUsers || stateContainsUser(prev, cardData.userId)
+            stateContainsUser(prev, cardData.userId)
               ? updateUserInState(prev, cardData.userId, currentCard => ({
                 ...currentCard,
                 __sourceCollection: freshCollection,
@@ -811,7 +816,7 @@ export const TopBlock = ({
 
     if (typeof setUsers === 'function' && cardData.userId) {
       setUsers(prev => (
-        isFromListOfUsers || stateContainsUser(prev, cardData.userId)
+        stateContainsUser(prev, cardData.userId)
           ? updateUserInState(prev, cardData.userId, currentCard => resolveNextCard(currentCard))
           : prev
       ));
