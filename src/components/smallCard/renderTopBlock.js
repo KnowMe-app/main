@@ -971,11 +971,11 @@ const pdfExportButtonStyle = {
   textDecoration: 'none',
 };
 
-const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) => {
+const resolvePdfPhotoUrls = async ({ cardData, photoUrls }) => {
   const existingPhotos = Array.isArray(photoUrls) ? photoUrls : [];
-  if (existingPhotos.length > 0 || !cardData?.userId || !photosCollection) return existingPhotos;
+  if (existingPhotos.length > 0 || !cardData?.userId) return existingPhotos;
 
-  const loadedPhotos = await getAllUserPhotos(cardData.userId, photosCollection);
+  const loadedPhotos = await getAllUserPhotos(cardData.userId);
   return Array.from(new Set(
     filterOutMedicationPhotos(loadedPhotos, cardData.userId)
       .map(convertDriveLinkToImage)
@@ -985,7 +985,7 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) =>
 
 const isSurrogateMotherRole = data => String(data?.userRole || data?.role || '').trim().toLowerCase() === 'sm';
 
-const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
+const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleExport = async event => {
@@ -995,7 +995,7 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
     setIsGenerating(true);
     try {
       const fileName = buildProfilePdfFileName(cardData);
-      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
+      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls });
       const blob = await pdf(<ProfilePdfDocument userData={cardData} photoUrls={effectivePhotoUrls} />).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1770,7 +1770,6 @@ export const TopBlock = ({
             <ProfilePdfExportButton
               cardData={cardData}
               photoUrls={userPhotoUrls}
-              photosCollection={photosCollection}
             />
           )}
           {additionalActions}
