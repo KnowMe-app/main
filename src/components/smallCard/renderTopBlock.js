@@ -1930,7 +1930,7 @@ export const TopBlock = ({
                 setState={setCardPhotosState}
                 collection={photosCollection}
                 uploadInputId={`file-upload-${cardData.userId || 'card'}`}
-                cropAspectRatio={4 / 3}
+                cropAspectRatio={3 / 4}
               />
             ) : (
               <p style={photosModalSubtitleStyle}>Визначаємо джерело фото перед збереженням…</p>
