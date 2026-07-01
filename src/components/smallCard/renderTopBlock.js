@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Document,
   Image,
   Page,
-  PDFDownloadLink,
+  Font,
+  pdf,
   StyleSheet,
   Text,
   View,
@@ -676,13 +677,18 @@ const extractMultiDataComments = cardData => {
   return normalized.filter(comment => comment.text);
 };
 
+Font.register({
+  family: 'NotoSans',
+  src: 'https://fonts.gstatic.com/s/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf',
+});
+
 const profilePdfStyles = StyleSheet.create({
   page: {
     position: 'relative',
     paddingTop: 78,
     paddingHorizontal: 88,
     paddingBottom: 74,
-    fontFamily: 'Helvetica',
+    fontFamily: 'NotoSans',
     color: '#111',
     backgroundColor: '#fff',
   },
@@ -727,7 +733,7 @@ const profilePdfStyles = StyleSheet.create({
     paddingTop: 78,
     paddingHorizontal: 70,
     paddingBottom: 74,
-    fontFamily: 'Helvetica',
+    fontFamily: 'NotoSans',
     backgroundColor: '#fff',
   },
   profileImage: {
@@ -779,12 +785,56 @@ const resolvePdfAge = data => {
 };
 
 const normalizePdfYesNo = value => {
+  if (value === null || value === undefined) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const loweredRaw = raw.toLowerCase();
+  if (['-', '0'].includes(loweredRaw)) return 'no';
+
   const normalized = normalizeDisplayValue(value);
   if (!normalized) return '';
   const lowered = normalized.toLowerCase();
   if (['yes', 'true', 'так', 'да', '+'].includes(lowered)) return 'yes';
-  if (['no', 'false', 'ні', 'нет', '-', '0', 'не було', 'none'].includes(lowered)) return 'no';
+  if (['no', 'false', 'ні', 'нет', 'не було', 'none'].includes(lowered)) return 'no';
   return normalized;
+};
+
+const resolvePdfYesNoValue = (data, keys) => {
+  const normalizedKeys = Array.isArray(keys) ? keys : [keys];
+  for (const key of normalizedKeys) {
+    const value = normalizePdfYesNo(data?.[key]);
+    if (value) return value;
+  }
+  return '';
+};
+
+const resolvePdfCombinedValue = (data, entries) => {
+  const values = entries
+    .map(([label, keys]) => {
+      const value = resolvePdfValue(data, keys);
+      return value ? `${label}: ${value}` : '';
+    })
+    .filter(Boolean);
+  return values.join('; ');
+};
+
+const resolvePdfHarmfulHabits = data => {
+  const summary = resolvePdfValue(data, ['harmfulHabits', 'badHabits']);
+  if (summary) return summary;
+  return resolvePdfCombinedValue(data, [
+    ['Smoking', ['smoking']],
+    ['Alcohol', ['alcohol']],
+  ]);
+};
+
+const resolvePdfMedicalDetails = data => {
+  const summary = resolvePdfValue(data, ['healthCondition', 'health', 'medicalCondition']);
+  const details = resolvePdfCombinedValue(data, [
+    ['Surgeries', ['surgeries']],
+    ['Chronic diseases', ['chronicDiseases']],
+    ['Allergy', ['allergy', 'allergies']],
+  ]);
+  return [summary, details].filter(Boolean).join('; ');
 };
 
 const buildProfilePdfRows = data => ([
@@ -795,14 +845,14 @@ const buildProfilePdfRows = data => ([
   ['Marital status', resolvePdfValue(data, ['maritalStatus'])],
   ['Children', resolvePdfValue(data, ['ownKids', 'children', 'kids'])],
   ['Ethnic group', resolvePdfValue(data, ['race', 'ethnicGroup', 'ethnicity'])],
-  ['Health condition', resolvePdfValue(data, ['healthCondition', 'health', 'medicalCondition'])],
+  ['Health condition', resolvePdfMedicalDetails(data)],
   ['Weight', resolvePdfValue(data, ['weight'])],
   ['Height', resolvePdfValue(data, ['height'])],
   ['Blood type', resolvePdfValue(data, ['blood', 'bloodType'])],
-  ['Harmful habits', resolvePdfValue(data, ['harmfulHabits', 'badHabits', 'smoking', 'alcohol'])],
+  ['Harmful habits', resolvePdfHarmfulHabits(data)],
   ['Nationality', resolvePdfValue(data, ['nationality', 'citizenship', 'country'])],
-  ['Experience in surrogacy', normalizePdfYesNo(resolvePdfValue(data, ['surrogacyExperience', 'experienceInSurrogacy', 'experience']))],
-  ['Cesarean section', normalizePdfYesNo(resolvePdfValue(data, ['csection', 'cSection', 'c_section', 'cesareanSection']))],
+  ['Experience in surrogacy', resolvePdfYesNoValue(data, ['surrogacyExperience', 'experienceInSurrogacy'])],
+  ['Cesarean section', resolvePdfYesNoValue(data, ['csection', 'cSection', 'c_section', 'cesareanSection'])],
 ]).filter(([, value]) => value);
 
 const buildProfilePdfFileName = data => {
@@ -854,17 +904,43 @@ const pdfExportButtonStyle = {
   textDecoration: 'none',
 };
 
-const renderProfilePdfExportButton = (cardData, photoUrls) => (
-  <PDFDownloadLink
-    document={<ProfilePdfDocument userData={cardData} photoUrls={photoUrls} />}
-    fileName={buildProfilePdfFileName(cardData)}
-    style={pdfExportButtonStyle}
-    title="Експорт профілю в PDF"
-    aria-label="Експорт профілю в PDF"
-    onClick={event => event.stopPropagation()}
-  >
-    {({ loading }) => (
-      loading ? (
+const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleExport = async event => {
+    event.stopPropagation();
+    if (isGenerating) return;
+
+    setIsGenerating(true);
+    try {
+      const fileName = buildProfilePdfFileName(cardData);
+      const blob = await pdf(<ProfilePdfDocument userData={cardData} photoUrls={photoUrls} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Unable to export profile PDF', error);
+      toast.error('Не вдалося експортувати PDF');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      style={pdfExportButtonStyle}
+      title="Експорт профілю в PDF"
+      aria-label="Експорт профілю в PDF"
+      onClick={handleExport}
+      disabled={isGenerating}
+    >
+      {isGenerating ? (
         <span style={{ fontSize: '10px', fontWeight: 700 }}>...</span>
       ) : (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -872,10 +948,10 @@ const renderProfilePdfExportButton = (cardData, photoUrls) => (
           <path d="M14 3v5h4" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
           <path d="M9 13h6M9 16h6M9 19h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
-      )
-    )}
-  </PDFDownloadLink>
-);
+      )}
+    </button>
+  );
+};
 
 export const TopBlock = ({
   userData,
@@ -1555,7 +1631,7 @@ export const TopBlock = ({
               backgroundColor: 'green',
               color: '#fff',
             })}
-          {renderProfilePdfExportButton(cardData, userPhotoUrls)}
+          <ProfilePdfExportButton cardData={cardData} photoUrls={userPhotoUrls} />
           {additionalActions}
           {stimulationScheduleToggleButton}
           <button

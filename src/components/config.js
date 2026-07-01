@@ -270,13 +270,31 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
 
 
 
+const PDF_SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
+const MAX_COMPRESSED_IMAGE_DIMENSION = 2400;
+const MIN_JPEG_QUALITY = 0.1;
+const JPEG_QUALITY_STEP = 0.07;
+const DOWNSCALE_STEP = 0.85;
+
+const shouldKeepOriginalUpload = (photo, disableCompression, maxSizeKB) => {
+  if (!photo) return false;
+  if (disableCompression) return true;
+  const type = String(photo.type || '').toLowerCase();
+  return photo.size <= maxSizeKB * 1024 && PDF_SUPPORTED_IMAGE_TYPES.includes(type);
+};
+
+const generateUploadFileId = () => {
+  const randomSuffix = Math.random().toString(36).slice(2, 10);
+  return `${Date.now()}-${randomSuffix}`;
+};
+
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   const { disableCompression = false, maxSizeKB = 1024 } = options;
-  const file = disableCompression || photo.size <= maxSizeKB * 1024
+  const file = shouldKeepOriginalUpload(photo, disableCompression, maxSizeKB)
     ? photo
     : await getFileBlob(await compressPhoto(photo, maxSizeKB));
 
-  const uniqueId = Date.now().toString(); // генеруємо унікальне ім"я для фото
+  const uniqueId = generateUploadFileId(); // генеруємо унікальне ім"я для фото
   const fileName = `${uniqueId}.jpg`; // Використовуємо унікальне ім'я для файлу
   const pathSegments = ['avatar', userId];
   if (options?.subfolder) {
@@ -310,22 +328,46 @@ const compressPhoto = (file, maxSizeKB) => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const maxSizeBytes = maxSizeKB * 1024;
+        const maxSourceDimension = Math.max(img.width, img.height);
+        let scale = maxSourceDimension > MAX_COMPRESSED_IMAGE_DIMENSION
+          ? MAX_COMPRESSED_IMAGE_DIMENSION / maxSourceDimension
+          : 1;
 
-        canvas.width = img.width;
-        canvas.height = img.height;
+        const renderAtScale = nextScale => {
+          const targetWidth = Math.max(1, Math.round(img.width * nextScale));
+          const targetHeight = Math.max(1, Math.round(img.height * nextScale));
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          ctx.clearRect(0, 0, targetWidth, targetHeight);
+          ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        };
 
-        // Не зменшуємо роздільну здатність: заливаємо оригінальні пікселі,
-        // а для файлів понад ліміт поступово знижуємо лише JPEG-якість.
-        ctx.drawImage(img, 0, 0, img.width, img.height);
+        const encodeAtCurrentScale = () => {
+          let quality = 0.92;
+          let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          let compressedFile = dataURLToFile(compressedDataUrl);
 
-        let quality = 0.92;
-        let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-        let compressedFile = dataURLToFile(compressedDataUrl);
+          while (compressedFile.size > maxSizeBytes && quality > MIN_JPEG_QUALITY) {
+            quality = Math.max(quality - JPEG_QUALITY_STEP, MIN_JPEG_QUALITY);
+            compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            compressedFile = dataURLToFile(compressedDataUrl);
+          }
 
-        while (compressedFile.size > maxSizeBytes && quality > 0.1) {
-          quality = Math.max(quality - 0.07, 0.1);
-          compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-          compressedFile = dataURLToFile(compressedDataUrl);
+          return compressedFile;
+        };
+
+        renderAtScale(scale);
+        let compressedFile = encodeAtCurrentScale();
+
+        while (compressedFile.size > maxSizeBytes && scale > 0.15) {
+          scale *= DOWNSCALE_STEP;
+          renderAtScale(scale);
+          compressedFile = encodeAtCurrentScale();
+        }
+
+        if (compressedFile.size > maxSizeBytes) {
+          reject(new Error('Не вдалося стиснути фото до дозволеного розміру'));
+          return;
         }
 
         resolve(compressedFile);
