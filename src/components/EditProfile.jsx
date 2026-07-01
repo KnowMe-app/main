@@ -907,10 +907,10 @@ const EditProfile = () => {
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
   const scheduleUserData = state;
   const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveCycleStatus);
-  const [isStimulationScheduleVisible, setIsStimulationScheduleVisible] = useState(true);
+  const [isStimulationScheduleVisible, setIsStimulationScheduleVisible] = useState(false);
 
   useEffect(() => {
-    setIsStimulationScheduleVisible(true);
+    setIsStimulationScheduleVisible(false);
   }, [state?.userId, shouldShowSchedule]);
 
   const overlayFieldAdditions = useMemo(() => {
