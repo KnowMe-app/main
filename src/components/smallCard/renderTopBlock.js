@@ -36,6 +36,7 @@ import { normalizeRegion } from '../normalizeLocation';
 import { getCurrentValue } from '../getCurrentValue';
 import {
   fetchUserById,
+  getAllUserPhotos,
   setUserComment as persistUserComment,
   fetchAllCommentsByCardId,
   updateCommentByOwner,
@@ -1016,6 +1017,8 @@ export const TopBlock = ({
   const region = normalizeRegion(cardData.region);
   const showSideActions = !additionalActions;
   const hasHiddenCycleFieldRole = hasRoleWithoutCycle(cardData);
+  const userPhotoUrls = getUserProfilePhotoUrls(cardData);
+  const userPhotoUrl = userPhotoUrls[0] || '';
 
   React.useEffect(() => {
     if (!cardData?.userId) {
@@ -1038,7 +1041,7 @@ export const TopBlock = ({
     const sourceCollection = resolveUserPhotoCollection(cardData);
     setResolvedPhotosCollection(sourceCollection);
 
-    if (!isPhotosModalOpen || sourceCollection || !cardData?.userId) {
+    if (sourceCollection || !cardData?.userId) {
       return undefined;
     }
 
@@ -1050,7 +1053,7 @@ export const TopBlock = ({
 
         const freshCollection = resolveUserPhotoCollection(fresh);
         if (!freshCollection) {
-          toast.error('Не вдалося визначити джерело фото профілю');
+          if (isPhotosModalOpen) toast.error('Не вдалося визначити джерело фото профілю');
           return;
         }
 
@@ -1083,7 +1086,7 @@ export const TopBlock = ({
       } catch (error) {
         if (isMounted) {
           console.error('Error resolving photo source:', error);
-          toast.error('Не вдалося визначити джерело фото профілю');
+          if (isPhotosModalOpen) toast.error('Не вдалося визначити джерело фото профілю');
         }
       }
     };
@@ -1094,10 +1097,61 @@ export const TopBlock = ({
     };
   }, [cardData, isFromListOfUsers, isPhotosModalOpen, setState, setUsers]);
 
+  React.useEffect(() => {
+    if (!cardData?.userId || userPhotoUrls.length > 0 || !resolvedPhotosCollection) {
+      return undefined;
+    }
+
+    let isMounted = true;
+    const hydrateTopBlockPhotos = async () => {
+      try {
+        const urls = await getAllUserPhotos(cardData.userId, resolvedPhotosCollection);
+        if (!isMounted) return;
+        const filteredUrls = filterOutMedicationPhotos(urls, cardData.userId);
+        if (!filteredUrls.length) return;
+
+        const updatePhotos = currentCard => {
+          const baseCard = currentCard || cardData;
+          if (baseCard?.userId && baseCard.userId !== cardData.userId) return currentCard;
+          const currentUrls = getUserProfilePhotoUrls(baseCard);
+          if (currentUrls.length > 0) return currentCard || baseCard;
+          return {
+            ...baseCard,
+            photos: filteredUrls,
+            __photosHydrated: true,
+          };
+        };
+
+        if (typeof setState === 'function' && !isFromListOfUsers) {
+          setState(prev => updatePhotos(prev), {
+            source: 'userChange',
+            caller: 'renderTopBlock.hydrateTopBlockPhotos',
+            reason: 'photos-hydrated-on-open',
+          });
+        }
+
+        if (typeof setUsers === 'function') {
+          setUsers(prev => (
+            stateContainsUser(prev, cardData.userId)
+              ? updateUserInState(prev, cardData.userId, updatePhotos)
+              : prev
+          ));
+        }
+      } catch (error) {
+        if (isMounted) {
+          console.error('Error hydrating top block photos:', error);
+        }
+      }
+    };
+
+    hydrateTopBlockPhotos();
+    return () => {
+      isMounted = false;
+    };
+  }, [cardData, isFromListOfUsers, resolvedPhotosCollection, setState, setUsers, userPhotoUrls.length]);
+
   if (!cardData) return null;
 
-  const userPhotoUrls = getUserProfilePhotoUrls(cardData);
-  const userPhotoUrl = userPhotoUrls[0] || '';
   const photosCollection = resolvedPhotosCollection;
   const setCardPhotosState = updater => {
     const resolveNextCard = currentCard => {
