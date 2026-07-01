@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import {
   deletePhotos,
@@ -125,9 +125,10 @@ const HiddenFileInput = styled.input`
 `;
 
 
-const PHOTO_CROP_ASPECT_RATIO = 1;
 const PHOTO_CROP_SIZE = 1200;
-const DEFAULT_CROP_CENTER = { x: 0.5, y: 0.5 };
+const DEFAULT_CROP_ZOOM = 1;
+const DEFAULT_CROP_OFFSET = { x: 0, y: 0 };
+const DEFAULT_CROP_ASPECT_RATIO = 1;
 
 const CropModalOverlay = styled.div`
   position: fixed;
@@ -141,7 +142,7 @@ const CropModalOverlay = styled.div`
 `;
 
 const CropModalCard = styled.div`
-  width: min(92vw, 440px);
+  width: min(92vw, 520px);
   background: #fff;
   border-radius: 14px;
   padding: 16px;
@@ -167,28 +168,73 @@ const CropPreview = styled.div`
   overflow: hidden;
   border-radius: 12px;
   background: #f3f4f6;
-  cursor: crosshair;
+  cursor: grab;
   user-select: none;
+  touch-action: none;
+
+  &:active {
+    cursor: grabbing;
+  }
 `;
 
 const CropPreviewImage = styled.img`
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: ${({ $displayWidth }) => `${$displayWidth}px`};
+  height: ${({ $displayHeight }) => `${$displayHeight}px`};
   object-fit: cover;
   display: block;
+  max-width: none;
+  transform: ${({ $offsetX, $offsetY }) => `translate(calc(-50% + ${$offsetX}px), calc(-50% + ${$offsetY}px))`};
+  transform-origin: center;
+  pointer-events: none;
 `;
 
-const CropCenterMarker = styled.div`
+const CropFocusFrame = styled.div`
   position: absolute;
-  left: ${({ $x }) => `${$x * 100}%`};
-  top: ${({ $y }) => `${$y * 100}%`};
-  width: 26px;
-  height: 26px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px ${color.accent5}, 0 2px 8px rgba(0, 0, 0, 0.35);
+  left: 50%;
+  top: 50%;
+  width: 86%;
+  aspect-ratio: ${({ $aspectRatio }) => $aspectRatio || DEFAULT_CROP_ASPECT_RATIO};
+  max-height: 86%;
   transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 9999px rgba(17, 24, 39, 0.48),
+    inset 0 0 0 1px rgba(245, 162, 75, 0.85),
+    0 8px 24px rgba(0, 0, 0, 0.28);
   pointer-events: none;
+`;
+
+const CropGrid = styled.div`
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 86%;
+  aspect-ratio: ${({ $aspectRatio }) => $aspectRatio || DEFAULT_CROP_ASPECT_RATIO};
+  max-height: 86%;
+  transform: translate(-50%, -50%);
+  border-radius: 12px;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, transparent 33.333%, rgba(255,255,255,0.55) 33.333%, rgba(255,255,255,0.55) calc(33.333% + 1px), transparent calc(33.333% + 1px), transparent 66.666%, rgba(255,255,255,0.55) 66.666%, rgba(255,255,255,0.55) calc(66.666% + 1px), transparent calc(66.666% + 1px)),
+    linear-gradient(to bottom, transparent 33.333%, rgba(255,255,255,0.55) 33.333%, rgba(255,255,255,0.55) calc(33.333% + 1px), transparent calc(33.333% + 1px), transparent 66.666%, rgba(255,255,255,0.55) 66.666%, rgba(255,255,255,0.55) calc(66.666% + 1px), transparent calc(66.666% + 1px));
+`;
+
+const CropZoomRow = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: ${color.gray3};
+  font-size: 14px;
+`;
+
+const CropZoomInput = styled.input`
+  flex: 1;
 `;
 
 const CropActions = styled.div`
@@ -228,28 +274,58 @@ const canvasToBlob = (canvas, type = 'image/jpeg', quality = 0.92) => new Promis
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
-const cropPhotoToStandardRatio = async (file, center = DEFAULT_CROP_CENTER) => {
+const resolveCropDisplay = ({ sourceWidth, sourceHeight, frameWidth, frameHeight, zoom }) => {
+  if (!sourceWidth || !sourceHeight || !frameWidth || !frameHeight) {
+    return { displayWidth: 0, displayHeight: 0, scale: 1 };
+  }
+
+  const baseScale = Math.max(frameWidth / sourceWidth, frameHeight / sourceHeight);
+  const scale = baseScale * zoom;
+  return {
+    displayWidth: sourceWidth * scale,
+    displayHeight: sourceHeight * scale,
+    scale,
+  };
+};
+
+const getBoundedCropOffset = ({ offset, displayWidth, displayHeight, frameWidth, frameHeight }) => ({
+  x: clamp(offset.x, -Math.max((displayWidth - frameWidth) / 2, 0), Math.max((displayWidth - frameWidth) / 2, 0)),
+  y: clamp(offset.y, -Math.max((displayHeight - frameHeight) / 2, 0), Math.max((displayHeight - frameHeight) / 2, 0)),
+});
+
+const cropPhotoToStandardRatio = async (file, cropSettings) => {
   const image = await loadImage(file);
   const sourceWidth = image.naturalWidth || image.width;
   const sourceHeight = image.naturalHeight || image.height;
   if (!sourceWidth || !sourceHeight) return file;
 
-  let cropWidth = sourceWidth;
-  let cropHeight = cropWidth / PHOTO_CROP_ASPECT_RATIO;
-  if (cropHeight > sourceHeight) {
-    cropHeight = sourceHeight;
-    cropWidth = cropHeight * PHOTO_CROP_ASPECT_RATIO;
-  }
-
-  const normalizedCenter = center || DEFAULT_CROP_CENTER;
-  const sourceX = clamp((normalizedCenter.x * sourceWidth) - cropWidth / 2, 0, sourceWidth - cropWidth);
-  const sourceY = clamp((normalizedCenter.y * sourceHeight) - cropHeight / 2, 0, sourceHeight - cropHeight);
-  const outputSize = Math.min(PHOTO_CROP_SIZE, Math.max(cropWidth, cropHeight));
+  const {
+    frameWidth = 1,
+    frameHeight = 1,
+    offset = DEFAULT_CROP_OFFSET,
+    zoom = DEFAULT_CROP_ZOOM,
+    aspectRatio = DEFAULT_CROP_ASPECT_RATIO,
+  } = cropSettings || {};
+  const safeAspectRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : DEFAULT_CROP_ASPECT_RATIO;
+  const { displayWidth, displayHeight, scale } = resolveCropDisplay({
+    sourceWidth,
+    sourceHeight,
+    frameWidth,
+    frameHeight,
+    zoom: Math.max(zoom, DEFAULT_CROP_ZOOM),
+  });
+  const boundedOffset = getBoundedCropOffset({ offset, displayWidth, displayHeight, frameWidth, frameHeight });
+  const sourceX = clamp(((displayWidth - frameWidth) / 2 - boundedOffset.x) / scale, 0, sourceWidth);
+  const sourceY = clamp(((displayHeight - frameHeight) / 2 - boundedOffset.y) / scale, 0, sourceHeight);
+  const cropWidth = clamp(frameWidth / scale, 1, sourceWidth - sourceX);
+  const cropHeight = clamp(frameHeight / scale, 1, sourceHeight - sourceY);
+  const outputWidth = Math.round(Math.min(PHOTO_CROP_SIZE, Math.max(1, cropWidth)));
+  const outputHeight = Math.round(outputWidth / safeAspectRatio);
   const canvas = document.createElement('canvas');
-  canvas.width = outputSize;
-  canvas.height = outputSize;
+  canvas.width = outputWidth;
+  canvas.height = outputHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, 0, 0, outputSize, outputSize);
+  ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
   const blob = await canvasToBlob(canvas);
   if (!blob) return file;
   return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg') || 'profile-photo.jpg', {
@@ -258,13 +334,17 @@ const cropPhotoToStandardRatio = async (file, center = DEFAULT_CROP_CENTER) => {
   });
 };
 
-export const Photos = ({ state, setState, collection, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9 }) => {
+export const Photos = ({ state, setState, collection, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9, cropAspectRatio = DEFAULT_CROP_ASPECT_RATIO }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
   const [pendingCropFiles, setPendingCropFiles] = useState([]);
   const [croppedPendingFiles, setCroppedPendingFiles] = useState([]);
   const [cropPreviewUrl, setCropPreviewUrl] = useState('');
-  const [cropCenter, setCropCenter] = useState(DEFAULT_CROP_CENTER);
-  const [hasSelectedCropCenter, setHasSelectedCropCenter] = useState(false);
+  const [cropOffset, setCropOffset] = useState(DEFAULT_CROP_OFFSET);
+  const [cropZoom, setCropZoom] = useState(DEFAULT_CROP_ZOOM);
+  const [cropImageSize, setCropImageSize] = useState({ width: 0, height: 0 });
+  const [cropFrameSize, setCropFrameSize] = useState({ width: 0, height: 0 });
+  const dragStateRef = useRef(null);
+  const cropFrameRef = useRef(null);
   const photoKeys = Object.keys(state).filter(
     k => k.toLowerCase().startsWith('photo') && k !== 'photos'
   );
@@ -272,6 +352,21 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
     a.length === b.length && a.every((val, idx) => val === b[idx]);
   const photoValues = photoKeys.map(k => state[k]).join('|');
   const pendingCropFile = pendingCropFiles[0] || null;
+  const safeCropAspectRatio = Number.isFinite(cropAspectRatio) && cropAspectRatio > 0 ? cropAspectRatio : DEFAULT_CROP_ASPECT_RATIO;
+  const cropDisplay = resolveCropDisplay({
+    sourceWidth: cropImageSize.width,
+    sourceHeight: cropImageSize.height,
+    frameWidth: cropFrameSize.width,
+    frameHeight: cropFrameSize.height,
+    zoom: cropZoom,
+  });
+  const boundedCropOffset = getBoundedCropOffset({
+    offset: cropOffset,
+    displayWidth: cropDisplay.displayWidth,
+    displayHeight: cropDisplay.displayHeight,
+    frameWidth: cropFrameSize.width,
+    frameHeight: cropFrameSize.height,
+  });
 
   useEffect(() => {
     if (!pendingCropFile) {
@@ -281,8 +376,10 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
 
     const url = URL.createObjectURL(pendingCropFile);
     setCropPreviewUrl(url);
-    setCropCenter(DEFAULT_CROP_CENTER);
-    setHasSelectedCropCenter(false);
+    setCropOffset(DEFAULT_CROP_OFFSET);
+    setCropZoom(DEFAULT_CROP_ZOOM);
+    setCropImageSize({ width: 0, height: 0 });
+    setCropFrameSize({ width: 0, height: 0 });
     return () => URL.revokeObjectURL(url);
   }, [pendingCropFile]);
 
@@ -472,13 +569,72 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
     setPendingCropFiles(photoArray);
   };
 
-  const handleCropPreviewClick = event => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setCropCenter({
-      x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
-      y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+  const updateCropFrameSize = element => {
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    setCropFrameSize({ width: rect.width, height: rect.height });
+  };
+
+  const handleCropPreviewPointerDown = event => {
+    updateCropFrameSize(cropFrameRef.current);
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startOffset: boundedCropOffset,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleCropPreviewPointerMove = event => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    const nextOffset = {
+      x: dragState.startOffset.x + event.clientX - dragState.startX,
+      y: dragState.startOffset.y + event.clientY - dragState.startY,
+    };
+    setCropOffset(getBoundedCropOffset({
+      offset: nextOffset,
+      displayWidth: cropDisplay.displayWidth,
+      displayHeight: cropDisplay.displayHeight,
+      frameWidth: cropFrameSize.width,
+      frameHeight: cropFrameSize.height,
+    }));
+  };
+
+  const handleCropPreviewPointerUp = event => {
+    if (dragStateRef.current?.pointerId === event.pointerId) {
+      dragStateRef.current = null;
+    }
+  };
+
+  const handleCropImageLoad = event => {
+    const image = event.currentTarget;
+    setCropImageSize({
+      width: image.naturalWidth || image.width,
+      height: image.naturalHeight || image.height,
     });
-    setHasSelectedCropCenter(true);
+    updateCropFrameSize(cropFrameRef.current);
+  };
+
+  const handleCropZoomChange = event => {
+    const nextZoom = Number(event.target.value);
+    setCropZoom(nextZoom);
+    const nextDisplay = resolveCropDisplay({
+      sourceWidth: cropImageSize.width,
+      sourceHeight: cropImageSize.height,
+      frameWidth: cropFrameSize.width,
+      frameHeight: cropFrameSize.height,
+      zoom: nextZoom,
+    });
+    setCropOffset(currentOffset => getBoundedCropOffset({
+      offset: currentOffset,
+      displayWidth: nextDisplay.displayWidth,
+      displayHeight: nextDisplay.displayHeight,
+      frameWidth: cropFrameSize.width,
+      frameHeight: cropFrameSize.height,
+    }));
   };
 
   const cancelCrop = () => {
@@ -488,8 +644,13 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
 
   const confirmCurrentCrop = async () => {
     if (!pendingCropFile) return;
-    const center = hasSelectedCropCenter ? cropCenter : DEFAULT_CROP_CENTER;
-    const croppedFile = await cropPhotoToStandardRatio(pendingCropFile, center);
+    const croppedFile = await cropPhotoToStandardRatio(pendingCropFile, {
+      aspectRatio: safeCropAspectRatio,
+      frameWidth: cropFrameSize.width,
+      frameHeight: cropFrameSize.height,
+      offset: boundedCropOffset,
+      zoom: cropZoom,
+    });
     const remainingFiles = pendingCropFiles.slice(1);
     const readyFiles = [...croppedPendingFiles, croppedFile];
 
@@ -577,11 +738,38 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
         <CropModalOverlay onClick={cancelCrop}>
           <CropModalCard onClick={event => event.stopPropagation()}>
             <CropModalTitle>Обрізати фото до стандартного розміру</CropModalTitle>
-            <CropModalHint>Клікніть по фото, щоб обрати центр обрізання. Якщо центр не обрано, фото буде обрізано автоматично по центру.</CropModalHint>
-            <CropPreview onClick={handleCropPreviewClick}>
-              {cropPreviewUrl && <CropPreviewImage src={cropPreviewUrl} alt="Попередній перегляд обрізання" />}
-              <CropCenterMarker $x={cropCenter.x} $y={cropCenter.y} />
+            <CropModalHint>Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.</CropModalHint>
+            <CropPreview
+              onPointerDown={handleCropPreviewPointerDown}
+              onPointerMove={handleCropPreviewPointerMove}
+              onPointerUp={handleCropPreviewPointerUp}
+              onPointerCancel={handleCropPreviewPointerUp}
+            >
+              {cropPreviewUrl && (
+                <CropPreviewImage
+                  src={cropPreviewUrl}
+                  alt="Попередній перегляд обрізання"
+                  $displayWidth={cropDisplay.displayWidth || cropFrameSize.width}
+                  $displayHeight={cropDisplay.displayHeight || cropFrameSize.height}
+                  $offsetX={boundedCropOffset.x}
+                  $offsetY={boundedCropOffset.y}
+                  onLoad={handleCropImageLoad}
+                />
+              )}
+              <CropFocusFrame ref={cropFrameRef} $aspectRatio={safeCropAspectRatio} />
+              <CropGrid $aspectRatio={safeCropAspectRatio} />
             </CropPreview>
+            <CropZoomRow>
+              Масштаб
+              <CropZoomInput
+                type="range"
+                min="1"
+                max="3"
+                step="0.01"
+                value={cropZoom}
+                onChange={handleCropZoomChange}
+              />
+            </CropZoomRow>
             <CropActions>
               <CropButton type="button" onClick={cancelCrop}>Скасувати</CropButton>
               <CropButton type="button" $primary onClick={confirmCurrentCrop}>
