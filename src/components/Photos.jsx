@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 import {
   deletePhotos,
@@ -126,6 +127,7 @@ const HiddenFileInput = styled.input`
 
 
 const PHOTO_CROP_SIZE = 1200;
+const MIN_CROP_ZOOM = 0.6;
 const DEFAULT_CROP_ZOOM = 1;
 const DEFAULT_CROP_OFFSET = { x: 0, y: 0 };
 const DEFAULT_CROP_ASPECT_RATIO = 1;
@@ -137,11 +139,13 @@ const CropModalOverlay = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 2147483000;
   padding: 16px;
 `;
 
 const CropModalCard = styled.div`
+  position: relative;
+  z-index: 1;
   width: min(92vw, 520px);
   background: #fff;
   border-radius: 14px;
@@ -187,6 +191,19 @@ const CropPreviewImage = styled.img`
   display: block;
   max-width: none;
   transform: ${({ $offsetX, $offsetY }) => `translate(calc(-50% + ${$offsetX}px), calc(-50% + ${$offsetY}px))`};
+  transform-origin: center;
+  pointer-events: none;
+`;
+
+const CropPreviewBlurImage = styled.img`
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: blur(18px);
+  transform: scale(1.08);
   transform-origin: center;
   pointer-events: none;
 `;
@@ -307,25 +324,35 @@ const cropPhotoToStandardRatio = async (file, cropSettings) => {
     aspectRatio = DEFAULT_CROP_ASPECT_RATIO,
   } = cropSettings || {};
   const safeAspectRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : DEFAULT_CROP_ASPECT_RATIO;
-  const { displayWidth, displayHeight, scale } = resolveCropDisplay({
+  const { displayWidth, displayHeight } = resolveCropDisplay({
     sourceWidth,
     sourceHeight,
     frameWidth,
     frameHeight,
-    zoom: Math.max(zoom, DEFAULT_CROP_ZOOM),
+    zoom: Math.max(zoom, MIN_CROP_ZOOM),
   });
   const boundedOffset = getBoundedCropOffset({ offset, displayWidth, displayHeight, frameWidth, frameHeight });
-  const sourceX = clamp(((displayWidth - frameWidth) / 2 - boundedOffset.x) / scale, 0, sourceWidth);
-  const sourceY = clamp(((displayHeight - frameHeight) / 2 - boundedOffset.y) / scale, 0, sourceHeight);
-  const cropWidth = clamp(frameWidth / scale, 1, sourceWidth - sourceX);
-  const cropHeight = clamp(frameHeight / scale, 1, sourceHeight - sourceY);
-  const outputWidth = Math.round(Math.min(PHOTO_CROP_SIZE, Math.max(1, cropWidth)));
+  const outputWidth = PHOTO_CROP_SIZE;
   const outputHeight = Math.round(outputWidth / safeAspectRatio);
   const canvas = document.createElement('canvas');
   canvas.width = outputWidth;
   canvas.height = outputHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+  const backgroundScale = Math.max(outputWidth / sourceWidth, outputHeight / sourceHeight) * 1.12;
+  const backgroundWidth = sourceWidth * backgroundScale;
+  const backgroundHeight = sourceHeight * backgroundScale;
+  const backgroundX = (outputWidth - backgroundWidth) / 2;
+  const backgroundY = (outputHeight - backgroundHeight) / 2;
+  ctx.save();
+  ctx.filter = 'blur(32px)';
+  ctx.drawImage(image, backgroundX, backgroundY, backgroundWidth, backgroundHeight);
+  ctx.restore();
+
+  const mainWidth = (displayWidth / frameWidth) * outputWidth;
+  const mainHeight = (displayHeight / frameHeight) * outputHeight;
+  const mainX = (outputWidth - mainWidth) / 2 + (boundedOffset.x / frameWidth) * outputWidth;
+  const mainY = (outputHeight - mainHeight) / 2 + (boundedOffset.y / frameHeight) * outputHeight;
+  ctx.drawImage(image, mainX, mainY, mainWidth, mainHeight);
   const blob = await canvasToBlob(canvas);
   if (!blob) return file;
   return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg') || 'profile-photo.jpg', {
@@ -701,6 +728,59 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
     </UploadButtonWrapper>
   );
 
+  const cropModal = pendingCropFile ? (
+    <CropModalOverlay onClick={cancelCrop}>
+      <CropModalCard onClick={event => event.stopPropagation()}>
+        <CropModalTitle>Обрізати фото до стандартного розміру</CropModalTitle>
+        <CropModalHint>Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.</CropModalHint>
+        <CropPreview
+          onPointerDown={handleCropPreviewPointerDown}
+          onPointerMove={handleCropPreviewPointerMove}
+          onPointerUp={handleCropPreviewPointerUp}
+          onPointerCancel={handleCropPreviewPointerUp}
+        >
+          {cropPreviewUrl && (
+            <>
+              <CropPreviewBlurImage
+                src={cropPreviewUrl}
+                alt=""
+                aria-hidden="true"
+              />
+              <CropPreviewImage
+                src={cropPreviewUrl}
+                alt="Попередній перегляд обрізання"
+                $displayWidth={cropDisplay.displayWidth || cropFrameSize.width}
+                $displayHeight={cropDisplay.displayHeight || cropFrameSize.height}
+                $offsetX={boundedCropOffset.x}
+                $offsetY={boundedCropOffset.y}
+                onLoad={handleCropImageLoad}
+              />
+            </>
+          )}
+          <CropFocusFrame ref={cropFrameRef} $aspectRatio={safeCropAspectRatio} />
+          <CropGrid $aspectRatio={safeCropAspectRatio} />
+        </CropPreview>
+        <CropZoomRow>
+          Масштаб
+          <CropZoomInput
+            type="range"
+            min={MIN_CROP_ZOOM}
+            max="3"
+            step="0.01"
+            value={cropZoom}
+            onChange={handleCropZoomChange}
+          />
+        </CropZoomRow>
+        <CropActions>
+          <CropButton type="button" onClick={cancelCrop}>Скасувати</CropButton>
+          <CropButton type="button" $primary onClick={confirmCurrentCrop}>
+            {pendingCropFiles.length > 1 ? 'Зберегти й наступне' : 'Зберегти'}
+          </CropButton>
+        </CropActions>
+      </CropModalCard>
+    </CropModalOverlay>
+  ) : null;
+
   return (
     <Container $compact={compact}>
       <PhotosWrapper $compact={compact}>
@@ -734,51 +814,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
         <NoPhotosText>Додайте свої фото, максимум {maxPhotos} шт</NoPhotosText>
       )}
       {!compact && uploadButton}
-      {pendingCropFile && (
-        <CropModalOverlay onClick={cancelCrop}>
-          <CropModalCard onClick={event => event.stopPropagation()}>
-            <CropModalTitle>Обрізати фото до стандартного розміру</CropModalTitle>
-            <CropModalHint>Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.</CropModalHint>
-            <CropPreview
-              onPointerDown={handleCropPreviewPointerDown}
-              onPointerMove={handleCropPreviewPointerMove}
-              onPointerUp={handleCropPreviewPointerUp}
-              onPointerCancel={handleCropPreviewPointerUp}
-            >
-              {cropPreviewUrl && (
-                <CropPreviewImage
-                  src={cropPreviewUrl}
-                  alt="Попередній перегляд обрізання"
-                  $displayWidth={cropDisplay.displayWidth || cropFrameSize.width}
-                  $displayHeight={cropDisplay.displayHeight || cropFrameSize.height}
-                  $offsetX={boundedCropOffset.x}
-                  $offsetY={boundedCropOffset.y}
-                  onLoad={handleCropImageLoad}
-                />
-              )}
-              <CropFocusFrame ref={cropFrameRef} $aspectRatio={safeCropAspectRatio} />
-              <CropGrid $aspectRatio={safeCropAspectRatio} />
-            </CropPreview>
-            <CropZoomRow>
-              Масштаб
-              <CropZoomInput
-                type="range"
-                min="1"
-                max="3"
-                step="0.01"
-                value={cropZoom}
-                onChange={handleCropZoomChange}
-              />
-            </CropZoomRow>
-            <CropActions>
-              <CropButton type="button" onClick={cancelCrop}>Скасувати</CropButton>
-              <CropButton type="button" $primary onClick={confirmCurrentCrop}>
-                {pendingCropFiles.length > 1 ? 'Зберегти й наступне' : 'Зберегти'}
-              </CropButton>
-            </CropActions>
-          </CropModalCard>
-        </CropModalOverlay>
-      )}
+      {cropModal && typeof document !== 'undefined' ? createPortal(cropModal, document.body) : cropModal}
       {viewerIndex !== null && (
         <PhotoViewer
           photos={state.photos}
