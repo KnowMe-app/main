@@ -159,10 +159,13 @@ const secondaryActionsStyle = {
 const compactTopActionButtonStyle = {
   ...zoneActionButtonStyle,
   display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   width: '30px',
   height: '30px',
   minHeight: '30px',
   flex: '0 0 30px',
+  padding: 0,
 };
 
 const compactReactionButtonStyle = {
@@ -710,9 +713,11 @@ const profilePdfStyles = StyleSheet.create({
   },
   watermark: {
     position: 'absolute',
-    left: 78,
-    top: 310,
-    fontSize: 102,
+    left: 52,
+    top: 330,
+    width: 520,
+    textAlign: 'center',
+    fontSize: 106,
     color: '#dbeafa',
     opacity: 0.72,
     transform: 'rotate(-42deg)',
@@ -747,8 +752,10 @@ const profilePdfStyles = StyleSheet.create({
   },
   imageWatermark: {
     position: 'absolute',
-    left: 102,
+    left: 52,
     top: 430,
+    width: 520,
+    textAlign: 'center',
     fontSize: 86,
     color: '#dbeafa',
     opacity: 0.72,
@@ -770,19 +777,49 @@ const pdfFooter = (
   </View>
 );
 
-const resolvePdfValue = (data, keys) => {
+const CYRILLIC_TO_LATIN = {
+  а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i',
+  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts',
+  ч: 'ch', ш: 'sh', щ: 'shch', ь: '', ю: 'iu', я: 'ia', ы: 'y', э: 'e', ё: 'io', ъ: '',
+};
+
+const PDF_VALUE_TRANSLATIONS = new Map([
+  ['так', 'yes'], ['да', 'yes'], ['yes', 'yes'], ['true', 'yes'], ['+', 'yes'],
+  ['ні', 'no'], ['нет', 'no'], ['no', 'no'], ['false', 'no'], ['-', 'no'], ['0', 'no'],
+  ['немає', 'none'], ['відсутні', 'none'], ['відсутня', 'none'], ['не має', 'none'], ['none', 'none'],
+  ['неодружена', 'not married'], ['незаміжня', 'not married'], ['не заміжня', 'not married'], ['не одружена', 'not married'],
+  ['одружена', 'married'], ['заміжня', 'married'], ['європейська', 'European'], ['європеєць', 'European'],
+  ['україна', 'Ukraine'], ['українка', 'Ukrainian'], ['українець', 'Ukrainian'], ['українська', 'Ukrainian'], ['українське', 'Ukrainian'],
+  ['середня освіта', 'secondary education'], ['середня', 'secondary education'], ['вища освіта', 'higher education'], ['вища', 'higher education'],
+  ['здоровий', 'healthy'], ['здорова', 'healthy'], ['здорова/ий', 'healthy'], ['касир', 'cashier'], ['продавець', 'retail cashier'],
+]);
+
+const transliterateForPdf = value => String(value || '').replace(/[А-Яа-яЁёЄєІіЇїҐґ]/g, char => {
+  const lower = char.toLowerCase();
+  const transliterated = CYRILLIC_TO_LATIN[lower] ?? char;
+  return char === lower ? transliterated : transliterated.charAt(0).toUpperCase() + transliterated.slice(1);
+});
+
+const toPdfEnglishValue = value => {
+  const normalized = normalizeDisplayValue(value);
+  if (!normalized) return '';
+  const translated = PDF_VALUE_TRANSLATIONS.get(normalized.trim().toLowerCase());
+  return translated || transliterateForPdf(normalized);
+};
+
+const resolvePdfValue = (data, keys, { translate = true } = {}) => {
   const normalizedKeys = Array.isArray(keys) ? keys : [keys];
   for (const key of normalizedKeys) {
     const value = normalizeDisplayValue(data?.[key]);
-    if (value) return value;
+    if (value) return translate ? toPdfEnglishValue(value) : value;
   }
   return '';
 };
 
 const resolvePdfAge = data => {
-  const explicitAge = resolvePdfValue(data, ['age']);
+  const explicitAge = resolvePdfValue(data, ['age'], { translate: false });
   if (explicitAge) return explicitAge;
-  const birth = resolvePdfValue(data, ['birth', 'birthDate', 'dateOfBirth']);
+  const birth = resolvePdfValue(data, ['birth', 'birthDate', 'dateOfBirth'], { translate: false });
   const calculatedAge = utilCalculateAge(birth);
   return calculatedAge || '';
 };
@@ -798,8 +835,8 @@ const normalizePdfYesNo = value => {
   if (!normalized) return '';
   const lowered = normalized.toLowerCase();
   if (['yes', 'true', 'так', 'да', '+'].includes(lowered)) return 'yes';
-  if (['no', 'false', 'ні', 'нет', 'не було', 'none'].includes(lowered)) return 'no';
-  return normalized;
+  if (['no', 'false', 'ні', 'нет', 'не було', 'none', 'немає', 'відсутні'].includes(lowered)) return 'no';
+  return toPdfEnglishValue(normalized);
 };
 
 const resolvePdfYesNoValue = (data, keys) => {
@@ -809,6 +846,12 @@ const resolvePdfYesNoValue = (data, keys) => {
     if (value) return value;
   }
   return '';
+};
+
+const resolvePdfMetric = (data, keys, unit) => {
+  const value = resolvePdfValue(data, keys, { translate: false });
+  if (!value) return '';
+  return new RegExp(`\\b${unit}\\b`, 'i').test(value) ? value : `${value} ${unit}`;
 };
 
 const resolvePdfCombinedValue = (data, entries) => {
@@ -824,36 +867,57 @@ const resolvePdfCombinedValue = (data, entries) => {
 const resolvePdfHarmfulHabits = data => {
   const summary = resolvePdfValue(data, ['harmfulHabits', 'badHabits']);
   if (summary) return summary;
+
+  const smoking = normalizePdfYesNo(data?.smoking);
+  const alcohol = normalizePdfYesNo(data?.alcohol);
+  if (!smoking && !alcohol) return 'no';
+  if ([smoking, alcohol].filter(Boolean).every(value => value === 'no')) return 'no';
+
   return resolvePdfCombinedValue(data, [
     ['Smoking', ['smoking']],
     ['Alcohol', ['alcohol']],
   ]);
 };
 
-const resolvePdfMedicalDetails = data => {
-  const summary = resolvePdfValue(data, ['healthCondition', 'health', 'medicalCondition']);
-  const details = resolvePdfCombinedValue(data, [
-    ['Surgeries', ['surgeries']],
-    ['Chronic diseases', ['chronicDiseases']],
-    ['Allergy', ['allergy', 'allergies']],
-  ]);
-  return [summary, details].filter(Boolean).join('; ');
+const resolvePdfGeneralHealth = data => {
+  const chronicDiseases = normalizePdfYesNo(data?.chronicDiseases);
+  if (chronicDiseases === 'no') return 'healthy';
+  if (chronicDiseases === 'yes') return 'has chronic diseases';
+  return chronicDiseases;
+};
+
+const resolvePdfMaritalStatus = data => {
+  const value = resolvePdfValue(data, ['maritalStatus']);
+  if (value === 'no') return 'not married';
+  if (value === 'yes') return 'married';
+  return value;
+};
+
+const resolvePdfBloodType = data => {
+  const value = resolvePdfValue(data, ['blood', 'bloodType'], { translate: false }).replace(/\s+/g, '');
+  if (!value) return '';
+  const match = value.match(/^([1-4])([+-])?$/);
+  if (match) {
+    const groupMap = { 1: 'O', 2: 'A', 3: 'B', 4: 'AB' };
+    return `${groupMap[match[1]]}${match[2] ? ` Rh${match[2] === '-' ? '−' : '+'}` : ''}`;
+  }
+  return toPdfEnglishValue(value).replace(/Rh-/g, 'Rh−');
 };
 
 const buildProfilePdfRows = data => ([
-  ['Name', buildName(data)],
+  ['Name', toPdfEnglishValue(buildName(data))],
   ['Age', resolvePdfAge(data)],
   ['Profession', resolvePdfValue(data, ['profession', 'specialization'])],
   ['Education', resolvePdfValue(data, ['education'])],
-  ['Marital status', resolvePdfValue(data, ['maritalStatus'])],
-  ['Children', resolvePdfValue(data, ['ownKids', 'children', 'kids'])],
+  ['Marital status', resolvePdfMaritalStatus(data)],
+  ['Number of pregnancies', resolvePdfValue(data, ['ownKids'], { translate: false })],
   ['Ethnic group', resolvePdfValue(data, ['race', 'ethnicGroup', 'ethnicity'])],
-  ['Health condition', resolvePdfMedicalDetails(data)],
-  ['Weight', resolvePdfValue(data, ['weight'])],
-  ['Height', resolvePdfValue(data, ['height'])],
-  ['Blood type', resolvePdfValue(data, ['blood', 'bloodType'])],
+  ['General health', resolvePdfGeneralHealth(data)],
+  ['Weight', resolvePdfMetric(data, ['weight'], 'kg')],
+  ['Height', resolvePdfMetric(data, ['height'], 'cm')],
+  ['Blood type', resolvePdfBloodType(data)],
   ['Harmful habits', resolvePdfHarmfulHabits(data)],
-  ['Nationality', resolvePdfValue(data, ['nationality', 'citizenship', 'country'])],
+  ['Nationality', 'Ukrainian'],
   ['Experience in surrogacy', resolvePdfYesNoValue(data, ['surrogacyExperience', 'experienceInSurrogacy'])],
   ['Cesarean section', resolvePdfYesNoValue(data, ['csection', 'cSection', 'c_section', 'cesareanSection'])],
 ]).filter(([, value]) => value);
@@ -907,7 +971,21 @@ const pdfExportButtonStyle = {
   textDecoration: 'none',
 };
 
-const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
+const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) => {
+  const existingPhotos = Array.isArray(photoUrls) ? photoUrls : [];
+  if (existingPhotos.length > 0 || !cardData?.userId || !photosCollection) return existingPhotos;
+
+  const loadedPhotos = await getAllUserPhotos(cardData.userId, photosCollection);
+  return Array.from(new Set(
+    filterOutMedicationPhotos(loadedPhotos, cardData.userId)
+      .map(convertDriveLinkToImage)
+      .filter(Boolean)
+  ));
+};
+
+const isSurrogateMotherRole = data => String(data?.userRole || data?.role || '').trim().toLowerCase() === 'sm';
+
+const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleExport = async event => {
@@ -917,7 +995,8 @@ const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
     setIsGenerating(true);
     try {
       const fileName = buildProfilePdfFileName(cardData);
-      const blob = await pdf(<ProfilePdfDocument userData={cardData} photoUrls={photoUrls} />).toBlob();
+      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
+      const blob = await pdf(<ProfilePdfDocument userData={cardData} photoUrls={effectivePhotoUrls} />).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -1687,7 +1766,13 @@ export const TopBlock = ({
               backgroundColor: 'green',
               color: '#fff',
             })}
-          <ProfilePdfExportButton cardData={cardData} photoUrls={userPhotoUrls} />
+          {isSurrogateMotherRole(cardData) && (
+            <ProfilePdfExportButton
+              cardData={cardData}
+              photoUrls={userPhotoUrls}
+              photosCollection={photosCollection}
+            />
+          )}
           {additionalActions}
           {stimulationScheduleToggleButton}
           <button

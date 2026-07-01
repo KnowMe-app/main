@@ -212,6 +212,7 @@ export const pickerFields = [
   { name: 'allergy', label: 'Алергії', ukrainian: 'Алергії', placeholder: 'пеніцилін', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'surgeries', label: 'Перенесені операції', ukrainian: 'Перенесені операції', placeholder: 'апендицит у 2021', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'chronicDiseases', label: 'Хронічні захворювання', ukrainian: 'Хронічні захворювання', placeholder: 'відсутні', svg: 'no', width: '33%', options: yesNoOptions },
+  { name: 'surrogacyExperience', label: 'Досвід у сурогатному материнстві', ukrainian: 'Досвід у сурогатному материнстві', placeholder: 'Так / Ні', svg: 'no', width: '33%', options: yesNoOptions },
 
   // фізичні
   { name: 'maritalStatus', label: 'Чи перебуваєте в офіційному шлюбі', ukrainian: 'Чи перебуваєте в офіційному шлюбі', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
