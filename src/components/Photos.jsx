@@ -472,7 +472,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
           if (filteredUrls.length > 0) {
             const currentPhotos = normalizePhotosArray(state.photos);
             const hasLocalPreviewPhotos = currentPhotos.some(url => typeof url === 'string' && url.startsWith('blob:'));
-            if (isUploadingPhotos || hasLocalPreviewPhotos || currentPhotos.length > filteredUrls.length) {
+            if (isUploadingPhotos || hasLocalPreviewPhotos) {
               return;
             }
             const sanitizedCurrent = filterOutMedicationPhotos(currentPhotos, state.userId);
