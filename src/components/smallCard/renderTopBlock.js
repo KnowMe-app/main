@@ -1,4 +1,13 @@
 import React from 'react';
+import {
+  Document,
+  Image,
+  Page,
+  PDFDownloadLink,
+  StyleSheet,
+  Text,
+  View,
+} from '@react-pdf/renderer';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
 import { btnEdit } from './btnEdit';
@@ -15,10 +24,12 @@ import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
 import Photos from '../Photos';
 import { compactDateButtonStyle } from './compactDateRowStyles';
+import { utilCalculateAge } from './utilCalculateAge';
 import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
+import { normalizeDisplayValue } from '../profileLayoutConfig';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { getCurrentValue } from '../getCurrentValue';
@@ -516,7 +527,7 @@ const normalizeCurrentPhoto = value => {
   return photo ? [photo] : [];
 };
 
-const getUserPhotoUrl = data => {
+const getUserProfilePhotoUrls = data => {
   const photos = [
     ...normalizePhotoList([data?.photos, data?.photoUrls, data?.avatarUrls]),
     ...[
@@ -530,7 +541,7 @@ const getUserPhotoUrl = data => {
       data?.picture,
     ].flatMap(normalizeCurrentPhoto),
   ].map(convertDriveLinkToImage);
-  return filterOutMedicationPhotos(photos, data?.userId)[0] || '';
+  return Array.from(new Set(filterOutMedicationPhotos(photos, data?.userId).filter(Boolean)));
 };
 
 const hasAgentOrIPRole = data =>
@@ -664,6 +675,207 @@ const extractMultiDataComments = cardData => {
 
   return normalized.filter(comment => comment.text);
 };
+
+const profilePdfStyles = StyleSheet.create({
+  page: {
+    position: 'relative',
+    paddingTop: 78,
+    paddingHorizontal: 88,
+    paddingBottom: 74,
+    fontFamily: 'Helvetica',
+    color: '#111',
+    backgroundColor: '#fff',
+  },
+  title: {
+    marginBottom: 38,
+    textAlign: 'center',
+    fontSize: 20,
+    lineHeight: 1.25,
+  },
+  profileRows: {
+    fontSize: 17,
+    lineHeight: 1.35,
+  },
+  profileRow: {
+    marginBottom: 1,
+  },
+  watermark: {
+    position: 'absolute',
+    left: 78,
+    top: 310,
+    fontSize: 102,
+    color: '#dbeafa',
+    opacity: 0.72,
+    transform: 'rotate(-42deg)',
+  },
+  footer: {
+    position: 'absolute',
+    left: 88,
+    right: 88,
+    bottom: 32,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    color: '#777',
+    fontSize: 7,
+    lineHeight: 1.2,
+  },
+  footerRight: {
+    textAlign: 'right',
+  },
+  imagePage: {
+    position: 'relative',
+    paddingTop: 78,
+    paddingHorizontal: 70,
+    paddingBottom: 74,
+    fontFamily: 'Helvetica',
+    backgroundColor: '#fff',
+  },
+  profileImage: {
+    width: 455,
+    maxHeight: 620,
+    objectFit: 'contain',
+    alignSelf: 'center',
+  },
+  imageWatermark: {
+    position: 'absolute',
+    left: 102,
+    top: 430,
+    fontSize: 86,
+    color: '#dbeafa',
+    opacity: 0.72,
+    transform: 'rotate(-42deg)',
+  },
+});
+
+const pdfFooter = (
+  <View style={profilePdfStyles.footer} fixed>
+    <Text>
+      REPRODUCTIVE AGENCY "UKRCOM"{'\n'}
+      31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine
+    </Text>
+    <Text style={profilePdfStyles.footerRight}>
+      Website: http://ukrcom.hol.es/{'\n'}
+      E-mail: sm.kiev.ukr@gmail.com{'\n'}
+      Telegram: @Contact_Us_Kyiv
+    </Text>
+  </View>
+);
+
+const resolvePdfValue = (data, keys) => {
+  const normalizedKeys = Array.isArray(keys) ? keys : [keys];
+  for (const key of normalizedKeys) {
+    const value = normalizeDisplayValue(data?.[key]);
+    if (value) return value;
+  }
+  return '';
+};
+
+const resolvePdfAge = data => {
+  const explicitAge = resolvePdfValue(data, ['age']);
+  if (explicitAge) return explicitAge;
+  const birth = resolvePdfValue(data, ['birth', 'birthDate', 'dateOfBirth']);
+  const calculatedAge = utilCalculateAge(birth);
+  return calculatedAge || '';
+};
+
+const normalizePdfYesNo = value => {
+  const normalized = normalizeDisplayValue(value);
+  if (!normalized) return '';
+  const lowered = normalized.toLowerCase();
+  if (['yes', 'true', 'так', 'да', '+'].includes(lowered)) return 'yes';
+  if (['no', 'false', 'ні', 'нет', '-', '0', 'не було', 'none'].includes(lowered)) return 'no';
+  return normalized;
+};
+
+const buildProfilePdfRows = data => ([
+  ['Name', buildName(data)],
+  ['Age', resolvePdfAge(data)],
+  ['Profession', resolvePdfValue(data, ['profession', 'specialization'])],
+  ['Education', resolvePdfValue(data, ['education'])],
+  ['Marital status', resolvePdfValue(data, ['maritalStatus'])],
+  ['Children', resolvePdfValue(data, ['ownKids', 'children', 'kids'])],
+  ['Ethnic group', resolvePdfValue(data, ['race', 'ethnicGroup', 'ethnicity'])],
+  ['Health condition', resolvePdfValue(data, ['healthCondition', 'health', 'medicalCondition'])],
+  ['Weight', resolvePdfValue(data, ['weight'])],
+  ['Height', resolvePdfValue(data, ['height'])],
+  ['Blood type', resolvePdfValue(data, ['blood', 'bloodType'])],
+  ['Harmful habits', resolvePdfValue(data, ['harmfulHabits', 'badHabits', 'smoking', 'alcohol'])],
+  ['Nationality', resolvePdfValue(data, ['nationality', 'citizenship', 'country'])],
+  ['Experience in surrogacy', normalizePdfYesNo(resolvePdfValue(data, ['surrogacyExperience', 'experienceInSurrogacy', 'experience']))],
+  ['Cesarean section', normalizePdfYesNo(resolvePdfValue(data, ['csection', 'cSection', 'c_section', 'cesareanSection']))],
+]).filter(([, value]) => value);
+
+const buildProfilePdfFileName = data => {
+  const name = buildName(data) || data?.userId || 'profile';
+  const safeName = name
+    .toString()
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 80);
+  return `${safeName || 'profile'}-UKRCOM.pdf`;
+};
+
+const ProfilePdfDocument = ({ userData, photoUrls }) => {
+  const rows = buildProfilePdfRows(userData);
+  const photos = Array.isArray(photoUrls) ? photoUrls : [];
+
+  return (
+    <Document title={`${buildName(userData) || 'Profile'} - UKRCOM`}>
+      <Page size="A4" style={profilePdfStyles.page}>
+        <Text style={profilePdfStyles.watermark}>UKRCOM</Text>
+        <Text style={profilePdfStyles.title}>
+          Surrogacy mother’s{'\n'}profile
+        </Text>
+        <View style={profilePdfStyles.profileRows}>
+          {rows.map(([label, value]) => (
+            <Text key={label} style={profilePdfStyles.profileRow}>
+              {label}: {value}
+            </Text>
+          ))}
+        </View>
+        {pdfFooter}
+      </Page>
+      {photos.map((photoUrl, index) => (
+        <Page key={`${photoUrl}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
+          <Image src={photoUrl} style={profilePdfStyles.profileImage} />
+          <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
+          {pdfFooter}
+        </Page>
+      ))}
+    </Document>
+  );
+};
+
+const pdfExportButtonStyle = {
+  ...compactTopActionButtonStyle,
+  backgroundColor: '#455a64',
+  color: '#fff',
+  textDecoration: 'none',
+};
+
+const renderProfilePdfExportButton = (cardData, photoUrls) => (
+  <PDFDownloadLink
+    document={<ProfilePdfDocument userData={cardData} photoUrls={photoUrls} />}
+    fileName={buildProfilePdfFileName(cardData)}
+    style={pdfExportButtonStyle}
+    title="Експорт профілю в PDF"
+    aria-label="Експорт профілю в PDF"
+    onClick={event => event.stopPropagation()}
+  >
+    {({ loading }) => (
+      loading ? (
+        <span style={{ fontSize: '10px', fontWeight: 700 }}>...</span>
+      ) : (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 3h7l4 4v14H7V3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M14 3v5h4" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M9 13h6M9 16h6M9 19h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      )
+    )}
+  </PDFDownloadLink>
+);
 
 export const TopBlock = ({
   userData,
@@ -806,7 +1018,8 @@ export const TopBlock = ({
 
   if (!cardData) return null;
 
-  const userPhotoUrl = getUserPhotoUrl(cardData);
+  const userPhotoUrls = getUserProfilePhotoUrls(cardData);
+  const userPhotoUrl = userPhotoUrls[0] || '';
   const photosCollection = resolvedPhotosCollection;
   const setCardPhotosState = updater => {
     const resolveNextCard = currentCard => {
@@ -1342,6 +1555,7 @@ export const TopBlock = ({
               backgroundColor: 'green',
               color: '#fff',
             })}
+          {renderProfilePdfExportButton(cardData, userPhotoUrls)}
           {additionalActions}
           {stimulationScheduleToggleButton}
           <button
