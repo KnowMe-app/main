@@ -271,8 +271,8 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
 
 
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
-  const { disableCompression = false, maxSizeKB = 50 } = options;
-  const file = disableCompression
+  const { disableCompression = false, maxSizeKB = 1024 } = options;
+  const file = disableCompression || photo.size <= maxSizeKB * 1024
     ? photo
     : await getFileBlob(await compressPhoto(photo, maxSizeKB));
 
@@ -309,32 +309,21 @@ const compressPhoto = (file, maxSizeKB) => {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
+        const maxSizeBytes = maxSizeKB * 1024;
 
-        // Задаємо зменшені розміри canvas, зберігаючи пропорції
-        let width = img.width;
-        let height = img.height;
+        canvas.width = img.width;
+        canvas.height = img.height;
 
-        // Якщо зображення більше 1000px по ширині, зменшуємо до 1000px
-        const MAX_WIDTH = 1000;
-        if (width > MAX_WIDTH) {
-          height *= MAX_WIDTH / width;
-          width = MAX_WIDTH;
-        }
+        // Не зменшуємо роздільну здатність: заливаємо оригінальні пікселі,
+        // а для файлів понад ліміт поступово знижуємо лише JPEG-якість.
+        ctx.drawImage(img, 0, 0, img.width, img.height);
 
-        canvas.width = width;
-        canvas.height = height;
-
-        // Малюємо зображення на canvas з новими розмірами
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Спробуємо спочатку стиснути з якістю 0.6
-        let quality = 0.6;
+        let quality = 0.92;
         let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
         let compressedFile = dataURLToFile(compressedDataUrl);
 
-        // Перевірка розміру файлу після стиснення і зниження якості поступово
-        while (compressedFile.size > maxSizeKB * 1024 && quality > 0.1) {
-          quality -= 0.1; // Зменшуємо якість
+        while (compressedFile.size > maxSizeBytes && quality > 0.1) {
+          quality = Math.max(quality - 0.07, 0.1);
           compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
           compressedFile = dataURLToFile(compressedDataUrl);
         }
