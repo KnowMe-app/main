@@ -365,6 +365,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
   const [viewerIndex, setViewerIndex] = useState(null);
   const [pendingCropFiles, setPendingCropFiles] = useState([]);
   const [croppedPendingFiles, setCroppedPendingFiles] = useState([]);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [cropPreviewUrl, setCropPreviewUrl] = useState('');
   const [cropOffset, setCropOffset] = useState(DEFAULT_CROP_OFFSET);
   const [cropZoom, setCropZoom] = useState(DEFAULT_CROP_ZOOM);
@@ -470,6 +471,10 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
           const filteredUrls = filterOutMedicationPhotos(urls, state.userId);
           if (filteredUrls.length > 0) {
             const currentPhotos = normalizePhotosArray(state.photos);
+            const hasLocalPreviewPhotos = currentPhotos.some(url => typeof url === 'string' && url.startsWith('blob:'));
+            if (isUploadingPhotos || hasLocalPreviewPhotos || currentPhotos.length > filteredUrls.length) {
+              return;
+            }
             const sanitizedCurrent = filterOutMedicationPhotos(currentPhotos, state.userId);
             if (!arraysEqual(filteredUrls, sanitizedCurrent)) {
               commitPhotosUpdate(filteredUrls);
@@ -515,7 +520,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, photoValues, setState, collection]);
+  }, [state.userId, photoValues, setState, collection, isUploadingPhotos]);
 
   const savePhotoList = async updatedPhotos => {
     if (collection === 'newUsers') {
@@ -568,6 +573,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
 
   const uploadPreparedPhotos = async files => {
     const currentPhotos = Array.isArray(state.photos) ? state.photos : [];
+    setIsUploadingPhotos(true);
     const previewUrls = files.map(file => URL.createObjectURL(file));
     commitPhotosUpdate([...currentPhotos, ...previewUrls]);
 
@@ -583,6 +589,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
       console.error('Error uploading photos:', error);
     } finally {
       previewUrls.forEach(url => URL.revokeObjectURL(url));
+      setIsUploadingPhotos(false);
     }
   };
 
