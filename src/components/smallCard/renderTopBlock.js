@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Document,
   Image,
@@ -404,7 +405,7 @@ const inlineModalOverlayStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  zIndex: 3000,
+  zIndex: 2147482990,
   padding: '16px',
 };
 
@@ -1894,50 +1895,56 @@ export const TopBlock = ({
           </div>
         ))}
       </div>
-      {isPhotosModalOpen && (
-        <div
-          style={inlineModalOverlayStyle}
-          onClick={event => {
-            event.stopPropagation();
-            setIsPhotosModalOpen(false);
-          }}
-        >
+      {isPhotosModalOpen && (() => {
+        const photosModalContent = (
           <div
-            style={photosModalCardStyle}
-            onClick={event => event.stopPropagation()}
+            style={inlineModalOverlayStyle}
+            onClick={event => {
+              event.stopPropagation();
+              setIsPhotosModalOpen(false);
+            }}
           >
-            <div style={photosModalHeaderStyle}>
-              <div>
-                <h3 style={photosModalTitleStyle}>Фото профілю</h3>
-                <p style={photosModalSubtitleStyle}>
-                  {buildName(cardData) || cardData.userId || 'Користувач'}
-                  {photosCollection ? ` · ${photosCollection}` : ' · визначаємо джерело фото…'}
-                </p>
+            <div
+              style={photosModalCardStyle}
+              onClick={event => event.stopPropagation()}
+            >
+              <div style={photosModalHeaderStyle}>
+                <div>
+                  <h3 style={photosModalTitleStyle}>Фото профілю</h3>
+                  <p style={photosModalSubtitleStyle}>
+                    {buildName(cardData) || cardData.userId || 'Користувач'}
+                    {photosCollection ? ` · ${photosCollection}` : ' · визначаємо джерело фото…'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  style={photosModalCloseButtonStyle}
+                  onClick={() => setIsPhotosModalOpen(false)}
+                  aria-label="Закрити фото"
+                  title="Закрити"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                type="button"
-                style={photosModalCloseButtonStyle}
-                onClick={() => setIsPhotosModalOpen(false)}
-                aria-label="Закрити фото"
-                title="Закрити"
-              >
-                ×
-              </button>
+              {photosCollection ? (
+                <Photos
+                  state={cardData}
+                  setState={setCardPhotosState}
+                  collection={photosCollection}
+                  uploadInputId={`file-upload-${cardData.userId || 'card'}`}
+                  cropAspectRatio={2 / 3}
+                />
+              ) : (
+                <p style={photosModalSubtitleStyle}>Визначаємо джерело фото перед збереженням…</p>
+              )}
             </div>
-            {photosCollection ? (
-              <Photos
-                state={cardData}
-                setState={setCardPhotosState}
-                collection={photosCollection}
-                uploadInputId={`file-upload-${cardData.userId || 'card'}`}
-                cropAspectRatio={3 / 4}
-              />
-            ) : (
-              <p style={photosModalSubtitleStyle}>Визначаємо джерело фото перед збереженням…</p>
-            )}
           </div>
-        </div>
-      )}
+        );
+
+        return typeof document !== 'undefined'
+          ? createPortal(photosModalContent, document.body)
+          : photosModalContent;
+      })()}
       {isCommentModalOpen && (
         <div
           style={inlineModalOverlayStyle}
