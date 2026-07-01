@@ -168,7 +168,7 @@ const CropModalHint = styled.p`
 const CropPreview = styled.div`
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: ${({ $aspectRatio }) => $aspectRatio || DEFAULT_CROP_ASPECT_RATIO};
   overflow: hidden;
   border-radius: 12px;
   background: #f3f4f6;
@@ -741,6 +741,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
         <CropModalTitle>Обрізати фото до стандартного розміру</CropModalTitle>
         <CropModalHint>Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.</CropModalHint>
         <CropPreview
+          $aspectRatio={safeCropAspectRatio}
           onPointerDown={handleCropPreviewPointerDown}
           onPointerMove={handleCropPreviewPointerMove}
           onPointerUp={handleCropPreviewPointerUp}
