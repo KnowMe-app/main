@@ -63,10 +63,12 @@ const topBlockContainerStyle = {
   isolation: 'isolate',
 };
 
+const topBlockAvatarRadius = '10px';
+
 const topBlockPhotoStyle = {
-  width: '44px',
-  height: '44px',
-  borderRadius: '50%',
+  width: '100%',
+  height: '100%',
+  borderRadius: topBlockAvatarRadius,
   objectFit: 'cover',
   display: 'block',
 };
@@ -78,9 +80,9 @@ const topBlockAvatarButtonStyle = {
   transform: 'translateY(-50%)',
   width: '48px',
   height: '48px',
-  borderRadius: '50%',
-  padding: '2px',
-  border: '2px solid rgba(255, 255, 255, 0.9)',
+  borderRadius: topBlockAvatarRadius,
+  padding: 0,
+  border: 'none',
   boxShadow: '0 4px 12px rgba(17, 24, 39, 0.28)',
   background: 'rgba(255, 255, 255, 0.9)',
   color: '#e8791a',
@@ -95,9 +97,9 @@ const topBlockAvatarButtonStyle = {
 const emptyAvatarStyle = {
   width: '100%',
   height: '100%',
-  borderRadius: '50%',
+  borderRadius: topBlockAvatarRadius,
   background: 'linear-gradient(145deg, #fffdf9 0%, #fff1e2 100%)',
-  border: '2px dashed #f5a24b',
+  border: 'none',
   boxShadow: 'inset 0 0 0 4px #fff8f0',
   display: 'flex',
   alignItems: 'center',
