@@ -62,7 +62,7 @@ The repository deploys to GitHub Pages from the `main` branch using `.github/wor
 The workflow:
 
 1. checks out the repository;
-2. installs Node.js 16;
+2. installs Node.js 20;
 3. creates `.env` from GitHub Actions secrets;
 4. installs dependencies;
 5. runs `npm run lint:js` and `npm run build`;
