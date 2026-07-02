@@ -2857,8 +2857,13 @@ export const getUserStorageAvatarPhotos = async userId => {
 
   try {
     const folderRef = ref(storage, `avatar/${userId}`);
-    const list = await listAll(folderRef);
-    const settledUrls = await Promise.allSettled(list.items.map(item => getDownloadURL(item)));
+    const collectStorageItems = async currentFolderRef => {
+      const list = await listAll(currentFolderRef);
+      const nestedItems = await Promise.all(list.prefixes.map(prefix => collectStorageItems(prefix)));
+      return [...list.items, ...nestedItems.flat()];
+    };
+    const items = await collectStorageItems(folderRef);
+    const settledUrls = await Promise.allSettled(items.map(item => getDownloadURL(item)));
     return settledUrls
       .flatMap(result => {
         if (result.status === 'fulfilled') return [result.value];
