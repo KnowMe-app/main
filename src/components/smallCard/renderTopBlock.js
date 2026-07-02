@@ -802,10 +802,22 @@ const profilePdfStyles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 1.25,
   },
+  debugContent: {
+    position: 'relative',
+    zIndex: 2,
+  },
   debugText: {
-    fontSize: 8,
+    fontSize: 9,
     lineHeight: 1.35,
-    marginBottom: 3,
+    marginBottom: 4,
+    color: '#111',
+  },
+  photoCaption: {
+    marginTop: 8,
+    fontSize: 8,
+    lineHeight: 1.3,
+    color: '#444',
+    textAlign: 'center',
   },
 });
 
@@ -982,6 +994,9 @@ const buildProfilePdfFileName = data => {
 const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
   const rows = buildProfilePdfRows(userData);
   const photos = Array.isArray(photoUrls) ? photoUrls : [];
+  const photoEntries = photos.map(photo => (
+    photo && typeof photo === 'object' ? photo : { src: photo, debug: '' }
+  )).filter(photo => photo?.src);
   const pdfDebugLines = Array.isArray(debugLines) ? debugLines.filter(Boolean) : [];
 
   return (
@@ -1001,17 +1016,20 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
         {pdfFooter}
       </Page>
       <Page size="A4" style={profilePdfStyles.debugPage}>
-        <Text style={profilePdfStyles.debugTitle}>PDF photo export debug</Text>
-        {pdfDebugLines.length ? pdfDebugLines.map((line, index) => (
-          <Text key={`pdf-debug-${index}`} style={profilePdfStyles.debugText}>{line}</Text>
-        )) : (
-          <Text style={profilePdfStyles.debugText}>No debug details were collected.</Text>
-        )}
+        <View style={profilePdfStyles.debugContent}>
+          <Text style={profilePdfStyles.debugTitle}>PDF photo export debug</Text>
+          {pdfDebugLines.length ? pdfDebugLines.map((line, index) => (
+            <Text key={`pdf-debug-${index}`} style={profilePdfStyles.debugText}>{line}</Text>
+          )) : (
+            <Text style={profilePdfStyles.debugText}>No debug details were collected.</Text>
+          )}
+        </View>
         {pdfFooter}
       </Page>
-      {photos.map((photoUrl, index) => (
-        <Page key={`${photoUrl}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
-          <Image src={photoUrl} style={profilePdfStyles.profileImage} />
+      {photoEntries.map((photo, index) => (
+        <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
+          <Image src={photo.src} style={profilePdfStyles.profileImage} />
+          {photo.debug ? <Text style={profilePdfStyles.photoCaption}>{photo.debug}</Text> : null}
           <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
           {pdfFooter}
         </Page>
@@ -1028,24 +1046,30 @@ const pdfExportButtonStyle = {
 };
 
 const PDF_DEBUG_URL_SAMPLE_SIZE = 3;
-const PDF_DEBUG_URL_MAX_LENGTH = 220;
+const PDF_DEBUG_URL_MAX_LENGTH = 180;
+const PDF_DEBUG_LINE_MAX_LENGTH = 260;
 
 const truncatePdfDebugValue = value => {
   const text = String(value || '');
   return text.length > PDF_DEBUG_URL_MAX_LENGTH ? `${text.slice(0, PDF_DEBUG_URL_MAX_LENGTH)}...` : text;
 };
 
+const formatPdfDebugLine = value => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > PDF_DEBUG_LINE_MAX_LENGTH ? `${text.slice(0, PDF_DEBUG_LINE_MAX_LENGTH)}...` : text;
+};
+
 const pushPdfDebugLine = (debugLines, message, payload) => {
   if (!Array.isArray(debugLines)) return;
   if (payload === undefined) {
-    debugLines.push(message);
+    debugLines.push(formatPdfDebugLine(message));
     return;
   }
 
   try {
-    debugLines.push(`${message}: ${JSON.stringify(payload)}`);
+    debugLines.push(formatPdfDebugLine(`${message}: ${JSON.stringify(payload)}`));
   } catch (error) {
-    debugLines.push(`${message}: ${String(payload)}`);
+    debugLines.push(formatPdfDebugLine(`${message}: ${String(payload)}`));
   }
 };
 
@@ -1119,10 +1143,10 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
-const loadPdfEmbeddedImage = async (photoUrl, debugLines) => {
+const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
   if (!photoUrl) {
     pushPdfDebugLine(debugLines, 'Skipped empty photo URL before embedding');
-    return '';
+    return { src: '', debug: `Photo ${index + 1}: empty URL` };
   }
 
   const debugUrl = truncatePdfDebugValue(photoUrl);
@@ -1147,20 +1171,25 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines) => {
       size: blob.size || 0,
     });
     const dataUrl = await readBlobAsDataUrl(blob);
+    const isImageDataUrl = dataUrl.startsWith('data:image/');
     pushPdfDebugLine(debugLines, 'Embedding photo: data URL created', {
       url: debugUrl,
       length: dataUrl.length,
-      isImageDataUrl: dataUrl.startsWith('data:image/'),
+      isImageDataUrl,
     });
-    return dataUrl;
+    if (!isImageDataUrl) {
+      pushPdfDebugLine(debugLines, 'Embedding photo: data URL is not an image, using original URL fallback', debugUrl);
+      return { src: photoUrl, debug: `Photo ${index + 1}: original URL fallback; fetched blob was not image data` };
+    }
+    return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
   } catch (error) {
     console.error('Unable to load PDF photo', photoUrl, error);
-    pushPdfDebugLine(debugLines, 'Embedding photo failed', {
+    pushPdfDebugLine(debugLines, 'Embedding photo failed; using original URL fallback', {
       url: debugUrl,
       name: error?.name || null,
       message: error?.message || String(error),
     });
-    return '';
+    return { src: photoUrl, debug: `Photo ${index + 1}: original URL fallback after fetch error (${error?.message || String(error)})` };
   }
 };
 
@@ -1184,15 +1213,22 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
       });
       const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection, debugLines });
       pushPdfDebugLine(debugLines, 'Effective photo URLs before embedding', summarizePdfDebugUrls(effectivePhotoUrls));
-      const embeddedPhotoUrls = await Promise.all(effectivePhotoUrls.map(photoUrl => loadPdfEmbeddedImage(photoUrl, debugLines)));
-      const printablePhotoUrls = embeddedPhotoUrls.filter(Boolean);
+      const embeddedPhotoEntries = await Promise.all(
+        effectivePhotoUrls.map((photoUrl, index) => loadPdfEmbeddedImage(photoUrl, debugLines, index))
+      );
+      const printablePhotoEntries = embeddedPhotoEntries.filter(entry => entry?.src);
       pushPdfDebugLine(debugLines, 'Embedded photo summary', {
         attempted: effectivePhotoUrls.length,
-        embedded: printablePhotoUrls.length,
-        failed: effectivePhotoUrls.length - printablePhotoUrls.length,
+        printable: printablePhotoEntries.length,
+        dataUrls: printablePhotoEntries.filter(entry => String(entry.src).startsWith('data:image/')).length,
+        originalUrlFallbacks: printablePhotoEntries.filter(entry => !String(entry.src).startsWith('data:image/')).length,
+        failedWithoutFallback: effectivePhotoUrls.length - printablePhotoEntries.length,
       });
+      if (!printablePhotoEntries.length) {
+        pushPdfDebugLine(debugLines, 'No printable photo entries; PDF will contain debug page only after questionnaire');
+      }
       const blob = await pdf(
-        <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoUrls} debugLines={debugLines} />
+        <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoEntries} debugLines={debugLines} />
       ).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
