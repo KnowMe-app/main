@@ -420,26 +420,6 @@ export const ActionBadge = styled.span`
   box-sizing: border-box;
 `;
 
-export const MatchingModeLabel = styled.span`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 31px;
-  padding: 3px 10px;
-  border: 1px solid var(--matching-section-border, rgba(255, 255, 255, 0.14));
-  border-radius: 999px;
-  background: var(--matching-section-bg, rgba(255, 255, 255, 0.82));
-  color: var(--matching-muted-text, #6B7280);
-  box-shadow: var(--matching-section-shadow, 0 8px 18px rgba(22, 22, 22, 0.08));
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-  flex: 0 0 auto;
-`;
-
-
-
-
 export const ThemeToggleButton = styled.button`
   position: relative;
   flex: 0 0 auto;
