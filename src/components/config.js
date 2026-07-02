@@ -2852,34 +2852,47 @@ const getPhotoSourceCollections = collectionSource => (
     : ['newUsers', 'users']
 );
 
-export const getAllUserPhotos = async (userId, collectionSource = null) => {
+export const getUserStorageAvatarPhotos = async userId => {
   if (!userId) return [];
 
   try {
     const folderRef = ref(storage, `avatar/${userId}`);
     const list = await listAll(folderRef);
-    const storageUrls = await Promise.all(list.items.map(item => getDownloadURL(item)));
-    const sourceCollections = getPhotoSourceCollections(collectionSource);
-    const snapshots = await Promise.allSettled(
-      sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)))
-    );
-    const databaseUrls = snapshots.flatMap((result, index) => {
-      if (result.status === 'rejected') {
-        console.error(`Error loading user photos from ${sourceCollections[index]}:`, result.reason);
+    const settledUrls = await Promise.allSettled(list.items.map(item => getDownloadURL(item)));
+    return settledUrls
+      .flatMap(result => {
+        if (result.status === 'fulfilled') return [result.value];
+        console.error('Error loading user photo from Storage:', result.reason);
         return [];
-      }
-      const snapshot = result.value;
-      return snapshot.exists() ? normalizePhotoValues(snapshot.val()?.photos) : [];
-    });
-    const urls = [...storageUrls, ...databaseUrls]
-      .map(convertDriveLinkToImage)
+      })
       .filter(Boolean);
-
-    return Array.from(new Set(filterOutMedicationPhotos(urls, userId)));
   } catch (error) {
-    console.error('Error listing user photos:', error);
+    console.error('Error listing user photos from Storage:', error);
     return [];
   }
+};
+
+export const getAllUserPhotos = async (userId, collectionSource = null, { includeStorage = true } = {}) => {
+  if (!userId) return [];
+
+  const storageUrls = includeStorage ? await getUserStorageAvatarPhotos(userId) : [];
+  const sourceCollections = getPhotoSourceCollections(collectionSource);
+  const snapshots = await Promise.allSettled(
+    sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)))
+  );
+  const databaseUrls = snapshots.flatMap((result, index) => {
+    if (result.status === 'rejected') {
+      console.error(`Error loading user photos from ${sourceCollections[index]}:`, result.reason);
+      return [];
+    }
+    const snapshot = result.value;
+    return snapshot.exists() ? normalizePhotoValues(snapshot.val()?.photos) : [];
+  });
+  const urls = [...storageUrls, ...databaseUrls]
+    .map(convertDriveLinkToImage)
+    .filter(Boolean);
+
+  return Array.from(new Set(filterOutMedicationPhotos(urls, userId)));
 };
 
 export const getMedicationPhotos = async userId => {
