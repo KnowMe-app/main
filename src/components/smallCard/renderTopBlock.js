@@ -1220,15 +1220,18 @@ export const TopBlock = ({
     };
   }, [cardData, isFromListOfUsers, isPhotosModalOpen, setState, setUsers]);
 
+  const photosCollection = resolvedPhotosCollection;
+  const effectivePhotosCollection = selectedPhotosCollection || photosCollection;
+
   React.useEffect(() => {
-    if (!cardData?.userId || userPhotoUrls.length > 0 || !resolvedPhotosCollection) {
+    if (!cardData?.userId || userPhotoUrls.length > 0 || !effectivePhotosCollection) {
       return undefined;
     }
 
     let isMounted = true;
     const hydrateTopBlockPhotos = async () => {
       try {
-        const urls = await getAllUserPhotos(cardData.userId, resolvedPhotosCollection);
+        const urls = await getAllUserPhotos(cardData.userId, effectivePhotosCollection);
         if (!isMounted) return;
         const filteredUrls = filterOutMedicationPhotos(urls, cardData.userId);
         if (!filteredUrls.length) return;
@@ -1271,12 +1274,10 @@ export const TopBlock = ({
     return () => {
       isMounted = false;
     };
-  }, [cardData, isFromListOfUsers, resolvedPhotosCollection, setState, setUsers, userPhotoUrls.length]);
+  }, [cardData, effectivePhotosCollection, isFromListOfUsers, setState, setUsers, userPhotoUrls.length]);
 
   if (!cardData) return null;
 
-  const photosCollection = resolvedPhotosCollection;
-  const effectivePhotosCollection = selectedPhotosCollection || photosCollection;
   const setCardPhotosState = updater => {
     const resolveNextCard = currentCard => {
       const baseCard = currentCard || cardData;
