@@ -452,6 +452,30 @@ const photosModalSubtitleStyle = {
   lineHeight: 1.35,
 };
 
+const photosCollectionToggleStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '4px',
+  padding: '3px',
+  marginTop: '8px',
+  borderRadius: '999px',
+  background: 'rgba(245, 162, 75, 0.12)',
+  border: '1px solid rgba(245, 162, 75, 0.22)',
+};
+
+const getPhotosCollectionToggleButtonStyle = isActive => ({
+  border: 'none',
+  borderRadius: '999px',
+  padding: '5px 10px',
+  background: isActive ? '#e8791a' : 'transparent',
+  color: isActive ? '#fff' : '#7a4b23',
+  cursor: 'pointer',
+  fontSize: '12px',
+  fontWeight: 700,
+  lineHeight: 1,
+  boxShadow: isActive ? '0 3px 8px rgba(232, 121, 26, 0.28)' : 'none',
+});
+
 const photosModalCloseButtonStyle = {
   width: '34px',
   height: '34px',
@@ -1066,6 +1090,8 @@ export const TopBlock = ({
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
   const [resolvedPhotosCollection, setResolvedPhotosCollection] = React.useState(null);
+  const [selectedPhotosCollection, setSelectedPhotosCollection] = React.useState(null);
+  const syncedPhotosCollectionRef = React.useRef({ userId: null, sourceCollection: undefined });
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
     if (!userData) return null;
@@ -1121,6 +1147,17 @@ export const TopBlock = ({
   React.useEffect(() => {
     const sourceCollection = resolveUserPhotoCollection(cardData);
     setResolvedPhotosCollection(sourceCollection);
+    const syncedPhotosCollection = syncedPhotosCollectionRef.current;
+    const shouldSyncSelectedCollection =
+      syncedPhotosCollection.userId !== cardData?.userId ||
+      syncedPhotosCollection.sourceCollection !== sourceCollection;
+    if (shouldSyncSelectedCollection) {
+      setSelectedPhotosCollection(sourceCollection || null);
+      syncedPhotosCollectionRef.current = {
+        userId: cardData?.userId || null,
+        sourceCollection,
+      };
+    }
 
     if (sourceCollection || !cardData?.userId) {
       return undefined;
@@ -1139,6 +1176,7 @@ export const TopBlock = ({
         }
 
         setResolvedPhotosCollection(freshCollection);
+        setSelectedPhotosCollection(freshCollection);
         if (typeof setState === 'function' && !isFromListOfUsers) {
           setState(prev => {
             const currentCard = prev && typeof prev === 'object' ? prev : cardData;
@@ -1234,6 +1272,7 @@ export const TopBlock = ({
   if (!cardData) return null;
 
   const photosCollection = resolvedPhotosCollection;
+  const effectivePhotosCollection = selectedPhotosCollection || photosCollection;
   const setCardPhotosState = updater => {
     const resolveNextCard = currentCard => {
       const baseCard = currentCard || cardData;
@@ -1898,6 +1937,7 @@ export const TopBlock = ({
         ))}
       </div>
       {isPhotosModalOpen && (() => {
+        const collectionOptions = ['users', 'newUsers'];
         const photosModalContent = (
           <div
             style={inlineModalOverlayStyle}
@@ -1915,8 +1955,25 @@ export const TopBlock = ({
                   <h3 style={photosModalTitleStyle}>Фото профілю</h3>
                   <p style={photosModalSubtitleStyle}>
                     {buildName(cardData) || cardData.userId || 'Користувач'}
-                    {photosCollection ? ` · ${photosCollection}` : ' · визначаємо джерело фото…'}
+                    {effectivePhotosCollection ? ` · ${effectivePhotosCollection}` : ' · визначаємо джерело фото…'}
                   </p>
+                  <div
+                    style={photosCollectionToggleStyle}
+                    role="group"
+                    aria-label="Вибір колекції фото"
+                  >
+                    {collectionOptions.map(collection => (
+                      <button
+                        key={collection}
+                        type="button"
+                        style={getPhotosCollectionToggleButtonStyle(effectivePhotosCollection === collection)}
+                        onClick={() => setSelectedPhotosCollection(collection)}
+                        aria-pressed={effectivePhotosCollection === collection}
+                      >
+                        {collection}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1928,11 +1985,11 @@ export const TopBlock = ({
                   ×
                 </button>
               </div>
-              {photosCollection ? (
+              {effectivePhotosCollection === 'users' || effectivePhotosCollection === 'newUsers' ? (
                 <Photos
                   state={cardData}
                   setState={setCardPhotosState}
-                  collection={photosCollection}
+                  collection={selectedPhotosCollection || photosCollection}
                   uploadInputId={`file-upload-${cardData.userId || 'card'}`}
                   cropAspectRatio={2 / 3}
                 />
