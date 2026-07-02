@@ -71,7 +71,6 @@ import {
   ModernSectionTitle,
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
-  MatchingModeLabel,
   MatchingSearchStatusMessage,
 } from './Matching.styled';
 import {
@@ -3713,13 +3712,6 @@ const Matching = () => {
 
   const loadDislikeCards = () => switchMatchingMode('dislikes');
 
-  const matchingModeLabel = {
-    default: 'Загальний список',
-    favorites: 'Обране',
-    dislikes: 'Дизлайки',
-    search: 'Пошук',
-  }[viewMode] || 'Matching';
-
   const handleDislikeModeClick = () => {
     if (viewMode === 'dislikes') {
       reloadDefault();
@@ -5785,7 +5777,6 @@ const Matching = () => {
                   <FaHeart />
                 </ActionButton>
               </TopActionGroup>
-              <MatchingModeLabel aria-live="polite">{matchingModeLabel}</MatchingModeLabel>
               <TopActionGroup aria-label="Налаштування matching">
                 <ThemeToggleButton
                   type="button"
