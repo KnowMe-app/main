@@ -787,6 +787,26 @@ const profilePdfStyles = StyleSheet.create({
     opacity: 0.72,
     transform: 'rotate(-42deg)',
   },
+  debugPage: {
+    position: 'relative',
+    paddingTop: 54,
+    paddingHorizontal: 56,
+    paddingBottom: 74,
+    fontFamily: 'NotoSans',
+    color: '#111',
+    backgroundColor: '#fff',
+  },
+  debugTitle: {
+    marginBottom: 14,
+    textAlign: 'center',
+    fontSize: 16,
+    lineHeight: 1.25,
+  },
+  debugText: {
+    fontSize: 8,
+    lineHeight: 1.35,
+    marginBottom: 3,
+  },
 });
 
 const pdfFooter = (
@@ -959,9 +979,10 @@ const buildProfilePdfFileName = data => {
   return `${safeName || 'profile'}-UKRCOM.pdf`;
 };
 
-const ProfilePdfDocument = ({ userData, photoUrls }) => {
+const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
   const rows = buildProfilePdfRows(userData);
   const photos = Array.isArray(photoUrls) ? photoUrls : [];
+  const pdfDebugLines = Array.isArray(debugLines) ? debugLines.filter(Boolean) : [];
 
   return (
     <Document title={`${buildName(userData) || 'Profile'} - UKRCOM`}>
@@ -977,6 +998,15 @@ const ProfilePdfDocument = ({ userData, photoUrls }) => {
             </Text>
           ))}
         </View>
+        {pdfFooter}
+      </Page>
+      <Page size="A4" style={profilePdfStyles.debugPage}>
+        <Text style={profilePdfStyles.debugTitle}>PDF photo export debug</Text>
+        {pdfDebugLines.length ? pdfDebugLines.map((line, index) => (
+          <Text key={`pdf-debug-${index}`} style={profilePdfStyles.debugText}>{line}</Text>
+        )) : (
+          <Text style={profilePdfStyles.debugText}>No debug details were collected.</Text>
+        )}
         {pdfFooter}
       </Page>
       {photos.map((photoUrl, index) => (
@@ -997,20 +1027,89 @@ const pdfExportButtonStyle = {
   textDecoration: 'none',
 };
 
-const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) => {
+const PDF_DEBUG_URL_SAMPLE_SIZE = 3;
+const PDF_DEBUG_URL_MAX_LENGTH = 220;
+
+const truncatePdfDebugValue = value => {
+  const text = String(value || '');
+  return text.length > PDF_DEBUG_URL_MAX_LENGTH ? `${text.slice(0, PDF_DEBUG_URL_MAX_LENGTH)}...` : text;
+};
+
+const pushPdfDebugLine = (debugLines, message, payload) => {
+  if (!Array.isArray(debugLines)) return;
+  if (payload === undefined) {
+    debugLines.push(message);
+    return;
+  }
+
+  try {
+    debugLines.push(`${message}: ${JSON.stringify(payload)}`);
+  } catch (error) {
+    debugLines.push(`${message}: ${String(payload)}`);
+  }
+};
+
+const summarizePdfDebugUrls = urls => {
+  const normalizedUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
+  return {
+    count: normalizedUrls.length,
+    sample: normalizedUrls.slice(0, PDF_DEBUG_URL_SAMPLE_SIZE).map(truncatePdfDebugValue),
+  };
+};
+
+const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debugLines }) => {
   const existingPhotos = Array.isArray(photoUrls) ? photoUrls : [];
-  if (!cardData?.userId) return existingPhotos;
+  pushPdfDebugLine(debugLines, 'PDF photo resolve started', {
+    userId: cardData?.userId || null,
+    passedPhotosCollection: photosCollection || null,
+    existingPhotos: summarizePdfDebugUrls(existingPhotos),
+  });
+
+  if (!cardData?.userId) {
+    pushPdfDebugLine(debugLines, 'No userId on cardData; using only existing photos', summarizePdfDebugUrls(existingPhotos));
+    return existingPhotos;
+  }
 
   const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
-  const [storagePhotos, loadedPhotos] = await Promise.all([
-    getUserStorageAvatarPhotos(cardData.userId),
-    getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false }),
-  ]);
-  return Array.from(new Set(
-    filterOutMedicationPhotos([...existingPhotos, ...storagePhotos, ...loadedPhotos], cardData.userId)
-      .map(convertDriveLinkToImage)
-      .filter(Boolean)
-  ));
+  pushPdfDebugLine(debugLines, 'Resolved photo source collection', {
+    sourceCollection: sourceCollection || null,
+    cardSourceCollection: cardData?.__sourceCollection || null,
+    userRole: cardData?.userRole || cardData?.role || null,
+  });
+
+  let storagePhotos = [];
+  let loadedPhotos = [];
+  try {
+    [storagePhotos, loadedPhotos] = await Promise.all([
+      getUserStorageAvatarPhotos(cardData.userId),
+      getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false }),
+    ]);
+  } catch (error) {
+    pushPdfDebugLine(debugLines, 'Error while loading photo URLs', {
+      name: error?.name || null,
+      message: error?.message || String(error),
+    });
+    throw error;
+  }
+
+  pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId}', summarizePdfDebugUrls(storagePhotos));
+  pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
+
+  const combinedPhotos = [...existingPhotos, ...storagePhotos, ...loadedPhotos];
+  const filteredPhotos = filterOutMedicationPhotos(combinedPhotos, cardData.userId);
+  const convertedPhotos = filteredPhotos.map(convertDriveLinkToImage).filter(Boolean);
+  const uniquePhotos = Array.from(new Set(convertedPhotos));
+
+  pushPdfDebugLine(debugLines, 'Combined photos before medication filter', summarizePdfDebugUrls(combinedPhotos));
+  pushPdfDebugLine(debugLines, 'Photos after medication filter', summarizePdfDebugUrls(filteredPhotos));
+  pushPdfDebugLine(debugLines, 'Photos after convertDriveLinkToImage/filter(Boolean)', summarizePdfDebugUrls(convertedPhotos));
+  pushPdfDebugLine(debugLines, 'Final unique photo URLs for PDF embedding', summarizePdfDebugUrls(uniquePhotos));
+
+  if (!uniquePhotos.length) {
+    pushPdfDebugLine(debugLines, 'No photo URLs remained for PDF embedding');
+  }
+
+  return uniquePhotos;
 };
 
 const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
@@ -1020,18 +1119,47 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
-const loadPdfEmbeddedImage = async photoUrl => {
-  if (!photoUrl) return '';
+const loadPdfEmbeddedImage = async (photoUrl, debugLines) => {
+  if (!photoUrl) {
+    pushPdfDebugLine(debugLines, 'Skipped empty photo URL before embedding');
+    return '';
+  }
+
+  const debugUrl = truncatePdfDebugValue(photoUrl);
+  pushPdfDebugLine(debugLines, 'Embedding photo: fetch started', debugUrl);
 
   try {
     const response = await fetch(photoUrl);
+    pushPdfDebugLine(debugLines, 'Embedding photo: fetch response', {
+      url: debugUrl,
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers?.get?.('content-type') || null,
+    });
     if (!response.ok) {
       throw new Error(`Photo request failed with status ${response.status}`);
     }
     const blob = await response.blob();
-    return readBlobAsDataUrl(blob);
+    pushPdfDebugLine(debugLines, 'Embedding photo: blob loaded', {
+      url: debugUrl,
+      type: blob.type || null,
+      size: blob.size || 0,
+    });
+    const dataUrl = await readBlobAsDataUrl(blob);
+    pushPdfDebugLine(debugLines, 'Embedding photo: data URL created', {
+      url: debugUrl,
+      length: dataUrl.length,
+      isImageDataUrl: dataUrl.startsWith('data:image/'),
+    });
+    return dataUrl;
   } catch (error) {
     console.error('Unable to load PDF photo', photoUrl, error);
+    pushPdfDebugLine(debugLines, 'Embedding photo failed', {
+      url: debugUrl,
+      name: error?.name || null,
+      message: error?.message || String(error),
+    });
     return '';
   }
 };
@@ -1048,10 +1176,23 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
     setIsGenerating(true);
     try {
       const fileName = buildProfilePdfFileName(cardData);
-      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
-      const embeddedPhotoUrls = await Promise.all(effectivePhotoUrls.map(loadPdfEmbeddedImage));
+      const debugLines = [];
+      pushPdfDebugLine(debugLines, 'PDF export started', {
+        userId: cardData?.userId || null,
+        fileName,
+        generatedAt: new Date().toISOString(),
+      });
+      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection, debugLines });
+      pushPdfDebugLine(debugLines, 'Effective photo URLs before embedding', summarizePdfDebugUrls(effectivePhotoUrls));
+      const embeddedPhotoUrls = await Promise.all(effectivePhotoUrls.map(photoUrl => loadPdfEmbeddedImage(photoUrl, debugLines)));
+      const printablePhotoUrls = embeddedPhotoUrls.filter(Boolean);
+      pushPdfDebugLine(debugLines, 'Embedded photo summary', {
+        attempted: effectivePhotoUrls.length,
+        embedded: printablePhotoUrls.length,
+        failed: effectivePhotoUrls.length - printablePhotoUrls.length,
+      });
       const blob = await pdf(
-        <ProfilePdfDocument userData={cardData} photoUrls={embeddedPhotoUrls.filter(Boolean)} />
+        <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoUrls} debugLines={debugLines} />
       ).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
