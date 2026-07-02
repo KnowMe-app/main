@@ -23,6 +23,7 @@ import {
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
+import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
 import { getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
@@ -2836,12 +2837,38 @@ export const deletePhotos = async (userId, photoUrls = []) => {
   );
 };
 
-export const getAllUserPhotos = async userId => {
+const normalizePhotoValues = value => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(normalizePhotoValues);
+  if (typeof value === 'object') return Object.values(value).flatMap(normalizePhotoValues);
+  if (typeof value !== 'string') return [];
+  const photo = value.trim();
+  return photo ? [photo] : [];
+};
+
+const getPhotoSourceCollections = collectionSource => (
+  collectionSource === 'users' || collectionSource === 'newUsers'
+    ? [collectionSource]
+    : ['newUsers', 'users']
+);
+
+export const getAllUserPhotos = async (userId, collectionSource = null) => {
+  if (!userId) return [];
+
   try {
     const folderRef = ref(storage, `avatar/${userId}`);
     const list = await listAll(folderRef);
-    const urls = await Promise.all(list.items.map(item => getDownloadURL(item)));
-    return filterOutMedicationPhotos(urls, userId);
+    const storageUrls = await Promise.all(list.items.map(item => getDownloadURL(item)));
+    const sourceCollections = getPhotoSourceCollections(collectionSource);
+    const snapshots = await Promise.all(
+      sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)).then(snapshot => snapshot.exists() ? snapshot.val() : null))
+    );
+    const databaseUrls = snapshots.flatMap(userData => normalizePhotoValues(userData?.photos));
+    const urls = [...storageUrls, ...databaseUrls]
+      .map(convertDriveLinkToImage)
+      .filter(Boolean);
+
+    return Array.from(new Set(filterOutMedicationPhotos(urls, userId)));
   } catch (error) {
     console.error('Error listing user photos:', error);
     return [];
@@ -6552,7 +6579,7 @@ export const fetchUserById = async userId => {
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {
-      const photos = await getAllUserPhotos(userId);
+      const photos = await getAllUserPhotos(userId, 'newUsers');
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
       if (userSnapshotInUsers.exists()) {
         return {
@@ -6574,7 +6601,7 @@ export const fetchUserById = async userId => {
     // Пошук у users, якщо не знайдено в newUsers
     const userSnapshot = await get(userRefInUsers);
     if (userSnapshot.exists()) {
-      const photos = await getAllUserPhotos(userId);
+      const photos = await getAllUserPhotos(userId, 'users');
       console.log('Знайдено користувача у users: ', userSnapshot.val());
       return {
         userId,

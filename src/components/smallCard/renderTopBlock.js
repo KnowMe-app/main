@@ -972,11 +972,12 @@ const pdfExportButtonStyle = {
   textDecoration: 'none',
 };
 
-const resolvePdfPhotoUrls = async ({ cardData, photoUrls }) => {
+const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) => {
   const existingPhotos = Array.isArray(photoUrls) ? photoUrls : [];
   if (existingPhotos.length > 0 || !cardData?.userId) return existingPhotos;
 
-  const loadedPhotos = await getAllUserPhotos(cardData.userId);
+  const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
+  const loadedPhotos = await getAllUserPhotos(cardData.userId, sourceCollection);
   return Array.from(new Set(
     filterOutMedicationPhotos(loadedPhotos, cardData.userId)
       .map(convertDriveLinkToImage)
@@ -986,7 +987,7 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls }) => {
 
 const isSurrogateMotherRole = data => String(data?.userRole || data?.role || '').trim().toLowerCase() === 'sm';
 
-const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
+const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleExport = async event => {
@@ -996,7 +997,7 @@ const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
     setIsGenerating(true);
     try {
       const fileName = buildProfilePdfFileName(cardData);
-      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls });
+      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
       const blob = await pdf(<ProfilePdfDocument userData={cardData} photoUrls={effectivePhotoUrls} />).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1771,6 +1772,7 @@ export const TopBlock = ({
             <ProfilePdfExportButton
               cardData={cardData}
               photoUrls={userPhotoUrls}
+              photosCollection={photosCollection}
             />
           )}
           {additionalActions}
