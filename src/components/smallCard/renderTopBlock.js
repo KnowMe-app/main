@@ -38,6 +38,7 @@ import { getCurrentValue } from '../getCurrentValue';
 import {
   fetchUserById,
   getAllUserPhotos,
+  getUserStorageAvatarPhotos,
   setUserComment as persistUserComment,
   fetchAllCommentsByCardId,
   updateCommentByOwner,
@@ -1001,9 +1002,12 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) =>
   if (!cardData?.userId) return existingPhotos;
 
   const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
-  const loadedPhotos = await getAllUserPhotos(cardData.userId, sourceCollection);
+  const [storagePhotos, loadedPhotos] = await Promise.all([
+    getUserStorageAvatarPhotos(cardData.userId),
+    getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false }),
+  ]);
   return Array.from(new Set(
-    filterOutMedicationPhotos([...existingPhotos, ...loadedPhotos], cardData.userId)
+    filterOutMedicationPhotos([...existingPhotos, ...storagePhotos, ...loadedPhotos], cardData.userId)
       .map(convertDriveLinkToImage)
       .filter(Boolean)
   ));
