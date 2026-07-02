@@ -1013,6 +1013,29 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) =>
   ));
 };
 
+const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+const loadPdfEmbeddedImage = async photoUrl => {
+  if (!photoUrl) return '';
+
+  try {
+    const response = await fetch(photoUrl);
+    if (!response.ok) {
+      throw new Error(`Photo request failed with status ${response.status}`);
+    }
+    const blob = await response.blob();
+    return readBlobAsDataUrl(blob);
+  } catch (error) {
+    console.error('Unable to load PDF photo', photoUrl, error);
+    return '';
+  }
+};
+
 const isSurrogateMotherRole = data => String(data?.userRole || data?.role || '').trim().toLowerCase() === 'sm';
 
 const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
@@ -1026,7 +1049,10 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
     try {
       const fileName = buildProfilePdfFileName(cardData);
       const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
-      const blob = await pdf(<ProfilePdfDocument userData={cardData} photoUrls={effectivePhotoUrls} />).toBlob();
+      const embeddedPhotoUrls = await Promise.all(effectivePhotoUrls.map(loadPdfEmbeddedImage));
+      const blob = await pdf(
+        <ProfilePdfDocument userData={cardData} photoUrls={embeddedPhotoUrls.filter(Boolean)} />
+      ).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
