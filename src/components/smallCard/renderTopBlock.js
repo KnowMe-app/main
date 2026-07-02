@@ -974,12 +974,12 @@ const pdfExportButtonStyle = {
 
 const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) => {
   const existingPhotos = Array.isArray(photoUrls) ? photoUrls : [];
-  if (existingPhotos.length > 0 || !cardData?.userId) return existingPhotos;
+  if (!cardData?.userId) return existingPhotos;
 
   const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
   const loadedPhotos = await getAllUserPhotos(cardData.userId, sourceCollection);
   return Array.from(new Set(
-    filterOutMedicationPhotos(loadedPhotos, cardData.userId)
+    filterOutMedicationPhotos([...existingPhotos, ...loadedPhotos], cardData.userId)
       .map(convertDriveLinkToImage)
       .filter(Boolean)
   ));

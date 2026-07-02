@@ -1772,7 +1772,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
   }
 };
 
-export const lazyLoadProfilePhotos = async userId => getAllUserPhotos(userId);
+export const lazyLoadProfilePhotos = async (userId, collectionSource = null) => getAllUserPhotos(userId, collectionSource);
 
 const addUserFromUsers = async (userId, users) => {
   const userSnap = await get(ref2(database, `users/${userId}`));
@@ -2860,10 +2860,17 @@ export const getAllUserPhotos = async (userId, collectionSource = null) => {
     const list = await listAll(folderRef);
     const storageUrls = await Promise.all(list.items.map(item => getDownloadURL(item)));
     const sourceCollections = getPhotoSourceCollections(collectionSource);
-    const snapshots = await Promise.all(
-      sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)).then(snapshot => snapshot.exists() ? snapshot.val() : null))
+    const snapshots = await Promise.allSettled(
+      sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)))
     );
-    const databaseUrls = snapshots.flatMap(userData => normalizePhotoValues(userData?.photos));
+    const databaseUrls = snapshots.flatMap((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`Error loading user photos from ${sourceCollections[index]}:`, result.reason);
+        return [];
+      }
+      const snapshot = result.value;
+      return snapshot.exists() ? normalizePhotoValues(snapshot.val()?.photos) : [];
+    });
     const urls = [...storageUrls, ...databaseUrls]
       .map(convertDriveLinkToImage)
       .filter(Boolean);
@@ -6579,8 +6586,11 @@ export const fetchUserById = async userId => {
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {
-      const photos = await getAllUserPhotos(userId, 'newUsers');
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
+      const photos = await getAllUserPhotos(
+        userId,
+        userSnapshotInUsers.exists() ? null : 'newUsers'
+      );
       if (userSnapshotInUsers.exists()) {
         return {
           userId,

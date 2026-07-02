@@ -6141,7 +6141,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     Promise.all(
       idsToLoad.map(async id => {
-        const photos = await lazyLoadProfilePhotos(id);
+        const photos = await lazyLoadProfilePhotos(id, paginatedUsers[id]?.__sourceCollection);
         return [id, Array.isArray(photos) ? photos : []];
       }),
     )
