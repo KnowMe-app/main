@@ -261,6 +261,31 @@ const CropActions = styled.div`
   margin-top: 14px;
 `;
 
+const CropSavingStatus = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  color: ${color.gray3};
+  font-size: 14px;
+  font-weight: 600;
+`;
+
+const CropSavingSpinner = styled.span`
+  width: 16px;
+  height: 16px;
+  border: 2px solid #fde3c2;
+  border-top-color: ${color.accent5};
+  border-radius: 50%;
+  animation: crop-saving-spin 0.8s linear infinite;
+
+  @keyframes crop-saving-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
 const CropButton = styled.button`
   border: none;
   border-radius: 8px;
@@ -269,6 +294,11 @@ const CropButton = styled.button`
   font-weight: 700;
   background: ${({ $primary }) => ($primary ? color.accent5 : '#eef2f7')};
   color: ${({ $primary }) => ($primary ? '#fff' : '#334155')};
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
 `;
 
 const loadImage = file => new Promise((resolve, reject) => {
@@ -366,6 +396,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
   const [pendingCropFiles, setPendingCropFiles] = useState([]);
   const [croppedPendingFiles, setCroppedPendingFiles] = useState([]);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [isConfirmingCrop, setIsConfirmingCrop] = useState(false);
   const [cropPreviewUrl, setCropPreviewUrl] = useState('');
   const [cropOffset, setCropOffset] = useState(DEFAULT_CROP_OFFSET);
   const [cropZoom, setCropZoom] = useState(DEFAULT_CROP_ZOOM);
@@ -380,6 +411,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
     a.length === b.length && a.every((val, idx) => val === b[idx]);
   const photoValues = photoKeys.map(k => state[k]).join('|');
   const pendingCropFile = pendingCropFiles[0] || null;
+  const isCropSaving = isUploadingPhotos || isConfirmingCrop;
   const safeCropAspectRatio = Number.isFinite(cropAspectRatio) && cropAspectRatio > 0 ? cropAspectRatio : DEFAULT_CROP_ASPECT_RATIO;
   const cropDisplay = resolveCropDisplay({
     sourceWidth: cropImageSize.width,
@@ -672,31 +704,38 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
   };
 
   const cancelCrop = () => {
+    if (isCropSaving) return;
     setPendingCropFiles([]);
     setCroppedPendingFiles([]);
   };
 
   const confirmCurrentCrop = async () => {
-    if (!pendingCropFile) return;
-    const croppedFile = await cropPhotoToStandardRatio(pendingCropFile, {
-      aspectRatio: safeCropAspectRatio,
-      frameWidth: cropFrameSize.width,
-      frameHeight: cropFrameSize.height,
-      offset: boundedCropOffset,
-      zoom: cropZoom,
-    });
-    const remainingFiles = pendingCropFiles.slice(1);
-    const readyFiles = [...croppedPendingFiles, croppedFile];
+    if (!pendingCropFile || isCropSaving) return;
+    setIsConfirmingCrop(true);
 
-    if (remainingFiles.length > 0) {
-      setCroppedPendingFiles(readyFiles);
-      setPendingCropFiles(remainingFiles);
-      return;
+    try {
+      const croppedFile = await cropPhotoToStandardRatio(pendingCropFile, {
+        aspectRatio: safeCropAspectRatio,
+        frameWidth: cropFrameSize.width,
+        frameHeight: cropFrameSize.height,
+        offset: boundedCropOffset,
+        zoom: cropZoom,
+      });
+      const remainingFiles = pendingCropFiles.slice(1);
+      const readyFiles = [...croppedPendingFiles, croppedFile];
+
+      if (remainingFiles.length > 0) {
+        setCroppedPendingFiles(readyFiles);
+        setPendingCropFiles(remainingFiles);
+        return;
+      }
+
+      await uploadPreparedPhotos(readyFiles);
+      setPendingCropFiles([]);
+      setCroppedPendingFiles([]);
+    } finally {
+      setIsConfirmingCrop(false);
     }
-
-    setPendingCropFiles([]);
-    setCroppedPendingFiles([]);
-    await uploadPreparedPhotos(readyFiles);
   };
 
   const handlePhotoClick = (url, index) => {
@@ -737,7 +776,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
 
   const cropModal = pendingCropFile ? (
     <CropModalOverlay onClick={cancelCrop}>
-      <CropModalCard onClick={event => event.stopPropagation()}>
+      <CropModalCard onClick={event => event.stopPropagation()} aria-busy={isCropSaving}>
         <CropModalTitle>Обрізати фото до стандартного розміру</CropModalTitle>
         <CropModalHint>Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.</CropModalHint>
         <CropPreview
@@ -780,9 +819,15 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
           />
         </CropZoomRow>
         <CropActions>
-          <CropButton type="button" onClick={cancelCrop}>Скасувати</CropButton>
-          <CropButton type="button" $primary onClick={confirmCurrentCrop}>
-            {pendingCropFiles.length > 1 ? 'Зберегти й наступне' : 'Зберегти'}
+          {isCropSaving && (
+            <CropSavingStatus role="status" aria-live="polite">
+              <CropSavingSpinner aria-hidden="true" />
+              {pendingCropFiles.length > 1 ? 'Обробляємо фото…' : 'Фото завантажується на сервер…'}
+            </CropSavingStatus>
+          )}
+          <CropButton type="button" onClick={cancelCrop} disabled={isCropSaving}>Скасувати</CropButton>
+          <CropButton type="button" $primary onClick={confirmCurrentCrop} disabled={isCropSaving}>
+            {isCropSaving ? 'Зберігаємо…' : pendingCropFiles.length > 1 ? 'Зберегти й наступне' : 'Зберегти'}
           </CropButton>
         </CropActions>
       </CropModalCard>
