@@ -1176,7 +1176,7 @@ export const TopBlock = ({
         }
 
         setResolvedPhotosCollection(freshCollection);
-        setSelectedPhotosCollection(freshCollection);
+        setSelectedPhotosCollection(prev => prev || freshCollection);
         if (typeof setState === 'function' && !isFromListOfUsers) {
           setState(prev => {
             const currentCard = prev && typeof prev === 'object' ? prev : cardData;
@@ -1294,6 +1294,23 @@ export const TopBlock = ({
         reason: 'photos-updated',
       });
     }
+  };
+
+  const clearCardPhotosState = () => {
+    setCardPhotosState(currentCard => {
+      if (!currentCard || !Object.prototype.hasOwnProperty.call(currentCard, 'photos')) {
+        return currentCard;
+      }
+
+      const { photos, ...cardWithoutPhotos } = currentCard;
+      return cardWithoutPhotos;
+    });
+  };
+
+  const handlePhotosCollectionSelect = collection => {
+    if (!collection || collection === effectivePhotosCollection) return;
+    setSelectedPhotosCollection(collection);
+    clearCardPhotosState();
   };
 
   const renderOverlayEntries = fieldNames => {
@@ -1967,7 +1984,7 @@ export const TopBlock = ({
                         key={collection}
                         type="button"
                         style={getPhotosCollectionToggleButtonStyle(effectivePhotosCollection === collection)}
-                        onClick={() => setSelectedPhotosCollection(collection)}
+                        onClick={() => handlePhotosCollectionSelect(collection)}
                         aria-pressed={effectivePhotosCollection === collection}
                       >
                         {collection}
@@ -1989,7 +2006,7 @@ export const TopBlock = ({
                 <Photos
                   state={cardData}
                   setState={setCardPhotosState}
-                  collection={selectedPhotosCollection || photosCollection}
+                  collection={effectivePhotosCollection}
                   uploadInputId={`file-upload-${cardData.userId || 'card'}`}
                   cropAspectRatio={2 / 3}
                 />
