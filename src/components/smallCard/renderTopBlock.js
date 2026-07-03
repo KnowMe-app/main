@@ -590,12 +590,6 @@ const getFirebaseStorageObjectPath = photoUrl => {
   }
 };
 
-const isUserStorageAvatarPhotoUrl = (photoUrl, userId) => {
-  if (!userId) return false;
-  const storagePath = getFirebaseStorageObjectPath(photoUrl);
-  return storagePath.startsWith(`avatar/${userId}/`) && !storagePath.startsWith(`avatar/${userId}/medication/`);
-};
-
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
@@ -1107,12 +1101,14 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
     userRole: cardData?.userRole || cardData?.role || null,
   });
 
-  const existingPhotosIncludeStorageAvatars = existingPhotos.some(photo => isUserStorageAvatarPhotoUrl(photo, cardData.userId));
+  const existingStorageAvatarPaths = existingPhotos
+    .map(getFirebaseStorageObjectPath)
+    .filter(path => path.startsWith(`avatar/${cardData.userId}/`) && !path.startsWith(`avatar/${cardData.userId}/medication/`));
   let storagePhotos = [];
   let loadedPhotos = [];
   try {
     [storagePhotos, loadedPhotos] = await Promise.all([
-      existingPhotosIncludeStorageAvatars ? Promise.resolve([]) : getUserStorageAvatarPhotoDataUrls(cardData.userId),
+      getUserStorageAvatarPhotoDataUrls(cardData.userId, { excludePaths: existingStorageAvatarPaths }),
       getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false }),
     ]);
   } catch (error) {
@@ -1123,7 +1119,10 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
     throw error;
   }
 
-  pushPdfDebugLine(debugLines, 'Existing photos include Storage avatars', { existingPhotosIncludeStorageAvatars });
+  pushPdfDebugLine(debugLines, 'Existing Storage avatar paths excluded from Storage data URL load', {
+    count: existingStorageAvatarPaths.length,
+    sample: existingStorageAvatarPaths.slice(0, PDF_DEBUG_URL_SAMPLE_SIZE),
+  });
   pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} as data URLs', summarizePdfDebugUrls(storagePhotos));
   pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
 

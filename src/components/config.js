@@ -2870,13 +2870,13 @@ const collectUserStorageAvatarItems = async userId => {
   return collectStorageItems(folderRef);
 };
 
+const PDF_SUPPORTED_STORAGE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png']);
+
 const getStorageContentTypeFromName = item => {
   const extension = String(item?.name || '').split('.').pop()?.toLowerCase();
   if (extension === 'png') return 'image/png';
-  if (extension === 'webp') return 'image/webp';
-  if (extension === 'gif') return 'image/gif';
-  if (extension === 'bmp') return 'image/bmp';
-  return 'image/jpeg';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  return null;
 };
 
 const getStorageContentTypeFromBytes = bytes => {
@@ -2893,14 +2893,21 @@ const getStorageContentTypeFromBytes = bytes => {
 };
 
 const getStorageContentType = async (item, bytes) => {
+  const bytesContentType = getStorageContentTypeFromBytes(bytes);
+  if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(bytesContentType)) return bytesContentType;
+  if (bytesContentType) return null;
+
   try {
     const metadata = await getMetadata(item);
     const metadataContentType = String(metadata?.contentType || '').toLowerCase();
-    if (metadataContentType.startsWith('image/')) return metadataContentType;
+    if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(metadataContentType)) return metadataContentType;
   } catch (error) {
     console.error('Error loading user photo metadata from Storage:', error);
   }
-  return getStorageContentTypeFromBytes(bytes) || getStorageContentTypeFromName(item);
+
+  const nameContentType = getStorageContentTypeFromName(item);
+  if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(nameContentType)) return nameContentType;
+  return null;
 };
 
 const bytesToBase64 = bytes => {
@@ -2942,17 +2949,21 @@ export const getUserStorageAvatarPhotos = async userId => {
   }
 };
 
-export const getUserStorageAvatarPhotoDataUrls = async userId => {
+export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) => {
   if (!userId) return [];
+
+  const excludePaths = new Set(Array.isArray(options.excludePaths) ? options.excludePaths.filter(Boolean) : []);
 
   try {
     const items = await collectUserStorageAvatarItems(userId);
     const settledPhotos = await Promise.allSettled(
       items
         .filter(item => !isMedicationStorageItem(item, userId))
+        .filter(item => !excludePaths.has(String(item?.fullPath || '')))
         .map(async item => {
           const bytes = await getBytes(item);
           const contentType = await getStorageContentType(item, bytes);
+          if (!contentType) return '';
           return `data:${contentType};base64,${bytesToBase64(bytes)}`;
         })
     );
