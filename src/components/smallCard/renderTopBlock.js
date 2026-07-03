@@ -38,7 +38,7 @@ import { getCurrentValue } from '../getCurrentValue';
 import {
   fetchUserById,
   getAllUserPhotos,
-  getUserStorageAvatarPhotos,
+  getUserStorageAvatarPhotoDataUrls,
   setUserComment as persistUserComment,
   fetchAllCommentsByCardId,
   updateCommentByOwner,
@@ -997,8 +997,6 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
   const photoEntries = photos.map(photo => (
     photo && typeof photo === 'object' ? photo : { src: photo, debug: '' }
   )).filter(photo => photo?.src);
-  const pdfDebugLines = Array.isArray(debugLines) ? debugLines.filter(Boolean) : [];
-
   return (
     <Document title={`${buildName(userData) || 'Profile'} - UKRCOM`}>
       <Page size="A4" style={profilePdfStyles.page}>
@@ -1012,17 +1010,6 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
               {label}: {value}
             </Text>
           ))}
-        </View>
-        {pdfFooter}
-      </Page>
-      <Page size="A4" style={profilePdfStyles.debugPage}>
-        <View style={profilePdfStyles.debugContent}>
-          <Text style={profilePdfStyles.debugTitle}>PDF photo export debug</Text>
-          {pdfDebugLines.length ? pdfDebugLines.map((line, index) => (
-            <Text key={`pdf-debug-${index}`} style={profilePdfStyles.debugText}>{line}</Text>
-          )) : (
-            <Text style={profilePdfStyles.debugText}>No debug details were collected.</Text>
-          )}
         </View>
         {pdfFooter}
       </Page>
@@ -1105,7 +1092,7 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   let loadedPhotos = [];
   try {
     [storagePhotos, loadedPhotos] = await Promise.all([
-      getUserStorageAvatarPhotos(cardData.userId),
+      getUserStorageAvatarPhotoDataUrls(cardData.userId),
       getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false }),
     ]);
   } catch (error) {
@@ -1116,7 +1103,7 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
     throw error;
   }
 
-  pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId}', summarizePdfDebugUrls(storagePhotos));
+  pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} as data URLs', summarizePdfDebugUrls(storagePhotos));
   pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
 
   const combinedPhotos = [...existingPhotos, ...storagePhotos, ...loadedPhotos];
@@ -1147,6 +1134,11 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
   if (!photoUrl) {
     pushPdfDebugLine(debugLines, 'Skipped empty photo URL before embedding');
     return { src: '', debug: `Photo ${index + 1}: empty URL` };
+  }
+
+  if (String(photoUrl).startsWith('data:image/')) {
+    pushPdfDebugLine(debugLines, 'Embedding photo: using prepared data URL', { index: index + 1 });
+    return { src: photoUrl, debug: '' };
   }
 
   const debugUrl = truncatePdfDebugValue(photoUrl);
