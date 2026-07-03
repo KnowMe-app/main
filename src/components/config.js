@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc as firebaseGetDoc, getDocs as firebaseGetDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll } from 'firebase/storage';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -2852,18 +2852,52 @@ const getPhotoSourceCollections = collectionSource => (
     : ['newUsers', 'users']
 );
 
+const collectUserStorageAvatarItems = async userId => {
+  const folderRef = ref(storage, `avatar/${userId}`);
+  const collectStorageItems = async currentFolderRef => {
+    const list = await listAll(currentFolderRef);
+    const nestedItems = await Promise.all(list.prefixes.map(prefix => collectStorageItems(prefix)));
+    return [...list.items, ...nestedItems.flat()];
+  };
+
+  return collectStorageItems(folderRef);
+};
+
+const getStorageContentType = item => {
+  const extension = String(item?.name || '').split('.').pop()?.toLowerCase();
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'bmp') return 'image/bmp';
+  return 'image/jpeg';
+};
+
+const bytesToBase64 = bytes => {
+  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < byteArray.length; index += chunkSize) {
+    binary += String.fromCharCode(...byteArray.subarray(index, index + chunkSize));
+  }
+
+  if (typeof btoa === 'function') {
+    return btoa(binary);
+  }
+  return Buffer.from(binary, 'binary').toString('base64');
+};
+
+const isMedicationStorageItem = (item, userId) => String(item?.fullPath || '').startsWith(`avatar/${userId}/medication/`);
+
 export const getUserStorageAvatarPhotos = async userId => {
   if (!userId) return [];
 
   try {
-    const folderRef = ref(storage, `avatar/${userId}`);
-    const collectStorageItems = async currentFolderRef => {
-      const list = await listAll(currentFolderRef);
-      const nestedItems = await Promise.all(list.prefixes.map(prefix => collectStorageItems(prefix)));
-      return [...list.items, ...nestedItems.flat()];
-    };
-    const items = await collectStorageItems(folderRef);
-    const settledUrls = await Promise.allSettled(items.map(item => getDownloadURL(item)));
+    const items = await collectUserStorageAvatarItems(userId);
+    const settledUrls = await Promise.allSettled(
+      items
+        .filter(item => !isMedicationStorageItem(item, userId))
+        .map(item => getDownloadURL(item))
+    );
     return settledUrls
       .flatMap(result => {
         if (result.status === 'fulfilled') return [result.value];
@@ -2873,6 +2907,33 @@ export const getUserStorageAvatarPhotos = async userId => {
       .filter(Boolean);
   } catch (error) {
     console.error('Error listing user photos from Storage:', error);
+    return [];
+  }
+};
+
+export const getUserStorageAvatarPhotoDataUrls = async userId => {
+  if (!userId) return [];
+
+  try {
+    const items = await collectUserStorageAvatarItems(userId);
+    const settledPhotos = await Promise.allSettled(
+      items
+        .filter(item => !isMedicationStorageItem(item, userId))
+        .map(async item => {
+          const bytes = await getBytes(item);
+          return `data:${getStorageContentType(item)};base64,${bytesToBase64(bytes)}`;
+        })
+    );
+
+    return settledPhotos
+      .flatMap(result => {
+        if (result.status === 'fulfilled') return [result.value];
+        console.error('Error loading user photo bytes from Storage:', result.reason);
+        return [];
+      })
+      .filter(Boolean);
+  } catch (error) {
+    console.error('Error listing user photo bytes from Storage:', error);
     return [];
   }
 };
