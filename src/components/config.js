@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc as firebaseGetDoc, getDocs as firebaseGetDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes } from 'firebase/storage';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getMetadata as firebaseGetMetadata } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -119,6 +119,13 @@ const getDownloadURL = (...args) => {
     path: args[0],
   });
 };
+
+const getMetadata = (...args) => withAdminDownloadToast(firebaseGetMetadata(...args), {
+  getUid: getCurrentAdminUid,
+  operation: 'Storage object metadata',
+  source: 'config',
+  path: args[0],
+});
 
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
@@ -2863,13 +2870,37 @@ const collectUserStorageAvatarItems = async userId => {
   return collectStorageItems(folderRef);
 };
 
-const getStorageContentType = item => {
+const getStorageContentTypeFromName = item => {
   const extension = String(item?.name || '').split('.').pop()?.toLowerCase();
   if (extension === 'png') return 'image/png';
   if (extension === 'webp') return 'image/webp';
   if (extension === 'gif') return 'image/gif';
   if (extension === 'bmp') return 'image/bmp';
   return 'image/jpeg';
+};
+
+const getStorageContentTypeFromBytes = bytes => {
+  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (byteArray[0] === 0xff && byteArray[1] === 0xd8 && byteArray[2] === 0xff) return 'image/jpeg';
+  if (byteArray[0] === 0x89 && byteArray[1] === 0x50 && byteArray[2] === 0x4e && byteArray[3] === 0x47) return 'image/png';
+  if (byteArray[0] === 0x47 && byteArray[1] === 0x49 && byteArray[2] === 0x46) return 'image/gif';
+  if (byteArray[0] === 0x42 && byteArray[1] === 0x4d) return 'image/bmp';
+  if (
+    byteArray[0] === 0x52 && byteArray[1] === 0x49 && byteArray[2] === 0x46 && byteArray[3] === 0x46
+    && byteArray[8] === 0x57 && byteArray[9] === 0x45 && byteArray[10] === 0x42 && byteArray[11] === 0x50
+  ) return 'image/webp';
+  return null;
+};
+
+const getStorageContentType = async (item, bytes) => {
+  try {
+    const metadata = await getMetadata(item);
+    const metadataContentType = String(metadata?.contentType || '').toLowerCase();
+    if (metadataContentType.startsWith('image/')) return metadataContentType;
+  } catch (error) {
+    console.error('Error loading user photo metadata from Storage:', error);
+  }
+  return getStorageContentTypeFromBytes(bytes) || getStorageContentTypeFromName(item);
 };
 
 const bytesToBase64 = bytes => {
@@ -2921,7 +2952,8 @@ export const getUserStorageAvatarPhotoDataUrls = async userId => {
         .filter(item => !isMedicationStorageItem(item, userId))
         .map(async item => {
           const bytes = await getBytes(item);
-          return `data:${getStorageContentType(item)};base64,${bytesToBase64(bytes)}`;
+          const contentType = await getStorageContentType(item, bytes);
+          return `data:${contentType};base64,${bytesToBase64(bytes)}`;
         })
     );
 
