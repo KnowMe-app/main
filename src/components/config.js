@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc as firebaseGetDoc, getDocs as firebaseGetDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getMetadata as firebaseGetMetadata } from 'firebase/storage';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getBlob, getMetadata as firebaseGetMetadata } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -2952,6 +2952,34 @@ const bytesToBase64 = bytes => {
   return Buffer.from(binary, 'binary').toString('base64');
 };
 
+const getStoragePhotoBlobDataUrl = async (item, options = {}) => {
+  const blob = await getBlob(item);
+  const bytes = await blob.arrayBuffer();
+  const contentType = PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(String(blob.type || '').toLowerCase())
+    ? String(blob.type).toLowerCase()
+    : await getStorageContentType(item, bytes, options);
+  if (!contentType) return '';
+  pushStoragePhotoDebug(options, 'Storage photo prepared as blob data URL for PDF', {
+    fullPath: item?.fullPath || null,
+    contentType,
+    byteLength: bytes?.byteLength || bytes?.length || 0,
+  });
+  return `data:${contentType};base64,${bytesToBase64(bytes)}`;
+};
+
+const getStoragePhotoBytesDataUrl = async (item, options = {}) => {
+  const fullPath = item?.fullPath || null;
+  const bytes = await getBytes(item);
+  const contentType = await getStorageContentType(item, bytes, options);
+  if (!contentType) return '';
+  pushStoragePhotoDebug(options, 'Storage photo prepared as data URL for PDF', {
+    fullPath,
+    contentType,
+    byteLength: bytes?.byteLength || bytes?.length || 0,
+  });
+  return `data:${contentType};base64,${bytesToBase64(bytes)}`;
+};
+
 const isMedicationStorageItem = (item, userId) => String(item?.fullPath || '').startsWith(`avatar/${userId}/medication/`);
 
 export const getUserStorageAvatarPhotos = async userId => {
@@ -2999,22 +3027,24 @@ export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) =>
       includedItems
         .map(async item => {
           const fullPath = item?.fullPath || null;
-          const bytes = await getBytes(item);
-          const contentType = await getStorageContentType(item, bytes, options);
-          if (!contentType) {
-            const fallbackUrl = await getDownloadURL(item);
-            pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
+          try {
+            const blobDataUrl = await getStoragePhotoBlobDataUrl(item, options);
+            if (blobDataUrl) return blobDataUrl;
+          } catch (error) {
+            console.error('Error loading user photo blob from Storage:', error);
+            pushStoragePhotoDebug(options, 'Storage photo blob load failed; trying bytes fallback for PDF', {
               fullPath,
-              reason: 'unsupported-or-unresolved-content-type',
+              message: error?.message || String(error),
             });
-            return fallbackUrl;
           }
-          pushStoragePhotoDebug(options, 'Storage photo prepared as data URL for PDF', {
+          const bytesDataUrl = await getStoragePhotoBytesDataUrl(item, options);
+          if (bytesDataUrl) return bytesDataUrl;
+          const fallbackUrl = await getDownloadURL(item);
+          pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
             fullPath,
-            contentType,
-            byteLength: bytes?.byteLength || bytes?.length || 0,
+            reason: 'unsupported-or-unresolved-content-type',
           });
-          return `data:${contentType};base64,${bytesToBase64(bytes)}`;
+          return fallbackUrl;
         })
     );
 
@@ -3027,13 +3057,31 @@ export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) =>
           fullPath: item?.fullPath || null,
           message: result.reason?.message || String(result.reason),
         });
-        return [getDownloadURL(item)
-          .then(url => {
-            pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
-              fullPath: item?.fullPath || null,
-              reason: result.reason?.code || result.reason?.message || String(result.reason),
+        return [getStoragePhotoBlobDataUrl(item, options)
+          .then(dataUrl => {
+            if (dataUrl) return dataUrl;
+            return getDownloadURL(item).then(url => {
+              pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
+                fullPath: item?.fullPath || null,
+                reason: result.reason?.code || result.reason?.message || String(result.reason),
+              });
+              return url;
             });
-            return url;
+          })
+          .catch(blobError => {
+            console.error('Error loading user photo blob from Storage:', blobError);
+            pushStoragePhotoDebug(options, 'Storage photo blob fallback failed; trying download URL fallback for PDF', {
+              fullPath: item?.fullPath || null,
+              message: blobError?.message || String(blobError),
+            });
+            return getDownloadURL(item)
+              .then(url => {
+                pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
+                  fullPath: item?.fullPath || null,
+                  reason: result.reason?.code || result.reason?.message || String(result.reason),
+                });
+                return url;
+              });
           })
           .catch(error => {
             console.error('Error loading user photo download URL from Storage:', error);
