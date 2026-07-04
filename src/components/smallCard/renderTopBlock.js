@@ -1214,7 +1214,7 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
     return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
   } catch (error) {
     console.error('Unable to load PDF photo', photoUrl, error);
-    pushPdfDebugLine(debugLines, 'Embedding photo failed; skipped original URL fallback for PDF reliability', {
+    pushPdfDebugLine(debugLines, 'Embedding photo failed; skipped because PDF requires a readable image data URL', {
       url: debugUrl,
       name: error?.name || null,
       message: error?.message || String(error),
