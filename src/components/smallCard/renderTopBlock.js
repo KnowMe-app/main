@@ -1027,14 +1027,6 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
         </View>
         {pdfFooter}
       </Page>
-      {photoEntries.map((photo, index) => (
-        <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
-          <Image src={photo.src} style={profilePdfStyles.profileImage} />
-          {photo.debug ? <Text style={profilePdfStyles.photoCaption}>{photo.debug}</Text> : null}
-          <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
-          {pdfFooter}
-        </Page>
-      ))}
       <Page size="A4" style={profilePdfStyles.debugPage}>
         <Text style={profilePdfStyles.watermark}>UKRCOM</Text>
         <Text style={profilePdfStyles.debugTitle}>PDF photo debug</Text>
@@ -1049,6 +1041,14 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
         </View>
         {pdfFooter}
       </Page>
+      {photoEntries.map((photo, index) => (
+        <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
+          <Image src={photo.src} style={profilePdfStyles.profileImage} />
+          {photo.debug ? <Text style={profilePdfStyles.photoCaption}>{photo.debug}</Text> : null}
+          <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
+          {pdfFooter}
+        </Page>
+      ))}
     </Document>
   );
 };
@@ -1168,52 +1168,6 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
-const loadImageUrlWithXhr = photoUrl => new Promise((resolve, reject) => {
-  const request = new XMLHttpRequest();
-  request.open('GET', photoUrl, true);
-  request.responseType = 'blob';
-  request.onload = () => {
-    if (request.status >= 200 && request.status < 300 && request.response) {
-      resolve(request.response);
-      return;
-    }
-    reject(new Error(`Photo XHR request failed with status ${request.status}`));
-  };
-  request.onerror = () => reject(new Error('Photo XHR request failed'));
-  request.ontimeout = () => reject(new Error('Photo XHR request timed out'));
-  request.timeout = 60000;
-  request.send();
-});
-
-const fetchImageUrlAsDataUrl = async (photoUrl, debugLines, debugUrl) => {
-  try {
-    const response = await fetch(photoUrl);
-    pushPdfDebugLine(debugLines, 'Embedding photo: fetch response', {
-      url: debugUrl,
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      contentType: response.headers?.get?.('content-type') || null,
-    });
-    if (!response.ok) {
-      throw new Error(`Photo request failed with status ${response.status}`);
-    }
-    return response.blob();
-  } catch (fetchError) {
-    pushPdfDebugLine(debugLines, 'Embedding photo: fetch failed; trying XHR blob fallback', {
-      url: debugUrl,
-      message: fetchError?.message || String(fetchError),
-    });
-    const blob = await loadImageUrlWithXhr(photoUrl);
-    pushPdfDebugLine(debugLines, 'Embedding photo: XHR blob fallback loaded', {
-      url: debugUrl,
-      type: blob.type || null,
-      size: blob.size || 0,
-    });
-    return blob;
-  }
-};
-
 const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
   if (!photoUrl) {
     pushPdfDebugLine(debugLines, 'Skipped empty photo URL before embedding');
@@ -1229,7 +1183,18 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
   pushPdfDebugLine(debugLines, 'Embedding photo: fetch started', debugUrl);
 
   try {
-    const blob = await fetchImageUrlAsDataUrl(photoUrl, debugLines, debugUrl);
+    const response = await fetch(photoUrl);
+    pushPdfDebugLine(debugLines, 'Embedding photo: fetch response', {
+      url: debugUrl,
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers?.get?.('content-type') || null,
+    });
+    if (!response.ok) {
+      throw new Error(`Photo request failed with status ${response.status}`);
+    }
+    const blob = await response.blob();
     pushPdfDebugLine(debugLines, 'Embedding photo: blob loaded', {
       url: debugUrl,
       type: blob.type || null,
@@ -1249,11 +1214,17 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
     return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
   } catch (error) {
     console.error('Unable to load PDF photo', photoUrl, error);
-    pushPdfDebugLine(debugLines, 'Embedding photo failed; PDF image requires a data URL', {
+    const canUseOriginalUrlFallback = /^https?:\/\//i.test(String(photoUrl || ''));
+    pushPdfDebugLine(debugLines, canUseOriginalUrlFallback
+      ? 'Embedding photo fetch failed; using original URL fallback for PDF'
+      : 'Embedding photo failed; no original URL fallback available for PDF', {
       url: debugUrl,
       name: error?.name || null,
       message: error?.message || String(error),
     });
+    if (canUseOriginalUrlFallback) {
+      return { src: photoUrl, debug: `Photo ${index + 1}: embedded from original URL fallback after fetch error (${error?.message || String(error)})` };
+    }
     return { src: '', debug: `Photo ${index + 1}: skipped after fetch error (${error?.message || String(error)})` };
   }
 };
