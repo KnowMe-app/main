@@ -49,7 +49,7 @@ import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { filterOutMedicationPhotos } from 'utils/photoFilters';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
-import { isPdfImageDataUrl, isHttpImageUrl } from 'utils/pdfImageDataUrl';
+import { isPdfImageDataUrl, isHttpImageUrl, normalizeImageBlobForPdf } from 'utils/pdfImageDataUrl';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
@@ -1065,6 +1065,7 @@ const PDF_DEBUG_URL_SAMPLE_SIZE = 3;
 const PDF_DEBUG_URL_MAX_LENGTH = 180;
 const PDF_DEBUG_LINE_MAX_LENGTH = 260;
 const PDF_MAX_PROFILE_PHOTOS = 6;
+const PDF_PHOTO_LOAD_TIMEOUT_MS = 25000;
 const PDF_RESOLVE_TIMEOUT_MS = 45000;
 const PDF_RENDER_TIMEOUT_MS = 45000;
 
@@ -1116,26 +1117,23 @@ const withPdfTimeout = (promise, ms, message) => new Promise((resolve, reject) =
     .finally(() => clearTimeout(timerId));
 });
 
-const preparePdfPhotoCandidates = (photos, userId, debugLines) => {
-  const sourcePhotos = Array.isArray(photos) ? photos : [];
-  const filteredPhotos = filterOutMedicationPhotos(sourcePhotos, userId);
-  const convertedPhotos = filteredPhotos.map(convertDriveLinkToImage).filter(Boolean);
-  const supportedPhotos = convertedPhotos.filter(photo => {
-    const supported = isPdfImageDataUrl(photo) || isHttpImageUrl(photo);
-    if (!supported && photo) {
-      pushPdfDebugLine(debugLines, 'photo skipped: unsupported PDF photo candidate', {
-        url: truncatePdfDebugValue(photo),
-        reason: 'PDF image candidates must be data:image URLs or http(s) URLs',
-      });
-    }
-    return supported;
-  });
+const fetchWithPdfTimeout = async (url, timeoutMs = PDF_PHOTO_LOAD_TIMEOUT_MS) => {
+  if (typeof AbortController === 'undefined') {
+    return withPdfTimeout(fetch(url), timeoutMs, 'Photo fetch timed out');
+  }
 
-  return {
-    filteredPhotos,
-    convertedPhotos,
-    uniquePhotos: Array.from(new Set(supportedPhotos)),
-  };
+  const controller = new AbortController();
+  const timerId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Photo fetch timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timerId);
+  }
 };
 
 const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debugLines }) => {
@@ -1147,23 +1145,8 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   });
 
   if (!cardData?.userId) {
-    const { uniquePhotos } = preparePdfPhotoCandidates(existingPhotos, null, debugLines);
-    const limitedPhotos = uniquePhotos.slice(0, PDF_MAX_PROFILE_PHOTOS);
-    pushPdfDebugLine(debugLines, 'No userId on cardData; using only existing photos', summarizePdfEmbeddingCandidates(limitedPhotos));
-    return limitedPhotos;
-  }
-
-  const existingPhotoCandidates = preparePdfPhotoCandidates(existingPhotos, cardData.userId, debugLines);
-  const existingLimitedPhotos = existingPhotoCandidates.uniquePhotos.slice(0, PDF_MAX_PROFILE_PHOTOS);
-  if (existingLimitedPhotos.length) {
-    pushPdfDebugLine(debugLines, 'Using existing card photo URLs for PDF', summarizePdfEmbeddingCandidates(existingLimitedPhotos));
-    if (existingPhotoCandidates.uniquePhotos.length > existingLimitedPhotos.length) {
-      pushPdfDebugLine(debugLines, 'PDF photo list limited for mobile export stability', {
-        limit: PDF_MAX_PROFILE_PHOTOS,
-        skippedByLimit: existingPhotoCandidates.uniquePhotos.length - existingLimitedPhotos.length,
-      });
-    }
-    return existingLimitedPhotos;
+    pushPdfDebugLine(debugLines, 'No userId on cardData; using only existing photos', summarizePdfDebugUrls(existingPhotos));
+    return existingPhotos.filter(photo => isPdfImageDataUrl(photo) || isHttpImageUrl(photo));
   }
 
   const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
@@ -1203,8 +1186,20 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} storageDownloadUrlFallbacks', summarizePdfDebugUrls(storagePhotos.filter(url => /^https?:\/\//i.test(String(url)))));
   pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
 
-  const combinedPhotos = [...storagePhotos, ...loadedPhotos];
-  const { filteredPhotos, convertedPhotos, uniquePhotos } = preparePdfPhotoCandidates(combinedPhotos, cardData.userId, debugLines);
+  const combinedPhotos = [...existingPhotos, ...storagePhotos, ...loadedPhotos];
+  const filteredPhotos = filterOutMedicationPhotos(combinedPhotos, cardData.userId);
+  const convertedPhotos = filteredPhotos.map(convertDriveLinkToImage).filter(Boolean);
+  const supportedPhotos = convertedPhotos.filter(photo => {
+    const supported = isPdfImageDataUrl(photo) || isHttpImageUrl(photo);
+    if (!supported && photo) {
+      pushPdfDebugLine(debugLines, 'photo skipped: unsupported PDF photo candidate', {
+        url: truncatePdfDebugValue(photo),
+        reason: 'PDF image candidates must be data:image URLs or http(s) URLs that can be converted before rendering',
+      });
+    }
+    return supported;
+  });
+  const uniquePhotos = Array.from(new Set(supportedPhotos));
   const limitedPhotos = uniquePhotos.slice(0, PDF_MAX_PROFILE_PHOTOS);
 
   pushPdfDebugLine(debugLines, 'Combined photos before medication filter', summarizePdfDebugUrls(combinedPhotos));
@@ -1227,6 +1222,52 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   return finalPhotos;
 };
 
+const loadImageUrlWithXhr = photoUrl => new Promise((resolve, reject) => {
+  const request = new XMLHttpRequest();
+  request.open('GET', photoUrl, true);
+  request.responseType = 'blob';
+  request.onload = () => {
+    if (request.status >= 200 && request.status < 300 && request.response) {
+      resolve(request.response);
+      return;
+    }
+    reject(new Error(`Photo XHR request failed with status ${request.status}`));
+  };
+  request.onerror = () => reject(new Error('Photo XHR request failed'));
+  request.ontimeout = () => reject(new Error('Photo XHR request timed out'));
+  request.timeout = PDF_PHOTO_LOAD_TIMEOUT_MS;
+  request.send();
+});
+
+const fetchImageUrlAsDataUrl = async (photoUrl, debugLines, debugUrl) => {
+  try {
+    const response = await fetchWithPdfTimeout(photoUrl);
+    pushPdfDebugLine(debugLines, 'Embedding photo: fetch response', {
+      url: debugUrl,
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers?.get?.('content-type') || null,
+    });
+    if (!response.ok) {
+      throw new Error(`Photo request failed with status ${response.status}`);
+    }
+    return response.blob();
+  } catch (fetchError) {
+    pushPdfDebugLine(debugLines, 'Embedding photo: fetch failed; trying XHR blob fallback', {
+      url: debugUrl,
+      message: fetchError?.message || String(fetchError),
+    });
+    const blob = await loadImageUrlWithXhr(photoUrl);
+    pushPdfDebugLine(debugLines, 'Embedding photo: XHR blob fallback loaded', {
+      url: debugUrl,
+      type: blob.type || null,
+      size: blob.size || 0,
+    });
+    return blob;
+  }
+};
+
 const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
   if (!photoUrl) {
     pushPdfDebugLine(debugLines, 'Skipped empty photo URL before embedding');
@@ -1239,13 +1280,36 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
   }
 
   const debugUrl = truncatePdfDebugValue(photoUrl);
-  if (!isHttpImageUrl(photoUrl)) {
-    pushPdfDebugLine(debugLines, 'Embedding photo skipped: unsupported URL', debugUrl);
-    return { src: '', debug: `Photo ${index + 1}: skipped because URL is unsupported` };
-  }
+  pushPdfDebugLine(debugLines, 'Embedding photo: fetch started', debugUrl);
 
-  pushPdfDebugLine(debugLines, 'Embedding photo: using existing remote URL', debugUrl);
-  return { src: photoUrl, debug: `Photo ${index + 1}: embedded as existing URL` };
+  try {
+    const blob = await fetchImageUrlAsDataUrl(photoUrl, debugLines, debugUrl);
+    pushPdfDebugLine(debugLines, 'Embedding photo: blob loaded', {
+      url: debugUrl,
+      type: blob.type || null,
+      size: blob.size || 0,
+    });
+    const dataUrl = await normalizeImageBlobForPdf(blob);
+    const isImageDataUrl = isPdfImageDataUrl(dataUrl);
+    pushPdfDebugLine(debugLines, 'Embedding photo: data URL created', {
+      url: debugUrl,
+      length: dataUrl.length,
+      isImageDataUrl,
+    });
+    if (!isImageDataUrl) {
+      pushPdfDebugLine(debugLines, 'Embedding photo skipped: fetched data URL is not an image', debugUrl);
+      return { src: '', debug: `Photo ${index + 1}: skipped because fetched blob was not image data` };
+    }
+    return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
+  } catch (error) {
+    console.error('Unable to load PDF photo', photoUrl, error);
+    pushPdfDebugLine(debugLines, 'Embedding photo failed; PDF image requires a data URL', {
+      url: debugUrl,
+      name: error?.name || null,
+      message: error?.message || String(error),
+    });
+    return { src: '', debug: `Photo ${index + 1}: skipped after fetch error (${error?.message || String(error)})` };
+  }
 };
 
 const isSurrogateMotherRole = data => String(data?.userRole || data?.role || '').trim().toLowerCase() === 'sm';
