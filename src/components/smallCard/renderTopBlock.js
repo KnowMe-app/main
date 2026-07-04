@@ -1219,6 +1219,9 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
       name: error?.name || null,
       message: error?.message || String(error),
     });
+    if (canUseOriginalUrlFallback) {
+      return { src: photoUrl, debug: `Photo ${index + 1}: embedded from original URL fallback after fetch error (${error?.message || String(error)})` };
+    }
     return { src: '', debug: `Photo ${index + 1}: skipped after fetch error (${error?.message || String(error)})` };
   }
 };
