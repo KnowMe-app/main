@@ -1214,11 +1214,17 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
     return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
   } catch (error) {
     console.error('Unable to load PDF photo', photoUrl, error);
-    pushPdfDebugLine(debugLines, 'Embedding photo failed; skipped original URL fallback for PDF reliability', {
+    const canUseOriginalUrlFallback = /^https?:\/\//i.test(String(photoUrl || ''));
+    pushPdfDebugLine(debugLines, canUseOriginalUrlFallback
+      ? 'Embedding photo fetch failed; using original URL fallback for PDF'
+      : 'Embedding photo failed; no original URL fallback available for PDF', {
       url: debugUrl,
       name: error?.name || null,
       message: error?.message || String(error),
     });
+    if (canUseOriginalUrlFallback) {
+      return { src: photoUrl, debug: `Photo ${index + 1}: embedded from original URL fallback after fetch error (${error?.message || String(error)})` };
+    }
     return { src: '', debug: `Photo ${index + 1}: skipped after fetch error (${error?.message || String(error)})` };
   }
 };
