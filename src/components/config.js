@@ -2973,18 +2973,13 @@ export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) =>
   try {
     const items = await collectUserStorageAvatarItems(userId);
     const avatarItems = items.filter(item => !isMedicationStorageItem(item, userId));
-    const maxItems = Number.isFinite(Number(options.limit)) && Number(options.limit) > 0
-      ? Number(options.limit)
-      : null;
-    const filteredItems = avatarItems.filter(item => !excludePaths.has(String(item?.fullPath || '')));
-    const includedItems = maxItems ? filteredItems.slice(0, maxItems) : filteredItems;
+    const includedItems = avatarItems.filter(item => !excludePaths.has(String(item?.fullPath || '')));
     pushStoragePhotoDebug(options, 'Storage avatar folder listed for PDF', {
       userId,
       folder: `avatar/${userId}`,
       totalItems: items.length,
       medicationItemsSkipped: items.length - avatarItems.length,
-      excludedExistingItems: avatarItems.length - filteredItems.length,
-      limitedItemsSkipped: filteredItems.length - includedItems.length,
+      excludedExistingItems: avatarItems.length - includedItems.length,
       itemsToRead: includedItems.length,
       sample: includedItems.slice(0, 3).map(item => item?.fullPath || item?.name || ''),
     });

@@ -1,7 +1,5 @@
 export const isPdfImageDataUrl = value => /^data:image\/(?:jpeg|jpg|png);base64,[a-z0-9+/=\s]+$/i.test(String(value || '').trim());
 
-export const isHttpImageUrl = value => /^https?:\/\//i.test(String(value || '').trim());
-
 export const blobToDataUrl = blob =>
   new Promise((resolve, reject) => {
     if (!blob) {
@@ -17,60 +15,25 @@ export const blobToDataUrl = blob =>
 
 const bytesToBlob = (bytes, contentType) => new Blob([bytes], { type: contentType || 'application/octet-stream' });
 
-const canUseCanvasForPdfImage = () => (
-  typeof document !== 'undefined' &&
-  typeof URL !== 'undefined' &&
-  typeof Image !== 'undefined'
-);
-
-export const normalizeImageBlobForPdf = async blob => {
-  const contentType = String(blob?.type || '').toLowerCase();
-  if (!contentType.startsWith('image/')) {
-    throw new Error(`Photo response is not an image blob (${blob?.type || 'unknown type'})`);
-  }
-
-  const directDataUrl = await blobToDataUrl(blob);
-  if (isPdfImageDataUrl(directDataUrl)) {
-    return directDataUrl;
-  }
-
-  if (!canUseCanvasForPdfImage()) {
-    throw new Error(`Photo blob did not convert to a supported PDF image data URL (${blob?.type || 'unknown type'})`);
-  }
-
-  const objectUrl = URL.createObjectURL(blob);
-  try {
-    const image = await new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error(`Unable to decode PDF image blob (${blob?.type || 'unknown type'})`));
-      img.src = objectUrl;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth || image.width;
-    canvas.height = image.naturalHeight || image.height;
-    if (!canvas.width || !canvas.height) {
-      throw new Error('Unable to normalize PDF image with empty dimensions');
-    }
-    const context = canvas.getContext('2d');
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    if (!isPdfImageDataUrl(jpegDataUrl)) {
-      throw new Error('Canvas conversion did not produce a supported PDF image data URL');
-    }
-    return jpegDataUrl;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-};
-
 export const fetchImageUrlAsDataUrl = async url => {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Photo request failed with status ${response.status}`);
   }
   const blob = await response.blob();
-  return normalizeImageBlobForPdf(blob);
+  if (
+    !String(blob?.type || '')
+      .toLowerCase()
+      .startsWith('image/')
+  ) {
+    throw new Error(`Photo response is not an image blob (${blob?.type || 'unknown type'})`);
+  }
+
+  const dataUrl = await blobToDataUrl(blob);
+  if (!isPdfImageDataUrl(dataUrl)) {
+    throw new Error('Photo blob did not convert to a supported PDF image data URL');
+  }
+  return dataUrl;
 };
 
 export const loadFirebasePhotoAsDataUrl = async (refOrUrl, { getBytes, getDownloadURL, resolveContentType, onDebug } = {}) => {
@@ -106,7 +69,11 @@ export const loadFirebasePhotoAsDataUrl = async (refOrUrl, { getBytes, getDownlo
     ) {
       throw new Error(`Unsupported image content type (${contentType || 'unknown'})`);
     }
-    return normalizeImageBlobForPdf(bytesToBlob(bytes, contentType));
+    const dataUrl = await blobToDataUrl(bytesToBlob(bytes, contentType));
+    if (!isPdfImageDataUrl(dataUrl)) {
+      throw new Error('Storage bytes did not convert to a supported PDF image data URL');
+    }
+    return dataUrl;
   } catch (bytesError) {
     debug('Storage photo bytes load failed; trying download URL fallback for PDF', {
       fullPath: refOrUrl?.fullPath || null,
