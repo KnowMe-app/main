@@ -1150,7 +1150,62 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 
+// @react-pdf/renderer only reliably embeds baseline JPEG/PNG; re-encoding through
+// a canvas normalizes progressive JPEGs, unusual PNG color modes, and EXIF-rotated
+// photos that would otherwise render as a blank page with no error.
+const reencodePdfImageDataUrl = (src, debugLines, index) => new Promise(resolve => {
+  if (typeof Image === 'undefined' || typeof document === 'undefined') {
+    resolve(src);
+    return;
+  }
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (!width || !height) {
+        pushPdfDebugLine(debugLines, 'Photo re-encode skipped: image reported no dimensions', { index: index + 1 });
+        resolve(src);
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const normalizedSrc = canvas.toDataURL('image/jpeg', 0.92);
+      pushPdfDebugLine(debugLines, 'Photo re-encoded as baseline JPEG for PDF compatibility', {
+        index: index + 1,
+        width,
+        height,
+      });
+      resolve(normalizedSrc);
+    } catch (error) {
+      pushPdfDebugLine(debugLines, 'Photo re-encode failed; using original image for PDF', {
+        index: index + 1,
+        name: error?.name || null,
+        message: error?.message || String(error),
+      });
+      resolve(src);
+    }
+  };
+  img.onerror = () => {
+    pushPdfDebugLine(debugLines, 'Photo re-encode failed: browser could not decode image; using original for PDF', { index: index + 1 });
+    resolve(src);
+  };
+  img.src = src;
+});
+
 const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
+  const result = await resolvePdfEmbeddedImageSource(photoUrl, debugLines, index);
+  if (!result.src) return result;
+  const normalizedSrc = await reencodePdfImageDataUrl(result.src, debugLines, index);
+  return { ...result, src: normalizedSrc };
+};
+
+const resolvePdfEmbeddedImageSource = async (photoUrl, debugLines, index = 0) => {
   if (!photoUrl) {
     pushPdfDebugLine(debugLines, 'Skipped empty photo URL before embedding');
     return { src: '', debug: `Photo ${index + 1}: empty URL` };
@@ -1215,14 +1270,26 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
     if (isGenerating) return;
 
     setIsGenerating(true);
+    const fileName = buildProfilePdfFileName(cardData);
+    const debugLines = [];
+    pushPdfDebugLine(debugLines, 'PDF export started', {
+      userId: cardData?.userId || null,
+      fileName,
+      generatedAt: new Date().toISOString(),
+    });
+
+    const downloadBlob = blob => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    };
+
     try {
-      const fileName = buildProfilePdfFileName(cardData);
-      const debugLines = [];
-      pushPdfDebugLine(debugLines, 'PDF export started', {
-        userId: cardData?.userId || null,
-        fileName,
-        generatedAt: new Date().toISOString(),
-      });
       const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection, debugLines });
       pushPdfDebugLine(debugLines, 'Effective photo URLs before embedding', summarizePdfDebugUrls(effectivePhotoUrls));
       const embeddedPhotoEntries = await Promise.all(
@@ -1242,17 +1309,22 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
       const blob = await pdf(
         <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoEntries} debugLines={debugLines} />
       ).toBlob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlob(blob);
     } catch (error) {
       console.error('Unable to export profile PDF', error);
-      toast.error('Не вдалося експортувати PDF');
+      pushPdfDebugLine(debugLines, 'PDF export failed with an error; producing debug-only PDF', {
+        name: error?.name || null,
+        message: error?.message || String(error),
+      });
+      try {
+        const fallbackBlob = await pdf(
+          <ProfilePdfDocument userData={cardData} photoUrls={[]} debugLines={debugLines} />
+        ).toBlob();
+        downloadBlob(fallbackBlob);
+      } catch (fallbackError) {
+        console.error('Unable to produce fallback debug PDF', fallbackError);
+        toast.error('Не вдалося експортувати PDF');
+      }
     } finally {
       setIsGenerating(false);
     }
