@@ -43,7 +43,7 @@ const PhotoItem = styled.div`
   box-sizing: border-box;
   border: ${({ $compact }) => ($compact ? '2px solid #E8E8E2' : '3px solid #E8E8E2')};
   border-radius: ${({ $compact }) => ($compact ? '50%' : '8px')};
-  overflow: hidden;
+  overflow: ${({ $compact }) => ($compact ? 'visible' : 'hidden')};
   background: #fff;
 `;
 
