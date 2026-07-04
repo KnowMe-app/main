@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc as firebaseGetDoc, getDocs as firebaseGetDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getMetadata as firebaseGetMetadata } from 'firebase/storage';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -119,13 +119,6 @@ const getDownloadURL = (...args) => {
     path: args[0],
   });
 };
-
-const getMetadata = (...args) => withAdminDownloadToast(firebaseGetMetadata(...args), {
-  getUid: getCurrentAdminUid,
-  operation: 'Storage object metadata',
-  source: 'config',
-  path: args[0],
-});
 
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
@@ -2870,8 +2863,6 @@ const collectUserStorageAvatarItems = async userId => {
   return collectStorageItems(folderRef);
 };
 
-const PDF_SUPPORTED_STORAGE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png']);
-
 const getStorageContentTypeFromName = item => {
   const extension = String(item?.name || '').split('.').pop()?.toLowerCase();
   if (extension === 'png') return 'image/png';
@@ -2889,24 +2880,6 @@ const getStorageContentTypeFromBytes = bytes => {
     byteArray[0] === 0x52 && byteArray[1] === 0x49 && byteArray[2] === 0x46 && byteArray[3] === 0x46
     && byteArray[8] === 0x57 && byteArray[9] === 0x45 && byteArray[10] === 0x42 && byteArray[11] === 0x50
   ) return 'image/webp';
-  return null;
-};
-
-const getStorageContentType = async (item, bytes) => {
-  const bytesContentType = getStorageContentTypeFromBytes(bytes);
-  if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(bytesContentType)) return bytesContentType;
-  if (bytesContentType) return null;
-
-  try {
-    const metadata = await getMetadata(item);
-    const metadataContentType = String(metadata?.contentType || '').toLowerCase();
-    if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(metadataContentType)) return metadataContentType;
-  } catch (error) {
-    console.error('Error loading user photo metadata from Storage:', error);
-  }
-
-  const nameContentType = getStorageContentTypeFromName(item);
-  if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(nameContentType)) return nameContentType;
   return null;
 };
 
@@ -2949,36 +2922,71 @@ export const getUserStorageAvatarPhotos = async userId => {
   }
 };
 
-export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) => {
-  if (!userId) return [];
+const blobToDataUrl = blob => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
 
-  const excludePaths = new Set(Array.isArray(options.excludePaths) ? options.excludePaths.filter(Boolean) : []);
+// Loads every photo from Storage avatar/{userId} (except medication/) as a data URL.
+// Never throws: each file carries its own error text, and a listing failure is
+// returned in `error` — callers surface these in the PDF debug output.
+export const getUserStorageAvatarPhotoFiles = async userId => {
+  if (!userId) return { items: [], error: 'no userId provided' };
 
+  let items;
   try {
-    const items = await collectUserStorageAvatarItems(userId);
-    const settledPhotos = await Promise.allSettled(
-      items
-        .filter(item => !isMedicationStorageItem(item, userId))
-        .filter(item => !excludePaths.has(String(item?.fullPath || '')))
-        .map(async item => {
-          const bytes = await getBytes(item);
-          const contentType = await getStorageContentType(item, bytes);
-          if (!contentType) return '';
-          return `data:${contentType};base64,${bytesToBase64(bytes)}`;
-        })
-    );
-
-    return settledPhotos
-      .flatMap(result => {
-        if (result.status === 'fulfilled') return [result.value];
-        console.error('Error loading user photo bytes from Storage:', result.reason);
-        return [];
-      })
-      .filter(Boolean);
+    items = await collectUserStorageAvatarItems(userId);
   } catch (error) {
     console.error('Error listing user photo bytes from Storage:', error);
-    return [];
+    return { items: [], error: `listAll(avatar/${userId}) failed: ${error?.code || ''} ${error?.message || String(error)}`.trim() };
   }
+
+  const photoItems = items.filter(item => !isMedicationStorageItem(item, userId));
+  const files = await Promise.all(
+    photoItems.map(async item => {
+      const file = {
+        path: String(item?.fullPath || ''),
+        name: String(item?.name || ''),
+        size: 0,
+        contentType: '',
+        dataUrl: '',
+        source: '',
+        error: '',
+      };
+
+      try {
+        const bytes = await getBytes(item);
+        const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        file.size = byteArray.length;
+        file.contentType = getStorageContentTypeFromBytes(byteArray) || getStorageContentTypeFromName(item) || 'image/jpeg';
+        file.dataUrl = `data:${file.contentType};base64,${bytesToBase64(byteArray)}`;
+        file.source = 'getBytes';
+        return file;
+      } catch (bytesError) {
+        const bytesMessage = `getBytes failed: ${bytesError?.code || ''} ${bytesError?.message || String(bytesError)}`.trim();
+        try {
+          const url = await getDownloadURL(item);
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+          const blob = await response.blob();
+          file.size = blob.size;
+          file.contentType = blob.type || getStorageContentTypeFromName(item) || 'image/jpeg';
+          file.dataUrl = await blobToDataUrl(blob);
+          file.source = 'downloadUrl-fetch';
+          file.error = bytesMessage;
+          return file;
+        } catch (fetchError) {
+          file.error = `${bytesMessage}; downloadUrl/fetch failed: ${fetchError?.code || ''} ${fetchError?.message || String(fetchError)}`.trim();
+          console.error('Error loading user photo bytes from Storage:', item?.fullPath, bytesError, fetchError);
+          return file;
+        }
+      }
+    })
+  );
+
+  return { items: files, error: '' };
 };
 
 export const getAllUserPhotos = async (userId, collectionSource = null, { includeStorage = true } = {}) => {

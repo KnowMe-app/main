@@ -38,7 +38,7 @@ import { getCurrentValue } from '../getCurrentValue';
 import {
   fetchUserById,
   getAllUserPhotos,
-  getUserStorageAvatarPhotoDataUrls,
+  getUserStorageAvatarPhotoFiles,
   setUserComment as persistUserComment,
   fetchAllCommentsByCardId,
   updateCommentByOwner,
@@ -577,19 +577,6 @@ const getUserProfilePhotoUrls = data => {
   return Array.from(new Set(filterOutMedicationPhotos(photos, data?.userId).filter(Boolean)));
 };
 
-const getFirebaseStorageObjectPath = photoUrl => {
-  const normalizedPhotoUrl = normalizePhotoValue(photoUrl);
-  if (!normalizedPhotoUrl || normalizedPhotoUrl.startsWith('data:')) return '';
-
-  try {
-    const url = new URL(normalizedPhotoUrl);
-    const encodedPath = url.pathname.split('/o/')[1]?.split('/')[0];
-    return encodedPath ? decodeURIComponent(encodedPath) : '';
-  } catch {
-    return '';
-  }
-};
-
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
@@ -1010,6 +997,7 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
   const photoEntries = photos.map(photo => (
     photo && typeof photo === 'object' ? photo : { src: photo, debug: '' }
   )).filter(photo => photo?.src);
+  const debugEntries = Array.isArray(debugLines) ? debugLines.filter(Boolean) : [];
   return (
     <Document title={`${buildName(userData) || 'Profile'} - UKRCOM`}>
       <Page size="A4" style={profilePdfStyles.page}>
@@ -1034,6 +1022,19 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
           {pdfFooter}
         </Page>
       ))}
+      {debugEntries.length > 0 ? (
+        <Page size="A4" style={profilePdfStyles.debugPage} wrap>
+          <View style={profilePdfStyles.debugContent}>
+            <Text style={profilePdfStyles.debugTitle}>Photo export debug</Text>
+            {debugEntries.map((line, index) => (
+              <Text key={index} style={profilePdfStyles.debugText}>
+                {index + 1}. {line}
+              </Text>
+            ))}
+          </View>
+          {pdfFooter}
+        </Page>
+      ) : null}
     </Document>
   );
 };
@@ -1086,60 +1087,57 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   pushPdfDebugLine(debugLines, 'PDF photo resolve started', {
     userId: cardData?.userId || null,
     passedPhotosCollection: photosCollection || null,
-    existingPhotos: summarizePdfDebugUrls(existingPhotos),
+    cardPhotos: summarizePdfDebugUrls(existingPhotos),
   });
 
   if (!cardData?.userId) {
-    pushPdfDebugLine(debugLines, 'No userId on cardData; using only existing photos', summarizePdfDebugUrls(existingPhotos));
+    pushPdfDebugLine(debugLines, 'No userId on cardData; using only card photos', summarizePdfDebugUrls(existingPhotos));
     return existingPhotos;
   }
 
-  const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
-  pushPdfDebugLine(debugLines, 'Resolved photo source collection', {
-    sourceCollection: sourceCollection || null,
-    cardSourceCollection: cardData?.__sourceCollection || null,
-    userRole: cardData?.userRole || cardData?.role || null,
+  const { items: storageFiles, error: storageListError } = await getUserStorageAvatarPhotoFiles(cardData.userId);
+  pushPdfDebugLine(debugLines, `Storage listing avatar/${cardData.userId}`, {
+    filesFound: storageFiles.length,
+    listError: storageListError || null,
+  });
+  storageFiles.forEach((file, index) => {
+    pushPdfDebugLine(debugLines, `Storage file ${index + 1}/${storageFiles.length}`, {
+      path: file.path,
+      size: file.size,
+      contentType: file.contentType || null,
+      loaded: Boolean(file.dataUrl),
+      loadedVia: file.source || null,
+      error: file.error || null,
+    });
   });
 
-  const existingStorageAvatarPaths = existingPhotos
-    .map(getFirebaseStorageObjectPath)
-    .filter(path => path.startsWith(`avatar/${cardData.userId}/`) && !path.startsWith(`avatar/${cardData.userId}/medication/`));
-  let storagePhotos = [];
-  let loadedPhotos = [];
+  const storagePhotos = storageFiles.map(file => file.dataUrl).filter(Boolean);
+  if (storagePhotos.length) {
+    pushPdfDebugLine(debugLines, 'Using photos from Storage avatar folder for PDF', { count: storagePhotos.length });
+    return Array.from(new Set(storagePhotos));
+  }
+
+  pushPdfDebugLine(debugLines, 'No photos loaded from Storage; falling back to card/database photos');
+  const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
+  let databasePhotos = [];
   try {
-    [storagePhotos, loadedPhotos] = await Promise.all([
-      getUserStorageAvatarPhotoDataUrls(cardData.userId, { excludePaths: existingStorageAvatarPaths }),
-      getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false }),
-    ]);
+    databasePhotos = await getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false });
   } catch (error) {
-    pushPdfDebugLine(debugLines, 'Error while loading photo URLs', {
+    pushPdfDebugLine(debugLines, 'Database photo fallback failed', {
       name: error?.name || null,
       message: error?.message || String(error),
     });
-    throw error;
   }
+  pushPdfDebugLine(debugLines, 'Fallback photos from database collections', summarizePdfDebugUrls(databasePhotos));
 
-  pushPdfDebugLine(debugLines, 'Existing Storage avatar paths excluded from Storage data URL load', {
-    count: existingStorageAvatarPaths.length,
-    sample: existingStorageAvatarPaths.slice(0, PDF_DEBUG_URL_SAMPLE_SIZE),
-  });
-  pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} as data URLs', summarizePdfDebugUrls(storagePhotos));
-  pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
-
-  const combinedPhotos = [...existingPhotos, ...storagePhotos, ...loadedPhotos];
-  const filteredPhotos = filterOutMedicationPhotos(combinedPhotos, cardData.userId);
-  const convertedPhotos = filteredPhotos.map(convertDriveLinkToImage).filter(Boolean);
-  const uniquePhotos = Array.from(new Set(convertedPhotos));
-
-  pushPdfDebugLine(debugLines, 'Combined photos before medication filter', summarizePdfDebugUrls(combinedPhotos));
-  pushPdfDebugLine(debugLines, 'Photos after medication filter', summarizePdfDebugUrls(filteredPhotos));
-  pushPdfDebugLine(debugLines, 'Photos after convertDriveLinkToImage/filter(Boolean)', summarizePdfDebugUrls(convertedPhotos));
-  pushPdfDebugLine(debugLines, 'Final unique photo URLs for PDF embedding', summarizePdfDebugUrls(uniquePhotos));
-
+  const combinedPhotos = filterOutMedicationPhotos([...existingPhotos, ...databasePhotos], cardData.userId)
+    .map(convertDriveLinkToImage)
+    .filter(Boolean);
+  const uniquePhotos = Array.from(new Set(combinedPhotos));
+  pushPdfDebugLine(debugLines, 'Final fallback photo URLs for PDF embedding', summarizePdfDebugUrls(uniquePhotos));
   if (!uniquePhotos.length) {
     pushPdfDebugLine(debugLines, 'No photo URLs remained for PDF embedding');
   }
-
   return uniquePhotos;
 };
 
