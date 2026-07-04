@@ -1152,12 +1152,15 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
 // a canvas normalizes progressive JPEGs, unusual PNG color modes, and EXIF-rotated
 // photos that would otherwise render as a blank page with no error.
 const reencodePdfImageDataUrl = (src, debugLines, index) => new Promise(resolve => {
-  if (typeof Image === 'undefined' || typeof document === 'undefined') {
+  // window.Image, not the react-pdf Image component imported above — that
+  // import shadows the global and `new Image()` here threw "not a constructor",
+  // killing the whole export.
+  if (typeof window === 'undefined' || typeof window.Image !== 'function' || typeof document === 'undefined') {
     resolve(src);
     return;
   }
 
-  const img = new Image();
+  const img = new window.Image();
   img.crossOrigin = 'anonymous';
   img.onload = () => {
     try {
