@@ -2998,11 +2998,19 @@ export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) =>
     const settledPhotos = await Promise.allSettled(
       includedItems
         .map(async item => {
+          const fullPath = item?.fullPath || null;
           const bytes = await getBytes(item);
           const contentType = await getStorageContentType(item, bytes, options);
-          if (!contentType) return '';
+          if (!contentType) {
+            const fallbackUrl = await getDownloadURL(item);
+            pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
+              fullPath,
+              reason: 'unsupported-or-unresolved-content-type',
+            });
+            return fallbackUrl;
+          }
           pushStoragePhotoDebug(options, 'Storage photo prepared as data URL for PDF', {
-            fullPath: item?.fullPath || null,
+            fullPath,
             contentType,
             byteLength: bytes?.byteLength || bytes?.length || 0,
           });
@@ -3011,21 +3019,40 @@ export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) =>
     );
 
     const dataUrls = settledPhotos
-      .flatMap(result => {
+      .flatMap((result, index) => {
         if (result.status === 'fulfilled') return [result.value];
+        const item = includedItems[index];
         console.error('Error loading user photo bytes from Storage:', result.reason);
-        pushStoragePhotoDebug(options, 'Storage photo bytes load failed', {
+        pushStoragePhotoDebug(options, 'Storage photo bytes load failed; trying download URL fallback for PDF', {
+          fullPath: item?.fullPath || null,
           message: result.reason?.message || String(result.reason),
         });
-        return [];
+        return [getDownloadURL(item)
+          .then(url => {
+            pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
+              fullPath: item?.fullPath || null,
+              reason: result.reason?.code || result.reason?.message || String(result.reason),
+            });
+            return url;
+          })
+          .catch(error => {
+            console.error('Error loading user photo download URL from Storage:', error);
+            pushStoragePhotoDebug(options, 'Storage photo download URL fallback failed for PDF', {
+              fullPath: item?.fullPath || null,
+              message: error?.message || String(error),
+            });
+            return '';
+          })];
       })
       .filter(Boolean);
+    const resolvedDataUrls = (await Promise.all(dataUrls)).filter(Boolean);
     pushStoragePhotoDebug(options, 'Storage avatar data URL load finished for PDF', {
       requested: includedItems.length,
-      preparedDataUrls: dataUrls.length,
-      failedOrUnsupported: includedItems.length - dataUrls.length,
+      preparedDataUrls: resolvedDataUrls.filter(url => String(url).startsWith('data:image/')).length,
+      fallbackDownloadUrls: resolvedDataUrls.filter(url => /^https?:\/\//i.test(String(url))).length,
+      failedOrUnsupported: includedItems.length - resolvedDataUrls.length,
     });
-    return dataUrls;
+    return resolvedDataUrls;
   } catch (error) {
     console.error('Error listing user photo bytes from Storage:', error);
     pushStoragePhotoDebug(options, 'Storage avatar folder list failed for PDF', {
