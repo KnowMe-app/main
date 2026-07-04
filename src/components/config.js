@@ -2892,49 +2892,21 @@ const getStorageContentTypeFromBytes = bytes => {
   return null;
 };
 
-const pushStoragePhotoDebug = (options, message, payload) => {
-  if (typeof options?.onDebug !== 'function') return;
-  options.onDebug(message, payload);
-};
-
-const getStorageContentType = async (item, bytes, options = {}) => {
+const getStorageContentType = async (item, bytes) => {
   const bytesContentType = getStorageContentTypeFromBytes(bytes);
   if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(bytesContentType)) return bytesContentType;
-  if (bytesContentType) {
-    pushStoragePhotoDebug(options, 'Storage photo skipped: unsupported image type detected from bytes', {
-      fullPath: item?.fullPath || null,
-      contentType: bytesContentType,
-      supportedTypes: Array.from(PDF_SUPPORTED_STORAGE_IMAGE_TYPES),
-    });
-    return null;
-  }
+  if (bytesContentType) return null;
 
   try {
     const metadata = await getMetadata(item);
     const metadataContentType = String(metadata?.contentType || '').toLowerCase();
     if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(metadataContentType)) return metadataContentType;
-    if (metadataContentType) {
-      pushStoragePhotoDebug(options, 'Storage photo skipped: unsupported metadata content type', {
-        fullPath: item?.fullPath || null,
-        contentType: metadataContentType,
-        supportedTypes: Array.from(PDF_SUPPORTED_STORAGE_IMAGE_TYPES),
-      });
-    }
   } catch (error) {
     console.error('Error loading user photo metadata from Storage:', error);
-    pushStoragePhotoDebug(options, 'Storage photo metadata load failed', {
-      fullPath: item?.fullPath || null,
-      message: error?.message || String(error),
-    });
   }
 
   const nameContentType = getStorageContentTypeFromName(item);
   if (PDF_SUPPORTED_STORAGE_IMAGE_TYPES.has(nameContentType)) return nameContentType;
-  pushStoragePhotoDebug(options, 'Storage photo skipped: unable to resolve supported image type', {
-    fullPath: item?.fullPath || null,
-    detectedFromName: nameContentType || null,
-    supportedTypes: Array.from(PDF_SUPPORTED_STORAGE_IMAGE_TYPES),
-  });
   return null;
 };
 
@@ -2984,55 +2956,27 @@ export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) =>
 
   try {
     const items = await collectUserStorageAvatarItems(userId);
-    const avatarItems = items.filter(item => !isMedicationStorageItem(item, userId));
-    const includedItems = avatarItems.filter(item => !excludePaths.has(String(item?.fullPath || '')));
-    pushStoragePhotoDebug(options, 'Storage avatar folder listed for PDF', {
-      userId,
-      folder: `avatar/${userId}`,
-      totalItems: items.length,
-      medicationItemsSkipped: items.length - avatarItems.length,
-      excludedExistingItems: avatarItems.length - includedItems.length,
-      itemsToRead: includedItems.length,
-      sample: includedItems.slice(0, 3).map(item => item?.fullPath || item?.name || ''),
-    });
     const settledPhotos = await Promise.allSettled(
-      includedItems
+      items
+        .filter(item => !isMedicationStorageItem(item, userId))
+        .filter(item => !excludePaths.has(String(item?.fullPath || '')))
         .map(async item => {
           const bytes = await getBytes(item);
-          const contentType = await getStorageContentType(item, bytes, options);
+          const contentType = await getStorageContentType(item, bytes);
           if (!contentType) return '';
-          pushStoragePhotoDebug(options, 'Storage photo prepared as data URL for PDF', {
-            fullPath: item?.fullPath || null,
-            contentType,
-            byteLength: bytes?.byteLength || bytes?.length || 0,
-          });
           return `data:${contentType};base64,${bytesToBase64(bytes)}`;
         })
     );
 
-    const dataUrls = settledPhotos
+    return settledPhotos
       .flatMap(result => {
         if (result.status === 'fulfilled') return [result.value];
         console.error('Error loading user photo bytes from Storage:', result.reason);
-        pushStoragePhotoDebug(options, 'Storage photo bytes load failed', {
-          message: result.reason?.message || String(result.reason),
-        });
         return [];
       })
       .filter(Boolean);
-    pushStoragePhotoDebug(options, 'Storage avatar data URL load finished for PDF', {
-      requested: includedItems.length,
-      preparedDataUrls: dataUrls.length,
-      failedOrUnsupported: includedItems.length - dataUrls.length,
-    });
-    return dataUrls;
   } catch (error) {
     console.error('Error listing user photo bytes from Storage:', error);
-    pushStoragePhotoDebug(options, 'Storage avatar folder list failed for PDF', {
-      userId,
-      folder: `avatar/${userId}`,
-      message: error?.message || String(error),
-    });
     return [];
   }
 };
