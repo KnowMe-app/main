@@ -24,6 +24,7 @@ import {
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
+import { isPdfImageDataUrl, loadFirebasePhotoAsDataUrl } from '../utils/pdfImageDataUrl';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
 import { getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
@@ -2939,20 +2940,6 @@ const getStorageContentType = async (item, bytes, options = {}) => {
   return null;
 };
 
-const bytesToBase64 = bytes => {
-  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let index = 0; index < byteArray.length; index += chunkSize) {
-    binary += String.fromCharCode(...byteArray.subarray(index, index + chunkSize));
-  }
-
-  if (typeof btoa === 'function') {
-    return btoa(binary);
-  }
-  return Buffer.from(binary, 'binary').toString('base64');
-};
-
 const isMedicationStorageItem = (item, userId) => String(item?.fullPath || '').startsWith(`avatar/${userId}/medication/`);
 
 export const getUserStorageAvatarPhotos = async userId => {
@@ -2998,62 +2985,35 @@ export const getUserStorageAvatarPhotoDataUrls = async (userId, options = {}) =>
     });
     const settledPhotos = await Promise.allSettled(
       includedItems
-        .map(async item => {
-          const fullPath = item?.fullPath || null;
-          const bytes = await getBytes(item);
-          const contentType = await getStorageContentType(item, bytes, options);
-          if (!contentType) {
-            const fallbackUrl = await getDownloadURL(item);
-            pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
-              fullPath,
-              reason: 'unsupported-or-unresolved-content-type',
-            });
-            return fallbackUrl;
-          }
-          pushStoragePhotoDebug(options, 'Storage photo prepared as data URL for PDF', {
-            fullPath,
-            contentType,
-            byteLength: bytes?.byteLength || bytes?.length || 0,
-          });
-          return `data:${contentType};base64,${bytesToBase64(bytes)}`;
-        })
+        .map(item => loadFirebasePhotoAsDataUrl(item, {
+          getBytes,
+          getDownloadURL,
+          resolveContentType: (photoRef, bytes) => getStorageContentType(photoRef, bytes, options),
+          onDebug: (message, payload) => pushStoragePhotoDebug(options, message, payload),
+        }))
     );
 
-    const dataUrls = settledPhotos
+    const storageDataUrls = settledPhotos
       .flatMap((result, index) => {
         if (result.status === 'fulfilled') return [result.value];
         const item = includedItems[index];
-        console.error('Error loading user photo bytes from Storage:', result.reason);
-        pushStoragePhotoDebug(options, 'Storage photo bytes load failed; trying download URL fallback for PDF', {
+        console.error('Error loading user photo as data URL from Storage:', result.reason);
+        pushStoragePhotoDebug(options, 'photo skipped: could not convert to data URL', {
           fullPath: item?.fullPath || null,
           message: result.reason?.message || String(result.reason),
         });
-        return [getDownloadURL(item)
-          .then(url => {
-            pushStoragePhotoDebug(options, 'Storage photo added as download URL fallback for PDF', {
-              fullPath: item?.fullPath || null,
-              reason: result.reason?.code || result.reason?.message || String(result.reason),
-            });
-            return url;
-          })
-          .catch(error => {
-            console.error('Error loading user photo download URL from Storage:', error);
-            pushStoragePhotoDebug(options, 'Storage photo download URL fallback failed for PDF', {
-              fullPath: item?.fullPath || null,
-              message: error?.message || String(error),
-            });
-            return '';
-          })];
+        return [];
       })
-      .filter(Boolean);
-    const resolvedDataUrls = (await Promise.all(dataUrls)).filter(Boolean);
+      .filter(isPdfImageDataUrl);
     pushStoragePhotoDebug(options, 'Storage avatar data URL load finished for PDF', {
       requested: includedItems.length,
-      preparedDataUrls: resolvedDataUrls.filter(url => String(url).startsWith('data:image/')).length,
-      fallbackDownloadUrls: resolvedDataUrls.filter(url => /^https?:\/\//i.test(String(url))).length,
-      failedOrUnsupported: includedItems.length - resolvedDataUrls.length,
+      storageDataUrls: storageDataUrls.length,
+      storageDownloadUrlFallbacks: 0,
+      preparedDataUrls: storageDataUrls.length,
+      fallbackDownloadUrls: 0,
+      failedOrUnsupported: includedItems.length - storageDataUrls.length,
     });
-    return resolvedDataUrls;
+    return storageDataUrls;
   } catch (error) {
     console.error('Error listing user photo bytes from Storage:', error);
     pushStoragePhotoDebug(options, 'Storage avatar folder list failed for PDF', {
