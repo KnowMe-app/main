@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc as firebaseGetDoc, getDocs as firebaseGetDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getMetadata as firebaseGetMetadata } from 'firebase/storage';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getMetadata as firebaseGetMetadata, setMaxDownloadRetryTime, setMaxOperationRetryTime } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -66,7 +66,8 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
-storage.maxOperationRetryTime = 120000;
+setMaxDownloadRetryTime(storage, 120000);
+setMaxOperationRetryTime(storage, 120000);
 export const database = getDatabase(app);
 
 const getCurrentAdminUid = () => auth.currentUser?.uid;
