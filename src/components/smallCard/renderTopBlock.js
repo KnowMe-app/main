@@ -49,6 +49,7 @@ import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { filterOutMedicationPhotos } from 'utils/photoFilters';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
+import { isPdfImageDataUrl, blobToDataUrl } from 'utils/pdfImageDataUrl';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
@@ -1106,7 +1107,7 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
 
   if (!cardData?.userId) {
     pushPdfDebugLine(debugLines, 'No userId on cardData; using only existing photos', summarizePdfDebugUrls(existingPhotos));
-    return existingPhotos;
+    return existingPhotos.filter(isPdfImageDataUrl);
   }
 
   const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
@@ -1141,13 +1142,23 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
     sample: existingStorageAvatarPaths.slice(0, PDF_DEBUG_URL_SAMPLE_SIZE),
     note: 'Storage data URLs are still loaded for all avatar/{userId} files to avoid URL fallback/CORS failures in PDF',
   });
-  pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} as data URLs', summarizePdfDebugUrls(storagePhotos));
+  pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} storageDataUrls', summarizePdfDebugUrls(storagePhotos.filter(isPdfImageDataUrl)));
+  pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} storageDownloadUrlFallbacks', summarizePdfDebugUrls(storagePhotos.filter(url => /^https?:\/\//i.test(String(url)))));
   pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
 
   const combinedPhotos = [...existingPhotos, ...storagePhotos, ...loadedPhotos];
   const filteredPhotos = filterOutMedicationPhotos(combinedPhotos, cardData.userId);
   const convertedPhotos = filteredPhotos.map(convertDriveLinkToImage).filter(Boolean);
-  const uniquePhotos = Array.from(new Set(convertedPhotos));
+  const uniquePhotos = Array.from(new Set(convertedPhotos)).filter(photo => {
+    const printable = isPdfImageDataUrl(photo);
+    if (!printable && photo) {
+      pushPdfDebugLine(debugLines, 'photo skipped: could not convert to data URL', {
+        url: truncatePdfDebugValue(photo),
+        reason: 'final PDF image list accepts only data:image/...;base64 URLs',
+      });
+    }
+    return printable;
+  });
 
   pushPdfDebugLine(debugLines, 'Combined photos before medication filter', summarizePdfDebugUrls(combinedPhotos));
   pushPdfDebugLine(debugLines, 'Photos after medication filter', summarizePdfDebugUrls(filteredPhotos));
@@ -1160,13 +1171,6 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
 
   return uniquePhotos;
 };
-
-const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-  reader.onerror = () => reject(reader.error);
-  reader.readAsDataURL(blob);
-});
 
 const loadImageUrlWithXhr = photoUrl => new Promise((resolve, reject) => {
   const request = new XMLHttpRequest();
@@ -1220,7 +1224,7 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
     return { src: '', debug: `Photo ${index + 1}: empty URL` };
   }
 
-  if (String(photoUrl).startsWith('data:image/')) {
+  if (isPdfImageDataUrl(photoUrl)) {
     pushPdfDebugLine(debugLines, 'Embedding photo: using prepared data URL', { index: index + 1 });
     return { src: photoUrl, debug: '' };
   }
@@ -1235,8 +1239,8 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
       type: blob.type || null,
       size: blob.size || 0,
     });
-    const dataUrl = await readBlobAsDataUrl(blob);
-    const isImageDataUrl = dataUrl.startsWith('data:image/');
+    const dataUrl = await blobToDataUrl(blob);
+    const isImageDataUrl = isPdfImageDataUrl(dataUrl);
     pushPdfDebugLine(debugLines, 'Embedding photo: data URL created', {
       url: debugUrl,
       length: dataUrl.length,
@@ -1285,8 +1289,8 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
       pushPdfDebugLine(debugLines, 'Embedded photo summary', {
         attempted: effectivePhotoUrls.length,
         printable: printablePhotoEntries.length,
-        dataUrls: printablePhotoEntries.filter(entry => String(entry.src).startsWith('data:image/')).length,
-        originalUrlFallbacks: printablePhotoEntries.filter(entry => !String(entry.src).startsWith('data:image/')).length,
+        dataUrls: printablePhotoEntries.filter(entry => isPdfImageDataUrl(entry.src)).length,
+        originalUrlFallbacks: printablePhotoEntries.filter(entry => !isPdfImageDataUrl(entry.src)).length,
         failedWithoutFallback: effectivePhotoUrls.length - printablePhotoEntries.length,
       });
       if (!printablePhotoEntries.length) {
