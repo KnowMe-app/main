@@ -49,7 +49,7 @@ import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { filterOutMedicationPhotos } from 'utils/photoFilters';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
-import { isPdfImageDataUrl, isHttpImageUrl, fetchImageUrlAsDataUrl } from 'utils/pdfImageDataUrl';
+import { isPdfImageDataUrl, isHttpImageUrl } from 'utils/pdfImageDataUrl';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
@@ -1154,7 +1154,17 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   }
 
   const existingPhotoCandidates = preparePdfPhotoCandidates(existingPhotos, cardData.userId, debugLines);
-  pushPdfDebugLine(debugLines, 'Prepared existing card photo URLs for PDF', summarizePdfEmbeddingCandidates(existingPhotoCandidates.uniquePhotos));
+  const existingLimitedPhotos = existingPhotoCandidates.uniquePhotos.slice(0, PDF_MAX_PROFILE_PHOTOS);
+  if (existingLimitedPhotos.length) {
+    pushPdfDebugLine(debugLines, 'Using existing card photo URLs for PDF', summarizePdfEmbeddingCandidates(existingLimitedPhotos));
+    if (existingPhotoCandidates.uniquePhotos.length > existingLimitedPhotos.length) {
+      pushPdfDebugLine(debugLines, 'PDF photo list limited for mobile export stability', {
+        limit: PDF_MAX_PROFILE_PHOTOS,
+        skippedByLimit: existingPhotoCandidates.uniquePhotos.length - existingLimitedPhotos.length,
+      });
+    }
+    return existingLimitedPhotos;
+  }
 
   const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
   pushPdfDebugLine(debugLines, 'Resolved photo source collection', {
@@ -1193,7 +1203,7 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} storageDownloadUrlFallbacks', summarizePdfDebugUrls(storagePhotos.filter(url => /^https?:\/\//i.test(String(url)))));
   pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
 
-  const combinedPhotos = [...existingPhotoCandidates.uniquePhotos, ...storagePhotos, ...loadedPhotos];
+  const combinedPhotos = [...storagePhotos, ...loadedPhotos];
   const { filteredPhotos, convertedPhotos, uniquePhotos } = preparePdfPhotoCandidates(combinedPhotos, cardData.userId, debugLines);
   const limitedPhotos = uniquePhotos.slice(0, PDF_MAX_PROFILE_PHOTOS);
 
@@ -1234,22 +1244,8 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
     return { src: '', debug: `Photo ${index + 1}: skipped because URL is unsupported` };
   }
 
-  try {
-    const dataUrl = await withPdfTimeout(
-      fetchImageUrlAsDataUrl(photoUrl),
-      15000,
-      `Photo ${index + 1} remote validation timed out`,
-    );
-    pushPdfDebugLine(debugLines, 'Embedding photo: converted remote URL to data URL', { index: index + 1, url: debugUrl });
-    return { src: dataUrl, debug: '' };
-  } catch (error) {
-    pushPdfDebugLine(debugLines, 'Embedding photo skipped: could not validate remote URL', {
-      index: index + 1,
-      url: debugUrl,
-      message: error?.message || String(error),
-    });
-    return { src: '', debug: `Photo ${index + 1}: skipped because remote URL could not be validated` };
-  }
+  pushPdfDebugLine(debugLines, 'Embedding photo: using existing remote URL', debugUrl);
+  return { src: photoUrl, debug: `Photo ${index + 1}: embedded as existing URL` };
 };
 
 const isSurrogateMotherRole = data => String(data?.userRole || data?.role || '').trim().toLowerCase() === 'sm';
