@@ -1007,7 +1007,6 @@ const buildProfilePdfFileName = data => {
 const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
   const rows = buildProfilePdfRows(userData);
   const photos = Array.isArray(photoUrls) ? photoUrls : [];
-  const debugEntries = Array.isArray(debugLines) ? debugLines.filter(Boolean) : [];
   const photoEntries = photos.map(photo => (
     photo && typeof photo === 'object' ? photo : { src: photo, debug: '' }
   )).filter(photo => photo?.src);
@@ -1024,20 +1023,6 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
               {label}: {value}
             </Text>
           ))}
-        </View>
-        {pdfFooter}
-      </Page>
-      <Page size="A4" style={profilePdfStyles.debugPage}>
-        <Text style={profilePdfStyles.watermark}>UKRCOM</Text>
-        <Text style={profilePdfStyles.debugTitle}>PDF photo debug</Text>
-        <View style={profilePdfStyles.debugContent}>
-          {debugEntries.length > 0 ? debugEntries.map((line, index) => (
-            <Text key={`${line}-${index}`} style={profilePdfStyles.debugText}>
-              {index + 1}. {line}
-            </Text>
-          )) : (
-            <Text style={profilePdfStyles.debugText}>No debug entries were collected.</Text>
-          )}
         </View>
         {pdfFooter}
       </Page>
@@ -1123,9 +1108,7 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
   let loadedPhotos = [];
   try {
     [storagePhotos, loadedPhotos] = await Promise.all([
-      getUserStorageAvatarPhotoDataUrls(cardData.userId, {
-        onDebug: (message, payload) => pushPdfDebugLine(debugLines, message, payload),
-      }),
+      getUserStorageAvatarPhotoDataUrls(cardData.userId, { excludePaths: existingStorageAvatarPaths }),
       getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false }),
     ]);
   } catch (error) {
@@ -1136,10 +1119,9 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debu
     throw error;
   }
 
-  pushPdfDebugLine(debugLines, 'Existing Storage avatar paths already present in card data', {
+  pushPdfDebugLine(debugLines, 'Existing Storage avatar paths excluded from Storage data URL load', {
     count: existingStorageAvatarPaths.length,
     sample: existingStorageAvatarPaths.slice(0, PDF_DEBUG_URL_SAMPLE_SIZE),
-    note: 'Storage data URLs are still loaded for all avatar/{userId} files to avoid URL fallback/CORS failures in PDF',
   });
   pushPdfDebugLine(debugLines, 'Photos from Storage avatar/{userId} as data URLs', summarizePdfDebugUrls(storagePhotos));
   pushPdfDebugLine(debugLines, 'Photos from database collections', summarizePdfDebugUrls(loadedPhotos));
@@ -1208,18 +1190,18 @@ const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
       isImageDataUrl,
     });
     if (!isImageDataUrl) {
-      pushPdfDebugLine(debugLines, 'Embedding photo skipped: fetched data URL is not an image', debugUrl);
-      return { src: '', debug: `Photo ${index + 1}: skipped because fetched blob was not image data` };
+      pushPdfDebugLine(debugLines, 'Embedding photo: data URL is not an image, using original URL fallback', debugUrl);
+      return { src: photoUrl, debug: `Photo ${index + 1}: original URL fallback; fetched blob was not image data` };
     }
     return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
   } catch (error) {
     console.error('Unable to load PDF photo', photoUrl, error);
-    pushPdfDebugLine(debugLines, 'Embedding photo failed; skipped original URL fallback for PDF reliability', {
+    pushPdfDebugLine(debugLines, 'Embedding photo failed; using original URL fallback', {
       url: debugUrl,
       name: error?.name || null,
       message: error?.message || String(error),
     });
-    return { src: '', debug: `Photo ${index + 1}: skipped after fetch error (${error?.message || String(error)})` };
+    return { src: photoUrl, debug: `Photo ${index + 1}: original URL fallback after fetch error (${error?.message || String(error)})` };
   }
 };
 
