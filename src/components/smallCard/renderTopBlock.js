@@ -796,6 +796,12 @@ const profilePdfStyles = StyleSheet.create({
     fontFamily: 'NotoSans',
     backgroundColor: '#fff',
   },
+  profileImageWrap: {
+    position: 'relative',
+    alignSelf: 'center',
+    width: 455,
+    maxHeight: 620,
+  },
   profileImage: {
     position: 'relative',
     zIndex: 1,
@@ -807,8 +813,8 @@ const profilePdfStyles = StyleSheet.create({
   imageWatermark: {
     position: 'absolute',
     zIndex: 0,
-    left: 52,
-    top: 430,
+    left: -32,
+    top: 230,
     width: 520,
     textAlign: 'center',
     fontSize: 86,
@@ -1012,8 +1018,10 @@ const ProfilePdfDocument = ({ userData, photoUrls }) => {
       </Page>
       {photoEntries.map((photo, index) => (
         <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
-          <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
-          <Image src={photo.src} style={profilePdfStyles.profileImage} />
+          <View style={profilePdfStyles.profileImageWrap}>
+            <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
+            <Image src={photo.src} style={profilePdfStyles.profileImage} />
+          </View>
           {pdfFooter}
         </Page>
       ))}
