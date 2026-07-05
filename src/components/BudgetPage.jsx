@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
-import { get, ref, set } from 'firebase/database';
-import { FaCheck, FaChevronDown, FaChevronUp, FaFilePdf, FaUpload } from 'react-icons/fa';
+import { get, ref, remove, set, update } from 'firebase/database';
+import { FaCheck, FaChevronDown, FaChevronUp, FaFilePdf, FaTimes, FaUpload } from 'react-icons/fa';
 import { database } from './config';
 
 const USD_ITEM_IDS = new Set([
@@ -11,11 +11,26 @@ const USD_ITEM_IDS = new Set([
   'sm-compensation',
 ]);
 const USD_TO_EUR_RATE = 0.92;
+const INCLUDED_PREVIEW_LIMIT = 6;
+const POPULAR_PACKAGE_ID = '3';
+const POPULAR_PACKAGE_BADGE = 'Most popular';
+const GUARANTEED_PACKAGE_IDS = new Set(['4', '5']);
+const FROM_PRICE_ITEM_IDS = new Set(['43', '49', '54', '61', '63', '64', '65']);
+const CATEGORY_LABELS = {
+  coordination: 'Coordination & Documents',
+  surrogateMother: 'Surrogate Mother',
+  eggDonor: 'Egg Donor',
+  ivf: 'IVF & Embryology',
+  pregnancyAndDiagnostics: 'Pregnancy & Diagnostics',
+  deliveryAndNewborn: 'Delivery & Newborn',
+  legalAndRegistration: 'Legal & Registration',
+  insurance: 'Insurance',
+};
 
 const formatMoney = (value, currency = 'EUR') => {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return `— ${currency || 'EUR'}`;
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount)} ${currency || 'EUR'}`;
+  return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)} ${currency || 'EUR'}`;
 };
 
 const normalizeCatalog = catalog => ({
@@ -32,19 +47,45 @@ const validateCatalog = catalog => {
   return '';
 };
 
-const getItemDisplayPrice = item => {
+const getItemDisplayAmount = item => {
   const basePrice = Number(item?.price);
-  if (!Number.isFinite(basePrice)) return formatMoney(item?.price, 'EUR');
+  if (!Number.isFinite(basePrice)) return null;
   const isUsd = USD_ITEM_IDS.has(String(item?.id || '').trim());
-  const amount = isUsd ? basePrice * USD_TO_EUR_RATE : basePrice;
-  return formatMoney(amount, 'EUR');
+  return isUsd ? basePrice * USD_TO_EUR_RATE : basePrice;
+};
+
+const getItemDisplayPrice = item => {
+  const amount = getItemDisplayAmount(item);
+  return amount === null ? formatMoney(item?.price, 'EUR') : formatMoney(amount, 'EUR');
+};
+
+const getExpensePriceLabel = item => {
+  const prefix = FROM_PRICE_ITEM_IDS.has(String(item?.id)) ? 'from ' : '';
+  return `${prefix}${getItemDisplayPrice(item)}`;
+};
+
+const getCategoryLabel = category => {
+  const key = String(category || 'Other');
+  if (CATEGORY_LABELS[key]) return CATEGORY_LABELS[key];
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase()) || 'Other';
+};
+
+const getCategoryMinimumPrice = items => {
+  const amounts = items.map(getItemDisplayAmount).filter(amount => Number.isFinite(amount));
+  if (!amounts.length) return '';
+  return `from ${formatMoney(Math.min(...amounts), 'EUR')}`;
 };
 
 const Page = styled.main`
   min-height: 100vh;
   background: linear-gradient(180deg, #fbf4eb 0%, #f7efe4 44%, #fffaf4 100%);
   color: #2f2923;
-  padding: 22px 14px 40px;
+  padding: 22px 14px 96px;
   font-family: 'DM Sans', 'Inter', Arial, sans-serif;
 `;
 
@@ -157,11 +198,35 @@ const ProgramsGrid = styled.div`
 `;
 
 const ProgramCard = styled.article`
-  border: 1px solid rgba(140, 101, 70, 0.16);
+  position: relative;
+  border: 1px solid ${({ $guaranteed }) => ($guaranteed ? 'rgba(175, 126, 51, 0.46)' : 'rgba(140, 101, 70, 0.16)')};
   border-radius: 28px;
-  background: rgba(255, 250, 244, 0.92);
+  background: ${({ $guaranteed }) => ($guaranteed ? 'rgba(255, 248, 235, 0.96)' : 'rgba(255, 250, 244, 0.92)')};
   box-shadow: 0 24px 70px rgba(89, 63, 40, 0.09);
   padding: 22px;
+`;
+
+const Badge = styled.span`
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border-radius: 999px;
+  background: #efe0ca;
+  color: #6c472f;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 6px 9px;
+  text-transform: uppercase;
+`;
+
+const ProgramMeta = styled.div`
+  color: #9b6b2e;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
 `;
 
 const ProgramName = styled.h3`
@@ -214,6 +279,10 @@ const IncludedItem = styled.div`
   color: #4b4139;
   font-size: 14px;
   line-height: 1.45;
+
+  strong {
+    display: block;
+  }
 `;
 
 const CheckIcon = styled.span`
@@ -233,7 +302,10 @@ const DetailButton = styled.button`
   border: 0;
   background: transparent;
   color: #8a5c3f;
-  padding: 5px 0 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 5px 0;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
@@ -286,6 +358,18 @@ const Count = styled.span`
   font-weight: 800;
 `;
 
+const ShowMoreButton = styled.button`
+  border: 1px solid rgba(140, 101, 70, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 250, 244, 0.72);
+  color: #67462f;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+`;
+
 const ExpenseRows = styled.div`
   border-top: 1px solid rgba(140, 101, 70, 0.13);
   padding: 2px 18px 10px;
@@ -327,6 +411,75 @@ const Muted = styled.p`
   line-height: 1.45;
 `;
 
+const InternalNote = styled.div`
+  margin-top: 8px;
+  border: 1px solid rgba(185, 28, 28, 0.28);
+  border-radius: 12px;
+  background: rgba(254, 226, 226, 0.64);
+  color: #991b1b;
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0 8px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+`;
+
+const IconButton = styled.button`
+  border: 0;
+  background: transparent;
+  color: inherit;
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+`;
+
+const EditableField = styled.label`
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  color: #7b6553;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+`;
+
+const EditInput = styled.input`
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dfcdbc;
+  border-radius: 12px;
+  background: rgba(255, 250, 244, 0.92);
+  color: #382d24;
+  padding: 10px 11px;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+`;
+
+const EditTextarea = styled.textarea`
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dfcdbc;
+  border-radius: 12px;
+  background: rgba(255, 250, 244, 0.92);
+  color: #382d24;
+  min-height: 74px;
+  padding: 10px 11px;
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+  text-transform: none;
+  letter-spacing: normal;
+`;
+
 const SearchInput = styled.input`
   width: 100%;
   box-sizing: border-box;
@@ -355,6 +508,31 @@ const StateCard = styled.div`
   color: #6d6259;
 `;
 
+const StickyContact = styled.div`
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  min-height: 64px;
+  padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: rgba(255, 250, 244, 0.82);
+  border-top: 1px solid rgba(140, 101, 70, 0.16);
+  backdrop-filter: blur(12px);
+`;
+
+const StickyContactInner = styled.div`
+  width: min(100%, 1120px);
+  margin: 0 auto;
+`;
+
+const StickyButton = styled(CTA)`
+  margin-top: 0;
+  min-height: 48px;
+  padding: 12px 16px;
+`;
+
 const BudgetPage = () => {
   const [catalog, setCatalog] = useState(() => normalizeCatalog(null));
   const [loading, setLoading] = useState(true);
@@ -362,8 +540,12 @@ const BudgetPage = () => {
   const [openPrograms, setOpenPrograms] = useState({});
   const [openDetails, setOpenDetails] = useState({});
   const [openCategories, setOpenCategories] = useState({});
+  const [expandedIncluded, setExpandedIncluded] = useState({});
   const [query, setQuery] = useState('');
+  const [showStickyContact, setShowStickyContact] = useState(false);
   const fileInputRef = useRef(null);
+  const isAdminUploadVisible = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('admin') === '1';
 
   const loadBudget = useCallback(async () => {
     setLoading(true);
@@ -384,6 +566,15 @@ const BudgetPage = () => {
     loadBudget();
   }, [loadBudget]);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowStickyContact(window.scrollY > window.innerHeight);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const itemsById = useMemo(() => {
     return new Map(catalog.items.map(item => [String(item.id), item]));
   }, [catalog.items]);
@@ -395,7 +586,8 @@ const BudgetPage = () => {
   const groupedExpenses = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return catalog.items.reduce((groups, item) => {
-      if (normalizedQuery && !String(item.name || '').toLowerCase().includes(normalizedQuery)) return groups;
+      const searchableText = `${item.name || ''} ${item.description || ''} ${item.internalNote || ''}`.toLowerCase();
+      if (normalizedQuery && !searchableText.includes(normalizedQuery)) return groups;
       const category = item.category || 'Other';
       if (!groups[category]) groups[category] = [];
       groups[category].push(item);
@@ -430,6 +622,105 @@ const BudgetPage = () => {
   const toggleProgram = id => setOpenPrograms(current => ({ ...current, [id]: !current[id] }));
   const toggleDetail = id => setOpenDetails(current => ({ ...current, [id]: !current[id] }));
   const toggleCategory = category => setOpenCategories(current => ({ ...current, [category]: !current[category] }));
+  const toggleIncluded = id => setExpandedIncluded(current => ({ ...current, [id]: !current[id] }));
+
+  const updateCatalogRecord = (collection, recordId, changes) => {
+    setCatalog(current => ({
+      ...current,
+      [collection]: current[collection].map(record => (
+        String(record.id) === String(recordId) ? { ...record, ...changes } : record
+      )),
+    }));
+  };
+
+  const persistCatalogRecordField = async (collection, recordId, field, value) => {
+    const index = catalog[collection].findIndex(record => String(record.id) === String(recordId));
+    if (index === -1) return;
+    const numericFields = new Set(['price', 'listedPrice', 'extraUnitPrice']);
+    const nextValue = numericFields.has(field) && value !== '' ? Number(value) : value;
+    updateCatalogRecord(collection, recordId, { [field]: nextValue });
+    try {
+      await update(ref(database, `budget/${collection}/${index}`), { [field]: nextValue });
+      toast.success('Budget field updated.');
+    } catch (saveError) {
+      console.error('Unable to update budget field', saveError);
+      toast.error('Unable to update budget field.');
+      loadBudget();
+    }
+  };
+
+  const handleCatalogFieldChange = (collection, recordId, field, value) => {
+    updateCatalogRecord(collection, recordId, { [field]: value });
+  };
+
+  const removeInternalNote = async (collection, recordId) => {
+    const index = catalog[collection].findIndex(record => String(record.id) === String(recordId));
+    if (index === -1) return;
+    updateCatalogRecord(collection, recordId, { internalNote: undefined });
+    try {
+      await remove(ref(database, `budget/${collection}/${index}/internalNote`));
+      toast.success('Internal note removed.');
+    } catch (saveError) {
+      console.error('Unable to remove internal note', saveError);
+      toast.error('Unable to remove internal note.');
+      loadBudget();
+    }
+  };
+
+  const scrollToContact = () => {
+    const target = document.getElementById('contact') || document.querySelector('[data-contact-section]');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    window.location.hash = 'contact';
+  };
+
+  const renderInternalNote = (collection, record) => (
+    record.internalNote ? (
+      <InternalNote>
+        <span>{record.internalNote}</span>
+        <IconButton
+          type="button"
+          aria-label="Remove internal note"
+          onClick={() => removeInternalNote(collection, record.id)}
+        >
+          <FaTimes />
+        </IconButton>
+      </InternalNote>
+    ) : null
+  );
+
+  const renderEditableFields = (collection, record, priceField = 'price') => (
+    <>
+      <EditableField>
+        Name
+        <EditInput
+          value={record.name || ''}
+          onChange={event => handleCatalogFieldChange(collection, record.id, 'name', event.target.value)}
+          onBlur={event => persistCatalogRecordField(collection, record.id, 'name', event.target.value)}
+        />
+      </EditableField>
+      <EditableField>
+        Description
+        <EditTextarea
+          value={record.description || ''}
+          onChange={event => handleCatalogFieldChange(collection, record.id, 'description', event.target.value)}
+          onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
+        />
+      </EditableField>
+      <EditableField>
+        Price
+        <EditInput
+          type="number"
+          inputMode="decimal"
+          value={record[priceField] ?? ''}
+          onChange={event => handleCatalogFieldChange(collection, record.id, priceField, event.target.value)}
+          onBlur={event => persistCatalogRecordField(collection, record.id, priceField, event.target.value)}
+        />
+      </EditableField>
+    </>
+  );
 
   return (
     <Page>
@@ -446,11 +737,15 @@ const BudgetPage = () => {
             <SoftButton type="button" disabled title="PDF export will be added in the next step">
               <FaFilePdf /> Export as PDF
             </SoftButton>
-            {/* Temporary migration button. Remove after the budget catalog has been uploaded to the backend. */}
-            <SoftButton type="button" onClick={handleUploadClick} $danger>
-              <FaUpload /> Upload budget JSON to backend
-            </SoftButton>
-            <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={handleBudgetFileChange} />
+            {isAdminUploadVisible ? (
+              <>
+                {/* Temporary migration button. Remove after the budget catalog has been uploaded to the backend. */}
+                <SoftButton type="button" onClick={handleUploadClick} $danger>
+                  <FaUpload /> Upload budget JSON to backend
+                </SoftButton>
+                <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={handleBudgetFileChange} />
+              </>
+            ) : null}
           </HeaderActions>
         </Header>
 
@@ -469,21 +764,31 @@ const BudgetPage = () => {
               <ProgramsGrid>
                 {sortedPackages.map(program => {
                   const isOpen = Boolean(openPrograms[program.id]);
+                  const isPopular = String(program.id) === POPULAR_PACKAGE_ID;
+                  const isGuaranteed = GUARANTEED_PACKAGE_IDS.has(String(program.id));
                   const includedItems = Array.isArray(program.children)
                     ? program.children.map(id => itemsById.get(String(id))).filter(Boolean)
                     : [];
+                  const includedExpanded = Boolean(expandedIncluded[program.id]);
+                  const visibleIncludedItems = includedExpanded
+                    ? includedItems
+                    : includedItems.slice(0, INCLUDED_PREVIEW_LIMIT);
                   return (
-                    <ProgramCard key={program.id}>
+                    <ProgramCard key={program.id} $guaranteed={isGuaranteed}>
+                      {isPopular ? <Badge>{POPULAR_PACKAGE_BADGE}</Badge> : null}
+                      {isGuaranteed ? <ProgramMeta>Guaranteed program</ProgramMeta> : null}
                       <ProgramName>{program.name}</ProgramName>
                       <Price>{formatMoney(program.listedPrice, program.currency || 'EUR')}</Price>
                       {program.description ? <Description>{program.description}</Description> : null}
+                      {renderInternalNote('packages', program)}
+                      {renderEditableFields('packages', program, 'listedPrice')}
                       <Toggle type="button" onClick={() => toggleProgram(program.id)} aria-expanded={isOpen}>
                         <span>What's included</span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
                       </Toggle>
                       {isOpen ? (
                         <IncludedList>
-                          {includedItems.map(item => {
+                          {visibleIncludedItems.map(item => {
                             const detailOpen = Boolean(openDetails[item.id]);
                             return (
                               <IncludedItem key={item.id}>
@@ -498,10 +803,19 @@ const BudgetPage = () => {
                                       </DetailButton>
                                     </>
                                   ) : null}
+                                  {renderInternalNote('items', item)}
+                                  {renderEditableFields('items', item)}
                                 </div>
                               </IncludedItem>
                             );
                           })}
+                          {includedItems.length > INCLUDED_PREVIEW_LIMIT ? (
+                            <ShowMoreButton type="button" onClick={() => toggleIncluded(program.id)}>
+                              {includedExpanded
+                                ? 'Show fewer included services'
+                                : `Show all ${includedItems.length} included services`}
+                            </ShowMoreButton>
+                          ) : null}
                         </IncludedList>
                       ) : null}
                       <CTA type="button">Request this program</CTA>
@@ -522,16 +836,17 @@ const BudgetPage = () => {
                 type="search"
                 value={query}
                 onChange={event => setQuery(event.target.value)}
-                placeholder="Search expenses by name"
-                aria-label="Search expenses by name"
+                placeholder="Search additional services..."
+                aria-label="Search additional services"
               />
               <AccordionList>
                 {Object.entries(groupedExpenses).map(([category, items]) => {
                   const isOpen = Boolean(openCategories[category]);
+                  const minimumPrice = getCategoryMinimumPrice(items);
                   return (
                     <Accordion key={category}>
                       <AccordionHeader type="button" onClick={() => toggleCategory(category)} aria-expanded={isOpen}>
-                        <span>{category} <Count>{items.length} items</Count></span>
+                        <span>{getCategoryLabel(category)} {minimumPrice ? <Count>{minimumPrice}</Count> : null}</span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
                       </AccordionHeader>
                       {isOpen ? (
@@ -540,12 +855,14 @@ const BudgetPage = () => {
                             <ExpenseRow key={item.id}>
                               <ExpenseTop>
                                 <ExpenseName>{item.name}</ExpenseName>
-                                <ExpensePrice>{getItemDisplayPrice(item)}</ExpensePrice>
+                                <ExpensePrice>{getExpensePriceLabel(item)}</ExpensePrice>
                               </ExpenseTop>
                               {item.description ? <Muted>{item.description}</Muted> : null}
                               {item.extraUnit && item.extraUnitPrice ? (
                                 <Muted>Additional {item.extraUnit}: {formatMoney(item.extraUnitPrice, 'EUR')}</Muted>
                               ) : null}
+                              {renderInternalNote('items', item)}
+                              {renderEditableFields('items', item)}
                             </ExpenseRow>
                           ))}
                         </ExpenseRows>
@@ -567,6 +884,13 @@ const BudgetPage = () => {
           </>
         ) : null}
       </Shell>
+      {showStickyContact ? (
+        <StickyContact>
+          <StickyContactInner>
+            <StickyButton type="button" onClick={scrollToContact}>Contact us</StickyButton>
+          </StickyContactInner>
+        </StickyContact>
+      ) : null}
     </Page>
   );
 };
