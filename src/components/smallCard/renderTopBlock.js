@@ -771,6 +771,8 @@ const profilePdfStyles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   profileImage: {
+    position: 'relative',
+    zIndex: 1,
     width: 455,
     maxHeight: 620,
     objectFit: 'contain',
@@ -778,6 +780,7 @@ const profilePdfStyles = StyleSheet.create({
   },
   imageWatermark: {
     position: 'absolute',
+    zIndex: 0,
     left: 52,
     top: 430,
     width: 520,
@@ -786,38 +789,6 @@ const profilePdfStyles = StyleSheet.create({
     color: '#dbeafa',
     opacity: 0.72,
     transform: 'rotate(-42deg)',
-  },
-  debugPage: {
-    position: 'relative',
-    paddingTop: 54,
-    paddingHorizontal: 56,
-    paddingBottom: 74,
-    fontFamily: 'NotoSans',
-    color: '#111',
-    backgroundColor: '#fff',
-  },
-  debugTitle: {
-    marginBottom: 14,
-    textAlign: 'center',
-    fontSize: 16,
-    lineHeight: 1.25,
-  },
-  debugContent: {
-    position: 'relative',
-    zIndex: 2,
-  },
-  debugText: {
-    fontSize: 9,
-    lineHeight: 1.35,
-    marginBottom: 4,
-    color: '#111',
-  },
-  photoCaption: {
-    marginTop: 8,
-    fontSize: 8,
-    lineHeight: 1.3,
-    color: '#444',
-    textAlign: 'center',
   },
 });
 
@@ -991,13 +962,12 @@ const buildProfilePdfFileName = data => {
   return `${safeName || 'profile'}-UKRCOM.pdf`;
 };
 
-const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
+const ProfilePdfDocument = ({ userData, photoUrls }) => {
   const rows = buildProfilePdfRows(userData);
   const photos = Array.isArray(photoUrls) ? photoUrls : [];
   const photoEntries = photos.map(photo => (
-    photo && typeof photo === 'object' ? photo : { src: photo, debug: '' }
+    photo && typeof photo === 'object' ? photo : { src: photo }
   )).filter(photo => photo?.src);
-  const debugEntries = Array.isArray(debugLines) ? debugLines.filter(Boolean) : [];
   return (
     <Document title={`${buildName(userData) || 'Profile'} - UKRCOM`}>
       <Page size="A4" style={profilePdfStyles.page}>
@@ -1016,25 +986,11 @@ const ProfilePdfDocument = ({ userData, photoUrls, debugLines }) => {
       </Page>
       {photoEntries.map((photo, index) => (
         <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
-          <Image src={photo.src} style={profilePdfStyles.profileImage} />
-          {photo.debug ? <Text style={profilePdfStyles.photoCaption}>{photo.debug}</Text> : null}
           <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
+          <Image src={photo.src} style={profilePdfStyles.profileImage} />
           {pdfFooter}
         </Page>
       ))}
-      {debugEntries.length > 0 ? (
-        <Page size="A4" style={profilePdfStyles.debugPage} wrap>
-          <View style={profilePdfStyles.debugContent}>
-            <Text style={profilePdfStyles.debugTitle}>Photo export debug</Text>
-            {debugEntries.map((line, index) => (
-              <Text key={index} style={profilePdfStyles.debugText}>
-                {index + 1}. {line}
-              </Text>
-            ))}
-          </View>
-          {pdfFooter}
-        </Page>
-      ) : null}
     </Document>
   );
 };
@@ -1046,99 +1002,31 @@ const pdfExportButtonStyle = {
   textDecoration: 'none',
 };
 
-const PDF_DEBUG_URL_SAMPLE_SIZE = 3;
-const PDF_DEBUG_URL_MAX_LENGTH = 180;
-const PDF_DEBUG_LINE_MAX_LENGTH = 260;
-
-const truncatePdfDebugValue = value => {
-  const text = String(value || '');
-  return text.length > PDF_DEBUG_URL_MAX_LENGTH ? `${text.slice(0, PDF_DEBUG_URL_MAX_LENGTH)}...` : text;
-};
-
-const formatPdfDebugLine = value => {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  return text.length > PDF_DEBUG_LINE_MAX_LENGTH ? `${text.slice(0, PDF_DEBUG_LINE_MAX_LENGTH)}...` : text;
-};
-
-const pushPdfDebugLine = (debugLines, message, payload) => {
-  if (!Array.isArray(debugLines)) return;
-  if (payload === undefined) {
-    debugLines.push(formatPdfDebugLine(message));
-    return;
-  }
-
-  try {
-    debugLines.push(formatPdfDebugLine(`${message}: ${JSON.stringify(payload)}`));
-  } catch (error) {
-    debugLines.push(formatPdfDebugLine(`${message}: ${String(payload)}`));
-  }
-};
-
-const summarizePdfDebugUrls = urls => {
-  const normalizedUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
-  return {
-    count: normalizedUrls.length,
-    sample: normalizedUrls.slice(0, PDF_DEBUG_URL_SAMPLE_SIZE).map(truncatePdfDebugValue),
-  };
-};
-
-const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection, debugLines }) => {
+const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) => {
   const existingPhotos = Array.isArray(photoUrls) ? photoUrls : [];
-  pushPdfDebugLine(debugLines, 'PDF photo resolve started', {
-    userId: cardData?.userId || null,
-    passedPhotosCollection: photosCollection || null,
-    cardPhotos: summarizePdfDebugUrls(existingPhotos),
-  });
 
   if (!cardData?.userId) {
-    pushPdfDebugLine(debugLines, 'No userId on cardData; using only card photos', summarizePdfDebugUrls(existingPhotos));
     return existingPhotos;
   }
 
-  const { items: storageFiles, error: storageListError } = await getUserStorageAvatarPhotoFiles(cardData.userId);
-  pushPdfDebugLine(debugLines, `Storage listing avatar/${cardData.userId}`, {
-    filesFound: storageFiles.length,
-    listError: storageListError || null,
-  });
-  storageFiles.forEach((file, index) => {
-    pushPdfDebugLine(debugLines, `Storage file ${index + 1}/${storageFiles.length}`, {
-      path: file.path,
-      size: file.size,
-      contentType: file.contentType || null,
-      loaded: Boolean(file.dataUrl),
-      loadedVia: file.source || null,
-      error: file.error || null,
-    });
-  });
-
+  const { items: storageFiles } = await getUserStorageAvatarPhotoFiles(cardData.userId);
   const storagePhotos = storageFiles.map(file => file.dataUrl).filter(Boolean);
   if (storagePhotos.length) {
-    pushPdfDebugLine(debugLines, 'Using photos from Storage avatar folder for PDF', { count: storagePhotos.length });
     return Array.from(new Set(storagePhotos));
   }
 
-  pushPdfDebugLine(debugLines, 'No photos loaded from Storage; falling back to card/database photos');
   const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
   let databasePhotos = [];
   try {
     databasePhotos = await getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false });
   } catch (error) {
-    pushPdfDebugLine(debugLines, 'Database photo fallback failed', {
-      name: error?.name || null,
-      message: error?.message || String(error),
-    });
+    console.error('Unable to load PDF fallback photos', error);
   }
-  pushPdfDebugLine(debugLines, 'Fallback photos from database collections', summarizePdfDebugUrls(databasePhotos));
 
   const combinedPhotos = filterOutMedicationPhotos([...existingPhotos, ...databasePhotos], cardData.userId)
     .map(convertDriveLinkToImage)
     .filter(Boolean);
-  const uniquePhotos = Array.from(new Set(combinedPhotos));
-  pushPdfDebugLine(debugLines, 'Final fallback photo URLs for PDF embedding', summarizePdfDebugUrls(uniquePhotos));
-  if (!uniquePhotos.length) {
-    pushPdfDebugLine(debugLines, 'No photo URLs remained for PDF embedding');
-  }
-  return uniquePhotos;
+  return Array.from(new Set(combinedPhotos));
 };
 
 const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
@@ -1151,7 +1039,7 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
 // @react-pdf/renderer only reliably embeds baseline JPEG/PNG; re-encoding through
 // a canvas normalizes progressive JPEGs, unusual PNG color modes, and EXIF-rotated
 // photos that would otherwise render as a blank page with no error.
-const reencodePdfImageDataUrl = (src, debugLines, index) => new Promise(resolve => {
+const reencodePdfImageDataUrl = src => new Promise(resolve => {
   // window.Image, not the react-pdf Image component imported above — that
   // import shadows the global and `new Image()` here threw "not a constructor",
   // killing the whole export.
@@ -1167,7 +1055,6 @@ const reencodePdfImageDataUrl = (src, debugLines, index) => new Promise(resolve 
       const width = img.naturalWidth || img.width;
       const height = img.naturalHeight || img.height;
       if (!width || !height) {
-        pushPdfDebugLine(debugLines, 'Photo re-encode skipped: image reported no dimensions', { index: index + 1 });
         resolve(src);
         return;
       }
@@ -1176,90 +1063,48 @@ const reencodePdfImageDataUrl = (src, debugLines, index) => new Promise(resolve 
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      const normalizedSrc = canvas.toDataURL('image/jpeg', 0.92);
-      pushPdfDebugLine(debugLines, 'Photo re-encoded as baseline JPEG for PDF compatibility', {
-        index: index + 1,
-        width,
-        height,
-      });
-      resolve(normalizedSrc);
+      resolve(canvas.toDataURL('image/jpeg', 0.92));
     } catch (error) {
-      pushPdfDebugLine(debugLines, 'Photo re-encode failed; using original image for PDF', {
-        index: index + 1,
-        name: error?.name || null,
-        message: error?.message || String(error),
-      });
+      console.error('Unable to re-encode PDF photo', error);
       resolve(src);
     }
   };
-  img.onerror = () => {
-    pushPdfDebugLine(debugLines, 'Photo re-encode failed: browser could not decode image; using original for PDF', { index: index + 1 });
-    resolve(src);
-  };
+  img.onerror = () => resolve(src);
   img.src = src;
 });
 
-const loadPdfEmbeddedImage = async (photoUrl, debugLines, index = 0) => {
-  const result = await resolvePdfEmbeddedImageSource(photoUrl, debugLines, index);
+const loadPdfEmbeddedImage = async photoUrl => {
+  const result = await resolvePdfEmbeddedImageSource(photoUrl);
   if (!result.src) return result;
-  const normalizedSrc = await reencodePdfImageDataUrl(result.src, debugLines, index);
+  const normalizedSrc = await reencodePdfImageDataUrl(result.src);
   return { ...result, src: normalizedSrc };
 };
 
-const resolvePdfEmbeddedImageSource = async (photoUrl, debugLines, index = 0) => {
+const resolvePdfEmbeddedImageSource = async photoUrl => {
   if (!photoUrl) {
-    pushPdfDebugLine(debugLines, 'Skipped empty photo URL before embedding');
-    return { src: '', debug: `Photo ${index + 1}: empty URL` };
+    return { src: '' };
   }
 
   if (String(photoUrl).startsWith('data:image/')) {
-    pushPdfDebugLine(debugLines, 'Embedding photo: using prepared data URL', { index: index + 1 });
-    return { src: photoUrl, debug: '' };
+    return { src: photoUrl };
   }
-
-  const debugUrl = truncatePdfDebugValue(photoUrl);
-  pushPdfDebugLine(debugLines, 'Embedding photo: fetch started', debugUrl);
 
   try {
     const response = await fetch(photoUrl);
-    pushPdfDebugLine(debugLines, 'Embedding photo: fetch response', {
-      url: debugUrl,
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      contentType: response.headers?.get?.('content-type') || null,
-    });
     if (!response.ok) {
       throw new Error(`Photo request failed with status ${response.status}`);
     }
     const blob = await response.blob();
-    pushPdfDebugLine(debugLines, 'Embedding photo: blob loaded', {
-      url: debugUrl,
-      type: blob.type || null,
-      size: blob.size || 0,
-    });
     const dataUrl = await readBlobAsDataUrl(blob);
-    const isImageDataUrl = dataUrl.startsWith('data:image/');
-    pushPdfDebugLine(debugLines, 'Embedding photo: data URL created', {
-      url: debugUrl,
-      length: dataUrl.length,
-      isImageDataUrl,
-    });
-    if (!isImageDataUrl) {
-      pushPdfDebugLine(debugLines, 'Embedding photo: fetched data is not an image; photo skipped', debugUrl);
-      return { src: '', debug: `Photo ${index + 1}: skipped; fetched blob was not image data` };
+    if (!dataUrl.startsWith('data:image/')) {
+      return { src: '' };
     }
-    return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
+    return { src: dataUrl };
   } catch (error) {
     // Remote URLs are never handed to @react-pdf: its own fetch would hit the
     // same CORS wall and abort rendering of the whole document.
     console.error('Unable to load PDF photo', photoUrl, error);
-    pushPdfDebugLine(debugLines, 'Embedding photo failed; photo skipped', {
-      url: debugUrl,
-      name: error?.name || null,
-      message: error?.message || String(error),
-    });
-    return { src: '', debug: `Photo ${index + 1}: skipped after fetch error (${error?.message || String(error)})` };
+    return { src: '' };
   }
 };
 
@@ -1274,12 +1119,6 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
 
     setIsGenerating(true);
     const fileName = buildProfilePdfFileName(cardData);
-    const debugLines = [];
-    pushPdfDebugLine(debugLines, 'PDF export started', {
-      userId: cardData?.userId || null,
-      fileName,
-      generatedAt: new Date().toISOString(),
-    });
 
     const downloadBlob = blob => {
       const url = URL.createObjectURL(blob);
@@ -1293,43 +1132,24 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
     };
 
     try {
-      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection, debugLines });
-      pushPdfDebugLine(debugLines, 'Effective photo URLs before embedding', summarizePdfDebugUrls(effectivePhotoUrls));
+      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
       const embeddedPhotoEntries = await Promise.all(
-        effectivePhotoUrls.map((photoUrl, index) => loadPdfEmbeddedImage(photoUrl, debugLines, index))
+        effectivePhotoUrls.map(photoUrl => loadPdfEmbeddedImage(photoUrl))
       );
       const printablePhotoEntries = embeddedPhotoEntries.filter(entry => entry?.src);
-      pushPdfDebugLine(debugLines, 'Embedded photo summary', {
-        attempted: effectivePhotoUrls.length,
-        printable: printablePhotoEntries.length,
-        skipped: effectivePhotoUrls.length - printablePhotoEntries.length,
-      });
-      if (!printablePhotoEntries.length) {
-        pushPdfDebugLine(debugLines, 'No printable photo entries; PDF will contain debug page only after questionnaire');
-        if (effectivePhotoUrls.length) {
-          pushPdfDebugLine(
-            debugLines,
-            'Every photo download was blocked by the browser. Most likely cause: the Storage bucket has no CORS configuration, so getBytes/fetch from this site are rejected while <img> previews still work. Fix: run "gsutil cors set cors.json gs://webringitapp.appspot.com" with a GET rule for this origin.'
-          );
-        }
-      }
       const blob = await pdf(
-        <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoEntries} debugLines={debugLines} />
+        <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoEntries} />
       ).toBlob();
       downloadBlob(blob);
     } catch (error) {
       console.error('Unable to export profile PDF', error);
-      pushPdfDebugLine(debugLines, 'PDF export failed with an error; producing debug-only PDF', {
-        name: error?.name || null,
-        message: error?.message || String(error),
-      });
       try {
         const fallbackBlob = await pdf(
-          <ProfilePdfDocument userData={cardData} photoUrls={[]} debugLines={debugLines} />
+          <ProfilePdfDocument userData={cardData} photoUrls={[]} />
         ).toBlob();
         downloadBlob(fallbackBlob);
       } catch (fallbackError) {
-        console.error('Unable to produce fallback debug PDF', fallbackError);
+        console.error('Unable to produce fallback PDF', fallbackError);
         toast.error('Не вдалося експортувати PDF');
       }
     } finally {
