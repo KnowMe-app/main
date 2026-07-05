@@ -1152,12 +1152,15 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
 // a canvas normalizes progressive JPEGs, unusual PNG color modes, and EXIF-rotated
 // photos that would otherwise render as a blank page with no error.
 const reencodePdfImageDataUrl = (src, debugLines, index) => new Promise(resolve => {
-  if (typeof Image === 'undefined' || typeof document === 'undefined') {
+  // window.Image, not the react-pdf Image component imported above — that
+  // import shadows the global and `new Image()` here threw "not a constructor",
+  // killing the whole export.
+  if (typeof window === 'undefined' || typeof window.Image !== 'function' || typeof document === 'undefined') {
     resolve(src);
     return;
   }
 
-  const img = new Image();
+  const img = new window.Image();
   img.crossOrigin = 'anonymous';
   img.onload = () => {
     try {
@@ -1243,18 +1246,20 @@ const resolvePdfEmbeddedImageSource = async (photoUrl, debugLines, index = 0) =>
       isImageDataUrl,
     });
     if (!isImageDataUrl) {
-      pushPdfDebugLine(debugLines, 'Embedding photo: data URL is not an image, using original URL fallback', debugUrl);
-      return { src: photoUrl, debug: `Photo ${index + 1}: original URL fallback; fetched blob was not image data` };
+      pushPdfDebugLine(debugLines, 'Embedding photo: fetched data is not an image; photo skipped', debugUrl);
+      return { src: '', debug: `Photo ${index + 1}: skipped; fetched blob was not image data` };
     }
     return { src: dataUrl, debug: `Photo ${index + 1}: embedded as data URL (${blob.type || 'unknown type'}, ${blob.size || 0} bytes)` };
   } catch (error) {
+    // Remote URLs are never handed to @react-pdf: its own fetch would hit the
+    // same CORS wall and abort rendering of the whole document.
     console.error('Unable to load PDF photo', photoUrl, error);
-    pushPdfDebugLine(debugLines, 'Embedding photo failed; using original URL fallback', {
+    pushPdfDebugLine(debugLines, 'Embedding photo failed; photo skipped', {
       url: debugUrl,
       name: error?.name || null,
       message: error?.message || String(error),
     });
-    return { src: photoUrl, debug: `Photo ${index + 1}: original URL fallback after fetch error (${error?.message || String(error)})` };
+    return { src: '', debug: `Photo ${index + 1}: skipped after fetch error (${error?.message || String(error)})` };
   }
 };
 
@@ -1297,12 +1302,16 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
       pushPdfDebugLine(debugLines, 'Embedded photo summary', {
         attempted: effectivePhotoUrls.length,
         printable: printablePhotoEntries.length,
-        dataUrls: printablePhotoEntries.filter(entry => String(entry.src).startsWith('data:image/')).length,
-        originalUrlFallbacks: printablePhotoEntries.filter(entry => !String(entry.src).startsWith('data:image/')).length,
-        failedWithoutFallback: effectivePhotoUrls.length - printablePhotoEntries.length,
+        skipped: effectivePhotoUrls.length - printablePhotoEntries.length,
       });
       if (!printablePhotoEntries.length) {
         pushPdfDebugLine(debugLines, 'No printable photo entries; PDF will contain debug page only after questionnaire');
+        if (effectivePhotoUrls.length) {
+          pushPdfDebugLine(
+            debugLines,
+            'Every photo download was blocked by the browser. Most likely cause: the Storage bucket has no CORS configuration, so getBytes/fetch from this site are rejected while <img> previews still work. Fix: run "gsutil cors set cors.json gs://webringitapp.appspot.com" with a GET rule for this origin.'
+          );
+        }
       }
       const blob = await pdf(
         <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoEntries} debugLines={debugLines} />
