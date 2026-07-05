@@ -98,6 +98,32 @@ const topBlockAvatarButtonStyle = {
   zIndex: 2,
 };
 
+const topBlockHeaderLayoutStyle = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '8px',
+  marginBottom: '6px',
+  minWidth: 0,
+};
+
+const topBlockHeaderContentStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+  flex: '1 1 auto',
+  minWidth: 0,
+};
+
+const topBlockHeaderAvatarButtonStyle = {
+  ...topBlockAvatarButtonStyle,
+  position: 'static',
+  right: 'auto',
+  top: 'auto',
+  transform: 'none',
+  flex: '0 0 48px',
+  zIndex: 1,
+};
+
 const emptyAvatarStyle = {
   width: '100%',
   height: '100%',
@@ -1867,7 +1893,6 @@ export const TopBlock = ({
     },
   ].filter(action => action && action.content);
 
-  const statusRowWithPhotoStyle = { ...statusRowStyle, position: 'relative', paddingRight: '64px' };
   const avatarLabel = userPhotoUrl ? 'Відкрити фото користувача' : 'Додати фото користувача';
   const avatarContent = userPhotoUrl ? (
     <img
@@ -1886,90 +1911,10 @@ export const TopBlock = ({
 
   return (
     <div style={topBlockContainerStyle}>
-      <div style={cardHeaderStyle}>
-        <div style={cardNameRowStyle}>
-          <div style={cardNameStyle}>{buildName(cardData)}</div>
-          <button
-            type="button"
-            style={roleBadgeStyle(cardRole)}
-            onClick={event => {
-              event.stopPropagation();
-              setIsRoleEditorOpen(open => !open);
-            }}
-            aria-expanded={isRoleEditorOpen}
-            aria-label="Редагувати роль"
-            title="Редагувати роль"
-          >
-            {displayRole}
-          </button>
-        </div>
-        {isRoleEditorOpen && (
-          <div style={roleEditorStyle} onClick={event => event.stopPropagation()}>
-            {fieldRole({ userData: cardData, setUsers, setState, submitOptions, updateContext })}
-          </div>
-        )}
-        {renderOverlayEntries(['surname', 'name', 'fathersname'])}
-        <div style={cardIdRowStyle}>
-          {cardData.lastAction && <span>{formatDateToDisplay(normalizeLastAction(cardData.lastAction))}</span>}
-          {cardData.lastAction && cardData.userId && <span>·</span>}
-          {cardData.userId && (
-            <a
-              href={buildRtdbLink(cardData.userId)}
-              target="_blank"
-              rel="noreferrer"
-              title="Відкрити профіль в Firebase RTDB"
-              onClick={event => event.stopPropagation()}
-              style={{ color: 'inherit', textDecoration: 'none' }}
-            >
-              {cardData.userId}
-            </a>
-          )}
-        </div>
-      </div>
-      <div style={topButtonsRowStyle}>
-        {topActions.map(action => (
-          <div
-            key={action.key}
-            aria-label={action.key}
-            style={{ ...topButtonsZoneStyle, backgroundColor: action.color }}
-          >
-            {action.content}
-          </div>
-        ))}
-        <div style={secondaryActionsStyle}>
-          {showSideActions &&
-            btnExport(cardData, {
-              ...compactTopActionButtonStyle,
-              backgroundColor: 'green',
-              color: '#fff',
-            })}
-          {isSurrogateMotherRole(cardData) && (
-            <ProfilePdfExportButton
-              cardData={cardData}
-              photoUrls={userPhotoUrls}
-              photosCollection={photosCollection}
-            />
-          )}
-          {additionalActions}
-          {stimulationScheduleToggleButton}
-          <button
-            type="button"
-            onClick={handleDetailsRefresh}
-            style={detailsToggleStyle}
-            title="Оновити дані з бекенду та показати всі поля"
-            aria-label="Оновити дані з бекенду та показати всі поля"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 12a8 8 0 0 1 14.93-4H15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M20 12a8 8 0 0 1-14.93 4H9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div style={statusRowWithPhotoStyle}>
+      <div style={topBlockHeaderLayoutStyle}>
         <button
           type="button"
-          style={topBlockAvatarButtonStyle}
+          style={topBlockHeaderAvatarButtonStyle}
           onClick={event => {
             event.stopPropagation();
             setIsPhotosModalOpen(true);
@@ -1979,6 +1924,90 @@ export const TopBlock = ({
         >
           {avatarContent}
         </button>
+        <div style={topBlockHeaderContentStyle}>
+          <div style={cardHeaderStyle}>
+            <div style={cardNameRowStyle}>
+              <div style={cardNameStyle}>{buildName(cardData)}</div>
+              <button
+                type="button"
+                style={roleBadgeStyle(cardRole)}
+                onClick={event => {
+                  event.stopPropagation();
+                  setIsRoleEditorOpen(open => !open);
+                }}
+                aria-expanded={isRoleEditorOpen}
+                aria-label="Редагувати роль"
+                title="Редагувати роль"
+              >
+                {displayRole}
+              </button>
+            </div>
+            {isRoleEditorOpen && (
+              <div style={roleEditorStyle} onClick={event => event.stopPropagation()}>
+                {fieldRole({ userData: cardData, setUsers, setState, submitOptions, updateContext })}
+              </div>
+            )}
+            {renderOverlayEntries(['surname', 'name', 'fathersname'])}
+            <div style={cardIdRowStyle}>
+              {cardData.lastAction && <span>{formatDateToDisplay(normalizeLastAction(cardData.lastAction))}</span>}
+              {cardData.lastAction && cardData.userId && <span>·</span>}
+              {cardData.userId && (
+                <a
+                  href={buildRtdbLink(cardData.userId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Відкрити профіль в Firebase RTDB"
+                  onClick={event => event.stopPropagation()}
+                  style={{ color: 'inherit', textDecoration: 'none' }}
+                >
+                  {cardData.userId}
+                </a>
+              )}
+            </div>
+          </div>
+          <div style={topButtonsRowStyle}>
+            {topActions.map(action => (
+              <div
+                key={action.key}
+                aria-label={action.key}
+                style={{ ...topButtonsZoneStyle, backgroundColor: action.color }}
+              >
+                {action.content}
+              </div>
+            ))}
+            <div style={secondaryActionsStyle}>
+              {showSideActions &&
+                btnExport(cardData, {
+                  ...compactTopActionButtonStyle,
+                  backgroundColor: 'green',
+                  color: '#fff',
+                })}
+              {isSurrogateMotherRole(cardData) && (
+                <ProfilePdfExportButton
+                  cardData={cardData}
+                  photoUrls={userPhotoUrls}
+                  photosCollection={photosCollection}
+                />
+              )}
+              {additionalActions}
+              {stimulationScheduleToggleButton}
+              <button
+                type="button"
+                onClick={handleDetailsRefresh}
+                style={detailsToggleStyle}
+                title="Оновити дані з бекенду та показати всі поля"
+                aria-label="Оновити дані з бекенду та показати всі поля"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 12a8 8 0 0 1 14.93-4H15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M20 12a8 8 0 0 1-14.93 4H9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style={statusRowStyle}>
         <div style={getInTouchStatusItemStyle}>
           {fieldGetInTouch({
             userData: cardData,
