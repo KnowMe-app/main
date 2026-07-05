@@ -68,6 +68,7 @@ const topBlockContainerStyle = {
 };
 
 const topBlockAvatarRadius = '10px';
+const topBlockHeaderAvatarSize = '72px';
 
 const topBlockPhotoStyle = {
   width: '100%',
@@ -120,7 +121,9 @@ const topBlockHeaderAvatarButtonStyle = {
   right: 'auto',
   top: 'auto',
   transform: 'none',
-  flex: '0 0 48px',
+  width: topBlockHeaderAvatarSize,
+  height: topBlockHeaderAvatarSize,
+  flex: `0 0 ${topBlockHeaderAvatarSize}`,
   zIndex: 1,
 };
 
