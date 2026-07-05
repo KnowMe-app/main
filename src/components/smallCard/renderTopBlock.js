@@ -804,7 +804,7 @@ const profilePdfStyles = StyleSheet.create({
   },
   profileImage: {
     position: 'relative',
-    zIndex: 1,
+    zIndex: 0,
     width: 455,
     maxHeight: 620,
     objectFit: 'contain',
@@ -812,7 +812,7 @@ const profilePdfStyles = StyleSheet.create({
   },
   imageWatermark: {
     position: 'absolute',
-    zIndex: 0,
+    zIndex: 1,
     left: -32,
     top: 230,
     width: 520,
