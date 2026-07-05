@@ -188,6 +188,21 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
+  const cycleDay = React.useMemo(() => {
+    const lastCycleDate = normalizeDate(parseDate(userData.lastCycle));
+    if (!lastCycleDate) {
+      return null;
+    }
+
+    const today = normalizeDate(new Date());
+    const diffMs = today.getTime() - lastCycleDate.getTime();
+    if (diffMs < 0) {
+      return 1;
+    }
+
+    return Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1;
+  }, [userData.lastCycle]);
+
   const pregnancyDuration = React.useMemo(() => {
     const lastCycleDate = parseDate(userData.lastCycle);
     if (!lastCycleDate) {
@@ -556,7 +571,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
               color: 'white',
             }}
           >
-            місячні
+            {cycleDay ? `${cycleDay}д місячні` : 'місячні'}
           </span>
         )}
         {status !== 'pregnant' && nextCycle && (
