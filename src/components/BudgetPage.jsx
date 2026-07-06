@@ -546,12 +546,10 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
   const fileInputRef = useRef(null);
-  const isBudgetAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
+  const canEditBudget = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('admin') === '1');
-  const [isEditMode, setIsEditMode] = useState(() => {
-    if (!isBudgetAdmin || typeof window === 'undefined') return false;
-    return window.localStorage.getItem(BUDGET_EDIT_MODE_STORAGE_KEY) === '1';
-  });
+  const [isEditMode, setIsEditMode] = useState(false);
+  const shouldShowEditMode = canEditBudget && isEditMode;
 
   const loadBudget = useCallback(async () => {
     setLoading(true);
@@ -592,24 +590,27 @@ const BudgetPage = ({ isAdmin = false }) => {
   const groupedExpenses = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return catalog.items.reduce((groups, item) => {
-      const searchableText = `${item.name || ''} ${item.description || ''} ${isEditMode ? item.internalNote || '' : ''}`.toLowerCase();
+      const searchableText = `${item.name || ''} ${item.description || ''} ${shouldShowEditMode ? item.internalNote || '' : ''}`.toLowerCase();
       if (normalizedQuery && !searchableText.includes(normalizedQuery)) return groups;
       const category = item.category || 'Other';
       if (!groups[category]) groups[category] = [];
       groups[category].push(item);
       return groups;
     }, {});
-  }, [catalog.items, query, isEditMode]);
+  }, [catalog.items, query, shouldShowEditMode]);
 
   useEffect(() => {
-    if (isBudgetAdmin) return;
+    if (canEditBudget) return;
     setIsEditMode(false);
-  }, [isBudgetAdmin]);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(BUDGET_EDIT_MODE_STORAGE_KEY, '0');
+    }
+  }, [canEditBudget]);
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
   const toggleEditMode = () => {
-    if (!isBudgetAdmin) return;
+    if (!canEditBudget) return;
     setIsEditMode(current => {
       const next = !current;
       if (typeof window !== 'undefined') {
@@ -759,17 +760,17 @@ const BudgetPage = ({ isAdmin = false }) => {
             <SoftButton type="button" disabled title="PDF export will be added in the next step">
               <FaFilePdf /> Export as PDF
             </SoftButton>
-            {isBudgetAdmin ? (
+            {canEditBudget ? (
               <SoftButton
                 type="button"
                 onClick={toggleEditMode}
-                aria-pressed={isEditMode}
-                title={isEditMode ? 'Preview budget as a client' : 'Edit budget'}
+                aria-pressed={shouldShowEditMode}
+                title={shouldShowEditMode ? 'Preview budget as a client' : 'Edit budget'}
               >
-                <FaPen /> {isEditMode ? 'Preview mode' : 'Edit budget'}
+                <FaPen /> {shouldShowEditMode ? 'Preview mode' : 'Edit budget'}
               </SoftButton>
             ) : null}
-            {isBudgetAdmin && isEditMode ? (
+            {canEditBudget && shouldShowEditMode ? (
               <>
                 {/* Temporary migration button. Remove after the budget catalog has been uploaded to the backend. */}
                 <SoftButton type="button" onClick={handleUploadClick} $danger>
@@ -786,7 +787,7 @@ const BudgetPage = ({ isAdmin = false }) => {
 
         {!loading && !error ? (
           <>
-            <Section aria-labelledby="budget-programs-title" $compact={!isEditMode}>
+            <Section aria-labelledby="budget-programs-title" $compact={!shouldShowEditMode}>
               <SectionHeading>
                 <div>
                   <H2 id="budget-programs-title">Programs</H2>
@@ -806,14 +807,14 @@ const BudgetPage = ({ isAdmin = false }) => {
                     ? includedItems
                     : includedItems.slice(0, INCLUDED_PREVIEW_LIMIT);
                   return (
-                    <ProgramCard key={program.id} $guaranteed={isGuaranteed} $compact={!isEditMode}>
+                    <ProgramCard key={program.id} $guaranteed={isGuaranteed} $compact={!shouldShowEditMode}>
                       {isPopular ? <Badge>{POPULAR_PACKAGE_BADGE}</Badge> : null}
                       {isGuaranteed ? <ProgramMeta>Guaranteed program</ProgramMeta> : null}
                       <ProgramName>{program.name}</ProgramName>
-                      <Price $compact={!isEditMode}>{formatMoney(program.listedPrice, program.currency || 'EUR')}</Price>
-                      {program.description ? <Description $compact={!isEditMode}>{program.description}</Description> : null}
-                      {isEditMode ? renderInternalNote('packages', program) : null}
-                      {isEditMode ? renderEditableFields('packages', program, 'listedPrice') : null}
+                      <Price $compact={!shouldShowEditMode}>{formatMoney(program.listedPrice, program.currency || 'EUR')}</Price>
+                      {program.description ? <Description $compact={!shouldShowEditMode}>{program.description}</Description> : null}
+                      {shouldShowEditMode ? renderInternalNote('packages', program) : null}
+                      {shouldShowEditMode ? renderEditableFields('packages', program, 'listedPrice') : null}
                       <Toggle type="button" onClick={() => toggleProgram(program.id)} aria-expanded={isOpen}>
                         <span>What's included</span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
@@ -829,14 +830,14 @@ const BudgetPage = ({ isAdmin = false }) => {
                                   <strong>{item.name}</strong>
                                   {item.description ? (
                                     <>
-                                      {detailOpen ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
+                                      {detailOpen ? <Muted $compact={!shouldShowEditMode}>{item.description}</Muted> : null}
                                       <DetailButton type="button" onClick={() => toggleDetail(item.id)}>
                                         {detailOpen ? 'Hide details' : 'Show details'}
                                       </DetailButton>
                                     </>
                                   ) : null}
-                                  {isEditMode ? renderInternalNote('items', item) : null}
-                                  {isEditMode ? renderEditableFields('items', item) : null}
+                                  {shouldShowEditMode ? renderInternalNote('items', item) : null}
+                                  {shouldShowEditMode ? renderEditableFields('items', item) : null}
                                 </div>
                               </IncludedItem>
                             );
@@ -857,7 +858,7 @@ const BudgetPage = ({ isAdmin = false }) => {
               </ProgramsGrid>
             </Section>
 
-            <Section aria-labelledby="budget-expenses-title" $compact={!isEditMode}>
+            <Section aria-labelledby="budget-expenses-title" $compact={!shouldShowEditMode}>
               <SectionHeading>
                 <div>
                   <H2 id="budget-expenses-title">Other expenses</H2>
@@ -877,24 +878,24 @@ const BudgetPage = ({ isAdmin = false }) => {
                   const minimumPrice = getCategoryMinimumPrice(items);
                   return (
                     <Accordion key={category}>
-                      <AccordionHeader type="button" onClick={() => toggleCategory(category)} aria-expanded={isOpen} $compact={!isEditMode}>
+                      <AccordionHeader type="button" onClick={() => toggleCategory(category)} aria-expanded={isOpen} $compact={!shouldShowEditMode}>
                         <span>{getCategoryLabel(category)} {minimumPrice ? <Count>{minimumPrice}</Count> : null}</span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
                       </AccordionHeader>
                       {isOpen ? (
                         <ExpenseRows>
                           {items.map(item => (
-                            <ExpenseRow key={item.id} $compact={!isEditMode}>
+                            <ExpenseRow key={item.id} $compact={!shouldShowEditMode}>
                               <ExpenseTop>
                                 <ExpenseName>{item.name}</ExpenseName>
                                 <ExpensePrice>{getExpensePriceLabel(item)}</ExpensePrice>
                               </ExpenseTop>
-                              {item.description ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
+                              {item.description ? <Muted $compact={!shouldShowEditMode}>{item.description}</Muted> : null}
                               {item.extraUnit && item.extraUnitPrice ? (
-                                <Muted $compact={!isEditMode}>Additional {item.extraUnit}: {formatMoney(item.extraUnitPrice, 'EUR')}</Muted>
+                                <Muted $compact={!shouldShowEditMode}>Additional {item.extraUnit}: {formatMoney(item.extraUnitPrice, 'EUR')}</Muted>
                               ) : null}
-                              {isEditMode ? renderInternalNote('items', item) : null}
-                              {isEditMode ? renderEditableFields('items', item) : null}
+                              {shouldShowEditMode ? renderInternalNote('items', item) : null}
+                              {shouldShowEditMode ? renderEditableFields('items', item) : null}
                             </ExpenseRow>
                           ))}
                         </ExpenseRows>
