@@ -4,15 +4,22 @@ import toast from 'react-hot-toast';
 import { get, ref, remove, set, update } from 'firebase/database';
 import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaTimes, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
-import { auth, database } from './config';
+import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { isAdminUid } from 'utils/accessLevel';
 import {
+  collectFormulaReferencedItemIds,
+  computePackageChildrenTotal,
+  describeBudgetPriceFormula,
   formatEuroAmount,
   formatMoney,
   getCategoryLabel,
   getClientNoteGroupLabel,
   getExpensePriceLabel,
+  normalizeBudgetPriceInput,
   normalizeCatalog,
+  parseBudgetPriceValue,
+  resolveBudgetPriceAmount,
+  KNOWN_CATEGORY_KEYS,
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
 
@@ -26,6 +33,10 @@ const BUDGET_COLLECTION_LABELS = {
   packages: 'program',
   items: 'expense',
 };
+const UKRCOM_MARKER = 'REPRODUCTIVE AGENCY "UKRCOM"';
+const CUSTOM_CATEGORY_OPTION = '__custom__';
+
+const getTodayYmd = () => new Date().toISOString().slice(0, 10);
 
 const getFirebaseConsoleProjectId = () =>
   process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
@@ -107,14 +118,6 @@ const Title = styled.h1`
   letter-spacing: -0.055em;
 `;
 
-const Subtitle = styled.p`
-  max-width: 720px;
-  margin: 12px 0 0;
-  color: #6f6359;
-  font-size: 16px;
-  line-height: 1.62;
-`;
-
 const HeaderActions = styled.div`
   display: flex;
   gap: 10px;
@@ -183,20 +186,24 @@ const InlineActionRow = styled.div`
 `;
 
 const BackendIdButton = styled.button`
-  border: 1px solid #dfcdbc;
-  border-radius: 8px;
-  background: rgba(255, 250, 244, 0.92);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: #67462f;
-  min-height: 30px;
-  padding: 4px 8px;
+  min-height: 20px;
+  padding: 1px 2px;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 6px;
   font-size: 12px;
   font-weight: 900;
   text-align: left;
   cursor: pointer;
+
+  &:hover {
+    background: rgba(223, 205, 188, 0.35);
+  }
 `;
 
 const HiddenBadge = styled.span`
@@ -638,9 +645,9 @@ const IconButton = styled.button`
 const EditableGrid = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 3px 8px;
   align-items: flex-end;
-  margin-top: 8px;
+  margin-top: 5px;
 `;
 
 const AddRecordGrid = styled(EditableGrid)`
@@ -672,35 +679,111 @@ const EditableDescriptionField = styled(EditableField)`
 `;
 
 
+// Edit-mode inputs stay inputs, but render as plain text to keep edit mode compact.
 const EditInput = styled.input`
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #dfcdbc;
-  border-radius: 8px;
-  background: rgba(255, 250, 244, 0.92);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: #382d24;
-  min-height: 30px;
-  padding: 5px 8px;
+  min-height: 20px;
+  padding: 1px 2px;
   font-size: 12.5px;
   font-weight: 700;
   text-transform: none;
   letter-spacing: normal;
+
+  &:hover {
+    background: rgba(223, 205, 188, 0.28);
+  }
+
+  &:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: inset 0 0 0 1px #dfcdbc;
+  }
 `;
 
 const EditTextarea = styled.textarea`
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #dfcdbc;
-  border-radius: 8px;
-  background: rgba(255, 250, 244, 0.92);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: #382d24;
-  min-height: 38px;
-  padding: 5px 8px;
+  min-height: 20px;
+  padding: 1px 2px;
   font-size: 12.5px;
   line-height: 1.32;
   resize: vertical;
   text-transform: none;
   letter-spacing: normal;
+
+  &:hover {
+    background: rgba(223, 205, 188, 0.28);
+  }
+
+  &:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: inset 0 0 0 1px #dfcdbc;
+  }
+`;
+
+const EditSelect = styled.select`
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #382d24;
+  min-height: 20px;
+  padding: 1px 2px;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(223, 205, 188, 0.28);
+  }
+
+  &:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: inset 0 0 0 1px #dfcdbc;
+  }
+`;
+
+const PriceComputedBadge = styled.span`
+  margin-left: 6px;
+  color: ${({ $over }) => ($over ? '#b91c1c' : '#15803d')};
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+`;
+
+const ScheduleDiffBadge = styled.span`
+  margin-left: 8px;
+  color: ${({ $over }) => ($over ? '#b91c1c' : '#15803d')};
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+`;
+
+const FormulaDebugNote = styled.div`
+  flex: 1 1 100%;
+  color: #8a7563;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 `;
 
 const SearchInput = styled.input`
@@ -807,7 +890,15 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState({});
-  const [newItem, setNewItem] = useState(() => ({ name: '', price: '', description: '', category: 'Other' }));
+  const [exchangeRates, setExchangeRates] = useState(null);
+  const [focusedPriceKey, setFocusedPriceKey] = useState('');
+  const [newItem, setNewItem] = useState(() => ({
+    name: '',
+    price: '',
+    description: '',
+    category: 'Other',
+    customCategory: '',
+  }));
   const fileInputRef = useRef(null);
   const isBudgetAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('admin') === '1');
@@ -836,6 +927,22 @@ const BudgetPage = ({ isAdmin = false }) => {
   }, [loadBudget]);
 
   useEffect(() => {
+    let cancelled = false;
+    // The official NBU rate powers "=" price formulas: when the rate changes,
+    // resolved prices change with it.
+    fetchNbuUahExchangeRatesByDate(getTodayYmd())
+      .then(rates => {
+        if (!cancelled && rates) setExchangeRates(rates);
+      })
+      .catch(ratesError => {
+        console.error('Unable to load NBU exchange rates for budget formulas', ratesError);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const handleScroll = () => {
       setShowStickyContact(window.scrollY > window.innerHeight);
     };
@@ -848,6 +955,26 @@ const BudgetPage = ({ isAdmin = false }) => {
     return new Map(catalog.items.map(item => [String(item.id), item]));
   }, [catalog.items]);
 
+  const priceContext = useMemo(
+    () => ({ itemsById, rates: exchangeRates }),
+    [itemsById, exchangeRates],
+  );
+
+  const formulaReferencedItemIds = useMemo(
+    () => collectFormulaReferencedItemIds(catalog),
+    [catalog],
+  );
+
+  const categoryOptions = useMemo(() => {
+    const keys = [...KNOWN_CATEGORY_KEYS];
+    catalog.items.forEach(item => {
+      const category = String(item?.category || '').trim();
+      if (category && !keys.includes(category)) keys.push(category);
+    });
+    if (!keys.includes('Other')) keys.push('Other');
+    return keys;
+  }, [catalog.items]);
+
   const paymentScheduleById = useMemo(() => {
     const schedules = Array.isArray(catalog.technical?.paymentSchedules)
       ? catalog.technical.paymentSchedules
@@ -858,8 +985,9 @@ const BudgetPage = ({ isAdmin = false }) => {
   const sortedPackages = useMemo(() => {
     return catalog.packages
       .filter(program => isEditMode || !program.hidden)
-      .sort((a, b) => Number(a.listedPrice || 0) - Number(b.listedPrice || 0));
-  }, [catalog.packages, isEditMode]);
+      .sort((a, b) => (resolveBudgetPriceAmount(a.listedPrice, priceContext) || 0)
+        - (resolveBudgetPriceAmount(b.listedPrice, priceContext) || 0));
+  }, [catalog.packages, isEditMode, priceContext]);
 
   const includedItemIds = useMemo(() => {
     return sortedPackages.reduce((ids, program) => {
@@ -876,6 +1004,9 @@ const BudgetPage = ({ isAdmin = false }) => {
       if (!isEditMode && item.hidden) return groups;
       const itemId = String(item.id);
       if (includedItemIds.has(itemId)) return groups;
+      // Sub-services referenced from price formulas are already part of another
+      // service/package price, so clients never see them as separate rows.
+      if (!isEditMode && formulaReferencedItemIds.has(itemId)) return groups;
       const searchableText = `${item.name || ''} ${item.description || ''} ${isEditMode ? item.internalNote || '' : ''}`.toLowerCase();
       if (normalizedQuery && !searchableText.includes(normalizedQuery)) return groups;
       const category = item.category || 'Other';
@@ -883,7 +1014,7 @@ const BudgetPage = ({ isAdmin = false }) => {
       groups[category].push(item);
       return groups;
     }, {});
-  }, [catalog.items, includedItemIds, query, isEditMode]);
+  }, [catalog.items, includedItemIds, formulaReferencedItemIds, query, isEditMode]);
 
   const noteGroupKeys = useMemo(() => {
     const keys = [...KNOWN_CLIENT_NOTE_GROUPS];
@@ -913,7 +1044,7 @@ const BudgetPage = ({ isAdmin = false }) => {
         import('@react-pdf/renderer'),
         import('./BudgetPdfDocument'),
       ]);
-      const blob = await pdf(React.createElement(BudgetPdfDocument, { catalog })).toBlob();
+      const blob = await pdf(React.createElement(BudgetPdfDocument, { catalog, rates: exchangeRates })).toBlob();
       saveAs(blob, `program-budget-${new Date().toISOString().slice(0, 10)}.pdf`);
       toast.success('Budget PDF exported.');
     } catch (exportError) {
@@ -975,7 +1106,8 @@ const BudgetPage = ({ isAdmin = false }) => {
     const index = catalog[collection].findIndex(record => String(record.id) === String(recordId));
     if (index === -1) return;
     const numericFields = new Set(['price', 'listedPrice', 'extraUnitPrice']);
-    const nextValue = numericFields.has(field) && value !== '' ? Number(value) : value;
+    // Price fields accept "=" formulas and "from ..." values, stored as strings.
+    const nextValue = numericFields.has(field) ? normalizeBudgetPriceInput(value) : value;
     updateCatalogRecord(collection, recordId, { [field]: nextValue });
     try {
       await update(ref(database, `budget/${collection}/${index}`), { [field]: nextValue });
@@ -1023,24 +1155,33 @@ const BudgetPage = ({ isAdmin = false }) => {
       return;
     }
 
-    const price = Number(newItem.price);
-    if (newItem.price === '' || !Number.isFinite(price)) {
+    const price = normalizeBudgetPriceInput(newItem.price);
+    const parsedPrice = parseBudgetPriceValue(price);
+    if (parsedPrice.isEmpty) {
+      toast.error('Enter a price, "from" price or "=" formula for the new budget item.');
+      return;
+    }
+    if (!parsedPrice.isFormula && !Number.isFinite(Number(parsedPrice.expression.replace(',', '.')))) {
       toast.error('Enter a valid price for the new budget item.');
       return;
     }
+
+    const category = newItem.category === CUSTOM_CATEGORY_OPTION
+      ? newItem.customCategory.trim() || 'Other'
+      : newItem.category.trim() || 'Other';
 
     const nextRecord = {
       id: getNextBudgetRecordId(catalog.items),
       name,
       price,
       description: newItem.description.trim(),
-      category: newItem.category.trim() || 'Other',
+      category,
     };
     const nextItems = [...catalog.items, nextRecord];
     setCatalog(current => ({ ...current, items: nextItems }));
     try {
       await set(ref(database, `budget/items/${nextItems.length - 1}`), nextRecord);
-      setNewItem({ name: '', price: '', description: '', category: 'Other' });
+      setNewItem({ name: '', price: '', description: '', category: 'Other', customCategory: '' });
       setOpenCategories(current => ({ ...current, [nextRecord.category]: true }));
       toast.success('Budget item created.');
     } catch (saveError) {
@@ -1259,10 +1400,22 @@ const BudgetPage = ({ isAdmin = false }) => {
     }
 
     const payments = Array.isArray(schedule.payments) ? schedule.payments : [];
+    const scheduleTotal = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
+    const packagePrice = resolveBudgetPriceAmount(program.listedPrice, priceContext);
 
     return (
       <PaymentScheduleCard>
-        <PaymentScheduleTitle>Payment schedule editor</PaymentScheduleTitle>
+        <PaymentScheduleTitle>
+          Payment schedule editor
+          {packagePrice != null ? (
+            <ScheduleDiffBadge
+              $over={packagePrice > scheduleTotal}
+              title="Package price vs payment schedule total"
+            >
+              {formatEuroAmount(packagePrice)} vs {formatEuroAmount(scheduleTotal)}
+            </ScheduleDiffBadge>
+          ) : null}
+        </PaymentScheduleTitle>
         <PaymentScheduleEditor>
           <EditableField>
             Schedule ID
@@ -1395,9 +1548,27 @@ const BudgetPage = ({ isAdmin = false }) => {
     ) : null
   );
 
+  // Focused price inputs show the raw stored value (e.g. "=23000/EUR"),
+  // blurred ones show the resolved amount.
+  const getPriceInputDisplayValue = rawValue => {
+    const parsed = parseBudgetPriceValue(rawValue);
+    if (!parsed.isFormula) return rawValue ?? '';
+    const amount = resolveBudgetPriceAmount(rawValue, priceContext);
+    if (amount == null) return String(rawValue);
+    return `${parsed.isFrom ? 'from ' : ''}${Math.round(amount * 100) / 100}`;
+  };
+
   const renderEditableFields = (collection, record, priceField = 'price') => {
     const recordIndex = catalog[collection].findIndex(item => String(item.id) === String(record.id));
     const collectionLabel = BUDGET_COLLECTION_LABELS[collection] || 'item';
+    const priceKey = `${collection}:${record.id}`;
+    const rawPrice = record[priceField] ?? '';
+    const isPriceFocused = focusedPriceKey === priceKey;
+    const formulaDebug = describeBudgetPriceFormula(rawPrice, priceContext);
+    const resolvedRecordPrice = resolveBudgetPriceAmount(rawPrice, priceContext);
+    const childrenTotal = collection === 'packages'
+      ? computePackageChildrenTotal(record, priceContext)
+      : null;
 
     return (
       <EditableGrid>
@@ -1422,15 +1593,29 @@ const BudgetPage = ({ isAdmin = false }) => {
           />
         </EditableField>
         <EditablePriceField>
-          Price
+          <span>
+            Price
+            {childrenTotal && childrenTotal.count ? (
+              <PriceComputedBadge
+                $over={resolvedRecordPrice != null && childrenTotal.total > resolvedRecordPrice}
+                title="Real cost of the included services"
+              >
+                Σ {formatEuroAmount(childrenTotal.total)}
+              </PriceComputedBadge>
+            ) : null}
+          </span>
           <EditInput
-            type="number"
-            inputMode="decimal"
-            value={record[priceField] ?? ''}
+            type="text"
+            value={isPriceFocused ? String(rawPrice) : getPriceInputDisplayValue(rawPrice)}
+            onFocus={() => setFocusedPriceKey(priceKey)}
             onChange={event => handleCatalogFieldChange(collection, record.id, priceField, event.target.value)}
-            onBlur={event => persistCatalogRecordField(collection, record.id, priceField, event.target.value)}
+            onBlur={event => {
+              setFocusedPriceKey('');
+              persistCatalogRecordField(collection, record.id, priceField, event.target.value);
+            }}
           />
         </EditablePriceField>
+        {formulaDebug ? <FormulaDebugNote title="Price formula">{formulaDebug}</FormulaDebugNote> : null}
         {collection === 'items' ? (
           <EditableField>
             Category
@@ -1484,11 +1669,8 @@ const BudgetPage = ({ isAdmin = false }) => {
       <Shell>
         <Header>
           <div>
-            <Eyebrow>Private client budget</Eyebrow>
+            <Eyebrow>{UKRCOM_MARKER}</Eyebrow>
             <Title>Program Budget</Title>
-            <Subtitle>
-              A clear overview of surrogacy program packages and optional expenses, prepared for international intended parents with transparent inclusions and calm, private presentation.
-            </Subtitle>
           </div>
           <HeaderActions>
             <SoftButton
@@ -1530,7 +1712,6 @@ const BudgetPage = ({ isAdmin = false }) => {
               <SectionHeading>
                 <div>
                   <H2 id="budget-programs-title">Programs</H2>
-                  <SectionNote>Core program packages are ordered from essential to premium.</SectionNote>
                 </div>
               </SectionHeading>
               <ProgramsGrid>
@@ -1552,7 +1733,12 @@ const BudgetPage = ({ isAdmin = false }) => {
                       {isPopular ? <Badge>{POPULAR_PACKAGE_BADGE}</Badge> : null}
                       {isGuaranteed ? <ProgramMeta>Guaranteed program</ProgramMeta> : null}
                       <ProgramName>{program.name}</ProgramName>
-                      <Price $compact={!isEditMode}>{formatMoney(program.listedPrice, program.currency || 'EUR')}</Price>
+                      <Price $compact={!isEditMode}>
+                        {formatMoney(
+                          resolveBudgetPriceAmount(program.listedPrice, priceContext) ?? program.listedPrice,
+                          program.currency || 'EUR',
+                        )}
+                      </Price>
                       {program.description ? <Description $compact={!isEditMode}>{program.description}</Description> : null}
                       {isEditMode ? renderInternalNote('packages', program) : null}
                       {isEditMode ? renderEditableFields('packages', program, 'listedPrice') : null}
@@ -1605,7 +1791,6 @@ const BudgetPage = ({ isAdmin = false }) => {
               <SectionHeading>
                 <div>
                   <H2 id="budget-expenses-title">Other expenses</H2>
-                  <SectionNote>Additional expenses are grouped by service category and collapsed for a softer first view.</SectionNote>
                 </div>
               </SectionHeading>
               <SearchInput
@@ -1630,7 +1815,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                             <ExpenseRow key={item.id} $compact={!isEditMode}>
                               <ExpenseTop>
                                 <ExpenseName>{item.name}</ExpenseName>
-                                <ExpensePrice>{getExpensePriceLabel(item)}</ExpensePrice>
+                                <ExpensePrice>{getExpensePriceLabel(item, priceContext)}</ExpensePrice>
                               </ExpenseTop>
                               {item.description ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
                               {item.extraUnit && item.extraUnitPrice ? (
@@ -1669,21 +1854,44 @@ const BudgetPage = ({ isAdmin = false }) => {
                     <EditablePriceField>
                       Price
                       <EditInput
-                        type="number"
-                        inputMode="decimal"
-                        value={newItem.price}
+                        type="text"
+                        value={focusedPriceKey === 'new-item'
+                          ? newItem.price
+                          : getPriceInputDisplayValue(newItem.price)}
+                        onFocus={() => setFocusedPriceKey('new-item')}
                         onChange={event => handleNewItemChange('price', event.target.value)}
-                        placeholder="0"
+                        onBlur={() => setFocusedPriceKey('')}
+                        placeholder="0, from 0 or =0/EUR"
                       />
                     </EditablePriceField>
+                    {describeBudgetPriceFormula(newItem.price, priceContext) ? (
+                      <FormulaDebugNote title="Price formula">
+                        {describeBudgetPriceFormula(newItem.price, priceContext)}
+                      </FormulaDebugNote>
+                    ) : null}
                     <EditableField>
                       Category
-                      <EditInput
+                      <EditSelect
                         value={newItem.category}
                         onChange={event => handleNewItemChange('category', event.target.value)}
-                        placeholder="Other"
-                      />
+                        aria-label="Category for the new budget item"
+                      >
+                        {categoryOptions.map(key => (
+                          <option key={key} value={key}>{getCategoryLabel(key)}</option>
+                        ))}
+                        <option value={CUSTOM_CATEGORY_OPTION}>Custom category…</option>
+                      </EditSelect>
                     </EditableField>
+                    {newItem.category === CUSTOM_CATEGORY_OPTION ? (
+                      <EditableField>
+                        Custom category
+                        <EditInput
+                          value={newItem.customCategory}
+                          onChange={event => handleNewItemChange('customCategory', event.target.value)}
+                          placeholder="New category name"
+                        />
+                      </EditableField>
+                    ) : null}
                     <EditableDescriptionField>
                       Description
                       <EditTextarea
@@ -1707,7 +1915,6 @@ const BudgetPage = ({ isAdmin = false }) => {
                 <SectionHeading>
                   <div>
                     <H2 id="budget-notes-title">Good to know</H2>
-                    <SectionNote>Key milestones and notes for intended parents.</SectionNote>
                   </div>
                 </SectionHeading>
                 {isEditMode ? (
