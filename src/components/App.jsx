@@ -96,7 +96,7 @@ export const App = () => {
       {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
       {isAdmin && <Route path="/medications/:userId" element={<MedicationsPage />} />}
       {isAdmin && <Route path="/flow" element={<FlowManager ownerId={auth.currentUser?.uid} />} />}
-      {isAdmin && <Route path="/budget" element={<BudgetPage />} />}
+      {isAdmin && <Route path="/budget" element={<BudgetPage isAdmin={isAdmin} />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );
