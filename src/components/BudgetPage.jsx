@@ -122,12 +122,6 @@ const getCategoryMinimumPrice = items => {
   return `from ${formatMoney(Math.min(...amounts), 'EUR')}`;
 };
 
-const isEmbryoStorageItem = item => {
-  const searchableText = `${item?.id || ''} ${item?.name || ''} ${item?.description || ''} ${item?.category || ''}`.toLowerCase();
-  return EMBRYO_STORAGE_MATCHERS.some(matcher => searchableText.includes(matcher))
-    && STORAGE_MATCHERS.some(matcher => searchableText.includes(matcher));
-};
-
 const Page = styled.main`
   min-height: 100vh;
   background: linear-gradient(180deg, #fbf4eb 0%, #f7efe4 44%, #fffaf4 100%);
@@ -762,7 +756,7 @@ const BudgetPage = ({ isAdmin = false }) => {
     return catalog.items.reduce((groups, item) => {
       if (!isEditMode && item.hidden) return groups;
       const itemId = String(item.id);
-      if (includedItemIds.has(itemId) && !isEmbryoStorageItem(item)) return groups;
+      if (includedItemIds.has(itemId)) return groups;
       const searchableText = `${item.name || ''} ${item.description || ''} ${isEditMode ? item.internalNote || '' : ''}`.toLowerCase();
       if (normalizedQuery && !searchableText.includes(normalizedQuery)) return groups;
       const category = item.category || 'Other';
