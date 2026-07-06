@@ -441,26 +441,41 @@ const IconButton = styled.button`
   cursor: pointer;
 `;
 
+const EditableGrid = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 132px);
+  gap: 7px;
+  margin-top: 7px;
+
+  @media (max-width: 520px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
 const EditableField = styled.label`
   display: grid;
-  gap: 5px;
-  margin-top: 9px;
+  gap: 3px;
   color: #7b6553;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 `;
+
+const EditableDescriptionField = styled(EditableField)`
+  grid-column: 1 / -1;
+`;
+
 
 const EditInput = styled.input`
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #dfcdbc;
-  border-radius: 12px;
+  border-radius: 9px;
   background: rgba(255, 250, 244, 0.92);
   color: #382d24;
-  padding: 10px 11px;
-  font-size: 14px;
+  padding: 7px 9px;
+  font-size: 13px;
   font-weight: 700;
   text-transform: none;
   letter-spacing: normal;
@@ -470,13 +485,13 @@ const EditTextarea = styled.textarea`
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #dfcdbc;
-  border-radius: 12px;
+  border-radius: 9px;
   background: rgba(255, 250, 244, 0.92);
   color: #382d24;
-  min-height: 74px;
-  padding: 10px 11px;
-  font-size: 14px;
-  line-height: 1.45;
+  min-height: 48px;
+  padding: 7px 9px;
+  font-size: 13px;
+  line-height: 1.32;
   resize: vertical;
   text-transform: none;
   letter-spacing: normal;
@@ -589,9 +604,20 @@ const BudgetPage = ({ isAdmin = false }) => {
     return [...catalog.packages].sort((a, b) => Number(a.listedPrice || 0) - Number(b.listedPrice || 0));
   }, [catalog.packages]);
 
+  const includedItemIds = useMemo(() => {
+    return catalog.packages.reduce((ids, program) => {
+      if (Array.isArray(program.children)) {
+        program.children.forEach(id => ids.add(String(id)));
+      }
+      return ids;
+    }, new Set());
+  }, [catalog.packages]);
+
   const groupedExpenses = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return catalog.items.reduce((groups, item) => {
+      const itemId = String(item.id);
+      if (includedItemIds.has(itemId)) return groups;
       const searchableText = `${item.name || ''} ${item.description || ''} ${isEditMode ? item.internalNote || '' : ''}`.toLowerCase();
       if (normalizedQuery && !searchableText.includes(normalizedQuery)) return groups;
       const category = item.category || 'Other';
@@ -599,7 +625,7 @@ const BudgetPage = ({ isAdmin = false }) => {
       groups[category].push(item);
       return groups;
     }, {});
-  }, [catalog.items, query, isEditMode]);
+  }, [catalog.items, includedItemIds, query, isEditMode]);
 
   useEffect(() => {
     if (isBudgetAdmin) return;
@@ -714,21 +740,13 @@ const BudgetPage = ({ isAdmin = false }) => {
   );
 
   const renderEditableFields = (collection, record, priceField = 'price') => (
-    <>
+    <EditableGrid>
       <EditableField>
         Name
         <EditInput
           value={record.name || ''}
           onChange={event => handleCatalogFieldChange(collection, record.id, 'name', event.target.value)}
           onBlur={event => persistCatalogRecordField(collection, record.id, 'name', event.target.value)}
-        />
-      </EditableField>
-      <EditableField>
-        Description
-        <EditTextarea
-          value={record.description || ''}
-          onChange={event => handleCatalogFieldChange(collection, record.id, 'description', event.target.value)}
-          onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
         />
       </EditableField>
       <EditableField>
@@ -741,7 +759,15 @@ const BudgetPage = ({ isAdmin = false }) => {
           onBlur={event => persistCatalogRecordField(collection, record.id, priceField, event.target.value)}
         />
       </EditableField>
-    </>
+      <EditableDescriptionField>
+        Description
+        <EditTextarea
+          value={record.description || ''}
+          onChange={event => handleCatalogFieldChange(collection, record.id, 'description', event.target.value)}
+          onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
+        />
+      </EditableDescriptionField>
+    </EditableGrid>
   );
 
   return (
