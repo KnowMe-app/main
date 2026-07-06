@@ -18,8 +18,6 @@ const POPULAR_PACKAGE_BADGE = 'Most popular';
 const BUDGET_EDIT_MODE_STORAGE_KEY = 'budget:edit-mode';
 const GUARANTEED_PACKAGE_IDS = new Set(['4', '5']);
 const FROM_PRICE_ITEM_IDS = new Set(['43', '49', '54', '61', '63', '64', '65']);
-const EMBRYO_STORAGE_MATCHERS = ['embryo', 'ембріон', 'embryon', 'кріо', 'cryo'];
-const STORAGE_MATCHERS = ['storage', 'зберіган', 'зберігання'];
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
 const BUDGET_COLLECTION_LABELS = {
   packages: 'program',
