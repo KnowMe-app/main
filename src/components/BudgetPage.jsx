@@ -40,6 +40,17 @@ const formatMoney = (value, currency = 'EUR') => {
   return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)} ${currency || 'EUR'}`;
 };
 
+const formatEuroAmount = value => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '€—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+};
+
 const normalizeCatalog = catalog => ({
   packages: Array.isArray(catalog?.packages) ? catalog.packages : [],
   items: Array.isArray(catalog?.items) ? catalog.items : [],
@@ -379,6 +390,82 @@ const Description = styled.p`
   color: #6d6259;
   font-size: ${({ $compact }) => ($compact ? '14px' : '15px')};
   line-height: ${({ $compact }) => ($compact ? 1.42 : 1.56)};
+`;
+
+const PaymentScheduleCard = styled.section`
+  margin-top: 14px;
+  border: 1px solid rgba(140, 101, 70, 0.16);
+  border-radius: 18px;
+  background: rgba(250, 241, 229, 0.72);
+  padding: 13px;
+`;
+
+const PaymentScheduleTitle = styled.h4`
+  margin: 0 0 10px;
+  color: #4d392b;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+`;
+
+const PaymentScheduleList = styled.div`
+  display: grid;
+  gap: 8px;
+`;
+
+const PaymentScheduleRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  border-top: 1px solid rgba(140, 101, 70, 0.12);
+  padding-top: 8px;
+
+  &:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+`;
+
+const PaymentScheduleLabel = styled.span`
+  min-width: 0;
+  color: #5f5148;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+`;
+
+const PaymentScheduleAmount = styled.span`
+  color: #65432d;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
+`;
+
+const PaymentScheduleEditor = styled.div`
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+`;
+
+const PaymentEditorRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 126px) auto;
+  gap: 7px;
+  align-items: end;
+
+  @media (max-width: 560px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const PaymentEditorActions = styled.div`
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
 `;
 
 const Toggle = styled.button`
@@ -735,6 +822,13 @@ const BudgetPage = ({ isAdmin = false }) => {
     return new Map(catalog.items.map(item => [String(item.id), item]));
   }, [catalog.items]);
 
+  const paymentScheduleById = useMemo(() => {
+    const schedules = Array.isArray(catalog.technical?.paymentSchedules)
+      ? catalog.technical.paymentSchedules
+      : [];
+    return new Map(schedules.map(schedule => [String(schedule.id), schedule]));
+  }, [catalog.technical]);
+
   const sortedPackages = useMemo(() => {
     return catalog.packages
       .filter(program => isEditMode || !program.hidden)
@@ -933,6 +1027,228 @@ const BudgetPage = ({ isAdmin = false }) => {
     }
   };
 
+  const resolveProgramPaymentSchedule = program => {
+    const scheduleId = program?.paymentScheduleId;
+    if (scheduleId) return paymentScheduleById.get(String(scheduleId)) || null;
+    return program?.paymentSchedule && typeof program.paymentSchedule === 'object'
+      ? program.paymentSchedule
+      : null;
+  };
+
+  const persistTechnicalPaymentSchedules = async (nextSchedules, successMessage = 'Payment schedule updated.') => {
+    setCatalog(current => ({
+      ...current,
+      technical: {
+        ...current.technical,
+        paymentSchedules: nextSchedules,
+      },
+    }));
+    try {
+      await set(ref(database, 'budget/technical/paymentSchedules'), nextSchedules);
+      toast.success(successMessage);
+    } catch (saveError) {
+      console.error('Unable to update payment schedule', saveError);
+      toast.error('Unable to update payment schedule.');
+      loadBudget();
+    }
+  };
+
+  const persistProgramPaymentScheduleId = async (programId, scheduleId) => {
+    const packageIndex = catalog.packages.findIndex(record => String(record.id) === String(programId));
+    if (packageIndex === -1) return;
+    updateCatalogRecord('packages', programId, { paymentScheduleId: scheduleId });
+    try {
+      await update(ref(database, `budget/packages/${packageIndex}`), { paymentScheduleId: scheduleId });
+      toast.success('Program payment schedule linked.');
+    } catch (saveError) {
+      console.error('Unable to link payment schedule', saveError);
+      toast.error('Unable to link payment schedule.');
+      loadBudget();
+    }
+  };
+
+  const updatePaymentSchedule = async (scheduleId, updater, successMessage) => {
+    const schedules = Array.isArray(catalog.technical?.paymentSchedules)
+      ? catalog.technical.paymentSchedules
+      : [];
+    const scheduleIndex = schedules.findIndex(schedule => String(schedule.id) === String(scheduleId));
+    if (scheduleIndex === -1) return;
+    const currentSchedule = schedules[scheduleIndex];
+    const nextSchedule = updater({
+      ...currentSchedule,
+      payments: Array.isArray(currentSchedule.payments) ? currentSchedule.payments : [],
+    });
+    const nextSchedules = schedules.map((schedule, index) => (index === scheduleIndex ? nextSchedule : schedule));
+    await persistTechnicalPaymentSchedules(nextSchedules, successMessage);
+  };
+
+  const createProgramPaymentSchedule = async program => {
+    const schedules = Array.isArray(catalog.technical?.paymentSchedules)
+      ? catalog.technical.paymentSchedules
+      : [];
+    const nextId = `ps-${program.id}`;
+    const uniqueId = schedules.some(schedule => String(schedule.id) === nextId)
+      ? `ps-${program.id}-${Date.now()}`
+      : nextId;
+    const nextSchedule = { id: uniqueId, payments: [] };
+    await persistTechnicalPaymentSchedules([...schedules, nextSchedule], 'Payment schedule created.');
+    await persistProgramPaymentScheduleId(program.id, uniqueId);
+  };
+
+  const deleteProgramPaymentSchedule = async program => {
+    const scheduleId = program.paymentScheduleId;
+    if (!scheduleId) return;
+    const schedules = Array.isArray(catalog.technical?.paymentSchedules)
+      ? catalog.technical.paymentSchedules
+      : [];
+    const nextSchedules = schedules.filter(schedule => String(schedule.id) !== String(scheduleId));
+    const packageIndex = catalog.packages.findIndex(record => String(record.id) === String(program.id));
+    setCatalog(current => ({
+      ...current,
+      packages: current.packages.map(record => (String(record.id) === String(program.id)
+        ? { ...record, paymentScheduleId: '' }
+        : record)),
+      technical: { ...current.technical, paymentSchedules: nextSchedules },
+    }));
+    try {
+      await set(ref(database, 'budget/technical/paymentSchedules'), nextSchedules);
+      if (packageIndex !== -1) {
+        await remove(ref(database, `budget/packages/${packageIndex}/paymentScheduleId`));
+      }
+      toast.success('Payment schedule deleted.');
+    } catch (saveError) {
+      console.error('Unable to delete payment schedule', saveError);
+      toast.error('Unable to delete payment schedule.');
+      loadBudget();
+    }
+  };
+
+  const updatePaymentScheduleId = (oldScheduleId, nextScheduleId) => {
+    const normalizedId = nextScheduleId.trim();
+    if (!normalizedId || normalizedId === String(oldScheduleId)) return;
+    updatePaymentSchedule(oldScheduleId, schedule => ({ ...schedule, id: normalizedId }), 'Payment schedule ID updated.');
+    catalog.packages
+      .filter(program => String(program.paymentScheduleId) === String(oldScheduleId))
+      .forEach(program => persistProgramPaymentScheduleId(program.id, normalizedId));
+  };
+
+  const updatePayment = (scheduleId, paymentIndex, field, value) => {
+    updatePaymentSchedule(scheduleId, schedule => ({
+      ...schedule,
+      payments: schedule.payments.map((payment, index) => (index === paymentIndex
+        ? { ...payment, [field]: field === 'amount' ? Number(value) : value }
+        : payment)),
+    }), 'Payment updated.');
+  };
+
+  const addPayment = (scheduleId, insertAfterIndex = -1) => {
+    updatePaymentSchedule(scheduleId, schedule => {
+      const nextPayment = { title: '', amount: 0 };
+      const insertIndex = Math.max(0, Math.min(schedule.payments.length, insertAfterIndex + 1));
+      return {
+        ...schedule,
+        payments: [
+          ...schedule.payments.slice(0, insertIndex),
+          nextPayment,
+          ...schedule.payments.slice(insertIndex),
+        ],
+      };
+    }, 'Payment added.');
+  };
+
+  const deletePayment = (scheduleId, paymentIndex) => {
+    updatePaymentSchedule(scheduleId, schedule => ({
+      ...schedule,
+      payments: schedule.payments.filter((payment, index) => index !== paymentIndex),
+    }), 'Payment deleted.');
+  };
+
+  const renderPaymentSchedule = schedule => {
+    const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
+    if (!payments.length) return null;
+
+    return (
+      <PaymentScheduleCard aria-label="Payment schedule">
+        <PaymentScheduleTitle>Payment schedule</PaymentScheduleTitle>
+        <PaymentScheduleList>
+          {payments.map((payment, index) => (
+            <PaymentScheduleRow key={`${schedule.id || 'payment'}-${index}`}>
+              <PaymentScheduleLabel>{payment.title}</PaymentScheduleLabel>
+              <PaymentScheduleAmount>{formatEuroAmount(payment.amount)}</PaymentScheduleAmount>
+            </PaymentScheduleRow>
+          ))}
+        </PaymentScheduleList>
+      </PaymentScheduleCard>
+    );
+  };
+
+  const renderPaymentScheduleEditor = (program, schedule) => {
+    if (!isEditMode) return null;
+    if (!schedule) {
+      return (
+        <PaymentScheduleCard>
+          <PaymentScheduleTitle>Payment schedule</PaymentScheduleTitle>
+          <SoftButton type="button" onClick={() => createProgramPaymentSchedule(program)}>
+            <FaPlus /> Create payment schedule
+          </SoftButton>
+        </PaymentScheduleCard>
+      );
+    }
+
+    const payments = Array.isArray(schedule.payments) ? schedule.payments : [];
+
+    return (
+      <PaymentScheduleCard>
+        <PaymentScheduleTitle>Payment schedule editor</PaymentScheduleTitle>
+        <PaymentScheduleEditor>
+          <EditableField>
+            Schedule ID
+            <EditInput
+              defaultValue={schedule.id || ''}
+              onBlur={event => updatePaymentScheduleId(schedule.id, event.target.value)}
+            />
+          </EditableField>
+          {payments.map((payment, index) => (
+            <PaymentEditorRow key={`${schedule.id}-editor-${index}`}>
+              <EditableField>
+                Title
+                <EditInput
+                  defaultValue={payment.title || ''}
+                  onBlur={event => updatePayment(schedule.id, index, 'title', event.target.value)}
+                />
+              </EditableField>
+              <EditableField>
+                Amount
+                <EditInput
+                  type="number"
+                  inputMode="decimal"
+                  defaultValue={payment.amount ?? ''}
+                  onBlur={event => updatePayment(schedule.id, index, 'amount', event.target.value)}
+                />
+              </EditableField>
+              <PaymentEditorActions>
+                <SoftButton type="button" onClick={() => addPayment(schedule.id, index)}>
+                  <FaPlus /> After
+                </SoftButton>
+                <DangerButton type="button" onClick={() => deletePayment(schedule.id, index)}>
+                  <FaTrash />
+                </DangerButton>
+              </PaymentEditorActions>
+            </PaymentEditorRow>
+          ))}
+          <PaymentEditorActions>
+            <SoftButton type="button" onClick={() => addPayment(schedule.id, payments.length - 1)}>
+              <FaPlus /> {payments.length ? 'Add payment' : 'Add first payment'}
+            </SoftButton>
+            <DangerButton type="button" onClick={() => deleteProgramPaymentSchedule(program)}>
+              <FaTrash /> Delete schedule
+            </DangerButton>
+          </PaymentEditorActions>
+        </PaymentScheduleEditor>
+      </PaymentScheduleCard>
+    );
+  };
+
   const removeInternalNote = async (collection, recordId) => {
     const index = catalog[collection].findIndex(record => String(record.id) === String(recordId));
     if (index === -1) return;
@@ -1127,6 +1443,8 @@ const BudgetPage = ({ isAdmin = false }) => {
                       {program.description ? <Description $compact={!isEditMode}>{program.description}</Description> : null}
                       {isEditMode ? renderInternalNote('packages', program) : null}
                       {isEditMode ? renderEditableFields('packages', program, 'listedPrice') : null}
+                      {!isEditMode ? renderPaymentSchedule(resolveProgramPaymentSchedule(program)) : null}
+                      {renderPaymentScheduleEditor(program, resolveProgramPaymentSchedule(program))}
                       <Toggle type="button" onClick={() => toggleProgram(program.id)} aria-expanded={isOpen}>
                         <span>What's included</span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
