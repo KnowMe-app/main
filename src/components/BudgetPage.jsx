@@ -535,7 +535,7 @@ const StickyButton = styled(CTA)`
   padding: 12px 16px;
 `;
 
-const BudgetPage = () => {
+const BudgetPage = ({ isAdmin = false }) => {
   const [catalog, setCatalog] = useState(() => normalizeCatalog(null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -546,7 +546,7 @@ const BudgetPage = () => {
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
   const fileInputRef = useRef(null);
-  const isBudgetAdmin = isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
+  const isBudgetAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('admin') === '1');
   const [isEditMode, setIsEditMode] = useState(() => {
     if (!isBudgetAdmin || typeof window === 'undefined') return false;
