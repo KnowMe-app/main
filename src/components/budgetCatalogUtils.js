@@ -102,12 +102,6 @@ export const getCategoryLabel = category => {
   return prettifyKey(key) || 'Other';
 };
 
-export const getCategoryMinimumPrice = items => {
-  const amounts = items.map(getItemDisplayAmount).filter(amount => Number.isFinite(amount));
-  if (!amounts.length) return '';
-  return `from ${formatMoney(Math.min(...amounts), 'EUR')}`;
-};
-
 export const getVisibleSortedPackages = catalog =>
   (Array.isArray(catalog?.packages) ? catalog.packages : [])
     .filter(program => !program.hidden)

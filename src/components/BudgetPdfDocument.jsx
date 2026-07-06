@@ -3,7 +3,6 @@ import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import {
   formatMoney,
   getCategoryLabel,
-  getCategoryMinimumPrice,
   getClientNoteGroupLabel,
   getExpensePriceLabel,
   getVisibleSortedPackages,
@@ -451,7 +450,7 @@ const BudgetPdfDocument = ({ catalog }) => {
         ) : null}
 
         {includedRows.length ? (
-          <View style={styles.section}>
+          <View style={styles.section} break>
             <Text style={styles.sectionTitle}>Included services by program</Text>
             <Text style={styles.sectionNote}>An “x” marks the services included in each program package.</Text>
             <View style={styles.table}>
@@ -491,7 +490,7 @@ const BudgetPdfDocument = ({ catalog }) => {
                 <View style={styles.categoryHeader} wrap={false} minPresenceAhead={40}>
                   <Text style={styles.categoryTitle}>{sanitizePdfText(getCategoryLabel(category))}</Text>
                   <Text style={styles.categoryMeta}>
-                    {`${categoryItems.length} services${getCategoryMinimumPrice(categoryItems) ? ` · ${getCategoryMinimumPrice(categoryItems)}` : ''}`}
+                    {`${categoryItems.length} ${categoryItems.length === 1 ? 'service' : 'services'}`}
                   </Text>
                 </View>
                 {categoryItems.map(item => (
