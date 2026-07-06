@@ -3,60 +3,30 @@ import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, remove, set, update } from 'firebase/database';
 import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaTimes, FaTrash, FaUpload } from 'react-icons/fa';
+import { saveAs } from 'file-saver';
 import { auth, database } from './config';
 import { isAdminUid } from 'utils/accessLevel';
+import {
+  formatEuroAmount,
+  formatMoney,
+  getCategoryLabel,
+  getCategoryMinimumPrice,
+  getClientNoteGroupLabel,
+  getExpensePriceLabel,
+  normalizeCatalog,
+  KNOWN_CLIENT_NOTE_GROUPS,
+} from './budgetCatalogUtils';
 
-const USD_ITEM_IDS = new Set([
-  'sm-program-compensation',
-  'surrogate-mother-compensation',
-  'sm-compensation',
-]);
-const USD_TO_EUR_RATE = 0.92;
 const INCLUDED_PREVIEW_LIMIT = 6;
 const POPULAR_PACKAGE_ID = '3';
 const POPULAR_PACKAGE_BADGE = 'Most popular';
 const BUDGET_EDIT_MODE_STORAGE_KEY = 'budget:edit-mode';
 const GUARANTEED_PACKAGE_IDS = new Set(['4', '5']);
-const FROM_PRICE_ITEM_IDS = new Set(['43', '49', '54', '61', '63', '64', '65']);
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
 const BUDGET_COLLECTION_LABELS = {
   packages: 'program',
   items: 'expense',
 };
-const CATEGORY_LABELS = {
-  coordination: 'Coordination & Documents',
-  surrogateMother: 'Surrogate Mother',
-  eggDonor: 'Egg Donor',
-  ivf: 'IVF & Embryology',
-  pregnancyAndDiagnostics: 'Pregnancy & Diagnostics',
-  deliveryAndNewborn: 'Delivery & Newborn',
-  legalAndRegistration: 'Legal & Registration',
-  insurance: 'Insurance',
-};
-
-const formatMoney = (value, currency = 'EUR') => {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return `— ${currency || 'EUR'}`;
-  return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)} ${currency || 'EUR'}`;
-};
-
-const formatEuroAmount = value => {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return '€—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
-
-const normalizeCatalog = catalog => ({
-  packages: Array.isArray(catalog?.packages) ? catalog.packages : [],
-  items: Array.isArray(catalog?.items) ? catalog.items : [],
-  clientNotes: Array.isArray(catalog?.clientNotes) ? catalog.clientNotes : [],
-  technical: catalog?.technical && typeof catalog.technical === 'object' ? catalog.technical : {},
-});
 
 const getFirebaseConsoleProjectId = () =>
   process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
@@ -95,40 +65,6 @@ const validateCatalog = catalog => {
   if (!Array.isArray(catalog.packages)) return 'Budget JSON must include packages[].';
   if (!Array.isArray(catalog.items)) return 'Budget JSON must include items[].';
   return '';
-};
-
-const getItemDisplayAmount = item => {
-  const basePrice = Number(item?.price);
-  if (!Number.isFinite(basePrice)) return null;
-  const isUsd = USD_ITEM_IDS.has(String(item?.id || '').trim());
-  return isUsd ? basePrice * USD_TO_EUR_RATE : basePrice;
-};
-
-const getItemDisplayPrice = item => {
-  const amount = getItemDisplayAmount(item);
-  return amount === null ? formatMoney(item?.price, 'EUR') : formatMoney(amount, 'EUR');
-};
-
-const getExpensePriceLabel = item => {
-  const prefix = FROM_PRICE_ITEM_IDS.has(String(item?.id)) ? 'from ' : '';
-  return `${prefix}${getItemDisplayPrice(item)}`;
-};
-
-const getCategoryLabel = category => {
-  const key = String(category || 'Other');
-  if (CATEGORY_LABELS[key]) return CATEGORY_LABELS[key];
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[-_]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\b\w/g, char => char.toUpperCase()) || 'Other';
-};
-
-const getCategoryMinimumPrice = items => {
-  const amounts = items.map(getItemDisplayAmount).filter(amount => Number.isFinite(amount));
-  if (!amounts.length) return '';
-  return `from ${formatMoney(Math.min(...amounts), 'EUR')}`;
 };
 
 const Page = styled.main`
@@ -218,26 +154,47 @@ const DangerButton = styled(SoftButton)`
   color: #8d4a36;
 `;
 
+const MiniButton = styled.button`
+  border: 1px solid #dfcdbc;
+  background: #fffaf4;
+  color: #5c4939;
+  border-radius: 8px;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+`;
+
+const MiniDangerButton = styled(MiniButton)`
+  border-color: #d9b0a2;
+  color: #8d4a36;
+`;
+
 const InlineActionRow = styled.div`
-  grid-column: 1 / -1;
+  flex: 1 1 100%;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 `;
 
 const BackendIdButton = styled.button`
   border: 1px solid #dfcdbc;
-  border-radius: 9px;
+  border-radius: 8px;
   background: rgba(255, 250, 244, 0.92);
   color: #67462f;
-  min-height: 34px;
-  padding: 7px 9px;
+  min-height: 30px;
+  padding: 4px 8px;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 900;
   text-align: left;
   cursor: pointer;
@@ -247,12 +204,11 @@ const HiddenBadge = styled.span`
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  margin-top: 7px;
   border-radius: 999px;
   background: #f3ded8;
   color: #8d4a36;
-  padding: 5px 8px;
-  font-size: 11px;
+  padding: 4px 7px;
+  font-size: 10px;
   font-weight: 900;
   text-transform: uppercase;
 `;
@@ -445,16 +401,28 @@ const PaymentScheduleAmount = styled.span`
   white-space: nowrap;
 `;
 
-const PaymentScheduleEditor = styled.div`
+const PaymentScheduleTotalRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(140, 101, 70, 0.28);
   margin-top: 10px;
+  padding-top: 8px;
+  color: #4d392b;
+  font-size: 13px;
+  font-weight: 900;
+`;
+
+const PaymentScheduleEditor = styled.div`
+  margin-top: 8px;
   display: grid;
-  gap: 10px;
+  gap: 7px;
 `;
 
 const PaymentEditorRow = styled.div`
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(92px, 126px) auto;
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) minmax(76px, 96px) auto;
+  gap: 6px;
   align-items: end;
 
   @media (max-width: 560px) {
@@ -464,7 +432,7 @@ const PaymentEditorRow = styled.div`
 
 const PaymentEditorActions = styled.div`
   display: flex;
-  gap: 7px;
+  gap: 6px;
   flex-wrap: wrap;
 `;
 
@@ -629,27 +597,39 @@ const Muted = styled.p`
 `;
 
 const InternalNote = styled.div`
-  margin-top: 8px;
+  margin-top: 6px;
   border: 1px solid rgba(185, 28, 28, 0.28);
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(254, 226, 226, 0.64);
   color: #991b1b;
   display: grid;
-  grid-template-columns: 1fr 44px;
-  gap: 8px;
+  grid-template-columns: 1fr 32px;
+  gap: 6px;
   align-items: center;
-  padding: 8px 0 8px 10px;
-  font-size: 12px;
+  padding: 5px 0 5px 8px;
+  font-size: 11.5px;
   font-weight: 800;
   line-height: 1.35;
+`;
+
+const InternalNoteInput = styled.textarea`
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  min-height: 28px;
+  padding: 2px 0;
+  resize: vertical;
 `;
 
 const IconButton = styled.button`
   border: 0;
   background: transparent;
   color: inherit;
-  min-height: 44px;
-  min-width: 44px;
+  min-height: 30px;
+  min-width: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -657,14 +637,11 @@ const IconButton = styled.button`
 `;
 
 const EditableGrid = styled.div`
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(92px, 132px);
-  gap: 7px;
-  margin-top: 7px;
-
-  @media (max-width: 520px) {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-end;
+  margin-top: 8px;
 `;
 
 const AddRecordGrid = styled(EditableGrid)`
@@ -673,16 +650,26 @@ const AddRecordGrid = styled(EditableGrid)`
 
 const EditableField = styled.label`
   display: grid;
-  gap: 3px;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 150px;
   color: #7b6553;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 `;
 
+const EditableIdField = styled(EditableField)`
+  flex: 0 0 64px;
+`;
+
+const EditablePriceField = styled(EditableField)`
+  flex: 0 1 92px;
+`;
+
 const EditableDescriptionField = styled(EditableField)`
-  grid-column: 1 / -1;
+  flex: 1 1 100%;
 `;
 
 
@@ -690,11 +677,12 @@ const EditInput = styled.input`
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #dfcdbc;
-  border-radius: 9px;
+  border-radius: 8px;
   background: rgba(255, 250, 244, 0.92);
   color: #382d24;
-  padding: 7px 9px;
-  font-size: 13px;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 12.5px;
   font-weight: 700;
   text-transform: none;
   letter-spacing: normal;
@@ -704,12 +692,12 @@ const EditTextarea = styled.textarea`
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #dfcdbc;
-  border-radius: 9px;
+  border-radius: 8px;
   background: rgba(255, 250, 244, 0.92);
   color: #382d24;
-  min-height: 48px;
-  padding: 7px 9px;
-  font-size: 13px;
+  min-height: 38px;
+  padding: 5px 8px;
+  font-size: 12.5px;
   line-height: 1.32;
   resize: vertical;
   text-transform: none;
@@ -728,13 +716,51 @@ const SearchInput = styled.input`
   margin-bottom: 14px;
 `;
 
-const NoteList = styled.ul`
-  margin: 12px 0 0;
-  padding: 18px 20px 18px 34px;
+const NotesGrid = styled.div`
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+
+  @media (max-width: 420px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const NoteCard = styled.div`
+  border: 1px solid rgba(140, 101, 70, 0.14);
   border-radius: 22px;
-  background: rgba(255, 250, 244, 0.72);
+  background: rgba(255, 250, 244, 0.78);
+  padding: 18px 20px;
+`;
+
+const NoteCardTitle = styled.h3`
+  margin: 0 0 10px;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  color: #4d392b;
+`;
+
+const NoteList = styled.ul`
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 7px;
   color: #66594f;
+  font-size: 14px;
   line-height: 1.55;
+`;
+
+const NotesEditorGroup = styled.div`
+  display: grid;
+  gap: 6px;
+`;
+
+const NoteEditorRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 6px;
+  align-items: start;
+  color: #8d4a36;
 `;
 
 const StateCard = styled.div`
@@ -780,6 +806,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState({});
   const [newItem, setNewItem] = useState(() => ({ name: '', price: '', description: '', category: 'Other' }));
   const fileInputRef = useRef(null);
@@ -859,12 +886,44 @@ const BudgetPage = ({ isAdmin = false }) => {
     }, {});
   }, [catalog.items, includedItemIds, query, isEditMode]);
 
+  const noteGroupKeys = useMemo(() => {
+    const keys = [...KNOWN_CLIENT_NOTE_GROUPS];
+    Object.keys(catalog.clientNotes || {}).forEach(key => {
+      if (!keys.includes(key)) keys.push(key);
+    });
+    return keys;
+  }, [catalog.clientNotes]);
+
+  const visibleNoteGroups = useMemo(() => noteGroupKeys
+    .map(key => [key, (catalog.clientNotes?.[key] || []).filter(note => String(note).trim())])
+    .filter(([, notes]) => notes.length), [noteGroupKeys, catalog.clientNotes]);
+
   useEffect(() => {
     if (isBudgetAdmin) return;
     setIsEditMode(false);
   }, [isBudgetAdmin]);
 
   const handleUploadClick = () => fileInputRef.current?.click();
+
+  const handleExportPdf = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      // Load the PDF renderer lazily so it stays out of the main bundle.
+      const [{ pdf }, { default: BudgetPdfDocument }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('./BudgetPdfDocument'),
+      ]);
+      const blob = await pdf(React.createElement(BudgetPdfDocument, { catalog })).toBlob();
+      saveAs(blob, `program-budget-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success('Budget PDF exported.');
+    } catch (exportError) {
+      console.error('Unable to export budget PDF', exportError);
+      toast.error('Unable to export budget PDF.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const toggleEditMode = () => {
     if (!isBudgetAdmin) return;
@@ -1166,6 +1225,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const renderPaymentSchedule = schedule => {
     const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
     if (!payments.length) return null;
+    const total = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
 
     return (
       <PaymentScheduleCard aria-label="Payment schedule">
@@ -1173,11 +1233,15 @@ const BudgetPage = ({ isAdmin = false }) => {
         <PaymentScheduleList>
           {payments.map((payment, index) => (
             <PaymentScheduleRow key={`${schedule.id || 'payment'}-${index}`}>
-              <PaymentScheduleLabel>{payment.title}</PaymentScheduleLabel>
+              <PaymentScheduleLabel>{`${index + 1}. ${payment.title || ''}`}</PaymentScheduleLabel>
               <PaymentScheduleAmount>{formatEuroAmount(payment.amount)}</PaymentScheduleAmount>
             </PaymentScheduleRow>
           ))}
         </PaymentScheduleList>
+        <PaymentScheduleTotalRow>
+          <span>Total</span>
+          <span>{formatEuroAmount(total)}</span>
+        </PaymentScheduleTotalRow>
       </PaymentScheduleCard>
     );
   };
@@ -1188,9 +1252,9 @@ const BudgetPage = ({ isAdmin = false }) => {
       return (
         <PaymentScheduleCard>
           <PaymentScheduleTitle>Payment schedule</PaymentScheduleTitle>
-          <SoftButton type="button" onClick={() => createProgramPaymentSchedule(program)}>
+          <MiniButton type="button" onClick={() => createProgramPaymentSchedule(program)}>
             <FaPlus /> Create payment schedule
-          </SoftButton>
+          </MiniButton>
         </PaymentScheduleCard>
       );
     }
@@ -1227,22 +1291,22 @@ const BudgetPage = ({ isAdmin = false }) => {
                 />
               </EditableField>
               <PaymentEditorActions>
-                <SoftButton type="button" onClick={() => addPayment(schedule.id, index)}>
-                  <FaPlus /> After
-                </SoftButton>
-                <DangerButton type="button" onClick={() => deletePayment(schedule.id, index)}>
+                <MiniButton type="button" title="Insert payment after this one" onClick={() => addPayment(schedule.id, index)}>
+                  <FaPlus />
+                </MiniButton>
+                <MiniDangerButton type="button" title="Delete payment" onClick={() => deletePayment(schedule.id, index)}>
                   <FaTrash />
-                </DangerButton>
+                </MiniDangerButton>
               </PaymentEditorActions>
             </PaymentEditorRow>
           ))}
           <PaymentEditorActions>
-            <SoftButton type="button" onClick={() => addPayment(schedule.id, payments.length - 1)}>
+            <MiniButton type="button" onClick={() => addPayment(schedule.id, payments.length - 1)}>
               <FaPlus /> {payments.length ? 'Add payment' : 'Add first payment'}
-            </SoftButton>
-            <DangerButton type="button" onClick={() => deleteProgramPaymentSchedule(program)}>
+            </MiniButton>
+            <MiniDangerButton type="button" onClick={() => deleteProgramPaymentSchedule(program)}>
               <FaTrash /> Delete schedule
-            </DangerButton>
+            </MiniDangerButton>
           </PaymentEditorActions>
         </PaymentScheduleEditor>
       </PaymentScheduleCard>
@@ -1263,6 +1327,44 @@ const BudgetPage = ({ isAdmin = false }) => {
     }
   };
 
+  const persistClientNotes = async (nextNotes, successMessage = 'Client notes updated.') => {
+    setCatalog(current => ({ ...current, clientNotes: nextNotes }));
+    try {
+      await set(ref(database, 'budget/clientNotes'), nextNotes);
+      toast.success(successMessage);
+    } catch (saveError) {
+      console.error('Unable to update client notes', saveError);
+      toast.error('Unable to update client notes.');
+      loadBudget();
+    }
+  };
+
+  const updateClientNote = (groupKey, noteIndex, value) => {
+    const groups = catalog.clientNotes || {};
+    const notes = Array.isArray(groups[groupKey]) ? [...groups[groupKey]] : [];
+    if (String(notes[noteIndex] ?? '') === value) return;
+    notes[noteIndex] = value;
+    persistClientNotes({ ...groups, [groupKey]: notes });
+  };
+
+  const addClientNote = groupKey => {
+    const groups = catalog.clientNotes || {};
+    const notes = Array.isArray(groups[groupKey]) ? [...groups[groupKey], ''] : [''];
+    persistClientNotes({ ...groups, [groupKey]: notes }, 'Note added.');
+  };
+
+  const deleteClientNote = (groupKey, noteIndex) => {
+    const groups = catalog.clientNotes || {};
+    const notes = (Array.isArray(groups[groupKey]) ? groups[groupKey] : []).filter((note, index) => index !== noteIndex);
+    const nextGroups = { ...groups };
+    if (notes.length) {
+      nextGroups[groupKey] = notes;
+    } else {
+      delete nextGroups[groupKey];
+    }
+    persistClientNotes(nextGroups, 'Note deleted.');
+  };
+
   const scrollToContact = () => {
     const target = document.getElementById('contact') || document.querySelector('[data-contact-section]');
     if (target) {
@@ -1275,7 +1377,14 @@ const BudgetPage = ({ isAdmin = false }) => {
   const renderInternalNote = (collection, record) => (
     record.internalNote ? (
       <InternalNote>
-        <span>{record.internalNote}</span>
+        <InternalNoteInput
+          defaultValue={record.internalNote}
+          aria-label="Internal note"
+          onBlur={event => {
+            if (event.target.value === record.internalNote) return;
+            persistCatalogRecordField(collection, record.id, 'internalNote', event.target.value);
+          }}
+        />
         <IconButton
           type="button"
           aria-label="Remove internal note"
@@ -1293,7 +1402,7 @@ const BudgetPage = ({ isAdmin = false }) => {
 
     return (
       <EditableGrid>
-        <EditableField>
+        <EditableIdField>
           ID
           <BackendIdButton
             type="button"
@@ -1304,7 +1413,7 @@ const BudgetPage = ({ isAdmin = false }) => {
             <span>{record.id}</span>
             <FaExternalLinkAlt size={12} />
           </BackendIdButton>
-        </EditableField>
+        </EditableIdField>
         <EditableField>
           Name
           <EditInput
@@ -1313,7 +1422,7 @@ const BudgetPage = ({ isAdmin = false }) => {
             onBlur={event => persistCatalogRecordField(collection, record.id, 'name', event.target.value)}
           />
         </EditableField>
-        <EditableField>
+        <EditablePriceField>
           Price
           <EditInput
             type="number"
@@ -1322,7 +1431,7 @@ const BudgetPage = ({ isAdmin = false }) => {
             onChange={event => handleCatalogFieldChange(collection, record.id, priceField, event.target.value)}
             onBlur={event => persistCatalogRecordField(collection, record.id, priceField, event.target.value)}
           />
-        </EditableField>
+        </EditablePriceField>
         {collection === 'items' ? (
           <EditableField>
             Category
@@ -1353,20 +1462,20 @@ const BudgetPage = ({ isAdmin = false }) => {
           />
         </EditableDescriptionField>
         <InlineActionRow>
-          <SoftButton
+          <MiniButton
             type="button"
             onClick={() => persistCatalogRecordHidden(collection, record.id, !record.hidden)}
           >
             {record.hidden ? `Show ${collectionLabel}` : `Hide ${collectionLabel}`}
-          </SoftButton>
-          <DangerButton
+          </MiniButton>
+          <MiniDangerButton
             type="button"
             onClick={() => setDeleteTarget({ collection, recordId: record.id, name: record.name || record.id })}
           >
-            <FaTrash /> Delete from backend
-          </DangerButton>
+            <FaTrash /> Delete
+          </MiniDangerButton>
+          {record.hidden ? <HiddenBadge>Hidden from clients</HiddenBadge> : null}
         </InlineActionRow>
-        {record.hidden ? <HiddenBadge>Hidden from clients</HiddenBadge> : null}
       </EditableGrid>
     );
   };
@@ -1383,8 +1492,13 @@ const BudgetPage = ({ isAdmin = false }) => {
             </Subtitle>
           </div>
           <HeaderActions>
-            <SoftButton type="button" disabled title="PDF export will be added in the next step">
-              <FaFilePdf /> Export as PDF
+            <SoftButton
+              type="button"
+              onClick={handleExportPdf}
+              disabled={loading || Boolean(error) || isExporting}
+              title="Download the client budget as a PDF"
+            >
+              <FaFilePdf /> {isExporting ? 'Preparing PDF…' : 'Export as PDF'}
             </SoftButton>
             {isBudgetAdmin ? (
               <SoftButton
@@ -1542,10 +1656,10 @@ const BudgetPage = ({ isAdmin = false }) => {
                   <H2 id="budget-create-item-title">Create new expense</H2>
                   <SectionNote>New records are saved to the backend with the next id after the last budget item.</SectionNote>
                   <AddRecordGrid>
-                    <EditableField>
+                    <EditableIdField>
                       ID
                       <EditInput value={getNextBudgetRecordId(catalog.items)} readOnly />
-                    </EditableField>
+                    </EditableIdField>
                     <EditableField>
                       Name
                       <EditInput
@@ -1554,7 +1668,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                         placeholder="New service name"
                       />
                     </EditableField>
-                    <EditableField>
+                    <EditablePriceField>
                       Price
                       <EditInput
                         type="number"
@@ -1563,7 +1677,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                         onChange={event => handleNewItemChange('price', event.target.value)}
                         placeholder="0"
                       />
-                    </EditableField>
+                    </EditablePriceField>
                     <EditableField>
                       Category
                       <EditInput
@@ -1581,21 +1695,69 @@ const BudgetPage = ({ isAdmin = false }) => {
                       />
                     </EditableDescriptionField>
                     <InlineActionRow>
-                      <SoftButton type="button" onClick={createBudgetItem}>
+                      <MiniButton type="button" onClick={createBudgetItem}>
                         <FaPlus /> Create and save to backend
-                      </SoftButton>
+                      </MiniButton>
                     </InlineActionRow>
                   </AddRecordGrid>
                 </EditPanel>
               </Section>
             ) : null}
 
-            {catalog.clientNotes.length ? (
+            {visibleNoteGroups.length || isEditMode ? (
               <Section aria-labelledby="budget-notes-title">
-                <H2 id="budget-notes-title">Client notes</H2>
-                <NoteList>
-                  {catalog.clientNotes.map((note, index) => <li key={`${note}-${index}`}>{note}</li>)}
-                </NoteList>
+                <SectionHeading>
+                  <div>
+                    <H2 id="budget-notes-title">Good to know</H2>
+                    <SectionNote>Key milestones and notes for intended parents.</SectionNote>
+                  </div>
+                </SectionHeading>
+                {isEditMode ? (
+                  <NotesGrid>
+                    {noteGroupKeys.map(groupKey => {
+                      const notes = Array.isArray(catalog.clientNotes?.[groupKey]) ? catalog.clientNotes[groupKey] : [];
+                      return (
+                        <NoteCard key={groupKey}>
+                          <NoteCardTitle>{getClientNoteGroupLabel(groupKey)}</NoteCardTitle>
+                          <NotesEditorGroup>
+                            {notes.map((note, index) => (
+                              <NoteEditorRow key={`${groupKey}-${index}-${note}`}>
+                                <EditTextarea
+                                  defaultValue={note}
+                                  aria-label={`${getClientNoteGroupLabel(groupKey)} note ${index + 1}`}
+                                  onBlur={event => updateClientNote(groupKey, index, event.target.value)}
+                                />
+                                <IconButton
+                                  type="button"
+                                  aria-label="Delete note"
+                                  onClick={() => deleteClientNote(groupKey, index)}
+                                >
+                                  <FaTrash />
+                                </IconButton>
+                              </NoteEditorRow>
+                            ))}
+                            <div>
+                              <MiniButton type="button" onClick={() => addClientNote(groupKey)}>
+                                <FaPlus /> Add note
+                              </MiniButton>
+                            </div>
+                          </NotesEditorGroup>
+                        </NoteCard>
+                      );
+                    })}
+                  </NotesGrid>
+                ) : (
+                  <NotesGrid>
+                    {visibleNoteGroups.map(([groupKey, notes]) => (
+                      <NoteCard key={groupKey}>
+                        <NoteCardTitle>{getClientNoteGroupLabel(groupKey)}</NoteCardTitle>
+                        <NoteList>
+                          {notes.map((note, index) => <li key={`${note}-${index}`}>{note}</li>)}
+                        </NoteList>
+                      </NoteCard>
+                    ))}
+                  </NotesGrid>
+                )}
               </Section>
             ) : null}
           </>
