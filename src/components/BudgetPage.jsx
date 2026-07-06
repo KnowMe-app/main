@@ -1,16 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
+import { Document, Page as PdfPage, pdf, StyleSheet, Text, View } from '@react-pdf/renderer';
+import { saveAs } from 'file-saver';
 import { get, ref, remove, set, update } from 'firebase/database';
 import { FaCheck, FaChevronDown, FaChevronUp, FaFilePdf, FaPen, FaTimes, FaUpload } from 'react-icons/fa';
 import { auth, database } from './config';
 import { isAdminUid } from 'utils/accessLevel';
+const AGENCY_META = {
+  name: 'UKRCOM Surrogacy Agency',
+  legalName: 'REPRODUCTIVE AGENCY "UKRCOM"',
+  address: '31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine',
+  website: 'http://ukrcom.hol.es/',
+  email: 'sm.kiev.ukr@gmail.com',
+  telegram: '@Contact_Us_Kyiv',
+};
 
 const USD_ITEM_IDS = new Set([
+  '22',
   'sm-program-compensation',
   'surrogate-mother-compensation',
   'sm-compensation',
 ]);
+
 const USD_TO_EUR_RATE = 0.92;
 const INCLUDED_PREVIEW_LIMIT = 6;
 const POPULAR_PACKAGE_ID = '3';
@@ -18,6 +30,7 @@ const POPULAR_PACKAGE_BADGE = 'Most popular';
 const BUDGET_EDIT_MODE_STORAGE_KEY = 'budget:edit-mode';
 const GUARANTEED_PACKAGE_IDS = new Set(['4', '5']);
 const FROM_PRICE_ITEM_IDS = new Set(['43', '49', '54', '61', '63', '64', '65']);
+
 const CATEGORY_LABELS = {
   coordination: 'Coordination & Documents',
   surrogateMother: 'Surrogate Mother',
@@ -35,10 +48,25 @@ const formatMoney = (value, currency = 'EUR') => {
   return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)} ${currency || 'EUR'}`;
 };
 
+const normalizeClientNotes = clientNotes => {
+  if (Array.isArray(clientNotes)) {
+    return { programMilestones: clientNotes.filter(Boolean) };
+  }
+  if (clientNotes && typeof clientNotes === 'object') {
+    return {
+      ...clientNotes,
+      programMilestones: Array.isArray(clientNotes.programMilestones)
+        ? clientNotes.programMilestones.filter(Boolean)
+        : [],
+    };
+  }
+  return { programMilestones: [] };
+};
+
 const normalizeCatalog = catalog => ({
   packages: Array.isArray(catalog?.packages) ? catalog.packages : [],
   items: Array.isArray(catalog?.items) ? catalog.items : [],
-  clientNotes: Array.isArray(catalog?.clientNotes) ? catalog.clientNotes : [],
+  clientNotes: normalizeClientNotes(catalog?.clientNotes),
   technical: catalog?.technical && typeof catalog.technical === 'object' ? catalog.technical : {},
 });
 
@@ -81,6 +109,271 @@ const getCategoryMinimumPrice = items => {
   const amounts = items.map(getItemDisplayAmount).filter(amount => Number.isFinite(amount));
   if (!amounts.length) return '';
   return `from ${formatMoney(Math.min(...amounts), 'EUR')}`;
+};
+
+const getProgramBudgetFileName = (date = new Date()) => {
+  const isoDate = date.toISOString().slice(0, 10);
+  return `UKRCOM-Program-Budget-${isoDate}.pdf`;
+};
+
+const compareNumericId = (a, b) => Number(a?.id || 0) - Number(b?.id || 0);
+
+const resolveNotes = clientNotes => {
+  if (Array.isArray(clientNotes?.programMilestones)) return clientNotes.programMilestones.filter(Boolean);
+  if (Array.isArray(clientNotes)) return clientNotes.filter(Boolean);
+  return [];
+};
+
+const buildProgramBudgetPdfModel = (catalog, options = {}) => {
+  const normalized = normalizeCatalog(catalog);
+  const generatedAt = options.generatedAt || new Date();
+  const generatedDate = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(generatedAt);
+  const heroText = options.heroText || 'A clear overview of surrogacy program packages and optional expenses, prepared for international intended parents with transparent inclusions and calm, private presentation.';
+  const itemsById = new Map(normalized.items.map(item => [String(item.id), item]));
+  const includedItemIds = new Set();
+
+  normalized.packages.forEach(program => {
+    if (Array.isArray(program.children)) {
+      program.children.forEach(id => includedItemIds.add(String(id)));
+    }
+  });
+
+  const overviewPrograms = [...normalized.packages]
+    .sort((a, b) => Number(a.listedPrice || 0) - Number(b.listedPrice || 0))
+    .map(program => ({
+      name: program.name || 'Program',
+      price: formatMoney(program.listedPrice, program.currency || 'EUR'),
+    }));
+
+  const packages = [...normalized.packages]
+    .sort(compareNumericId)
+    .map(program => ({
+      name: program.name || 'Program',
+      price: formatMoney(program.listedPrice, program.currency || 'EUR'),
+      description: program.description || '',
+      isGuaranteed: GUARANTEED_PACKAGE_IDS.has(String(program.id)),
+      includedItems: Array.isArray(program.children)
+        ? program.children
+          .map(id => itemsById.get(String(id)))
+          .filter(Boolean)
+          .map(item => ({ name: item.name || 'Included service' }))
+        : [],
+    }));
+
+  const additionalExpenseGroups = normalized.items.reduce((groups, item) => {
+    if (includedItemIds.has(String(item.id))) return groups;
+    const categoryLabel = getCategoryLabel(item.category || 'Other');
+    if (!groups[categoryLabel]) groups[categoryLabel] = [];
+    groups[categoryLabel].push({
+      name: item.name || 'Additional service',
+      price: getExpensePriceLabel(item),
+    });
+    return groups;
+  }, {});
+
+  const additionalExpenses = Object.entries(additionalExpenseGroups)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([category, items]) => ({ category, items }));
+
+  return {
+    agency: AGENCY_META,
+    title: 'Program Budget',
+    subtitle: 'Prepared for International Intended Parents',
+    generatedDate,
+    heroText,
+    overviewPrograms,
+    packages,
+    additionalExpenses,
+    notes: resolveNotes(normalized.clientNotes),
+    disclaimer: 'This document is for informational purposes and does not constitute a binding offer.',
+  };
+};
+
+const colors = {
+  background: '#fffaf4',
+  coverBackground: '#fbf4eb',
+  ink: '#2f2923',
+  muted: '#6f6359',
+  accent: '#9a6b48',
+  border: '#e8d7c5',
+  soft: '#f7efe4',
+  guaranteed: '#fff2df',
+  white: '#ffffff',
+};
+
+const styles = StyleSheet.create({
+  page: {
+    size: 'A4',
+    paddingTop: 57,
+    paddingRight: 57,
+    paddingBottom: 64,
+    paddingLeft: 57,
+    fontFamily: 'Helvetica',
+    color: colors.ink,
+    backgroundColor: colors.background,
+    fontSize: 10,
+    lineHeight: 1.35,
+  },
+  cover: {
+    paddingTop: 76,
+    paddingRight: 57,
+    paddingBottom: 57,
+    paddingLeft: 57,
+    fontFamily: 'Helvetica',
+    color: colors.ink,
+    backgroundColor: colors.coverBackground,
+  },
+  eyebrow: { color: colors.accent, fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16 },
+  coverAgency: { fontSize: 18, marginBottom: 88, color: colors.accent },
+  coverTitle: { fontSize: 44, lineHeight: 1, fontFamily: 'Helvetica-Bold', letterSpacing: -1.2 },
+  coverSubtitle: { marginTop: 16, fontSize: 17, color: colors.muted },
+  coverDate: { marginTop: 36, fontSize: 12, color: colors.muted },
+  coverFooter: { position: 'absolute', left: 57, right: 57, bottom: 57, borderTopWidth: 1, borderColor: colors.border, paddingTop: 14, color: colors.muted, fontSize: 10 },
+  title: { fontSize: 26, fontFamily: 'Helvetica-Bold', marginBottom: 14, letterSpacing: -0.5 },
+  sectionTitle: { fontSize: 18, fontFamily: 'Helvetica-Bold', marginBottom: 10, color: colors.ink },
+  paragraph: { fontSize: 11, color: colors.muted, marginBottom: 18 },
+  table: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.white },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.border, minHeight: 32, alignItems: 'center' },
+  tableRowLast: { flexDirection: 'row', minHeight: 32, alignItems: 'center' },
+  tableHeader: { backgroundColor: colors.soft, fontFamily: 'Helvetica-Bold' },
+  tableCellName: { flex: 1, padding: 10 },
+  tableCellPrice: { width: 128, padding: 10, textAlign: 'right', fontFamily: 'Helvetica-Bold' },
+  packageBox: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 18, backgroundColor: colors.white },
+  guaranteedBox: { borderWidth: 1.5, borderColor: colors.accent, borderRadius: 14, padding: 18, backgroundColor: colors.guaranteed },
+  packageMeta: { color: colors.accent, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, fontFamily: 'Helvetica-Bold' },
+  packageName: { fontSize: 24, fontFamily: 'Helvetica-Bold', marginBottom: 8, letterSpacing: -0.4 },
+  price: { fontSize: 24, fontFamily: 'Helvetica-Bold', color: colors.accent, marginBottom: 12 },
+  description: { fontSize: 11, color: colors.muted, marginBottom: 18 },
+  includedTitle: { fontSize: 13, fontFamily: 'Helvetica-Bold', marginBottom: 8 },
+  includedItem: { flexDirection: 'row', gap: 7, marginBottom: 6, alignItems: 'flex-start' },
+  check: { color: colors.accent, fontFamily: 'Helvetica-Bold', width: 12 },
+  includedText: { flex: 1, fontSize: 10.5 },
+  expenseColumns: { flexDirection: 'row', gap: 14 },
+  expenseColumn: { flex: 1 },
+  expenseGroup: { marginBottom: 14, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.white },
+  expenseCategory: { fontSize: 12, fontFamily: 'Helvetica-Bold', marginBottom: 7, color: colors.accent },
+  expenseRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginBottom: 5 },
+  expenseName: { flex: 1 },
+  expensePrice: { width: 70, textAlign: 'right', fontFamily: 'Helvetica-Bold' },
+  noteItem: { flexDirection: 'row', gap: 7, marginBottom: 8 },
+  noteBullet: { width: 10, color: colors.accent },
+  noteText: { flex: 1, color: colors.muted },
+  contactBox: { marginTop: 24, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.white },
+  contactTitle: { fontFamily: 'Helvetica-Bold', marginBottom: 8 },
+  disclaimer: { position: 'absolute', left: 57, right: 57, bottom: 84, fontSize: 9, color: colors.muted },
+  footer: { position: 'absolute', left: 57, right: 57, bottom: 30, paddingTop: 8, borderTopWidth: 1, borderColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', color: colors.muted, fontSize: 8 },
+});
+
+const StandardFooter = ({ agency }) => (
+  <View style={styles.footer} fixed>
+    <Text>{agency.name}</Text>
+    <Text render={({ pageNumber }) => `Page ${pageNumber}`} />
+  </View>
+);
+
+const splitColumns = groups => groups.reduce((columns, group, index) => {
+  columns[index % 2].push(group);
+  return columns;
+}, [[], []]);
+
+const ProgramBudgetPdfDocument = ({ catalog, generatedAt }) => {
+  const model = buildProgramBudgetPdfModel(catalog, { generatedAt });
+  const [leftExpenses, rightExpenses] = splitColumns(model.additionalExpenses);
+  return (
+    <Document title={`${model.agency.name} - ${model.title}`} author={model.agency.name} subject={model.title}>
+      <PdfPage size="A4" style={styles.cover}>
+        <Text style={styles.coverAgency}>{model.agency.name}</Text>
+        <Text style={styles.eyebrow}>Private client budget</Text>
+        <Text style={styles.coverTitle}>{model.title}</Text>
+        <Text style={styles.coverSubtitle}>{model.subtitle}</Text>
+        <Text style={styles.coverDate}>Generated on {model.generatedDate}</Text>
+        <View style={styles.coverFooter}>
+          <Text>{model.agency.website}</Text>
+          <Text>{model.agency.email}</Text>
+        </View>
+      </PdfPage>
+
+      <PdfPage size="A4" style={styles.page}>
+        <Text style={styles.title}>Program Budget Overview</Text>
+        <Text style={styles.paragraph}>{model.heroText}</Text>
+        <View style={styles.table}>
+          <View style={[styles.tableRow, styles.tableHeader]}>
+            <Text style={styles.tableCellName}>Program</Text>
+            <Text style={styles.tableCellPrice}>Price</Text>
+          </View>
+          {model.overviewPrograms.map((program, index) => (
+            <View key={program.name} style={index === model.overviewPrograms.length - 1 ? styles.tableRowLast : styles.tableRow}>
+              <Text style={styles.tableCellName}>{program.name}</Text>
+              <Text style={styles.tableCellPrice}>{program.price}</Text>
+            </View>
+          ))}
+        </View>
+        <StandardFooter agency={model.agency} />
+      </PdfPage>
+
+      {model.packages.map(program => (
+        <PdfPage key={program.name} size="A4" style={styles.page}>
+          <View style={program.isGuaranteed ? styles.guaranteedBox : styles.packageBox}>
+            {program.isGuaranteed ? <Text style={styles.packageMeta}>Guaranteed program</Text> : null}
+            <Text style={styles.packageName}>{program.name}</Text>
+            <Text style={styles.price}>{program.price}</Text>
+            {program.description ? <Text style={styles.description}>{program.description}</Text> : null}
+            <Text style={styles.includedTitle}>What's included</Text>
+            {program.includedItems.map(item => (
+              <View key={item.name} style={styles.includedItem} wrap={false}>
+                <Text style={styles.check}>✓</Text>
+                <Text style={styles.includedText}>{item.name}</Text>
+              </View>
+            ))}
+          </View>
+          <StandardFooter agency={model.agency} />
+        </PdfPage>
+      ))}
+
+      <PdfPage size="A4" style={styles.page}>
+        <Text style={styles.sectionTitle}>Additional expenses</Text>
+        <View style={styles.expenseColumns}>
+          {[leftExpenses, rightExpenses].map((column, columnIndex) => (
+            <View key={columnIndex} style={styles.expenseColumn}>
+              {column.map(group => (
+                <View key={group.category} style={styles.expenseGroup} wrap={false}>
+                  <Text style={styles.expenseCategory}>{group.category}</Text>
+                  {group.items.map(item => (
+                    <View key={`${group.category}-${item.name}`} style={styles.expenseRow}>
+                      <Text style={styles.expenseName}>{item.name}</Text>
+                      <Text style={styles.expensePrice}>{item.price}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+        <StandardFooter agency={model.agency} />
+      </PdfPage>
+
+      <PdfPage size="A4" style={styles.page}>
+        <Text style={styles.sectionTitle}>Important notes</Text>
+        {model.notes.map(note => (
+          <View key={note} style={styles.noteItem}>
+            <Text style={styles.noteBullet}>•</Text>
+            <Text style={styles.noteText}>{note}</Text>
+          </View>
+        ))}
+        <View style={styles.contactBox}>
+          <Text style={styles.contactTitle}>Contact</Text>
+          <Text>{model.agency.website}</Text>
+          <Text>{model.agency.email}</Text>
+        </View>
+        <Text style={styles.disclaimer}>{model.disclaimer}</Text>
+        <StandardFooter agency={model.agency} />
+      </PdfPage>
+    </Document>
+  );
 };
 
 const Page = styled.main`
@@ -560,6 +853,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [expandedIncluded, setExpandedIncluded] = useState({});
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const fileInputRef = useRef(null);
   const isBudgetAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('admin') === '1');
@@ -724,6 +1018,23 @@ const BudgetPage = ({ isAdmin = false }) => {
     window.location.hash = 'contact';
   };
 
+
+  const handleExportPdf = async () => {
+    if (loading || error || !catalog.packages.length || isExportingPdf) return;
+    setIsExportingPdf(true);
+    const generatedAt = new Date();
+    try {
+      const blob = await pdf(<ProgramBudgetPdfDocument catalog={catalog} generatedAt={generatedAt} />).toBlob();
+      saveAs(blob, getProgramBudgetFileName(generatedAt));
+      toast.success('Program Budget PDF is ready.');
+    } catch (exportError) {
+      console.error('Unable to export budget PDF', exportError);
+      toast.error('Unable to export Program Budget PDF.');
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   const renderInternalNote = (collection, record) => (
     record.internalNote ? (
       <InternalNote>
@@ -782,8 +1093,8 @@ const BudgetPage = ({ isAdmin = false }) => {
             </Subtitle>
           </div>
           <HeaderActions>
-            <SoftButton type="button" disabled title="PDF export will be added in the next step">
-              <FaFilePdf /> Export as PDF
+            <SoftButton type="button" onClick={handleExportPdf} disabled={loading || Boolean(error) || !catalog.packages.length || isExportingPdf} title={isExportingPdf ? 'Preparing Program Budget PDF…' : 'Download Program Budget as PDF'}>
+              <FaFilePdf /> {isExportingPdf ? 'Preparing PDF…' : 'Export as PDF'}
             </SoftButton>
             {isBudgetAdmin ? (
               <SoftButton
@@ -931,11 +1242,11 @@ const BudgetPage = ({ isAdmin = false }) => {
               </AccordionList>
             </Section>
 
-            {catalog.clientNotes.length ? (
+            {catalog.clientNotes.programMilestones.length ? (
               <Section aria-labelledby="budget-notes-title">
                 <H2 id="budget-notes-title">Client notes</H2>
                 <NoteList>
-                  {catalog.clientNotes.map((note, index) => <li key={`${note}-${index}`}>{note}</li>)}
+                  {catalog.clientNotes.programMilestones.map((note, index) => <li key={`${note}-${index}`}>{note}</li>)}
                 </NoteList>
               </Section>
             ) : null}
