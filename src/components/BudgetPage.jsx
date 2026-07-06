@@ -18,6 +18,8 @@ const POPULAR_PACKAGE_BADGE = 'Most popular';
 const BUDGET_EDIT_MODE_STORAGE_KEY = 'budget:edit-mode';
 const GUARANTEED_PACKAGE_IDS = new Set(['4', '5']);
 const FROM_PRICE_ITEM_IDS = new Set(['43', '49', '54', '61', '63', '64', '65']);
+const EMBRYO_STORAGE_MATCHERS = ['embryo', 'ембріон', 'embryon', 'кріо', 'cryo'];
+const STORAGE_MATCHERS = ['storage', 'зберіган', 'зберігання'];
 const CATEGORY_LABELS = {
   coordination: 'Coordination & Documents',
   surrogateMother: 'Surrogate Mother',
@@ -81,6 +83,12 @@ const getCategoryMinimumPrice = items => {
   const amounts = items.map(getItemDisplayAmount).filter(amount => Number.isFinite(amount));
   if (!amounts.length) return '';
   return `from ${formatMoney(Math.min(...amounts), 'EUR')}`;
+};
+
+const isEmbryoStorageItem = item => {
+  const searchableText = `${item?.id || ''} ${item?.name || ''} ${item?.description || ''} ${item?.category || ''}`.toLowerCase();
+  return EMBRYO_STORAGE_MATCHERS.some(matcher => searchableText.includes(matcher))
+    && STORAGE_MATCHERS.some(matcher => searchableText.includes(matcher));
 };
 
 const Page = styled.main`
