@@ -10,7 +10,6 @@ import {
   formatEuroAmount,
   formatMoney,
   getCategoryLabel,
-  getCategoryMinimumPrice,
   getClientNoteGroupLabel,
   getExpensePriceLabel,
   normalizeCatalog,
@@ -1619,11 +1618,10 @@ const BudgetPage = ({ isAdmin = false }) => {
               <AccordionList>
                 {Object.entries(groupedExpenses).map(([category, items]) => {
                   const isOpen = Boolean(openCategories[category]);
-                  const minimumPrice = getCategoryMinimumPrice(items);
                   return (
                     <Accordion key={category}>
                       <AccordionHeader type="button" onClick={() => toggleCategory(category)} aria-expanded={isOpen} $compact={!isEditMode}>
-                        <span>{getCategoryLabel(category)} {minimumPrice ? <Count>{minimumPrice}</Count> : null}</span>
+                        <span>{getCategoryLabel(category)} <Count>{items.length} {items.length === 1 ? 'service' : 'services'}</Count></span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
                       </AccordionHeader>
                       {isOpen ? (
