@@ -1,15 +1,19 @@
 import React from 'react';
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import {
+  collectFormulaReferencedItemIds,
   formatMoney,
   getCategoryLabel,
   getClientNoteGroupLabel,
   getExpensePriceLabel,
   getVisibleSortedPackages,
   normalizeClientNotes,
+  resolveBudgetPriceAmount,
   resolveProgramPaymentSchedule,
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
+
+const UKRCOM_MARKER = 'REPRODUCTIVE AGENCY "UKRCOM"';
 
 const INK = '#33291f';
 const MUTED = '#6f6359';
@@ -302,11 +306,15 @@ const styles = StyleSheet.create({
   },
 });
 
-const BudgetPdfDocument = ({ catalog }) => {
+const BudgetPdfDocument = ({ catalog, rates = null }) => {
   const items = Array.isArray(catalog?.items) ? catalog.items : [];
   const visibleItems = items.filter(item => !item.hidden);
   const itemsById = new Map(visibleItems.map(item => [String(item.id), item]));
-  const packages = getVisibleSortedPackages(catalog);
+  const priceContext = { itemsById: new Map(items.map(item => [String(item.id), item])), rates };
+  const packages = getVisibleSortedPackages(catalog, priceContext);
+  const formulaReferencedIds = collectFormulaReferencedItemIds(catalog);
+  const resolveListedPrice = program =>
+    resolveBudgetPriceAmount(program?.listedPrice, priceContext) ?? program?.listedPrice;
 
   const programSchedules = packages.map(program => resolveProgramPaymentSchedule(catalog, program));
   const scheduleRowCount = programSchedules.reduce(
@@ -339,6 +347,9 @@ const BudgetPdfDocument = ({ catalog }) => {
 
   const groupedExpenses = visibleItems.reduce((groups, item) => {
     if (includedIdSet.has(String(item.id))) return groups;
+    // Sub-services referenced from price formulas are already included in
+    // another service/package price, so they are not listed separately.
+    if (formulaReferencedIds.has(String(item.id))) return groups;
     const category = item.category || 'Other';
     if (!groups[category]) groups[category] = [];
     groups[category].push(item);
@@ -363,30 +374,25 @@ const BudgetPdfDocument = ({ catalog }) => {
       {packages.map((program, index) => (
         <View key={program.id} style={styles.programCell}>
           <Text style={styles.programCellHead}>{`#${index + 1}`}</Text>
-          <Text style={styles.programCellHeadPrice}>{formatAmount(program.listedPrice)}</Text>
+          <Text style={styles.programCellHeadPrice}>{formatAmount(resolveListedPrice(program))}</Text>
         </View>
       ))}
     </View>
   );
 
   return (
-    <Document title="Program Budget" subject="Surrogacy program budget" creator="KnowMe">
+    <Document title="UKRCOM - Program Budget" subject="Surrogacy program budget" creator="UKRCOM">
       <Page size="A4" style={styles.page} wrap>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.eyebrow}>Private client budget</Text>
+            <Text style={styles.eyebrow}>{UKRCOM_MARKER}</Text>
             <Text style={styles.title}>Program Budget</Text>
           </View>
           <Text style={styles.headerDate}>{dateLabel}</Text>
         </View>
-        <Text style={styles.subtitle}>
-          A clear overview of surrogacy program packages and optional expenses, prepared for international
-          intended parents with transparent inclusions. All prices are in EUR unless stated otherwise.
-        </Text>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Programs</Text>
-          <Text style={styles.sectionNote}>Core program packages, ordered from essential to premium.</Text>
           {packages.map((program, index) => (
             <View key={program.id} style={styles.programRow} wrap={false}>
               <View style={styles.programIndexCell}>
@@ -398,7 +404,7 @@ const BudgetPdfDocument = ({ catalog }) => {
                   <Text style={styles.programDescription}>{sanitizePdfText(program.description)}</Text>
                 ) : null}
               </View>
-              <Text style={styles.programPrice}>{formatMoney(program.listedPrice, program.currency || 'EUR')}</Text>
+              <Text style={styles.programPrice}>{formatMoney(resolveListedPrice(program), program.currency || 'EUR')}</Text>
             </View>
           ))}
         </View>
@@ -406,7 +412,6 @@ const BudgetPdfDocument = ({ catalog }) => {
         {scheduleRowCount > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Payment schedule</Text>
-            <Text style={styles.sectionNote}>Amounts in EUR, payable at each program milestone.</Text>
             <View style={styles.table}>
               <View style={styles.tableHeadRow} wrap={false}>
                 <View style={styles.labelCell}>
@@ -415,7 +420,7 @@ const BudgetPdfDocument = ({ catalog }) => {
                 {packages.map((program, index) => (
                   <View key={program.id} style={styles.programCell}>
                     <Text style={styles.programCellHead}>{`#${index + 1}`}</Text>
-                    <Text style={styles.programCellHeadPrice}>{formatAmount(program.listedPrice)}</Text>
+                    <Text style={styles.programCellHeadPrice}>{formatAmount(resolveListedPrice(program))}</Text>
                   </View>
                 ))}
               </View>
@@ -482,9 +487,7 @@ const BudgetPdfDocument = ({ catalog }) => {
         {Object.keys(groupedExpenses).length ? (
           <View style={styles.section} break>
             <Text style={styles.sectionTitle}>Other expenses</Text>
-            <Text style={styles.sectionNote}>
-              Optional and situational services, grouped by category. “From” prices are lower bounds of a range.
-            </Text>
+            <Text style={styles.sectionNote}>“From” prices are lower bounds of a range.</Text>
             {Object.entries(groupedExpenses).map(([category, categoryItems]) => (
               <View key={category} style={styles.categoryBlock}>
                 <View style={styles.categoryHeader} wrap={false} minPresenceAhead={40}>
@@ -501,7 +504,7 @@ const BudgetPdfDocument = ({ catalog }) => {
                         <Text style={styles.expenseDescription}>{sanitizePdfText(item.description)}</Text>
                       ) : null}
                     </View>
-                    <Text style={styles.expensePrice}>{getExpensePriceLabel(item)}</Text>
+                    <Text style={styles.expensePrice}>{getExpensePriceLabel(item, priceContext)}</Text>
                   </View>
                 ))}
               </View>
@@ -512,7 +515,6 @@ const BudgetPdfDocument = ({ catalog }) => {
         {noteGroups.length ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Good to know</Text>
-            <Text style={styles.sectionNote}>Key milestones and notes for intended parents.</Text>
             {noteGroups.map(([groupKey, notes]) => (
               <View key={groupKey} style={styles.noteCard} wrap={false}>
                 <Text style={styles.noteGroupTitle}>{sanitizePdfText(getClientNoteGroupLabel(groupKey))}</Text>
@@ -528,7 +530,7 @@ const BudgetPdfDocument = ({ catalog }) => {
         ) : null}
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>{`Program Budget · generated ${dateLabel}`}</Text>
+          <Text style={styles.footerText}>{sanitizePdfText(`${UKRCOM_MARKER} · Program Budget · generated ${dateLabel}`)}</Text>
           <Text
             style={styles.footerText}
             render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}

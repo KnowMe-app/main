@@ -1,5 +1,12 @@
 // Shared helpers for the budget catalog: used by BudgetPage (screen) and BudgetPdfDocument (export).
 
+import {
+  evaluateBudgetPriceFormula,
+  extractBudgetFormulaItemIds,
+  isBudgetPriceFormula,
+  stripBudgetFormulaPrefix,
+} from 'utils/budgetPriceFormula';
+
 export const USD_ITEM_IDS = new Set([
   '22',
   'sm-program-compensation',
@@ -22,11 +29,16 @@ const CATEGORY_LABELS = {
   insurance: 'Insurance',
 };
 
+export const KNOWN_CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
+
 const CLIENT_NOTE_GROUP_LABELS = {
   programMilestones: 'Milestones for the intended parents',
   surrogateMotherExpenses: "Surrogate mother's expenses",
   general: 'Client notes',
 };
+
+const FROM_PREFIX_REGEX = /^from\s*/i;
+const PLAIN_NUMBER_REGEX = /^[-+]?\d+(?:[.,]\d+)?$/;
 
 const prettifyKey = key => String(key || '')
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -50,6 +62,99 @@ export const formatEuroAmount = value => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
+};
+
+// Splits a stored price into its "from" flag and the remaining expression
+// (a plain number, or a "=..." formula).
+export const parseBudgetPriceValue = raw => {
+  if (typeof raw === 'number') {
+    return { isFrom: false, expression: String(raw), isFormula: false, isEmpty: !Number.isFinite(raw) };
+  }
+  const text = String(raw ?? '').trim();
+  if (!text) return { isFrom: false, expression: '', isFormula: false, isEmpty: true };
+  const isFrom = FROM_PREFIX_REGEX.test(text);
+  const expression = text.replace(FROM_PREFIX_REGEX, '').trim();
+  return { isFrom, expression, isFormula: isBudgetPriceFormula(expression), isEmpty: !expression };
+};
+
+// Keeps plain numbers numeric on the backend; formulas and "from ..." strings stay as-is.
+export const normalizeBudgetPriceInput = raw => {
+  const text = String(raw ?? '').trim();
+  if (text === '') return '';
+  if (PLAIN_NUMBER_REGEX.test(text)) {
+    const numeric = Number(text.replace(',', '.'));
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return text;
+};
+
+// Resolves a stored price to a EUR number: plain numbers pass through, formulas
+// are evaluated with the NBU rates and idNN references to other items.
+export const resolveBudgetPriceAmount = (raw, context = {}, seenIds = new Set()) => {
+  const parsed = parseBudgetPriceValue(raw);
+  if (parsed.isEmpty) return null;
+  if (!parsed.isFormula) {
+    const numeric = Number(parsed.expression.replace(',', '.'));
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  const { itemsById, rates } = context;
+  try {
+    return evaluateBudgetPriceFormula(parsed.expression, name => {
+      const lower = String(name).toLowerCase();
+      if (lower === 'eur') return rates?.eur;
+      if (lower === 'usd') return rates?.usd;
+      const idMatch = /^id(\d+)$/.exec(lower);
+      if (!idMatch) return NaN;
+      const itemId = idMatch[1];
+      if (seenIds.has(itemId)) return NaN;
+      const item = itemsById?.get?.(itemId);
+      if (!item) return NaN;
+      const nextSeen = new Set(seenIds);
+      nextSeen.add(itemId);
+      const amount = resolveBudgetPriceAmount(item.price, context, nextSeen);
+      return amount == null ? NaN : amount;
+    });
+  } catch (error) {
+    return null;
+  }
+};
+
+const formatShortAmount = value => {
+  if (!Number.isFinite(value)) return '?';
+  return String(Math.round(value * 100) / 100);
+};
+
+// Debug line for edit mode: the formula with idNN replaced by service names
+// (with their resolved amounts) plus the computed total.
+export const describeBudgetPriceFormula = (raw, context = {}) => {
+  const parsed = parseBudgetPriceValue(raw);
+  if (!parsed.isFormula) return '';
+  const { itemsById, rates } = context;
+  const readable = stripBudgetFormulaPrefix(parsed.expression)
+    .replace(/\bid(\d+)\b/gi, (match, itemId) => {
+      const item = itemsById?.get?.(String(itemId));
+      if (!item) return `id${itemId}?`;
+      const amount = resolveBudgetPriceAmount(item.price, context);
+      return `${item.name || `id${itemId}`} [${formatShortAmount(amount == null ? NaN : amount)}]`;
+    })
+    .replace(/\bEUR\b/g, `EUR ${formatShortAmount(Number(rates?.eur))}`)
+    .replace(/\bUSD\b/g, `USD ${formatShortAmount(Number(rates?.usd))}`);
+  const total = resolveBudgetPriceAmount(raw, context);
+  return `${readable} = ${formatShortAmount(total == null ? NaN : total)}`;
+};
+
+// IDs of items referenced from price formulas (sub-services). They are already
+// part of another service/package price, so clients should not see them twice.
+export const collectFormulaReferencedItemIds = catalog => {
+  const ids = new Set();
+  const scan = value => {
+    const parsed = parseBudgetPriceValue(value);
+    if (!parsed.isFormula) return;
+    extractBudgetFormulaItemIds(parsed.expression).forEach(id => ids.add(String(id)));
+  };
+  (Array.isArray(catalog?.items) ? catalog.items : []).forEach(item => scan(item?.price));
+  (Array.isArray(catalog?.packages) ? catalog.packages : []).forEach(program => scan(program?.listedPrice));
+  return ids;
 };
 
 export const normalizeClientNotes = value => {
@@ -79,21 +184,41 @@ export const normalizeCatalog = catalog => ({
 export const getClientNoteGroupLabel = key =>
   CLIENT_NOTE_GROUP_LABELS[key] || prettifyKey(key) || 'Client notes';
 
-export const getItemDisplayAmount = item => {
-  const basePrice = Number(item?.price);
-  if (!Number.isFinite(basePrice)) return null;
+export const getItemDisplayAmount = (item, context = {}) => {
+  const basePrice = resolveBudgetPriceAmount(item?.price, context);
+  if (basePrice == null) return null;
   const isUsd = USD_ITEM_IDS.has(String(item?.id || '').trim());
   return isUsd ? basePrice * USD_TO_EUR_RATE : basePrice;
 };
 
-export const getItemDisplayPrice = item => {
-  const amount = getItemDisplayAmount(item);
+export const getItemDisplayPrice = (item, context = {}) => {
+  const amount = getItemDisplayAmount(item, context);
   return amount === null ? formatMoney(item?.price, 'EUR') : formatMoney(amount, 'EUR');
 };
 
-export const getExpensePriceLabel = item => {
-  const prefix = FROM_PRICE_ITEM_IDS.has(String(item?.id)) ? 'from ' : '';
-  return `${prefix}${getItemDisplayPrice(item)}`;
+export const isFromPricedItem = item =>
+  parseBudgetPriceValue(item?.price).isFrom || FROM_PRICE_ITEM_IDS.has(String(item?.id));
+
+export const getExpensePriceLabel = (item, context = {}) => {
+  const prefix = isFromPricedItem(item) ? 'from ' : '';
+  return `${prefix}${getItemDisplayPrice(item, context)}`;
+};
+
+// Real cost of a package: the sum of its included services (sub-service
+// formulas resolved). Used as the margin marker next to the package price.
+export const computePackageChildrenTotal = (program, context = {}) => {
+  const children = Array.isArray(program?.children) ? program.children : [];
+  let total = 0;
+  let resolvedCount = 0;
+  children.forEach(id => {
+    const item = context.itemsById?.get?.(String(id));
+    const amount = item ? getItemDisplayAmount(item, context) : null;
+    if (amount != null) {
+      total += amount;
+      resolvedCount += 1;
+    }
+  });
+  return { total, count: children.length, resolvedCount };
 };
 
 export const getCategoryLabel = category => {
@@ -102,10 +227,11 @@ export const getCategoryLabel = category => {
   return prettifyKey(key) || 'Other';
 };
 
-export const getVisibleSortedPackages = catalog =>
+export const getVisibleSortedPackages = (catalog, context = {}) =>
   (Array.isArray(catalog?.packages) ? catalog.packages : [])
     .filter(program => !program.hidden)
-    .sort((a, b) => Number(a.listedPrice || 0) - Number(b.listedPrice || 0));
+    .sort((a, b) => (resolveBudgetPriceAmount(a.listedPrice, context) || 0)
+      - (resolveBudgetPriceAmount(b.listedPrice, context) || 0));
 
 export const resolveProgramPaymentSchedule = (catalog, program) => {
   const schedules = Array.isArray(catalog?.technical?.paymentSchedules)
