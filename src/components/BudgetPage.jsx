@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, remove, set, update } from 'firebase/database';
-import { FaCheck, FaChevronDown, FaChevronUp, FaFilePdf, FaPen, FaTimes, FaUpload } from 'react-icons/fa';
+import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaTimes, FaTrash, FaUpload } from 'react-icons/fa';
 import { auth, database } from './config';
 import { isAdminUid } from 'utils/accessLevel';
 
@@ -20,6 +20,11 @@ const GUARANTEED_PACKAGE_IDS = new Set(['4', '5']);
 const FROM_PRICE_ITEM_IDS = new Set(['43', '49', '54', '61', '63', '64', '65']);
 const EMBRYO_STORAGE_MATCHERS = ['embryo', 'ембріон', 'embryon', 'кріо', 'cryo'];
 const STORAGE_MATCHERS = ['storage', 'зберіган', 'зберігання'];
+const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
+const BUDGET_COLLECTION_LABELS = {
+  packages: 'program',
+  items: 'expense',
+};
 const CATEGORY_LABELS = {
   coordination: 'Coordination & Documents',
   surrogateMother: 'Surrogate Mother',
@@ -43,6 +48,38 @@ const normalizeCatalog = catalog => ({
   clientNotes: Array.isArray(catalog?.clientNotes) ? catalog.clientNotes : [],
   technical: catalog?.technical && typeof catalog.technical === 'object' ? catalog.technical : {},
 });
+
+const getFirebaseConsoleProjectId = () =>
+  process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
+
+const getFirebaseRealtimeDatabaseName = () => {
+  const fallbackProjectId = getFirebaseConsoleProjectId();
+  const databaseUrl = process.env.REACT_APP_DATABASE_URL || '';
+
+  try {
+    const { hostname } = new URL(databaseUrl);
+    return hostname.split('.')[0] || `${fallbackProjectId}-default-rtdb`;
+  } catch (error) {
+    return `${fallbackProjectId}-default-rtdb`;
+  }
+};
+
+const buildBudgetBackendUrl = (collection, index) => {
+  if (!collection || index < 0) return '';
+
+  const projectId = getFirebaseConsoleProjectId();
+  const databaseName = getFirebaseRealtimeDatabaseName();
+  const encodedPath = ['budget', collection, String(index)]
+    .map(segment => `~2F${encodeURIComponent(segment)}`)
+    .join('');
+
+  return `https://console.firebase.google.com/u/0/project/${projectId}/database/${databaseName}/data/${encodedPath}`;
+};
+
+const getNextBudgetRecordId = records => {
+  const lastRecord = [...records].reverse().find(record => Number.isFinite(Number(record?.id)));
+  return String((lastRecord ? Number(lastRecord.id) : 0) + 1);
+};
 
 const validateCatalog = catalog => {
   if (!catalog || typeof catalog !== 'object') return 'Budget JSON must be an object.';
@@ -170,6 +207,97 @@ const SoftButton = styled.button`
   @media (max-width: 640px) {
     flex: 1 1 100%;
   }
+`;
+
+
+const DangerButton = styled(SoftButton)`
+  border-color: #d9b0a2;
+  color: #8d4a36;
+`;
+
+const InlineActionRow = styled.div`
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+`;
+
+const BackendIdButton = styled.button`
+  border: 1px solid #dfcdbc;
+  border-radius: 9px;
+  background: rgba(255, 250, 244, 0.92);
+  color: #67462f;
+  min-height: 34px;
+  padding: 7px 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: left;
+  cursor: pointer;
+`;
+
+const HiddenBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: #f3ded8;
+  color: #8d4a36;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+`;
+
+const EditPanel = styled.div`
+  margin-top: 16px;
+  border: 1px solid rgba(140, 101, 70, 0.16);
+  border-radius: 22px;
+  background: rgba(255, 250, 244, 0.78);
+  padding: 16px;
+`;
+
+const ModalBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(42, 32, 25, 0.46);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+`;
+
+const ConfirmModal = styled.div`
+  width: min(100%, 440px);
+  border-radius: 24px;
+  background: #fffaf4;
+  box-shadow: 0 24px 70px rgba(42, 32, 25, 0.24);
+  padding: 22px;
+  color: #382d24;
+`;
+
+const ModalTitle = styled.h3`
+  margin: 0 0 8px;
+  font-size: 22px;
+`;
+
+const ModalText = styled.p`
+  margin: 0 0 16px;
+  color: #6f6359;
+  line-height: 1.5;
+`;
+
+const ModalActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 `;
 
 const Section = styled.section`
@@ -460,6 +588,10 @@ const EditableGrid = styled.div`
   }
 `;
 
+const AddRecordGrid = styled(EditableGrid)`
+  margin-top: 12px;
+`;
+
 const EditableField = styled.label`
   display: grid;
   gap: 3px;
@@ -568,6 +700,8 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [expandedIncluded, setExpandedIncluded] = useState({});
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [newItem, setNewItem] = useState(() => ({ name: '', price: '', description: '', category: 'Other' }));
   const fileInputRef = useRef(null);
   const isBudgetAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('admin') === '1');
@@ -609,8 +743,10 @@ const BudgetPage = ({ isAdmin = false }) => {
   }, [catalog.items]);
 
   const sortedPackages = useMemo(() => {
-    return [...catalog.packages].sort((a, b) => Number(a.listedPrice || 0) - Number(b.listedPrice || 0));
-  }, [catalog.packages]);
+    return catalog.packages
+      .filter(program => isEditMode || !program.hidden)
+      .sort((a, b) => Number(a.listedPrice || 0) - Number(b.listedPrice || 0));
+  }, [catalog.packages, isEditMode]);
 
   const includedItemIds = useMemo(() => {
     return catalog.packages.reduce((ids, program) => {
@@ -624,6 +760,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const groupedExpenses = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return catalog.items.reduce((groups, item) => {
+      if (!isEditMode && item.hidden) return groups;
       const itemId = String(item.id);
       if (includedItemIds.has(itemId) && !isEmbryoStorageItem(item)) return groups;
       const searchableText = `${item.name || ''} ${item.description || ''} ${isEditMode ? item.internalNote || '' : ''}`.toLowerCase();
@@ -709,6 +846,82 @@ const BudgetPage = ({ isAdmin = false }) => {
     updateCatalogRecord(collection, recordId, { [field]: value });
   };
 
+  const openBudgetBackendRecord = (collection, recordId) => {
+    const index = catalog[collection].findIndex(record => String(record.id) === String(recordId));
+    const url = buildBudgetBackendUrl(collection, index);
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const persistCatalogRecordHidden = async (collection, recordId, hidden) => {
+    const index = catalog[collection].findIndex(record => String(record.id) === String(recordId));
+    if (index === -1) return;
+    updateCatalogRecord(collection, recordId, { hidden });
+    try {
+      await update(ref(database, `budget/${collection}/${index}`), { hidden });
+      toast.success(hidden ? 'Budget item hidden.' : 'Budget item is visible.');
+    } catch (saveError) {
+      console.error('Unable to update budget item visibility', saveError);
+      toast.error('Unable to update budget item visibility.');
+      loadBudget();
+    }
+  };
+
+  const handleNewItemChange = (field, value) => {
+    setNewItem(current => ({ ...current, [field]: value }));
+  };
+
+  const createBudgetItem = async () => {
+    const name = newItem.name.trim();
+    if (!name) {
+      toast.error('Enter a name for the new budget item.');
+      return;
+    }
+
+    const nextRecord = {
+      id: getNextBudgetRecordId(catalog.items),
+      name,
+      price: Number.isFinite(Number(newItem.price)) && newItem.price !== '' ? Number(newItem.price) : '',
+      description: newItem.description.trim(),
+      category: newItem.category.trim() || 'Other',
+    };
+    const nextItems = [...catalog.items, nextRecord];
+    setCatalog(current => ({ ...current, items: nextItems }));
+    try {
+      await set(ref(database, `budget/items/${nextItems.length - 1}`), nextRecord);
+      setNewItem({ name: '', price: '', description: '', category: 'Other' });
+      setOpenCategories(current => ({ ...current, [nextRecord.category]: true }));
+      toast.success('Budget item created.');
+    } catch (saveError) {
+      console.error('Unable to create budget item', saveError);
+      toast.error('Unable to create budget item.');
+      loadBudget();
+    }
+  };
+
+  const confirmDeleteBudgetRecord = async () => {
+    if (!deleteTarget) return;
+    const { collection, recordId } = deleteTarget;
+    const records = catalog[collection] || [];
+    const record = records.find(item => String(item.id) === String(recordId));
+    if (!record) {
+      setDeleteTarget(null);
+      return;
+    }
+
+    const nextRecords = records.filter(item => String(item.id) !== String(recordId));
+    setCatalog(current => ({ ...current, [collection]: nextRecords }));
+    setDeleteTarget(null);
+    try {
+      await set(ref(database, `budget/${collection}`), nextRecords);
+      toast.success('Budget item deleted from backend.');
+    } catch (saveError) {
+      console.error('Unable to delete budget item', saveError);
+      toast.error('Unable to delete budget item.');
+      loadBudget();
+    }
+  };
+
   const removeInternalNote = async (collection, recordId) => {
     const index = catalog[collection].findIndex(record => String(record.id) === String(recordId));
     if (index === -1) return;
@@ -747,36 +960,78 @@ const BudgetPage = ({ isAdmin = false }) => {
     ) : null
   );
 
-  const renderEditableFields = (collection, record, priceField = 'price') => (
-    <EditableGrid>
-      <EditableField>
-        Name
-        <EditInput
-          value={record.name || ''}
-          onChange={event => handleCatalogFieldChange(collection, record.id, 'name', event.target.value)}
-          onBlur={event => persistCatalogRecordField(collection, record.id, 'name', event.target.value)}
-        />
-      </EditableField>
-      <EditableField>
-        Price
-        <EditInput
-          type="number"
-          inputMode="decimal"
-          value={record[priceField] ?? ''}
-          onChange={event => handleCatalogFieldChange(collection, record.id, priceField, event.target.value)}
-          onBlur={event => persistCatalogRecordField(collection, record.id, priceField, event.target.value)}
-        />
-      </EditableField>
-      <EditableDescriptionField>
-        Description
-        <EditTextarea
-          value={record.description || ''}
-          onChange={event => handleCatalogFieldChange(collection, record.id, 'description', event.target.value)}
-          onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
-        />
-      </EditableDescriptionField>
-    </EditableGrid>
-  );
+  const renderEditableFields = (collection, record, priceField = 'price') => {
+    const recordIndex = catalog[collection].findIndex(item => String(item.id) === String(record.id));
+    const collectionLabel = BUDGET_COLLECTION_LABELS[collection] || 'item';
+
+    return (
+      <EditableGrid>
+        <EditableField>
+          ID
+          <BackendIdButton
+            type="button"
+            disabled={recordIndex === -1}
+            title="Open this budget record in Firebase"
+            onClick={() => openBudgetBackendRecord(collection, record.id)}
+          >
+            <span>{record.id}</span>
+            <FaExternalLinkAlt size={12} />
+          </BackendIdButton>
+        </EditableField>
+        <EditableField>
+          Name
+          <EditInput
+            value={record.name || ''}
+            onChange={event => handleCatalogFieldChange(collection, record.id, 'name', event.target.value)}
+            onBlur={event => persistCatalogRecordField(collection, record.id, 'name', event.target.value)}
+          />
+        </EditableField>
+        <EditableField>
+          Price
+          <EditInput
+            type="number"
+            inputMode="decimal"
+            value={record[priceField] ?? ''}
+            onChange={event => handleCatalogFieldChange(collection, record.id, priceField, event.target.value)}
+            onBlur={event => persistCatalogRecordField(collection, record.id, priceField, event.target.value)}
+          />
+        </EditableField>
+        {collection === 'items' ? (
+          <EditableField>
+            Category
+            <EditInput
+              value={record.category || ''}
+              onChange={event => handleCatalogFieldChange(collection, record.id, 'category', event.target.value)}
+              onBlur={event => persistCatalogRecordField(collection, record.id, 'category', event.target.value)}
+            />
+          </EditableField>
+        ) : null}
+        <EditableDescriptionField>
+          Description
+          <EditTextarea
+            value={record.description || ''}
+            onChange={event => handleCatalogFieldChange(collection, record.id, 'description', event.target.value)}
+            onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
+          />
+        </EditableDescriptionField>
+        <InlineActionRow>
+          <SoftButton
+            type="button"
+            onClick={() => persistCatalogRecordHidden(collection, record.id, !record.hidden)}
+          >
+            {record.hidden ? `Show ${collectionLabel}` : `Hide ${collectionLabel}`}
+          </SoftButton>
+          <DangerButton
+            type="button"
+            onClick={() => setDeleteTarget({ collection, recordId: record.id, name: record.name || record.id })}
+          >
+            <FaTrash /> Delete from backend
+          </DangerButton>
+        </InlineActionRow>
+        {record.hidden ? <HiddenBadge>Hidden from clients</HiddenBadge> : null}
+      </EditableGrid>
+    );
+  };
 
   return (
     <Page>
@@ -833,7 +1088,9 @@ const BudgetPage = ({ isAdmin = false }) => {
                   const isPopular = String(program.id) === POPULAR_PACKAGE_ID;
                   const isGuaranteed = GUARANTEED_PACKAGE_IDS.has(String(program.id));
                   const includedItems = Array.isArray(program.children)
-                    ? program.children.map(id => itemsById.get(String(id))).filter(Boolean)
+                    ? program.children
+                      .map(id => itemsById.get(String(id)))
+                      .filter(item => item && (isEditMode || !item.hidden))
                     : [];
                   const includedExpanded = Boolean(expandedIncluded[program.id]);
                   const visibleIncludedItems = includedExpanded
@@ -939,6 +1196,60 @@ const BudgetPage = ({ isAdmin = false }) => {
               </AccordionList>
             </Section>
 
+            {isEditMode ? (
+              <Section aria-labelledby="budget-create-item-title">
+                <EditPanel>
+                  <H2 id="budget-create-item-title">Create new expense</H2>
+                  <SectionNote>New records are saved to the backend with the next id after the last budget item.</SectionNote>
+                  <AddRecordGrid>
+                    <EditableField>
+                      ID
+                      <EditInput value={getNextBudgetRecordId(catalog.items)} readOnly />
+                    </EditableField>
+                    <EditableField>
+                      Name
+                      <EditInput
+                        value={newItem.name}
+                        onChange={event => handleNewItemChange('name', event.target.value)}
+                        placeholder="New service name"
+                      />
+                    </EditableField>
+                    <EditableField>
+                      Price
+                      <EditInput
+                        type="number"
+                        inputMode="decimal"
+                        value={newItem.price}
+                        onChange={event => handleNewItemChange('price', event.target.value)}
+                        placeholder="0"
+                      />
+                    </EditableField>
+                    <EditableField>
+                      Category
+                      <EditInput
+                        value={newItem.category}
+                        onChange={event => handleNewItemChange('category', event.target.value)}
+                        placeholder="Other"
+                      />
+                    </EditableField>
+                    <EditableDescriptionField>
+                      Description
+                      <EditTextarea
+                        value={newItem.description}
+                        onChange={event => handleNewItemChange('description', event.target.value)}
+                        placeholder="Description for clients"
+                      />
+                    </EditableDescriptionField>
+                    <InlineActionRow>
+                      <SoftButton type="button" onClick={createBudgetItem}>
+                        <FaPlus /> Create and save to backend
+                      </SoftButton>
+                    </InlineActionRow>
+                  </AddRecordGrid>
+                </EditPanel>
+              </Section>
+            ) : null}
+
             {catalog.clientNotes.length ? (
               <Section aria-labelledby="budget-notes-title">
                 <H2 id="budget-notes-title">Client notes</H2>
@@ -950,6 +1261,22 @@ const BudgetPage = ({ isAdmin = false }) => {
           </>
         ) : null}
       </Shell>
+      {deleteTarget ? (
+        <ModalBackdrop role="presentation" onMouseDown={() => setDeleteTarget(null)}>
+          <ConfirmModal role="dialog" aria-modal="true" aria-labelledby="budget-delete-title" onMouseDown={event => event.stopPropagation()}>
+            <ModalTitle id="budget-delete-title">Delete budget item?</ModalTitle>
+            <ModalText>
+              This will permanently delete “{deleteTarget.name}” from the backend. Use hide if you only need to remove it from client display.
+            </ModalText>
+            <ModalActions>
+              <SoftButton type="button" onClick={() => setDeleteTarget(null)}>Cancel</SoftButton>
+              <DangerButton type="button" onClick={confirmDeleteBudgetRecord}>
+                <FaTrash /> Delete from backend
+              </DangerButton>
+            </ModalActions>
+          </ConfirmModal>
+        </ModalBackdrop>
+      ) : null}
       {showStickyContact ? (
         <StickyContact>
           <StickyContactInner>
