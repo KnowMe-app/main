@@ -693,6 +693,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [categoryDrafts, setCategoryDrafts] = useState({});
   const [newItem, setNewItem] = useState(() => ({ name: '', price: '', description: '', category: 'Other' }));
   const fileInputRef = useRef(null);
   const isBudgetAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
@@ -741,13 +742,13 @@ const BudgetPage = ({ isAdmin = false }) => {
   }, [catalog.packages, isEditMode]);
 
   const includedItemIds = useMemo(() => {
-    return catalog.packages.reduce((ids, program) => {
+    return sortedPackages.reduce((ids, program) => {
       if (Array.isArray(program.children)) {
         program.children.forEach(id => ids.add(String(id)));
       }
       return ids;
     }, new Set());
-  }, [catalog.packages]);
+  }, [sortedPackages]);
 
   const groupedExpenses = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -870,10 +871,16 @@ const BudgetPage = ({ isAdmin = false }) => {
       return;
     }
 
+    const price = Number(newItem.price);
+    if (newItem.price === '' || !Number.isFinite(price)) {
+      toast.error('Enter a valid price for the new budget item.');
+      return;
+    }
+
     const nextRecord = {
       id: getNextBudgetRecordId(catalog.items),
       name,
-      price: Number.isFinite(Number(newItem.price)) && newItem.price !== '' ? Number(newItem.price) : '',
+      price,
       description: newItem.description.trim(),
       category: newItem.category.trim() || 'Other',
     };
@@ -902,10 +909,22 @@ const BudgetPage = ({ isAdmin = false }) => {
     }
 
     const nextRecords = records.filter(item => String(item.id) !== String(recordId));
-    setCatalog(current => ({ ...current, [collection]: nextRecords }));
+    const nextPackages = collection === 'items'
+      ? catalog.packages.map(program => (Array.isArray(program.children)
+        ? { ...program, children: program.children.filter(id => String(id) !== String(recordId)) }
+        : program))
+      : catalog.packages;
+    setCatalog(current => ({
+      ...current,
+      [collection]: nextRecords,
+      ...(collection === 'items' ? { packages: nextPackages } : {}),
+    }));
     setDeleteTarget(null);
     try {
       await set(ref(database, `budget/${collection}`), nextRecords);
+      if (collection === 'items') {
+        await set(ref(database, 'budget/packages'), nextPackages);
+      }
       toast.success('Budget item deleted from backend.');
     } catch (saveError) {
       console.error('Unable to delete budget item', saveError);
@@ -992,9 +1011,20 @@ const BudgetPage = ({ isAdmin = false }) => {
           <EditableField>
             Category
             <EditInput
-              value={record.category || ''}
-              onChange={event => handleCatalogFieldChange(collection, record.id, 'category', event.target.value)}
-              onBlur={event => persistCatalogRecordField(collection, record.id, 'category', event.target.value)}
+              value={categoryDrafts[String(record.id)] ?? record.category ?? ''}
+              onChange={event => setCategoryDrafts(current => ({
+                ...current,
+                [String(record.id)]: event.target.value,
+              }))}
+              onBlur={event => {
+                const nextCategory = event.target.value;
+                setCategoryDrafts(current => {
+                  const nextDrafts = { ...current };
+                  delete nextDrafts[String(record.id)];
+                  return nextDrafts;
+                });
+                persistCatalogRecordField(collection, record.id, 'category', nextCategory);
+              }}
             />
           </EditableField>
         ) : null}
