@@ -625,7 +625,7 @@ const BudgetPage = ({ isAdmin = false }) => {
     const normalizedQuery = query.trim().toLowerCase();
     return catalog.items.reduce((groups, item) => {
       const itemId = String(item.id);
-      if (includedItemIds.has(itemId) && !isEmbryoStorageItem(item)) return groups;
+      if (includedItemIds.has(itemId)) return groups;
       const searchableText = `${item.name || ''} ${item.description || ''} ${isEditMode ? item.internalNote || '' : ''}`.toLowerCase();
       if (normalizedQuery && !searchableText.includes(normalizedQuery)) return groups;
       const category = item.category || 'Other';
