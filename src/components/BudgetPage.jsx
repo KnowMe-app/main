@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, remove, set, update } from 'firebase/database';
-import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaTimes, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaRedo, FaTimes, FaTrash, FaUndo, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { isAdminUid } from 'utils/accessLevel';
@@ -120,13 +120,14 @@ const Title = styled.h1`
 
 const HeaderActions = styled.div`
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
 
   @media (max-width: 640px) {
     width: 100%;
-    justify-content: stretch;
+    justify-content: flex-start;
   }
 `;
 
@@ -169,7 +170,8 @@ const MiniButton = styled.button`
   align-items: center;
   justify-content: center;
   gap: 6px;
-  cursor: pointer;
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+  opacity: ${({ disabled }) => (disabled ? 0.5 : 1)};
 `;
 
 const MiniDangerButton = styled(MiniButton)`
@@ -368,6 +370,30 @@ const PaymentScheduleTitle = styled.h4`
   font-size: 14px;
   font-weight: 900;
   letter-spacing: -0.01em;
+`;
+
+const PaymentScheduleEditorHeader = styled.button`
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--km-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
+`;
+
+const PaymentScheduleEditorHeaderText = styled.span`
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
 `;
 
 const PaymentScheduleList = styled.div`
@@ -665,19 +691,26 @@ const AddRecordGrid = styled(EditableGrid)`
 `;
 
 const EditableField = styled.label`
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
   flex: 1 1 150px;
+`;
+
+// Compact edit mode: label sits next to its value on one line instead of stacked above it.
+const FieldLabel = styled.span`
+  flex: 0 0 auto;
   color: var(--km-muted);
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  white-space: nowrap;
 `;
 
 const EditableIdField = styled(EditableField)`
-  flex: 0 0 64px;
+  flex: 0 0 auto;
 `;
 
 const EditablePriceField = styled(EditableField)`
@@ -692,6 +725,7 @@ const EditableDescriptionField = styled(EditableField)`
 // Edit-mode inputs stay inputs, but render as plain text to keep edit mode compact.
 const EditInput = styled.input`
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   border: 0;
   border-radius: 6px;
@@ -717,6 +751,7 @@ const EditInput = styled.input`
 
 const EditTextarea = styled.textarea`
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   border: 0;
   border-radius: 6px;
@@ -743,6 +778,7 @@ const EditTextarea = styled.textarea`
 
 const EditSelect = styled.select`
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   border: 0;
   border-radius: 6px;
@@ -794,6 +830,46 @@ const FormulaDebugNote = styled.div`
   text-transform: none;
   line-height: 1.3;
   overflow-wrap: anywhere;
+`;
+
+// Inline name+price editor: replaces the read-mode heading in place, no separate labeled fields below.
+const InlineEditRow = styled.div`
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+`;
+
+const InlinePriceWrap = styled.span`
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+`;
+
+const NameEditInput = styled(EditInput)`
+  flex: 1 1 160px;
+  font-weight: 850;
+  font-size: ${({ $size }) => $size || '15px'};
+`;
+
+const PriceEditInput = styled(EditInput)`
+  flex: 0 0 auto;
+  width: ${({ $width }) => $width || '96px'};
+  text-align: right;
+  color: var(--km-accent);
+  font-weight: 900;
+  font-size: ${({ $size }) => $size || '15px'};
+`;
+
+const DescriptionEditInput = styled(EditTextarea)`
+  display: block;
+  flex: 1 1 100%;
+  width: 100%;
+  color: var(--km-muted);
+  font-size: ${({ $size }) => $size || '13px'};
+  line-height: 1.45;
 `;
 
 const SearchInput = styled.input`
@@ -909,6 +985,7 @@ const BudgetPage = ({ isAdmin = false }) => {
     category: 'Other',
     customCategory: '',
   }));
+  const [collapsedScheduleEditors, setCollapsedScheduleEditors] = useState({});
   const fileInputRef = useRef(null);
   const isBudgetAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('admin') === '1');
@@ -917,12 +994,24 @@ const BudgetPage = ({ isAdmin = false }) => {
     return window.localStorage.getItem(BUDGET_EDIT_MODE_STORAGE_KEY) === '1';
   });
 
+  // Undo/redo for edit mode: mirrors the change history pattern used in the profile
+  // editor (AddNewProfile) — every persisted catalog change is snapshotted so it can
+  // be stepped back through (and forward again), rewriting the backend each time.
+  const cloneCatalogSnapshot = useCallback(snapshot => JSON.parse(JSON.stringify(snapshot || {})), []);
+  const catalogHistoryRef = useRef({ loaded: false, current: null, undoStack: [], redoStack: [] });
+  const historyNavigationRef = useRef(false);
+  // Reloading from the backend (initial load, or a reload after a failed save) replaces
+  // the whole catalog — that is not a user edit, so it must not become an undo entry.
+  const historyLoadRef = useRef(false);
+  const [, setHistoryVersion] = useState(0);
+
   const loadBudget = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const snapshot = await get(ref(database, 'budget'));
       const value = snapshot.exists() ? snapshot.val() : null;
+      historyLoadRef.current = true;
       setCatalog(normalizeCatalog(value));
     } catch (loadError) {
       console.error('Unable to load budget catalog', loadError);
@@ -935,6 +1024,27 @@ const BudgetPage = ({ isAdmin = false }) => {
   useEffect(() => {
     loadBudget();
   }, [loadBudget]);
+
+  useEffect(() => {
+    const history = catalogHistoryRef.current;
+    if (!history.loaded) {
+      catalogHistoryRef.current = { loaded: true, current: cloneCatalogSnapshot(catalog), undoStack: [], redoStack: [] };
+      historyLoadRef.current = false;
+      setHistoryVersion(version => version + 1);
+      return;
+    }
+    if (historyNavigationRef.current || historyLoadRef.current) {
+      history.current = cloneCatalogSnapshot(catalog);
+      historyNavigationRef.current = false;
+      historyLoadRef.current = false;
+      return;
+    }
+    if (JSON.stringify(history.current) === JSON.stringify(catalog)) return;
+    history.undoStack.push(history.current);
+    history.redoStack = [];
+    history.current = cloneCatalogSnapshot(catalog);
+    setHistoryVersion(version => version + 1);
+  }, [catalog, cloneCatalogSnapshot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1076,6 +1186,56 @@ const BudgetPage = ({ isAdmin = false }) => {
     });
   };
 
+  const persistCatalogSnapshot = async snapshot => {
+    await Promise.all([
+      set(ref(database, 'budget/packages'), snapshot.packages || []),
+      set(ref(database, 'budget/items'), snapshot.items || []),
+      set(ref(database, 'budget/technical'), snapshot.technical || {}),
+      set(ref(database, 'budget/clientNotes'), snapshot.clientNotes || {}),
+    ]);
+  };
+
+  const handleUndoBudgetChanges = async () => {
+    const history = catalogHistoryRef.current;
+    if (!history.undoStack.length) return;
+    const previous = history.undoStack.pop();
+    history.redoStack.push(history.current);
+    history.current = previous;
+    historyNavigationRef.current = true;
+    setCatalog(cloneCatalogSnapshot(previous));
+    setHistoryVersion(version => version + 1);
+    try {
+      await persistCatalogSnapshot(previous);
+      toast.success('Last change undone.');
+    } catch (saveError) {
+      console.error('Unable to undo budget change', saveError);
+      toast.error('Unable to undo budget change.');
+      loadBudget();
+    }
+  };
+
+  const handleRedoBudgetChanges = async () => {
+    const history = catalogHistoryRef.current;
+    if (!history.redoStack.length) return;
+    const next = history.redoStack.pop();
+    history.undoStack.push(history.current);
+    history.current = next;
+    historyNavigationRef.current = true;
+    setCatalog(cloneCatalogSnapshot(next));
+    setHistoryVersion(version => version + 1);
+    try {
+      await persistCatalogSnapshot(next);
+      toast.success('Change restored.');
+    } catch (saveError) {
+      console.error('Unable to redo budget change', saveError);
+      toast.error('Unable to redo budget change.');
+      loadBudget();
+    }
+  };
+
+  const canUndoBudgetChanges = catalogHistoryRef.current.undoStack.length > 0;
+  const canRedoBudgetChanges = catalogHistoryRef.current.redoStack.length > 0;
+
   const handleBudgetFileChange = async event => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1102,6 +1262,12 @@ const BudgetPage = ({ isAdmin = false }) => {
   const toggleDetail = id => setOpenDetails(current => ({ ...current, [id]: !current[id] }));
   const toggleCategory = category => setOpenCategories(current => ({ ...current, [category]: !current[category] }));
   const toggleIncluded = id => setExpandedIncluded(current => ({ ...current, [id]: !current[id] }));
+  // Schedule editors default to collapsed (unset key === collapsed), so the toggle must
+  // flip against that default rather than blindly negating an undefined value.
+  const toggleScheduleEditorCollapsed = id => setCollapsedScheduleEditors(current => {
+    const isCurrentlyCollapsed = current[id] !== false;
+    return { ...current, [id]: !isCurrentlyCollapsed };
+  });
 
   const updateCatalogRecord = (collection, recordId, changes) => {
     setCatalog(current => ({
@@ -1412,65 +1578,83 @@ const BudgetPage = ({ isAdmin = false }) => {
     const payments = Array.isArray(schedule.payments) ? schedule.payments : [];
     const scheduleTotal = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
     const packagePrice = resolveBudgetPriceAmount(program.listedPrice, priceContext);
+    // Collapsed by default so an edit screen full of programs stays scannable.
+    const isCollapsed = collapsedScheduleEditors[program.id] !== false;
 
     return (
       <PaymentScheduleCard>
-        <PaymentScheduleTitle>
-          Payment schedule editor
-          {packagePrice != null ? (
-            <ScheduleDiffBadge
-              $over={packagePrice > scheduleTotal}
-              title="Package price vs payment schedule total"
-            >
-              {formatEuroAmount(packagePrice)} vs {formatEuroAmount(scheduleTotal)}
-            </ScheduleDiffBadge>
-          ) : null}
-        </PaymentScheduleTitle>
-        <PaymentScheduleEditor>
-          <EditableField>
-            Schedule ID
-            <EditInput
-              defaultValue={schedule.id || ''}
-              onBlur={event => updatePaymentScheduleId(schedule.id, event.target.value)}
-            />
-          </EditableField>
-          {payments.map((payment, index) => (
-            <PaymentEditorRow key={`${schedule.id}-editor-${index}`}>
-              <EditableField>
-                Title
-                <EditInput
-                  defaultValue={payment.title || ''}
-                  onBlur={event => updatePayment(schedule.id, index, 'title', event.target.value)}
-                />
-              </EditableField>
-              <EditableField>
-                Amount
-                <EditInput
-                  type="number"
-                  inputMode="decimal"
-                  defaultValue={payment.amount ?? ''}
-                  onBlur={event => updatePayment(schedule.id, index, 'amount', event.target.value)}
-                />
-              </EditableField>
+        <PaymentScheduleEditorHeader
+          type="button"
+          onClick={() => toggleScheduleEditorCollapsed(program.id)}
+          aria-expanded={!isCollapsed}
+        >
+          <PaymentScheduleEditorHeaderText>
+            Payment schedule editor
+            {packagePrice != null ? (
+              <ScheduleDiffBadge
+                $over={packagePrice > scheduleTotal}
+                title="Package price vs payment schedule total"
+              >
+                {formatEuroAmount(packagePrice)} vs {formatEuroAmount(scheduleTotal)}
+              </ScheduleDiffBadge>
+            ) : null}
+          </PaymentScheduleEditorHeaderText>
+          {isCollapsed ? <FaChevronDown /> : <FaChevronUp />}
+        </PaymentScheduleEditorHeader>
+        {isCollapsed ? null : (
+          <PaymentScheduleEditor>
+            <EditableField>
+              <FieldLabel>Schedule ID</FieldLabel>
+              <EditInput
+                defaultValue={schedule.id || ''}
+                onBlur={event => updatePaymentScheduleId(schedule.id, event.target.value)}
+              />
+            </EditableField>
+            {payments.map((payment, index) => (
+              <PaymentEditorRow key={`${schedule.id}-editor-${index}`}>
+                <EditableField>
+                  <FieldLabel>Title</FieldLabel>
+                  <EditInput
+                    defaultValue={payment.title || ''}
+                    onBlur={event => updatePayment(schedule.id, index, 'title', event.target.value)}
+                  />
+                </EditableField>
+                <EditableField>
+                  <FieldLabel>Amount</FieldLabel>
+                  <EditInput
+                    type="number"
+                    inputMode="decimal"
+                    defaultValue={payment.amount ?? ''}
+                    onBlur={event => updatePayment(schedule.id, index, 'amount', event.target.value)}
+                  />
+                </EditableField>
+                <PaymentEditorActions>
+                  <MiniButton type="button" title="Insert payment after this one" onClick={() => addPayment(schedule.id, index)}>
+                    <FaPlus />
+                  </MiniButton>
+                  <MiniDangerButton type="button" title="Delete this payment" onClick={() => deletePayment(schedule.id, index)}>
+                    <FaTrash />
+                  </MiniDangerButton>
+                  {index === payments.length - 1 ? (
+                    <MiniDangerButton type="button" title="Delete the whole schedule" onClick={() => deleteProgramPaymentSchedule(program)}>
+                      <FaTrash /> Schedule
+                    </MiniDangerButton>
+                  ) : null}
+                </PaymentEditorActions>
+              </PaymentEditorRow>
+            ))}
+            {payments.length ? null : (
               <PaymentEditorActions>
-                <MiniButton type="button" title="Insert payment after this one" onClick={() => addPayment(schedule.id, index)}>
-                  <FaPlus />
+                <MiniButton type="button" onClick={() => addPayment(schedule.id, -1)}>
+                  <FaPlus /> Add first payment
                 </MiniButton>
-                <MiniDangerButton type="button" title="Delete payment" onClick={() => deletePayment(schedule.id, index)}>
-                  <FaTrash />
+                <MiniDangerButton type="button" onClick={() => deleteProgramPaymentSchedule(program)}>
+                  <FaTrash /> Delete schedule
                 </MiniDangerButton>
               </PaymentEditorActions>
-            </PaymentEditorRow>
-          ))}
-          <PaymentEditorActions>
-            <MiniButton type="button" onClick={() => addPayment(schedule.id, payments.length - 1)}>
-              <FaPlus /> {payments.length ? 'Add payment' : 'Add first payment'}
-            </MiniButton>
-            <MiniDangerButton type="button" onClick={() => deleteProgramPaymentSchedule(program)}>
-              <FaTrash /> Delete schedule
-            </MiniDangerButton>
-          </PaymentEditorActions>
-        </PaymentScheduleEditor>
+            )}
+          </PaymentScheduleEditor>
+        )}
       </PaymentScheduleCard>
     );
   };
@@ -1568,22 +1752,16 @@ const BudgetPage = ({ isAdmin = false }) => {
     return `${parsed.isFrom ? 'from ' : ''}${Math.round(amount * 100) / 100}`;
   };
 
-  const renderEditableFields = (collection, record, priceField = 'price') => {
+  // Name, price and description are edited in place (see renderInlineRecordEditor) at their
+  // normal read-mode position, so this grid only carries the fields that have no such spot.
+  const renderEditableFields = (collection, record) => {
     const recordIndex = catalog[collection].findIndex(item => String(item.id) === String(record.id));
     const collectionLabel = BUDGET_COLLECTION_LABELS[collection] || 'item';
-    const priceKey = `${collection}:${record.id}`;
-    const rawPrice = record[priceField] ?? '';
-    const isPriceFocused = focusedPriceKey === priceKey;
-    const formulaDebug = describeBudgetPriceFormula(rawPrice, priceContext);
-    const resolvedRecordPrice = resolveBudgetPriceAmount(rawPrice, priceContext);
-    const childrenTotal = collection === 'packages'
-      ? computePackageChildrenTotal(record, priceContext)
-      : null;
 
     return (
       <EditableGrid>
         <EditableIdField>
-          ID
+          <FieldLabel>ID</FieldLabel>
           <BackendIdButton
             type="button"
             disabled={recordIndex === -1}
@@ -1594,41 +1772,9 @@ const BudgetPage = ({ isAdmin = false }) => {
             <FaExternalLinkAlt size={12} />
           </BackendIdButton>
         </EditableIdField>
-        <EditableField>
-          Name
-          <EditInput
-            value={record.name || ''}
-            onChange={event => handleCatalogFieldChange(collection, record.id, 'name', event.target.value)}
-            onBlur={event => persistCatalogRecordField(collection, record.id, 'name', event.target.value)}
-          />
-        </EditableField>
-        <EditablePriceField>
-          <span>
-            Price
-            {childrenTotal && childrenTotal.count ? (
-              <PriceComputedBadge
-                $over={resolvedRecordPrice != null && childrenTotal.total > resolvedRecordPrice}
-                title="Real cost of the included services"
-              >
-                Σ {formatEuroAmount(childrenTotal.total)}
-              </PriceComputedBadge>
-            ) : null}
-          </span>
-          <EditInput
-            type="text"
-            value={isPriceFocused ? String(rawPrice) : getPriceInputDisplayValue(rawPrice)}
-            onFocus={() => setFocusedPriceKey(priceKey)}
-            onChange={event => handleCatalogFieldChange(collection, record.id, priceField, event.target.value)}
-            onBlur={event => {
-              setFocusedPriceKey('');
-              persistCatalogRecordField(collection, record.id, priceField, event.target.value);
-            }}
-          />
-        </EditablePriceField>
-        {formulaDebug ? <FormulaDebugNote title="Price formula">{formulaDebug}</FormulaDebugNote> : null}
         {collection === 'items' ? (
           <EditableField>
-            Category
+            <FieldLabel>Category</FieldLabel>
             <EditInput
               value={categoryDrafts[String(record.id)] ?? record.category ?? ''}
               onChange={event => setCategoryDrafts(current => ({
@@ -1647,14 +1793,6 @@ const BudgetPage = ({ isAdmin = false }) => {
             />
           </EditableField>
         ) : null}
-        <EditableDescriptionField>
-          Description
-          <EditTextarea
-            value={record.description || ''}
-            onChange={event => handleCatalogFieldChange(collection, record.id, 'description', event.target.value)}
-            onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
-          />
-        </EditableDescriptionField>
         <InlineActionRow>
           <MiniButton
             type="button"
@@ -1674,6 +1812,73 @@ const BudgetPage = ({ isAdmin = false }) => {
     );
   };
 
+  // Inline replacement for the read-mode name/price/description: no separate labels,
+  // no duplicate fields further down — it lives exactly where the static text used to be.
+  const renderInlineRecordEditor = (collection, record, options = {}) => {
+    const {
+      priceField = 'price',
+      nameSize,
+      priceSize,
+      priceWidth,
+      descriptionSize,
+      showChildrenTotal = false,
+    } = options;
+    const priceKey = `${collection}:${record.id}`;
+    const rawPrice = record[priceField] ?? '';
+    const isPriceFocused = focusedPriceKey === priceKey;
+    const formulaDebug = describeBudgetPriceFormula(rawPrice, priceContext);
+    const resolvedRecordPrice = resolveBudgetPriceAmount(rawPrice, priceContext);
+    const childrenTotal = showChildrenTotal ? computePackageChildrenTotal(record, priceContext) : null;
+
+    return (
+      <>
+        <InlineEditRow>
+          <NameEditInput
+            $size={nameSize}
+            value={record.name || ''}
+            placeholder="Name"
+            aria-label="Name"
+            onChange={event => handleCatalogFieldChange(collection, record.id, 'name', event.target.value)}
+            onBlur={event => persistCatalogRecordField(collection, record.id, 'name', event.target.value)}
+          />
+          <InlinePriceWrap>
+            <PriceEditInput
+              $size={priceSize}
+              $width={priceWidth}
+              type="text"
+              value={isPriceFocused ? String(rawPrice) : getPriceInputDisplayValue(rawPrice)}
+              placeholder="0, from 0, =0/EUR"
+              aria-label="Price"
+              onFocus={() => setFocusedPriceKey(priceKey)}
+              onChange={event => handleCatalogFieldChange(collection, record.id, priceField, event.target.value)}
+              onBlur={event => {
+                setFocusedPriceKey('');
+                persistCatalogRecordField(collection, record.id, priceField, event.target.value);
+              }}
+            />
+            {childrenTotal && childrenTotal.count ? (
+              <PriceComputedBadge
+                $over={resolvedRecordPrice != null && childrenTotal.total > resolvedRecordPrice}
+                title="Real cost of the included services"
+              >
+                Σ {formatEuroAmount(childrenTotal.total)}
+              </PriceComputedBadge>
+            ) : null}
+          </InlinePriceWrap>
+        </InlineEditRow>
+        {formulaDebug ? <FormulaDebugNote title="Price formula">{formulaDebug}</FormulaDebugNote> : null}
+        <DescriptionEditInput
+          $size={descriptionSize}
+          value={record.description || ''}
+          placeholder="Description for clients"
+          aria-label="Description"
+          onChange={event => handleCatalogFieldChange(collection, record.id, 'description', event.target.value)}
+          onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
+        />
+      </>
+    );
+  };
+
   return (
     <Page>
       <Shell>
@@ -1683,30 +1888,46 @@ const BudgetPage = ({ isAdmin = false }) => {
             <Title>Program Budget</Title>
           </div>
           <HeaderActions>
-            <SoftButton
+            <MiniButton
               type="button"
               onClick={handleExportPdf}
               disabled={loading || Boolean(error) || isExporting}
               title="Download the client budget as a PDF"
             >
-              <FaFilePdf /> {isExporting ? 'Preparing PDF…' : 'Export as PDF'}
-            </SoftButton>
+              <FaFilePdf /> {isExporting ? 'Preparing…' : 'Export PDF'}
+            </MiniButton>
             {isBudgetAdmin ? (
-              <SoftButton
+              <MiniButton
                 type="button"
                 onClick={toggleEditMode}
                 aria-pressed={isEditMode}
                 title={isEditMode ? 'Preview budget as a client' : 'Edit budget'}
               >
-                <FaPen /> {isEditMode ? 'Preview mode' : 'Edit budget'}
-              </SoftButton>
+                <FaPen /> {isEditMode ? 'Preview' : 'Edit'}
+              </MiniButton>
             ) : null}
             {isBudgetAdmin && isEditMode ? (
               <>
+                <MiniButton
+                  type="button"
+                  onClick={handleUndoBudgetChanges}
+                  disabled={!canUndoBudgetChanges}
+                  title="Undo the last change"
+                >
+                  <FaUndo />
+                </MiniButton>
+                <MiniButton
+                  type="button"
+                  onClick={handleRedoBudgetChanges}
+                  disabled={!canRedoBudgetChanges}
+                  title="Redo the change"
+                >
+                  <FaRedo />
+                </MiniButton>
                 {/* Temporary migration button. Remove after the budget catalog has been uploaded to the backend. */}
-                <SoftButton type="button" onClick={handleUploadClick} $danger>
-                  <FaUpload /> Upload budget JSON to backend
-                </SoftButton>
+                <MiniDangerButton type="button" onClick={handleUploadClick}>
+                  <FaUpload /> Upload JSON
+                </MiniDangerButton>
                 <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={handleBudgetFileChange} />
               </>
             ) : null}
@@ -1718,12 +1939,7 @@ const BudgetPage = ({ isAdmin = false }) => {
 
         {!loading && !error ? (
           <>
-            <Section aria-labelledby="budget-programs-title" $compact={!isEditMode}>
-              <SectionHeading>
-                <div>
-                  <H2 id="budget-programs-title">Programs</H2>
-                </div>
-              </SectionHeading>
+            <Section aria-label="Programs" $compact={!isEditMode}>
               <ProgramsGrid>
                 {sortedPackages.map(program => {
                   const isOpen = Boolean(openPrograms[program.id]);
@@ -1742,16 +1958,29 @@ const BudgetPage = ({ isAdmin = false }) => {
                     <ProgramCard key={program.id} $guaranteed={isGuaranteed} $compact={!isEditMode}>
                       {isPopular ? <Badge>{POPULAR_PACKAGE_BADGE}</Badge> : null}
                       {isGuaranteed ? <ProgramMeta>Guaranteed program</ProgramMeta> : null}
-                      <ProgramName>{program.name}</ProgramName>
-                      <Price $compact={!isEditMode}>
-                        {formatMoney(
-                          resolveBudgetPriceAmount(program.listedPrice, priceContext) ?? program.listedPrice,
-                          program.currency || 'EUR',
-                        )}
-                      </Price>
-                      {program.description ? <Description $compact={!isEditMode}>{program.description}</Description> : null}
+                      {isEditMode ? (
+                        renderInlineRecordEditor('packages', program, {
+                          priceField: 'listedPrice',
+                          nameSize: '20px',
+                          priceSize: '22px',
+                          priceWidth: '130px',
+                          descriptionSize: '14px',
+                          showChildrenTotal: true,
+                        })
+                      ) : (
+                        <>
+                          <ProgramName>{program.name}</ProgramName>
+                          <Price $compact={!isEditMode}>
+                            {formatMoney(
+                              resolveBudgetPriceAmount(program.listedPrice, priceContext) ?? program.listedPrice,
+                              program.currency || 'EUR',
+                            )}
+                          </Price>
+                          {program.description ? <Description $compact={!isEditMode}>{program.description}</Description> : null}
+                        </>
+                      )}
                       {isEditMode ? renderInternalNote('packages', program) : null}
-                      {isEditMode ? renderEditableFields('packages', program, 'listedPrice') : null}
+                      {isEditMode ? renderEditableFields('packages', program) : null}
                       {!isEditMode ? renderPaymentSchedule(resolveProgramPaymentSchedule(program)) : null}
                       {renderPaymentScheduleEditor(program, resolveProgramPaymentSchedule(program))}
                       <Toggle type="button" onClick={() => toggleProgram(program.id)} aria-expanded={isOpen}>
@@ -1766,15 +1995,26 @@ const BudgetPage = ({ isAdmin = false }) => {
                               <IncludedItem key={item.id}>
                                 <CheckIcon><FaCheck /></CheckIcon>
                                 <div>
-                                  <strong>{item.name}</strong>
-                                  {item.description ? (
+                                  {isEditMode ? (
+                                    renderInlineRecordEditor('items', item, {
+                                      nameSize: '14px',
+                                      priceSize: '13px',
+                                      priceWidth: '84px',
+                                      descriptionSize: '12.5px',
+                                    })
+                                  ) : (
                                     <>
-                                      {detailOpen ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
-                                      <DetailButton type="button" onClick={() => toggleDetail(item.id)}>
-                                        {detailOpen ? 'Hide details' : 'Show details'}
-                                      </DetailButton>
+                                      <strong>{item.name}</strong>
+                                      {item.description ? (
+                                        <>
+                                          {detailOpen ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
+                                          <DetailButton type="button" onClick={() => toggleDetail(item.id)}>
+                                            {detailOpen ? 'Hide details' : 'Show details'}
+                                          </DetailButton>
+                                        </>
+                                      ) : null}
                                     </>
-                                  ) : null}
+                                  )}
                                   {isEditMode ? renderInternalNote('items', item) : null}
                                   {isEditMode ? renderEditableFields('items', item) : null}
                                 </div>
@@ -1823,11 +2063,22 @@ const BudgetPage = ({ isAdmin = false }) => {
                         <ExpenseRows>
                           {items.map(item => (
                             <ExpenseRow key={item.id} $compact={!isEditMode}>
-                              <ExpenseTop>
-                                <ExpenseName>{item.name}</ExpenseName>
-                                <ExpensePrice>{getExpensePriceLabel(item, priceContext)}</ExpensePrice>
-                              </ExpenseTop>
-                              {item.description ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
+                              {isEditMode ? (
+                                renderInlineRecordEditor('items', item, {
+                                  nameSize: '15px',
+                                  priceSize: '15px',
+                                  priceWidth: '96px',
+                                  descriptionSize: '13px',
+                                })
+                              ) : (
+                                <>
+                                  <ExpenseTop>
+                                    <ExpenseName>{item.name}</ExpenseName>
+                                    <ExpensePrice>{getExpensePriceLabel(item, priceContext)}</ExpensePrice>
+                                  </ExpenseTop>
+                                  {item.description ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
+                                </>
+                              )}
                               {item.extraUnit && item.extraUnitPrice ? (
                                 <Muted $compact={!isEditMode}>Additional {item.extraUnit}: {formatMoney(item.extraUnitPrice, 'EUR')}</Muted>
                               ) : null}
@@ -1850,19 +2101,19 @@ const BudgetPage = ({ isAdmin = false }) => {
                   <SectionNote>New records are saved to the backend with the next id after the last budget item.</SectionNote>
                   <AddRecordGrid>
                     <EditableIdField>
-                      ID
+                      <FieldLabel>ID</FieldLabel>
                       <EditInput value={getNextBudgetRecordId(catalog.items)} readOnly />
                     </EditableIdField>
                     <EditableField>
-                      Name
+                      <FieldLabel>Name</FieldLabel>
                       <EditInput
                         value={newItem.name}
                         onChange={event => handleNewItemChange('name', event.target.value)}
                         placeholder="New service name"
                       />
                     </EditableField>
-                    <EditablePriceField>
-                      Price
+                    <EditablePriceField style={{ flexBasis: '150px' }}>
+                      <FieldLabel>Price</FieldLabel>
                       <EditInput
                         type="text"
                         value={focusedPriceKey === 'new-item'
@@ -1871,7 +2122,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                         onFocus={() => setFocusedPriceKey('new-item')}
                         onChange={event => handleNewItemChange('price', event.target.value)}
                         onBlur={() => setFocusedPriceKey('')}
-                        placeholder="0, from 0 or =0/EUR"
+                        placeholder="0, from 0, =0/EUR"
                       />
                     </EditablePriceField>
                     {describeBudgetPriceFormula(newItem.price, priceContext) ? (
@@ -1880,7 +2131,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                       </FormulaDebugNote>
                     ) : null}
                     <EditableField>
-                      Category
+                      <FieldLabel>Category</FieldLabel>
                       <EditSelect
                         value={newItem.category}
                         onChange={event => handleNewItemChange('category', event.target.value)}
@@ -1894,7 +2145,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                     </EditableField>
                     {newItem.category === CUSTOM_CATEGORY_OPTION ? (
                       <EditableField>
-                        Custom category
+                        <FieldLabel>Custom category</FieldLabel>
                         <EditInput
                           value={newItem.customCategory}
                           onChange={event => handleNewItemChange('customCategory', event.target.value)}
@@ -1903,7 +2154,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                       </EditableField>
                     ) : null}
                     <EditableDescriptionField>
-                      Description
+                      <FieldLabel>Description</FieldLabel>
                       <EditTextarea
                         value={newItem.description}
                         onChange={event => handleNewItemChange('description', event.target.value)}

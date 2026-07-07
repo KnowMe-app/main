@@ -22,8 +22,8 @@ describe('budgetCatalogUtils', () => {
     expect(getItemDisplayAmount({ id: 1, price: 5000 })).toBe(5000);
   });
 
-  it('prefixes range-based items with "from"', () => {
-    expect(getExpensePriceLabel({ id: 32, price: 100 })).toBe('from 100 EUR');
+  it('only prefixes "from" when the stored price says so, never by item id', () => {
+    expect(getExpensePriceLabel({ id: 32, price: 100 })).toBe('100 EUR');
     expect(getExpensePriceLabel({ id: 1, price: 5000 })).toBe('5,000 EUR');
   });
 
