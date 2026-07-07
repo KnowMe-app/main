@@ -23,6 +23,14 @@ describe('flowAmountFormula', () => {
     expect(resolveFlowAmountInput('=10×5÷2')).toBe('25');
   });
 
+  it('resolves USD, EUR and dollar identifiers through the provided rates', () => {
+    const resolveRate = name => ({ USD: 44.6, EUR: 48.2 }[String(name).toUpperCase()]);
+
+    expect(resolveFlowAmountInput('=500*USD', resolveRate)).toBe('22300');
+    expect(resolveFlowAmountInput('=100*EUR', resolveRate)).toBe('4820');
+    expect(resolveFlowAmountInput('=25*$', resolveRate)).toBe('1115');
+  });
+
   it('rounds final flow amounts to two decimal places without trailing zeroes', () => {
     expect(formatFlowAmountResult(10 / 3)).toBe('3.33');
     expect(formatFlowAmountResult(-0)).toBe('0');
@@ -30,6 +38,6 @@ describe('flowAmountFormula', () => {
 
   it('rejects invalid formulas', () => {
     expect(() => resolveFlowAmountInput('=100/0')).toThrow('division by zero');
-    expect(() => resolveFlowAmountInput('=100+abc')).toThrow('unsupported characters');
+    expect(() => resolveFlowAmountInput('=100+abc')).toThrow('identifier "abc" is unresolved');
   });
 });

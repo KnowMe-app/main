@@ -17,7 +17,7 @@ import {
 } from './config';
 import { useAutoResize } from 'hooks/useAutoResize';
 import { color } from './styles';
-import { resolveFlowAmountInput } from 'utils/flowAmountFormula';
+import { isFormulaFlowAmount, resolveFlowAmountInput } from 'utils/flowAmountFormula';
 
 const Wrap = styled.div`
   display: flex;
@@ -683,7 +683,42 @@ const calculateFlowRowCurrencyAmount = ({
   return storedAmount > 0 ? storedAmount : 0;
 };
 
-const FORMULA_AMOUNT_CHAR_REGEX = /[0-9.,+\-*/%()\s×xXхХ÷:−–—]/;
+const makeFlowCurrencyFormulaResolver = rates => name => {
+  const normalizedName = String(name || '').trim().toUpperCase();
+  if (normalizedName === 'USD') return Number(rates?.usd);
+  if (normalizedName === 'EUR') return Number(rates?.eur);
+  return undefined;
+};
+
+const resolveFlowDisplayAmount = ({
+  amount,
+  row,
+  exchangeRateMode,
+  exchangeRates,
+  historicalRatesByDate,
+  customUsdRate,
+}) => {
+  const rawAmount = normalizeFlowAmount(amount);
+  if (!isFormulaFlowAmount(rawAmount)) return rawAmount;
+
+  const rates = getFlowRatesForRow({
+    row: row || {},
+    exchangeRateMode,
+    exchangeRates,
+    historicalRatesByDate,
+    customUsdRate,
+  });
+
+  try {
+    return normalizeFlowAmount(resolveFlowAmountInput(rawAmount, makeFlowCurrencyFormulaResolver(rates)));
+  } catch {
+    return rawAmount;
+  }
+};
+
+const getFlowAmountNumberForTotals = options => toAmountNumber(resolveFlowDisplayAmount(options));
+
+const FLOW_FORMULA_TOKEN_REGEX = /[0-9.,+\-*/%()\s×xXхХ÷:−–—$]/;
 const FLOW_AMOUNT_START_REGEX = /^(?:[+-]?\d+(?:[.,]\d+)?|=)/;
 
 const splitFlowAmountAndDescription = value => {
@@ -692,8 +727,18 @@ const splitFlowAmountAndDescription = value => {
 
   if (raw.startsWith('=')) {
     let index = 1;
-    while (index < raw.length && FORMULA_AMOUNT_CHAR_REGEX.test(raw[index])) {
-      index += 1;
+    while (index < raw.length) {
+      const tail = raw.slice(index);
+      const identifierMatch = tail.match(/^(?:USD|EUR)\b/i);
+      if (identifierMatch) {
+        index += identifierMatch[0].length;
+        continue;
+      }
+      if (FLOW_FORMULA_TOKEN_REGEX.test(raw[index])) {
+        index += 1;
+        continue;
+      }
+      break;
     }
     const amountRaw = raw.slice(0, index).trim();
     const description = raw.slice(index).trim();
@@ -708,34 +753,6 @@ const splitFlowAmountAndDescription = value => {
     description: numberMatch[2] || '',
   };
 };
-
-const resolveFlowEntryLineForDisplay = line => {
-  const trimmedLine = String(line || '').trim();
-  if (!trimmedLine) return line;
-
-  const lineMatch = trimmedLine.match(/^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?(.+)$/);
-  if (!lineMatch) return line;
-
-  const amountParts = splitFlowAmountAndDescription(lineMatch[2]);
-  if (!amountParts) return line;
-
-  let resolvedAmount = '';
-  try {
-    resolvedAmount = normalizeFlowAmount(resolveFlowAmountInput(amountParts.amountRaw));
-  } catch {
-    return line;
-  }
-  if (!resolvedAmount || resolvedAmount === amountParts.amountRaw) return line;
-
-  const datePrefix = lineMatch[1] ? `${lineMatch[1]} ` : '';
-  return `${datePrefix}${resolvedAmount} ${amountParts.description || ''}`.trim();
-};
-
-const resolveFlowEntryInputForDisplay = rawText =>
-  String(rawText || '')
-    .split(/(\r?\n)/)
-    .map(part => (/\r?\n/.test(part) ? part : resolveFlowEntryLineForDisplay(part)))
-    .join('');
 
 export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const trimmedLine = String(line || '').trim();
@@ -1095,9 +1112,17 @@ export const FlowManager = ({ ownerId }) => {
         if (!acc[group]) {
           acc[group] = { uah: 0, usd: 0, eur: 0 };
         }
-        const amountUah = toAmountNumber(row.amount);
-        const amountUsdDerived = calculateFlowRowCurrencyAmount({
+        const amountUah = getFlowAmountNumberForTotals({
+          amount: row.amount,
           row,
+          exchangeRateMode,
+          exchangeRates,
+          historicalRatesByDate,
+          customUsdRate,
+        });
+        const displayAmountRow = { ...row, amount: formatCategorySum(amountUah) };
+        const amountUsdDerived = calculateFlowRowCurrencyAmount({
+          row: displayAmountRow,
           currency: 'usd',
           exchangeRateMode,
           exchangeRates,
@@ -1105,7 +1130,7 @@ export const FlowManager = ({ ownerId }) => {
           customUsdRate,
         });
         const amountEurDerived = calculateFlowRowCurrencyAmount({
-          row,
+          row: displayAmountRow,
           currency: 'eur',
           exchangeRateMode,
           exchangeRates,
@@ -1551,7 +1576,7 @@ export const FlowManager = ({ ownerId }) => {
         const title = subgroup ? `${group}, ${subgroup}` : group;
         const lines = sortRowsByDate(rows).map(row => {
           const displayDate = formatDisplayDate(row.date);
-          const formattedAmount = formatFlowAmountForClipboard(row.amount);
+          const formattedAmount = formatFlowAmountForClipboard(resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate }));
           return `${displayDate}\t${formattedAmount}\t\t${row.description || ''}`.trimEnd();
         });
         return [title, ...lines].join('\n');
@@ -1994,11 +2019,7 @@ export const FlowManager = ({ ownerId }) => {
               onKeyDown={e => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  const resolvedInput = resolveFlowEntryInputForDisplay(entryInput);
-                  if (resolvedInput !== entryInput) {
-                    setEntryInput(resolvedInput);
-                  }
-                  handleSave({ rawText: resolvedInput });
+                  handleSave({ rawText: entryInput });
                   categoryInputRef.current?.focus();
                 }
               }}
@@ -2084,10 +2105,11 @@ export const FlowManager = ({ ownerId }) => {
                     ) : (
                       <>
                         <EventText>
-                          {formatDisplayDate(row.date)} {row.amount} {row.description}
+                          {formatDisplayDate(row.date)} {resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate })} {row.description}
                           {(() => {
+                            const displayAmount = resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate });
                             const amountUsd = calculateFlowRowCurrencyAmount({
-                              row,
+                              row: { ...row, amount: displayAmount },
                               currency: 'usd',
                               exchangeRateMode,
                               exchangeRates,
