@@ -373,15 +373,15 @@ export const UnderlinedInput = styled.input`
 
 export const uiTokens = {
   colors: {
-    pageBg: '#f4f6fb',
-    cardBg: '#ffffff',
-    textPrimary: '#1f2937',
-    textSecondary: '#6b7280',
-    border: '#eadfce',
-    borderFocus: '#ff8c00',
-    accent: '#ff8c00',
-    danger: '#e53935',
-    mutedBg: '#f8f3eb',
+    pageBg: 'var(--km-bg)',
+    cardBg: 'var(--km-card)',
+    textPrimary: 'var(--km-text)',
+    textSecondary: 'var(--km-muted)',
+    border: 'var(--km-border)',
+    borderFocus: 'var(--km-accent)',
+    accent: 'var(--km-accent)',
+    danger: 'var(--km-danger)',
+    mutedBg: 'color-mix(in srgb, var(--km-text) 6%, var(--km-card))',
   },
   radius: {
     sm: '8px',

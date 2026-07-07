@@ -869,7 +869,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                               style={removeButtonStyle}
                               onClick={() => handleRemove(arrayKey)}
                             >
-                              <FaTimes size={12} color={color.white} />
+                              <FaTimes size={12} />
                             </OrangeBtn>
                           )}
                         </div>
@@ -889,7 +889,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                             style={removeButtonStyle}
                             onClick={() => handleRemove(arrayKey)}
                           >
-                            <FaTimes size={12} color={color.white} />
+                            <FaTimes size={12} />
                           </OrangeBtn>
                         )}
                       </div>
@@ -906,7 +906,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                 style={removeButtonStyle}
                 onClick={() => handleRemove(nestedKey)}
               >
-                <FaTimes size={12} color={color.white} />
+                <FaTimes size={12} />
               </OrangeBtn>
             )}
           </div>
@@ -931,7 +931,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                 style={removeButtonStyle}
                 onClick={() => handleRemove(nestedKey)}
               >
-                <FaTimes size={12} color={color.white} />
+                <FaTimes size={12} />
               </OrangeBtn>
             )}
           </div>
@@ -952,7 +952,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
             style={removeButtonStyle}
             onClick={() => handleRemove(nestedKey)}
           >
-            <FaTimes size={12} color={color.white} />
+            <FaTimes size={12} />
           </OrangeBtn>
         )}
       </div>
@@ -3622,7 +3622,7 @@ const SearchIdBackendButton = styled.button`
   background: none;
   border: none;
   cursor: pointer;
-  color: ${color.accent};
+  color: var(--km-accent);
   font-size: 16px;
   width: 35px;
   height: 35px;
@@ -3630,7 +3630,7 @@ const SearchIdBackendButton = styled.button`
   z-index: 1;
 
   &:hover {
-    color: ${color.iconActive};
+    color: var(--km-text);
   }
 `;
 
@@ -4046,8 +4046,8 @@ const Button = styled.button`
   height: 34px;
   min-height: 34px;
   padding: 0 8px;
-  border: 1px solid rgba(255, 140, 0, 0.35);
-  background: linear-gradient(135deg, #ffb347 0%, #ff9800 100%);
+  border: 1px solid var(--km-accent-mid);
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
   color: #fff;
   border-radius: 999px;
   cursor: pointer;
@@ -4061,7 +4061,7 @@ const Button = styled.button`
 
   &:hover {
     filter: brightness(1.04);
-    box-shadow: 0 3px 8px rgba(255, 140, 0, 0.22);
+    box-shadow: 0 8px 22px rgba(232, 121, 26, 0.28);
   }
 
   &:active {

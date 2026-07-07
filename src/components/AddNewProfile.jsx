@@ -221,7 +221,7 @@ const Container = styled.div`
 const MoreActionsInfo = styled.p`
   margin: 0 0 10px;
   font-size: 14px;
-  color: #333;
+  color: var(--km-text);
 `;
 
 const MoreActionsCommandButton = styled.button`
@@ -266,7 +266,7 @@ const MatchingMiniList = styled.div`
   max-height: 50vh;
   overflow: auto;
   margin-top: 8px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--km-border);
   padding-top: 8px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -280,8 +280,8 @@ const MatchingMiniList = styled.div`
 const MatchingMiniCard = styled.div`
   border-radius: 12px;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid #e7e7e7;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 `;
 
@@ -289,14 +289,14 @@ const MatchingMiniCardShell = styled.div`
   position: relative;
   width: 100%;
   min-height: 180px;
-  background: #f3f3f3;
+  background: var(--km-border);
   cursor: pointer;
 `;
 
 const MatchingMiniReactionBadge = styled.div`
   font-size: 12px;
   line-height: 1.2;
-  color: #4a4a4a;
+  color: var(--km-muted);
   padding: 8px 10px 0;
 `;
 
@@ -313,7 +313,7 @@ const MatchingMiniFallback = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #888;
+  color: var(--km-muted);
   font-size: 13px;
 `;
 
@@ -343,7 +343,7 @@ const InnerContainer = styled.div`
   max-width: 560px;
   width: 100%;
   box-sizing: border-box;
-  background-color: #f0f0f0;
+  background-color: var(--km-card);
   padding: 16px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
@@ -351,7 +351,7 @@ const InnerContainer = styled.div`
   @media (max-width: 768px) {
     // Медіа-запит для пристроїв з шириною екрану до 768px
     background-color: ${uiTokens.colors.pageBg};
-    box-shadow: 0 4px 8px #f5f5f5;
+    box-shadow: 0 4px 8px var(--km-border);
     border-radius: 0;
     padding: 0;
   }
@@ -366,7 +366,7 @@ const DotsButton = styled.button`
   border-radius: 12px;
   font-size: 22px;
   line-height: 1;
-  color: ${color.accent5};
+  color: var(--km-accent);
   cursor: pointer;
   padding: 0;
   margin-left: auto;
@@ -379,16 +379,16 @@ const DotsButton = styled.button`
     color 0.2s ease;
 
   &:hover {
-    background-color: ${color.paleAccent2};
-    border-color: ${color.paleAccent5};
-    color: ${color.accent};
+    background-color: var(--km-accent-light);
+    border-color: var(--km-accent-mid);
+    color: var(--km-accent);
   }
 `;
 
 
 export const SubmitButton = styled.button`
   padding: 11px 14px;
-  color: ${color.black};
+  color: var(--km-text);
   border: 1px solid transparent;
   border-radius: 10px;
   cursor: pointer;
@@ -397,8 +397,8 @@ export const SubmitButton = styled.button`
   align-self: flex-start;
   width: 100%;
   text-align: left;
-  background: linear-gradient(180deg, ${color.oppositeAccent} 0%, #fffaf2 100%);
-  box-shadow: inset 0 -1px 0 ${color.gray};
+  background: var(--km-card);
+  box-shadow: inset 0 -1px 0 var(--km-border);
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
@@ -410,19 +410,19 @@ export const SubmitButton = styled.button`
   }
 
   &:hover {
-    background: ${color.paleAccent2};
-    border-color: ${color.paleAccent5};
+    background: var(--km-accent-light);
+    border-color: var(--km-accent-mid);
     transform: translateY(-1px);
   }
 `;
 
 export const ExitButton = styled(SubmitButton)`
-  background: #fff;
-  color: ${color.accent3};
-  border-color: ${color.gray};
+  background: var(--km-card);
+  color: var(--km-accent);
+  border-color: var(--km-border);
 
   &:hover {
-    background-color: ${color.paleAccent2};
+    background-color: var(--km-accent-light);
   }
 `;
 
@@ -440,7 +440,7 @@ const EditActionButton = styled.button`
   border-radius: 12px;
   border: 1px solid transparent;
   background: none;
-  color: ${color.accent5};
+  color: var(--km-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -452,9 +452,9 @@ const EditActionButton = styled.button`
     transform 0.2s ease;
 
   &:hover {
-    background-color: ${color.paleAccent2};
-    border-color: ${color.paleAccent5};
-    color: ${color.accent};
+    background-color: var(--km-accent-light);
+    border-color: var(--km-accent-mid);
+    color: var(--km-accent);
     transform: translateY(-1px);
   }
 
@@ -475,9 +475,9 @@ const DownloadSizeToastToggleButton = styled(EditActionButton)`
   min-width: 40px;
   padding: 0 10px;
   gap: 6px;
-  color: ${({ $active }) => ($active ? color.accent : color.accent5)};
-  background-color: ${({ $active }) => ($active ? color.paleAccent2 : 'transparent')};
-  border-color: ${({ $active }) => ($active ? color.paleAccent5 : 'transparent')};
+  color: var(--km-accent);
+  background-color: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'transparent')};
+  border-color: ${({ $active }) => ($active ? 'var(--km-accent-mid)' : 'transparent')};
   font-size: 13px;
   font-weight: 700;
 `;
@@ -501,9 +501,9 @@ const DownloadSizeToastStatus = styled.span`
 const Button = styled.button`
   padding: 0 12px;
   height: 30px;
-  border: 1.5px solid #e5e5e5;
-  background: #fff;
-  color: #444;
+  border: 1.5px solid var(--km-border);
+  background: var(--km-card);
+  color: var(--km-text);
   border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
@@ -516,9 +516,9 @@ const Button = styled.button`
   transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
 
   &:hover {
-    background: #FFF3E0;
-    border-color: #FF8C00;
-    color: #CC5500;
+    background: var(--km-accent-light);
+    border-color: var(--km-accent);
+    color: var(--km-accent);
   }
 
   &:active {
@@ -539,8 +539,8 @@ const ButtonsContainer = styled.div`
   flex-wrap: wrap;
   gap: 6px;
   padding: 10px 12px;
-  background: #fff;
-  border: 1px solid #eee;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   border-radius: 10px;
   margin: 8px 0;
 `;
@@ -552,8 +552,8 @@ const SortModeContainer = styled.div`
   gap: 4px;
   margin: 8px 0;
   padding: 8px 12px;
-  background: #fff;
-  border: 1px solid #eee;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   border-radius: 10px;
 `;
 
@@ -578,8 +578,8 @@ const GearButton = styled(Button)`
 
 const LoadOptionsPopover = styled.div`
   width: 100%;
-  background: #fff;
-  border: 1px solid #eee;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   border-radius: 10px;
   padding: 8px;
 `;
@@ -587,7 +587,7 @@ const LoadOptionsPopover = styled.div`
 const SortModeTitle = styled.span`
   font-size: 10px;
   font-weight: 700;
-  color: #aaa;
+  color: var(--km-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-right: 4px;
@@ -598,7 +598,7 @@ const SortModeLabel = styled.label`
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #444;
+  color: var(--km-text);
   cursor: pointer;
   padding: 3px 8px;
   border-radius: 6px;
@@ -610,15 +610,15 @@ const SortModeLabel = styled.label`
   }
 
   &:has(input:checked) {
-    background: #FFF3E0;
-    border-color: #FF8C00;
-    color: #CC5500;
+    background: var(--km-accent-light);
+    border-color: var(--km-accent);
+    color: var(--km-accent);
     font-weight: 600;
   }
 
   &:hover:not(:has(input:checked)) {
-    background: #f5f5f5;
-    border-color: #ddd;
+    background: var(--km-border);
+    border-color: var(--km-border);
   }
 `;
 
@@ -634,8 +634,8 @@ const SearchScopeContainer = styled.div`
 `;
 
 const SearchScopeBlock = styled.div`
-  background: #fff;
-  border: 1px solid #eee;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   border-radius: 10px;
   padding: 8px 12px 10px;
 `;
@@ -643,7 +643,7 @@ const SearchScopeBlock = styled.div`
 const SearchScopeBlockTitle = styled.div`
   font-size: 10px;
   font-weight: 700;
-  color: #aaa;
+  color: var(--km-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   line-height: 1;
@@ -665,7 +665,7 @@ const SearchScopeItems = styled.div`
 const SearchScopeDivider = styled.hr`
   flex-basis: 100%;
   border: 0;
-  border-top: 1px solid #e8e8e8;
+  border-top: 1px solid var(--km-border);
   margin: 4px 0;
 `;
 
@@ -674,7 +674,7 @@ const SearchScopeLabel = styled.label`
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #1f1f1f;
+  color: var(--km-text);
 `;
 
 const SearchScopeLabelTextGroup = styled.span`
@@ -686,9 +686,9 @@ const SearchScopeLabelTextGroup = styled.span`
 const ScopeChip = styled.button`
   padding: 3px 9px;
   border-radius: 20px;
-  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : '#e0e0e0')};
-  background: ${({ $active }) => ($active ? '#FFF3E0' : '#fafafa')};
-  color: ${({ $active }) => ($active ? '#CC5500' : '#666')};
+  border: 1.5px solid ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-border)')};
+  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'var(--km-card)')};
+  color: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-muted)')};
   font-size: 12px;
   font-weight: ${({ $active }) => ($active ? '600' : '400')};
   cursor: pointer;
@@ -703,16 +703,16 @@ const ScopeChip = styled.button`
   }
 
   &:hover:not(:disabled) {
-    border-color: #FF8C00;
-    color: #CC5500;
+    border-color: var(--km-accent);
+    color: var(--km-accent);
   }
 `;
 
 const ToggleSearchScopeButton = styled.button`
-  border: 1px solid #c8d0ff;
+  border: 1px solid var(--km-accent-mid);
   border-radius: 6px;
-  background: #f3f5ff;
-  color: #2f4db9;
+  background: var(--km-accent-light);
+  color: var(--km-accent);
   font-size: 11px;
   line-height: 1;
   padding: 5px 8px;
@@ -720,7 +720,7 @@ const ToggleSearchScopeButton = styled.button`
   flex-shrink: 0;
 
   &:hover {
-    background: #e9edff;
+    background: var(--km-accent-light);
   }
 `;
 
@@ -733,21 +733,21 @@ const SearchBarRow = styled.div`
 const SearchSettingsButton = styled.button`
   width: 38px;
   height: 38px;
-  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : '#d5d5d5')};
+  border: 1.5px solid ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-border)')};
   border-radius: 8px;
-  background: ${({ $active }) => ($active ? '#FFF3E0' : '#fff')};
+  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'var(--km-card)')};
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: ${({ $active }) => ($active ? '#CC5500' : '#666')};
+  color: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-muted)')};
   flex-shrink: 0;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 
   &:hover {
-    border-color: #FF8C00;
-    color: #CC5500;
-    background: #FFF3E0;
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+    background: var(--km-accent-light);
   }
 `;
 
@@ -755,9 +755,9 @@ const IndexModal = styled.div`
   width: 100%;
   margin: 6px 0 10px;
   padding: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--km-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--km-card);
 `;
 
 const IndexModalList = styled.div`
@@ -782,7 +782,7 @@ const LocalIndexModal = styled.div`
   width: min(560px, 100%);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
-  background: #fff;
+  background: var(--km-card);
   border-radius: 10px;
   padding: 16px;
   box-shadow: 0 10px 35px rgba(0, 0, 0, 0.2);
@@ -801,19 +801,19 @@ const SaveModalTitle = styled.h3`
 
 const SaveModalHint = styled.p`
   margin: 0 0 12px;
-  color: #555;
+  color: var(--km-muted);
   font-size: 13px;
 `;
 
 const SaveModalSection = styled.div`
   padding: 10px 0;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--km-border);
 `;
 
 const SaveModalSectionTitle = styled.div`
   margin-bottom: 8px;
   font-weight: 700;
-  color: #333;
+  color: var(--km-text);
 `;
 
 const SaveModalRadioRow = styled.label`
@@ -826,7 +826,7 @@ const SaveModalRadioRow = styled.label`
 
 const SaveModalComment = styled.span`
   display: block;
-  color: #666;
+  color: var(--km-muted);
   font-size: 12px;
   line-height: 1.35;
 `;
@@ -840,16 +840,16 @@ const SaveModalActions = styled.div`
 const SaveModalActionButton = styled.button`
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ffd39a;
+  border: 1px solid var(--km-accent-mid);
   border-radius: 8px;
-  background: #fff8ef;
-  color: #5d3b00;
+  background: var(--km-accent-light);
+  color: var(--km-accent);
   text-align: left;
   cursor: pointer;
 
   &:hover {
-    background: #fff3e0;
-    border-color: #ff8c00;
+    background: var(--km-accent-light);
+    border-color: var(--km-accent);
   }
 
   &:disabled {
@@ -6781,7 +6781,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ) : (
           <div>
             {(searchLoading || hasSearched) && !userNotFound && (
-              <p style={{ textAlign: 'center', color: 'black' }}>
+              <p style={{ textAlign: 'center', color: 'var(--km-text)' }}>
                 Знайдено{' '}
                 {searchLoading ? (
                   <span className="spinner" />
@@ -6792,7 +6792,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </p>
             )}
             {userNotFound && hasSearched && (
-              <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
+              <p style={{ textAlign: 'center', color: 'var(--km-text)' }}>No result</p>
             )}
             <ButtonsContainer>
               {userNotFound && (
