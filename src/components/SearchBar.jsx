@@ -24,10 +24,11 @@ const SearchIcon = (
     height="16"
     viewBox="0 0 24 24"
     fill="none"
-    stroke="gray"
+    stroke="currentColor"
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
+    style={{ color: 'var(--km-muted)' }}
   >
     <circle cx="11" cy="11" r="8" />
     <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -39,15 +40,20 @@ const InputDiv = styled.div`
   align-items: center;
   position: relative;
   margin: 10px 0;
-  padding: 10px;
-  background-color: #fff;
-  border: 3px solid;
-  border-image: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1;
-  border-radius: 5px;
+  padding: 10px 14px;
+  background-color: var(--km-card);
+  border: 1.5px solid var(--km-border);
+  border-radius: var(--km-radius);
   box-sizing: border-box;
   flex: 1 1 auto;
   min-width: 0;
   height: auto;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+
+  &:focus-within {
+    border-color: var(--km-accent);
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
+  }
 `;
 
 const InputFieldContainer = styled.div`
@@ -73,7 +79,9 @@ const InputField = styled.textarea`
   overflow: hidden;
   min-height: 24px;
   line-height: normal;
-  
+  background: transparent;
+  color: var(--km-text);
+  font-family: var(--km-font);
 `;
 
 const ClearButton = styled.button`
@@ -85,13 +93,13 @@ const ClearButton = styled.button`
   background: none;
   border: none;
   cursor: pointer;
-  color: gray;
+  color: var(--km-muted);
   font-size: 18px;
   width: 35px;
   height: 35px;
 
   &:hover {
-    color: black;
+    color: var(--km-accent);
   }
 `;
 
@@ -100,23 +108,27 @@ const HistoryList = styled.ul`
   top: 100%;
   left: 0;
   right: 0;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
+  border-radius: 0 0 var(--km-radius) var(--km-radius);
+  box-shadow: var(--km-shadow);
   z-index: 10;
   list-style: none;
   margin: 0;
   padding: 0;
+  overflow: hidden;
 `;
 
 const HistoryItem = styled.li`
   display: flex;
   justify-content: space-between;
-  padding: 5px 10px;
+  padding: 8px 14px;
   cursor: pointer;
-  color: black;
+  color: var(--km-text);
+  font-size: 14px;
 
   &:hover {
-    background-color: #f0f0f0;
+    background-color: var(--km-accent-light);
   }
 `;
 
@@ -124,10 +136,10 @@ const HistoryRemove = styled.button`
   border: none;
   background: none;
   cursor: pointer;
-  color: gray;
+  color: var(--km-muted);
 
   &:hover {
-    color: black;
+    color: var(--km-accent);
   }
 `;
 

@@ -20,6 +20,7 @@ import {
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 import { isMedicationPhotoUrl } from '../utils/photoFilters';
 import { MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
+import { KmPage } from './styles/knowme';
 
 const onValue = wrapAdminOnValue(firebaseOnValue, {
   operation: 'onValue',
@@ -59,7 +60,7 @@ const arePhotoListsEqual = (first = [], second = []) => {
   return first.every((item, index) => item === second[index]);
 };
 
-const PageContainer = styled.div`
+const PageContainer = styled(KmPage)`
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -67,7 +68,6 @@ const PageContainer = styled.div`
   max-width: 960px;
   margin: 0 auto;
   box-sizing: border-box;
-  color: black;
 `;
 
 const Header = styled.div`
@@ -88,14 +88,14 @@ const BackButton = styled.button`
   padding: 6px 12px;
   border-radius: 6px;
   border: none;
-  background-color: #ffb347;
-  color: white;
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  color: #fff;
   cursor: pointer;
   font-size: 14px;
-  transition: background-color 0.2s ease;
+  transition: filter 0.2s ease;
 
   &:hover {
-    background-color: #ff9a1a;
+    filter: brightness(1.05);
   }
 `;
 
@@ -107,14 +107,14 @@ const IconSquareButton = styled.button`
   height: 34px;
   border-radius: 6px;
   border: none;
-  background-color: #ffb347;
-  color: white;
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  color: #fff;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: filter 0.2s ease;
   padding: 0;
 
   &:hover:not(:disabled) {
-    background-color: #ff9a1a;
+    filter: brightness(1.05);
   }
 
   &:disabled {
@@ -141,7 +141,7 @@ const Title = styled.h1`
 
 const Subtitle = styled.span`
   font-size: 14px;
-  color: #555;
+  color: var(--km-muted);
 `;
 
 const DeleteButtonsWrapper = styled.div`
@@ -155,14 +155,14 @@ const DeleteButton = styled.button`
   padding: 6px 12px;
   border-radius: 6px;
   border: none;
-  background-color: #d32f2f;
+  background-color: var(--km-danger);
   color: white;
   cursor: pointer;
   font-size: 14px;
-  transition: background-color 0.2s ease;
+  transition: filter 0.2s ease;
 
   &:hover:not(:disabled) {
-    background-color: #b71c1c;
+    filter: brightness(0.9);
   }
 
   &:disabled {
@@ -172,29 +172,29 @@ const DeleteButton = styled.button`
 `;
 
 const ClearScheduleButton = styled(DeleteButton)`
-  background-color: #f57c00;
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
 
   &:hover:not(:disabled) {
-    background-color: #ef6c00;
+    filter: brightness(1.05);
   }
 `;
 
 const Card = styled.div`
-  background-color: #f9f9f9;
+  background-color: var(--km-card);
   border-radius: 12px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--km-shadow);
   padding: 20px;
 `;
 
 const Message = styled.p`
   margin: 0;
   font-size: 14px;
-  color: #444;
+  color: var(--km-text);
 `;
 
 const LoadingState = styled.div`
   font-size: 14px;
-  color: #666;
+  color: var(--km-muted);
 `;
 
 const PhotosModalOverlay = styled.div`
@@ -213,9 +213,10 @@ const PhotosModalOverlay = styled.div`
 `;
 
 const PhotosModal = styled.div`
-  background: #fff;
+  background: var(--km-card);
+  color: var(--km-text);
   border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--km-shadow-pop);
   width: min(700px, 100%);
   max-height: 90vh;
   display: flex;
@@ -228,7 +229,7 @@ const PhotosModalHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--km-border);
 `;
 
 const PhotosModalTitle = styled.h2`
@@ -240,12 +241,12 @@ const PhotosModalTitle = styled.h2`
 const CloseModalButton = styled.button`
   border: none;
   background: transparent;
-  color: #333;
+  color: var(--km-muted);
   cursor: pointer;
   padding: 4px;
 
   &:hover {
-    color: #000;
+    color: var(--km-text);
   }
 `;
 
@@ -272,7 +273,7 @@ const PhotoThumbnailButton = styled.button`
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  background: #f2f2f2;
+  background: var(--km-border);
   position: relative;
   width: 100%;
   aspect-ratio: 1;
@@ -305,14 +306,14 @@ const PhotoDeleteButton = styled.button`
   padding: 4px 6px;
   border: none;
   border-radius: 6px;
-  background-color: #d32f2f;
+  background-color: var(--km-danger);
   color: #fff;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: filter 0.2s ease;
   font-size: 12px;
 
   &:hover:not(:disabled) {
-    background-color: #b71c1c;
+    filter: brightness(0.9);
   }
 
   &:disabled {
@@ -333,10 +334,10 @@ const UploadLabel = styled.label`
   gap: 8px;
   padding: 8px 16px;
   border-radius: 6px;
-  background-color: #ffb347;
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
   color: #fff;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: filter 0.2s ease;
 
   ${({ $disabled }) =>
     $disabled
@@ -347,7 +348,7 @@ const UploadLabel = styled.label`
   `
       : `
     &:hover {
-      background-color: #ff9a1a;
+      filter: brightness(1.05);
     }
   `}
 `;

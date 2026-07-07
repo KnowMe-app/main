@@ -45,7 +45,7 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   gap: 20px;
-  color: black;
+  color: var(--km-text);
 `;
 
 const IssuedList = styled.div`
@@ -98,28 +98,28 @@ const IssuedInput = styled.input`
   width: 120px;
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid #d0d0d0;
+  border: 1px solid var(--km-border);
   font-size: 14px;
-  color: black;
+  color: var(--km-text);
 
   &::placeholder {
-    color: #888;
+    color: var(--km-muted);
   }
 `;
 
 const IssuedStats = styled.span`
   font-size: 13px;
-  color: #666;
+  color: var(--km-muted);
 `;
 
 const RemainingValue = styled.span`
   color: ${props => {
     if (props.$negative) {
-      return '#d1433f';
+      return 'var(--km-danger)';
     }
 
     if (props.$positive) {
-      return '#1a7f37';
+      return 'var(--km-success)';
     }
 
     return 'inherit';
@@ -129,7 +129,7 @@ const RemainingValue = styled.span`
 
 const FormulaHint = styled.span`
   font-size: 12px;
-  color: #888;
+  color: var(--km-muted);
 `;
 
 const AddMedicationRow = styled.div`
@@ -137,7 +137,7 @@ const AddMedicationRow = styled.div`
   flex-direction: column;
   gap: 8px;
   padding-top: 12px;
-  border-top: 1px solid #e6e6e6;
+  border-top: 1px solid var(--km-border);
 `;
 
 const AddMedicationLabel = styled.span`
@@ -156,9 +156,9 @@ const AddMedicationInput = styled.input`
   width: ${props => (props.$wide ? '200px' : '120px')};
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid #d0d0d0;
+  border: 1px solid var(--km-border);
   font-size: 14px;
-  color: black;
+  color: var(--km-text);
   box-sizing: border-box;
 `;
 
@@ -166,7 +166,7 @@ const AddMedicationButton = styled.button`
   padding: 6px 10px;
   border-radius: 6px;
   border: none;
-  background-color: #2e7d32;
+  background-color: var(--km-success);
   color: white;
   font-size: 16px;
   cursor: pointer;
@@ -174,10 +174,10 @@ const AddMedicationButton = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s ease;
+  transition: filter 0.2s ease;
 
   &:hover:not(:disabled) {
-    background-color: #276528;
+    filter: brightness(0.9);
   }
 
   &:disabled {
@@ -188,12 +188,12 @@ const AddMedicationButton = styled.button`
 
 const AddMedicationHint = styled.span`
   font-size: 12px;
-  color: #777;
+  color: var(--km-muted);
 `;
 
 const AddMedicationGuide = styled.span`
   font-size: 12px;
-  color: #555;
+  color: var(--km-muted);
   white-space: nowrap;
 `;
 
@@ -201,14 +201,14 @@ const TableWrapper = styled.div`
   position: relative;
   max-height: 60vh;
   overflow: auto;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--km-border);
   border-radius: 8px;
 `;
 
 const StyledTable = styled.table`
   width: 100%;
   border-collapse: collapse;
-  color: black;
+  color: var(--km-text);
   table-layout: fixed;
 `;
 
@@ -219,15 +219,15 @@ const TableHead = styled.thead`
 `;
 
 const TableHeaderRow = styled.tr`
-  background: #fafafa;
+  background: var(--km-card);
 `;
 
 const Th = styled.th`
   position: sticky;
   top: 0;
-  background: #fafafa;
+  background: var(--km-card);
   padding: 2px 4px;
-  border-bottom: 1px solid #d9d9d9;
+  border-bottom: 1px solid var(--km-border);
   font-weight: 500;
   text-align: center;
   vertical-align: middle;
@@ -236,7 +236,7 @@ const Th = styled.th`
 
 const Td = styled.td`
   padding: 4px 4px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--km-border);
   vertical-align: middle;
 `;
 
@@ -246,23 +246,23 @@ const CellInput = styled.input`
   min-width: 0;
   padding: 2.4px;
   border-radius: 6px;
-  border: 1px solid ${({ $visual }) => $visual?.border || '#d0d0d0'};
+  border: 1px solid ${({ $visual }) => $visual?.border || 'var(--km-border)'};
   font-size: 13px;
   text-align: center;
-  color: ${({ $visual }) => $visual?.text || 'black'};
+  color: ${({ $visual }) => $visual?.text || 'var(--km-text)'};
   box-sizing: border-box;
   display: inline-block;
-  background-color: ${({ $visual }) => $visual?.background || 'white'};
+  background-color: ${({ $visual }) => $visual?.background || 'var(--km-card)'};
   transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
   &::placeholder {
-    color: #b0b0b0;
+    color: var(--km-muted);
   }
 `;
 
 const MedicationTh = styled(Th)`
   text-align: center;
   padding: 2px;
-  background: #fafafa;
+  background: var(--km-card);
   overflow: visible;
 `;
 
@@ -300,16 +300,16 @@ const MedicationHeaderButton = styled.button`
   ${({ $reorderTarget }) =>
     $reorderTarget &&
     css`
-      box-shadow: inset 0 0 0 1px #ffb74d;
+      box-shadow: inset 0 0 0 1px var(--km-accent);
     `}
 
   &:hover {
     background: rgba(183, 28, 28, 0.1);
-    color: #b71c1c;
+    color: var(--km-danger);
   }
 
   &:focus-visible {
-    outline: 2px solid #b71c1c;
+    outline: 2px solid var(--km-danger);
     outline-offset: 2px;
   }
 `;
@@ -335,7 +335,7 @@ const DayCell = styled.div`
 
 const DayBadge = styled.span`
   font-size: 11px;
-  color: #555;
+  color: var(--km-muted);
   font-weight: 600;
   white-space: nowrap;
 `;
@@ -357,35 +357,35 @@ const DateText = styled.span`
 
 const WeekdayTag = styled.span`
   font-size: 12px;
-  color: #777;
+  color: var(--km-muted);
   text-transform: lowercase;
 `;
 
 const YearSeparatorRow = styled.tr`
-  background: #f3f3f3;
+  background: var(--km-border);
 `;
 
 const YearSeparatorCell = styled.td`
   padding: 6px 10px;
   font-weight: 600;
   font-size: 13px;
-  color: #444;
-  border-bottom: 1px solid #e0e0e0;
+  color: var(--km-text);
+  border-bottom: 1px solid var(--km-border);
 `;
 
 const HighlightedRow = styled.tr`
-  background: #fff6e5;
+  background: var(--km-accent-light);
 `;
 
 const DescriptionRow = styled.tr`
-  background: #fffaf0;
+  background: var(--km-accent-light);
 `;
 
 const DescriptionCell = styled.td`
   padding: 6px 8px;
-  border-bottom: 1px solid #f0e0c5;
+  border-bottom: 1px solid var(--km-border);
   font-size: 13px;
-  color: #6a4b16;
+  color: var(--km-accent);
 `;
 
 const MedicationTd = styled(Td)`
@@ -417,7 +417,7 @@ const ModalOverlay = styled.div`
 `;
 
 const ModalContainer = styled.div`
-  background: white;
+  background: var(--km-card);
   border-radius: 12px;
   padding: 24px;
   width: min(90vw, 360px);
@@ -436,7 +436,7 @@ const ModalTitle = styled.h2`
 const ModalMessage = styled.p`
   margin: 0;
   font-size: 14px;
-  color: #444;
+  color: var(--km-text);
   white-space: pre-line;
 `;
 
@@ -465,47 +465,52 @@ const ModalButton = styled.button`
 `;
 
 const ModalCancelButton = styled(ModalButton)`
-  background: #e0e0e0;
-  color: #333;
+  background: var(--km-border);
+  color: var(--km-text);
+  transition: filter 0.2s ease;
 
   &:hover {
-    background: #cfcfcf;
+    filter: brightness(0.92);
   }
 `;
 
 const ModalSecondaryButton = styled(ModalButton)`
   background: #1976d2;
   color: white;
+  transition: filter 0.2s ease;
 
   &:hover {
-    background: #115293;
+    filter: brightness(0.85);
   }
 `;
 
 const ModalDirectionButton = styled(ModalButton)`
-  background: #eeeeee;
-  color: #333;
+  background: var(--km-border);
+  color: var(--km-text);
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  transition: filter 0.2s ease;
 
   &:hover {
-    background: #e0e0e0;
+    filter: brightness(0.92);
   }
 
   &:disabled {
-    background: #f5f5f5;
-    color: #aaaaaa;
+    background: var(--km-border);
+    color: var(--km-muted);
+    filter: none;
     cursor: not-allowed;
   }
 `;
 
 const ModalConfirmButton = styled(ModalButton)`
-  background: #d84315;
+  background: var(--km-danger);
   color: white;
+  transition: filter 0.2s ease;
 
   &:hover {
-    background: #bf360c;
+    filter: brightness(0.9);
   }
 `;
 
@@ -519,13 +524,13 @@ const ModalSectionTitle = styled.h3`
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #222;
+  color: var(--km-text);
 `;
 
 const ModalHint = styled.p`
   margin: 0;
   font-size: 13px;
-  color: #555;
+  color: var(--km-muted);
   white-space: pre-line;
 `;
 
@@ -538,22 +543,22 @@ const HiddenOptionList = styled.div`
 const HiddenOptionButton = styled.button`
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid #d0d0d0;
-  background: white;
+  border: 1px solid var(--km-border);
+  background: var(--km-card);
   cursor: pointer;
   text-align: left;
   font-size: 14px;
   transition: background-color 0.2s ease, border-color 0.2s ease;
 
   &:hover {
-    background: #f5f5f5;
-    border-color: #bdbdbd;
+    background: var(--km-border);
+    border-color: var(--km-accent);
   }
 `;
 
 const HiddenOptionEmpty = styled.span`
   font-size: 13px;
-  color: #777;
+  color: var(--km-muted);
 `;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

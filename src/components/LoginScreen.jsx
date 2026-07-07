@@ -15,16 +15,16 @@ import {
 } from './authProfilePersistence';
 
 const Container = styled.div`
-  --accent: #E8791A;
-  --accent-light: #FFF0E0;
-  --accent-mid: #F5A24B;
-  --bg: #FAFAF8;
-  --card: #FFFFFF;
-  --text: #1A1A1A;
-  --muted: #7A7A72;
-  --border: #E8E8E2;
-  --radius: 14px;
-  --shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --accent: var(--km-accent);
+  --accent-light: var(--km-accent-light);
+  --accent-mid: var(--km-accent-mid);
+  --bg: var(--km-bg);
+  --card: var(--km-card);
+  --text: var(--km-text);
+  --muted: var(--km-muted);
+  --border: var(--km-border);
+  --radius: var(--km-radius);
+  --shadow: var(--km-shadow);
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -34,7 +34,7 @@ const Container = styled.div`
     radial-gradient(circle at top left, rgba(232, 121, 26, 0.12), transparent 30%),
     var(--bg);
   color: var(--text);
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--km-font);
   box-sizing: border-box;
 `;
 
@@ -139,7 +139,7 @@ const SubmitButton = styled.button`
   cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
   font-size: 16px;
   font-weight: 800;
-  background: ${({ disabled }) => (disabled ? '#c9c9c2' : 'linear-gradient(135deg, #E8791A 0%, #F5A24B 100%)')};
+  background: ${({ disabled }) => (disabled ? 'var(--border)' : 'linear-gradient(135deg, var(--accent) 0%, var(--accent-mid) 100%)')};
   box-shadow: ${({ disabled }) => (disabled ? 'none' : '0 10px 24px rgba(232, 121, 26, 0.22)')};
   transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 
@@ -266,7 +266,7 @@ const CustomCheckbox = styled.input`
 const LoadingOverlay = styled.div`
   position: fixed;
   inset: 0;
-  background: rgba(250, 250, 248, 0.78);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -278,7 +278,7 @@ const LoadingOverlay = styled.div`
 const Spinner = styled.div`
   width: 44px;
   height: 44px;
-  border: 4px solid #f2ded0;
+  border: 4px solid var(--accent-light);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;

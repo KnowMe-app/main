@@ -5,11 +5,9 @@ export const Container = styled.div`
   min-height: calc(100vh - 400px);
   margin: 0 auto 0;
   padding: 30px;
-  /* background-color: var(--primary-background-color); */
-  box-shadow: var(--box-shadow);
+  box-shadow: var(--km-shadow);
   display: flex;
   flex-direction: column;
-  /* background: linear-gradient(to bottom, #ffa500, #ff8c00); */
 `;
 
 export const TitleH1 = styled.h1`
@@ -24,19 +22,18 @@ export const TitleH2 = styled.h2`
 
 export const Button = styled.button`
   margin-left: 10px;
-  /* margin-bottom: 10px; */
   padding: 5px 5px;
   width: 40px;
   height: 40px;
-  background-color: var(--accent-color);
-  color: var(--primary-text-color);
-  border: var(--border);
+  background-color: var(--km-accent);
+  color: #fff;
+  border: 1px solid var(--km-border);
   border-radius: 50px;
   font-weight: 700;
-  transition: background-color var(--animation-timing-function);
+  transition: background-color 0.18s ease;
   &:hover,
   &:focus {
-    background-color: var(--accent-color-hover);
+    background-color: var(--km-accent-mid);
   };
   align-self: flex-end;
 `;

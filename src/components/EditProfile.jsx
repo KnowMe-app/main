@@ -16,6 +16,8 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { TopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
 import { coloredCard } from './styles';
+import { KmPage, KmGhostButton } from './styles/knowme';
+import { FaArrowLeft } from 'react-icons/fa';
 import { updateCachedUser } from '../utils/cache';
 import { getCard } from '../utils/cardIndex';
 import {
@@ -38,7 +40,7 @@ import {
   saveOverlayForUserCard,
 } from 'utils/multiAccountEdits';
 
-const Container = styled.div`
+const Container = styled(KmPage)`
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -49,18 +51,20 @@ const Container = styled.div`
   margin: 0 auto;
 `;
 
-const BackButton = styled.button`
+const BackButton = styled(KmGhostButton)`
   align-self: flex-start;
+  min-height: 36px;
+  padding: 6px 14px;
   margin-bottom: 10px;
 `;
 
 const SkeletonCard = styled.div`
   width: 100%;
-  border-radius: 12px;
+  border-radius: var(--km-radius);
   padding: 14px;
   margin-bottom: 8px;
-  background: #f6f7fb;
-  border: 1px solid #e7e9f5;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
 `;
 
 const SkeletonLine = styled.div`
@@ -68,7 +72,7 @@ const SkeletonLine = styled.div`
   width: ${props => props.width || '100%'};
   border-radius: 8px;
   margin-bottom: 10px;
-  background: linear-gradient(90deg, #eceef7 25%, #f7f8fc 50%, #eceef7 75%);
+  background: linear-gradient(90deg, var(--km-border) 25%, var(--km-card) 50%, var(--km-border) 75%);
   background-size: 200% 100%;
   animation: skeletonPulse 1.2s ease-in-out infinite;
 
@@ -956,7 +960,9 @@ const EditProfile = () => {
 
   return (
     <Container>
-      <BackButton onClick={() => navigate(-1)}>Back</BackButton>
+      <BackButton type="button" onClick={() => navigate(-1)}>
+        <FaArrowLeft size={12} /> Back
+      </BackButton>
       {shouldShowEditorSkeleton ? (
         <TopBlockSkeleton />
       ) : (
