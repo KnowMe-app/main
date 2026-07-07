@@ -7,9 +7,9 @@ export const COLOR_OPTIONS = [
   {
     key: 'none',
     label: 'Без кольору',
-    background: 'white',
-    border: '#d0d0d0',
-    text: 'black',
+    background: 'var(--km-card)',
+    border: 'var(--km-border)',
+    text: 'var(--km-text)',
   },
   {
     key: 'morning',
@@ -45,10 +45,10 @@ const MenuContainer = styled.div`
   top: ${({ $anchor }) => `${$anchor.y}px`};
   left: ${({ $anchor }) => `${$anchor.x}px`};
   transform: translate(-50%, 8px);
-  background: white;
-  border: 1px solid #d0d0d0;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   border-radius: 10px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--km-shadow-pop);
   padding: 6px;
   z-index: 20;
   min-width: 160px;
@@ -86,7 +86,7 @@ const MenuItem = styled.button`
 const MenuHint = styled.span`
   display: block;
   padding: 4px 6px 0;
-  color: #666;
+  color: var(--km-muted);
   font-size: 12px;
 `;
 

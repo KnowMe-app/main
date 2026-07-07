@@ -1,7 +1,7 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './smallCard/actions';
 import { formatDateToServer } from 'components/inputValidations';
-import { OrangeBtn, color } from 'components/styles';
+import { OrangeBtn } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
@@ -3101,13 +3101,13 @@ const StimulationSchedule = ({
           <div
             onClick={event => event.stopPropagation()}
             style={{
-              backgroundColor: '#fff',
+              backgroundColor: 'var(--km-card)',
               padding: '24px 20px',
               borderRadius: '8px',
               maxWidth: '320px',
               width: '90%',
-              color: '#000',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+              color: 'var(--km-text)',
+              boxShadow: 'var(--km-shadow-pop)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -3142,8 +3142,9 @@ const StimulationSchedule = ({
                   minWidth: '120px',
                   padding: '10px 16px',
                   borderRadius: '6px',
-                  border: '1px solid #ccc',
-                  backgroundColor: '#fff',
+                  border: '1px solid var(--km-border)',
+                  backgroundColor: 'var(--km-card)',
+                  color: 'var(--km-text)',
                   cursor: 'pointer',
                   fontWeight: 600,
                 }}
@@ -3158,7 +3159,7 @@ const StimulationSchedule = ({
                   padding: '10px 16px',
                   borderRadius: '6px',
                   border: 'none',
-                  backgroundColor: color.accent,
+                  backgroundColor: 'var(--km-danger)',
                   color: '#fff',
                   cursor: 'pointer',
                   fontWeight: 600,
