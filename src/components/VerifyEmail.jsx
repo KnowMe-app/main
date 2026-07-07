@@ -1,15 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { onAuthStateChanged, sendEmailVerification } from 'firebase/auth';
 import { auth } from './config';
-import { fontSize } from './styles';
 import styled from 'styled-components';
-import {SubmitButton} from './ProfileScreen';
 
-const ButtonText = styled.span`
-font-size: ${fontSize.biggest}px;
-margin-bottom: 20px;
+const VerifyButton = styled.button`
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--km-radius);
+  background: ${({ disabled }) => (disabled ? 'var(--km-border)' : 'linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%)')};
+  color: ${({ disabled }) => (disabled ? 'var(--km-muted)' : '#fff')};
+  font-family: var(--km-font);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+  transition: filter 0.18s ease, box-shadow 0.18s ease;
+
+  &:hover {
+    filter: ${({ disabled }) => (disabled ? 'none' : 'brightness(1.05)')};
+  }
 `;
-  
+
     export   const VerifyEmail = () => {
 
         const language = 'uk';
@@ -76,22 +89,18 @@ margin-bottom: 20px;
         }, [isCounting]);
 
       return (
-          <div>
-            <SubmitButton 
-            disabled={isCounting} 
-            onClick={handleVerifyAgain} 
-            style={{backgroundColor: isCounting ? 'gray' : null }}
-            >
-            {!isCounting ? 'Підтвердити email':
-            (
-              <ButtonText style={{fontSize: fontSize.big, textAlign: 'center', color: 'white' }}>
-                {language==='uk'? 'Лист відправлено. Повторити через ':'Verify again in '}
-                {Math.floor(countdown / 60)}:{countdown % 60}
-                {language==='uk'? ' хв':' min'}
-              </ButtonText>
+          <VerifyButton
+            type="button"
+            disabled={isCounting}
+            onClick={handleVerifyAgain}
+          >
+            {!isCounting ? 'Підтвердити email' : (
+              <>
+                {language === 'uk' ? 'Лист відправлено. Повторити через ' : 'Verify again in '}
+                {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+                {language === 'uk' ? ' хв' : ' min'}
+              </>
             )}
-            </SubmitButton>
-            
-          </div>
+          </VerifyButton>
       );
     }

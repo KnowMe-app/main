@@ -105,6 +105,11 @@ export const KmIconButton = styled.button`
   &:active {
     transform: scale(0.98);
   }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 `;
 
 export const KmPrimaryButton = styled.button`
