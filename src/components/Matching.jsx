@@ -37,10 +37,6 @@ import {
   SkeletonInfo,
   SkeletonLine,
   SkeletonPhoto,
-  ThemeToggleButton,
-  ThemeToggleKnob,
-  ThemeToggleScene,
-  ThemeToggleTrackIcon,
   TopActionGroup,
   TopActions,
   ModernActionRail,
@@ -124,6 +120,7 @@ import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { useAppSettings } from 'hooks/useAppSettings';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import {
@@ -1261,16 +1258,6 @@ const MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS = 2;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
-const MATCHING_THEME_KEY = 'matchingThemeMode';
-
-const getStoredMatchingTheme = () => {
-  try {
-    const storedTheme = localStorage.getItem(MATCHING_THEME_KEY) || sessionStorage.getItem(MATCHING_THEME_KEY);
-    return storedTheme === 'light' ? 'light' : 'dark';
-  } catch (error) {
-    return 'dark';
-  }
-};
 
 const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit = 9, lastDate) => {
   const usersRef = refDb(database, collection);
@@ -1375,7 +1362,8 @@ const Matching = () => {
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
-  const [themeMode, setThemeMode] = useState(getStoredMatchingTheme);
+  // Тема тепер глобальна: перемикається в меню трьох крапок (ProfileDotsMenu).
+  const { themeMode } = useAppSettings();
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
@@ -1542,18 +1530,6 @@ const Matching = () => {
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(MATCHING_THEME_KEY, themeMode);
-      sessionStorage.setItem(MATCHING_THEME_KEY, themeMode);
-    } catch (error) {
-      // Theme persistence is non-critical; keep the in-memory theme if storage is unavailable.
-    }
-    document.documentElement.dataset.matchingTheme = themeMode;
-  }, [themeMode]);
-  const handleThemeToggle = React.useCallback(() => {
-    setThemeMode(current => (current === 'light' ? 'dark' : 'light'));
-  }, []);
   useEffect(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
@@ -5776,33 +5752,6 @@ const Matching = () => {
                 >
                   <FaHeart />
                 </ActionButton>
-              </TopActionGroup>
-              <TopActionGroup aria-label="Налаштування matching">
-                <ThemeToggleButton
-                  type="button"
-                  $themeMode={themeMode}
-                  aria-pressed={themeMode === 'light'}
-                  aria-label={themeMode === 'light' ? 'Перемкнути Matching на темну тему' : 'Перемкнути Matching на світлу тему'}
-                  title={themeMode === 'light' ? 'Темна тема' : 'Світла тема'}
-                  onClick={handleThemeToggle}
-                >
-                  <ThemeToggleTrackIcon $side="left" $active={themeMode === 'dark'} aria-hidden="true">
-                    <svg viewBox="0 0 24 24" role="img">
-                      <path fill="currentColor" d="M15.4 2.8a7.4 7.4 0 1 0 5.8 10.8 6.2 6.2 0 1 1-5.8-10.8Z" />
-                      <circle cx="6" cy="6" r="1.4" fill="#ffd45c" />
-                      <circle cx="19" cy="5.5" r="1.1" fill="#ffd45c" />
-                    </svg>
-                  </ThemeToggleTrackIcon>
-                  <ThemeToggleTrackIcon $side="right" $active={themeMode === 'light'} aria-hidden="true">
-                    <svg viewBox="0 0 24 24" role="img">
-                      <circle cx="9" cy="9" r="4" fill="#ffd45c" />
-                      <path fill="currentColor" d="M8 17.5h8.8a3.8 3.8 0 0 0 .4-7.6 5.3 5.3 0 0 0-10.1 1.7A3 3 0 0 0 8 17.5Z" />
-                    </svg>
-                  </ThemeToggleTrackIcon>
-                  <ThemeToggleKnob $themeMode={themeMode} aria-hidden="true">
-                    <ThemeToggleScene $themeMode={themeMode} />
-                  </ThemeToggleKnob>
-                </ThemeToggleButton>
               </TopActionGroup>
               <TopActionGroup aria-label="Адміністративні дії matching">
                 {showBackendTrafficToggle && (

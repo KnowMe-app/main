@@ -26,19 +26,21 @@ import { authNotifications } from './authNotifications';
 import { persistUserWithFallback } from './authProfilePersistence';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { KnowMeBrand } from './styles/knowme';
 
 const Page = styled.div`
-  --accent: #E8791A;
-  --accent-light: #FFF0E0;
-  --accent-mid: #F5A24B;
-  --bg: #FAFAF8;
-  --card: #FFFFFF;
-  --text: #1A1A1A;
-  --muted: #7A7A72;
-  --border: #E8E8E2;
-  --radius: 14px;
-  --shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
-  font-family: 'DM Sans', sans-serif;
+  /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
+  --accent: var(--km-accent);
+  --accent-light: var(--km-accent-light);
+  --accent-mid: var(--km-accent-mid);
+  --bg: var(--km-bg);
+  --card: var(--km-card);
+  --text: var(--km-text);
+  --muted: var(--km-muted);
+  --border: var(--km-border);
+  --radius: var(--km-radius);
+  --shadow: var(--km-shadow);
+  font-family: var(--km-font);
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -590,6 +592,7 @@ export const MyProfile = () => {
       access={access}
       isEmailVerified={isEmailVerified}
       showVerifyEmail
+      isSessionActive={isProfileAccessConfirmed}
       onExit={handleExit}
       onSelect={() => setShowInfoModal(false)}
     />
@@ -1055,14 +1058,12 @@ export const MyProfile = () => {
   return <Page style={{ '--sticky-header-offset': `${stickyHeaderOffset}px` }}>
     <StickyHeader ref={stickyHeaderRef}>
       <Topbar>
-        <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
+        <KnowMeBrand />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <StatusBadge type="button" $clickable={!isProfileAccessConfirmed} onClick={handleAuthBadgeClick}>
             ● {isProfileAccessConfirmed ? 'Прихована' : 'Логін не відбувся'}
           </StatusBadge>
-          {isProfileAccessConfirmed && (
-            <DotsButton type='button' aria-label='Відкрити меню профілю' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
-          )}
+          <DotsButton type='button' aria-label='Відкрити меню профілю' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
         </div>
       </Topbar>
 

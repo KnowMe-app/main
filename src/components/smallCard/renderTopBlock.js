@@ -830,13 +830,11 @@ const profilePdfStyles = StyleSheet.create({
 const pdfFooter = (
   <View style={profilePdfStyles.footer} fixed>
     <Text>
-      REPRODUCTIVE AGENCY "UKRCOM"{'\n'}
-      31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine
+      KnowMe: Egg donor
     </Text>
     <Text style={profilePdfStyles.footerRight}>
-      Website: http://ukrcom.hol.es/{'\n'}
-      E-mail: sm.kiev.ukr@gmail.com{'\n'}
-      Telegram: @Contact_Us_Kyiv
+      E-mail: KnowMeEggDonor@gmail.com{'\n'}
+      Google Play: KnowMe: Egg donor
     </Text>
   </View>
 );
@@ -994,7 +992,7 @@ const buildProfilePdfFileName = data => {
     .replace(/[\\/:*?"<>|]+/g, '')
     .replace(/\s+/g, '-')
     .slice(0, 80);
-  return `${safeName || 'profile'}-UKRCOM.pdf`;
+  return `${safeName || 'profile'}-KnowMe.pdf`;
 };
 
 const ProfilePdfDocument = ({ userData, photoUrls }) => {
@@ -1004,9 +1002,9 @@ const ProfilePdfDocument = ({ userData, photoUrls }) => {
     photo && typeof photo === 'object' ? photo : { src: photo }
   )).filter(photo => photo?.src);
   return (
-    <Document title={`${buildName(userData) || 'Profile'} - UKRCOM`}>
+    <Document title={`${buildName(userData) || 'Profile'} - KnowMe: Egg donor`}>
       <Page size="A4" style={profilePdfStyles.page}>
-        <Text style={profilePdfStyles.watermark}>UKRCOM</Text>
+        <Text style={profilePdfStyles.watermark}>KnowMe</Text>
         <Text style={profilePdfStyles.title}>
           Surrogacy mother’s{'\n'}profile
         </Text>
@@ -1022,7 +1020,7 @@ const ProfilePdfDocument = ({ userData, photoUrls }) => {
       {photoEntries.map((photo, index) => (
         <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
           <View style={profilePdfStyles.profileImageWrap}>
-            <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
+            <Text style={profilePdfStyles.imageWatermark}>KnowMe</Text>
             <Image src={photo.src} style={profilePdfStyles.profileImage} />
           </View>
           {pdfFooter}

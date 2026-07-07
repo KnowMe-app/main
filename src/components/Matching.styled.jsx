@@ -5,43 +5,44 @@ const STACK_CARD_RADIUS = '18px';
 
 const matchingThemeVars = css`
   --matching-page-bg: ${({ $themeMode }) => ($themeMode === 'light'
-    ? '#F6F7F9'
-    : 'radial-gradient(circle at 50% 0%, rgba(247, 147, 30, 0.11), transparent 32%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
+    ? '#FAFAF8'
+    : 'radial-gradient(circle at 50% 0%, rgba(232, 121, 26, 0.11), transparent 32%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
   --matching-shell-bg: ${({ $themeMode }) => ($themeMode === 'light'
-    ? '#F6F7F9'
-    : 'radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.16), transparent 28%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
+    ? '#FAFAF8'
+    : 'radial-gradient(circle at 18% 0%, rgba(232, 121, 26, 0.16), transparent 28%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
   --matching-card-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#17120e')};
-  --matching-card-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E2D8' : 'rgba(255, 214, 148, 0.14)')};
+  --matching-card-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.14)')};
   --matching-card-shadow: ${({ $themeMode }) => ($themeMode === 'light'
     ? '0 16px 34px rgba(22, 22, 22, 0.08)'
-    : '0 18px 40px rgba(0, 0, 0, 0.3), 0 0 22px rgba(247, 147, 30, 0.05)')};
-  --matching-header-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#161616' : '#fff8ec')};
-  --matching-muted-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#6B7280' : 'rgba(255, 248, 236, 0.88)')};
+    : '0 18px 40px rgba(0, 0, 0, 0.3), 0 0 22px rgba(232, 121, 26, 0.05)')};
+  --matching-header-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#fff8ec')};
+  --matching-muted-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#7A7A72' : 'rgba(255, 248, 236, 0.88)')};
   --matching-panel-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#15120f')};
-  --matching-panel-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#161616' : '#fff8ec')};
+  --matching-panel-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#fff8ec')};
   --matching-section-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : 'rgba(26, 23, 20, 0.82)')};
-  --matching-section-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E2D8' : 'rgba(255, 214, 148, 0.11)')};
+  --matching-section-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
   --matching-section-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 10px 24px rgba(22, 22, 22, 0.06)' : '0 12px 28px rgba(0, 0, 0, 0.18)')};
-  --matching-section-title: ${({ $themeMode }) => ($themeMode === 'light' ? '#161616' : '#ffd18a')};
+  --matching-section-title: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#ffd18a')};
   --matching-chip-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.045)')};
-  --matching-chip-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E5E0D8' : 'rgba(255, 214, 148, 0.12)')};
-  --matching-chip-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#161616' : '#fff8ec')};
-  --matching-chip-label: ${({ $themeMode }) => ($themeMode === 'light' ? '#6B7280' : 'rgba(247, 185, 95, 0.76)')};
-  --matching-accent: ${({ $themeMode }) => ($themeMode === 'light' ? '#FF9500' : '#f7931e')};
+  --matching-chip-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.12)')};
+  --matching-chip-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#fff8ec')};
+  --matching-chip-label: ${({ $themeMode }) => ($themeMode === 'light' ? '#7A7A72' : 'rgba(247, 185, 95, 0.76)')};
+  --matching-accent: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8791A' : '#F08A2C')};
   --matching-contact-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#2A2A2A' : '#ffd899')};
-  --matching-contact-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E5E0D8' : 'rgba(255, 214, 148, 0.12)')};
+  --matching-contact-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.12)')};
   --matching-hero-fallback: ${({ $themeMode }) => ($themeMode === 'light'
-    ? 'linear-gradient(145deg, #e8edf4 0%, #d7dee8 100%)'
-    : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)')};
+    ? 'linear-gradient(145deg, #f4ede4 0%, #e9ded1 100%)'
+    : 'radial-gradient(circle at 26% 16%, rgba(232, 121, 26, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)')};
   --matching-hero-bottom: ${({ $themeMode }) => ($themeMode === 'light'
     ? 'linear-gradient(180deg, rgba(22, 22, 22, 0) 0%, rgba(22, 22, 22, 0.22) 100%)'
     : 'linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%)')};
   --matching-rail-bg: transparent;
   --matching-rail-border: transparent;
   --matching-action-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#211b16')};
-  --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#FF9500' : '#fff8ec')};
+  --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8791A' : '#fff8ec')};
   --matching-action-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 8px 18px rgba(22, 22, 22, 0.10)' : '0 8px 18px rgba(0, 0, 0, 0.22)')};
   color-scheme: ${({ $themeMode }) => ($themeMode === 'light' ? 'light' : 'dark')};
+  font-family: var(--km-font);
   transition: background 280ms cubic-bezier(0.4, 0, 0.2, 1), color 280ms cubic-bezier(0.4, 0, 0.2, 1);
 `;
 
@@ -55,8 +56,8 @@ export const ROLE_COLORS = {
 
 export const getRoleColors = role => ROLE_COLORS[role] || {
   accent: color.accent5,
-  light: 'rgba(247,147,30,0.08)',
-  border: 'rgba(247,147,30,0.25)',
+  light: 'rgba(232,121,26,0.08)',
+  border: 'rgba(232,121,26,0.25)',
   text: color.accent3,
   tag: 'rgba(255,243,224,0.9)',
 };
@@ -363,9 +364,9 @@ export const ActionButton = styled.button`
   min-width: ${({ $wide }) => ($wide ? '44px' : '35px')};
   height: 35px;
   padding: ${({ $wide }) => ($wide ? '3px 10px' : '3px')};
-  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'transparent')};
-  background: ${({ $active }) => ($active ? 'rgba(255, 149, 0, 0.14)' : 'var(--matching-action-bg, ' + color.accent5 + ')')};
-  color: ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'var(--matching-action-color, white)')};
+  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #E8791A)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'rgba(232, 121, 26, 0.14)' : 'var(--matching-action-bg, ' + color.accent5 + ')')};
+  color: ${({ $active }) => ($active ? 'var(--matching-accent, #E8791A)' : 'var(--matching-action-color, white)')};
   box-shadow: var(--matching-action-shadow, none);
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1), border-color 240ms cubic-bezier(0.4, 0, 0.2, 1), color 240ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50px;
@@ -380,7 +381,7 @@ export const ActionButton = styled.button`
 
   &:hover:not(:disabled) {
     transform: translateY(-1px) scale(1.03);
-    border-color: var(--matching-accent, #FF9500);
+    border-color: var(--matching-accent, #E8791A);
   }
 
   &:active:not(:disabled) {
@@ -388,7 +389,7 @@ export const ActionButton = styled.button`
   }
 
   &:focus-visible {
-    outline: 3px solid rgba(247, 147, 30, 0.42);
+    outline: 3px solid rgba(232, 121, 26, 0.42);
     outline-offset: 2px;
   }
 
@@ -409,7 +410,7 @@ export const ActionBadge = styled.span`
   padding: 0 4px;
   border: 2px solid var(--matching-panel-bg, #fff);
   border-radius: 999px;
-  background: var(--matching-accent, #FF9500);
+  background: var(--matching-accent, #E8791A);
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -418,150 +419,6 @@ export const ActionBadge = styled.span`
   font-weight: 800;
   line-height: 1;
   box-sizing: border-box;
-`;
-
-export const ThemeToggleButton = styled.button`
-  position: relative;
-  flex: 0 0 auto;
-  width: 64px;
-  height: 34px;
-  padding: 3px;
-  border: 0;
-  border-radius: 9999px;
-  background: ${({ $themeMode }) => ($themeMode === 'light' ? '#f5f5f7' : '#24242a')};
-  box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.06),
-    ${({ $themeMode }) => ($themeMode === 'light'
-      ? '0 6px 14px rgba(83, 61, 35, 0.12)'
-      : '0 6px 16px rgba(0, 0, 0, 0.34)')};
-  cursor: pointer;
-  overflow: hidden;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    transform 260ms cubic-bezier(0.4, 0, 0.2, 1),
-    background 260ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 260ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 180ms ease;
-
-  &:hover {
-    transform: scale(1.03);
-    box-shadow:
-      inset 0 2px 7px rgba(0, 0, 0, 0.07),
-      ${({ $themeMode }) => ($themeMode === 'light'
-        ? '0 8px 18px rgba(83, 61, 35, 0.16)'
-        : '0 8px 20px rgba(0, 0, 0, 0.42)')};
-  }
-
-  &:active {
-    transform: scale(0.97);
-    opacity: 0.92;
-  }
-
-  &:focus-visible {
-    outline: 3px solid rgba(247, 147, 30, 0.48);
-    outline-offset: 3px;
-  }
-`;
-
-export const ThemeToggleTrackIcon = styled.span`
-  position: absolute;
-  top: 50%;
-  width: 17px;
-  height: 17px;
-  transform: translateY(-50%);
-  color: ${({ $active }) => ($active ? 'rgba(247, 147, 30, 0.78)' : 'rgba(120, 112, 104, 0.42)')};
-  opacity: ${({ $active }) => ($active ? 0.95 : 0.5)};
-  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1), color 260ms cubic-bezier(0.4, 0, 0.2, 1);
-
-  ${({ $side }) => ($side === 'left' ? 'left: 9px;' : 'right: 9px;')}
-
-  svg {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-`;
-
-export const ThemeToggleKnob = styled.span`
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 26px;
-  height: 26px;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  transform: translateX(${({ $themeMode }) => ($themeMode === 'light' ? '30px' : '0')});
-  background: ${({ $themeMode }) => ($themeMode === 'light'
-    ? 'linear-gradient(145deg, #dff2ff 0%, #9ed7ff 100%)'
-    : 'linear-gradient(145deg, #162950 0%, #071327 100%)')};
-  box-shadow:
-    0 5px 12px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.42);
-  transition:
-    transform 280ms cubic-bezier(0.4, 0, 0.2, 1),
-    background 280ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
-`;
-
-export const ThemeToggleScene = styled.span`
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: block;
-
-  &::before {
-    content: '';
-    position: absolute;
-    border-radius: 999px;
-    transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
-    ${({ $themeMode }) => ($themeMode === 'light'
-      ? `
-        width: 13px;
-        height: 13px;
-        left: 6px;
-        top: 5px;
-        z-index: 2;
-        background: #ffd45c;
-        box-shadow: 0 0 0 3px rgba(255, 212, 92, 0.24);
-      `
-      : `
-        width: 15px;
-        height: 15px;
-        left: 8px;
-        top: 7px;
-        background: #fffaf0;
-        box-shadow: inset -5px -1px 0 #cbd7ef;
-      `)}
-  }
-
-  &::after {
-    content: '';
-    position: absolute;
-    transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
-    ${({ $themeMode }) => ($themeMode === 'light'
-      ? `
-        width: 14px;
-        height: 7px;
-        right: 4px;
-        bottom: 5px;
-        z-index: 1;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.94);
-        box-shadow: -5px 0 0 -2px rgba(255, 255, 255, 0.92);
-      `
-      : `
-        width: 3px;
-        height: 3px;
-        right: 8px;
-        top: 8px;
-        border-radius: 50%;
-        background: #ffd45c;
-        box-shadow: -8px 7px 0 #ffd45c, 2px 13px 0 rgba(255, 212, 92, 0.82);
-      `)}
-  }
 `;
 
 export const BackendTrafficToggleButton = styled(ActionButton)`
@@ -753,7 +610,7 @@ export const FilterDrawerClose = styled.button`
   border: 1px solid var(--matching-section-border, #E8E2D8);
   border-radius: 999px;
   background: var(--matching-action-bg, #fff);
-  color: var(--matching-action-color, #FF9500);
+  color: var(--matching-action-color, #E8791A);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -762,12 +619,12 @@ export const FilterDrawerClose = styled.button`
 
   &:hover,
   &:focus-visible {
-    border-color: var(--matching-accent, #FF9500);
+    border-color: var(--matching-accent, #E8791A);
     transform: translateY(-1px);
   }
 
   &:focus-visible {
-    outline: 3px solid rgba(247, 147, 30, 0.38);
+    outline: 3px solid rgba(232, 121, 26, 0.38);
     outline-offset: 2px;
   }
 `;
@@ -785,7 +642,7 @@ export const MatchingSearchStatusMessage = styled.p`
   margin: 6px 0 0;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(247, 147, 30, 0.1);
+  background: rgba(232, 121, 26, 0.1);
   color: var(--matching-text, #2d2d2d);
   font-size: 13px;
   font-weight: 700;
@@ -857,10 +714,10 @@ export const CollectionSourceLabel = styled.label`
   justify-content: center;
   min-height: 38px;
   padding: 8px 10px;
-  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'var(--matching-chip-border, #E5E0D8)')};
+  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #E8791A)' : 'var(--matching-chip-border, #E5E0D8)')};
   border-radius: 12px;
-  background: ${({ $active }) => ($active ? 'rgba(255, 149, 0, 0.14)' : 'var(--matching-chip-bg, #fff)')};
-  color: ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'var(--matching-chip-text, #2c2d38)')};
+  background: ${({ $active }) => ($active ? 'rgba(232, 121, 26, 0.14)' : 'var(--matching-chip-bg, #fff)')};
+  color: ${({ $active }) => ($active ? 'var(--matching-accent, #E8791A)' : 'var(--matching-chip-text, #2c2d38)')};
   font-size: 12px;
   font-weight: 700;
   text-align: center;
@@ -879,11 +736,11 @@ export const CollectionSourceLabel = styled.label`
   }
 
   &:hover {
-    border-color: var(--matching-accent, #FF9500);
+    border-color: var(--matching-accent, #E8791A);
   }
 
   &:has(input:focus-visible) {
-    outline: 3px solid rgba(247, 147, 30, 0.38);
+    outline: 3px solid rgba(232, 121, 26, 0.38);
     outline-offset: 2px;
   }
 `;
@@ -992,7 +849,7 @@ export const Table = styled.div`
 export const MoreInfo = styled.div`
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  border-left: 4px solid ${props => (props.$isAdmin ? '#ff6b6b' : '#f7931e')};
+  border-left: 4px solid ${props => (props.$isAdmin ? '#ff6b6b' : '#E8791A')};
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 10px;
@@ -1023,8 +880,8 @@ export const Icons = styled.div`
     width: 30px !important;
     height: 30px !important;
     border-radius: 8px;
-    background: rgba(247, 147, 30, 0.1);
-    border: 1px solid rgba(247, 147, 30, 0.22) !important;
+    background: rgba(232, 121, 26, 0.1);
+    border: 1px solid rgba(232, 121, 26, 0.22) !important;
     transition: all 0.15s ease;
   }
 
@@ -1228,7 +1085,7 @@ export const ModernHero = styled.div`
   }
 
   &:focus-visible {
-    outline: 3px solid rgba(255, 149, 0, 0.75);
+    outline: 3px solid rgba(232, 121, 26, 0.75);
     outline-offset: -5px;
   }
 `;
@@ -1257,7 +1114,7 @@ export const ModernHeroFallbackMark = styled.div`
   font-size: 38px;
   font-weight: 900;
   letter-spacing: 1px;
-  background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,149,0,0.16));
+  background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(232,121,26,0.16));
   border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(14px);
@@ -1288,7 +1145,7 @@ export const ModernRoleBadge = styled.span`
   border-radius: 999px;
   color: #FFFFFF;
   background: var(--matching-accent);
-  box-shadow: 0 8px 18px rgba(255, 149, 0, 0.18);
+  box-shadow: 0 8px 18px rgba(232, 121, 26, 0.18);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.7px;
@@ -1609,7 +1466,7 @@ export const ModernDesktopNavButton = styled.button`
   }
 
   &:focus-visible {
-    outline: 3px solid rgba(247, 147, 30, 0.42);
+    outline: 3px solid rgba(232, 121, 26, 0.42);
     outline-offset: -4px;
   }
 

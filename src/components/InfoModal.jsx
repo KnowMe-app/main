@@ -7,59 +7,65 @@ const ModalOverlay = styled.div`
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(20, 16, 12, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1000;
+  padding: 16px;
+  box-sizing: border-box;
 `;
 
 const OptionsList = styled.ul`
   list-style: none;
   padding: 0;
   margin: 0;
-  text-align: left; 
+  text-align: left;
 `;
 
 const OptionItem = styled.li`
   cursor: pointer;
-  padding: 10px;
-  color: black;
-  font-size: 16px;
+  padding: 12px 10px;
+  color: var(--km-text);
+  font-size: 15px;
   line-height: 1.5;
-  transition: background-color 0.3s ease;
-  border-bottom: 1px solid #ddd; /* Лінія між елементами */
+  border-radius: 10px;
+  transition: background-color 0.18s ease, color 0.18s ease;
 
-  &:last-child {
-    /* border-bottom: none; Прибирає лінію у останнього елемента */
+  & + & {
+    border-top: 1px solid var(--km-border);
   }
 
   &:hover {
-    background-color: #f5f5f5; /* Легкий фон при наведенні */
+    background-color: var(--km-accent-light);
+    color: var(--km-accent);
   }
 `;
 
 const CustomInput = styled.input`
-  padding: 10px;
+  padding: 12px;
   padding-right: 40px;
-  /* padding-bottom: 0; */
-  /* margin-top: 10px; */
   width: 100%;
   box-sizing: border-box;
-  border: none;
+  border: 1.5px solid var(--km-border);
+  border-radius: 10px;
+  background: var(--km-bg);
   outline: none;
-  font-size: 16px;
-  color: black; /* Темно оранжевий колір */
+  font-family: var(--km-font);
+  font-size: 15px;
+  color: var(--km-text);
   line-height: 1.5;
+  margin-top: 10px;
 
   &::placeholder {
-    color: darkorange; /* Темно оранжевий колір плейсхолдера */
-    font-size: 16px;
-    font-style: italic; /* Курсив для плейсхолдера */
-    font-weight: bold; /* Жирний текст для плейсхолдера */
+    color: var(--km-muted);
+    font-size: 14px;
   }
-  &:hover {
-    background-color: #f5f5f5; /* Легкий фон при наведенні */
+
+  &:focus {
+    border-color: var(--km-accent);
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
   }
 `;
 
@@ -75,25 +81,24 @@ const InlineDeleteButton = styled.button`
   align-items: center;
   width: 32px;
   height: 32px;
-  margin: -7px;
   padding: 0;
-  top: 50%;
+  top: calc(50% + 5px);
   transform: translateY(-50%);
   background: none;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  color: gray;
+  color: var(--km-muted);
   font-size: 18px;
   touch-action: manipulation;
 
   &:hover {
-    color: black;
-    background-color: rgba(0, 0, 0, 0.04);
+    color: var(--km-text);
+    background-color: var(--km-accent-light);
   }
 
   &:focus-visible {
-    outline: 2px solid #f57c00;
+    outline: 2px solid var(--km-accent);
     outline-offset: 1px;
   }
 `;
@@ -101,24 +106,26 @@ const InlineDeleteButton = styled.button`
 const ActionRow = styled.div`
   display: flex;
   justify-content: center;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 14px;
 `;
 
 const OkButton = styled.button`
-  width: 35px;
-  height: 35px;
-  padding: 3px;
+  min-height: 40px;
+  padding: 8px 24px;
   border: none;
-  background-color: #ff7043;
-  color: white;
-  border-radius: 50px;
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  color: #fff;
+  border-radius: 99px;
   cursor: pointer;
-  font-size: 12px;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  font-family: var(--km-font);
+  font-size: 14px;
+  font-weight: 700;
+  transition: box-shadow 0.18s ease, transform 0.18s ease, filter 0.18s ease;
 
   &:hover {
-    background-color: #ff5722;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    filter: brightness(1.05);
+    box-shadow: 0 8px 22px rgba(232, 121, 26, 0.28);
   }
 
   &:active {
@@ -126,20 +133,24 @@ const OkButton = styled.button`
   }
 
   &:disabled {
-    opacity: 0.6;
+    opacity: 0.55;
     cursor: not-allowed;
     box-shadow: none;
   }
 `;
 
 const ModalContent = styled.div`
-  background-color: white;
+  background-color: var(--km-card);
+  color: var(--km-text);
+  font-family: var(--km-font);
   padding: 20px;
-  border-radius: 5px;
-  width: 300px;
+  border-radius: var(--km-radius-lg);
+  border: 1px solid var(--km-border);
+  box-shadow: var(--km-shadow-pop);
+  width: min(92vw, 320px);
   text-align: center;
-  color: black;
   position: relative;
+  box-sizing: border-box;
 `;
 
 const LargeModalContent = styled(ModalContent)`
@@ -152,12 +163,64 @@ const MenuModalContent = styled(ModalContent)`
   width: min(92vw, 380px);
   padding: 14px;
   border-radius: 22px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(232, 232, 226, 0.9);
+  max-height: 90vh;
+  overflow: auto;
 `;
 
 const OrangeStrong = styled.strong`
-  color: orange;
+  color: var(--km-accent);
+`;
+
+// Спільні елементи для модалок підтвердження (використовуються і в інших екранах).
+export const ModalTitle = styled.h3`
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--km-text);
+`;
+
+export const ModalText = styled.p`
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--km-muted);
+`;
+
+export const ModalActionRow = styled(ActionRow)``;
+
+export const ModalPrimaryButton = styled(OkButton)``;
+
+export const ModalDangerButton = styled(OkButton)`
+  background: var(--km-danger);
+
+  &:hover {
+    box-shadow: 0 8px 22px rgba(180, 35, 24, 0.25);
+  }
+`;
+
+export const ModalGhostButton = styled.button`
+  min-height: 40px;
+  padding: 8px 24px;
+  border: 1.5px solid var(--km-border);
+  background: var(--km-card);
+  color: var(--km-text);
+  border-radius: 99px;
+  cursor: pointer;
+  font-family: var(--km-font);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+
+  &:hover {
+    background: var(--km-accent-light);
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
 `;
 
 export const InfoModal = ({
@@ -177,21 +240,23 @@ export const InfoModal = ({
 
   const delProfile = (
     <>
-      <p>Щоб видалити анкету, відправте запит на пошту</p>
-      <a href="mailto:KnowMeEggDonor@gmail.com?subject=Видаліть мою анкету" style={{ color: 'black', textDecoration: 'none' }}>
-        <strong>KnowMeEggDonor@gmail.com</strong>
+      <ModalTitle>Видалення анкети</ModalTitle>
+      <ModalText>Щоб видалити анкету, відправте запит на пошту</ModalText>
+      <a href="mailto:KnowMeEggDonor@gmail.com?subject=Видаліть мою анкету" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <OrangeStrong>KnowMeEggDonor@gmail.com</OrangeStrong>
       </a>
-      <p>з темою листа "Видаліть мою анкету".</p>
+      <ModalText style={{ marginTop: 4 }}>з темою листа «Видаліть мою анкету».</ModalText>
     </>
   );
 
   const viewProfile = (
     <>
-      <p>Щоб переглянути анкету, встановіть застосунок</p>
-      <a href="https://play.google.com/store/apps/details?id=com.xanderkiev.MyApp" style={{ color: 'black', textDecoration: 'none' }}>
+      <ModalTitle>Перегляд анкети</ModalTitle>
+      <ModalText>Щоб переглянути анкету, встановіть застосунок</ModalText>
+      <a href="https://play.google.com/store/apps/details?id=com.xanderkiev.MyApp" style={{ color: 'inherit', textDecoration: 'none' }}>
         <OrangeStrong>KnowMe: Egg donor</OrangeStrong>
       </a>
-      <p>в Google Play</p>
+      <ModalText style={{ marginTop: 4 }}>в Google Play</ModalText>
     </>
   );
 

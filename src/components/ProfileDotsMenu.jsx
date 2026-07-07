@@ -1,15 +1,17 @@
 import React from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign } from 'react-icons/fa';
+import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
+import { useAppSettings } from 'hooks/useAppSettings';
 
 const MenuShell = styled.nav`
   width: 100%;
   min-width: 280px;
   text-align: left;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--km-font);
+  color: var(--km-text);
 `;
 
 const MenuHeader = styled.div`
@@ -18,7 +20,7 @@ const MenuHeader = styled.div`
 
 const MenuTitle = styled.h3`
   margin: 0;
-  color: #1a1a1a;
+  color: var(--km-text);
   font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -26,14 +28,14 @@ const MenuTitle = styled.h3`
 
 const MenuSubtitle = styled.p`
   margin: 5px 0 0;
-  color: #7a7a72;
+  color: var(--km-muted);
   font-size: 12px;
   line-height: 1.4;
 `;
 
 const MenuSection = styled.div`
   padding: 10px 0;
-  border-top: 1px solid #e8e8e2;
+  border-top: 1px solid var(--km-border);
 
   &:first-of-type {
     border-top: none;
@@ -43,7 +45,7 @@ const MenuSection = styled.div`
 
 const SectionLabel = styled.div`
   margin: 0 4px 8px;
-  color: #9a9a92;
+  color: var(--km-muted);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -57,10 +59,10 @@ const MenuItem = styled.button`
   align-items: center;
   gap: 10px;
   padding: 10px;
-  border: 1px solid ${({ $active, $danger }) => ($danger ? '#f2c9c9' : $active ? '#e8791a' : 'transparent')};
-  border-radius: 14px;
-  background: ${({ $active, $danger }) => ($danger ? '#fff7f7' : $active ? '#fff0e0' : '#fff')};
-  color: ${({ $danger }) => ($danger ? '#b42318' : '#1a1a1a')};
+  border: 1px solid ${({ $active, $danger }) => ($danger ? 'var(--km-danger-border)' : $active ? 'var(--km-accent)' : 'transparent')};
+  border-radius: var(--km-radius);
+  background: ${({ $active, $danger }) => ($danger ? 'var(--km-danger-bg)' : $active ? 'var(--km-accent-light)' : 'var(--km-card)')};
+  color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-text)')};
   cursor: pointer;
   text-align: left;
   transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
@@ -71,15 +73,15 @@ const MenuItem = styled.button`
 
   &:hover {
     transform: translateY(-1px);
-    border-color: ${({ $danger }) => ($danger ? '#e8a8a8' : '#f5a24b')};
-    background: ${({ $danger }) => ($danger ? '#fff1f1' : '#fff8ef')};
+    border-color: ${({ $danger }) => ($danger ? 'var(--km-danger-border)' : 'var(--km-accent-mid)')};
+    background: ${({ $danger }) => ($danger ? 'var(--km-danger-bg)' : 'var(--km-accent-light)')};
     box-shadow: 0 8px 22px rgba(26, 26, 26, 0.08);
   }
 
   &:focus-visible {
     outline: none;
-    border-color: ${({ $danger }) => ($danger ? '#b42318' : '#e8791a')};
-    box-shadow: 0 0 0 3px ${({ $danger }) => ($danger ? 'rgba(180, 35, 24, .14)' : 'rgba(232, 121, 26, .16)')};
+    border-color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-accent)')};
+    box-shadow: 0 0 0 3px ${({ $danger }) => ($danger ? 'rgba(180, 35, 24, .14)' : 'var(--km-accent-ring)')};
   }
 
   &:active {
@@ -94,8 +96,8 @@ const ItemIcon = styled.span`
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  background: ${({ $danger }) => ($danger ? '#fee9e9' : '#fff0e0')};
-  color: ${({ $danger }) => ($danger ? '#b42318' : '#e8791a')};
+  background: ${({ $danger }) => ($danger ? 'var(--km-danger-bg)' : 'var(--km-accent-light)')};
+  color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-accent)')};
   font-size: 15px;
 `;
 
@@ -108,7 +110,7 @@ const ItemLabel = styled.span`
 const ItemDescription = styled.span`
   display: block;
   margin-top: 2px;
-  color: #7a7a72;
+  color: var(--km-muted);
   font-size: 11px;
   line-height: 1.35;
 `;
@@ -116,7 +118,7 @@ const ItemDescription = styled.span`
 const ActivePill = styled.span`
   padding: 3px 8px;
   border-radius: 999px;
-  background: #e8791a;
+  background: var(--km-accent);
   color: #fff;
   font-size: 10px;
   font-weight: 800;
@@ -124,6 +126,53 @@ const ActivePill = styled.span`
 
 const VerifyWrap = styled.div`
   margin-top: 8px;
+`;
+
+const SettingRow = styled.div`
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--km-radius);
+
+  & + & {
+    margin-top: 6px;
+  }
+`;
+
+const SegmentedControl = styled.div`
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--km-border);
+  border-radius: 99px;
+  background: var(--km-bg);
+`;
+
+const SegmentedOption = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 99px;
+  background: ${({ $active }) => ($active ? 'var(--km-accent)' : 'transparent')};
+  color: ${({ $active }) => ($active ? '#fff' : 'var(--km-muted)')};
+  font-family: var(--km-font);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
+
+  &:hover {
+    color: ${({ $active }) => ($active ? '#fff' : 'var(--km-accent)')};
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
+  }
 `;
 
 const normalizeAccess = access => ({
@@ -145,6 +194,7 @@ export const ProfileDotsMenu = ({
   beforeNavigate,
 }) => {
   const location = useLocation();
+  const { themeMode, setThemeMode, language, setLanguage } = useAppSettings();
   const resolvedAccess = normalizeAccess(access);
   const canSeePrivilegedNav = isAdmin || resolvedAccess.canAccessAdd || resolvedAccess.canAccessMatching;
 
@@ -200,6 +250,60 @@ export const ProfileDotsMenu = ({
             </MenuItem>
           );
         })}
+      </MenuSection>
+
+      <MenuSection>
+        <SectionLabel>Налаштування</SectionLabel>
+        <SettingRow>
+          <ItemIcon>{themeMode === 'dark' ? <FaMoon /> : <FaSun />}</ItemIcon>
+          <span>
+            <ItemLabel>Тема</ItemLabel>
+            <ItemDescription>Оформлення застосунку</ItemDescription>
+          </span>
+          <SegmentedControl role="group" aria-label="Перемкнути тему">
+            <SegmentedOption
+              type="button"
+              $active={themeMode === 'light'}
+              aria-pressed={themeMode === 'light'}
+              onClick={() => setThemeMode('light')}
+            >
+              <FaSun aria-hidden="true" /> Світла
+            </SegmentedOption>
+            <SegmentedOption
+              type="button"
+              $active={themeMode === 'dark'}
+              aria-pressed={themeMode === 'dark'}
+              onClick={() => setThemeMode('dark')}
+            >
+              <FaMoon aria-hidden="true" /> Темна
+            </SegmentedOption>
+          </SegmentedControl>
+        </SettingRow>
+        <SettingRow>
+          <ItemIcon><FaGlobe /></ItemIcon>
+          <span>
+            <ItemLabel>Мова</ItemLabel>
+            <ItemDescription>Мова документів і правил</ItemDescription>
+          </span>
+          <SegmentedControl role="group" aria-label="Перемкнути мову">
+            <SegmentedOption
+              type="button"
+              $active={language === 'uk'}
+              aria-pressed={language === 'uk'}
+              onClick={() => setLanguage('uk')}
+            >
+              UK
+            </SegmentedOption>
+            <SegmentedOption
+              type="button"
+              $active={language === 'en'}
+              aria-pressed={language === 'en'}
+              onClick={() => setLanguage('en')}
+            >
+              EN
+            </SegmentedOption>
+          </SegmentedControl>
+        </SettingRow>
       </MenuSection>
 
       {(onDeleteProfile || onViewProfile) && (

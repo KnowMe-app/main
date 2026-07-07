@@ -10,6 +10,48 @@
   --box-shadow: 0px 0px 10px 5px rgba(0, 0, 0, 0.2);
   --border: 1px solid #122236;
   --animation-timing-function: 300ms cubic-bezier(0.4, 0, 0.2, 1) 0s;
+
+  /* KnowMe design tokens (shared across all screens) */
+  --km-accent: #E8791A;
+  --km-accent-mid: #F5A24B;
+  --km-accent-light: #FFF0E0;
+  --km-accent-ring: rgba(232, 121, 26, 0.16);
+  --km-bg: #FAFAF8;
+  --km-card: #FFFFFF;
+  --km-text: #1A1A1A;
+  --km-muted: #7A7A72;
+  --km-border: #E8E8E2;
+  --km-danger: #B42318;
+  --km-danger-bg: #FFF7F7;
+  --km-danger-border: #F2C9C9;
+  --km-success: #2E9B55;
+  --km-success-bg: #EBF8EF;
+  --km-radius: 14px;
+  --km-radius-lg: 18px;
+  --km-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --km-shadow-pop: 0 24px 80px rgba(0, 0, 0, 0.22);
+  --km-font: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --km-font-display: 'Playfair Display', Georgia, serif;
+}
+
+:root[data-km-theme='dark'] {
+  --km-accent: #F08A2C;
+  --km-accent-mid: #F5A24B;
+  --km-accent-light: rgba(240, 138, 44, 0.16);
+  --km-accent-ring: rgba(240, 138, 44, 0.22);
+  --km-bg: #14100C;
+  --km-card: #1C1712;
+  --km-text: #FFF8EC;
+  --km-muted: rgba(255, 248, 236, 0.72);
+  --km-border: rgba(255, 214, 148, 0.16);
+  --km-danger: #F08A80;
+  --km-danger-bg: rgba(180, 35, 24, 0.16);
+  --km-danger-border: rgba(240, 138, 128, 0.35);
+  --km-success: #6FCF97;
+  --km-success-bg: rgba(46, 155, 85, 0.16);
+  --km-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+  --km-shadow-pop: 0 24px 80px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
 }
 
 body,
@@ -65,13 +107,11 @@ button {
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--km-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--primary-text-color);
-  background-color: #f5f5f5;
+  background-color: var(--km-bg);
 }
 
 code {
