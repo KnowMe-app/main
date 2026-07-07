@@ -559,7 +559,17 @@ const sanitizeAmountChunk = value =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const normalizeFlowAmount = value => sanitizeAmountChunk(String(value || '').replace(/,/g, '.'));
+const normalizeFlowAmount = value => {
+  const normalized = String(value || '').replace(/,/g, '.');
+  if (isFormulaFlowAmount(normalized)) {
+    return normalized
+      .trim()
+      .replace(/[#[\]]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  return sanitizeAmountChunk(normalized);
+};
 const FLOW_DATE_YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const toAmountNumber = value => {
@@ -727,11 +737,23 @@ const splitFlowAmountAndDescription = value => {
 
   if (raw.startsWith('=')) {
     let index = 1;
+    const canConsumeFormulaValue = () => {
+      const prefix = raw.slice(1, index).trimEnd();
+      if (!prefix) return true;
+      return /[+\-*/%(]$/.test(prefix);
+    };
+
     while (index < raw.length) {
       const tail = raw.slice(index);
       const identifierMatch = tail.match(/^(?:USD|EUR)\b/i);
       if (identifierMatch) {
+        if (!canConsumeFormulaValue()) break;
         index += identifierMatch[0].length;
+        continue;
+      }
+      if (raw[index] === '$') {
+        if (!canConsumeFormulaValue()) break;
+        index += 1;
         continue;
       }
       if (FLOW_FORMULA_TOKEN_REGEX.test(raw[index])) {
@@ -742,7 +764,7 @@ const splitFlowAmountAndDescription = value => {
     }
     const amountRaw = raw.slice(0, index).trim();
     const description = raw.slice(index).trim();
-    if (!/\d/.test(amountRaw)) return null;
+    if (!/(?:\d|\$|\b(?:USD|EUR)\b)/i.test(amountRaw)) return null;
     return { amountRaw, description };
   }
 
