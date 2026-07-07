@@ -49,6 +49,28 @@ const tokenizeFormula = rawExpression => {
       continue;
     }
 
+    if (rawChar === '$') {
+      tokens.push({ type: 'identifier', name: 'USD' });
+      index += 1;
+      continue;
+    }
+
+    if (/[A-Za-z_]/.test(rawChar) && !/[xX]/.test(rawChar)) {
+      let name = '';
+      while (index < expression.length && /[A-Za-z0-9_]/.test(expression[index])) {
+        name += expression[index];
+        index += 1;
+      }
+      tokens.push({ type: 'identifier', name });
+      continue;
+    }
+
+    if (/[xX]/.test(rawChar)) {
+      tokens.push({ type: '*' });
+      index += 1;
+      continue;
+    }
+
     if ('+-*/()%'.includes(char)) {
       tokens.push({ type: char });
       index += 1;
@@ -69,7 +91,7 @@ export const formatFlowAmountResult = value => {
   return rounded.toFixed(2).replace(/\.?0+$/, '');
 };
 
-export const evaluateFlowAmountFormula = rawFormula => {
+export const evaluateFlowAmountFormula = (rawFormula, resolveIdentifier) => {
   const formulaText = String(rawFormula || '').trim();
   const expression = formulaText.startsWith(FLOW_FORMULA_PREFIX)
     ? formulaText.slice(FLOW_FORMULA_PREFIX.length)
@@ -123,6 +145,14 @@ export const evaluateFlowAmountFormula = rawFormula => {
     } else if (peek()?.type === 'number') {
       value = peek().value;
       position += 1;
+    } else if (peek()?.type === 'identifier') {
+      const name = peek().name;
+      const resolved = Number(resolveIdentifier?.(name));
+      if (!Number.isFinite(resolved)) {
+        throw new Error(`Formula identifier "${name}" is unresolved`);
+      }
+      value = resolved;
+      position += 1;
     } else {
       throw new Error('Formula value is missing');
     }
@@ -147,11 +177,11 @@ export const evaluateFlowAmountFormula = rawFormula => {
   return result;
 };
 
-export const resolveFlowAmountInput = rawAmount => {
+export const resolveFlowAmountInput = (rawAmount, resolveIdentifier) => {
   const amountText = String(rawAmount || '').trim().replace(/,/g, '.');
   if (!amountText) return '';
   if (!amountText.startsWith(FLOW_FORMULA_PREFIX)) return amountText;
-  return formatFlowAmountResult(evaluateFlowAmountFormula(amountText));
+  return formatFlowAmountResult(evaluateFlowAmountFormula(amountText, resolveIdentifier));
 };
 
 export const isFormulaFlowAmount = rawAmount =>
