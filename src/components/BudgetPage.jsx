@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, remove, set, update } from 'firebase/database';
-import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaTimes, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaEye, FaEyeSlash, FaFilePdf, FaPen, FaPlus, FaTimes, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { isAdminUid } from 'utils/accessLevel';
@@ -95,7 +95,7 @@ const Header = styled.header`
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 22px;
+  margin-bottom: ${({ $edit }) => ($edit ? '12px' : '22px')};
 
   @media (max-width: 640px) {
     flex-direction: column;
@@ -113,7 +113,7 @@ const Eyebrow = styled.div`
 
 const Title = styled.h1`
   margin: 0;
-  font-size: clamp(30px, 7vw, 54px);
+  font-size: ${({ $edit }) => ($edit ? 'clamp(22px, 4vw, 30px)' : 'clamp(30px, 7vw, 54px)')};
   line-height: 0.98;
   letter-spacing: -0.055em;
 `;
@@ -220,11 +220,76 @@ const HiddenBadge = styled.span`
 `;
 
 const EditPanel = styled.div`
-  margin-top: 16px;
-  border: 1px solid rgba(140, 101, 70, 0.16);
-  border-radius: 22px;
-  background: rgba(255, 250, 244, 0.78);
-  padding: 16px;
+  border: 1px solid rgba(140, 101, 70, 0.3);
+  border-radius: 14px;
+  background: #fffefc;
+  padding: 12px 14px;
+`;
+
+const EditCardHead = styled.div`
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+`;
+
+const EditCardName = styled.h3`
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+`;
+
+const EditCardPrice = styled.span`
+  color: #7a4c2f;
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+`;
+
+const EditToolsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+`;
+
+const IncludedEditRow = styled.div`
+  padding: 6px 0;
+  border-top: 1px dashed rgba(140, 101, 70, 0.24);
+
+  &:first-child {
+    border-top: 0;
+  }
+`;
+
+const RowActions = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-left: auto;
+`;
+
+const RowIconButton = styled.button`
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #8a6a4f;
+  min-height: 26px;
+  min-width: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(223, 205, 188, 0.4);
+  }
+`;
+
+const RowDangerIconButton = styled(RowIconButton)`
+  color: #8d4a36;
 `;
 
 const ModalBackdrop = styled.div`
@@ -266,7 +331,7 @@ const ModalActions = styled.div`
 `;
 
 const Section = styled.section`
-  margin-top: ${({ $compact }) => ($compact ? '22px' : '28px')};
+  margin-top: ${({ $compact, $edit }) => ($edit ? '16px' : $compact ? '22px' : '28px')};
 `;
 
 const SectionHeading = styled.div`
@@ -274,12 +339,12 @@ const SectionHeading = styled.div`
   align-items: end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: ${({ $edit }) => ($edit ? '8px' : '14px')};
 `;
 
 const H2 = styled.h2`
   margin: 0;
-  font-size: 25px;
+  font-size: ${({ $edit }) => ($edit ? '18px' : '25px')};
   letter-spacing: -0.035em;
 `;
 
@@ -292,8 +357,8 @@ const SectionNote = styled.p`
 
 const ProgramsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(286px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(${({ $edit }) => ($edit ? '320px' : '286px')}, 1fr));
+  gap: ${({ $edit }) => ($edit ? '10px' : '16px')};
 
   @media (max-width: 420px) {
     grid-template-columns: 1fr;
@@ -302,11 +367,15 @@ const ProgramsGrid = styled.div`
 
 const ProgramCard = styled.article`
   position: relative;
-  border: 1px solid ${({ $guaranteed }) => ($guaranteed ? 'rgba(175, 126, 51, 0.46)' : 'rgba(140, 101, 70, 0.16)')};
-  border-radius: 28px;
-  background: ${({ $guaranteed }) => ($guaranteed ? 'rgba(255, 248, 235, 0.96)' : 'rgba(255, 250, 244, 0.92)')};
-  box-shadow: 0 24px 70px rgba(89, 63, 40, 0.09);
-  padding: ${({ $compact }) => ($compact ? '17px' : '22px')};
+  border: 1px solid ${({ $guaranteed, $edit }) => ($edit
+    ? 'rgba(140, 101, 70, 0.3)'
+    : $guaranteed ? 'rgba(175, 126, 51, 0.46)' : 'rgba(140, 101, 70, 0.16)')};
+  border-radius: ${({ $edit }) => ($edit ? '14px' : '28px')};
+  background: ${({ $guaranteed, $edit }) => ($edit
+    ? '#fffefc'
+    : $guaranteed ? 'rgba(255, 248, 235, 0.96)' : 'rgba(255, 250, 244, 0.92)')};
+  box-shadow: ${({ $edit }) => ($edit ? 'none' : '0 24px 70px rgba(89, 63, 40, 0.09)')};
+  padding: ${({ $compact, $edit }) => ($edit ? '10px 12px' : $compact ? '17px' : '22px')};
 `;
 
 const Badge = styled.span`
@@ -458,9 +527,9 @@ const Toggle = styled.button`
 `;
 
 const IncludedList = styled.div`
-  margin-top: 14px;
+  margin-top: ${({ $edit }) => ($edit ? '8px' : '14px')};
   display: grid;
-  gap: 10px;
+  gap: ${({ $edit }) => ($edit ? '0' : '10px')};
 `;
 
 const IncludedItem = styled.div`
@@ -517,14 +586,14 @@ const CTA = styled.button`
 
 const AccordionList = styled.div`
   display: grid;
-  gap: 12px;
+  gap: ${({ $edit }) => ($edit ? '8px' : '12px')};
 `;
 
 const Accordion = styled.div`
   overflow: hidden;
-  border: 1px solid rgba(140, 101, 70, 0.16);
-  border-radius: 22px;
-  background: rgba(255, 250, 244, 0.78);
+  border: 1px solid ${({ $edit }) => ($edit ? 'rgba(140, 101, 70, 0.3)' : 'rgba(140, 101, 70, 0.16)')};
+  border-radius: ${({ $edit }) => ($edit ? '14px' : '22px')};
+  background: ${({ $edit }) => ($edit ? '#fffefc' : 'rgba(255, 250, 244, 0.78)')};
 `;
 
 const AccordionHeader = styled.button`
@@ -532,12 +601,12 @@ const AccordionHeader = styled.button`
   border: 0;
   background: transparent;
   color: #33291f;
-  padding: ${({ $compact }) => ($compact ? '13px 16px' : '17px 18px')};
+  padding: ${({ $compact, $edit }) => ($edit ? '9px 14px' : $compact ? '13px 16px' : '17px 18px')};
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 17px;
+  font-size: ${({ $edit }) => ($edit ? '14px' : '17px')};
   font-weight: 900;
   text-align: left;
   cursor: pointer;
@@ -563,16 +632,26 @@ const ShowMoreButton = styled.button`
 
 const ExpenseRows = styled.div`
   border-top: 1px solid rgba(140, 101, 70, 0.13);
-  padding: 2px 18px 10px;
+  padding: ${({ $edit }) => ($edit ? '4px 14px 8px' : '2px 18px 10px')};
 `;
 
 const ExpenseRow = styled.div`
-  padding: ${({ $compact }) => ($compact ? '9px 0' : '13px 0')};
+  padding: ${({ $compact, $edit }) => ($edit ? '6px 8px' : $compact ? '9px 0' : '13px 0')};
   border-bottom: 1px solid rgba(140, 101, 70, 0.1);
 
   &:last-child {
     border-bottom: 0;
   }
+
+  /* Zebra rows keep dense edit lists scannable. */
+  ${({ $edit }) => ($edit ? `
+    margin: 0 -8px;
+    border-radius: 8px;
+
+    &:nth-of-type(even) {
+      background: rgba(140, 101, 70, 0.055);
+    }
+  ` : '')}
 `;
 
 const ExpenseTop = styled.div`
@@ -790,18 +869,18 @@ const SearchInput = styled.input`
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #dfcdbc;
-  border-radius: 18px;
+  border-radius: ${({ $edit }) => ($edit ? '12px' : '18px')};
   background: #fffaf4;
   color: #382d24;
-  padding: 13px 15px;
-  font-size: 15px;
-  margin-bottom: 14px;
+  padding: ${({ $edit }) => ($edit ? '9px 13px' : '13px 15px')};
+  font-size: ${({ $edit }) => ($edit ? '13px' : '15px')};
+  margin-bottom: ${({ $edit }) => ($edit ? '8px' : '14px')};
 `;
 
 const NotesGrid = styled.div`
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: ${({ $edit }) => ($edit ? '10px' : '14px')};
+  grid-template-columns: repeat(auto-fit, minmax(${({ $edit }) => ($edit ? '260px' : '300px')}, 1fr));
 
   @media (max-width: 420px) {
     grid-template-columns: 1fr;
@@ -809,10 +888,10 @@ const NotesGrid = styled.div`
 `;
 
 const NoteCard = styled.div`
-  border: 1px solid rgba(140, 101, 70, 0.14);
-  border-radius: 22px;
-  background: rgba(255, 250, 244, 0.78);
-  padding: 18px 20px;
+  border: 1px solid ${({ $edit }) => ($edit ? 'rgba(140, 101, 70, 0.3)' : 'rgba(140, 101, 70, 0.14)')};
+  border-radius: ${({ $edit }) => ($edit ? '14px' : '22px')};
+  background: ${({ $edit }) => ($edit ? '#fffefc' : 'rgba(255, 250, 244, 0.78)')};
+  padding: ${({ $edit }) => ($edit ? '12px 14px' : '18px 20px')};
 `;
 
 const NoteCardTitle = styled.h3`
@@ -884,6 +963,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [openPrograms, setOpenPrograms] = useState({});
   const [openDetails, setOpenDetails] = useState({});
   const [openCategories, setOpenCategories] = useState({});
+  const [openScheduleEditors, setOpenScheduleEditors] = useState({});
   const [expandedIncluded, setExpandedIncluded] = useState({});
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
@@ -1092,6 +1172,10 @@ const BudgetPage = ({ isAdmin = false }) => {
   const toggleDetail = id => setOpenDetails(current => ({ ...current, [id]: !current[id] }));
   const toggleCategory = category => setOpenCategories(current => ({ ...current, [category]: !current[category] }));
   const toggleIncluded = id => setExpandedIncluded(current => ({ ...current, [id]: !current[id] }));
+  const toggleScheduleEditor = id => setOpenScheduleEditors(current => ({ ...current, [id]: !current[id] }));
+  const setAllCategoriesOpen = open => setOpenCategories(
+    Object.keys(groupedExpenses).reduce((acc, category) => ({ ...acc, [category]: open }), {}),
+  );
 
   const updateCatalogRecord = (collection, recordId, changes) => {
     setCatalog(current => ({
@@ -1615,7 +1699,6 @@ const BudgetPage = ({ isAdmin = false }) => {
             }}
           />
         </EditablePriceField>
-        {formulaDebug ? <FormulaDebugNote title="Price formula">{formulaDebug}</FormulaDebugNote> : null}
         {collection === 'items' ? (
           <EditableField>
             Category
@@ -1637,6 +1720,25 @@ const BudgetPage = ({ isAdmin = false }) => {
             />
           </EditableField>
         ) : null}
+        <RowActions>
+          {record.hidden ? <HiddenBadge>Hidden</HiddenBadge> : null}
+          <RowIconButton
+            type="button"
+            title={record.hidden ? `Show ${collectionLabel} to clients` : `Hide ${collectionLabel} from clients`}
+            aria-label={record.hidden ? `Show ${collectionLabel}` : `Hide ${collectionLabel}`}
+            onClick={() => persistCatalogRecordHidden(collection, record.id, !record.hidden)}
+          >
+            {record.hidden ? <FaEye /> : <FaEyeSlash />}
+          </RowIconButton>
+          <RowDangerIconButton
+            type="button"
+            title={`Delete ${collectionLabel}`}
+            aria-label={`Delete ${collectionLabel}`}
+            onClick={() => setDeleteTarget({ collection, recordId: record.id, name: record.name || record.id })}
+          >
+            <FaTrash />
+          </RowDangerIconButton>
+        </RowActions>
         <EditableDescriptionField>
           Description
           <EditTextarea
@@ -1645,21 +1747,7 @@ const BudgetPage = ({ isAdmin = false }) => {
             onBlur={event => persistCatalogRecordField(collection, record.id, 'description', event.target.value)}
           />
         </EditableDescriptionField>
-        <InlineActionRow>
-          <MiniButton
-            type="button"
-            onClick={() => persistCatalogRecordHidden(collection, record.id, !record.hidden)}
-          >
-            {record.hidden ? `Show ${collectionLabel}` : `Hide ${collectionLabel}`}
-          </MiniButton>
-          <MiniDangerButton
-            type="button"
-            onClick={() => setDeleteTarget({ collection, recordId: record.id, name: record.name || record.id })}
-          >
-            <FaTrash /> Delete
-          </MiniDangerButton>
-          {record.hidden ? <HiddenBadge>Hidden from clients</HiddenBadge> : null}
-        </InlineActionRow>
+        {formulaDebug ? <FormulaDebugNote title="Price formula">{formulaDebug}</FormulaDebugNote> : null}
       </EditableGrid>
     );
   };
@@ -1667,10 +1755,10 @@ const BudgetPage = ({ isAdmin = false }) => {
   return (
     <Page>
       <Shell>
-        <Header>
+        <Header $edit={isEditMode}>
           <div>
             <Eyebrow>{UKRCOM_MARKER}</Eyebrow>
-            <Title>Program Budget</Title>
+            <Title $edit={isEditMode}>Program Budget</Title>
           </div>
           <HeaderActions>
             <SoftButton
@@ -1708,13 +1796,13 @@ const BudgetPage = ({ isAdmin = false }) => {
 
         {!loading && !error ? (
           <>
-            <Section aria-labelledby="budget-programs-title" $compact={!isEditMode}>
-              <SectionHeading>
+            <Section aria-labelledby="budget-programs-title" $compact={!isEditMode} $edit={isEditMode}>
+              <SectionHeading $edit={isEditMode}>
                 <div>
-                  <H2 id="budget-programs-title">Programs</H2>
+                  <H2 id="budget-programs-title" $edit={isEditMode}>Programs</H2>
                 </div>
               </SectionHeading>
-              <ProgramsGrid>
+              <ProgramsGrid $edit={isEditMode}>
                 {sortedPackages.map(program => {
                   const isOpen = Boolean(openPrograms[program.id]);
                   const isPopular = String(program.id) === POPULAR_PACKAGE_ID;
@@ -1728,22 +1816,80 @@ const BudgetPage = ({ isAdmin = false }) => {
                   const visibleIncludedItems = includedExpanded
                     ? includedItems
                     : includedItems.slice(0, INCLUDED_PREVIEW_LIMIT);
+                  const resolvedProgramPrice = resolveBudgetPriceAmount(program.listedPrice, priceContext);
+
+                  if (isEditMode) {
+                    const schedule = resolveProgramPaymentSchedule(program);
+                    const schedulePayments = Array.isArray(schedule?.payments) ? schedule.payments : [];
+                    const scheduleTotal = schedulePayments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
+                    const scheduleMismatch = schedulePayments.length > 0
+                      && resolvedProgramPrice != null
+                      && Math.round(scheduleTotal) !== Math.round(resolvedProgramPrice);
+                    const scheduleOpen = Boolean(openScheduleEditors[program.id]);
+                    return (
+                      <ProgramCard key={program.id} $edit>
+                        <EditCardHead>
+                          <EditCardName>
+                            {program.name}
+                            {isGuaranteed ? ' · Guaranteed' : ''}
+                          </EditCardName>
+                          <EditCardPrice>
+                            {formatMoney(resolvedProgramPrice ?? program.listedPrice, program.currency || 'EUR')}
+                          </EditCardPrice>
+                        </EditCardHead>
+                        {renderInternalNote('packages', program)}
+                        {renderEditableFields('packages', program, 'listedPrice')}
+                        <EditToolsRow>
+                          <MiniButton
+                            type="button"
+                            onClick={() => toggleScheduleEditor(program.id)}
+                            aria-expanded={scheduleOpen}
+                          >
+                            Payments ({schedulePayments.length})
+                            {scheduleMismatch ? (
+                              <ScheduleDiffBadge
+                                $over={resolvedProgramPrice > scheduleTotal}
+                                title="Payment schedule total differs from the package price"
+                              >
+                                ≠ {formatEuroAmount(scheduleTotal)}
+                              </ScheduleDiffBadge>
+                            ) : null}
+                            {scheduleOpen ? <FaChevronUp /> : <FaChevronDown />}
+                          </MiniButton>
+                          <MiniButton
+                            type="button"
+                            onClick={() => toggleProgram(program.id)}
+                            aria-expanded={isOpen}
+                          >
+                            Included ({includedItems.length})
+                            {isOpen ? <FaChevronUp /> : <FaChevronDown />}
+                          </MiniButton>
+                        </EditToolsRow>
+                        {scheduleOpen ? renderPaymentScheduleEditor(program, schedule) : null}
+                        {isOpen ? (
+                          <IncludedList $edit>
+                            {includedItems.map(item => (
+                              <IncludedEditRow key={item.id}>
+                                {renderInternalNote('items', item)}
+                                {renderEditableFields('items', item)}
+                              </IncludedEditRow>
+                            ))}
+                          </IncludedList>
+                        ) : null}
+                      </ProgramCard>
+                    );
+                  }
+
                   return (
-                    <ProgramCard key={program.id} $guaranteed={isGuaranteed} $compact={!isEditMode}>
+                    <ProgramCard key={program.id} $guaranteed={isGuaranteed} $compact>
                       {isPopular ? <Badge>{POPULAR_PACKAGE_BADGE}</Badge> : null}
                       {isGuaranteed ? <ProgramMeta>Guaranteed program</ProgramMeta> : null}
                       <ProgramName>{program.name}</ProgramName>
-                      <Price $compact={!isEditMode}>
-                        {formatMoney(
-                          resolveBudgetPriceAmount(program.listedPrice, priceContext) ?? program.listedPrice,
-                          program.currency || 'EUR',
-                        )}
+                      <Price $compact>
+                        {formatMoney(resolvedProgramPrice ?? program.listedPrice, program.currency || 'EUR')}
                       </Price>
-                      {program.description ? <Description $compact={!isEditMode}>{program.description}</Description> : null}
-                      {isEditMode ? renderInternalNote('packages', program) : null}
-                      {isEditMode ? renderEditableFields('packages', program, 'listedPrice') : null}
-                      {!isEditMode ? renderPaymentSchedule(resolveProgramPaymentSchedule(program)) : null}
-                      {renderPaymentScheduleEditor(program, resolveProgramPaymentSchedule(program))}
+                      {program.description ? <Description $compact>{program.description}</Description> : null}
+                      {renderPaymentSchedule(resolveProgramPaymentSchedule(program))}
                       <Toggle type="button" onClick={() => toggleProgram(program.id)} aria-expanded={isOpen}>
                         <span>What's included</span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
@@ -1759,14 +1905,12 @@ const BudgetPage = ({ isAdmin = false }) => {
                                   <strong>{item.name}</strong>
                                   {item.description ? (
                                     <>
-                                      {detailOpen ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
+                                      {detailOpen ? <Muted $compact>{item.description}</Muted> : null}
                                       <DetailButton type="button" onClick={() => toggleDetail(item.id)}>
                                         {detailOpen ? 'Hide details' : 'Show details'}
                                       </DetailButton>
                                     </>
                                   ) : null}
-                                  {isEditMode ? renderInternalNote('items', item) : null}
-                                  {isEditMode ? renderEditableFields('items', item) : null}
                                 </div>
                               </IncludedItem>
                             );
@@ -1787,11 +1931,17 @@ const BudgetPage = ({ isAdmin = false }) => {
               </ProgramsGrid>
             </Section>
 
-            <Section aria-labelledby="budget-expenses-title" $compact={!isEditMode}>
-              <SectionHeading>
+            <Section aria-labelledby="budget-expenses-title" $compact={!isEditMode} $edit={isEditMode}>
+              <SectionHeading $edit={isEditMode}>
                 <div>
-                  <H2 id="budget-expenses-title">Other expenses</H2>
+                  <H2 id="budget-expenses-title" $edit={isEditMode}>Other expenses</H2>
                 </div>
+                {isEditMode ? (
+                  <EditToolsRow>
+                    <MiniButton type="button" onClick={() => setAllCategoriesOpen(true)}>Expand all</MiniButton>
+                    <MiniButton type="button" onClick={() => setAllCategoriesOpen(false)}>Collapse all</MiniButton>
+                  </EditToolsRow>
+                ) : null}
               </SectionHeading>
               <SearchInput
                 type="search"
@@ -1799,25 +1949,30 @@ const BudgetPage = ({ isAdmin = false }) => {
                 onChange={event => setQuery(event.target.value)}
                 placeholder="Search additional services..."
                 aria-label="Search additional services"
+                $edit={isEditMode}
               />
-              <AccordionList>
+              <AccordionList $edit={isEditMode}>
                 {Object.entries(groupedExpenses).map(([category, items]) => {
                   const isOpen = Boolean(openCategories[category]);
                   return (
-                    <Accordion key={category}>
-                      <AccordionHeader type="button" onClick={() => toggleCategory(category)} aria-expanded={isOpen} $compact={!isEditMode}>
+                    <Accordion key={category} $edit={isEditMode}>
+                      <AccordionHeader type="button" onClick={() => toggleCategory(category)} aria-expanded={isOpen} $compact={!isEditMode} $edit={isEditMode}>
                         <span>{getCategoryLabel(category)} <Count>{items.length} {items.length === 1 ? 'service' : 'services'}</Count></span>
                         {isOpen ? <FaChevronUp /> : <FaChevronDown />}
                       </AccordionHeader>
                       {isOpen ? (
-                        <ExpenseRows>
+                        <ExpenseRows $edit={isEditMode}>
                           {items.map(item => (
-                            <ExpenseRow key={item.id} $compact={!isEditMode}>
-                              <ExpenseTop>
-                                <ExpenseName>{item.name}</ExpenseName>
-                                <ExpensePrice>{getExpensePriceLabel(item, priceContext)}</ExpensePrice>
-                              </ExpenseTop>
-                              {item.description ? <Muted $compact={!isEditMode}>{item.description}</Muted> : null}
+                            <ExpenseRow key={item.id} $compact={!isEditMode} $edit={isEditMode}>
+                              {!isEditMode ? (
+                                <>
+                                  <ExpenseTop>
+                                    <ExpenseName>{item.name}</ExpenseName>
+                                    <ExpensePrice>{getExpensePriceLabel(item, priceContext)}</ExpensePrice>
+                                  </ExpenseTop>
+                                  {item.description ? <Muted $compact>{item.description}</Muted> : null}
+                                </>
+                              ) : null}
                               {item.extraUnit && item.extraUnitPrice ? (
                                 <Muted $compact={!isEditMode}>Additional {item.extraUnit}: {formatMoney(item.extraUnitPrice, 'EUR')}</Muted>
                               ) : null}
@@ -1834,9 +1989,9 @@ const BudgetPage = ({ isAdmin = false }) => {
             </Section>
 
             {isEditMode ? (
-              <Section aria-labelledby="budget-create-item-title">
+              <Section aria-labelledby="budget-create-item-title" $edit>
                 <EditPanel>
-                  <H2 id="budget-create-item-title">Create new expense</H2>
+                  <H2 id="budget-create-item-title" $edit>Create new expense</H2>
                   <SectionNote>New records are saved to the backend with the next id after the last budget item.</SectionNote>
                   <AddRecordGrid>
                     <EditableIdField>
@@ -1911,18 +2066,18 @@ const BudgetPage = ({ isAdmin = false }) => {
             ) : null}
 
             {visibleNoteGroups.length || isEditMode ? (
-              <Section aria-labelledby="budget-notes-title">
-                <SectionHeading>
+              <Section aria-labelledby="budget-notes-title" $edit={isEditMode}>
+                <SectionHeading $edit={isEditMode}>
                   <div>
-                    <H2 id="budget-notes-title">Good to know</H2>
+                    <H2 id="budget-notes-title" $edit={isEditMode}>Good to know</H2>
                   </div>
                 </SectionHeading>
                 {isEditMode ? (
-                  <NotesGrid>
+                  <NotesGrid $edit>
                     {noteGroupKeys.map(groupKey => {
                       const notes = Array.isArray(catalog.clientNotes?.[groupKey]) ? catalog.clientNotes[groupKey] : [];
                       return (
-                        <NoteCard key={groupKey}>
+                        <NoteCard key={groupKey} $edit>
                           <NoteCardTitle>{getClientNoteGroupLabel(groupKey)}</NoteCardTitle>
                           <NotesEditorGroup>
                             {notes.map((note, index) => (
@@ -1984,7 +2139,7 @@ const BudgetPage = ({ isAdmin = false }) => {
           </ConfirmModal>
         </ModalBackdrop>
       ) : null}
-      {showStickyContact ? (
+      {showStickyContact && !isEditMode ? (
         <StickyContact>
           <StickyContactInner>
             <StickyButton type="button" onClick={scrollToContact}>Contact us</StickyButton>
