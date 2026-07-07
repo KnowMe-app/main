@@ -80,10 +80,14 @@ describe('BudgetPage edit mode', () => {
     await Promise.resolve();
   });
 
+  const mountBudgetPage = root => {
+    root.render(<BudgetPage isAdmin />);
+  };
+
   it('renders name/price/description once each, no "from" for a plain price, undo disabled until an edit happens', async () => {
     const root = createRoot(container);
     await act(async () => {
-      root.render(<BudgetPage isAdmin />);
+      mountBudgetPage(root);
     });
     await flush();
 
@@ -141,14 +145,14 @@ describe('BudgetPage edit mode', () => {
   it('supports undo/redo of an edit, rewriting the backend snapshot both times', async () => {
     const root = createRoot(container);
     await act(async () => {
-      root.render(<BudgetPage isAdmin />);
+      mountBudgetPage(root);
     });
     await flush();
 
-    const findByAriaLabel = label => container.querySelector(`input[aria-label="${label}"]`);
+    const queryInputByAriaLabel = label => container.querySelector(`input[aria-label="${label}"]`);
     const findButtonByTitle = title => Array.from(container.querySelectorAll('button')).find(btn => btn.title === title);
 
-    const nameInput = findByAriaLabel('Name');
+    const nameInput = queryInputByAriaLabel('Name');
     expect(nameInput.value).toBe('Standard Program');
 
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -165,7 +169,7 @@ describe('BudgetPage edit mode', () => {
     await flush();
 
     expect(update).toHaveBeenCalledWith('budget/packages/0', { name: 'Renamed Program' });
-    expect(findByAriaLabel('Name').value).toBe('Renamed Program');
+    expect(queryInputByAriaLabel('Name').value).toBe('Renamed Program');
 
     const undoButton = findButtonByTitle('Undo the last change');
     const redoButton = findButtonByTitle('Redo the change');
@@ -177,7 +181,7 @@ describe('BudgetPage edit mode', () => {
     });
     await flush();
 
-    expect(findByAriaLabel('Name').value).toBe('Standard Program');
+    expect(queryInputByAriaLabel('Name').value).toBe('Standard Program');
     expect(set).toHaveBeenCalledWith('budget/packages', expect.arrayContaining([
       expect.objectContaining({ name: 'Standard Program' }),
     ]));
@@ -189,7 +193,7 @@ describe('BudgetPage edit mode', () => {
     });
     await flush();
 
-    expect(findByAriaLabel('Name').value).toBe('Renamed Program');
+    expect(queryInputByAriaLabel('Name').value).toBe('Renamed Program');
     expect(set).toHaveBeenCalledWith('budget/packages', expect.arrayContaining([
       expect.objectContaining({ name: 'Renamed Program' }),
     ]));
