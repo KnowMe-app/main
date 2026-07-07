@@ -441,8 +441,8 @@ const inlineModalOverlayStyle = {
 
 const inlineModalCardStyle = {
   width: 'min(92vw, 560px)',
-  background: '#fff',
-  color: '#111',
+  background: 'var(--km-card)',
+  color: 'var(--km-text)',
   borderRadius: '12px',
   padding: '14px',
   boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
@@ -452,12 +452,12 @@ const photosModalCardStyle = {
   width: 'min(94vw, 560px)',
   maxHeight: 'min(88vh, 720px)',
   overflowY: 'auto',
-  background: 'linear-gradient(180deg, #fffaf4 0%, #ffffff 42%)',
-  color: '#111827',
+  background: 'linear-gradient(180deg, var(--km-accent-light) 0%, var(--km-card) 42%)',
+  color: 'var(--km-text)',
   borderRadius: '20px',
   padding: '18px',
   boxShadow: '0 24px 70px rgba(0, 0, 0, 0.38)',
-  border: '1px solid rgba(245, 162, 75, 0.24)',
+  border: '1px solid var(--km-border)',
 };
 
 const photosModalHeaderStyle = {
@@ -470,14 +470,14 @@ const photosModalHeaderStyle = {
 
 const photosModalTitleStyle = {
   margin: 0,
-  color: '#111827',
+  color: 'var(--km-text)',
   fontSize: '18px',
   lineHeight: 1.2,
 };
 
 const photosModalSubtitleStyle = {
   margin: '4px 0 0',
-  color: '#6b7280',
+  color: 'var(--km-muted)',
   fontSize: '12px',
   lineHeight: 1.35,
 };
@@ -489,16 +489,16 @@ const photosCollectionToggleStyle = {
   padding: '3px',
   marginTop: '8px',
   borderRadius: '999px',
-  background: 'rgba(245, 162, 75, 0.12)',
-  border: '1px solid rgba(245, 162, 75, 0.22)',
+  background: 'var(--km-accent-light)',
+  border: '1px solid var(--km-border)',
 };
 
 const getPhotosCollectionToggleButtonStyle = isActive => ({
   border: 'none',
   borderRadius: '999px',
   padding: '5px 10px',
-  background: isActive ? '#e8791a' : 'transparent',
-  color: isActive ? '#fff' : '#7a4b23',
+  background: isActive ? 'var(--km-accent)' : 'transparent',
+  color: isActive ? '#fff' : 'var(--km-muted)',
   cursor: 'pointer',
   fontSize: '12px',
   fontWeight: 700,
@@ -510,9 +510,9 @@ const photosModalCloseButtonStyle = {
   width: '34px',
   height: '34px',
   borderRadius: '50%',
-  border: '1px solid #f0d8c2',
-  background: '#fff',
-  color: '#7a4b23',
+  border: '1px solid var(--km-border)',
+  background: 'var(--km-card)',
+  color: 'var(--km-text)',
   cursor: 'pointer',
   fontSize: '22px',
   lineHeight: 1,
@@ -522,7 +522,9 @@ const inlineModalTextareaStyle = {
   width: '100%',
   minHeight: '120px',
   borderRadius: '8px',
-  border: '1px solid #c7c7c7',
+  border: '1px solid var(--km-border)',
+  background: 'var(--km-card)',
+  color: 'var(--km-text)',
   padding: '10px',
   resize: 'vertical',
   fontSize: '14px',
@@ -548,8 +550,8 @@ const modalButtonBaseStyle = {
 
 const modalCancelButtonStyle = {
   ...modalButtonBaseStyle,
-  background: '#e5e7eb',
-  color: '#374151',
+  background: 'var(--km-border)',
+  color: 'var(--km-text)',
 };
 
 const modalSaveButtonStyle = {
@@ -560,7 +562,7 @@ const modalSaveButtonStyle = {
 
 const modalDeleteButtonStyle = {
   ...modalButtonBaseStyle,
-  background: '#d32f2f',
+  background: 'var(--km-danger)',
   color: '#fff',
 };
 
