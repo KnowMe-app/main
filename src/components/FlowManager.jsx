@@ -729,7 +729,10 @@ const resolveFlowDisplayAmount = ({
 const getFlowAmountNumberForTotals = options => toAmountNumber(resolveFlowDisplayAmount(options));
 
 const FLOW_FORMULA_TOKEN_REGEX = /[0-9.,+\-*/%()\s×xXхХ÷:−–—$]/;
+const FLOW_FORMULA_OPERATOR_END_REGEX = /[+\-*/%(×xXхХ÷:−–—]$/;
 const FLOW_AMOUNT_START_REGEX = /^(?:[+-]?\d+(?:[.,]\d+)?|=)/;
+const normalizeFlowCurrencyFormulaAmount = amount =>
+  String(amount || '').startsWith('=') ? String(amount || '').replace(/\$/g, 'USD') : amount;
 
 const splitFlowAmountAndDescription = value => {
   const raw = String(value || '').trim();
@@ -740,7 +743,7 @@ const splitFlowAmountAndDescription = value => {
     const canConsumeFormulaValue = () => {
       const prefix = raw.slice(1, index).trimEnd();
       if (!prefix) return true;
-      return /[+\-*/%(]$/.test(prefix);
+      return FLOW_FORMULA_OPERATOR_END_REGEX.test(prefix);
     };
 
     while (index < raw.length) {
@@ -796,7 +799,7 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
 
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
   const parsedDate = lineMatch[1] ? parseDisplayDate(lineMatch[1], fallbackYear) : fallbackDate;
-  const parsedAmount = normalizeFlowAmount(amountParts.amountRaw || '');
+  const parsedAmount = normalizeFlowCurrencyFormulaAmount(normalizeFlowAmount(amountParts.amountRaw || ''));
   const { text: descriptionWithoutCustomRate, customUsdRate } = extractCustomUsdRateFromText(
     amountParts.description || ''
   );
