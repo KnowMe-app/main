@@ -1207,7 +1207,8 @@ const sanitizeFlowValuePart = value =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const normalizeFlowStoredAmount = value => sanitizeFlowValuePart(String(value || '').replace(/,/g, '.'));
+const normalizeFlowStoredAmount = value =>
+  sanitizeFlowValuePart(String(value || '').replace(/,/g, '.').replace(/\$/g, 'USD'));
 
 const buildFlowEntryValue = ({ amount, description = '' }) => {
   const safeAmount = normalizeFlowStoredAmount(amount);
