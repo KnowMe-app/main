@@ -28,7 +28,7 @@ export const KmTopbar = styled.div`
 
 const BrandWrap = styled.div`
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 `;
@@ -46,11 +46,16 @@ const BrandAccent = styled.span`
 `;
 
 const BrandTagline = styled.span`
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--km-border);
+  border-radius: 999px;
+  background: var(--km-accent-light);
+  color: var(--km-accent);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--km-muted);
+  letter-spacing: 0.02em;
   white-space: nowrap;
 
   @media (max-width: 380px) {
