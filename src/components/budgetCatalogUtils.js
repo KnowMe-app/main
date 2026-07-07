@@ -14,8 +14,6 @@ export const USD_ITEM_IDS = new Set([
   'sm-compensation',
 ]);
 export const USD_TO_EUR_RATE = 0.92;
-// Items whose catalog price is the lower bound of a range (or a base price with add-ons).
-export const FROM_PRICE_ITEM_IDS = new Set(['32', '43', '49', '54', '61', '63', '64', '65']);
 export const KNOWN_CLIENT_NOTE_GROUPS = ['programMilestones', 'surrogateMotherExpenses'];
 
 const CATEGORY_LABELS = {
@@ -196,8 +194,8 @@ export const getItemDisplayPrice = (item, context = {}) => {
   return amount === null ? formatMoney(item?.price, 'EUR') : formatMoney(amount, 'EUR');
 };
 
-export const isFromPricedItem = item =>
-  parseBudgetPriceValue(item?.price).isFrom || FROM_PRICE_ITEM_IDS.has(String(item?.id));
+// Only the actual stored price decides the "from" prefix — never hardcode it per item id.
+export const isFromPricedItem = item => parseBudgetPriceValue(item?.price).isFrom;
 
 export const getExpensePriceLabel = (item, context = {}) => {
   const prefix = isFromPricedItem(item) ? 'from ' : '';
