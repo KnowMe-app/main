@@ -14,6 +14,7 @@ import BudgetPage from './BudgetPage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
 import { resolveAccess } from 'utils/accessLevel';
+import { applyStoredAppSettings } from 'hooks/useAppSettings';
 
 export const App = () => {
 
@@ -28,6 +29,7 @@ export const App = () => {
   const location = useLocation();
 
   useEffect(() => {
+    applyStoredAppSettings();
     const stored = localStorage.getItem('isLoggedIn');
     if (stored === 'true') {
       setIsLoggedIn(true);

@@ -79,10 +79,10 @@ const validateCatalog = catalog => {
 
 const Page = styled.main`
   min-height: 100vh;
-  background: linear-gradient(180deg, #fbf4eb 0%, #f7efe4 44%, #fffaf4 100%);
-  color: #2f2923;
+  background: var(--km-bg);
+  color: var(--km-text);
   padding: 22px 14px 96px;
-  font-family: 'DM Sans', 'Inter', Arial, sans-serif;
+  font-family: var(--km-font);
 `;
 
 const Shell = styled.div`
@@ -103,7 +103,7 @@ const Header = styled.header`
 `;
 
 const Eyebrow = styled.div`
-  color: #9a6b48;
+  color: var(--km-accent);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.16em;
@@ -131,9 +131,9 @@ const HeaderActions = styled.div`
 `;
 
 const SoftButton = styled.button`
-  border: 1px solid ${({ $danger }) => ($danger ? '#d9b0a2' : '#dfcdbc')};
-  background: ${({ disabled }) => (disabled ? 'rgba(255,255,255,0.5)' : '#fffaf4')};
-  color: ${({ $danger }) => ($danger ? '#8d4a36' : '#5c4939')};
+  border: 1px solid ${({ $danger }) => ($danger ? 'var(--km-danger-border)' : 'var(--km-border)')};
+  background: ${({ disabled }) => (disabled ? 'rgba(255, 255, 255, 0.55)' : 'var(--km-card)')};
+  color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-text)')};
   border-radius: 999px;
   padding: 11px 16px;
   font-size: 13px;
@@ -152,14 +152,14 @@ const SoftButton = styled.button`
 
 
 const DangerButton = styled(SoftButton)`
-  border-color: #d9b0a2;
-  color: #8d4a36;
+  border-color: var(--km-danger-border);
+  color: var(--km-danger);
 `;
 
 const MiniButton = styled.button`
-  border: 1px solid #dfcdbc;
-  background: #fffaf4;
-  color: #5c4939;
+  border: 1px solid var(--km-border);
+  background: var(--km-card);
+  color: var(--km-text);
   border-radius: 8px;
   min-height: 30px;
   padding: 4px 10px;
@@ -173,8 +173,8 @@ const MiniButton = styled.button`
 `;
 
 const MiniDangerButton = styled(MiniButton)`
-  border-color: #d9b0a2;
-  color: #8d4a36;
+  border-color: var(--km-danger-border);
+  color: var(--km-danger);
 `;
 
 const InlineActionRow = styled.div`
@@ -189,7 +189,7 @@ const BackendIdButton = styled.button`
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #67462f;
+  color: var(--km-accent);
   min-height: 20px;
   padding: 1px 2px;
   display: inline-flex;
@@ -202,7 +202,7 @@ const BackendIdButton = styled.button`
   cursor: pointer;
 
   &:hover {
-    background: rgba(223, 205, 188, 0.35);
+    background: var(--km-accent-light);
   }
 `;
 
@@ -211,8 +211,8 @@ const HiddenBadge = styled.span`
   align-items: center;
   width: fit-content;
   border-radius: 999px;
-  background: #f3ded8;
-  color: #8d4a36;
+  background: var(--km-danger-bg);
+  color: var(--km-danger);
   padding: 4px 7px;
   font-size: 10px;
   font-weight: 900;
@@ -221,9 +221,9 @@ const HiddenBadge = styled.span`
 
 const EditPanel = styled.div`
   margin-top: 16px;
-  border: 1px solid rgba(140, 101, 70, 0.16);
+  border: 1px solid var(--km-border);
   border-radius: 22px;
-  background: rgba(255, 250, 244, 0.78);
+  background: var(--km-card);
   padding: 16px;
 `;
 
@@ -231,7 +231,7 @@ const ModalBackdrop = styled.div`
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(42, 32, 25, 0.46);
+  background: rgba(20, 16, 12, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -241,10 +241,10 @@ const ModalBackdrop = styled.div`
 const ConfirmModal = styled.div`
   width: min(100%, 440px);
   border-radius: 24px;
-  background: #fffaf4;
-  box-shadow: 0 24px 70px rgba(42, 32, 25, 0.24);
+  background: var(--km-card);
+  box-shadow: 0 24px 70px rgba(20, 16, 12, 0.24);
   padding: 22px;
-  color: #382d24;
+  color: var(--km-text);
 `;
 
 const ModalTitle = styled.h3`
@@ -254,7 +254,7 @@ const ModalTitle = styled.h3`
 
 const ModalText = styled.p`
   margin: 0 0 16px;
-  color: #6f6359;
+  color: var(--km-muted);
   line-height: 1.5;
 `;
 
@@ -285,7 +285,7 @@ const H2 = styled.h2`
 
 const SectionNote = styled.p`
   margin: 4px 0 0;
-  color: #76685d;
+  color: var(--km-muted);
   font-size: 14px;
   line-height: 1.5;
 `;
@@ -302,10 +302,10 @@ const ProgramsGrid = styled.div`
 
 const ProgramCard = styled.article`
   position: relative;
-  border: 1px solid ${({ $guaranteed }) => ($guaranteed ? 'rgba(175, 126, 51, 0.46)' : 'rgba(140, 101, 70, 0.16)')};
+  border: 1px solid ${({ $guaranteed }) => ($guaranteed ? 'rgba(232, 121, 26, 0.45)' : 'var(--km-border)')};
   border-radius: 28px;
-  background: ${({ $guaranteed }) => ($guaranteed ? 'rgba(255, 248, 235, 0.96)' : 'rgba(255, 250, 244, 0.92)')};
-  box-shadow: 0 24px 70px rgba(89, 63, 40, 0.09);
+  background: ${({ $guaranteed }) => ($guaranteed ? '#FFF8EF' : 'var(--km-card)')};
+  box-shadow: 0 24px 70px rgba(26, 26, 26, 0.07);
   padding: ${({ $compact }) => ($compact ? '17px' : '22px')};
 `;
 
@@ -314,8 +314,8 @@ const Badge = styled.span`
   top: 18px;
   right: 18px;
   border-radius: 999px;
-  background: #efe0ca;
-  color: #6c472f;
+  background: var(--km-accent-light);
+  color: var(--km-accent);
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.04em;
@@ -324,7 +324,7 @@ const Badge = styled.span`
 `;
 
 const ProgramMeta = styled.div`
-  color: #9b6b2e;
+  color: var(--km-accent);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.1em;
@@ -341,7 +341,7 @@ const ProgramName = styled.h3`
 
 const Price = styled.div`
   margin: 0 0 ${({ $compact }) => ($compact ? '8px' : '12px')};
-  color: #7a4c2f;
+  color: var(--km-accent);
   font-size: ${({ $compact }) => ($compact ? 'clamp(27px, 7vw, 38px)' : 'clamp(32px, 8vw, 46px)')};
   font-weight: 900;
   letter-spacing: -0.06em;
@@ -349,14 +349,14 @@ const Price = styled.div`
 
 const Description = styled.p`
   margin: 0;
-  color: #6d6259;
+  color: var(--km-muted);
   font-size: ${({ $compact }) => ($compact ? '14px' : '15px')};
   line-height: ${({ $compact }) => ($compact ? 1.42 : 1.56)};
 `;
 
 const PaymentScheduleCard = styled.section`
   margin-top: 14px;
-  border: 1px solid rgba(140, 101, 70, 0.16);
+  border: 1px solid var(--km-border);
   border-radius: 18px;
   background: rgba(250, 241, 229, 0.72);
   padding: 13px;
@@ -364,7 +364,7 @@ const PaymentScheduleCard = styled.section`
 
 const PaymentScheduleTitle = styled.h4`
   margin: 0 0 10px;
-  color: #4d392b;
+  color: var(--km-text);
   font-size: 14px;
   font-weight: 900;
   letter-spacing: -0.01em;
@@ -380,7 +380,7 @@ const PaymentScheduleRow = styled.div`
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
-  border-top: 1px solid rgba(140, 101, 70, 0.12);
+  border-top: 1px solid var(--km-border);
   padding-top: 8px;
 
   &:first-child {
@@ -391,7 +391,7 @@ const PaymentScheduleRow = styled.div`
 
 const PaymentScheduleLabel = styled.span`
   min-width: 0;
-  color: #5f5148;
+  color: var(--km-muted);
   font-size: 13px;
   font-weight: 750;
   line-height: 1.35;
@@ -399,7 +399,7 @@ const PaymentScheduleLabel = styled.span`
 `;
 
 const PaymentScheduleAmount = styled.span`
-  color: #65432d;
+  color: var(--km-accent);
   font-size: 13px;
   font-weight: 900;
   line-height: 1.35;
@@ -411,10 +411,10 @@ const PaymentScheduleTotalRow = styled.div`
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid rgba(140, 101, 70, 0.28);
+  border-top: 1px solid #D8D8CE;
   margin-top: 10px;
   padding-top: 8px;
-  color: #4d392b;
+  color: var(--km-text);
   font-size: 13px;
   font-weight: 900;
 `;
@@ -445,8 +445,8 @@ const PaymentEditorActions = styled.div`
 const Toggle = styled.button`
   width: 100%;
   border: 0;
-  background: #f1e4d6;
-  color: #553c2b;
+  background: var(--km-accent-light);
+  color: var(--km-text);
   border-radius: 16px;
   margin: 18px 0 0;
   padding: 12px 14px;
@@ -467,7 +467,7 @@ const IncludedItem = styled.div`
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 10px;
-  color: #4b4139;
+  color: var(--km-text);
   font-size: 14px;
   line-height: 1.45;
 
@@ -480,8 +480,8 @@ const CheckIcon = styled.span`
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #dcc4a8;
-  color: #4d3320;
+  background: var(--km-accent-light);
+  color: var(--km-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -492,7 +492,7 @@ const CheckIcon = styled.span`
 const DetailButton = styled.button`
   border: 0;
   background: transparent;
-  color: #8a5c3f;
+  color: var(--km-accent);
   display: inline-flex;
   align-items: center;
   min-height: 44px;
@@ -505,14 +505,24 @@ const DetailButton = styled.button`
 const CTA = styled.button`
   width: 100%;
   border: 0;
-  border-radius: 18px;
-  background: #3f2f26;
-  color: #fff8ef;
+  border-radius: var(--km-radius);
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  color: #fff;
   margin-top: 18px;
   padding: 14px 16px;
   font-size: 15px;
   font-weight: 900;
   cursor: pointer;
+  transition: box-shadow 0.18s ease, transform 0.18s ease, filter 0.18s ease;
+
+  &:hover {
+    filter: brightness(1.05);
+    box-shadow: 0 8px 22px rgba(232, 121, 26, 0.28);
+  }
+
+  &:active {
+    transform: scale(0.99);
+  }
 `;
 
 const AccordionList = styled.div`
@@ -522,16 +532,16 @@ const AccordionList = styled.div`
 
 const Accordion = styled.div`
   overflow: hidden;
-  border: 1px solid rgba(140, 101, 70, 0.16);
+  border: 1px solid var(--km-border);
   border-radius: 22px;
-  background: rgba(255, 250, 244, 0.78);
+  background: var(--km-card);
 `;
 
 const AccordionHeader = styled.button`
   width: 100%;
   border: 0;
   background: transparent;
-  color: #33291f;
+  color: var(--km-text);
   padding: ${({ $compact }) => ($compact ? '13px 16px' : '17px 18px')};
   display: flex;
   align-items: center;
@@ -544,16 +554,16 @@ const AccordionHeader = styled.button`
 `;
 
 const Count = styled.span`
-  color: #9a836f;
+  color: var(--km-muted);
   font-size: 12px;
   font-weight: 800;
 `;
 
 const ShowMoreButton = styled.button`
-  border: 1px solid rgba(140, 101, 70, 0.18);
+  border: 1px solid var(--km-border);
   border-radius: 14px;
-  background: rgba(255, 250, 244, 0.72);
-  color: #67462f;
+  background: var(--km-card);
+  color: var(--km-accent);
   min-height: 44px;
   padding: 10px 12px;
   font-size: 13px;
@@ -562,13 +572,13 @@ const ShowMoreButton = styled.button`
 `;
 
 const ExpenseRows = styled.div`
-  border-top: 1px solid rgba(140, 101, 70, 0.13);
+  border-top: 1px solid var(--km-border);
   padding: 2px 18px 10px;
 `;
 
 const ExpenseRow = styled.div`
   padding: ${({ $compact }) => ($compact ? '9px 0' : '13px 0')};
-  border-bottom: 1px solid rgba(140, 101, 70, 0.1);
+  border-bottom: 1px solid var(--km-border);
 
   &:last-child {
     border-bottom: 0;
@@ -589,7 +599,7 @@ const ExpenseName = styled.div`
 `;
 
 const ExpensePrice = styled.div`
-  color: #69462f;
+  color: var(--km-accent);
   font-size: 15px;
   font-weight: 900;
   white-space: nowrap;
@@ -597,7 +607,7 @@ const ExpensePrice = styled.div`
 
 const Muted = styled.p`
   margin: ${({ $compact }) => ($compact ? '3px 0 0' : '5px 0 0')};
-  color: #7e7369;
+  color: var(--km-muted);
   font-size: ${({ $compact }) => ($compact ? '12px' : '13px')};
   line-height: ${({ $compact }) => ($compact ? 1.35 : 1.45)};
 `;
@@ -659,7 +669,7 @@ const EditableField = styled.label`
   gap: 2px;
   min-width: 0;
   flex: 1 1 150px;
-  color: #7b6553;
+  color: var(--km-muted);
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.05em;
@@ -686,7 +696,7 @@ const EditInput = styled.input`
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #382d24;
+  color: var(--km-text);
   min-height: 20px;
   padding: 1px 2px;
   font-size: 12.5px;
@@ -695,13 +705,13 @@ const EditInput = styled.input`
   letter-spacing: normal;
 
   &:hover {
-    background: rgba(223, 205, 188, 0.28);
+    background: var(--km-accent-light);
   }
 
   &:focus {
     outline: none;
     background: rgba(255, 255, 255, 0.85);
-    box-shadow: inset 0 0 0 1px #dfcdbc;
+    box-shadow: inset 0 0 0 1px var(--km-border);
   }
 `;
 
@@ -711,7 +721,7 @@ const EditTextarea = styled.textarea`
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #382d24;
+  color: var(--km-text);
   min-height: 20px;
   padding: 1px 2px;
   font-size: 12.5px;
@@ -721,13 +731,13 @@ const EditTextarea = styled.textarea`
   letter-spacing: normal;
 
   &:hover {
-    background: rgba(223, 205, 188, 0.28);
+    background: var(--km-accent-light);
   }
 
   &:focus {
     outline: none;
     background: rgba(255, 255, 255, 0.85);
-    box-shadow: inset 0 0 0 1px #dfcdbc;
+    box-shadow: inset 0 0 0 1px var(--km-border);
   }
 `;
 
@@ -737,7 +747,7 @@ const EditSelect = styled.select`
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #382d24;
+  color: var(--km-text);
   min-height: 20px;
   padding: 1px 2px;
   font-size: 12.5px;
@@ -747,13 +757,13 @@ const EditSelect = styled.select`
   cursor: pointer;
 
   &:hover {
-    background: rgba(223, 205, 188, 0.28);
+    background: var(--km-accent-light);
   }
 
   &:focus {
     outline: none;
     background: rgba(255, 255, 255, 0.85);
-    box-shadow: inset 0 0 0 1px #dfcdbc;
+    box-shadow: inset 0 0 0 1px var(--km-border);
   }
 `;
 
@@ -777,7 +787,7 @@ const ScheduleDiffBadge = styled.span`
 
 const FormulaDebugNote = styled.div`
   flex: 1 1 100%;
-  color: #8a7563;
+  color: var(--km-muted);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: normal;
@@ -789,10 +799,10 @@ const FormulaDebugNote = styled.div`
 const SearchInput = styled.input`
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #dfcdbc;
+  border: 1px solid var(--km-border);
   border-radius: 18px;
-  background: #fffaf4;
-  color: #382d24;
+  background: var(--km-card);
+  color: var(--km-text);
   padding: 13px 15px;
   font-size: 15px;
   margin-bottom: 14px;
@@ -809,9 +819,9 @@ const NotesGrid = styled.div`
 `;
 
 const NoteCard = styled.div`
-  border: 1px solid rgba(140, 101, 70, 0.14);
+  border: 1px solid var(--km-border);
   border-radius: 22px;
-  background: rgba(255, 250, 244, 0.78);
+  background: var(--km-card);
   padding: 18px 20px;
 `;
 
@@ -819,7 +829,7 @@ const NoteCardTitle = styled.h3`
   margin: 0 0 10px;
   font-size: 16px;
   letter-spacing: -0.02em;
-  color: #4d392b;
+  color: var(--km-text);
 `;
 
 const NoteList = styled.ul`
@@ -827,7 +837,7 @@ const NoteList = styled.ul`
   padding-left: 18px;
   display: grid;
   gap: 7px;
-  color: #66594f;
+  color: var(--km-muted);
   font-size: 14px;
   line-height: 1.55;
 `;
@@ -842,14 +852,14 @@ const NoteEditorRow = styled.div`
   grid-template-columns: minmax(0, 1fr) 32px;
   gap: 6px;
   align-items: start;
-  color: #8d4a36;
+  color: var(--km-danger);
 `;
 
 const StateCard = styled.div`
   padding: 28px;
   border-radius: 24px;
-  background: rgba(255, 250, 244, 0.82);
-  color: #6d6259;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--km-muted);
 `;
 
 const StickyContact = styled.div`
@@ -861,8 +871,8 @@ const StickyContact = styled.div`
   min-height: 64px;
   padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: rgba(255, 250, 244, 0.82);
-  border-top: 1px solid rgba(140, 101, 70, 0.16);
+  background: rgba(255, 255, 255, 0.86);
+  border-top: 1px solid var(--km-border);
   backdrop-filter: blur(12px);
 `;
 

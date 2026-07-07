@@ -58,7 +58,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { resolveAccess } from 'utils/accessLevel';
 import { normalizePhoneState } from './inputValidations';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
-import InfoModal from './InfoModal';
+import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, ModalGhostButton } from './InfoModal';
 
 import { color, coloredCard, uiTokens } from './styles';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
@@ -3435,9 +3435,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <span className="spinner" />
         ) : (
           <>
-            <p>Видалити профіль?</p>
-            <SubmitButton onClick={handleRemoveUser}>Видалити</SubmitButton>
-            <SubmitButton onClick={handleCloseModal}>Відмінити</SubmitButton>
+            <ModalTitle>Видалити профіль?</ModalTitle>
+            <ModalText>Цю дію не можна скасувати.</ModalText>
+            <ModalActionRow>
+              <ModalGhostButton type="button" onClick={handleCloseModal}>Відмінити</ModalGhostButton>
+              <ModalDangerButton type="button" onClick={handleRemoveUser}>Видалити</ModalDangerButton>
+            </ModalActionRow>
           </>
         )}
       </>

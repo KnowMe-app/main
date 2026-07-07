@@ -8,11 +8,12 @@ import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 
 const FiltersCard = styled.div`
-  background: var(--matching-section-bg, #fff);
-  border: 1px solid var(--matching-section-border, #eee);
-  color: var(--matching-panel-text, inherit);
-  border-radius: 10px;
-  padding: 8px 12px 4px;
+  background: var(--matching-section-bg, var(--km-card));
+  border: 1px solid var(--matching-section-border, var(--km-border));
+  color: var(--matching-panel-text, var(--km-text));
+  font-family: var(--km-font);
+  border-radius: var(--km-radius);
+  padding: 10px 12px 6px;
   margin: 0 0 8px;
 `;
 

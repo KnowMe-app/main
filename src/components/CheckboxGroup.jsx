@@ -9,7 +9,7 @@ const GroupLabel = styled.span`
   display: block;
   font-size: 10px;
   font-weight: 700;
-  color: var(--matching-chip-label, #aaa);
+  color: var(--matching-chip-label, var(--km-muted));
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 7px;
@@ -26,9 +26,10 @@ const Chip = styled.button`
   min-height: 36px;
   padding: 7px 12px;
   border-radius: 20px;
-  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : 'var(--matching-chip-border, #e0e0e0)')};
-  background: ${({ $active }) => ($active ? 'rgba(255, 243, 224, 0.92)' : 'var(--matching-chip-bg, #fafafa)')};
-  color: ${({ $active }) => ($active ? '#CC5500' : 'var(--matching-chip-text, #666)')};
+  border: 1.5px solid ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--matching-chip-border, var(--km-border))')};
+  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'var(--matching-chip-bg, var(--km-card))')};
+  color: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--matching-chip-text, var(--km-muted))')};
+  font-family: var(--km-font);
   font-size: 12px;
   font-weight: ${({ $active }) => ($active ? '600' : '400')};
   cursor: pointer;
@@ -39,13 +40,13 @@ const Chip = styled.button`
   justify-content: center;
 
   &:hover {
-    border-color: #FF8C00;
-    color: #CC5500;
+    border-color: var(--km-accent);
+    color: var(--km-accent);
     transform: translateY(-1px);
   }
 
   &:focus-visible {
-    outline: 3px solid rgba(247, 147, 30, 0.38);
+    outline: 3px solid var(--km-accent-ring);
     outline-offset: 2px;
   }
 `;
