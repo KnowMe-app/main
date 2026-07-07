@@ -23,9 +23,9 @@ export const getStoredThemeMode = () => {
 
 export const getStoredLanguage = () => {
   try {
-    return localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : 'uk';
+    return localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'uk' ? 'uk' : 'en';
   } catch (error) {
-    return 'uk';
+    return 'en';
   }
 };
 
