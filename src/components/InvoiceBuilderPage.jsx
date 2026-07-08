@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { get, ref, set } from 'firebase/database';
 import { FaFilePdf, FaPlus, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
-import { auth, database } from './config';
+import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { isAdminUid } from 'utils/accessLevel';
 import {
   applyPaymentPurposePlaceholders,
@@ -18,6 +18,7 @@ import {
   getTodayYmd,
   makeCatalogServiceEntry,
   makeCustomServiceEntry,
+  isInvoiceDataShape,
   normalizeInvoiceData,
   parseServiceEntry,
   reorderBeneficiaryIds,
@@ -347,12 +348,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const [data, setData] = useState(() => normalizeInvoiceData(null));
   const [catalogItems, setCatalogItems] = useState([]);
+  const [exchangeRates, setExchangeRates] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [invoiceDateInput, setInvoiceDateInput] = useState(getTodayYmd());
   const [newCustomServiceName, setNewCustomServiceName] = useState('');
   const [newCustomServicePrice, setNewCustomServicePrice] = useState('');
+  const [invoiceServicePriceDrafts, setInvoiceServicePriceDrafts] = useState({});
   const [catalogQuery, setCatalogQuery] = useState('');
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
   const fileInputRef = useRef(null);
@@ -379,13 +382,32 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     loadInvoiceData();
   }, [loadInvoiceData]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchNbuUahExchangeRatesByDate(getTodayYmd())
+      .then(rates => {
+        if (!cancelled && rates) setExchangeRates(rates);
+      })
+      .catch(ratesError => {
+        console.error('Unable to load NBU exchange rates for invoice catalog formulas', ratesError);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const catalogItemsById = useMemo(() => new Map(catalogItems.map(item => [String(item.id), item])), [catalogItems]);
 
   const activeBeneficiary = useMemo(() => getActiveBeneficiary(data), [data]);
 
+  const priceContext = useMemo(
+    () => ({ itemsById: catalogItemsById, rates: exchangeRates }),
+    [catalogItemsById, exchangeRates],
+  );
+
   const invoiceServiceRows = useMemo(
-    () => resolveInvoiceServiceRows(data.invoiceServices, catalogItemsById),
-    [data.invoiceServices, catalogItemsById],
+    () => resolveInvoiceServiceRows(data.invoiceServices, catalogItemsById, priceContext),
+    [data.invoiceServices, catalogItemsById, priceContext],
   );
 
   const subtotal = useMemo(() => computeInvoiceSubtotal(invoiceServiceRows), [invoiceServiceRows]);
@@ -540,7 +562,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const updateInvoiceServiceRow = (index, field, value) => {
     setData(current => {
       const entries = [...current.invoiceServices];
-      const resolved = resolveServiceRow(entries[index], catalogItemsById);
+      const resolved = resolveServiceRow(entries[index], catalogItemsById, priceContext);
       const nextName = field === 'name' ? value : resolved.name;
       const nextPrice = field === 'price' ? (Number(String(value).replace(',', '.')) || 0) : resolved.price;
       entries[index] = makeCustomServiceEntry(nextName, nextPrice);
@@ -548,8 +570,24 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     });
   };
 
-  const commitInvoiceServiceRow = () => {
-    persistInvoiceServices(data.invoiceServices, 'Service updated.');
+  const commitInvoiceServiceRow = index => {
+    const draft = invoiceServicePriceDrafts[index];
+    if (draft === undefined) {
+      persistInvoiceServices(data.invoiceServices, 'Service updated.');
+      return;
+    }
+
+    const entries = [...data.invoiceServices];
+    const resolved = resolveServiceRow(entries[index], catalogItemsById, priceContext);
+    const parsedPrice = Number(String(draft).replace(',', '.'));
+    entries[index] = makeCustomServiceEntry(resolved.name, Number.isFinite(parsedPrice) ? parsedPrice : 0);
+    setData(current => ({ ...current, invoiceServices: entries }));
+    setInvoiceServicePriceDrafts(current => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    persistInvoiceServices(entries, 'Service updated.');
   };
 
   const removeInvoiceServiceRow = index => {
@@ -640,6 +678,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
+      if (!isInvoiceDataShape(parsed)) {
+        toast.error('Upload an invoice-builder JSON with beneficiaries, customers, services, and notes.');
+        return;
+      }
       const nextData = normalizeInvoiceData(parsed);
       await Promise.all([
         set(ref(database, `${INVOICE_DATA_PATH}/beneficiaries`), nextData.beneficiaries),
@@ -685,6 +727,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         customers: data.customers,
         invoiceServices: data.invoiceServices,
         catalogItemsById,
+        priceContext,
         notes: data.notes,
         taxPercent: data.taxPercent,
         invoiceNumber,
@@ -865,8 +908,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     <Input
                       type="text"
                       inputMode="decimal"
-                      value={row.price}
-                      onChange={event => updateInvoiceServiceRow(index, 'price', event.target.value)}
+                      value={invoiceServicePriceDrafts[index] ?? row.price}
+                      onChange={event => setInvoiceServicePriceDrafts(current => ({ ...current, [index]: event.target.value }))}
                       onBlur={() => commitInvoiceServiceRow(index)}
                     />
                     <DangerButton type="button" onClick={() => removeInvoiceServiceRow(index)}><FaTrash /></DangerButton>
@@ -880,7 +923,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   <PanelNote style={{ marginTop: 14, marginBottom: 4 }}>Recent services (click to add)</PanelNote>
                   <ChipRow>
                     {recentServiceSuggestions.map(entry => {
-                      const resolved = resolveServiceRow(entry, catalogItemsById);
+                      const resolved = resolveServiceRow(entry, catalogItemsById, priceContext);
                       return (
                         <Chip key={entry} type="button" onClick={() => addServiceEntry(entry)}>
                           {resolved.name} · {formatEuroPreview(resolved.price)}

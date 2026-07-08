@@ -5,7 +5,7 @@
 //   "Deposit for transportation of SM || 300" -> a custom one-off service, "Name || Price"
 // "||" is used instead of "-" as the separator so it never collides with a dash inside a name.
 
-import { resolveBudgetPriceAmount } from './budgetCatalogUtils';
+import { getItemDisplayAmount } from './budgetCatalogUtils';
 
 const SERVICE_PRICE_SEPARATOR = '||';
 const CATALOG_ID_PREFIX = 'id';
@@ -21,6 +21,13 @@ export const normalizeInvoiceData = raw => ({
   notes: Array.isArray(raw?.notes) ? raw.notes : [],
   taxPercent: Number.isFinite(Number(raw?.taxPercent)) ? Number(raw.taxPercent) : 0,
 });
+
+export const isInvoiceDataShape = raw => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  return ['beneficiaries', 'beneficiaryIds', 'customers', 'recentServices', 'invoiceServices', 'notes']
+    .every(field => Array.isArray(raw[field]))
+    && (raw.taxPercent === undefined || Number.isFinite(Number(raw.taxPercent)));
+};
 
 // The active beneficiary is always the first id in beneficiaryIds.
 export const getActiveBeneficiary = data => {
@@ -63,7 +70,7 @@ export const parseServiceEntry = entry => {
 
 // Resolves a stored service row to its display name + EUR price, looking up
 // catalog references in the budget catalog (budget/items, keyed by id).
-export const resolveServiceRow = (entry, catalogItemsById) => {
+export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) => {
   const parsed = parseServiceEntry(entry);
   if (parsed.isCatalog) {
     const item = catalogItemsById?.get?.(String(parsed.catalogId));
@@ -72,7 +79,7 @@ export const resolveServiceRow = (entry, catalogItemsById) => {
         key: entry, isCatalog: true, catalogId: parsed.catalogId, missing: true, name: `Unknown catalog service (id${parsed.catalogId})`, price: 0,
       };
     }
-    const amount = resolveBudgetPriceAmount(item.price, { itemsById: catalogItemsById });
+    const amount = getItemDisplayAmount(item, { ...priceContext, itemsById: catalogItemsById });
     return {
       key: entry,
       isCatalog: true,
@@ -88,8 +95,8 @@ export const resolveServiceRow = (entry, catalogItemsById) => {
   };
 };
 
-export const resolveInvoiceServiceRows = (invoiceServices, catalogItemsById) =>
-  (Array.isArray(invoiceServices) ? invoiceServices : []).map(entry => resolveServiceRow(entry, catalogItemsById));
+export const resolveInvoiceServiceRows = (invoiceServices, catalogItemsById, priceContext = {}) =>
+  (Array.isArray(invoiceServices) ? invoiceServices : []).map(entry => resolveServiceRow(entry, catalogItemsById, priceContext));
 
 export const computeInvoiceSubtotal = rows => rows.reduce((sum, row) => sum + (Number(row.price) || 0), 0);
 
@@ -147,4 +154,7 @@ export const applyPaymentPurposePlaceholders = (template, { invoiceNumber, invoi
     .replaceAll('{invoiceNumber}', invoiceNumber || '')
     .replaceAll('{invoiceDate}', invoiceDate || '');
 
-export const getTodayYmd = () => new Date().toISOString().slice(0, 10);
+export const getTodayYmd = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+};

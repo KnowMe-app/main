@@ -268,8 +268,9 @@ const InvoicePdfDocument = ({
   invoiceNumber,
   invoiceDate,
   purposeOfPayment,
+  priceContext,
 }) => {
-  const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById);
+  const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, priceContext);
   const subtotal = computeInvoiceSubtotal(rows);
   const total = computeInvoiceTotal(subtotal, taxPercent);
   const payerName = buildPayerName(customers);

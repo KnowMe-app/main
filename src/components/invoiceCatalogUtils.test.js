@@ -7,8 +7,10 @@ import {
   computeInvoiceTotal,
   generateInvoiceIdentifiers,
   getActiveBeneficiary,
+  getTodayYmd,
   makeCatalogServiceEntry,
   makeCustomServiceEntry,
+  isInvoiceDataShape,
   normalizeInvoiceData,
   parseServiceEntry,
   reorderBeneficiaryIds,
@@ -29,6 +31,21 @@ describe('invoiceCatalogUtils', () => {
       notes: [],
       taxPercent: 0,
     });
+  });
+
+
+  it('validates the invoice upload shape before normalization can empty missing collections', () => {
+    expect(isInvoiceDataShape({})).toBe(false);
+    expect(isInvoiceDataShape({ items: [] })).toBe(false);
+    expect(isInvoiceDataShape({
+      beneficiaries: [],
+      beneficiaryIds: [],
+      customers: [],
+      recentServices: [],
+      invoiceServices: [],
+      notes: [],
+      taxPercent: 0,
+    })).toBe(true);
   });
 
   it('picks the active beneficiary from the first beneficiaryId', () => {
@@ -68,6 +85,17 @@ describe('invoiceCatalogUtils', () => {
     });
   });
 
+
+
+  it('resolves catalog invoice rows with budget display conversion and formula rates', () => {
+    const catalogItemsById = new Map([
+      ['22', { id: '22', name: 'USD compensation', price: 23000 }],
+      ['30', { id: '30', name: 'Formula price', price: '=USD/EUR*100' }],
+    ]);
+    expect(resolveServiceRow('id22', catalogItemsById).price).toBeCloseTo(21160);
+    expect(resolveServiceRow('id30', catalogItemsById, { rates: { usd: 40, eur: 50 } }).price).toBeCloseTo(80);
+  });
+
   it('flags a catalog reference that no longer exists', () => {
     const row = resolveServiceRow('id999', new Map());
     expect(row.missing).toBe(true);
@@ -102,6 +130,29 @@ describe('invoiceCatalogUtils', () => {
       invoiceNumber: '23/05/2026',
       invoiceDate: '23.05.2026',
     });
+  });
+
+
+
+  it('uses local date components for the default invoice date', () => {
+    const RealDate = Date;
+    const fixed = new RealDate('2026-05-24T06:30:00.000Z');
+    global.Date = class extends RealDate {
+      constructor(...args) {
+        super(...(args.length === 0 ? [fixed.getTime()] : args));
+      }
+      getFullYear() { return this.getTime() === fixed.getTime() ? 2026 : super.getFullYear(); }
+      getMonth() { return this.getTime() === fixed.getTime() ? 4 : super.getMonth(); }
+      getDate() { return this.getTime() === fixed.getTime() ? 23 : super.getDate(); }
+      static now() { return fixed.getTime(); }
+      static parse(value) { return RealDate.parse(value); }
+      static UTC(...args) { return RealDate.UTC(...args); }
+    };
+    try {
+      expect(getTodayYmd()).toBe('2026-05-23');
+    } finally {
+      global.Date = RealDate;
+    }
   });
 
   it('fills invoiceNumber/invoiceDate placeholders into the payment purpose', () => {
