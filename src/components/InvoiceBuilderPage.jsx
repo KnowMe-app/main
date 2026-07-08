@@ -1521,10 +1521,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     const fresh = buildExpectedExpensesPlan(resolvedPackage, schedule);
     const nextGroups = fresh.expectedExpenses.map((group, index) => {
       const existingGroup = Array.isArray(expectedExpenses.expectedExpenses?.[index]) ? expectedExpenses.expectedExpenses[index] : [];
-      const scheduledIndex = existingGroup.findIndex(entry => entry?.kind === 'packagePercent' && String(entry.catalogId) === String(expectedExpenses.packageId));
-      const extraServices = scheduledIndex === -1
-        ? existingGroup
-        : existingGroup.filter((_, entryIndex) => entryIndex !== scheduledIndex);
+      const extraServices = existingGroup.filter(entry => entry?.expectedExpenseRole !== 'scheduled');
       return [...group, ...extraServices];
     });
     persistExpectedExpenses({ ...expectedExpenses, expectedExpenses: nextGroups }, 'Schedule groups refreshed.');

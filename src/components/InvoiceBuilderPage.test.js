@@ -226,8 +226,8 @@ describe('InvoiceBuilderPage', () => {
       const plan = persistedCalls[persistedCalls.length - 1][1];
       expect(plan.packageId).toBe('p1');
       expect(plan.expectedExpenses).toHaveLength(2);
-      expect(plan.expectedExpenses[0][0]).toBe('idp1 || 60%');
-      expect(plan.expectedExpenses[1][0]).toBe('idp1 || 40%');
+      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
 
       await act(async () => { root.unmount(); });
     });
@@ -276,10 +276,10 @@ describe('InvoiceBuilderPage', () => {
               packageId: 'p1',
               expectedExpenses: [
                 [
-                  { id: 'stale-1', kind: 'packagePercent', catalogId: 'p1', percent: 10 },
+                  { id: 'stale-1', kind: 'packagePercent', catalogId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' },
                   { id: 'custom-1', kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
                 ],
-                [{ id: 'stale-2', kind: 'packagePercent', catalogId: 'p1', percent: 10 }],
+                [{ id: 'stale-2', kind: 'packagePercent', catalogId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' }],
               ],
             }),
           });
@@ -295,12 +295,49 @@ describe('InvoiceBuilderPage', () => {
       await flush();
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.expectedExpenses[0][0]).toBe('idp1 || 60%');
+      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
       expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
-      expect(plan.expectedExpenses[1][0]).toBe('idp1 || 40%');
+      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
 
       await act(async () => { root.unmount(); });
     });
+
+    it('preserves user-added package percent rows when recalculating', async () => {
+      get.mockImplementation(path => {
+        if (path === 'invoiceBuilder') return Promise.resolve({ exists: () => true, val: () => fixtureInvoiceData });
+        if (path === 'budget/items') return Promise.resolve({ exists: () => true, val: () => fixtureItems });
+        if (path === 'budget/packages') return Promise.resolve({ exists: () => true, val: () => fixturePackages });
+        if (path === 'budget/technical') return Promise.resolve({ exists: () => true, val: () => fixtureTechnical });
+        if (path === 'invoiceBuilder/expectedExpenses') {
+          return Promise.resolve({
+            exists: () => true,
+            val: () => ({
+              packageId: 'p1',
+              expectedExpenses: [
+                [{ id: 'manual-percent', kind: 'packagePercent', catalogId: 'p1', percent: 10 }],
+                [],
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ exists: () => false, val: () => null });
+      });
+      const root = mount();
+      await flush();
+
+      const recalculateButton = findButton('Recalculate');
+      expect(recalculateButton).toBeTruthy();
+      await act(async () => { recalculateButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.expectedExpenses[0][1]).toBe('idp1 || 10%');
+      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+
+      await act(async () => { root.unmount(); });
+    });
+
 
     it('deletes the whole plan', async () => {
       const root = mount();
