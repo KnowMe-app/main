@@ -156,7 +156,10 @@ export const normalizeServiceEntry = raw => {
   }
 
   if (raw.kind === 'packagePercent') {
-    return makePackagePercentEntry({ catalogId: raw.catalogId, percent: raw.percent }, { id });
+    return {
+      ...makePackagePercentEntry({ catalogId: raw.catalogId, percent: raw.percent }, { id }),
+      ...(raw.expectedExpenseRole ? { expectedExpenseRole: raw.expectedExpenseRole } : {}),
+    };
   }
 
   if (raw.kind === 'custom') {

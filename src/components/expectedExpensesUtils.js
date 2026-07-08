@@ -24,7 +24,15 @@ const formatCleanNumber = value => {
 export const serializeExpectedExpenseEntry = entry => {
   if (typeof entry === 'string') return entry;
   if (!entry || typeof entry !== 'object') return '';
-  if (entry.kind === 'packagePercent') return `id${entry.catalogId ?? ''} || ${formatCleanNumber(entry.percent)}%`;
+  if (entry.kind === 'packagePercent' && entry.expectedExpenseRole !== 'scheduled') return `id${entry.catalogId ?? ''} || ${formatCleanNumber(entry.percent)}%`;
+  if (entry.kind === 'packagePercent') {
+    return {
+      kind: 'packagePercent',
+      catalogId: String(entry.catalogId ?? ''),
+      percent: Number(entry.percent) || 0,
+      expectedExpenseRole: 'scheduled',
+    };
+  }
   if (entry.kind === 'item') return `id${entry.catalogId ?? ''}`;
   if (entry.kind === 'custom') return `${String(entry.name || '').trim()} || ${formatCleanNumber(entry.price)}`;
   return '';
@@ -56,7 +64,10 @@ export const buildExpectedExpensesGroupsFromSchedule = (schedule, pkg) => {
   return payments.map(payment => {
     const amount = Number(payment?.amount) || 0;
     const percent = packagePrice ? (amount / packagePrice) * 100 : 0;
-    return [makePackagePercentEntry({ catalogId: pkg?.id ?? '', percent })];
+    return [{
+      ...makePackagePercentEntry({ catalogId: pkg?.id ?? '', percent }),
+      expectedExpenseRole: 'scheduled',
+    }];
   });
 };
 
