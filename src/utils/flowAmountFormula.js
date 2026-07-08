@@ -107,38 +107,51 @@ export const evaluateFlowAmountFormula = (rawFormula, resolveIdentifier) => {
   };
 
   const parseExpression = () => {
-    let value = parseTerm();
+    let term = parseTerm();
+    let value = term.value;
     while (peek()?.type === '+' || peek()?.type === '-') {
       const operator = peek().type;
       position += 1;
       const right = parseTerm();
-      value = operator === '+' ? value + right : value - right;
+      const rightValue = right.isPercent ? value * right.value : right.value;
+      value = operator === '+' ? value + rightValue : value - rightValue;
+      term = { value, isPercent: false };
     }
-    return value;
+    return term;
   };
 
   const parseTerm = () => {
-    let value = parseFactor();
+    let factor = parseFactor();
+    let value = factor.value;
+    let isPercent = factor.isPercent;
     while (peek()?.type === '*' || peek()?.type === '/') {
       const operator = peek().type;
       position += 1;
       const right = parseFactor();
-      if (operator === '/' && right === 0) {
+      if (operator === '/' && right.value === 0) {
         throw new Error('Formula division by zero');
       }
-      value = operator === '*' ? value * right : value / right;
+      value = operator === '*' ? value * right.value : value / right.value;
+      isPercent = false;
     }
-    return value;
+    return { value, isPercent };
   };
 
   const parseFactor = () => {
     let value;
+    let isPercent = false;
     if (consume('+')) {
-      value = parseFactor();
+      const factor = parseFactor();
+      value = factor.value;
+      isPercent = factor.isPercent;
     } else if (consume('-')) {
-      value = -parseFactor();
+      const factor = parseFactor();
+      value = -factor.value;
+      isPercent = factor.isPercent;
     } else if (consume('(')) {
-      value = parseExpression();
+      const expressionResult = parseExpression();
+      value = expressionResult.value;
+      isPercent = expressionResult.isPercent;
       if (!consume(')')) {
         throw new Error('Formula closing parenthesis is missing');
       }
@@ -159,15 +172,16 @@ export const evaluateFlowAmountFormula = (rawFormula, resolveIdentifier) => {
 
     while (consume('%')) {
       value /= 100;
+      isPercent = true;
     }
-    return value;
+    return { value, isPercent };
   };
 
   if (tokens.length === 0) {
     throw new Error('Formula is empty');
   }
 
-  const result = parseExpression();
+  const result = parseExpression().value;
   if (position !== tokens.length) {
     throw new Error('Formula has an unexpected token');
   }

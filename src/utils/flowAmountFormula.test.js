@@ -15,7 +15,10 @@ describe('flowAmountFormula', () => {
 
   it('supports postfix percent values in formulas', () => {
     expect(evaluateFlowAmountFormula('=20%')).toBeCloseTo(0.2);
-    expect(resolveFlowAmountInput('=100+20%')).toBe('100.2');
+    expect(resolveFlowAmountInput('=100+20%')).toBe('120');
+    expect(resolveFlowAmountInput('=86000-6%')).toBe('80840');
+    expect(resolveFlowAmountInput('=86000*6%')).toBe('5160');
+    expect(resolveFlowAmountInput('=86000-(86000*6/100)-100')).toBe('80740');
   });
 
   it('supports unary minus and localized operators', () => {

@@ -16,13 +16,40 @@ jest.mock('./config', () => ({
   updateFlowEntry: jest.fn(),
 }));
 
-const { parseFlowEntryLine } = require('./FlowManager');
+const { flattenFlowEntriesFromBackend, parseFlowEntryLine } = require('./FlowManager');
 
 describe('parseFlowEntryLine', () => {
   it('keeps dollar-only formulas as a persistable USD formula amount', () => {
     expect(parseFlowEntryLine('=$ lunch', '2026-07-07')).toMatchObject({
       amount: '=USD',
       description: 'lunch',
+    });
+  });
+
+  it('keeps division operators inside formula amounts while parsing a line', () => {
+    expect(parseFlowEntryLine('08.07.2026 =(86000-(86000*6/100)-100) Лена', '2026-07-07')).toMatchObject({
+      date: '2026-07-08',
+      amount: '=(86000-(86000*6/100)-100)',
+      description: 'Лена',
+    });
+  });
+
+  it('keeps division operators inside persisted object formula amounts', () => {
+    expect(
+      flattenFlowEntriesFromBackend({
+        general: {
+          '2026-07-08': {
+            abc: {
+              amount: '=(86000-(86000*6/100)-100)',
+              description: 'Лена',
+            },
+          },
+        },
+      })[0]
+    ).toMatchObject({
+      date: '2026-07-08',
+      amount: '=(86000-(86000*6/100)-100)',
+      description: 'Лена',
     });
   });
 
