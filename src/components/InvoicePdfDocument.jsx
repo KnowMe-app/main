@@ -1,5 +1,6 @@
 import React from 'react';
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
+import { PDF_COLOR, PDF_FONT, pdfBaseStyles, sanitizePdfText } from './pdfTheme';
 import {
   buildCaseTitle,
   buildPayerLocation,
@@ -15,22 +16,6 @@ const AGENCY_ADDRESS_LINE_2 = 'Kyiv, 01034, Ukraine';
 const AGENCY_WEBSITE = 'Website: http://ukrcom.kyiv.ua/';
 const AGENCY_EMAIL = 'E-mail: sm.kiev.ukr@gmail.com';
 const AGENCY_TELEGRAM = 'Telegram: @Contact_Us_Kyiv';
-
-const INK = '#33291f';
-const MUTED = '#6f6359';
-const ACCENT = '#7a4c2f';
-const HEAD_BG = '#f3e6d2';
-const TOTAL_BG = '#cfe0f5';
-
-// The built-in Helvetica font only covers WinAnsi glyphs, so swap the few
-// characters that would otherwise render blank.
-const sanitizePdfText = value => String(value ?? '')
-  .replace(/№/g, 'No.')
-  .replace(/[’‘]/g, "'")
-  .replace(/[“”]/g, '"')
-  .replace(/[–—]/g, '-')
-  .replace(/\s+/g, ' ')
-  .trim();
 
 // Row-level amounts show as plain numbers ("3000", "300"); only the
 // tax-adjusted totals use the space-grouped, comma-decimal EUR format.
@@ -49,46 +34,48 @@ const formatEuroTotal = value => {
 };
 
 const styles = StyleSheet.create({
-  page: {
-    paddingTop: 44,
-    paddingBottom: 62,
-    paddingHorizontal: 44,
-    fontFamily: 'Helvetica',
-    fontSize: 10,
-    color: INK,
-    backgroundColor: '#ffffff',
-  },
+  page: pdfBaseStyles.page,
+  eyebrow: pdfBaseStyles.eyebrow,
   title: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 20,
-    letterSpacing: -0.2,
-    textAlign: 'center',
-    marginBottom: 26,
-  },
-  sectionTitle: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 20,
-    letterSpacing: -0.2,
+    ...pdfBaseStyles.docTitle,
+    fontSize: 21,
     textAlign: 'center',
     marginBottom: 4,
   },
+  titleRule: {
+    alignSelf: 'center',
+    width: 64,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: PDF_COLOR.accent,
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontFamily: PDF_FONT.bold,
+    fontSize: 19,
+    letterSpacing: -0.2,
+    textAlign: 'center',
+    marginBottom: 4,
+    color: PDF_COLOR.ink,
+  },
   sectionSubtitle: {
     fontSize: 10.5,
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.bold,
     textAlign: 'center',
-    color: MUTED,
-    marginBottom: 20,
+    color: PDF_COLOR.soft,
+    marginBottom: 22,
   },
   table: {
     borderWidth: 1,
-    borderColor: '#111111',
+    borderColor: PDF_COLOR.line,
     borderStyle: 'solid',
+    borderRadius: 6,
     marginBottom: 18,
   },
   row: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: '#111111',
+    borderTopColor: PDF_COLOR.line,
     borderTopStyle: 'solid',
   },
   firstRow: {
@@ -96,27 +83,33 @@ const styles = StyleSheet.create({
   },
   labelCell: {
     width: '38%',
-    backgroundColor: HEAD_BG,
+    backgroundColor: PDF_COLOR.headBg,
     borderRightWidth: 1,
-    borderRightColor: '#111111',
+    borderRightColor: PDF_COLOR.line,
     borderRightStyle: 'solid',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
     justifyContent: 'center',
   },
   labelText: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.bold,
     fontSize: 9.5,
+    color: '#4d3a26',
   },
   valueCell: {
     width: '62%',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
     justifyContent: 'center',
   },
   valueText: {
     fontSize: 9.5,
     lineHeight: 1.4,
+  },
+  totalValueText: {
+    fontFamily: PDF_FONT.bold,
+    fontSize: 11,
+    color: PDF_COLOR.accent,
   },
   noteRow: {
     flexDirection: 'row',
@@ -125,36 +118,44 @@ const styles = StyleSheet.create({
   noteMark: {
     width: 20,
     fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
-    color: ACCENT,
+    fontFamily: PDF_FONT.bold,
+    color: PDF_COLOR.accent,
   },
   noteText: {
     flex: 1,
     fontSize: 9,
     lineHeight: 1.45,
+    color: PDF_COLOR.muted,
   },
   expensesTable: {
     borderWidth: 1,
-    borderColor: '#111111',
+    borderColor: PDF_COLOR.line,
     borderStyle: 'solid',
+    borderRadius: 6,
     marginBottom: 4,
   },
   expensesHeadRow: {
     flexDirection: 'row',
-    backgroundColor: HEAD_BG,
+    backgroundColor: PDF_COLOR.headBg,
   },
   expensesRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: '#111111',
+    borderTopColor: PDF_COLOR.line,
     borderTopStyle: 'solid',
   },
+  expensesRowAlt: {
+    backgroundColor: PDF_COLOR.rowAlt,
+  },
+  packageHeadRow: {
+    backgroundColor: PDF_COLOR.headBg,
+  },
   expenseIndexCell: {
-    width: 26,
+    width: 30,
     borderRightWidth: 1,
-    borderRightColor: '#111111',
+    borderRightColor: PDF_COLOR.line,
     borderRightStyle: 'solid',
-    paddingVertical: 5,
+    paddingVertical: 6,
     paddingHorizontal: 6,
     justifyContent: 'center',
     alignItems: 'center',
@@ -162,47 +163,84 @@ const styles = StyleSheet.create({
   expenseNameCell: {
     flex: 1,
     borderRightWidth: 1,
-    borderRightColor: '#111111',
+    borderRightColor: PDF_COLOR.line,
     borderRightStyle: 'solid',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
     justifyContent: 'center',
   },
+  expenseNameCellChild: {
+    paddingLeft: 20,
+  },
   expenseAmountCell: {
-    width: 84,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    width: 88,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
     justifyContent: 'center',
     alignItems: 'flex-end',
   },
   expenseHeadText: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.bold,
     fontSize: 9.5,
+    color: '#4d3a26',
+  },
+  expenseIndexText: {
+    fontSize: 8.5,
+    color: PDF_COLOR.soft,
+    fontFamily: PDF_FONT.bold,
   },
   expenseText: {
     fontSize: 9.5,
   },
+  expenseTextChild: {
+    fontSize: 9,
+    color: PDF_COLOR.ink,
+  },
+  expenseTextPackage: {
+    fontFamily: PDF_FONT.bold,
+    fontSize: 10,
+  },
+  expenseDescription: {
+    fontSize: 8,
+    color: PDF_COLOR.muted,
+    lineHeight: 1.4,
+    marginTop: 1.5,
+  },
+  expensePriceText: {
+    fontSize: 9.5,
+  },
+  expensePriceTextChild: {
+    fontSize: 9,
+    color: PDF_COLOR.muted,
+  },
+  expensePriceTextPackage: {
+    fontFamily: PDF_FONT.bold,
+    fontSize: 10,
+    color: PDF_COLOR.accent,
+  },
   summaryRow: {
     flexDirection: 'row',
     borderWidth: 1,
-    borderColor: '#111111',
+    borderColor: PDF_COLOR.line,
     borderStyle: 'solid',
     borderTopWidth: 0,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
   },
   summaryLabelCell: {
     flex: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
     justifyContent: 'center',
   },
   summaryAmountCell: {
-    width: 110,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    width: 118,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
     justifyContent: 'center',
     alignItems: 'flex-end',
     borderLeftWidth: 1,
-    borderLeftColor: '#111111',
+    borderLeftColor: PDF_COLOR.line,
     borderLeftStyle: 'solid',
   },
   summaryLabelText: {
@@ -212,34 +250,15 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
   },
   totalAmountCell: {
-    backgroundColor: TOTAL_BG,
+    backgroundColor: PDF_COLOR.totalBg,
   },
   totalAmountText: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.bold,
   },
-  footer: {
-    position: 'absolute',
-    left: 44,
-    right: 44,
-    bottom: 24,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  footerColumn: {
-    maxWidth: 260,
-  },
-  footerText: {
-    fontSize: 8,
-    color: MUTED,
-    lineHeight: 1.4,
-  },
-  footerPage: {
-    position: 'absolute',
-    right: 44,
-    bottom: 24,
-    fontSize: 8,
-    color: MUTED,
-  },
+  footer: pdfBaseStyles.footer,
+  footerColumn: pdfBaseStyles.footerColumn,
+  footerText: pdfBaseStyles.footerText,
+  footerPage: pdfBaseStyles.footerPage,
 });
 
 const renderFooter = pageLabel => (
@@ -258,6 +277,22 @@ const renderFooter = pageLabel => (
   </View>
 );
 
+// Flattens resolved rows into a display list: a package becomes its own bold header row
+// ("2.") followed by its children indented underneath ("2.1", "2.2", ...).
+const buildDisplayRows = rows => {
+  const display = [];
+  rows.forEach((row, index) => {
+    const number = String(index + 1);
+    display.push({ ...row, number, depth: 0 });
+    if (row.kind === 'package') {
+      (row.children || []).forEach((child, childIndex) => {
+        display.push({ ...child, number: `${number}.${childIndex + 1}`, depth: 1 });
+      });
+    }
+  });
+  return display;
+};
+
 const InvoicePdfDocument = ({
   beneficiary,
   customers,
@@ -271,6 +306,7 @@ const InvoicePdfDocument = ({
   priceContext,
 }) => {
   const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, priceContext);
+  const displayRows = buildDisplayRows(rows);
   const subtotal = computeInvoiceSubtotal(rows);
   const total = computeInvoiceTotal(subtotal, taxPercent);
   const payerName = buildPayerName(customers);
@@ -281,7 +317,9 @@ const InvoicePdfDocument = ({
   return (
     <Document title={`Invoice ${invoiceNumber || ''}`} subject="Invoice" creator="UKRCOM">
       <Page size="A4" style={styles.page} wrap>
-        <Text style={styles.title}>{sanitizePdfText(`INVOICE # ${invoiceNumber || ''}`)}</Text>
+        <Text style={styles.eyebrow}>{sanitizePdfText(AGENCY_NAME)}</Text>
+        <Text style={styles.title}>{sanitizePdfText(`INVOICE No. ${invoiceNumber || ''}`)}</Text>
+        <View style={styles.titleRule} />
 
         <View style={styles.table}>
           <View style={[styles.row, styles.firstRow]} wrap={false}>
@@ -321,7 +359,7 @@ const InvoicePdfDocument = ({
           </View>
           <View style={styles.row} wrap={false}>
             <View style={styles.labelCell}><Text style={styles.labelText}>Total:</Text></View>
-            <View style={styles.valueCell}><Text style={styles.valueText}>{formatEuroTotal(total)}</Text></View>
+            <View style={styles.valueCell}><Text style={styles.totalValueText}>{formatEuroTotal(total)}</Text></View>
           </View>
         </View>
 
@@ -336,6 +374,7 @@ const InvoicePdfDocument = ({
       </Page>
 
       <Page size="A4" style={styles.page} wrap>
+        <Text style={styles.eyebrow}>{sanitizePdfText(AGENCY_NAME)}</Text>
         <Text style={styles.sectionTitle}>Description</Text>
         <Text style={styles.sectionSubtitle}>{sanitizePdfText(caseTitle)}</Text>
 
@@ -345,18 +384,39 @@ const InvoicePdfDocument = ({
             <View style={styles.expenseNameCell}><Text style={styles.expenseHeadText}>Expenses</Text></View>
             <View style={styles.expenseAmountCell}><Text style={styles.expenseHeadText}>EUR</Text></View>
           </View>
-          {rows.map((row, index) => (
-            <View key={row.key || index} style={styles.expensesRow} wrap={false}>
-              <View style={styles.expenseIndexCell}><Text style={styles.expenseText}>{index + 1}</Text></View>
-              <View style={styles.expenseNameCell}><Text style={styles.expenseText}>{sanitizePdfText(row.name)}</Text></View>
-              <View style={styles.expenseAmountCell}><Text style={styles.expenseText}>{formatPlainAmount(row.price)}</Text></View>
-            </View>
-          ))}
+          {displayRows.map((row, rowIndex) => {
+            const isChild = row.depth > 0;
+            const isPackageHeader = row.kind === 'package';
+            return (
+              <View
+                key={`${row.key || rowIndex}-${row.number}`}
+                style={[
+                  styles.expensesRow,
+                  isPackageHeader ? styles.packageHeadRow : null,
+                  !isPackageHeader && rowIndex % 2 ? styles.expensesRowAlt : null,
+                ]}
+                wrap={false}
+              >
+                <View style={styles.expenseIndexCell}><Text style={styles.expenseIndexText}>{row.number}</Text></View>
+                <View style={[styles.expenseNameCell, isChild ? styles.expenseNameCellChild : null]}>
+                  <Text style={isPackageHeader ? styles.expenseTextPackage : (isChild ? styles.expenseTextChild : styles.expenseText)}>
+                    {sanitizePdfText(row.name)}
+                  </Text>
+                  {row.description ? <Text style={styles.expenseDescription}>{sanitizePdfText(row.description)}</Text> : null}
+                </View>
+                <View style={styles.expenseAmountCell}>
+                  <Text style={isPackageHeader ? styles.expensePriceTextPackage : (isChild ? styles.expensePriceTextChild : styles.expensePriceText)}>
+                    {formatPlainAmount(row.price)}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
 
         <View style={styles.summaryRow} wrap={false}>
-          <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: 'Helvetica-Bold' }]}>Total:</Text></View>
-          <View style={styles.summaryAmountCell}><Text style={[styles.summaryAmountText, { fontFamily: 'Helvetica-Bold' }]}>{formatEuroTotal(subtotal)}</Text></View>
+          <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Total:</Text></View>
+          <View style={styles.summaryAmountCell}><Text style={[styles.summaryAmountText, { fontFamily: PDF_FONT.bold }]}>{formatEuroTotal(subtotal)}</Text></View>
         </View>
 
         <View style={{ marginTop: 16 }}>
@@ -365,7 +425,7 @@ const InvoicePdfDocument = ({
             <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(taxPercent)}</Text></View>
           </View>
           <View style={styles.summaryRow} wrap={false}>
-            <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: 'Helvetica-Bold' }]}>Amount need to be paid (EUR)</Text></View>
+            <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Amount need to be paid (EUR)</Text></View>
             <View style={[styles.summaryAmountCell, styles.totalAmountCell]}><Text style={[styles.summaryAmountText, styles.totalAmountText]}>{formatEuroTotal(total)}</Text></View>
           </View>
         </View>

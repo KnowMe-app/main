@@ -4,12 +4,12 @@ import {
   Document,
   Image,
   Page,
-  Font,
   pdf,
   StyleSheet,
   Text,
   View,
 } from '@react-pdf/renderer';
+import { PDF_COLOR, PDF_FONT, pdfBaseStyles, sanitizePdfText } from '../pdfTheme';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
 import { btnEdit } from './btnEdit';
@@ -740,33 +740,76 @@ const extractMultiDataComments = cardData => {
   return normalized.filter(comment => comment.text);
 };
 
-Font.register({
-  family: 'NotoSans',
-  src: 'https://fonts.gstatic.com/s/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf',
-});
-
 const profilePdfStyles = StyleSheet.create({
   page: {
     position: 'relative',
     paddingTop: 78,
     paddingHorizontal: 88,
     paddingBottom: 74,
-    fontFamily: 'NotoSans',
-    color: '#111',
-    backgroundColor: '#fff',
+    fontFamily: PDF_FONT.base,
+    color: PDF_COLOR.ink,
+    backgroundColor: PDF_COLOR.white,
+  },
+  eyebrow: {
+    ...pdfBaseStyles.eyebrow,
+    textAlign: 'center',
+    marginBottom: 8,
   },
   title: {
-    marginBottom: 38,
+    fontFamily: PDF_FONT.bold,
+    marginBottom: 6,
     textAlign: 'center',
     fontSize: 20,
     lineHeight: 1.25,
+    color: PDF_COLOR.ink,
   },
-  profileRows: {
-    fontSize: 17,
-    lineHeight: 1.35,
+  titleRule: {
+    alignSelf: 'center',
+    width: 64,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: PDF_COLOR.accent,
+    marginBottom: 28,
   },
-  profileRow: {
-    marginBottom: 1,
+  table: {
+    borderWidth: 1,
+    borderColor: PDF_COLOR.line,
+    borderStyle: 'solid',
+    borderRadius: 6,
+  },
+  row: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: PDF_COLOR.line,
+    borderTopStyle: 'solid',
+  },
+  firstRow: {
+    borderTopWidth: 0,
+  },
+  labelCell: {
+    width: '38%',
+    backgroundColor: PDF_COLOR.headBg,
+    borderRightWidth: 1,
+    borderRightColor: PDF_COLOR.line,
+    borderRightStyle: 'solid',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+  },
+  labelText: {
+    fontFamily: PDF_FONT.bold,
+    fontSize: 10.5,
+    color: '#4d3a26',
+  },
+  valueCell: {
+    width: '62%',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+  },
+  valueText: {
+    fontSize: 11,
+    lineHeight: 1.4,
   },
   watermark: {
     position: 'absolute',
@@ -774,21 +817,26 @@ const profilePdfStyles = StyleSheet.create({
     top: 330,
     width: 520,
     textAlign: 'center',
+    fontFamily: PDF_FONT.bold,
     fontSize: 106,
-    color: '#dbeafa',
-    opacity: 0.72,
+    color: PDF_COLOR.watermark,
+    opacity: 0.9,
     transform: 'rotate(-42deg)',
   },
   footer: {
     position: 'absolute',
     left: 88,
     right: 88,
-    bottom: 32,
+    bottom: 28,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    color: '#777',
-    fontSize: 7,
-    lineHeight: 1.2,
+    borderTopWidth: 1,
+    borderTopColor: PDF_COLOR.line,
+    borderTopStyle: 'solid',
+    paddingTop: 8,
+    color: PDF_COLOR.muted,
+    fontSize: 7.5,
+    lineHeight: 1.4,
   },
   footerRight: {
     textAlign: 'right',
@@ -798,8 +846,8 @@ const profilePdfStyles = StyleSheet.create({
     paddingTop: 78,
     paddingHorizontal: 70,
     paddingBottom: 74,
-    fontFamily: 'NotoSans',
-    backgroundColor: '#fff',
+    fontFamily: PDF_FONT.base,
+    backgroundColor: PDF_COLOR.white,
   },
   profileImageWrap: {
     position: 'relative',
@@ -822,9 +870,10 @@ const profilePdfStyles = StyleSheet.create({
     top: 230,
     width: 520,
     textAlign: 'center',
+    fontFamily: PDF_FONT.bold,
     fontSize: 86,
-    color: '#dbeafa',
-    opacity: 0.72,
+    color: PDF_COLOR.watermark,
+    opacity: 0.9,
     transform: 'rotate(-42deg)',
   },
 });
@@ -1007,14 +1056,17 @@ const ProfilePdfDocument = ({ userData, photoUrls }) => {
     <Document title={`${buildName(userData) || 'Profile'} - KnowMe: Egg donor`}>
       <Page size="A4" style={profilePdfStyles.page}>
         <Text style={profilePdfStyles.watermark}>KnowMe</Text>
+        <Text style={profilePdfStyles.eyebrow}>{sanitizePdfText('KnowMe · Egg donor')}</Text>
         <Text style={profilePdfStyles.title}>
-          Surrogacy mother’s{'\n'}profile
+          {sanitizePdfText("Surrogacy mother's profile")}
         </Text>
-        <View style={profilePdfStyles.profileRows}>
-          {rows.map(([label, value]) => (
-            <Text key={label} style={profilePdfStyles.profileRow}>
-              {label}: {value}
-            </Text>
+        <View style={profilePdfStyles.titleRule} />
+        <View style={profilePdfStyles.table}>
+          {rows.map(([label, value], index) => (
+            <View key={label} style={[profilePdfStyles.row, index === 0 ? profilePdfStyles.firstRow : null]} wrap={false}>
+              <View style={profilePdfStyles.labelCell}><Text style={profilePdfStyles.labelText}>{sanitizePdfText(label)}</Text></View>
+              <View style={profilePdfStyles.valueCell}><Text style={profilePdfStyles.valueText}>{sanitizePdfText(value)}</Text></View>
+            </View>
           ))}
         </View>
         {pdfFooter}
