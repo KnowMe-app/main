@@ -1519,9 +1519,23 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
     if (!resolvedPackage) return;
     const fresh = buildExpectedExpensesPlan(resolvedPackage, schedule);
+    const packageId = String(expectedExpenses.packageId ?? '');
+    const isLegacyScheduledEntry = entry => (
+      entry?.expectedExpenseRole !== 'scheduled'
+      && entry?.kind === 'packagePercent'
+      && String(entry.catalogId ?? '') === packageId
+    );
+    const hasLegacyScheduledRows = fresh.expectedExpenses.length > 0
+      && fresh.expectedExpenses.every((_, index) => {
+        const existingGroup = Array.isArray(expectedExpenses.expectedExpenses?.[index]) ? expectedExpenses.expectedExpenses[index] : [];
+        return isLegacyScheduledEntry(existingGroup[0]);
+      });
     const nextGroups = fresh.expectedExpenses.map((group, index) => {
       const existingGroup = Array.isArray(expectedExpenses.expectedExpenses?.[index]) ? expectedExpenses.expectedExpenses[index] : [];
-      const extraServices = existingGroup.filter(entry => entry?.expectedExpenseRole !== 'scheduled');
+      const extraServices = existingGroup.filter((entry, entryIndex) => (
+        entry?.expectedExpenseRole !== 'scheduled'
+        && !(hasLegacyScheduledRows && entryIndex === 0 && isLegacyScheduledEntry(entry))
+      ));
       return [...group, ...extraServices];
     });
     persistExpectedExpenses({ ...expectedExpenses, expectedExpenses: nextGroups }, 'Schedule groups refreshed.');
