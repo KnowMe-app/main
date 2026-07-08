@@ -322,7 +322,7 @@ const renderExpensesTable = rows => (
   </View>
 );
 
-const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate, schedule, taxPercent = 0 }) => {
+const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate }) => {
   const caseTitle = buildCaseTitle(customers);
   const dateLabel = formatPlanDate(planDate instanceof Date ? planDate : new Date(planDate || Date.now()));
   const overviewRows = resolvePackageOverviewRows(plan?.packageSnapshot?.children, catalogItemsById, priceContext);
@@ -341,9 +341,11 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
         return (
           <Page key={`${plan?.packageId || 'package'}-${index}`} size="A4" style={styles.page} wrap>
             <Text style={styles.sectionTitle}>{sanitizePdfText(`Expected expenses of the invoice #${index + 1}`)}</Text>
-            <Text style={styles.sectionSubtitle}>{sanitizePdfText(`${index + 1}. ${payment?.title || `Payment ${index + 1}`}`)}</Text>
+            <Text style={styles.sectionSubtitle}>{sanitizePdfText(`${index + 1}. ${milestone.title}`)}</Text>
             <Text style={styles.dateText}>{dateLabel}</Text>
 
+            {milestone.showPackageOverview ? (
+              <>
                 <View style={styles.overviewTable}>
                   <View style={styles.overviewHeadRow} wrap={false}>
                     <View style={styles.overviewHeadCell}><Text style={styles.overviewHeadText}>{sanitizePdfText(plan.packageSnapshot.name)}</Text></View>
@@ -381,13 +383,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
                 {serviceRows.length ? renderExpensesTable(serviceRows) : null}
               </>
             ) : (
-              <>
-                <Text style={styles.sectionTitle}>{sanitizePdfText(`Expected expenses of the invoice #${index + 1}`)}</Text>
-                <Text style={styles.sectionSubtitle}>{sanitizePdfText(`${index + 1}. ${milestone.title}`)}</Text>
-                <Text style={styles.dateText}>{dateLabel}</Text>
-
-                {renderExpensesTable(serviceRows)}
-              </>
+              renderExpensesTable(serviceRows)
             )}
 
             <View style={[styles.summaryRow, styles.summaryRowLast]} wrap={false}>
@@ -398,7 +394,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
             <View style={{ marginTop: 16 }}>
               <View style={styles.summaryRow} wrap={false}>
                 <View style={styles.summaryLabelCell}><Text style={styles.summaryLabelText}>Taxes (%)</Text></View>
-                <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(taxPercent)}</Text></View>
+                <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(milestone.taxPercent)}</Text></View>
               </View>
               <View style={[styles.summaryRow, styles.summaryRowLast]} wrap={false}>
                 <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Amount need to be paid (EUR)</Text></View>

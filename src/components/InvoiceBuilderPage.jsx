@@ -61,12 +61,14 @@ import {
   computeMilestoneSubtotal,
   computeMilestonesPackageSharePercent,
   computeMilestonesTotal,
+  getExpectedExpensesPackagePrice,
   isExpectedExpensesShape,
   isRawExpectedExpensesGroups,
   normalizeExpectedExpensesData,
   removeMilestoneService,
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
+  serializeExpectedExpensesData,
   setMilestoneField,
   updateMilestoneServiceField,
 } from './expectedExpensesUtils';
@@ -932,60 +934,25 @@ const PackageEntryCard = ({
   );
 };
 
-const PdfPreviewStrip = styled.div`
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 12px 2px 4px;
-  margin-top: 8px;
-`;
-
-const PdfPreviewPage = styled.div`
-  flex: 0 0 165px;
-  min-height: 232px;
-  background: #fff;
-  border: 1px solid var(--km-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-  padding: 14px 12px;
-  color: #111827;
-  font-size: 7px;
-`;
-
-const PdfPreviewTitle = styled.div`
-  text-align: center;
-  font-weight: 900;
-  font-size: 10px;
-  margin-bottom: 4px;
-`;
-
-const PdfPreviewSubtitle = styled.div`
-  text-align: center;
-  font-weight: 700;
-  margin-bottom: 10px;
-`;
-
-const PdfPreviewTable = styled.div`
-  border: 1px solid #111827;
-`;
-
-const PdfPreviewRow = styled.div`
-  display: flex;
-  justify-content: space-between;
-  gap: 5px;
-  border-bottom: 1px solid #111827;
-  padding: 3px;
-
-  &:last-child { border-bottom: 0; }
-`;
-
-const PdfPreviewFooter = styled.div`
-  margin-top: 10px;
-  font-weight: 800;
-  text-align: right;
-`;
-
 // --- Expected expenses milestone (one payment-schedule entry -> one future invoice) ------------------------------------------------------
+
+const MilestoneCheckboxRow = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 8px;
+`;
+
+const MilestoneCheckboxLabel = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--km-muted);
+  cursor: pointer;
+`;
 
 const MilestoneCard = ({
   index,
@@ -993,7 +960,6 @@ const MilestoneCard = ({
   serviceRows,
   subtotal,
   amountDue,
-  taxPercent,
   catalogItems,
   catalogPackages,
   onCommitField,
@@ -1004,6 +970,7 @@ const MilestoneCard = ({
   onAddCustomService,
   onAddCatalogService,
   onAddPercentService,
+  onAddPackagePercent,
 }) => {
   const [titleDraft, setTitleDraft, titleEditingRef] = useFieldDraft(milestone.title);
   const [taxDraft, setTaxDraft, taxEditingRef] = useFieldDraft(String(milestone.taxPercent ?? ''));
@@ -1102,7 +1069,7 @@ const MilestoneCard = ({
       <PackageAddRow>
         <PackageQuickField
           rows={1}
-          placeholder="Add a custom line to this invoice…"
+          placeholder="Custom line name…"
           value={customName}
           onChange={event => setCustomName(event.target.value)}
         />
@@ -1623,7 +1590,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     }
     const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
     if (!resolvedPackage) return;
-    const plan = buildExpectedExpensesPlan(resolvedPackage, schedule);
+    const plan = buildExpectedExpensesPlan(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
     persistExpectedExpenses(plan, 'Expected expenses template created.');
     setShowExpectedExpensesPicker(false);
   };
@@ -1645,9 +1612,25 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     )) return;
     const resolvedPackage = { ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice };
     const freshMilestones = buildMilestonesFromSchedule(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
+    // A milestone saved before expectedExpenseRole existed has no explicit marker on its scheduled
+    // row, so it can't be told apart from a manually-added percent-of-package row by itself. Only
+    // guess when EVERY existing milestone's first row looks like that same unmarked pattern - one
+    // manual row surrounded by otherwise-fresh milestones is left alone instead of being swallowed
+    // as if it were the old scheduled amount. Evaluated over the existing milestones (not the fresh
+    // ones), so a schedule that grew a new step doesn't silently defeat this check.
+    const packageId = String(expectedExpenses.packageId ?? '');
+    const isUnmarkedPackagePercent = entry => entry?.kind === 'percent'
+      && !entry.expectedExpenseRole
+      && String(entry.packageId) === packageId;
+    const existingMilestones = expectedExpenses.milestones || [];
+    const hasLegacyScheduledRows = existingMilestones.length > 0
+      && existingMilestones.every(milestone => isUnmarkedPackagePercent((milestone.services || [])[0]));
     const nextMilestones = freshMilestones.map((milestone, index) => {
-      const previous = expectedExpenses.milestones[index];
-      const previousExtras = (previous?.services || []).filter(entry => entry.kind !== 'percent' || String(entry.packageId) !== String(expectedExpenses.packageId));
+      const previous = existingMilestones[index];
+      const previousExtras = (previous?.services || []).filter((entry, entryIndex) => (
+        entry?.expectedExpenseRole !== 'scheduled'
+        && !(hasLegacyScheduledRows && entryIndex === 0 && isUnmarkedPackagePercent(entry))
+      ));
       return {
         ...milestone,
         services: [...milestone.services, ...previousExtras],
@@ -1670,12 +1653,22 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistExpectedExpenses(null, 'Expected expenses template deleted.');
   };
 
-  const commitExpectedExpenseServiceField = (groupIndex, entryId, field, value) => {
-    persistExpectedExpenses(updateExpectedExpenseServiceField(expectedExpenses, groupIndex, entryId, field, value), 'Service updated.');
+  const persistExpectedExpensesMilestones = (nextMilestones, successMessage) => {
+    persistExpectedExpenses({ ...expectedExpenses, milestones: nextMilestones }, successMessage);
   };
 
-  const resetExpectedExpenseServiceEntry = (groupIndex, entryId) => {
-    persistExpectedExpenses(resetExpectedExpenseService(expectedExpenses, groupIndex, entryId), 'Reverted to catalog values.');
+  const commitMilestoneField = (milestoneId, field, value) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? setMilestoneField(milestone, field, value)
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
+  };
+
+  const toggleMilestoneOverview = milestoneId => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? { ...milestone, showPackageOverview: !milestone.showPackageOverview }
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
   };
 
   const commitMilestoneServiceField = (milestoneId, entryId, field, value) => {
@@ -1721,8 +1714,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
   };
 
+  const addMilestonePackagePercentService = (milestoneId, percent) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? addMilestoneService(milestone, makePercentOfPackageEntry(expectedExpenses.packageId, percent))
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
+  };
+
   const handleGenerateExpectedExpensesPdf = async () => {
-    if (!expectedExpenses || !expectedExpensesView?.pages?.length) {
+    if (!expectedExpenses || !expectedExpensesView?.milestoneRows?.length) {
       toast.error('Choose a package to build the plan first.');
       return;
     }
@@ -1743,8 +1743,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         catalogItemsById,
         priceContext,
         planDate: new Date(`${invoiceDateInput || getTodayYmd()}T00:00:00`),
-        schedule: expectedExpensesView?.schedule,
-        taxPercent: defaultExpectedExpensesTaxPercent,
       };
       let blob;
       try {
@@ -2377,7 +2375,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       serviceRows={serviceRows}
                       subtotal={subtotal}
                       amountDue={amountDue}
-                      taxPercent={taxPercent}
                       catalogItems={catalogItems}
                       catalogPackages={visibleCatalogPackages}
                       onCommitField={(field, value) => commitMilestoneField(milestone.id, field, value)}
@@ -2388,28 +2385,9 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       onAddCustomService={fields => addMilestoneCustomService(milestone.id, fields)}
                       onAddCatalogService={catalogId => addMilestoneCatalogService(milestone.id, catalogId)}
                       onAddPercentService={() => addMilestonePercentService(milestone.id)}
+                      onAddPackagePercent={percent => addMilestonePackagePercentService(milestone.id, percent)}
                     />
                   ))}
-
-                  {expectedExpensesView?.pages?.length ? (
-                    <PdfPreviewStrip>
-                      {expectedExpensesView.pages.map(({ payment, rows, amountDue, taxPercent }, index) => (
-                        <PdfPreviewPage key={`preview-${index}`}>
-                          <PdfPreviewTitle>Expected expenses of the invoice #{index + 1}</PdfPreviewTitle>
-                          <PdfPreviewSubtitle>{index + 1}. {payment?.title || `Payment ${index + 1}`}</PdfPreviewSubtitle>
-                          <PdfPreviewTable>
-                            {rows.map((row, rowIndex) => (
-                              <PdfPreviewRow key={row.key || rowIndex}>
-                                <span>{rowIndex + 1}. {row.name}</span>
-                                <b>{formatEuroPreview(row.price)}</b>
-                              </PdfPreviewRow>
-                            ))}
-                          </PdfPreviewTable>
-                          <PdfPreviewFooter>Tax {taxPercent}% · Due {formatEuroPreview(amountDue)}</PdfPreviewFooter>
-                        </PdfPreviewPage>
-                      ))}
-                    </PdfPreviewStrip>
-                  ) : null}
                 </>
               )}
             </Panel>

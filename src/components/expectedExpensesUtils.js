@@ -23,6 +23,7 @@
 import {
   computeInvoiceSubtotal,
   computeInvoiceTotal,
+  createEntryId,
   makeCatalogItemEntry,
   makeCustomEntry,
   makePercentOfPackageEntry,
@@ -47,7 +48,17 @@ const buildGroupFromSchedulePayment = (pkg, payment) => {
   const amount = Number(payment?.amount) || 0;
   if (!listedPrice || !amount) return [];
   const percent = Math.round((amount / listedPrice) * 10000) / 100;
-  return [makePercentOfPackageEntry(pkg?.id, percent)];
+  return [makePercentOfPackageEntry(pkg?.id, percent, { expectedExpenseRole: 'scheduled' })];
+};
+
+// A package needs a resolved, positive listed price before a plan can be built from it - otherwise
+// every percent-of-package row would divide by zero. Throws instead of silently building an empty plan.
+export const getExpectedExpensesPackagePrice = pkg => {
+  const packagePrice = Number(pkg?.listedPrice);
+  if (!Number.isFinite(packagePrice) || packagePrice <= 0) {
+    throw new Error('Expected expenses require a resolved positive package price.');
+  }
+  return packagePrice;
 };
 
 export const buildMilestonesFromSchedule = (pkg, schedule, { taxPercent = 0 } = {}) =>
@@ -85,6 +96,20 @@ export const buildExpectedExpensesPlan = (pkg, schedule, { taxPercent = 0 } = {}
 
 export const isRawExpectedExpensesGroups = raw => Array.isArray(raw) && raw.every(group => Array.isArray(group));
 
+// A freshly uploaded array-of-groups plan has no way to mark which row is "the" auto-generated
+// schedule row - by convention it's always the first percent-of-package row of each group (see the
+// module docstring), so it's safe to tag unconditionally here. This is only ever run once, at
+// upload time - an already-saved plan's milestones are never re-guessed like this on load, since by
+// then a user may have deliberately removed the scheduled row and kept only a manual one; that
+// ambiguous case is resolved by recalculateExpectedExpensesSchedule (InvoiceBuilderPage.jsx) instead.
+export const markLegacyScheduledRow = (services, packageId) => {
+  const rows = Array.isArray(services) ? services : [];
+  if (!rows.length || rows.some(entry => entry?.expectedExpenseRole)) return rows;
+  const [first, ...rest] = rows;
+  if (first?.kind !== 'percent' || String(first.packageId) !== String(packageId)) return rows;
+  return [{ ...first, expectedExpenseRole: 'scheduled' }, ...rest];
+};
+
 // Finds the package id referenced by the first percent-of-package row across all groups.
 export const inferPackageIdFromRawGroups = rawGroups => {
   for (const group of (Array.isArray(rawGroups) ? rawGroups : [])) {
@@ -116,7 +141,7 @@ export const buildExpectedExpensesPlanFromRawGroups = (rawGroups, { catalog, tax
     title: payment?.title || `Payment ${index + 1}`,
     taxPercent,
     showPackageOverview: index === 0,
-    services: groups[index] || [],
+    services: markLegacyScheduledRow(groups[index] || [], packageId),
   }));
 
   return {
@@ -139,7 +164,7 @@ export const normalizeExpectedExpensesMilestone = (raw, { packageId = '', listed
   const migratedServices = !hasOwnServices && Number.isFinite(legacyAmount) && legacyAmount !== 0
     ? [
       listedPrice
-        ? makePercentOfPackageEntry(packageId, Math.round((legacyAmount / listedPrice) * 10000) / 100)
+        ? makePercentOfPackageEntry(packageId, Math.round((legacyAmount / listedPrice) * 10000) / 100, { expectedExpenseRole: 'scheduled' })
         : makeCustomEntry({ name: raw?.title ? `Scheduled payment (${raw.title})` : 'Scheduled payment', price: legacyAmount }),
       ...services,
     ]
@@ -182,8 +207,29 @@ export const isExpectedExpensesShape = raw => Boolean(
   && typeof raw === 'object'
   && !Array.isArray(raw)
   && raw.packageId !== undefined
-  && (Array.isArray(raw.expectedExpenses) || Array.isArray(raw.milestones))
+  && Array.isArray(raw.milestones)
 );
+
+// The compact form persisted to invoiceBuilder/expectedExpenses: every editable field a milestone
+// can carry (title/tax/overview/services), with no resolved amounts - the inverse of
+// normalizeExpectedExpensesData, so persistExpectedExpenses can round-trip through it.
+export const serializeExpectedExpensesData = plan => (plan ? {
+  packageId: String(plan.packageId ?? ''),
+  packageSnapshot: {
+    name: plan.packageSnapshot?.name || '',
+    description: plan.packageSnapshot?.description || '',
+    listedPrice: Number(plan.packageSnapshot?.listedPrice) || 0,
+    currency: plan.packageSnapshot?.currency || 'EUR',
+    children: normalizeServiceEntries(plan.packageSnapshot?.children),
+  },
+  milestones: (Array.isArray(plan.milestones) ? plan.milestones : []).map(milestone => ({
+    id: milestone.id || createEntryId(),
+    title: milestone.title || '',
+    taxPercent: Number(milestone.taxPercent) || 0,
+    showPackageOverview: Boolean(milestone.showPackageOverview),
+    services: normalizeServiceEntries(milestone.services),
+  })),
+} : null);
 
 // --- Editing ------------------------------------------------------------
 
@@ -221,6 +267,8 @@ export const resolveMilestoneServiceRows = (milestone, catalogItemsById, priceCo
     .map(entry => resolveServiceRow(entry, catalogItemsById, priceContext));
 
 export const computeMilestoneSubtotal = rows => computeInvoiceSubtotal(rows);
+
+export const computeMilestoneAmountDue = (subtotal, taxPercent) => computeInvoiceTotal(subtotal, taxPercent);
 
 export const resolveExpectedExpenseRows = (group, catalogItemsById, priceContext = {}) =>
   (Array.isArray(group) ? group : []).map(entry => resolveServiceRow(entry, catalogItemsById, priceContext));
