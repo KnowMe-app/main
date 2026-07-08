@@ -17,6 +17,7 @@ import {
   makeCatalogItemEntry,
   makeCatalogPackageEntry,
   makeCustomEntry,
+  makePercentOfPackageEntry,
   movePackageChild,
   normalizeInvoiceData,
   normalizeServiceEntry,
@@ -84,6 +85,17 @@ describe('invoiceCatalogUtils', () => {
       });
     });
 
+    it('parses legacy "idX || Y%" rows as a share of that package\'s price', () => {
+      expect(parseLegacyServiceString('id1 || 20%')).toEqual({ kind: 'percent', packageId: '1', percent: 20 });
+      expect(parseLegacyServiceString('id1 || 12.5%')).toEqual({ kind: 'percent', packageId: '1', percent: 12.5 });
+    });
+
+    it('parses a non-numeric, non-percent price as a free-text price label', () => {
+      expect(parseLegacyServiceString('Standard service until 6 months after delivery || GIFT')).toEqual({
+        kind: 'custom', name: 'Standard service until 6 months after delivery', price: 0, priceLabel: 'GIFT',
+      });
+    });
+
     it('upgrades a legacy string into the canonical object entry', () => {
       const item = normalizeServiceEntry('id15');
       expect(item.kind).toBe('item');
@@ -100,11 +112,12 @@ describe('invoiceCatalogUtils', () => {
       const data = normalizeInvoiceData({
         beneficiaries: [], beneficiaryIds: [], customers: [], notes: [],
         recentServices: ['id15'],
-        invoiceServices: ['id15', 'Deposit for transportation of SM || 300'],
+        invoiceServices: ['id15', 'Deposit for transportation of SM || 300', 'id1 || 20%'],
       });
-      expect(data.invoiceServices).toHaveLength(2);
+      expect(data.invoiceServices).toHaveLength(3);
       expect(data.invoiceServices[0]).toMatchObject({ kind: 'item', catalogId: '15' });
       expect(data.invoiceServices[1]).toMatchObject({ kind: 'custom', name: 'Deposit for transportation of SM', price: 300 });
+      expect(data.invoiceServices[2]).toMatchObject({ kind: 'percent', packageId: '1', percent: 20 });
     });
 
     it('is idempotent on an already-normalized entry (keeps its id)', () => {
@@ -276,6 +289,47 @@ describe('invoiceCatalogUtils', () => {
       expect(row.hasPriceOverride).toBe(true);
     });
 
+    it('resolves a percent-of-package row from the package\'s live listed price, never storing the euro amount', () => {
+      const packagesById = new Map([['1', { id: '1', name: 'IVF+ED+SM', listedPrice: 40000 }]]);
+      const entry = makePercentOfPackageEntry('1', 20);
+      const row = resolveServiceRow(entry, new Map(), { packagesById });
+      expect(row).toMatchObject({ kind: 'percent', packageId: '1', percent: 20, missing: false, price: 8000 });
+      expect(row.name).toBe('20% of IVF+ED+SM');
+
+      // Bumping the package price recalculates the row automatically - no stored amount to go stale.
+      const bumped = new Map([['1', { id: '1', name: 'IVF+ED+SM', listedPrice: 50000 }]]);
+      expect(resolveServiceRow(entry, new Map(), { packagesById: bumped }).price).toBe(10000);
+    });
+
+    it('flags a percent-of-package row whose package no longer exists', () => {
+      const row = resolveServiceRow(makePercentOfPackageEntry('999', 20), new Map(), { packagesById: new Map() });
+      expect(row.missing).toBe(true);
+      expect(row.price).toBe(0);
+    });
+
+    it('edits the percent and target package of a percent-of-package entry', () => {
+      const entry = makePercentOfPackageEntry('1', 20);
+      expect(setEntryField(entry, 'percent', '15,5').percent).toBe(15.5);
+      expect(setEntryField(entry, 'packageId', '2').packageId).toBe('2');
+    });
+
+    it('editing a custom row\'s price with non-numeric text sets a free-text priceLabel instead of coercing to 0', () => {
+      const entry = makeCustomEntry({ name: 'Post-delivery support', price: 500 });
+      const gifted = setEntryField(entry, 'price', 'GIFT');
+      expect(gifted).toMatchObject({ price: 0, priceLabel: 'GIFT' });
+      // Typing a real number back in clears the label again.
+      expect(setEntryField(gifted, 'price', '650')).toMatchObject({ price: 650 });
+      expect(setEntryField(gifted, 'price', '650').priceLabel).toBeUndefined();
+    });
+
+    it('carries a free-text priceLabel (e.g. "GIFT") through resolution instead of a euro amount', () => {
+      const entry = makeCustomEntry({ name: 'Post-delivery support', priceLabel: 'GIFT' });
+      expect(entry.price).toBe(0);
+      const row = resolveServiceRow(entry, new Map());
+      expect(row.priceLabel).toBe('GIFT');
+      expect(row.price).toBe(0);
+    });
+
     it('computes subtotal/total without double-counting package children', () => {
       const catalogItemsById = new Map([
         ['15', { id: '15', name: 'Scheduled payment', price: 3000 }],
@@ -299,6 +353,7 @@ describe('invoiceCatalogUtils', () => {
       expect(getEntryIdentityKey(makeCatalogPackageEntry({ id: 'p1', children: [] }))).toBe('package:p1');
       expect(getEntryIdentityKey(makeCustomEntry({ name: 'Extra', price: 50 })))
         .toBe(getEntryIdentityKey(makeCustomEntry({ name: 'Extra', price: 50 })));
+      expect(getEntryIdentityKey(makePercentOfPackageEntry('1', 20))).toBe('percent:1:20');
     });
 
     it('moves used services to the front of recentServices, deduped by identity', () => {

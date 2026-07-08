@@ -33,6 +33,9 @@ const formatEuroTotal = value => {
   return `${grouped},${decimals} EUR`;
 };
 
+// A row may carry a free-text price label (e.g. "GIFT") instead of a euro amount.
+const formatRowAmount = row => row?.priceLabel || formatPlainAmount(row?.price);
+
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
   eyebrow: pdfBaseStyles.eyebrow,
@@ -406,7 +409,7 @@ const InvoicePdfDocument = ({
                 </View>
                 <View style={styles.expenseAmountCell}>
                   <Text style={isPackageHeader ? styles.expensePriceTextPackage : (isChild ? styles.expensePriceTextChild : styles.expensePriceText)}>
-                    {formatPlainAmount(row.price)}
+                    {formatRowAmount(row)}
                   </Text>
                 </View>
               </View>

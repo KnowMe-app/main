@@ -1,16 +1,20 @@
 import {
-  addMilestoneAdditionalService,
+  addMilestoneService,
   buildExpectedExpensesPlan,
+  buildExpectedExpensesPlanFromRawGroups,
   computeMilestoneAmountDue,
   computeMilestoneSubtotal,
-  computeMilestonesScheduledTotal,
+  computeMilestonesPackageSharePercent,
+  computeMilestonesTotal,
+  inferPackageIdFromRawGroups,
   isExpectedExpensesShape,
+  isRawExpectedExpensesGroups,
   normalizeExpectedExpensesData,
-  removeMilestoneAdditionalService,
-  resolveMilestoneAdditionalRows,
+  removeMilestoneService,
+  resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
   setMilestoneField,
-  updateMilestoneAdditionalServiceField,
+  updateMilestoneServiceField,
 } from './expectedExpensesUtils';
 import expectedExpensesSeed from '../data/expectedExpensesSeed.json';
 import { makeCustomEntry } from './invoiceCatalogUtils';
@@ -27,13 +31,13 @@ const pkg = {
 const schedule = {
   id: 'ps-3',
   payments: [
-    { title: 'To start the program', amount: 8772 },
-    { title: 'To start stimulation of a SM', amount: 6228 },
+    { title: 'To start the program', amount: 8000 },
+    { title: 'To start stimulation of a SM', amount: 6000 },
     { title: 'In a week before embryo transfer', amount: 3000 },
     { title: 'After confirmation of pregnancy by ultrasound', amount: 4000 },
     { title: 'On the 12th week of pregnancy', amount: 6000 },
     { title: 'On the 18th week of pregnancy', amount: 6000 },
-    { title: 'On the 36th week of pregnancy', amount: 6000 },
+    { title: 'On the 36th week of pregnancy', amount: 7000 },
   ],
 };
 
@@ -49,13 +53,25 @@ describe('expectedExpensesUtils', () => {
     ]);
 
     expect(plan.milestones).toHaveLength(7);
-    expect(plan.milestones[0]).toMatchObject({ title: 'To start the program', scheduledAmount: 8772, taxPercent: 14, showPackageOverview: true });
-    expect(plan.milestones[1]).toMatchObject({ title: 'To start stimulation of a SM', scheduledAmount: 6228, showPackageOverview: false });
+    expect(plan.milestones[0]).toMatchObject({ title: 'To start the program', taxPercent: 14, showPackageOverview: true });
+    expect(plan.milestones[0].services).toEqual([
+      { id: plan.milestones[0].services[0].id, kind: 'percent', packageId: '3', percent: 20 },
+    ]);
+    expect(plan.milestones[1]).toMatchObject({ title: 'To start stimulation of a SM', showPackageOverview: false });
+    expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: '3', percent: 15 });
   });
 
-  it('sums the milestones back up to the package listed price', () => {
+  it('never stores a euro amount on a milestone - the percent-of-package row recalculates it', () => {
     const plan = buildExpectedExpensesPlan(pkg, schedule);
-    expect(computeMilestonesScheduledTotal(plan.milestones)).toBe(40000);
+    expect(computeMilestonesTotal(plan.milestones, new Map(), { packagesById: new Map([['3', pkg]]) })).toBe(40000);
+
+    const bumped = { ...pkg, listedPrice: 80000 };
+    expect(computeMilestonesTotal(plan.milestones, new Map(), { packagesById: new Map([['3', bumped]]) })).toBe(80000);
+  });
+
+  it('sums the percent-of-package rows back up to 100% of the schedule', () => {
+    const plan = buildExpectedExpensesPlan(pkg, schedule);
+    expect(computeMilestonesPackageSharePercent(plan.milestones, plan.packageId)).toBe(100);
   });
 
   it('round-trips through normalization, assigning ids where missing', () => {
@@ -65,47 +81,58 @@ describe('expectedExpensesUtils', () => {
     expect(normalizeExpectedExpensesData(null)).toBeNull();
   });
 
-  it('edits a milestone field, parsing numeric fields and leaving text fields as-is', () => {
+  it('migrates a legacy milestone with a frozen scheduledAmount into an equivalent percent-of-package row', () => {
+    const legacy = {
+      packageId: '3',
+      packageSnapshot: { name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR', children: [] },
+      milestones: [
+        { id: 'm1', title: 'To start the program', scheduledAmount: 8000, taxPercent: 14, showPackageOverview: true, additionalServices: [] },
+      ],
+    };
+    const normalized = normalizeExpectedExpensesData(legacy);
+    expect(normalized.milestones[0].services).toEqual([
+      { id: normalized.milestones[0].services[0].id, kind: 'percent', packageId: '3', percent: 20 },
+    ]);
+    expect(computeMilestonesTotal(normalized.milestones, new Map(), { packagesById: new Map([['3', pkg]]) })).toBe(8000);
+  });
+
+  it('edits a milestone field, parsing the numeric taxPercent and leaving text fields as-is', () => {
     const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-    const edited = setMilestoneField(plan.milestones[1], 'scheduledAmount', '6 500,50'.replace(' ', ''));
-    expect(edited.scheduledAmount).toBe(6500.5);
+    const edited = setMilestoneField(plan.milestones[1], 'taxPercent', '6,5');
+    expect(edited.taxPercent).toBe(6.5);
     expect(setMilestoneField(plan.milestones[1], 'title', 'Renamed step').title).toBe('Renamed step');
   });
 
-  it('adds, edits, and removes an additional service on a milestone', () => {
+  it('adds, edits, and removes a service on a milestone', () => {
     const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
     const deposit = makeCustomEntry({ name: 'Deposit for transportation of SM', price: 300 });
-    let milestone = addMilestoneAdditionalService(plan.milestones[1], deposit);
-    expect(milestone.additionalServices).toHaveLength(1);
+    let milestone = addMilestoneService(plan.milestones[1], deposit);
+    expect(milestone.services).toHaveLength(2);
 
-    milestone = updateMilestoneAdditionalServiceField(milestone, deposit.id, 'price', '350');
-    expect(milestone.additionalServices[0].price).toBe(350);
+    milestone = updateMilestoneServiceField(milestone, deposit.id, 'price', '350');
+    expect(milestone.services.find(entry => entry.id === deposit.id).price).toBe(350);
 
-    milestone = removeMilestoneAdditionalService(milestone, deposit.id);
-    expect(milestone.additionalServices).toHaveLength(0);
+    milestone = removeMilestoneService(milestone, deposit.id);
+    expect(milestone.services).toHaveLength(1);
   });
 
-  it('computes the amount due for a milestone exactly like the "To start the program" sample invoice (8772 taxed at 14%)', () => {
+  it('computes the amount due for a milestone from its resolved rows (percent share + tax)', () => {
     const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-    const catalogItemsById = new Map();
-    const additionalRows = resolveMilestoneAdditionalRows(plan.milestones[0], catalogItemsById);
-    const subtotal = computeMilestoneSubtotal(plan.milestones[0], additionalRows);
-    expect(subtotal).toBe(8772);
-    expect(computeMilestoneAmountDue(subtotal, plan.milestones[0].taxPercent)).toBeCloseTo(10000.08);
+    const packagesById = new Map([['3', pkg]]);
+    const rows = resolveMilestoneServiceRows(plan.milestones[0], new Map(), { packagesById });
+    const subtotal = computeMilestoneSubtotal(rows);
+    expect(subtotal).toBe(8000);
+    expect(computeMilestoneAmountDue(subtotal, plan.milestones[0].taxPercent)).toBeCloseTo(9120);
   });
 
-  it('adds extra services into the amount due, matching the Mullins sample (13000 scheduled + 2500 PGS, taxed at 13%)', () => {
-    const plan = buildExpectedExpensesPlan(
-      { ...pkg, listedPrice: 41500 },
-      { payments: [{ title: 'To start the program', amount: 13000 }] },
-      { taxPercent: 13 },
-    );
+  it('adds extra services into the amount due on top of the percent-of-package share', () => {
+    const plan = buildExpectedExpensesPlan({ ...pkg, listedPrice: 40000 }, { payments: [{ title: 'To start the program', amount: 13000 }] }, { taxPercent: 13 });
     const pgs = makeCustomEntry({ name: 'PGS of 24 chromosomes', price: 2500 });
-    const milestone = addMilestoneAdditionalService(plan.milestones[0], pgs);
-    const catalogItemsById = new Map();
-    const additionalRows = resolveMilestoneAdditionalRows(milestone, catalogItemsById);
-    const subtotal = computeMilestoneSubtotal(milestone, additionalRows);
-    expect(subtotal).toBe(15500);
+    const milestone = addMilestoneService(plan.milestones[0], pgs);
+    const packagesById = new Map([['3', { ...pkg, listedPrice: 40000 }]]);
+    const rows = resolveMilestoneServiceRows(milestone, new Map(), { packagesById });
+    const subtotal = computeMilestoneSubtotal(rows);
+    expect(subtotal).toBeCloseTo(15500);
     expect(computeMilestoneAmountDue(subtotal, milestone.taxPercent)).toBeCloseTo(17515);
   });
 
@@ -129,15 +156,73 @@ describe('expectedExpensesUtils', () => {
     });
   });
 
+  describe('raw group upload (array of arrays of legacy service strings)', () => {
+    const rawGroups = [
+      ['id1 || 20%', 'Deposit for transportation of SM || 300', 'Deposit for medical expenses of SM || 300'],
+      ['id1 || 10%', 'Deposit for transportation of SM || 300'],
+      ['id1 || 15%', 'id32', 'Deposit for medical expenses of SM || 300'],
+    ];
+    const rawCatalog = {
+      packages: [{ id: '1', name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR', children: ['1', '2'] }],
+      technical: { paymentSchedules: [{ id: 'ps-1', payments: schedule.payments.slice(0, 4) }] },
+    };
+    const rawCatalogWithLink = {
+      ...rawCatalog,
+      packages: [{ ...rawCatalog.packages[0], paymentScheduleId: 'ps-1' }],
+    };
+
+    it('detects the raw array-of-groups shape', () => {
+      expect(isRawExpectedExpensesGroups(rawGroups)).toBe(true);
+      expect(isRawExpectedExpensesGroups({})).toBe(false);
+      expect(isRawExpectedExpensesGroups([['ok'], 'nope'])).toBe(false);
+    });
+
+    it('infers the package id from the first percent-of-package row', () => {
+      expect(inferPackageIdFromRawGroups(rawGroups)).toBe('1');
+      expect(inferPackageIdFromRawGroups([['Just a custom || 300']])).toBe('');
+    });
+
+    it('builds a plan by lining groups up with the package\'s default schedule, index by index', () => {
+      const { plan, missingPackage, droppedGroupsCount } = buildExpectedExpensesPlanFromRawGroups(rawGroups, { catalog: rawCatalogWithLink, taxPercent: 14 });
+      expect(missingPackage).toBe(false);
+      expect(droppedGroupsCount).toBe(0);
+      expect(plan.packageId).toBe('1');
+      expect(plan.milestones).toHaveLength(4);
+      expect(plan.milestones[0].showPackageOverview).toBe(true);
+      expect(plan.milestones[0].services).toHaveLength(3);
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: '1', percent: 20 });
+      // The schedule has 4 steps but only 3 groups were uploaded - the last step is left empty
+      // instead of breaking.
+      expect(plan.milestones[3].services).toEqual([]);
+    });
+
+    it('drops groups beyond the schedule\'s step count and reports how many', () => {
+      const shortSchedule = { ...rawCatalogWithLink, technical: { paymentSchedules: [{ id: 'ps-1', payments: schedule.payments.slice(0, 2) }] } };
+      const { plan, droppedGroupsCount } = buildExpectedExpensesPlanFromRawGroups(rawGroups, { catalog: shortSchedule });
+      expect(plan.milestones).toHaveLength(2);
+      expect(droppedGroupsCount).toBe(1);
+    });
+
+    it('reports a missing package instead of guessing when no percent row names one', () => {
+      const { plan, missingPackage } = buildExpectedExpensesPlanFromRawGroups([['Custom line || 300']], { catalog: rawCatalogWithLink });
+      expect(missingPackage).toBe(true);
+      expect(plan).toBeNull();
+    });
+  });
+
   describe('expectedExpensesSeed.json', () => {
-    it('is a valid, normalizable expected-expenses plan whose milestones add up to the package price', () => {
+    it('is a valid, normalizable expected-expenses plan whose percent shares add up to 100%', () => {
       expect(isExpectedExpensesShape(expectedExpensesSeed)).toBe(true);
       const normalized = normalizeExpectedExpensesData(expectedExpensesSeed);
       expect(normalized.packageId).toBe('3');
       expect(normalized.milestones).toHaveLength(6);
-      expect(computeMilestonesScheduledTotal(normalized.milestones)).toBe(normalized.packageSnapshot.listedPrice);
+      expect(computeMilestonesPackageSharePercent(normalized.milestones, normalized.packageId)).toBe(100);
+      expect(computeMilestonesTotal(normalized.milestones, new Map(), { packagesById: new Map([['3', normalized.packageSnapshot]]) }))
+        .toBeGreaterThan(normalized.packageSnapshot.listedPrice);
       expect(normalized.milestones[0].showPackageOverview).toBe(true);
       expect(normalized.milestones.slice(1).every(milestone => !milestone.showPackageOverview)).toBe(true);
+      const giftRow = normalized.milestones[5].services.find(entry => entry.priceLabel === 'GIFT');
+      expect(giftRow).toMatchObject({ price: 0, priceLabel: 'GIFT' });
     });
   });
 });
