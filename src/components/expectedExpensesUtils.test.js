@@ -8,6 +8,7 @@ import {
   normalizeExpectedExpensesData,
   removeExpectedExpenseService,
   resolveExpectedExpenseRows,
+  serializeExpectedExpensesData,
   updateExpectedExpenseServiceField,
 } from './expectedExpensesUtils';
 import expectedExpensesSeed from '../data/expectedExpensesSeed.json';
@@ -59,6 +60,10 @@ describe('expectedExpensesUtils', () => {
       { kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
       { kind: 'item', catalogId: '32' },
     ]);
+    expect(serializeExpectedExpensesData(normalized)).toEqual({
+      packageId: '3',
+      expectedExpenses: [['id3 || 20%', 'Deposit for transportation of SM || 300', 'id32']],
+    });
     expect(normalizeExpectedExpensesData(null)).toBeNull();
   });
 
