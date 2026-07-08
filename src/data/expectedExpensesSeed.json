@@ -1,33 +1,37 @@
 {
   "packageId": "3",
-  "packageSnapshot": {
-    "name": "IVF + ED + SM",
-    "description": "For cases where embryos need to be created using donor oocytes.",
-    "listedPrice": 46000,
-    "currency": "EUR",
-    "children": [
-      { "id": "pkg3-child-1", "kind": "item", "catalogId": "1" },
-      { "id": "pkg3-child-2", "kind": "item", "catalogId": "2" },
-      { "id": "pkg3-child-3", "kind": "item", "catalogId": "3" },
-      { "id": "pkg3-child-4", "kind": "item", "catalogId": "4" },
-      { "id": "pkg3-child-5", "kind": "item", "catalogId": "5" },
-      { "id": "pkg3-child-6", "kind": "item", "catalogId": "6" },
-      { "id": "pkg3-child-7", "kind": "item", "catalogId": "7" },
-      { "id": "pkg3-child-8", "kind": "item", "catalogId": "8" },
-      { "id": "pkg3-child-9", "kind": "item", "catalogId": "9" },
-      { "id": "pkg3-child-10", "kind": "item", "catalogId": "10" },
-      { "id": "pkg3-child-11", "kind": "item", "catalogId": "11" },
-      { "id": "pkg3-child-12", "kind": "item", "catalogId": "12" },
-      { "id": "pkg3-child-13", "kind": "item", "catalogId": "14" },
-      { "id": "pkg3-child-14", "kind": "item", "catalogId": "15" },
-      { "id": "pkg3-child-15", "kind": "item", "catalogId": "16" },
-      { "id": "pkg3-child-16", "kind": "item", "catalogId": "18" },
-      { "id": "pkg3-child-17", "kind": "item", "catalogId": "19" },
-      { "id": "pkg3-child-18", "kind": "item", "catalogId": "21" },
-      { "id": "pkg3-child-19", "kind": "item", "catalogId": "22" },
-      { "id": "pkg3-child-20", "kind": "item", "catalogId": "23" },
-      { "id": "pkg3-child-21", "kind": "item", "catalogId": "24" },
-      { "id": "pkg3-child-22", "kind": "item", "catalogId": "25" }
+  "expectedExpenses": [
+    [
+      "id3 || 34.7826086957%"
+    ],
+    [
+      "id3 || 13.0434782609%",
+      "Deposit for transportation of SM || 300",
+      "Deposit for medical expenses of SM || 300"
+    ],
+    [
+      "id3 || 13.0434782609%",
+      "Deposit for transportation of SM || 300",
+      "Deposit for medical expenses of SM || 300"
+    ],
+    [
+      "id3 || 13.0434782609%",
+      "id40",
+      "Deposit for transportation of SM || 300",
+      "Deposit for medical expenses of SM || 300"
+    ],
+    [
+      "id3 || 13.0434782609%",
+      "Deposit for transportation of SM || 300",
+      "Deposit for medical expenses of SM || 300"
+    ],
+    [
+      "id3 || 13.0434782609%",
+      "Deposit. Medications for SM during and after delivery || 500",
+      "Deposit. For C-section (is returned if not used) || 2700",
+      "Deposit. For baby clothes / diapers / formulas / etc || 110",
+      "Deposit. For unexpected expenses (e.g. staying in hospital, service of nanny etc.) || 600",
+      "Standard service of the independent lawyer, notary and post until the 6 months after delivery || GIFT"
     ]
   },
   "milestones": [

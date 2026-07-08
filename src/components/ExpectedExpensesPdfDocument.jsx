@@ -322,7 +322,7 @@ const renderExpensesTable = rows => (
   </View>
 );
 
-const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate }) => {
+const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate, schedule, taxPercent = 0 }) => {
   const caseTitle = buildCaseTitle(customers);
   const dateLabel = formatPlanDate(planDate instanceof Date ? planDate : new Date(planDate || Date.now()));
   const overviewRows = resolvePackageOverviewRows(plan?.packageSnapshot?.children, catalogItemsById, priceContext);
@@ -339,12 +339,10 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
         const pageLabel = `${index + 1}/${milestones.length}`;
 
         return (
-          <Page key={milestone.id || index} size="A4" style={styles.page} wrap>
-            {milestone.showPackageOverview ? (
-              <>
-                <Text style={styles.sectionTitle}>Description</Text>
-                <Text style={styles.sectionSubtitle}>{sanitizePdfText(caseTitle)}</Text>
-                <Text style={styles.dateText}>{dateLabel}</Text>
+          <Page key={`${plan?.packageId || 'package'}-${index}`} size="A4" style={styles.page} wrap>
+            <Text style={styles.sectionTitle}>{sanitizePdfText(`Expected expenses of the invoice #${index + 1}`)}</Text>
+            <Text style={styles.sectionSubtitle}>{sanitizePdfText(`${index + 1}. ${payment?.title || `Payment ${index + 1}`}`)}</Text>
+            <Text style={styles.dateText}>{dateLabel}</Text>
 
                 <View style={styles.overviewTable}>
                   <View style={styles.overviewHeadRow} wrap={false}>
@@ -400,7 +398,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
             <View style={{ marginTop: 16 }}>
               <View style={styles.summaryRow} wrap={false}>
                 <View style={styles.summaryLabelCell}><Text style={styles.summaryLabelText}>Taxes (%)</Text></View>
-                <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(milestone.taxPercent)}</Text></View>
+                <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(taxPercent)}</Text></View>
               </View>
               <View style={[styles.summaryRow, styles.summaryRowLast]} wrap={false}>
                 <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Amount need to be paid (EUR)</Text></View>

@@ -22,7 +22,6 @@ import { makeCustomEntry } from './invoiceCatalogUtils';
 const pkg = {
   id: '3',
   name: 'IVF+ED+SM',
-  description: 'For cases where embryos need to be created using donor oocytes.',
   listedPrice: 40000,
   currency: 'EUR',
   children: [1, 2, 3],
@@ -41,9 +40,14 @@ const schedule = {
   ],
 };
 
+const priceContext = {
+  packagesById: new Map([['3', pkg]]),
+  resolvePackagePrice: packageRow => Number(packageRow?.listedPrice) || 0,
+};
+
 describe('expectedExpensesUtils', () => {
-  it('builds a plan whose milestones mirror the schedule, first one flagged as the package overview', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
+  it('builds a compact template with one service group per schedule payment', () => {
+    const plan = buildExpectedExpensesPlan(pkg, schedule);
     expect(plan.packageId).toBe('3');
     expect(plan.packageSnapshot).toMatchObject({ name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR' });
     expect(plan.packageSnapshot.children).toEqual([
@@ -74,10 +78,21 @@ describe('expectedExpensesUtils', () => {
     expect(computeMilestonesPackageSharePercent(plan.milestones, plan.packageId)).toBe(100);
   });
 
-  it('round-trips through normalization, assigning ids where missing', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-    const normalized = normalizeExpectedExpensesData(JSON.parse(JSON.stringify(plan)));
-    expect(normalized).toEqual(plan);
+  it('round-trips through normalization and supports legacy string rows', () => {
+    const normalized = normalizeExpectedExpensesData({
+      packageId: '3',
+      expectedExpenses: [['id3 || 20%', 'Deposit for transportation of SM || 300', 'id32']],
+    });
+    expect(normalized.packageId).toBe('3');
+    expect(normalized.expectedExpenses[0]).toMatchObject([
+      { kind: 'packagePercent', catalogId: '3', percent: 20 },
+      { kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
+      { kind: 'item', catalogId: '32' },
+    ]);
+    expect(serializeExpectedExpensesData(normalized)).toEqual({
+      packageId: '3',
+      expectedExpenses: [['id3 || 20%', 'Deposit for transportation of SM || 300', 'id32']],
+    });
     expect(normalizeExpectedExpensesData(null)).toBeNull();
   });
 

@@ -21,7 +21,6 @@
 // schedule still existing unchanged in the catalog.
 
 import {
-  createEntryId,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
   makeCatalogItemEntry,
@@ -182,9 +181,8 @@ export const isExpectedExpensesShape = raw => Boolean(
   raw
   && typeof raw === 'object'
   && !Array.isArray(raw)
-  && raw.packageSnapshot
-  && typeof raw.packageSnapshot === 'object'
-  && Array.isArray(raw.milestones),
+  && raw.packageId !== undefined
+  && (Array.isArray(raw.expectedExpenses) || Array.isArray(raw.milestones))
 );
 
 // --- Editing ------------------------------------------------------------
@@ -224,7 +222,8 @@ export const resolveMilestoneServiceRows = (milestone, catalogItemsById, priceCo
 
 export const computeMilestoneSubtotal = rows => computeInvoiceSubtotal(rows);
 
-export const computeMilestoneAmountDue = (subtotal, taxPercent) => computeInvoiceTotal(subtotal, taxPercent);
+export const resolveExpectedExpenseRows = (group, catalogItemsById, priceContext = {}) =>
+  (Array.isArray(group) ? group : []).map(entry => resolveServiceRow(entry, catalogItemsById, priceContext));
 
 // Sum of every milestone's resolved total (percent-of-package rows resolved to euros, plus every
 // catalog/custom extra) - the actual amount the whole plan bills for.

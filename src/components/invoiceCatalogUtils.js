@@ -104,6 +104,13 @@ export const makePercentOfPackageEntry = (packageId, percent, { id } = {}) => ({
   percent: toNumber(percent),
 });
 
+export const makePackagePercentEntry = ({ catalogId = '', percent = 0 } = {}, { id } = {}) => ({
+  id: id || createEntryId(),
+  kind: 'packagePercent',
+  catalogId: String(catalogId),
+  percent: toNumber(percent),
+});
+
 // pkg: a budget/packages record ({ id, children: [itemId, ...] }). Its children are copied in as
 // plain catalog-item entries - editing/removing any of them below marks the package as customized.
 export const makeCatalogPackageEntry = (pkg, { id } = {}) => ({
@@ -187,6 +194,13 @@ export const normalizeServiceEntry = raw => {
     };
   }
 
+  if (raw.kind === 'packagePercent') {
+    return {
+      ...makePackagePercentEntry({ catalogId: raw.catalogId, percent: raw.percent }, { id }),
+      ...(raw.expectedExpenseRole ? { expectedExpenseRole: raw.expectedExpenseRole } : {}),
+    };
+  }
+
   if (raw.kind === 'custom') {
     return {
       id,
@@ -233,6 +247,11 @@ export const setEntryField = (entry, field, value) => {
   if (entry.kind === 'percent') {
     if (field === 'percent') return { ...entry, percent: toNumber(value) };
     if (field === 'packageId') return { ...entry, packageId: String(value ?? '') };
+    return entry;
+  }
+  if (entry.kind === 'packagePercent') {
+    if (field === 'percent' || field === 'price') return { ...entry, percent: toNumber(value) };
+    if (field === 'catalogId') return { ...entry, catalogId: String(value) };
     return entry;
   }
   if (entry.kind === 'package') {
@@ -296,6 +315,7 @@ export const isEntryCustomized = entry => (entry?.kind === 'custom' ? true : Boo
 export const getEntryIdentityKey = entry => {
   if (!entry) return '';
   if (entry.kind === 'package') return `package:${entry.catalogId}`;
+  if (entry.kind === 'packagePercent') return `package-percent:${entry.catalogId}:${entry.percent || 0}`;
   if (entry.kind === 'item') return `item:${entry.catalogId}`;
   if (entry.kind === 'percent') return `percent:${entry.packageId}:${entry.percent}`;
   return `custom:${entry.name || ''}:${entry.price || 0}:${entry.description || ''}`;

@@ -210,7 +210,7 @@ describe('InvoiceBuilderPage', () => {
       await flush();
     };
 
-    it('builds a plan from a package, auto-calculating each milestone amount from its catalog schedule', async () => {
+    it('builds a template from a package, auto-calculating package-percent rows from its catalog schedule', async () => {
       const root = mount();
       await flush();
 
@@ -234,13 +234,13 @@ describe('InvoiceBuilderPage', () => {
       await act(async () => { root.unmount(); });
     });
 
-    it('adding a service to a milestone updates its due amount and is persisted on that milestone only', async () => {
+    it('adding a service to a schedule group updates its due amount and is persisted on that group only', async () => {
       const root = mount();
       await flush();
 
       await createPlan();
 
-      const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Add a custom line to this invoice…"]'));
+      const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Custom line name…"]'));
       expect(milestoneNameFields).toHaveLength(2);
       const milestoneAddRow = milestoneNameFields[0].parentElement;
       const priceField = milestoneAddRow.querySelector('textarea[placeholder="Price or GIFT"]');
@@ -264,6 +264,123 @@ describe('InvoiceBuilderPage', () => {
 
       await act(async () => { root.unmount(); });
     });
+
+    it('recalculates scheduled package rows while preserving extra services', async () => {
+      get.mockImplementation(path => {
+        if (path === 'invoiceBuilder') return Promise.resolve({ exists: () => true, val: () => fixtureInvoiceData });
+        if (path === 'budget/items') return Promise.resolve({ exists: () => true, val: () => fixtureItems });
+        if (path === 'budget/packages') return Promise.resolve({ exists: () => true, val: () => fixturePackages });
+        if (path === 'budget/technical') return Promise.resolve({ exists: () => true, val: () => fixtureTechnical });
+        if (path === 'invoiceBuilder/expectedExpenses') {
+          return Promise.resolve({
+            exists: () => true,
+            val: () => ({
+              packageId: 'p1',
+              expectedExpenses: [
+                [
+                  { id: 'stale-1', kind: 'packagePercent', catalogId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' },
+                  { id: 'custom-1', kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
+                ],
+                [{ id: 'stale-2', kind: 'packagePercent', catalogId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' }],
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ exists: () => false, val: () => null });
+      });
+      const root = mount();
+      await flush();
+
+      const recalculateButton = findButton('Recalculate');
+      expect(recalculateButton).toBeTruthy();
+      await act(async () => { recalculateButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
+      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('replaces legacy unmarked scheduled package rows while preserving extra services', async () => {
+      get.mockImplementation(path => {
+        if (path === 'invoiceBuilder') return Promise.resolve({ exists: () => true, val: () => fixtureInvoiceData });
+        if (path === 'budget/items') return Promise.resolve({ exists: () => true, val: () => fixtureItems });
+        if (path === 'budget/packages') return Promise.resolve({ exists: () => true, val: () => fixturePackages });
+        if (path === 'budget/technical') return Promise.resolve({ exists: () => true, val: () => fixtureTechnical });
+        if (path === 'invoiceBuilder/expectedExpenses') {
+          return Promise.resolve({
+            exists: () => true,
+            val: () => ({
+              packageId: 'p1',
+              expectedExpenses: [
+                [
+                  'idp1 || 10%',
+                  'Deposit for transportation of SM || 300',
+                ],
+                ['idp1 || 10%'],
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ exists: () => false, val: () => null });
+      });
+      const root = mount();
+      await flush();
+
+      const recalculateButton = findButton('Recalculate');
+      expect(recalculateButton).toBeTruthy();
+      await act(async () => { recalculateButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan.expectedExpenses[0]).toHaveLength(2);
+      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
+      expect(plan.expectedExpenses[1]).toHaveLength(1);
+      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('preserves user-added package percent rows when recalculating', async () => {
+      get.mockImplementation(path => {
+        if (path === 'invoiceBuilder') return Promise.resolve({ exists: () => true, val: () => fixtureInvoiceData });
+        if (path === 'budget/items') return Promise.resolve({ exists: () => true, val: () => fixtureItems });
+        if (path === 'budget/packages') return Promise.resolve({ exists: () => true, val: () => fixturePackages });
+        if (path === 'budget/technical') return Promise.resolve({ exists: () => true, val: () => fixtureTechnical });
+        if (path === 'invoiceBuilder/expectedExpenses') {
+          return Promise.resolve({
+            exists: () => true,
+            val: () => ({
+              packageId: 'p1',
+              expectedExpenses: [
+                [{ id: 'manual-percent', kind: 'packagePercent', catalogId: 'p1', percent: 10 }],
+                [],
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ exists: () => false, val: () => null });
+      });
+      const root = mount();
+      await flush();
+
+      const recalculateButton = findButton('Recalculate');
+      expect(recalculateButton).toBeTruthy();
+      await act(async () => { recalculateButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.expectedExpenses[0][1]).toBe('idp1 || 10%');
+      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+
+      await act(async () => { root.unmount(); });
+    });
+
 
     it('deletes the whole plan', async () => {
       const root = mount();
@@ -304,12 +421,13 @@ describe('InvoiceBuilderPage', () => {
       await act(async () => { fileInput.dispatchEvent(new Event('change', { bubbles: true })); });
       await flush();
 
-      expect(container.innerHTML).toContain('To start the program');
-      expect(container.innerHTML).toContain('Deposit for transportation of SM');
+      expect(container.innerHTML).toContain('Expected expenses has 6 groups');
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
       expect(plan.packageId).toBe('3');
-      expect(plan.milestones).toHaveLength(6);
+      expect(plan).toEqual(expectedExpensesSeed);
+      expect(plan.expectedExpenses).toHaveLength(6);
+      expect(plan.expectedExpenses[1][1]).toBe('Deposit for transportation of SM || 300');
 
       await act(async () => { root.unmount(); });
     });
