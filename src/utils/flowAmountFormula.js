@@ -113,9 +113,10 @@ export const evaluateFlowAmountFormula = (rawFormula, resolveIdentifier) => {
       const operator = peek().type;
       position += 1;
       const right = parseTerm();
-      const rightValue = right.isPercent ? value * right.value : right.value;
+      const isPercentSum = term.isPercent && right.isPercent;
+      const rightValue = right.isPercent && !term.isPercent ? value * right.value : right.value;
       value = operator === '+' ? value + rightValue : value - rightValue;
-      term = { value, isPercent: false };
+      term = { value, isPercent: isPercentSum };
     }
     return term;
   };
