@@ -5,6 +5,7 @@ import { get, ref, set } from 'firebase/database';
 import { FaFilePdf, FaPlus, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
+import { parseBudgetPriceValue } from './budgetCatalogUtils';
 import { isAdminUid } from 'utils/accessLevel';
 import {
   applyPaymentPurposePlaceholders,
@@ -349,6 +350,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [data, setData] = useState(() => normalizeInvoiceData(null));
   const [catalogItems, setCatalogItems] = useState([]);
   const [exchangeRates, setExchangeRates] = useState(null);
+  const [exchangeRatesLoading, setExchangeRatesLoading] = useState(false);
+  const [exchangeRatesError, setExchangeRatesError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -384,21 +387,46 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   useEffect(() => {
     let cancelled = false;
-    fetchNbuUahExchangeRatesByDate(getTodayYmd())
+    const ratesDate = invoiceDateInput || getTodayYmd();
+    setExchangeRatesLoading(true);
+    setExchangeRatesError('');
+    setExchangeRates(null);
+    fetchNbuUahExchangeRatesByDate(ratesDate)
       .then(rates => {
-        if (!cancelled && rates) setExchangeRates(rates);
+        if (cancelled) return;
+        if (rates) {
+          setExchangeRates(rates);
+        } else {
+          setExchangeRatesError(`NBU exchange rates are not available for ${ratesDate}.`);
+        }
       })
       .catch(ratesError => {
-        console.error('Unable to load NBU exchange rates for invoice catalog formulas', ratesError);
+        if (cancelled) return;
+        console.error(`Unable to load NBU exchange rates for invoice catalog formulas on ${ratesDate}`, ratesError);
+        setExchangeRatesError(`NBU exchange rates are not available for ${ratesDate}.`);
+      })
+      .finally(() => {
+        if (!cancelled) setExchangeRatesLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [invoiceDateInput]);
 
   const catalogItemsById = useMemo(() => new Map(catalogItems.map(item => [String(item.id), item])), [catalogItems]);
 
   const activeBeneficiary = useMemo(() => getActiveBeneficiary(data), [data]);
+
+  const hasFormulaInvoiceService = useMemo(() => data.invoiceServices.some(entry => {
+    const parsed = parseServiceEntry(entry);
+    if (!parsed.isCatalog) return false;
+    const item = catalogItemsById.get(String(parsed.catalogId));
+    return parseBudgetPriceValue(item?.price).isFormula;
+  }), [data.invoiceServices, catalogItemsById]);
+
+  const isFormulaRatePending = hasFormulaInvoiceService && exchangeRatesLoading;
+  const formulaRateError = hasFormulaInvoiceService ? exchangeRatesError : '';
+  const isGenerateDisabled = loading || Boolean(error) || isGenerating || isFormulaRatePending || Boolean(formulaRateError);
 
   const priceContext = useMemo(
     () => ({ itemsById: catalogItemsById, rates: exchangeRates }),
@@ -716,6 +744,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       return;
     }
     if (isGenerating) return;
+    if (isFormulaRatePending) {
+      toast.error('Wait until NBU exchange rates load for formula-priced services.');
+      return;
+    }
+    if (formulaRateError) {
+      toast.error(formulaRateError);
+      return;
+    }
     setIsGenerating(true);
     try {
       const [{ pdf }, { default: InvoicePdfDocument }] = await Promise.all([
@@ -781,7 +817,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <MiniButton
               type="button"
               onClick={handleGeneratePdf}
-              disabled={loading || Boolean(error) || isGenerating}
+              disabled={isGenerateDisabled}
               title="Generate and download the invoice PDF"
             >
               <FaFilePdf /> {isGenerating ? 'Generating…' : 'Generate PDF'}
@@ -791,6 +827,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
         {loading ? <StateCard>Loading invoice data…</StateCard> : null}
         {!loading && error ? <StateCard>{error}</StateCard> : null}
+        {!loading && !error && isFormulaRatePending ? <StateCard>Loading NBU exchange rates for formula-priced services…</StateCard> : null}
+        {!loading && !error && formulaRateError ? <StateCard>{formulaRateError}</StateCard> : null}
 
         {!loading && !error ? (
           <>
