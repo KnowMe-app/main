@@ -3,10 +3,9 @@ import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import { PDF_COLOR, PDF_FONT, pdfBaseStyles, sanitizePdfText } from './pdfTheme';
 import { buildCaseTitle } from './invoiceCatalogUtils';
 import {
-  computeMilestoneAmountDue,
-  computeMilestoneSubtotal,
-  resolveMilestoneAdditionalRows,
-  resolvePackageOverviewRows,
+  computeExpectedExpenseAmountDue,
+  computeExpectedExpenseSubtotal,
+  resolveExpectedExpenseRows,
 } from './expectedExpensesUtils';
 
 const AGENCY_NAME = 'REPRODUCTIVE AGENCY "UKRCOM"';
@@ -324,73 +323,27 @@ const renderExpensesTable = (rows, { includeScheduledRow, scheduledAmount }) => 
   );
 };
 
-const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate }) => {
+const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate, schedule, taxPercent = 0 }) => {
   const caseTitle = buildCaseTitle(customers);
   const dateLabel = formatPlanDate(planDate instanceof Date ? planDate : new Date(planDate || Date.now()));
-  const overviewRows = resolvePackageOverviewRows(plan?.packageSnapshot?.children, catalogItemsById, priceContext);
-  const milestones = Array.isArray(plan?.milestones) ? plan.milestones : [];
+  const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
 
   return (
     <Document title={`Expected expenses - ${caseTitle}`} subject="Expected expenses" creator="UKRCOM">
-      {milestones.map((milestone, index) => {
-        const additionalRows = resolveMilestoneAdditionalRows(milestone, catalogItemsById, priceContext);
-        const subtotal = computeMilestoneSubtotal(milestone, additionalRows);
-        const amountDue = computeMilestoneAmountDue(subtotal, milestone.taxPercent);
-        const pageLabel = `${index + 1}/${milestones.length}`;
+      {payments.map((payment, index) => {
+        const group = plan?.expectedExpenses?.[index] || [];
+        const rows = resolveExpectedExpenseRows(group, catalogItemsById, priceContext);
+        const subtotal = computeExpectedExpenseSubtotal(rows);
+        const amountDue = computeExpectedExpenseAmountDue(subtotal, taxPercent);
+        const pageLabel = `${index + 1}/${payments.length}`;
 
         return (
-          <Page key={milestone.id || index} size="A4" style={styles.page} wrap>
-            {milestone.showPackageOverview ? (
-              <>
-                <Text style={styles.sectionTitle}>Description</Text>
-                <Text style={styles.sectionSubtitle}>{sanitizePdfText(caseTitle)}</Text>
-                <Text style={styles.dateText}>{dateLabel}</Text>
+          <Page key={`${plan?.packageId || 'package'}-${index}`} size="A4" style={styles.page} wrap>
+            <Text style={styles.sectionTitle}>{sanitizePdfText(`Expected expenses of the invoice #${index + 1}`)}</Text>
+            <Text style={styles.sectionSubtitle}>{sanitizePdfText(`${index + 1}. ${payment?.title || `Payment ${index + 1}`}`)}</Text>
+            <Text style={styles.dateText}>{dateLabel}</Text>
 
-                <View style={styles.overviewTable}>
-                  <View style={styles.overviewHeadRow} wrap={false}>
-                    <View style={styles.overviewHeadCell}><Text style={styles.overviewHeadText}>{sanitizePdfText(plan.packageSnapshot.name)}</Text></View>
-                  </View>
-                  {overviewRows.map((row, rowIndex) => (
-                    <View
-                      key={row.key || rowIndex}
-                      style={[styles.overviewRow, rowIndex % 2 ? styles.overviewRowAlt : null]}
-                      wrap={false}
-                    >
-                      <View style={styles.overviewIndexCell}><Text style={styles.overviewIndexText}>{rowIndex + 1}</Text></View>
-                      <View style={styles.overviewNameCell}><Text style={styles.overviewText}>{sanitizePdfText(row.name)}</Text></View>
-                    </View>
-                  ))}
-                  <View style={styles.overviewTotalRow} wrap={false}>
-                    <View style={styles.overviewTotalLabelCell}><Text style={styles.overviewTotalLabelText}>Total:</Text></View>
-                    <View style={styles.overviewTotalAmountCell}><Text style={styles.overviewTotalAmountText}>{formatEuroTotal(plan.packageSnapshot.listedPrice)}</Text></View>
-                  </View>
-                </View>
-
-                <Text style={styles.scheduleHeading}>Payment schedule:</Text>
-                {milestones.map((scheduleMilestone, scheduleIndex) => (
-                  <View
-                    key={scheduleMilestone.id || scheduleIndex}
-                    style={[styles.scheduleRow, scheduleIndex === index ? styles.scheduleRowCurrent : null]}
-                    wrap={false}
-                  >
-                    <Text style={[styles.scheduleLabelText, scheduleIndex === index ? styles.scheduleLabelTextCurrent : null]}>
-                      {sanitizePdfText(`${scheduleIndex + 1}. ${scheduleMilestone.title}`)}
-                    </Text>
-                    <Text style={styles.scheduleAmountText}>{formatEuroTotal(scheduleMilestone.scheduledAmount)}</Text>
-                  </View>
-                ))}
-
-                {additionalRows.length ? renderExpensesTable(additionalRows, { includeScheduledRow: false }) : null}
-              </>
-            ) : (
-              <>
-                <Text style={styles.sectionTitle}>{sanitizePdfText(`Expected expenses of the invoice #${index + 1}`)}</Text>
-                <Text style={styles.sectionSubtitle}>{sanitizePdfText(`${index + 1}. ${milestone.title}`)}</Text>
-                <Text style={styles.dateText}>{dateLabel}</Text>
-
-                {renderExpensesTable(additionalRows, { includeScheduledRow: true, scheduledAmount: milestone.scheduledAmount })}
-              </>
-            )}
+            {renderExpensesTable(rows, { includeScheduledRow: false })}
 
             <View style={[styles.summaryRow, styles.summaryRowLast]} wrap={false}>
               <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Total:</Text></View>
@@ -400,7 +353,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
             <View style={{ marginTop: 16 }}>
               <View style={styles.summaryRow} wrap={false}>
                 <View style={styles.summaryLabelCell}><Text style={styles.summaryLabelText}>Taxes (%)</Text></View>
-                <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(milestone.taxPercent)}</Text></View>
+                <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(taxPercent)}</Text></View>
               </View>
               <View style={[styles.summaryRow, styles.summaryRowLast]} wrap={false}>
                 <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Amount need to be paid (EUR)</Text></View>

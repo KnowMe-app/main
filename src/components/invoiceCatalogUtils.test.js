@@ -17,6 +17,7 @@ import {
   makeCatalogItemEntry,
   makeCatalogPackageEntry,
   makeCustomEntry,
+  makePackagePercentEntry,
   movePackageChild,
   normalizeInvoiceData,
   normalizeServiceEntry,
@@ -82,6 +83,12 @@ describe('invoiceCatalogUtils', () => {
       expect(parseLegacyServiceString('Deposit for transportation of SM || 300')).toEqual({
         kind: 'custom', name: 'Deposit for transportation of SM', price: 300,
       });
+    });
+
+    it('parses legacy "idNN || Percent%" rows as package percentages', () => {
+      expect(parseLegacyServiceString('id3 || 20%')).toEqual({ kind: 'packagePercent', catalogId: '3', percent: 20 });
+      const entry = normalizeServiceEntry('id3 || 12,5%');
+      expect(entry).toMatchObject({ kind: 'packagePercent', catalogId: '3', percent: 12.5 });
     });
 
     it('upgrades a legacy string into the canonical object entry', () => {
@@ -274,6 +281,14 @@ describe('invoiceCatalogUtils', () => {
       expect(row.price).toBe(250);
       expect(row.childrenTotal).toBe(300);
       expect(row.hasPriceOverride).toBe(true);
+    });
+
+    it('resolves a package percentage from the current package price without storing the amount', () => {
+      const packagesById = new Map([['p1', { id: 'p1', name: 'Full program', listedPrice: 40000 }]]);
+      const row = resolveServiceRow(makePackagePercentEntry({ catalogId: 'p1', percent: 20 }), new Map(), { packagesById });
+      expect(row.name).toBe('Scheduled payment');
+      expect(row.description).toBe('20% of Full program');
+      expect(row.price).toBe(8000);
     });
 
     it('computes subtotal/total without double-counting package children', () => {

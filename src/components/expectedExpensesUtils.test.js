@@ -1,16 +1,14 @@
 import {
-  addMilestoneAdditionalService,
+  addExpectedExpenseService,
   buildExpectedExpensesPlan,
-  computeMilestoneAmountDue,
-  computeMilestoneSubtotal,
-  computeMilestonesScheduledTotal,
+  computeExpectedExpenseAmountDue,
+  computeExpectedExpenseSubtotal,
+  getExpectedExpensesValidation,
   isExpectedExpensesShape,
   normalizeExpectedExpensesData,
-  removeMilestoneAdditionalService,
-  resolveMilestoneAdditionalRows,
-  resolvePackageOverviewRows,
-  setMilestoneField,
-  updateMilestoneAdditionalServiceField,
+  removeExpectedExpenseService,
+  resolveExpectedExpenseRows,
+  updateExpectedExpenseServiceField,
 } from './expectedExpensesUtils';
 import expectedExpensesSeed from '../data/expectedExpensesSeed.json';
 import { makeCustomEntry } from './invoiceCatalogUtils';
@@ -18,7 +16,6 @@ import { makeCustomEntry } from './invoiceCatalogUtils';
 const pkg = {
   id: '3',
   name: 'IVF+ED+SM',
-  description: 'For cases where embryos need to be created using donor oocytes.',
   listedPrice: 40000,
   currency: 'EUR',
   children: [1, 2, 3],
@@ -30,114 +27,72 @@ const schedule = {
     { title: 'To start the program', amount: 8772 },
     { title: 'To start stimulation of a SM', amount: 6228 },
     { title: 'In a week before embryo transfer', amount: 3000 },
-    { title: 'After confirmation of pregnancy by ultrasound', amount: 4000 },
-    { title: 'On the 12th week of pregnancy', amount: 6000 },
-    { title: 'On the 18th week of pregnancy', amount: 6000 },
-    { title: 'On the 36th week of pregnancy', amount: 6000 },
   ],
 };
 
+const priceContext = {
+  packagesById: new Map([['3', pkg]]),
+  resolvePackagePrice: packageRow => Number(packageRow?.listedPrice) || 0,
+};
+
 describe('expectedExpensesUtils', () => {
-  it('builds a plan whose milestones mirror the schedule, first one flagged as the package overview', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-    expect(plan.packageId).toBe('3');
-    expect(plan.packageSnapshot).toMatchObject({ name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR' });
-    expect(plan.packageSnapshot.children).toEqual([
-      { id: plan.packageSnapshot.children[0].id, kind: 'item', catalogId: '1' },
-      { id: plan.packageSnapshot.children[1].id, kind: 'item', catalogId: '2' },
-      { id: plan.packageSnapshot.children[2].id, kind: 'item', catalogId: '3' },
-    ]);
-
-    expect(plan.milestones).toHaveLength(7);
-    expect(plan.milestones[0]).toMatchObject({ title: 'To start the program', scheduledAmount: 8772, taxPercent: 14, showPackageOverview: true });
-    expect(plan.milestones[1]).toMatchObject({ title: 'To start stimulation of a SM', scheduledAmount: 6228, showPackageOverview: false });
-  });
-
-  it('sums the milestones back up to the package listed price', () => {
+  it('builds a compact template with one service group per schedule payment', () => {
     const plan = buildExpectedExpensesPlan(pkg, schedule);
-    expect(computeMilestonesScheduledTotal(plan.milestones)).toBe(40000);
+    expect(plan.packageId).toBe('3');
+    expect(plan.expectedExpenses).toHaveLength(3);
+    expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: '3' });
+    expect(plan.expectedExpenses[0][0].percent).toBeCloseTo(21.93, 2);
   });
 
-  it('round-trips through normalization, assigning ids where missing', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-    const normalized = normalizeExpectedExpensesData(JSON.parse(JSON.stringify(plan)));
-    expect(normalized).toEqual(plan);
+  it('round-trips through normalization and supports legacy string rows', () => {
+    const normalized = normalizeExpectedExpensesData({
+      packageId: '3',
+      expectedExpenses: [['id3 || 20%', 'Deposit for transportation of SM || 300', 'id32']],
+    });
+    expect(normalized.packageId).toBe('3');
+    expect(normalized.expectedExpenses[0]).toMatchObject([
+      { kind: 'packagePercent', catalogId: '3', percent: 20 },
+      { kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
+      { kind: 'item', catalogId: '32' },
+    ]);
     expect(normalizeExpectedExpensesData(null)).toBeNull();
   });
 
-  it('edits a milestone field, parsing numeric fields and leaving text fields as-is', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-    const edited = setMilestoneField(plan.milestones[1], 'scheduledAmount', '6 500,50'.replace(' ', ''));
-    expect(edited.scheduledAmount).toBe(6500.5);
-    expect(setMilestoneField(plan.milestones[1], 'title', 'Renamed step').title).toBe('Renamed step');
-  });
-
-  it('adds, edits, and removes an additional service on a milestone', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
+  it('adds, edits, removes, resolves, and totals expected service rows', () => {
+    let plan = buildExpectedExpensesPlan(pkg, schedule);
     const deposit = makeCustomEntry({ name: 'Deposit for transportation of SM', price: 300 });
-    let milestone = addMilestoneAdditionalService(plan.milestones[1], deposit);
-    expect(milestone.additionalServices).toHaveLength(1);
+    plan = addExpectedExpenseService(plan, 0, deposit);
+    plan = updateExpectedExpenseServiceField(plan, 0, deposit.id, 'price', '350');
+    expect(plan.expectedExpenses[0].find(row => row.id === deposit.id).price).toBe(350);
 
-    milestone = updateMilestoneAdditionalServiceField(milestone, deposit.id, 'price', '350');
-    expect(milestone.additionalServices[0].price).toBe(350);
+    const rows = resolveExpectedExpenseRows(plan.expectedExpenses[0], new Map(), priceContext);
+    const subtotal = computeExpectedExpenseSubtotal(rows);
+    expect(subtotal).toBeCloseTo(9122);
+    expect(computeExpectedExpenseAmountDue(subtotal, 14)).toBeCloseTo(10399.08);
 
-    milestone = removeMilestoneAdditionalService(milestone, deposit.id);
-    expect(milestone.additionalServices).toHaveLength(0);
+    plan = removeExpectedExpenseService(plan, 0, deposit.id);
+    expect(plan.expectedExpenses[0]).toHaveLength(1);
   });
 
-  it('computes the amount due for a milestone exactly like the "To start the program" sample invoice (8772 taxed at 14%)', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-    const catalogItemsById = new Map();
-    const additionalRows = resolveMilestoneAdditionalRows(plan.milestones[0], catalogItemsById);
-    const subtotal = computeMilestoneSubtotal(plan.milestones[0], additionalRows);
-    expect(subtotal).toBe(8772);
-    expect(computeMilestoneAmountDue(subtotal, plan.milestones[0].taxPercent)).toBeCloseTo(10000.08);
+  it('validates extra groups against the schedule length', () => {
+    const plan = { packageId: '3', expectedExpenses: [[], [], [], []] };
+    expect(getExpectedExpensesValidation(plan, schedule)).toContain('4 groups');
+    expect(getExpectedExpensesValidation({ packageId: '3', expectedExpenses: [[]] }, schedule)).toBe('');
   });
 
-  it('adds extra services into the amount due, matching the Mullins sample (13000 scheduled + 2500 PGS, taxed at 13%)', () => {
-    const plan = buildExpectedExpensesPlan(
-      { ...pkg, listedPrice: 41500 },
-      { payments: [{ title: 'To start the program', amount: 13000 }] },
-      { taxPercent: 13 },
-    );
-    const pgs = makeCustomEntry({ name: 'PGS of 24 chromosomes', price: 2500 });
-    const milestone = addMilestoneAdditionalService(plan.milestones[0], pgs);
-    const catalogItemsById = new Map();
-    const additionalRows = resolveMilestoneAdditionalRows(milestone, catalogItemsById);
-    const subtotal = computeMilestoneSubtotal(milestone, additionalRows);
-    expect(subtotal).toBe(15500);
-    expect(computeMilestoneAmountDue(subtotal, milestone.taxPercent)).toBeCloseTo(17515);
-  });
-
-  it('resolves package overview rows by name, without prices, following the catalog', () => {
-    const catalogItemsById = new Map([
-      ['1', { id: '1', name: 'Program coordination and support', price: 5000 }],
-      ['2', { id: '2', name: 'Surrogacy document preparation', price: 350 }],
-    ]);
-    const plan = buildExpectedExpensesPlan(pkg, schedule);
-    const rows = resolvePackageOverviewRows(plan.packageSnapshot.children.slice(0, 2), catalogItemsById);
-    expect(rows.map(row => row.name)).toEqual(['Program coordination and support', 'Surrogacy document preparation']);
-  });
-
-  describe('isExpectedExpensesShape', () => {
-    it('accepts a plan-shaped object and rejects anything else', () => {
-      const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
-      expect(isExpectedExpensesShape(plan)).toBe(true);
-      expect(isExpectedExpensesShape(null)).toBe(false);
-      expect(isExpectedExpensesShape({})).toBe(false);
-      expect(isExpectedExpensesShape({ packageSnapshot: {}, milestones: 'nope' })).toBe(false);
-    });
+  it('accepts new templates and legacy milestone plans', () => {
+    expect(isExpectedExpensesShape(buildExpectedExpensesPlan(pkg, schedule))).toBe(true);
+    expect(isExpectedExpensesShape({ packageId: '3', milestones: [] })).toBe(true);
+    expect(isExpectedExpensesShape({})).toBe(false);
   });
 
   describe('expectedExpensesSeed.json', () => {
-    it('is a valid, normalizable expected-expenses plan whose milestones add up to the package price', () => {
+    it('is a valid, normalizable expected-expenses template', () => {
       expect(isExpectedExpensesShape(expectedExpensesSeed)).toBe(true);
       const normalized = normalizeExpectedExpensesData(expectedExpensesSeed);
       expect(normalized.packageId).toBe('3');
-      expect(normalized.milestones).toHaveLength(6);
-      expect(computeMilestonesScheduledTotal(normalized.milestones)).toBe(normalized.packageSnapshot.listedPrice);
-      expect(normalized.milestones[0].showPackageOverview).toBe(true);
-      expect(normalized.milestones.slice(1).every(milestone => !milestone.showPackageOverview)).toBe(true);
+      expect(normalized.expectedExpenses).toHaveLength(6);
+      expect(normalized.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: '3' });
     });
   });
 });
