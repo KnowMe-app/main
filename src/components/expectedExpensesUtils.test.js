@@ -13,6 +13,7 @@ import {
   removeMilestoneService,
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
+  serializeExpectedExpensesData,
   setMilestoneField,
   updateMilestoneServiceField,
 } from './expectedExpensesUtils';
@@ -40,14 +41,9 @@ const schedule = {
   ],
 };
 
-const priceContext = {
-  packagesById: new Map([['3', pkg]]),
-  resolvePackagePrice: packageRow => Number(packageRow?.listedPrice) || 0,
-};
-
 describe('expectedExpensesUtils', () => {
   it('builds a compact template with one service group per schedule payment', () => {
-    const plan = buildExpectedExpensesPlan(pkg, schedule);
+    const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
     expect(plan.packageId).toBe('3');
     expect(plan.packageSnapshot).toMatchObject({ name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR' });
     expect(plan.packageSnapshot.children).toEqual([
@@ -59,7 +55,7 @@ describe('expectedExpensesUtils', () => {
     expect(plan.milestones).toHaveLength(7);
     expect(plan.milestones[0]).toMatchObject({ title: 'To start the program', taxPercent: 14, showPackageOverview: true });
     expect(plan.milestones[0].services).toEqual([
-      { id: plan.milestones[0].services[0].id, kind: 'percent', packageId: '3', percent: 20 },
+      { id: plan.milestones[0].services[0].id, kind: 'percent', packageId: '3', percent: 20, expectedExpenseRole: 'scheduled' },
     ]);
     expect(plan.milestones[1]).toMatchObject({ title: 'To start stimulation of a SM', showPackageOverview: false });
     expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: '3', percent: 15 });
@@ -78,22 +74,27 @@ describe('expectedExpensesUtils', () => {
     expect(computeMilestonesPackageSharePercent(plan.milestones, plan.packageId)).toBe(100);
   });
 
-  it('round-trips through normalization and supports legacy string rows', () => {
-    const normalized = normalizeExpectedExpensesData({
-      packageId: '3',
-      expectedExpenses: [['id3 || 20%', 'Deposit for transportation of SM || 300', 'id32']],
-    });
-    expect(normalized.packageId).toBe('3');
-    expect(normalized.expectedExpenses[0]).toMatchObject([
-      { kind: 'packagePercent', catalogId: '3', percent: 20 },
+  it('round-trips through serialization/normalization and supports legacy string rows', () => {
+    const rawCatalog = {
+      packages: [{ id: '3', name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR', children: [], paymentScheduleId: 'ps-3' }],
+      technical: { paymentSchedules: [{ id: 'ps-3', payments: [{ title: 'To start the program', amount: 8000 }] }] },
+    };
+    const { plan } = buildExpectedExpensesPlanFromRawGroups(
+      [['id3 || 20%', 'Deposit for transportation of SM || 300', 'id32']],
+      { catalog: rawCatalog },
+    );
+    expect(plan.packageId).toBe('3');
+    expect(plan.milestones[0].services).toMatchObject([
+      { kind: 'percent', packageId: '3', percent: 20, expectedExpenseRole: 'scheduled' },
       { kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
       { kind: 'item', catalogId: '32' },
     ]);
-    expect(serializeExpectedExpensesData(normalized)).toEqual({
-      packageId: '3',
-      expectedExpenses: [['id3 || 20%', 'Deposit for transportation of SM || 300', 'id32']],
-    });
+
+    const renormalized = normalizeExpectedExpensesData(serializeExpectedExpensesData(plan));
+    expect(renormalized.packageId).toBe(plan.packageId);
+    expect(renormalized.milestones[0].services).toMatchObject(plan.milestones[0].services);
     expect(normalizeExpectedExpensesData(null)).toBeNull();
+    expect(serializeExpectedExpensesData(null)).toBeNull();
   });
 
   it('migrates a legacy milestone with a frozen scheduledAmount into an equivalent percent-of-package row', () => {
@@ -106,7 +107,7 @@ describe('expectedExpensesUtils', () => {
     };
     const normalized = normalizeExpectedExpensesData(legacy);
     expect(normalized.milestones[0].services).toEqual([
-      { id: normalized.milestones[0].services[0].id, kind: 'percent', packageId: '3', percent: 20 },
+      { id: normalized.milestones[0].services[0].id, kind: 'percent', packageId: '3', percent: 20, expectedExpenseRole: 'scheduled' },
     ]);
     expect(computeMilestonesTotal(normalized.milestones, new Map(), { packagesById: new Map([['3', pkg]]) })).toBe(8000);
   });

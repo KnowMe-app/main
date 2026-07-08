@@ -276,12 +276,19 @@ describe('InvoiceBuilderPage', () => {
             exists: () => true,
             val: () => ({
               packageId: 'p1',
-              expectedExpenses: [
-                [
-                  { id: 'stale-1', kind: 'packagePercent', catalogId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' },
-                  { id: 'custom-1', kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
-                ],
-                [{ id: 'stale-2', kind: 'packagePercent', catalogId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' }],
+              packageSnapshot: { name: 'Full program', listedPrice: 250, currency: 'EUR', children: [] },
+              milestones: [
+                {
+                  id: 'm1', title: 'Old title 1', taxPercent: 14, showPackageOverview: true,
+                  services: [
+                    { id: 'stale-1', kind: 'percent', packageId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' },
+                    { id: 'custom-1', kind: 'custom', name: 'Deposit for transportation of SM', price: 300 },
+                  ],
+                },
+                {
+                  id: 'm2', title: 'Old title 2', taxPercent: 14, showPackageOverview: false,
+                  services: [{ id: 'stale-2', kind: 'percent', packageId: 'p1', percent: 10, expectedExpenseRole: 'scheduled' }],
+                },
               ],
             }),
           });
@@ -297,9 +304,11 @@ describe('InvoiceBuilderPage', () => {
       await flush();
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
-      expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
-      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+      expect(plan.milestones[0].services).toHaveLength(2);
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.milestones[0].services[1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
+      expect(plan.milestones[1].services).toHaveLength(1);
+      expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
 
       await act(async () => { root.unmount(); });
     });
@@ -315,12 +324,9 @@ describe('InvoiceBuilderPage', () => {
             exists: () => true,
             val: () => ({
               packageId: 'p1',
-              expectedExpenses: [
-                [
-                  'idp1 || 10%',
-                  'Deposit for transportation of SM || 300',
-                ],
-                ['idp1 || 10%'],
+              milestones: [
+                { id: 'm1', title: 'Old title 1', taxPercent: 14, showPackageOverview: true, services: ['idp1 || 10%', 'Deposit for transportation of SM || 300'] },
+                { id: 'm2', title: 'Old title 2', taxPercent: 14, showPackageOverview: false, services: ['idp1 || 10%'] },
               ],
             }),
           });
@@ -336,11 +342,11 @@ describe('InvoiceBuilderPage', () => {
       await flush();
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.expectedExpenses[0]).toHaveLength(2);
-      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
-      expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
-      expect(plan.expectedExpenses[1]).toHaveLength(1);
-      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+      expect(plan.milestones[0].services).toHaveLength(2);
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.milestones[0].services[1]).toMatchObject({ kind: 'custom', name: 'Deposit for transportation of SM', price: 300 });
+      expect(plan.milestones[1].services).toHaveLength(1);
+      expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
 
       await act(async () => { root.unmount(); });
     });
@@ -356,9 +362,9 @@ describe('InvoiceBuilderPage', () => {
             exists: () => true,
             val: () => ({
               packageId: 'p1',
-              expectedExpenses: [
-                [{ id: 'manual-percent', kind: 'packagePercent', catalogId: 'p1', percent: 10 }],
-                [],
+              milestones: [
+                { id: 'm1', title: 'Old title 1', taxPercent: 14, showPackageOverview: true, services: [{ id: 'manual-percent', kind: 'percent', packageId: 'p1', percent: 10 }] },
+                { id: 'm2', title: 'Old title 2', taxPercent: 14, showPackageOverview: false, services: [] },
               ],
             }),
           });
@@ -374,9 +380,12 @@ describe('InvoiceBuilderPage', () => {
       await flush();
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
-      expect(plan.expectedExpenses[0][1]).toBe('idp1 || 10%');
-      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+      expect(plan.milestones[0].services).toHaveLength(2);
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
+      expect(plan.milestones[0].services[1]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 10 });
+      expect(plan.milestones[0].services[1].expectedExpenseRole).toBeUndefined();
+      expect(plan.milestones[1].services).toHaveLength(1);
+      expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
 
       await act(async () => { root.unmount(); });
     });
@@ -421,13 +430,13 @@ describe('InvoiceBuilderPage', () => {
       await act(async () => { fileInput.dispatchEvent(new Event('change', { bubbles: true })); });
       await flush();
 
-      expect(container.innerHTML).toContain('Expected expenses has 6 groups');
+      expect(container.innerHTML).toContain('To start the program');
+      expect(container.innerHTML).toContain('On the 36th week of pregnancy');
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
       expect(plan.packageId).toBe('3');
-      expect(plan).toEqual(expectedExpensesSeed);
-      expect(plan.expectedExpenses).toHaveLength(6);
-      expect(plan.expectedExpenses[1][1]).toBe('Deposit for transportation of SM || 300');
+      expect(plan.milestones).toHaveLength(6);
+      expect(plan.milestones[1].services[1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
 
       await act(async () => { root.unmount(); });
     });

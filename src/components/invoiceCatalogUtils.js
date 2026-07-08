@@ -97,11 +97,15 @@ export const makeCustomEntry = ({ name = '', price = 0, description = '', priceL
 
 // A share of a budget/packages program's listed price, e.g. "20% of package 1". The euro amount
 // is intentionally never stored - resolveServiceRow recalculates it from the package's price.
-export const makePercentOfPackageEntry = (packageId, percent, { id } = {}) => ({
+// `expectedExpenseRole: 'scheduled'` marks the one row that was auto-generated from the package's
+// payment schedule (as opposed to one an admin added by hand) - see recalculateExpectedExpensesSchedule
+// in InvoiceBuilderPage.jsx, which only ever replaces rows carrying that marker.
+export const makePercentOfPackageEntry = (packageId, percent, { id, expectedExpenseRole } = {}) => ({
   id: id || createEntryId(),
   kind: 'percent',
   packageId: String(packageId ?? ''),
   percent: toNumber(percent),
+  ...(expectedExpenseRole ? { expectedExpenseRole } : {}),
 });
 
 export const makePackagePercentEntry = ({ catalogId = '', percent = 0 } = {}, { id } = {}) => ({
@@ -176,7 +180,7 @@ export const normalizeServiceEntry = raw => {
   const id = raw.id || createEntryId();
 
   if (raw.kind === 'percent') {
-    return makePercentOfPackageEntry(raw.packageId, raw.percent, { id });
+    return makePercentOfPackageEntry(raw.packageId, raw.percent, { id, expectedExpenseRole: raw.expectedExpenseRole });
   }
 
   if (raw.kind === 'package') {
