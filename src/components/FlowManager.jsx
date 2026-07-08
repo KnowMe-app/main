@@ -947,6 +947,10 @@ export const flattenFlowEntriesFromBackend = flowNode => {
       return { amountUah: '', amountUsd: '', amountEur: '', customUsdRate: '' };
     }
 
+    if (isFormulaFlowAmount(normalizedRawAmount)) {
+      return { amountUah: normalizedRawAmount, amountUsd: '', amountEur: '', customUsdRate: '' };
+    }
+
     const slashSeparated = normalizedRawAmount
       .split('/')
       .map(item => String(item || '').trim());

@@ -1200,15 +1200,19 @@ const buildFlowGroupPath = groupPath => {
   return sanitizedSegments.join('/');
 };
 
-const sanitizeFlowValuePart = value =>
+const isFlowFormulaAmount = value => String(value || '').trim().startsWith('=');
+
+const sanitizeFlowValuePart = (value, { preserveSlash = false } = {}) =>
   String(value || '')
     .trim()
-    .replace(/[#$[\]/]/g, ' ')
+    .replace(preserveSlash ? /[#$[\]]/g : /[#$[\]/]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-const normalizeFlowStoredAmount = value =>
-  sanitizeFlowValuePart(String(value || '').replace(/,/g, '.').replace(/\$/g, 'USD'));
+const normalizeFlowStoredAmount = value => {
+  const normalized = String(value || '').replace(/,/g, '.').replace(/\$/g, 'USD');
+  return sanitizeFlowValuePart(normalized, { preserveSlash: isFlowFormulaAmount(normalized) });
+};
 
 const buildFlowEntryValue = ({ amount, description = '' }) => {
   const safeAmount = normalizeFlowStoredAmount(amount);
@@ -1616,13 +1620,21 @@ export const saveFlowEntry = async ({
       ? formatFlowStoredCurrencyAmount(amountUahNumber / effectiveRates.eur)
       : '';
   const normalizedRowCustomUsdRate = normalizeFlowCustomUsdRate(rowCustomUsdRate);
-  const amountPayload = [
-    normalizedAmountUah,
-    amountUsd,
-    amountEur,
-    normalizedRowCustomUsdRate ? formatFlowStoredCurrencyAmount(normalizedRowCustomUsdRate) : '',
-  ].join('/');
-  const value = buildFlowEntryValue({ amount: amountPayload, description });
+  const normalizedCustomUsdRateAmount = normalizedRowCustomUsdRate
+    ? formatFlowStoredCurrencyAmount(normalizedRowCustomUsdRate)
+    : '';
+  const value = isFlowFormulaAmount(normalizedAmountUah)
+    ? {
+        amount: normalizedAmountUah,
+        amountUsd,
+        amountEur,
+        customUsdRate: normalizedCustomUsdRateAmount,
+        description: sanitizeFlowValuePart(description),
+      }
+    : buildFlowEntryValue({
+        amount: [normalizedAmountUah, amountUsd, amountEur, normalizedCustomUsdRateAmount].join('/'),
+        description,
+      });
   const entryId = generateFlowEntryId();
   await set(ref2(database, `multiData/flow/${ownerId}/${datePath}/${entryId}`), value);
 };
