@@ -16,6 +16,7 @@ import {
 } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
+import PdfPagePreviewStrip from './PdfPagePreviewStrip';
 import { getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isAdminUid } from 'utils/accessLevel';
@@ -37,9 +38,10 @@ import {
   makeCatalogItemEntry,
   makeCatalogPackageEntry,
   makeCustomEntry,
-  makePackagePercentEntry,
+  makePercentOfPackageEntry,
   movePackageChild,
   normalizeInvoiceData,
+  parseCustomPriceInput,
   removePackageChild,
   reorderBeneficiaryIds,
   reorderRecentServices,
@@ -51,19 +53,22 @@ import {
   updatePackageChildField,
 } from './invoiceCatalogUtils';
 import {
-  addExpectedExpenseService,
+  addMilestoneService,
   buildExpectedExpensesPlan,
-  computeExpectedExpenseAmountDue,
-  computeExpectedExpenseSubtotal,
-  getExpectedExpensesPackagePrice,
-  getExpectedExpensesValidation,
+  buildExpectedExpensesPlanFromRawGroups,
+  buildMilestonesFromSchedule,
+  computeMilestoneAmountDue,
+  computeMilestoneSubtotal,
+  computeMilestonesPackageSharePercent,
+  computeMilestonesTotal,
   isExpectedExpensesShape,
+  isRawExpectedExpensesGroups,
   normalizeExpectedExpensesData,
-  removeExpectedExpenseService,
-  resetExpectedExpenseService,
-  resolveExpectedExpenseRows,
-  serializeExpectedExpensesData,
-  updateExpectedExpenseServiceField,
+  removeMilestoneService,
+  resolveMilestoneServiceRows,
+  resolvePackageOverviewRows,
+  setMilestoneField,
+  updateMilestoneServiceField,
 } from './expectedExpensesUtils';
 
 const INVOICE_DATA_PATH = 'invoiceBuilder';
@@ -460,10 +465,77 @@ const MissingTag = styled(CustomizedTag)`
   background: rgba(180, 35, 24, 0.1);
 `;
 
+// A "% of package" row has no name/description of its own (it's derived: "20% of IVF+ED+SM") -
+// what's editable is the percent value and which catalog package it's a share of.
+const PercentShareRow = ({
+  row,
+  index,
+  isChild,
+  catalogPackages,
+  onCommit,
+  onRemove,
+  removeTitle,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
+}) => {
+  const [percentDraft, setPercentDraft, percentEditingRef] = useFieldDraft(String(row.percent ?? ''));
+
+  return (
+    <LineCard>
+      <LineMainRow>
+        <RowIndex>{index + 1}</RowIndex>
+        <PlainSelect
+          aria-label="Package this share is calculated from"
+          value={row.packageId}
+          onChange={event => onCommit('packageId', event.target.value)}
+        >
+          {!catalogPackages.some(pkg => String(pkg.id) === String(row.packageId)) ? (
+            <option value={row.packageId}>{`Package ${row.packageId}`}</option>
+          ) : null}
+          {catalogPackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
+        </PlainSelect>
+        <AutoTextArea
+          as={PlainPriceBase}
+          $size={isChild ? '12.5px' : '13px'}
+          $width="52px"
+          inputMode="decimal"
+          value={percentDraft}
+          placeholder="0"
+          aria-label="Percent of package price"
+          onFocus={() => { percentEditingRef.current = true; }}
+          onChange={event => setPercentDraft(event.target.value)}
+          onBlur={() => { percentEditingRef.current = false; onCommit('percent', percentDraft); }}
+        />
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--km-muted)' }}>%</span>
+        <CustomizedTag title="Recalculated live from the package's price">≈ {formatEuroPreview(row.price)}</CustomizedTag>
+        {row.missing ? <MissingTag title="This catalog package no longer exists">Missing</MissingTag> : null}
+        <RowActions>
+          {onMoveUp ? (
+            <IconButton type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
+              <FaChevronUp />
+            </IconButton>
+          ) : null}
+          {onMoveDown ? (
+            <IconButton type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
+              <FaChevronDown />
+            </IconButton>
+          ) : null}
+          <IconDangerButton type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
+            <FaTrash />
+          </IconDangerButton>
+        </RowActions>
+      </LineMainRow>
+    </LineCard>
+  );
+};
+
 const ServiceLineRow = ({
   row,
   index,
   isChild = false,
+  catalogPackages = [],
   onCommit,
   onRemove,
   removeTitle = 'Remove',
@@ -475,7 +547,25 @@ const ServiceLineRow = ({
 }) => {
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
-  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(row.kind === 'packagePercent' ? row.percent : (row.price ?? '')));
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(row.priceLabel || String(row.price ?? ''));
+
+  if (row.kind === 'percent') {
+    return (
+      <PercentShareRow
+        row={row}
+        index={index}
+        isChild={isChild}
+        catalogPackages={catalogPackages}
+        onCommit={onCommit}
+        onRemove={onRemove}
+        removeTitle={removeTitle}
+        onMoveUp={onMoveUp}
+        onMoveDown={onMoveDown}
+        canMoveUp={canMoveUp}
+        canMoveDown={canMoveDown}
+      />
+    );
+  }
 
   return (
     <LineCard>
@@ -495,10 +585,9 @@ const ServiceLineRow = ({
           as={PlainPriceBase}
           $size={isChild ? '12.5px' : '13px'}
           $width={isChild ? '76px' : '88px'}
-          inputMode="decimal"
           value={priceDraft}
-          placeholder={row.kind === 'packagePercent' ? '%' : '0'}
-          aria-label={row.kind === 'packagePercent' ? 'Package percent' : 'Price (EUR)'}
+          placeholder="0 or GIFT"
+          aria-label="Price (EUR)"
           onFocus={() => { priceEditingRef.current = true; }}
           onChange={event => setPriceDraft(event.target.value)}
           onBlur={() => { priceEditingRef.current = false; onCommit('price', priceDraft); }}
@@ -714,16 +803,11 @@ const PackageEntryCard = ({
 
   const handleAddCustom = () => {
     const name = customName.trim();
-    const price = Number(customPrice.replace(',', '.'));
     if (!name) {
       toast.error('Enter a name for the new service.');
       return;
     }
-    if (!Number.isFinite(price)) {
-      toast.error('Enter a valid price for the new service.');
-      return;
-    }
-    onAddCustomChild({ name, price });
+    onAddCustomChild({ name, ...parseCustomPriceInput(customPrice) });
     setCustomName('');
     setCustomPrice('');
   };
@@ -816,8 +900,7 @@ const PackageEntryCard = ({
         />
         <PackageQuickPrice
           rows={1}
-          inputMode="decimal"
-          placeholder="Price"
+          placeholder="Price or GIFT"
           value={customPrice}
           onChange={event => setCustomPrice(event.target.value)}
         />
@@ -906,18 +989,24 @@ const PdfPreviewFooter = styled.div`
 
 const MilestoneCard = ({
   index,
-  payment,
-  rows,
+  milestone,
+  serviceRows,
+  subtotal,
   amountDue,
   taxPercent,
   catalogItems,
+  catalogPackages,
+  onCommitField,
+  onToggleOverview,
   onCommitServiceField,
   onRemoveService,
   onResetService,
   onAddCustomService,
   onAddCatalogService,
-  onAddPackagePercent,
+  onAddPercentService,
 }) => {
+  const [titleDraft, setTitleDraft, titleEditingRef] = useFieldDraft(milestone.title);
+  const [taxDraft, setTaxDraft, taxEditingRef] = useFieldDraft(String(milestone.taxPercent ?? ''));
   const [showPicker, setShowPicker] = useState(false);
   const [query, setQuery] = useState('');
   const [customName, setCustomName] = useState('');
@@ -925,8 +1014,8 @@ const MilestoneCard = ({
   const [percentDraft, setPercentDraft] = useState('');
 
   const usedCatalogIds = useMemo(
-    () => new Set(rows.filter(row => row.kind === 'item').map(row => String(row.catalogId))),
-    [rows],
+    () => new Set(serviceRows.filter(row => row.kind === 'item').map(row => String(row.catalogId))),
+    [serviceRows],
   );
 
   const availableItems = useMemo(() => {
@@ -939,16 +1028,11 @@ const MilestoneCard = ({
 
   const handleAddCustom = () => {
     const name = customName.trim();
-    const price = Number(customPrice.replace(',', '.'));
     if (!name) {
       toast.error('Enter a name for the new service.');
       return;
     }
-    if (!Number.isFinite(price)) {
-      toast.error('Enter a valid price for the new service.');
-      return;
-    }
-    onAddCustomService({ name, price });
+    onAddCustomService({ name, ...parseCustomPriceInput(customPrice) });
     setCustomName('');
     setCustomPrice('');
   };
@@ -967,34 +1051,75 @@ const MilestoneCard = ({
     <PackageCard>
       <PackageHeaderRow>
         <RowIndex>{index + 1}</RowIndex>
-        <div style={{ flex: 1, fontWeight: 800 }}>{index + 1}. {payment?.title || `Payment ${index + 1}`}</div>
-        <CustomizedTag title="Rows total with taxes">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
-        <CustomizedTag title="Tax percent">Tax {formatEuroPreview(taxPercent).replace(' EUR', '%')}</CustomizedTag>
+        <AutoTextArea
+          $size="13.5px"
+          $weight="800"
+          value={titleDraft}
+          placeholder="Milestone title"
+          aria-label="Milestone title"
+          onFocus={() => { titleEditingRef.current = true; }}
+          onChange={event => setTitleDraft(event.target.value)}
+          onBlur={() => { titleEditingRef.current = false; onCommitField('title', titleDraft); }}
+        />
+        <AutoTextArea
+          as={PlainPriceBase}
+          $width="48px"
+          inputMode="decimal"
+          value={taxDraft}
+          placeholder="%"
+          title="Tax (%)"
+          aria-label="Tax percent"
+          onFocus={() => { taxEditingRef.current = true; }}
+          onChange={event => setTaxDraft(event.target.value)}
+          onBlur={() => { taxEditingRef.current = false; onCommitField('taxPercent', taxDraft); }}
+        />
       </PackageHeaderRow>
+      <MilestoneCheckboxRow>
+        <MilestoneCheckboxLabel>
+          <input type="checkbox" checked={Boolean(milestone.showPackageOverview)} onChange={onToggleOverview} />
+          Show full package overview on this invoice
+        </MilestoneCheckboxLabel>
+        <CustomizedTag title="Sum of this milestone's rows">Subtotal: {formatEuroPreview(subtotal)}</CustomizedTag>
+        <CustomizedTag title="Subtotal + tax">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
+      </MilestoneCheckboxRow>
 
       <PackageChildren>
-        {rows.map((row, rowIndex) => (
+        {serviceRows.map((row, rowIndex) => (
           <ServiceLineRow
             key={row.key}
             row={row}
             index={rowIndex}
             isChild
-            onCommit={(field, value) => onCommitServiceField(row.id, row.kind === 'packagePercent' && field === 'price' ? 'percent' : field, value)}
+            catalogPackages={catalogPackages}
+            onCommit={(field, value) => onCommitServiceField(row.id, field, value)}
             onRemove={() => onRemoveService(row.id)}
             onReset={row.kind === 'item' && row.isCustomized ? () => onResetService(row.id) : undefined}
           />
         ))}
-        {!rows.length ? <PanelNote style={{ margin: '8px 0' }}>No expected services for this schedule step yet.</PanelNote> : null}
+        {!serviceRows.length ? <PanelNote style={{ margin: '8px 0' }}>No services on this milestone yet.</PanelNote> : null}
       </PackageChildren>
 
       <PackageAddRow>
-        <PackageQuickField rows={1} placeholder="Custom line name…" value={customName} onChange={event => setCustomName(event.target.value)} />
-        <PackageQuickPrice rows={1} inputMode="decimal" placeholder="Price" value={customPrice} onChange={event => setCustomPrice(event.target.value)} />
+        <PackageQuickField
+          rows={1}
+          placeholder="Add a custom line to this invoice…"
+          value={customName}
+          onChange={event => setCustomName(event.target.value)}
+        />
+        <PackageQuickPrice
+          rows={1}
+          placeholder="Price or GIFT"
+          value={customPrice}
+          onChange={event => setCustomPrice(event.target.value)}
+        />
         <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
         <PackageQuickPrice rows={1} inputMode="decimal" placeholder="% of package" value={percentDraft} onChange={event => setPercentDraft(event.target.value)} />
         <SmallButton type="button" onClick={handleAddPackagePercent}><FaPlus /> Percent</SmallButton>
         <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
           <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
+        </SmallButton>
+        <SmallButton type="button" onClick={onAddPercentService} title="Add a share of the package price (e.g. 20%)">
+          <FaPlus /> % of package
         </SmallButton>
       </PackageAddRow>
 
@@ -1233,20 +1358,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const expectedExpensesView = useMemo(() => {
     if (!expectedExpenses) return null;
-    const pkg = catalogPackagesById.get(String(expectedExpenses.packageId));
-    const schedule = pkg ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg) : null;
-    const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
-    const taxPercent = defaultExpectedExpensesTaxPercent;
-    const validation = getExpectedExpensesValidation(expectedExpenses, schedule);
-    const pages = payments.map((payment, index) => {
-      const group = expectedExpenses.expectedExpenses?.[index] || [];
-      const rows = resolveExpectedExpenseRows(group, catalogItemsById, priceContext);
-      const subtotal = computeExpectedExpenseSubtotal(rows);
-      const amountDue = computeExpectedExpenseAmountDue(subtotal, taxPercent);
-      return { payment, group, rows, subtotal, amountDue, taxPercent };
+    const overviewRows = resolvePackageOverviewRows(expectedExpenses.packageSnapshot.children, catalogItemsById, priceContext);
+    const milestoneRows = expectedExpenses.milestones.map(milestone => {
+      const serviceRows = resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext);
+      const subtotal = computeMilestoneSubtotal(serviceRows);
+      const amountDue = computeMilestoneAmountDue(subtotal, milestone.taxPercent);
+      return { milestone, serviceRows, subtotal, amountDue };
     });
-    return { pkg, schedule, pages, validation };
-  }, [expectedExpenses, catalogPackagesById, catalogTechnical, catalogItemsById, priceContext, defaultExpectedExpensesTaxPercent]);
+    return {
+      overviewRows,
+      milestoneRows,
+      totalPlanned: computeMilestonesTotal(expectedExpenses.milestones, catalogItemsById, priceContext),
+      packageSharePercent: computeMilestonesPackageSharePercent(expectedExpenses.milestones, expectedExpenses.packageId),
+    };
+  }, [expectedExpenses, catalogItemsById, priceContext]);
 
   const persistPath = async (path, value, successMessage) => {
     try {
@@ -1413,18 +1538,17 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const addCustomServiceEntry = () => {
     const name = newCustomServiceName.trim();
-    const price = Number(newCustomServicePrice.replace(',', '.'));
     if (!name) {
       toast.error('Enter a name for the new service.');
       return;
     }
-    if (!Number.isFinite(price)) {
-      toast.error('Enter a valid price for the new service.');
-      return;
-    }
-    addEntryToInvoice(makeCustomEntry({ name, price }), 'Service added.');
+    addEntryToInvoice(makeCustomEntry({ name, ...parseCustomPriceInput(newCustomServicePrice) }), 'Service added.');
     setNewCustomServiceName('');
     setNewCustomServicePrice('');
+  };
+
+  const addPercentServiceEntry = packageId => {
+    addEntryToInvoice(makePercentOfPackageEntry(packageId, 0), 'Service added.');
   };
 
   const addRecentServiceEntry = entry => addEntryToInvoice(cloneEntryWithNewId(entry), 'Service added.');
@@ -1516,29 +1640,29 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.error('This package has no payment schedule in the catalog.');
       return;
     }
-    const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
-    if (!resolvedPackage) return;
-    const fresh = buildExpectedExpensesPlan(resolvedPackage, schedule);
-    const packageId = String(expectedExpenses.packageId ?? '');
-    const isLegacyScheduledEntry = entry => (
-      entry?.expectedExpenseRole !== 'scheduled'
-      && entry?.kind === 'packagePercent'
-      && String(entry.catalogId ?? '') === packageId
-    );
-    const hasLegacyScheduledRows = fresh.expectedExpenses.length > 0
-      && fresh.expectedExpenses.every((_, index) => {
-        const existingGroup = Array.isArray(expectedExpenses.expectedExpenses?.[index]) ? expectedExpenses.expectedExpenses[index] : [];
-        return isLegacyScheduledEntry(existingGroup[0]);
-      });
-    const nextGroups = fresh.expectedExpenses.map((group, index) => {
-      const existingGroup = Array.isArray(expectedExpenses.expectedExpenses?.[index]) ? expectedExpenses.expectedExpenses[index] : [];
-      const extraServices = existingGroup.filter((entry, entryIndex) => (
-        entry?.expectedExpenseRole !== 'scheduled'
-        && !(hasLegacyScheduledRows && entryIndex === 0 && isLegacyScheduledEntry(entry))
-      ));
-      return [...group, ...extraServices];
+    if (typeof window !== 'undefined' && !window.confirm(
+      'Recalculate milestones from the catalog schedule? Titles reset to the catalog and the package-share row is recomputed; extra services on each milestone are kept.',
+    )) return;
+    const resolvedPackage = { ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice };
+    const freshMilestones = buildMilestonesFromSchedule(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
+    const nextMilestones = freshMilestones.map((milestone, index) => {
+      const previous = expectedExpenses.milestones[index];
+      const previousExtras = (previous?.services || []).filter(entry => entry.kind !== 'percent' || String(entry.packageId) !== String(expectedExpenses.packageId));
+      return {
+        ...milestone,
+        services: [...milestone.services, ...previousExtras],
+        taxPercent: previous?.taxPercent ?? milestone.taxPercent,
+        showPackageOverview: previous?.showPackageOverview ?? milestone.showPackageOverview,
+      };
     });
-    persistExpectedExpenses({ ...expectedExpenses, expectedExpenses: nextGroups }, 'Schedule groups refreshed.');
+    persistExpectedExpenses({
+      ...expectedExpenses,
+      packageSnapshot: {
+        ...expectedExpenses.packageSnapshot,
+        listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? Number(pkg.listedPrice) ?? 0,
+      },
+      milestones: nextMilestones,
+    }, 'Schedule recalculated.');
   };
 
   const deleteExpectedExpensesPlan = () => {
@@ -1554,20 +1678,47 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistExpectedExpenses(resetExpectedExpenseService(expectedExpenses, groupIndex, entryId), 'Reverted to catalog values.');
   };
 
-  const removeExpectedExpenseServiceEntry = (groupIndex, entryId) => {
-    persistExpectedExpenses(removeExpectedExpenseService(expectedExpenses, groupIndex, entryId), 'Service removed.');
+  const commitMilestoneServiceField = (milestoneId, entryId, field, value) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? updateMilestoneServiceField(milestone, entryId, field, value)
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service updated.');
   };
 
-  const addExpectedExpenseCustomService = (groupIndex, fields) => {
-    persistExpectedExpenses(addExpectedExpenseService(expectedExpenses, groupIndex, makeCustomEntry(fields)), 'Service added.');
+  const resetMilestoneServiceEntry = (milestoneId, entryId) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id !== milestoneId ? milestone : {
+      ...milestone,
+      services: milestone.services.map(entry => (entry.id === entryId ? resetItemEntryOverrides(entry) : entry)),
+    }));
+    persistExpectedExpensesMilestones(nextMilestones, 'Reverted to catalog values.');
   };
 
-  const addExpectedExpenseCatalogService = (groupIndex, catalogId) => {
-    persistExpectedExpenses(addExpectedExpenseService(expectedExpenses, groupIndex, makeCatalogItemEntry(catalogId)), 'Service added.');
+  const removeMilestoneServiceEntry = (milestoneId, entryId) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? removeMilestoneService(milestone, entryId)
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service removed.');
   };
 
-  const addExpectedExpensePackagePercent = (groupIndex, percent) => {
-    persistExpectedExpenses(addExpectedExpenseService(expectedExpenses, groupIndex, makePackagePercentEntry({ catalogId: expectedExpenses.packageId, percent })), 'Package percent added.');
+  const addMilestoneCustomService = (milestoneId, fields) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? addMilestoneService(milestone, makeCustomEntry(fields))
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
+  };
+
+  const addMilestoneCatalogService = (milestoneId, catalogId) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? addMilestoneService(milestone, makeCatalogItemEntry(catalogId))
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
+  };
+
+  const addMilestonePercentService = milestoneId => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? addMilestoneService(milestone, makePercentOfPackageEntry(expectedExpenses.packageId, 0))
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
   };
 
   const handleGenerateExpectedExpensesPdf = async () => {
@@ -1655,6 +1806,36 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
+  // Shared by both upload buttons: accepts either the lean array-of-groups shape (lined up 1:1
+  // with the chosen package's default payment schedule - the package itself is inferred from the
+  // "idX || Y%" rows inside the groups) or an already-normalized { packageId, packageSnapshot,
+  // milestones } plan. Returns the persisted plan, or null if nothing could be built/persisted
+  // (a toast has already explained why).
+  const uploadExpectedExpenses = async rawExpectedExpenses => {
+    let nextPlan;
+    if (isRawExpectedExpensesGroups(rawExpectedExpenses)) {
+      const { plan, missingPackage, droppedGroupsCount } = buildExpectedExpensesPlanFromRawGroups(rawExpectedExpenses, {
+        catalog: { packages: catalogPackages, technical: catalogTechnical },
+        taxPercent: defaultExpectedExpensesTaxPercent,
+      });
+      if (missingPackage) {
+        toast.error('Expected expenses: none of the groups reference a catalog package ("idX || Y%") - nothing was imported.');
+        return null;
+      }
+      if (droppedGroupsCount) {
+        toast.error(`Expected expenses: ${droppedGroupsCount} extra group(s) beyond the package's payment schedule were ignored.`);
+      }
+      nextPlan = plan;
+    } else if (isExpectedExpensesShape(rawExpectedExpenses)) {
+      nextPlan = normalizeExpectedExpensesData(rawExpectedExpenses);
+    } else {
+      return null;
+    }
+    await set(ref(database, EXPECTED_EXPENSES_PATH), nextPlan);
+    setExpectedExpenses(nextPlan);
+    return nextPlan;
+  };
+
   const handleFileChange = async event => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1677,6 +1858,11 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         set(ref(database, `${INVOICE_DATA_PATH}/taxPercent`), nextData.taxPercent),
       ]);
       setData(nextData);
+      // The combined invoice-template upload (beneficiaries/customers/services/notes) may also
+      // carry an `expectedExpenses` field - build/persist that plan too, in the same upload.
+      if (parsed.expectedExpenses !== undefined) {
+        await uploadExpectedExpenses(parsed.expectedExpenses);
+      }
       toast.success('Invoice JSON uploaded to backend.');
     } catch (uploadError) {
       console.error('Unable to upload invoice JSON', uploadError);
@@ -1685,7 +1871,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   };
 
   // Upload a standalone expected-expenses JSON (see src/data/expectedExpensesSeed.json for the
-  // shape) straight into invoiceBuilder/expectedExpenses, replacing any existing plan.
+  // normalized shape, or the invoice-template upload for the lean array-of-groups shape) straight
+  // into invoiceBuilder/expectedExpenses, replacing any existing plan.
   const handleExpectedExpensesUploadClick = () => expectedExpensesFileInputRef.current?.click();
 
   const handleExpectedExpensesFileChange = async event => {
@@ -1695,13 +1882,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      if (!isExpectedExpensesShape(parsed)) {
-        toast.error('Upload an expected-expenses JSON with packageId and expectedExpenses groups.');
+      const source = parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.expectedExpenses !== undefined
+        ? parsed.expectedExpenses
+        : parsed;
+      const nextPlan = await uploadExpectedExpenses(source);
+      if (!nextPlan) {
+        toast.error('Upload an expected-expenses JSON: either { packageSnapshot, milestones }, or an array of groups.');
         return;
       }
-      const nextPlan = normalizeExpectedExpensesData(parsed);
-      await set(ref(database, EXPECTED_EXPENSES_PATH), parsed);
-      setExpectedExpenses(nextPlan);
       toast.success('Expected expenses JSON uploaded to backend.');
     } catch (uploadError) {
       console.error('Unable to upload expected expenses JSON', uploadError);
@@ -1804,7 +1992,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />
-            <MiniButton type="button" onClick={handleUploadClick} title="Upload an invoice JSON to the backend">
+            <MiniButton type="button" onClick={handleUploadClick} title="Upload an invoice JSON to the backend (an expectedExpenses array of groups is picked up too)">
               <FaUpload /> Upload JSON
             </MiniButton>
             <PrimaryMiniButton
@@ -1954,6 +2142,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   key={row.key}
                   row={row}
                   index={index}
+                  catalogPackages={visibleCatalogPackages}
                   onCommit={(field, value) => commitTopLevelField(row.id, field, value)}
                   onRemove={() => removeTopLevelEntry(row.id)}
                   onMoveUp={() => moveTopLevelEntry(row.id, -1)}
@@ -1992,12 +2181,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 />
                 <PlainPriceBase
                   rows={1}
-                  inputMode="decimal"
-                  placeholder="Price"
+                  placeholder="Price or GIFT"
                   value={newCustomServicePrice}
                   onChange={event => setNewCustomServicePrice(event.target.value)}
                 />
                 <SmallButton type="button" onClick={addCustomServiceEntry}><FaPlus /> Add</SmallButton>
+                <SmallButton
+                  type="button"
+                  title="Add a share of a catalog package's price (e.g. 20%)"
+                  onClick={() => (visibleCatalogPackages.length
+                    ? addPercentServiceEntry(visibleCatalogPackages[0].id)
+                    : toast.error('No packages in the catalog yet.'))}
+                >
+                  <FaPlus /> % of package
+                </SmallButton>
               </FieldRow>
 
               <div style={{ marginTop: 8 }}>
@@ -2108,7 +2305,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   <SmallButton
                     type="button"
                     onClick={handleExpectedExpensesUploadClick}
-                    title="Upload a standalone expected-expenses JSON (see src/data/expectedExpensesSeed.json)"
+                    title="Upload an expected-expenses JSON: { packageSnapshot, milestones } or an array of groups lined up with the package's schedule"
                   >
                     <FaUpload /> Upload JSON
                   </SmallButton>
@@ -2163,25 +2360,34 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       {formatEuroPreview(resolveBudgetPriceAmount(expectedExpensesView?.pkg?.listedPrice, priceContext) ?? expectedExpensesView?.pkg?.listedPrice)}
                     </span>
                   </FieldRow>
-                  {expectedExpensesView?.validation ? (
-                    <PanelNote style={{ color: 'var(--km-danger)' }}>{expectedExpensesView.validation}</PanelNote>
+                  {expectedExpensesView && Math.round(expectedExpensesView.packageSharePercent * 100) / 100 !== 100 ? (
+                    <PanelNote style={{ color: 'var(--km-danger)' }}>
+                      The percent-of-package rows add up to {expectedExpensesView.packageSharePercent}% of the package price, not 100%.
+                    </PanelNote>
                   ) : null}
+                  <PanelNote>
+                    Plan totals {formatEuroPreview(expectedExpensesView?.totalPlanned)} across all milestones (package share + extras).
+                  </PanelNote>
 
-                  {expectedExpensesView?.pages.map(({ payment, rows, amountDue, taxPercent }, index) => (
+                  {expectedExpensesView?.milestoneRows.map(({ milestone, serviceRows, subtotal, amountDue }, index) => (
                     <MilestoneCard
                       key={`${expectedExpenses.packageId}-${index}`}
                       index={index}
-                      payment={payment}
-                      rows={rows}
+                      milestone={milestone}
+                      serviceRows={serviceRows}
+                      subtotal={subtotal}
                       amountDue={amountDue}
                       taxPercent={taxPercent}
                       catalogItems={catalogItems}
-                      onCommitServiceField={(entryId, field, value) => commitExpectedExpenseServiceField(index, entryId, field, value)}
-                      onRemoveService={entryId => removeExpectedExpenseServiceEntry(index, entryId)}
-                      onResetService={entryId => resetExpectedExpenseServiceEntry(index, entryId)}
-                      onAddCustomService={fields => addExpectedExpenseCustomService(index, fields)}
-                      onAddCatalogService={catalogId => addExpectedExpenseCatalogService(index, catalogId)}
-                      onAddPackagePercent={percent => addExpectedExpensePackagePercent(index, percent)}
+                      catalogPackages={visibleCatalogPackages}
+                      onCommitField={(field, value) => commitMilestoneField(milestone.id, field, value)}
+                      onToggleOverview={() => toggleMilestoneOverview(milestone.id)}
+                      onCommitServiceField={(entryId, field, value) => commitMilestoneServiceField(milestone.id, entryId, field, value)}
+                      onRemoveService={entryId => removeMilestoneServiceEntry(milestone.id, entryId)}
+                      onResetService={entryId => resetMilestoneServiceEntry(milestone.id, entryId)}
+                      onAddCustomService={fields => addMilestoneCustomService(milestone.id, fields)}
+                      onAddCatalogService={catalogId => addMilestoneCatalogService(milestone.id, catalogId)}
+                      onAddPercentService={() => addMilestonePercentService(milestone.id)}
                     />
                   ))}
 
@@ -2206,6 +2412,44 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   ) : null}
                 </>
               )}
+            </Panel>
+
+            <Panel>
+              <PanelHeading>
+                <H2>PDF preview</H2>
+              </PanelHeading>
+              <PanelNote>
+                Scaled-down mock-ups of the pages "Generate PDF" would produce, built from the same rows and totals -
+                a quick way to spot a too-long name or a lopsided total before generating the real file.
+              </PanelNote>
+              <PdfPagePreviewStrip
+                title="Invoice"
+                emptyMessage="Add services to preview the invoice PDF."
+                pages={invoiceServiceRows.length ? [{
+                  key: 'invoice',
+                  label: `Invoice ${invoiceNumber}`,
+                  subtitle: caseTitle,
+                  rows: invoiceServiceRows,
+                  subtotal,
+                  taxPercent: data.taxPercent,
+                  total,
+                }] : []}
+              />
+              <div style={{ marginTop: 14 }}>
+                <PdfPagePreviewStrip
+                  title="Expected expenses"
+                  emptyMessage="Choose a package to preview the expected-expenses PDF."
+                  pages={(expectedExpensesView?.milestoneRows || []).map(({ milestone, serviceRows, subtotal: milestoneSubtotal, amountDue }, index) => ({
+                    key: milestone.id,
+                    label: `#${index + 1} ${milestone.title}`,
+                    badge: milestone.showPackageOverview ? 'Overview' : null,
+                    rows: serviceRows,
+                    subtotal: milestoneSubtotal,
+                    taxPercent: milestone.taxPercent,
+                    total: amountDue,
+                  }))}
+                />
+              </div>
             </Panel>
           </>
         ) : null}

@@ -33,9 +33,83 @@
       "Deposit. For unexpected expenses (e.g. staying in hospital, service of nanny etc.) || 600",
       "Standard service of the independent lawyer, notary and post until the 6 months after delivery || GIFT"
     ]
-  ],
-  "notes": [
-    "Purpose of the payment must be exactly like in invoice.",
-    "Please make sure you pay the whole amount. Do not use SHA option while making payment."
+  },
+  "milestones": [
+    {
+      "id": "milestone-1",
+      "title": "To start the program",
+      "taxPercent": 14,
+      "showPackageOverview": true,
+      "services": [
+        { "id": "milestone-1-share", "kind": "percent", "packageId": "3", "percent": 20 },
+        { "id": "milestone-1-extra-1", "kind": "custom", "name": "Deposit for transportation of SM", "price": 300 },
+        { "id": "milestone-1-extra-2", "kind": "custom", "name": "Deposit for medical expenses of SM", "price": 300 }
+      ]
+    },
+    {
+      "id": "milestone-2",
+      "title": "Two weeks before embryo transfer",
+      "taxPercent": 14,
+      "showPackageOverview": false,
+      "services": [
+        { "id": "milestone-2-share", "kind": "percent", "packageId": "3", "percent": 10 },
+        { "id": "milestone-2-extra-1", "kind": "custom", "name": "Deposit for transportation of SM", "price": 300 },
+        { "id": "milestone-2-extra-2", "kind": "custom", "name": "Deposit for medical expenses of SM", "price": 300 }
+      ]
+    },
+    {
+      "id": "milestone-3",
+      "title": "After confirmation of pregnancy by ultrasound",
+      "taxPercent": 14,
+      "showPackageOverview": false,
+      "services": [
+        { "id": "milestone-3-share", "kind": "percent", "packageId": "3", "percent": 15 },
+        { "id": "milestone-3-extra-1", "kind": "item", "catalogId": "32" },
+        { "id": "milestone-3-extra-2", "kind": "custom", "name": "Deposit for transportation of SM", "price": 300 },
+        { "id": "milestone-3-extra-3", "kind": "custom", "name": "Deposit for medical expenses of SM", "price": 300 }
+      ]
+    },
+    {
+      "id": "milestone-4",
+      "title": "On the 12th week of pregnancy",
+      "taxPercent": 14,
+      "showPackageOverview": false,
+      "services": [
+        { "id": "milestone-4-share", "kind": "percent", "packageId": "3", "percent": 20 },
+        { "id": "milestone-4-extra-1", "kind": "custom", "name": "Deposit for transportation of SM", "price": 300 },
+        { "id": "milestone-4-extra-2", "kind": "custom", "name": "Deposit for medical expenses of SM", "price": 300 }
+      ]
+    },
+    {
+      "id": "milestone-5",
+      "title": "On the 18th week of pregnancy",
+      "taxPercent": 14,
+      "showPackageOverview": false,
+      "services": [
+        { "id": "milestone-5-share", "kind": "percent", "packageId": "3", "percent": 20 },
+        { "id": "milestone-5-extra-1", "kind": "custom", "name": "Deposit for transportation of SM", "price": 300 },
+        { "id": "milestone-5-extra-2", "kind": "custom", "name": "Deposit for medical expenses of SM", "price": 300 }
+      ]
+    },
+    {
+      "id": "milestone-6",
+      "title": "On the 36th week of pregnancy",
+      "taxPercent": 14,
+      "showPackageOverview": false,
+      "services": [
+        { "id": "milestone-6-share", "kind": "percent", "packageId": "3", "percent": 15 },
+        { "id": "milestone-6-extra-1", "kind": "item", "catalogId": "61" },
+        { "id": "milestone-6-extra-2", "kind": "item", "catalogId": "62" },
+        { "id": "milestone-6-extra-3", "kind": "item", "catalogId": "63" },
+        { "id": "milestone-6-extra-4", "kind": "item", "catalogId": "64" },
+        {
+          "id": "milestone-6-extra-5",
+          "kind": "custom",
+          "name": "Standard service of the independent lawyer, notary and post until the 6 months after delivery",
+          "price": 0,
+          "priceLabel": "GIFT"
+        }
+      ]
+    }
   ]
 }

@@ -174,7 +174,7 @@ describe('InvoiceBuilderPage', () => {
     await flush();
 
     const nameField = container.querySelector('textarea[placeholder="New custom service name"]');
-    const priceField = container.querySelector('textarea[placeholder="Price"]');
+    const priceField = container.querySelector('textarea[placeholder="Price or GIFT"]');
     await act(async () => {
       nameField.focus();
       setFieldValue(nameField, 'Courier fee');
@@ -225,9 +225,11 @@ describe('InvoiceBuilderPage', () => {
       expect(persistedCalls.length).toBeGreaterThan(0);
       const plan = persistedCalls[persistedCalls.length - 1][1];
       expect(plan.packageId).toBe('p1');
-      expect(plan.expectedExpenses).toHaveLength(2);
-      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60, expectedExpenseRole: 'scheduled' });
-      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40, expectedExpenseRole: 'scheduled' });
+      expect(plan.milestones).toHaveLength(2);
+      expect(plan.milestones[0]).toMatchObject({ title: 'To start the program', taxPercent: 14, showPackageOverview: true });
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 60 });
+      expect(plan.milestones[1]).toMatchObject({ title: 'Final payment', showPackageOverview: false });
+      expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 40 });
 
       await act(async () => { root.unmount(); });
     });
@@ -241,7 +243,7 @@ describe('InvoiceBuilderPage', () => {
       const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Custom line name…"]'));
       expect(milestoneNameFields).toHaveLength(2);
       const milestoneAddRow = milestoneNameFields[0].parentElement;
-      const priceField = milestoneAddRow.querySelector('textarea[placeholder="Price"]');
+      const priceField = milestoneAddRow.querySelector('textarea[placeholder="Price or GIFT"]');
       const addButton = Array.from(milestoneAddRow.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Add');
 
       await act(async () => {
@@ -256,9 +258,9 @@ describe('InvoiceBuilderPage', () => {
       expect(container.innerHTML).toContain('Due: €513.00');
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.expectedExpenses[0]).toHaveLength(2);
-      expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
-      expect(plan.expectedExpenses[1]).toHaveLength(1);
+      expect(plan.milestones[0].services).toHaveLength(2);
+      expect(plan.milestones[0].services[1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
+      expect(plan.milestones[1].services).toHaveLength(1);
 
       await act(async () => { root.unmount(); });
     });

@@ -7,19 +7,24 @@
 //                                                        fields pinned to a local value instead of
 //                                                        following the shared budget catalog
 //   { id, kind: 'custom', name, price, description? } -> a one-off line with no catalog link
+//     (price may be paired with a non-numeric `priceLabel`, e.g. "GIFT", for a free-text amount)
 //   { id, kind: 'package', catalogId, children: [...] } -> a whole budget/packages program, its
 //                                                        line items copied in as child entries
 //                                                        (each child is itself an 'item' or 'custom'
 //                                                        entry). Editing/removing/reordering a
 //                                                        child, or renaming the package, flips
 //                                                        `customized: true` on the package.
-//   { id, kind: 'packagePercent', catalogId, percent } -> a live percentage of a package price
-//                                                        (legacy string: "id1 || 20%").
+//   { id, kind: 'percent', packageId, percent }        -> a share of a budget/packages program's
+//                                                        listed price (e.g. "20% of package 1").
+//                                                        The euro amount is never stored - it's
+//                                                        recalculated from the package's live/
+//                                                        resolved price every time it's resolved.
 //
-// Older data may still contain plain strings ("id15", "Name || Price") - normalizeServiceEntry
-// upgrades those to the object shape on load, so the rest of the app only ever sees objects.
+// Older data may still contain plain strings ("id15", "Name || Price", "id1 || 20%") -
+// normalizeServiceEntry upgrades those to the object shape on load, so the rest of the app only
+// ever sees objects.
 
-import { getItemDisplayAmount } from './budgetCatalogUtils';
+import { getItemDisplayAmount, resolveBudgetPriceAmount } from './budgetCatalogUtils';
 
 const SERVICE_PRICE_SEPARATOR = '||';
 const CATALOG_ID_PREFIX = 'id';
@@ -32,6 +37,14 @@ const toNumber = value => {
 };
 
 export const createEntryId = () => `entry-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+
+// Splits a manually-typed price field into a numeric price or a free-text priceLabel (e.g.
+// "GIFT") - the interactive-editing counterpart of parseLegacyServiceString's price handling.
+export const parseCustomPriceInput = raw => {
+  const text = String(raw ?? '').trim();
+  if (!text || PLAIN_NUMBER_STRING_REGEX.test(text)) return { price: toNumber(text), priceLabel: '' };
+  return { price: 0, priceLabel: text };
+};
 
 export const normalizeInvoiceData = raw => ({
   beneficiaries: Array.isArray(raw?.beneficiaries) ? raw.beneficiaries : [],
@@ -73,12 +86,22 @@ export const makeCatalogItemEntry = (catalogId, { id } = {}) => ({
   catalogId: String(catalogId),
 });
 
-export const makeCustomEntry = ({ name = '', price = 0, description = '' } = {}, { id } = {}) => ({
+export const makeCustomEntry = ({ name = '', price = 0, description = '', priceLabel = '' } = {}, { id } = {}) => ({
   id: id || createEntryId(),
   kind: 'custom',
   name: String(name || '').trim(),
   price: toNumber(price),
   ...(String(description || '').trim() ? { description: String(description).trim() } : {}),
+  ...(String(priceLabel || '').trim() ? { priceLabel: String(priceLabel).trim() } : {}),
+});
+
+// A share of a budget/packages program's listed price, e.g. "20% of package 1". The euro amount
+// is intentionally never stored - resolveServiceRow recalculates it from the package's price.
+export const makePercentOfPackageEntry = (packageId, percent, { id } = {}) => ({
+  id: id || createEntryId(),
+  kind: 'percent',
+  packageId: String(packageId ?? ''),
+  percent: toNumber(percent),
 });
 
 export const makePackagePercentEntry = ({ catalogId = '', percent = 0 } = {}, { id } = {}) => ({
@@ -110,19 +133,31 @@ export const cloneEntryWithNewId = entry => {
 
 // --- Legacy string parsing / normalization ------------------------------------------------------
 
-// "id15" -> catalog reference · "Name || Price" -> custom · "id1 || 20%" -> package percentage.
+const CATALOG_ID_REGEX = new RegExp(`^${CATALOG_ID_PREFIX}(.+)$`, 'i');
+const PERCENT_VALUE_REGEX = /^(\d+(?:[.,]\d+)?)\s*%$/;
+const PLAIN_NUMBER_STRING_REGEX = /^[-+]?\d+(?:[.,]\d+)?$/;
+
+// "id15" -> catalog reference · "Name || Price" -> a custom one-off line ·
+// "id1 || 20%" -> a share of that catalog package's listed price ·
+// "Name || GIFT" (or any other non-numeric, non-percent price) -> a custom line with a free-text
+// price label instead of a euro amount.
 export const parseLegacyServiceString = raw => {
   const text = String(raw ?? '').trim();
   if (text.includes(SERVICE_PRICE_SEPARATOR)) {
     const [namePart, ...priceParts] = text.split(SERVICE_PRICE_SEPARATOR);
-    const left = namePart.trim();
-    const right = priceParts.join(SERVICE_PRICE_SEPARATOR).trim();
-    const catalogMatch = new RegExp(`^${CATALOG_ID_PREFIX}(.+)$`, 'i').exec(left);
-    const percentMatch = /^(-?\d+(?:[.,]\d+)?)\s*%$/.exec(right);
-    if (catalogMatch && percentMatch) return { kind: 'packagePercent', catalogId: catalogMatch[1], percent: toNumber(percentMatch[1]) };
-    return { kind: 'custom', name: left, price: toNumber(right) };
+    const trimmedName = namePart.trim();
+    const pricePart = priceParts.join(SERVICE_PRICE_SEPARATOR).trim();
+    const percentMatch = PERCENT_VALUE_REGEX.exec(pricePart);
+    const packageIdMatch = CATALOG_ID_REGEX.exec(trimmedName);
+    if (percentMatch && packageIdMatch) {
+      return { kind: 'percent', packageId: packageIdMatch[1], percent: toNumber(percentMatch[1]) };
+    }
+    if (pricePart && !PLAIN_NUMBER_STRING_REGEX.test(pricePart)) {
+      return { kind: 'custom', name: trimmedName, price: 0, priceLabel: pricePart };
+    }
+    return { kind: 'custom', name: trimmedName, price: toNumber(pricePart) };
   }
-  const catalogMatch = new RegExp(`^${CATALOG_ID_PREFIX}(.+)$`, 'i').exec(text);
+  const catalogMatch = CATALOG_ID_REGEX.exec(text);
   if (catalogMatch) return { kind: 'item', catalogId: catalogMatch[1] };
   return { kind: 'custom', name: text, price: 0 };
 };
@@ -133,12 +168,16 @@ export const normalizeServiceEntry = raw => {
   if (typeof raw === 'string') {
     const parsed = parseLegacyServiceString(raw);
     if (parsed.kind === 'item') return makeCatalogItemEntry(parsed.catalogId);
-    if (parsed.kind === 'packagePercent') return makePackagePercentEntry(parsed);
+    if (parsed.kind === 'percent') return makePercentOfPackageEntry(parsed.packageId, parsed.percent);
     return makeCustomEntry(parsed);
   }
   if (!raw || typeof raw !== 'object') return makeCustomEntry({});
 
   const id = raw.id || createEntryId();
+
+  if (raw.kind === 'percent') {
+    return makePercentOfPackageEntry(raw.packageId, raw.percent, { id });
+  }
 
   if (raw.kind === 'package') {
     return {
@@ -169,6 +208,7 @@ export const normalizeServiceEntry = raw => {
       name: raw.name || '',
       price: toNumber(raw.price),
       ...(raw.description ? { description: raw.description } : {}),
+      ...(raw.priceLabel ? { priceLabel: raw.priceLabel } : {}),
     };
   }
 
@@ -195,7 +235,19 @@ export const normalizeServiceEntries = list => (Array.isArray(list) ? list.map(n
 export const setEntryField = (entry, field, value) => {
   if (!entry) return entry;
   if (entry.kind === 'custom') {
-    return { ...entry, [field]: field === 'price' ? toNumber(value) : value };
+    if (field === 'price') {
+      const text = String(value ?? '').trim();
+      const { priceLabel, ...rest } = entry;
+      if (!text || PLAIN_NUMBER_STRING_REGEX.test(text)) return { ...rest, price: toNumber(text) };
+      // A non-numeric price (e.g. "GIFT") is kept as a free-text label instead of being coerced to 0.
+      return { ...rest, price: 0, priceLabel: text };
+    }
+    return { ...entry, [field]: value };
+  }
+  if (entry.kind === 'percent') {
+    if (field === 'percent') return { ...entry, percent: toNumber(value) };
+    if (field === 'packageId') return { ...entry, packageId: String(value ?? '') };
+    return entry;
   }
   if (entry.kind === 'packagePercent') {
     if (field === 'percent' || field === 'price') return { ...entry, percent: toNumber(value) };
@@ -265,6 +317,7 @@ export const getEntryIdentityKey = entry => {
   if (entry.kind === 'package') return `package:${entry.catalogId}`;
   if (entry.kind === 'packagePercent') return `package-percent:${entry.catalogId}:${entry.percent || 0}`;
   if (entry.kind === 'item') return `item:${entry.catalogId}`;
+  if (entry.kind === 'percent') return `percent:${entry.packageId}:${entry.percent}`;
   return `custom:${entry.name || ''}:${entry.price || 0}:${entry.description || ''}`;
 };
 
@@ -276,24 +329,27 @@ export const getEntryIdentityKey = entry => {
 // following its catalog name/description the same way an un-edited item entry does. A package's
 // `children` are always a frozen snapshot taken when it was added - they never live-track the
 // catalog, since that's the whole point of pinning a specific set of services to an invoice.
+const formatPercentValue = percent => (Number.isInteger(percent) ? String(percent) : String(Math.round(percent * 100) / 100));
+
 export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) => {
-  if (entry?.kind === 'packagePercent') {
-    const pkg = priceContext.packagesById?.get?.(String(entry.catalogId));
-    const rawPackagePrice = pkg?.listedPrice ?? pkg?.price ?? 0;
-    const packagePrice = Number(priceContext.resolvePackagePrice?.(pkg) ?? rawPackagePrice) || 0;
+  if (entry?.kind === 'percent') {
+    const pkg = priceContext.packagesById?.get?.(String(entry.packageId));
+    const packageAmount = pkg
+      ? resolveBudgetPriceAmount(pkg.listedPrice, { ...priceContext, itemsById: catalogItemsById })
+      : null;
     const percent = Number(entry.percent) || 0;
+    const price = packageAmount == null ? 0 : (packageAmount * percent) / 100;
     return {
       key: entry.id,
       id: entry.id,
-      kind: 'packagePercent',
-      catalogId: entry.catalogId,
-      missing: !pkg,
-      isCustomized: true,
-      name: 'Scheduled payment',
-      description: pkg?.name ? `${percent}% of ${pkg.name}` : `${percent}% of package id${entry.catalogId}`,
-      price: packagePrice * percent / 100,
+      kind: 'percent',
+      packageId: entry.packageId,
       percent,
-      packagePrice,
+      missing: !pkg,
+      isCustomized: false,
+      name: `${formatPercentValue(percent)}% of ${pkg?.name ?? `Package ${entry.packageId}`}`,
+      description: '',
+      price,
     };
   }
 
@@ -329,6 +385,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       name: entry.name || '',
       description: entry.description || '',
       price: Number(entry.price) || 0,
+      ...(entry.priceLabel ? { priceLabel: entry.priceLabel } : {}),
     };
   }
 
