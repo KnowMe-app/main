@@ -1,0 +1,41 @@
+{
+  "beneficiaries": [
+    {
+      "title": "PE KOVAL OLEKSANDR",
+      "id": "ua-fop-koval",
+      "address": "Ukraine, c. Kyiv, st. Bohatyrska, build. 6/1, fl. 129",
+      "iban": "UA743220010000026000300004046",
+      "bankName": "JSC UNIVERSAL BANK, KYIV, UKRAINE",
+      "swiftCode": "UNJSUAUKXXX",
+      "paymentPurpose": "Payment for information and consultation services by the invoice № {invoiceNumber} of {invoiceDate} without VAT, KOVAL O.V. (3281009190)."
+    }
+  ],
+  "beneficiaryIds": [
+    "ua-fop-koval"
+  ],
+  "customers": [
+    {
+      "name": "Amny Athamny",
+      "address": "Netherlands"
+    },
+    {
+      "name": "Fons Mitchell Drost",
+      "address": "Netherlands"
+    }
+  ],
+  "recentServices": [
+    "id15",
+    "Deposit for transportation of SM || 300",
+    "Deposit for medical expenses of SM || 300"
+  ],
+  "invoiceServices": [
+    "id15",
+    "Deposit for transportation of SM || 300",
+    "Deposit for medical expenses of SM || 300"
+  ],
+  "notes": [
+    "Purpose of the payment must be exactly like in invoice.",
+    "Please make sure you pay the whole amount (don't use SHA option while making payment)."
+  ],
+  "taxPercent": 14
+}
