@@ -9,13 +9,14 @@ import {
   FaFilePdf,
   FaLayerGroup,
   FaPlus,
+  FaSyncAlt,
   FaTrash,
   FaUndoAlt,
   FaUpload,
 } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
-import { getVisibleSortedPackages, parseBudgetPriceValue } from './budgetCatalogUtils';
+import { getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isAdminUid } from 'utils/accessLevel';
 import {
@@ -48,10 +49,26 @@ import {
   setEntryField,
   updatePackageChildField,
 } from './invoiceCatalogUtils';
+import {
+  addMilestoneAdditionalService,
+  buildExpectedExpensesPlan,
+  buildMilestonesFromSchedule,
+  computeMilestoneAmountDue,
+  computeMilestoneSubtotal,
+  computeMilestonesScheduledTotal,
+  normalizeExpectedExpensesData,
+  removeMilestoneAdditionalService,
+  resolveMilestoneAdditionalRows,
+  resolvePackageOverviewRows,
+  setMilestoneField,
+  updateMilestoneAdditionalServiceField,
+} from './expectedExpensesUtils';
 
 const INVOICE_DATA_PATH = 'invoiceBuilder';
 const CATALOG_ITEMS_PATH = 'budget/items';
 const CATALOG_PACKAGES_PATH = 'budget/packages';
+const CATALOG_TECHNICAL_PATH = 'budget/technical';
+const EXPECTED_EXPENSES_PATH = 'invoiceBuilder/expectedExpenses';
 
 const toArray = value => {
   if (Array.isArray(value)) return value;
@@ -830,6 +847,184 @@ const PackageEntryCard = ({
   );
 };
 
+// --- Expected expenses milestone (one payment-schedule entry -> one future invoice) ------------------------------------------------------
+
+const MilestoneCheckboxRow = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 0 28px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--km-muted);
+
+  @media (max-width: 560px) {
+    margin-left: 10px;
+  }
+`;
+
+const MilestoneCheckboxLabel = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+`;
+
+const MilestoneCard = ({
+  index,
+  milestone,
+  additionalRows,
+  amountDue,
+  catalogItems,
+  onCommitField,
+  onToggleOverview,
+  onCommitServiceField,
+  onRemoveService,
+  onResetService,
+  onAddCustomService,
+  onAddCatalogService,
+}) => {
+  const [titleDraft, setTitleDraft, titleEditingRef] = useFieldDraft(milestone.title);
+  const [amountDraft, setAmountDraft, amountEditingRef] = useFieldDraft(String(milestone.scheduledAmount ?? ''));
+  const [taxDraft, setTaxDraft, taxEditingRef] = useFieldDraft(String(milestone.taxPercent ?? ''));
+  const [showPicker, setShowPicker] = useState(false);
+  const [query, setQuery] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+
+  const usedCatalogIds = useMemo(
+    () => new Set(additionalRows.filter(row => row.kind === 'item').map(row => String(row.catalogId))),
+    [additionalRows],
+  );
+
+  const availableItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return catalogItems
+      .filter(item => !usedCatalogIds.has(String(item.id)))
+      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
+      .slice(0, 30);
+  }, [catalogItems, usedCatalogIds, query]);
+
+  const handleAddCustom = () => {
+    const name = customName.trim();
+    const price = Number(customPrice.replace(',', '.'));
+    if (!name) {
+      toast.error('Enter a name for the new service.');
+      return;
+    }
+    if (!Number.isFinite(price)) {
+      toast.error('Enter a valid price for the new service.');
+      return;
+    }
+    onAddCustomService({ name, price });
+    setCustomName('');
+    setCustomPrice('');
+  };
+
+  return (
+    <PackageCard>
+      <PackageHeaderRow>
+        <RowIndex>{index + 1}</RowIndex>
+        <AutoTextArea
+          $size="13.5px"
+          $weight="800"
+          value={titleDraft}
+          placeholder="Milestone title"
+          aria-label="Milestone title"
+          onFocus={() => { titleEditingRef.current = true; }}
+          onChange={event => setTitleDraft(event.target.value)}
+          onBlur={() => { titleEditingRef.current = false; onCommitField('title', titleDraft); }}
+        />
+        <AutoTextArea
+          as={PlainPriceBase}
+          $width="88px"
+          inputMode="decimal"
+          value={amountDraft}
+          placeholder="0"
+          aria-label="Scheduled amount (EUR)"
+          onFocus={() => { amountEditingRef.current = true; }}
+          onChange={event => setAmountDraft(event.target.value)}
+          onBlur={() => { amountEditingRef.current = false; onCommitField('scheduledAmount', amountDraft); }}
+        />
+        <AutoTextArea
+          as={PlainPriceBase}
+          $width="48px"
+          inputMode="decimal"
+          value={taxDraft}
+          placeholder="%"
+          title="Tax (%)"
+          aria-label="Tax percent"
+          onFocus={() => { taxEditingRef.current = true; }}
+          onChange={event => setTaxDraft(event.target.value)}
+          onBlur={() => { taxEditingRef.current = false; onCommitField('taxPercent', taxDraft); }}
+        />
+      </PackageHeaderRow>
+      <MilestoneCheckboxRow>
+        <MilestoneCheckboxLabel>
+          <input type="checkbox" checked={Boolean(milestone.showPackageOverview)} onChange={onToggleOverview} />
+          Show full package overview on this invoice
+        </MilestoneCheckboxLabel>
+        <CustomizedTag title="Scheduled amount + additional services, taxed">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
+      </MilestoneCheckboxRow>
+
+      <PackageChildren>
+        {additionalRows.map((row, rowIndex) => (
+          <ServiceLineRow
+            key={row.key}
+            row={row}
+            index={rowIndex}
+            isChild
+            onCommit={(field, value) => onCommitServiceField(row.id, field, value)}
+            onRemove={() => onRemoveService(row.id)}
+            onReset={row.kind === 'item' && row.isCustomized ? () => onResetService(row.id) : undefined}
+          />
+        ))}
+        {!additionalRows.length ? <PanelNote style={{ margin: '8px 0' }}>No additional services on this invoice yet.</PanelNote> : null}
+      </PackageChildren>
+
+      <PackageAddRow>
+        <PackageQuickField
+          rows={1}
+          placeholder="Add a custom line to this invoice…"
+          value={customName}
+          onChange={event => setCustomName(event.target.value)}
+        />
+        <PackageQuickPrice
+          rows={1}
+          inputMode="decimal"
+          placeholder="Price"
+          value={customPrice}
+          onChange={event => setCustomPrice(event.target.value)}
+        />
+        <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
+        <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
+          <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
+        </SmallButton>
+      </PackageAddRow>
+
+      {showPicker ? (
+        <InlinePickerBox>
+          <CatalogSearchField
+            rows={1}
+            placeholder="Search catalog services…"
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+          />
+          <CatalogPickerList>
+            {availableItems.map(item => (
+              <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogService(item.id); setShowPicker(false); setQuery(''); }}>
+                <span>{item.name}</span>
+              </CatalogPickerButton>
+            ))}
+            {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
+          </CatalogPickerList>
+        </InlinePickerBox>
+      ) : null}
+    </PackageCard>
+  );
+};
+
 // --- Summary ------------------------------------------------------
 
 const SummaryGrid = styled.div`
@@ -883,32 +1078,40 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [data, setData] = useState(() => normalizeInvoiceData(null));
   const [catalogItems, setCatalogItems] = useState([]);
   const [catalogPackages, setCatalogPackages] = useState([]);
+  const [catalogTechnical, setCatalogTechnical] = useState({});
+  const [expectedExpenses, setExpectedExpenses] = useState(null);
   const [exchangeRates, setExchangeRates] = useState(null);
   const [exchangeRatesLoading, setExchangeRatesLoading] = useState(false);
   const [exchangeRatesError, setExchangeRatesError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingExpectedExpenses, setIsGeneratingExpectedExpenses] = useState(false);
   const [invoiceDateInput, setInvoiceDateInput] = useState(getTodayYmd());
   const [newCustomServiceName, setNewCustomServiceName] = useState('');
   const [newCustomServicePrice, setNewCustomServicePrice] = useState('');
   const [catalogQuery, setCatalogQuery] = useState('');
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
   const [catalogTab, setCatalogTab] = useState('items');
+  const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
   const fileInputRef = useRef(null);
 
   const loadInvoiceData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [invoiceSnapshot, itemsSnapshot, packagesSnapshot] = await Promise.all([
+      const [invoiceSnapshot, itemsSnapshot, packagesSnapshot, technicalSnapshot, expectedExpensesSnapshot] = await Promise.all([
         get(ref(database, INVOICE_DATA_PATH)),
         get(ref(database, CATALOG_ITEMS_PATH)),
         get(ref(database, CATALOG_PACKAGES_PATH)),
+        get(ref(database, CATALOG_TECHNICAL_PATH)),
+        get(ref(database, EXPECTED_EXPENSES_PATH)),
       ]);
       setData(normalizeInvoiceData(invoiceSnapshot.exists() ? invoiceSnapshot.val() : null));
       setCatalogItems(toArray(itemsSnapshot.exists() ? itemsSnapshot.val() : []));
       setCatalogPackages(toArray(packagesSnapshot.exists() ? packagesSnapshot.val() : []));
+      setCatalogTechnical(technicalSnapshot.exists() ? technicalSnapshot.val() : {});
+      setExpectedExpenses(normalizeExpectedExpensesData(expectedExpensesSnapshot.exists() ? expectedExpensesSnapshot.val() : null));
     } catch (loadError) {
       console.error('Unable to load invoice builder data', loadError);
       setError('Invoice data is not available right now.');
@@ -1027,6 +1230,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       .filter(pkg => !usedCatalogPackageIds.has(String(pkg.id)))
       .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
   }, [visibleCatalogPackages, usedCatalogPackageIds, catalogQuery]);
+
+  const expectedExpensesView = useMemo(() => {
+    if (!expectedExpenses) return null;
+    const overviewRows = resolvePackageOverviewRows(expectedExpenses.packageSnapshot.children, catalogItemsById, priceContext);
+    const milestoneRows = expectedExpenses.milestones.map(milestone => {
+      const additionalRows = resolveMilestoneAdditionalRows(milestone, catalogItemsById, priceContext);
+      const subtotal = computeMilestoneSubtotal(milestone, additionalRows);
+      const amountDue = computeMilestoneAmountDue(subtotal, milestone.taxPercent);
+      return { milestone, additionalRows, subtotal, amountDue };
+    });
+    return { overviewRows, milestoneRows, scheduledTotal: computeMilestonesScheduledTotal(expectedExpenses.milestones) };
+  }, [expectedExpenses, catalogItemsById, priceContext]);
 
   const persistPath = async (path, value, successMessage) => {
     try {
@@ -1245,6 +1460,161 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const addCatalogChildEntry = (packageId, catalogId) => {
     const next = data.invoiceServices.map(entry => (entry.id === packageId ? addCatalogChildToPackage(entry, catalogId) : entry));
     persistInvoiceServices(next, 'Service added to package.');
+  };
+
+  // Expected expenses ------------------------------------------------------------
+  // A whole program's billing forecast: one milestone per payment-schedule entry, auto-computed
+  // from the chosen budget/packages program, stored as its own object at invoiceBuilder/expectedExpenses.
+
+  const defaultExpectedExpensesTaxPercent = Number.isFinite(Number(catalogTechnical?.wireTransferSurchargeRate))
+    ? Math.round(Number(catalogTechnical.wireTransferSurchargeRate) * 10000) / 100
+    : (Number(data.taxPercent) || 0);
+
+  const persistExpectedExpenses = (nextPlan, successMessage) => {
+    setExpectedExpenses(nextPlan);
+    persistPath(EXPECTED_EXPENSES_PATH, nextPlan, successMessage);
+  };
+
+  const persistExpectedExpensesMilestones = (nextMilestones, successMessage) => {
+    persistExpectedExpenses({ ...expectedExpenses, milestones: nextMilestones }, successMessage);
+  };
+
+  const createExpectedExpensesPlan = pkg => {
+    const schedule = resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg);
+    if (!schedule || !Array.isArray(schedule.payments) || !schedule.payments.length) {
+      toast.error('This package has no payment schedule in the catalog.');
+      return;
+    }
+    const resolvedPackage = { ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice };
+    const plan = buildExpectedExpensesPlan(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
+    persistExpectedExpenses(plan, 'Expected expenses plan created.');
+    setShowExpectedExpensesPicker(false);
+  };
+
+  const recalculateExpectedExpensesSchedule = () => {
+    if (!expectedExpenses) return;
+    const pkg = catalogPackagesById.get(String(expectedExpenses.packageId));
+    if (!pkg) {
+      toast.error('The original package is no longer in the catalog.');
+      return;
+    }
+    const schedule = resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg);
+    if (!schedule || !Array.isArray(schedule.payments) || !schedule.payments.length) {
+      toast.error('This package has no payment schedule in the catalog.');
+      return;
+    }
+    if (typeof window !== 'undefined' && !window.confirm(
+      'Recalculate milestones from the catalog schedule? Titles/amounts reset to the catalog; extra services on each milestone are kept.',
+    )) return;
+    const freshMilestones = buildMilestonesFromSchedule(schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
+    const nextMilestones = freshMilestones.map((milestone, index) => ({
+      ...milestone,
+      additionalServices: expectedExpenses.milestones[index]?.additionalServices || [],
+      taxPercent: expectedExpenses.milestones[index]?.taxPercent ?? milestone.taxPercent,
+    }));
+    persistExpectedExpenses({
+      ...expectedExpenses,
+      packageSnapshot: {
+        ...expectedExpenses.packageSnapshot,
+        listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? Number(pkg.listedPrice) ?? 0,
+      },
+      milestones: nextMilestones,
+    }, 'Schedule recalculated.');
+  };
+
+  const deleteExpectedExpensesPlan = () => {
+    if (typeof window !== 'undefined' && !window.confirm('Delete the whole expected expenses plan?')) return;
+    persistExpectedExpenses(null, 'Expected expenses plan deleted.');
+  };
+
+  const commitMilestoneField = (milestoneId, field, value) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? setMilestoneField(milestone, field, value)
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
+  };
+
+  const toggleMilestoneOverview = milestoneId => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? { ...milestone, showPackageOverview: !milestone.showPackageOverview }
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
+  };
+
+  const commitMilestoneServiceField = (milestoneId, entryId, field, value) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? updateMilestoneAdditionalServiceField(milestone, entryId, field, value)
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service updated.');
+  };
+
+  const resetMilestoneServiceEntry = (milestoneId, entryId) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id !== milestoneId ? milestone : {
+      ...milestone,
+      additionalServices: milestone.additionalServices.map(entry => (entry.id === entryId ? resetItemEntryOverrides(entry) : entry)),
+    }));
+    persistExpectedExpensesMilestones(nextMilestones, 'Reverted to catalog values.');
+  };
+
+  const removeMilestoneServiceEntry = (milestoneId, entryId) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? removeMilestoneAdditionalService(milestone, entryId)
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service removed.');
+  };
+
+  const addMilestoneCustomService = (milestoneId, fields) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? addMilestoneAdditionalService(milestone, makeCustomEntry(fields))
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
+  };
+
+  const addMilestoneCatalogService = (milestoneId, catalogId) => {
+    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
+      ? addMilestoneAdditionalService(milestone, makeCatalogItemEntry(catalogId))
+      : milestone));
+    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
+  };
+
+  const handleGenerateExpectedExpensesPdf = async () => {
+    if (!expectedExpenses || !expectedExpenses.milestones.length) {
+      toast.error('Choose a package to build the plan first.');
+      return;
+    }
+    if (!data.customers.length) {
+      toast.error('Add at least one customer first.');
+      return;
+    }
+    if (isGeneratingExpectedExpenses) return;
+    setIsGeneratingExpectedExpenses(true);
+    try {
+      const [{ pdf }, { default: ExpectedExpensesPdfDocument }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('./ExpectedExpensesPdfDocument'),
+      ]);
+      const documentProps = {
+        plan: expectedExpenses,
+        customers: data.customers,
+        catalogItemsById,
+        priceContext,
+        planDate: new Date(`${invoiceDateInput || getTodayYmd()}T00:00:00`),
+      };
+      let blob;
+      try {
+        blob = await pdf(React.createElement(ExpectedExpensesPdfDocument, documentProps)).toBlob();
+      } catch (firstAttemptError) {
+        console.error('Expected expenses PDF generation failed on first attempt, retrying', firstAttemptError);
+        blob = await pdf(React.createElement(ExpectedExpensesPdfDocument, documentProps)).toBlob();
+      }
+      saveAs(blob, `expected-expenses-${(caseTitle || 'plan').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
+      toast.success('Expected expenses PDF generated.');
+    } catch (generateError) {
+      console.error('Unable to generate expected expenses PDF', generateError);
+      toast.error('Unable to generate expected expenses PDF.');
+    } finally {
+      setIsGeneratingExpectedExpenses(false);
+    }
   };
 
   // Notes ------------------------------------------------------------
@@ -1702,6 +2072,87 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 </FieldRow>
               ))}
               {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
+            </Panel>
+
+            <Panel>
+              <PanelHeading>
+                <H2>Expected expenses</H2>
+                {expectedExpenses ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <SmallButton type="button" onClick={recalculateExpectedExpensesSchedule}>
+                      <FaSyncAlt /> Recalculate
+                    </SmallButton>
+                    <PrimaryMiniButton
+                      type="button"
+                      onClick={handleGenerateExpectedExpensesPdf}
+                      disabled={isGeneratingExpectedExpenses}
+                      title="Generate the full payment-schedule forecast PDF"
+                    >
+                      <FaFilePdf /> {isGeneratingExpectedExpenses ? 'Generating…' : 'Generate PDF'}
+                    </PrimaryMiniButton>
+                    <DangerButton type="button" onClick={deleteExpectedExpensesPlan}><FaTrash /> Delete plan</DangerButton>
+                  </div>
+                ) : null}
+              </PanelHeading>
+              <PanelNote>
+                Pick a program package to auto-build a full billing forecast: one milestone per scheduled payment
+                (amount calculated automatically from the catalog), each editable, with room for extra one-off
+                services. The first milestone doubles as the program-introduction invoice (included services,
+                no per-item price, plus the whole schedule).
+              </PanelNote>
+
+              {!expectedExpenses ? (
+                <div>
+                  <SmallButton type="button" onClick={() => setShowExpectedExpensesPicker(current => !current)}>
+                    <FaLayerGroup /> {showExpectedExpensesPicker ? 'Hide packages' : 'Choose a package'}
+                  </SmallButton>
+                  {showExpectedExpensesPicker ? (
+                    <CatalogPickerList style={{ marginTop: 8 }}>
+                      {visibleCatalogPackages.map(pkg => (
+                        <CatalogPickerButton key={pkg.id} type="button" onClick={() => createExpectedExpensesPlan(pkg)}>
+                          <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}</span>
+                          <span>{formatEuroPreview(resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice)}</span>
+                        </CatalogPickerButton>
+                      ))}
+                      {!visibleCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No packages in the catalog.</PanelNote> : null}
+                    </CatalogPickerList>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+                  <FieldRow $align="center">
+                    <FieldTag>Package</FieldTag>
+                    <div style={{ flex: 1, padding: '5px 6px', fontWeight: 700 }}>{expectedExpenses.packageSnapshot.name}</div>
+                    <span style={{ fontWeight: 800, color: 'var(--km-accent)', padding: '5px 6px' }}>
+                      {formatEuroPreview(expectedExpenses.packageSnapshot.listedPrice)}
+                    </span>
+                  </FieldRow>
+                  {expectedExpensesView && expectedExpensesView.scheduledTotal !== expectedExpenses.packageSnapshot.listedPrice ? (
+                    <PanelNote style={{ color: 'var(--km-danger)' }}>
+                      Milestones add up to {formatEuroPreview(expectedExpensesView.scheduledTotal)}, the package price is{' '}
+                      {formatEuroPreview(expectedExpenses.packageSnapshot.listedPrice)}.
+                    </PanelNote>
+                  ) : null}
+
+                  {expectedExpensesView?.milestoneRows.map(({ milestone, additionalRows, amountDue }, index) => (
+                    <MilestoneCard
+                      key={milestone.id}
+                      index={index}
+                      milestone={milestone}
+                      additionalRows={additionalRows}
+                      amountDue={amountDue}
+                      catalogItems={catalogItems}
+                      onCommitField={(field, value) => commitMilestoneField(milestone.id, field, value)}
+                      onToggleOverview={() => toggleMilestoneOverview(milestone.id)}
+                      onCommitServiceField={(entryId, field, value) => commitMilestoneServiceField(milestone.id, entryId, field, value)}
+                      onRemoveService={entryId => removeMilestoneServiceEntry(milestone.id, entryId)}
+                      onResetService={entryId => resetMilestoneServiceEntry(milestone.id, entryId)}
+                      onAddCustomService={fields => addMilestoneCustomService(milestone.id, fields)}
+                      onAddCatalogService={catalogId => addMilestoneCatalogService(milestone.id, catalogId)}
+                    />
+                  ))}
+                </>
+              )}
             </Panel>
           </>
         ) : null}

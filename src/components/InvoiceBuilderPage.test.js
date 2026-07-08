@@ -13,8 +13,17 @@ const fixtureItems = [
 ];
 
 const fixturePackages = [
-  { id: 'p1', name: 'Full program', listedPrice: 250, description: 'Everything included.', children: ['10', '11'] },
+  {
+    id: 'p1', name: 'Full program', listedPrice: 250, description: 'Everything included.', children: ['10', '11'], paymentScheduleId: 'ps-1',
+  },
 ];
+
+const fixtureTechnical = {
+  paymentSchedules: [
+    { id: 'ps-1', payments: [{ title: 'To start the program', amount: 150 }, { title: 'Final payment', amount: 100 }] },
+  ],
+  wireTransferSurchargeRate: 0.14,
+};
 
 const fixtureInvoiceData = {
   beneficiaries: [{ id: 'b1', title: 'PE KOVAL OLEKSANDR', address: 'Kyiv', iban: 'UA1', bankName: 'Bank', swiftCode: 'SWIFT', paymentPurpose: '' }],
@@ -51,9 +60,11 @@ describe('InvoiceBuilderPage', () => {
       if (path === 'invoiceBuilder') return Promise.resolve({ exists: () => true, val: () => fixtureInvoiceData });
       if (path === 'budget/items') return Promise.resolve({ exists: () => true, val: () => fixtureItems });
       if (path === 'budget/packages') return Promise.resolve({ exists: () => true, val: () => fixturePackages });
+      if (path === 'budget/technical') return Promise.resolve({ exists: () => true, val: () => fixtureTechnical });
       return Promise.resolve({ exists: () => false, val: () => null });
     });
     set.mockImplementation(() => Promise.resolve());
+    window.confirm = jest.fn(() => true);
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -185,5 +196,89 @@ describe('InvoiceBuilderPage', () => {
     expect(lastServicesCall[1].some(entry => entry.name === 'Courier fee')).toBe(false);
 
     await act(async () => { root.unmount(); });
+  });
+
+  describe('expected expenses', () => {
+    const createPlan = async () => {
+      await act(async () => { findButton('Choose a package').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      const packageButton = findButton('Full program');
+      expect(packageButton).toBeTruthy();
+      await act(async () => { packageButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+    };
+
+    it('builds a plan from a package, auto-calculating each milestone amount from its catalog schedule', async () => {
+      const root = mount();
+      await flush();
+
+      await createPlan();
+
+      expect(container.innerHTML).toContain('To start the program');
+      expect(container.innerHTML).toContain('Final payment');
+      expect(container.innerHTML).toContain('Due: €171.00');
+      expect(container.innerHTML).toContain('Due: €114.00');
+
+      const persistedCalls = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses');
+      expect(persistedCalls.length).toBeGreaterThan(0);
+      const plan = persistedCalls[persistedCalls.length - 1][1];
+      expect(plan.packageId).toBe('p1');
+      expect(plan.milestones).toHaveLength(2);
+      expect(plan.milestones[0]).toMatchObject({ title: 'To start the program', scheduledAmount: 150, taxPercent: 14, showPackageOverview: true });
+      expect(plan.milestones[1]).toMatchObject({ title: 'Final payment', scheduledAmount: 100, showPackageOverview: false });
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('adding a service to a milestone updates its due amount and is persisted on that milestone only', async () => {
+      const root = mount();
+      await flush();
+
+      await createPlan();
+
+      const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Add a custom line to this invoice…"]'));
+      expect(milestoneNameFields).toHaveLength(2);
+      const milestoneAddRow = milestoneNameFields[0].parentElement;
+      const priceField = milestoneAddRow.querySelector('textarea[placeholder="Price"]');
+      const addButton = Array.from(milestoneAddRow.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Add');
+
+      await act(async () => {
+        milestoneNameFields[0].focus();
+        setFieldValue(milestoneNameFields[0], 'Deposit for transportation of SM');
+        setFieldValue(priceField, '300');
+      });
+      await act(async () => { addButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      expect(container.innerHTML).toContain('Deposit for transportation of SM');
+      expect(container.innerHTML).toContain('Due: €513.00');
+
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan.milestones[0].additionalServices).toHaveLength(1);
+      expect(plan.milestones[0].additionalServices[0]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
+      expect(plan.milestones[1].additionalServices).toHaveLength(0);
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('deletes the whole plan', async () => {
+      const root = mount();
+      await flush();
+
+      await createPlan();
+      expect(container.innerHTML).toContain('To start the program');
+
+      const deleteButton = findButton('Delete plan');
+      expect(deleteButton).toBeTruthy();
+      await act(async () => { deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      expect(container.innerHTML).not.toContain('To start the program');
+      expect(container.innerHTML).toContain('Choose a package');
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan).toBeNull();
+
+      await act(async () => { root.unmount(); });
+    });
   });
 });
