@@ -45,17 +45,23 @@ const BrandAccent = styled.span`
   font-style: italic;
 `;
 
+const BrandDivider = styled.span`
+  width: 1px;
+  height: 16px;
+  background: var(--km-border);
+  flex-shrink: 0;
+
+  @media (max-width: 380px) {
+    display: none;
+  }
+`;
+
 const BrandTagline = styled.span`
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  border: 1px solid var(--km-border);
-  border-radius: 999px;
-  background: var(--km-accent-light);
-  color: var(--km-accent);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--km-font-display);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--km-muted);
+  letter-spacing: 0.01em;
   white-space: nowrap;
 
   @media (max-width: 380px) {
@@ -68,7 +74,12 @@ export const KnowMeBrand = ({ tagline = 'Egg donor' }) => (
     <BrandName>
       Know<BrandAccent>Me</BrandAccent>
     </BrandName>
-    {tagline ? <BrandTagline>{tagline}</BrandTagline> : null}
+    {tagline ? (
+      <>
+        <BrandDivider aria-hidden="true" />
+        <BrandTagline>{tagline}</BrandTagline>
+      </>
+    ) : null}
   </BrandWrap>
 );
 
