@@ -1,7 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
+import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { useAppSettings } from 'hooks/useAppSettings';
@@ -220,6 +220,7 @@ export const ProfileDotsMenu = ({
       : []),
     ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),
+    ...(isAdmin ? [{ path: '/invoices', label: 'Invoices', description: 'Create and export client invoices', icon: <FaFileInvoiceDollar /> }] : []),
   ];
 
   return (
