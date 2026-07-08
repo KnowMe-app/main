@@ -12,30 +12,20 @@ import {
   resolveProgramPaymentSchedule,
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
+import { PDF_COLOR, sanitizePdfText } from './pdfTheme';
 
 const UKRCOM_MARKER = 'REPRODUCTIVE AGENCY "UKRCOM"';
 
-const INK = '#33291f';
-const MUTED = '#6f6359';
-const ACCENT = '#7a4c2f';
-const SOFT = '#9a6b48';
-const LINE = '#e6d7c4';
-const HEAD_BG = '#f3e6d2';
-const ROW_ALT = '#faf3e8';
-const CARD_BG = '#fdf8f0';
+const INK = PDF_COLOR.ink;
+const MUTED = PDF_COLOR.muted;
+const ACCENT = PDF_COLOR.accent;
+const SOFT = PDF_COLOR.soft;
+const LINE = PDF_COLOR.line;
+const HEAD_BG = PDF_COLOR.headBg;
+const ROW_ALT = PDF_COLOR.rowAlt;
+const CARD_BG = PDF_COLOR.cardBg;
 
 const PROGRAM_COL_WIDTH = 52;
-
-// The built-in Helvetica font only covers WinAnsi glyphs, so swap the few
-// characters from the catalog data that would otherwise render blank.
-const sanitizePdfText = value => String(value ?? '')
-  .replace(/№/g, 'No.')
-  .replace(/[’‘]/g, "'")
-  .replace(/[“”]/g, '"')
-  .replace(/[–—]/g, '-')
-  .replace(/[✓✔]/g, 'x')
-  .replace(/\s+/g, ' ')
-  .trim();
 
 const formatAmount = value => {
   const amount = Number(value);

@@ -1,35 +1,57 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import styled from 'styled-components';
+import styled, { css } from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set } from 'firebase/database';
-import { FaChevronDown, FaChevronUp, FaFilePdf, FaPlus, FaTrash, FaUpload } from 'react-icons/fa';
+import {
+  FaBoxOpen,
+  FaChevronDown,
+  FaChevronUp,
+  FaFilePdf,
+  FaLayerGroup,
+  FaPlus,
+  FaTrash,
+  FaUndoAlt,
+  FaUpload,
+} from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
-import { parseBudgetPriceValue } from './budgetCatalogUtils';
+import { getVisibleSortedPackages, parseBudgetPriceValue } from './budgetCatalogUtils';
+import { useAutoResize } from '../hooks/useAutoResize';
 import { isAdminUid } from 'utils/accessLevel';
 import {
+  addCatalogChildToPackage,
+  addCustomChildToPackage,
   applyPaymentPurposePlaceholders,
   buildCaseTitle,
   buildPayerLocation,
   buildPayerName,
+  cloneEntryWithNewId,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
   generateInvoiceIdentifiers,
   getActiveBeneficiary,
+  getEntryIdentityKey,
   getTodayYmd,
-  makeCatalogServiceEntry,
-  makeCustomServiceEntry,
   isInvoiceDataShape,
+  makeCatalogItemEntry,
+  makeCatalogPackageEntry,
+  makeCustomEntry,
+  movePackageChild,
   normalizeInvoiceData,
-  parseServiceEntry,
+  removePackageChild,
   reorderBeneficiaryIds,
   reorderRecentServices,
+  resetItemEntryOverrides,
+  resetPackageEntryToCatalog,
   resolveInvoiceServiceRows,
   resolveServiceRow,
+  setEntryField,
+  updatePackageChildField,
 } from './invoiceCatalogUtils';
 
 const INVOICE_DATA_PATH = 'invoiceBuilder';
 const CATALOG_ITEMS_PATH = 'budget/items';
+const CATALOG_PACKAGES_PATH = 'budget/packages';
 
 const toArray = value => {
   if (Array.isArray(value)) return value;
@@ -47,6 +69,8 @@ const emptyBeneficiary = () => ({
   paymentPurpose: '',
 });
 
+// --- Layout shell ------------------------------------------------------
+
 const Page = styled.main`
   min-height: 100vh;
   background: var(--km-bg);
@@ -57,7 +81,7 @@ const Page = styled.main`
 `;
 
 const Shell = styled.div`
-  width: min(100%, 900px);
+  width: min(100%, 880px);
   margin: 0 auto;
 `;
 
@@ -85,9 +109,10 @@ const Eyebrow = styled.div`
 
 const Title = styled.h1`
   margin: 0;
-  font-size: clamp(20px, 4vw, 26px);
+  font-family: var(--km-font-display);
+  font-size: clamp(20px, 4vw, 27px);
   line-height: 1.05;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 `;
 
 const HeaderActions = styled.div`
@@ -108,7 +133,7 @@ const MiniButton = styled.button`
   background: var(--km-card);
   color: var(--km-text);
   border-radius: 10px;
-  min-height: 32px;
+  min-height: 30px;
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 700;
@@ -118,7 +143,7 @@ const MiniButton = styled.button`
   gap: 6px;
   cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
   opacity: ${({ disabled }) => (disabled ? 0.55 : 1)};
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 
   &:hover:not(:disabled) {
     border-color: var(--km-accent);
@@ -138,10 +163,10 @@ const PrimaryMiniButton = styled(MiniButton)`
 `;
 
 const SmallButton = styled(MiniButton)`
-  min-height: 26px;
+  min-height: 24px;
   padding: 3px 9px;
-  font-size: 11px;
-  border-radius: 8px;
+  font-size: 10.5px;
+  border-radius: 7px;
 `;
 
 const DangerButton = styled(SmallButton)`
@@ -154,31 +179,34 @@ const DangerButton = styled(SmallButton)`
   }
 `;
 
-const IconButton = styled.button`
+const iconButtonBase = css`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
-  border: 1px solid var(--km-border);
-  border-radius: 7px;
-  background: var(--km-card);
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: var(--km-muted);
-  font-size: 11px;
+  font-size: 10.5px;
   cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
-  opacity: ${({ disabled }) => (disabled ? 0.35 : 1)};
-  transition: border-color 0.15s ease, color 0.15s ease;
+  opacity: ${({ disabled }) => (disabled ? 0.3 : 1)};
+  transition: color 0.15s ease, background 0.15s ease;
 
   &:hover:not(:disabled) {
-    border-color: var(--km-accent);
+    background: var(--km-accent-light);
     color: var(--km-accent);
   }
 `;
 
-const IconDangerButton = styled(IconButton)`
+const IconButton = styled.button`${iconButtonBase}`;
+
+const IconDangerButton = styled.button`
+  ${iconButtonBase}
   &:hover:not(:disabled) {
-    border-color: var(--km-danger);
+    background: rgba(180, 35, 24, 0.12);
     color: var(--km-danger);
   }
 `;
@@ -186,7 +214,7 @@ const IconDangerButton = styled(IconButton)`
 const Panel = styled.section`
   margin-top: 10px;
   border: 1px solid var(--km-border);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--km-card);
   padding: 12px 14px;
 `;
@@ -196,199 +224,390 @@ const PanelHeading = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 `;
 
 const H2 = styled.h2`
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--km-muted);
 `;
 
 const PanelNote = styled.p`
-  margin: -4px 0 8px;
+  margin: -2px 0 8px;
   color: var(--km-muted);
   font-size: 11.5px;
   line-height: 1.4;
 `;
 
-const FieldGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 8px;
-`;
-
-const FieldLabel = styled.label`
-  display: grid;
-  gap: 3px;
-  font-size: 10px;
-  font-weight: 800;
+const StateCard = styled.div`
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   color: var(--km-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-size: 13px;
 `;
 
-const Input = styled.input`
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--km-border);
-  border-radius: 8px;
-  background: var(--km-bg);
-  color: var(--km-text);
-  padding: 7px 9px;
-  font-size: 12.5px;
-  font-weight: 600;
+// --- Plain, borderless "editable text" fields ------------------------------------------------------
+//
+// No boxes, no visible borders: a field reads as plain text until you hover/focus it, at which
+// point a soft accent wash + underline appear. Every text field auto-grows vertically with its
+// content (useAutoResize) instead of clipping or scrolling.
 
-  &:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px var(--km-accent-light);
+const FieldRow = styled.div`
+  display: flex;
+  align-items: ${({ $align }) => $align || 'flex-start'};
+  gap: 8px;
+  padding: 5px 0;
+
+  & + & {
+    border-top: 1px solid var(--km-border);
   }
 `;
 
-const Textarea = styled.textarea`
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--km-border);
-  border-radius: 8px;
-  background: var(--km-bg);
-  color: var(--km-text);
-  padding: 7px 9px;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.35;
-  resize: vertical;
-  min-height: 44px;
-
-  &:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px var(--km-accent-light);
-  }
-`;
-
-const Select = styled.select`
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--km-border);
-  border-radius: 8px;
-  background: var(--km-bg);
-  color: var(--km-text);
-  padding: 7px 9px;
-  font-size: 12.5px;
-  font-weight: 700;
-`;
-
-const RowList = styled.div`
-  display: grid;
-  gap: 5px;
-`;
-
-const CustomerRow = styled.div`
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 6px;
-  align-items: center;
-
-  @media (max-width: 480px) {
-    grid-template-columns: 1fr 1fr;
-
-    > *:last-child {
-      grid-column: 1 / -1;
-      justify-self: start;
-    }
-  }
-`;
-
-const ServiceTableHead = styled.div`
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 76px 88px;
-  gap: 6px;
-  padding: 0 2px 4px;
+const FieldTag = styled.span`
+  flex: 0 0 auto;
+  width: 128px;
+  padding-top: 6px;
   font-size: 9.5px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--km-muted);
 
-  @media (max-width: 480px) {
-    display: none;
+  @media (max-width: 560px) {
+    width: 84px;
   }
 `;
 
-const ServiceRow = styled.div`
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 76px 88px;
-  gap: 6px;
-  align-items: center;
-  padding: 4px 0;
+const plainFieldStyle = css`
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--km-text);
+  font-family: inherit;
+  font-size: ${({ $size }) => $size || '13px'};
+  font-weight: ${({ $weight }) => $weight || '600'};
+  line-height: 1.45;
+  padding: 5px 6px;
+  margin: 0;
+  resize: none;
+  overflow: hidden;
+
+  &::placeholder {
+    color: var(--km-muted);
+    font-weight: 500;
+    opacity: 0.8;
+  }
+
+  &:hover {
+    background: var(--km-accent-light);
+  }
+
+  &:focus {
+    outline: none;
+    background: var(--km-accent-light);
+    box-shadow: inset 0 0 0 1px var(--km-accent-mid);
+  }
+`;
+
+const PlainTextBase = styled.textarea`
+  ${plainFieldStyle}
+`;
+
+const PlainPriceBase = styled.textarea`
+  ${plainFieldStyle}
+  flex: 0 0 auto;
+  width: ${({ $width }) => $width || '92px'};
+  text-align: right;
+  font-weight: 800;
+  color: var(--km-accent);
+`;
+
+const PlainSelect = styled.select`
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--km-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px;
+  cursor: pointer;
+
+  &:hover,
+  &:focus {
+    outline: none;
+    background: var(--km-accent-light);
+  }
+`;
+
+// Wraps a textarea with useAutoResize so it grows with its content instead of clipping/scrolling.
+const AutoTextArea = React.forwardRef(({ as: Component = PlainTextBase, value, ...rest }, forwardedRef) => {
+  const localRef = useRef(null);
+  const autoResize = useAutoResize(localRef, value);
+  return (
+    <Component
+      ref={node => {
+        localRef.current = node;
+        autoResize(node);
+        if (typeof forwardedRef === 'function') forwardedRef(node);
+        else if (forwardedRef) forwardedRef.current = node;
+      }}
+      rows={1}
+      value={value}
+      {...rest}
+    />
+  );
+});
+AutoTextArea.displayName = 'AutoTextArea';
+
+// Keeps a locally-editable draft of one field, resynced from the resolved value whenever it
+// changes elsewhere - unless the field currently has focus (so an in-progress keystroke never
+// gets clobbered by a re-render triggered by an unrelated commit).
+const useFieldDraft = externalValue => {
+  const [draft, setDraft] = useState(externalValue ?? '');
+  const editingRef = useRef(false);
+  useEffect(() => {
+    if (!editingRef.current) setDraft(externalValue ?? '');
+  }, [externalValue]);
+  return [draft, setDraft, editingRef];
+};
+
+const formatEuroPreview = value => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `€${amount.toFixed(2)}` : '€—';
+};
+
+// --- Service line item (top-level custom/catalog row, or a row nested inside a package) ------------------------------------------------------
+
+const LineCard = styled.div`
+  padding: 4px 0 6px;
   border-top: 1px solid var(--km-border);
 
   &:first-child {
     border-top: 0;
   }
+`;
 
-  @media (max-width: 480px) {
-    grid-template-columns: 1fr auto;
-    row-gap: 4px;
-
-    > *:nth-child(1) {
-      display: none;
-    }
-
-    > *:nth-child(2) {
-      grid-column: 1 / -1;
-    }
-  }
+const LineMainRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 `;
 
 const RowIndex = styled.span`
-  font-size: 11px;
+  flex: 0 0 auto;
+  width: 16px;
+  padding-top: 7px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--km-muted);
   text-align: center;
 `;
 
 const RowActions = styled.div`
+  flex: 0 0 auto;
   display: flex;
-  gap: 3px;
-  justify-content: flex-end;
+  gap: 1px;
+  padding-top: 2px;
 `;
 
-const AddRow = styled.div`
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 90px auto;
-  gap: 6px;
-  align-items: center;
-  margin-top: 8px;
+const CustomizedTag = styled.span`
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--km-accent);
+  background: var(--km-accent-light);
+  border-radius: 999px;
+  padding: 2px 7px;
+  white-space: nowrap;
+`;
 
-  @media (max-width: 480px) {
-    grid-template-columns: 1fr;
+const MissingTag = styled(CustomizedTag)`
+  color: var(--km-danger);
+  background: rgba(180, 35, 24, 0.1);
+`;
+
+const ServiceLineRow = ({
+  row,
+  index,
+  isChild = false,
+  onCommit,
+  onRemove,
+  removeTitle = 'Remove',
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = false,
+  canMoveDown = false,
+  onReset,
+}) => {
+  const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
+  const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(row.price ?? ''));
+
+  return (
+    <LineCard>
+      <LineMainRow>
+        <RowIndex>{index + 1}</RowIndex>
+        <AutoTextArea
+          $size={isChild ? '12.5px' : '13px'}
+          $weight="700"
+          value={nameDraft}
+          placeholder="Service name"
+          aria-label="Service name"
+          onFocus={() => { nameEditingRef.current = true; }}
+          onChange={event => setNameDraft(event.target.value)}
+          onBlur={() => { nameEditingRef.current = false; onCommit('name', nameDraft); }}
+        />
+        <AutoTextArea
+          as={PlainPriceBase}
+          $size={isChild ? '12.5px' : '13px'}
+          $width={isChild ? '76px' : '88px'}
+          inputMode="decimal"
+          value={priceDraft}
+          placeholder="0"
+          aria-label="Price (EUR)"
+          onFocus={() => { priceEditingRef.current = true; }}
+          onChange={event => setPriceDraft(event.target.value)}
+          onBlur={() => { priceEditingRef.current = false; onCommit('price', priceDraft); }}
+        />
+        {row.isCustomized ? <CustomizedTag title="Overridden for this invoice only - the shared budget is unchanged">Custom</CustomizedTag> : null}
+        {row.missing ? <MissingTag title="This catalog reference no longer exists">Missing</MissingTag> : null}
+        {onReset ? (
+          <IconButton type="button" onClick={onReset} title="Revert to the catalog value" aria-label="Revert to catalog value">
+            <FaUndoAlt />
+          </IconButton>
+        ) : null}
+        <RowActions>
+          {onMoveUp ? (
+            <IconButton type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
+              <FaChevronUp />
+            </IconButton>
+          ) : null}
+          {onMoveDown ? (
+            <IconButton type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
+              <FaChevronDown />
+            </IconButton>
+          ) : null}
+          <IconDangerButton type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
+            <FaTrash />
+          </IconDangerButton>
+        </RowActions>
+      </LineMainRow>
+      <AutoTextArea
+        $size="11.5px"
+        $weight="500"
+        style={{ color: 'var(--km-muted)' }}
+        value={descriptionDraft}
+        placeholder="Add description…"
+        aria-label="Description"
+        onFocus={() => { descriptionEditingRef.current = true; }}
+        onChange={event => setDescriptionDraft(event.target.value)}
+        onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); }}
+      />
+    </LineCard>
+  );
+};
+
+// --- Package group (a whole budget/packages program, editable/removable per line) ------------------------------------------------------
+
+const PackageCard = styled.div`
+  margin-top: 10px;
+  border: 1px solid var(--km-border);
+  border-radius: 12px;
+  background: var(--km-accent-light);
+  padding: 8px 10px 10px;
+
+  &:first-child {
+    margin-top: 0;
   }
 `;
 
-const ChipRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
+const PackageHeaderRow = styled(LineMainRow)`
+  align-items: flex-start;
 `;
 
-const Chip = styled.button`
-  border: 1px dashed var(--km-border);
-  background: var(--km-bg);
-  color: var(--km-text);
-  border-radius: 999px;
-  padding: 4px 9px;
+const PackageIcon = styled.span`
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 3px;
+  border-radius: 7px;
+  background: var(--km-card);
+  color: var(--km-accent);
   font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
+`;
+
+const PackageChildren = styled.div`
+  margin: 6px 0 4px 28px;
+  border-radius: 10px;
+  background: var(--km-card);
+  padding: 0 8px;
+
+  @media (max-width: 560px) {
+    margin-left: 10px;
+  }
+`;
+
+const PackageAddRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 0 28px;
+
+  @media (max-width: 560px) {
+    margin-left: 10px;
+  }
+`;
+
+const PackageQuickField = styled(PlainTextBase)`
+  flex: 1 1 140px;
+  background: var(--km-card);
+  border-radius: 8px;
+  padding: 5px 8px;
+`;
+
+const PackageQuickPrice = styled(PlainPriceBase)`
+  flex: 0 0 76px;
+  background: var(--km-card);
+  border-radius: 8px;
+  padding: 5px 8px;
+`;
+
+const InlinePickerBox = styled.div`
+  margin: 6px 0 0 28px;
+
+  @media (max-width: 560px) {
+    margin-left: 10px;
+  }
+`;
+
+const CatalogSearchField = styled(PlainTextBase)`
+  background: var(--km-card);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
 `;
 
 const CatalogPickerList = styled.div`
-  margin-top: 8px;
-  max-height: 200px;
+  max-height: 190px;
   overflow-y: auto;
   display: grid;
   gap: 4px;
@@ -396,7 +615,7 @@ const CatalogPickerList = styled.div`
 
 const CatalogPickerButton = styled.button`
   border: 1px solid var(--km-border);
-  background: var(--km-bg);
+  background: var(--km-card);
   color: var(--km-text);
   border-radius: 8px;
   padding: 6px 9px;
@@ -407,7 +626,211 @@ const CatalogPickerButton = styled.button`
   display: flex;
   justify-content: space-between;
   gap: 8px;
+
+  &:hover {
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
 `;
+
+const CatalogTabs = styled.div`
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: var(--km-bg);
+  border: 1px solid var(--km-border);
+`;
+
+const CatalogTabButton = styled.button`
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  color: ${({ $active }) => ($active ? '#fff' : 'var(--km-muted)')};
+  background: ${({ $active }) => ($active ? 'linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%)' : 'transparent')};
+`;
+
+const PackageEntryCard = ({
+  row,
+  index,
+  canMoveUp,
+  canMoveDown,
+  catalogItems,
+  onCommitField,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+  onReset,
+  onCommitChildField,
+  onResetChildField,
+  onRemoveChild,
+  onMoveChild,
+  onAddCustomChild,
+  onAddCatalogChild,
+}) => {
+  const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
+  const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(row.price ?? ''));
+  const [showPicker, setShowPicker] = useState(false);
+  const [query, setQuery] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+
+  const childCatalogIds = useMemo(
+    () => new Set(row.children.filter(child => child.kind === 'item').map(child => String(child.catalogId))),
+    [row.children],
+  );
+
+  const availableItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return catalogItems
+      .filter(item => !childCatalogIds.has(String(item.id)))
+      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
+      .slice(0, 30);
+  }, [catalogItems, childCatalogIds, query]);
+
+  const handleAddCustom = () => {
+    const name = customName.trim();
+    const price = Number(customPrice.replace(',', '.'));
+    if (!name) {
+      toast.error('Enter a name for the new service.');
+      return;
+    }
+    if (!Number.isFinite(price)) {
+      toast.error('Enter a valid price for the new service.');
+      return;
+    }
+    onAddCustomChild({ name, price });
+    setCustomName('');
+    setCustomPrice('');
+  };
+
+  return (
+    <PackageCard>
+      <PackageHeaderRow>
+        <PackageIcon><FaBoxOpen /></PackageIcon>
+        <RowIndex>{index + 1}</RowIndex>
+        <AutoTextArea
+          $size="13.5px"
+          $weight="800"
+          value={nameDraft}
+          placeholder="Package name"
+          aria-label="Package name"
+          onFocus={() => { nameEditingRef.current = true; }}
+          onChange={event => setNameDraft(event.target.value)}
+          onBlur={() => { nameEditingRef.current = false; onCommitField('name', nameDraft); }}
+        />
+        <AutoTextArea
+          as={PlainPriceBase}
+          $width="92px"
+          inputMode="decimal"
+          value={priceDraft}
+          placeholder="0"
+          aria-label="Package price (EUR)"
+          onFocus={() => { priceEditingRef.current = true; }}
+          onChange={event => setPriceDraft(event.target.value)}
+          onBlur={() => { priceEditingRef.current = false; onCommitField('price', priceDraft); }}
+        />
+        {row.hasPriceOverride ? (
+          <CustomizedTag title="Real total of the services below">Σ {formatEuroPreview(row.childrenTotal)}</CustomizedTag>
+        ) : null}
+        {row.isCustomized ? <CustomizedTag title="No longer matches the shared budget package">Custom package</CustomizedTag> : null}
+        {onReset ? (
+          <IconButton type="button" onClick={onReset} title="Revert to the catalog package" aria-label="Revert to catalog package">
+            <FaUndoAlt />
+          </IconButton>
+        ) : null}
+        <RowActions>
+          <IconButton type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move package up">
+            <FaChevronUp />
+          </IconButton>
+          <IconButton type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move package down">
+            <FaChevronDown />
+          </IconButton>
+          <IconDangerButton type="button" onClick={onRemove} title="Remove package" aria-label="Remove package">
+            <FaTrash />
+          </IconDangerButton>
+        </RowActions>
+      </PackageHeaderRow>
+      <AutoTextArea
+        $size="11.5px"
+        $weight="500"
+        style={{ color: 'var(--km-muted)', marginLeft: 28 }}
+        value={descriptionDraft}
+        placeholder="Add description…"
+        aria-label="Package description"
+        onFocus={() => { descriptionEditingRef.current = true; }}
+        onChange={event => setDescriptionDraft(event.target.value)}
+        onBlur={() => { descriptionEditingRef.current = false; onCommitField('description', descriptionDraft); }}
+      />
+
+      <PackageChildren>
+        {row.children.map((child, childIndex) => (
+          <ServiceLineRow
+            key={child.key}
+            row={child}
+            index={childIndex}
+            isChild
+            removeTitle="Remove from package"
+            onCommit={(field, value) => onCommitChildField(child.id, field, value)}
+            onRemove={() => onRemoveChild(child.id)}
+            onMoveUp={() => onMoveChild(child.id, -1)}
+            onMoveDown={() => onMoveChild(child.id, 1)}
+            canMoveUp={childIndex > 0}
+            canMoveDown={childIndex < row.children.length - 1}
+            onReset={child.kind === 'item' && child.isCustomized ? () => onResetChildField(child.id) : undefined}
+          />
+        ))}
+        {!row.children.length ? <PanelNote style={{ margin: '8px 0' }}>No services in this package.</PanelNote> : null}
+      </PackageChildren>
+
+      <PackageAddRow>
+        <PackageQuickField
+          rows={1}
+          placeholder="Add a custom line to this package…"
+          value={customName}
+          onChange={event => setCustomName(event.target.value)}
+        />
+        <PackageQuickPrice
+          rows={1}
+          inputMode="decimal"
+          placeholder="Price"
+          value={customPrice}
+          onChange={event => setCustomPrice(event.target.value)}
+        />
+        <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
+        <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
+          <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
+        </SmallButton>
+      </PackageAddRow>
+
+      {showPicker ? (
+        <InlinePickerBox>
+          <CatalogSearchField
+            rows={1}
+            placeholder="Search catalog services…"
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+          />
+          <CatalogPickerList>
+            {availableItems.map(item => (
+              <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogChild(item.id); setShowPicker(false); setQuery(''); }}>
+                <span>{item.name}</span>
+              </CatalogPickerButton>
+            ))}
+            {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
+          </CatalogPickerList>
+        </InlinePickerBox>
+      ) : null}
+    </PackageCard>
+  );
+};
+
+// --- Summary ------------------------------------------------------
 
 const SummaryGrid = styled.div`
   display: grid;
@@ -430,19 +853,28 @@ const SummaryLine = styled.div`
   }
 `;
 
-const StateCard = styled.div`
-  padding: 20px;
-  border-radius: 16px;
-  background: var(--km-card);
-  border: 1px solid var(--km-border);
-  color: var(--km-muted);
-  font-size: 13px;
+const Chip = styled.button`
+  border: 1px dashed var(--km-border);
+  background: var(--km-bg);
+  color: var(--km-text);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
 `;
 
-const formatEuroPreview = value => {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? `€${amount.toFixed(2)}` : '€—';
-};
+const ChipRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+`;
 
 const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const isInvoiceAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
@@ -450,6 +882,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const [data, setData] = useState(() => normalizeInvoiceData(null));
   const [catalogItems, setCatalogItems] = useState([]);
+  const [catalogPackages, setCatalogPackages] = useState([]);
   const [exchangeRates, setExchangeRates] = useState(null);
   const [exchangeRatesLoading, setExchangeRatesLoading] = useState(false);
   const [exchangeRatesError, setExchangeRatesError] = useState('');
@@ -459,21 +892,23 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [invoiceDateInput, setInvoiceDateInput] = useState(getTodayYmd());
   const [newCustomServiceName, setNewCustomServiceName] = useState('');
   const [newCustomServicePrice, setNewCustomServicePrice] = useState('');
-  const [invoiceServicePriceDrafts, setInvoiceServicePriceDrafts] = useState({});
   const [catalogQuery, setCatalogQuery] = useState('');
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
+  const [catalogTab, setCatalogTab] = useState('items');
   const fileInputRef = useRef(null);
 
   const loadInvoiceData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [invoiceSnapshot, catalogSnapshot] = await Promise.all([
+      const [invoiceSnapshot, itemsSnapshot, packagesSnapshot] = await Promise.all([
         get(ref(database, INVOICE_DATA_PATH)),
         get(ref(database, CATALOG_ITEMS_PATH)),
+        get(ref(database, CATALOG_PACKAGES_PATH)),
       ]);
       setData(normalizeInvoiceData(invoiceSnapshot.exists() ? invoiceSnapshot.val() : null));
-      setCatalogItems(toArray(catalogSnapshot.exists() ? catalogSnapshot.val() : []));
+      setCatalogItems(toArray(itemsSnapshot.exists() ? itemsSnapshot.val() : []));
+      setCatalogPackages(toArray(packagesSnapshot.exists() ? packagesSnapshot.val() : []));
     } catch (loadError) {
       console.error('Unable to load invoice builder data', loadError);
       setError('Invoice data is not available right now.');
@@ -515,23 +950,30 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   }, [invoiceDateInput]);
 
   const catalogItemsById = useMemo(() => new Map(catalogItems.map(item => [String(item.id), item])), [catalogItems]);
+  const catalogPackagesById = useMemo(() => new Map(catalogPackages.map(pkg => [String(pkg.id), pkg])), [catalogPackages]);
 
   const activeBeneficiary = useMemo(() => getActiveBeneficiary(data), [data]);
 
-  const hasFormulaInvoiceService = useMemo(() => data.invoiceServices.some(entry => {
-    const parsed = parseServiceEntry(entry);
-    if (!parsed.isCatalog) return false;
-    const item = catalogItemsById.get(String(parsed.catalogId));
+  const entryReferencesFormulaItem = useCallback(entry => {
+    if (!entry) return false;
+    if (entry.kind === 'package') return (entry.children || []).some(entryReferencesFormulaItem);
+    if (entry.kind !== 'item') return false;
+    const item = catalogItemsById.get(String(entry.catalogId));
     return parseBudgetPriceValue(item?.price).isFormula;
-  }), [data.invoiceServices, catalogItemsById]);
+  }, [catalogItemsById]);
+
+  const hasFormulaInvoiceService = useMemo(
+    () => data.invoiceServices.some(entryReferencesFormulaItem),
+    [data.invoiceServices, entryReferencesFormulaItem],
+  );
 
   const isFormulaRatePending = hasFormulaInvoiceService && exchangeRatesLoading;
   const formulaRateError = hasFormulaInvoiceService ? exchangeRatesError : '';
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || isFormulaRatePending || Boolean(formulaRateError);
 
   const priceContext = useMemo(
-    () => ({ itemsById: catalogItemsById, rates: exchangeRates }),
-    [catalogItemsById, exchangeRates],
+    () => ({ itemsById: catalogItemsById, rates: exchangeRates, packagesById: catalogPackagesById }),
+    [catalogItemsById, exchangeRates, catalogPackagesById],
   );
 
   const invoiceServiceRows = useMemo(
@@ -554,23 +996,37 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const caseTitle = useMemo(() => buildCaseTitle(data.customers), [data.customers]);
 
   const recentServiceSuggestions = useMemo(() => {
-    const used = new Set(data.invoiceServices);
-    return data.recentServices.filter(entry => !used.has(entry)).slice(0, 8);
+    const used = new Set(data.invoiceServices.map(getEntryIdentityKey));
+    return data.recentServices.filter(entry => !used.has(getEntryIdentityKey(entry))).slice(0, 8);
   }, [data.recentServices, data.invoiceServices]);
 
+  const usedCatalogItemIds = useMemo(() => new Set(
+    data.invoiceServices.filter(entry => entry.kind === 'item').map(entry => String(entry.catalogId)),
+  ), [data.invoiceServices]);
+
+  const usedCatalogPackageIds = useMemo(() => new Set(
+    data.invoiceServices.filter(entry => entry.kind === 'package').map(entry => String(entry.catalogId)),
+  ), [data.invoiceServices]);
+
   const filteredCatalogItems = useMemo(() => {
-    const usedCatalogIds = new Set(
-      data.invoiceServices
-        .map(entry => parseServiceEntry(entry))
-        .filter(parsed => parsed.isCatalog)
-        .map(parsed => String(parsed.catalogId)),
-    );
     const normalizedQuery = catalogQuery.trim().toLowerCase();
     return catalogItems
-      .filter(item => !usedCatalogIds.has(String(item.id)))
+      .filter(item => !usedCatalogItemIds.has(String(item.id)))
       .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
       .slice(0, 30);
-  }, [catalogItems, data.invoiceServices, catalogQuery]);
+  }, [catalogItems, usedCatalogItemIds, catalogQuery]);
+
+  const visibleCatalogPackages = useMemo(
+    () => getVisibleSortedPackages({ packages: catalogPackages }, priceContext),
+    [catalogPackages, priceContext],
+  );
+
+  const filteredCatalogPackages = useMemo(() => {
+    const normalizedQuery = catalogQuery.trim().toLowerCase();
+    return visibleCatalogPackages
+      .filter(pkg => !usedCatalogPackageIds.has(String(pkg.id)))
+      .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
+  }, [visibleCatalogPackages, usedCatalogPackageIds, catalogQuery]);
 
   const persistPath = async (path, value, successMessage) => {
     try {
@@ -681,71 +1137,56 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   // Invoice services ------------------------------------------------------------
 
-  const persistInvoiceServices = async (nextInvoiceServices, successMessage) => {
-    await persistPath(`${INVOICE_DATA_PATH}/invoiceServices`, nextInvoiceServices, successMessage);
-  };
-
-  // Editing name/price of a row (catalog-linked or custom) always writes it back
-  // as a plain "Name || Price" row - a catalog reference only makes sense while
-  // it still mirrors the catalog, so editing it detaches it into its own copy.
-  const updateInvoiceServiceRow = (index, field, value) => {
-    setData(current => {
-      const entries = [...current.invoiceServices];
-      const resolved = resolveServiceRow(entries[index], catalogItemsById, priceContext);
-      const nextName = field === 'name' ? value : resolved.name;
-      const nextPrice = field === 'price' ? (Number(String(value).replace(',', '.')) || 0) : resolved.price;
-      entries[index] = makeCustomServiceEntry(nextName, nextPrice);
-      return { ...current, invoiceServices: entries };
-    });
-  };
-
-  const commitInvoiceServiceRow = index => {
-    const draft = invoiceServicePriceDrafts[index];
-    if (draft === undefined) {
-      persistInvoiceServices(data.invoiceServices, 'Service updated.');
-      return;
-    }
-
-    const entries = [...data.invoiceServices];
-    const resolved = resolveServiceRow(entries[index], catalogItemsById, priceContext);
-    const parsedPrice = Number(String(draft).replace(',', '.'));
-    entries[index] = makeCustomServiceEntry(resolved.name, Number.isFinite(parsedPrice) ? parsedPrice : 0);
-    setData(current => ({ ...current, invoiceServices: entries }));
-    setInvoiceServicePriceDrafts(current => {
-      const next = { ...current };
-      delete next[index];
-      return next;
-    });
-    persistInvoiceServices(entries, 'Service updated.');
-  };
-
-  const removeInvoiceServiceRow = index => {
-    const nextInvoiceServices = data.invoiceServices.filter((entry, entryIndex) => entryIndex !== index);
+  const persistInvoiceServices = (nextInvoiceServices, successMessage) => {
     setData(current => ({ ...current, invoiceServices: nextInvoiceServices }));
-    persistInvoiceServices(nextInvoiceServices, 'Service removed.');
+    persistPath(`${INVOICE_DATA_PATH}/invoiceServices`, nextInvoiceServices, successMessage);
   };
 
-  const moveInvoiceServiceRow = (index, offset) => {
+  const commitTopLevelField = (id, field, value) => {
+    const next = data.invoiceServices.map(entry => (entry.id === id ? setEntryField(entry, field, value) : entry));
+    persistInvoiceServices(next, 'Service updated.');
+  };
+
+  const removeTopLevelEntry = id => {
+    persistInvoiceServices(data.invoiceServices.filter(entry => entry.id !== id), 'Service removed.');
+  };
+
+  const moveTopLevelEntry = (id, offset) => {
+    const index = data.invoiceServices.findIndex(entry => entry.id === id);
     const targetIndex = index + offset;
-    if (targetIndex < 0 || targetIndex >= data.invoiceServices.length) return;
-    const nextInvoiceServices = [...data.invoiceServices];
-    [nextInvoiceServices[index], nextInvoiceServices[targetIndex]] = [nextInvoiceServices[targetIndex], nextInvoiceServices[index]];
-    setData(current => ({ ...current, invoiceServices: nextInvoiceServices }));
-    persistInvoiceServices(nextInvoiceServices, 'Service order updated.');
+    if (index === -1 || targetIndex < 0 || targetIndex >= data.invoiceServices.length) return;
+    const next = [...data.invoiceServices];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+    persistInvoiceServices(next, 'Service order updated.');
   };
 
-  const addServiceEntry = entry => {
-    if (data.invoiceServices.includes(entry)) {
-      toast.error('This service is already on the invoice.');
+  const resetTopLevelEntry = id => {
+    const next = data.invoiceServices.map(entry => {
+      if (entry.id !== id) return entry;
+      if (entry.kind === 'item') return resetItemEntryOverrides(entry);
+      if (entry.kind === 'package') return resetPackageEntryToCatalog(entry, catalogPackagesById.get(String(entry.catalogId)));
+      return entry;
+    });
+    persistInvoiceServices(next, 'Reverted to catalog values.');
+  };
+
+  const addEntryToInvoice = (entry, successMessage) => {
+    const identity = getEntryIdentityKey(entry);
+    if (data.invoiceServices.some(existing => getEntryIdentityKey(existing) === identity)) {
+      toast.error('This is already on the invoice.');
       return;
     }
-    const nextInvoiceServices = [...data.invoiceServices, entry];
-    setData(current => ({ ...current, invoiceServices: nextInvoiceServices }));
-    persistInvoiceServices(nextInvoiceServices, 'Service added.');
+    persistInvoiceServices([...data.invoiceServices, entry], successMessage);
   };
 
   const addCatalogServiceEntry = catalogId => {
-    addServiceEntry(makeCatalogServiceEntry(catalogId));
+    addEntryToInvoice(makeCatalogItemEntry(catalogId), 'Service added.');
+    setShowCatalogPicker(false);
+    setCatalogQuery('');
+  };
+
+  const addCatalogPackageEntry = pkg => {
+    addEntryToInvoice(makeCatalogPackageEntry(pkg), 'Package added.');
     setShowCatalogPicker(false);
     setCatalogQuery('');
   };
@@ -761,9 +1202,49 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.error('Enter a valid price for the new service.');
       return;
     }
-    addServiceEntry(makeCustomServiceEntry(name, price));
+    addEntryToInvoice(makeCustomEntry({ name, price }), 'Service added.');
     setNewCustomServiceName('');
     setNewCustomServicePrice('');
+  };
+
+  const addRecentServiceEntry = entry => addEntryToInvoice(cloneEntryWithNewId(entry), 'Service added.');
+
+  // Package children ------------------------------------------------------------
+
+  const commitPackageChildField = (packageId, childId, field, value) => {
+    const next = data.invoiceServices.map(entry => (entry.id === packageId
+      ? updatePackageChildField(entry, childId, field, value)
+      : entry));
+    persistInvoiceServices(next, 'Package updated.');
+  };
+
+  const resetPackageChildEntry = (packageId, childId) => {
+    const next = data.invoiceServices.map(entry => {
+      if (entry.id !== packageId) return entry;
+      const children = (entry.children || []).map(child => (child.id === childId ? resetItemEntryOverrides(child) : child));
+      return { ...entry, children, customized: true };
+    });
+    persistInvoiceServices(next, 'Reverted to catalog values.');
+  };
+
+  const removePackageChildEntry = (packageId, childId) => {
+    const next = data.invoiceServices.map(entry => (entry.id === packageId ? removePackageChild(entry, childId) : entry));
+    persistInvoiceServices(next, 'Service removed from package.');
+  };
+
+  const movePackageChildEntry = (packageId, childId, offset) => {
+    const next = data.invoiceServices.map(entry => (entry.id === packageId ? movePackageChild(entry, childId, offset) : entry));
+    persistInvoiceServices(next, 'Package order updated.');
+  };
+
+  const addCustomChildEntry = (packageId, fields) => {
+    const next = data.invoiceServices.map(entry => (entry.id === packageId ? addCustomChildToPackage(entry, fields) : entry));
+    persistInvoiceServices(next, 'Service added to package.');
+  };
+
+  const addCatalogChildEntry = (packageId, catalogId) => {
+    const next = data.invoiceServices.map(entry => (entry.id === packageId ? addCatalogChildToPackage(entry, catalogId) : entry));
+    persistInvoiceServices(next, 'Service added to package.');
   };
 
   // Notes ------------------------------------------------------------
@@ -957,72 +1438,71 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <Panel>
               <PanelHeading>
                 <H2>Beneficiary</H2>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
                   <SmallButton type="button" onClick={addBeneficiary}><FaPlus /> Add</SmallButton>
                   <DangerButton type="button" onClick={deleteActiveBeneficiary}><FaTrash /> Delete</DangerButton>
                 </div>
               </PanelHeading>
-              <FieldGrid style={{ marginBottom: 10 }}>
-                <FieldLabel>
-                  Active beneficiary
-                  <Select value={activeBeneficiary?.id || ''} onChange={event => handleSelectBeneficiary(event.target.value)}>
-                    {data.beneficiaries.map(beneficiary => (
-                      <option key={beneficiary.id} value={beneficiary.id}>{beneficiary.title || beneficiary.id}</option>
-                    ))}
-                  </Select>
-                </FieldLabel>
-              </FieldGrid>
+              <FieldRow>
+                <FieldTag>Active</FieldTag>
+                <PlainSelect value={activeBeneficiary?.id || ''} onChange={event => handleSelectBeneficiary(event.target.value)}>
+                  {data.beneficiaries.map(beneficiary => (
+                    <option key={beneficiary.id} value={beneficiary.id}>{beneficiary.title || beneficiary.id}</option>
+                  ))}
+                </PlainSelect>
+              </FieldRow>
               {activeBeneficiary ? (
-                <FieldGrid>
-                  <FieldLabel>
-                    Title
-                    <Input
+                <>
+                  <FieldRow>
+                    <FieldTag>Title</FieldTag>
+                    <AutoTextArea
                       value={activeBeneficiary.title || ''}
                       onChange={event => updateActiveBeneficiaryField('title', event.target.value)}
                       onBlur={event => persistActiveBeneficiaryField('title', event.target.value)}
                     />
-                  </FieldLabel>
-                  <FieldLabel>
-                    Address
-                    <Input
+                  </FieldRow>
+                  <FieldRow>
+                    <FieldTag>Address</FieldTag>
+                    <AutoTextArea
                       value={activeBeneficiary.address || ''}
                       onChange={event => updateActiveBeneficiaryField('address', event.target.value)}
                       onBlur={event => persistActiveBeneficiaryField('address', event.target.value)}
                     />
-                  </FieldLabel>
-                  <FieldLabel>
-                    IBAN
-                    <Input
+                  </FieldRow>
+                  <FieldRow>
+                    <FieldTag>IBAN</FieldTag>
+                    <AutoTextArea
                       value={activeBeneficiary.iban || ''}
                       onChange={event => updateActiveBeneficiaryField('iban', event.target.value)}
                       onBlur={event => persistActiveBeneficiaryField('iban', event.target.value)}
                     />
-                  </FieldLabel>
-                  <FieldLabel>
-                    Bank name
-                    <Input
+                  </FieldRow>
+                  <FieldRow>
+                    <FieldTag>Bank name</FieldTag>
+                    <AutoTextArea
                       value={activeBeneficiary.bankName || ''}
                       onChange={event => updateActiveBeneficiaryField('bankName', event.target.value)}
                       onBlur={event => persistActiveBeneficiaryField('bankName', event.target.value)}
                     />
-                  </FieldLabel>
-                  <FieldLabel>
-                    SWIFT code
-                    <Input
+                  </FieldRow>
+                  <FieldRow>
+                    <FieldTag>SWIFT code</FieldTag>
+                    <AutoTextArea
                       value={activeBeneficiary.swiftCode || ''}
                       onChange={event => updateActiveBeneficiaryField('swiftCode', event.target.value)}
                       onBlur={event => persistActiveBeneficiaryField('swiftCode', event.target.value)}
                     />
-                  </FieldLabel>
-                  <FieldLabel style={{ gridColumn: '1 / -1' }}>
-                    Payment purpose ({'{invoiceNumber}'} and {'{invoiceDate}'} are filled in automatically)
-                    <Textarea
+                  </FieldRow>
+                  <FieldRow>
+                    <FieldTag>Payment purpose</FieldTag>
+                    <AutoTextArea
                       value={activeBeneficiary.paymentPurpose || ''}
+                      placeholder="{invoiceNumber} and {invoiceDate} are filled in automatically"
                       onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
                       onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
                     />
-                  </FieldLabel>
-                </FieldGrid>
+                  </FieldRow>
+                </>
               ) : null}
             </Panel>
 
@@ -1032,91 +1512,78 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <SmallButton type="button" onClick={addCustomer}><FaPlus /> Add customer</SmallButton>
               </PanelHeading>
               <PanelNote>{`Payer: ${payerName || '—'} · ${caseTitle}`}</PanelNote>
-              <RowList>
-                {data.customers.map((customer, index) => (
-                  <CustomerRow key={`customer-${index}`}>
-                    <Input
-                      placeholder="Name"
-                      value={customer.name || ''}
-                      onChange={event => updateCustomerField(index, 'name', event.target.value)}
-                      onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
-                    />
-                    <Input
-                      placeholder="Address / country"
-                      value={customer.address || ''}
-                      onChange={event => updateCustomerField(index, 'address', event.target.value)}
-                      onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
-                    />
-                    <DangerButton type="button" onClick={() => removeCustomer(index)}><FaTrash /></DangerButton>
-                  </CustomerRow>
-                ))}
-              </RowList>
+              {data.customers.map((customer, index) => (
+                <FieldRow key={`customer-${index}`}>
+                  <FieldTag>Customer {index + 1}</FieldTag>
+                  <AutoTextArea
+                    placeholder="Name"
+                    value={customer.name || ''}
+                    onChange={event => updateCustomerField(index, 'name', event.target.value)}
+                    onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
+                  />
+                  <AutoTextArea
+                    placeholder="Address / country"
+                    value={customer.address || ''}
+                    onChange={event => updateCustomerField(index, 'address', event.target.value)}
+                    onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
+                  />
+                  <IconDangerButton type="button" onClick={() => removeCustomer(index)} title="Remove customer" aria-label="Remove customer">
+                    <FaTrash />
+                  </IconDangerButton>
+                </FieldRow>
+              ))}
             </Panel>
 
             <Panel>
               <PanelHeading>
                 <H2>Invoice services</H2>
               </PanelHeading>
-              {invoiceServiceRows.length ? (
-                <ServiceTableHead>
-                  <span>#</span>
-                  <span>Service</span>
-                  <span>EUR</span>
-                  <span />
-                </ServiceTableHead>
-              ) : null}
-              <RowList>
-                {invoiceServiceRows.map((row, index) => (
-                  <ServiceRow key={`${row.key}-${index}`}>
-                    <RowIndex>{index + 1}</RowIndex>
-                    <Input
-                      value={row.name}
-                      onChange={event => updateInvoiceServiceRow(index, 'name', event.target.value)}
-                      onBlur={() => commitInvoiceServiceRow(index)}
-                    />
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={invoiceServicePriceDrafts[index] ?? row.price}
-                      onChange={event => setInvoiceServicePriceDrafts(current => ({ ...current, [index]: event.target.value }))}
-                      onBlur={() => commitInvoiceServiceRow(index)}
-                    />
-                    <RowActions>
-                      <IconButton
-                        type="button"
-                        onClick={() => moveInvoiceServiceRow(index, -1)}
-                        disabled={index === 0}
-                        title="Move up"
-                        aria-label="Move service up"
-                      >
-                        <FaChevronUp />
-                      </IconButton>
-                      <IconButton
-                        type="button"
-                        onClick={() => moveInvoiceServiceRow(index, 1)}
-                        disabled={index === invoiceServiceRows.length - 1}
-                        title="Move down"
-                        aria-label="Move service down"
-                      >
-                        <FaChevronDown />
-                      </IconButton>
-                      <IconDangerButton type="button" onClick={() => removeInvoiceServiceRow(index)} title="Remove" aria-label="Remove service">
-                        <FaTrash />
-                      </IconDangerButton>
-                    </RowActions>
-                  </ServiceRow>
-                ))}
-                {!invoiceServiceRows.length ? <PanelNote style={{ margin: 0 }}>No services on this invoice yet.</PanelNote> : null}
-              </RowList>
+
+              {invoiceServiceRows.map((row, index) => (row.kind === 'package' ? (
+                <PackageEntryCard
+                  key={row.key}
+                  row={row}
+                  index={index}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < invoiceServiceRows.length - 1}
+                  catalogItems={catalogItems}
+                  onCommitField={(field, value) => commitTopLevelField(row.id, field, value)}
+                  onRemove={() => removeTopLevelEntry(row.id)}
+                  onMoveUp={() => moveTopLevelEntry(row.id, -1)}
+                  onMoveDown={() => moveTopLevelEntry(row.id, 1)}
+                  onReset={row.isCustomized ? () => resetTopLevelEntry(row.id) : undefined}
+                  onCommitChildField={(childId, field, value) => commitPackageChildField(row.id, childId, field, value)}
+                  onResetChildField={childId => resetPackageChildEntry(row.id, childId)}
+                  onRemoveChild={childId => removePackageChildEntry(row.id, childId)}
+                  onMoveChild={(childId, offset) => movePackageChildEntry(row.id, childId, offset)}
+                  onAddCustomChild={fields => addCustomChildEntry(row.id, fields)}
+                  onAddCatalogChild={catalogId => addCatalogChildEntry(row.id, catalogId)}
+                />
+              ) : (
+                <ServiceLineRow
+                  key={row.key}
+                  row={row}
+                  index={index}
+                  onCommit={(field, value) => commitTopLevelField(row.id, field, value)}
+                  onRemove={() => removeTopLevelEntry(row.id)}
+                  onMoveUp={() => moveTopLevelEntry(row.id, -1)}
+                  onMoveDown={() => moveTopLevelEntry(row.id, 1)}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < invoiceServiceRows.length - 1}
+                  onReset={row.kind === 'item' && row.isCustomized ? () => resetTopLevelEntry(row.id) : undefined}
+                />
+              )))}
+              {!invoiceServiceRows.length ? <PanelNote style={{ margin: 0 }}>No services on this invoice yet.</PanelNote> : null}
 
               {recentServiceSuggestions.length ? (
                 <>
-                  <PanelNote style={{ marginTop: 14, marginBottom: 4 }}>Recent services (click to add)</PanelNote>
+                  <PanelNote style={{ marginTop: 14, marginBottom: 4 }}>Recent (click to add)</PanelNote>
                   <ChipRow>
                     {recentServiceSuggestions.map(entry => {
                       const resolved = resolveServiceRow(entry, catalogItemsById, priceContext);
                       return (
-                        <Chip key={entry} type="button" onClick={() => addServiceEntry(entry)}>
+                        <Chip key={entry.id} type="button" onClick={() => addRecentServiceEntry(entry)}>
+                          {entry.kind === 'package' ? <FaLayerGroup style={{ marginRight: 4 }} /> : null}
                           {resolved.name} · {formatEuroPreview(resolved.price)}
                         </Chip>
                       );
@@ -1125,43 +1592,58 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 </>
               ) : null}
 
-              <AddRow>
-                <Input
+              <FieldRow $align="center" style={{ marginTop: 14 }}>
+                <FieldTag>Add custom</FieldTag>
+                <PlainTextBase
+                  rows={1}
                   placeholder="New custom service name"
                   value={newCustomServiceName}
                   onChange={event => setNewCustomServiceName(event.target.value)}
                 />
-                <Input
-                  placeholder="Price"
-                  type="text"
+                <PlainPriceBase
+                  rows={1}
                   inputMode="decimal"
+                  placeholder="Price"
                   value={newCustomServicePrice}
                   onChange={event => setNewCustomServicePrice(event.target.value)}
                 />
                 <SmallButton type="button" onClick={addCustomServiceEntry}><FaPlus /> Add</SmallButton>
-              </AddRow>
+              </FieldRow>
 
-              <div style={{ marginTop: 10 }}>
+              <div style={{ marginTop: 8 }}>
                 <SmallButton type="button" onClick={() => setShowCatalogPicker(current => !current)}>
-                  <FaPlus /> {showCatalogPicker ? 'Hide catalog' : 'Add from services catalog'}
+                  <FaPlus /> {showCatalogPicker ? 'Hide catalog' : 'Add from catalog'}
                 </SmallButton>
                 {showCatalogPicker ? (
-                  <>
-                    <Input
-                      style={{ marginTop: 8 }}
-                      placeholder="Search catalog services…"
+                  <div style={{ marginTop: 8 }}>
+                    <CatalogTabs>
+                      <CatalogTabButton type="button" $active={catalogTab === 'items'} onClick={() => setCatalogTab('items')}>
+                        Services
+                      </CatalogTabButton>
+                      <CatalogTabButton type="button" $active={catalogTab === 'packages'} onClick={() => setCatalogTab('packages')}>
+                        Packages
+                      </CatalogTabButton>
+                    </CatalogTabs>
+                    <CatalogSearchField
+                      rows={1}
+                      placeholder={catalogTab === 'items' ? 'Search catalog services…' : 'Search catalog packages…'}
                       value={catalogQuery}
                       onChange={event => setCatalogQuery(event.target.value)}
                     />
                     <CatalogPickerList>
-                      {filteredCatalogItems.map(item => (
+                      {catalogTab === 'items' ? filteredCatalogItems.map(item => (
                         <CatalogPickerButton key={item.id} type="button" onClick={() => addCatalogServiceEntry(item.id)}>
                           <span>{item.name}</span>
                         </CatalogPickerButton>
+                      )) : filteredCatalogPackages.map(pkg => (
+                        <CatalogPickerButton key={pkg.id} type="button" onClick={() => addCatalogPackageEntry(pkg)}>
+                          <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}</span>
+                        </CatalogPickerButton>
                       ))}
-                      {!filteredCatalogItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
+                      {catalogTab === 'items' && !filteredCatalogItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
+                      {catalogTab === 'packages' && !filteredCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
                     </CatalogPickerList>
-                  </>
+                  </div>
                 ) : null}
               </div>
             </Panel>
@@ -1170,27 +1652,29 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               <PanelHeading>
                 <H2>Summary</H2>
               </PanelHeading>
-              <FieldGrid style={{ marginBottom: 12 }}>
-                <FieldLabel>
-                  Invoice date
-                  <Input
-                    type="date"
-                    value={invoiceDateInput}
-                    onChange={event => setInvoiceDateInput(event.target.value)}
-                  />
-                </FieldLabel>
-                <FieldLabel>
-                  Taxes (%)
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    value={data.taxPercent}
-                    onChange={event => updateTaxPercent(event.target.value)}
-                    onBlur={commitTaxPercent}
-                  />
-                </FieldLabel>
-              </FieldGrid>
-              <SummaryGrid>
+              <FieldRow>
+                <FieldTag>Invoice date</FieldTag>
+                <input
+                  type="date"
+                  value={invoiceDateInput}
+                  onChange={event => setInvoiceDateInput(event.target.value)}
+                  style={{
+                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
+                  }}
+                />
+              </FieldRow>
+              <FieldRow>
+                <FieldTag>Taxes (%)</FieldTag>
+                <PlainPriceBase
+                  rows={1}
+                  inputMode="decimal"
+                  value={data.taxPercent}
+                  onChange={event => updateTaxPercent(event.target.value)}
+                  onBlur={commitTaxPercent}
+                  style={{ flex: '0 0 auto' }}
+                />
+              </FieldRow>
+              <SummaryGrid style={{ marginTop: 10 }}>
                 <SummaryLine><span>Invoice number</span><span>{invoiceNumber}</span></SummaryLine>
                 <SummaryLine><span>Purpose of the payment</span><span style={{ textAlign: 'right', maxWidth: 420 }}>{purposeOfPayment || '—'}</span></SummaryLine>
                 <SummaryLine><span>Location</span><span>{payerLocation || '—'}</span></SummaryLine>
@@ -1204,19 +1688,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <H2>Notes</H2>
                 <SmallButton type="button" onClick={addNote}><FaPlus /> Add note</SmallButton>
               </PanelHeading>
-              <RowList>
-                {data.notes.map((note, index) => (
-                  <CustomerRow key={`note-${index}`} style={{ gridTemplateColumns: '1fr auto' }}>
-                    <Textarea
-                      value={note}
-                      onChange={event => updateNote(index, event.target.value)}
-                      onBlur={commitNote}
-                    />
-                    <DangerButton type="button" onClick={() => removeNote(index)}><FaTrash /></DangerButton>
-                  </CustomerRow>
-                ))}
-                {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
-              </RowList>
+              {data.notes.map((note, index) => (
+                <FieldRow key={`note-${index}`}>
+                  <FieldTag>Note {index + 1}</FieldTag>
+                  <AutoTextArea
+                    value={note}
+                    onChange={event => updateNote(index, event.target.value)}
+                    onBlur={commitNote}
+                  />
+                  <IconDangerButton type="button" onClick={() => removeNote(index)} title="Remove note" aria-label="Remove note">
+                    <FaTrash />
+                  </IconDangerButton>
+                </FieldRow>
+              ))}
+              {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
             </Panel>
           </>
         ) : null}
