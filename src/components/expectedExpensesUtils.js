@@ -76,6 +76,17 @@ export const normalizeExpectedExpensesData = raw => {
   };
 };
 
+// Loose validation for an uploaded expected-expenses JSON, before normalizeExpectedExpensesData
+// fills in any missing pieces - mirrors isInvoiceDataShape's role for the main invoice JSON.
+export const isExpectedExpensesShape = raw => Boolean(
+  raw
+  && typeof raw === 'object'
+  && !Array.isArray(raw)
+  && raw.packageSnapshot
+  && typeof raw.packageSnapshot === 'object'
+  && Array.isArray(raw.milestones),
+);
+
 // --- Editing ------------------------------------------------------------
 
 export const setMilestoneField = (milestone, field, value) => {

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import InvoiceBuilderPage from './InvoiceBuilderPage';
 import { fetchNbuUahExchangeRatesByDate } from './config';
 import { get, set } from 'firebase/database';
+import expectedExpensesSeed from '../data/expectedExpensesSeed.json';
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -277,6 +278,35 @@ describe('InvoiceBuilderPage', () => {
       expect(container.innerHTML).toContain('Choose a package');
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
       expect(plan).toBeNull();
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('uploads a standalone expected-expenses JSON straight into invoiceBuilder/expectedExpenses', async () => {
+      const root = mount();
+      await flush();
+
+      const heading = Array.from(container.querySelectorAll('h2')).find(h => h.textContent === 'Expected expenses');
+      const panel = heading.closest('section');
+      const uploadButton = Array.from(panel.querySelectorAll('button')).find(btn => btn.textContent.includes('Upload JSON'));
+      const fileInput = panel.querySelector('input[type="file"]');
+      expect(uploadButton).toBeTruthy();
+      expect(fileInput).toBeTruthy();
+
+      const fileText = JSON.stringify(expectedExpensesSeed);
+      const file = new File([fileText], 'expected-expenses.json', { type: 'application/json' });
+      // jsdom's File/Blob doesn't implement .text() - the component relies on it, so stub it here.
+      file.text = () => Promise.resolve(fileText);
+      Object.defineProperty(fileInput, 'files', { value: [file] });
+      await act(async () => { fileInput.dispatchEvent(new Event('change', { bubbles: true })); });
+      await flush();
+
+      expect(container.innerHTML).toContain('To start the program');
+      expect(container.innerHTML).toContain('Deposit for transportation of SM');
+
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan.packageId).toBe('3');
+      expect(plan.milestones).toHaveLength(6);
 
       await act(async () => { root.unmount(); });
     });

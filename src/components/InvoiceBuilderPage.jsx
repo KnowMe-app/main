@@ -56,6 +56,7 @@ import {
   computeMilestoneAmountDue,
   computeMilestoneSubtotal,
   computeMilestonesScheduledTotal,
+  isExpectedExpensesShape,
   normalizeExpectedExpensesData,
   removeMilestoneAdditionalService,
   resolveMilestoneAdditionalRows,
@@ -1095,6 +1096,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [catalogTab, setCatalogTab] = useState('items');
   const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
   const fileInputRef = useRef(null);
+  const expectedExpensesFileInputRef = useRef(null);
 
   const loadInvoiceData = useCallback(async () => {
     setLoading(true);
@@ -1689,6 +1691,31 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     }
   };
 
+  // Upload a standalone expected-expenses JSON (see src/data/expectedExpensesSeed.json for the
+  // shape) straight into invoiceBuilder/expectedExpenses, replacing any existing plan.
+  const handleExpectedExpensesUploadClick = () => expectedExpensesFileInputRef.current?.click();
+
+  const handleExpectedExpensesFileChange = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!isExpectedExpensesShape(parsed)) {
+        toast.error('Upload an expected-expenses JSON with packageSnapshot and milestones.');
+        return;
+      }
+      const nextPlan = normalizeExpectedExpensesData(parsed);
+      await set(ref(database, EXPECTED_EXPENSES_PATH), nextPlan);
+      setExpectedExpenses(nextPlan);
+      toast.success('Expected expenses JSON uploaded to backend.');
+    } catch (uploadError) {
+      console.error('Unable to upload expected expenses JSON', uploadError);
+      toast.error('Unable to upload expected expenses JSON.');
+    }
+  };
+
   // Generate PDF ------------------------------------------------------------
 
   const handleGeneratePdf = async () => {
@@ -2077,22 +2104,38 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <Panel>
               <PanelHeading>
                 <H2>Expected expenses</H2>
-                {expectedExpenses ? (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <SmallButton type="button" onClick={recalculateExpectedExpensesSchedule}>
-                      <FaSyncAlt /> Recalculate
-                    </SmallButton>
-                    <PrimaryMiniButton
-                      type="button"
-                      onClick={handleGenerateExpectedExpensesPdf}
-                      disabled={isGeneratingExpectedExpenses}
-                      title="Generate the full payment-schedule forecast PDF"
-                    >
-                      <FaFilePdf /> {isGeneratingExpectedExpenses ? 'Generating…' : 'Generate PDF'}
-                    </PrimaryMiniButton>
-                    <DangerButton type="button" onClick={deleteExpectedExpensesPlan}><FaTrash /> Delete plan</DangerButton>
-                  </div>
-                ) : null}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <input
+                    ref={expectedExpensesFileInputRef}
+                    type="file"
+                    accept="application/json"
+                    style={{ display: 'none' }}
+                    onChange={handleExpectedExpensesFileChange}
+                  />
+                  <SmallButton
+                    type="button"
+                    onClick={handleExpectedExpensesUploadClick}
+                    title="Upload a standalone expected-expenses JSON (see src/data/expectedExpensesSeed.json)"
+                  >
+                    <FaUpload /> Upload JSON
+                  </SmallButton>
+                  {expectedExpenses ? (
+                    <>
+                      <SmallButton type="button" onClick={recalculateExpectedExpensesSchedule}>
+                        <FaSyncAlt /> Recalculate
+                      </SmallButton>
+                      <PrimaryMiniButton
+                        type="button"
+                        onClick={handleGenerateExpectedExpensesPdf}
+                        disabled={isGeneratingExpectedExpenses}
+                        title="Generate the full payment-schedule forecast PDF"
+                      >
+                        <FaFilePdf /> {isGeneratingExpectedExpenses ? 'Generating…' : 'Generate PDF'}
+                      </PrimaryMiniButton>
+                      <DangerButton type="button" onClick={deleteExpectedExpensesPlan}><FaTrash /> Delete plan</DangerButton>
+                    </>
+                  ) : null}
+                </div>
               </PanelHeading>
               <PanelNote>
                 Pick a program package to auto-build a full billing forecast: one milestone per scheduled payment

@@ -4,6 +4,7 @@ import {
   computeMilestoneAmountDue,
   computeMilestoneSubtotal,
   computeMilestonesScheduledTotal,
+  isExpectedExpensesShape,
   normalizeExpectedExpensesData,
   removeMilestoneAdditionalService,
   resolveMilestoneAdditionalRows,
@@ -11,6 +12,7 @@ import {
   setMilestoneField,
   updateMilestoneAdditionalServiceField,
 } from './expectedExpensesUtils';
+import expectedExpensesSeed from '../data/expectedExpensesSeed.json';
 import { makeCustomEntry } from './invoiceCatalogUtils';
 
 const pkg = {
@@ -115,5 +117,27 @@ describe('expectedExpensesUtils', () => {
     const plan = buildExpectedExpensesPlan(pkg, schedule);
     const rows = resolvePackageOverviewRows(plan.packageSnapshot.children.slice(0, 2), catalogItemsById);
     expect(rows.map(row => row.name)).toEqual(['Program coordination and support', 'Surrogacy document preparation']);
+  });
+
+  describe('isExpectedExpensesShape', () => {
+    it('accepts a plan-shaped object and rejects anything else', () => {
+      const plan = buildExpectedExpensesPlan(pkg, schedule, { taxPercent: 14 });
+      expect(isExpectedExpensesShape(plan)).toBe(true);
+      expect(isExpectedExpensesShape(null)).toBe(false);
+      expect(isExpectedExpensesShape({})).toBe(false);
+      expect(isExpectedExpensesShape({ packageSnapshot: {}, milestones: 'nope' })).toBe(false);
+    });
+  });
+
+  describe('expectedExpensesSeed.json', () => {
+    it('is a valid, normalizable expected-expenses plan whose milestones add up to the package price', () => {
+      expect(isExpectedExpensesShape(expectedExpensesSeed)).toBe(true);
+      const normalized = normalizeExpectedExpensesData(expectedExpensesSeed);
+      expect(normalized.packageId).toBe('3');
+      expect(normalized.milestones).toHaveLength(6);
+      expect(computeMilestonesScheduledTotal(normalized.milestones)).toBe(normalized.packageSnapshot.listedPrice);
+      expect(normalized.milestones[0].showPackageOverview).toBe(true);
+      expect(normalized.milestones.slice(1).every(milestone => !milestone.showPackageOverview)).toBe(true);
+    });
   });
 });
