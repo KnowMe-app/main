@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set } from 'firebase/database';
-import { FaFilePdf, FaPlus, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaChevronDown, FaChevronUp, FaFilePdf, FaPlus, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { isAdminUid } from 'utils/accessLevel';
@@ -50,51 +50,53 @@ const Page = styled.main`
   min-height: 100vh;
   background: var(--km-bg);
   color: var(--km-text);
-  padding: 22px 14px 96px;
+  padding: 16px 12px 72px;
   font-family: var(--km-font);
+  font-size: 13px;
 `;
 
 const Shell = styled.div`
-  width: min(100%, 980px);
+  width: min(100%, 900px);
   margin: 0 auto;
 `;
 
 const Header = styled.header`
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 22px;
+  gap: 12px;
+  margin-bottom: 14px;
 
-  @media (max-width: 640px) {
+  @media (max-width: 560px) {
     flex-direction: column;
+    align-items: stretch;
   }
 `;
 
 const Eyebrow = styled.div`
   color: var(--km-accent);
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 800;
-  letter-spacing: 0.16em;
-  margin-bottom: 8px;
+  letter-spacing: 0.14em;
+  margin-bottom: 2px;
   text-transform: uppercase;
 `;
 
 const Title = styled.h1`
   margin: 0;
-  font-size: clamp(28px, 6vw, 44px);
-  line-height: 0.98;
-  letter-spacing: -0.05em;
+  font-size: clamp(20px, 4vw, 26px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
 `;
 
 const HeaderActions = styled.div`
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
 
-  @media (max-width: 640px) {
+  @media (max-width: 560px) {
     width: 100%;
     justify-content: flex-start;
   }
@@ -104,84 +106,139 @@ const MiniButton = styled.button`
   border: 1px solid var(--km-border);
   background: var(--km-card);
   color: var(--km-text);
-  border-radius: 999px;
-  min-height: 38px;
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 800;
+  border-radius: 10px;
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
   opacity: ${({ disabled }) => (disabled ? 0.55 : 1)};
+  transition: border-color 0.15s ease, color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
+`;
+
+const PrimaryMiniButton = styled(MiniButton)`
+  border: none;
+  color: #fff;
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+
+  &:hover:not(:disabled) {
+    color: #fff;
+    filter: brightness(1.05);
+  }
 `;
 
 const SmallButton = styled(MiniButton)`
-  min-height: 28px;
-  padding: 4px 10px;
-  font-size: 11.5px;
+  min-height: 26px;
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 8px;
 `;
 
 const DangerButton = styled(SmallButton)`
   border-color: var(--km-danger-border);
   color: var(--km-danger);
+
+  &:hover:not(:disabled) {
+    border-color: var(--km-danger);
+    color: var(--km-danger);
+  }
+`;
+
+const IconButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 1px solid var(--km-border);
+  border-radius: 7px;
+  background: var(--km-card);
+  color: var(--km-muted);
+  font-size: 11px;
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+  opacity: ${({ disabled }) => (disabled ? 0.35 : 1)};
+  transition: border-color 0.15s ease, color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
+`;
+
+const IconDangerButton = styled(IconButton)`
+  &:hover:not(:disabled) {
+    border-color: var(--km-danger);
+    color: var(--km-danger);
+  }
 `;
 
 const Panel = styled.section`
-  margin-top: 18px;
+  margin-top: 10px;
   border: 1px solid var(--km-border);
-  border-radius: 22px;
+  border-radius: 14px;
   background: var(--km-card);
-  padding: 18px;
+  padding: 12px 14px;
 `;
 
 const PanelHeading = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 8px;
 `;
 
 const H2 = styled.h2`
   margin: 0;
-  font-size: 18px;
-  letter-spacing: -0.02em;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--km-muted);
 `;
 
 const PanelNote = styled.p`
-  margin: -6px 0 12px;
+  margin: -4px 0 8px;
   color: var(--km-muted);
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 11.5px;
+  line-height: 1.4;
 `;
 
 const FieldGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
 `;
 
 const FieldLabel = styled.label`
   display: grid;
-  gap: 4px;
-  font-size: 11px;
+  gap: 3px;
+  font-size: 10px;
   font-weight: 800;
   color: var(--km-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
 `;
 
 const Input = styled.input`
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--km-border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--km-bg);
   color: var(--km-text);
-  padding: 9px 10px;
-  font-size: 13.5px;
+  padding: 7px 9px;
+  font-size: 12.5px;
   font-weight: 600;
 
   &:focus {
@@ -194,15 +251,15 @@ const Textarea = styled.textarea`
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--km-border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--km-bg);
   color: var(--km-text);
-  padding: 9px 10px;
-  font-size: 13.5px;
+  padding: 7px 9px;
+  font-size: 12.5px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.35;
   resize: vertical;
-  min-height: 60px;
+  min-height: 44px;
 
   &:focus {
     outline: none;
@@ -214,56 +271,98 @@ const Select = styled.select`
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--km-border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--km-bg);
   color: var(--km-text);
-  padding: 9px 10px;
-  font-size: 13.5px;
+  padding: 7px 9px;
+  font-size: 12.5px;
   font-weight: 700;
 `;
 
 const RowList = styled.div`
   display: grid;
-  gap: 8px;
+  gap: 5px;
 `;
 
 const CustomerRow = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 
-  @media (max-width: 560px) {
-    grid-template-columns: 1fr;
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr 1fr;
+
+    > *:last-child {
+      grid-column: 1 / -1;
+      justify-self: start;
+    }
+  }
+`;
+
+const ServiceTableHead = styled.div`
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 76px 88px;
+  gap: 6px;
+  padding: 0 2px 4px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--km-muted);
+
+  @media (max-width: 480px) {
+    display: none;
   }
 `;
 
 const ServiceRow = styled.div`
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px auto;
-  gap: 8px;
+  grid-template-columns: 20px minmax(0, 1fr) 76px 88px;
+  gap: 6px;
   align-items: center;
+  padding: 4px 0;
   border-top: 1px solid var(--km-border);
-  padding-top: 8px;
 
   &:first-child {
     border-top: 0;
-    padding-top: 0;
   }
 
-  @media (max-width: 560px) {
-    grid-template-columns: 1fr;
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr auto;
+    row-gap: 4px;
+
+    > *:nth-child(1) {
+      display: none;
+    }
+
+    > *:nth-child(2) {
+      grid-column: 1 / -1;
+    }
   }
+`;
+
+const RowIndex = styled.span`
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--km-muted);
+  text-align: center;
+`;
+
+const RowActions = styled.div`
+  display: flex;
+  gap: 3px;
+  justify-content: flex-end;
 `;
 
 const AddRow = styled.div`
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px auto;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 90px auto;
+  gap: 6px;
   align-items: center;
-  margin-top: 12px;
+  margin-top: 8px;
 
-  @media (max-width: 560px) {
+  @media (max-width: 480px) {
     grid-template-columns: 1fr;
   }
 `;
@@ -271,8 +370,8 @@ const AddRow = styled.div`
 const ChipRow = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 5px;
+  margin-top: 8px;
 `;
 
 const Chip = styled.button`
@@ -280,27 +379,27 @@ const Chip = styled.button`
   background: var(--km-bg);
   color: var(--km-text);
   border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 11.5px;
+  padding: 4px 9px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 `;
 
 const CatalogPickerList = styled.div`
-  margin-top: 10px;
-  max-height: 220px;
+  margin-top: 8px;
+  max-height: 200px;
   overflow-y: auto;
   display: grid;
-  gap: 6px;
+  gap: 4px;
 `;
 
 const CatalogPickerButton = styled.button`
   border: 1px solid var(--km-border);
   background: var(--km-bg);
   color: var(--km-text);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 12.5px;
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
   font-weight: 700;
   text-align: left;
   cursor: pointer;
@@ -311,30 +410,32 @@ const CatalogPickerButton = styled.button`
 
 const SummaryGrid = styled.div`
   display: grid;
-  gap: 6px;
-  font-size: 13.5px;
+  gap: 4px;
+  font-size: 12.5px;
 `;
 
 const SummaryLine = styled.div`
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 0;
+  padding: 3px 0;
 
   &:last-child {
     border-top: 1px solid var(--km-border);
-    margin-top: 4px;
-    padding-top: 8px;
+    margin-top: 3px;
+    padding-top: 6px;
     font-weight: 900;
     color: var(--km-accent);
   }
 `;
 
 const StateCard = styled.div`
-  padding: 28px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.86);
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
   color: var(--km-muted);
+  font-size: 13px;
 `;
 
 const formatEuroPreview = value => {
@@ -596,6 +697,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistInvoiceServices(nextInvoiceServices, 'Service removed.');
   };
 
+  const moveInvoiceServiceRow = (index, offset) => {
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= data.invoiceServices.length) return;
+    const nextInvoiceServices = [...data.invoiceServices];
+    [nextInvoiceServices[index], nextInvoiceServices[targetIndex]] = [nextInvoiceServices[targetIndex], nextInvoiceServices[index]];
+    setData(current => ({ ...current, invoiceServices: nextInvoiceServices }));
+    persistInvoiceServices(nextInvoiceServices, 'Service order updated.');
+  };
+
   const addServiceEntry = entry => {
     if (data.invoiceServices.includes(entry)) {
       toast.error('This service is already on the invoice.');
@@ -722,7 +832,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         import('@react-pdf/renderer'),
         import('./InvoicePdfDocument'),
       ]);
-      const blob = await pdf(React.createElement(InvoicePdfDocument, {
+      const documentProps = {
         beneficiary: activeBeneficiary,
         customers: data.customers,
         invoiceServices: data.invoiceServices,
@@ -733,7 +843,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         invoiceNumber,
         invoiceDate,
         purposeOfPayment,
-      })).toBlob();
+      };
+
+      // @react-pdf/renderer's WASM layout engine can still be warming up on the
+      // very first call after a fresh page load, which fails intermittently -
+      // one silent retry clears that without bothering the admin.
+      let blob;
+      try {
+        blob = await pdf(React.createElement(InvoicePdfDocument, documentProps)).toBlob();
+      } catch (firstAttemptError) {
+        console.error('Invoice PDF generation failed on first attempt, retrying', firstAttemptError);
+        blob = await pdf(React.createElement(InvoicePdfDocument, documentProps)).toBlob();
+      }
       saveAs(blob, `invoice-${invoiceNumber.replace(/\//g, '-')}.pdf`);
 
       const nextRecentServices = reorderRecentServices(data.recentServices, data.invoiceServices);
@@ -743,7 +864,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.success('Invoice PDF generated.');
     } catch (generateError) {
       console.error('Unable to generate invoice PDF', generateError);
-      toast.error('Unable to generate invoice PDF.');
+      const reason = generateError?.message ? `: ${generateError.message}` : '';
+      toast.error(`Unable to generate invoice PDF${reason}`);
     } finally {
       setIsGenerating(false);
     }
@@ -778,14 +900,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <MiniButton type="button" onClick={handleUploadClick} title="Upload an invoice JSON to the backend">
               <FaUpload /> Upload JSON
             </MiniButton>
-            <MiniButton
+            <PrimaryMiniButton
               type="button"
               onClick={handleGeneratePdf}
               disabled={loading || Boolean(error) || isGenerating}
               title="Generate and download the invoice PDF"
             >
               <FaFilePdf /> {isGenerating ? 'Generating…' : 'Generate PDF'}
-            </MiniButton>
+            </PrimaryMiniButton>
           </HeaderActions>
         </Header>
 
@@ -897,9 +1019,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               <PanelHeading>
                 <H2>Invoice services</H2>
               </PanelHeading>
+              {invoiceServiceRows.length ? (
+                <ServiceTableHead>
+                  <span>#</span>
+                  <span>Service</span>
+                  <span>EUR</span>
+                  <span />
+                </ServiceTableHead>
+              ) : null}
               <RowList>
                 {invoiceServiceRows.map((row, index) => (
                   <ServiceRow key={`${row.key}-${index}`}>
+                    <RowIndex>{index + 1}</RowIndex>
                     <Input
                       value={row.name}
                       onChange={event => updateInvoiceServiceRow(index, 'name', event.target.value)}
@@ -912,7 +1043,29 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       onChange={event => setInvoiceServicePriceDrafts(current => ({ ...current, [index]: event.target.value }))}
                       onBlur={() => commitInvoiceServiceRow(index)}
                     />
-                    <DangerButton type="button" onClick={() => removeInvoiceServiceRow(index)}><FaTrash /></DangerButton>
+                    <RowActions>
+                      <IconButton
+                        type="button"
+                        onClick={() => moveInvoiceServiceRow(index, -1)}
+                        disabled={index === 0}
+                        title="Move up"
+                        aria-label="Move service up"
+                      >
+                        <FaChevronUp />
+                      </IconButton>
+                      <IconButton
+                        type="button"
+                        onClick={() => moveInvoiceServiceRow(index, 1)}
+                        disabled={index === invoiceServiceRows.length - 1}
+                        title="Move down"
+                        aria-label="Move service down"
+                      >
+                        <FaChevronDown />
+                      </IconButton>
+                      <IconDangerButton type="button" onClick={() => removeInvoiceServiceRow(index)} title="Remove" aria-label="Remove service">
+                        <FaTrash />
+                      </IconDangerButton>
+                    </RowActions>
                   </ServiceRow>
                 ))}
                 {!invoiceServiceRows.length ? <PanelNote style={{ margin: 0 }}>No services on this invoice yet.</PanelNote> : null}
