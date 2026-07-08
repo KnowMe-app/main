@@ -84,6 +84,7 @@ describe('InvoiceBuilderPage', () => {
 
   const mount = () => {
     const root = createRoot(container);
+    // eslint-disable-next-line testing-library/no-unnecessary-act -- createRoot.render must be wrapped in act to flush the initial React 18 render in this test harness.
     act(() => {
       root.render(<InvoiceBuilderPage isAdmin />);
     });
