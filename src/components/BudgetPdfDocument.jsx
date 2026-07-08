@@ -340,10 +340,11 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
     });
   });
   const includedIdSet = new Set(includedIds);
+  // Row order follows each service's position within the packages (first package
+  // that includes it wins), so reordering services in a package reorders this table.
   const includedRows = includedIds
     .map(id => itemsById.get(id))
-    .filter(Boolean)
-    .sort((a, b) => Number(a.id) - Number(b.id));
+    .filter(Boolean);
 
   const groupedExpenses = visibleItems.reduce((groups, item) => {
     if (includedIdSet.has(String(item.id))) return groups;

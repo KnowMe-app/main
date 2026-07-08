@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, remove, set, update } from 'firebase/database';
-import { FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaRedo, FaTimes, FaTrash, FaUndo, FaUpload } from 'react-icons/fa';
+import { FaArrowDown, FaArrowUp, FaCheck, FaChevronDown, FaChevronUp, FaExternalLinkAlt, FaFilePdf, FaPen, FaPlus, FaRedo, FaTimes, FaTrash, FaUndo, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { isAdminUid } from 'utils/accessLevel';
@@ -234,6 +234,7 @@ const ModalBackdrop = styled.div`
   inset: 0;
   z-index: 50;
   background: rgba(20, 16, 12, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -242,22 +243,28 @@ const ModalBackdrop = styled.div`
 
 const ConfirmModal = styled.div`
   width: min(100%, 440px);
+  max-height: min(85vh, 640px);
+  display: flex;
+  flex-direction: column;
   border-radius: 24px;
   background: var(--km-card);
   box-shadow: 0 24px 70px rgba(20, 16, 12, 0.24);
   padding: 22px;
   color: var(--km-text);
+  overflow: hidden;
 `;
 
 const ModalTitle = styled.h3`
   margin: 0 0 8px;
   font-size: 22px;
+  flex: 0 0 auto;
 `;
 
 const ModalText = styled.p`
   margin: 0 0 16px;
   color: var(--km-muted);
   line-height: 1.5;
+  flex: 0 0 auto;
 `;
 
 const ModalActions = styled.div`
@@ -265,6 +272,33 @@ const ModalActions = styled.div`
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+  flex: 0 0 auto;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--km-border);
+`;
+
+const ModalScrollArea = styled.div`
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -6px;
+  padding: 0 6px;
+`;
+
+const ServicePickerList = styled.div`
+  display: grid;
+  gap: 8px;
+`;
+
+const ServicePickerButton = styled(MiniButton)`
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  min-height: 38px;
+  font-size: 13px;
 `;
 
 const Section = styled.section`
@@ -1154,6 +1188,17 @@ const BudgetPage = ({ isAdmin = false }) => {
     setIsEditMode(false);
   }, [isBudgetAdmin]);
 
+  // Prevents the background page from scrolling behind an open modal while the
+  // wheel/touch scroll is over the modal itself.
+  useEffect(() => {
+    if (!insertChildTarget && !deleteTarget) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [insertChildTarget, deleteTarget]);
+
   const handleUploadClick = () => fileInputRef.current?.click();
 
   const handleExportPdf = async () => {
@@ -1330,6 +1375,15 @@ const BudgetPage = ({ isAdmin = false }) => {
     const nextChildren = (Array.isArray(program.children) ? program.children : [])
       .filter(id => String(id) !== String(itemId));
     persistProgramChildren(program.id, nextChildren, 'Service removed from package.');
+  };
+
+  const moveProgramChild = (program, index, direction) => {
+    const children = Array.isArray(program.children) ? program.children : [];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= children.length) return;
+    const nextChildren = [...children];
+    [nextChildren[index], nextChildren[targetIndex]] = [nextChildren[targetIndex], nextChildren[index]];
+    persistProgramChildren(program.id, nextChildren, 'Service order updated.');
   };
 
   const insertProgramChild = itemId => {
@@ -1854,6 +1908,24 @@ const BudgetPage = ({ isAdmin = false }) => {
             <>
               <MiniButton
                 type="button"
+                title="Move service up"
+                aria-label="Move service up"
+                disabled={programChildContext.index <= 0}
+                onClick={() => moveProgramChild(programChildContext.program, programChildContext.index, -1)}
+              >
+                <FaArrowUp />
+              </MiniButton>
+              <MiniButton
+                type="button"
+                title="Move service down"
+                aria-label="Move service down"
+                disabled={programChildContext.index >= programChildContext.count - 1}
+                onClick={() => moveProgramChild(programChildContext.program, programChildContext.index, 1)}
+              >
+                <FaArrowDown />
+              </MiniButton>
+              <MiniButton
+                type="button"
                 title="Insert service after this one"
                 aria-label="Insert service after this one"
                 onClick={() => setInsertChildTarget({
@@ -2089,7 +2161,13 @@ const BudgetPage = ({ isAdmin = false }) => {
                                     </>
                                   )}
                                   {isEditMode ? renderInternalNote('items', item) : null}
-                                  {isEditMode ? renderEditableFields('items', item, { programChildContext: { program, index: childIndex } }) : null}
+                                  {isEditMode ? renderEditableFields('items', item, {
+                                    programChildContext: {
+                                      program,
+                                      index: childIndex,
+                                      count: Array.isArray(program.children) ? program.children.length : 0,
+                                    },
+                                  }) : null}
                                 </div>
                               </IncludedItem>
                             );
@@ -2318,21 +2396,30 @@ const BudgetPage = ({ isAdmin = false }) => {
         const children = Array.isArray(program?.children) ? program.children : [];
         const availableItems = catalog.items.filter(item => !children.some(id => String(id) === String(item.id)));
         return (
-          <ModalBackdrop>
-            <ConfirmModal>
-              <ModalTitle>Add service to package</ModalTitle>
+          <ModalBackdrop role="presentation" onMouseDown={() => setInsertChildTarget(null)}>
+            <ConfirmModal
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="budget-insert-child-title"
+              onMouseDown={event => event.stopPropagation()}
+            >
+              <ModalTitle id="budget-insert-child-title">Add service to package</ModalTitle>
               <ModalText>Choose a service to insert in the selected position.</ModalText>
-              <PaymentScheduleEditor>
-                {availableItems.length ? availableItems.map(item => (
-                  <MiniButton
-                    type="button"
-                    key={item.id}
-                    onClick={() => insertProgramChild(item.id)}
-                  >
-                    <FaPlus /> {item.name || `Service ${item.id}`}
-                  </MiniButton>
-                )) : <ModalText>All available services are already included in this package.</ModalText>}
-              </PaymentScheduleEditor>
+              {availableItems.length ? (
+                <ModalScrollArea>
+                  <ServicePickerList>
+                    {availableItems.map(item => (
+                      <ServicePickerButton
+                        type="button"
+                        key={item.id}
+                        onClick={() => insertProgramChild(item.id)}
+                      >
+                        <FaPlus /> {item.name || `Service ${item.id}`}
+                      </ServicePickerButton>
+                    ))}
+                  </ServicePickerList>
+                </ModalScrollArea>
+              ) : <ModalText>All available services are already included in this package.</ModalText>}
               <ModalActions>
                 <SoftButton type="button" onClick={() => setInsertChildTarget(null)}>Cancel</SoftButton>
               </ModalActions>
