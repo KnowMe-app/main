@@ -974,6 +974,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [query, setQuery] = useState('');
   const [showStickyContact, setShowStickyContact] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [insertChildTarget, setInsertChildTarget] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState({});
   const [exchangeRates, setExchangeRates] = useState(null);
@@ -1304,6 +1305,54 @@ const BudgetPage = ({ isAdmin = false }) => {
     const url = buildBudgetBackendUrl(collection, index);
     if (!url) return;
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const persistProgramChildren = async (programId, nextChildren, successMessage = 'Package services updated.') => {
+    const packageIndex = catalog.packages.findIndex(record => String(record.id) === String(programId));
+    if (packageIndex === -1) return;
+    setCatalog(current => ({
+      ...current,
+      packages: current.packages.map(record => (String(record.id) === String(programId)
+        ? { ...record, children: nextChildren }
+        : record)),
+    }));
+    try {
+      await update(ref(database, `budget/packages/${packageIndex}`), { children: nextChildren });
+      toast.success(successMessage);
+    } catch (saveError) {
+      console.error('Unable to update package services', saveError);
+      toast.error('Unable to update package services.');
+      loadBudget();
+    }
+  };
+
+  const removeProgramChild = (program, itemId) => {
+    const nextChildren = (Array.isArray(program.children) ? program.children : [])
+      .filter(id => String(id) !== String(itemId));
+    persistProgramChildren(program.id, nextChildren, 'Service removed from package.');
+  };
+
+  const insertProgramChild = itemId => {
+    if (!insertChildTarget) return;
+    const program = catalog.packages.find(record => String(record.id) === String(insertChildTarget.programId));
+    if (!program) {
+      setInsertChildTarget(null);
+      return;
+    }
+    const children = Array.isArray(program.children) ? program.children : [];
+    const normalizedItemId = String(itemId);
+    if (children.some(id => String(id) === normalizedItemId)) {
+      toast.error('This service is already included in the package.');
+      return;
+    }
+    const insertIndex = Math.max(0, Math.min(children.length, insertChildTarget.insertIndex));
+    const nextChildren = [
+      ...children.slice(0, insertIndex),
+      normalizedItemId,
+      ...children.slice(insertIndex),
+    ];
+    setInsertChildTarget(null);
+    persistProgramChildren(program.id, nextChildren, 'Service added to package.');
   };
 
   const persistCatalogRecordHidden = async (collection, recordId, hidden) => {
@@ -1754,9 +1803,10 @@ const BudgetPage = ({ isAdmin = false }) => {
 
   // Name, price and description are edited in place (see renderInlineRecordEditor) at their
   // normal read-mode position, so this grid only carries the fields that have no such spot.
-  const renderEditableFields = (collection, record) => {
+  const renderEditableFields = (collection, record, options = {}) => {
     const recordIndex = catalog[collection].findIndex(item => String(item.id) === String(record.id));
     const collectionLabel = BUDGET_COLLECTION_LABELS[collection] || 'item';
+    const { programChildContext = null } = options;
 
     return (
       <EditableGrid>
@@ -1800,12 +1850,35 @@ const BudgetPage = ({ isAdmin = false }) => {
           >
             {record.hidden ? `Show ${collectionLabel}` : `Hide ${collectionLabel}`}
           </MiniButton>
-          <MiniDangerButton
-            type="button"
-            onClick={() => setDeleteTarget({ collection, recordId: record.id, name: record.name || record.id })}
-          >
-            <FaTrash /> Delete
-          </MiniDangerButton>
+          {programChildContext ? (
+            <>
+              <MiniButton
+                type="button"
+                title="Insert service after this one"
+                aria-label="Insert service after this one"
+                onClick={() => setInsertChildTarget({
+                  programId: programChildContext.program.id,
+                  insertIndex: programChildContext.index + 1,
+                })}
+              >
+                <FaPlus />
+              </MiniButton>
+              <MiniDangerButton
+                type="button"
+                title="Remove this service from the package"
+                onClick={() => removeProgramChild(programChildContext.program, record.id)}
+              >
+                <FaTrash /> Delete
+              </MiniDangerButton>
+            </>
+          ) : (
+            <MiniDangerButton
+              type="button"
+              onClick={() => setDeleteTarget({ collection, recordId: record.id, name: record.name || record.id })}
+            >
+              <FaTrash /> Delete
+            </MiniDangerButton>
+          )}
           {record.hidden ? <HiddenBadge>Hidden from clients</HiddenBadge> : null}
         </InlineActionRow>
       </EditableGrid>
@@ -1989,7 +2062,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                       </Toggle>
                       {isOpen ? (
                         <IncludedList>
-                          {visibleIncludedItems.map(item => {
+                          {visibleIncludedItems.map((item, index) => {
                             const detailOpen = Boolean(openDetails[item.id]);
                             return (
                               <IncludedItem key={item.id}>
@@ -2016,7 +2089,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                                     </>
                                   )}
                                   {isEditMode ? renderInternalNote('items', item) : null}
-                                  {isEditMode ? renderEditableFields('items', item) : null}
+                                  {isEditMode ? renderEditableFields('items', item, { programChildContext: { program, index } }) : null}
                                 </div>
                               </IncludedItem>
                             );
@@ -2229,6 +2302,33 @@ const BudgetPage = ({ isAdmin = false }) => {
           </>
         ) : null}
       </Shell>
+      {insertChildTarget ? (() => {
+        const program = catalog.packages.find(record => String(record.id) === String(insertChildTarget.programId));
+        const children = Array.isArray(program?.children) ? program.children : [];
+        const availableItems = catalog.items.filter(item => !children.some(id => String(id) === String(item.id)));
+        return (
+          <ModalBackdrop>
+            <ConfirmModal>
+              <ModalTitle>Add service to package</ModalTitle>
+              <ModalText>Choose a service to insert in the selected position.</ModalText>
+              <PaymentScheduleEditor>
+                {availableItems.length ? availableItems.map(item => (
+                  <MiniButton
+                    type="button"
+                    key={item.id}
+                    onClick={() => insertProgramChild(item.id)}
+                  >
+                    <FaPlus /> {item.name || `Service ${item.id}`}
+                  </MiniButton>
+                )) : <ModalText>All available services are already included in this package.</ModalText>}
+              </PaymentScheduleEditor>
+              <ModalActions>
+                <SoftButton type="button" onClick={() => setInsertChildTarget(null)}>Cancel</SoftButton>
+              </ModalActions>
+            </ConfirmModal>
+          </ModalBackdrop>
+        );
+      })() : null}
       {deleteTarget ? (
         <ModalBackdrop role="presentation" onMouseDown={() => setDeleteTarget(null)}>
           <ConfirmModal role="dialog" aria-modal="true" aria-labelledby="budget-delete-title" onMouseDown={event => event.stopPropagation()}>
