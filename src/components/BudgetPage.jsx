@@ -2020,8 +2020,8 @@ const BudgetPage = ({ isAdmin = false }) => {
                   const isGuaranteed = GUARANTEED_PACKAGE_IDS.has(String(program.id));
                   const includedItems = Array.isArray(program.children)
                     ? program.children
-                      .map(id => itemsById.get(String(id)))
-                      .filter(item => item && (isEditMode || !item.hidden))
+                      .map((id, childIndex) => ({ item: itemsById.get(String(id)), childIndex }))
+                      .filter(({ item }) => item && (isEditMode || !item.hidden))
                     : [];
                   const includedExpanded = Boolean(expandedIncluded[program.id]);
                   const visibleIncludedItems = includedExpanded
@@ -2062,7 +2062,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                       </Toggle>
                       {isOpen ? (
                         <IncludedList>
-                          {visibleIncludedItems.map((item, index) => {
+                          {visibleIncludedItems.map(({ item, childIndex }) => {
                             const detailOpen = Boolean(openDetails[item.id]);
                             return (
                               <IncludedItem key={item.id}>
@@ -2089,11 +2089,22 @@ const BudgetPage = ({ isAdmin = false }) => {
                                     </>
                                   )}
                                   {isEditMode ? renderInternalNote('items', item) : null}
-                                  {isEditMode ? renderEditableFields('items', item, { programChildContext: { program, index } }) : null}
+                                  {isEditMode ? renderEditableFields('items', item, { programChildContext: { program, index: childIndex } }) : null}
                                 </div>
                               </IncludedItem>
                             );
                           })}
+                          {isEditMode ? (
+                            <MiniButton
+                              type="button"
+                              onClick={() => setInsertChildTarget({
+                                programId: program.id,
+                                insertIndex: Array.isArray(program.children) ? program.children.length : 0,
+                              })}
+                            >
+                              <FaPlus /> Add service to package
+                            </MiniButton>
+                          ) : null}
                           {includedItems.length > INCLUDED_PREVIEW_LIMIT ? (
                             <ShowMoreButton type="button" onClick={() => toggleIncluded(program.id)}>
                               {includedExpanded
