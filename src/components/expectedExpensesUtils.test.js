@@ -133,11 +133,30 @@ describe('expectedExpensesUtils', () => {
     it('is a valid, normalizable expected-expenses plan whose milestones add up to the package price', () => {
       expect(isExpectedExpensesShape(expectedExpensesSeed)).toBe(true);
       const normalized = normalizeExpectedExpensesData(expectedExpensesSeed);
-      expect(normalized.packageId).toBe('3');
-      expect(normalized.milestones).toHaveLength(6);
+      expect(normalized.packageId).toBe('1');
+      expect(normalized.milestones).toHaveLength(7);
       expect(computeMilestonesScheduledTotal(normalized.milestones)).toBe(normalized.packageSnapshot.listedPrice);
       expect(normalized.milestones[0].showPackageOverview).toBe(true);
       expect(normalized.milestones.slice(1).every(milestone => !milestone.showPackageOverview)).toBe(true);
+    });
+
+    it('matches the real sample invoices amount-due exactly (each milestone taxed at 14%)', () => {
+      const normalized = normalizeExpectedExpensesData(expectedExpensesSeed);
+      const catalogItemsById = new Map([['40', { id: '40', name: 'Pregnancy comprehensive examination', price: 1700 }]]);
+      const expectedAmountsDue = [10000.08, 7783.92, 4104, 7125, 7524, 7524, 11297.4];
+
+      normalized.milestones.forEach((milestone, index) => {
+        const additionalRows = resolveMilestoneAdditionalRows(milestone, catalogItemsById);
+        const subtotal = computeMilestoneSubtotal(milestone, additionalRows);
+        expect(computeMilestoneAmountDue(subtotal, milestone.taxPercent)).toBeCloseTo(expectedAmountsDue[index]);
+      });
+
+      // The 4th milestone's comprehensive-exam line is a catalog reference with a price override
+      // (1650, matching the historical invoice) - it must not equal the live catalog price (1700).
+      const overriddenRow = resolveMilestoneAdditionalRows(normalized.milestones[3], catalogItemsById)
+        .find(row => row.catalogId === '40');
+      expect(overriddenRow.price).toBe(1650);
+      expect(overriddenRow.isCustomized).toBe(true);
     });
   });
 });

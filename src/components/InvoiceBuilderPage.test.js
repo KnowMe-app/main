@@ -305,8 +305,8 @@ describe('InvoiceBuilderPage', () => {
       expect(container.innerHTML).toContain('Deposit for transportation of SM');
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.packageId).toBe('3');
-      expect(plan.milestones).toHaveLength(6);
+      expect(plan.packageId).toBe('1');
+      expect(plan.milestones).toHaveLength(7);
 
       await act(async () => { root.unmount(); });
     });
