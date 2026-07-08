@@ -16,9 +16,17 @@ import {
 
 export const normalizeExpectedExpensesGroups = groups => (Array.isArray(groups) ? groups.map(normalizeServiceEntries) : []);
 
+export const getExpectedExpensesPackagePrice = pkg => {
+  const packagePrice = Number(pkg?.listedPrice);
+  if (!Number.isFinite(packagePrice) || packagePrice <= 0) {
+    throw new Error('Expected expenses require a resolved positive package price.');
+  }
+  return packagePrice;
+};
+
 export const buildExpectedExpensesGroupsFromSchedule = (schedule, pkg) => {
   const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
-  const packagePrice = Number(pkg?.listedPrice) || 0;
+  const packagePrice = getExpectedExpensesPackagePrice(pkg);
   return payments.map(payment => {
     const amount = Number(payment?.amount) || 0;
     const percent = packagePrice ? (amount / packagePrice) * 100 : 0;
