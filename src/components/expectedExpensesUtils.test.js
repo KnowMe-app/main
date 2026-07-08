@@ -44,6 +44,10 @@ describe('expectedExpensesUtils', () => {
     expect(plan.expectedExpenses[0][0].percent).toBeCloseTo(21.93, 2);
   });
 
+  it('rejects unresolved package prices before generating percentage rows', () => {
+    expect(() => buildExpectedExpensesPlan({ ...pkg, listedPrice: '=usd * 1000' }, schedule)).toThrow('resolved positive package price');
+  });
+
   it('round-trips through normalization and supports legacy string rows', () => {
     const normalized = normalizeExpectedExpensesData({
       packageId: '3',

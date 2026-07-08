@@ -55,6 +55,7 @@ import {
   buildExpectedExpensesPlan,
   computeExpectedExpenseAmountDue,
   computeExpectedExpenseSubtotal,
+  getExpectedExpensesPackagePrice,
   getExpectedExpensesValidation,
   isExpectedExpensesShape,
   normalizeExpectedExpensesData,
@@ -1474,13 +1475,29 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistPath(EXPECTED_EXPENSES_PATH, nextPlan, successMessage);
   };
 
+  const getResolvedExpectedExpensesPackage = pkg => {
+    const resolvedPrice = resolveBudgetPriceAmount(pkg.listedPrice, priceContext);
+    if (resolvedPrice == null) {
+      toast.error('Wait until the package price formula resolves before creating expected expenses.');
+      return null;
+    }
+    try {
+      getExpectedExpensesPackagePrice({ ...pkg, listedPrice: resolvedPrice });
+    } catch (error) {
+      toast.error('Expected expenses require a resolved positive package price.');
+      return null;
+    }
+    return { ...pkg, listedPrice: resolvedPrice };
+  };
+
   const createExpectedExpensesPlan = pkg => {
     const schedule = resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg);
     if (!schedule || !Array.isArray(schedule.payments) || !schedule.payments.length) {
       toast.error('This package has no payment schedule in the catalog.');
       return;
     }
-    const resolvedPackage = { ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice };
+    const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
+    if (!resolvedPackage) return;
     const plan = buildExpectedExpensesPlan(resolvedPackage, schedule);
     persistExpectedExpenses(plan, 'Expected expenses template created.');
     setShowExpectedExpensesPicker(false);
@@ -1498,8 +1515,17 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.error('This package has no payment schedule in the catalog.');
       return;
     }
-    const fresh = buildExpectedExpensesPlan({ ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice }, schedule);
-    const nextGroups = fresh.expectedExpenses.map((group, index) => expectedExpenses.expectedExpenses?.[index] || group);
+    const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
+    if (!resolvedPackage) return;
+    const fresh = buildExpectedExpensesPlan(resolvedPackage, schedule);
+    const nextGroups = fresh.expectedExpenses.map((group, index) => {
+      const existingGroup = Array.isArray(expectedExpenses.expectedExpenses?.[index]) ? expectedExpenses.expectedExpenses[index] : [];
+      const scheduledIndex = existingGroup.findIndex(entry => entry?.kind === 'packagePercent' && String(entry.catalogId) === String(expectedExpenses.packageId));
+      const extraServices = scheduledIndex === -1
+        ? existingGroup
+        : existingGroup.filter((_, entryIndex) => entryIndex !== scheduledIndex);
+      return [...group, ...extraServices];
+    });
     persistExpectedExpenses({ ...expectedExpenses, expectedExpenses: nextGroups }, 'Schedule groups refreshed.');
   };
 
