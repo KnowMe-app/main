@@ -161,6 +161,21 @@ const nestedIndentStyle = {
 
 const resolveFieldNameBase = fieldName => String(fieldName || '').replace(/-\d+$/, '');
 
+export const resolveBirthDateFromAgeInput = (rawValue, currentDate = new Date()) => {
+  const ageMatch = String(rawValue ?? '').trim().match(/\d+/);
+  if (!ageMatch) return '';
+
+  const age = Number.parseInt(ageMatch[0], 10);
+  if (!Number.isFinite(age) || age < 15 || age > 90) return '';
+
+  const currentYear =
+    currentDate instanceof Date && !Number.isNaN(currentDate.getTime())
+      ? currentDate.getFullYear()
+      : new Date().getFullYear();
+
+  return `01.01.${currentYear - age}`;
+};
+
 
 const PROFILE_FORM_RESTORE_LOG_PREFIX = '[ProfileRestore][ProfileForm]';
 
@@ -2954,6 +2969,25 @@ ${entries.join('\n')}`;
 
                               if (!trimmed) {
                                 handleDelKeyValue('getInTouch');
+                                return;
+                              }
+                            }
+
+                            if (field.name === 'age') {
+                              const birthFromAge = resolveBirthDateFromAgeInput(latestDraft.age);
+
+                              if (birthFromAge) {
+                                const nextState = {
+                                  ...latestDraft,
+                                  birth: birthFromAge,
+                                };
+
+                                setState(nextState, {
+                                  source: 'blur',
+                                  caller: 'ProfileForm.scalarInput.onBlur',
+                                  reason: 'age-to-birth-normalized',
+                                });
+                                submitWithNormalization(nextState, 'overwrite');
                                 return;
                               }
                             }
