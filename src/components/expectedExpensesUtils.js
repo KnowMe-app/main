@@ -14,6 +14,32 @@ import {
   setEntryField,
 } from './invoiceCatalogUtils';
 
+
+const formatCleanNumber = value => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value ?? '').trim();
+  return Number.isInteger(number) ? String(number) : String(number);
+};
+
+export const serializeExpectedExpenseEntry = entry => {
+  if (typeof entry === 'string') return entry;
+  if (!entry || typeof entry !== 'object') return '';
+  if (entry.kind === 'packagePercent') return `id${entry.catalogId ?? ''} || ${formatCleanNumber(entry.percent)}%`;
+  if (entry.kind === 'item') return `id${entry.catalogId ?? ''}`;
+  if (entry.kind === 'custom') return `${String(entry.name || '').trim()} || ${formatCleanNumber(entry.price)}`;
+  return '';
+};
+
+export const serializeExpectedExpensesGroups = groups => (Array.isArray(groups)
+  ? groups.map(group => (Array.isArray(group) ? group.map(serializeExpectedExpenseEntry).filter(Boolean) : []))
+  : []);
+
+export const serializeExpectedExpensesData = plan => (plan ? {
+  packageId: String(plan.packageId ?? ''),
+  expectedExpenses: serializeExpectedExpensesGroups(plan.expectedExpenses),
+  ...(Array.isArray(plan.notes) ? { notes: [...plan.notes] } : {}),
+} : null);
+
 export const normalizeExpectedExpensesGroups = groups => (Array.isArray(groups) ? groups.map(normalizeServiceEntries) : []);
 
 export const getExpectedExpensesPackagePrice = pkg => {

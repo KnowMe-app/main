@@ -226,8 +226,8 @@ describe('InvoiceBuilderPage', () => {
       const plan = persistedCalls[persistedCalls.length - 1][1];
       expect(plan.packageId).toBe('p1');
       expect(plan.expectedExpenses).toHaveLength(2);
-      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60 });
-      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40 });
+      expect(plan.expectedExpenses[0][0]).toBe('idp1 || 60%');
+      expect(plan.expectedExpenses[1][0]).toBe('idp1 || 40%');
 
       await act(async () => { root.unmount(); });
     });
@@ -257,7 +257,7 @@ describe('InvoiceBuilderPage', () => {
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
       expect(plan.expectedExpenses[0]).toHaveLength(2);
-      expect(plan.expectedExpenses[0][1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
+      expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
       expect(plan.expectedExpenses[1]).toHaveLength(1);
 
       await act(async () => { root.unmount(); });
@@ -295,9 +295,9 @@ describe('InvoiceBuilderPage', () => {
       await flush();
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60 });
-      expect(plan.expectedExpenses[0][1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
-      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40 });
+      expect(plan.expectedExpenses[0][0]).toBe('idp1 || 60%');
+      expect(plan.expectedExpenses[0][1]).toBe('Deposit for transportation of SM || 300');
+      expect(plan.expectedExpenses[1][0]).toBe('idp1 || 40%');
 
       await act(async () => { root.unmount(); });
     });
@@ -345,8 +345,9 @@ describe('InvoiceBuilderPage', () => {
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
       expect(plan.packageId).toBe('3');
+      expect(plan).toEqual(expectedExpensesSeed);
       expect(plan.expectedExpenses).toHaveLength(6);
-      expect(plan.expectedExpenses[1][1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
+      expect(plan.expectedExpenses[1][1]).toBe('Deposit for transportation of SM || 300');
 
       await act(async () => { root.unmount(); });
     });

@@ -62,6 +62,7 @@ import {
   removeExpectedExpenseService,
   resetExpectedExpenseService,
   resolveExpectedExpenseRows,
+  serializeExpectedExpensesData,
   updateExpectedExpenseServiceField,
 } from './expectedExpensesUtils';
 
@@ -1472,7 +1473,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const persistExpectedExpenses = (nextPlan, successMessage) => {
     setExpectedExpenses(nextPlan);
-    persistPath(EXPECTED_EXPENSES_PATH, nextPlan, successMessage);
+    persistPath(EXPECTED_EXPENSES_PATH, serializeExpectedExpensesData(nextPlan), successMessage);
   };
 
   const getResolvedExpectedExpensesPackage = pkg => {
@@ -1688,7 +1689,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         return;
       }
       const nextPlan = normalizeExpectedExpensesData(parsed);
-      await set(ref(database, EXPECTED_EXPENSES_PATH), nextPlan);
+      await set(ref(database, EXPECTED_EXPENSES_PATH), parsed);
       setExpectedExpenses(nextPlan);
       toast.success('Expected expenses JSON uploaded to backend.');
     } catch (uploadError) {
