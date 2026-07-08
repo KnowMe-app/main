@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { signOut } from 'firebase/auth';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
+import { InfoModal } from './InfoModal';
+import { ProfileDotsMenu } from './ProfileDotsMenu';
 import {
   deleteFlowEntry,
   deleteFlowCategory,
@@ -14,9 +17,9 @@ import {
   resolveFlowExchangeRatesForMode,
   saveFlowEntry,
   updateFlowEntry,
+  auth,
 } from './config';
 import { useAutoResize } from 'hooks/useAutoResize';
-import { color } from './styles';
 import { isFormulaFlowAmount, resolveFlowAmountInput } from 'utils/flowAmountFormula';
 
 const Wrap = styled.div`
@@ -36,10 +39,6 @@ const TopControls = styled.div`
   align-items: center;
   gap: 8px;
   min-width: 0;
-`;
-
-const MenuWrap = styled.div`
-  position: relative;
 `;
 
 const TopActionBtn = styled.button`
@@ -73,45 +72,6 @@ const CopyBtn = styled(TopActionBtn)`
 const DangerBtn = styled(TopActionBtn)``;
 
 const MenuBtn = styled(TopActionBtn)``;
-
-const MenuPanel = styled.div`
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 180px;
-  background: linear-gradient(180deg, ${color.oppositeAccent} 0%, #fffaf2 100%);
-  border: 1px solid ${color.paleAccent5};
-  border-radius: 10px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
-  z-index: 2;
-  padding: 6px;
-`;
-
-const MenuItem = styled.button`
-  width: 100%;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  text-align: left;
-  color: ${color.black};
-  font-size: 15px;
-  font-weight: 500;
-  padding: 10px 12px;
-  cursor: pointer;
-  margin-bottom: 4px;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease;
-
-  &:last-child {
-    margin-bottom: 0;
-  }
-
-  &:hover {
-    background: ${color.paleAccent2};
-    border-color: ${color.paleAccent5};
-  }
-`;
 
 const Row = styled.div`
   display: flex;
@@ -1074,7 +1034,7 @@ export const FlowManager = ({ ownerId }) => {
   const [editingKey, setEditingKey] = useState(null);
   const [editingDraft, setEditingDraft] = useState({ line: '' });
   const [confirmState, setConfirmState] = useState({ type: null, row: null, rowKey: null });
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [isCategoryEditMode, setIsCategoryEditMode] = useState(false);
   const [renamingCategory, setRenamingCategory] = useState({ source: '', draft: '' });
   const [exchangeRates, setExchangeRates] = useState(null);
@@ -1084,7 +1044,6 @@ export const FlowManager = ({ ownerId }) => {
   const [customUsdRate, setCustomUsdRate] = useState('');
   const [customUsdRateDraft, setCustomUsdRateDraft] = useState('');
   const [isCustomUsdRateFocused, setIsCustomUsdRateFocused] = useState(false);
-  const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
   const subCategoryInputRef = useRef(null);
@@ -1390,19 +1349,6 @@ export const FlowManager = ({ ownerId }) => {
   }, [ownerId, selectedCategoryPath]);
 
   useEffect(() => {
-    if (!isMenuOpen) return undefined;
-    const handleOutsideClick = event => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-    };
-  }, [isMenuOpen]);
-
-  useEffect(() => {
     if (
       allCategories.length > 0 &&
       (!selectedCategoryPath || !allCategories.includes(selectedCategoryPath))
@@ -1656,6 +1602,24 @@ export const FlowManager = ({ ownerId }) => {
   const openDeleteConfirm = (row, rowKey) => setConfirmState({ type: 'row', row, rowKey });
   const closeConfirm = () => setConfirmState({ type: null, row: null, rowKey: null });
 
+
+  const handleExit = async () => {
+    await signOut(auth);
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('ownerId');
+    navigate('/');
+  };
+
+  const dotsMenu = () => (
+    <ProfileDotsMenu
+      navigate={navigate}
+      isAdmin
+      access={{ canAccessAdd: true, canAccessMatching: true }}
+      onExit={handleExit}
+      onSelect={() => setShowInfoModal(false)}
+    />
+  );
+
   const handleConfirm = async () => {
     if (confirmState.type === 'clear') {
       await handleClear();
@@ -1806,47 +1770,15 @@ export const FlowManager = ({ ownerId }) => {
           <ClipboardIcon />
         </CopyBtn>
         <DangerBtn type="button" onClick={openClearConfirm} $bg="#dc3545">del</DangerBtn>
-        <MenuWrap ref={menuRef}>
-          <MenuBtn
-            type="button"
-            aria-label="Відкрити меню навігації"
-            onClick={() => setIsMenuOpen(prev => !prev)}
-            $bg="#6f42c1"
-          >
-            ⋮
-          </MenuBtn>
-          {isMenuOpen && (
-            <MenuPanel>
-              <MenuItem
-                type="button"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  navigate('/my-profile');
-                }}
-              >
-                Перейти в профіль
-              </MenuItem>
-              <MenuItem
-                type="button"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  navigate('/add');
-                }}
-              >
-                перейти на add
-              </MenuItem>
-              <MenuItem
-                type="button"
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  navigate('/matching');
-                }}
-              >
-                перейти на matching
-              </MenuItem>
-            </MenuPanel>
-          )}
-        </MenuWrap>
+        <MenuBtn
+          type="button"
+          aria-label="Відкрити меню профілю"
+          title="Відкрити меню профілю"
+          onClick={() => setShowInfoModal('dotsMenu')}
+          $bg="#6f42c1"
+        >
+          ⋮
+        </MenuBtn>
       </TopControls>
 
       <Row>
@@ -2181,6 +2113,14 @@ export const FlowManager = ({ ownerId }) => {
       </EventsList>
 
       {loading && <small>Завантаження...</small>}
+
+      {showInfoModal && (
+        <InfoModal
+          onClose={() => setShowInfoModal(false)}
+          text={showInfoModal}
+          Context={dotsMenu}
+        />
+      )}
 
       {isExchangeModalOpen && (
         <ConfirmBackdrop onClick={() => setIsExchangeModalOpen(false)}>
