@@ -27,6 +27,13 @@ const fixtureCatalog = {
       description: 'Daily care in hospital.',
       category: 'deliveryAndNewborn',
     },
+    {
+      id: '11',
+      name: 'Airport transfer',
+      price: 90,
+      description: 'Transfer from the airport.',
+      category: 'logistics',
+    },
   ],
   technical: {
     paymentSchedules: [
@@ -202,4 +209,71 @@ describe('BudgetPage edit mode', () => {
       root.unmount();
     });
   });
+
+  it('removes package children and inserts a selected service after the requested child', async () => {
+    const root = createRoot(container);
+    await act(async () => {
+      mountBudgetPage(root);
+    });
+    await flush();
+
+    const includedToggle = Array.from(container.querySelectorAll('button')).find(btn => btn.textContent.includes("What's included"));
+    expect(includedToggle).toBeTruthy();
+    await act(async () => {
+      includedToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    const removeChildButton = Array.from(container.querySelectorAll('button')).find(btn => btn.title === 'Remove this service from the package');
+    expect(removeChildButton).toBeTruthy();
+    await act(async () => {
+      removeChildButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    expect(update).toHaveBeenCalledWith('budget/packages/0', { children: [] });
+
+    const freshCatalog = {
+      ...fixtureCatalog,
+      packages: [{ ...fixtureCatalog.packages[0], children: ['10'] }],
+    };
+    get.mockImplementation(() => Promise.resolve({ exists: () => true, val: () => freshCatalog }));
+    update.mockClear();
+    await act(async () => {
+      root.unmount();
+    });
+
+    const secondRoot = createRoot(container);
+    await act(async () => {
+      mountBudgetPage(secondRoot);
+    });
+    await flush();
+
+    const secondIncludedToggle = Array.from(container.querySelectorAll('button')).find(btn => btn.textContent.includes("What's included"));
+    await act(async () => {
+      secondIncludedToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    const insertAfterButton = Array.from(container.querySelectorAll('button')).find(btn => btn.title === 'Insert service after this one');
+    expect(insertAfterButton).toBeTruthy();
+    await act(async () => {
+      insertAfterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    const transferButton = Array.from(container.querySelectorAll('button')).find(btn => btn.textContent.includes('Airport transfer'));
+    expect(transferButton).toBeTruthy();
+    await act(async () => {
+      transferButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    expect(update).toHaveBeenCalledWith('budget/packages/0', { children: ['10', '11'] });
+
+    await act(async () => {
+      secondRoot.unmount();
+    });
+  });
+
 });
