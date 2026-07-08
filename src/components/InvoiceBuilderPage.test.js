@@ -210,7 +210,7 @@ describe('InvoiceBuilderPage', () => {
       await flush();
     };
 
-    it('builds a plan from a package, auto-calculating each milestone amount from its catalog schedule', async () => {
+    it('builds a template from a package, auto-calculating package-percent rows from its catalog schedule', async () => {
       const root = mount();
       await flush();
 
@@ -225,20 +225,20 @@ describe('InvoiceBuilderPage', () => {
       expect(persistedCalls.length).toBeGreaterThan(0);
       const plan = persistedCalls[persistedCalls.length - 1][1];
       expect(plan.packageId).toBe('p1');
-      expect(plan.milestones).toHaveLength(2);
-      expect(plan.milestones[0]).toMatchObject({ title: 'To start the program', scheduledAmount: 150, taxPercent: 14, showPackageOverview: true });
-      expect(plan.milestones[1]).toMatchObject({ title: 'Final payment', scheduledAmount: 100, showPackageOverview: false });
+      expect(plan.expectedExpenses).toHaveLength(2);
+      expect(plan.expectedExpenses[0][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 60 });
+      expect(plan.expectedExpenses[1][0]).toMatchObject({ kind: 'packagePercent', catalogId: 'p1', percent: 40 });
 
       await act(async () => { root.unmount(); });
     });
 
-    it('adding a service to a milestone updates its due amount and is persisted on that milestone only', async () => {
+    it('adding a service to a schedule group updates its due amount and is persisted on that group only', async () => {
       const root = mount();
       await flush();
 
       await createPlan();
 
-      const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Add a custom line to this invoice…"]'));
+      const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Custom line name…"]'));
       expect(milestoneNameFields).toHaveLength(2);
       const milestoneAddRow = milestoneNameFields[0].parentElement;
       const priceField = milestoneAddRow.querySelector('textarea[placeholder="Price"]');
@@ -256,9 +256,9 @@ describe('InvoiceBuilderPage', () => {
       expect(container.innerHTML).toContain('Due: €513.00');
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
-      expect(plan.milestones[0].additionalServices).toHaveLength(1);
-      expect(plan.milestones[0].additionalServices[0]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
-      expect(plan.milestones[1].additionalServices).toHaveLength(0);
+      expect(plan.expectedExpenses[0]).toHaveLength(2);
+      expect(plan.expectedExpenses[0][1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
+      expect(plan.expectedExpenses[1]).toHaveLength(1);
 
       await act(async () => { root.unmount(); });
     });
@@ -302,12 +302,12 @@ describe('InvoiceBuilderPage', () => {
       await act(async () => { fileInput.dispatchEvent(new Event('change', { bubbles: true })); });
       await flush();
 
-      expect(container.innerHTML).toContain('To start the program');
-      expect(container.innerHTML).toContain('Deposit for transportation of SM');
+      expect(container.innerHTML).toContain('Expected expenses has 6 groups');
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
       expect(plan.packageId).toBe('3');
-      expect(plan.milestones).toHaveLength(6);
+      expect(plan.expectedExpenses).toHaveLength(6);
+      expect(plan.expectedExpenses[1][1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
 
       await act(async () => { root.unmount(); });
     });

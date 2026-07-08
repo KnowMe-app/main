@@ -37,6 +37,7 @@ import {
   makeCatalogItemEntry,
   makeCatalogPackageEntry,
   makeCustomEntry,
+  makePackagePercentEntry,
   movePackageChild,
   normalizeInvoiceData,
   removePackageChild,
@@ -50,19 +51,17 @@ import {
   updatePackageChildField,
 } from './invoiceCatalogUtils';
 import {
-  addMilestoneAdditionalService,
+  addExpectedExpenseService,
   buildExpectedExpensesPlan,
-  buildMilestonesFromSchedule,
-  computeMilestoneAmountDue,
-  computeMilestoneSubtotal,
-  computeMilestonesScheduledTotal,
+  computeExpectedExpenseAmountDue,
+  computeExpectedExpenseSubtotal,
+  getExpectedExpensesValidation,
   isExpectedExpensesShape,
   normalizeExpectedExpensesData,
-  removeMilestoneAdditionalService,
-  resolveMilestoneAdditionalRows,
-  resolvePackageOverviewRows,
-  setMilestoneField,
-  updateMilestoneAdditionalServiceField,
+  removeExpectedExpenseService,
+  resetExpectedExpenseService,
+  resolveExpectedExpenseRows,
+  updateExpectedExpenseServiceField,
 } from './expectedExpensesUtils';
 
 const INVOICE_DATA_PATH = 'invoiceBuilder';
@@ -474,7 +473,7 @@ const ServiceLineRow = ({
 }) => {
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
-  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(row.price ?? ''));
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(row.kind === 'packagePercent' ? row.percent : (row.price ?? '')));
 
   return (
     <LineCard>
@@ -496,8 +495,8 @@ const ServiceLineRow = ({
           $width={isChild ? '76px' : '88px'}
           inputMode="decimal"
           value={priceDraft}
-          placeholder="0"
-          aria-label="Price (EUR)"
+          placeholder={row.kind === 'packagePercent' ? '%' : '0'}
+          aria-label={row.kind === 'packagePercent' ? 'Package percent' : 'Price (EUR)'}
           onFocus={() => { priceEditingRef.current = true; }}
           onChange={event => setPriceDraft(event.target.value)}
           onBlur={() => { priceEditingRef.current = false; onCommit('price', priceDraft); }}
@@ -848,55 +847,84 @@ const PackageEntryCard = ({
   );
 };
 
-// --- Expected expenses milestone (one payment-schedule entry -> one future invoice) ------------------------------------------------------
-
-const MilestoneCheckboxRow = styled.div`
+const PdfPreviewStrip = styled.div`
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 2px 0 0 28px;
-  font-size: 11px;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 12px 2px 4px;
+  margin-top: 8px;
+`;
+
+const PdfPreviewPage = styled.div`
+  flex: 0 0 165px;
+  min-height: 232px;
+  background: #fff;
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  padding: 14px 12px;
+  color: #111827;
+  font-size: 7px;
+`;
+
+const PdfPreviewTitle = styled.div`
+  text-align: center;
+  font-weight: 900;
+  font-size: 10px;
+  margin-bottom: 4px;
+`;
+
+const PdfPreviewSubtitle = styled.div`
+  text-align: center;
   font-weight: 700;
-  color: var(--km-muted);
-
-  @media (max-width: 560px) {
-    margin-left: 10px;
-  }
+  margin-bottom: 10px;
 `;
 
-const MilestoneCheckboxLabel = styled.label`
+const PdfPreviewTable = styled.div`
+  border: 1px solid #111827;
+`;
+
+const PdfPreviewRow = styled.div`
   display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
+  justify-content: space-between;
+  gap: 5px;
+  border-bottom: 1px solid #111827;
+  padding: 3px;
+
+  &:last-child { border-bottom: 0; }
 `;
+
+const PdfPreviewFooter = styled.div`
+  margin-top: 10px;
+  font-weight: 800;
+  text-align: right;
+`;
+
+// --- Expected expenses milestone (one payment-schedule entry -> one future invoice) ------------------------------------------------------
 
 const MilestoneCard = ({
   index,
-  milestone,
-  additionalRows,
+  payment,
+  rows,
   amountDue,
+  taxPercent,
   catalogItems,
-  onCommitField,
-  onToggleOverview,
   onCommitServiceField,
   onRemoveService,
   onResetService,
   onAddCustomService,
   onAddCatalogService,
+  onAddPackagePercent,
 }) => {
-  const [titleDraft, setTitleDraft, titleEditingRef] = useFieldDraft(milestone.title);
-  const [amountDraft, setAmountDraft, amountEditingRef] = useFieldDraft(String(milestone.scheduledAmount ?? ''));
-  const [taxDraft, setTaxDraft, taxEditingRef] = useFieldDraft(String(milestone.taxPercent ?? ''));
   const [showPicker, setShowPicker] = useState(false);
   const [query, setQuery] = useState('');
   const [customName, setCustomName] = useState('');
   const [customPrice, setCustomPrice] = useState('');
+  const [percentDraft, setPercentDraft] = useState('');
 
   const usedCatalogIds = useMemo(
-    () => new Set(additionalRows.filter(row => row.kind === 'item').map(row => String(row.catalogId))),
-    [additionalRows],
+    () => new Set(rows.filter(row => row.kind === 'item').map(row => String(row.catalogId))),
+    [rows],
   );
 
   const availableItems = useMemo(() => {
@@ -923,82 +951,46 @@ const MilestoneCard = ({
     setCustomPrice('');
   };
 
+  const handleAddPackagePercent = () => {
+    const percent = Number(percentDraft.replace(',', '.'));
+    if (!Number.isFinite(percent)) {
+      toast.error('Enter a valid package percent.');
+      return;
+    }
+    onAddPackagePercent(percent);
+    setPercentDraft('');
+  };
+
   return (
     <PackageCard>
       <PackageHeaderRow>
         <RowIndex>{index + 1}</RowIndex>
-        <AutoTextArea
-          $size="13.5px"
-          $weight="800"
-          value={titleDraft}
-          placeholder="Milestone title"
-          aria-label="Milestone title"
-          onFocus={() => { titleEditingRef.current = true; }}
-          onChange={event => setTitleDraft(event.target.value)}
-          onBlur={() => { titleEditingRef.current = false; onCommitField('title', titleDraft); }}
-        />
-        <AutoTextArea
-          as={PlainPriceBase}
-          $width="88px"
-          inputMode="decimal"
-          value={amountDraft}
-          placeholder="0"
-          aria-label="Scheduled amount (EUR)"
-          onFocus={() => { amountEditingRef.current = true; }}
-          onChange={event => setAmountDraft(event.target.value)}
-          onBlur={() => { amountEditingRef.current = false; onCommitField('scheduledAmount', amountDraft); }}
-        />
-        <AutoTextArea
-          as={PlainPriceBase}
-          $width="48px"
-          inputMode="decimal"
-          value={taxDraft}
-          placeholder="%"
-          title="Tax (%)"
-          aria-label="Tax percent"
-          onFocus={() => { taxEditingRef.current = true; }}
-          onChange={event => setTaxDraft(event.target.value)}
-          onBlur={() => { taxEditingRef.current = false; onCommitField('taxPercent', taxDraft); }}
-        />
+        <div style={{ flex: 1, fontWeight: 800 }}>{index + 1}. {payment?.title || `Payment ${index + 1}`}</div>
+        <CustomizedTag title="Rows total with taxes">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
+        <CustomizedTag title="Tax percent">Tax {formatEuroPreview(taxPercent).replace(' EUR', '%')}</CustomizedTag>
       </PackageHeaderRow>
-      <MilestoneCheckboxRow>
-        <MilestoneCheckboxLabel>
-          <input type="checkbox" checked={Boolean(milestone.showPackageOverview)} onChange={onToggleOverview} />
-          Show full package overview on this invoice
-        </MilestoneCheckboxLabel>
-        <CustomizedTag title="Scheduled amount + additional services, taxed">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
-      </MilestoneCheckboxRow>
 
       <PackageChildren>
-        {additionalRows.map((row, rowIndex) => (
+        {rows.map((row, rowIndex) => (
           <ServiceLineRow
             key={row.key}
             row={row}
             index={rowIndex}
             isChild
-            onCommit={(field, value) => onCommitServiceField(row.id, field, value)}
+            onCommit={(field, value) => onCommitServiceField(row.id, row.kind === 'packagePercent' && field === 'price' ? 'percent' : field, value)}
             onRemove={() => onRemoveService(row.id)}
             onReset={row.kind === 'item' && row.isCustomized ? () => onResetService(row.id) : undefined}
           />
         ))}
-        {!additionalRows.length ? <PanelNote style={{ margin: '8px 0' }}>No additional services on this invoice yet.</PanelNote> : null}
+        {!rows.length ? <PanelNote style={{ margin: '8px 0' }}>No expected services for this schedule step yet.</PanelNote> : null}
       </PackageChildren>
 
       <PackageAddRow>
-        <PackageQuickField
-          rows={1}
-          placeholder="Add a custom line to this invoice…"
-          value={customName}
-          onChange={event => setCustomName(event.target.value)}
-        />
-        <PackageQuickPrice
-          rows={1}
-          inputMode="decimal"
-          placeholder="Price"
-          value={customPrice}
-          onChange={event => setCustomPrice(event.target.value)}
-        />
+        <PackageQuickField rows={1} placeholder="Custom line name…" value={customName} onChange={event => setCustomName(event.target.value)} />
+        <PackageQuickPrice rows={1} inputMode="decimal" placeholder="Price" value={customPrice} onChange={event => setCustomPrice(event.target.value)} />
         <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
+        <PackageQuickPrice rows={1} inputMode="decimal" placeholder="% of package" value={percentDraft} onChange={event => setPercentDraft(event.target.value)} />
+        <SmallButton type="button" onClick={handleAddPackagePercent}><FaPlus /> Percent</SmallButton>
         <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
           <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
         </SmallButton>
@@ -1006,12 +998,7 @@ const MilestoneCard = ({
 
       {showPicker ? (
         <InlinePickerBox>
-          <CatalogSearchField
-            rows={1}
-            placeholder="Search catalog services…"
-            value={query}
-            onChange={event => setQuery(event.target.value)}
-          />
+          <CatalogSearchField rows={1} placeholder="Search catalog services…" value={query} onChange={event => setQuery(event.target.value)} />
           <CatalogPickerList>
             {availableItems.map(item => (
               <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogService(item.id); setShowPicker(false); setQuery(''); }}>
@@ -1177,7 +1164,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || isFormulaRatePending || Boolean(formulaRateError);
 
   const priceContext = useMemo(
-    () => ({ itemsById: catalogItemsById, rates: exchangeRates, packagesById: catalogPackagesById }),
+    () => ({
+      itemsById: catalogItemsById,
+      rates: exchangeRates,
+      packagesById: catalogPackagesById,
+      resolvePackagePrice: pkg => resolveBudgetPriceAmount(pkg?.listedPrice, { itemsById: catalogItemsById, rates: exchangeRates, packagesById: catalogPackagesById }),
+    }),
     [catalogItemsById, exchangeRates, catalogPackagesById],
   );
 
@@ -1233,17 +1225,26 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
   }, [visibleCatalogPackages, usedCatalogPackageIds, catalogQuery]);
 
+  const defaultExpectedExpensesTaxPercent = Number.isFinite(Number(catalogTechnical?.wireTransferSurchargeRate))
+    ? Math.round(Number(catalogTechnical.wireTransferSurchargeRate) * 10000) / 100
+    : (Number(data.taxPercent) || 0);
+
   const expectedExpensesView = useMemo(() => {
     if (!expectedExpenses) return null;
-    const overviewRows = resolvePackageOverviewRows(expectedExpenses.packageSnapshot.children, catalogItemsById, priceContext);
-    const milestoneRows = expectedExpenses.milestones.map(milestone => {
-      const additionalRows = resolveMilestoneAdditionalRows(milestone, catalogItemsById, priceContext);
-      const subtotal = computeMilestoneSubtotal(milestone, additionalRows);
-      const amountDue = computeMilestoneAmountDue(subtotal, milestone.taxPercent);
-      return { milestone, additionalRows, subtotal, amountDue };
+    const pkg = catalogPackagesById.get(String(expectedExpenses.packageId));
+    const schedule = pkg ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg) : null;
+    const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
+    const taxPercent = defaultExpectedExpensesTaxPercent;
+    const validation = getExpectedExpensesValidation(expectedExpenses, schedule);
+    const pages = payments.map((payment, index) => {
+      const group = expectedExpenses.expectedExpenses?.[index] || [];
+      const rows = resolveExpectedExpenseRows(group, catalogItemsById, priceContext);
+      const subtotal = computeExpectedExpenseSubtotal(rows);
+      const amountDue = computeExpectedExpenseAmountDue(subtotal, taxPercent);
+      return { payment, group, rows, subtotal, amountDue, taxPercent };
     });
-    return { overviewRows, milestoneRows, scheduledTotal: computeMilestonesScheduledTotal(expectedExpenses.milestones) };
-  }, [expectedExpenses, catalogItemsById, priceContext]);
+    return { pkg, schedule, pages, validation };
+  }, [expectedExpenses, catalogPackagesById, catalogTechnical, catalogItemsById, priceContext, defaultExpectedExpensesTaxPercent]);
 
   const persistPath = async (path, value, successMessage) => {
     try {
@@ -1468,17 +1469,9 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // A whole program's billing forecast: one milestone per payment-schedule entry, auto-computed
   // from the chosen budget/packages program, stored as its own object at invoiceBuilder/expectedExpenses.
 
-  const defaultExpectedExpensesTaxPercent = Number.isFinite(Number(catalogTechnical?.wireTransferSurchargeRate))
-    ? Math.round(Number(catalogTechnical.wireTransferSurchargeRate) * 10000) / 100
-    : (Number(data.taxPercent) || 0);
-
   const persistExpectedExpenses = (nextPlan, successMessage) => {
     setExpectedExpenses(nextPlan);
     persistPath(EXPECTED_EXPENSES_PATH, nextPlan, successMessage);
-  };
-
-  const persistExpectedExpensesMilestones = (nextMilestones, successMessage) => {
-    persistExpectedExpenses({ ...expectedExpenses, milestones: nextMilestones }, successMessage);
   };
 
   const createExpectedExpensesPlan = pkg => {
@@ -1488,8 +1481,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       return;
     }
     const resolvedPackage = { ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice };
-    const plan = buildExpectedExpensesPlan(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
-    persistExpectedExpenses(plan, 'Expected expenses plan created.');
+    const plan = buildExpectedExpensesPlan(resolvedPackage, schedule);
+    persistExpectedExpenses(plan, 'Expected expenses template created.');
     setShowExpectedExpensesPicker(false);
   };
 
@@ -1505,82 +1498,42 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.error('This package has no payment schedule in the catalog.');
       return;
     }
-    if (typeof window !== 'undefined' && !window.confirm(
-      'Recalculate milestones from the catalog schedule? Titles/amounts reset to the catalog; extra services on each milestone are kept.',
-    )) return;
-    const freshMilestones = buildMilestonesFromSchedule(schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
-    const nextMilestones = freshMilestones.map((milestone, index) => ({
-      ...milestone,
-      additionalServices: expectedExpenses.milestones[index]?.additionalServices || [],
-      taxPercent: expectedExpenses.milestones[index]?.taxPercent ?? milestone.taxPercent,
-    }));
-    persistExpectedExpenses({
-      ...expectedExpenses,
-      packageSnapshot: {
-        ...expectedExpenses.packageSnapshot,
-        listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? Number(pkg.listedPrice) ?? 0,
-      },
-      milestones: nextMilestones,
-    }, 'Schedule recalculated.');
+    const fresh = buildExpectedExpensesPlan({ ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice }, schedule);
+    const nextGroups = fresh.expectedExpenses.map((group, index) => expectedExpenses.expectedExpenses?.[index] || group);
+    persistExpectedExpenses({ ...expectedExpenses, expectedExpenses: nextGroups }, 'Schedule groups refreshed.');
   };
 
   const deleteExpectedExpensesPlan = () => {
-    if (typeof window !== 'undefined' && !window.confirm('Delete the whole expected expenses plan?')) return;
-    persistExpectedExpenses(null, 'Expected expenses plan deleted.');
+    if (typeof window !== 'undefined' && !window.confirm('Delete the whole expected expenses template?')) return;
+    persistExpectedExpenses(null, 'Expected expenses template deleted.');
   };
 
-  const commitMilestoneField = (milestoneId, field, value) => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? setMilestoneField(milestone, field, value)
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
+  const commitExpectedExpenseServiceField = (groupIndex, entryId, field, value) => {
+    persistExpectedExpenses(updateExpectedExpenseServiceField(expectedExpenses, groupIndex, entryId, field, value), 'Service updated.');
   };
 
-  const toggleMilestoneOverview = milestoneId => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? { ...milestone, showPackageOverview: !milestone.showPackageOverview }
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
+  const resetExpectedExpenseServiceEntry = (groupIndex, entryId) => {
+    persistExpectedExpenses(resetExpectedExpenseService(expectedExpenses, groupIndex, entryId), 'Reverted to catalog values.');
   };
 
-  const commitMilestoneServiceField = (milestoneId, entryId, field, value) => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? updateMilestoneAdditionalServiceField(milestone, entryId, field, value)
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Service updated.');
+  const removeExpectedExpenseServiceEntry = (groupIndex, entryId) => {
+    persistExpectedExpenses(removeExpectedExpenseService(expectedExpenses, groupIndex, entryId), 'Service removed.');
   };
 
-  const resetMilestoneServiceEntry = (milestoneId, entryId) => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id !== milestoneId ? milestone : {
-      ...milestone,
-      additionalServices: milestone.additionalServices.map(entry => (entry.id === entryId ? resetItemEntryOverrides(entry) : entry)),
-    }));
-    persistExpectedExpensesMilestones(nextMilestones, 'Reverted to catalog values.');
+  const addExpectedExpenseCustomService = (groupIndex, fields) => {
+    persistExpectedExpenses(addExpectedExpenseService(expectedExpenses, groupIndex, makeCustomEntry(fields)), 'Service added.');
   };
 
-  const removeMilestoneServiceEntry = (milestoneId, entryId) => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? removeMilestoneAdditionalService(milestone, entryId)
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Service removed.');
+  const addExpectedExpenseCatalogService = (groupIndex, catalogId) => {
+    persistExpectedExpenses(addExpectedExpenseService(expectedExpenses, groupIndex, makeCatalogItemEntry(catalogId)), 'Service added.');
   };
 
-  const addMilestoneCustomService = (milestoneId, fields) => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? addMilestoneAdditionalService(milestone, makeCustomEntry(fields))
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
-  };
-
-  const addMilestoneCatalogService = (milestoneId, catalogId) => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? addMilestoneAdditionalService(milestone, makeCatalogItemEntry(catalogId))
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
+  const addExpectedExpensePackagePercent = (groupIndex, percent) => {
+    persistExpectedExpenses(addExpectedExpenseService(expectedExpenses, groupIndex, makePackagePercentEntry({ catalogId: expectedExpenses.packageId, percent })), 'Package percent added.');
   };
 
   const handleGenerateExpectedExpensesPdf = async () => {
-    if (!expectedExpenses || !expectedExpenses.milestones.length) {
+    if (!expectedExpenses || !expectedExpensesView?.pages?.length) {
       toast.error('Choose a package to build the plan first.');
       return;
     }
@@ -1601,6 +1554,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         catalogItemsById,
         priceContext,
         planDate: new Date(`${invoiceDateInput || getTodayYmd()}T00:00:00`),
+        schedule: expectedExpensesView?.schedule,
+        taxPercent: defaultExpectedExpensesTaxPercent,
       };
       let blob;
       try {
@@ -1703,7 +1658,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (!isExpectedExpensesShape(parsed)) {
-        toast.error('Upload an expected-expenses JSON with packageSnapshot and milestones.');
+        toast.error('Upload an expected-expenses JSON with packageId and expectedExpenses groups.');
         return;
       }
       const nextPlan = normalizeExpectedExpensesData(parsed);
@@ -2165,35 +2120,52 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <>
                   <FieldRow $align="center">
                     <FieldTag>Package</FieldTag>
-                    <div style={{ flex: 1, padding: '5px 6px', fontWeight: 700 }}>{expectedExpenses.packageSnapshot.name}</div>
+                    <div style={{ flex: 1, padding: '5px 6px', fontWeight: 700 }}>{expectedExpensesView?.pkg?.name || expectedExpenses.packageId}</div>
                     <span style={{ fontWeight: 800, color: 'var(--km-accent)', padding: '5px 6px' }}>
-                      {formatEuroPreview(expectedExpenses.packageSnapshot.listedPrice)}
+                      {formatEuroPreview(resolveBudgetPriceAmount(expectedExpensesView?.pkg?.listedPrice, priceContext) ?? expectedExpensesView?.pkg?.listedPrice)}
                     </span>
                   </FieldRow>
-                  {expectedExpensesView && expectedExpensesView.scheduledTotal !== expectedExpenses.packageSnapshot.listedPrice ? (
-                    <PanelNote style={{ color: 'var(--km-danger)' }}>
-                      Milestones add up to {formatEuroPreview(expectedExpensesView.scheduledTotal)}, the package price is{' '}
-                      {formatEuroPreview(expectedExpenses.packageSnapshot.listedPrice)}.
-                    </PanelNote>
+                  {expectedExpensesView?.validation ? (
+                    <PanelNote style={{ color: 'var(--km-danger)' }}>{expectedExpensesView.validation}</PanelNote>
                   ) : null}
 
-                  {expectedExpensesView?.milestoneRows.map(({ milestone, additionalRows, amountDue }, index) => (
+                  {expectedExpensesView?.pages.map(({ payment, rows, amountDue, taxPercent }, index) => (
                     <MilestoneCard
-                      key={milestone.id}
+                      key={`${expectedExpenses.packageId}-${index}`}
                       index={index}
-                      milestone={milestone}
-                      additionalRows={additionalRows}
+                      payment={payment}
+                      rows={rows}
                       amountDue={amountDue}
+                      taxPercent={taxPercent}
                       catalogItems={catalogItems}
-                      onCommitField={(field, value) => commitMilestoneField(milestone.id, field, value)}
-                      onToggleOverview={() => toggleMilestoneOverview(milestone.id)}
-                      onCommitServiceField={(entryId, field, value) => commitMilestoneServiceField(milestone.id, entryId, field, value)}
-                      onRemoveService={entryId => removeMilestoneServiceEntry(milestone.id, entryId)}
-                      onResetService={entryId => resetMilestoneServiceEntry(milestone.id, entryId)}
-                      onAddCustomService={fields => addMilestoneCustomService(milestone.id, fields)}
-                      onAddCatalogService={catalogId => addMilestoneCatalogService(milestone.id, catalogId)}
+                      onCommitServiceField={(entryId, field, value) => commitExpectedExpenseServiceField(index, entryId, field, value)}
+                      onRemoveService={entryId => removeExpectedExpenseServiceEntry(index, entryId)}
+                      onResetService={entryId => resetExpectedExpenseServiceEntry(index, entryId)}
+                      onAddCustomService={fields => addExpectedExpenseCustomService(index, fields)}
+                      onAddCatalogService={catalogId => addExpectedExpenseCatalogService(index, catalogId)}
+                      onAddPackagePercent={percent => addExpectedExpensePackagePercent(index, percent)}
                     />
                   ))}
+
+                  {expectedExpensesView?.pages?.length ? (
+                    <PdfPreviewStrip>
+                      {expectedExpensesView.pages.map(({ payment, rows, amountDue, taxPercent }, index) => (
+                        <PdfPreviewPage key={`preview-${index}`}>
+                          <PdfPreviewTitle>Expected expenses of the invoice #{index + 1}</PdfPreviewTitle>
+                          <PdfPreviewSubtitle>{index + 1}. {payment?.title || `Payment ${index + 1}`}</PdfPreviewSubtitle>
+                          <PdfPreviewTable>
+                            {rows.map((row, rowIndex) => (
+                              <PdfPreviewRow key={row.key || rowIndex}>
+                                <span>{rowIndex + 1}. {row.name}</span>
+                                <b>{formatEuroPreview(row.price)}</b>
+                              </PdfPreviewRow>
+                            ))}
+                          </PdfPreviewTable>
+                          <PdfPreviewFooter>Tax {taxPercent}% · Due {formatEuroPreview(amountDue)}</PdfPreviewFooter>
+                        </PdfPreviewPage>
+                      ))}
+                    </PdfPreviewStrip>
+                  ) : null}
                 </>
               )}
             </Panel>

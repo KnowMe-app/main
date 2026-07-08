@@ -13,6 +13,8 @@
 //                                                        entry). Editing/removing/reordering a
 //                                                        child, or renaming the package, flips
 //                                                        `customized: true` on the package.
+//   { id, kind: 'packagePercent', catalogId, percent } -> a live percentage of a package price
+//                                                        (legacy string: "id1 || 20%").
 //
 // Older data may still contain plain strings ("id15", "Name || Price") - normalizeServiceEntry
 // upgrades those to the object shape on load, so the rest of the app only ever sees objects.
@@ -79,6 +81,13 @@ export const makeCustomEntry = ({ name = '', price = 0, description = '' } = {},
   ...(String(description || '').trim() ? { description: String(description).trim() } : {}),
 });
 
+export const makePackagePercentEntry = ({ catalogId = '', percent = 0 } = {}, { id } = {}) => ({
+  id: id || createEntryId(),
+  kind: 'packagePercent',
+  catalogId: String(catalogId),
+  percent: toNumber(percent),
+});
+
 // pkg: a budget/packages record ({ id, children: [itemId, ...] }). Its children are copied in as
 // plain catalog-item entries - editing/removing any of them below marks the package as customized.
 export const makeCatalogPackageEntry = (pkg, { id } = {}) => ({
@@ -101,12 +110,17 @@ export const cloneEntryWithNewId = entry => {
 
 // --- Legacy string parsing / normalization ------------------------------------------------------
 
-// "id15" -> catalog reference · "Name || Price" -> a custom one-off line.
+// "id15" -> catalog reference · "Name || Price" -> custom · "id1 || 20%" -> package percentage.
 export const parseLegacyServiceString = raw => {
   const text = String(raw ?? '').trim();
   if (text.includes(SERVICE_PRICE_SEPARATOR)) {
     const [namePart, ...priceParts] = text.split(SERVICE_PRICE_SEPARATOR);
-    return { kind: 'custom', name: namePart.trim(), price: toNumber(priceParts.join(SERVICE_PRICE_SEPARATOR)) };
+    const left = namePart.trim();
+    const right = priceParts.join(SERVICE_PRICE_SEPARATOR).trim();
+    const catalogMatch = new RegExp(`^${CATALOG_ID_PREFIX}(.+)$`, 'i').exec(left);
+    const percentMatch = /^(-?\d+(?:[.,]\d+)?)\s*%$/.exec(right);
+    if (catalogMatch && percentMatch) return { kind: 'packagePercent', catalogId: catalogMatch[1], percent: toNumber(percentMatch[1]) };
+    return { kind: 'custom', name: left, price: toNumber(right) };
   }
   const catalogMatch = new RegExp(`^${CATALOG_ID_PREFIX}(.+)$`, 'i').exec(text);
   if (catalogMatch) return { kind: 'item', catalogId: catalogMatch[1] };
@@ -118,7 +132,9 @@ export const parseLegacyServiceString = raw => {
 export const normalizeServiceEntry = raw => {
   if (typeof raw === 'string') {
     const parsed = parseLegacyServiceString(raw);
-    return parsed.kind === 'item' ? makeCatalogItemEntry(parsed.catalogId) : makeCustomEntry(parsed);
+    if (parsed.kind === 'item') return makeCatalogItemEntry(parsed.catalogId);
+    if (parsed.kind === 'packagePercent') return makePackagePercentEntry(parsed);
+    return makeCustomEntry(parsed);
   }
   if (!raw || typeof raw !== 'object') return makeCustomEntry({});
 
@@ -137,6 +153,10 @@ export const normalizeServiceEntry = raw => {
         : {}),
       children: normalizeServiceEntries(raw.children),
     };
+  }
+
+  if (raw.kind === 'packagePercent') {
+    return makePackagePercentEntry({ catalogId: raw.catalogId, percent: raw.percent }, { id });
   }
 
   if (raw.kind === 'custom') {
@@ -173,6 +193,11 @@ export const setEntryField = (entry, field, value) => {
   if (!entry) return entry;
   if (entry.kind === 'custom') {
     return { ...entry, [field]: field === 'price' ? toNumber(value) : value };
+  }
+  if (entry.kind === 'packagePercent') {
+    if (field === 'percent' || field === 'price') return { ...entry, percent: toNumber(value) };
+    if (field === 'catalogId') return { ...entry, catalogId: String(value) };
+    return entry;
   }
   if (entry.kind === 'package') {
     if (field === 'price') return { ...entry, priceOverride: toNumber(value), customized: true };
@@ -235,6 +260,7 @@ export const isEntryCustomized = entry => (entry?.kind === 'custom' ? true : Boo
 export const getEntryIdentityKey = entry => {
   if (!entry) return '';
   if (entry.kind === 'package') return `package:${entry.catalogId}`;
+  if (entry.kind === 'packagePercent') return `package-percent:${entry.catalogId}:${entry.percent || 0}`;
   if (entry.kind === 'item') return `item:${entry.catalogId}`;
   return `custom:${entry.name || ''}:${entry.price || 0}:${entry.description || ''}`;
 };
@@ -248,6 +274,26 @@ export const getEntryIdentityKey = entry => {
 // `children` are always a frozen snapshot taken when it was added - they never live-track the
 // catalog, since that's the whole point of pinning a specific set of services to an invoice.
 export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) => {
+  if (entry?.kind === 'packagePercent') {
+    const pkg = priceContext.packagesById?.get?.(String(entry.catalogId));
+    const rawPackagePrice = pkg?.listedPrice ?? pkg?.price ?? 0;
+    const packagePrice = Number(priceContext.resolvePackagePrice?.(pkg) ?? rawPackagePrice) || 0;
+    const percent = Number(entry.percent) || 0;
+    return {
+      key: entry.id,
+      id: entry.id,
+      kind: 'packagePercent',
+      catalogId: entry.catalogId,
+      missing: !pkg,
+      isCustomized: true,
+      name: 'Scheduled payment',
+      description: pkg?.name ? `${percent}% of ${pkg.name}` : `${percent}% of package id${entry.catalogId}`,
+      price: packagePrice * percent / 100,
+      percent,
+      packagePrice,
+    };
+  }
+
   if (entry?.kind === 'package') {
     const pkg = priceContext.packagesById?.get?.(String(entry.catalogId));
     const children = Array.isArray(entry.children) ? entry.children : [];
