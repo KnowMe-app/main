@@ -54,13 +54,18 @@ export const normalizeInvoiceData = raw => ({
   invoiceServices: normalizeServiceEntries(raw?.invoiceServices),
   notes: Array.isArray(raw?.notes) ? raw.notes : [],
   taxPercent: Number.isFinite(Number(raw?.taxPercent)) ? Number(raw.taxPercent) : 0,
+  // A signed carry-over from the client's previous payment, settled after tax (never itself
+  // taxed): positive = the client still owes a debt from before, negative = they're sitting on a
+  // deposit/credit. Zero (the default) means "nothing to carry over" and is never rendered.
+  debtOrDeposit: Number.isFinite(Number(raw?.debtOrDeposit)) ? Number(raw.debtOrDeposit) : 0,
 });
 
 export const isInvoiceDataShape = raw => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   return ['beneficiaries', 'beneficiaryIds', 'customers', 'recentServices', 'invoiceServices', 'notes']
     .every(field => Array.isArray(raw[field]))
-    && (raw.taxPercent === undefined || Number.isFinite(Number(raw.taxPercent)));
+    && (raw.taxPercent === undefined || Number.isFinite(Number(raw.taxPercent)))
+    && (raw.debtOrDeposit === undefined || Number.isFinite(Number(raw.debtOrDeposit)));
 };
 
 // The active beneficiary is always the first id in beneficiaryIds.
@@ -426,6 +431,11 @@ export const resolveInvoiceDocType = rows => ((Array.isArray(rows) ? rows : [])
 export const computeInvoiceSubtotal = rows => rows.reduce((sum, row) => sum + (Number(row.price) || 0), 0);
 
 export const computeInvoiceTotal = (subtotal, taxPercent) => subtotal * (1 + (Number(taxPercent) || 0) / 100);
+
+// Applied after tax, never before it - a debt/deposit carried over from a previous payment is
+// already-settled money, not a taxable service, so it never goes through computeInvoiceTotal's
+// tax multiplier the way a service row would.
+export const computeInvoiceAmountDue = (total, debtOrDeposit) => total + (Number(debtOrDeposit) || 0);
 
 // After an invoice is generated, its top-level services move to the front of recentServices (same
 // order, deduped by identity) so they're the first quick-pick choices next time.

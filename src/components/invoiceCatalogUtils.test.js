@@ -44,6 +44,7 @@ describe('invoiceCatalogUtils', () => {
       invoiceServices: [],
       notes: [],
       taxPercent: 0,
+      debtOrDeposit: 0,
     });
   });
 

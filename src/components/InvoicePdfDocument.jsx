@@ -10,6 +10,7 @@ import {
   buildCaseTitle,
   buildPayerLocation,
   buildPayerName,
+  computeInvoiceAmountDue,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
   resolveInvoiceDocType,
@@ -272,10 +273,12 @@ const InvoicePdfDocument = ({
   priceContext,
   invoiceType,
   catalogTechnical,
+  debtOrDeposit,
 }) => {
   const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, priceContext);
   const subtotal = computeInvoiceSubtotal(rows);
   const total = computeInvoiceTotal(subtotal, taxPercent);
+  const amountDue = computeInvoiceAmountDue(total, debtOrDeposit);
   const payerName = buildPayerName(customers);
   const payerLocation = buildPayerLocation(customers);
   const caseTitle = buildCaseTitle(customers);
@@ -362,7 +365,7 @@ const InvoicePdfDocument = ({
 
           <View style={pdfBaseStyles.totalCard}>
             <Text style={pdfBaseStyles.totalCardLabel}>Amount due</Text>
-            <Text style={pdfBaseStyles.totalCardAmount}>{formatMoney(total)}</Text>
+            <Text style={pdfBaseStyles.totalCardAmount}>{formatMoney(amountDue)}</Text>
             <View style={pdfBaseStyles.totalCardRule} />
             <View style={pdfBaseStyles.totalCardRow}>
               <Text style={pdfBaseStyles.totalCardRowLabel}>Subtotal</Text>
@@ -372,6 +375,19 @@ const InvoicePdfDocument = ({
               <Text style={pdfBaseStyles.totalCardRowLabel}>Tax</Text>
               <Text style={pdfBaseStyles.totalCardRowValue}>{`${sanitizePdfText(String(taxPercent ?? 0))}%`}</Text>
             </View>
+            {/* Applied after tax, never folded into the taxable subtotal above it (spec follow-up):
+                a carried-over debt/deposit is settled money, not a billable service - zero (the
+                default) renders nothing. */}
+            {debtOrDeposit ? (
+              <View style={pdfBaseStyles.totalCardRow}>
+                <Text style={pdfBaseStyles.totalCardRowLabel}>
+                  {debtOrDeposit > 0 ? 'Debt of the previous payment' : 'Deposit of the previous payment'}
+                </Text>
+                <Text style={pdfBaseStyles.totalCardRowValue}>
+                  {`${debtOrDeposit > 0 ? '+' : '-'}${formatMoney(Math.abs(debtOrDeposit))}`}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
