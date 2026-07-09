@@ -27,6 +27,7 @@ import {
   buildCaseTitle,
   buildPayerLocation,
   buildPayerName,
+  buildUkrcomFileName,
   cloneEntryWithNewId,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
@@ -1153,6 +1154,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingExpectedExpenses, setIsGeneratingExpectedExpenses] = useState(false);
+  const [generatePaymentDetails, setGeneratePaymentDetails] = useState(true);
   const [invoiceDateInput, setInvoiceDateInput] = useState(getTodayYmd());
   const [newCustomServiceName, setNewCustomServiceName] = useState('');
   const [newCustomServicePrice, setNewCustomServicePrice] = useState('');
@@ -1726,7 +1728,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         console.error('Expected expenses PDF generation failed on first attempt, retrying', firstAttemptError);
         blob = await pdf(React.createElement(ExpectedExpensesPdfDocument, documentProps)).toBlob();
       }
-      saveAs(blob, `expected-expenses-${(caseTitle || 'plan').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
+      saveAs(blob, buildUkrcomFileName('ExpectedExpenses', data.customers, invoiceDateInput));
       toast.success('Expected expenses PDF generated.');
     } catch (generateError) {
       console.error('Unable to generate expected expenses PDF', generateError);
@@ -1896,12 +1898,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     }
     setIsGenerating(true);
     try {
-      const [{ pdf }, { default: InvoicePdfDocument }] = await Promise.all([
+      const importPromises = [
         import('@react-pdf/renderer'),
         import('./InvoicePdfDocument'),
-      ]);
+      ];
+      if (generatePaymentDetails) importPromises.push(import('./PaymentDetailsPdfDocument'));
+      const [{ pdf }, { default: InvoicePdfDocument }, paymentDetailsModule] = await Promise.all(importPromises);
+
+      const invoiceDisplayDate = new Date(`${invoiceDateInput || getTodayYmd()}T00:00:00`);
       const documentProps = {
-        beneficiary: activeBeneficiary,
         customers: data.customers,
         invoiceServices: data.invoiceServices,
         catalogItemsById,
@@ -1909,8 +1914,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         notes: data.notes,
         taxPercent: data.taxPercent,
         invoiceNumber,
-        invoiceDate,
-        purposeOfPayment,
+        invoiceDisplayDate,
       };
 
       // @react-pdf/renderer's WASM layout engine can still be warming up on the
@@ -1925,11 +1929,32 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       }
       saveAs(blob, `invoice-${invoiceNumber.replace(/\//g, '-')}.pdf`);
 
+      // Payment Details is always its own file now, generated together with the Invoice so its
+      // amount due is guaranteed to stay in sync (spec §3) - never a second page of the invoice.
+      if (generatePaymentDetails && paymentDetailsModule) {
+        const PaymentDetailsPdfDocument = paymentDetailsModule.default;
+        const paymentDetailsProps = {
+          beneficiary: activeBeneficiary,
+          customers: data.customers,
+          invoiceNumber,
+          purposeOfPayment,
+          amountDue: total,
+        };
+        let paymentDetailsBlob;
+        try {
+          paymentDetailsBlob = await pdf(React.createElement(PaymentDetailsPdfDocument, paymentDetailsProps)).toBlob();
+        } catch (firstAttemptError) {
+          console.error('Payment details PDF generation failed on first attempt, retrying', firstAttemptError);
+          paymentDetailsBlob = await pdf(React.createElement(PaymentDetailsPdfDocument, paymentDetailsProps)).toBlob();
+        }
+        saveAs(paymentDetailsBlob, buildUkrcomFileName('PaymentDetails', data.customers, invoiceDateInput));
+      }
+
       const nextRecentServices = reorderRecentServices(data.recentServices, data.invoiceServices);
       setData(current => ({ ...current, recentServices: nextRecentServices }));
       await persistPath(`${INVOICE_DATA_PATH}/recentServices`, nextRecentServices);
 
-      toast.success('Invoice PDF generated.');
+      toast.success(generatePaymentDetails ? 'Invoice and payment details PDFs generated.' : 'Invoice PDF generated.');
     } catch (generateError) {
       console.error('Unable to generate invoice PDF', generateError);
       const reason = generateError?.message ? `: ${generateError.message}` : '';
@@ -2233,6 +2258,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   onBlur={commitTaxPercent}
                   style={{ flex: '0 0 auto' }}
                 />
+              </FieldRow>
+              <FieldRow $align="center">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={generatePaymentDetails}
+                    onChange={event => setGeneratePaymentDetails(event.target.checked)}
+                  />
+                  <span>Generate Payment Details (separate PDF)</span>
+                </label>
               </FieldRow>
               <SummaryGrid style={{ marginTop: 10 }}>
                 <SummaryLine><span>Invoice number</span><span>{invoiceNumber}</span></SummaryLine>

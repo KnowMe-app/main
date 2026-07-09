@@ -45,10 +45,20 @@ const prettifyKey = key => String(key || '')
   .replace(/\s+/g, ' ')
   .replace(/\b\w/g, char => char.toUpperCase());
 
+// The one money format every UKRCOM document (Budget/Invoice/Payment Details/Expected Expenses)
+// and the admin screens use (spec §4): tabular tens/hundreds/thousands with a comma, no copies
+// past the decimal for round sums, and exactly two decimals only when the amount genuinely
+// carries cents - never silently rounded away.
 export const formatMoney = (value, currency = 'EUR') => {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return `— ${currency || 'EUR'}`;
-  return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)} ${currency || 'EUR'}`;
+  const rounded = Math.round(amount * 100) / 100;
+  const isInteger = Number.isInteger(rounded);
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: isInteger ? 0 : 2,
+    maximumFractionDigits: isInteger ? 0 : 2,
+  }).format(rounded);
+  return `${formatted} ${currency || 'EUR'}`;
 };
 
 export const formatEuroAmount = value => {

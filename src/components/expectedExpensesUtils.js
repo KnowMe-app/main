@@ -273,6 +273,18 @@ export const computeMilestoneAmountDue = (subtotal, taxPercent) => computeInvoic
 export const resolveExpectedExpenseRows = (group, catalogItemsById, priceContext = {}) =>
   (Array.isArray(group) ? group : []).map(entry => resolveServiceRow(entry, catalogItemsById, priceContext));
 
+// Splits a milestone's resolved rows into the one auto-generated "share of the programme fee" row
+// (expectedExpenseRole === 'scheduled') and every other row (SM deposits, catalog add-ons, gifts,
+// ...) - the Expected Expenses PDF shows the scheduled share as "N% of programme fee" and every
+// other row as a plain compact line (spec §1.2).
+export const splitScheduledRows = rows => {
+  const list = Array.isArray(rows) ? rows : [];
+  return {
+    scheduledRows: list.filter(row => row.expectedExpenseRole === 'scheduled'),
+    additionalRows: list.filter(row => row.expectedExpenseRole !== 'scheduled'),
+  };
+};
+
 // Sum of every milestone's resolved total (percent-of-package rows resolved to euros, plus every
 // catalog/custom extra) - the actual amount the whole plan bills for.
 export const computeMilestonesTotal = (milestones, catalogItemsById, priceContext = {}) =>

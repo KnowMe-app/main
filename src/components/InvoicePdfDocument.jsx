@@ -2,8 +2,9 @@ import React from 'react';
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import {
   BrandRow, BrandRule, BronzeMotif, ContinuedTag, Footer, PDF_COLOR, PDF_FONT,
-  ensurePdfFontsRegistered, pdfBaseStyles, sanitizePdfText, TitleBlock,
+  ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
+import { formatMoney } from './budgetCatalogUtils';
 import {
   buildCaseTitle,
   buildPayerLocation,
@@ -25,20 +26,6 @@ const DOC_LABEL_BY_TYPE = {
 const EYEBROW_BY_TYPE = {
   programme_milestone: 'Programme milestone invoice',
   service: 'Service invoice',
-};
-
-// No copies past the decimal for round or four-figure sums; two decimals only when the
-// amount genuinely carries cents (spec §1.8).
-const formatMoney = (value, currency = 'EUR') => {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return '-';
-  const rounded = Math.round(amount * 100) / 100;
-  const isInteger = Number.isInteger(rounded);
-  const formatted = new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: isInteger ? 0 : 2,
-    maximumFractionDigits: isInteger ? 0 : 2,
-  }).format(rounded);
-  return `${formatted} ${currency}`;
 };
 
 // A row may carry a free-text price label (e.g. "GIFT") instead of a euro amount.
@@ -160,52 +147,6 @@ const styles = StyleSheet.create({
     lineHeight: 1.45,
     color: PDF_COLOR.inkSoft,
   },
-  paymentCard: {
-    backgroundColor: PDF_COLOR.neutralBg,
-    borderWidth: 1,
-    borderColor: PDF_COLOR.neutralLine,
-    borderStyle: 'solid',
-    borderRadius: 8,
-    padding: 14,
-  },
-  paymentCardTitle: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 7.5,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: PDF_COLOR.neutralSoft,
-    marginBottom: 8,
-  },
-  paymentRow: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.neutralLine,
-    borderTopStyle: 'solid',
-    paddingVertical: 6,
-  },
-  paymentRowFirst: {
-    borderTopWidth: 0,
-    paddingTop: 0,
-  },
-  paymentLabelCell: {
-    width: '32%',
-  },
-  paymentLabelText: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 8.5,
-    color: PDF_COLOR.neutralInk,
-  },
-  paymentValueCell: {
-    flex: 1,
-  },
-  paymentValueText: {
-    fontFamily: PDF_FONT.body,
-    fontSize: 8.5,
-    lineHeight: 1.4,
-    color: PDF_COLOR.neutralInk,
-  },
 });
 
 // Flattens resolved rows into a display list: a package becomes its own bold header row
@@ -225,15 +166,13 @@ const buildDisplayRows = rows => {
 };
 
 const InvoicePdfDocument = ({
-  beneficiary,
   customers,
   invoiceServices,
   catalogItemsById,
   notes,
   taxPercent,
   invoiceNumber,
-  invoiceDate,
-  purposeOfPayment,
+  invoiceDisplayDate,
   priceContext,
   invoiceType,
 }) => {
@@ -250,18 +189,23 @@ const InvoicePdfDocument = ({
     : resolveInvoiceDocType(rows);
   const docLabel = DOC_LABEL_BY_TYPE[docType];
   const eyebrow = EYEBROW_BY_TYPE[docType];
+  // The DD.MM.YYYY `invoiceDate` string (invoiceCatalogUtils.generateInvoiceIdentifiers) is the
+  // legal-text date used inside the payment-purpose placeholder only - the human-readable date
+  // shown here always uses the one shared display format (spec §4), never that dotted form or the
+  // invoice number's own slash format.
+  const dateLabel = formatDisplayDate(invoiceDisplayDate);
 
   return (
     <Document title={`Invoice ${invoiceNumber || ''}`} subject="Invoice" creator="UKRCOM">
       <Page size="A4" style={styles.page} wrap>
         <BronzeMotif />
         <ContinuedTag label={docLabel} />
-        <BrandRow metaLines={[`Invoice No. ${invoiceNumber || ''}`, invoiceDate, caseTitle]} />
+        <BrandRow metaLines={[`Invoice No. ${invoiceNumber || ''}`, dateLabel, caseTitle]} />
         <BrandRule />
         <TitleBlock
           eyebrow={eyebrow}
           title={`Invoice No. ${invoiceNumber || ''}`}
-          subtitle={`Prepared for ${payerName}${payerLocation ? ` · ${payerLocation}` : ''}.`}
+          subtitle={`Prepared exclusively for ${payerName}${payerLocation ? ` · ${payerLocation}` : ''}.`}
         />
 
         <View style={styles.section}>
@@ -321,52 +265,6 @@ const InvoicePdfDocument = ({
         </View>
 
         <Footer variant="branded" />
-      </Page>
-
-      {/* Payment details gets its own page with a neutral (unbranded) footer: the beneficiary (a
-          sole proprietorship) is a legally separate party from the UKRCOM agency, so this page must
-          not carry the agency's name/address (spec §1.5). */}
-      <Page size="A4" style={styles.page} wrap>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment details</Text>
-          <View style={styles.paymentCard}>
-            <Text style={styles.paymentCardTitle}>Beneficiary details</Text>
-            <View style={[styles.paymentRow, styles.paymentRowFirst]}>
-              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Beneficiary</Text></View>
-              <View style={styles.paymentValueCell}>
-                <Text style={styles.paymentValueText}>
-                  {sanitizePdfText(`${beneficiary?.title || ''}, ${beneficiary?.address || ''}`)}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.paymentRow}>
-              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>IBAN</Text></View>
-              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(beneficiary?.iban)}</Text></View>
-            </View>
-            <View style={styles.paymentRow}>
-              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Bank</Text></View>
-              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(beneficiary?.bankName)}</Text></View>
-            </View>
-            <View style={styles.paymentRow}>
-              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>SWIFT/BIC</Text></View>
-              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(beneficiary?.swiftCode)}</Text></View>
-            </View>
-            <View style={styles.paymentRow}>
-              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Payer</Text></View>
-              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(payerName)}</Text></View>
-            </View>
-            <View style={styles.paymentRow}>
-              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Location</Text></View>
-              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(payerLocation)}</Text></View>
-            </View>
-            <View style={styles.paymentRow}>
-              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Purpose of payment</Text></View>
-              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(purposeOfPayment)}</Text></View>
-            </View>
-          </View>
-        </View>
-
-        <Footer variant="neutral" />
       </Page>
     </Document>
   );

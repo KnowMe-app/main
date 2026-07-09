@@ -354,6 +354,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       name: `${formatPercentValue(percent)}% of ${pkg?.name ?? `Package ${entry.packageId}`}`,
       description: '',
       price,
+      ...(entry.expectedExpenseRole ? { expectedExpenseRole: entry.expectedExpenseRole } : {}),
     };
   }
 
@@ -457,6 +458,22 @@ export const buildPayerLocation = customers => {
 export const buildCaseTitle = customers => {
   const payerName = buildPayerName(customers);
   return payerName ? `Case of ${payerName}` : 'Case';
+};
+
+// The first customer's surname (last whitespace-separated token of their name) - used to build the
+// `UKRCOM-{DocType}-{ClientLastName}-YYYY-MM-DD.pdf` filenames every generated document shares.
+export const buildClientLastName = customers => {
+  const firstName = String((Array.isArray(customers) ? customers : [])[0]?.name || '').trim();
+  if (!firstName) return 'Client';
+  const tokens = firstName.split(/\s+/).filter(Boolean);
+  return tokens[tokens.length - 1] || 'Client';
+};
+
+// `UKRCOM-{DocType}-{ClientLastName}-YYYY-MM-DD.pdf`, filesystem-safe (spec §1.1/§2/§3).
+export const buildUkrcomFileName = (docType, customers, dateYmd) => {
+  const lastName = buildClientLastName(customers).replace(/[^a-z0-9]+/gi, '');
+  const datePart = String(dateYmd || getTodayYmd());
+  return `UKRCOM-${docType}-${lastName}-${datePart}.pdf`;
 };
 
 export const formatInvoiceNumberDate = date => `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
