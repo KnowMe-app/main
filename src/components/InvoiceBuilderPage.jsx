@@ -29,6 +29,7 @@ import {
   buildPayerName,
   buildUkrcomFileName,
   cloneEntryWithNewId,
+  computeInvoiceAmountDue,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
   generateInvoiceIdentifiers,
@@ -1260,6 +1261,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const subtotal = useMemo(() => computeInvoiceSubtotal(invoiceServiceRows), [invoiceServiceRows]);
   const total = useMemo(() => computeInvoiceTotal(subtotal, data.taxPercent), [subtotal, data.taxPercent]);
+  const amountDue = useMemo(() => computeInvoiceAmountDue(total, data.debtOrDeposit), [total, data.debtOrDeposit]);
 
   const { invoiceNumber, invoiceDate } = useMemo(() => generateInvoiceIdentifiers(invoiceDateInput), [invoiceDateInput]);
 
@@ -1777,6 +1779,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistPath(`${INVOICE_DATA_PATH}/taxPercent`, value, 'Tax updated.');
   };
 
+  // Debt / deposit of the previous payment ------------------------------------------------------
+
+  const updateDebtOrDeposit = value => {
+    setData(current => ({ ...current, debtOrDeposit: value }));
+  };
+
+  const commitDebtOrDeposit = () => {
+    const value = Number(String(data.debtOrDeposit).replace(',', '.')) || 0;
+    setData(current => ({ ...current, debtOrDeposit: value }));
+    persistPath(`${INVOICE_DATA_PATH}/debtOrDeposit`, value, 'Debt/deposit updated.');
+  };
+
   // Upload seed JSON ------------------------------------------------------------
 
   const handleUploadClick = () => fileInputRef.current?.click();
@@ -1913,8 +1927,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         priceContext,
         notes: data.notes,
         taxPercent: data.taxPercent,
+        debtOrDeposit: data.debtOrDeposit,
         invoiceNumber,
         invoiceDisplayDate,
+        catalogTechnical,
       };
 
       // @react-pdf/renderer's WASM layout engine can still be warming up on the
@@ -1938,7 +1954,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
           customers: data.customers,
           invoiceNumber,
           purposeOfPayment,
-          amountDue: total,
+          amountDue,
         };
         let paymentDetailsBlob;
         try {
@@ -2259,6 +2275,17 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   style={{ flex: '0 0 auto' }}
                 />
               </FieldRow>
+              <FieldRow>
+                <FieldTag title="Applied after tax. Positive = debt owed from before, negative = deposit/credit.">Debt/Deposit</FieldTag>
+                <PlainPriceBase
+                  rows={1}
+                  inputMode="decimal"
+                  value={data.debtOrDeposit}
+                  onChange={event => updateDebtOrDeposit(event.target.value)}
+                  onBlur={commitDebtOrDeposit}
+                  style={{ flex: '0 0 auto' }}
+                />
+              </FieldRow>
               <FieldRow $align="center">
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input
@@ -2274,7 +2301,13 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <SummaryLine><span>Purpose of the payment</span><span style={{ textAlign: 'right', maxWidth: 420 }}>{purposeOfPayment || '—'}</span></SummaryLine>
                 <SummaryLine><span>Location</span><span>{payerLocation || '—'}</span></SummaryLine>
                 <SummaryLine><span>Subtotal</span><span>{formatEuroPreview(subtotal)}</span></SummaryLine>
-                <SummaryLine><span>Amount to be paid</span><span>{formatEuroPreview(total)}</span></SummaryLine>
+                {data.debtOrDeposit ? (
+                  <SummaryLine>
+                    <span>{data.debtOrDeposit > 0 ? 'Debt of the previous payment' : 'Deposit of the previous payment'}</span>
+                    <span>{`${data.debtOrDeposit > 0 ? '+' : '-'}${formatEuroPreview(Math.abs(data.debtOrDeposit))}`}</span>
+                  </SummaryLine>
+                ) : null}
+                <SummaryLine><span>Amount to be paid</span><span>{formatEuroPreview(amountDue)}</span></SummaryLine>
               </SummaryGrid>
             </Panel>
 
