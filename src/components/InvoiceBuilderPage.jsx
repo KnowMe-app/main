@@ -1915,6 +1915,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         taxPercent: data.taxPercent,
         invoiceNumber,
         invoiceDisplayDate,
+        catalogTechnical,
       };
 
       // @react-pdf/renderer's WASM layout engine can still be warming up on the

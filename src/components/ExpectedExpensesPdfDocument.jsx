@@ -8,6 +8,7 @@ import { formatMoney } from './budgetCatalogUtils';
 import { formatAmount, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import { buildCaseTitle, buildPayerName } from './invoiceCatalogUtils';
 import {
+  computeMilestoneAmountDue,
   computeMilestoneSubtotal,
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
@@ -57,13 +58,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: PDF_COLOR.docInk,
   },
-  paymentTotal: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontVariantNumeric: 'tabular-nums',
-    fontSize: 11,
-    color: PDF_COLOR.bronzeDeep,
-  },
   scheduledLine: {
     fontFamily: PDF_FONT.body,
     fontSize: 9,
@@ -96,6 +90,21 @@ const styles = StyleSheet.create({
     color: PDF_COLOR.inkSoft,
     marginTop: 14,
   },
+  // Same background/rule/row tokens as pdfBaseStyles.totalCard (the Invoice's total-card), just
+  // scaled down to fit inside a compact, repeated-per-milestone card instead of a whole-document one.
+  paymentTotalCard: {
+    backgroundColor: PDF_COLOR.totalCardBg,
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 6,
+  },
+  paymentTotalAmount: {
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontSize: 16,
+    color: PDF_COLOR.totalCardAmount,
+  },
 });
 
 // One compact block per payment (spec §1.2): "Payment #N - {milestone title}" - a header line, the
@@ -106,11 +115,12 @@ const styles = StyleSheet.create({
 const PaymentBlock = ({ index, milestone, rows, currency }) => {
   const { scheduledRows, additionalRows } = splitScheduledRows(rows);
   const subtotal = computeMilestoneSubtotal(rows);
+  const taxPercent = Number(milestone.taxPercent) || 0;
+  const amountDue = computeMilestoneAmountDue(subtotal, taxPercent);
   return (
     <View style={styles.paymentBlock} wrap={false}>
       <View style={styles.paymentHeaderRow}>
         <Text style={styles.paymentTitle}>{sanitizePdfText(`Payment #${index + 1} — ${milestone.title}`)}</Text>
-        <Text style={styles.paymentTotal}>{formatMoney(subtotal, currency)}</Text>
       </View>
       {scheduledRows.map(row => (
         <Text key={row.key} style={styles.scheduledLine}>
@@ -123,6 +133,22 @@ const PaymentBlock = ({ index, milestone, rows, currency }) => {
           <Text style={styles.additionalPrice}>{row.priceLabel || formatMoney(row.price, currency)}</Text>
         </View>
       ))}
+      {/* Spec §3 fix: this used to show only the pre-tax subtotal, silently dropping the milestone's
+          own tax rate - reuse the exact same total-card (label/amount/rule/rows) the Invoice uses so
+          the figure a client sees here already matches the amount they'll later be billed. */}
+      <View style={styles.paymentTotalCard}>
+        <Text style={pdfBaseStyles.totalCardLabel}>Estimated total</Text>
+        <Text style={styles.paymentTotalAmount}>{formatMoney(amountDue, currency)}</Text>
+        <View style={pdfBaseStyles.totalCardRule} />
+        <View style={pdfBaseStyles.totalCardRow}>
+          <Text style={pdfBaseStyles.totalCardRowLabel}>Subtotal</Text>
+          <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoney(subtotal, currency)}</Text>
+        </View>
+        <View style={pdfBaseStyles.totalCardRow}>
+          <Text style={pdfBaseStyles.totalCardRowLabel}>Tax</Text>
+          <Text style={pdfBaseStyles.totalCardRowValue}>{`${formatPercentValue(taxPercent)}%`}</Text>
+        </View>
+      </View>
     </View>
   );
 };
