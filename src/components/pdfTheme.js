@@ -388,14 +388,18 @@ const AGENCY_NAME = 'Reproductive Agency "UKRCOM"';
 const AGENCY_ADDRESS = '31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine';
 const AGENCY_CONTACT = 'http://ukrcom.kyiv.ua/  ·  sm.kiev.ukr@gmail.com  ·  @Contact_Us_Kyiv';
 
-// Identical agency footer on every page of every branded document (spec §1.2).
-export const Footer = () => (
+// Identical agency footer on every page of every branded document (spec §1.2). `variant="neutral"`
+// drops the UKRCOM agency block entirely - required on the Payment Details page/document, whose
+// beneficiary (a sole proprietorship) is a legally separate party from the agency (spec §1.5).
+export const Footer = ({ variant = 'branded' } = {}) => (
   <View style={pdfSharedStyles.footer} fixed>
-    <View style={pdfSharedStyles.footerColumn}>
-      <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_NAME)}</Text>
-      <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_ADDRESS)}</Text>
-      <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_CONTACT)}</Text>
-    </View>
+    {variant === 'neutral' ? <View style={pdfSharedStyles.footerColumn} /> : (
+      <View style={pdfSharedStyles.footerColumn}>
+        <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_NAME)}</Text>
+        <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_ADDRESS)}</Text>
+        <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_CONTACT)}</Text>
+      </View>
+    )}
     <Text
       style={pdfSharedStyles.footerPage}
       render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}

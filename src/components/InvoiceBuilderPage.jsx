@@ -67,7 +67,6 @@ import {
   normalizeExpectedExpensesData,
   removeMilestoneService,
   resolveMilestoneServiceRows,
-  resolvePackageOverviewRows,
   serializeExpectedExpensesData,
   setMilestoneField,
   updateMilestoneServiceField,
@@ -944,16 +943,6 @@ const MilestoneCheckboxRow = styled.div`
   margin: 6px 0 8px;
 `;
 
-const MilestoneCheckboxLabel = styled.label`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--km-muted);
-  cursor: pointer;
-`;
-
 const MilestoneCard = ({
   index,
   milestone,
@@ -963,7 +952,6 @@ const MilestoneCard = ({
   catalogItems,
   catalogPackages,
   onCommitField,
-  onToggleOverview,
   onCommitServiceField,
   onRemoveService,
   onResetService,
@@ -1042,10 +1030,6 @@ const MilestoneCard = ({
         />
       </PackageHeaderRow>
       <MilestoneCheckboxRow>
-        <MilestoneCheckboxLabel>
-          <input type="checkbox" checked={Boolean(milestone.showPackageOverview)} onChange={onToggleOverview} />
-          Show full package overview on this invoice
-        </MilestoneCheckboxLabel>
         <CustomizedTag title="Sum of this milestone's rows">Subtotal: {formatEuroPreview(subtotal)}</CustomizedTag>
         <CustomizedTag title="Subtotal + tax">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
       </MilestoneCheckboxRow>
@@ -1325,7 +1309,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const expectedExpensesView = useMemo(() => {
     if (!expectedExpenses) return null;
-    const overviewRows = resolvePackageOverviewRows(expectedExpenses.packageSnapshot.children, catalogItemsById, priceContext);
     const milestoneRows = expectedExpenses.milestones.map(milestone => {
       const serviceRows = resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext);
       const subtotal = computeMilestoneSubtotal(serviceRows);
@@ -1333,7 +1316,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       return { milestone, serviceRows, subtotal, amountDue };
     });
     return {
-      overviewRows,
       milestoneRows,
       totalPlanned: computeMilestonesTotal(expectedExpenses.milestones, catalogItemsById, priceContext),
       packageSharePercent: computeMilestonesPackageSharePercent(expectedExpenses.milestones, expectedExpenses.packageId),
@@ -1660,13 +1642,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const commitMilestoneField = (milestoneId, field, value) => {
     const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
       ? setMilestoneField(milestone, field, value)
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
-  };
-
-  const toggleMilestoneOverview = milestoneId => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? { ...milestone, showPackageOverview: !milestone.showPackageOverview }
       : milestone));
     persistExpectedExpensesMilestones(nextMilestones, 'Milestone updated.');
   };
@@ -2378,7 +2353,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       catalogItems={catalogItems}
                       catalogPackages={visibleCatalogPackages}
                       onCommitField={(field, value) => commitMilestoneField(milestone.id, field, value)}
-                      onToggleOverview={() => toggleMilestoneOverview(milestone.id)}
                       onCommitServiceField={(entryId, field, value) => commitMilestoneServiceField(milestone.id, entryId, field, value)}
                       onRemoveService={entryId => removeMilestoneServiceEntry(milestone.id, entryId)}
                       onResetService={entryId => resetMilestoneServiceEntry(milestone.id, entryId)}
@@ -2420,7 +2394,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   pages={(expectedExpensesView?.milestoneRows || []).map(({ milestone, serviceRows, subtotal: milestoneSubtotal, amountDue }, index) => ({
                     key: milestone.id,
                     label: `#${index + 1} ${milestone.title}`,
-                    badge: milestone.showPackageOverview ? 'Overview' : null,
                     rows: serviceRows,
                     subtotal: milestoneSubtotal,
                     taxPercent: milestone.taxPercent,

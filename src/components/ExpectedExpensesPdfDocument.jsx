@@ -8,7 +8,6 @@ import { buildCaseTitle } from './invoiceCatalogUtils';
 import {
   computeMilestoneSubtotal,
   resolveMilestoneServiceRows,
-  resolvePackageOverviewRows,
 } from './expectedExpensesUtils';
 
 ensurePdfFontsRegistered();
@@ -34,20 +33,6 @@ const formatPlanDate = date => {
   return safeDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
-// A row's technical source reference, e.g. "catalog.pregnancy_diagnostics.comprehensive_exam" or
-// "schedule.milestone.percent_of_package" - makes it transparent that nothing here is a hand-typed
-// guess (spec §1.6: every line must trace back to a catalog id or the payment schedule).
-const rowSourceRef = (row, catalogItemsById) => {
-  if (row?.kind === 'percent') return 'schedule.milestone.percent_of_package';
-  if (row?.kind === 'item' && row.catalogId) {
-    const item = catalogItemsById?.get?.(String(row.catalogId));
-    const category = item?.category || 'item';
-    return `catalog.${category}.${row.catalogId}`;
-  }
-  if (row?.kind === 'package' && row.catalogId) return `catalog.package.${row.catalogId}`;
-  return 'manual entry';
-};
-
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
   dateText: {
@@ -61,81 +46,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
-  overviewCard: {
-    backgroundColor: PDF_COLOR.card,
-    borderRadius: 8,
-    padding: 12,
-  },
-  overviewHeadText: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 9.5,
-    color: PDF_COLOR.docInk,
-    marginBottom: 6,
-  },
-  overviewRow: {
-    flexDirection: 'row',
-    paddingVertical: 3,
-  },
-  overviewIndexText: {
-    width: 20,
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 8,
-    color: PDF_COLOR.bronze,
-  },
-  overviewText: {
-    flex: 1,
+  contextNote: {
     fontFamily: PDF_FONT.body,
     fontSize: 9,
-    color: PDF_COLOR.docInk,
-  },
-  overviewTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.bronze,
-    borderTopStyle: 'solid',
-  },
-  overviewTotalLabel: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 9,
-    color: PDF_COLOR.docInk,
-  },
-  overviewTotalAmount: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontVariantNumeric: 'tabular-nums',
-    fontSize: 9,
-    color: PDF_COLOR.bronzeDeep,
-  },
-  scheduleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    borderRadius: 4,
-  },
-  scheduleRowCurrent: {
-    backgroundColor: PDF_COLOR.card,
-  },
-  scheduleLabelText: {
-    fontFamily: PDF_FONT.body,
-    fontSize: 9,
-    color: PDF_COLOR.docInk,
-  },
-  scheduleLabelTextCurrent: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-  },
-  scheduleAmountText: {
-    fontFamily: PDF_FONT.body,
-    fontVariantNumeric: 'tabular-nums',
-    fontSize: 9,
-    color: PDF_COLOR.docInk,
+    color: PDF_COLOR.inkSoft,
+    marginBottom: 4,
   },
   expenseRow: {
     flexDirection: 'row',
@@ -173,13 +88,6 @@ const styles = StyleSheet.create({
     lineHeight: 1.4,
     marginTop: 2,
   },
-  itemRef: {
-    fontFamily: PDF_FONT.body,
-    fontSize: 6.5,
-    letterSpacing: 0.2,
-    color: PDF_COLOR.footerSoft,
-    marginTop: 2,
-  },
   expensePriceCell: {
     width: 96,
     textAlign: 'right',
@@ -199,7 +107,7 @@ const styles = StyleSheet.create({
   },
 });
 
-const renderExpensesRows = (rows, catalogItemsById) => (
+const renderExpensesRows = rows => (
   <View>
     {rows.map((row, index) => (
       <View
@@ -211,7 +119,6 @@ const renderExpensesRows = (rows, catalogItemsById) => (
         <View style={styles.expenseNameCell}>
           <Text style={styles.expenseNameText}>{sanitizePdfText(row.name)}</Text>
           {row.description ? <Text style={styles.expenseDescription}>{sanitizePdfText(row.description)}</Text> : null}
-          <Text style={styles.itemRef}>{sanitizePdfText(rowSourceRef(row, catalogItemsById))}</Text>
         </View>
         <View style={styles.expensePriceCell}><Text style={styles.expensePriceText}>{formatRowAmount(row)}</Text></View>
       </View>
@@ -219,19 +126,21 @@ const renderExpensesRows = (rows, catalogItemsById) => (
   </View>
 );
 
+// Each milestone gets its own compact page: this payment's line items, the estimated total, and a
+// one-line pointer back to the Budget document - never the full programme overview or payment
+// schedule (those already live in the Budget PDF; repeating them here on every one of the plan's
+// milestones was the source of a bloated, near-duplicate document).
 const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate }) => {
   const caseTitle = buildCaseTitle(customers);
   const dateLabel = formatPlanDate(planDate instanceof Date ? planDate : new Date(planDate || Date.now()));
-  const overviewRows = resolvePackageOverviewRows(plan?.packageSnapshot?.children, catalogItemsById, priceContext);
+  const programmeName = plan?.packageSnapshot?.name || 'Programme';
   const milestones = Array.isArray(plan?.milestones) ? plan.milestones : [];
-  const milestoneServiceRows = milestones.map(milestone => resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext));
-  const milestoneSubtotals = milestoneServiceRows.map(computeMilestoneSubtotal);
 
   return (
     <Document title={`Expected expenses - ${caseTitle}`} subject="Expected expenses" creator="UKRCOM">
       {milestones.map((milestone, index) => {
-        const serviceRows = milestoneServiceRows[index];
-        const subtotal = milestoneSubtotals[index];
+        const serviceRows = resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext);
+        const subtotal = computeMilestoneSubtotal(serviceRows);
 
         return (
           <Page key={`${plan?.packageId || 'package'}-${index}`} size="A4" style={styles.page} wrap>
@@ -244,55 +153,16 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
               title={`Expected expenses of the invoice #${index + 1}`}
               subtitle={milestone.title}
             />
+            <Text style={styles.contextNote}>
+              {sanitizePdfText(`${programmeName} - full programme details are in your Budget document.`)}
+            </Text>
 
-            {milestone.showPackageOverview ? (
-              <>
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>{sanitizePdfText(plan.packageSnapshot?.name || 'Programme')}</Text>
-                  <View style={styles.overviewCard}>
-                    <Text style={styles.overviewHeadText}>Included in this programme</Text>
-                    {overviewRows.map((row, rowIndex) => (
-                      <View key={row.key || rowIndex} style={styles.overviewRow}>
-                        <Text style={styles.overviewIndexText}>{rowIndex + 1}</Text>
-                        <Text style={styles.overviewText}>{sanitizePdfText(row.name)}</Text>
-                      </View>
-                    ))}
-                    <View style={styles.overviewTotalRow}>
-                      <Text style={styles.overviewTotalLabel}>Total programme fee</Text>
-                      <Text style={styles.overviewTotalAmount}>{formatMoney(plan.packageSnapshot.listedPrice)}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Payment schedule</Text>
-                  {milestones.map((scheduleMilestone, scheduleIndex) => (
-                    <View
-                      key={scheduleMilestone.id || scheduleIndex}
-                      style={[styles.scheduleRow, scheduleIndex === index ? styles.scheduleRowCurrent : null]}
-                      wrap={false}
-                    >
-                      <Text style={[styles.scheduleLabelText, scheduleIndex === index ? styles.scheduleLabelTextCurrent : null]}>
-                        {sanitizePdfText(`${scheduleIndex + 1}. ${scheduleMilestone.title}`)}
-                      </Text>
-                      <Text style={styles.scheduleAmountText}>{formatMoney(milestoneSubtotals[scheduleIndex])}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                {serviceRows.length ? (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Expected expenses</Text>
-                    {renderExpensesRows(serviceRows, catalogItemsById)}
-                  </View>
-                ) : null}
-              </>
-            ) : (
+            {serviceRows.length ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Expected expenses</Text>
-                {renderExpensesRows(serviceRows, catalogItemsById)}
+                {renderExpensesRows(serviceRows)}
               </View>
-            )}
+            ) : null}
 
             <View style={pdfBaseStyles.totalCard}>
               <Text style={pdfBaseStyles.totalCardLabel}>Estimated total (pre-tax)</Text>
