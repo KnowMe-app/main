@@ -45,6 +45,7 @@ describe('invoiceCatalogUtils', () => {
       notes: [],
       taxPercent: 0,
       debtOrDeposit: 0,
+      paymentPurposeOverride: '',
     });
   });
 

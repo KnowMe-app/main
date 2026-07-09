@@ -452,12 +452,17 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
           ))}
         </View>
 
-        <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} totals={scheduleTotals} />
-
-        {/* `break` starts Included services on a fresh page (spec §2), so the schedule above stays
-            on page 1 with Programs and this large table never splits mid-page. */}
+        {/* Client-facing reading order is Programs -> Included services -> Payment schedule ->
+            Other expenses (first round of feedback, item 8): the client should understand what
+            they're buying before how they pay for it. Each of the three sections below starts on
+            its own fresh page (`break`) regardless of how much room is left on the previous one,
+            so a large table is never forced to split mid-page. */}
         <View break={includedRows.length > 0}>
           <IncludedServicesTable packages={packagesMeta} includedRows={includedRows} />
+        </View>
+
+        <View break={scheduleRows.length > 0}>
+          <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} totals={scheduleTotals} />
         </View>
 
         {Object.keys(groupedExpenses).length ? (

@@ -9,12 +9,12 @@ import designTokens from '../data/designTokens.json';
 
 // Colors and font families are never hardcoded here - they live in src/data/designTokens.json,
 // the single shared source of truth for the UKRCOM document system's visual language (see that
-// file's header comment). `renderTopBlock.js` (surrogate/donor ProfilePdfDocument) and
-// `PdfPagePreviewStrip.jsx` (admin UI preview strip) depend on the original key names below
-// (ink/muted/soft/accent/accentStrong/line/lineSoft/headBg/rowAlt/cardBg/totalBg/watermark/white)
-// and on PDF_FONT.base/bold — those keys are kept as-is in the token file so those two files keep
-// rendering unchanged. The Budget/Invoice/Payment-Details/Expected-Expenses documents use the
-// separately-named spec tokens (paper/card/docLine/docInk/... below) from the same file instead.
+// file's header comment). `renderTopBlock.js` (surrogate/donor ProfilePdfDocument) depends on the
+// original key names below (ink/muted/soft/accent/accentStrong/line/lineSoft/headBg/rowAlt/cardBg/
+// totalBg/watermark/white) and on PDF_FONT.base/bold — those keys are kept as-is in the token file
+// so that file keeps rendering unchanged. The Budget/Invoice/Payment-Details/Expected-Expenses
+// documents use the separately-named spec tokens (paper/card/docLine/docInk/... below) from the
+// same file instead.
 export const PDF_COLOR = designTokens.color;
 
 export const PDF_FONT = designTokens.font;
