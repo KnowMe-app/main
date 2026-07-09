@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
   // Extra breathing room above Payment schedule so Programs and Payment schedule don't sit flush
   // against each other on page 1 (spec §2).
   scheduleSection: {
-    marginTop: 46,
+    marginTop: 23,
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
-    paddingVertical: 9,
+    paddingVertical: 6.5,
   },
   programRowFirst: {
     borderTopWidth: 0,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   },
   labelCell: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 3.5,
     paddingHorizontal: 9,
     justifyContent: 'center',
   },
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   },
   programCell: {
     width: PROGRAM_COL_WIDTH,
-    paddingVertical: 6,
+    paddingVertical: 3.5,
     paddingHorizontal: 4,
     borderLeftWidth: 1,
     borderLeftColor: PDF_COLOR.docLine,
