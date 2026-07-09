@@ -72,6 +72,24 @@ export const formatEuroAmount = value => {
   }).format(amount);
 };
 
+// Same rounding rule as formatMoney (2 decimals only when the amount genuinely carries cents),
+// but with a "€" symbol instead of a trailing currency code - the admin-UI-facing counterpart
+// used across the Invoice Builder (never a bare .toFixed(2), which leaks float noise and drops
+// the thousands separator).
+export const formatEuroSmart = value => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '€—';
+  const rounded = Math.round(amount * 100) / 100;
+  const isInteger = Number.isInteger(rounded);
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'EUR',
+    currencyDisplay: 'narrowSymbol',
+    minimumFractionDigits: isInteger ? 0 : 2,
+    maximumFractionDigits: isInteger ? 0 : 2,
+  }).format(rounded);
+};
+
 // Splits a stored price into its "from" flag and the remaining expression
 // (a plain number, or a "=..." formula).
 export const parseBudgetPriceValue = raw => {

@@ -15,9 +15,10 @@ import {
   FaUpload,
 } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
+import designTokens from '../data/designTokens.json';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import PdfPagePreviewStrip from './PdfPagePreviewStrip';
-import { getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
+import { formatEuroSmart, getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isAdminUid } from 'utils/accessLevel';
 import {
@@ -98,7 +99,26 @@ const emptyBeneficiary = () => ({
 
 // --- Layout shell ------------------------------------------------------
 
+// Scoped to this page only (never touches the app-wide :root tokens in index.css): the Invoice
+// Builder is one of the UKRCOM client-facing documents, so it reads the same paper/bronze palette
+// as the PDFs (src/data/designTokens.json) instead of KnowMe's orange brand accent. Because these
+// are the same custom-property names the rest of the file's styled-components already reference
+// (var(--km-accent), var(--km-card), ...), redefining them here on the page root is enough to
+// retint the whole subtree - no call site below needs to change.
 const Page = styled.main`
+  --km-bg: #EFE9DD;
+  --km-card: ${designTokens.color.paper};
+  --km-text: ${designTokens.color.docInk};
+  --km-muted: ${designTokens.color.inkSoft};
+  --km-border: ${designTokens.color.docLine};
+  --km-accent: ${designTokens.color.bronze};
+  --km-accent-mid: #C6A671;
+  --km-accent-light: rgba(162, 121, 63, 0.12);
+  --km-danger: #B3523F;
+  --km-danger-border: rgba(179, 82, 63, 0.35);
+  --km-font: 'Inter', sans-serif;
+  --km-font-display: 'Fraunces', serif;
+
   min-height: 100vh;
   background: var(--km-bg);
   color: var(--km-text);
@@ -159,7 +179,7 @@ const MiniButton = styled.button`
   border: 1px solid var(--km-border);
   background: var(--km-card);
   color: var(--km-text);
-  border-radius: 10px;
+  border-radius: 6px;
   min-height: 30px;
   padding: 6px 12px;
   font-size: 12px;
@@ -193,7 +213,7 @@ const SmallButton = styled(MiniButton)`
   min-height: 24px;
   padding: 3px 9px;
   font-size: 10.5px;
-  border-radius: 7px;
+  border-radius: 5px;
 `;
 
 const DangerButton = styled(SmallButton)`
@@ -233,7 +253,7 @@ const IconButton = styled.button`${iconButtonBase}`;
 const IconDangerButton = styled.button`
   ${iconButtonBase}
   &:hover:not(:disabled) {
-    background: rgba(180, 35, 24, 0.12);
+    background: rgba(179, 82, 63, 0.12);
     color: var(--km-danger);
   }
 `;
@@ -241,7 +261,7 @@ const IconDangerButton = styled.button`
 const Panel = styled.section`
   margin-top: 10px;
   border: 1px solid var(--km-border);
-  border-radius: 16px;
+  border-radius: 10px;
   background: var(--km-card);
   padding: 12px 14px;
 `;
@@ -272,11 +292,54 @@ const PanelNote = styled.p`
 
 const StateCard = styled.div`
   padding: 20px;
-  border-radius: 16px;
+  border-radius: 10px;
   background: var(--km-card);
   border: 1px solid var(--km-border);
   color: var(--km-muted);
   font-size: 13px;
+`;
+
+// --- Compact collapsed row (Beneficiary / Payer) ------------------------------------------------------
+//
+// These change rarely, so by default they're a single clickable summary line - the full form only
+// mounts once the admin asks for it, instead of permanently occupying screen space.
+
+const CompactSection = styled.div`
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  background: var(--km-bg);
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  margin-bottom: ${({ $expanded }) => ($expanded ? '8px' : 0)};
+`;
+
+const CompactLabel = styled.div`
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--km-accent);
+`;
+
+const CompactValue = styled.div`
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--km-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const CompactChevron = styled.span`
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--km-accent);
 `;
 
 // --- Plain, borderless "editable text" fields ------------------------------------------------------
@@ -349,13 +412,15 @@ const PlainTextBase = styled.textarea`
   ${plainFieldStyle}
 `;
 
-const PlainPriceBase = styled.textarea`
+const PlainPriceBase = styled.textarea.attrs({ wrap: 'off' })`
   ${plainFieldStyle}
   flex: 0 0 auto;
   width: ${({ $width }) => $width || '92px'};
   text-align: right;
   font-weight: 800;
   color: var(--km-accent);
+  white-space: nowrap;
+  overflow-x: auto;
 `;
 
 const PlainSelect = styled.select`
@@ -410,10 +475,7 @@ const useFieldDraft = externalValue => {
   return [draft, setDraft, editingRef];
 };
 
-const formatEuroPreview = value => {
-  const amount = Number(value);
-  return Number.isFinite(amount) ? `€${amount.toFixed(2)}` : '€—';
-};
+const formatEuroPreview = formatEuroSmart;
 
 // --- Service line item (top-level custom/catalog row, or a row nested inside a package) ------------------------------------------------------
 
@@ -465,7 +527,35 @@ const CustomizedTag = styled.span`
 
 const MissingTag = styled(CustomizedTag)`
   color: var(--km-danger);
-  background: rgba(180, 35, 24, 0.1);
+  background: rgba(179, 82, 63, 0.1);
+`;
+
+// A description field is rarely needed (the catalog already carries the full text for most
+// rows) - it stays collapsed to a single truncated line until the admin clicks to edit it,
+// instead of permanently showing an "Add description..." textarea on every row.
+const DescriptionToggle = styled.button`
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--km-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-style: ${({ $hasValue }) => ($hasValue ? 'normal' : 'italic')};
+  text-align: left;
+  padding: 3px 6px;
+  margin: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &:hover {
+    color: var(--km-accent);
+    background: var(--km-accent-light);
+    border-radius: 6px;
+  }
 `;
 
 // A "% of package" row has no name/description of its own (it's derived: "20% of IVF+ED+SM") -
@@ -551,6 +641,7 @@ const ServiceLineRow = ({
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
   const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(row.priceLabel || String(row.price ?? ''));
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   if (row.kind === 'percent') {
     return (
@@ -618,17 +709,24 @@ const ServiceLineRow = ({
           </IconDangerButton>
         </RowActions>
       </LineMainRow>
-      <AutoTextArea
-        $size="11.5px"
-        $weight="500"
-        style={{ color: 'var(--km-muted)' }}
-        value={descriptionDraft}
-        placeholder="Add description…"
-        aria-label="Description"
-        onFocus={() => { descriptionEditingRef.current = true; }}
-        onChange={event => setDescriptionDraft(event.target.value)}
-        onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); }}
-      />
+      {descriptionOpen ? (
+        <AutoTextArea
+          $size="11.5px"
+          $weight="500"
+          style={{ color: 'var(--km-muted)' }}
+          value={descriptionDraft}
+          placeholder="Add description…"
+          aria-label="Description"
+          autoFocus
+          onFocus={() => { descriptionEditingRef.current = true; }}
+          onChange={event => setDescriptionDraft(event.target.value)}
+          onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); }}
+        />
+      ) : (
+        <DescriptionToggle type="button" $hasValue={Boolean(row.description)} onClick={() => setDescriptionOpen(true)}>
+          {row.description || '+ Add description'}
+        </DescriptionToggle>
+      )}
     </LineCard>
   );
 };
@@ -638,7 +736,7 @@ const ServiceLineRow = ({
 const PackageCard = styled.div`
   margin-top: 10px;
   border: 1px solid var(--km-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--km-accent-light);
   padding: 8px 10px 10px;
 
@@ -667,7 +765,7 @@ const PackageIcon = styled.span`
 
 const PackageChildren = styled.div`
   margin: 6px 0 4px 28px;
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--km-card);
   padding: 0 8px;
 
@@ -790,6 +888,7 @@ const PackageEntryCard = ({
   const [query, setQuery] = useState('');
   const [customName, setCustomName] = useState('');
   const [customPrice, setCustomPrice] = useState('');
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   const childCatalogIds = useMemo(
     () => new Set(row.children.filter(child => child.kind === 'item').map(child => String(child.catalogId))),
@@ -862,17 +961,29 @@ const PackageEntryCard = ({
           </IconDangerButton>
         </RowActions>
       </PackageHeaderRow>
-      <AutoTextArea
-        $size="11.5px"
-        $weight="500"
-        style={{ color: 'var(--km-muted)', marginLeft: 28 }}
-        value={descriptionDraft}
-        placeholder="Add description…"
-        aria-label="Package description"
-        onFocus={() => { descriptionEditingRef.current = true; }}
-        onChange={event => setDescriptionDraft(event.target.value)}
-        onBlur={() => { descriptionEditingRef.current = false; onCommitField('description', descriptionDraft); }}
-      />
+      {descriptionOpen ? (
+        <AutoTextArea
+          $size="11.5px"
+          $weight="500"
+          style={{ color: 'var(--km-muted)', marginLeft: 28 }}
+          value={descriptionDraft}
+          placeholder="Add description…"
+          aria-label="Package description"
+          autoFocus
+          onFocus={() => { descriptionEditingRef.current = true; }}
+          onChange={event => setDescriptionDraft(event.target.value)}
+          onBlur={() => { descriptionEditingRef.current = false; onCommitField('description', descriptionDraft); }}
+        />
+      ) : (
+        <DescriptionToggle
+          type="button"
+          $hasValue={Boolean(row.description)}
+          style={{ marginLeft: 28, width: 'calc(100% - 28px)' }}
+          onClick={() => setDescriptionOpen(true)}
+        >
+          {row.description || '+ Add description'}
+        </DescriptionToggle>
+      )}
 
       <PackageChildren>
         {row.children.map((child, childIndex) => (
@@ -936,13 +1047,105 @@ const PackageEntryCard = ({
 };
 
 // --- Expected expenses milestone (one payment-schedule entry -> one future invoice) ------------------------------------------------------
+//
+// Rendered as a native <details>/<summary> so it's collapsed by default and keeps its own
+// open/closed state across re-renders without React needing to track it: the summary shows only
+// the number, title, item count and Amount Due (spec 2.2) - the editable title/tax/items only
+// mount inside the body, once expanded.
+
+const MilestoneDetails = styled.details`
+  margin-top: 10px;
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  background: var(--km-bg);
+  overflow: hidden;
+
+  &:first-of-type {
+    margin-top: 0;
+  }
+
+  &[open] {
+    border-color: var(--km-accent);
+  }
+`;
+
+const MilestoneSummary = styled.summary`
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+`;
+
+const MilestoneSummaryLeft = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 0;
+`;
+
+const MilestoneNum = styled.span`
+  flex: 0 0 auto;
+  font-family: var(--km-font-display);
+  font-size: 12.5px;
+  color: var(--km-accent);
+`;
+
+const MilestoneTitleText = styled.span`
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const MilestoneCount = styled.span`
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--km-muted);
+`;
+
+const MilestoneSummaryRight = styled.div`
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`;
+
+const MilestoneDue = styled.span`
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+`;
+
+const MilestoneChevron = styled.span`
+  color: var(--km-accent);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+
+  ${MilestoneDetails}[open] & {
+    transform: rotate(90deg);
+  }
+`;
+
+const MilestoneBody = styled.div`
+  padding: 0 12px 10px;
+  border-top: 1px solid var(--km-border);
+`;
 
 const MilestoneCheckboxRow = styled.div`
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 6px 0 8px;
+  margin: 8px 0 8px;
 `;
 
 const MilestoneCard = ({
@@ -1005,91 +1208,104 @@ const MilestoneCard = ({
   };
 
   return (
-    <PackageCard>
-      <PackageHeaderRow>
-        <RowIndex>{index + 1}</RowIndex>
-        <AutoTextArea
-          $size="13.5px"
-          $weight="800"
-          value={titleDraft}
-          placeholder="Milestone title"
-          aria-label="Milestone title"
-          onFocus={() => { titleEditingRef.current = true; }}
-          onChange={event => setTitleDraft(event.target.value)}
-          onBlur={() => { titleEditingRef.current = false; onCommitField('title', titleDraft); }}
-        />
-        <AutoTextArea
-          as={PlainPriceBase}
-          $width="48px"
-          inputMode="decimal"
-          value={taxDraft}
-          placeholder="%"
-          title="Tax (%)"
-          aria-label="Tax percent"
-          onFocus={() => { taxEditingRef.current = true; }}
-          onChange={event => setTaxDraft(event.target.value)}
-          onBlur={() => { taxEditingRef.current = false; onCommitField('taxPercent', taxDraft); }}
-        />
-      </PackageHeaderRow>
-      <MilestoneCheckboxRow>
-        <CustomizedTag title="Sum of this milestone's rows">Subtotal: {formatEuroPreview(subtotal)}</CustomizedTag>
-        <CustomizedTag title="Subtotal + tax">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
-      </MilestoneCheckboxRow>
+    <MilestoneDetails>
+      <MilestoneSummary>
+        <MilestoneSummaryLeft>
+          <MilestoneNum>{String(index + 1).padStart(2, '0')}</MilestoneNum>
+          <MilestoneTitleText title={milestone.title}>{milestone.title || 'Untitled milestone'}</MilestoneTitleText>
+          <MilestoneCount>{serviceRows.length} item{serviceRows.length === 1 ? '' : 's'}</MilestoneCount>
+        </MilestoneSummaryLeft>
+        <MilestoneSummaryRight>
+          <MilestoneDue>{formatEuroPreview(amountDue)}</MilestoneDue>
+          <MilestoneChevron>›</MilestoneChevron>
+        </MilestoneSummaryRight>
+      </MilestoneSummary>
 
-      <PackageChildren>
-        {serviceRows.map((row, rowIndex) => (
-          <ServiceLineRow
-            key={row.key}
-            row={row}
-            index={rowIndex}
-            isChild
-            catalogPackages={catalogPackages}
-            onCommit={(field, value) => onCommitServiceField(row.id, field, value)}
-            onRemove={() => onRemoveService(row.id)}
-            onReset={row.kind === 'item' && row.isCustomized ? () => onResetService(row.id) : undefined}
+      <MilestoneBody>
+        <PackageHeaderRow>
+          <AutoTextArea
+            $size="13.5px"
+            $weight="800"
+            value={titleDraft}
+            placeholder="Milestone title"
+            aria-label="Milestone title"
+            onFocus={() => { titleEditingRef.current = true; }}
+            onChange={event => setTitleDraft(event.target.value)}
+            onBlur={() => { titleEditingRef.current = false; onCommitField('title', titleDraft); }}
           />
-        ))}
-        {!serviceRows.length ? <PanelNote style={{ margin: '8px 0' }}>No services on this milestone yet.</PanelNote> : null}
-      </PackageChildren>
+          <AutoTextArea
+            as={PlainPriceBase}
+            $width="48px"
+            inputMode="decimal"
+            value={taxDraft}
+            placeholder="%"
+            title="Tax (%)"
+            aria-label="Tax percent"
+            onFocus={() => { taxEditingRef.current = true; }}
+            onChange={event => setTaxDraft(event.target.value)}
+            onBlur={() => { taxEditingRef.current = false; onCommitField('taxPercent', taxDraft); }}
+          />
+        </PackageHeaderRow>
+        <MilestoneCheckboxRow>
+          <CustomizedTag title="Sum of this milestone's rows">Subtotal: {formatEuroPreview(subtotal)}</CustomizedTag>
+          <CustomizedTag title="Subtotal + tax">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
+        </MilestoneCheckboxRow>
 
-      <PackageAddRow>
-        <PackageQuickField
-          rows={1}
-          placeholder="Custom line name…"
-          value={customName}
-          onChange={event => setCustomName(event.target.value)}
-        />
-        <PackageQuickPrice
-          rows={1}
-          placeholder="Price or GIFT"
-          value={customPrice}
-          onChange={event => setCustomPrice(event.target.value)}
-        />
-        <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
-        <PackageQuickPrice rows={1} inputMode="decimal" placeholder="% of package" value={percentDraft} onChange={event => setPercentDraft(event.target.value)} />
-        <SmallButton type="button" onClick={handleAddPackagePercent}><FaPlus /> Percent</SmallButton>
-        <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
-          <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
-        </SmallButton>
-        <SmallButton type="button" onClick={onAddPercentService} title="Add a share of the package price (e.g. 20%)">
-          <FaPlus /> % of package
-        </SmallButton>
-      </PackageAddRow>
+        <PackageChildren>
+          {serviceRows.map((row, rowIndex) => (
+            <ServiceLineRow
+              key={row.key}
+              row={row}
+              index={rowIndex}
+              isChild
+              catalogPackages={catalogPackages}
+              onCommit={(field, value) => onCommitServiceField(row.id, field, value)}
+              onRemove={() => onRemoveService(row.id)}
+              onReset={row.kind === 'item' && row.isCustomized ? () => onResetService(row.id) : undefined}
+            />
+          ))}
+          {!serviceRows.length ? <PanelNote style={{ margin: '8px 0' }}>No services on this milestone yet.</PanelNote> : null}
+        </PackageChildren>
 
-      {showPicker ? (
-        <InlinePickerBox>
-          <CatalogSearchField rows={1} placeholder="Search catalog services…" value={query} onChange={event => setQuery(event.target.value)} />
-          <CatalogPickerList>
-            {availableItems.map(item => (
-              <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogService(item.id); setShowPicker(false); setQuery(''); }}>
-                <span>{item.name}</span>
-              </CatalogPickerButton>
-            ))}
-            {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
-          </CatalogPickerList>
-        </InlinePickerBox>
-      ) : null}
-    </PackageCard>
+        <PackageAddRow>
+          <PackageQuickField
+            rows={1}
+            placeholder="Custom line name…"
+            value={customName}
+            onChange={event => setCustomName(event.target.value)}
+          />
+          <PackageQuickPrice
+            rows={1}
+            placeholder="Price or GIFT"
+            value={customPrice}
+            onChange={event => setCustomPrice(event.target.value)}
+          />
+          <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
+          <PackageQuickPrice rows={1} inputMode="decimal" placeholder="% of package" value={percentDraft} onChange={event => setPercentDraft(event.target.value)} />
+          <SmallButton type="button" onClick={handleAddPackagePercent}><FaPlus /> Percent</SmallButton>
+          <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
+            <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
+          </SmallButton>
+          <SmallButton type="button" onClick={onAddPercentService} title="Add a share of the package price (e.g. 20%)">
+            <FaPlus /> % of package
+          </SmallButton>
+        </PackageAddRow>
+
+        {showPicker ? (
+          <InlinePickerBox>
+            <CatalogSearchField rows={1} placeholder="Search catalog services…" value={query} onChange={event => setQuery(event.target.value)} />
+            <CatalogPickerList>
+              {availableItems.map(item => (
+                <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogService(item.id); setShowPicker(false); setQuery(''); }}>
+                  <span>{item.name}</span>
+                </CatalogPickerButton>
+              ))}
+              {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
+            </CatalogPickerList>
+          </InlinePickerBox>
+        ) : null}
+      </MilestoneBody>
+    </MilestoneDetails>
   );
 };
 
@@ -1163,6 +1379,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
   const [catalogTab, setCatalogTab] = useState('items');
   const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
+  const [beneficiaryExpanded, setBeneficiaryExpanded] = useState(false);
+  const [payerExpanded, setPayerExpanded] = useState(false);
   const fileInputRef = useRef(null);
   const expectedExpensesFileInputRef = useRef(null);
 
@@ -2028,102 +2246,136 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         {!loading && !error ? (
           <>
             <Panel>
-              <PanelHeading>
-                <H2>Beneficiary</H2>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <SmallButton type="button" onClick={addBeneficiary}><FaPlus /> Add</SmallButton>
-                  <DangerButton type="button" onClick={deleteActiveBeneficiary}><FaTrash /> Delete</DangerButton>
+              <CompactSection
+                $expanded={beneficiaryExpanded}
+                onClick={() => setBeneficiaryExpanded(current => !current)}
+                role="button"
+                aria-expanded={beneficiaryExpanded}
+              >
+                <div>
+                  <CompactLabel>Beneficiary</CompactLabel>
+                  <CompactValue>
+                    {[activeBeneficiary?.title, activeBeneficiary?.bankName].filter(Boolean).join(' · ') || 'No beneficiary yet'}
+                  </CompactValue>
                 </div>
-              </PanelHeading>
-              <FieldRow>
-                <FieldTag>Active</FieldTag>
-                <PlainSelect value={activeBeneficiary?.id || ''} onChange={event => handleSelectBeneficiary(event.target.value)}>
-                  {data.beneficiaries.map(beneficiary => (
-                    <option key={beneficiary.id} value={beneficiary.id}>{beneficiary.title || beneficiary.id}</option>
-                  ))}
-                </PlainSelect>
-              </FieldRow>
-              {activeBeneficiary ? (
+                <CompactChevron>{beneficiaryExpanded ? 'Hide ›' : 'Edit ›'}</CompactChevron>
+              </CompactSection>
+              {beneficiaryExpanded ? (
                 <>
+                  <PanelHeading>
+                    <H2>Beneficiary</H2>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <SmallButton type="button" onClick={addBeneficiary}><FaPlus /> Add</SmallButton>
+                      <DangerButton type="button" onClick={deleteActiveBeneficiary}><FaTrash /> Delete</DangerButton>
+                    </div>
+                  </PanelHeading>
                   <FieldRow>
-                    <FieldTag>Title</FieldTag>
-                    <AutoTextArea
-                      value={activeBeneficiary.title || ''}
-                      onChange={event => updateActiveBeneficiaryField('title', event.target.value)}
-                      onBlur={event => persistActiveBeneficiaryField('title', event.target.value)}
-                    />
+                    <FieldTag>Active</FieldTag>
+                    <PlainSelect value={activeBeneficiary?.id || ''} onChange={event => handleSelectBeneficiary(event.target.value)}>
+                      {data.beneficiaries.map(beneficiary => (
+                        <option key={beneficiary.id} value={beneficiary.id}>{beneficiary.title || beneficiary.id}</option>
+                      ))}
+                    </PlainSelect>
                   </FieldRow>
-                  <FieldRow>
-                    <FieldTag>Address</FieldTag>
-                    <AutoTextArea
-                      value={activeBeneficiary.address || ''}
-                      onChange={event => updateActiveBeneficiaryField('address', event.target.value)}
-                      onBlur={event => persistActiveBeneficiaryField('address', event.target.value)}
-                    />
-                  </FieldRow>
-                  <FieldRow>
-                    <FieldTag>IBAN</FieldTag>
-                    <AutoTextArea
-                      value={activeBeneficiary.iban || ''}
-                      onChange={event => updateActiveBeneficiaryField('iban', event.target.value)}
-                      onBlur={event => persistActiveBeneficiaryField('iban', event.target.value)}
-                    />
-                  </FieldRow>
-                  <FieldRow>
-                    <FieldTag>Bank name</FieldTag>
-                    <AutoTextArea
-                      value={activeBeneficiary.bankName || ''}
-                      onChange={event => updateActiveBeneficiaryField('bankName', event.target.value)}
-                      onBlur={event => persistActiveBeneficiaryField('bankName', event.target.value)}
-                    />
-                  </FieldRow>
-                  <FieldRow>
-                    <FieldTag>SWIFT code</FieldTag>
-                    <AutoTextArea
-                      value={activeBeneficiary.swiftCode || ''}
-                      onChange={event => updateActiveBeneficiaryField('swiftCode', event.target.value)}
-                      onBlur={event => persistActiveBeneficiaryField('swiftCode', event.target.value)}
-                    />
-                  </FieldRow>
-                  <FieldRow>
-                    <FieldTag>Payment purpose</FieldTag>
-                    <AutoTextArea
-                      value={activeBeneficiary.paymentPurpose || ''}
-                      placeholder="{invoiceNumber} and {invoiceDate} are filled in automatically"
-                      onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
-                      onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
-                    />
-                  </FieldRow>
+                  {activeBeneficiary ? (
+                    <>
+                      <FieldRow>
+                        <FieldTag>Title</FieldTag>
+                        <AutoTextArea
+                          value={activeBeneficiary.title || ''}
+                          onChange={event => updateActiveBeneficiaryField('title', event.target.value)}
+                          onBlur={event => persistActiveBeneficiaryField('title', event.target.value)}
+                        />
+                      </FieldRow>
+                      <FieldRow>
+                        <FieldTag>Address</FieldTag>
+                        <AutoTextArea
+                          value={activeBeneficiary.address || ''}
+                          onChange={event => updateActiveBeneficiaryField('address', event.target.value)}
+                          onBlur={event => persistActiveBeneficiaryField('address', event.target.value)}
+                        />
+                      </FieldRow>
+                      <FieldRow>
+                        <FieldTag>IBAN</FieldTag>
+                        <AutoTextArea
+                          value={activeBeneficiary.iban || ''}
+                          onChange={event => updateActiveBeneficiaryField('iban', event.target.value)}
+                          onBlur={event => persistActiveBeneficiaryField('iban', event.target.value)}
+                        />
+                      </FieldRow>
+                      <FieldRow>
+                        <FieldTag>Bank name</FieldTag>
+                        <AutoTextArea
+                          value={activeBeneficiary.bankName || ''}
+                          onChange={event => updateActiveBeneficiaryField('bankName', event.target.value)}
+                          onBlur={event => persistActiveBeneficiaryField('bankName', event.target.value)}
+                        />
+                      </FieldRow>
+                      <FieldRow>
+                        <FieldTag>SWIFT code</FieldTag>
+                        <AutoTextArea
+                          value={activeBeneficiary.swiftCode || ''}
+                          onChange={event => updateActiveBeneficiaryField('swiftCode', event.target.value)}
+                          onBlur={event => persistActiveBeneficiaryField('swiftCode', event.target.value)}
+                        />
+                      </FieldRow>
+                      <FieldRow>
+                        <FieldTag>Payment purpose</FieldTag>
+                        <AutoTextArea
+                          value={activeBeneficiary.paymentPurpose || ''}
+                          placeholder="{invoiceNumber} and {invoiceDate} are filled in automatically"
+                          onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
+                          onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
+                        />
+                      </FieldRow>
+                    </>
+                  ) : null}
                 </>
               ) : null}
             </Panel>
 
             <Panel>
-              <PanelHeading>
-                <H2>Payer (customers)</H2>
-                <SmallButton type="button" onClick={addCustomer}><FaPlus /> Add customer</SmallButton>
-              </PanelHeading>
-              <PanelNote>{`Payer: ${payerName || '—'} · ${caseTitle}`}</PanelNote>
-              {data.customers.map((customer, index) => (
-                <FieldRow key={`customer-${index}`}>
-                  <FieldTag>Customer {index + 1}</FieldTag>
-                  <AutoTextArea
-                    placeholder="Name"
-                    value={customer.name || ''}
-                    onChange={event => updateCustomerField(index, 'name', event.target.value)}
-                    onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
-                  />
-                  <AutoTextArea
-                    placeholder="Address / country"
-                    value={customer.address || ''}
-                    onChange={event => updateCustomerField(index, 'address', event.target.value)}
-                    onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
-                  />
-                  <IconDangerButton type="button" onClick={() => removeCustomer(index)} title="Remove customer" aria-label="Remove customer">
-                    <FaTrash />
-                  </IconDangerButton>
-                </FieldRow>
-              ))}
+              <CompactSection
+                $expanded={payerExpanded}
+                onClick={() => setPayerExpanded(current => !current)}
+                role="button"
+                aria-expanded={payerExpanded}
+              >
+                <div>
+                  <CompactLabel>Payer</CompactLabel>
+                  <CompactValue>{[payerName, payerLocation].filter(Boolean).join(' · ') || 'No payer yet'}</CompactValue>
+                </div>
+                <CompactChevron>{payerExpanded ? 'Hide ›' : 'Edit ›'}</CompactChevron>
+              </CompactSection>
+              {payerExpanded ? (
+                <>
+                  <PanelHeading>
+                    <H2>Payer (customers)</H2>
+                    <SmallButton type="button" onClick={addCustomer}><FaPlus /> Add customer</SmallButton>
+                  </PanelHeading>
+                  <PanelNote>{`Payer: ${payerName || '—'} · ${caseTitle}`}</PanelNote>
+                  {data.customers.map((customer, index) => (
+                    <FieldRow key={`customer-${index}`}>
+                      <FieldTag>Customer {index + 1}</FieldTag>
+                      <AutoTextArea
+                        placeholder="Name"
+                        value={customer.name || ''}
+                        onChange={event => updateCustomerField(index, 'name', event.target.value)}
+                        onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
+                      />
+                      <AutoTextArea
+                        placeholder="Address / country"
+                        value={customer.address || ''}
+                        onChange={event => updateCustomerField(index, 'address', event.target.value)}
+                        onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
+                      />
+                      <IconDangerButton type="button" onClick={() => removeCustomer(index)} title="Remove customer" aria-label="Remove customer">
+                        <FaTrash />
+                      </IconDangerButton>
+                    </FieldRow>
+                  ))}
+                </>
+              ) : null}
             </Panel>
 
             <Panel>
@@ -2186,7 +2438,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               ) : null}
 
               <FieldRow $align="center" style={{ marginTop: 14 }}>
-                <FieldTag>Add custom</FieldTag>
                 <PlainTextBase
                   rows={1}
                   placeholder="New custom service name"
