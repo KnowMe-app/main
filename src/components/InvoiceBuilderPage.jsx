@@ -17,7 +17,6 @@ import {
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
-import PdfPagePreviewStrip from './PdfPagePreviewStrip';
 import { formatEuroSmart, getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isAdminUid } from 'utils/accessLevel';
@@ -317,6 +316,11 @@ const CompactSection = styled.div`
   margin-bottom: ${({ $expanded }) => ($expanded ? '8px' : 0)};
 `;
 
+const CompactInfo = styled.div`
+  flex: 1 1 auto;
+  min-width: 0;
+`;
+
 const CompactLabel = styled.div`
   font-size: 9.5px;
   font-weight: 800;
@@ -372,6 +376,33 @@ const FieldTag = styled.span`
   @media (max-width: 560px) {
     width: 84px;
   }
+`;
+
+// A label-on-top, full-width-value-below layout for long free-text fields (Purpose of the
+// payment, Notes, ...) - side-by-side FieldRow/FieldTag squeezes long text into a narrow right
+// column and forces the label to wrap too, which reads badly once the value runs past a few words.
+const StackedFieldRow = styled.div`
+  padding: 5px 0;
+
+  & + & {
+    border-top: 1px solid var(--km-border);
+  }
+`;
+
+const StackedFieldHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+`;
+
+const StackedFieldTag = styled.span`
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--km-muted);
 `;
 
 const plainFieldStyle = css`
@@ -491,7 +522,19 @@ const LineCard = styled.div`
 const LineMainRow = styled.div`
   display: flex;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 6px;
+`;
+
+// The footer row of a service line (price + reorder + delete) - always its own row below the
+// name/description so a long name never has to fight fixed-width siblings for space in the same
+// flex row (that squeeze is what forced a <textarea> into single-character-per-line wrapping).
+const LineFooterRow = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
 `;
 
 const RowIndex = styled.span`
@@ -565,6 +608,7 @@ const PercentShareRow = ({
   index,
   isChild,
   catalogPackages,
+  lockPackage = false,
   onCommit,
   onRemove,
   removeTitle,
@@ -575,20 +619,36 @@ const PercentShareRow = ({
 }) => {
   const [percentDraft, setPercentDraft, percentEditingRef] = useFieldDraft(String(row.percent ?? ''));
 
+  const lockedPackageName = useMemo(
+    () => catalogPackages.find(pkg => String(pkg.id) === String(row.packageId))?.name || `Package ${row.packageId}`,
+    [catalogPackages, row.packageId],
+  );
+
   return (
     <LineCard>
       <LineMainRow>
         <RowIndex>{index + 1}</RowIndex>
-        <PlainSelect
-          aria-label="Package this share is calculated from"
-          value={row.packageId}
-          onChange={event => onCommit('packageId', event.target.value)}
-        >
-          {!catalogPackages.some(pkg => String(pkg.id) === String(row.packageId)) ? (
-            <option value={row.packageId}>{`Package ${row.packageId}`}</option>
-          ) : null}
-          {catalogPackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
-        </PlainSelect>
+        {lockPackage ? (
+          <span
+            title="This invoice's package is fixed at the top - see the Package field above"
+            style={{
+              flex: '1 1 auto', minWidth: 0, padding: '6px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}
+          >
+            {lockedPackageName}
+          </span>
+        ) : (
+          <PlainSelect
+            aria-label="Package this share is calculated from"
+            value={row.packageId}
+            onChange={event => onCommit('packageId', event.target.value)}
+          >
+            {!catalogPackages.some(pkg => String(pkg.id) === String(row.packageId)) ? (
+              <option value={row.packageId}>{`Package ${row.packageId}`}</option>
+            ) : null}
+            {catalogPackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
+          </PlainSelect>
+        )}
         <AutoTextArea
           as={PlainPriceBase}
           $size={isChild ? '12.5px' : '13px'}
@@ -629,6 +689,7 @@ const ServiceLineRow = ({
   index,
   isChild = false,
   catalogPackages = [],
+  lockPackage = false,
   onCommit,
   onRemove,
   removeTitle = 'Remove',
@@ -650,6 +711,7 @@ const ServiceLineRow = ({
         index={index}
         isChild={isChild}
         catalogPackages={catalogPackages}
+        lockPackage={lockPackage}
         onCommit={onCommit}
         onRemove={onRemove}
         removeTitle={removeTitle}
@@ -675,6 +737,26 @@ const ServiceLineRow = ({
           onChange={event => setNameDraft(event.target.value)}
           onBlur={() => { nameEditingRef.current = false; onCommit('name', nameDraft); }}
         />
+      </LineMainRow>
+      {descriptionOpen ? (
+        <AutoTextArea
+          $size="11.5px"
+          $weight="500"
+          style={{ color: 'var(--km-muted)' }}
+          value={descriptionDraft}
+          placeholder="Add description…"
+          aria-label="Description"
+          autoFocus
+          onFocus={() => { descriptionEditingRef.current = true; }}
+          onChange={event => setDescriptionDraft(event.target.value)}
+          onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); }}
+        />
+      ) : (
+        <DescriptionToggle type="button" $hasValue={Boolean(row.description)} onClick={() => setDescriptionOpen(true)}>
+          {row.description || '+ Add description'}
+        </DescriptionToggle>
+      )}
+      <LineFooterRow>
         <AutoTextArea
           as={PlainPriceBase}
           $size={isChild ? '12.5px' : '13px'}
@@ -708,25 +790,7 @@ const ServiceLineRow = ({
             <FaTrash />
           </IconDangerButton>
         </RowActions>
-      </LineMainRow>
-      {descriptionOpen ? (
-        <AutoTextArea
-          $size="11.5px"
-          $weight="500"
-          style={{ color: 'var(--km-muted)' }}
-          value={descriptionDraft}
-          placeholder="Add description…"
-          aria-label="Description"
-          autoFocus
-          onFocus={() => { descriptionEditingRef.current = true; }}
-          onChange={event => setDescriptionDraft(event.target.value)}
-          onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); }}
-        />
-      ) : (
-        <DescriptionToggle type="button" $hasValue={Boolean(row.description)} onClick={() => setDescriptionOpen(true)}>
-          {row.description || '+ Add description'}
-        </DescriptionToggle>
-      )}
+      </LineFooterRow>
     </LineCard>
   );
 };
@@ -1162,16 +1226,12 @@ const MilestoneCard = ({
   onResetService,
   onAddCustomService,
   onAddCatalogService,
-  onAddPercentService,
-  onAddPackagePercent,
 }) => {
-  const [titleDraft, setTitleDraft, titleEditingRef] = useFieldDraft(milestone.title);
   const [taxDraft, setTaxDraft, taxEditingRef] = useFieldDraft(String(milestone.taxPercent ?? ''));
   const [showPicker, setShowPicker] = useState(false);
   const [query, setQuery] = useState('');
   const [customName, setCustomName] = useState('');
   const [customPrice, setCustomPrice] = useState('');
-  const [percentDraft, setPercentDraft] = useState('');
 
   const usedCatalogIds = useMemo(
     () => new Set(serviceRows.filter(row => row.kind === 'item').map(row => String(row.catalogId))),
@@ -1197,16 +1257,6 @@ const MilestoneCard = ({
     setCustomPrice('');
   };
 
-  const handleAddPackagePercent = () => {
-    const percent = Number(percentDraft.replace(',', '.'));
-    if (!Number.isFinite(percent)) {
-      toast.error('Enter a valid package percent.');
-      return;
-    }
-    onAddPackagePercent(percent);
-    setPercentDraft('');
-  };
-
   return (
     <MilestoneDetails>
       <MilestoneSummary>
@@ -1222,30 +1272,20 @@ const MilestoneCard = ({
       </MilestoneSummary>
 
       <MilestoneBody>
-        <PackageHeaderRow>
-          <AutoTextArea
-            $size="13.5px"
-            $weight="800"
-            value={titleDraft}
-            placeholder="Milestone title"
-            aria-label="Milestone title"
-            onFocus={() => { titleEditingRef.current = true; }}
-            onChange={event => setTitleDraft(event.target.value)}
-            onBlur={() => { titleEditingRef.current = false; onCommitField('title', titleDraft); }}
-          />
+        <FieldRow $align="center">
+          <FieldTag>Tax (%)</FieldTag>
           <AutoTextArea
             as={PlainPriceBase}
             $width="48px"
             inputMode="decimal"
             value={taxDraft}
-            placeholder="%"
-            title="Tax (%)"
+            placeholder="0"
             aria-label="Tax percent"
             onFocus={() => { taxEditingRef.current = true; }}
             onChange={event => setTaxDraft(event.target.value)}
             onBlur={() => { taxEditingRef.current = false; onCommitField('taxPercent', taxDraft); }}
           />
-        </PackageHeaderRow>
+        </FieldRow>
         <MilestoneCheckboxRow>
           <CustomizedTag title="Sum of this milestone's rows">Subtotal: {formatEuroPreview(subtotal)}</CustomizedTag>
           <CustomizedTag title="Subtotal + tax">Due: {formatEuroPreview(amountDue)}</CustomizedTag>
@@ -1258,6 +1298,7 @@ const MilestoneCard = ({
               row={row}
               index={rowIndex}
               isChild
+              lockPackage
               catalogPackages={catalogPackages}
               onCommit={(field, value) => onCommitServiceField(row.id, field, value)}
               onRemove={() => onRemoveService(row.id)}
@@ -1281,13 +1322,8 @@ const MilestoneCard = ({
             onChange={event => setCustomPrice(event.target.value)}
           />
           <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
-          <PackageQuickPrice rows={1} inputMode="decimal" placeholder="% of package" value={percentDraft} onChange={event => setPercentDraft(event.target.value)} />
-          <SmallButton type="button" onClick={handleAddPackagePercent}><FaPlus /> Percent</SmallButton>
           <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
             <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
-          </SmallButton>
-          <SmallButton type="button" onClick={onAddPercentService} title="Add a share of the package price (e.g. 20%)">
-            <FaPlus /> % of package
           </SmallButton>
         </PackageAddRow>
 
@@ -1477,16 +1513,37 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     [data.invoiceServices, catalogItemsById, priceContext],
   );
 
+  // "% of package" only makes sense once a package is already part of this invoice - it's a
+  // share of that package's price, not a standalone add option (spec item C).
+  const firstTopLevelPackage = useMemo(
+    () => invoiceServiceRows.find(row => row.kind === 'package') || null,
+    [invoiceServiceRows],
+  );
+
   const subtotal = useMemo(() => computeInvoiceSubtotal(invoiceServiceRows), [invoiceServiceRows]);
   const total = useMemo(() => computeInvoiceTotal(subtotal, data.taxPercent), [subtotal, data.taxPercent]);
   const amountDue = useMemo(() => computeInvoiceAmountDue(total, data.debtOrDeposit), [total, data.debtOrDeposit]);
 
   const { invoiceNumber, invoiceDate } = useMemo(() => generateInvoiceIdentifiers(invoiceDateInput), [invoiceDateInput]);
 
-  const purposeOfPayment = useMemo(
+  const defaultPurposeOfPayment = useMemo(
     () => applyPaymentPurposePlaceholders(activeBeneficiary?.paymentPurpose, { invoiceNumber, invoiceDate }),
     [activeBeneficiary, invoiceNumber, invoiceDate],
   );
+  // An explicit per-invoice override always wins over the auto-generated text (spec item E).
+  const purposeOfPayment = data.paymentPurposeOverride || defaultPurposeOfPayment;
+  const [purposeOfPaymentDraft, setPurposeOfPaymentDraft, purposeOfPaymentEditingRef] = useFieldDraft(purposeOfPayment);
+
+  const commitPurposeOfPayment = value => {
+    const nextValue = value === defaultPurposeOfPayment ? '' : value;
+    setData(current => ({ ...current, paymentPurposeOverride: nextValue }));
+    persistPath(`${INVOICE_DATA_PATH}/paymentPurposeOverride`, nextValue, 'Purpose of the payment updated.');
+  };
+
+  const resetPurposeOfPayment = () => {
+    setData(current => ({ ...current, paymentPurposeOverride: '' }));
+    persistPath(`${INVOICE_DATA_PATH}/paymentPurposeOverride`, '', 'Purpose of the payment reset to auto-generated.');
+  };
 
   const payerName = useMemo(() => buildPayerName(data.customers), [data.customers]);
   const payerLocation = useMemo(() => buildPayerLocation(data.customers), [data.customers]);
@@ -1904,20 +1961,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
   };
 
-  const addMilestonePercentService = milestoneId => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? addMilestoneService(milestone, makePercentOfPackageEntry(expectedExpenses.packageId, 0))
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
-  };
-
-  const addMilestonePackagePercentService = (milestoneId, percent) => {
-    const nextMilestones = expectedExpenses.milestones.map(milestone => (milestone.id === milestoneId
-      ? addMilestoneService(milestone, makePercentOfPackageEntry(expectedExpenses.packageId, percent))
-      : milestone));
-    persistExpectedExpensesMilestones(nextMilestones, 'Service added.');
-  };
-
   const handleGenerateExpectedExpensesPdf = async () => {
     if (!expectedExpenses || !expectedExpensesView?.milestoneRows?.length) {
       toast.error('Choose a package to build the plan first.');
@@ -2252,12 +2295,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 role="button"
                 aria-expanded={beneficiaryExpanded}
               >
-                <div>
+                <CompactInfo>
                   <CompactLabel>Beneficiary</CompactLabel>
                   <CompactValue>
                     {[activeBeneficiary?.title, activeBeneficiary?.bankName].filter(Boolean).join(' · ') || 'No beneficiary yet'}
                   </CompactValue>
-                </div>
+                </CompactInfo>
                 <CompactChevron>{beneficiaryExpanded ? 'Hide ›' : 'Edit ›'}</CompactChevron>
               </CompactSection>
               {beneficiaryExpanded ? (
@@ -2319,15 +2362,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                           onBlur={event => persistActiveBeneficiaryField('swiftCode', event.target.value)}
                         />
                       </FieldRow>
-                      <FieldRow>
-                        <FieldTag>Payment purpose</FieldTag>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>Payment purpose</StackedFieldTag>
+                        </StackedFieldHeader>
                         <AutoTextArea
+                          style={{ width: '100%' }}
                           value={activeBeneficiary.paymentPurpose || ''}
                           placeholder="{invoiceNumber} and {invoiceDate} are filled in automatically"
                           onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
                         />
-                      </FieldRow>
+                      </StackedFieldRow>
                     </>
                   ) : null}
                 </>
@@ -2341,10 +2387,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 role="button"
                 aria-expanded={payerExpanded}
               >
-                <div>
+                <CompactInfo>
                   <CompactLabel>Payer</CompactLabel>
                   <CompactValue>{[payerName, payerLocation].filter(Boolean).join(' · ') || 'No payer yet'}</CompactValue>
-                </div>
+                </CompactInfo>
                 <CompactChevron>{payerExpanded ? 'Hide ›' : 'Edit ›'}</CompactChevron>
               </CompactSection>
               {payerExpanded ? (
@@ -2451,15 +2497,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   onChange={event => setNewCustomServicePrice(event.target.value)}
                 />
                 <SmallButton type="button" onClick={addCustomServiceEntry}><FaPlus /> Add</SmallButton>
-                <SmallButton
-                  type="button"
-                  title="Add a share of a catalog package's price (e.g. 20%)"
-                  onClick={() => (visibleCatalogPackages.length
-                    ? addPercentServiceEntry(visibleCatalogPackages[0].id)
-                    : toast.error('No packages in the catalog yet.'))}
-                >
-                  <FaPlus /> % of package
-                </SmallButton>
+                {firstTopLevelPackage ? (
+                  <SmallButton
+                    type="button"
+                    title="Add a share of this invoice's package price (e.g. 20%)"
+                    onClick={() => addPercentServiceEntry(firstTopLevelPackage.catalogId)}
+                  >
+                    <FaPlus /> % of package
+                  </SmallButton>
+                ) : null}
               </FieldRow>
 
               <div style={{ marginTop: 8 }}>
@@ -2547,9 +2593,27 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   <span>Generate Payment Details (separate PDF)</span>
                 </label>
               </FieldRow>
+              <StackedFieldRow style={{ marginTop: 10 }}>
+                <StackedFieldHeader>
+                  <StackedFieldTag>Purpose of the payment</StackedFieldTag>
+                  {data.paymentPurposeOverride ? (
+                    <IconButton type="button" onClick={resetPurposeOfPayment} title="Revert to the auto-generated text" aria-label="Revert to the auto-generated text">
+                      <FaUndoAlt />
+                    </IconButton>
+                  ) : null}
+                </StackedFieldHeader>
+                <AutoTextArea
+                  style={{ width: '100%' }}
+                  value={purposeOfPaymentDraft}
+                  placeholder="Auto-generated from the beneficiary's payment purpose template"
+                  aria-label="Purpose of the payment"
+                  onFocus={() => { purposeOfPaymentEditingRef.current = true; }}
+                  onChange={event => setPurposeOfPaymentDraft(event.target.value)}
+                  onBlur={() => { purposeOfPaymentEditingRef.current = false; commitPurposeOfPayment(purposeOfPaymentDraft); }}
+                />
+              </StackedFieldRow>
               <SummaryGrid style={{ marginTop: 10 }}>
                 <SummaryLine><span>Invoice number</span><span>{invoiceNumber}</span></SummaryLine>
-                <SummaryLine><span>Purpose of the payment</span><span style={{ textAlign: 'right', maxWidth: 420 }}>{purposeOfPayment || '—'}</span></SummaryLine>
                 <SummaryLine><span>Location</span><span>{payerLocation || '—'}</span></SummaryLine>
                 <SummaryLine><span>Subtotal</span><span>{formatEuroPreview(subtotal)}</span></SummaryLine>
                 {data.debtOrDeposit ? (
@@ -2568,17 +2632,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <SmallButton type="button" onClick={addNote}><FaPlus /> Add note</SmallButton>
               </PanelHeading>
               {data.notes.map((note, index) => (
-                <FieldRow key={`note-${index}`}>
-                  <FieldTag>Note {index + 1}</FieldTag>
+                <StackedFieldRow key={`note-${index}`}>
+                  <StackedFieldHeader>
+                    <StackedFieldTag>Note {index + 1}</StackedFieldTag>
+                    <IconDangerButton type="button" onClick={() => removeNote(index)} title="Remove note" aria-label="Remove note">
+                      <FaTrash />
+                    </IconDangerButton>
+                  </StackedFieldHeader>
                   <AutoTextArea
+                    style={{ width: '100%' }}
                     value={note}
                     onChange={event => updateNote(index, event.target.value)}
                     onBlur={commitNote}
                   />
-                  <IconDangerButton type="button" onClick={() => removeNote(index)} title="Remove note" aria-label="Remove note">
-                    <FaTrash />
-                  </IconDangerButton>
-                </FieldRow>
+                </StackedFieldRow>
               ))}
               {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
             </Panel>
@@ -2677,49 +2744,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       onResetService={entryId => resetMilestoneServiceEntry(milestone.id, entryId)}
                       onAddCustomService={fields => addMilestoneCustomService(milestone.id, fields)}
                       onAddCatalogService={catalogId => addMilestoneCatalogService(milestone.id, catalogId)}
-                      onAddPercentService={() => addMilestonePercentService(milestone.id)}
-                      onAddPackagePercent={percent => addMilestonePackagePercentService(milestone.id, percent)}
                     />
                   ))}
                 </>
               )}
-            </Panel>
-
-            <Panel>
-              <PanelHeading>
-                <H2>PDF preview</H2>
-              </PanelHeading>
-              <PanelNote>
-                Scaled-down mock-ups of the pages "Generate PDF" would produce, built from the same rows and totals -
-                a quick way to spot a too-long name or a lopsided total before generating the real file.
-              </PanelNote>
-              <PdfPagePreviewStrip
-                title="Invoice"
-                emptyMessage="Add services to preview the invoice PDF."
-                pages={invoiceServiceRows.length ? [{
-                  key: 'invoice',
-                  label: `Invoice ${invoiceNumber}`,
-                  subtitle: caseTitle,
-                  rows: invoiceServiceRows,
-                  subtotal,
-                  taxPercent: data.taxPercent,
-                  total,
-                }] : []}
-              />
-              <div style={{ marginTop: 14 }}>
-                <PdfPagePreviewStrip
-                  title="Expected expenses"
-                  emptyMessage="Choose a package to preview the expected-expenses PDF."
-                  pages={(expectedExpensesView?.milestoneRows || []).map(({ milestone, serviceRows, subtotal: milestoneSubtotal, amountDue }, index) => ({
-                    key: milestone.id,
-                    label: `#${index + 1} ${milestone.title}`,
-                    rows: serviceRows,
-                    subtotal: milestoneSubtotal,
-                    taxPercent: milestone.taxPercent,
-                    total: amountDue,
-                  }))}
-                />
-              </div>
             </Panel>
           </>
         ) : null}

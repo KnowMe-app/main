@@ -66,6 +66,9 @@ export const normalizeInvoiceData = raw => ({
   // taxed): positive = the client still owes a debt from before, negative = they're sitting on a
   // deposit/credit. Zero (the default) means "nothing to carry over" and is never rendered.
   debtOrDeposit: Number.isFinite(Number(raw?.debtOrDeposit)) ? Number(raw.debtOrDeposit) : 0,
+  // Empty string (the default) means "keep auto-generating it from the beneficiary's template" -
+  // any other value is an admin edit for this invoice only and wins over the auto-generated text.
+  paymentPurposeOverride: typeof raw?.paymentPurposeOverride === 'string' ? raw.paymentPurposeOverride : '',
 });
 
 export const isInvoiceDataShape = raw => {
