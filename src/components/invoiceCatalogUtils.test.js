@@ -302,6 +302,16 @@ describe('invoiceCatalogUtils', () => {
       expect(resolveServiceRow(entry, new Map(), { packagesById: bumped }).price).toBe(10000);
     });
 
+    it('rounds a percent-of-package price to the cent instead of leaking float noise (P0 bug)', () => {
+      const packagesById = new Map([['1', { id: '1', name: 'IVF+ED+SM', listedPrice: 12345.67 }]]);
+      const entry = makePercentOfPackageEntry('1', 34.129);
+      const row = resolveServiceRow(entry, new Map(), { packagesById });
+      // Unrounded this would be 12345.67 * 34.129 / 100 = 4213.4537143 (float noise), a value
+      // that renders as an unbounded string of digits instead of a clean currency amount.
+      expect(row.price).toBe(4213.45);
+      expect(Number(row.price.toFixed(10))).toBe(row.price);
+    });
+
     it('flags a percent-of-package row whose package no longer exists', () => {
       const row = resolveServiceRow(makePercentOfPackageEntry('999', 20), new Map(), { packagesById: new Map() });
       expect(row.missing).toBe(true);

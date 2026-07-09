@@ -36,6 +36,14 @@ const toNumber = value => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+// Every computed euro amount is rounded to the cent the moment it's derived (not only when it's
+// formatted for display) - otherwise floating-point multiplication/division (percent-of-package
+// shares, formula-priced catalog items) leaks 12+ digits of noise into the stored/rendered price.
+const roundMoney = value => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+};
+
 export const createEntryId = () => `entry-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 
 // Splits a manually-typed price field into a numeric price or a free-text priceLabel (e.g.
@@ -347,7 +355,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       ? resolveBudgetPriceAmount(pkg.listedPrice, { ...priceContext, itemsById: catalogItemsById })
       : null;
     const percent = Number(entry.percent) || 0;
-    const price = packageAmount == null ? 0 : (packageAmount * percent) / 100;
+    const price = packageAmount == null ? 0 : roundMoney((packageAmount * percent) / 100);
     return {
       key: entry.id,
       id: entry.id,
@@ -367,7 +375,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
     const pkg = priceContext.packagesById?.get?.(String(entry.catalogId));
     const children = Array.isArray(entry.children) ? entry.children : [];
     const resolvedChildren = children.map(child => resolveServiceRow(child, catalogItemsById, priceContext));
-    const childrenTotal = resolvedChildren.reduce((sum, row) => sum + (Number(row.price) || 0), 0);
+    const childrenTotal = roundMoney(resolvedChildren.reduce((sum, row) => sum + (Number(row.price) || 0), 0));
     const hasPriceOverride = entry.priceOverride !== undefined && entry.priceOverride !== null;
     return {
       key: entry.id,
@@ -378,7 +386,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       isCustomized: Boolean(entry.customized),
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? pkg?.description ?? '',
-      price: hasPriceOverride ? Number(entry.priceOverride) || 0 : childrenTotal,
+      price: hasPriceOverride ? roundMoney(entry.priceOverride) : childrenTotal,
       childrenTotal,
       hasPriceOverride,
       children: resolvedChildren,
