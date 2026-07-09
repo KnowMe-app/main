@@ -10,12 +10,22 @@ import {
   buildPayerName,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
+  resolveInvoiceDocType,
   resolveInvoiceServiceRows,
 } from './invoiceCatalogUtils';
 
 ensurePdfFontsRegistered();
 
-const DOC_LABEL = 'Programme Milestone Invoice';
+// Type A vs Type B from the spec's document-type taxonomy - the eyebrow/running-header label
+// depends on what's actually billed (see resolveInvoiceDocType), never a single hardcoded template.
+const DOC_LABEL_BY_TYPE = {
+  programme_milestone: 'Programme Milestone Invoice',
+  service: 'Service Invoice',
+};
+const EYEBROW_BY_TYPE = {
+  programme_milestone: 'Programme milestone invoice',
+  service: 'Service invoice',
+};
 
 // No copies past the decimal for round or four-figure sums; two decimals only when the
 // amount genuinely carries cents (spec §1.8).
@@ -40,7 +50,6 @@ const styles = StyleSheet.create({
     marginTop: 26,
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
-  sectionNote: pdfBaseStyles.sectionNote,
   table: {
     borderRadius: 8,
     overflow: 'hidden',
@@ -226,6 +235,7 @@ const InvoicePdfDocument = ({
   invoiceDate,
   purposeOfPayment,
   priceContext,
+  invoiceType,
 }) => {
   const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, priceContext);
   const displayRows = buildDisplayRows(rows);
@@ -235,23 +245,26 @@ const InvoicePdfDocument = ({
   const payerLocation = buildPayerLocation(customers);
   const caseTitle = buildCaseTitle(customers);
   const noteList = Array.isArray(notes) ? notes.filter(note => String(note || '').trim()) : [];
+  const docType = invoiceType === 'service' || invoiceType === 'programme_milestone'
+    ? invoiceType
+    : resolveInvoiceDocType(rows);
+  const docLabel = DOC_LABEL_BY_TYPE[docType];
+  const eyebrow = EYEBROW_BY_TYPE[docType];
 
   return (
     <Document title={`Invoice ${invoiceNumber || ''}`} subject="Invoice" creator="UKRCOM">
       <Page size="A4" style={styles.page} wrap>
         <BronzeMotif />
-        <ContinuedTag label={DOC_LABEL} />
+        <ContinuedTag label={docLabel} />
         <BrandRow metaLines={[`Invoice No. ${invoiceNumber || ''}`, invoiceDate, caseTitle]} />
         <BrandRule />
         <TitleBlock
-          eyebrow="Programme milestone invoice"
+          eyebrow={eyebrow}
           title={`Invoice No. ${invoiceNumber || ''}`}
           subtitle={`Prepared for ${payerName}${payerLocation ? ` · ${payerLocation}` : ''}.`}
         />
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Breakdown</Text>
-          <Text style={styles.sectionNote}>{caseTitle}</Text>
           <View style={styles.table}>
             {displayRows.map((row, rowIndex) => {
               const isChild = row.depth > 0;
@@ -307,7 +320,14 @@ const InvoicePdfDocument = ({
           </View>
         </View>
 
-        <View style={styles.section} wrap={false}>
+        <Footer variant="branded" />
+      </Page>
+
+      {/* Payment details gets its own page with a neutral (unbranded) footer: the beneficiary (a
+          sole proprietorship) is a legally separate party from the UKRCOM agency, so this page must
+          not carry the agency's name/address (spec §1.5). */}
+      <Page size="A4" style={styles.page} wrap>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment details</Text>
           <View style={styles.paymentCard}>
             <Text style={styles.paymentCardTitle}>Beneficiary details</Text>
@@ -346,7 +366,7 @@ const InvoicePdfDocument = ({
           </View>
         </View>
 
-        <Footer />
+        <Footer variant="neutral" />
       </Page>
     </Document>
   );

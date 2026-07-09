@@ -412,6 +412,14 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
 export const resolveInvoiceServiceRows = (invoiceServices, catalogItemsById, priceContext = {}) =>
   (Array.isArray(invoiceServices) ? invoiceServices : []).map(entry => resolveServiceRow(entry, catalogItemsById, priceContext));
 
+// An invoice bills for a whole programme milestone (a package row, or a percent-of-package share of
+// one) as soon as any top-level row is tied to a budget/packages program - that's what makes it a
+// "Programme Milestone Invoice" rather than a plain "Service Invoice" for a handful of one-off
+// services/points (spec's document-type taxonomy, Type A vs Type B). Never hardcoded - always
+// derived from what's actually on the invoice.
+export const resolveInvoiceDocType = rows => ((Array.isArray(rows) ? rows : [])
+  .some(row => row?.kind === 'package' || row?.kind === 'percent') ? 'programme_milestone' : 'service');
+
 // Subtotal only walks top-level rows: a package row's price already sums its children, so nested
 // children are never double-counted.
 export const computeInvoiceSubtotal = rows => rows.reduce((sum, row) => sum + (Number(row.price) || 0), 0);

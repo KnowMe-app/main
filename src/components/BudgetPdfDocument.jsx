@@ -359,9 +359,39 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
           ))}
         </View>
 
+        {includedRows.length ? (
+          <View style={styles.section}>
+            <View wrap={false} minPresenceAhead={70}>
+              <Text style={styles.sectionTitle}>Included services by program</Text>
+              <Text style={styles.sectionNote}>An "x" marks the services included in each program package.</Text>
+            </View>
+            <View style={styles.table}>
+              {renderProgramColumnsHead()}
+              {includedRows.map(item => (
+                <View key={item.id} style={styles.tableRow} wrap={false}>
+                  <View style={styles.labelCell}>
+                    <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
+                  </View>
+                  {packages.map(program => {
+                    const included = Array.isArray(program.children)
+                      && program.children.some(id => String(id) === String(item.id));
+                    return (
+                      <View key={`${item.id}-${program.id}`} style={styles.programCell}>
+                        <Text style={styles.markCellText}>{included ? 'x' : ''}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {scheduleRowCount > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment schedule</Text>
+            <View wrap={false} minPresenceAhead={70}>
+              <Text style={styles.sectionTitle}>Payment schedule</Text>
+            </View>
             <View style={styles.table}>
               <View style={styles.tableHeadRow} wrap={false}>
                 <View style={styles.labelCell}>
@@ -400,36 +430,12 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
           </View>
         ) : null}
 
-        {includedRows.length ? (
-          <View style={styles.section} break>
-            <Text style={styles.sectionTitle}>Included services by program</Text>
-            <Text style={styles.sectionNote}>An "x" marks the services included in each program package.</Text>
-            <View style={styles.table}>
-              {renderProgramColumnsHead()}
-              {includedRows.map(item => (
-                <View key={item.id} style={styles.tableRow} wrap={false}>
-                  <View style={styles.labelCell}>
-                    <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
-                  </View>
-                  {packages.map(program => {
-                    const included = Array.isArray(program.children)
-                      && program.children.some(id => String(id) === String(item.id));
-                    return (
-                      <View key={`${item.id}-${program.id}`} style={styles.programCell}>
-                        <Text style={styles.markCellText}>{included ? 'x' : ''}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
         {Object.keys(groupedExpenses).length ? (
-          <View style={styles.section} break>
-            <Text style={styles.sectionTitle}>Other expenses</Text>
-            <Text style={styles.sectionNote}>"From" prices are lower bounds of a range.</Text>
+          <View style={styles.section}>
+            <View wrap={false} minPresenceAhead={70}>
+              <Text style={styles.sectionTitle}>Other expenses</Text>
+              <Text style={styles.sectionNote}>"From" prices are lower bounds of a range.</Text>
+            </View>
             {Object.entries(groupedExpenses).map(([category, categoryItems]) => (
               <View key={category} style={styles.categoryBlock}>
                 <View style={styles.categoryHeader} wrap={false} minPresenceAhead={40}>
