@@ -10,8 +10,8 @@ import {
   View,
 } from '@react-pdf/renderer';
 import {
-  BrandRow, BrandRule, BronzeMotif, Footer, PDF_COLOR, PDF_FONT,
-  ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
+  BrandRow, BrandRule, BronzeMotif, CoordinatorLine, Footer, PDF_COLOR, PDF_FONT,
+  ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, SummaryCard, TitleBlock,
 } from '../pdfTheme';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
@@ -752,94 +752,84 @@ ensurePdfFontsRegistered();
 
 const profilePdfStyles = StyleSheet.create({
   page: pdfBaseStyles.page,
-  table: {
-    borderWidth: 1,
-    borderColor: PDF_COLOR.docLine,
-    borderStyle: 'solid',
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginTop: 22,
+  // "At a glance" - 4 cards in a row (spec §3), not a table: the handful of vitals a coordinator
+  // scans first (Age / Height / Weight / Blood type).
+  glanceRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
   },
-  row: {
+  glanceCard: {
+    flex: 1,
+    backgroundColor: PDF_COLOR.totalCardBg,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+  },
+  glanceLabel: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 6.5,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: PDF_COLOR.footerSoft,
+    marginBottom: 4,
+  },
+  glanceValue: {
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontSize: 15,
+    color: PDF_COLOR.totalCardAmount,
+  },
+  // "Background" / "Personal" (spec §3): a plain list with hairline row dividers only - no shaded
+  // label column, no outer border box (unlike the boxed tables the other UKRCOM documents use).
+  infoSection: {
+    marginTop: 24,
+  },
+  infoSectionTitle: pdfBaseStyles.sectionTitle,
+  infoRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
     borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
-  },
-  firstRow: {
-    borderTopWidth: 0,
-  },
-  labelCell: {
-    width: '38%',
-    backgroundColor: PDF_COLOR.card,
-    borderRightWidth: 1,
-    borderRightColor: PDF_COLOR.docLine,
-    borderRightStyle: 'solid',
     paddingVertical: 7,
-    paddingHorizontal: 10,
-    justifyContent: 'center',
   },
-  labelText: {
+  infoRowFirst: {
+    borderTopWidth: 0,
+    paddingTop: 4,
+  },
+  infoLabelCell: {
+    width: '40%',
+  },
+  infoLabelText: {
     fontFamily: PDF_FONT.body,
     fontWeight: 600,
     fontSize: 8.5,
     color: PDF_COLOR.bronzeDeep,
   },
-  valueCell: {
-    width: '62%',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    justifyContent: 'center',
+  infoValueCell: {
+    flex: 1,
   },
-  valueText: {
+  infoValueText: {
     fontFamily: PDF_FONT.body,
     fontSize: 9.5,
     lineHeight: 1.4,
     color: PDF_COLOR.docInk,
   },
-  // "Картки-акценти для ключових даних" (spec §6): the handful of fields a coordinator scans
-  // first sit in their own bronze accent cards above the full table, instead of blending into it.
-  accentRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 20,
-  },
-  accentCard: {
-    flex: 1,
-    backgroundColor: PDF_COLOR.totalCardBg,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  accentLabel: {
+  imagePage: pdfBaseStyles.page,
+  // "N of M" for the lifestyle/portrait pages (spec §5) - top-right corner, same treatment as
+  // ContinuedTag elsewhere, never inside the photo itself.
+  photoCounter: {
+    position: 'absolute',
+    top: 26,
+    right: 56,
     fontFamily: PDF_FONT.body,
     fontWeight: 600,
-    fontSize: 7,
+    fontSize: 7.5,
     letterSpacing: 1.2,
-    textTransform: 'uppercase',
     color: PDF_COLOR.footerSoft,
-    marginBottom: 4,
+    textTransform: 'uppercase',
   },
-  accentValue: {
-    fontFamily: PDF_FONT.display,
-    fontWeight: 600,
-    fontSize: 16,
-    color: PDF_COLOR.totalCardAmount,
-  },
-  watermark: {
-    position: 'absolute',
-    left: 52,
-    top: 330,
-    width: 520,
-    textAlign: 'center',
-    fontFamily: PDF_FONT.display,
-    fontWeight: 700,
-    fontSize: 106,
-    color: PDF_COLOR.card,
-    opacity: 0.9,
-    transform: 'rotate(-42deg)',
-  },
-  imagePage: pdfBaseStyles.page,
   profileImageWrap: {
     position: 'relative',
     alignSelf: 'center',
@@ -854,19 +844,17 @@ const profilePdfStyles = StyleSheet.create({
     objectFit: 'contain',
     alignSelf: 'center',
   },
-  imageWatermark: {
-    position: 'absolute',
-    zIndex: 1,
-    left: -32,
-    top: 230,
-    width: 520,
+  // Quiet, one-sentence context caption under a photo (spec §5) - only rendered when the source
+  // data actually has one; never generated/guessed by this code. No fontStyle: 'italic' - only
+  // Regular/Medium/SemiBold/Bold Inter is embedded (see ensurePdfFontsRegistered), so a fake
+  // italic would just render as upright text; "quiet" comes from size/color/tracking instead.
+  photoContext: {
+    marginTop: 10,
     textAlign: 'center',
-    fontFamily: PDF_FONT.display,
-    fontWeight: 700,
-    fontSize: 86,
-    color: PDF_COLOR.card,
-    opacity: 0.9,
-    transform: 'rotate(-42deg)',
+    fontFamily: PDF_FONT.body,
+    fontSize: 8.5,
+    letterSpacing: 0.1,
+    color: PDF_COLOR.footerSoft,
   },
 });
 
@@ -972,13 +960,6 @@ const resolvePdfHarmfulHabits = data => {
   ]);
 };
 
-const resolvePdfGeneralHealth = data => {
-  const chronicDiseases = normalizePdfYesNo(data?.chronicDiseases);
-  if (chronicDiseases === 'no') return 'healthy';
-  if (chronicDiseases === 'yes') return 'has chronic diseases';
-  return chronicDiseases;
-};
-
 const resolvePdfMaritalStatus = data => {
   const value = resolvePdfValue(data, ['maritalStatus']);
   if (value === 'no') return 'not married';
@@ -997,85 +978,139 @@ const resolvePdfBloodType = data => {
   return toPdfEnglishValue(value).replace(/Rh-/g, 'Rh−');
 };
 
-const buildProfilePdfRows = data => ([
-  ['Name', toPdfEnglishValue(buildName(data))],
-  ['Age', resolvePdfAge(data)],
-  ['Profession', resolvePdfValue(data, ['profession', 'specialization'])],
-  ['Education', resolvePdfValue(data, ['education'])],
-  ['Marital status', resolvePdfMaritalStatus(data)],
-  ['Number of pregnancies', resolvePdfValue(data, ['ownKids'], { translate: false })],
-  ['Ethnic group', resolvePdfValue(data, ['race', 'ethnicGroup', 'ethnicity'])],
-  ['General health', resolvePdfGeneralHealth(data)],
-  ['Weight', resolvePdfMetric(data, ['weight'], 'kg')],
-  ['Height', resolvePdfMetric(data, ['height'], 'cm')],
-  ['Blood type', resolvePdfBloodType(data)],
-  ['Harmful habits', resolvePdfHarmfulHabits(data)],
-  ['Nationality', 'Ukrainian'],
-  ['Experience in surrogacy', resolvePdfYesNoValue(data, ['surrogacyExperience', 'experienceInSurrogacy'])],
-  ['Cesarean section', resolvePdfYesNoValue(data, ['csection', 'cSection', 'c_section', 'cesareanSection'])],
-]).filter(([, value]) => value);
-
-const buildProfilePdfFileName = data => {
-  const name = buildName(data) || data?.userId || 'profile';
-  const safeName = name
-    .toString()
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, '')
-    .replace(/\s+/g, '-')
-    .slice(0, 80);
-  return `${safeName || 'profile'}-KnowMe.pdf`;
+// Full surname (buildName above also folds in the patronymic) is an internal/contract-system
+// field only - spec §2 requires it never reach this client-facing document. The PDF only ever
+// shows the first name plus a transliterated surname initial, e.g. "Viktoriia I.".
+const resolvePdfNameParts = data => {
+  const firstNameRaw = resolvePdfValue(data, ['name', 'firstName'], { translate: false });
+  const surnameRaw = resolvePdfValue(data, ['surname', 'lastName'], { translate: false });
+  const firstName = transliterateForPdf(firstNameRaw);
+  const lastInitial = surnameRaw ? transliterateForPdf(surnameRaw.trim().charAt(0)) : '';
+  return { firstName, lastInitial };
 };
 
-// The two fields a coordinator scans first get their own bronze accent cards above the full
-// table (spec §6); every other field stays in the plain label/value table.
-const ACCENT_ROW_LABELS = ['Name', 'Age'];
+const resolvePdfDisplayName = data => {
+  const { firstName, lastInitial } = resolvePdfNameParts(data);
+  return [firstName, lastInitial ? `${lastInitial}.` : ''].filter(Boolean).join(' ');
+};
 
-const ProfilePdfDocument = ({ userData, photoUrls }) => {
-  const rows = buildProfilePdfRows(userData);
-  const accentRows = rows.filter(([label]) => ACCENT_ROW_LABELS.includes(label));
-  const tableRows = rows.filter(([label]) => !ACCENT_ROW_LABELS.includes(label));
+const resolvePdfNationality = data => resolvePdfValue(data, ['nationality']) || 'Ukrainian';
+
+// Curated order (spec §3), not the order fields happen to sit in the database.
+// "At a glance": 4 cards - the vitals a coordinator scans first.
+const buildProfileGlanceRows = data => ([
+  ['Age', resolvePdfAge(data)],
+  ['Height', resolvePdfMetric(data, ['height'], 'cm')],
+  ['Weight', resolvePdfMetric(data, ['weight'], 'kg')],
+  ['Blood type', resolvePdfBloodType(data)],
+]).filter(([, value]) => value);
+
+// "Background". "Number of children" is intentionally absent - there is no such field distinct
+// from `ownKids` (which is "number of deliveries", i.e. Number of pregnancies) in the current
+// candidate data model; spec §3 only asks for it "if present in the data".
+const buildProfileBackgroundRows = data => ([
+  ['Marital status', resolvePdfMaritalStatus(data)],
+  ['Number of pregnancies', resolvePdfValue(data, ['ownKids'], { translate: false })],
+  ['Previous surrogacy experience', resolvePdfYesNoValue(data, ['surrogacyExperience', 'experienceInSurrogacy'])],
+  ['Caesarean section', resolvePdfYesNoValue(data, ['csection', 'cSection', 'c_section', 'cesareanSection'])],
+]).filter(([, value]) => value);
+
+// "Personal".
+const buildProfilePersonalRows = data => ([
+  ['Profession', resolvePdfValue(data, ['profession', 'specialization'])],
+  ['Education', resolvePdfValue(data, ['education'])],
+  ['Nationality', resolvePdfNationality(data)],
+  ['Harmful habits', resolvePdfHarmfulHabits(data)],
+]).filter(([, value]) => value);
+
+// spec §7: UKRCOM-SMProfile-{CandidateFirstName}{LastNameInitial}-YYYY-MM-DD.pdf
+const buildProfilePdfFileName = data => {
+  const { firstName, lastInitial } = resolvePdfNameParts(data);
+  const safeName = `${firstName}${lastInitial}`.replace(/[^a-zA-Z0-9-]+/g, '') || 'Profile';
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  return `UKRCOM-SMProfile-${safeName}-${dateStamp}.pdf`;
+};
+
+const renderInfoSection = (title, rows) => (rows.length ? (
+  <View style={profilePdfStyles.infoSection}>
+    <Text style={profilePdfStyles.infoSectionTitle}>{sanitizePdfText(title)}</Text>
+    {rows.map(([label, value], index) => (
+      <View
+        key={label}
+        style={[profilePdfStyles.infoRow, index === 0 ? profilePdfStyles.infoRowFirst : null]}
+        wrap={false}
+      >
+        <View style={profilePdfStyles.infoLabelCell}><Text style={profilePdfStyles.infoLabelText}>{sanitizePdfText(label)}</Text></View>
+        <View style={profilePdfStyles.infoValueCell}><Text style={profilePdfStyles.infoValueText}>{sanitizePdfText(value)}</Text></View>
+      </View>
+    ))}
+  </View>
+) : null);
+
+// `intendedParentNames`, if given, becomes the small corner tag "Prepared exclusively for {names}
+// — Confidential" in the header metadata (spec §1) - replacing the old full-page diagonal
+// watermark entirely, not just relabeling it. There is no field on the candidate record itself
+// that names the intended parents she's being presented to (that association isn't part of this
+// data model - spec §8 keeps DB schema changes out of scope), so the coordinator is prompted for
+// it at export time in ProfilePdfExportButton below; the tag still degrades to plain
+// "Confidential" if left blank rather than reading "Prepared exclusively for  —  Confidential".
+const ProfilePdfDocument = ({ userData, photoUrls, intendedParentNames }) => {
+  const glanceRows = buildProfileGlanceRows(userData);
+  const backgroundRows = buildProfileBackgroundRows(userData);
+  const personalRows = buildProfilePersonalRows(userData);
   const photos = Array.isArray(photoUrls) ? photoUrls : [];
   const photoEntries = photos.map(photo => (
     photo && typeof photo === 'object' ? photo : { src: photo }
   )).filter(photo => photo?.src);
   const dateLabel = formatDisplayDate(new Date());
+  const displayName = resolvePdfDisplayName(userData);
+  const cornerTag = intendedParentNames
+    ? `Prepared exclusively for ${intendedParentNames} — Confidential`
+    : 'Confidential';
+  const summaryText = typeof userData?.moreInfo_main === 'string' ? userData.moreInfo_main.trim() : '';
+
   return (
-    <Document title={`${buildName(userData) || 'Profile'} - UKRCOM Surrogate Mother Profile`} subject="Surrogate mother profile" creator="UKRCOM">
-      <Page size="A4" style={profilePdfStyles.page}>
+    <Document title={`${displayName || 'Profile'} - UKRCOM Surrogate Mother Profile`} subject="Surrogate mother profile" creator="UKRCOM">
+      <Page size="A4" style={profilePdfStyles.page} wrap>
         <BronzeMotif />
-        <Text style={profilePdfStyles.watermark}>UKRCOM</Text>
-        <BrandRow metaLines={[dateLabel, 'Confidential']} />
+        <BrandRow metaLines={[dateLabel, cornerTag]} />
         <BrandRule />
         <TitleBlock
-          eyebrow="Surrogate mother profile"
-          title={buildName(userData) || 'Surrogate Mother Profile'}
+          eyebrow="Surrogate Mother Profile"
+          title={displayName || 'Surrogate Mother Profile'}
+          subtitle={`${resolvePdfNationality(userData)} · medically approved by our clinical team`}
         />
-        {accentRows.length ? (
-          <View style={profilePdfStyles.accentRow} wrap={false}>
-            {accentRows.map(([label, value]) => (
-              <View key={label} style={profilePdfStyles.accentCard}>
-                <Text style={profilePdfStyles.accentLabel}>{sanitizePdfText(label)}</Text>
-                <Text style={profilePdfStyles.accentValue}>{sanitizePdfText(value)}</Text>
+        {glanceRows.length ? (
+          <View style={profilePdfStyles.glanceRow} wrap={false}>
+            {glanceRows.map(([label, value]) => (
+              <View key={label} style={profilePdfStyles.glanceCard}>
+                <Text style={profilePdfStyles.glanceLabel}>{sanitizePdfText(label)}</Text>
+                <Text style={profilePdfStyles.glanceValue}>{sanitizePdfText(value)}</Text>
               </View>
             ))}
           </View>
         ) : null}
-        <View style={profilePdfStyles.table}>
-          {tableRows.map(([label, value], index) => (
-            <View key={label} style={[profilePdfStyles.row, index === 0 ? profilePdfStyles.firstRow : null]} wrap={false}>
-              <View style={profilePdfStyles.labelCell}><Text style={profilePdfStyles.labelText}>{sanitizePdfText(label)}</Text></View>
-              <View style={profilePdfStyles.valueCell}><Text style={profilePdfStyles.valueText}>{sanitizePdfText(value)}</Text></View>
-            </View>
-          ))}
-        </View>
+        {renderInfoSection('Background', backgroundRows)}
+        {renderInfoSection('Personal', personalRows)}
+        {/* Coordinator's summary (spec §4): moreInfo_main rendered verbatim, section omitted
+            entirely (not shown empty) when the field has nothing in it. */}
+        {/* Signature sits right under the card, not above it as PreparedForBlock does elsewhere
+            (spec §4: "signature under the text") - so it reads as who wrote this note. */}
+        <SummaryCard label="Coordinator's summary" text={summaryText} />
+        {summaryText ? <CoordinatorLine /> : null}
         <Footer />
       </Page>
       {photoEntries.map((photo, index) => (
         <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
+          <Text style={profilePdfStyles.photoCounter}>{sanitizePdfText(`${index + 1} of ${photoEntries.length}`)}</Text>
           <View style={profilePdfStyles.profileImageWrap}>
-            <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
             <Image src={photo.src} style={profilePdfStyles.profileImage} />
           </View>
+          {/* photo-context caption (spec §5): only rendered when the photo entry actually carries
+              one from the data - never invented here. */}
+          {photo.caption || photo.context ? (
+            <Text style={profilePdfStyles.photoContext}>{sanitizePdfText(photo.caption || photo.context)}</Text>
+          ) : null}
           <Footer />
         </Page>
       ))}
@@ -1205,6 +1240,15 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
     event.stopPropagation();
     if (isGenerating) return;
 
+    // spec §1: the corner "Prepared exclusively for {intended parent names}" tag needs a name
+    // that isn't part of the candidate record itself (this document describes her, it isn't tied
+    // to one specific match) - ask once per export; the tag falls back to plain "Confidential"
+    // if this is left blank.
+    const intendedParentNames = (window.prompt(
+      'Intended parent name(s) for "Prepared exclusively for…" (leave blank to omit):',
+      ''
+    ) || '').trim();
+
     setIsGenerating(true);
     const fileName = buildProfilePdfFileName(cardData);
 
@@ -1226,14 +1270,14 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
       );
       const printablePhotoEntries = embeddedPhotoEntries.filter(entry => entry?.src);
       const blob = await pdf(
-        <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoEntries} />
+        <ProfilePdfDocument userData={cardData} photoUrls={printablePhotoEntries} intendedParentNames={intendedParentNames} />
       ).toBlob();
       downloadBlob(blob);
     } catch (error) {
       console.error('Unable to export profile PDF', error);
       try {
         const fallbackBlob = await pdf(
-          <ProfilePdfDocument userData={cardData} photoUrls={[]} />
+          <ProfilePdfDocument userData={cardData} photoUrls={[]} intendedParentNames={intendedParentNames} />
         ).toBlob();
         downloadBlob(fallbackBlob);
       } catch (fallbackError) {

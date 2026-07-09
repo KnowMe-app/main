@@ -400,6 +400,18 @@ export const TitleBlock = ({ eyebrow, title, subtitle }) => (
 const COORDINATOR_NAME = 'Irina Koval';
 const COORDINATOR_TITLE = 'Co-Founder, UKRCOM';
 
+// "Your programme coordinator — {name}, {title}" - the one signature line every document with a
+// coordinator's voice in it uses (spec: never a different formulation like "Reviewed by...").
+// Exported standalone (not just via PreparedForBlock below) so a document can sign a piece of
+// coordinator-written text - e.g. a summary-card - without repeating "Prepared exclusively for...".
+export const CoordinatorLine = () => (
+  <Text style={pdfSharedStyles.coordinatorLine}>
+    {'Your programme coordinator — '}
+    <Text style={{ fontWeight: 600, color: PDF_COLOR.docInk }}>{sanitizePdfText(COORDINATOR_NAME)}</Text>
+    {sanitizePdfText(`, ${COORDINATOR_TITLE}`)}
+  </Text>
+);
+
 // "Prepared exclusively for {client}" + the coordinator line - the two lines every case-specific
 // document (Invoice, Payment Details, Expected Expenses) shows under its title block, right above
 // any programme summary (spec §1.2/§4). Never shown on the catalog-wide Program Budget document,
@@ -407,11 +419,7 @@ const COORDINATOR_TITLE = 'Co-Founder, UKRCOM';
 export const PreparedForBlock = ({ clientName }) => (
   <>
     {clientName ? <Text style={pdfSharedStyles.preparedFor}>{sanitizePdfText(`Prepared exclusively for ${clientName}`)}</Text> : null}
-    <Text style={pdfSharedStyles.coordinatorLine}>
-      {'Your programme coordinator — '}
-      <Text style={{ fontWeight: 600, color: PDF_COLOR.docInk }}>{sanitizePdfText(COORDINATOR_NAME)}</Text>
-      {sanitizePdfText(`, ${COORDINATOR_TITLE}`)}
-    </Text>
+    <CoordinatorLine />
   </>
 );
 
