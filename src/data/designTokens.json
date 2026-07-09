@@ -1,0 +1,41 @@
+{
+  "_comment": "Single source of truth for the UKRCOM document system's visual language (colors + type families). Consumed by src/components/pdfTheme.js for every @react-pdf export (Budget/Invoice/Payment Details/Expected Expenses); any future web UI for the same client-facing documents should read from this file too instead of duplicating values.",
+  "color": {
+    "ink": "#2b2118",
+    "muted": "#786a5c",
+    "soft": "#9a6b48",
+    "accent": "#8a5527",
+    "accentStrong": "#6b3f18",
+    "line": "#e6d7c0",
+    "lineSoft": "#efe3d1",
+    "headBg": "#f3e6d1",
+    "rowAlt": "#faf3e6",
+    "cardBg": "#fdf8ef",
+    "totalBg": "#ead9b8",
+    "watermark": "#f1e2c6",
+    "white": "#ffffff",
+
+    "paper": "#FBF7F0",
+    "card": "#F2E9D6",
+    "docLine": "#E6DCC7",
+    "docInk": "#2B2620",
+    "inkSoft": "#726858",
+    "footerSoft": "#A79C88",
+    "bronze": "#A2793F",
+    "bronzeDeep": "#7C5B2E",
+    "totalCardBg": "#362C22",
+    "totalCardAmount": "#EFDDB0",
+
+    "neutralBg": "#FDFCFA",
+    "neutralInk": "#3A362F",
+    "neutralSoft": "#8A8478",
+    "neutralLine": "#D8D2C2",
+    "neutralTotal": "#3A362F"
+  },
+  "font": {
+    "base": "Helvetica",
+    "bold": "Helvetica-Bold",
+    "display": "Fraunces",
+    "body": "Inter"
+  }
+}

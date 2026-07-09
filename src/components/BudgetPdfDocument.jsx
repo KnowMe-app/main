@@ -14,7 +14,7 @@ import {
 } from './budgetCatalogUtils';
 import {
   BrandRow, BrandRule, BronzeMotif, ContinuedTag, Footer, PDF_COLOR, PDF_FONT,
-  ensurePdfFontsRegistered, pdfBaseStyles, sanitizePdfText, TitleBlock,
+  ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 
 ensurePdfFontsRegistered();
@@ -22,7 +22,9 @@ ensurePdfFontsRegistered();
 const DOC_LABEL = 'Program Budget';
 const PROGRAM_COL_WIDTH = 56;
 
-const formatAmount = value => {
+// Bare (no-currency) number for a table cell, as opposed to formatMoney (budgetCatalogUtils),
+// the one currency-labeled money format shared by every UKRCOM document (spec §4).
+export const formatAmount = value => {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return '-';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount);
@@ -32,6 +34,11 @@ const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
   section: {
     marginTop: 26,
+  },
+  // Extra breathing room above Payment schedule so Programs and Payment schedule don't sit flush
+  // against each other on page 1 (spec §2).
+  scheduleSection: {
+    marginTop: 46,
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
@@ -249,6 +256,92 @@ const styles = StyleSheet.create({
   },
 });
 
+const ProgramColumnsHead = ({ packages, leadLabel }) => (
+  <View style={styles.tableHeadRow} wrap={false}>
+    <View style={styles.labelCell}>
+      <Text style={styles.labelCellHeadText}>{leadLabel}</Text>
+    </View>
+    {packages.map(program => (
+      <View key={program.id} style={styles.programCell}>
+        <Text style={styles.programCellHead}>{program.label}</Text>
+        <Text style={styles.programCellHeadPrice}>{program.priceLabel}</Text>
+      </View>
+    ))}
+  </View>
+);
+
+// The "Included in this programme" table (spec §1.2/§2). Shared, byte-for-byte, between the
+// catalog-wide Program Budget (one column per programme) and the case-specific Expected Expenses
+// overview (a single column for the one chosen programme) - so the two documents can never drift
+// apart on how included services are listed.
+// packages: [{ id, label, priceLabel }] · includedRows: [{ id, name, includedByPackageId: Set<id> }]
+export const IncludedServicesTable = ({
+  packages,
+  includedRows,
+  title = 'Included services by program',
+  note = 'An "x" marks the services included in each program package.',
+}) => (includedRows.length ? (
+  <View style={styles.section}>
+    <View wrap={false} minPresenceAhead={70}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionNote}>{note}</Text>
+    </View>
+    <View style={styles.table}>
+      <ProgramColumnsHead packages={packages} leadLabel="Provided service" />
+      {includedRows.map(item => (
+        <View key={item.id} style={styles.tableRow} wrap={false}>
+          <View style={styles.labelCell}>
+            <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
+          </View>
+          {packages.map(program => (
+            <View key={`${item.id}-${program.id}`} style={styles.programCell}>
+              <Text style={styles.markCellText}>{item.includedByPackageId.has(String(program.id)) ? 'x' : ''}</Text>
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  </View>
+) : null);
+
+// The "Payment schedule" table (spec §1.2/§2) - same sharing rationale as IncludedServicesTable
+// above. rows: [{ title, amounts: [amountOrNull, ...] }] · totals: [amountOrNull, ...] (one per
+// package column, same order as `packages`).
+export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment schedule' }) => (rows.length ? (
+  <View style={styles.scheduleSection}>
+    <View wrap={false} minPresenceAhead={70}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+    <View style={styles.table}>
+      <ProgramColumnsHead packages={packages} leadLabel="Milestone" />
+      {rows.map((row, rowIndex) => (
+        <View key={`schedule-row-${rowIndex}`} style={styles.tableRow} wrap={false}>
+          <View style={styles.labelCell}>
+            <Text style={styles.labelCellText}>{`${rowIndex + 1}. ${sanitizePdfText(row.title)}`}</Text>
+          </View>
+          {row.amounts.map((amount, columnIndex) => (
+            <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={styles.programCell}>
+              <Text style={styles.amountCellText}>{amount == null ? '-' : formatAmount(amount)}</Text>
+            </View>
+          ))}
+        </View>
+      ))}
+      {Array.isArray(totals) ? (
+        <View style={[styles.tableRow, styles.totalRow]} wrap={false}>
+          <View style={styles.labelCell}>
+            <Text style={styles.labelCellHeadText}>Total</Text>
+          </View>
+          {totals.map((total, columnIndex) => (
+            <View key={`schedule-total-${columnIndex}`} style={styles.programCell}>
+              <Text style={styles.programCellHead}>{total == null ? '-' : formatAmount(total)}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  </View>
+) : null);
+
 const BudgetPdfDocument = ({ catalog, rates = null }) => {
   const items = Array.isArray(catalog?.items) ? catalog.items : [];
   const visibleItems = items.filter(item => !item.hidden);
@@ -287,7 +380,21 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
   // that includes it wins), so reordering services in a package reorders this table.
   const includedRows = includedIds
     .map(id => itemsById.get(id))
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(item => ({
+      id: item.id,
+      name: item.name,
+      includedByPackageId: new Set(
+        packages.filter(program => Array.isArray(program.children)
+          && program.children.some(childId => String(childId) === String(item.id))).map(program => String(program.id)),
+      ),
+    }));
+
+  const packagesMeta = packages.map((program, index) => ({
+    id: program.id,
+    label: `#${index + 1}`,
+    priceLabel: formatAmount(resolveListedPrice(program)),
+  }));
 
   const groupedExpenses = visibleItems.reduce((groups, item) => {
     if (includedIdSet.has(String(item.id))) return groups;
@@ -308,21 +415,7 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
     .map(key => [key, clientNotes[key] || []])
     .filter(([, notes]) => notes.length);
 
-  const dateLabel = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-
-  const renderProgramColumnsHead = () => (
-    <View style={styles.tableHeadRow} wrap={false}>
-      <View style={styles.labelCell}>
-        <Text style={styles.labelCellHeadText}>Provided service</Text>
-      </View>
-      {packages.map((program, index) => (
-        <View key={program.id} style={styles.programCell}>
-          <Text style={styles.programCellHead}>{`#${index + 1}`}</Text>
-          <Text style={styles.programCellHeadPrice}>{formatAmount(resolveListedPrice(program))}</Text>
-        </View>
-      ))}
-    </View>
-  );
+  const dateLabel = formatDisplayDate(new Date());
 
   return (
     <Document title="UKRCOM - Program Budget" subject="Surrogacy program budget" creator="UKRCOM">
@@ -359,76 +452,13 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
           ))}
         </View>
 
-        {includedRows.length ? (
-          <View style={styles.section}>
-            <View wrap={false} minPresenceAhead={70}>
-              <Text style={styles.sectionTitle}>Included services by program</Text>
-              <Text style={styles.sectionNote}>An "x" marks the services included in each program package.</Text>
-            </View>
-            <View style={styles.table}>
-              {renderProgramColumnsHead()}
-              {includedRows.map(item => (
-                <View key={item.id} style={styles.tableRow} wrap={false}>
-                  <View style={styles.labelCell}>
-                    <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
-                  </View>
-                  {packages.map(program => {
-                    const included = Array.isArray(program.children)
-                      && program.children.some(id => String(id) === String(item.id));
-                    return (
-                      <View key={`${item.id}-${program.id}`} style={styles.programCell}>
-                        <Text style={styles.markCellText}>{included ? 'x' : ''}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
+        <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} totals={scheduleTotals} />
 
-        {scheduleRowCount > 0 ? (
-          <View style={styles.section}>
-            <View wrap={false} minPresenceAhead={70}>
-              <Text style={styles.sectionTitle}>Payment schedule</Text>
-            </View>
-            <View style={styles.table}>
-              <View style={styles.tableHeadRow} wrap={false}>
-                <View style={styles.labelCell}>
-                  <Text style={styles.labelCellHeadText}>Milestone</Text>
-                </View>
-                {packages.map((program, index) => (
-                  <View key={program.id} style={styles.programCell}>
-                    <Text style={styles.programCellHead}>{`#${index + 1}`}</Text>
-                    <Text style={styles.programCellHeadPrice}>{formatAmount(resolveListedPrice(program))}</Text>
-                  </View>
-                ))}
-              </View>
-              {scheduleRows.map((row, rowIndex) => (
-                <View key={`schedule-row-${rowIndex}`} style={styles.tableRow} wrap={false}>
-                  <View style={styles.labelCell}>
-                    <Text style={styles.labelCellText}>{`${rowIndex + 1}. ${sanitizePdfText(row.title)}`}</Text>
-                  </View>
-                  {row.amounts.map((amount, columnIndex) => (
-                    <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={styles.programCell}>
-                      <Text style={styles.amountCellText}>{amount == null ? '-' : formatAmount(amount)}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-              <View style={[styles.tableRow, styles.totalRow]} wrap={false}>
-                <View style={styles.labelCell}>
-                  <Text style={styles.labelCellHeadText}>Total</Text>
-                </View>
-                {scheduleTotals.map((total, columnIndex) => (
-                  <View key={`schedule-total-${columnIndex}`} style={styles.programCell}>
-                    <Text style={styles.programCellHead}>{total == null ? '-' : formatAmount(total)}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </View>
-        ) : null}
+        {/* `break` starts Included services on a fresh page (spec §2), so the schedule above stays
+            on page 1 with Programs and this large table never splits mid-page. */}
+        <View break={includedRows.length > 0}>
+          <IncludedServicesTable packages={packagesMeta} includedRows={includedRows} />
+        </View>
 
         {Object.keys(groupedExpenses).length ? (
           <View style={styles.section}>

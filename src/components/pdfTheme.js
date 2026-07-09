@@ -5,55 +5,19 @@
 // product. Tokens below mirror the UKRCOM Invoice Builder design spec (ukrcom-invoice-fullset.html).
 import React from 'react';
 import { Font, StyleSheet, Svg, Defs, LinearGradient, Stop, Line, Text, View } from '@react-pdf/renderer';
+import designTokens from '../data/designTokens.json';
 
-// NOTE ON BACKWARDS COMPATIBILITY: `renderTopBlock.js` (surrogate/donor ProfilePdfDocument) and
-// `PdfPagePreviewStrip.jsx` (admin UI preview strip) already depend on the original palette below
+// Colors and font families are never hardcoded here - they live in src/data/designTokens.json,
+// the single shared source of truth for the UKRCOM document system's visual language (see that
+// file's header comment). `renderTopBlock.js` (surrogate/donor ProfilePdfDocument) and
+// `PdfPagePreviewStrip.jsx` (admin UI preview strip) depend on the original key names below
 // (ink/muted/soft/accent/accentStrong/line/lineSoft/headBg/rowAlt/cardBg/totalBg/watermark/white)
-// and on PDF_FONT.base/bold — those keys and values are kept exactly as they were so those two
-// files keep rendering unchanged. The Budget/Invoice/Expected-Expenses redesign uses the new,
-// separately-named spec tokens added below instead of overloading the old keys.
-export const PDF_COLOR = {
-  ink: '#2b2118',
-  muted: '#786a5c',
-  soft: '#9a6b48',
-  accent: '#8a5527',
-  accentStrong: '#6b3f18',
-  line: '#e6d7c0',
-  lineSoft: '#efe3d1',
-  headBg: '#f3e6d1',
-  rowAlt: '#faf3e6',
-  cardBg: '#fdf8ef',
-  totalBg: '#ead9b8',
-  watermark: '#f1e2c6',
-  white: '#ffffff',
+// and on PDF_FONT.base/bold — those keys are kept as-is in the token file so those two files keep
+// rendering unchanged. The Budget/Invoice/Payment-Details/Expected-Expenses documents use the
+// separately-named spec tokens (paper/card/docLine/docInk/... below) from the same file instead.
+export const PDF_COLOR = designTokens.color;
 
-  // Spec tokens (§1.1) for the redesigned Budget/Invoice/Expected-Expenses documents.
-  paper: '#FBF7F0',
-  card: '#F2E9D6',
-  docLine: '#E6DCC7',
-  docInk: '#2B2620',
-  inkSoft: '#726858',
-  footerSoft: '#A79C88',
-  bronze: '#A2793F',
-  bronzeDeep: '#7C5B2E',
-  totalCardBg: '#362C22',
-  totalCardAmount: '#EFDDB0',
-
-  // Separate neutral palette — reserved for the Payment Instructions document, which is
-  // deliberately not branded (see spec §1.5).
-  neutralBg: '#FDFCFA',
-  neutralInk: '#3A362F',
-  neutralSoft: '#8A8478',
-  neutralLine: '#D8D2C2',
-  neutralTotal: '#3A362F',
-};
-
-export const PDF_FONT = {
-  base: 'Helvetica',
-  bold: 'Helvetica-Bold',
-  display: 'Fraunces',
-  body: 'Inter',
-};
+export const PDF_FONT = designTokens.font;
 
 let fontsRegistered = false;
 
@@ -101,6 +65,15 @@ export const sanitizePdfText = value => String(value ?? '')
   .replace(/[✓✔]/g, 'x')
   .replace(/\s+/g, ' ')
   .trim();
+
+// The one date format every document displays to a client (spec §4): "9 July 2026" - never
+// DD.MM.YYYY or DD/MM/YYYY. (The invoice number and the payment-purpose placeholder are a
+// separate concern - they intentionally keep their own numeric formats, since those are
+// identifiers/legal text, not a human-readable "as of" date.)
+export const formatDisplayDate = date => {
+  const safeDate = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+  return safeDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+};
 
 const PAGE_MARGIN = 56;
 const MOTIF_INSET = 30;
@@ -193,6 +166,46 @@ export const pdfBaseStyles = {
   },
   titleBlock: {
     marginBottom: 24,
+  },
+  preparedFor: {
+    // No italic here: only Regular/Medium/SemiBold/Bold are embedded for Inter (see
+    // ensurePdfFontsRegistered) - react-pdf can't fake-italicize a custom font without a matching
+    // italic source file, so emphasis comes from color/weight/tracking instead.
+    fontFamily: PDF_FONT.body,
+    fontWeight: 500,
+    letterSpacing: 0.2,
+    fontSize: 9,
+    color: PDF_COLOR.bronzeDeep,
+    marginTop: 2,
+    marginBottom: 3,
+  },
+  coordinatorLine: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 9,
+    color: PDF_COLOR.inkSoft,
+    marginBottom: 24,
+  },
+  summaryCard: {
+    backgroundColor: PDF_COLOR.card,
+    borderRadius: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 22,
+  },
+  summaryCardLabel: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: PDF_COLOR.bronzeDeep,
+    marginBottom: 6,
+  },
+  summaryCardText: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 9.5,
+    lineHeight: 1.6,
+    color: PDF_COLOR.docInk,
   },
   sectionTitle: {
     fontFamily: PDF_FONT.display,
@@ -383,6 +396,32 @@ export const TitleBlock = ({ eyebrow, title, subtitle }) => (
     {subtitle ? <Text style={pdfSharedStyles.docSubtitle}>{sanitizePdfText(subtitle)}</Text> : null}
   </View>
 );
+
+const COORDINATOR_NAME = 'Irina Koval';
+const COORDINATOR_TITLE = 'Co-Founder, UKRCOM';
+
+// "Prepared exclusively for {client}" + the coordinator line - the two lines every case-specific
+// document (Invoice, Payment Details, Expected Expenses) shows under its title block, right above
+// any programme summary (spec §1.2/§4). Never shown on the catalog-wide Program Budget document,
+// which has no client to prepare it for.
+export const PreparedForBlock = ({ clientName }) => (
+  <>
+    {clientName ? <Text style={pdfSharedStyles.preparedFor}>{sanitizePdfText(`Prepared exclusively for ${clientName}`)}</Text> : null}
+    <Text style={pdfSharedStyles.coordinatorLine}>
+      {'Your programme coordinator — '}
+      <Text style={{ fontWeight: 600, color: PDF_COLOR.docInk }}>{sanitizePdfText(COORDINATOR_NAME)}</Text>
+      {sanitizePdfText(`, ${COORDINATOR_TITLE}`)}
+    </Text>
+  </>
+);
+
+// The highlighted "what this programme includes" card (spec §1.2's "program-summary").
+export const SummaryCard = ({ label, text }) => (text ? (
+  <View style={pdfSharedStyles.summaryCard} wrap={false}>
+    {label ? <Text style={pdfSharedStyles.summaryCardLabel}>{sanitizePdfText(label)}</Text> : null}
+    <Text style={pdfSharedStyles.summaryCardText}>{sanitizePdfText(text)}</Text>
+  </View>
+) : null);
 
 const AGENCY_NAME = 'Reproductive Agency "UKRCOM"';
 const AGENCY_ADDRESS = '31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine';

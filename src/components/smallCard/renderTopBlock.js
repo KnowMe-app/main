@@ -9,7 +9,10 @@ import {
   Text,
   View,
 } from '@react-pdf/renderer';
-import { PDF_COLOR, PDF_FONT, pdfBaseStyles, sanitizePdfText } from '../pdfTheme';
+import {
+  BrandRow, BrandRule, BronzeMotif, Footer, PDF_COLOR, PDF_FONT,
+  ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
+} from '../pdfTheme';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
 import { btnEdit } from './btnEdit';
@@ -740,47 +743,27 @@ const extractMultiDataComments = cardData => {
   return normalized.filter(comment => comment.text);
 };
 
+// The SM Profile PDF is only ever exported for surrogate mother candidates (gated by
+// isSurrogateMotherRole below), so - like Budget/Invoice/Payment Details/Expected Expenses - it
+// uses the shared UKRCOM wordmark, bronze motif and Fraunces/Inter type scale (spec §6) instead of
+// its own one-off look. Fonts must be registered here since this module never otherwise imports a
+// document that does so.
+ensurePdfFontsRegistered();
+
 const profilePdfStyles = StyleSheet.create({
-  page: {
-    position: 'relative',
-    paddingTop: 78,
-    paddingHorizontal: 88,
-    paddingBottom: 74,
-    fontFamily: PDF_FONT.base,
-    color: PDF_COLOR.ink,
-    backgroundColor: PDF_COLOR.white,
-  },
-  eyebrow: {
-    ...pdfBaseStyles.eyebrow,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  title: {
-    fontFamily: PDF_FONT.bold,
-    marginBottom: 6,
-    textAlign: 'center',
-    fontSize: 20,
-    lineHeight: 1.25,
-    color: PDF_COLOR.ink,
-  },
-  titleRule: {
-    alignSelf: 'center',
-    width: 64,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: PDF_COLOR.accent,
-    marginBottom: 28,
-  },
+  page: pdfBaseStyles.page,
   table: {
     borderWidth: 1,
-    borderColor: PDF_COLOR.line,
+    borderColor: PDF_COLOR.docLine,
     borderStyle: 'solid',
-    borderRadius: 6,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginTop: 22,
   },
   row: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.line,
+    borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
   },
   firstRow: {
@@ -788,18 +771,19 @@ const profilePdfStyles = StyleSheet.create({
   },
   labelCell: {
     width: '38%',
-    backgroundColor: PDF_COLOR.headBg,
+    backgroundColor: PDF_COLOR.card,
     borderRightWidth: 1,
-    borderRightColor: PDF_COLOR.line,
+    borderRightColor: PDF_COLOR.docLine,
     borderRightStyle: 'solid',
     paddingVertical: 7,
     paddingHorizontal: 10,
     justifyContent: 'center',
   },
   labelText: {
-    fontFamily: PDF_FONT.bold,
-    fontSize: 10.5,
-    color: '#4d3a26',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.5,
+    color: PDF_COLOR.bronzeDeep,
   },
   valueCell: {
     width: '62%',
@@ -808,8 +792,39 @@ const profilePdfStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   valueText: {
-    fontSize: 11,
+    fontFamily: PDF_FONT.body,
+    fontSize: 9.5,
     lineHeight: 1.4,
+    color: PDF_COLOR.docInk,
+  },
+  // "Картки-акценти для ключових даних" (spec §6): the handful of fields a coordinator scans
+  // first sit in their own bronze accent cards above the full table, instead of blending into it.
+  accentRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  accentCard: {
+    flex: 1,
+    backgroundColor: PDF_COLOR.totalCardBg,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  accentLabel: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 7,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: PDF_COLOR.footerSoft,
+    marginBottom: 4,
+  },
+  accentValue: {
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontSize: 16,
+    color: PDF_COLOR.totalCardAmount,
   },
   watermark: {
     position: 'absolute',
@@ -817,38 +832,14 @@ const profilePdfStyles = StyleSheet.create({
     top: 330,
     width: 520,
     textAlign: 'center',
-    fontFamily: PDF_FONT.bold,
+    fontFamily: PDF_FONT.display,
+    fontWeight: 700,
     fontSize: 106,
-    color: PDF_COLOR.watermark,
+    color: PDF_COLOR.card,
     opacity: 0.9,
     transform: 'rotate(-42deg)',
   },
-  footer: {
-    position: 'absolute',
-    left: 88,
-    right: 88,
-    bottom: 28,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.line,
-    borderTopStyle: 'solid',
-    paddingTop: 8,
-    color: PDF_COLOR.muted,
-    fontSize: 7.5,
-    lineHeight: 1.4,
-  },
-  footerRight: {
-    textAlign: 'right',
-  },
-  imagePage: {
-    position: 'relative',
-    paddingTop: 78,
-    paddingHorizontal: 70,
-    paddingBottom: 74,
-    fontFamily: PDF_FONT.base,
-    backgroundColor: PDF_COLOR.white,
-  },
+  imagePage: pdfBaseStyles.page,
   profileImageWrap: {
     position: 'relative',
     alignSelf: 'center',
@@ -870,25 +861,14 @@ const profilePdfStyles = StyleSheet.create({
     top: 230,
     width: 520,
     textAlign: 'center',
-    fontFamily: PDF_FONT.bold,
+    fontFamily: PDF_FONT.display,
+    fontWeight: 700,
     fontSize: 86,
-    color: PDF_COLOR.watermark,
+    color: PDF_COLOR.card,
     opacity: 0.9,
     transform: 'rotate(-42deg)',
   },
 });
-
-const pdfFooter = (
-  <View style={profilePdfStyles.footer} fixed>
-    <Text>
-      KnowMe: Egg donor
-    </Text>
-    <Text style={profilePdfStyles.footerRight}>
-      E-mail: KnowMeEggDonor@gmail.com{'\n'}
-      Google Play: KnowMe: Egg donor
-    </Text>
-  </View>
-);
 
 const CYRILLIC_TO_LATIN = {
   а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i',
@@ -1046,38 +1026,57 @@ const buildProfilePdfFileName = data => {
   return `${safeName || 'profile'}-KnowMe.pdf`;
 };
 
+// The two fields a coordinator scans first get their own bronze accent cards above the full
+// table (spec §6); every other field stays in the plain label/value table.
+const ACCENT_ROW_LABELS = ['Name', 'Age'];
+
 const ProfilePdfDocument = ({ userData, photoUrls }) => {
   const rows = buildProfilePdfRows(userData);
+  const accentRows = rows.filter(([label]) => ACCENT_ROW_LABELS.includes(label));
+  const tableRows = rows.filter(([label]) => !ACCENT_ROW_LABELS.includes(label));
   const photos = Array.isArray(photoUrls) ? photoUrls : [];
   const photoEntries = photos.map(photo => (
     photo && typeof photo === 'object' ? photo : { src: photo }
   )).filter(photo => photo?.src);
+  const dateLabel = formatDisplayDate(new Date());
   return (
-    <Document title={`${buildName(userData) || 'Profile'} - KnowMe: Egg donor`}>
+    <Document title={`${buildName(userData) || 'Profile'} - UKRCOM Surrogate Mother Profile`} subject="Surrogate mother profile" creator="UKRCOM">
       <Page size="A4" style={profilePdfStyles.page}>
-        <Text style={profilePdfStyles.watermark}>KnowMe</Text>
-        <Text style={profilePdfStyles.eyebrow}>{sanitizePdfText('KnowMe · Egg donor')}</Text>
-        <Text style={profilePdfStyles.title}>
-          {sanitizePdfText("Surrogacy mother's profile")}
-        </Text>
-        <View style={profilePdfStyles.titleRule} />
+        <BronzeMotif />
+        <Text style={profilePdfStyles.watermark}>UKRCOM</Text>
+        <BrandRow metaLines={[dateLabel, 'Confidential']} />
+        <BrandRule />
+        <TitleBlock
+          eyebrow="Surrogate mother profile"
+          title={buildName(userData) || 'Surrogate Mother Profile'}
+        />
+        {accentRows.length ? (
+          <View style={profilePdfStyles.accentRow} wrap={false}>
+            {accentRows.map(([label, value]) => (
+              <View key={label} style={profilePdfStyles.accentCard}>
+                <Text style={profilePdfStyles.accentLabel}>{sanitizePdfText(label)}</Text>
+                <Text style={profilePdfStyles.accentValue}>{sanitizePdfText(value)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
         <View style={profilePdfStyles.table}>
-          {rows.map(([label, value], index) => (
+          {tableRows.map(([label, value], index) => (
             <View key={label} style={[profilePdfStyles.row, index === 0 ? profilePdfStyles.firstRow : null]} wrap={false}>
               <View style={profilePdfStyles.labelCell}><Text style={profilePdfStyles.labelText}>{sanitizePdfText(label)}</Text></View>
               <View style={profilePdfStyles.valueCell}><Text style={profilePdfStyles.valueText}>{sanitizePdfText(value)}</Text></View>
             </View>
           ))}
         </View>
-        {pdfFooter}
+        <Footer />
       </Page>
       {photoEntries.map((photo, index) => (
         <Page key={`${photo.src}-${index}`} size="A4" style={profilePdfStyles.imagePage}>
           <View style={profilePdfStyles.profileImageWrap}>
-            <Text style={profilePdfStyles.imageWatermark}>KnowMe</Text>
+            <Text style={profilePdfStyles.imageWatermark}>UKRCOM</Text>
             <Image src={photo.src} style={profilePdfStyles.profileImage} />
           </View>
-          {pdfFooter}
+          <Footer />
         </Page>
       ))}
     </Document>
