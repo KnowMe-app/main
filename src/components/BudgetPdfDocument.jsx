@@ -12,20 +12,15 @@ import {
   resolveProgramPaymentSchedule,
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
-import { PDF_COLOR, sanitizePdfText } from './pdfTheme';
+import {
+  BrandRow, BrandRule, BronzeMotif, ContinuedTag, Footer, PDF_COLOR, PDF_FONT,
+  ensurePdfFontsRegistered, pdfBaseStyles, sanitizePdfText, TitleBlock,
+} from './pdfTheme';
 
-const UKRCOM_MARKER = 'REPRODUCTIVE AGENCY "UKRCOM"';
+ensurePdfFontsRegistered();
 
-const INK = PDF_COLOR.ink;
-const MUTED = PDF_COLOR.muted;
-const ACCENT = PDF_COLOR.accent;
-const SOFT = PDF_COLOR.soft;
-const LINE = PDF_COLOR.line;
-const HEAD_BG = PDF_COLOR.headBg;
-const ROW_ALT = PDF_COLOR.rowAlt;
-const CARD_BG = PDF_COLOR.cardBg;
-
-const PROGRAM_COL_WIDTH = 52;
+const DOC_LABEL = 'Program Budget';
+const PROGRAM_COL_WIDTH = 56;
 
 const formatAmount = value => {
   const amount = Number(value);
@@ -34,234 +29,206 @@ const formatAmount = value => {
 };
 
 const styles = StyleSheet.create({
-  page: {
-    paddingTop: 40,
-    paddingBottom: 62,
-    paddingHorizontal: 44,
-    fontFamily: 'Helvetica',
-    fontSize: 9,
-    color: INK,
-    backgroundColor: '#ffffff',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  eyebrow: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 7.5,
-    letterSpacing: 1.8,
-    color: SOFT,
-    textTransform: 'uppercase',
-    marginBottom: 5,
-  },
-  title: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 24,
-    letterSpacing: -0.5,
-    color: INK,
-  },
-  headerDate: {
-    fontSize: 9,
-    color: MUTED,
-    marginBottom: 3,
-  },
-  subtitle: {
-    fontSize: 9.5,
-    lineHeight: 1.5,
-    color: MUTED,
-    marginTop: 7,
-    maxWidth: 420,
-  },
+  page: pdfBaseStyles.page,
   section: {
-    marginTop: 22,
+    marginTop: 26,
   },
-  sectionTitle: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 12.5,
-    letterSpacing: -0.2,
-    marginBottom: 3,
-    color: INK,
-  },
-  sectionNote: {
-    fontSize: 8.5,
-    color: MUTED,
-    marginBottom: 9,
-  },
+  sectionTitle: pdfBaseStyles.sectionTitle,
+  sectionNote: pdfBaseStyles.sectionNote,
   programRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     borderTopWidth: 1,
-    borderTopColor: LINE,
+    borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
-    paddingVertical: 8,
+    paddingVertical: 9,
+  },
+  programRowFirst: {
+    borderTopWidth: 0,
   },
   programIndexCell: {
     width: 28,
   },
   programIndexText: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 9,
-    color: SOFT,
+    color: PDF_COLOR.bronze,
   },
   programBody: {
     flex: 1,
     paddingRight: 12,
   },
   programName: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 10.5,
+    color: PDF_COLOR.docInk,
     marginBottom: 2,
   },
   programDescription: {
+    fontFamily: PDF_FONT.body,
     fontSize: 8.5,
-    color: MUTED,
+    color: PDF_COLOR.inkSoft,
     lineHeight: 1.45,
   },
   programPrice: {
-    width: 88,
+    width: 92,
     textAlign: 'right',
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 11,
-    color: ACCENT,
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
+    fontSize: 12,
+    color: PDF_COLOR.bronzeDeep,
   },
   table: {
     borderWidth: 1,
-    borderColor: LINE,
+    borderColor: PDF_COLOR.docLine,
     borderStyle: 'solid',
-    borderRadius: 6,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   tableHeadRow: {
     flexDirection: 'row',
-    backgroundColor: HEAD_BG,
+    backgroundColor: PDF_COLOR.card,
   },
   tableRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: LINE,
+    borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
-  },
-  tableRowAlt: {
-    backgroundColor: ROW_ALT,
   },
   labelCell: {
     flex: 1,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
     justifyContent: 'center',
   },
   labelCellHeadText: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 8.5,
-    color: '#4d392b',
+    color: PDF_COLOR.docInk,
   },
   labelCellText: {
+    fontFamily: PDF_FONT.body,
     fontSize: 8.5,
+    color: PDF_COLOR.docInk,
     lineHeight: 1.4,
   },
   programCell: {
     width: PROGRAM_COL_WIDTH,
-    paddingVertical: 5,
+    paddingVertical: 6,
     paddingHorizontal: 4,
     borderLeftWidth: 1,
-    borderLeftColor: LINE,
+    borderLeftColor: PDF_COLOR.docLine,
     borderLeftStyle: 'solid',
     justifyContent: 'center',
   },
   programCellHead: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 8.5,
     textAlign: 'center',
-    color: '#4d392b',
+    color: PDF_COLOR.docInk,
   },
   programCellHeadPrice: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
     fontSize: 7.5,
     textAlign: 'center',
-    color: ACCENT,
+    color: PDF_COLOR.bronzeDeep,
     marginTop: 2,
   },
   amountCellText: {
+    fontFamily: PDF_FONT.body,
+    fontVariantNumeric: 'tabular-nums',
     fontSize: 8.5,
     textAlign: 'center',
+    color: PDF_COLOR.docInk,
   },
   markCellText: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 8.5,
     textAlign: 'center',
-    color: ACCENT,
+    color: PDF_COLOR.bronze,
   },
   totalRow: {
-    borderTopColor: '#d8c3a8',
-    backgroundColor: HEAD_BG,
+    backgroundColor: PDF_COLOR.card,
   },
   categoryBlock: {
-    marginBottom: 12,
+    marginBottom: 14,
   },
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    backgroundColor: HEAD_BG,
+    backgroundColor: PDF_COLOR.card,
     borderRadius: 6,
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
     marginBottom: 2,
   },
   categoryTitle: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 9.5,
-    color: '#4d392b',
+    color: PDF_COLOR.docInk,
   },
   categoryMeta: {
+    fontFamily: PDF_FONT.body,
     fontSize: 8,
-    color: SOFT,
+    color: PDF_COLOR.bronze,
   },
   expenseRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: '#efe3d1',
+    borderBottomColor: PDF_COLOR.docLine,
     borderBottomStyle: 'solid',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
   },
   expenseBody: {
     flex: 1,
     paddingRight: 10,
   },
   expenseName: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 8.8,
+    color: PDF_COLOR.docInk,
     marginBottom: 1.5,
   },
   expenseDescription: {
+    fontFamily: PDF_FONT.body,
     fontSize: 8,
-    color: MUTED,
+    color: PDF_COLOR.inkSoft,
     lineHeight: 1.4,
   },
   expensePrice: {
-    width: 80,
+    width: 84,
     textAlign: 'right',
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
     fontSize: 8.8,
-    color: ACCENT,
+    color: PDF_COLOR.bronzeDeep,
   },
   noteCard: {
-    backgroundColor: CARD_BG,
-    borderWidth: 1,
-    borderColor: LINE,
-    borderStyle: 'solid',
+    backgroundColor: PDF_COLOR.card,
     borderRadius: 8,
-    padding: 12,
+    padding: 13,
     marginBottom: 10,
   },
   noteGroupTitle: {
-    fontFamily: 'Helvetica-Bold',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
     fontSize: 9.5,
     marginBottom: 6,
-    color: '#4d392b',
+    color: PDF_COLOR.docInk,
   },
   noteRow: {
     flexDirection: 'row',
@@ -269,30 +236,16 @@ const styles = StyleSheet.create({
   },
   noteBullet: {
     width: 12,
+    fontFamily: PDF_FONT.body,
     fontSize: 8.5,
-    color: ACCENT,
+    color: PDF_COLOR.bronze,
   },
   noteText: {
     flex: 1,
+    fontFamily: PDF_FONT.body,
     fontSize: 8.5,
     lineHeight: 1.45,
-    color: '#5a4d42',
-  },
-  footer: {
-    position: 'absolute',
-    left: 44,
-    right: 44,
-    bottom: 24,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: LINE,
-    borderTopStyle: 'solid',
-    paddingTop: 8,
-  },
-  footerText: {
-    fontSize: 7.5,
-    color: MUTED,
+    color: PDF_COLOR.inkSoft,
   },
 });
 
@@ -374,18 +327,24 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
   return (
     <Document title="UKRCOM - Program Budget" subject="Surrogacy program budget" creator="UKRCOM">
       <Page size="A4" style={styles.page} wrap>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.eyebrow}>{UKRCOM_MARKER}</Text>
-            <Text style={styles.title}>Program Budget</Text>
-          </View>
-          <Text style={styles.headerDate}>{dateLabel}</Text>
-        </View>
+        <BronzeMotif />
+        <ContinuedTag label={DOC_LABEL} />
+        <BrandRow metaLines={[dateLabel, `${packages.length} programmes`]} />
+        <BrandRule />
+        <TitleBlock
+          eyebrow="Programme catalog"
+          title="Program Budget"
+          subtitle="Every programme UKRCOM offers, what it includes, and how the payment schedule breaks down."
+        />
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Programs</Text>
           {packages.map((program, index) => (
-            <View key={program.id} style={styles.programRow} wrap={false}>
+            <View
+              key={program.id}
+              style={[styles.programRow, index === 0 ? styles.programRowFirst : null]}
+              wrap={false}
+            >
               <View style={styles.programIndexCell}>
                 <Text style={styles.programIndexText}>{`#${index + 1}`}</Text>
               </View>
@@ -416,11 +375,7 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
                 ))}
               </View>
               {scheduleRows.map((row, rowIndex) => (
-                <View
-                  key={`schedule-row-${rowIndex}`}
-                  style={rowIndex % 2 ? [styles.tableRow, styles.tableRowAlt] : styles.tableRow}
-                  wrap={false}
-                >
+                <View key={`schedule-row-${rowIndex}`} style={styles.tableRow} wrap={false}>
                   <View style={styles.labelCell}>
                     <Text style={styles.labelCellText}>{`${rowIndex + 1}. ${sanitizePdfText(row.title)}`}</Text>
                   </View>
@@ -448,15 +403,11 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
         {includedRows.length ? (
           <View style={styles.section} break>
             <Text style={styles.sectionTitle}>Included services by program</Text>
-            <Text style={styles.sectionNote}>An “x” marks the services included in each program package.</Text>
+            <Text style={styles.sectionNote}>An "x" marks the services included in each program package.</Text>
             <View style={styles.table}>
               {renderProgramColumnsHead()}
-              {includedRows.map((item, rowIndex) => (
-                <View
-                  key={item.id}
-                  style={rowIndex % 2 ? [styles.tableRow, styles.tableRowAlt] : styles.tableRow}
-                  wrap={false}
-                >
+              {includedRows.map(item => (
+                <View key={item.id} style={styles.tableRow} wrap={false}>
                   <View style={styles.labelCell}>
                     <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
                   </View>
@@ -478,7 +429,7 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
         {Object.keys(groupedExpenses).length ? (
           <View style={styles.section} break>
             <Text style={styles.sectionTitle}>Other expenses</Text>
-            <Text style={styles.sectionNote}>“From” prices are lower bounds of a range.</Text>
+            <Text style={styles.sectionNote}>"From" prices are lower bounds of a range.</Text>
             {Object.entries(groupedExpenses).map(([category, categoryItems]) => (
               <View key={category} style={styles.categoryBlock}>
                 <View style={styles.categoryHeader} wrap={false} minPresenceAhead={40}>
@@ -520,13 +471,7 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
           </View>
         ) : null}
 
-        <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>{sanitizePdfText(`${UKRCOM_MARKER} · Program Budget · generated ${dateLabel}`)}</Text>
-          <Text
-            style={styles.footerText}
-            render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-          />
-        </View>
+        <Footer />
       </Page>
     </Document>
   );
