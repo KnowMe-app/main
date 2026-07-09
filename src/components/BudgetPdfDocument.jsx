@@ -461,7 +461,10 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
         </View>
 
         {Object.keys(groupedExpenses).length ? (
-          <View style={styles.section}>
+          // `break` starts Other expenses on a fresh page so it never trails onto the
+          // last line of the Included services table above (only the section start is forced;
+          // page breaks between categories inside this section remain natural).
+          <View style={styles.section} break>
             <View wrap={false} minPresenceAhead={70}>
               <Text style={styles.sectionTitle}>Other expenses</Text>
               <Text style={styles.sectionNote}>"From" prices are lower bounds of a range.</Text>
