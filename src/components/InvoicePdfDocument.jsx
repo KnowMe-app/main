@@ -1,6 +1,9 @@
 import React from 'react';
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
-import { PDF_COLOR, PDF_FONT, pdfBaseStyles, sanitizePdfText } from './pdfTheme';
+import {
+  BrandRow, BrandRule, BronzeMotif, ContinuedTag, Footer, PDF_COLOR, PDF_FONT,
+  ensurePdfFontsRegistered, pdfBaseStyles, sanitizePdfText, TitleBlock,
+} from './pdfTheme';
 import {
   buildCaseTitle,
   buildPayerLocation,
@@ -10,275 +13,191 @@ import {
   resolveInvoiceServiceRows,
 } from './invoiceCatalogUtils';
 
-const AGENCY_NAME = 'REPRODUCTIVE AGENCY "UKRCOM"';
-const AGENCY_ADDRESS_LINE_1 = '31/16 Reitarska Str., 1st floor,';
-const AGENCY_ADDRESS_LINE_2 = 'Kyiv, 01034, Ukraine';
-const AGENCY_WEBSITE = 'Website: http://ukrcom.kyiv.ua/';
-const AGENCY_EMAIL = 'E-mail: sm.kiev.ukr@gmail.com';
-const AGENCY_TELEGRAM = 'Telegram: @Contact_Us_Kyiv';
+ensurePdfFontsRegistered();
 
-// Row-level amounts show as plain numbers ("3000", "300"); only the
-// tax-adjusted totals use the space-grouped, comma-decimal EUR format.
-const formatPlainAmount = value => {
+const DOC_LABEL = 'Programme Milestone Invoice';
+
+// No copies past the decimal for round or four-figure sums; two decimals only when the
+// amount genuinely carries cents (spec §1.8).
+const formatMoney = (value, currency = 'EUR') => {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return '-';
-  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace('.', ',');
-};
-
-const formatEuroTotal = value => {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return '-';
-  const [whole, decimals] = amount.toFixed(2).split('.');
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  return `${grouped},${decimals} EUR`;
+  const rounded = Math.round(amount * 100) / 100;
+  const isInteger = Number.isInteger(rounded);
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: isInteger ? 0 : 2,
+    maximumFractionDigits: isInteger ? 0 : 2,
+  }).format(rounded);
+  return `${formatted} ${currency}`;
 };
 
 // A row may carry a free-text price label (e.g. "GIFT") instead of a euro amount.
-const formatRowAmount = row => row?.priceLabel || formatPlainAmount(row?.price);
+const formatRowAmount = row => row?.priceLabel || formatMoney(row?.price);
 
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
-  eyebrow: pdfBaseStyles.eyebrow,
-  title: {
-    ...pdfBaseStyles.docTitle,
-    fontSize: 21,
-    textAlign: 'center',
-    marginBottom: 4,
+  section: {
+    marginTop: 26,
   },
-  titleRule: {
-    alignSelf: 'center',
-    width: 64,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: PDF_COLOR.accent,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontFamily: PDF_FONT.bold,
-    fontSize: 19,
-    letterSpacing: -0.2,
-    textAlign: 'center',
-    marginBottom: 4,
-    color: PDF_COLOR.ink,
-  },
-  sectionSubtitle: {
-    fontSize: 10.5,
-    fontFamily: PDF_FONT.bold,
-    textAlign: 'center',
-    color: PDF_COLOR.soft,
-    marginBottom: 22,
-  },
+  sectionTitle: pdfBaseStyles.sectionTitle,
+  sectionNote: pdfBaseStyles.sectionNote,
   table: {
-    borderWidth: 1,
-    borderColor: PDF_COLOR.line,
-    borderStyle: 'solid',
-    borderRadius: 6,
-    marginBottom: 18,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.line,
+    borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
+    paddingVertical: 8,
   },
   firstRow: {
     borderTopWidth: 0,
   },
-  labelCell: {
-    width: '38%',
-    backgroundColor: PDF_COLOR.headBg,
-    borderRightWidth: 1,
-    borderRightColor: PDF_COLOR.line,
-    borderRightStyle: 'solid',
-    paddingVertical: 7,
-    paddingHorizontal: 9,
-    justifyContent: 'center',
+  packageRow: {
+    backgroundColor: PDF_COLOR.card,
+    borderRadius: 5,
+    paddingHorizontal: 8,
+    marginBottom: 1,
   },
-  labelText: {
-    fontFamily: PDF_FONT.bold,
+  indexCell: {
+    width: 26,
+  },
+  indexText: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.5,
+    color: PDF_COLOR.bronze,
+  },
+  nameCell: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  nameCellChild: {
+    paddingLeft: 14,
+  },
+  nameText: {
+    fontFamily: PDF_FONT.body,
     fontSize: 9.5,
-    color: '#4d3a26',
+    color: PDF_COLOR.docInk,
   },
-  valueCell: {
-    width: '62%',
-    paddingVertical: 7,
-    paddingHorizontal: 9,
-    justifyContent: 'center',
+  nameTextPackage: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 10.5,
+    color: PDF_COLOR.docInk,
   },
-  valueText: {
-    fontSize: 9.5,
+  nameTextChild: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 9,
+    color: PDF_COLOR.inkSoft,
+  },
+  descriptionText: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8,
+    color: PDF_COLOR.inkSoft,
     lineHeight: 1.4,
+    marginTop: 2,
   },
-  totalValueText: {
-    fontFamily: PDF_FONT.bold,
-    fontSize: 11,
-    color: PDF_COLOR.accent,
+  itemNote: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 7,
+    letterSpacing: 0.6,
+    color: PDF_COLOR.bronze,
+    textTransform: 'uppercase',
+    marginTop: 2,
+  },
+  priceCell: {
+    width: 96,
+    textAlign: 'right',
+  },
+  priceText: {
+    fontFamily: PDF_FONT.body,
+    fontVariantNumeric: 'tabular-nums',
+    fontSize: 9.5,
+    color: PDF_COLOR.docInk,
+  },
+  priceTextPackage: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
+    fontSize: 10.5,
+    color: PDF_COLOR.bronzeDeep,
+  },
+  priceTextChild: {
+    fontFamily: PDF_FONT.body,
+    fontVariantNumeric: 'tabular-nums',
+    fontSize: 9,
+    color: PDF_COLOR.inkSoft,
   },
   noteRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginTop: 8,
   },
   noteMark: {
-    width: 20,
-    fontSize: 9,
-    fontFamily: PDF_FONT.bold,
-    color: PDF_COLOR.accent,
+    width: 16,
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.5,
+    color: PDF_COLOR.bronze,
   },
   noteText: {
     flex: 1,
-    fontSize: 9,
+    fontFamily: PDF_FONT.body,
+    fontSize: 8.5,
     lineHeight: 1.45,
-    color: PDF_COLOR.muted,
+    color: PDF_COLOR.inkSoft,
   },
-  expensesTable: {
+  paymentCard: {
+    backgroundColor: PDF_COLOR.neutralBg,
     borderWidth: 1,
-    borderColor: PDF_COLOR.line,
+    borderColor: PDF_COLOR.neutralLine,
     borderStyle: 'solid',
-    borderRadius: 6,
-    marginBottom: 4,
+    borderRadius: 8,
+    padding: 14,
   },
-  expensesHeadRow: {
-    flexDirection: 'row',
-    backgroundColor: PDF_COLOR.headBg,
+  paymentCardTitle: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 7.5,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: PDF_COLOR.neutralSoft,
+    marginBottom: 8,
   },
-  expensesRow: {
+  paymentRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.line,
+    borderTopColor: PDF_COLOR.neutralLine,
     borderTopStyle: 'solid',
-  },
-  expensesRowAlt: {
-    backgroundColor: PDF_COLOR.rowAlt,
-  },
-  packageHeadRow: {
-    backgroundColor: PDF_COLOR.headBg,
-  },
-  expenseIndexCell: {
-    width: 30,
-    borderRightWidth: 1,
-    borderRightColor: PDF_COLOR.line,
-    borderRightStyle: 'solid',
     paddingVertical: 6,
-    paddingHorizontal: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  expenseNameCell: {
-    flex: 1,
-    borderRightWidth: 1,
-    borderRightColor: PDF_COLOR.line,
-    borderRightStyle: 'solid',
-    paddingVertical: 6,
-    paddingHorizontal: 9,
-    justifyContent: 'center',
-  },
-  expenseNameCellChild: {
-    paddingLeft: 20,
-  },
-  expenseAmountCell: {
-    width: 88,
-    paddingVertical: 6,
-    paddingHorizontal: 9,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-  },
-  expenseHeadText: {
-    fontFamily: PDF_FONT.bold,
-    fontSize: 9.5,
-    color: '#4d3a26',
-  },
-  expenseIndexText: {
-    fontSize: 8.5,
-    color: PDF_COLOR.soft,
-    fontFamily: PDF_FONT.bold,
-  },
-  expenseText: {
-    fontSize: 9.5,
-  },
-  expenseTextChild: {
-    fontSize: 9,
-    color: PDF_COLOR.ink,
-  },
-  expenseTextPackage: {
-    fontFamily: PDF_FONT.bold,
-    fontSize: 10,
-  },
-  expenseDescription: {
-    fontSize: 8,
-    color: PDF_COLOR.muted,
-    lineHeight: 1.4,
-    marginTop: 1.5,
-  },
-  expensePriceText: {
-    fontSize: 9.5,
-  },
-  expensePriceTextChild: {
-    fontSize: 9,
-    color: PDF_COLOR.muted,
-  },
-  expensePriceTextPackage: {
-    fontFamily: PDF_FONT.bold,
-    fontSize: 10,
-    color: PDF_COLOR.accent,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: PDF_COLOR.line,
-    borderStyle: 'solid',
+  paymentRowFirst: {
     borderTopWidth: 0,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
+    paddingTop: 0,
   },
-  summaryLabelCell: {
+  paymentLabelCell: {
+    width: '32%',
+  },
+  paymentLabelText: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.5,
+    color: PDF_COLOR.neutralInk,
+  },
+  paymentValueCell: {
     flex: 1,
-    paddingVertical: 7,
-    paddingHorizontal: 9,
-    justifyContent: 'center',
   },
-  summaryAmountCell: {
-    width: 118,
-    paddingVertical: 7,
-    paddingHorizontal: 9,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    borderLeftWidth: 1,
-    borderLeftColor: PDF_COLOR.line,
-    borderLeftStyle: 'solid',
+  paymentValueText: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8.5,
+    lineHeight: 1.4,
+    color: PDF_COLOR.neutralInk,
   },
-  summaryLabelText: {
-    fontSize: 9.5,
-  },
-  summaryAmountText: {
-    fontSize: 9.5,
-  },
-  totalAmountCell: {
-    backgroundColor: PDF_COLOR.totalBg,
-  },
-  totalAmountText: {
-    fontFamily: PDF_FONT.bold,
-  },
-  footer: pdfBaseStyles.footer,
-  footerColumn: pdfBaseStyles.footerColumn,
-  footerText: pdfBaseStyles.footerText,
-  footerPage: pdfBaseStyles.footerPage,
 });
-
-const renderFooter = pageLabel => (
-  <View style={styles.footer} fixed>
-    <View style={styles.footerColumn}>
-      <Text style={styles.footerText}>{sanitizePdfText(AGENCY_NAME)}</Text>
-      <Text style={styles.footerText}>{sanitizePdfText(AGENCY_ADDRESS_LINE_1)}</Text>
-      <Text style={styles.footerText}>{sanitizePdfText(AGENCY_ADDRESS_LINE_2)}</Text>
-    </View>
-    <View style={styles.footerColumn}>
-      <Text style={[styles.footerText, { textAlign: 'right' }]}>{sanitizePdfText(AGENCY_WEBSITE)}</Text>
-      <Text style={[styles.footerText, { textAlign: 'right' }]}>{sanitizePdfText(AGENCY_EMAIL)}</Text>
-      <Text style={[styles.footerText, { textAlign: 'right' }]}>{sanitizePdfText(AGENCY_TELEGRAM)}</Text>
-    </View>
-    <Text style={styles.footerPage}>{pageLabel}</Text>
-  </View>
-);
 
 // Flattens resolved rows into a display list: a package becomes its own bold header row
 // ("2.") followed by its children indented underneath ("2.1", "2.2", ...).
@@ -320,120 +239,114 @@ const InvoicePdfDocument = ({
   return (
     <Document title={`Invoice ${invoiceNumber || ''}`} subject="Invoice" creator="UKRCOM">
       <Page size="A4" style={styles.page} wrap>
-        <Text style={styles.eyebrow}>{sanitizePdfText(AGENCY_NAME)}</Text>
-        <Text style={styles.title}>{sanitizePdfText(`INVOICE No. ${invoiceNumber || ''}`)}</Text>
-        <View style={styles.titleRule} />
+        <BronzeMotif />
+        <ContinuedTag label={DOC_LABEL} />
+        <BrandRow metaLines={[`Invoice No. ${invoiceNumber || ''}`, invoiceDate, caseTitle]} />
+        <BrandRule />
+        <TitleBlock
+          eyebrow="Programme milestone invoice"
+          title={`Invoice No. ${invoiceNumber || ''}`}
+          subtitle={`Prepared for ${payerName}${payerLocation ? ` · ${payerLocation}` : ''}.`}
+        />
 
-        <View style={styles.table}>
-          <View style={[styles.row, styles.firstRow]} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>Beneficiary:</Text></View>
-            <View style={styles.valueCell}>
-              <Text style={styles.valueText}>
-                {sanitizePdfText(`${beneficiary?.title || ''}, ${beneficiary?.address || ''}`)}
-              </Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Breakdown</Text>
+          <Text style={styles.sectionNote}>{caseTitle}</Text>
+          <View style={styles.table}>
+            {displayRows.map((row, rowIndex) => {
+              const isChild = row.depth > 0;
+              const isPackageHeader = row.kind === 'package';
+              return (
+                <View
+                  key={`${row.key || rowIndex}-${row.number}`}
+                  style={[
+                    isPackageHeader ? styles.packageRow : styles.row,
+                    !isPackageHeader && !isChild && rowIndex === 0 ? styles.firstRow : null,
+                  ]}
+                  wrap={false}
+                >
+                  <View style={styles.indexCell}>
+                    <Text style={styles.indexText}>{row.number}</Text>
+                  </View>
+                  <View style={[styles.nameCell, isChild ? styles.nameCellChild : null]}>
+                    <Text style={isPackageHeader ? styles.nameTextPackage : (isChild ? styles.nameTextChild : styles.nameText)}>
+                      {sanitizePdfText(row.name)}
+                    </Text>
+                    {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
+                    {row.isCustomized ? <Text style={styles.itemNote}>Confirmed for this case</Text> : null}
+                  </View>
+                  <View style={styles.priceCell}>
+                    <Text style={isPackageHeader ? styles.priceTextPackage : (isChild ? styles.priceTextChild : styles.priceText)}>
+                      {formatRowAmount(row)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          {noteList.map((note, index) => (
+            <View key={`note-${index}`} style={styles.noteRow}>
+              <Text style={styles.noteMark}>{'*'.repeat(index + 1)}</Text>
+              <Text style={styles.noteText}>{sanitizePdfText(note)}</Text>
+            </View>
+          ))}
+
+          <View style={pdfBaseStyles.totalCard}>
+            <Text style={pdfBaseStyles.totalCardLabel}>Amount due</Text>
+            <Text style={pdfBaseStyles.totalCardAmount}>{formatMoney(total)}</Text>
+            <View style={pdfBaseStyles.totalCardRule} />
+            <View style={pdfBaseStyles.totalCardRow}>
+              <Text style={pdfBaseStyles.totalCardRowLabel}>Subtotal</Text>
+              <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoney(subtotal)}</Text>
+            </View>
+            <View style={pdfBaseStyles.totalCardRow}>
+              <Text style={pdfBaseStyles.totalCardRowLabel}>Tax</Text>
+              <Text style={pdfBaseStyles.totalCardRowValue}>{`${sanitizePdfText(String(taxPercent ?? 0))}%`}</Text>
             </View>
           </View>
-          <View style={styles.row} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>International bank account number</Text></View>
-            <View style={styles.valueCell}><Text style={styles.valueText}>{sanitizePdfText(beneficiary?.iban)}</Text></View>
-          </View>
-          <View style={styles.row} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>Name of the bank</Text></View>
-            <View style={styles.valueCell}><Text style={styles.valueText}>{sanitizePdfText(beneficiary?.bankName)}</Text></View>
-          </View>
-          <View style={styles.row} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>Bank SWIFT Code</Text></View>
-            <View style={styles.valueCell}><Text style={styles.valueText}>{sanitizePdfText(beneficiary?.swiftCode)}</Text></View>
-          </View>
         </View>
 
-        <View style={styles.table}>
-          <View style={[styles.row, styles.firstRow]} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>Payer:</Text></View>
-            <View style={styles.valueCell}><Text style={styles.valueText}>{sanitizePdfText(payerName)}</Text></View>
-          </View>
-          <View style={styles.row} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>Location:</Text></View>
-            <View style={styles.valueCell}><Text style={styles.valueText}>{sanitizePdfText(payerLocation)}</Text></View>
-          </View>
-          <View style={styles.row} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>Purpose of the payment:</Text></View>
-            <View style={styles.valueCell}><Text style={styles.valueText}>{sanitizePdfText(purposeOfPayment)}</Text></View>
-          </View>
-          <View style={styles.row} wrap={false}>
-            <View style={styles.labelCell}><Text style={styles.labelText}>Total:</Text></View>
-            <View style={styles.valueCell}><Text style={styles.totalValueText}>{formatEuroTotal(total)}</Text></View>
-          </View>
-        </View>
-
-        {noteList.map((note, index) => (
-          <View key={`note-${index}`} style={styles.noteRow}>
-            <Text style={styles.noteMark}>{'*'.repeat(index + 1)}</Text>
-            <Text style={styles.noteText}>{sanitizePdfText(note)}</Text>
-          </View>
-        ))}
-
-        {renderFooter('1/2')}
-      </Page>
-
-      <Page size="A4" style={styles.page} wrap>
-        <Text style={styles.eyebrow}>{sanitizePdfText(AGENCY_NAME)}</Text>
-        <Text style={styles.sectionTitle}>Description</Text>
-        <Text style={styles.sectionSubtitle}>{sanitizePdfText(caseTitle)}</Text>
-
-        <View style={styles.expensesTable}>
-          <View style={styles.expensesHeadRow} wrap={false}>
-            <View style={styles.expenseIndexCell}><Text style={styles.expenseHeadText}>#</Text></View>
-            <View style={styles.expenseNameCell}><Text style={styles.expenseHeadText}>Expenses</Text></View>
-            <View style={styles.expenseAmountCell}><Text style={styles.expenseHeadText}>EUR</Text></View>
-          </View>
-          {displayRows.map((row, rowIndex) => {
-            const isChild = row.depth > 0;
-            const isPackageHeader = row.kind === 'package';
-            return (
-              <View
-                key={`${row.key || rowIndex}-${row.number}`}
-                style={[
-                  styles.expensesRow,
-                  isPackageHeader ? styles.packageHeadRow : null,
-                  !isPackageHeader && rowIndex % 2 ? styles.expensesRowAlt : null,
-                ]}
-                wrap={false}
-              >
-                <View style={styles.expenseIndexCell}><Text style={styles.expenseIndexText}>{row.number}</Text></View>
-                <View style={[styles.expenseNameCell, isChild ? styles.expenseNameCellChild : null]}>
-                  <Text style={isPackageHeader ? styles.expenseTextPackage : (isChild ? styles.expenseTextChild : styles.expenseText)}>
-                    {sanitizePdfText(row.name)}
-                  </Text>
-                  {row.description ? <Text style={styles.expenseDescription}>{sanitizePdfText(row.description)}</Text> : null}
-                </View>
-                <View style={styles.expenseAmountCell}>
-                  <Text style={isPackageHeader ? styles.expensePriceTextPackage : (isChild ? styles.expensePriceTextChild : styles.expensePriceText)}>
-                    {formatRowAmount(row)}
-                  </Text>
-                </View>
+        <View style={styles.section} wrap={false}>
+          <Text style={styles.sectionTitle}>Payment details</Text>
+          <View style={styles.paymentCard}>
+            <Text style={styles.paymentCardTitle}>Beneficiary details</Text>
+            <View style={[styles.paymentRow, styles.paymentRowFirst]}>
+              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Beneficiary</Text></View>
+              <View style={styles.paymentValueCell}>
+                <Text style={styles.paymentValueText}>
+                  {sanitizePdfText(`${beneficiary?.title || ''}, ${beneficiary?.address || ''}`)}
+                </Text>
               </View>
-            );
-          })}
-        </View>
-
-        <View style={styles.summaryRow} wrap={false}>
-          <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Total:</Text></View>
-          <View style={styles.summaryAmountCell}><Text style={[styles.summaryAmountText, { fontFamily: PDF_FONT.bold }]}>{formatEuroTotal(subtotal)}</Text></View>
-        </View>
-
-        <View style={{ marginTop: 16 }}>
-          <View style={styles.summaryRow} wrap={false}>
-            <View style={styles.summaryLabelCell}><Text style={styles.summaryLabelText}>Taxes (%)</Text></View>
-            <View style={styles.summaryAmountCell}><Text style={styles.summaryAmountText}>{formatPlainAmount(taxPercent)}</Text></View>
+            </View>
+            <View style={styles.paymentRow}>
+              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>IBAN</Text></View>
+              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(beneficiary?.iban)}</Text></View>
+            </View>
+            <View style={styles.paymentRow}>
+              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Bank</Text></View>
+              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(beneficiary?.bankName)}</Text></View>
+            </View>
+            <View style={styles.paymentRow}>
+              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>SWIFT/BIC</Text></View>
+              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(beneficiary?.swiftCode)}</Text></View>
+            </View>
+            <View style={styles.paymentRow}>
+              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Payer</Text></View>
+              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(payerName)}</Text></View>
+            </View>
+            <View style={styles.paymentRow}>
+              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Location</Text></View>
+              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(payerLocation)}</Text></View>
+            </View>
+            <View style={styles.paymentRow}>
+              <View style={styles.paymentLabelCell}><Text style={styles.paymentLabelText}>Purpose of payment</Text></View>
+              <View style={styles.paymentValueCell}><Text style={styles.paymentValueText}>{sanitizePdfText(purposeOfPayment)}</Text></View>
+            </View>
           </View>
-          <View style={styles.summaryRow} wrap={false}>
-            <View style={styles.summaryLabelCell}><Text style={[styles.summaryLabelText, { fontFamily: PDF_FONT.bold }]}>Amount need to be paid (EUR)</Text></View>
-            <View style={[styles.summaryAmountCell, styles.totalAmountCell]}><Text style={[styles.summaryAmountText, styles.totalAmountText]}>{formatEuroTotal(total)}</Text></View>
-          </View>
         </View>
 
-        {renderFooter('2/2')}
+        <Footer />
       </Page>
     </Document>
   );

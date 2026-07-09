@@ -1,8 +1,17 @@
-// Shared visual language for every @react-pdf/renderer export in the app (BudgetPdfDocument,
-// InvoicePdfDocument, and the surrogate/donor ProfilePdfDocument in smallCard/renderTopBlock.js).
-// Each document keeps its own StyleSheet and layout, but pulls its palette, type scale and the
-// header/footer/watermark building blocks from here so the three read as one product.
+// Shared visual language for every UKRCOM @react-pdf/renderer export (BudgetPdfDocument,
+// InvoicePdfDocument, ExpectedExpensesPdfDocument). Each document keeps its own StyleSheet and
+// content layout, but pulls its palette, type scale, embedded fonts, and the brand-row / brand-rule
+// / bronze-motif / title-block / footer building blocks from here so every document reads as one
+// product. Tokens below mirror the UKRCOM Invoice Builder design spec (ukrcom-invoice-fullset.html).
+import React from 'react';
+import { Font, StyleSheet, Svg, Defs, LinearGradient, Stop, Line, Text, View } from '@react-pdf/renderer';
 
+// NOTE ON BACKWARDS COMPATIBILITY: `renderTopBlock.js` (surrogate/donor ProfilePdfDocument) and
+// `PdfPagePreviewStrip.jsx` (admin UI preview strip) already depend on the original palette below
+// (ink/muted/soft/accent/accentStrong/line/lineSoft/headBg/rowAlt/cardBg/totalBg/watermark/white)
+// and on PDF_FONT.base/bold — those keys and values are kept exactly as they were so those two
+// files keep rendering unchanged. The Budget/Invoice/Expected-Expenses redesign uses the new,
+// separately-named spec tokens added below instead of overloading the old keys.
 export const PDF_COLOR = {
   ink: '#2b2118',
   muted: '#786a5c',
@@ -17,14 +26,72 @@ export const PDF_COLOR = {
   totalBg: '#ead9b8',
   watermark: '#f1e2c6',
   white: '#ffffff',
+
+  // Spec tokens (§1.1) for the redesigned Budget/Invoice/Expected-Expenses documents.
+  paper: '#FBF7F0',
+  card: '#F2E9D6',
+  docLine: '#E6DCC7',
+  docInk: '#2B2620',
+  inkSoft: '#726858',
+  footerSoft: '#A79C88',
+  bronze: '#A2793F',
+  bronzeDeep: '#7C5B2E',
+  totalCardBg: '#362C22',
+  totalCardAmount: '#EFDDB0',
+
+  // Separate neutral palette — reserved for the Payment Instructions document, which is
+  // deliberately not branded (see spec §1.5).
+  neutralBg: '#FDFCFA',
+  neutralInk: '#3A362F',
+  neutralSoft: '#8A8478',
+  neutralLine: '#D8D2C2',
+  neutralTotal: '#3A362F',
 };
 
 export const PDF_FONT = {
   base: 'Helvetica',
   bold: 'Helvetica-Bold',
+  display: 'Fraunces',
+  body: 'Inter',
 };
 
-// The built-in Helvetica font only covers WinAnsi glyphs, so every document should run its text
+let fontsRegistered = false;
+
+// This app is hosted under a sub-path (see "homepage" in package.json), so asset URLs must go
+// through PUBLIC_URL the same way public/index.html references %PUBLIC_URL% - a bare "/fonts/..."
+// would 404 once deployed.
+const fontUrl = file => `${process.env.PUBLIC_URL || ''}/fonts/${file}`;
+
+// The built-in @react-pdf renderer needs every custom font registered once, up front, before any
+// <Document> using it is rendered. Registration fetches the .ttf files bundled under public/fonts
+// so the PDF embeds real Fraunces/Inter glyphs instead of falling back to a system font.
+export const ensurePdfFontsRegistered = () => {
+  if (fontsRegistered) return;
+  fontsRegistered = true;
+  Font.register({
+    family: PDF_FONT.display,
+    fonts: [
+      { src: fontUrl('Fraunces-Regular.ttf'), fontWeight: 400 },
+      { src: fontUrl('Fraunces-Medium.ttf'), fontWeight: 500 },
+      { src: fontUrl('Fraunces-SemiBold.ttf'), fontWeight: 600 },
+      { src: fontUrl('Fraunces-Bold.ttf'), fontWeight: 700 },
+    ],
+  });
+  Font.register({
+    family: PDF_FONT.body,
+    fonts: [
+      { src: fontUrl('Inter-Regular.ttf'), fontWeight: 400 },
+      { src: fontUrl('Inter-Medium.ttf'), fontWeight: 500 },
+      { src: fontUrl('Inter-SemiBold.ttf'), fontWeight: 600 },
+      { src: fontUrl('Inter-Bold.ttf'), fontWeight: 700 },
+    ],
+  });
+  // Neither typeface ships hyphenation-safe defaults for long catalog/service names; disable
+  // @react-pdf's automatic word hyphenation so labels wrap on spaces instead of mid-word.
+  Font.registerHyphenationCallback(word => [word]);
+};
+
+// The built-in fonts only cover a limited glyph set, so every document should run its text
 // through this before rendering (swaps the handful of characters that would otherwise be blank).
 export const sanitizePdfText = value => String(value ?? '')
   .replace(/№/g, 'No.')
@@ -35,17 +102,14 @@ export const sanitizePdfText = value => String(value ?? '')
   .replace(/\s+/g, ' ')
   .trim();
 
-// Common building blocks every document's own StyleSheet.create(...) can spread in.
+const PAGE_MARGIN = 56;
+const MOTIF_INSET = 30;
+
+// Common building blocks every redesigned document's own StyleSheet.create(...) can spread in.
+// `eyebrow` is the one key here that predates this redesign and is still spread as-is by
+// renderTopBlock.js's ProfilePdfDocument — its shape is kept byte-for-byte; the new eyebrow used
+// by TitleBlock below lives under `docEyebrow` instead so the two never collide.
 export const pdfBaseStyles = {
-  page: {
-    paddingTop: 44,
-    paddingBottom: 62,
-    paddingHorizontal: 44,
-    fontFamily: PDF_FONT.base,
-    fontSize: 10,
-    color: PDF_COLOR.ink,
-    backgroundColor: PDF_COLOR.white,
-  },
   eyebrow: {
     fontFamily: PDF_FONT.bold,
     fontSize: 7.5,
@@ -54,40 +118,299 @@ export const pdfBaseStyles = {
     textTransform: 'uppercase',
     marginBottom: 5,
   },
+
+  page: {
+    paddingTop: 48,
+    paddingBottom: 68,
+    paddingLeft: PAGE_MARGIN,
+    paddingRight: PAGE_MARGIN,
+    fontFamily: PDF_FONT.body,
+    fontSize: 9.5,
+    color: PDF_COLOR.docInk,
+    backgroundColor: PDF_COLOR.paper,
+  },
+  docSeries: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 7.5,
+    letterSpacing: 1.4,
+    color: PDF_COLOR.footerSoft,
+    textTransform: 'uppercase',
+    marginBottom: 14,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  wordmark: {
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontSize: 17,
+    letterSpacing: 0.4,
+    color: PDF_COLOR.docInk,
+  },
+  wordmarkTagline: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8,
+    color: PDF_COLOR.inkSoft,
+    marginTop: 2,
+  },
+  brandMeta: {
+    alignItems: 'flex-end',
+  },
+  brandMetaText: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8,
+    color: PDF_COLOR.inkSoft,
+    textAlign: 'right',
+    lineHeight: 1.5,
+  },
+  docEyebrow: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8,
+    letterSpacing: 1.6,
+    color: PDF_COLOR.bronze,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
   docTitle: {
-    fontFamily: PDF_FONT.bold,
-    fontSize: 22,
-    letterSpacing: -0.4,
-    color: PDF_COLOR.ink,
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontSize: 25,
+    letterSpacing: -0.3,
+    color: PDF_COLOR.docInk,
+  },
+  docSubtitle: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 10,
+    lineHeight: 1.5,
+    color: PDF_COLOR.inkSoft,
+    marginTop: 8,
+    maxWidth: 460,
+  },
+  titleBlock: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontSize: 13.5,
+    letterSpacing: -0.1,
+    color: PDF_COLOR.docInk,
+    marginBottom: 4,
+  },
+  sectionNote: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8.5,
+    color: PDF_COLOR.inkSoft,
+    marginBottom: 10,
+  },
+  totalCard: {
+    backgroundColor: PDF_COLOR.totalCardBg,
+    borderRadius: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginTop: 18,
+  },
+  totalCardLabel: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 7.5,
+    letterSpacing: 1.4,
+    color: PDF_COLOR.footerSoft,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  totalCardAmount: {
+    fontFamily: PDF_FONT.display,
+    fontWeight: 600,
+    fontSize: 30,
+    color: PDF_COLOR.totalCardAmount,
+  },
+  totalCardRule: {
+    borderTopWidth: 1,
+    borderTopColor: PDF_COLOR.bronze,
+    borderTopStyle: 'solid',
+    opacity: 0.5,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  totalCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 3,
+  },
+  totalCardRowLabel: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8.5,
+    color: '#C9BC9E',
+  },
+  totalCardRowValue: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.5,
+    color: PDF_COLOR.card,
   },
   footer: {
     position: 'absolute',
-    left: 44,
-    right: 44,
-    bottom: 24,
+    left: PAGE_MARGIN,
+    right: PAGE_MARGIN,
+    bottom: 30,
     flexDirection: 'row',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.line,
+    borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
-    paddingTop: 8,
+    paddingTop: 9,
   },
   footerColumn: {
-    maxWidth: 260,
+    maxWidth: 280,
   },
   footerText: {
-    fontSize: 7.5,
-    color: PDF_COLOR.muted,
-    lineHeight: 1.4,
+    fontFamily: PDF_FONT.body,
+    fontSize: 7,
+    color: PDF_COLOR.footerSoft,
+    lineHeight: 1.5,
   },
   footerPage: {
-    fontSize: 7.5,
-    color: PDF_COLOR.muted,
+    fontFamily: PDF_FONT.body,
+    fontSize: 7,
+    color: PDF_COLOR.footerSoft,
   },
-  watermarkText: {
+  continuedTag: {
     position: 'absolute',
-    fontFamily: PDF_FONT.bold,
-    color: PDF_COLOR.watermark,
-    opacity: 0.9,
+    top: 26,
+    left: PAGE_MARGIN,
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 7.5,
+    letterSpacing: 1.2,
+    color: PDF_COLOR.footerSoft,
+    textTransform: 'uppercase',
   },
 };
+
+export const pdfSharedStyles = StyleSheet.create(pdfBaseStyles);
+
+// `Document {n} of {total} · {Document Type Name}` per spec §1.7. `total` is omitted for
+// standalone/optional documents (Expected Expenses is never numbered into the main series).
+export const DocSeries = ({ index, total, label, optional = false }) => (
+  <Text style={pdfSharedStyles.docSeries}>
+    {sanitizePdfText(optional
+      ? `Optional document · ${label}`
+      : `Document ${index} of ${total} · ${label}`)}
+  </Text>
+);
+
+// wordmark + tagline on the left, document meta (number/date/client) on the right.
+export const BrandRow = ({ metaLines = [] }) => (
+  <View style={pdfSharedStyles.brandRow}>
+    <View>
+      <Text style={pdfSharedStyles.wordmark}>UKRCOM</Text>
+      <Text style={pdfSharedStyles.wordmarkTagline}>Reproductive Agency, Kyiv</Text>
+    </View>
+    <View style={pdfSharedStyles.brandMeta}>
+      {metaLines.filter(Boolean).map((line, index) => (
+        <Text key={`meta-${index}`} style={pdfSharedStyles.brandMetaText}>{sanitizePdfText(line)}</Text>
+      ))}
+    </View>
+  </View>
+);
+
+const ruleStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  line: {
+    flex: 1,
+    height: 1,
+    backgroundColor: PDF_COLOR.docLine,
+  },
+  diamond: {
+    width: 5,
+    height: 5,
+    backgroundColor: PDF_COLOR.bronze,
+    transform: 'rotate(45deg)',
+    marginHorizontal: 8,
+  },
+});
+
+// Thin rule with a bronze diamond marker — the required brand motif under the wordmark
+// on every branded document (all types except Payment Instructions, per spec §1.1/§1.5).
+export const BrandRule = () => (
+  <View style={ruleStyles.wrap}>
+    <View style={ruleStyles.line} />
+    <View style={ruleStyles.diamond} />
+    <View style={ruleStyles.line} />
+  </View>
+);
+
+// Thin bronze vertical line along the inner page margin, fading out top and bottom,
+// rendered once per page as the required brand motif (spec §1.1). Implemented as an
+// SVG line with a gradient stroke since @react-pdf has no CSS gradient support.
+const A4_HEIGHT_PT = 842;
+
+export const BronzeMotif = () => (
+  <Svg
+    style={{ position: 'absolute', top: 0, left: MOTIF_INSET, width: 1, height: A4_HEIGHT_PT }}
+    viewBox={`0 0 1 ${A4_HEIGHT_PT}`}
+    preserveAspectRatio="none"
+    fixed
+    wrap={false}
+  >
+    <Defs>
+      <LinearGradient id="bronzeFade" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0" stopColor={PDF_COLOR.bronze} stopOpacity={0} />
+        <Stop offset="0.12" stopColor={PDF_COLOR.bronze} stopOpacity={0.55} />
+        <Stop offset="0.88" stopColor={PDF_COLOR.bronze} stopOpacity={0.55} />
+        <Stop offset="1" stopColor={PDF_COLOR.bronze} stopOpacity={0} />
+      </LinearGradient>
+    </Defs>
+    <Line x1="0" y1="0" x2="0" y2={A4_HEIGHT_PT} stroke="url(#bronzeFade)" strokeWidth={1} />
+  </Svg>
+);
+
+// eyebrow -> H1 -> subrow with the key sum/context. Always left-aligned, never centered.
+export const TitleBlock = ({ eyebrow, title, subtitle }) => (
+  <View style={pdfSharedStyles.titleBlock}>
+    {eyebrow ? <Text style={pdfSharedStyles.docEyebrow}>{sanitizePdfText(eyebrow)}</Text> : null}
+    <Text style={pdfSharedStyles.docTitle}>{sanitizePdfText(title)}</Text>
+    {subtitle ? <Text style={pdfSharedStyles.docSubtitle}>{sanitizePdfText(subtitle)}</Text> : null}
+  </View>
+);
+
+const AGENCY_NAME = 'Reproductive Agency "UKRCOM"';
+const AGENCY_ADDRESS = '31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine';
+const AGENCY_CONTACT = 'http://ukrcom.kyiv.ua/  ·  sm.kiev.ukr@gmail.com  ·  @Contact_Us_Kyiv';
+
+// Identical agency footer on every page of every branded document (spec §1.2).
+export const Footer = () => (
+  <View style={pdfSharedStyles.footer} fixed>
+    <View style={pdfSharedStyles.footerColumn}>
+      <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_NAME)}</Text>
+      <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_ADDRESS)}</Text>
+      <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_CONTACT)}</Text>
+    </View>
+    <Text
+      style={pdfSharedStyles.footerPage}
+      render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+    />
+  </View>
+);
+
+// Short colophon shown at the top of overflow pages instead of repeating brand-row/title-block
+// (spec §1.10: "перехід на другу сторінку без повторення brand-row/title-block"). `fixed` makes
+// it render on every page, but the render-prop only returns text from page 2 onward so page 1
+// (which already has the full brand-row/title-block) stays clean.
+export const ContinuedTag = ({ label }) => (
+  <Text
+    style={pdfSharedStyles.continuedTag}
+    fixed
+    render={({ pageNumber }) => (pageNumber > 1 ? sanitizePdfText(`${label} · continued`) : '')}
+  />
+);
