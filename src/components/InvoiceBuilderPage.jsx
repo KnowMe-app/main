@@ -51,6 +51,7 @@ import {
   resetPackageEntryToCatalog,
   resolveInvoiceServiceRows,
   resolveServiceRow,
+  dropStandardPaymentCaveats,
   setEntryField,
   updatePackageChildField,
 } from './invoiceCatalogUtils';
@@ -1810,8 +1811,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // the package price is still unbilled.
   const addPercentServiceEntry = packageId => {
     const pkg = catalogPackagesById.get(String(packageId));
-    const schedule = pkg ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg) : null;
     const listedPriceAmount = pkg ? resolveBudgetPriceAmount(pkg.listedPrice, priceContext) : null;
+    // A formula-priced package (NBU-rate dependent) can't seed a trustworthy default until the
+    // rates resolve - falling through to the "remaining balance" guess would silently create a
+    // 100% row on the very first click, one that never re-corrects itself once the rates arrive
+    // (or load correctly - a stuck 0/errored rate would otherwise do the same thing forever).
+    if (parseBudgetPriceValue(pkg?.listedPrice).isFormula && listedPriceAmount == null) {
+      toast.error(exchangeRatesError || 'Wait until NBU exchange rates load before adding a % of package share.');
+      return;
+    }
+    const schedule = pkg ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg) : null;
     const existingPercentRows = data.invoiceServices.filter(
       entry => entry.kind === 'percent' && String(entry.packageId) === String(packageId),
     );
@@ -1820,7 +1829,13 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     const defaultPercent = (nextPayment && listedPriceAmount)
       ? Math.round((Number(nextPayment.amount || 0) / listedPriceAmount) * 1e6) / 1e4
       : Math.max(0, Math.round((100 - usedPercentTotal) * 100) / 100);
-    addEntryToInvoice(makePercentOfPackageEntry(packageId, defaultPercent), 'Service added.');
+    // Two distinct schedule installments can legitimately share the same percent (e.g. two 50/50
+    // payments) - addEntryToInvoice's generic value-based dedupe would wrongly reject the second
+    // one as "already on the invoice", so this bypasses it instead of going through that helper.
+    persistInvoiceServices(
+      [...data.invoiceServices, makePercentOfPackageEntry(packageId, defaultPercent)],
+      'Service added.',
+    );
   };
 
   const addRecentServiceEntry = entry => addEntryToInvoice(cloneEntryWithNewId(entry), 'Service added.');
@@ -2241,12 +2256,19 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       const [{ pdf }, { default: InvoicePdfDocument }, paymentDetailsModule] = await Promise.all(importPromises);
 
       const invoiceDisplayDate = new Date(`${invoiceDateInput || getTodayYmd()}T00:00:00`);
+      // Legacy invoice data still carries the two standard payment caveats as plain `notes`
+      // entries (they used to render on the Invoice PDF itself). Once Payment Details is being
+      // generated alongside it, those same caveats render there instead (pdfTheme keeps the
+      // wording in sync via STANDARD_PAYMENT_CAVEATS) - so they're dropped here to avoid showing
+      // the same instructions on both documents. If Payment Details isn't being generated this
+      // time, they're left in place - the Invoice PDF is then the only document the client sees.
+      const invoiceNotes = generatePaymentDetails ? dropStandardPaymentCaveats(data.notes) : data.notes;
       const documentProps = {
         customers: data.customers,
         invoiceServices: data.invoiceServices,
         catalogItemsById,
         priceContext,
-        notes: data.notes,
+        notes: invoiceNotes,
         taxPercent: data.taxPercent,
         debtOrDeposit: data.debtOrDeposit,
         invoiceNumber,

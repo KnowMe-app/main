@@ -299,10 +299,41 @@ async function checkBudget() {
   }
 }
 
+async function checkPaymentDetails() {
+  const PaymentDetailsPdfDocument = require('../src/components/PaymentDetailsPdfDocument').default;
+  const { STANDARD_PAYMENT_CAVEATS } = require('../src/components/invoiceCatalogUtils');
+  const beneficiary = {
+    title: 'PE KOVAL OLEKSANDR',
+    address: 'Ukraine, c. Kyiv, st. Bohatyrska, build. 6/1, fl. 129',
+    iban: 'UA743220010000026000300004046',
+    bankName: 'JSC UNIVERSAL BANK, KYIV, UKRAINE',
+    swiftCode: 'UNJSUAUKXXX',
+  };
+  const customers = [{ name: 'Amny Athamny', address: 'Netherlands' }];
+
+  const pagesText = await renderPdf(React.createElement(PaymentDetailsPdfDocument, {
+    beneficiary,
+    customers,
+    invoiceNumber: '09/07/2026',
+    purposeOfPayment: 'Payment for services.',
+    amountDue: 1234.5,
+  }));
+
+  checkNoDebugStrings('Payment Details', pagesText);
+  checkNoBlankPages('Payment Details', pagesText);
+  // The beneficiary (a sole proprietorship) is a legally separate party from the UKRCOM agency
+  // (bug #4 this document was split out to fix) - it must never carry the agency's own brand.
+  checkNoBrandOnPages('Payment Details', pagesText, pagesText.map((_, index) => index), 'UKRCOM');
+  checkStringsRoundTrip('Payment Details', pagesText, [
+    beneficiary.iban, beneficiary.swiftCode, ...STANDARD_PAYMENT_CAVEATS,
+  ]);
+}
+
 async function main() {
   await checkInvoice();
   await checkExpectedExpenses();
   await checkBudget();
+  await checkPaymentDetails();
 
   if (failures.length) {
     console.error(`PDF QA check FAILED (${failures.length} issue${failures.length === 1 ? '' : 's'}):`);

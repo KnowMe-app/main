@@ -17,11 +17,18 @@ const fixturePackages = [
   {
     id: 'p1', name: 'Full program', listedPrice: 250, description: 'Everything included.', children: ['10', '11'], paymentScheduleId: 'ps-1',
   },
+  {
+    id: 'p2', name: 'Split program', listedPrice: 250, description: 'Two equal installments.', children: ['10', '11'], paymentScheduleId: 'ps-2',
+  },
+  {
+    id: 'p3', name: 'Formula program', listedPrice: '=100*EUR', description: 'NBU-rate priced.', children: ['10'], paymentScheduleId: 'ps-1',
+  },
 ];
 
 const fixtureTechnical = {
   paymentSchedules: [
     { id: 'ps-1', payments: [{ title: 'To start the program', amount: 150 }, { title: 'Final payment', amount: 100 }] },
+    { id: 'ps-2', payments: [{ title: 'First half', amount: 125 }, { title: 'Second half', amount: 125 }] },
   ],
   wireTransferSurchargeRate: 0.14,
 };
@@ -203,6 +210,67 @@ describe('InvoiceBuilderPage', () => {
     expect(percentEntries).toHaveLength(2);
     expect(percentEntries[1].percent).toBe(40);
 
+    await act(async () => { root.unmount(); });
+  });
+
+  // Regression: two schedule installments of equal size (e.g. 50/50) look identical by value -
+  // the generic "already on the invoice" dedupe (keyed on packageId+percent) used to reject the
+  // second click outright, making it impossible to add both halves of an even split.
+  it('"% of package" allows two equal-size schedule installments, not just distinct percentages', async () => {
+    const root = mount();
+    await flush();
+
+    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Split program').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const percentButton = findButton('% of package');
+    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    const percentEntries = lastServicesCall[1].filter(entry => entry.kind === 'percent');
+    expect(percentEntries).toHaveLength(2);
+    expect(percentEntries.map(entry => entry.percent)).toEqual([50, 50]);
+    expect(container.innerHTML).not.toContain('already on the invoice');
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // Regression: a formula-priced package (NBU-rate dependent) can't resolve its listed price
+  // while exchange rates are still loading - seeding the default from the "remaining unbilled
+  // share" fallback in that state used to silently create a 100% row instead of the correct
+  // schedule share, one that never corrects itself once the rates actually arrive.
+  it('"% of package" refuses to seed a default for a formula-priced package while rates are still loading', async () => {
+    let resolveRates;
+    fetchNbuUahExchangeRatesByDate.mockImplementation(() => new Promise(resolve => { resolveRates = resolve; }));
+    const root = mount();
+    await flush();
+
+    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Formula program').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const percentButton = findButton('% of package');
+    expect(percentButton).toBeTruthy();
+    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    expect(lastServicesCall[1].some(entry => entry.kind === 'percent')).toBe(false);
+
+    // Let the pending rates promise settle before unmounting, instead of leaving it dangling for
+    // the rest of the test run.
+    await act(async () => { resolveRates({ eur: 46, usd: 42 }); });
+    await flush();
     await act(async () => { root.unmount(); });
   });
 

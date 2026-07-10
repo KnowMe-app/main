@@ -9,7 +9,7 @@ import {
   Footer, PDF_COLOR, PDF_FONT, ensurePdfFontsRegistered, pdfBaseStyles, sanitizePdfText,
 } from './pdfTheme';
 import { formatMoney } from './budgetCatalogUtils';
-import { buildPayerLocation, buildPayerName } from './invoiceCatalogUtils';
+import { buildPayerLocation, buildPayerName, STANDARD_PAYMENT_CAVEATS } from './invoiceCatalogUtils';
 
 ensurePdfFontsRegistered();
 
@@ -173,20 +173,15 @@ const PaymentDetailsPdfDocument = ({
           </View>
 
           {/* These payment caveats used to live on the Invoice PDF itself - they belong here,
-              next to the wire instructions they actually govern, not on the itemized invoice. */}
-          <View style={styles.noteRow}>
-            <Text style={styles.noteMark}>*</Text>
-            <Text style={styles.noteText}>
-              Purpose of the payment must be exactly like in invoice.
-            </Text>
-          </View>
-          <View style={styles.noteRow}>
-            <Text style={styles.noteMark}>**</Text>
-            <Text style={styles.noteText}>
-              Please make sure you pay the whole amount due - any bank transfer fees on your side must not be
-              deducted from it.
-            </Text>
-          </View>
+              next to the wire instructions they actually govern, not on the itemized invoice.
+              InvoiceBuilderPage.jsx drops the same text from the Invoice's own notes whenever
+              this document is generated alongside it, so they're never shown twice. */}
+          {STANDARD_PAYMENT_CAVEATS.map((caveat, index) => (
+            <View key={caveat} style={styles.noteRow}>
+              <Text style={styles.noteMark}>{'*'.repeat(index + 1)}</Text>
+              <Text style={styles.noteText}>{sanitizePdfText(caveat)}</Text>
+            </View>
+          ))}
         </View>
 
         {/* Own, independent page numbering - "Page 1 of 1" for a one-page document (spec §3) -

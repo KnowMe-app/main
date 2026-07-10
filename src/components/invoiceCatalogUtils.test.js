@@ -8,6 +8,7 @@ import {
   cloneEntryWithNewId,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
+  dropStandardPaymentCaveats,
   generateInvoiceIdentifiers,
   getActiveBeneficiary,
   getEntryIdentityKey,
@@ -30,6 +31,7 @@ import {
   resolveInvoiceServiceRows,
   resolveServiceRow,
   setEntryField,
+  STANDARD_PAYMENT_CAVEATS,
   updatePackageChildField,
 } from './invoiceCatalogUtils';
 
@@ -461,5 +463,23 @@ describe('invoiceCatalogUtils', () => {
     const template = 'Payment by the invoice № {invoiceNumber} of {invoiceDate} without VAT.';
     expect(applyPaymentPurposePlaceholders(template, { invoiceNumber: '23/05/2026', invoiceDate: '23.05.2026' }))
       .toBe('Payment by the invoice № 23/05/2026 of 23.05.2026 without VAT.');
+  });
+
+  // Regression: Payment Details now renders the two standard caveats itself - dropping them from
+  // the Invoice PDF's own notes (once Payment Details is generated alongside it) must match that
+  // exact wording, or a legacy invoice's caveats would print on both documents.
+  it('drops only exact-match standard payment caveats from a notes list, keeping custom notes', () => {
+    const notes = [STANDARD_PAYMENT_CAVEATS[0], 'A custom note the admin added.', STANDARD_PAYMENT_CAVEATS[1]];
+    expect(dropStandardPaymentCaveats(notes)).toEqual(['A custom note the admin added.']);
+    expect(dropStandardPaymentCaveats([`  ${STANDARD_PAYMENT_CAVEATS[0]}  `])).toEqual([]);
+    expect(dropStandardPaymentCaveats(['Please make sure you pay the whole amount.'])).toHaveLength(1);
+  });
+
+  // The canonical wording never uses a contraction (see STANDARD_PAYMENT_CAVEATS), but legacy
+  // invoice data (e.g. src/data/invoiceBuilderSeed.json) still carries the older "don't" phrasing
+  // - it must still be recognized and dropped, not just the current wording.
+  it('also drops the legacy apostrophe wording of the second caveat', () => {
+    const legacyNote = "Please make sure you pay the whole amount (don't use SHA option while making payment).";
+    expect(dropStandardPaymentCaveats([legacyNote])).toEqual([]);
   });
 });

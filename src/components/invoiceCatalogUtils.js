@@ -26,6 +26,35 @@
 
 import { getItemDisplayAmount, resolveBudgetPriceAmount } from './budgetCatalogUtils';
 
+// The two standard payment caveats: legacy invoice data still carries them as free-text `notes`
+// entries (they used to render on the Invoice PDF itself), but they now belong on the standalone
+// Payment Details document next to the wire instructions they actually govern. Exported as a
+// single shared list so both PaymentDetailsPdfDocument (which renders them) and
+// InvoiceBuilderPage (which must drop them from the Invoice PDF's own notes once Payment Details
+// is generated, so they're never shown twice) always agree on the exact wording.
+//
+// No contraction in the second line ("do not", not "don't") - @react-pdf/renderer's font
+// subsetting corrupts that particular apostrophe into a stray digit glyph in this document
+// (caught by scripts/pdfQaCheck.js's round-trip check), and no other client-facing PDF text in
+// this codebase uses a contraction either.
+export const STANDARD_PAYMENT_CAVEATS = [
+  'Purpose of the payment must be exactly like in invoice.',
+  'Please make sure you pay the whole amount (do not use SHA option while making payment).',
+];
+
+// Older invoices were seeded with the apostrophe wording above - recognized here too (but never
+// rendered) so their notes still get deduped against the Invoice PDF correctly.
+const RECOGNIZED_PAYMENT_CAVEATS = new Set([
+  ...STANDARD_PAYMENT_CAVEATS,
+  "Please make sure you pay the whole amount (don't use SHA option while making payment).",
+]);
+
+// Drops exact-match copies of the standard caveats from a notes list - used when building the
+// Invoice PDF's own `notes` prop once Payment Details (which now renders them itself) is being
+// generated alongside it, so the client never sees the same instruction printed twice.
+export const dropStandardPaymentCaveats = notes =>
+  (Array.isArray(notes) ? notes : []).filter(note => !RECOGNIZED_PAYMENT_CAVEATS.has(String(note ?? '').trim()));
+
 const SERVICE_PRICE_SEPARATOR = '||';
 const CATALOG_ID_PREFIX = 'id';
 
