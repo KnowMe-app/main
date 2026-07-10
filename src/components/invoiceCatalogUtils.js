@@ -445,9 +445,13 @@ export const resolveInvoiceServiceRows = (invoiceServices, catalogItemsById, pri
 export const resolveInvoiceDocType = rows => ((Array.isArray(rows) ? rows : [])
   .some(row => row?.kind === 'package' || row?.kind === 'percent') ? 'programme_milestone' : 'service');
 
-// Subtotal only walks top-level rows: a package row's price already sums its children, so nested
-// children are never double-counted.
-export const computeInvoiceSubtotal = rows => rows.reduce((sum, row) => sum + (Number(row.price) || 0), 0);
+// A top-level 'package' row is never billed by its own price - it's a reference block (its
+// included-services list and Payment Schedule mirror the catalog programme for context, same as
+// Budget), not a line item of this specific invoice. What's actually billed alongside it is
+// whatever other rows sit next to it - custom/catalog items, or a 'percent' share of that package.
+export const computeInvoiceSubtotal = rows => rows
+  .filter(row => row?.kind !== 'package')
+  .reduce((sum, row) => sum + (Number(row.price) || 0), 0);
 
 export const computeInvoiceTotal = (subtotal, taxPercent) => subtotal * (1 + (Number(taxPercent) || 0) / 100);
 
