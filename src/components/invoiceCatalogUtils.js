@@ -380,6 +380,14 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
     const resolvedChildren = children.map(child => resolveServiceRow(child, catalogItemsById, priceContext));
     const childrenTotal = roundMoney(resolvedChildren.reduce((sum, row) => sum + (Number(row.price) || 0), 0));
     const hasPriceOverride = entry.priceOverride !== undefined && entry.priceOverride !== null;
+    // The billed price is the package's own listed price (a deliberately curated catalog figure),
+    // not the sum of whatever line items happen to be attached - that sum is only a reference for
+    // the admin to sanity-check budget coverage (see childrenTotal below), and is only ever billed
+    // when the package's listed price can't be resolved at all.
+    const listedPriceAmount = pkg
+      ? resolveBudgetPriceAmount(pkg.listedPrice, { ...priceContext, itemsById: catalogItemsById })
+      : null;
+    const defaultPrice = listedPriceAmount == null ? childrenTotal : roundMoney(listedPriceAmount);
     return {
       key: entry.id,
       id: entry.id,
@@ -389,7 +397,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       isCustomized: Boolean(entry.customized),
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? pkg?.description ?? '',
-      price: hasPriceOverride ? roundMoney(entry.priceOverride) : childrenTotal,
+      price: hasPriceOverride ? roundMoney(entry.priceOverride) : defaultPrice,
       childrenTotal,
       hasPriceOverride,
       children: resolvedChildren,

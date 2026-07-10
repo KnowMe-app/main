@@ -41,13 +41,15 @@ export const buildPackageOverviewChildren = pkg => (Array.isArray(pkg?.children)
   .map(catalogId => makeCatalogItemEntry(catalogId));
 
 // A schedule payment's euro amount is only ever used once, to seed a percent-of-package row (e.g.
-// a 8772 EUR first payment on a 40000 EUR package becomes "21.93% of the package") - from then on
-// that row is a normal, independently editable service row like any other.
+// a 8772 EUR first payment on a 40000 EUR package becomes "21.9300% of the package") - from then on
+// that row is a normal, independently editable service row like any other. Kept to 4 decimal places
+// (not 2) so resolving the percent back to euros lands on the same cent the schedule specified,
+// instead of drifting by tens of euros on packages whose payments aren't a round percentage.
 const buildGroupFromSchedulePayment = (pkg, payment) => {
   const listedPrice = Number(pkg?.listedPrice) || 0;
   const amount = Number(payment?.amount) || 0;
   if (!listedPrice || !amount) return [];
-  const percent = Math.round((amount / listedPrice) * 10000) / 100;
+  const percent = Math.round((amount / listedPrice) * 1e6) / 1e4;
   return [makePercentOfPackageEntry(pkg?.id, percent, { expectedExpenseRole: 'scheduled' })];
 };
 
@@ -126,8 +128,11 @@ export const inferPackageIdFromRawGroups = rawGroups => {
 };
 
 // Builds a full plan from raw groups + the loaded budget catalog. Returns `missingPackage: true`
-// when no package could be resolved (nothing is built in that case), and `droppedGroupsCount` for
-// any groups beyond the schedule's own step count (they're dropped rather than silently merged).
+// when no package could be resolved, `missingSchedule: true` when the resolved package has no
+// payment schedule of its own - either way nothing is built, the same "no payment schedule" failure
+// a manually-created plan gets, instead of silently persisting a plan with zero milestones. Also
+// returns `droppedGroupsCount` for any groups beyond the schedule's own step count (they're dropped
+// rather than silently merged).
 export const buildExpectedExpensesPlanFromRawGroups = (rawGroups, { catalog, taxPercent = 0, packageId: explicitPackageId } = {}) => {
   const groups = (Array.isArray(rawGroups) ? rawGroups : []).map(normalizeServiceEntries);
   const packageId = String(explicitPackageId || inferPackageIdFromRawGroups(rawGroups) || '');
@@ -135,6 +140,7 @@ export const buildExpectedExpensesPlanFromRawGroups = (rawGroups, { catalog, tax
   const pkg = packages.find(candidate => String(candidate.id) === packageId) || null;
   const schedule = pkg ? resolveProgramPaymentSchedule(catalog, pkg) : null;
   const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
+  const missingSchedule = Boolean(pkg) && payments.length === 0;
 
   const milestones = payments.map((payment, index) => ({
     id: createEntryId(),
@@ -145,8 +151,9 @@ export const buildExpectedExpensesPlanFromRawGroups = (rawGroups, { catalog, tax
   }));
 
   return {
-    plan: pkg ? { packageId, packageSnapshot: buildPackageSnapshot(pkg), milestones } : null,
+    plan: (pkg && !missingSchedule) ? { packageId, packageSnapshot: buildPackageSnapshot(pkg), milestones } : null,
     missingPackage: !pkg,
+    missingSchedule,
     droppedGroupsCount: Math.max(0, groups.length - payments.length),
   };
 };
@@ -154,18 +161,19 @@ export const buildExpectedExpensesPlanFromRawGroups = (rawGroups, { catalog, tax
 // --- Normalization (defensive parsing of whatever's stored on the backend) ------------------------------------------------------
 
 // Old persisted milestones may still carry a frozen `scheduledAmount` number (and/or the old
-// `additionalServices` field name) from before groups became plain row lists - migrate it into an
-// equivalent percent-of-package row (or a plain custom row, if the package price isn't known) so
-// the euro total is preserved instead of silently dropped.
-export const normalizeExpectedExpensesMilestone = (raw, { packageId = '', listedPrice = 0 } = {}) => {
+// `additionalServices` field name) from before groups became plain row lists - migrate it into a
+// fixed custom row carrying that exact euro amount, so the total is preserved even if the plan's
+// package has since been removed from the catalog. A percent-of-package row would be nicer (it'd
+// track the package price live), but resolveServiceRow only ever prices one against the *current*
+// live catalog package, never the frozen packageSnapshot - so for a package that's gone missing,
+// seeding a percent row here would silently price this migrated row at 0 instead of preserving it.
+export const normalizeExpectedExpensesMilestone = raw => {
   const hasOwnServices = Array.isArray(raw?.services);
   const services = normalizeServiceEntries(raw?.services ?? raw?.additionalServices);
   const legacyAmount = Number(raw?.scheduledAmount);
   const migratedServices = !hasOwnServices && Number.isFinite(legacyAmount) && legacyAmount !== 0
     ? [
-      listedPrice
-        ? makePercentOfPackageEntry(packageId, Math.round((legacyAmount / listedPrice) * 10000) / 100, { expectedExpenseRole: 'scheduled' })
-        : makeCustomEntry({ name: raw?.title ? `Scheduled payment (${raw.title})` : 'Scheduled payment', price: legacyAmount }),
+      makeCustomEntry({ name: raw?.title ? `Scheduled payment (${raw.title})` : 'Scheduled payment', price: legacyAmount }),
       ...services,
     ]
     : services;
@@ -181,19 +189,17 @@ export const normalizeExpectedExpensesMilestone = (raw, { packageId = '', listed
 
 export const normalizeExpectedExpensesData = raw => {
   if (!raw || typeof raw !== 'object') return null;
-  const packageId = String(raw.packageId ?? '');
-  const listedPrice = Number(raw.packageSnapshot?.listedPrice) || 0;
   return {
-    packageId,
+    packageId: String(raw.packageId ?? ''),
     packageSnapshot: {
       name: raw.packageSnapshot?.name || '',
       description: raw.packageSnapshot?.description || '',
-      listedPrice,
+      listedPrice: Number(raw.packageSnapshot?.listedPrice) || 0,
       currency: raw.packageSnapshot?.currency || 'EUR',
       children: normalizeServiceEntries(raw.packageSnapshot?.children),
     },
     milestones: Array.isArray(raw.milestones)
-      ? raw.milestones.map(milestone => normalizeExpectedExpensesMilestone(milestone, { packageId, listedPrice }))
+      ? raw.milestones.map(normalizeExpectedExpensesMilestone)
       : [],
   };
 };
