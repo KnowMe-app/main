@@ -17,7 +17,7 @@ import {
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
-import { formatEuroSmart, getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
+import { formatEuroSmart, getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isAdminUid } from 'utils/accessLevel';
 import {
@@ -389,6 +389,16 @@ const StackedFieldRow = styled.div`
   }
 `;
 
+// Groups one payer/customer's fields together (name/address, each its own StackedFieldRow) with a
+// heavier separator between customers than the light one between fields of the same customer.
+const CustomerBlock = styled.div`
+  padding: 8px 0;
+
+  & + & {
+    border-top: 1px solid var(--km-border);
+  }
+`;
+
 const StackedFieldHeader = styled.div`
   display: flex;
   align-items: center;
@@ -701,7 +711,7 @@ const ServiceLineRow = ({
 }) => {
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
-  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(row.priceLabel || String(row.price ?? ''));
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(row.priceLabel || String(roundToCents(row.price) ?? ''));
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   if (row.kind === 'percent') {
@@ -947,7 +957,7 @@ const PackageEntryCard = ({
 }) => {
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
-  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(row.price ?? ''));
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(roundToCents(row.price) ?? ''));
   const [showPicker, setShowPicker] = useState(false);
   const [query, setQuery] = useState('');
   const [customName, setCustomName] = useState('');
@@ -2356,46 +2366,61 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   </FieldRow>
                   {activeBeneficiary ? (
                     <>
-                      <FieldRow>
-                        <FieldTag>Title</FieldTag>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>Title</StackedFieldTag>
+                        </StackedFieldHeader>
                         <AutoTextArea
+                          style={{ width: '100%' }}
                           value={activeBeneficiary.title || ''}
                           onChange={event => updateActiveBeneficiaryField('title', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('title', event.target.value)}
                         />
-                      </FieldRow>
-                      <FieldRow>
-                        <FieldTag>Address</FieldTag>
+                      </StackedFieldRow>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>Address</StackedFieldTag>
+                        </StackedFieldHeader>
                         <AutoTextArea
+                          style={{ width: '100%' }}
                           value={activeBeneficiary.address || ''}
                           onChange={event => updateActiveBeneficiaryField('address', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('address', event.target.value)}
                         />
-                      </FieldRow>
-                      <FieldRow>
-                        <FieldTag>IBAN</FieldTag>
+                      </StackedFieldRow>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>IBAN</StackedFieldTag>
+                        </StackedFieldHeader>
                         <AutoTextArea
+                          style={{ width: '100%' }}
                           value={activeBeneficiary.iban || ''}
                           onChange={event => updateActiveBeneficiaryField('iban', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('iban', event.target.value)}
                         />
-                      </FieldRow>
-                      <FieldRow>
-                        <FieldTag>Bank name</FieldTag>
+                      </StackedFieldRow>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>Bank name</StackedFieldTag>
+                        </StackedFieldHeader>
                         <AutoTextArea
+                          style={{ width: '100%' }}
                           value={activeBeneficiary.bankName || ''}
                           onChange={event => updateActiveBeneficiaryField('bankName', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('bankName', event.target.value)}
                         />
-                      </FieldRow>
-                      <FieldRow>
-                        <FieldTag>SWIFT code</FieldTag>
+                      </StackedFieldRow>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>SWIFT code</StackedFieldTag>
+                        </StackedFieldHeader>
                         <AutoTextArea
+                          style={{ width: '100%' }}
                           value={activeBeneficiary.swiftCode || ''}
                           onChange={event => updateActiveBeneficiaryField('swiftCode', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('swiftCode', event.target.value)}
                         />
-                      </FieldRow>
+                      </StackedFieldRow>
                       <StackedFieldRow>
                         <StackedFieldHeader>
                           <StackedFieldTag>Payment purpose</StackedFieldTag>
@@ -2435,24 +2460,38 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   </PanelHeading>
                   <PanelNote>{`Payer: ${payerName || '—'} · ${caseTitle}`}</PanelNote>
                   {data.customers.map((customer, index) => (
-                    <FieldRow key={`customer-${index}`}>
-                      <FieldTag>Customer {index + 1}</FieldTag>
-                      <AutoTextArea
-                        placeholder="Name"
-                        value={customer.name || ''}
-                        onChange={event => updateCustomerField(index, 'name', event.target.value)}
-                        onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
-                      />
-                      <AutoTextArea
-                        placeholder="Address / country"
-                        value={customer.address || ''}
-                        onChange={event => updateCustomerField(index, 'address', event.target.value)}
-                        onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
-                      />
-                      <IconDangerButton type="button" onClick={() => removeCustomer(index)} title="Remove customer" aria-label="Remove customer">
-                        <FaTrash />
-                      </IconDangerButton>
-                    </FieldRow>
+                    <CustomerBlock key={`customer-${index}`}>
+                      <StackedFieldHeader>
+                        <StackedFieldTag>Customer {index + 1}</StackedFieldTag>
+                        <IconDangerButton type="button" onClick={() => removeCustomer(index)} title="Remove customer" aria-label="Remove customer">
+                          <FaTrash />
+                        </IconDangerButton>
+                      </StackedFieldHeader>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>Name</StackedFieldTag>
+                        </StackedFieldHeader>
+                        <AutoTextArea
+                          style={{ width: '100%' }}
+                          placeholder="Name"
+                          value={customer.name || ''}
+                          onChange={event => updateCustomerField(index, 'name', event.target.value)}
+                          onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
+                        />
+                      </StackedFieldRow>
+                      <StackedFieldRow>
+                        <StackedFieldHeader>
+                          <StackedFieldTag>Address</StackedFieldTag>
+                        </StackedFieldHeader>
+                        <AutoTextArea
+                          style={{ width: '100%' }}
+                          placeholder="Address / country"
+                          value={customer.address || ''}
+                          onChange={event => updateCustomerField(index, 'address', event.target.value)}
+                          onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
+                        />
+                      </StackedFieldRow>
+                    </CustomerBlock>
                   ))}
                 </>
               ) : null}

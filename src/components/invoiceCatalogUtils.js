@@ -413,7 +413,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       isCustomized: true,
       name: entry.name || '',
       description: entry.description || '',
-      price: Number(entry.price) || 0,
+      price: roundMoney(entry.price),
       ...(entry.priceLabel ? { priceLabel: entry.priceLabel } : {}),
     };
   }
@@ -430,7 +430,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
     isCustomized: Boolean(entry?.customized),
     name: entry?.name ?? item?.name ?? `Unknown catalog service (id${catalogId})`,
     description: entry?.description ?? item?.description ?? '',
-    price: entry?.price ?? (catalogAmount == null ? 0 : catalogAmount),
+    price: entry?.price !== undefined && entry?.price !== null ? roundMoney(entry.price) : roundMoney(catalogAmount),
   };
 };
 
