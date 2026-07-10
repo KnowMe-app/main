@@ -93,6 +93,24 @@ const styles = StyleSheet.create({
     color: PDF_COLOR.neutralBg,
     marginTop: 4,
   },
+  noteRow: {
+    flexDirection: 'row',
+    marginTop: 14,
+  },
+  noteMark: {
+    width: 16,
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.5,
+    color: PDF_COLOR.neutralSoft,
+  },
+  noteText: {
+    flex: 1,
+    fontFamily: PDF_FONT.body,
+    fontSize: 8.5,
+    lineHeight: 1.45,
+    color: PDF_COLOR.neutralInk,
+  },
 });
 
 const PaymentDetailsPdfDocument = ({
@@ -152,6 +170,22 @@ const PaymentDetailsPdfDocument = ({
             <Text style={styles.amountLabel}>Amount due</Text>
             <Text style={styles.amountValue}>{formatMoney(amountDue)}</Text>
             <Text style={styles.amountSub}>{sanitizePdfText(`See Invoice No. ${invoiceNumber || ''} for the full breakdown.`)}</Text>
+          </View>
+
+          {/* These payment caveats used to live on the Invoice PDF itself - they belong here,
+              next to the wire instructions they actually govern, not on the itemized invoice. */}
+          <View style={styles.noteRow}>
+            <Text style={styles.noteMark}>*</Text>
+            <Text style={styles.noteText}>
+              Purpose of the payment must be exactly like in invoice.
+            </Text>
+          </View>
+          <View style={styles.noteRow}>
+            <Text style={styles.noteMark}>**</Text>
+            <Text style={styles.noteText}>
+              Please make sure you pay the whole amount due - any bank transfer fees on your side must not be
+              deducted from it.
+            </Text>
           </View>
         </View>
 

@@ -210,16 +210,29 @@ async function checkExpectedExpenses() {
   checkStringsRoundTrip('Expected Expenses', pagesText, [
     NAMES[32], NAMES[61], NAMES[62], NAMES[63], NAMES[64],
   ]);
-  if (pagesText.length !== plan.milestones.length) {
-    fail(`Expected Expenses: expected exactly one page per milestone (${plan.milestones.length}), got ${pagesText.length} - the Budget-duplication regression may be back`);
+
+  // This document is one flowing, auto-paginating <Page> (spec's "Consolidate UKRCOM document
+  // system" brief) - the programme overview (included services + payment schedule) renders exactly
+  // once at the top, followed by one compact "Payment #N" block per milestone. So the regression
+  // to guard against isn't a fixed page count (physical page count depends on how much content
+  // fits per sheet), it's the overview or any milestone block being duplicated - the original
+  // "Budget-duplication" bug this document was fixed for.
+  const combined = pagesText.join('\n');
+  const countOccurrences = (text, pattern) => (text.match(pattern) || []).length;
+
+  const overviewCount = countOccurrences(combined, /Included in this programme/gi);
+  if (overviewCount !== 1) {
+    fail(`Expected Expenses: "Included in this programme" should appear exactly once (found ${overviewCount}) - the Budget-duplication regression may be back`);
   }
-  // Every milestone copy must point back to the Budget document instead of repeating it.
-  pagesText.forEach((text, index) => {
-    if (!/full programme details are in your Budget document/i.test(text)) {
-      fail(`Expected Expenses page ${index + 1}: missing the "full details in your Budget" pointer`);
-    }
-    if (/Included in this programme/i.test(text) || /^Payment schedule$/im.test(text)) {
-      fail(`Expected Expenses page ${index + 1}: repeats the full programme overview/payment schedule again`);
+  const scheduleHeadingCount = countOccurrences(combined, /^Payment schedule$/gim);
+  if (scheduleHeadingCount !== 1) {
+    fail(`Expected Expenses: "Payment schedule" heading should appear exactly once (found ${scheduleHeadingCount}) - the Budget-duplication regression may be back`);
+  }
+  plan.milestones.forEach((milestone, index) => {
+    const marker = new RegExp(`Payment #${index + 1}\\s*[—-]\\s*${milestone.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g');
+    const count = countOccurrences(combined, marker);
+    if (count !== 1) {
+      fail(`Expected Expenses: "Payment #${index + 1} — ${milestone.title}" block should appear exactly once (found ${count})`);
     }
   });
 }
