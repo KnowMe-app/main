@@ -114,6 +114,15 @@ export const normalizeBudgetPriceInput = raw => {
   return text;
 };
 
+// Rounds to the nearest cent - the one point every price resolution path (plain numbers, NBU-rate
+// formulas, USD conversion) funnels through, so float noise from division/multiplication never
+// reaches a display or a further computation (spec: single shared rounding function, applied
+// everywhere a computed amount is produced, not just at the final formatMoney/formatEuroSmart call).
+export const roundToCents = value => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : amount;
+};
+
 // Resolves a stored price to a EUR number: plain numbers pass through, formulas
 // are evaluated with the NBU rates and idNN references to other items.
 export const resolveBudgetPriceAmount = (raw, context = {}, seenIds = new Set()) => {
@@ -121,11 +130,11 @@ export const resolveBudgetPriceAmount = (raw, context = {}, seenIds = new Set())
   if (parsed.isEmpty) return null;
   if (!parsed.isFormula) {
     const numeric = Number(parsed.expression.replace(',', '.'));
-    return Number.isFinite(numeric) ? numeric : null;
+    return Number.isFinite(numeric) ? roundToCents(numeric) : null;
   }
   const { itemsById, rates } = context;
   try {
-    return evaluateBudgetPriceFormula(parsed.expression, name => {
+    return roundToCents(evaluateBudgetPriceFormula(parsed.expression, name => {
       const lower = String(name).toLowerCase();
       if (lower === 'eur') return rates?.eur;
       if (lower === 'usd') return rates?.usd;
@@ -139,7 +148,7 @@ export const resolveBudgetPriceAmount = (raw, context = {}, seenIds = new Set())
       nextSeen.add(itemId);
       const amount = resolveBudgetPriceAmount(item.price, context, nextSeen);
       return amount == null ? NaN : amount;
-    });
+    }));
   } catch (error) {
     return null;
   }
@@ -214,7 +223,7 @@ export const getItemDisplayAmount = (item, context = {}) => {
   const basePrice = resolveBudgetPriceAmount(item?.price, context);
   if (basePrice == null) return null;
   const isUsd = USD_ITEM_IDS.has(String(item?.id || '').trim());
-  return isUsd ? basePrice * USD_TO_EUR_RATE : basePrice;
+  return isUsd ? roundToCents(basePrice * USD_TO_EUR_RATE) : basePrice;
 };
 
 export const getItemDisplayPrice = (item, context = {}) => {

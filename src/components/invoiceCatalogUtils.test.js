@@ -256,8 +256,20 @@ describe('invoiceCatalogUtils', () => {
         ['22', { id: '22', name: 'USD compensation', price: 23000 }],
         ['30', { id: '30', name: 'Formula price', price: '=USD/EUR*100' }],
       ]);
-      expect(resolveServiceRow(makeCatalogItemEntry('22'), catalogItemsById).price).toBeCloseTo(21160);
-      expect(resolveServiceRow(makeCatalogItemEntry('30'), catalogItemsById, { rates: { usd: 40, eur: 50 } }).price).toBeCloseTo(80);
+      expect(resolveServiceRow(makeCatalogItemEntry('22'), catalogItemsById).price).toBe(21160);
+      expect(resolveServiceRow(makeCatalogItemEntry('30'), catalogItemsById, { rates: { usd: 40, eur: 50 } }).price).toBe(80);
+    });
+
+    // P0 bug repro: "Compensation to surrogate mother for the program" is a USD-priced catalog item
+    // (surrogate-mother-compensation is in budgetCatalogUtils.USD_ITEM_IDS) - its price must resolve
+    // to an exact cents amount (e.g. via a plain Number equality check), never a float like
+    // 18514.292958... leaking through to the invoice row / price input.
+    it('never leaks float noise for a USD-priced surrogate-mother-compensation row', () => {
+      const catalogItemsById = new Map([
+        ['surrogate-mother-compensation', { id: 'surrogate-mother-compensation', name: 'Compensation to surrogate mother for the program', price: 20124.23 }],
+      ]);
+      const row = resolveServiceRow(makeCatalogItemEntry('surrogate-mother-compensation'), catalogItemsById);
+      expect(row.price).toBe(Math.round(row.price * 100) / 100);
     });
 
     it('flags a catalog reference that no longer exists', () => {

@@ -18,6 +18,24 @@ describe('budgetCatalogUtils', () => {
     expect(getItemDisplayAmount(item)).toBeCloseTo(23000 * USD_TO_EUR_RATE);
   });
 
+  // P0 bug: the USD->EUR conversion (rate 0.92) leaks float noise like 18514.292958... into the
+  // displayed/stored price unless it's rounded to the cent right where it's produced - e.g.
+  // "Compensation to surrogate mother for the program" (id22-style USD item).
+  it('rounds the USD->EUR conversion to the cent, never leaking float noise', () => {
+    const item = { id: 22, price: 20124.23 };
+    const amount = getItemDisplayAmount(item);
+    expect(amount).toBe(Math.round(amount * 100) / 100);
+    expect(String(amount).split('.')[1]?.length ?? 0).toBeLessThanOrEqual(2);
+  });
+
+  // Same guarantee for a formula-priced item (division/multiplication by NBU rates) - resolved
+  // amounts must never carry more than 2 decimal digits, whether or not USD conversion applies.
+  it('rounds formula-resolved prices to the cent', () => {
+    const context = { rates: { eur: 41.7123456, usd: 38.919283 } };
+    const amount = resolveBudgetPriceAmount('=1000/EUR*7', context);
+    expect(amount).toBe(Math.round(amount * 100) / 100);
+  });
+
   it('keeps EUR items unchanged', () => {
     expect(getItemDisplayAmount({ id: 1, price: 5000 })).toBe(5000);
   });
