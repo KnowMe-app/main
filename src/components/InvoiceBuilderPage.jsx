@@ -1803,8 +1803,24 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     setNewCustomServicePrice('');
   };
 
+  // Never defaults to 0% or 100% - that's just swapping one wrong constant for another. The
+  // starting value is the package's next unused Payment Schedule milestone (so a first "% of
+  // package" row on a fresh invoice matches what the catalog actually expects to be billed at
+  // this stage); once every schedule step already has a row, it falls back to whatever share of
+  // the package price is still unbilled.
   const addPercentServiceEntry = packageId => {
-    addEntryToInvoice(makePercentOfPackageEntry(packageId, 0), 'Service added.');
+    const pkg = catalogPackagesById.get(String(packageId));
+    const schedule = pkg ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg) : null;
+    const listedPriceAmount = pkg ? resolveBudgetPriceAmount(pkg.listedPrice, priceContext) : null;
+    const existingPercentRows = data.invoiceServices.filter(
+      entry => entry.kind === 'percent' && String(entry.packageId) === String(packageId),
+    );
+    const usedPercentTotal = existingPercentRows.reduce((sum, entry) => sum + (Number(entry.percent) || 0), 0);
+    const nextPayment = schedule?.payments?.[existingPercentRows.length];
+    const defaultPercent = (nextPayment && listedPriceAmount)
+      ? Math.round((Number(nextPayment.amount || 0) / listedPriceAmount) * 1e6) / 1e4
+      : Math.max(0, Math.round((100 - usedPercentTotal) * 100) / 100);
+    addEntryToInvoice(makePercentOfPackageEntry(packageId, defaultPercent), 'Service added.');
   };
 
   const addRecentServiceEntry = entry => addEntryToInvoice(cloneEntryWithNewId(entry), 'Service added.');

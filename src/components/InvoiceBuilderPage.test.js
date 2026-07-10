@@ -169,6 +169,43 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // Regression: "% of package" used to always default to 0% (previously always 100%) with no
+  // link to the catalog's own Payment Schedule - an admin had to know the right number by heart.
+  // It should now seed the first click from the package's first unbilled schedule milestone
+  // (150/250 = 60% here), not a hardcoded constant.
+  it('"% of package" defaults to the package\'s next unused Payment Schedule share, not 0% or 100%', async () => {
+    const root = mount();
+    await flush();
+
+    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Full program').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const percentButton = findButton('% of package');
+    expect(percentButton).toBeTruthy();
+    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    let lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    let percentEntry = lastServicesCall[1].find(entry => entry.kind === 'percent');
+    expect(percentEntry.percent).toBe(60);
+
+    // A second click should seed from the schedule's next step (Final payment: 100/250 = 40%),
+    // not repeat 0%/100% or the same 60% again.
+    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    const percentEntries = lastServicesCall[1].filter(entry => entry.kind === 'percent');
+    expect(percentEntries).toHaveLength(2);
+    expect(percentEntries[1].percent).toBe(40);
+
+    await act(async () => { root.unmount(); });
+  });
+
   it('deletes a custom service from the invoice', async () => {
     const root = mount();
     await flush();
@@ -218,8 +255,8 @@ describe('InvoiceBuilderPage', () => {
 
       expect(container.innerHTML).toContain('To start the program');
       expect(container.innerHTML).toContain('Final payment');
-      expect(container.innerHTML).toContain('Due: €171.00');
-      expect(container.innerHTML).toContain('Due: €114.00');
+      expect(container.innerHTML).toContain('Due: €171');
+      expect(container.innerHTML).toContain('Due: €114');
 
       const persistedCalls = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses');
       expect(persistedCalls.length).toBeGreaterThan(0);
@@ -255,7 +292,7 @@ describe('InvoiceBuilderPage', () => {
       await flush();
 
       expect(container.innerHTML).toContain('Deposit for transportation of SM');
-      expect(container.innerHTML).toContain('Due: €513.00');
+      expect(container.innerHTML).toContain('Due: €513');
 
       const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
       expect(plan.milestones[0].services).toHaveLength(2);

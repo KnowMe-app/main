@@ -293,7 +293,13 @@ const InvoicePdfDocument = ({
   // service confirmed for this case that sits outside the standard package.
   const packageRows = rows.filter(row => row.kind === 'package');
   const isPackageInvoice = packageRows.length > 0;
-  const otherRows = isPackageInvoice ? rows.filter(row => row.kind !== 'package') : rows;
+  // A "% of package" row (a programme milestone share) is never mixed into the same table as
+  // custom/catalog services - it prices a slice of the standard package, not a one-off item
+  // confirmed for this case, so it always gets its own section/heading even on a plain milestone
+  // invoice that carries no full package block.
+  const percentRows = rows.filter(row => row.kind === 'percent');
+  const otherRows = rows.filter(row => row.kind !== 'package' && row.kind !== 'percent');
+  const percentDisplayRows = buildDisplayRows(percentRows);
   const displayRows = buildDisplayRows(otherRows);
   // The package entry's own `children` are a frozen name-only snapshot (invoiceCatalogUtils.js) -
   // its payment schedule instead always comes live from the catalog package it was added from, the
@@ -323,31 +329,38 @@ const InvoicePdfDocument = ({
         />
 
         {isPackageInvoice ? (
-          <>
-            {packageRows.map(row => (
-              <PackageBlock key={row.key} row={row} schedule={resolvePackageSchedule(row)} />
-            ))}
-            {displayRows.length ? (
-              <View style={styles.section}>
+          packageRows.map(row => (
+            <PackageBlock key={row.key} row={row} schedule={resolvePackageSchedule(row)} />
+          ))
+        ) : null}
+
+        {percentDisplayRows.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>% of package</Text>
+            <Text style={styles.sectionNote}>This invoice bills a share of the standard package's price.</Text>
+            <View style={styles.table}>
+              {percentDisplayRows.map((row, rowIndex) => (
+                <ServiceItemRow key={`${row.key || rowIndex}-${row.number}`} row={row} isFirst={rowIndex === 0} />
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {displayRows.length ? (
+          <View style={styles.section}>
+            {isPackageInvoice || percentDisplayRows.length ? (
+              <>
                 <Text style={styles.sectionTitle}>Additional services outside the package</Text>
                 <Text style={styles.sectionNote}>Confirmed for this case, billed alongside the standard package.</Text>
-                <View style={styles.table}>
-                  {displayRows.map((row, rowIndex) => (
-                    <ServiceItemRow key={`${row.key || rowIndex}-${row.number}`} row={row} isFirst={rowIndex === 0} />
-                  ))}
-                </View>
-              </View>
+              </>
             ) : null}
-          </>
-        ) : (
-          <View style={styles.section}>
             <View style={styles.table}>
               {displayRows.map((row, rowIndex) => (
                 <ServiceItemRow key={`${row.key || rowIndex}-${row.number}`} row={row} isFirst={rowIndex === 0} />
               ))}
             </View>
           </View>
-        )}
+        ) : null}
 
         {/* No extra top margin here - noteRow/totalCard already carry their own spacing (spec §1.4),
             same as the flat layout above where they sit directly under the table with no gap of
