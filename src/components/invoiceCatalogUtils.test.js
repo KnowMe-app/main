@@ -359,7 +359,10 @@ describe('invoiceCatalogUtils', () => {
       expect(row.price).toBe(0);
     });
 
-    it('computes subtotal/total without double-counting package children', () => {
+    // P0 bug: a package row is a reference block (Payment Schedule mirrors the catalog programme for
+    // context, like Budget) - its own price must never be billed into this invoice's Subtotal, only
+    // the other rows actually invoiced alongside it (custom/catalog items, or a % share of it) are.
+    it('excludes a package row\'s own price from the subtotal, billing only the invoice\'s other rows', () => {
       const catalogItemsById = new Map([
         ['15', { id: '15', name: 'Scheduled payment', price: 3000 }],
         ['1', { id: '1', name: 'Consultation', price: 300 }],
@@ -371,8 +374,22 @@ describe('invoiceCatalogUtils', () => {
       ];
       const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById);
       const subtotal = computeInvoiceSubtotal(rows);
-      expect(subtotal).toBe(3600);
-      expect(computeInvoiceTotal(subtotal, 14)).toBeCloseTo(4104);
+      expect(subtotal).toBe(3300);
+      expect(computeInvoiceTotal(subtotal, 14)).toBeCloseTo(3762);
+    });
+
+    it('still bills a "% of package" row even though the package row itself is reference-only', () => {
+      const packagesById = new Map([['p1', { id: 'p1', name: 'Full program', listedPrice: 40000, children: ['1'] }]]);
+      const catalogItemsById = new Map([['1', { id: '1', name: 'Consultation', price: 300 }]]);
+      const invoiceServices = [
+        makeCatalogPackageEntry({ id: 'p1', children: ['1'] }),
+        makePercentOfPackageEntry('p1', 20),
+        makeCustomEntry({ name: 'Deposit', price: 300 }),
+      ];
+      const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, { packagesById });
+      const subtotal = computeInvoiceSubtotal(rows);
+      // 20% of 40000 (8000) + the 300 deposit - the package's own 40000 reference price is excluded.
+      expect(subtotal).toBe(8300);
     });
   });
 
