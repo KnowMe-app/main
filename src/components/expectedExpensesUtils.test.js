@@ -97,7 +97,7 @@ describe('expectedExpensesUtils', () => {
     expect(serializeExpectedExpensesData(null)).toBeNull();
   });
 
-  it('migrates a legacy milestone with a frozen scheduledAmount into an equivalent percent-of-package row', () => {
+  it('migrates a legacy milestone with a frozen scheduledAmount into a fixed custom row, independent of the live package', () => {
     const legacy = {
       packageId: '3',
       packageSnapshot: { name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR', children: [] },
@@ -107,9 +107,11 @@ describe('expectedExpensesUtils', () => {
     };
     const normalized = normalizeExpectedExpensesData(legacy);
     expect(normalized.milestones[0].services).toEqual([
-      { id: normalized.milestones[0].services[0].id, kind: 'percent', packageId: '3', percent: 20, expectedExpenseRole: 'scheduled' },
+      { id: normalized.milestones[0].services[0].id, kind: 'custom', name: 'Scheduled payment (To start the program)', price: 8000 },
     ]);
-    expect(computeMilestonesTotal(normalized.milestones, new Map(), { packagesById: new Map([['3', pkg]]) })).toBe(8000);
+    // The amount survives even if the package that used to price it no longer exists in the
+    // catalog - a percent-of-package row would have resolved to 0 in that case instead.
+    expect(computeMilestonesTotal(normalized.milestones, new Map(), { packagesById: new Map() })).toBe(8000);
   });
 
   it('edits a milestone field, parsing the numeric taxPercent and leaving text fields as-is', () => {
@@ -222,6 +224,14 @@ describe('expectedExpensesUtils', () => {
     it('reports a missing package instead of guessing when no percent row names one', () => {
       const { plan, missingPackage } = buildExpectedExpensesPlanFromRawGroups([['Custom line || 300']], { catalog: rawCatalogWithLink });
       expect(missingPackage).toBe(true);
+      expect(plan).toBeNull();
+    });
+
+    it('reports a missing schedule instead of persisting an empty plan when the package has none', () => {
+      const catalogWithoutSchedule = { packages: [{ id: '1', name: 'IVF+ED+SM', listedPrice: 40000, currency: 'EUR', children: ['1', '2'] }] };
+      const { plan, missingPackage, missingSchedule } = buildExpectedExpensesPlanFromRawGroups(rawGroups, { catalog: catalogWithoutSchedule });
+      expect(missingPackage).toBe(false);
+      expect(missingSchedule).toBe(true);
       expect(plan).toBeNull();
     });
   });

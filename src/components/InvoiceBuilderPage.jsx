@@ -1481,13 +1481,21 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const activeBeneficiary = useMemo(() => getActiveBeneficiary(data), [data]);
 
+  // A 'percent' row's price formula lives on the *package* it shares (pkg.listedPrice), not on the
+  // row itself - same pending/error treatment as a formula-priced catalog item, otherwise a package
+  // invoice or expected-expenses plan can be generated with every package-share row silently priced
+  // at 0 while the NBU rates are still loading.
   const entryReferencesFormulaItem = useCallback(entry => {
     if (!entry) return false;
     if (entry.kind === 'package') return (entry.children || []).some(entryReferencesFormulaItem);
+    if (entry.kind === 'percent') {
+      const pkg = catalogPackagesById.get(String(entry.packageId));
+      return parseBudgetPriceValue(pkg?.listedPrice).isFormula;
+    }
     if (entry.kind !== 'item') return false;
     const item = catalogItemsById.get(String(entry.catalogId));
     return parseBudgetPriceValue(item?.price).isFormula;
-  }, [catalogItemsById]);
+  }, [catalogItemsById, catalogPackagesById]);
 
   const hasFormulaInvoiceService = useMemo(
     () => data.invoiceServices.some(entryReferencesFormulaItem),
@@ -1497,6 +1505,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const isFormulaRatePending = hasFormulaInvoiceService && exchangeRatesLoading;
   const formulaRateError = hasFormulaInvoiceService ? exchangeRatesError : '';
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || isFormulaRatePending || Boolean(formulaRateError);
+
+  const hasFormulaExpectedExpensesService = useMemo(
+    () => (expectedExpenses?.milestones || []).some(milestone => (milestone.services || []).some(entryReferencesFormulaItem)),
+    [expectedExpenses, entryReferencesFormulaItem],
+  );
+  const isExpectedExpensesFormulaRatePending = hasFormulaExpectedExpensesService && exchangeRatesLoading;
+  const expectedExpensesFormulaRateError = hasFormulaExpectedExpensesService ? exchangeRatesError : '';
+  const isExpectedExpensesGenerateDisabled = isGeneratingExpectedExpenses
+    || isExpectedExpensesFormulaRatePending
+    || Boolean(expectedExpensesFormulaRateError);
 
   const priceContext = useMemo(
     () => ({
@@ -1868,10 +1886,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.error('This package has no payment schedule in the catalog.');
       return;
     }
+    // Resolved (and validated positive) the same way a brand-new plan is - an unresolved formula
+    // price must never silently fall back to the raw "=..." string, which would zero out every
+    // freshly-rebuilt percent-of-package row below.
+    const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
+    if (!resolvedPackage) return;
     if (typeof window !== 'undefined' && !window.confirm(
       'Recalculate milestones from the catalog schedule? Titles reset to the catalog and the package-share row is recomputed; extra services on each milestone are kept.',
     )) return;
-    const resolvedPackage = { ...pkg, listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice };
     const freshMilestones = buildMilestonesFromSchedule(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
     // A milestone saved before expectedExpenseRole existed has no explicit marker on its scheduled
     // row, so it can't be told apart from a manually-added percent-of-package row by itself. Only
@@ -1903,7 +1925,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       ...expectedExpenses,
       packageSnapshot: {
         ...expectedExpenses.packageSnapshot,
-        listedPrice: resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? Number(pkg.listedPrice) ?? 0,
+        listedPrice: resolvedPackage.listedPrice,
       },
       milestones: nextMilestones,
     }, 'Schedule recalculated.');
@@ -1968,6 +1990,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     }
     if (!data.customers.length) {
       toast.error('Add at least one customer first.');
+      return;
+    }
+    if (isExpectedExpensesFormulaRatePending) {
+      toast.error('Wait until the package price formula resolves before generating the PDF.');
+      return;
+    }
+    if (expectedExpensesFormulaRateError) {
+      toast.error('Exchange rates failed to load - cannot resolve the package price formula.');
       return;
     }
     if (isGeneratingExpectedExpenses) return;
@@ -2064,12 +2094,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const uploadExpectedExpenses = async rawExpectedExpenses => {
     let nextPlan;
     if (isRawExpectedExpensesGroups(rawExpectedExpenses)) {
-      const { plan, missingPackage, droppedGroupsCount } = buildExpectedExpensesPlanFromRawGroups(rawExpectedExpenses, {
+      const { plan, missingPackage, missingSchedule, droppedGroupsCount } = buildExpectedExpensesPlanFromRawGroups(rawExpectedExpenses, {
         catalog: { packages: catalogPackages, technical: catalogTechnical },
         taxPercent: defaultExpectedExpensesTaxPercent,
       });
       if (missingPackage) {
         toast.error('Expected expenses: none of the groups reference a catalog package ("idX || Y%") - nothing was imported.');
+        return null;
+      }
+      if (missingSchedule) {
+        toast.error('This package has no payment schedule in the catalog.');
         return null;
       }
       if (droppedGroupsCount) {
@@ -2676,8 +2710,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       <PrimaryMiniButton
                         type="button"
                         onClick={handleGenerateExpectedExpensesPdf}
-                        disabled={isGeneratingExpectedExpenses}
-                        title="Generate the full payment-schedule forecast PDF"
+                        disabled={isExpectedExpensesGenerateDisabled}
+                        title={isExpectedExpensesFormulaRatePending
+                          ? 'Waiting for the package price formula to resolve…'
+                          : 'Generate the full payment-schedule forecast PDF'}
                       >
                         <FaFilePdf /> {isGeneratingExpectedExpenses ? 'Generating…' : 'Generate PDF'}
                       </PrimaryMiniButton>

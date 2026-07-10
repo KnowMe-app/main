@@ -5,7 +5,7 @@ import {
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 import { formatMoney, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
-import { formatAmount, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
+import { IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import {
   buildCaseTitle,
   buildPayerLocation,
@@ -124,15 +124,6 @@ const styles = StyleSheet.create({
     lineHeight: 1.4,
     marginTop: 2,
   },
-  itemNote: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 7,
-    letterSpacing: 0.6,
-    color: PDF_COLOR.bronze,
-    textTransform: 'uppercase',
-    marginTop: 2,
-  },
   priceCell: {
     width: 96,
     textAlign: 'right',
@@ -214,7 +205,6 @@ const ServiceItemRow = ({ row, isFirst }) => {
           {sanitizePdfText(row.name)}
         </Text>
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
-        {row.isCustomized ? <Text style={styles.itemNote}>Confirmed for this case</Text> : null}
       </View>
       <View style={styles.priceCell}>
         <Text style={isPackageHeader ? styles.priceTextPackage : (isChild ? styles.priceTextChild : styles.priceText)}>
@@ -235,13 +225,20 @@ const PackageBlock = ({ row, schedule }) => {
     name: child.name,
     includedByPackageId: new Set(['programme']),
   }));
-  const packagesMeta = [{ id: 'programme', label: row.name, priceLabel: formatAmount(row.price) }];
+  // A short, fixed column header - the package's own name/fee is already shown in full in the
+  // header block above the table, and doesn't need repeating (and stretching every row) here.
+  const packagesMeta = [{ id: 'programme', label: 'Price', priceLabel: '' }];
   const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
+  const scheduleRawTotal = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
+  // The catalog schedule's own amounts only add up to the invoice total when the package is billed
+  // at its plain catalog listed price - scale them to the row's actual price (a manual override, or
+  // a customized set of children) so this table's total never disagrees with what's actually billed.
+  const scaleRatio = scheduleRawTotal > 0 ? row.price / scheduleRawTotal : 1;
   const scheduleRows = payments.map((payment, index) => ({
     title: payment?.title || `Payment ${index + 1}`,
-    amounts: [Number(payment?.amount) || 0],
+    amounts: [Math.round((Number(payment?.amount) || 0) * scaleRatio * 100) / 100],
   }));
-  const scheduleTotal = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
+  const scheduleTotal = Math.round((Number(row.price) || 0) * 100) / 100;
 
   return (
     <View style={styles.packageBlock}>

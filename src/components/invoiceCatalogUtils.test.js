@@ -282,6 +282,23 @@ describe('invoiceCatalogUtils', () => {
       expect(resolveServiceRow(renamed, catalogItemsById, { packagesById }).name).toBe('Custom bundle for Amny');
     });
 
+    it('defaults an unoverridden package row to its catalog listed price, not the sum of its children', () => {
+      const catalogItemsById = new Map([
+        ['1', { id: '1', name: 'Consultation', price: 300 }],
+        ['2', { id: '2', name: 'Legal support', price: 700 }],
+      ]);
+      // The catalog's own listed price (40000) deliberately doesn't match the sum of these two
+      // sample children (1000) - childrenTotal is only a reference figure for the admin to check
+      // budget coverage, it must never itself be billed unless the price is explicitly overridden.
+      const packagesById = new Map([['p1', { id: 'p1', name: 'Full program', listedPrice: 40000, children: ['1', '2'] }]]);
+      const pkg = makeCatalogPackageEntry({ id: 'p1', children: ['1', '2'] });
+
+      const row = resolveServiceRow(pkg, catalogItemsById, { packagesById });
+      expect(row.price).toBe(40000);
+      expect(row.childrenTotal).toBe(1000);
+      expect(row.hasPriceOverride).toBe(false);
+    });
+
     it('an explicit package price override replaces the children total, which is still exposed for reference', () => {
       const catalogItemsById = new Map([['1', { id: '1', name: 'Consultation', price: 300 }]]);
       const pkg = setEntryField(makeCatalogPackageEntry({ id: 'p1', children: ['1'] }), 'price', 250);
