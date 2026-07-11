@@ -4,7 +4,8 @@ import {
   BrandRow, BrandRule, BronzeMotif, ContinuedTag, Footer, PDF_COLOR, PDF_FONT,
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
-import { formatMoney, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
+import { formatMoney, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
+import { IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import {
   buildCaseTitle,
   buildPayerLocation,
@@ -236,9 +237,24 @@ const ServiceItemRow = ({ row, isFirst }) => {
 // pointing at the Budget instead of repeating its "Included in this programme" and "Payment
 // schedule" tables verbatim - that full breakdown already lives in the Budget, and duplicating it
 // here was the single biggest source of clutter on this document.
-const PackageBlock = ({ row, schedule }) => {
+const PackageBlock = ({ row, schedule, scheduleTotal }) => {
   const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
   const totalLabel = formatRowAmount(row);
+  const isCustomized = Boolean(row.isCustomized);
+  const packageMeta = [{ id: row.id || row.key || 'package', label: row.name, priceLabel: totalLabel }];
+  const includedRows = isCustomized
+    ? (row.children || []).map((child, index) => ({
+      id: child.id || child.key || `child-${index}`,
+      name: child.name || '',
+      includedByPackageId: new Set([String(packageMeta[0].id)]),
+    }))
+    : [];
+  const scheduleRows = isCustomized
+    ? payments.map(payment => ({
+      title: payment.title || 'Payment',
+      amounts: [Number.isFinite(Number(payment.amount)) ? Number(payment.amount) : null],
+    }))
+    : [];
   const budgetReferenceNote = payments.length
     ? `Part of a ${payments.length}-instalment programme totalling ${totalLabel}. Full programme details and the complete payment schedule are set out in your Budget.`
     : `Full programme details and the complete payment schedule are set out in your Budget.`;
@@ -251,7 +267,27 @@ const PackageBlock = ({ row, schedule }) => {
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
         <Text style={styles.packageBlockFee}>{`Total programme fee ${totalLabel}`}</Text>
       </View>
-      <Text style={styles.sectionNote}>{sanitizePdfText(budgetReferenceNote)}</Text>
+      {isCustomized ? (
+        <>
+          <Text style={styles.sectionNote}>
+            {sanitizePdfText('This invoice includes customised programme details shown below.')}
+          </Text>
+          <IncludedServicesTable
+            packages={packageMeta}
+            includedRows={includedRows}
+            title="Included in this invoice"
+            note="These services reflect the customised package configured for this invoice."
+          />
+          <PaymentScheduleTable
+            packages={packageMeta}
+            rows={scheduleRows}
+            totals={[scheduleTotal]}
+            title="Payment schedule for this invoice"
+          />
+        </>
+      ) : (
+        <Text style={styles.sectionNote}>{sanitizePdfText(budgetReferenceNote)}</Text>
+      )}
     </View>
   );
 };
@@ -268,6 +304,7 @@ const InvoicePdfDocument = ({
   invoiceType,
   catalogTechnical,
   debtOrDeposit,
+  generatePaymentDetails = true,
 }) => {
   const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, priceContext);
   const subtotal = computeInvoiceSubtotal(rows);
@@ -277,7 +314,9 @@ const InvoicePdfDocument = ({
   const payerLocation = buildPayerLocation(customers);
   const caseTitle = buildCaseTitle(customers);
   const noteList = Array.isArray(notes)
-    ? notes.filter(note => String(note || '').trim()).filter(note => !isPaymentCaveatNote(note))
+    ? notes
+      .filter(note => String(note || '').trim())
+      .filter(note => !generatePaymentDetails || !isPaymentCaveatNote(note))
     : [];
   const docType = invoiceType === 'service' || invoiceType === 'programme_milestone'
     ? invoiceType
@@ -295,16 +334,31 @@ const InvoicePdfDocument = ({
   // A "% of package" row (a programme milestone share) and any custom/catalog service row share one
   // "Breakdown" list, one row style, one running numbering - splitting them into two headed
   // sections was the second-biggest source of clutter on this document (declutter spec §2).
-  const percentRows = rows.filter(row => row.kind === 'percent');
-  const otherRows = rows.filter(row => row.kind !== 'package' && row.kind !== 'percent');
-  const breakdownDisplayRows = buildDisplayRows([...percentRows, ...otherRows]);
+  const breakdownRows = rows.filter(row => row.kind !== 'package');
+  const breakdownDisplayRows = buildDisplayRows(breakdownRows);
   // The package entry's own `children` are a frozen name-only snapshot (invoiceCatalogUtils.js) -
   // its payment schedule instead always comes live from the catalog package it was added from, the
   // same source Program Budget/Expected Expenses read it from, so a schedule edit in the catalog is
   // reflected here too.
   const resolvePackageSchedule = row => {
     const catalogPackage = priceContext?.packagesById?.get?.(String(row.catalogId));
-    return catalogPackage ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, catalogPackage) : null;
+    const schedule = catalogPackage ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, catalogPackage) : null;
+    if (!row.isCustomized || !schedule?.payments?.length || !catalogPackage) return schedule;
+    const catalogTotal = resolveBudgetPriceAmount(catalogPackage.listedPrice, { ...priceContext, itemsById: catalogItemsById });
+    const rowTotal = Number(row.price);
+    if (!catalogTotal || !Number.isFinite(rowTotal)) return schedule;
+    const scale = rowTotal / catalogTotal;
+    return {
+      ...schedule,
+      payments: schedule.payments.map(payment => ({
+        ...payment,
+        amount: Number.isFinite(Number(payment.amount)) ? Math.round(Number(payment.amount) * scale * 100) / 100 : payment.amount,
+      })),
+    };
+  };
+  const getPackageScheduleTotal = schedule => {
+    const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
+    return payments.length ? payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) : null;
   };
   // The DD.MM.YYYY `invoiceDate` string (invoiceCatalogUtils.generateInvoiceIdentifiers) is the
   // legal-text date used inside the payment-purpose placeholder only - the human-readable date
@@ -326,9 +380,17 @@ const InvoicePdfDocument = ({
         />
 
         {isPackageInvoice ? (
-          packageRows.map(row => (
-            <PackageBlock key={row.key} row={row} schedule={resolvePackageSchedule(row)} />
-          ))
+          packageRows.map(row => {
+            const schedule = resolvePackageSchedule(row);
+            return (
+              <PackageBlock
+                key={row.key}
+                row={row}
+                schedule={schedule}
+                scheduleTotal={getPackageScheduleTotal(schedule)}
+              />
+            );
+          })
         ) : null}
 
         {breakdownDisplayRows.length ? (
