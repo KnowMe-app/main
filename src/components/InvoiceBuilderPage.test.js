@@ -206,6 +206,33 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // Bug report: adding a package used to only offer the full listed price, with no way to bill
+  // just a share of it (e.g. the first Payment Schedule milestone) - the only route to a percent
+  // row required adding the whole package first, then deleting it again. The catalog picker's
+  // package entry now offers a "% of package" action directly, with no full package row involved.
+  it('adds a "% of package" share straight from the catalog picker, without adding the full package first', async () => {
+    const root = mount();
+    await flush();
+
+    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const percentButton = findButton('% of package');
+    expect(percentButton).toBeTruthy();
+    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    const services = lastServicesCall[1];
+    expect(services.some(entry => entry.kind === 'package')).toBe(false);
+    const percentEntry = services.find(entry => entry.kind === 'percent');
+    expect(percentEntry).toMatchObject({ packageId: 'p1', percent: 60 });
+
+    await act(async () => { root.unmount(); });
+  });
+
   it('deletes a custom service from the invoice', async () => {
     const root = mount();
     await flush();
@@ -233,6 +260,44 @@ describe('InvoiceBuilderPage', () => {
     expect(container.innerHTML).not.toContain('Courier fee');
     const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
     expect(lastServicesCall[1].some(entry => entry.name === 'Courier fee')).toBe(false);
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // Bug report: after editing a service's description, the field stayed permanently expanded
+  // (full multi-line textarea) instead of collapsing back to the single-line toggle like every
+  // sibling row - descriptionOpen never reset to false on blur.
+  it('collapses a service description back to the single-line toggle after editing it', async () => {
+    const root = mount();
+    await flush();
+
+    const nameField = container.querySelector('textarea[placeholder="New custom service name"]');
+    const priceField = container.querySelector('textarea[placeholder="Price or GIFT"]');
+    await act(async () => {
+      nameField.focus();
+      setFieldValue(nameField, 'Courier fee');
+      setFieldValue(priceField, '25');
+    });
+    const addCustomButton = nameField.parentElement.querySelector('button');
+    await act(async () => { addCustomButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const descriptionToggle = findButton('+ Add description', true);
+    expect(descriptionToggle).toBeTruthy();
+    await act(async () => { descriptionToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const descriptionField = container.querySelector('textarea[aria-label="Description"]');
+    expect(descriptionField).toBeTruthy();
+    await act(async () => {
+      descriptionField.focus();
+      setFieldValue(descriptionField, 'Same-day courier from the clinic.');
+      descriptionField.blur();
+    });
+    await flush();
+
+    expect(container.querySelector('textarea[aria-label="Description"]')).toBeFalsy();
+    expect(findButton('Same-day courier from the clinic.', true)).toBeTruthy();
 
     await act(async () => { root.unmount(); });
   });
