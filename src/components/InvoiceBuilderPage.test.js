@@ -110,6 +110,33 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // Regression: opening a description just to read the full text (then clicking away without
+  // typing anything) used to unconditionally commit it on blur, which flipped `customized: true`
+  // and detached the row from the shared catalog - merely viewing a description should never do that.
+  it('opening and closing a description without editing it does not mark the item customized', async () => {
+    const root = mount();
+    await flush();
+
+    const descriptionToggle = findButton('Daily care in hospital.', true);
+    expect(descriptionToggle).toBeTruthy();
+    await act(async () => { descriptionToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const descriptionField = container.querySelector('textarea[aria-label="Description"]');
+    expect(descriptionField).toBeTruthy();
+    await act(async () => {
+      descriptionField.focus();
+      descriptionField.blur();
+    });
+    await flush();
+
+    expect(set.mock.calls.some(([path]) => path === 'invoiceBuilder/invoiceServices')).toBe(false);
+    expect(container.innerHTML).not.toContain('Custom<');
+    expect(findButton('Daily care in hospital.', true)).toBeTruthy();
+
+    await act(async () => { root.unmount(); });
+  });
+
   it('overriding a catalog item price only writes invoiceBuilder/invoiceServices, never budget/items', async () => {
     const root = mount();
     await flush();

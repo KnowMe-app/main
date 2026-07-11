@@ -675,7 +675,10 @@ const PercentShareRow = ({
           aria-label="Percent of package price"
           onFocus={() => { percentEditingRef.current = true; }}
           onChange={event => setPercentDraft(event.target.value)}
-          onBlur={() => { percentEditingRef.current = false; onCommit('percent', percentDraft); }}
+          onBlur={() => {
+            percentEditingRef.current = false;
+            if (percentDraft !== String(row.percent ?? '')) onCommit('percent', percentDraft);
+          }}
         />
         <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--km-muted)' }}>%</span>
         <CustomizedTag title="Recalculated live from the package's price">≈ {formatEuroPreview(row.price)}</CustomizedTag>
@@ -751,7 +754,10 @@ const ServiceLineRow = ({
           aria-label="Service name"
           onFocus={() => { nameEditingRef.current = true; }}
           onChange={event => setNameDraft(event.target.value)}
-          onBlur={() => { nameEditingRef.current = false; onCommit('name', nameDraft); }}
+          onBlur={() => {
+            nameEditingRef.current = false;
+            if (nameDraft !== (row.name ?? '')) onCommit('name', nameDraft);
+          }}
         />
       </LineMainRow>
       {descriptionOpen ? (
@@ -765,7 +771,11 @@ const ServiceLineRow = ({
           autoFocus
           onFocus={() => { descriptionEditingRef.current = true; }}
           onChange={event => setDescriptionDraft(event.target.value)}
-          onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); setDescriptionOpen(false); }}
+          onBlur={() => {
+            descriptionEditingRef.current = false;
+            if (descriptionDraft !== (row.description ?? '')) onCommit('description', descriptionDraft);
+            setDescriptionOpen(false);
+          }}
         />
       ) : (
         <DescriptionToggle type="button" $hasValue={Boolean(row.description)} onClick={() => setDescriptionOpen(true)}>
@@ -782,7 +792,11 @@ const ServiceLineRow = ({
           aria-label="Price (EUR)"
           onFocus={() => { priceEditingRef.current = true; }}
           onChange={event => setPriceDraft(event.target.value)}
-          onBlur={() => { priceEditingRef.current = false; onCommit('price', priceDraft); }}
+          onBlur={() => {
+            priceEditingRef.current = false;
+            const originalPriceDraft = row.priceLabel || String(roundToCents(row.price) ?? '');
+            if (priceDraft !== originalPriceDraft) onCommit('price', priceDraft);
+          }}
         />
         {row.isCustomized ? <CustomizedTag title="Overridden for this invoice only - the shared budget is unchanged">Custom</CustomizedTag> : null}
         {row.missing ? <MissingTag title="This catalog reference no longer exists">Missing</MissingTag> : null}
@@ -1035,7 +1049,10 @@ const PackageEntryCard = ({
           aria-label="Package name"
           onFocus={() => { nameEditingRef.current = true; }}
           onChange={event => setNameDraft(event.target.value)}
-          onBlur={() => { nameEditingRef.current = false; onCommitField('name', nameDraft); }}
+          onBlur={() => {
+            nameEditingRef.current = false;
+            if (nameDraft !== (row.name ?? '')) onCommitField('name', nameDraft);
+          }}
         />
         <AutoTextArea
           as={PlainPriceBase}
@@ -1046,7 +1063,11 @@ const PackageEntryCard = ({
           aria-label="Package price (EUR)"
           onFocus={() => { priceEditingRef.current = true; }}
           onChange={event => setPriceDraft(event.target.value)}
-          onBlur={() => { priceEditingRef.current = false; onCommitField('price', priceDraft); }}
+          onBlur={() => {
+            priceEditingRef.current = false;
+            const originalPriceDraft = String(roundToCents(row.price) ?? '');
+            if (priceDraft !== originalPriceDraft) onCommitField('price', priceDraft);
+          }}
         />
         {row.hasPriceOverride ? (
           <CustomizedTag title="Real total of the services below">Σ {formatEuroPreview(row.childrenTotal)}</CustomizedTag>
@@ -1080,7 +1101,11 @@ const PackageEntryCard = ({
           autoFocus
           onFocus={() => { descriptionEditingRef.current = true; }}
           onChange={event => setDescriptionDraft(event.target.value)}
-          onBlur={() => { descriptionEditingRef.current = false; onCommitField('description', descriptionDraft); setDescriptionOpen(false); }}
+          onBlur={() => {
+            descriptionEditingRef.current = false;
+            if (descriptionDraft !== (row.description ?? '')) onCommitField('description', descriptionDraft);
+            setDescriptionOpen(false);
+          }}
         />
       ) : (
         <DescriptionToggle
