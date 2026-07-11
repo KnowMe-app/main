@@ -476,6 +476,18 @@ describe('invoiceCatalogUtils', () => {
       // 20% of 40000 (8000) + the 300 deposit - the package's own 40000 reference price is excluded.
       expect(subtotal).toBe(8300);
     });
+
+    it('includes a custom package in the subtotal because there is no catalog share row to bill alongside it', () => {
+      const catalogItemsById = new Map([['1', { id: '1', name: 'Consultation', price: 300 }]]);
+      const customPackage = setEntryField(
+        addCatalogChildToPackage(makeCustomPackageEntry({ name: 'Bespoke package' }), '1'),
+        'price',
+        1200,
+      );
+      const rows = resolveInvoiceServiceRows([customPackage], catalogItemsById);
+      expect(rows[0]).toMatchObject({ kind: 'package', catalogId: '', price: 1200 });
+      expect(computeInvoiceSubtotal(rows)).toBe(1200);
+    });
   });
 
   describe('identity keys and recent services', () => {

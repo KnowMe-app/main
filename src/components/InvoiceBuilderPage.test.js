@@ -219,6 +219,7 @@ describe('InvoiceBuilderPage', () => {
     expect(container.innerHTML).toContain('Bespoke concierge programme');
     expect(container.innerHTML).toContain('Custom package');
     expect(container.innerHTML).not.toContain('Missing');
+    expect(findButton('% of package')).toBeFalsy();
 
     await act(async () => { root.unmount(); });
   });
@@ -399,6 +400,48 @@ describe('InvoiceBuilderPage', () => {
     await flush();
 
     expect(activeNameFieldValues()).toEqual(['Amny Athamny']);
+
+    await act(async () => { root.unmount(); });
+  });
+
+  it('preserves every payer case from an uploaded invoice JSON while appending current history', async () => {
+    const root = mount();
+    await flush();
+
+    const fileInput = container.querySelector('input[type="file"][accept="application/json"]');
+    expect(fileInput).toBeTruthy();
+
+    const uploadedInvoice = {
+      beneficiaries: fixtureInvoiceData.beneficiaries,
+      beneficiaryIds: fixtureInvoiceData.beneficiaryIds,
+      customers: [{ name: 'Active Upload', address: 'Germany' }],
+      payerCases: [
+        { id: 'upload-active', customers: [{ name: 'Active Upload', address: 'Germany' }] },
+        { id: 'upload-history', customers: [{ name: 'Historical Upload', address: 'France' }] },
+      ],
+      payerCaseIds: ['upload-active', 'upload-history'],
+      recentServices: [],
+      invoiceServices: [],
+      notes: [],
+      taxPercent: 0,
+    };
+    const fileText = JSON.stringify(uploadedInvoice);
+    const file = new File([fileText], 'invoice.json', { type: 'application/json' });
+    file.text = () => Promise.resolve(fileText);
+    Object.defineProperty(fileInput, 'files', { value: [file] });
+
+    await act(async () => { fileInput.dispatchEvent(new Event('change', { bubbles: true })); });
+    await flush();
+
+    const payerCases = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/payerCases').pop()[1];
+    expect(payerCases.map(payerCase => payerCase.customers[0]?.name)).toEqual([
+      'Amny Athamny',
+      'Active Upload',
+      'Historical Upload',
+    ]);
+    const payerCaseIds = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/payerCaseIds').pop()[1];
+    expect(payerCases.find(payerCase => payerCase.id === payerCaseIds[0]).customers[0].name).toBe('Active Upload');
+    expect(payerCases.find(payerCase => payerCase.id === payerCaseIds[1]).customers[0].name).toBe('Historical Upload');
 
     await act(async () => { root.unmount(); });
   });
