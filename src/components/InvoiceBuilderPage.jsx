@@ -393,8 +393,11 @@ const StackedFieldRow = styled.div`
 
 // Groups one payer/customer's fields together (name/address, each its own StackedFieldRow) with a
 // heavier separator between customers than the light one between fields of the same customer.
+// Indented to match the collapsed compact row's own inner padding (CompactSection) above it, so
+// the Name/Address text lines up with the summary text instead of sitting flush against the panel
+// edge, a step to the left of everything above it.
 const CustomerBlock = styled.div`
-  padding: 8px 0;
+  padding: 8px 0 8px 12px;
 
   & + & {
     border-top: 1px solid var(--km-border);
