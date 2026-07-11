@@ -270,6 +270,29 @@ async function checkExpectedExpenses() {
       fail(`Expected Expenses: "Payment #${index + 1} — ${milestone.title}" block should appear exactly once (found ${count})`);
     }
   });
+
+  // Custom package + hand-built schedule (round4 #4) - no catalog package/schedule behind it at
+  // all (packageId '', empty packageSnapshot.children), must still render without crashing.
+  const customSchedulePlan = {
+    packageId: '',
+    packageSnapshot: { name: 'Bespoke concierge programme', description: '', listedPrice: 10000, currency: 'EUR', children: [] },
+    milestones: [
+      { id: 'm1', title: 'Deposit', taxPercent: 0, showPackageOverview: true, services: [{ id: 's1', kind: 'custom', name: 'Deposit', price: 4000 }] },
+      { id: 'm2', title: 'Final payment', taxPercent: 0, showPackageOverview: false, services: [{ id: 's2', kind: 'custom', name: 'Final payment', price: 6000 }] },
+    ],
+  };
+  const customSchedulePages = await renderPdf(React.createElement(ExpectedExpensesPdfDocument, {
+    plan: customSchedulePlan,
+    customers,
+    catalogItemsById: new Map(),
+    priceContext: { itemsById: new Map(), rates: null },
+    planDate: new Date('2026-07-11'),
+  }));
+  checkNoDebugStrings('Expected Expenses (custom schedule)', customSchedulePages);
+  checkNoBlankPages('Expected Expenses (custom schedule)', customSchedulePages);
+  checkStringsRoundTrip('Expected Expenses (custom schedule)', customSchedulePages, [
+    'Bespoke concierge programme', 'Deposit', 'Final payment',
+  ]);
 }
 
 async function checkBudget() {
