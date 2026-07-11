@@ -2,6 +2,11 @@ export const ADMIN_UIDS = ['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J01
 
 export const isAdminUid = uid => !!uid && ADMIN_UIDS.includes(uid);
 
+// UIDs granted Invoice Builder access without full admin rights.
+export const INVOICE_BUILDER_UIDS = ['S0VhDLCYjuTFDNLalRa85u7fPcg2'];
+
+export const isInvoiceBuilderUid = uid => !!uid && (isAdminUid(uid) || INVOICE_BUILDER_UIDS.includes(uid));
+
 const normalize = level =>
   String(level || '')
     .toLowerCase()
@@ -44,10 +49,12 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole } = {}) => {
   const isAdmin = isAdminUid(uid);
   const canAccessMatching = isAdmin || canAccessMatchingByLevel(accessLevel) || canAccessMatchingByRole({ role, userRole });
   const canAccessAdd = isAdmin || canAccessAddByLevel(accessLevel);
+  const canAccessInvoices = isInvoiceBuilderUid(uid);
 
   return {
     isAdmin,
     canAccessMatching,
     canAccessAdd,
+    canAccessInvoices,
   };
 };

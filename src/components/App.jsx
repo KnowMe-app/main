@@ -23,6 +23,7 @@ export const App = () => {
   const [isAdmin, setIsAdmin] = useState(null);
   const [canAccessAdd, setCanAccessAdd] = useState(false);
   const [canAccessMatching, setCanAccessMatching] = useState(false);
+  const [canAccessInvoices, setCanAccessInvoices] = useState(false);
   const [isAccessResolved, setIsAccessResolved] = useState(false);
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
@@ -70,6 +71,7 @@ export const App = () => {
         setIsAdmin(access.isAdmin);
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessMatching(access.canAccessMatching);
+        setCanAccessInvoices(access.canAccessInvoices);
         localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
         setIsAccessResolved(true);
@@ -80,6 +82,7 @@ export const App = () => {
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessMatching(false);
+        setCanAccessInvoices(false);
         setIsAccessResolved(true);
       }
     });
@@ -100,7 +103,7 @@ export const App = () => {
       {isAdmin && <Route path="/medications/:userId" element={<MedicationsPage />} />}
       {isAdmin && <Route path="/flow" element={<FlowManager ownerId={auth.currentUser?.uid} />} />}
       {isAdmin && <Route path="/budget" element={<BudgetPage isAdmin={isAdmin} />} />}
-      {isAdmin && <Route path="/invoices" element={<InvoiceBuilderPage isAdmin={isAdmin} />} />}
+      {canAccessInvoices && <Route path="/invoices" element={<InvoiceBuilderPage isAdmin={canAccessInvoices} />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );

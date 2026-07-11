@@ -1,5 +1,6 @@
 import {
   ADMIN_UIDS,
+  INVOICE_BUILDER_UIDS,
   canAccessMatchingByRole,
   resolveAccess,
 } from './accessLevel';
@@ -27,6 +28,7 @@ describe('accessLevel', () => {
       isAdmin: true,
       canAccessMatching: true,
       canAccessAdd: true,
+      canAccessInvoices: true,
     });
   });
 
@@ -35,6 +37,14 @@ describe('accessLevel', () => {
       isAdmin: false,
       canAccessMatching: true,
       canAccessAdd: false,
+      canAccessInvoices: false,
     });
+  });
+
+  it('grants invoice builder access without full admin rights', () => {
+    const access = resolveAccess({ uid: INVOICE_BUILDER_UIDS[0], accessLevel: '', userRole: '' });
+    expect(access.canAccessInvoices).toBe(true);
+    expect(access.isAdmin).toBe(false);
+    expect(access.canAccessAdd).toBe(false);
   });
 });

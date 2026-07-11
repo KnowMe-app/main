@@ -49,7 +49,7 @@ jest.mock('firebase/database', () => ({
 }));
 
 jest.mock('utils/accessLevel', () => ({
-  isAdminUid: () => true,
+  isInvoiceBuilderUid: () => true,
 }));
 
 describe('InvoiceBuilderPage', () => {

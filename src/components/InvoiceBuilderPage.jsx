@@ -19,7 +19,7 @@ import designTokens from '../data/designTokens.json';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { formatEuroSmart, getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
-import { isAdminUid } from 'utils/accessLevel';
+import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import {
   addCatalogChildToPackage,
   addCustomChildToPackage,
@@ -1406,7 +1406,7 @@ const ChipRow = styled.div`
 `;
 
 const InvoiceBuilderPage = ({ isAdmin = false }) => {
-  const isInvoiceAdmin = Boolean(isAdmin) || isAdminUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
+  const isInvoiceAdmin = Boolean(isAdmin) || isInvoiceBuilderUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('admin') === '1');
 
   const [data, setData] = useState(() => normalizeInvoiceData(null));
