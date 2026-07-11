@@ -276,4 +276,84 @@ describe('BudgetPage edit mode', () => {
     });
   });
 
+  // P0 bug repro: a legacy record with float-noise saved before rounding was applied on write
+  // (e.g. "18514.292958...") must never leak those raw decimals back into an admin input - neither
+  // an item/package price field nor a payment-schedule amount field - once the field isn't focused.
+  it('rounds float-noise prices and payment-schedule amounts to the cent when displayed and re-saved', async () => {
+    const noisyCatalog = {
+      packages: [{
+        id: '3',
+        name: 'Standard Program',
+        listedPrice: 30000,
+        currency: 'EUR',
+        description: 'Program description here.',
+        children: [],
+        paymentScheduleId: 'ps-3',
+      }],
+      items: [{
+        id: '12',
+        name: 'Compensation to surrogate mother for the program',
+        price: 18514.292958,
+        description: '',
+        category: 'surrogateMother',
+      }],
+      technical: {
+        paymentSchedules: [{
+          id: 'ps-3',
+          payments: [{ title: 'Compensation to surrogate mother for the program', amount: 18514.292958 }],
+        }],
+      },
+      clientNotes: {},
+    };
+    get.mockImplementation(() => Promise.resolve({ exists: () => true, val: () => noisyCatalog }));
+
+    const root = createRoot(container);
+    await act(async () => {
+      mountBudgetPage(root);
+    });
+    await flush();
+
+    const categoryToggle = Array.from(container.querySelectorAll('button')).find(btn => btn.textContent.includes('Surrogate Mother'));
+    expect(categoryToggle).toBeTruthy();
+    await act(async () => {
+      categoryToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    const priceInputs = Array.from(container.querySelectorAll('input[aria-label="Price"]'));
+    const noisyPriceInput = priceInputs.find(input => input.value.includes('18514'));
+    expect(noisyPriceInput).toBeTruthy();
+    expect(noisyPriceInput.value).toBe('18514.29');
+
+    const scheduleToggle = Array.from(container.querySelectorAll('button')).find(btn => btn.textContent.includes('Payment schedule editor'));
+    expect(scheduleToggle).toBeTruthy();
+    await act(async () => {
+      scheduleToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flush();
+
+    const amountInput = container.querySelector('input[type="number"]');
+    expect(amountInput).toBeTruthy();
+    expect(amountInput.value).toBe('18514.29');
+
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    await act(async () => {
+      amountInput.focus();
+      nativeInputValueSetter.call(amountInput, '18600.006');
+      amountInput.dispatchEvent(new Event('input', { bubbles: true }));
+      amountInput.blur();
+    });
+    await flush();
+
+    expect(set).toHaveBeenCalledWith('budget/technical/paymentSchedules', expect.arrayContaining([
+      expect.objectContaining({
+        payments: expect.arrayContaining([expect.objectContaining({ amount: 18600.01 })]),
+      }),
+    ]));
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
 });

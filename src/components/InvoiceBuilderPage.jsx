@@ -586,18 +586,23 @@ const MissingTag = styled(CustomizedTag)`
 // A description field is rarely needed (the catalog already carries the full text for most
 // rows) - it stays collapsed to a single truncated line until the admin clicks to edit it,
 // instead of permanently showing an "Add description..." textarea on every row.
+// Same font-size/padding/line-height as the AutoTextArea it flips into on click (plainFieldStyle,
+// $size="11.5px") - otherwise the collapsed line sits at a different height/position than the
+// textarea that replaces it, and the row visibly jumps sideways/up-down right when you click in.
 const DescriptionToggle = styled.button`
   display: block;
   width: 100%;
   max-width: 100%;
   border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--km-muted);
   font-family: inherit;
-  font-size: 11px;
+  font-size: 11.5px;
   font-style: ${({ $hasValue }) => ($hasValue ? 'normal' : 'italic')};
+  line-height: 1.45;
   text-align: left;
-  padding: 3px 6px;
+  padding: 5px 6px;
   margin: 0;
   cursor: pointer;
   white-space: nowrap;
@@ -607,7 +612,6 @@ const DescriptionToggle = styled.button`
   &:hover {
     color: var(--km-accent);
     background: var(--km-accent-light);
-    border-radius: 6px;
   }
 `;
 
