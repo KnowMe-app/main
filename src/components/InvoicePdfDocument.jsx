@@ -202,8 +202,7 @@ const ServiceItemRow = ({ row, isFirst }) => {
   const isChild = row.depth > 0;
   const isPackageHeader = row.kind === 'package';
   // A "% of package" row reads as "Scheduled payment" here - the same one-style breakdown line as
-  // every other row - with the percent/package it prices kept as a small caption underneath rather
-  // than a standalone section heading (spec: declutter §2).
+  // every other row - without repeating the underlying percentage/package wording in the PDF.
   const isPercent = row.kind === 'percent';
   const displayName = isPercent ? 'Scheduled payment' : row.name;
   return (
@@ -221,7 +220,6 @@ const ServiceItemRow = ({ row, isFirst }) => {
         <Text style={isPackageHeader ? styles.nameTextPackage : (isChild ? styles.nameTextChild : styles.nameText)}>
           {sanitizePdfText(displayName)}
         </Text>
-        {isPercent ? <Text style={styles.descriptionText}>{sanitizePdfText(row.name)}</Text> : null}
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
       </View>
       <View style={styles.priceCell}>
