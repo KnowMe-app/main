@@ -2320,6 +2320,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         invoiceNumber,
         invoiceDisplayDate,
         catalogTechnical,
+        generatePaymentDetails,
       };
 
       // @react-pdf/renderer's WASM layout engine can still be warming up on the
