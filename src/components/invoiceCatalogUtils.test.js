@@ -10,6 +10,7 @@ import {
   computeInvoiceTotal,
   generateInvoiceIdentifiers,
   getActiveBeneficiary,
+  getActivePayerCase,
   getEntryIdentityKey,
   getTodayYmd,
   isEntryCustomized,
@@ -17,6 +18,7 @@ import {
   makeCatalogItemEntry,
   makeCatalogPackageEntry,
   makeCustomEntry,
+  makeCustomPackageEntry,
   makePercentOfPackageEntry,
   movePackageChild,
   normalizeInvoiceData,
@@ -24,6 +26,7 @@ import {
   parseLegacyServiceString,
   removePackageChild,
   reorderBeneficiaryIds,
+  reorderPayerCaseIds,
   reorderRecentServices,
   resetItemEntryOverrides,
   resetPackageEntryToCatalog,
@@ -39,6 +42,8 @@ describe('invoiceCatalogUtils', () => {
     expect(data).toEqual({
       beneficiaries: [],
       beneficiaryIds: [],
+      payerCases: [{ id: 'legacy', customers: [] }],
+      payerCaseIds: ['legacy'],
       customers: [],
       recentServices: [],
       invoiceServices: [],
@@ -74,6 +79,35 @@ describe('invoiceCatalogUtils', () => {
   it('reorders beneficiaryIds without touching the beneficiaries array', () => {
     expect(reorderBeneficiaryIds(['a', 'b', 'c'], 'c')).toEqual(['c', 'a', 'b']);
     expect(reorderBeneficiaryIds(['a', 'b'], 'a')).toEqual(['a', 'b']);
+  });
+
+  describe('payer cases (P0: selecting a new client replaces, never merges, the active payer)', () => {
+    it('migrates a legacy flat customers array into a single payer case', () => {
+      const data = normalizeInvoiceData({ customers: [{ name: 'Amny Athamny', address: 'Netherlands' }] });
+      expect(data.payerCases).toEqual([{ id: 'legacy', customers: [{ name: 'Amny Athamny', address: 'Netherlands' }] }]);
+      expect(data.payerCaseIds).toEqual(['legacy']);
+      expect(data.customers).toEqual([{ name: 'Amny Athamny', address: 'Netherlands' }]);
+    });
+
+    it('picks the active case customers from the first payerCaseId, mirrored onto data.customers', () => {
+      const data = normalizeInvoiceData({
+        payerCases: [
+          { id: 'case-1', customers: [{ name: 'Kyogoku', address: 'Japan' }] },
+          { id: 'case-2', customers: [{ name: 'Amny Athamny', address: 'Netherlands' }, { name: 'Fons Mitchell Drost', address: 'Netherlands' }] },
+        ],
+        payerCaseIds: ['case-2', 'case-1'],
+      });
+      expect(getActivePayerCase(data).id).toBe('case-2');
+      expect(data.customers).toEqual([
+        { name: 'Amny Athamny', address: 'Netherlands' },
+        { name: 'Fons Mitchell Drost', address: 'Netherlands' },
+      ]);
+    });
+
+    it('reorders payerCaseIds without touching any case\'s stored customers', () => {
+      expect(reorderPayerCaseIds(['a', 'b', 'c'], 'c')).toEqual(['c', 'a', 'b']);
+      expect(reorderPayerCaseIds(['a', 'b'], 'a')).toEqual(['a', 'b']);
+    });
   });
 
   describe('legacy string upgrade', () => {
@@ -230,6 +264,45 @@ describe('invoiceCatalogUtils', () => {
       expect(reverted.id).toBe(pkg.id);
       expect(reverted.customized).toBeUndefined();
       expect(reverted.children.map(child => child.catalogId)).toEqual(['1', '2']);
+    });
+  });
+
+  // P0 (round4 #2): a package with no Budget catalog entry can't reference the catalog - it must
+  // be saved fully on the invoice itself (name + children + price), never depend on a catalog
+  // lookup succeeding.
+  describe('custom packages (no Budget catalog entry)', () => {
+    it('creates a self-contained package entry with an empty catalogId, pre-flagged customized', () => {
+      const pkg = makeCustomPackageEntry({ name: 'Bespoke programme' });
+      expect(pkg).toMatchObject({ kind: 'package', catalogId: '', customized: true, name: 'Bespoke programme', children: [] });
+    });
+
+    it('never reports a custom package as "missing" - it was never meant to match a catalog entry', () => {
+      const pkg = makeCustomPackageEntry({ name: 'Bespoke programme' });
+      const row = resolveServiceRow(pkg, new Map(), { packagesById: new Map() });
+      expect(row.missing).toBe(false);
+      expect(row.isCustomized).toBe(true);
+      expect(row.name).toBe('Bespoke programme');
+    });
+
+    it('bills the sum of its own children when no price override is set', () => {
+      const catalogItemsById = new Map([['1', { id: '1', name: 'Consult', price: 100 }]]);
+      const withChild = addCustomChildToPackage(makeCustomPackageEntry({ name: 'Bespoke' }), { name: 'Extra', price: 50 });
+      const withCatalogChild = addCatalogChildToPackage(withChild, '1');
+      const row = resolveServiceRow(withCatalogChild, catalogItemsById, { itemsById: catalogItemsById, packagesById: new Map() });
+      expect(row.children).toHaveLength(2);
+      expect(row.price).toBe(150);
+    });
+
+    it('two different custom packages never collide on the same identity key', () => {
+      const a = makeCustomPackageEntry({ name: 'Package A' });
+      const b = makeCustomPackageEntry({ name: 'Package B' });
+      expect(getEntryIdentityKey(a)).not.toBe(getEntryIdentityKey(b));
+    });
+
+    it('leaves a custom package untouched when "reset to catalog" is attempted (no catalog entry to revert to)', () => {
+      const pkg = addCustomChildToPackage(makeCustomPackageEntry({ name: 'Bespoke' }), { name: 'Extra', price: 50 });
+      const reverted = resetPackageEntryToCatalog(pkg, undefined);
+      expect(reverted).toBe(pkg);
     });
   });
 

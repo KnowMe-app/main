@@ -172,6 +172,41 @@ async function checkInvoice() {
   if (!milestonePages[0].replace(/\s+/g, '').toUpperCase().includes('PROGRAMMEMILESTONEINVOICE')) {
     fail('Invoice (milestone): expected a "Programme milestone invoice" eyebrow, got something else');
   }
+
+  // Custom package (P0, round4 #2) - a package with no Budget catalog entry (catalogId '') must
+  // render its full name/children/price straight from the invoice, never depend on a catalog
+  // lookup or crash when priceContext.packagesById has nothing for it.
+  const customPackagePages = await renderPdf(React.createElement(InvoicePdfDocument, {
+    beneficiary,
+    customers,
+    invoiceServices: [{
+      id: 'e1',
+      kind: 'package',
+      catalogId: '',
+      customized: true,
+      name: 'Bespoke concierge programme',
+      children: [
+        { id: 'c1', kind: 'custom', name: 'Dedicated case manager', price: 2000 },
+        { id: 'c2', kind: 'item', catalogId: '1' },
+      ],
+    }],
+    catalogItemsById,
+    priceContext: { itemsById: catalogItemsById, rates: null, packagesById: new Map() },
+    notes: [],
+    taxPercent: 0,
+    invoiceNumber: '09/07/2026',
+    invoiceDate: '09.07.2026',
+    purposeOfPayment: 'Payment for the bespoke programme.',
+  }));
+  checkNoDebugStrings('Invoice (custom package)', customPackagePages);
+  checkNoBlankPages('Invoice (custom package)', customPackagePages);
+  checkStringsRoundTrip('Invoice (custom package)', customPackagePages, [
+    'Bespoke concierge programme', 'Dedicated case manager', 'Pregnancy blood test',
+  ]);
+  const customPackageCombined = customPackagePages.join('\n');
+  if (/set out in your Budget/i.test(customPackageCombined)) {
+    fail('Invoice (custom package): a package with no Budget catalog entry pointed the client at "your Budget" instead of showing its own contents');
+  }
 }
 
 async function checkExpectedExpenses() {

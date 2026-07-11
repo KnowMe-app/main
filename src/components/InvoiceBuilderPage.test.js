@@ -196,6 +196,33 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // P0 (round4 #2): a package with no Budget catalog entry must be creatable straight from the
+  // invoice - it should never claim to be "missing from the catalog" (it was never in one), and
+  // its own children/name/price must persist on the invoice itself.
+  it('adds a custom package with no Budget catalog entry, storing its full contents on the invoice', async () => {
+    const root = mount();
+    await flush();
+
+    const nameField = container.querySelector('textarea[placeholder="New custom package name"]');
+    expect(nameField).toBeTruthy();
+    await act(async () => {
+      nameField.focus();
+      setFieldValue(nameField, 'Bespoke concierge programme');
+    });
+    await act(async () => { findButton('Add custom package').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    const packageEntry = lastServicesCall[1].find(entry => entry.kind === 'package' && entry.name === 'Bespoke concierge programme');
+    expect(packageEntry).toMatchObject({ catalogId: '', customized: true, children: [] });
+
+    expect(container.innerHTML).toContain('Bespoke concierge programme');
+    expect(container.innerHTML).toContain('Custom package');
+    expect(container.innerHTML).not.toContain('Missing');
+
+    await act(async () => { root.unmount(); });
+  });
+
   // Regression: "% of package" used to always default to 0% (previously always 100%) with no
   // link to the catalog's own Payment Schedule - an admin had to know the right number by heart.
   // It should now seed the first click from the package's first unbilled schedule milestone
@@ -325,6 +352,53 @@ describe('InvoiceBuilderPage', () => {
 
     expect(container.querySelector('textarea[aria-label="Description"]')).toBeFalsy();
     expect(findButton('Same-day courier from the clinic.', true)).toBeTruthy();
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // Regression (P0, round4 #1): selecting/starting a different client used to have no dedicated
+  // affordance at all, so admins fell back to "Add customer", which appended the new client's
+  // name onto the previous one instead of replacing it - two unrelated cases then rendered as one
+  // merged payer. "New case" must start a blank payer while keeping the old one selectable again.
+  it('starting a new payer case replaces the active payer instead of merging with the previous client', async () => {
+    const root = mount();
+    await flush();
+
+    const payerToggle = Array.from(container.querySelectorAll('[role="button"]')).find(el => el.textContent.includes('Payer'));
+    await act(async () => { payerToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const activeNameFieldValues = () => Array.from(container.querySelectorAll('textarea[placeholder="Name"]')).map(field => field.value);
+    expect(activeNameFieldValues()).toEqual(['Amny Athamny']);
+
+    await act(async () => { findButton('New case').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    // The previous client's name field must be gone from the active payer, not merged alongside a
+    // second, blank one - "New case" replaces the active payer, it never appends to it.
+    expect(activeNameFieldValues()).toEqual(['']);
+
+    const nameField = container.querySelector('textarea[placeholder="Name"]');
+    await act(async () => {
+      nameField.focus();
+      setFieldValue(nameField, 'Kyogoku');
+      nameField.blur();
+    });
+    await flush();
+
+    expect(activeNameFieldValues()).toEqual(['Kyogoku']);
+
+    // Switching back to the previous case must restore it exactly, still with no merging.
+    const caseSelect = Array.from(container.querySelectorAll('select')).find(select => Array.from(select.options).some(option => option.text.includes('Amny Athamny')));
+    expect(caseSelect).toBeTruthy();
+    const originalCaseOption = Array.from(caseSelect.options).find(option => option.text.includes('Amny Athamny'));
+    await act(async () => {
+      caseSelect.value = originalCaseOption.value;
+      caseSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flush();
+
+    expect(activeNameFieldValues()).toEqual(['Amny Athamny']);
 
     await act(async () => { root.unmount(); });
   });
