@@ -5,7 +5,6 @@ import {
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 import { formatMoney, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
-import { IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import {
   buildCaseTitle,
   buildPayerLocation,
@@ -33,10 +32,23 @@ const EYEBROW_BY_TYPE = {
 // A row may carry a free-text price label (e.g. "GIFT") instead of a euro amount.
 const formatRowAmount = row => row?.priceLabel || formatMoney(row?.price);
 
+// These two wire-transfer caveats now live on the standalone Payment Details document, right next
+// to the instructions they actually govern (see PaymentDetailsPdfDocument) - they no longer belong
+// on the Invoice itself. Matched by keyword rather than exact string so pre-existing notes data
+// (already carrying an older phrasing) is filtered out too, not just freshly authored ones.
+const PAYMENT_CAVEAT_PATTERNS = [/purpose of the payment/i, /sha option/i];
+const isPaymentCaveatNote = note => PAYMENT_CAVEAT_PATTERNS.some(pattern => pattern.test(note));
+
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
   section: {
     marginTop: 26,
+  },
+  // The very first block under the title carries no preceding marginBottom of its own to offset -
+  // TitleBlock's trailing margin already does that job, so stacking the full 26pt section rhythm
+  // on top of it doubles the gap. Used only when that block is the first thing after TitleBlock.
+  sectionAfterTitle: {
+    marginTop: 2,
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
@@ -45,7 +57,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   packageBlock: {
-    marginTop: 26,
+    marginTop: 2,
   },
   packageBlockHeader: {
     backgroundColor: PDF_COLOR.card,
@@ -183,12 +195,16 @@ const buildDisplayRows = rows => {
   return display;
 };
 
-// One line of the "Invoice breakdown" - shared, byte-for-byte, between the plain flat table
-// (Service Invoice / a single milestone share) and the "Additional services outside the package"
-// section of a Package Invoice, so a service/custom row never renders two different ways.
+// One line of the "Breakdown" list - shared, byte-for-byte, across Service Invoice, milestone-share,
+// and Package Invoice layouts, so a service/custom/percent row never renders two different ways.
 const ServiceItemRow = ({ row, isFirst }) => {
   const isChild = row.depth > 0;
   const isPackageHeader = row.kind === 'package';
+  // A "% of package" row reads as "Scheduled payment" here - the same one-style breakdown line as
+  // every other row - with the percent/package it prices kept as a small caption underneath rather
+  // than a standalone section heading (spec: declutter §2).
+  const isPercent = row.kind === 'percent';
+  const displayName = isPercent ? 'Scheduled payment' : row.name;
   return (
     <View
       style={[
@@ -202,8 +218,9 @@ const ServiceItemRow = ({ row, isFirst }) => {
       </View>
       <View style={[styles.nameCell, isChild ? styles.nameCellChild : null]}>
         <Text style={isPackageHeader ? styles.nameTextPackage : (isChild ? styles.nameTextChild : styles.nameText)}>
-          {sanitizePdfText(row.name)}
+          {sanitizePdfText(displayName)}
         </Text>
+        {isPercent ? <Text style={styles.descriptionText}>{sanitizePdfText(row.name)}</Text> : null}
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
       </View>
       <View style={styles.priceCell}>
@@ -215,30 +232,16 @@ const ServiceItemRow = ({ row, isFirst }) => {
   );
 };
 
-// The "Package block" (spec §1.1): the same shared IncludedServicesTable used by the Program
-// Budget/Expected Expenses documents, so the standard-package contents can never drift between
-// documents - preceded by a compact name/fee header (this document has no spare TitleBlock to
-// reuse for it, that one already carries the invoice's own title).
+// The "Package block" (spec §1.1): a compact name/fee header, plus a single reference sentence
+// pointing at the Budget instead of repeating its "Included in this programme" and "Payment
+// schedule" tables verbatim - that full breakdown already lives in the Budget, and duplicating it
+// here was the single biggest source of clutter on this document.
 const PackageBlock = ({ row, schedule }) => {
-  const includedRows = (row.children || []).map(child => ({
-    id: child.key || child.id,
-    name: child.name,
-    includedByPackageId: new Set(['programme']),
-  }));
-  // A short, fixed column header - the package's own name/fee is already shown in full in the
-  // header block above the table, and doesn't need repeating (and stretching every row) here.
-  const packagesMeta = [{ id: 'programme', label: 'Price', priceLabel: '' }];
   const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
-  const scheduleRawTotal = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
-  // The catalog schedule's own amounts only add up to the invoice total when the package is billed
-  // at its plain catalog listed price - scale them to the row's actual price (a manual override, or
-  // a customized set of children) so this table's total never disagrees with what's actually billed.
-  const scaleRatio = scheduleRawTotal > 0 ? row.price / scheduleRawTotal : 1;
-  const scheduleRows = payments.map((payment, index) => ({
-    title: payment?.title || `Payment ${index + 1}`,
-    amounts: [Math.round((Number(payment?.amount) || 0) * scaleRatio * 100) / 100],
-  }));
-  const scheduleTotal = Math.round((Number(row.price) || 0) * 100) / 100;
+  const totalLabel = formatRowAmount(row);
+  const budgetReferenceNote = payments.length
+    ? `Part of a ${payments.length}-instalment programme totalling ${totalLabel}. Full programme details and the complete payment schedule are set out in your Budget.`
+    : `Full programme details and the complete payment schedule are set out in your Budget.`;
 
   return (
     <View style={styles.packageBlock}>
@@ -246,15 +249,9 @@ const PackageBlock = ({ row, schedule }) => {
       <View style={styles.packageBlockHeader} wrap={false}>
         <Text style={styles.packageBlockName}>{sanitizePdfText(row.name)}</Text>
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
-        <Text style={styles.packageBlockFee}>{`Total programme fee ${formatRowAmount(row)}`}</Text>
+        <Text style={styles.packageBlockFee}>{`Total programme fee ${totalLabel}`}</Text>
       </View>
-      <IncludedServicesTable
-        packages={packagesMeta}
-        includedRows={includedRows}
-        title="Included in this programme"
-        note="Every item below is already covered by the programme fee."
-      />
-      <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} totals={[scheduleTotal]} />
+      <Text style={styles.sectionNote}>{sanitizePdfText(budgetReferenceNote)}</Text>
     </View>
   );
 };
@@ -279,7 +276,9 @@ const InvoicePdfDocument = ({
   const payerName = buildPayerName(customers);
   const payerLocation = buildPayerLocation(customers);
   const caseTitle = buildCaseTitle(customers);
-  const noteList = Array.isArray(notes) ? notes.filter(note => String(note || '').trim()) : [];
+  const noteList = Array.isArray(notes)
+    ? notes.filter(note => String(note || '').trim()).filter(note => !isPaymentCaveatNote(note))
+    : [];
   const docType = invoiceType === 'service' || invoiceType === 'programme_milestone'
     ? invoiceType
     : resolveInvoiceDocType(rows);
@@ -287,20 +286,18 @@ const InvoicePdfDocument = ({
   const eyebrow = EYEBROW_BY_TYPE[docType];
 
   // Package Invoice (spec §1): adding a whole standard package - as opposed to a single
-  // percent-of-package milestone share, or a handful of one-off services - gets its own
-  // three-block layout (package block, payment schedule, additional services) instead of the flat
-  // itemized breakdown below. Any other top-level row alongside the package is, by definition, a
-  // service confirmed for this case that sits outside the standard package.
+  // percent-of-package milestone share, or a handful of one-off services - gets its own package
+  // block (name/fee header + a reference sentence to the Budget) above the flat itemized breakdown
+  // below. Any other top-level row alongside the package is, by definition, a service confirmed
+  // for this case that sits outside the standard package.
   const packageRows = rows.filter(row => row.kind === 'package');
   const isPackageInvoice = packageRows.length > 0;
-  // A "% of package" row (a programme milestone share) is never mixed into the same table as
-  // custom/catalog services - it prices a slice of the standard package, not a one-off item
-  // confirmed for this case, so it always gets its own section/heading even on a plain milestone
-  // invoice that carries no full package block.
+  // A "% of package" row (a programme milestone share) and any custom/catalog service row share one
+  // "Breakdown" list, one row style, one running numbering - splitting them into two headed
+  // sections was the second-biggest source of clutter on this document (declutter spec §2).
   const percentRows = rows.filter(row => row.kind === 'percent');
   const otherRows = rows.filter(row => row.kind !== 'package' && row.kind !== 'percent');
-  const percentDisplayRows = buildDisplayRows(percentRows);
-  const displayRows = buildDisplayRows(otherRows);
+  const breakdownDisplayRows = buildDisplayRows([...percentRows, ...otherRows]);
   // The package entry's own `children` are a frozen name-only snapshot (invoiceCatalogUtils.js) -
   // its payment schedule instead always comes live from the catalog package it was added from, the
   // same source Program Budget/Expected Expenses read it from, so a schedule edit in the catalog is
@@ -334,28 +331,11 @@ const InvoicePdfDocument = ({
           ))
         ) : null}
 
-        {percentDisplayRows.length ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>% of package</Text>
-            <Text style={styles.sectionNote}>This invoice bills a share of the standard package's price.</Text>
+        {breakdownDisplayRows.length ? (
+          <View style={[styles.section, !isPackageInvoice ? styles.sectionAfterTitle : null]}>
+            <Text style={styles.sectionTitle}>Breakdown</Text>
             <View style={styles.table}>
-              {percentDisplayRows.map((row, rowIndex) => (
-                <ServiceItemRow key={`${row.key || rowIndex}-${row.number}`} row={row} isFirst={rowIndex === 0} />
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        {displayRows.length ? (
-          <View style={styles.section}>
-            {isPackageInvoice || percentDisplayRows.length ? (
-              <>
-                <Text style={styles.sectionTitle}>Additional services outside the package</Text>
-                <Text style={styles.sectionNote}>Confirmed for this case, billed alongside the standard package.</Text>
-              </>
-            ) : null}
-            <View style={styles.table}>
-              {displayRows.map((row, rowIndex) => (
+              {breakdownDisplayRows.map((row, rowIndex) => (
                 <ServiceItemRow key={`${row.key || rowIndex}-${row.number}`} row={row} isFirst={rowIndex === 0} />
               ))}
             </View>
