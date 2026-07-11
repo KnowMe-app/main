@@ -225,18 +225,20 @@ const DangerButton = styled(SmallButton)`
   }
 `;
 
+// $dense shrinks the button footprint (package-card header cluster wants less height, a package
+// child row's footer cluster wants less width) without touching every other IconButton on the page.
 const iconButtonBase = css`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: ${({ $dense }) => ($dense ? '18px' : '22px')};
+  height: ${({ $dense }) => ($dense ? '18px' : '22px')};
   flex-shrink: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--km-muted);
-  font-size: 10.5px;
+  font-size: ${({ $dense }) => ($dense ? '9px' : '10.5px')};
   cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
   opacity: ${({ disabled }) => (disabled ? 0.3 : 1)};
   transition: color 0.15s ease, background 0.15s ease;
@@ -560,8 +562,8 @@ const RowIndex = styled.span`
 const RowActions = styled.div`
   flex: 0 0 auto;
   display: flex;
-  gap: 1px;
-  padding-top: 2px;
+  gap: ${({ $dense }) => ($dense ? '0' : '1px')};
+  padding-top: ${({ $dense }) => ($dense ? '0' : '2px')};
 `;
 
 const CustomizedTag = styled.span`
@@ -763,7 +765,7 @@ const ServiceLineRow = ({
           autoFocus
           onFocus={() => { descriptionEditingRef.current = true; }}
           onChange={event => setDescriptionDraft(event.target.value)}
-          onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); }}
+          onBlur={() => { descriptionEditingRef.current = false; onCommit('description', descriptionDraft); setDescriptionOpen(false); }}
         />
       ) : (
         <DescriptionToggle type="button" $hasValue={Boolean(row.description)} onClick={() => setDescriptionOpen(true)}>
@@ -785,22 +787,22 @@ const ServiceLineRow = ({
         {row.isCustomized ? <CustomizedTag title="Overridden for this invoice only - the shared budget is unchanged">Custom</CustomizedTag> : null}
         {row.missing ? <MissingTag title="This catalog reference no longer exists">Missing</MissingTag> : null}
         {onReset ? (
-          <IconButton type="button" onClick={onReset} title="Revert to the catalog value" aria-label="Revert to catalog value">
+          <IconButton $dense={isChild} type="button" onClick={onReset} title="Revert to the catalog value" aria-label="Revert to catalog value">
             <FaUndoAlt />
           </IconButton>
         ) : null}
-        <RowActions>
+        <RowActions $dense={isChild}>
           {onMoveUp ? (
-            <IconButton type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
+            <IconButton $dense={isChild} type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
               <FaChevronUp />
             </IconButton>
           ) : null}
           {onMoveDown ? (
-            <IconButton type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
+            <IconButton $dense={isChild} type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
               <FaChevronDown />
             </IconButton>
           ) : null}
-          <IconDangerButton type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
+          <IconDangerButton $dense={isChild} type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
             <FaTrash />
           </IconDangerButton>
         </RowActions>
@@ -920,6 +922,34 @@ const CatalogPickerButton = styled.button`
   }
 `;
 
+// A package in the catalog picker offers two ways in, side by side: the full package at its
+// listed price (CatalogPickerButton), or just a share of it billed on this invoice (this button) -
+// so an admin building a milestone invoice never has to add the whole package first just to reach
+// the percent option, then delete it again.
+const CatalogPickerRow = styled.div`
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+`;
+
+const CatalogPickerPercentButton = styled.button`
+  flex: 0 0 auto;
+  border: 1px solid var(--km-border);
+  background: var(--km-card);
+  color: var(--km-muted);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
+`;
+
 const CatalogTabs = styled.div`
   display: inline-flex;
   gap: 3px;
@@ -1023,18 +1053,18 @@ const PackageEntryCard = ({
         ) : null}
         {row.isCustomized ? <CustomizedTag title="No longer matches the shared budget package">Custom package</CustomizedTag> : null}
         {onReset ? (
-          <IconButton type="button" onClick={onReset} title="Revert to the catalog package" aria-label="Revert to catalog package">
+          <IconButton $dense type="button" onClick={onReset} title="Revert to the catalog package" aria-label="Revert to catalog package">
             <FaUndoAlt />
           </IconButton>
         ) : null}
-        <RowActions>
-          <IconButton type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move package up">
+        <RowActions $dense>
+          <IconButton $dense type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move package up">
             <FaChevronUp />
           </IconButton>
-          <IconButton type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move package down">
+          <IconButton $dense type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move package down">
             <FaChevronDown />
           </IconButton>
-          <IconDangerButton type="button" onClick={onRemove} title="Remove package" aria-label="Remove package">
+          <IconDangerButton $dense type="button" onClick={onRemove} title="Remove package" aria-label="Remove package">
             <FaTrash />
           </IconDangerButton>
         </RowActions>
@@ -1050,7 +1080,7 @@ const PackageEntryCard = ({
           autoFocus
           onFocus={() => { descriptionEditingRef.current = true; }}
           onChange={event => setDescriptionDraft(event.target.value)}
-          onBlur={() => { descriptionEditingRef.current = false; onCommitField('description', descriptionDraft); }}
+          onBlur={() => { descriptionEditingRef.current = false; onCommitField('description', descriptionDraft); setDescriptionOpen(false); }}
         />
       ) : (
         <DescriptionToggle
@@ -1792,6 +1822,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const addCatalogPackageEntry = pkg => {
     addEntryToInvoice(makeCatalogPackageEntry(pkg), 'Package added.');
+    setShowCatalogPicker(false);
+    setCatalogQuery('');
+  };
+
+  const addCatalogPackagePercentEntry = pkg => {
+    addPercentServiceEntry(pkg.id);
     setShowCatalogPicker(false);
     setCatalogQuery('');
   };
@@ -2627,9 +2663,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                           <span>{item.name}</span>
                         </CatalogPickerButton>
                       )) : filteredCatalogPackages.map(pkg => (
-                        <CatalogPickerButton key={pkg.id} type="button" onClick={() => addCatalogPackageEntry(pkg)}>
-                          <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}</span>
-                        </CatalogPickerButton>
+                        <CatalogPickerRow key={pkg.id}>
+                          <CatalogPickerButton type="button" style={{ flex: '1 1 auto' }} onClick={() => addCatalogPackageEntry(pkg)} title="Add the whole package at its full listed price">
+                            <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}</span>
+                          </CatalogPickerButton>
+                          <CatalogPickerPercentButton
+                            type="button"
+                            onClick={() => addCatalogPackagePercentEntry(pkg)}
+                            title="Bill only a share of this package on this invoice (e.g. one Payment Schedule milestone) - no need to add the full package first"
+                          >
+                            % of package
+                          </CatalogPickerPercentButton>
+                        </CatalogPickerRow>
                       ))}
                       {catalogTab === 'items' && !filteredCatalogItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
                       {catalogTab === 'packages' && !filteredCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
