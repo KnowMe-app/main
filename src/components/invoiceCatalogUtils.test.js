@@ -25,6 +25,7 @@ import {
   normalizeServiceEntry,
   parseLegacyServiceString,
   removePackageChild,
+  removeRecentEntry,
   reorderBeneficiaryIds,
   reorderPayerCaseIds,
   reorderRecentServices,
@@ -33,7 +34,9 @@ import {
   resolveInvoiceServiceRows,
   resolveServiceRow,
   setEntryField,
+  touchRecentEntry,
   updatePackageChildField,
+  upsertRecentEntry,
 } from './invoiceCatalogUtils';
 
 describe('invoiceCatalogUtils', () => {
@@ -47,6 +50,8 @@ describe('invoiceCatalogUtils', () => {
       customers: [],
       recentServices: [],
       invoiceServices: [],
+      recentPaymentSchedules: [],
+      recentTaxRates: [],
       notes: [],
       taxPercent: 0,
       debtOrDeposit: 0,
@@ -492,6 +497,31 @@ describe('invoiceCatalogUtils', () => {
       const invoiceServices = [makeCatalogItemEntry('3'), makeCatalogItemEntry('2')];
       const reordered = reorderRecentServices(recentServices, invoiceServices);
       expect(reordered.map(entry => entry.catalogId)).toEqual(['3', '2', '1']);
+    });
+  });
+
+  // round4 #6: one shared save/display/delete pattern for both recent payment schedules and
+  // recent tax rates, instead of two separate ad hoc systems.
+  describe('shared recent-list mechanism (payment schedules, tax rates)', () => {
+    it('adds a new entry to the front, and re-adding an existing id moves it to the front instead of duplicating', () => {
+      const a = { id: 'a', value: 14 };
+      const b = { id: 'b', value: 20 };
+      const withBoth = upsertRecentEntry(upsertRecentEntry([], a), b);
+      expect(withBoth).toEqual([b, a]);
+      expect(upsertRecentEntry(withBoth, a)).toEqual([a, b]);
+    });
+
+    it('touches an existing entry by id to the front without needing the full object again', () => {
+      const a = { id: 'a', value: 14 };
+      const b = { id: 'b', value: 20 };
+      expect(touchRecentEntry([a, b], 'b')).toEqual([b, a]);
+      expect(touchRecentEntry([a, b], 'missing')).toEqual([a, b]);
+    });
+
+    it('removes an entry by id, leaving the rest untouched', () => {
+      const a = { id: 'a', value: 14 };
+      const b = { id: 'b', value: 20 };
+      expect(removeRecentEntry([a, b], 'a')).toEqual([b]);
     });
   });
 

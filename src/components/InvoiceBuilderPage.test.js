@@ -403,6 +403,76 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // Round4 #7: Beneficiary/Payer fields should show only the value (or a placeholder when empty),
+  // never a "TITLE"/"IBAN"/"CUSTOMER 1"-style label above every field.
+  it('shows no field labels above Beneficiary/Payer values, only placeholders', async () => {
+    const root = mount();
+    await flush();
+
+    const beneficiaryToggle = Array.from(container.querySelectorAll('[role="button"]')).find(el => el.textContent.includes('Beneficiary'));
+    const payerToggle = Array.from(container.querySelectorAll('[role="button"]')).find(el => el.textContent.includes('Payer'));
+    await act(async () => { beneficiaryToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { payerToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const removedLabels = ['Title', 'IBAN', 'Bank name', 'SWIFT code', 'Customer 1'];
+    const spanTexts = Array.from(container.querySelectorAll('span')).map(span => span.textContent.trim());
+    removedLabels.forEach(label => expect(spanTexts).not.toContain(label));
+
+    expect(container.querySelector('textarea[placeholder="Title"]')).toBeTruthy();
+    expect(container.querySelector('textarea[placeholder="IBAN"]')).toBeTruthy();
+    expect(container.querySelector('textarea[placeholder="Name"]')).toBeTruthy();
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // round4 #5/#6: a committed tax rate joins a shared recent-rates list (comma or period decimal),
+  // offered as a one-click quick-pick with its own delete, the same pattern used for services.
+  it('remembers a committed tax rate for one-click reuse, with a trash icon to forget it', async () => {
+    const root = mount();
+    await flush();
+
+    const taxField = container.querySelector('textarea[aria-label="Taxes (%)"]');
+    expect(taxField).toBeTruthy();
+    await act(async () => {
+      taxField.focus();
+      setFieldValue(taxField, '8,5');
+      taxField.blur();
+    });
+    await flush();
+
+    let persistedTaxPercent = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/taxPercent').pop();
+    expect(persistedTaxPercent[1]).toBe(8.5);
+    let persistedRates = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/recentTaxRates').pop();
+    expect(persistedRates[1]).toEqual([{ id: expect.any(String), value: 8.5 }]);
+    expect(findButton('8.5%')).toBeTruthy();
+
+    // Change the field away, then click the saved 8.5% chip to reapply it in one click.
+    await act(async () => {
+      taxField.focus();
+      setFieldValue(taxField, '0');
+      taxField.blur();
+    });
+    await flush();
+    await act(async () => { findButton('8.5%').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    persistedTaxPercent = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/taxPercent').pop();
+    expect(persistedTaxPercent[1]).toBe(8.5);
+
+    // Delete it from recent - it disappears from the quick-pick list without touching the invoice's own tax field.
+    const deleteButton = Array.from(container.querySelectorAll('button')).find(btn => btn.title === 'Remove this rate from recent');
+    expect(deleteButton).toBeTruthy();
+    await act(async () => { deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    expect(findButton('8.5%')).toBeFalsy();
+    persistedRates = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/recentTaxRates').pop();
+    expect(persistedRates[1]).toEqual([]);
+
+    await act(async () => { root.unmount(); });
+  });
+
   describe('expected expenses', () => {
     const createPlan = async () => {
       await act(async () => { findButton('Choose a package').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -640,6 +710,109 @@ describe('InvoiceBuilderPage', () => {
       expect(plan.packageId).toBe('3');
       expect(plan.milestones).toHaveLength(6);
       expect(plan.milestones[1].services[1]).toMatchObject({ name: 'Deposit for transportation of SM', price: 300 });
+
+      await act(async () => { root.unmount(); });
+    });
+
+    // round4 #4: a package with no Budget catalog entry has no catalog schedule to build a plan
+    // from, so the admin builds one by hand - each row is a fixed amount, not a live percent share.
+    it('builds an Expected Expenses plan from a hand-built custom schedule, and saves it to Recent for reuse', async () => {
+      const root = mount();
+      await flush();
+
+      await act(async () => { findButton('Custom package/schedule').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const nameField = container.querySelector('textarea[placeholder="Package name"]');
+      const priceField = container.querySelector('textarea[placeholder="Total price"]');
+      await act(async () => {
+        nameField.focus();
+        setFieldValue(nameField, 'Bespoke concierge programme');
+        priceField.focus();
+        setFieldValue(priceField, '10000');
+      });
+
+      const titleField = container.querySelector('textarea[placeholder="Payment title"]');
+      const amountField = container.querySelector('textarea[placeholder="Amount"]');
+      await act(async () => {
+        titleField.focus();
+        setFieldValue(titleField, 'Deposit');
+        amountField.focus();
+        setFieldValue(amountField, '4000');
+      });
+
+      await act(async () => { findButton('Add row').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      const titleFields = container.querySelectorAll('textarea[placeholder="Payment title"]');
+      const amountFields = container.querySelectorAll('textarea[placeholder="Amount"]');
+      await act(async () => {
+        titleFields[1].focus();
+        setFieldValue(titleFields[1], 'Final payment');
+        amountFields[1].focus();
+        setFieldValue(amountFields[1], '6000');
+      });
+
+      await act(async () => { findButton('Create plan').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const plan = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses').pop()[1];
+      expect(plan.packageId).toBe('');
+      expect(plan.packageSnapshot).toMatchObject({ name: 'Bespoke concierge programme', listedPrice: 10000 });
+      expect(plan.milestones).toHaveLength(2);
+      expect(plan.milestones[0]).toMatchObject({ title: 'Deposit' });
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'custom', name: 'Deposit', price: 4000 });
+      expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'custom', name: 'Final payment', price: 6000 });
+
+      // A catalog-schedule-only action must not appear for a plan with no catalog package behind it.
+      expect(findButton('Recalculate')).toBeFalsy();
+
+      const savedSchedules = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/recentPaymentSchedules').pop();
+      expect(savedSchedules[1]).toEqual([{
+        id: expect.any(String),
+        name: 'Bespoke concierge programme',
+        payments: [{ title: 'Deposit', amount: 4000 }, { title: 'Final payment', amount: 6000 }],
+      }]);
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('reloads a saved custom schedule from Recent, and deleting it removes it from the list', async () => {
+      const root = mount();
+      await flush();
+
+      // Seed one recent schedule the way createExpectedExpensesPlanFromCustomSchedule would.
+      await act(async () => { findButton('Custom package/schedule').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      await act(async () => {
+        setFieldValue(container.querySelector('textarea[placeholder="Package name"]'), 'Saved plan');
+        setFieldValue(container.querySelector('textarea[placeholder="Total price"]'), '5000');
+        setFieldValue(container.querySelector('textarea[placeholder="Payment title"]'), 'Only payment');
+        setFieldValue(container.querySelector('textarea[placeholder="Amount"]'), '5000');
+      });
+      await act(async () => { findButton('Create plan').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      await act(async () => { findButton('Delete plan').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      await act(async () => { findButton('Custom package/schedule').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const savedChip = findButton('Saved plan');
+      expect(savedChip).toBeTruthy();
+      await act(async () => { savedChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      expect(container.querySelector('textarea[placeholder="Payment title"]').value).toBe('Only payment');
+      expect(container.querySelector('textarea[placeholder="Amount"]').value).toBe('5000');
+
+      const deleteButton = Array.from(container.querySelectorAll('button')).find(btn => btn.title === 'Remove this schedule from recent');
+      expect(deleteButton).toBeTruthy();
+      await act(async () => { deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      expect(findButton('Saved plan')).toBeFalsy();
+      const savedSchedules = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/recentPaymentSchedules').pop();
+      expect(savedSchedules[1]).toEqual([]);
 
       await act(async () => { root.unmount(); });
     });

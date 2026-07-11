@@ -86,6 +86,15 @@ export const normalizeInvoiceData = raw => {
     customers: activeCase?.customers || [],
     recentServices: normalizeServiceEntries(raw?.recentServices),
     invoiceServices: normalizeServiceEntries(raw?.invoiceServices),
+    // Every payment schedule an admin has ever built for a custom package (round4 #4), most
+    // recently used first - offered when a package has no catalog schedule to fall back on.
+    recentPaymentSchedules: Array.isArray(raw?.recentPaymentSchedules)
+      ? raw.recentPaymentSchedules.filter(schedule => schedule && typeof schedule === 'object')
+      : [],
+    // Every tax rate an admin has ever applied (round4 #5), most recently used first.
+    recentTaxRates: Array.isArray(raw?.recentTaxRates)
+      ? raw.recentTaxRates.filter(rate => rate && typeof rate === 'object' && Number.isFinite(Number(rate.value)))
+      : [],
     notes: Array.isArray(raw?.notes) ? raw.notes : [],
     taxPercent: Number.isFinite(Number(raw?.taxPercent)) ? Number(raw.taxPercent) : 0,
     // A signed carry-over from the client's previous payment, settled after tax (never itself
@@ -535,6 +544,26 @@ export const reorderRecentServices = (recentServices, invoiceServices) => {
   const rest = (Array.isArray(recentServices) ? recentServices : []).filter(entry => !seen.has(getEntryIdentityKey(entry)));
   return [...used, ...rest];
 };
+
+// The shared "recent list" mechanism (round4 #6): every recent list beyond recentServices (custom
+// payment schedules, tax rates) is a plain array of objects with a stable `id`, offered most-
+// recently-used first - one save/display/delete pattern reused for both, instead of building two
+// separate ad hoc systems.
+export const upsertRecentEntry = (list, entry) => {
+  const rest = (Array.isArray(list) ? list : []).filter(existing => String(existing?.id) !== String(entry?.id));
+  return [entry, ...rest];
+};
+
+// Re-applies an already-saved entry (found by id) to the front of the list, without creating a
+// duplicate copy - used when picking an existing recent schedule/tax rate rather than a new one.
+export const touchRecentEntry = (list, id) => {
+  const items = Array.isArray(list) ? list : [];
+  const found = items.find(entry => String(entry?.id) === String(id));
+  return found ? upsertRecentEntry(items, found) : items;
+};
+
+export const removeRecentEntry = (list, id) =>
+  (Array.isArray(list) ? list : []).filter(entry => String(entry?.id) !== String(id));
 
 export const buildPayerName = customers =>
   (Array.isArray(customers) ? customers : [])

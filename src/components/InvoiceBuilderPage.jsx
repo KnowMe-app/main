@@ -52,10 +52,13 @@ import {
   reorderRecentServices,
   resetItemEntryOverrides,
   resetPackageEntryToCatalog,
+  removeRecentEntry,
   resolveInvoiceServiceRows,
   resolveServiceRow,
   setEntryField,
+  touchRecentEntry,
   updatePackageChildField,
+  upsertRecentEntry,
 } from './invoiceCatalogUtils';
 import {
   addMilestoneService,
@@ -1447,19 +1450,68 @@ const SummaryLine = styled.div`
   }
 `;
 
-const Chip = styled.button`
+// Shared "recent list" chip shape (round4 #6): one click-to-apply button plus one small delete
+// button, used identically for recent services/packages, recent payment schedules, and recent tax
+// rates - the same save/display/delete pattern rendered three times instead of three UIs.
+const ChipContainer = styled.div`
+  display: inline-flex;
+  align-items: stretch;
+  gap: 1px;
   border: 1px dashed var(--km-border);
   background: var(--km-bg);
-  color: var(--km-text);
   border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
+  padding: 2px 3px 2px 10px;
 
   &:hover {
     border-color: var(--km-accent);
+  }
+`;
+
+const ChipButton = styled.button`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--km-text);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  padding: 4px 0;
+  cursor: pointer;
+
+  &:hover {
     color: var(--km-accent);
+  }
+`;
+
+// Small-print composition line under a package chip's name (round4 #3.1) - e.g. the services
+// included in a saved custom package, so the admin can tell packages apart without expanding one.
+const ChipComposition = styled.span`
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--km-muted);
+  margin-top: 1px;
+`;
+
+const ChipDeleteButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--km-muted);
+  font-size: 8.5px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--km-danger-border);
+    color: var(--km-danger);
   }
 `;
 
@@ -1495,6 +1547,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
   const [catalogTab, setCatalogTab] = useState('items');
   const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
+  const [showCustomSchedulePicker, setShowCustomSchedulePicker] = useState(false);
+  const [customPlanPackageName, setCustomPlanPackageName] = useState('');
+  const [customPlanPackagePrice, setCustomPlanPackagePrice] = useState('');
+  const [customScheduleRows, setCustomScheduleRows] = useState([{ title: '', amount: '' }]);
   const [beneficiaryExpanded, setBeneficiaryExpanded] = useState(false);
   const [payerExpanded, setPayerExpanded] = useState(false);
   const fileInputRef = useRef(null);
@@ -1989,6 +2045,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const addRecentServiceEntry = entry => addEntryToInvoice(cloneEntryWithNewId(entry), 'Service added.');
 
+  // round4 #3.2 (and, by the shared mechanism, #6): a trash icon on a recent entry removes just
+  // that one record from the backend list - it never touches the current invoice's own services.
+  const removeRecentServiceEntry = entryId => {
+    const nextRecentServices = data.recentServices.filter(entry => String(entry.id) !== String(entryId));
+    setData(current => ({ ...current, recentServices: nextRecentServices }));
+    persistPath(`${INVOICE_DATA_PATH}/recentServices`, nextRecentServices, 'Removed from recent.');
+  };
+
   // Package children ------------------------------------------------------------
 
   const commitPackageChildField = (packageId, childId, field, value) => {
@@ -2062,6 +2126,79 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     const plan = buildExpectedExpensesPlan(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
     persistExpectedExpenses(plan, 'Expected expenses template created.');
     setShowExpectedExpensesPicker(false);
+  };
+
+  // round4 #4: a custom package has no catalog payment schedule to build from, so the admin builds
+  // one by hand (title + amount rows) instead. Each row becomes a fixed custom line on its own
+  // milestone (never a "% of package" row - there is no catalog package price for that percent to
+  // track live against), matching round4 #2's "stored fully on the invoice" rule for custom packages.
+  const addCustomScheduleRow = () => setCustomScheduleRows(rows => [...rows, { title: '', amount: '' }]);
+
+  const removeCustomScheduleRow = index => setCustomScheduleRows(rows => (rows.length > 1
+    ? rows.filter((row, rowIndex) => rowIndex !== index)
+    : rows));
+
+  const updateCustomScheduleRow = (index, field, value) => setCustomScheduleRows(rows => rows.map(
+    (row, rowIndex) => (rowIndex === index ? { ...row, [field]: value } : row),
+  ));
+
+  // Loads a saved schedule (round4 #4's "recent" list) back into the editable rows, most-recently-
+  // used first thanks to touchRecentEntry bringing it to the front of recentPaymentSchedules.
+  const loadRecentSchedule = scheduleEntry => {
+    setCustomScheduleRows(scheduleEntry.payments.map(payment => ({ title: payment.title, amount: String(payment.amount) })));
+    setCustomPlanPackageName(current => current || scheduleEntry.name || '');
+    const nextRecentPaymentSchedules = touchRecentEntry(data.recentPaymentSchedules, scheduleEntry.id);
+    setData(current => ({ ...current, recentPaymentSchedules: nextRecentPaymentSchedules }));
+    persistPath(`${INVOICE_DATA_PATH}/recentPaymentSchedules`, nextRecentPaymentSchedules);
+  };
+
+  const removeRecentSchedule = scheduleId => {
+    const nextRecentPaymentSchedules = removeRecentEntry(data.recentPaymentSchedules, scheduleId);
+    setData(current => ({ ...current, recentPaymentSchedules: nextRecentPaymentSchedules }));
+    persistPath(`${INVOICE_DATA_PATH}/recentPaymentSchedules`, nextRecentPaymentSchedules, 'Removed from recent.');
+  };
+
+  const createExpectedExpensesPlanFromCustomSchedule = () => {
+    const name = customPlanPackageName.trim();
+    const price = Number(String(customPlanPackagePrice).replace(',', '.'));
+    const payments = customScheduleRows
+      .map(row => ({ title: row.title.trim(), amount: Number(String(row.amount).replace(',', '.')) }))
+      .filter(payment => payment.title && Number.isFinite(payment.amount) && payment.amount > 0);
+    if (!name) {
+      toast.error('Enter a package name.');
+      return;
+    }
+    if (!Number.isFinite(price) || price <= 0) {
+      toast.error('Enter a positive package price.');
+      return;
+    }
+    if (!payments.length) {
+      toast.error('Add at least one payment schedule row (title + amount).');
+      return;
+    }
+    const milestones = payments.map((payment, index) => ({
+      id: createEntryId(),
+      title: payment.title,
+      taxPercent: defaultExpectedExpensesTaxPercent,
+      showPackageOverview: index === 0,
+      services: [makeCustomEntry({ name: payment.title, price: payment.amount })],
+    }));
+    const plan = {
+      packageId: '',
+      packageSnapshot: { name, description: '', listedPrice: price, currency: 'EUR', children: [] },
+      milestones,
+    };
+    persistExpectedExpenses(plan, 'Expected expenses template created from custom schedule.');
+
+    const scheduleEntry = { id: createEntryId(), name, payments };
+    const nextRecentPaymentSchedules = upsertRecentEntry(data.recentPaymentSchedules, scheduleEntry);
+    setData(current => ({ ...current, recentPaymentSchedules: nextRecentPaymentSchedules }));
+    persistPath(`${INVOICE_DATA_PATH}/recentPaymentSchedules`, nextRecentPaymentSchedules);
+
+    setShowCustomSchedulePicker(false);
+    setCustomPlanPackageName('');
+    setCustomPlanPackagePrice('');
+    setCustomScheduleRows([{ title: '', amount: '' }]);
   };
 
   const recalculateExpectedExpensesSchedule = () => {
@@ -2255,9 +2392,35 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   };
 
   const commitTaxPercent = () => {
+    // Accepts both "8.5" and "8,5" (round4 #5) - comma and period both read as the decimal
+    // separator, always stored as a single plain number.
     const value = Number(String(data.taxPercent).replace(',', '.')) || 0;
     setData(current => ({ ...current, taxPercent: value }));
     persistPath(`${INVOICE_DATA_PATH}/taxPercent`, value, 'Tax updated.');
+    // 0% is the untouched default, not a deliberately "applied" rate - only genuinely used rates
+    // join the recent list, and re-applying an already-saved one just bumps it instead of
+    // duplicating it.
+    if (value <= 0) return;
+    const existing = data.recentTaxRates.find(rate => Number(rate.value) === value);
+    const nextRecentTaxRates = existing
+      ? touchRecentEntry(data.recentTaxRates, existing.id)
+      : upsertRecentEntry(data.recentTaxRates, { id: createEntryId(), value });
+    setData(current => ({ ...current, recentTaxRates: nextRecentTaxRates }));
+    persistPath(`${INVOICE_DATA_PATH}/recentTaxRates`, nextRecentTaxRates);
+  };
+
+  // Applies a saved rate (round4 #5's "last selected as default" - here, a one-click quick-pick
+  // rather than a silent auto-fill, so it never overwrites a rate someone is mid-typing).
+  const applyRecentTaxRate = rate => {
+    setData(current => ({ ...current, taxPercent: rate.value, recentTaxRates: touchRecentEntry(current.recentTaxRates, rate.id) }));
+    persistPath(`${INVOICE_DATA_PATH}/taxPercent`, rate.value);
+    persistPath(`${INVOICE_DATA_PATH}/recentTaxRates`, touchRecentEntry(data.recentTaxRates, rate.id));
+  };
+
+  const removeRecentTaxRate = rateId => {
+    const nextRecentTaxRates = removeRecentEntry(data.recentTaxRates, rateId);
+    setData(current => ({ ...current, recentTaxRates: nextRecentTaxRates }));
+    persistPath(`${INVOICE_DATA_PATH}/recentTaxRates`, nextRecentTaxRates, 'Removed from recent.');
   };
 
   // Debt / deposit of the previous payment ------------------------------------------------------
@@ -2561,68 +2724,61 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   {activeBeneficiary ? (
                     <>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>Title</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
+                          placeholder="Title"
                           value={activeBeneficiary.title || ''}
+                          aria-label="Title"
                           onChange={event => updateActiveBeneficiaryField('title', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('title', event.target.value)}
                         />
                       </StackedFieldRow>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>Address</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
+                          placeholder="Address"
                           value={activeBeneficiary.address || ''}
+                          aria-label="Address"
                           onChange={event => updateActiveBeneficiaryField('address', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('address', event.target.value)}
                         />
                       </StackedFieldRow>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>IBAN</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
+                          placeholder="IBAN"
                           value={activeBeneficiary.iban || ''}
+                          aria-label="IBAN"
                           onChange={event => updateActiveBeneficiaryField('iban', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('iban', event.target.value)}
                         />
                       </StackedFieldRow>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>Bank name</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
+                          placeholder="Bank name"
                           value={activeBeneficiary.bankName || ''}
+                          aria-label="Bank name"
                           onChange={event => updateActiveBeneficiaryField('bankName', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('bankName', event.target.value)}
                         />
                       </StackedFieldRow>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>SWIFT code</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
+                          placeholder="SWIFT code"
                           value={activeBeneficiary.swiftCode || ''}
+                          aria-label="SWIFT code"
                           onChange={event => updateActiveBeneficiaryField('swiftCode', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('swiftCode', event.target.value)}
                         />
                       </StackedFieldRow>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>Payment purpose</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
                           value={activeBeneficiary.paymentPurpose || ''}
-                          placeholder="{invoiceNumber} and {invoiceDate} are filled in automatically"
+                          placeholder="Payment purpose - {invoiceNumber} and {invoiceDate} are filled in automatically"
+                          aria-label="Payment purpose"
                           onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
                         />
@@ -2672,31 +2828,26 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   {data.customers.map((customer, index) => (
                     <CustomerBlock key={`customer-${index}`}>
                       <StackedFieldHeader>
-                        <StackedFieldTag>Customer {index + 1}</StackedFieldTag>
-                        <IconDangerButton type="button" onClick={() => removeCustomer(index)} title="Remove customer" aria-label="Remove customer">
+                        <IconDangerButton type="button" onClick={() => removeCustomer(index)} title="Remove customer" aria-label="Remove customer" style={{ marginLeft: 'auto' }}>
                           <FaTrash />
                         </IconDangerButton>
                       </StackedFieldHeader>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>Name</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
                           placeholder="Name"
                           value={customer.name || ''}
+                          aria-label={`Customer ${index + 1} name`}
                           onChange={event => updateCustomerField(index, 'name', event.target.value)}
                           onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
                         />
                       </StackedFieldRow>
                       <StackedFieldRow>
-                        <StackedFieldHeader>
-                          <StackedFieldTag>Address</StackedFieldTag>
-                        </StackedFieldHeader>
                         <AutoTextArea
                           style={{ width: '100%' }}
                           placeholder="Address / country"
                           value={customer.address || ''}
+                          aria-label={`Customer ${index + 1} address`}
                           onChange={event => updateCustomerField(index, 'address', event.target.value)}
                           onBlur={() => persistCustomers(data.customers, 'Customer updated.')}
                         />
@@ -2755,11 +2906,29 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   <ChipRow>
                     {recentServiceSuggestions.map(entry => {
                       const resolved = resolveServiceRow(entry, catalogItemsById, priceContext);
+                      // Small-print composition line so a saved custom package can be told apart
+                      // from another without expanding it (round4 #3.1).
+                      const composition = entry.kind === 'package'
+                        ? (resolved.children || []).map(child => child.name).filter(Boolean).join(', ')
+                        : '';
                       return (
-                        <Chip key={entry.id} type="button" onClick={() => addRecentServiceEntry(entry)}>
-                          {entry.kind === 'package' ? <FaLayerGroup style={{ marginRight: 4 }} /> : null}
-                          {resolved.name} · {formatEuroPreview(resolved.price)}
-                        </Chip>
+                        <ChipContainer key={entry.id}>
+                          <ChipButton type="button" onClick={() => addRecentServiceEntry(entry)}>
+                            <span>
+                              {entry.kind === 'package' ? <FaLayerGroup style={{ marginRight: 4 }} /> : null}
+                              {resolved.name} · {formatEuroPreview(resolved.price)}
+                            </span>
+                            {composition ? <ChipComposition>{composition}</ChipComposition> : null}
+                          </ChipButton>
+                          <ChipDeleteButton
+                            type="button"
+                            onClick={() => removeRecentServiceEntry(entry.id)}
+                            title="Remove from recent"
+                            aria-label="Remove from recent"
+                          >
+                            <FaTrash />
+                          </ChipDeleteButton>
+                        </ChipContainer>
                       );
                     })}
                   </ChipRow>
@@ -2874,12 +3043,32 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <PlainPriceBase
                   rows={1}
                   inputMode="decimal"
+                  aria-label="Taxes (%)"
                   value={data.taxPercent}
                   onChange={event => updateTaxPercent(event.target.value)}
                   onBlur={commitTaxPercent}
                   style={{ flex: '0 0 auto' }}
                 />
               </FieldRow>
+              {data.recentTaxRates.length ? (
+                <ChipRow style={{ marginTop: 0, marginBottom: 8 }}>
+                  {data.recentTaxRates.map(rate => (
+                    <ChipContainer key={rate.id}>
+                      <ChipButton type="button" onClick={() => applyRecentTaxRate(rate)}>
+                        <span>{rate.value}%</span>
+                      </ChipButton>
+                      <ChipDeleteButton
+                        type="button"
+                        onClick={() => removeRecentTaxRate(rate.id)}
+                        title="Remove this rate from recent"
+                        aria-label="Remove this rate from recent"
+                      >
+                        <FaTrash />
+                      </ChipDeleteButton>
+                    </ChipContainer>
+                  ))}
+                </ChipRow>
+              ) : null}
               <FieldRow>
                 <FieldTag title="Applied after tax. Positive = debt owed from before, negative = deposit/credit.">Debt/Deposit</FieldTag>
                 <PlainPriceBase
@@ -2978,9 +3167,11 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   </SmallButton>
                   {expectedExpenses ? (
                     <>
-                      <SmallButton type="button" onClick={recalculateExpectedExpensesSchedule}>
-                        <FaSyncAlt /> Recalculate
-                      </SmallButton>
+                      {expectedExpenses.packageId ? (
+                        <SmallButton type="button" onClick={recalculateExpectedExpensesSchedule}>
+                          <FaSyncAlt /> Recalculate
+                        </SmallButton>
+                      ) : null}
                       <PrimaryMiniButton
                         type="button"
                         onClick={handleGenerateExpectedExpensesPdf}
@@ -3005,9 +3196,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
               {!expectedExpenses ? (
                 <div>
-                  <SmallButton type="button" onClick={() => setShowExpectedExpensesPicker(current => !current)}>
-                    <FaLayerGroup /> {showExpectedExpensesPicker ? 'Hide packages' : 'Choose a package'}
-                  </SmallButton>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <SmallButton type="button" onClick={() => setShowExpectedExpensesPicker(current => !current)}>
+                      <FaLayerGroup /> {showExpectedExpensesPicker ? 'Hide packages' : 'Choose a package'}
+                    </SmallButton>
+                    <SmallButton type="button" onClick={() => setShowCustomSchedulePicker(current => !current)}>
+                      <FaLayerGroup /> {showCustomSchedulePicker ? 'Hide custom schedule' : 'Custom package/schedule'}
+                    </SmallButton>
+                  </div>
                   {showExpectedExpensesPicker ? (
                     <CatalogPickerList style={{ marginTop: 8 }}>
                       {visibleCatalogPackages.map(pkg => (
@@ -3018,6 +3214,84 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       ))}
                       {!visibleCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No packages in the catalog.</PanelNote> : null}
                     </CatalogPickerList>
+                  ) : null}
+                  {showCustomSchedulePicker ? (
+                    <div style={{ marginTop: 8 }}>
+                      <PanelNote style={{ margin: '0 0 8px' }}>
+                        For a package with no Budget catalog entry: name it, set its total price, and build its
+                        payment schedule by hand (round4 #4). Each row bills a fixed amount - it has no live
+                        catalog price to track a percentage against.
+                      </PanelNote>
+                      <FieldRow $align="center">
+                        <PlainTextBase
+                          rows={1}
+                          placeholder="Package name"
+                          value={customPlanPackageName}
+                          onChange={event => setCustomPlanPackageName(event.target.value)}
+                        />
+                        <PlainPriceBase
+                          rows={1}
+                          placeholder="Total price"
+                          inputMode="decimal"
+                          value={customPlanPackagePrice}
+                          onChange={event => setCustomPlanPackagePrice(event.target.value)}
+                        />
+                      </FieldRow>
+                      {customScheduleRows.map((row, index) => (
+                        <FieldRow key={`schedule-row-${index}`} $align="center">
+                          <PlainTextBase
+                            rows={1}
+                            placeholder="Payment title"
+                            value={row.title}
+                            onChange={event => updateCustomScheduleRow(index, 'title', event.target.value)}
+                          />
+                          <PlainPriceBase
+                            rows={1}
+                            placeholder="Amount"
+                            inputMode="decimal"
+                            value={row.amount}
+                            onChange={event => updateCustomScheduleRow(index, 'amount', event.target.value)}
+                          />
+                          <IconDangerButton
+                            type="button"
+                            onClick={() => removeCustomScheduleRow(index)}
+                            title="Remove this row"
+                            aria-label="Remove this row"
+                          >
+                            <FaTrash />
+                          </IconDangerButton>
+                        </FieldRow>
+                      ))}
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                        <SmallButton type="button" onClick={addCustomScheduleRow}><FaPlus /> Add row</SmallButton>
+                        <PrimaryMiniButton type="button" onClick={createExpectedExpensesPlanFromCustomSchedule}>
+                          Create plan
+                        </PrimaryMiniButton>
+                      </div>
+                      {data.recentPaymentSchedules.length ? (
+                        <>
+                          <PanelNote style={{ marginTop: 14, marginBottom: 4 }}>Recent schedules (click to load)</PanelNote>
+                          <ChipRow>
+                            {data.recentPaymentSchedules.map(scheduleEntry => (
+                              <ChipContainer key={scheduleEntry.id}>
+                                <ChipButton type="button" onClick={() => loadRecentSchedule(scheduleEntry)}>
+                                  <span>{scheduleEntry.name || 'Custom schedule'}</span>
+                                  <ChipComposition>{scheduleEntry.payments.map(payment => payment.title).join(', ')}</ChipComposition>
+                                </ChipButton>
+                                <ChipDeleteButton
+                                  type="button"
+                                  onClick={() => removeRecentSchedule(scheduleEntry.id)}
+                                  title="Remove this schedule from recent"
+                                  aria-label="Remove this schedule from recent"
+                                >
+                                  <FaTrash />
+                                </ChipDeleteButton>
+                              </ChipContainer>
+                            ))}
+                          </ChipRow>
+                        </>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               ) : (
