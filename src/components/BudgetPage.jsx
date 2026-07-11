@@ -19,6 +19,7 @@ import {
   normalizeCatalog,
   parseBudgetPriceValue,
   resolveBudgetPriceAmount,
+  roundToCents,
   KNOWN_CATEGORY_KEYS,
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
@@ -1614,7 +1615,7 @@ const BudgetPage = ({ isAdmin = false }) => {
     updatePaymentSchedule(scheduleId, schedule => ({
       ...schedule,
       payments: schedule.payments.map((payment, index) => (index === paymentIndex
-        ? { ...payment, [field]: field === 'amount' ? Number(value) : value }
+        ? { ...payment, [field]: field === 'amount' ? roundToCents(Number(value)) : value }
         : payment)),
     }), 'Payment updated.');
   };
@@ -1727,7 +1728,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                   <EditInput
                     type="number"
                     inputMode="decimal"
-                    defaultValue={payment.amount ?? ''}
+                    defaultValue={payment.amount != null ? roundToCents(payment.amount) : ''}
                     onBlur={event => updatePayment(schedule.id, index, 'amount', event.target.value)}
                   />
                 </EditableField>
@@ -1846,13 +1847,15 @@ const BudgetPage = ({ isAdmin = false }) => {
   );
 
   // Focused price inputs show the raw stored value (e.g. "=23000/EUR"),
-  // blurred ones show the resolved amount.
+  // blurred ones show the resolved, rounded-to-cents amount - for a plain number too, not only a
+  // formula, so a legacy value with float noise (e.g. from before rounding was applied on save)
+  // never leaks its raw decimals into the field once it's blurred.
   const getPriceInputDisplayValue = rawValue => {
     const parsed = parseBudgetPriceValue(rawValue);
-    if (!parsed.isFormula) return rawValue ?? '';
+    if (parsed.isEmpty) return rawValue ?? '';
     const amount = resolveBudgetPriceAmount(rawValue, priceContext);
     if (amount == null) return String(rawValue);
-    return `${parsed.isFrom ? 'from ' : ''}${Math.round(amount * 100) / 100}`;
+    return `${parsed.isFrom ? 'from ' : ''}${amount}`;
   };
 
   // Name, price and description are edited in place (see renderInlineRecordEditor) at their

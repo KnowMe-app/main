@@ -105,6 +105,14 @@ describe('budgetCatalogUtils', () => {
     expect(normalizeBudgetPriceInput('')).toBe('');
   });
 
+  // P0 bug: a plain-number price must be rounded to the cent on save, the same as every other
+  // computed-amount path - otherwise a typed/pasted value with float noise persists forever and
+  // leaks its raw decimals back into the price field whenever it's displayed unfocused.
+  it('rounds a plain-number price to the cent on save', () => {
+    expect(normalizeBudgetPriceInput('18514.292958')).toBe(18514.29);
+    expect(normalizeBudgetPriceInput(18600.006)).toBe(18600.01);
+  });
+
   it('collects sub-service ids referenced from price formulas', () => {
     const catalog = {
       items: [

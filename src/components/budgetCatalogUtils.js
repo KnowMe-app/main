@@ -109,7 +109,7 @@ export const normalizeBudgetPriceInput = raw => {
   if (text === '') return '';
   if (PLAIN_NUMBER_REGEX.test(text)) {
     const numeric = Number(text.replace(',', '.'));
-    if (Number.isFinite(numeric)) return numeric;
+    if (Number.isFinite(numeric)) return roundToCents(numeric);
   }
   return text;
 };
