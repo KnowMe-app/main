@@ -54,22 +54,49 @@ export const parseCustomPriceInput = raw => {
   return { price: 0, priceLabel: text };
 };
 
-export const normalizeInvoiceData = raw => ({
-  beneficiaries: Array.isArray(raw?.beneficiaries) ? raw.beneficiaries : [],
-  beneficiaryIds: Array.isArray(raw?.beneficiaryIds) ? raw.beneficiaryIds.map(String) : [],
-  customers: Array.isArray(raw?.customers) ? raw.customers : [],
-  recentServices: normalizeServiceEntries(raw?.recentServices),
-  invoiceServices: normalizeServiceEntries(raw?.invoiceServices),
-  notes: Array.isArray(raw?.notes) ? raw.notes : [],
-  taxPercent: Number.isFinite(Number(raw?.taxPercent)) ? Number(raw.taxPercent) : 0,
-  // A signed carry-over from the client's previous payment, settled after tax (never itself
-  // taxed): positive = the client still owes a debt from before, negative = they're sitting on a
-  // deposit/credit. Zero (the default) means "nothing to carry over" and is never rendered.
-  debtOrDeposit: Number.isFinite(Number(raw?.debtOrDeposit)) ? Number(raw.debtOrDeposit) : 0,
-  // Empty string (the default) means "keep auto-generating it from the beneficiary's template" -
-  // any other value is an admin edit for this invoice only and wins over the auto-generated text.
-  paymentPurposeOverride: typeof raw?.paymentPurposeOverride === 'string' ? raw.paymentPurposeOverride : '',
-});
+// One invoice belongs to one case/payer: payerCases is a catalog of every payer/case ever used
+// (each a group of one-or-more customers, e.g. a couple), payerCaseIds orders them with the
+// active case first - the same "catalog + activate by reordering ids" pattern beneficiaries use.
+// `customers` stays in the normalized shape too, always mirroring the active case, so every other
+// read site (PDF generation, exports, buildPayerName/buildCaseTitle) keeps reading `data.customers`
+// unchanged; only the handful of mutation sites need to know payerCases/payerCaseIds exist.
+const normalizePayerCases = raw => {
+  const legacyCustomers = Array.isArray(raw?.customers) ? raw.customers : [];
+  const rawPayerCases = Array.isArray(raw?.payerCases) ? raw.payerCases : [];
+  const payerCases = rawPayerCases.length
+    ? rawPayerCases.map(payerCase => ({
+      id: String(payerCase?.id ?? createEntryId()),
+      customers: Array.isArray(payerCase?.customers) ? payerCase.customers : [],
+    }))
+    : [{ id: 'legacy', customers: legacyCustomers }];
+  const knownIds = payerCases.map(payerCase => payerCase.id);
+  const rawIds = (Array.isArray(raw?.payerCaseIds) ? raw.payerCaseIds : []).map(String).filter(id => knownIds.includes(id));
+  const payerCaseIds = [...rawIds, ...knownIds.filter(id => !rawIds.includes(id))];
+  return { payerCases, payerCaseIds };
+};
+
+export const normalizeInvoiceData = raw => {
+  const { payerCases, payerCaseIds } = normalizePayerCases(raw);
+  const activeCase = payerCases.find(payerCase => String(payerCase.id) === String(payerCaseIds[0])) || payerCases[0];
+  return {
+    beneficiaries: Array.isArray(raw?.beneficiaries) ? raw.beneficiaries : [],
+    beneficiaryIds: Array.isArray(raw?.beneficiaryIds) ? raw.beneficiaryIds.map(String) : [],
+    payerCases,
+    payerCaseIds,
+    customers: activeCase?.customers || [],
+    recentServices: normalizeServiceEntries(raw?.recentServices),
+    invoiceServices: normalizeServiceEntries(raw?.invoiceServices),
+    notes: Array.isArray(raw?.notes) ? raw.notes : [],
+    taxPercent: Number.isFinite(Number(raw?.taxPercent)) ? Number(raw.taxPercent) : 0,
+    // A signed carry-over from the client's previous payment, settled after tax (never itself
+    // taxed): positive = the client still owes a debt from before, negative = they're sitting on a
+    // deposit/credit. Zero (the default) means "nothing to carry over" and is never rendered.
+    debtOrDeposit: Number.isFinite(Number(raw?.debtOrDeposit)) ? Number(raw.debtOrDeposit) : 0,
+    // Empty string (the default) means "keep auto-generating it from the beneficiary's template" -
+    // any other value is an admin edit for this invoice only and wins over the auto-generated text.
+    paymentPurposeOverride: typeof raw?.paymentPurposeOverride === 'string' ? raw.paymentPurposeOverride : '',
+  };
+};
 
 export const isInvoiceDataShape = raw => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
@@ -86,13 +113,24 @@ export const getActiveBeneficiary = data => {
   return beneficiaries.find(beneficiary => String(beneficiary.id) === String(activeId)) || beneficiaries[0] || null;
 };
 
-// Brings a beneficiary id to the front of beneficiaryIds without touching the
-// beneficiaries array order.
-export const reorderBeneficiaryIds = (beneficiaryIds, activeId) => {
+// Brings an id to the front of an id-ordering array without touching the underlying catalog's
+// order - shared by beneficiaries (reorderBeneficiaryIds) and payer cases (reorderPayerCaseIds).
+const reorderIdsToFront = (ids, activeId) => {
   const id = String(activeId);
-  const rest = (Array.isArray(beneficiaryIds) ? beneficiaryIds : []).filter(existing => String(existing) !== id);
+  const rest = (Array.isArray(ids) ? ids : []).filter(existing => String(existing) !== id);
   return [id, ...rest];
 };
+
+export const reorderBeneficiaryIds = (beneficiaryIds, activeId) => reorderIdsToFront(beneficiaryIds, activeId);
+
+// The active payer case is always the first id in payerCaseIds (same pattern as beneficiaries).
+export const getActivePayerCase = data => {
+  const activeId = data?.payerCaseIds?.[0];
+  const payerCases = Array.isArray(data?.payerCases) ? data.payerCases : [];
+  return payerCases.find(payerCase => String(payerCase.id) === String(activeId)) || payerCases[0] || null;
+};
+
+export const reorderPayerCaseIds = (payerCaseIds, activeId) => reorderIdsToFront(payerCaseIds, activeId);
 
 // --- Entry constructors ------------------------------------------------------
 
@@ -138,6 +176,22 @@ export const makeCatalogPackageEntry = (pkg, { id } = {}) => ({
   kind: 'package',
   catalogId: String(pkg?.id ?? ''),
   children: (Array.isArray(pkg?.children) ? pkg.children : []).map(childId => makeCatalogItemEntry(childId)),
+});
+
+// A package that has no Budget catalog entry at all (catalogId '') - it can't reference the
+// catalog because there is nothing there to reference, so its name/children/price are the
+// invoice's own record from the moment it's created. `customized: true` is what makes
+// resolveServiceRow/PDF rendering treat it as fully self-contained rather than "missing from the
+// catalog": see resolveServiceRow's `missing` flag below and InvoicePdfDocument's PackageBlock,
+// which renders a customized package's included services/schedule inline instead of pointing at
+// the Budget (there being no Budget entry to point at).
+export const makeCustomPackageEntry = ({ name = '' } = {}, { id } = {}) => ({
+  id: id || createEntryId(),
+  kind: 'package',
+  catalogId: '',
+  customized: true,
+  name: String(name || '').trim() || 'Custom package',
+  children: [],
 });
 
 // Deep-clones an entry (and, for packages, its children) with fresh ids - used whenever a
@@ -288,8 +342,10 @@ export const resetItemEntryOverrides = entry => (entry?.kind === 'item'
   : entry);
 
 // Reverts a package entry back to a fresh snapshot of the given budget/packages record, dropping
-// every local override and child edit.
-export const resetPackageEntryToCatalog = (entry, pkg) => (entry?.kind === 'package'
+// every local override and child edit. A custom package (no catalogId, so no `pkg` to revert to)
+// is left untouched - there is nothing in the Budget to revert it to without destroying its only
+// copy of its own name/children.
+export const resetPackageEntryToCatalog = (entry, pkg) => (entry?.kind === 'package' && pkg
   ? makeCatalogPackageEntry(pkg, { id: entry.id })
   : entry);
 
@@ -334,7 +390,9 @@ export const isEntryCustomized = entry => (entry?.kind === 'custom' ? true : Boo
 // stop the same catalog item/package being added to the invoice twice.
 export const getEntryIdentityKey = entry => {
   if (!entry) return '';
-  if (entry.kind === 'package') return `package:${entry.catalogId}`;
+  // A custom package (catalogId '') has no shared catalog identity to dedupe against - two
+  // different custom packages must never collide on `package:` and get treated as duplicates.
+  if (entry.kind === 'package') return entry.catalogId ? `package:${entry.catalogId}` : `package:custom:${entry.id}`;
   if (entry.kind === 'packagePercent') return `package-percent:${entry.catalogId}:${entry.percent || 0}`;
   if (entry.kind === 'item') return `item:${entry.catalogId}`;
   if (entry.kind === 'percent') return `percent:${entry.packageId}:${entry.percent}`;
@@ -393,7 +451,10 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       id: entry.id,
       kind: 'package',
       catalogId: entry.catalogId,
-      missing: !pkg,
+      // A package with no catalogId was never meant to reference the catalog (see
+      // makeCustomPackageEntry) - only flag "missing" when a catalogId was set but no longer
+      // resolves, never for a package that's custom by design.
+      missing: Boolean(entry.catalogId) && !pkg,
       isCustomized: Boolean(entry.customized),
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? pkg?.description ?? '',

@@ -32,6 +32,7 @@ import {
   computeInvoiceAmountDue,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
+  createEntryId,
   generateInvoiceIdentifiers,
   getActiveBeneficiary,
   getEntryIdentityKey,
@@ -40,12 +41,14 @@ import {
   makeCatalogItemEntry,
   makeCatalogPackageEntry,
   makeCustomEntry,
+  makeCustomPackageEntry,
   makePercentOfPackageEntry,
   movePackageChild,
   normalizeInvoiceData,
   parseCustomPriceInput,
   removePackageChild,
   reorderBeneficiaryIds,
+  reorderPayerCaseIds,
   reorderRecentServices,
   resetItemEntryOverrides,
   resetPackageEntryToCatalog,
@@ -1075,7 +1078,11 @@ const PackageEntryCard = ({
         {row.hasPriceOverride ? (
           <CustomizedTag title="Real total of the services below">Σ {formatEuroPreview(row.childrenTotal)}</CustomizedTag>
         ) : null}
-        {row.isCustomized ? <CustomizedTag title="No longer matches the shared budget package">Custom package</CustomizedTag> : null}
+        {row.isCustomized ? (
+          <CustomizedTag title={row.catalogId ? 'No longer matches the shared budget package' : 'Not in the Budget catalog - saved entirely on this invoice'}>
+            Custom package
+          </CustomizedTag>
+        ) : null}
         {onReset ? (
           <IconButton $dense type="button" onClick={onReset} title="Revert to the catalog package" aria-label="Revert to catalog package">
             <FaUndoAlt />
@@ -1483,6 +1490,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [invoiceDateInput, setInvoiceDateInput] = useState(getTodayYmd());
   const [newCustomServiceName, setNewCustomServiceName] = useState('');
   const [newCustomServicePrice, setNewCustomServicePrice] = useState('');
+  const [newCustomPackageName, setNewCustomPackageName] = useState('');
   const [catalogQuery, setCatalogQuery] = useState('');
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
   const [catalogTab, setCatalogTab] = useState('items');
@@ -1638,6 +1646,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const payerName = useMemo(() => buildPayerName(data.customers), [data.customers]);
   const payerLocation = useMemo(() => buildPayerLocation(data.customers), [data.customers]);
   const caseTitle = useMemo(() => buildCaseTitle(data.customers), [data.customers]);
+  const activePayerCaseId = data.payerCaseIds[0];
 
   const recentServiceSuggestions = useMemo(() => {
     const used = new Set(data.invoiceServices.map(getEntryIdentityKey));
@@ -1771,31 +1780,104 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     }
   };
 
-  // Customers ------------------------------------------------------------
+  // Customers / payer cases ------------------------------------------------------------
+  // One invoice belongs to one case/payer: `data.customers` is always a mirror of the active
+  // payer case (data.payerCases[i] where payerCases[i].id === payerCaseIds[0]). Editing customers
+  // writes through to that active case. Switching or starting a case never merges customers from
+  // different cases into one payer - it replaces the active case outright (see startNewPayerCase/
+  // selectPayerCase below), while still keeping every previously-used case saved for reuse.
+
+  // Keeps `customers` (the convenience mirror every PDF/export/display site reads) and the active
+  // entry inside `payerCases` in sync with each other.
+  const withActiveCaseCustomers = (current, nextCustomers) => ({
+    ...current,
+    customers: nextCustomers,
+    payerCases: current.payerCases.map(payerCase => (String(payerCase.id) === String(current.payerCaseIds[0])
+      ? { ...payerCase, customers: nextCustomers }
+      : payerCase)),
+  });
+
+  const persistPayerCases = async (nextPayerCases, nextPayerCaseIds, successMessage) => {
+    try {
+      await Promise.all([
+        set(ref(database, `${INVOICE_DATA_PATH}/payerCases`), nextPayerCases),
+        set(ref(database, `${INVOICE_DATA_PATH}/payerCaseIds`), nextPayerCaseIds),
+      ]);
+      if (successMessage) toast.success(successMessage);
+    } catch (saveError) {
+      console.error('Unable to save payer cases', saveError);
+      toast.error('Unable to save. Reloading latest data.');
+      loadInvoiceData();
+    }
+  };
 
   const updateCustomerField = (index, field, value) => {
-    setData(current => ({
-      ...current,
-      customers: current.customers.map((customer, customerIndex) => (customerIndex === index
+    setData(current => {
+      const nextCustomers = current.customers.map((customer, customerIndex) => (customerIndex === index
         ? { ...customer, [field]: value }
-        : customer)),
-    }));
+        : customer));
+      return withActiveCaseCustomers(current, nextCustomers);
+    });
   };
 
   const persistCustomers = async (nextCustomers, successMessage) => {
-    await persistPath(`${INVOICE_DATA_PATH}/customers`, nextCustomers, successMessage);
+    const nextPayerCases = data.payerCases.map(payerCase => (String(payerCase.id) === String(data.payerCaseIds[0])
+      ? { ...payerCase, customers: nextCustomers }
+      : payerCase));
+    await persistPayerCases(nextPayerCases, data.payerCaseIds, successMessage);
   };
 
+  // Adds a co-payer within the CURRENT case (e.g. a couple) - it never creates a new case.
   const addCustomer = () => {
     const nextCustomers = [...data.customers, { name: '', address: '' }];
-    setData(current => ({ ...current, customers: nextCustomers }));
+    setData(current => withActiveCaseCustomers(current, nextCustomers));
     persistCustomers(nextCustomers, 'Customer added.');
   };
 
   const removeCustomer = index => {
     const nextCustomers = data.customers.filter((customer, customerIndex) => customerIndex !== index);
-    setData(current => ({ ...current, customers: nextCustomers }));
+    setData(current => withActiveCaseCustomers(current, nextCustomers));
     persistCustomers(nextCustomers, 'Customer removed.');
+  };
+
+  // Starts a brand-new case: the active payer switches to a blank customer, while every
+  // previously-used case (and its customers) stays saved in payerCases for later reuse - this is
+  // the "select a new client replaces the previous selection" fix (P0, round4 #1).
+  const startNewPayerCase = async () => {
+    const nextCase = { id: createEntryId(), customers: [{ name: '', address: '' }] };
+    const nextPayerCases = [...data.payerCases, nextCase];
+    const nextPayerCaseIds = reorderPayerCaseIds(data.payerCaseIds, nextCase.id);
+    setData(current => ({ ...current, payerCases: nextPayerCases, payerCaseIds: nextPayerCaseIds, customers: nextCase.customers }));
+    await persistPayerCases(nextPayerCases, nextPayerCaseIds, 'New case started.');
+  };
+
+  // Switches the active case without touching any case's saved customers - most-recently-selected
+  // case is brought to the front, so it's offered first the next time this list is shown.
+  const selectPayerCase = async id => {
+    if (String(id) === String(data.payerCaseIds[0])) return;
+    const nextPayerCaseIds = reorderPayerCaseIds(data.payerCaseIds, id);
+    const nextCase = data.payerCases.find(payerCase => String(payerCase.id) === String(id));
+    setData(current => ({ ...current, payerCaseIds: nextPayerCaseIds, customers: nextCase?.customers || [] }));
+    await persistPayerCases(data.payerCases, nextPayerCaseIds, 'Active case switched.');
+  };
+
+  const deleteActivePayerCase = async () => {
+    if (data.payerCases.length <= 1) {
+      toast.error('At least one case is required.');
+      return;
+    }
+    const activeId = data.payerCaseIds[0];
+    if (typeof window !== 'undefined' && !window.confirm(`Delete case "${payerName || activeId}" from history?`)) return;
+    const nextPayerCases = data.payerCases.filter(payerCase => String(payerCase.id) !== String(activeId));
+    const nextPayerCaseIds = data.payerCaseIds.filter(id => String(id) !== String(activeId));
+    const nextActiveCase = nextPayerCases.find(payerCase => String(payerCase.id) === String(nextPayerCaseIds[0])) || nextPayerCases[0];
+    setData(current => ({
+      ...current,
+      payerCases: nextPayerCases,
+      payerCaseIds: nextPayerCaseIds,
+      customers: nextActiveCase?.customers || [],
+    }));
+    await persistPayerCases(nextPayerCases, nextPayerCaseIds, 'Case deleted.');
   };
 
   // Invoice services ------------------------------------------------------------
@@ -1869,6 +1951,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     addEntryToInvoice(makeCustomEntry({ name, ...parseCustomPriceInput(newCustomServicePrice) }), 'Service added.');
     setNewCustomServiceName('');
     setNewCustomServicePrice('');
+  };
+
+  // A package with no Budget catalog entry - it can't reference the catalog because there is
+  // nothing there to reference, so it's saved fully on this invoice (P0, round4 #2). Its price
+  // starts at 0/sum-of-children; the admin fills in children (custom or catalog-linked) and/or a
+  // price override on the resulting package card, same as any catalog-sourced package.
+  const addCustomPackageEntry = () => {
+    const name = newCustomPackageName.trim();
+    if (!name) {
+      toast.error('Enter a name for the new package.');
+      return;
+    }
+    addEntryToInvoice(makeCustomPackageEntry({ name }), 'Custom package added.');
+    setNewCustomPackageName('');
   };
 
   // Never defaults to 0% or 100% - that's just swapping one wrong constant for another. The
@@ -2225,11 +2321,24 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         toast.error('Upload an invoice-builder JSON with beneficiaries, customers, services, and notes.');
         return;
       }
-      const nextData = normalizeInvoiceData(parsed);
+      const uploadedData = normalizeInvoiceData(parsed);
+      // The uploaded file's customers describe a single case - add it as a new case on top of
+      // whatever payer history already exists here, rather than overwriting it, so uploading a
+      // JSON for a different client never merges into (or wipes out) a previous client's payer.
+      const uploadedCase = { id: createEntryId(), customers: uploadedData.customers };
+      const nextPayerCases = [...data.payerCases, uploadedCase];
+      const nextPayerCaseIds = reorderPayerCaseIds(data.payerCaseIds, uploadedCase.id);
+      const nextData = {
+        ...uploadedData,
+        payerCases: nextPayerCases,
+        payerCaseIds: nextPayerCaseIds,
+        customers: uploadedCase.customers,
+      };
       await Promise.all([
         set(ref(database, `${INVOICE_DATA_PATH}/beneficiaries`), nextData.beneficiaries),
         set(ref(database, `${INVOICE_DATA_PATH}/beneficiaryIds`), nextData.beneficiaryIds),
-        set(ref(database, `${INVOICE_DATA_PATH}/customers`), nextData.customers),
+        set(ref(database, `${INVOICE_DATA_PATH}/payerCases`), nextData.payerCases),
+        set(ref(database, `${INVOICE_DATA_PATH}/payerCaseIds`), nextData.payerCaseIds),
         set(ref(database, `${INVOICE_DATA_PATH}/recentServices`), nextData.recentServices),
         set(ref(database, `${INVOICE_DATA_PATH}/invoiceServices`), nextData.invoiceServices),
         set(ref(database, `${INVOICE_DATA_PATH}/notes`), nextData.notes),
@@ -2541,8 +2650,24 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <>
                   <PanelHeading>
                     <H2>Payer (customers)</H2>
-                    <SmallButton type="button" onClick={addCustomer}><FaPlus /> Add customer</SmallButton>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <SmallButton type="button" onClick={addCustomer}><FaPlus /> Add customer</SmallButton>
+                      <SmallButton type="button" onClick={startNewPayerCase}><FaPlus /> New case</SmallButton>
+                      <DangerButton type="button" onClick={deleteActivePayerCase}><FaTrash /> Delete case</DangerButton>
+                    </div>
                   </PanelHeading>
+                  <FieldRow>
+                    <FieldTag>Active case</FieldTag>
+                    <PlainSelect value={activePayerCaseId || ''} onChange={event => selectPayerCase(event.target.value)}>
+                      {data.payerCaseIds.map(id => {
+                        const payerCase = data.payerCases.find(candidate => String(candidate.id) === String(id));
+                        if (!payerCase) return null;
+                        return (
+                          <option key={id} value={id}>{buildPayerName(payerCase.customers) || `Case ${id}`}</option>
+                        );
+                      })}
+                    </PlainSelect>
+                  </FieldRow>
                   <PanelNote>{`Payer: ${payerName || '—'} · ${caseTitle}`}</PanelNote>
                   {data.customers.map((customer, index) => (
                     <CustomerBlock key={`customer-${index}`}>
@@ -2599,7 +2724,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   onRemove={() => removeTopLevelEntry(row.id)}
                   onMoveUp={() => moveTopLevelEntry(row.id, -1)}
                   onMoveDown={() => moveTopLevelEntry(row.id, 1)}
-                  onReset={row.isCustomized ? () => resetTopLevelEntry(row.id) : undefined}
+                  onReset={row.catalogId && row.isCustomized ? () => resetTopLevelEntry(row.id) : undefined}
                   onCommitChildField={(childId, field, value) => commitPackageChildField(row.id, childId, field, value)}
                   onResetChildField={childId => resetPackageChildEntry(row.id, childId)}
                   onRemoveChild={childId => removePackageChildEntry(row.id, childId)}
@@ -2664,6 +2789,22 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     <FaPlus /> % of package
                   </SmallButton>
                 ) : null}
+              </FieldRow>
+
+              <FieldRow $align="center" style={{ marginTop: 8 }}>
+                <PlainTextBase
+                  rows={1}
+                  placeholder="New custom package name"
+                  value={newCustomPackageName}
+                  onChange={event => setNewCustomPackageName(event.target.value)}
+                />
+                <SmallButton
+                  type="button"
+                  title="A package with no Budget catalog entry - saved fully on this invoice"
+                  onClick={addCustomPackageEntry}
+                >
+                  <FaLayerGroup /> Add custom package
+                </SmallButton>
               </FieldRow>
 
               <div style={{ marginTop: 8 }}>
