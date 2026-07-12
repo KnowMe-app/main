@@ -268,6 +268,15 @@ export const getVisibleSortedPackages = (catalog, context = {}) =>
     .sort((a, b) => (resolveBudgetPriceAmount(a.listedPrice, context) || 0)
       - (resolveBudgetPriceAmount(b.listedPrice, context) || 0));
 
+// Every package, hidden ones included, sorted by price - for admin-facing pickers (Invoice
+// Builder, Expected Expenses) where a "special offer" package must stay selectable even though
+// it's deliberately kept out of the public Program Budget PDF (getVisibleSortedPackages above).
+export const getSortedPackages = (catalog, context = {}) =>
+  (Array.isArray(catalog?.packages) ? catalog.packages : [])
+    .slice()
+    .sort((a, b) => (resolveBudgetPriceAmount(a.listedPrice, context) || 0)
+      - (resolveBudgetPriceAmount(b.listedPrice, context) || 0));
+
 export const resolveProgramPaymentSchedule = (catalog, program) => {
   const schedules = Array.isArray(catalog?.technical?.paymentSchedules)
     ? catalog.technical.paymentSchedules
@@ -278,4 +287,16 @@ export const resolveProgramPaymentSchedule = (catalog, program) => {
   return program?.paymentSchedule && typeof program.paymentSchedule === 'object'
     ? program.paymentSchedule
     : null;
+};
+
+// A payment-schedule entry is either a fixed euro amount ({ amount }, ps-1..ps-5) or a share of
+// the package's listed price ({ percent }, ps-6 onwards) - every reader of `paymentSchedules`
+// (Budget/Invoice/Expected Expenses) funnels through here instead of reading `payment.amount`
+// directly, so the two formats can freely coexist in the same schedule.
+export const resolvePaymentAmount = (payment, listedPrice) => {
+  if (Number.isFinite(Number(payment?.amount))) return roundToCents(Number(payment.amount));
+  if (Number.isFinite(Number(payment?.percent)) && listedPrice != null && Number.isFinite(Number(listedPrice))) {
+    return roundToCents((Number(listedPrice) * Number(payment.percent)) / 100);
+  }
+  return null;
 };

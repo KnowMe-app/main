@@ -17,7 +17,7 @@ import {
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
-import { formatEuroSmart, getVisibleSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
+import { formatEuroSmart, getSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import {
@@ -671,7 +671,9 @@ const PercentShareRow = ({
             {!catalogPackages.some(pkg => String(pkg.id) === String(row.packageId)) ? (
               <option value={row.packageId}>{`Package ${row.packageId}`}</option>
             ) : null}
-            {catalogPackages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
+            {catalogPackages.map(pkg => (
+              <option key={pkg.id} value={pkg.id}>{pkg.hidden ? `${pkg.name} (Special offer)` : pkg.name}</option>
+            ))}
           </PlainSelect>
         )}
         <AutoTextArea
@@ -971,6 +973,23 @@ const CatalogPickerPercentButton = styled.button`
     border-color: var(--km-accent);
     color: var(--km-accent);
   }
+`;
+
+// A package hidden from the public Program Budget PDF (a manually-offered "special offer") is
+// still pickable here - this badge is the only thing telling the admin it's not one of the
+// public programs.
+const SpecialOfferBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--km-accent-light);
+  color: var(--km-accent);
+  padding: 2px 7px;
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
 `;
 
 const CatalogTabs = styled.div`
@@ -1725,8 +1744,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       .slice(0, 30);
   }, [catalogItems, usedCatalogItemIds, catalogQuery]);
 
+  // Hidden ("special offer") packages are excluded from the public Program Budget PDF but must
+  // stay pickable here - an admin selects them deliberately, they're just not advertised.
   const visibleCatalogPackages = useMemo(
-    () => getVisibleSortedPackages({ packages: catalogPackages }, priceContext),
+    () => getSortedPackages({ packages: catalogPackages }, priceContext),
     [catalogPackages, priceContext],
   );
 
@@ -2043,8 +2064,9 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     );
     const usedPercentTotal = existingPercentRows.reduce((sum, entry) => sum + (Number(entry.percent) || 0), 0);
     const nextPayment = schedule?.payments?.[existingPercentRows.length];
-    const defaultPercent = (nextPayment && listedPriceAmount)
-      ? Math.round((Number(nextPayment.amount || 0) / listedPriceAmount) * 1e6) / 1e4
+    const nextPaymentAmount = nextPayment ? resolvePaymentAmount(nextPayment, listedPriceAmount) : null;
+    const defaultPercent = (nextPaymentAmount != null && listedPriceAmount)
+      ? Math.round((nextPaymentAmount / listedPriceAmount) * 1e6) / 1e4
       : Math.max(0, Math.round((100 - usedPercentTotal) * 100) / 100);
     addEntryToInvoice(makePercentOfPackageEntry(packageId, defaultPercent), 'Service added.');
   };
@@ -3029,7 +3051,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       )) : filteredCatalogPackages.map(pkg => (
                         <CatalogPickerRow key={pkg.id}>
                           <CatalogPickerButton type="button" style={{ flex: '1 1 auto' }} onClick={() => addCatalogPackageEntry(pkg)} title="Add the whole package at its full listed price">
-                            <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}</span>
+                            <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
                           </CatalogPickerButton>
                           <CatalogPickerPercentButton
                             type="button"
@@ -3233,7 +3255,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     <CatalogPickerList style={{ marginTop: 8 }}>
                       {visibleCatalogPackages.map(pkg => (
                         <CatalogPickerButton key={pkg.id} type="button" onClick={() => createExpectedExpensesPlan(pkg)}>
-                          <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}</span>
+                          <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
                           <span>{formatEuroPreview(resolveBudgetPriceAmount(pkg.listedPrice, priceContext) ?? pkg.listedPrice)}</span>
                         </CatalogPickerButton>
                       ))}

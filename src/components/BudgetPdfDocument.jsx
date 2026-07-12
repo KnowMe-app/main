@@ -9,6 +9,7 @@ import {
   getVisibleSortedPackages,
   normalizeClientNotes,
   resolveBudgetPriceAmount,
+  resolvePaymentAmount,
   resolveProgramPaymentSchedule,
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
@@ -361,11 +362,18 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
     const titleSource = programSchedules.find(schedule => schedule?.payments?.[index]?.title);
     return {
       title: titleSource?.payments[index].title || `Payment ${index + 1}`,
-      amounts: programSchedules.map(schedule => schedule?.payments?.[index]?.amount),
+      amounts: programSchedules.map((schedule, programIndex) => {
+        const payment = schedule?.payments?.[index];
+        if (!payment) return undefined;
+        return resolvePaymentAmount(payment, resolveListedPrice(packages[programIndex]));
+      }),
     };
   });
-  const scheduleTotals = programSchedules.map(schedule => (Array.isArray(schedule?.payments)
-    ? schedule.payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0)
+  const scheduleTotals = programSchedules.map((schedule, programIndex) => (Array.isArray(schedule?.payments)
+    ? schedule.payments.reduce(
+      (sum, payment) => sum + (resolvePaymentAmount(payment, resolveListedPrice(packages[programIndex])) || 0),
+      0,
+    )
     : null));
 
   const includedIds = [];

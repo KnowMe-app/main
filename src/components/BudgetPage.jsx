@@ -19,6 +19,7 @@ import {
   normalizeCatalog,
   parseBudgetPriceValue,
   resolveBudgetPriceAmount,
+  resolvePaymentAmount,
   roundToCents,
   KNOWN_CATEGORY_KEYS,
   KNOWN_CLIENT_NOTE_GROUPS,
@@ -1642,10 +1643,11 @@ const BudgetPage = ({ isAdmin = false }) => {
     }), 'Payment deleted.');
   };
 
-  const renderPaymentSchedule = schedule => {
+  const renderPaymentSchedule = (schedule, program) => {
     const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
     if (!payments.length) return null;
-    const total = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
+    const packagePrice = resolveBudgetPriceAmount(program?.listedPrice, priceContext);
+    const total = payments.reduce((sum, payment) => sum + (resolvePaymentAmount(payment, packagePrice) || 0), 0);
 
     return (
       <PaymentScheduleCard aria-label="Payment schedule">
@@ -1654,7 +1656,7 @@ const BudgetPage = ({ isAdmin = false }) => {
           {payments.map((payment, index) => (
             <PaymentScheduleRow key={`${schedule.id || 'payment'}-${index}`}>
               <PaymentScheduleLabel>{`${index + 1}. ${payment.title || ''}`}</PaymentScheduleLabel>
-              <PaymentScheduleAmount>{formatEuroAmount(payment.amount)}</PaymentScheduleAmount>
+              <PaymentScheduleAmount>{formatEuroAmount(resolvePaymentAmount(payment, packagePrice))}</PaymentScheduleAmount>
             </PaymentScheduleRow>
           ))}
         </PaymentScheduleList>
@@ -1680,8 +1682,8 @@ const BudgetPage = ({ isAdmin = false }) => {
     }
 
     const payments = Array.isArray(schedule.payments) ? schedule.payments : [];
-    const scheduleTotal = payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0);
     const packagePrice = resolveBudgetPriceAmount(program.listedPrice, priceContext);
+    const scheduleTotal = payments.reduce((sum, payment) => sum + (resolvePaymentAmount(payment, packagePrice) || 0), 0);
     // Collapsed by default so an edit screen full of programs stays scannable.
     const isCollapsed = collapsedScheduleEditors[program.id] !== false;
 
@@ -1725,12 +1727,21 @@ const BudgetPage = ({ isAdmin = false }) => {
                 </EditableField>
                 <EditableField>
                   <FieldLabel>Amount</FieldLabel>
-                  <EditInput
-                    type="number"
-                    inputMode="decimal"
-                    defaultValue={payment.amount != null ? roundToCents(payment.amount) : ''}
-                    onBlur={event => updatePayment(schedule.id, index, 'amount', event.target.value)}
-                  />
+                  {payment.amount == null && payment.percent != null ? (
+                    // Percent-based payment (e.g. ps-6): shown read-only here - editing it as a raw
+                    // amount would silently overwrite `percent` with a frozen euro figure on blur,
+                    // which defeats the point of a percent-of-listed-price schedule step.
+                    <PaymentScheduleAmount title="Percent-based payment - edit the percent in the catalog JSON">
+                      {`${payment.percent}% (${formatEuroAmount(resolvePaymentAmount(payment, packagePrice))})`}
+                    </PaymentScheduleAmount>
+                  ) : (
+                    <EditInput
+                      type="number"
+                      inputMode="decimal"
+                      defaultValue={payment.amount != null ? roundToCents(payment.amount) : ''}
+                      onBlur={event => updatePayment(schedule.id, index, 'amount', event.target.value)}
+                    />
+                  )}
                 </EditableField>
                 <PaymentEditorActions>
                   <MiniButton type="button" title="Insert payment after this one" onClick={() => addPayment(schedule.id, index)}>
@@ -2129,7 +2140,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                       )}
                       {isEditMode ? renderInternalNote('packages', program) : null}
                       {isEditMode ? renderEditableFields('packages', program) : null}
-                      {!isEditMode ? renderPaymentSchedule(resolveProgramPaymentSchedule(program)) : null}
+                      {!isEditMode ? renderPaymentSchedule(resolveProgramPaymentSchedule(program), program) : null}
                       {renderPaymentScheduleEditor(program, resolveProgramPaymentSchedule(program))}
                       <Toggle type="button" onClick={() => toggleProgram(program.id)} aria-expanded={isOpen}>
                         <span>What's included</span>
