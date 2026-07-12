@@ -1743,6 +1743,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const expectedExpensesView = useMemo(() => {
     if (!expectedExpenses) return null;
+    const pkg = catalogPackagesById.get(String(expectedExpenses.packageId)) || expectedExpenses.packageSnapshot || null;
+    const shouldCheckPackageSharePercent = Boolean(expectedExpenses.packageId);
     const milestoneRows = expectedExpenses.milestones.map(milestone => {
       const serviceRows = resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext);
       const subtotal = computeMilestoneSubtotal(serviceRows);
@@ -1750,11 +1752,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       return { milestone, serviceRows, subtotal, amountDue };
     });
     return {
+      pkg,
       milestoneRows,
       totalPlanned: computeMilestonesTotal(expectedExpenses.milestones, catalogItemsById, priceContext),
-      packageSharePercent: computeMilestonesPackageSharePercent(expectedExpenses.milestones, expectedExpenses.packageId),
+      packageSharePercent: shouldCheckPackageSharePercent
+        ? computeMilestonesPackageSharePercent(expectedExpenses.milestones, expectedExpenses.packageId)
+        : null,
+      shouldCheckPackageSharePercent,
     };
-  }, [expectedExpenses, catalogItemsById, priceContext]);
+  }, [expectedExpenses, catalogItemsById, catalogPackagesById, priceContext]);
 
   const persistPath = async (path, value, successMessage) => {
     try {
@@ -2145,8 +2151,13 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // Loads a saved schedule (round4 #4's "recent" list) back into the editable rows, most-recently-
   // used first thanks to touchRecentEntry bringing it to the front of recentPaymentSchedules.
   const loadRecentSchedule = scheduleEntry => {
-    setCustomScheduleRows(scheduleEntry.payments.map(payment => ({ title: payment.title, amount: String(payment.amount) })));
+    const payments = Array.isArray(scheduleEntry.payments) ? scheduleEntry.payments : [];
+    setCustomScheduleRows(payments.map(payment => ({ title: payment.title, amount: String(payment.amount) })));
     setCustomPlanPackageName(current => current || scheduleEntry.name || '');
+    const savedPrice = Number(scheduleEntry.price);
+    const derivedPrice = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+    const nextPrice = Number.isFinite(savedPrice) && savedPrice > 0 ? savedPrice : derivedPrice;
+    setCustomPlanPackagePrice(nextPrice > 0 ? String(nextPrice) : '');
     const nextRecentPaymentSchedules = touchRecentEntry(data.recentPaymentSchedules, scheduleEntry.id);
     setData(current => ({ ...current, recentPaymentSchedules: nextRecentPaymentSchedules }));
     persistPath(`${INVOICE_DATA_PATH}/recentPaymentSchedules`, nextRecentPaymentSchedules);
@@ -2190,7 +2201,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     };
     persistExpectedExpenses(plan, 'Expected expenses template created from custom schedule.');
 
-    const scheduleEntry = { id: createEntryId(), name, payments };
+    const scheduleEntry = { id: createEntryId(), name, price, payments };
     const nextRecentPaymentSchedules = upsertRecentEntry(data.recentPaymentSchedules, scheduleEntry);
     setData(current => ({ ...current, recentPaymentSchedules: nextRecentPaymentSchedules }));
     persistPath(`${INVOICE_DATA_PATH}/recentPaymentSchedules`, nextRecentPaymentSchedules);
@@ -3317,7 +3328,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       {formatEuroPreview(resolveBudgetPriceAmount(expectedExpensesView?.pkg?.listedPrice, priceContext) ?? expectedExpensesView?.pkg?.listedPrice)}
                     </span>
                   </FieldRow>
-                  {expectedExpensesView && Math.round(expectedExpensesView.packageSharePercent * 100) / 100 !== 100 ? (
+                  {expectedExpensesView?.shouldCheckPackageSharePercent && Math.round(expectedExpensesView.packageSharePercent * 100) / 100 !== 100 ? (
                     <PanelNote style={{ color: 'var(--km-danger)' }}>
                       The percent-of-package rows add up to {expectedExpensesView.packageSharePercent}% of the package price, not 100%.
                     </PanelNote>
