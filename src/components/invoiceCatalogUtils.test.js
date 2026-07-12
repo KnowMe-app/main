@@ -34,6 +34,7 @@ import {
   resolveInvoiceServiceRows,
   resolveServiceRow,
   setEntryField,
+  shouldRenderPackageDetail,
   touchRecentEntry,
   updatePackageChildField,
   upsertRecentEntry,
@@ -308,6 +309,47 @@ describe('invoiceCatalogUtils', () => {
       const pkg = addCustomChildToPackage(makeCustomPackageEntry({ name: 'Bespoke' }), { name: 'Extra', price: 50 });
       const reverted = resetPackageEntryToCatalog(pkg, undefined);
       expect(reverted).toBe(pkg);
+    });
+  });
+
+  describe('hidden/special-offer packages render full detail on the Invoice (round6 #1)', () => {
+    it('flags a package row as isHiddenCatalog when its catalog package is hidden', () => {
+      const packagesById = new Map([['p6', { id: 'p6', name: 'Special Offer', hidden: true, children: ['1'] }]]);
+      const row = resolveServiceRow(makeCatalogPackageEntry({ id: 'p6', children: ['1'] }), new Map(), { packagesById });
+      expect(row.isHiddenCatalog).toBe(true);
+      expect(row.isCustomized).toBe(false);
+    });
+
+    it('left on "auto", renders full detail for a hidden package but only a Budget reference for a standard one', () => {
+      const packagesById = new Map([
+        ['hidden-1', { id: 'hidden-1', name: 'Special Offer', hidden: true, children: ['1'] }],
+        ['standard-1', { id: 'standard-1', name: 'Programme', children: ['1'] }],
+      ]);
+      const hiddenRow = resolveServiceRow(makeCatalogPackageEntry({ id: 'hidden-1', children: ['1'] }), new Map(), { packagesById });
+      const standardRow = resolveServiceRow(makeCatalogPackageEntry({ id: 'standard-1', children: ['1'] }), new Map(), { packagesById });
+      expect(shouldRenderPackageDetail(hiddenRow)).toBe(true);
+      expect(shouldRenderPackageDetail(standardRow)).toBe(false);
+    });
+
+    it('an explicit detailMode override always wins over the auto default', () => {
+      const packagesById = new Map([
+        ['hidden-1', { id: 'hidden-1', name: 'Special Offer', hidden: true, children: ['1'] }],
+        ['standard-1', { id: 'standard-1', name: 'Programme', children: ['1'] }],
+      ]);
+      const hiddenEntry = setEntryField(makeCatalogPackageEntry({ id: 'hidden-1', children: ['1'] }), 'detailMode', 'reference');
+      const standardEntry = setEntryField(makeCatalogPackageEntry({ id: 'standard-1', children: ['1'] }), 'detailMode', 'full');
+      const hiddenRow = resolveServiceRow(hiddenEntry, new Map(), { packagesById });
+      const standardRow = resolveServiceRow(standardEntry, new Map(), { packagesById });
+      expect(shouldRenderPackageDetail(hiddenRow)).toBe(false);
+      expect(shouldRenderPackageDetail(standardRow)).toBe(true);
+      // Setting detailMode is a display choice, not a content edit - it must never flip `customized`.
+      expect(hiddenEntry.customized).toBeUndefined();
+      expect(standardEntry.customized).toBeUndefined();
+    });
+
+    it('a custom (self-contained) package always renders full detail regardless of detailMode', () => {
+      const row = resolveServiceRow(makeCustomPackageEntry({ name: 'Bespoke' }), new Map(), { packagesById: new Map() });
+      expect(shouldRenderPackageDetail(row)).toBe(true);
     });
   });
 

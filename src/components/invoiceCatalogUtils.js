@@ -340,6 +340,11 @@ export const setEntryField = (entry, field, value) => {
   if (entry.kind === 'package') {
     if (field === 'price') return { ...entry, priceOverride: toNumber(value), customized: true };
     if (field === 'name' || field === 'description') return { ...entry, [field]: value, customized: true };
+    // detailMode is a rendering choice for this one invoice, not a content edit - it must never
+    // flip `customized` (that flag means "no longer matches the catalog package's actual content").
+    if (field === 'detailMode') {
+      return { ...entry, detailMode: ['full', 'reference'].includes(value) ? value : 'auto' };
+    }
     return entry;
   }
   return { ...entry, [field]: field === 'price' ? toNumber(value) : value, customized: true };
@@ -394,6 +399,18 @@ export const addCatalogChildToPackage = (entry, catalogId) => {
 // --- Queries ------------------------------------------------------------
 
 export const isEntryCustomized = entry => (entry?.kind === 'custom' ? true : Boolean(entry?.customized));
+
+// Whether a package row's full "Included in this programme" + "Payment schedule" detail should be
+// rendered inline on the Invoice PDF, instead of the one-sentence Budget reference (round6 #1).
+// An explicit detailMode always wins; left on 'auto', it renders full detail exactly when there's
+// no Budget document to point at instead - a customized package (content no longer matches the
+// catalog) or a hidden/special-offer package (no public Budget page at all).
+export const shouldRenderPackageDetail = row => {
+  if (!row) return false;
+  if (row.detailMode === 'full') return true;
+  if (row.detailMode === 'reference') return false;
+  return Boolean(row.isCustomized) || Boolean(row.isHiddenCatalog);
+};
 
 // A stable identity for an entry, ignoring its id - used to dedupe "recent services" chips and to
 // stop the same catalog item/package being added to the invoice twice.
@@ -465,6 +482,14 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       // resolves, never for a package that's custom by design.
       missing: Boolean(entry.catalogId) && !pkg,
       isCustomized: Boolean(entry.customized),
+      // A "hidden" catalog package (a manually-offered special offer) has no public Budget document
+      // of its own - there is nothing for the Invoice's "see your Budget" reference sentence to
+      // point at, so PackageBlock must fall back to rendering the full details inline instead.
+      isHiddenCatalog: Boolean(pkg?.hidden),
+      // 'auto' (default) lets shouldRenderPackageDetail decide from isCustomized/isHiddenCatalog;
+      // 'full'/'reference' are an explicit per-invoice admin override of that default (round5 #4 /
+      // round6 #1 - a selector, not an implicit toggle).
+      detailMode: ['full', 'reference'].includes(entry.detailMode) ? entry.detailMode : 'auto',
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? pkg?.description ?? '',
       price: hasPriceOverride ? roundMoney(entry.priceOverride) : defaultPrice,

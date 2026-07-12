@@ -15,6 +15,7 @@ import {
   computeInvoiceTotal,
   resolveInvoiceDocType,
   resolveInvoiceServiceRows,
+  shouldRenderPackageDetail,
 } from './invoiceCatalogUtils';
 
 ensurePdfFontsRegistered();
@@ -238,16 +239,16 @@ const ServiceItemRow = ({ row, isFirst }) => {
 const PackageBlock = ({ row, schedule, scheduleTotal }) => {
   const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
   const totalLabel = formatRowAmount(row);
-  const isCustomized = Boolean(row.isCustomized);
+  const showFullDetail = shouldRenderPackageDetail(row);
   const packageMeta = [{ id: row.id || row.key || 'package', label: row.name, priceLabel: totalLabel }];
-  const includedRows = isCustomized
+  const includedRows = showFullDetail
     ? (row.children || []).map((child, index) => ({
       id: child.id || child.key || `child-${index}`,
       name: child.name || '',
       includedByPackageId: new Set([String(packageMeta[0].id)]),
     }))
     : [];
-  const scheduleRows = isCustomized
+  const scheduleRows = showFullDetail
     ? payments.map(payment => ({
       title: payment.title || 'Payment',
       amounts: [Number.isFinite(Number(payment.amount)) ? Number(payment.amount) : null],
@@ -256,6 +257,11 @@ const PackageBlock = ({ row, schedule, scheduleTotal }) => {
   const budgetReferenceNote = payments.length
     ? `Part of a ${payments.length}-instalment programme totalling ${totalLabel}. Full programme details and the complete payment schedule are set out in your Budget.`
     : `Full programme details and the complete payment schedule are set out in your Budget.`;
+  // A hidden/special-offer package has no public Budget document at all - "see your Budget" would
+  // point the client nowhere, so the note explains the detail is shown here instead.
+  const fullDetailNote = row.isHiddenCatalog && !row.isCustomized
+    ? 'This programme has no separate Budget document - its full details are shown below.'
+    : 'This invoice includes customised programme details shown below.';
 
   return (
     <View style={styles.packageBlock}>
@@ -265,11 +271,9 @@ const PackageBlock = ({ row, schedule, scheduleTotal }) => {
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
         <Text style={styles.packageBlockFee}>{`Total programme fee ${totalLabel}`}</Text>
       </View>
-      {isCustomized ? (
+      {showFullDetail ? (
         <>
-          <Text style={styles.sectionNote}>
-            {sanitizePdfText('This invoice includes customised programme details shown below.')}
-          </Text>
+          <Text style={styles.sectionNote}>{sanitizePdfText(fullDetailNote)}</Text>
           <IncludedServicesTable
             packages={packageMeta}
             includedRows={includedRows}
