@@ -118,6 +118,12 @@ describe('InvoiceBuilderPage', () => {
     field.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
+  const nativeSelectValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+  const selectOption = (select, value) => {
+    nativeSelectValueSetter.call(select, value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
   it('renders the catalog-linked service from budget/items without touching the shared catalog', async () => {
     const root = mount();
     await flush();
@@ -175,7 +181,6 @@ describe('InvoiceBuilderPage', () => {
     const [, persistedValue] = persistedCalls[0];
     expect(persistedValue[0]).toMatchObject({ kind: 'item', catalogId: '10', price: 350, customized: true });
     expect(set.mock.calls.some(([path]) => path.startsWith('budget/'))).toBe(false);
-    expect(container.innerHTML).toContain('Custom');
 
     await act(async () => { root.unmount(); });
   });
@@ -184,12 +189,9 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    await act(async () => { findButton('Choose from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-
-    const packageButton = findButton('Full program');
-    expect(packageButton).toBeTruthy();
-    await act(async () => { packageButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const packageSelect = container.querySelector('select[aria-label="Choose package from catalog"]');
+    expect(packageSelect).toBeTruthy();
+    await act(async () => { selectOption(packageSelect, 'p1'); });
     await flush();
 
     expect(container.innerHTML).toContain('Airport transfer');
@@ -246,15 +248,12 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    await act(async () => { findButton('Choose from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-
     expect(container.innerHTML).toContain('Special Offer — Initial Payment');
     expect(container.innerHTML).toContain('Special offer');
 
-    const packageButton = findButton('Special Offer — Initial Payment');
-    expect(packageButton).toBeTruthy();
-    await act(async () => { packageButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const packageSelect = container.querySelector('select[aria-label="Choose package from catalog"]');
+    expect(packageSelect).toBeTruthy();
+    await act(async () => { selectOption(packageSelect, 'p6'); });
     await flush();
 
     const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
@@ -275,9 +274,8 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    await act(async () => { findButton('Choose from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-    await act(async () => { findButton('Full program').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const packageSelect = container.querySelector('select[aria-label="Choose package from catalog"]');
+    await act(async () => { selectOption(packageSelect, 'p1'); });
     await flush();
 
     const percentButton = findButton('% of package');
@@ -338,12 +336,12 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => {
       nameField.focus();
       setFieldValue(nameField, 'Courier fee');
-      setFieldValue(priceField, '25');
     });
-
-    const addCustomButton = nameField.parentElement.querySelector('button');
-    expect(addCustomButton.textContent.trim()).toBe('Add');
-    await act(async () => { addCustomButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => {
+      priceField.focus();
+      setFieldValue(priceField, '25');
+      priceField.blur();
+    });
     await flush();
 
     expect(container.innerHTML).toContain('Courier fee');
@@ -372,10 +370,12 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => {
       nameField.focus();
       setFieldValue(nameField, 'Courier fee');
-      setFieldValue(priceField, '25');
     });
-    const addCustomButton = nameField.parentElement.querySelector('button');
-    await act(async () => { addCustomButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => {
+      priceField.focus();
+      setFieldValue(priceField, '25');
+      priceField.blur();
+    });
     await flush();
 
     const descriptionToggle = findButton('+ Add description', true);

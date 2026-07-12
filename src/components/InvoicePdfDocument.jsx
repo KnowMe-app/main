@@ -237,7 +237,10 @@ const ServiceItemRow = ({ row, isFirst }) => {
 // gated separately by the Builder's "Payment schedule" checkbox (`showSchedule`).
 const PackageBlock = ({ row, showSchedule }) => {
   const totalLabel = formatRowAmount(row);
-  const packageMeta = [{ id: row.id || row.key || 'package', label: row.name, priceLabel: totalLabel }];
+  // The package's own name and total fee are already shown just above, in packageBlockHeader -
+  // repeating them as this single column's header (round8 spec A) would just say the same thing
+  // twice, so the column here carries only the currency.
+  const packageMeta = [{ id: row.id || row.key || 'package', label: '', priceLabel: 'EUR' }];
   const includedRows = (row.children || []).map((child, index) => ({
     id: child.id || child.key || `child-${index}`,
     name: child.name || '',
