@@ -184,9 +184,7 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { findButton('Choose from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
 
     const packageButton = findButton('Full program');
@@ -248,9 +246,7 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { findButton('Choose from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
 
     expect(container.innerHTML).toContain('Special Offer — Initial Payment');
@@ -279,9 +275,7 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { findButton('Choose from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
     await act(async () => { findButton('Full program').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
@@ -318,10 +312,10 @@ describe('InvoiceBuilderPage', () => {
 
     await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
-    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { findButton('% of package', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
 
-    const percentButton = findButton('% of package');
+    const percentButton = findButton('Full program');
     expect(percentButton).toBeTruthy();
     await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
@@ -522,6 +516,13 @@ describe('InvoiceBuilderPage', () => {
   });
 
   describe('expected expenses', () => {
+    // round7 spec D: Expected Expenses lives behind its own top-level tab, structurally separate
+    // from the regular invoice-creation flow - every test below must switch to it first.
+    const switchToExpectedExpensesTab = async () => {
+      await act(async () => { findButton('Expected expenses', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+    };
+
     const createPlan = async () => {
       await act(async () => { findButton('Choose a package').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
@@ -534,6 +535,7 @@ describe('InvoiceBuilderPage', () => {
     it('builds a template from a package, auto-calculating package-percent rows from its catalog schedule', async () => {
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       await createPlan();
 
@@ -561,6 +563,7 @@ describe('InvoiceBuilderPage', () => {
     it('builds an Expected Expenses plan from a percent-based schedule (ps-6 format)', async () => {
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       await act(async () => { findButton('Choose a package').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
@@ -586,6 +589,7 @@ describe('InvoiceBuilderPage', () => {
     it('adding a service to a schedule group updates its due amount and is persisted on that group only', async () => {
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       await createPlan();
 
@@ -646,6 +650,7 @@ describe('InvoiceBuilderPage', () => {
       });
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       const recalculateButton = findButton('Recalculate');
       expect(recalculateButton).toBeTruthy();
@@ -684,6 +689,7 @@ describe('InvoiceBuilderPage', () => {
       });
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       const recalculateButton = findButton('Recalculate');
       expect(recalculateButton).toBeTruthy();
@@ -722,6 +728,7 @@ describe('InvoiceBuilderPage', () => {
       });
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       const recalculateButton = findButton('Recalculate');
       expect(recalculateButton).toBeTruthy();
@@ -743,6 +750,7 @@ describe('InvoiceBuilderPage', () => {
     it('deletes the whole plan', async () => {
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       await createPlan();
       expect(container.innerHTML).toContain('To start the program');
@@ -763,6 +771,7 @@ describe('InvoiceBuilderPage', () => {
     it('uploads a standalone expected-expenses JSON straight into invoiceBuilder/expectedExpenses', async () => {
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       const heading = Array.from(container.querySelectorAll('h2')).find(h => h.textContent === 'Expected expenses');
       const panel = heading.closest('section');
@@ -795,6 +804,7 @@ describe('InvoiceBuilderPage', () => {
     it('builds an Expected Expenses plan from a hand-built custom schedule, and saves it to Recent for reuse', async () => {
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       await act(async () => { findButton('Custom package/schedule').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
       await flush();
@@ -855,6 +865,7 @@ describe('InvoiceBuilderPage', () => {
     it('reloads a saved custom schedule from Recent, and deleting it removes it from the list', async () => {
       const root = mount();
       await flush();
+      await switchToExpectedExpensesTab();
 
       // Seed one recent schedule the way createExpectedExpensesPlanFromCustomSchedule would.
       await act(async () => { findButton('Custom package/schedule').dispatchEvent(new MouseEvent('click', { bubbles: true })); });

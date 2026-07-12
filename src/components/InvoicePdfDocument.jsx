@@ -4,7 +4,7 @@ import {
   BrandRow, BrandRule, BronzeMotif, ContinuedTag, Footer, PDF_COLOR, PDF_FONT,
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
-import { formatMoney, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
+import { formatMoney } from './budgetCatalogUtils';
 import { IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import {
   buildCaseTitle,
@@ -15,7 +15,6 @@ import {
   computeInvoiceTotal,
   resolveInvoiceDocType,
   resolveInvoiceServiceRows,
-  shouldRenderPackageDetail,
 } from './invoiceCatalogUtils';
 
 ensurePdfFontsRegistered();
@@ -232,36 +231,28 @@ const ServiceItemRow = ({ row, isFirst }) => {
   );
 };
 
-// The "Package block" (spec §1.1): a compact name/fee header, plus a single reference sentence
-// pointing at the Budget instead of repeating its "Included in this programme" and "Payment
-// schedule" tables verbatim - that full breakdown already lives in the Budget, and duplicating it
-// here was the single biggest source of clutter on this document.
-const PackageBlock = ({ row, schedule, scheduleTotal }) => {
-  const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
+// The "Package block" (round7 spec C): a compact name/fee header, then the package's full
+// composition - always shown, since the Builder's own "Package" checkbox already gates whether
+// this block is rendered at all (InvoiceBuilderPage) - and an optional payment schedule table,
+// gated separately by the Builder's "Payment schedule" checkbox (`showSchedule`).
+const PackageBlock = ({ row, showSchedule }) => {
   const totalLabel = formatRowAmount(row);
-  const showFullDetail = shouldRenderPackageDetail(row);
   const packageMeta = [{ id: row.id || row.key || 'package', label: row.name, priceLabel: totalLabel }];
-  const includedRows = showFullDetail
-    ? (row.children || []).map((child, index) => ({
-      id: child.id || child.key || `child-${index}`,
-      name: child.name || '',
-      includedByPackageId: new Set([String(packageMeta[0].id)]),
-    }))
-    : [];
-  const scheduleRows = showFullDetail
-    ? payments.map(payment => ({
-      title: payment.title || 'Payment',
-      amounts: [Number.isFinite(Number(payment.amount)) ? Number(payment.amount) : null],
-    }))
-    : [];
-  const budgetReferenceNote = payments.length
-    ? `Part of a ${payments.length}-instalment programme totalling ${totalLabel}. Full programme details and the complete payment schedule are set out in your Budget.`
-    : `Full programme details and the complete payment schedule are set out in your Budget.`;
-  // A hidden/special-offer package has no public Budget document at all - "see your Budget" would
-  // point the client nowhere, so the note explains the detail is shown here instead.
-  const fullDetailNote = row.isHiddenCatalog && !row.isCustomized
-    ? 'This programme has no separate Budget document - its full details are shown below.'
-    : 'This invoice includes customised programme details shown below.';
+  const includedRows = (row.children || []).map((child, index) => ({
+    id: child.id || child.key || `child-${index}`,
+    name: child.name || '',
+    includedByPackageId: new Set([String(packageMeta[0].id)]),
+  }));
+  const scheduleRows = (row.scheduleRows || []).map(payment => ({
+    title: payment.title || 'Payment',
+    amounts: [payment.amount],
+  }));
+  // Only a customised package gets an explanatory note above its breakdown - a stock catalog
+  // package just shows its detail below with no note at all (round7 spec B.1: it no longer claims
+  // "no separate Budget document exists").
+  const fullDetailNote = row.isCustomized
+    ? 'This invoice includes customised programme details shown below.'
+    : null;
 
   return (
     <View style={styles.packageBlock}>
@@ -271,25 +262,20 @@ const PackageBlock = ({ row, schedule, scheduleTotal }) => {
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
         <Text style={styles.packageBlockFee}>{`Total programme fee ${totalLabel}`}</Text>
       </View>
-      {showFullDetail ? (
-        <>
-          <Text style={styles.sectionNote}>{sanitizePdfText(fullDetailNote)}</Text>
-          <IncludedServicesTable
-            packages={packageMeta}
-            includedRows={includedRows}
-            title="Included in this invoice"
-            note="These services reflect the customised package configured for this invoice."
-          />
-          <PaymentScheduleTable
-            packages={packageMeta}
-            rows={scheduleRows}
-            totals={[scheduleTotal]}
-            title="Payment schedule for this invoice"
-          />
-        </>
-      ) : (
-        <Text style={styles.sectionNote}>{sanitizePdfText(budgetReferenceNote)}</Text>
-      )}
+      {fullDetailNote ? <Text style={styles.sectionNote}>{sanitizePdfText(fullDetailNote)}</Text> : null}
+      <IncludedServicesTable
+        packages={packageMeta}
+        includedRows={includedRows}
+        title="Included in this package"
+        note="These services reflect the customisation made to this package."
+      />
+      {showSchedule ? (
+        <PaymentScheduleTable
+          packages={packageMeta}
+          rows={scheduleRows}
+          title="Payment schedule for this package"
+        />
+      ) : null}
     </View>
   );
 };
@@ -304,9 +290,10 @@ const InvoicePdfDocument = ({
   invoiceDisplayDate,
   priceContext,
   invoiceType,
-  catalogTechnical,
   debtOrDeposit,
   generatePaymentDetails = true,
+  includePackageInPdf = true,
+  includeScheduleInPdf = true,
 }) => {
   const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, priceContext);
   const subtotal = computeInvoiceSubtotal(rows);
@@ -326,49 +313,18 @@ const InvoicePdfDocument = ({
   const docLabel = DOC_LABEL_BY_TYPE[docType];
   const eyebrow = EYEBROW_BY_TYPE[docType];
 
-  // Package Invoice (spec §1): adding a whole standard package - as opposed to a single
-  // percent-of-package milestone share, or a handful of one-off services - gets its own package
-  // block (name/fee header + a reference sentence to the Budget) above the flat itemized breakdown
-  // below. Any other top-level row alongside the package is, by definition, a service confirmed
-  // for this case that sits outside the standard package.
-  const packageRows = rows.filter(row => row.kind === 'package');
+  // Package Invoice (round7 spec C): a package now lives outside Invoice Services structurally -
+  // whether its block renders here at all is decided solely by the Builder's own "Package"
+  // checkbox (includePackageInPdf), never implicitly by whether one happens to be on the invoice.
+  // Any other top-level row is, by definition, a service confirmed for this case that sits outside
+  // the standard package.
+  const packageRows = includePackageInPdf ? rows.filter(row => row.kind === 'package') : [];
   const isPackageInvoice = packageRows.length > 0;
   // A "% of package" row (a programme milestone share) and any custom/catalog service row share one
   // "Breakdown" list, one row style, one running numbering - splitting them into two headed
   // sections was the second-biggest source of clutter on this document (declutter spec §2).
   const breakdownRows = rows.filter(row => row.kind !== 'package');
   const breakdownDisplayRows = buildDisplayRows(breakdownRows);
-  // The package entry's own `children` are a frozen name-only snapshot (invoiceCatalogUtils.js) -
-  // its payment schedule instead always comes live from the catalog package it was added from, the
-  // same source Program Budget/Expected Expenses read it from, so a schedule edit in the catalog is
-  // reflected here too.
-  const resolvePackageSchedule = row => {
-    const catalogPackage = priceContext?.packagesById?.get?.(String(row.catalogId));
-    const schedule = catalogPackage ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, catalogPackage) : null;
-    if (!schedule?.payments?.length || !catalogPackage) return schedule;
-    const catalogTotal = resolveBudgetPriceAmount(catalogPackage.listedPrice, { ...priceContext, itemsById: catalogItemsById });
-    // Resolve every payment (amount- or percent-based) to a concrete euro amount up front, so the
-    // rest of this file - and PackageBlock below - only ever reads a plain `payment.amount` number.
-    const resolvedPayments = schedule.payments.map(payment => ({
-      ...payment,
-      amount: resolvePaymentAmount(payment, catalogTotal),
-    }));
-    if (!row.isCustomized) return { ...schedule, payments: resolvedPayments };
-    const rowTotal = Number(row.price);
-    if (!catalogTotal || !Number.isFinite(rowTotal)) return { ...schedule, payments: resolvedPayments };
-    const scale = rowTotal / catalogTotal;
-    return {
-      ...schedule,
-      payments: resolvedPayments.map(payment => ({
-        ...payment,
-        amount: Number.isFinite(payment.amount) ? Math.round(payment.amount * scale * 100) / 100 : payment.amount,
-      })),
-    };
-  };
-  const getPackageScheduleTotal = schedule => {
-    const payments = Array.isArray(schedule?.payments) ? schedule.payments : [];
-    return payments.length ? payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) : null;
-  };
   // The DD.MM.YYYY `invoiceDate` string (invoiceCatalogUtils.generateInvoiceIdentifiers) is the
   // legal-text date used inside the payment-purpose placeholder only - the human-readable date
   // shown here always uses the one shared display format (spec §4), never that dotted form or the
@@ -389,17 +345,9 @@ const InvoicePdfDocument = ({
         />
 
         {isPackageInvoice ? (
-          packageRows.map(row => {
-            const schedule = resolvePackageSchedule(row);
-            return (
-              <PackageBlock
-                key={row.key}
-                row={row}
-                schedule={schedule}
-                scheduleTotal={getPackageScheduleTotal(schedule)}
-              />
-            );
-          })
+          packageRows.map(row => (
+            <PackageBlock key={row.key} row={row} showSchedule={includeScheduleInPdf} />
+          ))
         ) : null}
 
         {breakdownDisplayRows.length ? (

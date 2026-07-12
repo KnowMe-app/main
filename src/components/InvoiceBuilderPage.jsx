@@ -56,6 +56,7 @@ import {
   resolveInvoiceServiceRows,
   resolveServiceRow,
   setEntryField,
+  setPackageSchedule,
   touchRecentEntry,
   updatePackageChildField,
   upsertRecentEntry,
@@ -429,6 +430,11 @@ const StackedFieldTag = styled.span`
   color: var(--km-muted);
 `;
 
+// $bare (round7 spec E): a minimal, single-line-tall field with no visual "input" chrome at all,
+// not even on hover/focus - it reads as plain text that happens to be editable, exactly like the
+// DescriptionToggle/text it sits next to. Used for Beneficiary/Payer fields, where the regular
+// hover/focus wash (still used everywhere else) reads as unnecessarily tall/boxy for a name/address
+// line.
 const plainFieldStyle = css`
   flex: 1 1 auto;
   min-width: 0;
@@ -440,8 +446,8 @@ const plainFieldStyle = css`
   font-family: inherit;
   font-size: ${({ $size }) => $size || '13px'};
   font-weight: ${({ $weight }) => $weight || '600'};
-  line-height: 1.45;
-  padding: 5px 6px;
+  line-height: ${({ $bare }) => ($bare ? '1.25' : '1.45')};
+  padding: ${({ $bare }) => ($bare ? '1px 2px' : '5px 6px')};
   margin: 0;
   resize: none;
   overflow: hidden;
@@ -453,13 +459,13 @@ const plainFieldStyle = css`
   }
 
   &:hover {
-    background: var(--km-accent-light);
+    background: ${({ $bare }) => ($bare ? 'transparent' : 'var(--km-accent-light)')};
   }
 
   &:focus {
     outline: none;
-    background: var(--km-accent-light);
-    box-shadow: inset 0 0 0 1px var(--km-accent-mid);
+    background: ${({ $bare }) => ($bare ? 'transparent' : 'var(--km-accent-light)')};
+    box-shadow: ${({ $bare }) => ($bare ? 'none' : 'inset 0 0 0 1px var(--km-accent-mid)')};
   }
 `;
 
@@ -857,28 +863,6 @@ const PackageHeaderRow = styled(LineMainRow)`
   align-items: flex-start;
 `;
 
-// The explicit "which package/schedule to render in the PDF" selector (round5 #4 / round6 #1) -
-// same visual pattern as the Beneficiary/Active-case PlainSelect, not a toggle.
-const PackageDetailModeRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 0 28px;
-
-  @media (max-width: 560px) {
-    margin-left: 10px;
-  }
-`;
-
-const PackageDetailModeLabel = styled.span`
-  flex: 0 0 auto;
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--km-muted);
-`;
-
 const PackageIcon = styled.span`
   flex: 0 0 auto;
   display: inline-flex;
@@ -972,34 +956,6 @@ const CatalogPickerButton = styled.button`
   }
 `;
 
-// A package in the catalog picker offers two ways in, side by side: the full package at its
-// listed price (CatalogPickerButton), or just a share of it billed on this invoice (this button) -
-// so an admin building a milestone invoice never has to add the whole package first just to reach
-// the percent option, then delete it again.
-const CatalogPickerRow = styled.div`
-  display: flex;
-  gap: 4px;
-  align-items: stretch;
-`;
-
-const CatalogPickerPercentButton = styled.button`
-  flex: 0 0 auto;
-  border: 1px solid var(--km-border);
-  background: var(--km-card);
-  color: var(--km-muted);
-  border-radius: 8px;
-  padding: 6px 9px;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--km-accent);
-    color: var(--km-accent);
-  }
-`;
-
 // A package hidden from the public Program Budget PDF (a manually-offered "special offer") is
 // still pickable here - this badge is the only thing telling the admin it's not one of the
 // public programs.
@@ -1040,14 +996,9 @@ const CatalogTabButton = styled.button`
 
 const PackageEntryCard = ({
   row,
-  index,
-  canMoveUp,
-  canMoveDown,
   catalogItems,
   onCommitField,
   onRemove,
-  onMoveUp,
-  onMoveDown,
   onReset,
   onCommitChildField,
   onResetChildField,
@@ -1093,7 +1044,6 @@ const PackageEntryCard = ({
     <PackageCard>
       <PackageHeaderRow>
         <PackageIcon><FaBoxOpen /></PackageIcon>
-        <RowIndex>{index + 1}</RowIndex>
         <AutoTextArea
           $size="13.5px"
           $weight="800"
@@ -1136,12 +1086,6 @@ const PackageEntryCard = ({
           </IconButton>
         ) : null}
         <RowActions $dense>
-          <IconButton $dense type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move package up">
-            <FaChevronUp />
-          </IconButton>
-          <IconButton $dense type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move package down">
-            <FaChevronDown />
-          </IconButton>
           <IconDangerButton $dense type="button" onClick={onRemove} title="Remove package" aria-label="Remove package">
             <FaTrash />
           </IconDangerButton>
@@ -1174,22 +1118,6 @@ const PackageEntryCard = ({
           {row.description || '+ Add description'}
         </DescriptionToggle>
       )}
-
-      {row.catalogId ? (
-        <PackageDetailModeRow>
-          <PackageDetailModeLabel>PDF detail</PackageDetailModeLabel>
-          <PlainSelect
-            style={{ flex: '0 1 auto', width: 'auto' }}
-            value={row.detailMode || 'auto'}
-            aria-label="Package detail shown in the Invoice PDF"
-            onChange={event => onCommitField('detailMode', event.target.value)}
-          >
-            <option value="auto">{`Auto (${row.isHiddenCatalog ? 'full details – no Budget' : 'reference to Budget'})`}</option>
-            <option value="full">Full details in PDF</option>
-            <option value="reference">Reference to Budget only</option>
-          </PlainSelect>
-        </PackageDetailModeRow>
-      ) : null}
 
       <PackageChildren>
         {row.children.map((child, childIndex) => (
@@ -1249,6 +1177,54 @@ const PackageEntryCard = ({
         </InlinePickerBox>
       ) : null}
     </PackageCard>
+  );
+};
+
+// --- Package payment schedule (round7 spec C.2) ------------------------------------------------------
+//
+// One editable {title, amount} row of the package's Payment Schedule, shown/edited only while the
+// "Payment schedule" checkbox is on (InvoiceBuilderPage) - the same draft/commit-on-blur pattern
+// every other row in this file uses.
+
+const ScheduleRow = ({ row, index, onCommit, onRemove }) => {
+  const [titleDraft, setTitleDraft, titleEditingRef] = useFieldDraft(row.title);
+  const [amountDraft, setAmountDraft, amountEditingRef] = useFieldDraft(String(roundToCents(row.amount) ?? ''));
+
+  return (
+    <LineCard>
+      <LineMainRow>
+        <RowIndex>{index + 1}</RowIndex>
+        <AutoTextArea
+          value={titleDraft}
+          placeholder="Payment title"
+          aria-label="Payment title"
+          onFocus={() => { titleEditingRef.current = true; }}
+          onChange={event => setTitleDraft(event.target.value)}
+          onBlur={() => {
+            titleEditingRef.current = false;
+            if (titleDraft !== (row.title ?? '')) onCommit(index, 'title', titleDraft);
+          }}
+        />
+        <AutoTextArea
+          as={PlainPriceBase}
+          $width="88px"
+          inputMode="decimal"
+          value={amountDraft}
+          placeholder="0"
+          aria-label="Payment amount (EUR)"
+          onFocus={() => { amountEditingRef.current = true; }}
+          onChange={event => setAmountDraft(event.target.value)}
+          onBlur={() => {
+            amountEditingRef.current = false;
+            const original = String(roundToCents(row.amount) ?? '');
+            if (amountDraft !== original) onCommit(index, 'amount', amountDraft);
+          }}
+        />
+        <IconDangerButton type="button" onClick={() => onRemove(index)} title="Remove payment" aria-label="Remove payment">
+          <FaTrash />
+        </IconDangerButton>
+      </LineMainRow>
+    </LineCard>
   );
 };
 
@@ -1605,6 +1581,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [newCustomPackageName, setNewCustomPackageName] = useState('');
   const [catalogQuery, setCatalogQuery] = useState('');
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
+  const [showPackagePicker, setShowPackagePicker] = useState(false);
+  const [packagePickerQuery, setPackagePickerQuery] = useState('');
   const [catalogTab, setCatalogTab] = useState('items');
   const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
   const [showCustomSchedulePicker, setShowCustomSchedulePicker] = useState(false);
@@ -1613,6 +1591,9 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [customScheduleRows, setCustomScheduleRows] = useState([{ title: '', amount: '' }]);
   const [beneficiaryExpanded, setBeneficiaryExpanded] = useState(false);
   const [payerExpanded, setPayerExpanded] = useState(false);
+  // round7 spec D: Expected Expenses is a standalone section of the Builder, not a step inside the
+  // regular invoice-creation flow - a top-level tab keeps the two entirely separate on screen.
+  const [activeTab, setActiveTab] = useState('invoice');
   const fileInputRef = useRef(null);
   const expectedExpensesFileInputRef = useRef(null);
 
@@ -1717,9 +1698,13 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       itemsById: catalogItemsById,
       rates: exchangeRates,
       packagesById: catalogPackagesById,
+      // Read by resolvePackageEntrySchedule (invoiceCatalogUtils) to resolve a package row's live
+      // Payment Schedule from the catalog - the same budget/technical record Program Budget/
+      // Expected Expenses read it from.
+      technical: catalogTechnical,
       resolvePackagePrice: pkg => resolveBudgetPriceAmount(pkg?.listedPrice, { itemsById: catalogItemsById, rates: exchangeRates, packagesById: catalogPackagesById }),
     }),
-    [catalogItemsById, exchangeRates, catalogPackagesById],
+    [catalogItemsById, exchangeRates, catalogPackagesById, catalogTechnical],
   );
 
   const invoiceServiceRows = useMemo(
@@ -1727,10 +1712,21 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     [data.invoiceServices, catalogItemsById, priceContext],
   );
 
-  // "% of package" only makes sense once a package is already part of this invoice - it's a
-  // share of that package's price, not a standalone add option (spec item C).
-  const firstTopLevelPackage = useMemo(
-    () => invoiceServiceRows.find(row => row.kind === 'package' && row.catalogId) || null,
+  // round7 spec C: the invoice's package is no longer just another "Invoice services" row - the
+  // Builder surfaces at most one at a time, in its own "Package & PDF components" panel.
+  const packageRow = useMemo(
+    () => invoiceServiceRows.find(row => row.kind === 'package') || null,
+    [invoiceServiceRows],
+  );
+
+  // "% of package" only makes sense once a catalog-linked package is already part of this invoice -
+  // it's a share of that package's price, not a standalone add option (spec item C).
+  const percentSharePackage = packageRow && packageRow.catalogId ? packageRow : null;
+
+  // The flat "Invoice services" list (item/custom/percent rows) - the package itself is rendered
+  // separately, in its own panel (round7 spec C).
+  const serviceLineRows = useMemo(
+    () => invoiceServiceRows.filter(row => row.kind !== 'package'),
     [invoiceServiceRows],
   );
 
@@ -1798,6 +1794,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       .filter(pkg => !usedCatalogPackageIds.has(String(pkg.id)))
       .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
   }, [visibleCatalogPackages, usedCatalogPackageIds, catalogQuery]);
+
+  // The Package panel's own catalog picker (round7 spec C.1) - a separate query from Invoice
+  // Services' "% of package" picker above, so typing in one never clears the other.
+  const filteredPackagePickerOptions = useMemo(() => {
+    const normalizedQuery = packagePickerQuery.trim().toLowerCase();
+    return visibleCatalogPackages
+      .filter(pkg => !usedCatalogPackageIds.has(String(pkg.id)))
+      .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
+  }, [visibleCatalogPackages, usedCatalogPackageIds, packagePickerQuery]);
 
   const defaultExpectedExpensesTaxPercent = Number.isFinite(Number(catalogTechnical?.wireTransferSurchargeRate))
     ? Math.round(Number(catalogTechnical.wireTransferSurchargeRate) * 10000) / 100
@@ -2022,8 +2027,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const moveTopLevelEntry = (id, offset) => {
     const index = data.invoiceServices.findIndex(entry => entry.id === id);
-    const targetIndex = index + offset;
-    if (index === -1 || targetIndex < 0 || targetIndex >= data.invoiceServices.length) return;
+    if (index === -1) return;
+    // The package row is no longer rendered inside Invoice Services (round7 spec C) and must never
+    // be an invisible "neighbor" a service row silently swaps places with - skip over it (if one
+    // sits in between) when looking for the next/previous *visible* row to swap with.
+    const step = offset > 0 ? 1 : -1;
+    let targetIndex = index + step;
+    while (targetIndex >= 0 && targetIndex < data.invoiceServices.length && data.invoiceServices[targetIndex].kind === 'package') {
+      targetIndex += step;
+    }
+    if (targetIndex < 0 || targetIndex >= data.invoiceServices.length) return;
     const next = [...data.invoiceServices];
     [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
     persistInvoiceServices(next, 'Service order updated.');
@@ -2158,6 +2171,47 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const addCatalogChildEntry = (packageId, catalogId) => {
     const next = data.invoiceServices.map(entry => (entry.id === packageId ? addCatalogChildToPackage(entry, catalogId) : entry));
     persistInvoiceServices(next, 'Service added to package.');
+  };
+
+  // Package & PDF components ------------------------------------------------------------
+  // round7 spec C: which optional PDF components (the package block, its payment schedule, the
+  // Payment Details document) are included is decided here, independent of the invoice's flat
+  // service breakdown - a checkbox both gates PDF inclusion and shows/hides that component's own
+  // editing area (spec C.2).
+
+  const setIncludePackageInPdf = value => {
+    setData(current => ({ ...current, includePackageInPdf: value }));
+    persistPath(`${INVOICE_DATA_PATH}/includePackageInPdf`, value);
+  };
+
+  const setIncludeScheduleInPdf = value => {
+    setData(current => ({ ...current, includeScheduleInPdf: value }));
+    persistPath(`${INVOICE_DATA_PATH}/includeScheduleInPdf`, value);
+  };
+
+  const commitPackageSchedule = (packageId, schedule) => {
+    const next = data.invoiceServices.map(entry => (entry.id === packageId ? setPackageSchedule(entry, schedule) : entry));
+    persistInvoiceServices(next, 'Payment schedule updated.');
+  };
+
+  // The first edit "materializes" whatever schedule is currently showing (live from the catalog, or
+  // an existing override) into a fresh per-invoice override, then applies the one field edit on top.
+  const updateScheduleRow = (rowIndex, field, value) => {
+    if (!packageRow) return;
+    const rows = packageRow.scheduleRows.map((row, index) => (index === rowIndex
+      ? { ...row, [field]: field === 'amount' ? (Number(String(value).replace(',', '.')) || 0) : value }
+      : row));
+    commitPackageSchedule(packageRow.id, rows);
+  };
+
+  const addScheduleRow = () => {
+    if (!packageRow) return;
+    commitPackageSchedule(packageRow.id, [...packageRow.scheduleRows, { title: '', amount: 0 }]);
+  };
+
+  const removeScheduleRow = rowIndex => {
+    if (!packageRow) return;
+    commitPackageSchedule(packageRow.id, packageRow.scheduleRows.filter((_, index) => index !== rowIndex));
   };
 
   // Expected expenses ------------------------------------------------------------
@@ -2679,8 +2733,9 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         debtOrDeposit: data.debtOrDeposit,
         invoiceNumber,
         invoiceDisplayDate,
-        catalogTechnical,
         generatePaymentDetails,
+        includePackageInPdf: data.includePackageInPdf,
+        includeScheduleInPdf: data.includeScheduleInPdf,
       };
 
       // @react-pdf/renderer's WASM layout engine can still be warming up on the
@@ -2756,27 +2811,44 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />
-            <MiniButton type="button" onClick={handleUploadClick} title="Upload an invoice JSON to the backend (an expectedExpenses array of groups is picked up too)">
-              <FaUpload /> Upload JSON
-            </MiniButton>
-            <PrimaryMiniButton
-              type="button"
-              onClick={handleGeneratePdf}
-              disabled={isGenerateDisabled}
-              title="Generate and download the invoice PDF"
-            >
-              <FaFilePdf /> {isGenerating ? 'Generating…' : 'Generate PDF'}
-            </PrimaryMiniButton>
+            {activeTab === 'invoice' ? (
+              <>
+                <MiniButton type="button" onClick={handleUploadClick} title="Upload an invoice JSON to the backend (an expectedExpenses array of groups is picked up too)">
+                  <FaUpload /> Upload JSON
+                </MiniButton>
+                <PrimaryMiniButton
+                  type="button"
+                  onClick={handleGeneratePdf}
+                  disabled={isGenerateDisabled}
+                  title="Generate and download the invoice PDF"
+                >
+                  <FaFilePdf /> {isGenerating ? 'Generating…' : 'Generate PDF'}
+                </PrimaryMiniButton>
+              </>
+            ) : null}
           </HeaderActions>
         </Header>
 
         {loading ? <StateCard>Loading invoice data…</StateCard> : null}
         {!loading && error ? <StateCard>{error}</StateCard> : null}
-        {!loading && !error && isFormulaRatePending ? <StateCard>Loading NBU exchange rates for formula-priced services…</StateCard> : null}
-        {!loading && !error && formulaRateError ? <StateCard>{formulaRateError}</StateCard> : null}
+        {!loading && !error && activeTab === 'invoice' && isFormulaRatePending ? <StateCard>Loading NBU exchange rates for formula-priced services…</StateCard> : null}
+        {!loading && !error && activeTab === 'invoice' && formulaRateError ? <StateCard>{formulaRateError}</StateCard> : null}
 
         {!loading && !error ? (
           <>
+            {/* round7 spec D: Expected Expenses is a standalone section, structurally separate from
+                the regular invoice-creation flow below - never a step inside the same scroll. */}
+            <CatalogTabs>
+              <CatalogTabButton type="button" $active={activeTab === 'invoice'} onClick={() => setActiveTab('invoice')}>
+                Invoice
+              </CatalogTabButton>
+              <CatalogTabButton type="button" $active={activeTab === 'expected-expenses'} onClick={() => setActiveTab('expected-expenses')}>
+                Expected expenses
+              </CatalogTabButton>
+            </CatalogTabs>
+
+            {activeTab === 'invoice' ? (
+              <>
             <Panel>
               <CompactSection
                 $expanded={beneficiaryExpanded}
@@ -2813,6 +2885,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     <>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           placeholder="Title"
                           value={activeBeneficiary.title || ''}
@@ -2823,6 +2896,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </StackedFieldRow>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           placeholder="Address"
                           value={activeBeneficiary.address || ''}
@@ -2833,6 +2907,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </StackedFieldRow>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           placeholder="IBAN"
                           value={activeBeneficiary.iban || ''}
@@ -2843,6 +2918,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </StackedFieldRow>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           placeholder="Bank name"
                           value={activeBeneficiary.bankName || ''}
@@ -2853,6 +2929,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </StackedFieldRow>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           placeholder="SWIFT code"
                           value={activeBeneficiary.swiftCode || ''}
@@ -2863,6 +2940,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </StackedFieldRow>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           value={activeBeneficiary.paymentPurpose || ''}
                           placeholder="Payment purpose - {invoiceNumber} and {invoiceDate} are filled in automatically"
@@ -2922,6 +3000,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </StackedFieldHeader>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           placeholder="Name"
                           value={customer.name || ''}
@@ -2932,6 +3011,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </StackedFieldRow>
                       <StackedFieldRow>
                         <AutoTextArea
+                          $bare
                           style={{ width: '100%' }}
                           placeholder="Address / country"
                           value={customer.address || ''}
@@ -2948,30 +3028,138 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
             <Panel>
               <PanelHeading>
+                <H2>Package & PDF components</H2>
+              </PanelHeading>
+              <PanelNote>
+                Choose which components are added to the generated Invoice PDF. A component enabled
+                below is shown and editable here; disabled, it is hidden from both this page and
+                the PDF.
+              </PanelNote>
+
+              <FieldRow $align="center">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={data.includePackageInPdf}
+                    onChange={event => setIncludePackageInPdf(event.target.checked)}
+                  />
+                  <span>{`Package${packageRow ? ` — ${packageRow.name}` : ''}`}</span>
+                </label>
+              </FieldRow>
+
+              {data.includePackageInPdf ? (
+                packageRow ? (
+                  <PackageEntryCard
+                    row={packageRow}
+                    catalogItems={catalogItems}
+                    onCommitField={(field, value) => commitTopLevelField(packageRow.id, field, value)}
+                    onRemove={() => removeTopLevelEntry(packageRow.id)}
+                    onReset={packageRow.catalogId && packageRow.isCustomized ? () => resetTopLevelEntry(packageRow.id) : undefined}
+                    onCommitChildField={(childId, field, value) => commitPackageChildField(packageRow.id, childId, field, value)}
+                    onResetChildField={childId => resetPackageChildEntry(packageRow.id, childId)}
+                    onRemoveChild={childId => removePackageChildEntry(packageRow.id, childId)}
+                    onMoveChild={(childId, offset) => movePackageChildEntry(packageRow.id, childId, offset)}
+                    onAddCustomChild={fields => addCustomChildEntry(packageRow.id, fields)}
+                    onAddCatalogChild={catalogId => addCatalogChildEntry(packageRow.id, catalogId)}
+                  />
+                ) : (
+                  <>
+                    <FieldRow $align="center" style={{ marginTop: 8 }}>
+                      <PlainTextBase
+                        rows={1}
+                        placeholder="New custom package name"
+                        value={newCustomPackageName}
+                        onChange={event => setNewCustomPackageName(event.target.value)}
+                      />
+                      <SmallButton
+                        type="button"
+                        title="A package with no Budget catalog entry - saved fully on this invoice"
+                        onClick={addCustomPackageEntry}
+                      >
+                        <FaLayerGroup /> Add custom package
+                      </SmallButton>
+                    </FieldRow>
+                    <div style={{ marginTop: 8 }}>
+                      <SmallButton type="button" onClick={() => setShowPackagePicker(current => !current)}>
+                        <FaPlus /> {showPackagePicker ? 'Hide catalog' : 'Choose from catalog'}
+                      </SmallButton>
+                      {showPackagePicker ? (
+                        <div style={{ marginTop: 8 }}>
+                          <CatalogSearchField
+                            rows={1}
+                            placeholder="Search catalog packages…"
+                            value={packagePickerQuery}
+                            onChange={event => setPackagePickerQuery(event.target.value)}
+                          />
+                          <CatalogPickerList>
+                            {filteredPackagePickerOptions.map(pkg => (
+                              <CatalogPickerButton
+                                key={pkg.id}
+                                type="button"
+                                onClick={() => { addCatalogPackageEntry(pkg); setShowPackagePicker(false); setPackagePickerQuery(''); }}
+                              >
+                                <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
+                              </CatalogPickerButton>
+                            ))}
+                            {!filteredPackagePickerOptions.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
+                          </CatalogPickerList>
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
+                )
+              ) : null}
+
+              <FieldRow $align="center" style={{ marginTop: 10 }}>
+                <label
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, cursor: packageRow ? 'pointer' : 'not-allowed', opacity: packageRow ? 1 : 0.5,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={data.includeScheduleInPdf}
+                    disabled={!packageRow}
+                    onChange={event => setIncludeScheduleInPdf(event.target.checked)}
+                  />
+                  <span>Payment schedule</span>
+                </label>
+              </FieldRow>
+
+              {data.includeScheduleInPdf && packageRow ? (
+                <div style={{ marginTop: 4 }}>
+                  {packageRow.scheduleRows.map((row, index) => (
+                    <ScheduleRow key={row.key} row={row} index={index} onCommit={updateScheduleRow} onRemove={removeScheduleRow} />
+                  ))}
+                  {!packageRow.scheduleRows.length ? <PanelNote style={{ margin: '8px 0' }}>No payments yet.</PanelNote> : null}
+                  <SmallButton type="button" style={{ marginTop: 6 }} onClick={addScheduleRow}>
+                    <FaPlus /> Add payment
+                  </SmallButton>
+                </div>
+              ) : null}
+
+              <FieldRow $align="center" style={{ marginTop: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={generatePaymentDetails}
+                    onChange={event => setGeneratePaymentDetails(event.target.checked)}
+                  />
+                  <span>Payment details (separate PDF)</span>
+                </label>
+              </FieldRow>
+            </Panel>
+
+            <Panel>
+              <PanelHeading>
                 <H2>Invoice services</H2>
               </PanelHeading>
+              <PanelNote>
+                A flat breakdown of items/custom lines and package-percent shares. The programme
+                package itself lives in the Package panel above.
+              </PanelNote>
 
-              {invoiceServiceRows.map((row, index) => (row.kind === 'package' ? (
-                <PackageEntryCard
-                  key={row.key}
-                  row={row}
-                  index={index}
-                  canMoveUp={index > 0}
-                  canMoveDown={index < invoiceServiceRows.length - 1}
-                  catalogItems={catalogItems}
-                  onCommitField={(field, value) => commitTopLevelField(row.id, field, value)}
-                  onRemove={() => removeTopLevelEntry(row.id)}
-                  onMoveUp={() => moveTopLevelEntry(row.id, -1)}
-                  onMoveDown={() => moveTopLevelEntry(row.id, 1)}
-                  onReset={row.catalogId && row.isCustomized ? () => resetTopLevelEntry(row.id) : undefined}
-                  onCommitChildField={(childId, field, value) => commitPackageChildField(row.id, childId, field, value)}
-                  onResetChildField={childId => resetPackageChildEntry(row.id, childId)}
-                  onRemoveChild={childId => removePackageChildEntry(row.id, childId)}
-                  onMoveChild={(childId, offset) => movePackageChildEntry(row.id, childId, offset)}
-                  onAddCustomChild={fields => addCustomChildEntry(row.id, fields)}
-                  onAddCatalogChild={catalogId => addCatalogChildEntry(row.id, catalogId)}
-                />
-              ) : (
+              {serviceLineRows.map((row, index) => (
                 <ServiceLineRow
                   key={row.key}
                   row={row}
@@ -2982,11 +3170,11 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   onMoveUp={() => moveTopLevelEntry(row.id, -1)}
                   onMoveDown={() => moveTopLevelEntry(row.id, 1)}
                   canMoveUp={index > 0}
-                  canMoveDown={index < invoiceServiceRows.length - 1}
+                  canMoveDown={index < serviceLineRows.length - 1}
                   onReset={row.kind === 'item' && row.isCustomized ? () => resetTopLevelEntry(row.id) : undefined}
                 />
-              )))}
-              {!invoiceServiceRows.length ? <PanelNote style={{ margin: 0 }}>No services on this invoice yet.</PanelNote> : null}
+              ))}
+              {!serviceLineRows.length ? <PanelNote style={{ margin: 0 }}>No services on this invoice yet.</PanelNote> : null}
 
               {recentServiceSuggestions.length ? (
                 <>
@@ -3037,31 +3225,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   onChange={event => setNewCustomServicePrice(event.target.value)}
                 />
                 <SmallButton type="button" onClick={addCustomServiceEntry}><FaPlus /> Add</SmallButton>
-                {firstTopLevelPackage ? (
+                {percentSharePackage ? (
                   <SmallButton
                     type="button"
                     title="Add a share of this invoice's package price (e.g. 20%)"
-                    onClick={() => addPercentServiceEntry(firstTopLevelPackage.catalogId)}
+                    onClick={() => addPercentServiceEntry(percentSharePackage.catalogId)}
                   >
                     <FaPlus /> % of package
                   </SmallButton>
                 ) : null}
-              </FieldRow>
-
-              <FieldRow $align="center" style={{ marginTop: 8 }}>
-                <PlainTextBase
-                  rows={1}
-                  placeholder="New custom package name"
-                  value={newCustomPackageName}
-                  onChange={event => setNewCustomPackageName(event.target.value)}
-                />
-                <SmallButton
-                  type="button"
-                  title="A package with no Budget catalog entry - saved fully on this invoice"
-                  onClick={addCustomPackageEntry}
-                >
-                  <FaLayerGroup /> Add custom package
-                </SmallButton>
               </FieldRow>
 
               <div style={{ marginTop: 8 }}>
@@ -3075,7 +3247,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                         Services
                       </CatalogTabButton>
                       <CatalogTabButton type="button" $active={catalogTab === 'packages'} onClick={() => setCatalogTab('packages')}>
-                        Packages
+                        % of package
                       </CatalogTabButton>
                     </CatalogTabs>
                     <CatalogSearchField
@@ -3090,18 +3262,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                           <span>{item.name}</span>
                         </CatalogPickerButton>
                       )) : filteredCatalogPackages.map(pkg => (
-                        <CatalogPickerRow key={pkg.id}>
-                          <CatalogPickerButton type="button" style={{ flex: '1 1 auto' }} onClick={() => addCatalogPackageEntry(pkg)} title="Add the whole package at its full listed price">
-                            <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
-                          </CatalogPickerButton>
-                          <CatalogPickerPercentButton
-                            type="button"
-                            onClick={() => addCatalogPackagePercentEntry(pkg)}
-                            title="Bill only a share of this package on this invoice (e.g. one Payment Schedule milestone) - no need to add the full package first"
-                          >
-                            % of package
-                          </CatalogPickerPercentButton>
-                        </CatalogPickerRow>
+                        <CatalogPickerButton
+                          key={pkg.id}
+                          type="button"
+                          onClick={() => addCatalogPackagePercentEntry(pkg)}
+                          title="Bill only a share of this package's price on this invoice (e.g. one Payment Schedule milestone) - the whole package itself is chosen in the Package panel above"
+                        >
+                          <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
+                        </CatalogPickerButton>
                       ))}
                       {catalogTab === 'items' && !filteredCatalogItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
                       {catalogTab === 'packages' && !filteredCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
@@ -3168,16 +3336,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   style={{ flex: '0 0 auto' }}
                 />
               </FieldRow>
-              <FieldRow $align="center">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={generatePaymentDetails}
-                    onChange={event => setGeneratePaymentDetails(event.target.checked)}
-                  />
-                  <span>Generate Payment Details (separate PDF)</span>
-                </label>
-              </FieldRow>
               <StackedFieldRow style={{ marginTop: 10 }}>
                 <StackedFieldHeader>
                   <StackedFieldTag>Purpose of the payment</StackedFieldTag>
@@ -3234,7 +3392,11 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               ))}
               {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
             </Panel>
+              </>
+            ) : null}
 
+            {activeTab === 'expected-expenses' ? (
+              <>
             <Panel>
               <PanelHeading>
                 <H2>Expected expenses</H2>
@@ -3421,6 +3583,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 </>
               )}
             </Panel>
+              </>
+            ) : null}
           </>
         ) : null}
       </Shell>

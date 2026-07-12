@@ -34,7 +34,7 @@ import {
   resolveInvoiceServiceRows,
   resolveServiceRow,
   setEntryField,
-  shouldRenderPackageDetail,
+  setPackageSchedule,
   touchRecentEntry,
   updatePackageChildField,
   upsertRecentEntry,
@@ -51,6 +51,8 @@ describe('invoiceCatalogUtils', () => {
       customers: [],
       recentServices: [],
       invoiceServices: [],
+      includePackageInPdf: true,
+      includeScheduleInPdf: true,
       recentPaymentSchedules: [],
       recentTaxRates: [],
       notes: [],
@@ -312,44 +314,63 @@ describe('invoiceCatalogUtils', () => {
     });
   });
 
-  describe('hidden/special-offer packages render full detail on the Invoice (round6 #1)', () => {
+  describe('hidden/special-offer packages (round6 #1)', () => {
     it('flags a package row as isHiddenCatalog when its catalog package is hidden', () => {
       const packagesById = new Map([['p6', { id: 'p6', name: 'Special Offer', hidden: true, children: ['1'] }]]);
       const row = resolveServiceRow(makeCatalogPackageEntry({ id: 'p6', children: ['1'] }), new Map(), { packagesById });
       expect(row.isHiddenCatalog).toBe(true);
       expect(row.isCustomized).toBe(false);
     });
+  });
 
-    it('left on "auto", renders full detail for a hidden package but only a Budget reference for a standard one', () => {
-      const packagesById = new Map([
-        ['hidden-1', { id: 'hidden-1', name: 'Special Offer', hidden: true, children: ['1'] }],
-        ['standard-1', { id: 'standard-1', name: 'Programme', children: ['1'] }],
+  // round7 spec C: whether/how a package's composition and payment schedule appear on the Invoice
+  // PDF is now decided by the Builder's own checkboxes (InvoiceBuilderPage), not by a per-package
+  // detailMode field - a package row's composition (`children`) is always resolved and available.
+  describe('package payment schedule (round7 spec C.2)', () => {
+    const packagesById = new Map([['p1', {
+      id: 'p1', name: 'Full program', listedPrice: 250, children: ['1'],
+    }]]);
+    const technical = { paymentSchedules: [{ id: 'ps-1', payments: [{ title: 'Deposit', amount: 150 }, { title: 'Final payment', amount: 100 }] }] };
+    const withSchedule = { ...packagesById.get('p1'), paymentScheduleId: 'ps-1' };
+    const packagesByIdWithSchedule = new Map([['p1', withSchedule]]);
+
+    it('derives the schedule live from the catalog package when no per-invoice override is set', () => {
+      const row = resolveServiceRow(makeCatalogPackageEntry({ id: 'p1', children: ['1'] }), new Map(), { packagesById: packagesByIdWithSchedule, technical });
+      expect(row.scheduleRows).toEqual([
+        { key: expect.any(String), title: 'Deposit', amount: 150 },
+        { key: expect.any(String), title: 'Final payment', amount: 100 },
       ]);
-      const hiddenRow = resolveServiceRow(makeCatalogPackageEntry({ id: 'hidden-1', children: ['1'] }), new Map(), { packagesById });
-      const standardRow = resolveServiceRow(makeCatalogPackageEntry({ id: 'standard-1', children: ['1'] }), new Map(), { packagesById });
-      expect(shouldRenderPackageDetail(hiddenRow)).toBe(true);
-      expect(shouldRenderPackageDetail(standardRow)).toBe(false);
     });
 
-    it('an explicit detailMode override always wins over the auto default', () => {
-      const packagesById = new Map([
-        ['hidden-1', { id: 'hidden-1', name: 'Special Offer', hidden: true, children: ['1'] }],
-        ['standard-1', { id: 'standard-1', name: 'Programme', children: ['1'] }],
+    it('scales the live schedule to match a price override', () => {
+      const overridden = setEntryField(makeCatalogPackageEntry({ id: 'p1', children: ['1'] }), 'price', 500);
+      const row = resolveServiceRow(overridden, new Map(), { packagesById: packagesByIdWithSchedule, technical });
+      expect(row.scheduleRows).toEqual([
+        { key: expect.any(String), title: 'Deposit', amount: 300 },
+        { key: expect.any(String), title: 'Final payment', amount: 200 },
       ]);
-      const hiddenEntry = setEntryField(makeCatalogPackageEntry({ id: 'hidden-1', children: ['1'] }), 'detailMode', 'reference');
-      const standardEntry = setEntryField(makeCatalogPackageEntry({ id: 'standard-1', children: ['1'] }), 'detailMode', 'full');
-      const hiddenRow = resolveServiceRow(hiddenEntry, new Map(), { packagesById });
-      const standardRow = resolveServiceRow(standardEntry, new Map(), { packagesById });
-      expect(shouldRenderPackageDetail(hiddenRow)).toBe(false);
-      expect(shouldRenderPackageDetail(standardRow)).toBe(true);
-      // Setting detailMode is a display choice, not a content edit - it must never flip `customized`.
-      expect(hiddenEntry.customized).toBeUndefined();
-      expect(standardEntry.customized).toBeUndefined();
     });
 
-    it('a custom (self-contained) package always renders full detail regardless of detailMode', () => {
+    it('an explicit per-invoice schedule override wins over the live catalog schedule', () => {
+      const withOverride = setPackageSchedule(
+        makeCatalogPackageEntry({ id: 'p1', children: ['1'] }),
+        [{ title: 'Only payment', amount: 999 }],
+      );
+      const row = resolveServiceRow(withOverride, new Map(), { packagesById: packagesByIdWithSchedule, technical });
+      expect(row.scheduleRows).toEqual([{ key: expect.any(String), title: 'Only payment', amount: 999 }]);
+      // Setting a schedule override is a rendering/billing choice for this invoice, not a content
+      // edit - it must never flip `customized`.
+      expect(withOverride.customized).toBeUndefined();
+    });
+
+    it('resolves no schedule rows when the catalog package has no payment schedule', () => {
+      const row = resolveServiceRow(makeCatalogPackageEntry({ id: 'p1', children: ['1'] }), new Map(), { packagesById, technical });
+      expect(row.scheduleRows).toEqual([]);
+    });
+
+    it('resolves no schedule rows for a custom package with no override', () => {
       const row = resolveServiceRow(makeCustomPackageEntry({ name: 'Bespoke' }), new Map(), { packagesById: new Map() });
-      expect(shouldRenderPackageDetail(row)).toBe(true);
+      expect(row.scheduleRows).toEqual([]);
     });
   });
 
