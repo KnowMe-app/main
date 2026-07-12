@@ -1670,7 +1670,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // "% of package" only makes sense once a package is already part of this invoice - it's a
   // share of that package's price, not a standalone add option (spec item C).
   const firstTopLevelPackage = useMemo(
-    () => invoiceServiceRows.find(row => row.kind === 'package') || null,
+    () => invoiceServiceRows.find(row => row.kind === 'package' && row.catalogId) || null,
     [invoiceServiceRows],
   );
 
@@ -2485,17 +2485,31 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         return;
       }
       const uploadedData = normalizeInvoiceData(parsed);
-      // The uploaded file's customers describe a single case - add it as a new case on top of
-      // whatever payer history already exists here, rather than overwriting it, so uploading a
-      // JSON for a different client never merges into (or wipes out) a previous client's payer.
-      const uploadedCase = { id: createEntryId(), customers: uploadedData.customers };
-      const nextPayerCases = [...data.payerCases, uploadedCase];
-      const nextPayerCaseIds = reorderPayerCaseIds(data.payerCaseIds, uploadedCase.id);
+      // Preserve every payer case stored in the uploaded file, but clone their ids before
+      // appending them to local history so an imported backup never collides with existing
+      // cases (for example another file that still uses the legacy id). The uploaded active
+      // case stays active after import by reordering the combined id list around its clone.
+      const uploadedActiveCaseId = uploadedData.payerCaseIds[0];
+      const uploadedCases = uploadedData.payerCases.map(payerCase => ({
+        id: createEntryId(),
+        customers: payerCase.customers,
+        sourceId: payerCase.id,
+      }));
+      const uploadedActiveCase = uploadedCases.find(payerCase => String(payerCase.sourceId) === String(uploadedActiveCaseId))
+        || uploadedCases[0];
+      const nextPayerCases = [
+        ...data.payerCases,
+        ...uploadedCases.map(({ sourceId, ...payerCase }) => payerCase),
+      ];
+      const nextPayerCaseIds = reorderPayerCaseIds(
+        [...data.payerCaseIds, ...uploadedCases.map(payerCase => payerCase.id)],
+        uploadedActiveCase.id,
+      );
       const nextData = {
         ...uploadedData,
         payerCases: nextPayerCases,
         payerCaseIds: nextPayerCaseIds,
-        customers: uploadedCase.customers,
+        customers: uploadedActiveCase.customers,
       };
       await Promise.all([
         set(ref(database, `${INVOICE_DATA_PATH}/beneficiaries`), nextData.beneficiaries),

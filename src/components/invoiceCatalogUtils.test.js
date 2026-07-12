@@ -449,9 +449,9 @@ describe('invoiceCatalogUtils', () => {
       expect(row.price).toBe(0);
     });
 
-    // P0 bug: a package row is a reference block (Payment Schedule mirrors the catalog programme for
-    // context, like Budget) - its own price must never be billed into this invoice's Subtotal, only
-    // the other rows actually invoiced alongside it (custom/catalog items, or a % share of it) are.
+    // Catalog package rows are reference blocks (Payment Schedule mirrors the catalog programme for
+    // context, like Budget) - their own prices must never be billed into this invoice's Subtotal,
+    // only the other rows actually invoiced alongside them (custom/catalog items, or a % share) are.
     it('excludes a package row\'s own price from the subtotal, billing only the invoice\'s other rows', () => {
       const catalogItemsById = new Map([
         ['15', { id: '15', name: 'Scheduled payment', price: 3000 }],
@@ -480,6 +480,14 @@ describe('invoiceCatalogUtils', () => {
       const subtotal = computeInvoiceSubtotal(rows);
       // 20% of 40000 (8000) + the 300 deposit - the package's own 40000 reference price is excluded.
       expect(subtotal).toBe(8300);
+    });
+
+    it('includes a custom package row in the subtotal because there is no catalog share row', () => {
+      const catalogItemsById = new Map([['1', { id: '1', name: 'Consultation', price: 300 }]]);
+      const customPackage = addCatalogChildToPackage(makeCustomPackageEntry({ name: 'From-scratch package' }), '1');
+      const rows = resolveInvoiceServiceRows([customPackage], catalogItemsById);
+      expect(rows[0]).toMatchObject({ kind: 'package', catalogId: '', price: 300, childrenTotal: 300 });
+      expect(computeInvoiceSubtotal(rows)).toBe(300);
     });
   });
 
