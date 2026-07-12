@@ -264,7 +264,7 @@ const ProgramColumnsHead = ({ packages, leadLabel }) => (
     </View>
     {packages.map(program => (
       <View key={program.id} style={styles.programCell}>
-        <Text style={styles.programCellHead}>{program.label}</Text>
+        {program.label ? <Text style={styles.programCellHead}>{program.label}</Text> : null}
         <Text style={styles.programCellHeadPrice}>{program.priceLabel}</Text>
       </View>
     ))}

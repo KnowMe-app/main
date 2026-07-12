@@ -556,17 +556,6 @@ const LineMainRow = styled.div`
   gap: 6px;
 `;
 
-// The footer row of a service line (price + reorder + delete) - always its own row below the
-// name/description so a long name never has to fight fixed-width siblings for space in the same
-// flex row (that squeeze is what forced a <textarea> into single-character-per-line wrapping).
-const LineFooterRow = styled.div`
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-`;
-
 const RowIndex = styled.span`
   flex: 0 0 auto;
   width: 16px;
@@ -767,6 +756,7 @@ const ServiceLineRow = ({
       <LineMainRow>
         <RowIndex>{index + 1}</RowIndex>
         <AutoTextArea
+          $bare
           $size={isChild ? '12.5px' : '13px'}
           $weight="700"
           value={nameDraft}
@@ -779,6 +769,43 @@ const ServiceLineRow = ({
             if (nameDraft !== (row.name ?? '')) onCommit('name', nameDraft);
           }}
         />
+        <AutoTextArea
+          as={PlainPriceBase}
+          $bare
+          $size={isChild ? '12.5px' : '13px'}
+          $width={isChild ? '76px' : '88px'}
+          value={priceDraft}
+          placeholder="100"
+          aria-label="Price (EUR)"
+          onFocus={() => { priceEditingRef.current = true; }}
+          onChange={event => setPriceDraft(event.target.value)}
+          onBlur={() => {
+            priceEditingRef.current = false;
+            const originalPriceDraft = row.priceLabel || String(roundToCents(row.price) ?? '');
+            if (priceDraft !== originalPriceDraft) onCommit('price', priceDraft);
+          }}
+        />
+        {row.missing ? <MissingTag title="This catalog reference no longer exists">Missing</MissingTag> : null}
+        {onReset ? (
+          <IconButton $dense={isChild} type="button" onClick={onReset} title="Revert to the catalog value" aria-label="Revert to catalog value">
+            <FaUndoAlt />
+          </IconButton>
+        ) : null}
+        <RowActions $dense={isChild}>
+          {onMoveUp ? (
+            <IconButton $dense={isChild} type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
+              <FaChevronUp />
+            </IconButton>
+          ) : null}
+          {onMoveDown ? (
+            <IconButton $dense={isChild} type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
+              <FaChevronDown />
+            </IconButton>
+          ) : null}
+          <IconDangerButton $dense={isChild} type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
+            <FaTrash />
+          </IconDangerButton>
+        </RowActions>
       </LineMainRow>
       {descriptionOpen ? (
         <AutoTextArea
@@ -802,45 +829,6 @@ const ServiceLineRow = ({
           {row.description || '+ Add description'}
         </DescriptionToggle>
       )}
-      <LineFooterRow>
-        <AutoTextArea
-          as={PlainPriceBase}
-          $size={isChild ? '12.5px' : '13px'}
-          $width={isChild ? '76px' : '88px'}
-          value={priceDraft}
-          placeholder="0 or GIFT"
-          aria-label="Price (EUR)"
-          onFocus={() => { priceEditingRef.current = true; }}
-          onChange={event => setPriceDraft(event.target.value)}
-          onBlur={() => {
-            priceEditingRef.current = false;
-            const originalPriceDraft = row.priceLabel || String(roundToCents(row.price) ?? '');
-            if (priceDraft !== originalPriceDraft) onCommit('price', priceDraft);
-          }}
-        />
-        {row.isCustomized ? <CustomizedTag title="Overridden for this invoice only - the shared budget is unchanged">Custom</CustomizedTag> : null}
-        {row.missing ? <MissingTag title="This catalog reference no longer exists">Missing</MissingTag> : null}
-        {onReset ? (
-          <IconButton $dense={isChild} type="button" onClick={onReset} title="Revert to the catalog value" aria-label="Revert to catalog value">
-            <FaUndoAlt />
-          </IconButton>
-        ) : null}
-        <RowActions $dense={isChild}>
-          {onMoveUp ? (
-            <IconButton $dense={isChild} type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
-              <FaChevronUp />
-            </IconButton>
-          ) : null}
-          {onMoveDown ? (
-            <IconButton $dense={isChild} type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
-              <FaChevronDown />
-            </IconButton>
-          ) : null}
-          <IconDangerButton $dense={isChild} type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
-            <FaTrash />
-          </IconDangerButton>
-        </RowActions>
-      </LineFooterRow>
     </LineCard>
   );
 };
@@ -1581,8 +1569,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [newCustomPackageName, setNewCustomPackageName] = useState('');
   const [catalogQuery, setCatalogQuery] = useState('');
   const [showCatalogPicker, setShowCatalogPicker] = useState(false);
-  const [showPackagePicker, setShowPackagePicker] = useState(false);
-  const [packagePickerQuery, setPackagePickerQuery] = useState('');
   const [catalogTab, setCatalogTab] = useState('items');
   const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
   const [showCustomSchedulePicker, setShowCustomSchedulePicker] = useState(false);
@@ -1794,15 +1780,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       .filter(pkg => !usedCatalogPackageIds.has(String(pkg.id)))
       .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
   }, [visibleCatalogPackages, usedCatalogPackageIds, catalogQuery]);
-
-  // The Package panel's own catalog picker (round7 spec C.1) - a separate query from Invoice
-  // Services' "% of package" picker above, so typing in one never clears the other.
-  const filteredPackagePickerOptions = useMemo(() => {
-    const normalizedQuery = packagePickerQuery.trim().toLowerCase();
-    return visibleCatalogPackages
-      .filter(pkg => !usedCatalogPackageIds.has(String(pkg.id)))
-      .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
-  }, [visibleCatalogPackages, usedCatalogPackageIds, packagePickerQuery]);
 
   const defaultExpectedExpensesTaxPercent = Number.isFinite(Number(catalogTechnical?.wireTransferSurchargeRate))
     ? Math.round(Number(catalogTechnical.wireTransferSurchargeRate) * 10000) / 100
@@ -2212,6 +2189,23 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const removeScheduleRow = rowIndex => {
     if (!packageRow) return;
     commitPackageSchedule(packageRow.id, packageRow.scheduleRows.filter((_, index) => index !== rowIndex));
+  };
+
+  // Lets the admin pick a different named schedule out of the full catalog (round8 spec B),
+  // instead of only ever inheriting the one schedule this package happens to be linked to.
+  // Percent-based steps are resolved against the package's own listed price, same as the
+  // catalog-derived schedule this replaces.
+  const applyCatalogPaymentSchedule = scheduleId => {
+    if (!packageRow) return;
+    const schedule = (catalogTechnical.paymentSchedules || []).find(candidate => String(candidate.id) === String(scheduleId));
+    if (!schedule) return;
+    const pkg = catalogPackagesById.get(String(packageRow.catalogId));
+    const listedPriceAmount = pkg ? resolveBudgetPriceAmount(pkg.listedPrice, priceContext) : null;
+    const rows = (schedule.payments || []).map(payment => ({
+      title: payment.title || '',
+      amount: resolvePaymentAmount(payment, listedPriceAmount) ?? 0,
+    }));
+    commitPackageSchedule(packageRow.id, rows);
   };
 
   // Expected expenses ------------------------------------------------------------
@@ -3080,31 +3074,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </SmallButton>
                     </FieldRow>
                     <div style={{ marginTop: 8 }}>
-                      <SmallButton type="button" onClick={() => setShowPackagePicker(current => !current)}>
-                        <FaPlus /> {showPackagePicker ? 'Hide catalog' : 'Choose from catalog'}
-                      </SmallButton>
-                      {showPackagePicker ? (
-                        <div style={{ marginTop: 8 }}>
-                          <CatalogSearchField
-                            rows={1}
-                            placeholder="Search catalog packages…"
-                            value={packagePickerQuery}
-                            onChange={event => setPackagePickerQuery(event.target.value)}
-                          />
-                          <CatalogPickerList>
-                            {filteredPackagePickerOptions.map(pkg => (
-                              <CatalogPickerButton
-                                key={pkg.id}
-                                type="button"
-                                onClick={() => { addCatalogPackageEntry(pkg); setShowPackagePicker(false); setPackagePickerQuery(''); }}
-                              >
-                                <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
-                              </CatalogPickerButton>
-                            ))}
-                            {!filteredPackagePickerOptions.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
-                          </CatalogPickerList>
-                        </div>
-                      ) : null}
+                      <PlainSelect
+                        aria-label="Choose package from catalog"
+                        value=""
+                        onChange={event => {
+                          const pkg = visibleCatalogPackages.find(candidate => String(candidate.id) === event.target.value);
+                          if (pkg) addCatalogPackageEntry(pkg);
+                        }}
+                      >
+                        <option value="">Choose package from catalog…</option>
+                        {visibleCatalogPackages.map(pkg => (
+                          <option key={pkg.id} value={pkg.id}>{pkg.hidden ? `${pkg.name} (Special offer)` : pkg.name}</option>
+                        ))}
+                      </PlainSelect>
+                      {!visibleCatalogPackages.length ? <PanelNote style={{ margin: '8px 0 0' }}>No packages in the catalog.</PanelNote> : null}
                     </div>
                   </>
                 )
@@ -3128,6 +3111,21 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
               {data.includeScheduleInPdf && packageRow ? (
                 <div style={{ marginTop: 4 }}>
+                  {(catalogTechnical.paymentSchedules || []).length ? (
+                    <PlainSelect
+                      aria-label="Apply a payment schedule from the catalog"
+                      value=""
+                      onChange={event => { if (event.target.value) applyCatalogPaymentSchedule(event.target.value); }}
+                      style={{ marginBottom: 8 }}
+                    >
+                      <option value="">Apply schedule from catalog…</option>
+                      {catalogTechnical.paymentSchedules.map(schedule => (
+                        <option key={schedule.id} value={schedule.id}>
+                          {`${schedule.id} (${(schedule.payments || []).length} payment${(schedule.payments || []).length === 1 ? '' : 's'})`}
+                        </option>
+                      ))}
+                    </PlainSelect>
+                  ) : null}
                   {packageRow.scheduleRows.map((row, index) => (
                     <ScheduleRow key={row.key} row={row} index={index} onCommit={updateScheduleRow} onRemove={removeScheduleRow} />
                   ))}
@@ -3176,6 +3174,82 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               ))}
               {!serviceLineRows.length ? <PanelNote style={{ margin: 0 }}>No services on this invoice yet.</PanelNote> : null}
 
+              <div
+                style={{ marginTop: 14 }}
+                onBlur={event => {
+                  if (event.currentTarget.contains(event.relatedTarget)) return;
+                  if (newCustomServiceName.trim()) addCustomServiceEntry();
+                }}
+              >
+                <FieldRow $align="center">
+                  <PlainTextBase
+                    $bare
+                    rows={1}
+                    placeholder="New custom service name"
+                    value={newCustomServiceName}
+                    onChange={event => setNewCustomServiceName(event.target.value)}
+                  />
+                  <PlainPriceBase
+                    $bare
+                    rows={1}
+                    placeholder="Price or GIFT"
+                    value={newCustomServicePrice}
+                    onChange={event => setNewCustomServicePrice(event.target.value)}
+                  />
+                </FieldRow>
+                <FieldRow $align="center" style={{ marginTop: 8 }}>
+                  <SmallButton type="button" onClick={() => setShowCatalogPicker(current => !current)}>
+                    <FaPlus /> {showCatalogPicker ? 'Hide catalog' : 'Add from catalog'}
+                  </SmallButton>
+                  {percentSharePackage ? (
+                    <SmallButton
+                      type="button"
+                      title="Add a share of this invoice's package price (e.g. 20%)"
+                      onClick={() => addPercentServiceEntry(percentSharePackage.catalogId)}
+                    >
+                      <FaPlus /> Add % of package
+                    </SmallButton>
+                  ) : null}
+                </FieldRow>
+              </div>
+
+              {showCatalogPicker ? (
+                <div style={{ marginTop: 8 }}>
+                  <CatalogTabs>
+                    <CatalogTabButton type="button" $active={catalogTab === 'items'} onClick={() => setCatalogTab('items')}>
+                      Services
+                    </CatalogTabButton>
+                    <CatalogTabButton type="button" $active={catalogTab === 'packages'} onClick={() => setCatalogTab('packages')}>
+                      % of package
+                    </CatalogTabButton>
+                  </CatalogTabs>
+                  <CatalogSearchField
+                    rows={1}
+                    placeholder={catalogTab === 'items' ? 'Search catalog services…' : 'Search catalog packages…'}
+                    value={catalogQuery}
+                    onChange={event => setCatalogQuery(event.target.value)}
+                  />
+                  <CatalogPickerList>
+                    {catalogTab === 'items' ? filteredCatalogItems.map(item => (
+                      <CatalogPickerButton key={item.id} type="button" onClick={() => addCatalogServiceEntry(item.id)}>
+                        <span>{item.name}</span>
+                      </CatalogPickerButton>
+                    )) : filteredCatalogPackages.map(pkg => (
+                      <CatalogPickerButton
+                        key={pkg.id}
+                        type="button"
+                        onClick={() => addCatalogPackagePercentEntry(pkg)}
+                        title="Bill only a share of this package's price on this invoice (e.g. one Payment Schedule milestone) - the whole package itself is chosen in the Package panel above"
+                      >
+                        <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
+                      </CatalogPickerButton>
+                    ))}
+                    {catalogTab === 'items' && !filteredCatalogItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
+                    {catalogTab === 'packages' && !filteredCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
+                  </CatalogPickerList>
+                </div>
+              ) : null}
+
               {recentServiceSuggestions.length ? (
                 <>
                   <PanelNote style={{ marginTop: 14, marginBottom: 4 }}>Recent (click to add)</PanelNote>
@@ -3210,73 +3284,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   </ChipRow>
                 </>
               ) : null}
-
-              <FieldRow $align="center" style={{ marginTop: 14 }}>
-                <PlainTextBase
-                  rows={1}
-                  placeholder="New custom service name"
-                  value={newCustomServiceName}
-                  onChange={event => setNewCustomServiceName(event.target.value)}
-                />
-                <PlainPriceBase
-                  rows={1}
-                  placeholder="Price or GIFT"
-                  value={newCustomServicePrice}
-                  onChange={event => setNewCustomServicePrice(event.target.value)}
-                />
-                <SmallButton type="button" onClick={addCustomServiceEntry}><FaPlus /> Add</SmallButton>
-                {percentSharePackage ? (
-                  <SmallButton
-                    type="button"
-                    title="Add a share of this invoice's package price (e.g. 20%)"
-                    onClick={() => addPercentServiceEntry(percentSharePackage.catalogId)}
-                  >
-                    <FaPlus /> % of package
-                  </SmallButton>
-                ) : null}
-              </FieldRow>
-
-              <div style={{ marginTop: 8 }}>
-                <SmallButton type="button" onClick={() => setShowCatalogPicker(current => !current)}>
-                  <FaPlus /> {showCatalogPicker ? 'Hide catalog' : 'Add from catalog'}
-                </SmallButton>
-                {showCatalogPicker ? (
-                  <div style={{ marginTop: 8 }}>
-                    <CatalogTabs>
-                      <CatalogTabButton type="button" $active={catalogTab === 'items'} onClick={() => setCatalogTab('items')}>
-                        Services
-                      </CatalogTabButton>
-                      <CatalogTabButton type="button" $active={catalogTab === 'packages'} onClick={() => setCatalogTab('packages')}>
-                        % of package
-                      </CatalogTabButton>
-                    </CatalogTabs>
-                    <CatalogSearchField
-                      rows={1}
-                      placeholder={catalogTab === 'items' ? 'Search catalog services…' : 'Search catalog packages…'}
-                      value={catalogQuery}
-                      onChange={event => setCatalogQuery(event.target.value)}
-                    />
-                    <CatalogPickerList>
-                      {catalogTab === 'items' ? filteredCatalogItems.map(item => (
-                        <CatalogPickerButton key={item.id} type="button" onClick={() => addCatalogServiceEntry(item.id)}>
-                          <span>{item.name}</span>
-                        </CatalogPickerButton>
-                      )) : filteredCatalogPackages.map(pkg => (
-                        <CatalogPickerButton
-                          key={pkg.id}
-                          type="button"
-                          onClick={() => addCatalogPackagePercentEntry(pkg)}
-                          title="Bill only a share of this package's price on this invoice (e.g. one Payment Schedule milestone) - the whole package itself is chosen in the Package panel above"
-                        >
-                          <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
-                        </CatalogPickerButton>
-                      ))}
-                      {catalogTab === 'items' && !filteredCatalogItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
-                      {catalogTab === 'packages' && !filteredCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
-                    </CatalogPickerList>
-                  </div>
-                ) : null}
-              </div>
             </Panel>
 
             <Panel>
@@ -3356,8 +3363,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 />
               </StackedFieldRow>
               <SummaryGrid style={{ marginTop: 10 }}>
-                <SummaryLine><span>Invoice number</span><span>{invoiceNumber}</span></SummaryLine>
-                <SummaryLine><span>Location</span><span>{payerLocation || '—'}</span></SummaryLine>
                 <SummaryLine><span>Subtotal</span><span>{formatEuroPreview(subtotal)}</span></SummaryLine>
                 {data.debtOrDeposit ? (
                   <SummaryLine>
@@ -3375,19 +3380,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <SmallButton type="button" onClick={addNote}><FaPlus /> Add note</SmallButton>
               </PanelHeading>
               {data.notes.map((note, index) => (
-                <StackedFieldRow key={`note-${index}`}>
-                  <StackedFieldHeader>
-                    <StackedFieldTag>Note {index + 1}</StackedFieldTag>
-                    <IconDangerButton type="button" onClick={() => removeNote(index)} title="Remove note" aria-label="Remove note">
-                      <FaTrash />
-                    </IconDangerButton>
-                  </StackedFieldHeader>
+                <StackedFieldRow key={`note-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <AutoTextArea
+                    $bare
                     style={{ width: '100%' }}
                     value={note}
+                    aria-label={`Note ${index + 1}`}
                     onChange={event => updateNote(index, event.target.value)}
                     onBlur={commitNote}
                   />
+                  <IconDangerButton type="button" onClick={() => removeNote(index)} title="Remove note" aria-label="Remove note">
+                    <FaTrash />
+                  </IconDangerButton>
                 </StackedFieldRow>
               ))}
               {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
