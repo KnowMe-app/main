@@ -24,7 +24,9 @@
 // normalizeServiceEntry upgrades those to the object shape on load, so the rest of the app only
 // ever sees objects.
 
-import { getItemDisplayAmount, resolveBudgetPriceAmount } from './budgetCatalogUtils';
+import {
+  getItemDisplayAmount, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule,
+} from './budgetCatalogUtils';
 
 const SERVICE_PRICE_SEPARATOR = '||';
 const CATALOG_ID_PREFIX = 'id';
@@ -86,6 +88,12 @@ export const normalizeInvoiceData = raw => {
     customers: activeCase?.customers || [],
     recentServices: normalizeServiceEntries(raw?.recentServices),
     invoiceServices: normalizeServiceEntries(raw?.invoiceServices),
+    // Which optional components the generated Invoice PDF includes (round7 spec C.1) - each is
+    // independently toggled, editable in the Builder while on, and takes no space in the PDF (or
+    // the Builder's own editing area) while off. Defaults to "on" so an admin who never touches
+    // these checkboxes gets the same complete PDF as before this panel existed.
+    includePackageInPdf: raw?.includePackageInPdf !== undefined ? Boolean(raw.includePackageInPdf) : true,
+    includeScheduleInPdf: raw?.includeScheduleInPdf !== undefined ? Boolean(raw.includeScheduleInPdf) : true,
     // Every payment schedule an admin has ever built for a custom package (round4 #4), most
     // recently used first - offered when a package has no catalog schedule to fall back on.
     recentPaymentSchedules: Array.isArray(raw?.recentPaymentSchedules)
@@ -273,6 +281,12 @@ export const normalizeServiceEntry = raw => {
       ...(raw.priceOverride !== undefined && raw.priceOverride !== null && raw.priceOverride !== ''
         ? { priceOverride: toNumber(raw.priceOverride) }
         : {}),
+      // A per-invoice override of the package's payment schedule (round7 spec C.2) - absent until
+      // an admin edits it in the Builder, at which point it freezes the schedule shown/billed on
+      // this invoice instead of continuing to track the catalog's live payment schedule.
+      ...(Array.isArray(raw.schedule)
+        ? { schedule: raw.schedule.map(payment => ({ title: String(payment?.title || ''), amount: toNumber(payment?.amount) })) }
+        : {}),
       children: normalizeServiceEntries(raw.children),
     };
   }
@@ -340,11 +354,6 @@ export const setEntryField = (entry, field, value) => {
   if (entry.kind === 'package') {
     if (field === 'price') return { ...entry, priceOverride: toNumber(value), customized: true };
     if (field === 'name' || field === 'description') return { ...entry, [field]: value, customized: true };
-    // detailMode is a rendering choice for this one invoice, not a content edit - it must never
-    // flip `customized` (that flag means "no longer matches the catalog package's actual content").
-    if (field === 'detailMode') {
-      return { ...entry, detailMode: ['full', 'reference'].includes(value) ? value : 'auto' };
-    }
     return entry;
   }
   return { ...entry, [field]: field === 'price' ? toNumber(value) : value, customized: true };
@@ -396,21 +405,17 @@ export const addCatalogChildToPackage = (entry, catalogId) => {
   return { ...entry, children: [...(entry.children || []), makeCatalogItemEntry(catalogId)], customized: true };
 };
 
+// Freezes a per-invoice override of the package's payment schedule (round7 spec C.2): once set, it
+// wins over the catalog's live payment schedule in resolvePackageEntrySchedule below - a rendering/
+// billing choice for this one invoice, not a content edit, so it never flips `customized` (which
+// means "no longer matches the catalog package's actual line items").
+export const setPackageSchedule = (entry, schedule) => (entry?.kind === 'package'
+  ? { ...entry, schedule: (Array.isArray(schedule) ? schedule : []).map(payment => ({ title: String(payment?.title || ''), amount: toNumber(payment?.amount) })) }
+  : entry);
+
 // --- Queries ------------------------------------------------------------
 
 export const isEntryCustomized = entry => (entry?.kind === 'custom' ? true : Boolean(entry?.customized));
-
-// Whether a package row's full "Included in this programme" + "Payment schedule" detail should be
-// rendered inline on the Invoice PDF, instead of the one-sentence Budget reference (round6 #1).
-// An explicit detailMode always wins; left on 'auto', it renders full detail exactly when there's
-// no Budget document to point at instead - a customized package (content no longer matches the
-// catalog) or a hidden/special-offer package (no public Budget page at all).
-export const shouldRenderPackageDetail = row => {
-  if (!row) return false;
-  if (row.detailMode === 'full') return true;
-  if (row.detailMode === 'reference') return false;
-  return Boolean(row.isCustomized) || Boolean(row.isHiddenCatalog);
-};
 
 // A stable identity for an entry, ignoring its id - used to dedupe "recent services" chips and to
 // stop the same catalog item/package being added to the invoice twice.
@@ -434,6 +439,37 @@ export const getEntryIdentityKey = entry => {
 // `children` are always a frozen snapshot taken when it was added - they never live-track the
 // catalog, since that's the whole point of pinning a specific set of services to an invoice.
 const formatPercentValue = percent => (Number.isInteger(percent) ? String(percent) : String(Math.round(percent * 100) / 100));
+
+// The payment schedule shown/edited for a package row on this invoice (round7 spec C.2): an
+// explicit per-invoice `entry.schedule` (set via setPackageSchedule, once an admin edits it) always
+// wins; otherwise it's derived live from the catalog package's own payment schedule, scaled to
+// match a price override the same way the package's own billed price already is. priceContext may
+// carry `technical` (budget/technical, for catalog.paymentSchedules lookups) alongside the usual
+// itemsById/rates/packagesById.
+export const resolvePackageEntrySchedule = (entry, listedPriceAmount, billedPrice, priceContext = {}) => {
+  if (entry?.kind !== 'package') return [];
+  if (Array.isArray(entry.schedule)) {
+    return entry.schedule.map((payment, index) => ({
+      key: `${entry.id}-schedule-${index}`,
+      title: payment.title || `Payment ${index + 1}`,
+      amount: roundMoney(payment.amount),
+    }));
+  }
+  const pkg = priceContext.packagesById?.get?.(String(entry.catalogId));
+  if (!pkg) return [];
+  const catalogSchedule = resolveProgramPaymentSchedule({ technical: priceContext.technical }, pkg);
+  const payments = Array.isArray(catalogSchedule?.payments) ? catalogSchedule.payments : [];
+  if (!payments.length) return [];
+  const scale = listedPriceAmount ? (Number(billedPrice) || 0) / listedPriceAmount : 1;
+  return payments.map((payment, index) => {
+    const amount = resolvePaymentAmount(payment, listedPriceAmount);
+    return {
+      key: `${entry.id}-schedule-${index}`,
+      title: payment.title || `Payment ${index + 1}`,
+      amount: amount == null ? 0 : roundMoney(amount * scale),
+    };
+  });
+};
 
 export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) => {
   if (entry?.kind === 'percent') {
@@ -486,16 +522,18 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       // of its own - there is nothing for the Invoice's "see your Budget" reference sentence to
       // point at, so PackageBlock must fall back to rendering the full details inline instead.
       isHiddenCatalog: Boolean(pkg?.hidden),
-      // 'auto' (default) lets shouldRenderPackageDetail decide from isCustomized/isHiddenCatalog;
-      // 'full'/'reference' are an explicit per-invoice admin override of that default (round5 #4 /
-      // round6 #1 - a selector, not an implicit toggle).
-      detailMode: ['full', 'reference'].includes(entry.detailMode) ? entry.detailMode : 'auto',
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? pkg?.description ?? '',
       price: hasPriceOverride ? roundMoney(entry.priceOverride) : defaultPrice,
       childrenTotal,
       hasPriceOverride,
       children: resolvedChildren,
+      scheduleRows: resolvePackageEntrySchedule(
+        entry,
+        listedPriceAmount,
+        hasPriceOverride ? roundMoney(entry.priceOverride) : defaultPrice,
+        { ...priceContext, itemsById: catalogItemsById },
+      ),
     };
   }
 
