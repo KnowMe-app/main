@@ -4,7 +4,7 @@ import {
   BrandRow, BrandRule, BronzeMotif, ContinuedTag, Footer, PDF_COLOR, PDF_FONT,
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
-import { formatMoney, resolveBudgetPriceAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
+import { formatMoney, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule } from './budgetCatalogUtils';
 import { IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import {
   buildCaseTitle,
@@ -341,16 +341,23 @@ const InvoicePdfDocument = ({
   const resolvePackageSchedule = row => {
     const catalogPackage = priceContext?.packagesById?.get?.(String(row.catalogId));
     const schedule = catalogPackage ? resolveProgramPaymentSchedule({ technical: catalogTechnical }, catalogPackage) : null;
-    if (!row.isCustomized || !schedule?.payments?.length || !catalogPackage) return schedule;
+    if (!schedule?.payments?.length || !catalogPackage) return schedule;
     const catalogTotal = resolveBudgetPriceAmount(catalogPackage.listedPrice, { ...priceContext, itemsById: catalogItemsById });
+    // Resolve every payment (amount- or percent-based) to a concrete euro amount up front, so the
+    // rest of this file - and PackageBlock below - only ever reads a plain `payment.amount` number.
+    const resolvedPayments = schedule.payments.map(payment => ({
+      ...payment,
+      amount: resolvePaymentAmount(payment, catalogTotal),
+    }));
+    if (!row.isCustomized) return { ...schedule, payments: resolvedPayments };
     const rowTotal = Number(row.price);
-    if (!catalogTotal || !Number.isFinite(rowTotal)) return schedule;
+    if (!catalogTotal || !Number.isFinite(rowTotal)) return { ...schedule, payments: resolvedPayments };
     const scale = rowTotal / catalogTotal;
     return {
       ...schedule,
-      payments: schedule.payments.map(payment => ({
+      payments: resolvedPayments.map(payment => ({
         ...payment,
-        amount: Number.isFinite(Number(payment.amount)) ? Math.round(Number(payment.amount) * scale * 100) / 100 : payment.amount,
+        amount: Number.isFinite(payment.amount) ? Math.round(payment.amount * scale * 100) / 100 : payment.amount,
       })),
     };
   };

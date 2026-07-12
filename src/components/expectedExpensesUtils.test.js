@@ -61,6 +61,28 @@ describe('expectedExpensesUtils', () => {
     expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: '3', percent: 15 });
   });
 
+  // ps-6 (Special Offer — Programme Fee): 4 payments of { percent: 25 } instead of { amount }.
+  it('builds milestones from a percent-based schedule (ps-6 format), same as an amount-based one', () => {
+    const specialOfferPkg = { id: '7', name: 'Special Offer — Programme Fee', listedPrice: 29700, currency: 'EUR', children: [] };
+    const percentSchedule = {
+      id: 'ps-6',
+      payments: [
+        { percent: 25, title: 'On confirmation of pregnancy by ultrasound' },
+        { percent: 25, title: 'Milestone 2' },
+        { percent: 25, title: 'Milestone 3' },
+        { percent: 25, title: 'Milestone 4' },
+      ],
+    };
+    const plan = buildExpectedExpensesPlan(specialOfferPkg, percentSchedule);
+    expect(plan.milestones).toHaveLength(4);
+    plan.milestones.forEach(milestone => {
+      expect(milestone.services[0]).toMatchObject({ kind: 'percent', packageId: '7', percent: 25 });
+    });
+    expect(computeMilestonesTotal(
+      plan.milestones, new Map(), { packagesById: new Map([['7', specialOfferPkg]]) },
+    )).toBe(7425 * 4);
+  });
+
   it('never stores a euro amount on a milestone - the percent-of-package row recalculates it', () => {
     const plan = buildExpectedExpensesPlan(pkg, schedule);
     expect(computeMilestonesTotal(plan.milestones, new Map(), { packagesById: new Map([['3', pkg]]) })).toBe(40000);

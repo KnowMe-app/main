@@ -5,10 +5,13 @@ import {
   formatMoney,
   getExpensePriceLabel,
   getItemDisplayAmount,
+  getSortedPackages,
+  getVisibleSortedPackages,
   normalizeBudgetPriceInput,
   normalizeCatalog,
   normalizeClientNotes,
   resolveBudgetPriceAmount,
+  resolvePaymentAmount,
   USD_TO_EUR_RATE,
 } from './budgetCatalogUtils';
 
@@ -161,5 +164,46 @@ describe('budgetCatalogUtils', () => {
     expect(catalog.packages).toHaveLength(1);
     expect(catalog.clientNotes.programMilestones).toEqual(['Note']);
     expect(catalog.technical.wireTransferSurchargeRate).toBe(0.14);
+  });
+
+  // Special Offer packages (hidden: true) must stay out of the public Program Budget PDF but
+  // remain pickable in Invoice Builder / Expected Expenses - two catalogs, one filtered, one not.
+  describe('hidden packages', () => {
+    const catalog = {
+      packages: [
+        { id: 1, name: 'Public A', listedPrice: 40000 },
+        { id: 6, name: 'Special Offer — Initial Payment', listedPrice: 7580, hidden: true },
+        { id: 2, name: 'Public B', listedPrice: 15000 },
+      ],
+    };
+
+    it('excludes hidden packages from getVisibleSortedPackages', () => {
+      const ids = getVisibleSortedPackages(catalog).map(pkg => pkg.id);
+      expect(ids).toEqual([2, 1]);
+    });
+
+    it('keeps hidden packages in getSortedPackages, still sorted by price', () => {
+      const ids = getSortedPackages(catalog).map(pkg => pkg.id);
+      expect(ids).toEqual([6, 2, 1]);
+    });
+  });
+
+  describe('resolvePaymentAmount', () => {
+    it('uses the fixed amount when present', () => {
+      expect(resolvePaymentAmount({ amount: 15000 }, 40000)).toBe(15000);
+    });
+
+    it('derives the amount from a percent of the listed price', () => {
+      expect(resolvePaymentAmount({ percent: 25 }, 29700)).toBe(7425);
+    });
+
+    it('prefers amount over percent when both are somehow present', () => {
+      expect(resolvePaymentAmount({ amount: 100, percent: 50 }, 1000)).toBe(100);
+    });
+
+    it('returns null when neither amount nor a resolvable percent is present', () => {
+      expect(resolvePaymentAmount({ title: 'No figure' }, 1000)).toBeNull();
+      expect(resolvePaymentAmount({ percent: 25 }, null)).toBeNull();
+    });
   });
 });

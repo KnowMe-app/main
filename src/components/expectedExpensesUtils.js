@@ -31,7 +31,7 @@ import {
   resolveServiceRow,
   setEntryField,
 } from './invoiceCatalogUtils';
-import { resolveProgramPaymentSchedule } from './budgetCatalogUtils';
+import { resolveProgramPaymentSchedule, resolvePaymentAmount } from './budgetCatalogUtils';
 
 // --- Building a plan from a chosen catalog package + its payment schedule ------------------------------------------------------
 
@@ -47,7 +47,7 @@ export const buildPackageOverviewChildren = pkg => (Array.isArray(pkg?.children)
 // instead of drifting by tens of euros on packages whose payments aren't a round percentage.
 const buildGroupFromSchedulePayment = (pkg, payment) => {
   const listedPrice = Number(pkg?.listedPrice) || 0;
-  const amount = Number(payment?.amount) || 0;
+  const amount = resolvePaymentAmount(payment, listedPrice) || 0;
   if (!listedPrice || !amount) return [];
   const percent = Math.round((amount / listedPrice) * 1e6) / 1e4;
   return [makePercentOfPackageEntry(pkg?.id, percent, { expectedExpenseRole: 'scheduled' })];

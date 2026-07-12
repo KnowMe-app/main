@@ -17,11 +17,29 @@ const fixturePackages = [
   {
     id: 'p1', name: 'Full program', listedPrice: 250, description: 'Everything included.', children: ['10', '11'], paymentScheduleId: 'ps-1',
   },
+  // Special Offer, initial payment: hidden from the public catalog, no payment schedule at all -
+  // a single lump-sum package (spec §2.2).
+  {
+    id: 'p6', name: 'Special Offer — Initial Payment', listedPrice: 7580, description: '', children: ['10'], hidden: true,
+  },
+  // Special Offer, programme fee: hidden, with a percent-based schedule (spec §2.3, ps-6 format).
+  {
+    id: 'p7', name: 'Special Offer — Programme Fee', listedPrice: 29700, description: '', children: ['11'], hidden: true, paymentScheduleId: 'ps-6',
+  },
 ];
 
 const fixtureTechnical = {
   paymentSchedules: [
     { id: 'ps-1', payments: [{ title: 'To start the program', amount: 150 }, { title: 'Final payment', amount: 100 }] },
+    {
+      id: 'ps-6',
+      payments: [
+        { percent: 25, title: 'On confirmation of pregnancy by ultrasound' },
+        { percent: 25, title: 'Milestone 2' },
+        { percent: 25, title: 'Milestone 3' },
+        { percent: 25, title: 'Milestone 4' },
+      ],
+    },
   ],
   wireTransferSurchargeRate: 0.14,
 };
@@ -219,6 +237,36 @@ describe('InvoiceBuilderPage', () => {
     expect(container.innerHTML).toContain('Bespoke concierge programme');
     expect(container.innerHTML).toContain('Custom package');
     expect(container.innerHTML).not.toContain('Missing');
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // Special Offer packages (hidden: true) are deliberately excluded from the public Program
+  // Budget PDF, but an admin must still be able to pick them here - labeled so they're never
+  // mistaken for one of the public programs.
+  it('lists hidden "Special Offer" packages in the catalog picker, and adds one with no payment schedule at its full listed price', async () => {
+    const root = mount();
+    await flush();
+
+    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    await act(async () => { findButton('Packages', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    expect(container.innerHTML).toContain('Special Offer — Initial Payment');
+    expect(container.innerHTML).toContain('Special offer');
+
+    const packageButton = findButton('Special Offer — Initial Payment');
+    expect(packageButton).toBeTruthy();
+    await act(async () => { packageButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    const packageEntry = lastServicesCall[1].find(entry => entry.kind === 'package' && entry.catalogId === 'p6');
+    expect(packageEntry).toBeTruthy();
+    // No payment schedule on this package (spec §2.2) - the whole package is billed as a single
+    // payment at its full listed price, with no milestone/percent breakdown to pick from.
+    expect(container.innerHTML).toContain('7580');
 
     await act(async () => { root.unmount(); });
   });
@@ -503,6 +551,34 @@ describe('InvoiceBuilderPage', () => {
       expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 60 });
       expect(plan.milestones[1]).toMatchObject({ title: 'Final payment', showPackageOverview: false });
       expect(plan.milestones[1].services[0]).toMatchObject({ kind: 'percent', packageId: 'p1', percent: 40 });
+
+      await act(async () => { root.unmount(); });
+    });
+
+    // Special Offer — Programme Fee (ps-6): its payment schedule uses { percent: 25 } entries
+    // instead of { amount }, so building the plan must resolve them the same way an amount-based
+    // schedule (like ps-1) is resolved.
+    it('builds an Expected Expenses plan from a percent-based schedule (ps-6 format)', async () => {
+      const root = mount();
+      await flush();
+
+      await act(async () => { findButton('Choose a package').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+      const packageButton = findButton('Special Offer — Programme Fee');
+      expect(packageButton).toBeTruthy();
+      await act(async () => { packageButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const persistedCalls = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/expectedExpenses');
+      expect(persistedCalls.length).toBeGreaterThan(0);
+      const plan = persistedCalls[persistedCalls.length - 1][1];
+      expect(plan.packageId).toBe('p7');
+      expect(plan.milestones).toHaveLength(4);
+      plan.milestones.forEach(milestone => {
+        expect(milestone.services[0]).toMatchObject({ kind: 'percent', packageId: 'p7', percent: 25 });
+      });
+      // 29,700 EUR x 25% = 7,425 EUR per milestone (checklist item in the import spec), before tax.
+      expect(container.innerHTML).toContain('Subtotal: €7,425');
 
       await act(async () => { root.unmount(); });
     });
