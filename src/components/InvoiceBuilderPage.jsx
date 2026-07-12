@@ -403,10 +403,13 @@ const StackedFieldRow = styled.div`
 // the Name/Address text lines up with the summary text instead of sitting flush against the panel
 // edge, a step to the left of everything above it.
 const CustomerBlock = styled.div`
-  padding: 8px 0 8px 12px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  background: var(--km-bg);
 
   & + & {
-    border-top: 1px solid var(--km-border);
+    margin-top: 8px;
   }
 `;
 
@@ -854,6 +857,28 @@ const PackageHeaderRow = styled(LineMainRow)`
   align-items: flex-start;
 `;
 
+// The explicit "which package/schedule to render in the PDF" selector (round5 #4 / round6 #1) -
+// same visual pattern as the Beneficiary/Active-case PlainSelect, not a toggle.
+const PackageDetailModeRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0 28px;
+
+  @media (max-width: 560px) {
+    margin-left: 10px;
+  }
+`;
+
+const PackageDetailModeLabel = styled.span`
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--km-muted);
+`;
+
 const PackageIcon = styled.span`
   flex: 0 0 auto;
   display: inline-flex;
@@ -1149,6 +1174,22 @@ const PackageEntryCard = ({
           {row.description || '+ Add description'}
         </DescriptionToggle>
       )}
+
+      {row.catalogId ? (
+        <PackageDetailModeRow>
+          <PackageDetailModeLabel>PDF detail</PackageDetailModeLabel>
+          <PlainSelect
+            style={{ flex: '0 1 auto', width: 'auto' }}
+            value={row.detailMode || 'auto'}
+            aria-label="Package detail shown in the Invoice PDF"
+            onChange={event => onCommitField('detailMode', event.target.value)}
+          >
+            <option value="auto">{`Auto (${row.isHiddenCatalog ? 'full details – no Budget' : 'reference to Budget'})`}</option>
+            <option value="full">Full details in PDF</option>
+            <option value="reference">Reference to Budget only</option>
+          </PlainSelect>
+        </PackageDetailModeRow>
+      ) : null}
 
       <PackageChildren>
         {row.children.map((child, childIndex) => (
