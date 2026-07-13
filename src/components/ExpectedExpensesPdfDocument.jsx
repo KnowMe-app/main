@@ -168,10 +168,15 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
   const packagesMeta = [{ id: 'programme', label: 'Programme', priceLabel: formatAmount(listedPrice) }];
 
   const milestoneRows = milestones.map(milestone => resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext));
-  const milestoneSubtotals = milestoneRows.map(rows => computeMilestoneSubtotal(rows));
+  // Only the auto-generated "share of the programme fee" row belongs in this schedule - it mirrors
+  // the package's own payment schedule, whose column already sums to the whole programme fee
+  // (Programme 46,000 above). Any other row (SM deposits, catalog add-ons, gifts, ...) is a one-off
+  // extra that belongs solely in that milestone's own Payments block below, never folded into this
+  // total - otherwise a milestone with an extra would show more than its actual scheduled share here.
+  const milestoneScheduledAmounts = milestoneRows.map(rows => computeMilestoneSubtotal(splitScheduledRows(rows).scheduledRows));
   const scheduleRows = milestones.map((milestone, index) => ({
     title: milestone.title || `Payment ${index + 1}`,
-    amounts: [milestoneSubtotals[index]],
+    amounts: [milestoneScheduledAmounts[index]],
   }));
 
   return (
