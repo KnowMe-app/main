@@ -560,6 +560,17 @@ describe('invoiceCatalogUtils', () => {
       expect(computeInvoiceTotal(subtotal, 14)).toBeCloseTo(3762);
     });
 
+    // Some catalog packages (e.g. a lump-sum "Initial payment" special offer) are already the
+    // whole invoice charge, with no separate "% of package" row to carry it - the `billDirectly`
+    // flag (set via the Builder's "Bill package price on this invoice" checkbox) opts a specific
+    // package row into being billed by its own price, same as a custom package always is.
+    it('bills a catalog package row\'s own price when billDirectly is set', () => {
+      const packagesById = new Map([['p1', { id: 'p1', name: 'Special Offer - Initial Payment', listedPrice: 8300, children: [] }]]);
+      const invoiceServices = [{ ...makeCatalogPackageEntry({ id: 'p1', children: [] }), billDirectly: true }];
+      const rows = resolveInvoiceServiceRows(invoiceServices, new Map(), { packagesById });
+      expect(computeInvoiceSubtotal(rows)).toBe(8300);
+    });
+
     it('still bills a "% of package" row even though the package row itself is reference-only', () => {
       const packagesById = new Map([['p1', { id: 'p1', name: 'Full program', listedPrice: 40000, children: ['1'] }]]);
       const catalogItemsById = new Map([['1', { id: '1', name: 'Consultation', price: 300 }]]);

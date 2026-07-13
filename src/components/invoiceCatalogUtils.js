@@ -304,6 +304,7 @@ export const normalizeServiceEntry = raw => {
       ...(raw.priceOverride !== undefined && raw.priceOverride !== null && raw.priceOverride !== ''
         ? { priceOverride: toNumber(raw.priceOverride) }
         : {}),
+      ...(raw.billDirectly ? { billDirectly: true } : {}),
       // A per-invoice override of the package's payment schedule (round7 spec C.2) - absent until
       // an admin edits it in the Builder, at which point it freezes the schedule shown/billed on
       // this invoice instead of continuing to track the catalog's live payment schedule.
@@ -389,6 +390,10 @@ export const setEntryField = (entry, field, value) => {
   if (entry.kind === 'package') {
     if (field === 'price') return { ...entry, priceOverride: toNumber(value), customized: true };
     if (field === 'name' || field === 'description') return { ...entry, [field]: value, customized: true };
+    // A billing preference, not a content override - toggling it never marks the package
+    // "customized" (that flag drives the PDF's "customised programme details" note and the
+    // catalog Reset button, neither of which applies here).
+    if (field === 'billDirectly') return { ...entry, billDirectly: Boolean(value) };
     return entry;
   }
   return { ...entry, [field]: field === 'price' ? toNumber(value) : value, customized: true };
@@ -591,6 +596,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? pkg?.description ?? '',
       price: hasPriceOverride ? roundMoney(entry.priceOverride) : defaultPrice,
+      billDirectly: Boolean(entry.billDirectly),
       childrenTotal,
       hasPriceOverride,
       children: resolvedChildren,
@@ -646,11 +652,14 @@ export const resolveInvoiceDocType = rows => ((Array.isArray(rows) ? rows : [])
 
 // A catalog-backed top-level 'package' row is never billed by its own price - it's a
 // reference block (its included-services list and Payment Schedule mirror the catalog
-// programme for context, same as Budget). Custom packages have no catalog payment-share
-// row to bill alongside them, so their resolved price (children total or override) is a
-// real invoice line and must stay in totals.
+// programme for context, same as Budget) - unless the admin has explicitly flagged it
+// `billDirectly` (the "Bill package price" checkbox), for a package that already *is* the
+// invoice's whole charge (e.g. a lump-sum "Initial payment" catalog package) with no separate
+// "% of package" row to carry the amount. Custom packages have no catalog payment-share row to
+// bill alongside them, so their resolved price (children total or override) is always a real
+// invoice line and must stay in totals regardless of that flag.
 export const computeInvoiceSubtotal = rows => rows
-  .filter(row => row?.kind !== 'package' || !row.catalogId)
+  .filter(row => row?.kind !== 'package' || !row.catalogId || row.billDirectly)
   .reduce((sum, row) => sum + (Number(row.price) || 0), 0);
 
 export const computeInvoiceTotal = (subtotal, taxPercent) => subtotal * (1 + (Number(taxPercent) || 0) / 100);
