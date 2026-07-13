@@ -1795,9 +1795,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const caseTitle = useMemo(() => buildCaseTitle(data.customers), [data.customers]);
   const activePayerCaseId = data.payerCaseIds[0];
 
+  // recentServices is already ordered most-recently-used first (reorderRecentServices) - so
+  // deduping here by keeping only the first occurrence of each identity naturally keeps the
+  // newest copy of any repeat and drops the older, stale ones from the chip row.
   const recentServiceSuggestions = useMemo(() => {
     const used = new Set(data.invoiceServices.map(getEntryIdentityKey));
-    return data.recentServices.filter(entry => !used.has(getEntryIdentityKey(entry))).slice(0, 8);
+    const seen = new Set();
+    const deduped = [];
+    for (const entry of data.recentServices) {
+      const key = getEntryIdentityKey(entry);
+      if (used.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(entry);
+    }
+    return deduped.slice(0, 8);
   }, [data.recentServices, data.invoiceServices]);
 
   const usedCatalogItemIds = useMemo(() => new Set(
@@ -3232,6 +3243,24 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     onAddCustomChild={fields => addCustomChildEntry(packageRow.id, fields)}
                     onAddCatalogChild={catalogId => addCatalogChildEntry(packageRow.id, catalogId)}
                   />
+                  {/* A catalog package's price is normally a reference figure only (the actual
+                      charge is a separate "% of package" row in Other expenses) - but some
+                      packages (e.g. a lump-sum "Initial payment" special offer) already *are*
+                      the whole charge, with no percent row to carry it. This checkbox bills the
+                      package's own price directly instead of requiring one. A custom package
+                      (no catalogId) is always billed already, so it never needs this toggle. */}
+                  {packageRow.catalogId ? (
+                    <FieldRow $align="center" style={{ marginTop: 8 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(packageRow.billDirectly)}
+                          onChange={event => commitTopLevelField(packageRow.id, 'billDirectly', event.target.checked)}
+                        />
+                        <span>Bill package price on this invoice</span>
+                      </label>
+                    </FieldRow>
+                  ) : null}
                   </>
                 ) : (
                   <>
@@ -3327,7 +3356,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
             <Panel>
               <PanelHeading>
-                <H2>Invoice services</H2>
+                <H2>Other expenses</H2>
               </PanelHeading>
 
               {serviceLineRows.map((row, index) => (
@@ -3345,7 +3374,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   onReset={row.kind === 'item' && row.isCustomized ? () => resetTopLevelEntry(row.id) : undefined}
                 />
               ))}
-              {!serviceLineRows.length ? <PanelNote style={{ margin: 0 }}>No services on this invoice yet.</PanelNote> : null}
+              {!serviceLineRows.length ? <PanelNote style={{ margin: 0 }}>No other expenses on this invoice yet.</PanelNote> : null}
 
               <div
                 style={{ marginTop: 14 }}
