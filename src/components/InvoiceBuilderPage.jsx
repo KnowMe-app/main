@@ -95,6 +95,13 @@ const toArray = value => {
   return [];
 };
 
+// A dynamic chunk that fails to load almost always means the deployed app was updated after this
+// tab was opened - the previous build's hashed chunk files are gone from the server, so webpack's
+// "Loading chunk NNN failed" is really "this page is stale". Detect it so the toast can say the
+// actual fix (refresh) instead of surfacing the cryptic chunk error.
+const isStaleChunkError = error => /loading (?:css )?chunk|chunkloaderror/i.test(`${error?.name || ''} ${error?.message || ''}`);
+const STALE_APP_MESSAGE = 'The app has been updated since this page was opened. Refresh the page and try again.';
+
 const emptyBeneficiary = () => ({
   id: `beneficiary-${Date.now()}`,
   title: 'New beneficiary',
@@ -1633,6 +1640,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     loadInvoiceData();
   }, [loadInvoiceData]);
 
+  // Warm the lazy PDF chunks the moment the page opens. Each deployment deletes the previous
+  // build's hashed chunk files, so a tab opened before a deploy can no longer fetch them at
+  // "Generate PDF" time ("Loading chunk NNN failed") - fetching them up front, while this page's
+  // own build is still live, keeps generation working for the whole session. Failures are
+  // ignored: generation itself retries and reports properly.
+  useEffect(() => {
+    import('@react-pdf/renderer').catch(() => {});
+    import('./InvoicePdfDocument').catch(() => {});
+    import('./PaymentDetailsPdfDocument').catch(() => {});
+    import('./ExpectedExpensesPdfDocument').catch(() => {});
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const ratesDate = invoiceDateInput || getTodayYmd();
@@ -2575,7 +2594,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.success('Expected expenses PDF generated.');
     } catch (generateError) {
       console.error('Unable to generate expected expenses PDF', generateError);
-      toast.error('Unable to generate expected expenses PDF.');
+      toast.error(isStaleChunkError(generateError) ? STALE_APP_MESSAGE : 'Unable to generate expected expenses PDF.');
     } finally {
       setIsGeneratingExpectedExpenses(false);
     }
@@ -2873,8 +2892,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.success(generatePaymentDetails ? 'Invoice and payment details PDFs generated.' : 'Invoice PDF generated.');
     } catch (generateError) {
       console.error('Unable to generate invoice PDF', generateError);
-      const reason = generateError?.message ? `: ${generateError.message}` : '';
-      toast.error(`Unable to generate invoice PDF${reason}`);
+      if (isStaleChunkError(generateError)) {
+        toast.error(STALE_APP_MESSAGE);
+      } else {
+        const reason = generateError?.message ? `: ${generateError.message}` : '';
+        toast.error(`Unable to generate invoice PDF${reason}`);
+      }
     } finally {
       setIsGenerating(false);
     }
