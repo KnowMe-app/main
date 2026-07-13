@@ -372,6 +372,34 @@ describe('invoiceCatalogUtils', () => {
       const row = resolveServiceRow(makeCustomPackageEntry({ name: 'Bespoke' }), new Map(), { packagesById: new Map() });
       expect(row.scheduleRows).toEqual([]);
     });
+
+    // A percent-based schedule (ps-6 onwards) needs the package's listed price resolved to turn
+    // into a euro amount - a formula-priced package with missing NBU rates has no such price yet.
+    // The payment must stay unresolved (null, rendered as "-") rather than a misleading €0.
+    it('leaves a percent-based payment unresolved when the listed price cannot be resolved', () => {
+      const unresolvedPackagesById = new Map([['p1', { id: 'p1', name: 'Full program', listedPrice: '=id99', children: ['1'] }]]);
+      const percentTechnical = { paymentSchedules: [{ id: 'ps-6', payments: [{ title: 'Deposit', percent: 25 }] }] };
+      const withPercentSchedule = { ...unresolvedPackagesById.get('p1'), paymentScheduleId: 'ps-6' };
+      const row = resolveServiceRow(
+        makeCatalogPackageEntry({ id: 'p1', children: ['1'] }),
+        new Map(),
+        { packagesById: new Map([['p1', withPercentSchedule]]), technical: percentTechnical },
+      );
+      expect(row.scheduleRows).toEqual([{ key: expect.any(String), title: 'Deposit', amount: null }]);
+    });
+
+    it('preserves an unresolved (null) amount through a per-invoice schedule override', () => {
+      const withOverride = setPackageSchedule(
+        makeCatalogPackageEntry({ id: 'p1', children: ['1'] }),
+        [{ title: 'Deposit', amount: null }, { title: 'Final payment', amount: 100 }],
+      );
+      expect(withOverride.schedule).toEqual([{ title: 'Deposit', amount: null }, { title: 'Final payment', amount: 100 }]);
+      const row = resolveServiceRow(withOverride, new Map(), { packagesById: packagesByIdWithSchedule, technical });
+      expect(row.scheduleRows).toEqual([
+        { key: expect.any(String), title: 'Deposit', amount: null },
+        { key: expect.any(String), title: 'Final payment', amount: 100 },
+      ]);
+    });
   });
 
   describe('resolving entries to display rows', () => {
