@@ -301,8 +301,18 @@ export const computeMilestonesTotal = (milestones, catalogItemsById, priceContex
 // euros) - the sanity check for "does the schedule breakdown still cover the whole package price".
 // Kept separate from computeMilestonesTotal because that one also includes one-off extras (SM
 // deposits, gifts, ...), which are expected to push the real bill above the package price.
-export const computeMilestonesPackageSharePercent = (milestones, packageId) =>
+// A row carrying a fixed euro `amount` (typed instead of a percent - design-tasks §1) contributes
+// its equivalent share of `packagePrice` when one is given; without a resolvable package price its
+// share is unknowable, so it contributes nothing rather than a made-up figure.
+export const computeMilestonesPackageSharePercent = (milestones, packageId, packagePrice) =>
   (Array.isArray(milestones) ? milestones : []).reduce((sum, milestone) => sum
     + (Array.isArray(milestone.services) ? milestone.services : [])
       .filter(entry => entry?.kind === 'percent' && String(entry.packageId) === String(packageId))
-      .reduce((entrySum, entry) => entrySum + (Number(entry.percent) || 0), 0), 0);
+      .reduce((entrySum, entry) => {
+        const fixedAmount = Number(entry.amount);
+        if (entry.amount != null && Number.isFinite(fixedAmount)) {
+          const price = Number(packagePrice);
+          return entrySum + (Number.isFinite(price) && price > 0 ? Math.round((fixedAmount / price) * 1e4) / 100 : 0);
+        }
+        return entrySum + (Number(entry.percent) || 0);
+      }, 0), 0);

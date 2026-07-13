@@ -13,6 +13,7 @@ import {
   BrandRow, BrandRule, BronzeMotif, CoordinatorLine, Footer, PDF_COLOR, PDF_FONT,
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, SummaryCard, TitleBlock,
 } from '../pdfTheme';
+import { ensurePdfAgencyConfigLoaded } from '../pdfAgency';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
 import { btnEdit } from './btnEdit';
@@ -1264,6 +1265,9 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
     };
 
     try {
+      // The document's wordmark/footer identity comes from budget/technical/agency - this export
+      // path doesn't otherwise load the budget catalog, so fetch it before rendering.
+      await ensurePdfAgencyConfigLoaded();
       const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
       const embeddedPhotoEntries = await Promise.all(
         effectivePhotoUrls.map(photoUrl => loadPdfEmbeddedImage(photoUrl))

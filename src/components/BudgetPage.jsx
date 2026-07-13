@@ -24,6 +24,7 @@ import {
   KNOWN_CATEGORY_KEYS,
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
+import { setPdfAgencyConfig } from './pdfTheme';
 
 const INCLUDED_PREVIEW_LIMIT = 6;
 const POPULAR_PACKAGE_ID = '3';
@@ -1050,6 +1051,9 @@ const BudgetPage = ({ isAdmin = false }) => {
       const value = snapshot.exists() ? snapshot.val() : null;
       historyLoadRef.current = true;
       setCatalog(normalizeCatalog(value));
+      // Agency identity (wordmark/footer of every generated PDF) is backend data, shared with the
+      // other documents through pdfTheme's config store.
+      setPdfAgencyConfig(value?.technical?.agency);
     } catch (loadError) {
       console.error('Unable to load budget catalog', loadError);
       setError('Budget catalog is not available right now.');
@@ -2043,7 +2047,7 @@ const BudgetPage = ({ isAdmin = false }) => {
       <Shell>
         <Header>
           <div>
-            <Eyebrow>{UKRCOM_MARKER}</Eyebrow>
+            <Eyebrow>{(catalog.technical?.agency?.name || UKRCOM_MARKER).toUpperCase()}</Eyebrow>
             <Title>Program Budget</Title>
           </div>
           <HeaderActions>

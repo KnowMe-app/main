@@ -17,6 +17,7 @@ import {
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
+import { setPdfAgencyConfig } from './pdfTheme';
 import { formatEuroSmart, getSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
@@ -46,6 +47,7 @@ import {
   movePackageChild,
   normalizeInvoiceData,
   parseCustomPriceInput,
+  parsePercentOrAmountInput,
   removePackageChild,
   reorderBeneficiaryIds,
   reorderPayerCaseIds,
@@ -238,8 +240,8 @@ const iconButtonBase = css`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: ${({ $dense }) => ($dense ? '18px' : '22px')};
-  height: ${({ $dense }) => ($dense ? '18px' : '22px')};
+  width: ${({ $dense }) => ($dense ? '18px' : '20px')};
+  height: ${({ $dense }) => ($dense ? '18px' : '20px')};
   flex-shrink: 0;
   border: none;
   border-radius: 6px;
@@ -430,24 +432,30 @@ const StackedFieldTag = styled.span`
   color: var(--km-muted);
 `;
 
-// $bare (round7 spec E): a minimal, single-line-tall field with no visual "input" chrome at all,
-// not even on hover/focus - it reads as plain text that happens to be editable, exactly like the
-// DescriptionToggle/text it sits next to. Used for Beneficiary/Payer fields, where the regular
-// hover/focus wash (still used everywhere else) reads as unnecessarily tall/boxy for a name/address
-// line.
+// One shared line-height every element of a row (index number, name, price, % sign, EUR chip,
+// arrows, trash icon) aligns to - the single-baseline rule of design-tasks §1. Everything below
+// that sits on a row either uses this line-height directly or centers itself inside it.
+const ROW_LINE_HEIGHT = '20px';
+
+// The one "plain editable text" field style (design-tasks §1): no box, border, background, or
+// focus ring - ever, not even while focused - a single line of text tall, auto-growing only as
+// its content wraps (useAutoResize). Font, padding, and line-height are normalized here so an
+// input, plain text, and "text styled as input" on the same row all share one baseline instead of
+// each carrying its own padding. ($bare predates this - every field is bare now; the prop is
+// still accepted so call sites don't have to change.)
 const plainFieldStyle = css`
   flex: 1 1 auto;
   min-width: 0;
   display: block;
   border: none;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--km-text);
   font-family: inherit;
   font-size: ${({ $size }) => $size || '13px'};
   font-weight: ${({ $weight }) => $weight || '600'};
-  line-height: ${({ $bare }) => ($bare ? '1.25' : '1.45')};
-  padding: ${({ $bare }) => ($bare ? '1px 2px' : '5px 6px')};
+  line-height: ${ROW_LINE_HEIGHT};
+  padding: 0 2px;
   margin: 0;
   resize: none;
   overflow: hidden;
@@ -458,14 +466,11 @@ const plainFieldStyle = css`
     opacity: 0.8;
   }
 
-  &:hover {
-    background: ${({ $bare }) => ($bare ? 'transparent' : 'var(--km-accent-light)')};
-  }
-
+  &:hover,
   &:focus {
     outline: none;
-    background: ${({ $bare }) => ($bare ? 'transparent' : 'var(--km-accent-light)')};
-    box-shadow: ${({ $bare }) => ($bare ? 'none' : 'inset 0 0 0 1px var(--km-accent-mid)')};
+    background: transparent;
+    box-shadow: none;
   }
 `;
 
@@ -488,19 +493,19 @@ const PlainSelect = styled.select`
   flex: 1 1 auto;
   min-width: 0;
   border: none;
-  border-radius: 6px;
   background: transparent;
   color: var(--km-text);
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
-  padding: 6px;
+  line-height: ${ROW_LINE_HEIGHT};
+  padding: 0 2px;
   cursor: pointer;
 
   &:hover,
   &:focus {
     outline: none;
-    background: var(--km-accent-light);
+    background: transparent;
   }
 `;
 
@@ -559,7 +564,7 @@ const LineMainRow = styled.div`
 const RowIndex = styled.span`
   flex: 0 0 auto;
   width: 16px;
-  padding-top: 7px;
+  line-height: ${ROW_LINE_HEIGHT};
   font-size: 10.5px;
   font-weight: 700;
   color: var(--km-muted);
@@ -569,13 +574,14 @@ const RowIndex = styled.span`
 const RowActions = styled.div`
   flex: 0 0 auto;
   display: flex;
+  align-items: flex-start;
   gap: ${({ $dense }) => ($dense ? '0' : '1px')};
-  padding-top: ${({ $dense }) => ($dense ? '0' : '2px')};
 `;
 
 const CustomizedTag = styled.span`
   flex: 0 0 auto;
-  align-self: center;
+  align-self: flex-start;
+  margin-top: 2px;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.03em;
@@ -584,6 +590,7 @@ const CustomizedTag = styled.span`
   background: var(--km-accent-light);
   border-radius: 999px;
   padding: 2px 7px;
+  line-height: 12px;
   white-space: nowrap;
 `;
 
@@ -603,15 +610,15 @@ const DescriptionToggle = styled.button`
   width: 100%;
   max-width: 100%;
   border: none;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--km-muted);
   font-family: inherit;
   font-size: 11.5px;
   font-style: ${({ $hasValue }) => ($hasValue ? 'normal' : 'italic')};
-  line-height: 1.45;
+  line-height: ${ROW_LINE_HEIGHT};
   text-align: left;
-  padding: 5px 6px;
+  padding: 0 2px;
   margin: 0;
   cursor: pointer;
   white-space: nowrap;
@@ -620,12 +627,24 @@ const DescriptionToggle = styled.button`
 
   &:hover {
     color: var(--km-accent);
-    background: var(--km-accent-light);
   }
 `;
 
-// A "% of package" row has no name/description of its own (it's derived: "20% of IVF+ED+SM") -
-// what's editable is the percent value and which catalog package it's a share of.
+// The unit that follows a percent/amount value ("%", "EUR") - same line-height as everything else
+// on the row so it sits on the shared baseline (design-tasks §2).
+const UnitSign = styled.span`
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: ${ROW_LINE_HEIGHT};
+  color: var(--km-muted);
+`;
+
+// A "% of package" row is the invoice's scheduled share of the programme fee, so it reads as
+// "Scheduled payment" - the same one-style line a normal service item uses (design-tasks §3) -
+// unless the package is still choosable, in which case the package selector doubles as the name.
+// Its one value field accepts a percent or an absolute euro amount interchangeably (design-tasks
+// §1: "25" -> 25%, "10000" -> 10,000 EUR), with the equivalent in the other unit shown as a chip.
 const PercentShareRow = ({
   row,
   index,
@@ -640,12 +659,9 @@ const PercentShareRow = ({
   canMoveUp,
   canMoveDown,
 }) => {
-  const [percentDraft, setPercentDraft, percentEditingRef] = useFieldDraft(String(row.percent ?? ''));
-
-  const lockedPackageName = useMemo(
-    () => catalogPackages.find(pkg => String(pkg.id) === String(row.packageId))?.name || `Package ${row.packageId}`,
-    [catalogPackages, row.packageId],
-  );
+  const isAmountMode = row.amount != null;
+  const committedValue = String((isAmountMode ? row.amount : row.percent) ?? '');
+  const [valueDraft, setValueDraft, valueEditingRef] = useFieldDraft(committedValue);
 
   return (
     <LineCard>
@@ -655,10 +671,10 @@ const PercentShareRow = ({
           <span
             title="This invoice's package is fixed at the top - see the Package field above"
             style={{
-              flex: '1 1 auto', minWidth: 0, padding: '6px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              flex: '1 1 auto', minWidth: 0, padding: '0 2px', fontWeight: 700, lineHeight: ROW_LINE_HEIGHT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}
           >
-            {lockedPackageName}
+            Scheduled payment
           </span>
         ) : (
           <PlainSelect
@@ -679,18 +695,22 @@ const PercentShareRow = ({
           $size={isChild ? '12.5px' : '13px'}
           $width="52px"
           inputMode="decimal"
-          value={percentDraft}
+          value={valueDraft}
           placeholder="0"
-          aria-label="Percent of package price"
-          onFocus={() => { percentEditingRef.current = true; }}
-          onChange={event => setPercentDraft(event.target.value)}
+          aria-label="Percent of package price, or an absolute EUR amount"
+          onFocus={() => { valueEditingRef.current = true; }}
+          onChange={event => setValueDraft(event.target.value)}
           onBlur={() => {
-            percentEditingRef.current = false;
-            if (percentDraft !== String(row.percent ?? '')) onCommit('percent', percentDraft);
+            valueEditingRef.current = false;
+            if (valueDraft !== committedValue) onCommit('percent', valueDraft);
           }}
         />
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--km-muted)' }}>%</span>
-        <CustomizedTag title="Recalculated live from the package's price">≈ {formatEuroPreview(row.price)}</CustomizedTag>
+        <UnitSign>{isAmountMode ? 'EUR' : '%'}</UnitSign>
+        {isAmountMode ? (
+          <CustomizedTag title="Share of the package's price this amount corresponds to">≈ {row.percent}%</CustomizedTag>
+        ) : (
+          <CustomizedTag title="Recalculated live from the package's price">≈ {formatEuroPreview(row.price)}</CustomizedTag>
+        )}
         {row.missing ? <MissingTag title="This catalog package no longer exists">Missing</MissingTag> : null}
         <RowActions>
           {onMoveUp ? (
@@ -856,9 +876,8 @@ const PackageIcon = styled.span`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-top: 3px;
+  width: 20px;
+  height: 20px;
   border-radius: 7px;
   background: var(--km-card);
   color: var(--km-accent);
@@ -888,18 +907,14 @@ const PackageAddRow = styled.div`
   }
 `;
 
+// Same plain-text look as every other field (design-tasks §1) - the flex bases are the only
+// thing these add.
 const PackageQuickField = styled(PlainTextBase)`
   flex: 1 1 140px;
-  background: var(--km-card);
-  border-radius: 8px;
-  padding: 5px 8px;
 `;
 
 const PackageQuickPrice = styled(PlainPriceBase)`
   flex: 0 0 76px;
-  background: var(--km-card);
-  border-radius: 8px;
-  padding: 5px 8px;
 `;
 
 const InlinePickerBox = styled.div`
@@ -1032,9 +1047,10 @@ const PackageEntryCard = ({
     <PackageCard>
       <PackageHeaderRow>
         <PackageIcon><FaBoxOpen /></PackageIcon>
+        {/* Same size/weight as a normal service line's name (design-tasks §2): the package name
+            must never render differently here than a line item does in Invoice Services. */}
         <AutoTextArea
-          $size="13.5px"
-          $weight="800"
+          $weight="700"
           value={nameDraft}
           placeholder="Package name"
           aria-label="Package name"
@@ -1136,7 +1152,8 @@ const PackageEntryCard = ({
         />
         <PackageQuickPrice
           rows={1}
-          placeholder="Price or GIFT"
+          placeholder="100"
+          aria-label="New custom line price"
           value={customPrice}
           onChange={event => setCustomPrice(event.target.value)}
         />
@@ -1423,7 +1440,8 @@ const MilestoneCard = ({
           />
           <PackageQuickPrice
             rows={1}
-            placeholder="Price or GIFT"
+            placeholder="100"
+            aria-label="New milestone service price"
             value={customPrice}
             onChange={event => setCustomPrice(event.target.value)}
           />
@@ -1597,7 +1615,11 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       setData(normalizeInvoiceData(invoiceSnapshot.exists() ? invoiceSnapshot.val() : null));
       setCatalogItems(toArray(itemsSnapshot.exists() ? itemsSnapshot.val() : []));
       setCatalogPackages(toArray(packagesSnapshot.exists() ? packagesSnapshot.val() : []));
-      setCatalogTechnical(technicalSnapshot.exists() ? technicalSnapshot.val() : {});
+      const technicalValue = technicalSnapshot.exists() ? technicalSnapshot.val() : {};
+      setCatalogTechnical(technicalValue);
+      // Agency identity (wordmark/footer of every generated PDF) is backend data, shared with the
+      // other documents through pdfTheme's config store.
+      setPdfAgencyConfig(technicalValue?.agency);
       setExpectedExpenses(normalizeExpectedExpensesData(expectedExpensesSnapshot.exists() ? expectedExpensesSnapshot.val() : null));
     } catch (loadError) {
       console.error('Unable to load invoice builder data', loadError);
@@ -1789,22 +1811,37 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     if (!expectedExpenses) return null;
     const pkg = catalogPackagesById.get(String(expectedExpenses.packageId)) || expectedExpenses.packageSnapshot || null;
     const shouldCheckPackageSharePercent = Boolean(expectedExpenses.packageId);
+    const packagePrice = resolveBudgetPriceAmount(pkg?.listedPrice, priceContext)
+      ?? (Number(expectedExpenses.packageSnapshot?.listedPrice) || null);
     const milestoneRows = expectedExpenses.milestones.map(milestone => {
       const serviceRows = resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext);
       const subtotal = computeMilestoneSubtotal(serviceRows);
       const amountDue = computeMilestoneAmountDue(subtotal, milestone.taxPercent);
       return { milestone, serviceRows, subtotal, amountDue };
     });
+    // One plan-wide tax rate (design-tasks §4): shown as a single value only while every milestone
+    // agrees; mixed per-milestone rates read as blank until re-applied.
+    const taxValues = expectedExpenses.milestones.map(milestone => Number(milestone.taxPercent) || 0);
+    const sharedTaxPercent = taxValues.length && taxValues.every(value => value === taxValues[0])
+      ? String(taxValues[0])
+      : '';
     return {
       pkg,
       milestoneRows,
+      sharedTaxPercent,
       totalPlanned: computeMilestonesTotal(expectedExpenses.milestones, catalogItemsById, priceContext),
       packageSharePercent: shouldCheckPackageSharePercent
-        ? computeMilestonesPackageSharePercent(expectedExpenses.milestones, expectedExpenses.packageId)
+        ? computeMilestonesPackageSharePercent(expectedExpenses.milestones, expectedExpenses.packageId, packagePrice)
         : null,
       shouldCheckPackageSharePercent,
     };
   }, [expectedExpenses, catalogItemsById, catalogPackagesById, priceContext]);
+
+  // Draft for the plan-wide Expected Expenses tax field (design-tasks §4) - resynced from the
+  // shared per-milestone value whenever the milestones change elsewhere.
+  const [expectedExpensesTaxDraft, setExpectedExpensesTaxDraft, expectedExpensesTaxEditingRef] = useFieldDraft(
+    expectedExpensesView?.sharedTaxPercent ?? '',
+  );
 
   const persistPath = async (path, value, successMessage) => {
     try {
@@ -2050,6 +2087,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     setCatalogQuery('');
   };
 
+  // The Package panel's programme selector (design-tasks §2): swaps the invoice's package for a
+  // different catalog programme in place - the fresh entry drops any per-invoice customisation of
+  // the old one, exactly like removing the package and adding the new one, but in a single step.
+  const replacePackageEntry = pkg => {
+    const next = data.invoiceServices.map(entry => (entry.kind === 'package' ? makeCatalogPackageEntry(pkg) : entry));
+    persistInvoiceServices(next, 'Package switched.');
+  };
+
   const addCatalogPackagePercentEntry = pkg => {
     addPercentServiceEntry(pkg.id);
     setShowCatalogPicker(false);
@@ -2173,10 +2218,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   // The first edit "materializes" whatever schedule is currently showing (live from the catalog, or
   // an existing override) into a fresh per-invoice override, then applies the one field edit on top.
+  // The amount field accepts a percent too (design-tasks §1: "25" -> 25% of the package's billed
+  // price, "10000" -> 10,000 EUR) - a percent is resolved to euros against the package price once,
+  // at commit time, since a schedule override stores plain euro amounts.
   const updateScheduleRow = (rowIndex, field, value) => {
     if (!packageRow) return;
+    const resolveAmount = raw => {
+      const { percent, amount } = parsePercentOrAmountInput(raw);
+      if (amount != null) return amount;
+      return roundToCents(((Number(packageRow.price) || 0) * percent) / 100) || 0;
+    };
     const rows = packageRow.scheduleRows.map((row, index) => (index === rowIndex
-      ? { ...row, [field]: field === 'amount' ? (Number(String(value).replace(',', '.')) || 0) : value }
+      ? { ...row, [field]: field === 'amount' ? resolveAmount(value) : value }
       : row));
     commitPackageSchedule(packageRow.id, rows);
   };
@@ -2323,14 +2376,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     setCustomScheduleRows([{ title: '', amount: '' }]);
   };
 
-  const recalculateExpectedExpensesSchedule = () => {
+  // Shared by "Recalculate" (the package's own catalog schedule) and the payment-schedule selector
+  // (any named schedule from the catalog - design-tasks §4): rebuilds the milestones from the given
+  // schedule while keeping each milestone's extra services, tax rate, and overview flag.
+  const rebuildExpectedExpensesFromSchedule = (schedule, successMessage) => {
     if (!expectedExpenses) return;
     const pkg = catalogPackagesById.get(String(expectedExpenses.packageId));
     if (!pkg) {
       toast.error('The original package is no longer in the catalog.');
       return;
     }
-    const schedule = resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg);
     if (!schedule || !Array.isArray(schedule.payments) || !schedule.payments.length) {
       toast.error('This package has no payment schedule in the catalog.');
       return;
@@ -2341,7 +2396,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
     if (!resolvedPackage) return;
     if (typeof window !== 'undefined' && !window.confirm(
-      'Recalculate milestones from the catalog schedule? Titles reset to the catalog and the package-share row is recomputed; extra services on each milestone are kept.',
+      'Recalculate milestones from this schedule? Titles reset to the schedule and the package-share row is recomputed; extra services on each milestone are kept.',
     )) return;
     const freshMilestones = buildMilestonesFromSchedule(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
     // A milestone saved before expectedExpenseRole existed has no explicit marker on its scheduled
@@ -2377,7 +2432,53 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         listedPrice: resolvedPackage.listedPrice,
       },
       milestones: nextMilestones,
-    }, 'Schedule recalculated.');
+    }, successMessage);
+  };
+
+  const recalculateExpectedExpensesSchedule = () => {
+    if (!expectedExpenses) return;
+    const pkg = catalogPackagesById.get(String(expectedExpenses.packageId));
+    if (!pkg) {
+      toast.error('The original package is no longer in the catalog.');
+      return;
+    }
+    const schedule = resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg);
+    rebuildExpectedExpensesFromSchedule(schedule, 'Schedule recalculated.');
+  };
+
+  // Payment-schedule selector (design-tasks §4): applies any named schedule from the catalog to
+  // the plan, same pattern as the Package panel's schedule selector.
+  const applyExpectedExpensesSchedule = scheduleId => {
+    const schedule = (catalogTechnical.paymentSchedules || []).find(candidate => String(candidate.id) === String(scheduleId));
+    if (!schedule) return;
+    rebuildExpectedExpensesFromSchedule(schedule, 'Payment schedule applied.');
+  };
+
+  // Package selector (design-tasks §4): switching programme rebuilds the whole plan from the new
+  // package's own catalog schedule - the same flow as picking a package for a brand-new plan.
+  const switchExpectedExpensesPackage = packageId => {
+    const pkg = catalogPackagesById.get(String(packageId));
+    if (!pkg || String(pkg.id) === String(expectedExpenses?.packageId)) return;
+    if (typeof window !== 'undefined' && !window.confirm(
+      `Switch the plan to "${pkg.name}"? Milestones are rebuilt from that package's payment schedule.`,
+    )) return;
+    createExpectedExpensesPlan(pkg);
+  };
+
+  // Plan-wide tax rate (design-tasks §4) - one value applied to every milestone, joining the same
+  // recent-rates quick-pick list the invoice Summary tax uses.
+  const applyExpectedExpensesTaxPercent = value => {
+    if (!expectedExpenses) return;
+    const numeric = Number(String(value).replace(',', '.')) || 0;
+    const nextMilestones = expectedExpenses.milestones.map(milestone => ({ ...milestone, taxPercent: numeric }));
+    persistExpectedExpensesMilestones(nextMilestones, 'Tax updated for all milestones.');
+    if (numeric <= 0) return;
+    const existing = data.recentTaxRates.find(rate => Number(rate.value) === numeric);
+    const nextRecentTaxRates = existing
+      ? touchRecentEntry(data.recentTaxRates, existing.id)
+      : upsertRecentEntry(data.recentTaxRates, { id: createEntryId(), value: numeric });
+    setData(current => ({ ...current, recentTaxRates: nextRecentTaxRates }));
+    persistPath(`${INVOICE_DATA_PATH}/recentTaxRates`, nextRecentTaxRates);
   };
 
   const deleteExpectedExpensesPlan = () => {
@@ -3043,6 +3144,26 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
               {data.includePackageInPdf ? (
                 packageRow ? (
+                  <>
+                    {/* Package/programme selector (design-tasks §2) - same select-from-catalog
+                        pattern as the payment-schedule selector below: picking a different
+                        programme replaces the current package outright. */}
+                    <PlainSelect
+                      aria-label="Switch to a different package from the catalog"
+                      value=""
+                      onChange={event => {
+                        const pkg = visibleCatalogPackages.find(candidate => String(candidate.id) === event.target.value);
+                        if (pkg) replacePackageEntry(pkg);
+                      }}
+                      style={{ marginBottom: 6 }}
+                    >
+                      <option value="">Switch package from catalog…</option>
+                      {visibleCatalogPackages
+                        .filter(pkg => String(pkg.id) !== String(packageRow.catalogId))
+                        .map(pkg => (
+                          <option key={pkg.id} value={pkg.id}>{pkg.hidden ? `${pkg.name} (Special offer)` : pkg.name}</option>
+                        ))}
+                    </PlainSelect>
                   <PackageEntryCard
                     row={packageRow}
                     catalogItems={catalogItems}
@@ -3056,6 +3177,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     onAddCustomChild={fields => addCustomChildEntry(packageRow.id, fields)}
                     onAddCatalogChild={catalogId => addCatalogChildEntry(packageRow.id, catalogId)}
                   />
+                  </>
                 ) : (
                   <>
                     <FieldRow $align="center" style={{ marginTop: 8 }}>
@@ -3152,10 +3274,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               <PanelHeading>
                 <H2>Invoice services</H2>
               </PanelHeading>
-              <PanelNote>
-                A flat breakdown of items/custom lines and package-percent shares. The programme
-                package itself lives in the Package panel above.
-              </PanelNote>
 
               {serviceLineRows.map((row, index) => (
                 <ServiceLineRow
@@ -3192,7 +3310,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   <PlainPriceBase
                     $bare
                     rows={1}
-                    placeholder="Price or GIFT"
+                    placeholder="100"
+                    aria-label="New custom service price"
                     value={newCustomServicePrice}
                     onChange={event => setNewCustomServicePrice(event.target.value)}
                   />
@@ -3552,11 +3671,83 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <>
                   <FieldRow $align="center">
                     <FieldTag>Package</FieldTag>
-                    <div style={{ flex: 1, padding: '5px 6px', fontWeight: 700 }}>{expectedExpensesView?.pkg?.name || expectedExpenses.packageId}</div>
-                    <span style={{ fontWeight: 800, color: 'var(--km-accent)', padding: '5px 6px' }}>
+                    {expectedExpenses.packageId ? (
+                      <PlainSelect
+                        aria-label="Switch the plan to a different package"
+                        value={String(expectedExpenses.packageId)}
+                        onChange={event => switchExpectedExpensesPackage(event.target.value)}
+                      >
+                        {!visibleCatalogPackages.some(pkg => String(pkg.id) === String(expectedExpenses.packageId)) ? (
+                          <option value={String(expectedExpenses.packageId)}>
+                            {expectedExpensesView?.pkg?.name || `Package ${expectedExpenses.packageId}`}
+                          </option>
+                        ) : null}
+                        {visibleCatalogPackages.map(pkg => (
+                          <option key={pkg.id} value={pkg.id}>{pkg.hidden ? `${pkg.name} (Special offer)` : pkg.name}</option>
+                        ))}
+                      </PlainSelect>
+                    ) : (
+                      <div style={{ flex: 1, padding: '0 2px', fontWeight: 700, lineHeight: '20px' }}>{expectedExpensesView?.pkg?.name || expectedExpenses.packageId}</div>
+                    )}
+                    <span style={{ fontWeight: 800, color: 'var(--km-accent)', padding: '0 2px', lineHeight: '20px' }}>
                       {formatEuroPreview(resolveBudgetPriceAmount(expectedExpensesView?.pkg?.listedPrice, priceContext) ?? expectedExpensesView?.pkg?.listedPrice)}
                     </span>
                   </FieldRow>
+                  {expectedExpenses.packageId && (catalogTechnical.paymentSchedules || []).length ? (
+                    <FieldRow $align="center">
+                      <FieldTag>Payment schedule</FieldTag>
+                      <PlainSelect
+                        aria-label="Apply a payment schedule from the catalog"
+                        value=""
+                        onChange={event => { if (event.target.value) applyExpectedExpensesSchedule(event.target.value); }}
+                      >
+                        <option value="">Apply schedule from catalog…</option>
+                        {catalogTechnical.paymentSchedules.map(schedule => (
+                          <option key={schedule.id} value={schedule.id}>
+                            {`${schedule.id} (${(schedule.payments || []).length} payment${(schedule.payments || []).length === 1 ? '' : 's'})`}
+                          </option>
+                        ))}
+                      </PlainSelect>
+                    </FieldRow>
+                  ) : null}
+                  <FieldRow $align="center">
+                    <FieldTag>Tax (%)</FieldTag>
+                    <AutoTextArea
+                      as={PlainPriceBase}
+                      $width="48px"
+                      inputMode="decimal"
+                      value={expectedExpensesTaxDraft}
+                      placeholder="0"
+                      aria-label="Tax percent for all milestones"
+                      onFocus={() => { expectedExpensesTaxEditingRef.current = true; }}
+                      onChange={event => setExpectedExpensesTaxDraft(event.target.value)}
+                      onBlur={() => {
+                        expectedExpensesTaxEditingRef.current = false;
+                        if (expectedExpensesTaxDraft !== (expectedExpensesView?.sharedTaxPercent ?? '')) {
+                          applyExpectedExpensesTaxPercent(expectedExpensesTaxDraft);
+                        }
+                      }}
+                    />
+                  </FieldRow>
+                  {data.recentTaxRates.length ? (
+                    <ChipRow style={{ marginTop: 0, marginBottom: 8 }}>
+                      {data.recentTaxRates.map(rate => (
+                        <ChipContainer key={rate.id}>
+                          <ChipButton type="button" onClick={() => applyExpectedExpensesTaxPercent(rate.value)}>
+                            <span>{rate.value}%</span>
+                          </ChipButton>
+                          <ChipDeleteButton
+                            type="button"
+                            onClick={() => removeRecentTaxRate(rate.id)}
+                            title="Remove this rate from recent"
+                            aria-label="Remove this rate from recent"
+                          >
+                            <FaTrash />
+                          </ChipDeleteButton>
+                        </ChipContainer>
+                      ))}
+                    </ChipRow>
+                  ) : null}
                   {expectedExpensesView?.shouldCheckPackageSharePercent && Math.round(expectedExpensesView.packageSharePercent * 100) / 100 !== 100 ? (
                     <PanelNote style={{ color: 'var(--km-danger)' }}>
                       The percent-of-package rows add up to {expectedExpensesView.packageSharePercent}% of the package price, not 100%.

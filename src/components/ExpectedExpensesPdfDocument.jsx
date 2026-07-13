@@ -58,13 +58,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: PDF_COLOR.docInk,
   },
-  scheduledLine: {
-    fontFamily: PDF_FONT.body,
-    fontSize: 9,
-    fontVariantNumeric: 'tabular-nums',
-    color: PDF_COLOR.docInk,
-    marginBottom: 2,
-  },
   additionalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -108,10 +101,11 @@ const styles = StyleSheet.create({
 });
 
 // One compact block per payment (spec §1.2): "Payment #N - {milestone title}" - a header line, the
-// scheduled share of the programme fee expressed as a percent (never a bare number with no
-// context), then every other row (SM deposits, catalog add-ons, gifts) as a plain line, and the
-// milestone's own total. Never repeats the package name, included services, or payment schedule -
-// those render exactly once, above, in the shared programme-overview block.
+// scheduled share of the programme fee as a "Scheduled payment" line with the amount right-aligned
+// (design-tasks §3/§4: same style as every other service line, never "N% of programme fee"), then
+// every other row (SM deposits, catalog add-ons, gifts) as the same plain line, and the milestone's
+// own total. Never repeats the package name, included services, or payment schedule - those render
+// exactly once, above, in the shared programme-overview block.
 const PaymentBlock = ({ index, milestone, rows, currency }) => {
   const { scheduledRows, additionalRows } = splitScheduledRows(rows);
   const subtotal = computeMilestoneSubtotal(rows);
@@ -123,9 +117,10 @@ const PaymentBlock = ({ index, milestone, rows, currency }) => {
         <Text style={styles.paymentTitle}>{sanitizePdfText(`Payment #${index + 1} — ${milestone.title}`)}</Text>
       </View>
       {scheduledRows.map(row => (
-        <Text key={row.key} style={styles.scheduledLine}>
-          {sanitizePdfText(`${formatPercentValue(row.percent)}% of programme fee — ${formatMoney(row.price, currency)}`)}
-        </Text>
+        <View key={row.key} style={styles.additionalRow}>
+          <Text style={styles.additionalName}>{sanitizePdfText('Scheduled payment')}</Text>
+          <Text style={styles.additionalPrice}>{formatMoney(row.price, currency)}</Text>
+        </View>
       ))}
       {additionalRows.map(row => (
         <View key={row.key} style={styles.additionalRow}>
@@ -178,7 +173,6 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
     title: milestone.title || `Payment ${index + 1}`,
     amounts: [milestoneSubtotals[index]],
   }));
-  const scheduleTotal = milestoneSubtotals.reduce((sum, amount) => sum + (Number(amount) || 0), 0);
 
   return (
     <Document title={`Expected expenses - ${caseTitle}`} subject="Expected expenses" creator="UKRCOM">
@@ -201,18 +195,17 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
 
         <SummaryCard label="What this programme includes" text={plan?.packageSnapshot?.description} />
 
-        <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} totals={[scheduleTotal]} />
+        {/* Included services first, then the payment schedule (design-tasks §4) - the schedule's
+            own Total row is dropped too: the programme fee is already stated once in the title
+            block and each column's header. */}
+        <IncludedServicesTable
+          packages={packagesMeta}
+          includedRows={includedRows}
+          title="Included in this programme"
+          note="Every item below is already covered by the programme fee."
+        />
 
-        {/* `break` starts Included services on a fresh page, matching the Program Budget layout
-            (spec §2) - so the schedule above stays with the title block/summary on page 1. */}
-        <View break={includedRows.length > 0}>
-          <IncludedServicesTable
-            packages={packagesMeta}
-            includedRows={includedRows}
-            title="Included in this programme"
-            note="Every item below is already covered by the programme fee."
-          />
-        </View>
+        <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} />
 
         {milestones.length ? (
           <View>

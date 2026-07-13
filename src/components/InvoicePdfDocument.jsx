@@ -42,30 +42,29 @@ const isPaymentCaveatNote = note => PAYMENT_CAVEAT_PATTERNS.some(pattern => patt
 
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
+  // Tighter than the 26pt rhythm the multi-page documents use: the Invoice's blocks (Programme
+  // package, Included in this package, Payment schedule, Breakdown) are compacted so the whole
+  // document fits a single page whenever the content allows (design-tasks §3).
   section: {
-    marginTop: 26,
+    marginTop: 10,
   },
   // The very first block under the title carries no preceding marginBottom of its own to offset -
-  // TitleBlock's trailing margin already does that job, so stacking the full 26pt section rhythm
+  // TitleBlock's trailing margin already does that job, so stacking the full section rhythm
   // on top of it doubles the gap. Used only when that block is the first thing after TitleBlock.
   sectionAfterTitle: {
     marginTop: 2,
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
-  table: {
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
   packageBlock: {
     marginTop: 2,
   },
   packageBlockHeader: {
     backgroundColor: PDF_COLOR.card,
     borderRadius: 8,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    marginBottom: 12,
+    marginBottom: 6,
   },
   packageBlockName: {
     fontFamily: PDF_FONT.display,
@@ -81,55 +80,6 @@ const styles = StyleSheet.create({
     color: PDF_COLOR.bronzeDeep,
     marginTop: 4,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.docLine,
-    borderTopStyle: 'solid',
-    paddingVertical: 8,
-  },
-  firstRow: {
-    borderTopWidth: 0,
-  },
-  packageRow: {
-    backgroundColor: PDF_COLOR.card,
-    borderRadius: 5,
-    paddingHorizontal: 8,
-    marginBottom: 1,
-  },
-  indexCell: {
-    width: 26,
-  },
-  indexText: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 8.5,
-    color: PDF_COLOR.bronze,
-  },
-  nameCell: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  nameCellChild: {
-    paddingLeft: 14,
-  },
-  nameText: {
-    fontFamily: PDF_FONT.body,
-    fontSize: 9.5,
-    color: PDF_COLOR.docInk,
-  },
-  nameTextPackage: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 10.5,
-    color: PDF_COLOR.docInk,
-  },
-  nameTextChild: {
-    fontFamily: PDF_FONT.body,
-    fontSize: 9,
-    color: PDF_COLOR.inkSoft,
-  },
   descriptionText: {
     fontFamily: PDF_FONT.body,
     fontSize: 8,
@@ -137,28 +87,22 @@ const styles = StyleSheet.create({
     lineHeight: 1.4,
     marginTop: 2,
   },
-  priceCell: {
-    width: 96,
-    textAlign: 'right',
+  // A compacted copy of the shared total-card (same tokens, tighter metrics): together with the
+  // 14pt section rhythm above it keeps a full package invoice - package block, included services,
+  // payment schedule, breakdown, total - on one physical page whenever possible (design-tasks §3).
+  totalCard: {
+    ...pdfBaseStyles.totalCard,
+    marginTop: 8,
+    paddingVertical: 10,
   },
-  priceText: {
-    fontFamily: PDF_FONT.body,
-    fontVariantNumeric: 'tabular-nums',
-    fontSize: 9.5,
-    color: PDF_COLOR.docInk,
+  totalCardAmount: {
+    ...pdfBaseStyles.totalCardAmount,
+    fontSize: 24,
   },
-  priceTextPackage: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontVariantNumeric: 'tabular-nums',
-    fontSize: 10.5,
-    color: PDF_COLOR.bronzeDeep,
-  },
-  priceTextChild: {
-    fontFamily: PDF_FONT.body,
-    fontVariantNumeric: 'tabular-nums',
-    fontSize: 9,
-    color: PDF_COLOR.inkSoft,
+  totalCardRule: {
+    ...pdfBaseStyles.totalCardRule,
+    marginTop: 8,
+    marginBottom: 6,
   },
   noteRow: {
     flexDirection: 'row',
@@ -180,56 +124,15 @@ const styles = StyleSheet.create({
   },
 });
 
-// Flattens resolved rows into a display list: a package becomes its own bold header row
-// ("2.") followed by its children indented underneath ("2.1", "2.2", ...).
-const buildDisplayRows = rows => {
-  const display = [];
-  rows.forEach((row, index) => {
-    const number = String(index + 1);
-    display.push({ ...row, number, depth: 0 });
-    if (row.kind === 'package') {
-      (row.children || []).forEach((child, childIndex) => {
-        display.push({ ...child, number: `${number}.${childIndex + 1}`, depth: 1 });
-      });
-    }
-  });
-  return display;
-};
-
-// One line of the "Breakdown" list - shared, byte-for-byte, across Service Invoice, milestone-share,
-// and Package Invoice layouts, so a service/custom/percent row never renders two different ways.
-const ServiceItemRow = ({ row, isFirst }) => {
-  const isChild = row.depth > 0;
-  const isPackageHeader = row.kind === 'package';
-  // A "% of package" row reads as "Scheduled payment" here - the same one-style breakdown line as
-  // every other row - without repeating the underlying percentage/package wording in the PDF.
-  const isPercent = row.kind === 'percent';
-  const displayName = isPercent ? 'Scheduled payment' : row.name;
-  return (
-    <View
-      style={[
-        isPackageHeader ? styles.packageRow : styles.row,
-        !isPackageHeader && !isChild && isFirst ? styles.firstRow : null,
-      ]}
-      wrap={false}
-    >
-      <View style={styles.indexCell}>
-        <Text style={styles.indexText}>{row.number}</Text>
-      </View>
-      <View style={[styles.nameCell, isChild ? styles.nameCellChild : null]}>
-        <Text style={isPackageHeader ? styles.nameTextPackage : (isChild ? styles.nameTextChild : styles.nameText)}>
-          {sanitizePdfText(displayName)}
-        </Text>
-        {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
-      </View>
-      <View style={styles.priceCell}>
-        <Text style={isPackageHeader ? styles.priceTextPackage : (isChild ? styles.priceTextChild : styles.priceText)}>
-          {formatRowAmount(row)}
-        </Text>
-      </View>
-    </View>
-  );
-};
+// One row of the "Breakdown" table. A "% of package" row reads as "Scheduled payment" - the same
+// one-style breakdown line as every other row - without repeating the underlying percentage/
+// package wording in the PDF (design-tasks §3). Amounts stay bare numbers (or a free-text label
+// like "GIFT"): the table's own EUR column header already carries the currency.
+const buildBreakdownTableRow = row => ({
+  title: row.kind === 'percent' ? 'Scheduled payment' : (row.name || ''),
+  description: row.description || '',
+  amounts: [row.priceLabel ? row.priceLabel : row.price],
+});
 
 // The "Package block" (round7 spec C): a compact name/fee header, then the package's full
 // composition - always shown, since the Builder's own "Package" checkbox already gates whether
@@ -263,20 +166,24 @@ const PackageBlock = ({ row, showSchedule }) => {
       <View style={styles.packageBlockHeader} wrap={false}>
         <Text style={styles.packageBlockName}>{sanitizePdfText(row.name)}</Text>
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
-        <Text style={styles.packageBlockFee}>{`Total programme fee ${totalLabel}`}</Text>
+        <Text style={styles.packageBlockFee}>{`Cost of the package ${totalLabel}`}</Text>
       </View>
       {fullDetailNote ? <Text style={styles.sectionNote}>{sanitizePdfText(fullDetailNote)}</Text> : null}
       <IncludedServicesTable
         packages={packageMeta}
         includedRows={includedRows}
         title="Included in this package"
-        note="These services reflect the customisation made to this package."
+        note={null}
+        sectionStyle={styles.section}
+        dense
       />
       {showSchedule ? (
         <PaymentScheduleTable
           packages={packageMeta}
           rows={scheduleRows}
           title="Payment schedule for this package"
+          sectionStyle={styles.section}
+          dense
         />
       ) : null}
     </View>
@@ -324,10 +231,13 @@ const InvoicePdfDocument = ({
   const packageRows = includePackageInPdf ? rows.filter(row => row.kind === 'package') : [];
   const isPackageInvoice = packageRows.length > 0;
   // A "% of package" row (a programme milestone share) and any custom/catalog service row share one
-  // "Breakdown" list, one row style, one running numbering - splitting them into two headed
+  // "Breakdown" table, one row style, one running numbering - splitting them into two headed
   // sections was the second-biggest source of clutter on this document (declutter spec §2).
   const breakdownRows = rows.filter(row => row.kind !== 'package');
-  const breakdownDisplayRows = buildDisplayRows(breakdownRows);
+  const breakdownTableRows = breakdownRows.map(buildBreakdownTableRow);
+  // Single amount column, same visual style as the Payment Schedule table (design-tasks §3) - the
+  // column header carries the currency once, so cells stay bare numbers.
+  const breakdownMeta = [{ id: 'amount', label: '', priceLabel: 'EUR' }];
   // The DD.MM.YYYY `invoiceDate` string (invoiceCatalogUtils.generateInvoiceIdentifiers) is the
   // legal-text date used inside the payment-purpose placeholder only - the human-readable date
   // shown here always uses the one shared display format (spec §4), never that dotted form or the
@@ -345,6 +255,7 @@ const InvoicePdfDocument = ({
           eyebrow={eyebrow}
           title={`Invoice No. ${invoiceNumber || ''}`}
           subtitle={`Prepared exclusively for ${payerName}${payerLocation ? ` · ${payerLocation}` : ''}.`}
+          style={{ marginBottom: 14 }}
         />
 
         {isPackageInvoice ? (
@@ -353,15 +264,15 @@ const InvoicePdfDocument = ({
           ))
         ) : null}
 
-        {breakdownDisplayRows.length ? (
-          <View style={[styles.section, !isPackageInvoice ? styles.sectionAfterTitle : null]}>
-            <Text style={styles.sectionTitle}>Breakdown</Text>
-            <View style={styles.table}>
-              {breakdownDisplayRows.map((row, rowIndex) => (
-                <ServiceItemRow key={`${row.key || rowIndex}-${row.number}`} row={row} isFirst={rowIndex === 0} />
-              ))}
-            </View>
-          </View>
+        {breakdownTableRows.length ? (
+          <PaymentScheduleTable
+            packages={breakdownMeta}
+            rows={breakdownTableRows}
+            title="Breakdown"
+            leadLabel="Provided service"
+            sectionStyle={!isPackageInvoice ? styles.sectionAfterTitle : styles.section}
+            dense
+          />
         ) : null}
 
         {/* No extra top margin here - noteRow/totalCard already carry their own spacing (spec §1.4),
@@ -375,10 +286,12 @@ const InvoicePdfDocument = ({
             </View>
           ))}
 
-          <View style={pdfBaseStyles.totalCard}>
+          {/* wrap={false}: the card either fits under the breakdown or moves to the next page
+              whole - it must never split its amount from its subtotal/tax rows. */}
+          <View style={styles.totalCard} wrap={false}>
             <Text style={pdfBaseStyles.totalCardLabel}>Amount due</Text>
-            <Text style={pdfBaseStyles.totalCardAmount}>{formatMoney(amountDue)}</Text>
-            <View style={pdfBaseStyles.totalCardRule} />
+            <Text style={styles.totalCardAmount}>{formatMoney(amountDue)}</Text>
+            <View style={styles.totalCardRule} />
             <View style={pdfBaseStyles.totalCardRow}>
               <Text style={pdfBaseStyles.totalCardRowLabel}>Subtotal</Text>
               <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoney(subtotal)}</Text>

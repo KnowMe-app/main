@@ -56,6 +56,25 @@ export const parseCustomPriceInput = raw => {
   return { price: 0, priceLabel: text };
 };
 
+// One field accepts either a percent or an absolute euro amount interchangeably (design-tasks §1):
+// "25" or "25%" reads as 25% of the package price; "10000", "€10,000" or "10000 EUR" reads as a
+// fixed 10,000 EUR amount. An explicit % / € / EUR marker always wins; a bare number splits on the
+// only unambiguous boundary available - a percent share can't exceed 100.
+export const parsePercentOrAmountInput = raw => {
+  const text = String(raw ?? '').trim();
+  if (!text) return { percent: 0 };
+  const hasPercentMark = /%/.test(text);
+  const hasCurrencyMark = /€|eur/i.test(text);
+  const cleaned = text.replace(/%|€|eur/gi, '').replace(/\s+/g, '');
+  // "10,000" uses the comma as a thousands separator; "8,5" uses it as a decimal one.
+  const normalized = /,\d{3}(?:\D|$)/.test(cleaned) ? cleaned.replace(/,/g, '') : cleaned.replace(',', '.');
+  const numeric = Number(normalized);
+  if (!Number.isFinite(numeric)) return { percent: 0 };
+  if (hasPercentMark) return { percent: numeric };
+  if (hasCurrencyMark || numeric > 100) return { amount: numeric };
+  return { percent: numeric };
+};
+
 // One invoice belongs to one case/payer: payerCases is a catalog of every payer/case ever used
 // (each a group of one-or-more customers, e.g. a couple), payerCaseIds orders them with the
 // active case first - the same "catalog + activate by reordering ids" pattern beneficiaries use.
@@ -168,14 +187,18 @@ export const makeCustomEntry = ({ name = '', price = 0, description = '', priceL
 
 // A share of a budget/packages program's listed price, e.g. "20% of package 1". The euro amount
 // is intentionally never stored - resolveServiceRow recalculates it from the package's price.
+// The one exception is an admin who typed an absolute euro figure instead of a percent (design-
+// tasks §1: "25" reads as 25%, "10000" as 10,000 EUR) - that fixed `amount` is stored as typed and
+// wins over `percent` when the row is priced, so what they entered is exactly what gets billed.
 // `expectedExpenseRole: 'scheduled'` marks the one row that was auto-generated from the package's
 // payment schedule (as opposed to one an admin added by hand) - see recalculateExpectedExpensesSchedule
 // in InvoiceBuilderPage.jsx, which only ever replaces rows carrying that marker.
-export const makePercentOfPackageEntry = (packageId, percent, { id, expectedExpenseRole } = {}) => ({
+export const makePercentOfPackageEntry = (packageId, percent, { id, expectedExpenseRole, amount } = {}) => ({
   id: id || createEntryId(),
   kind: 'percent',
   packageId: String(packageId ?? ''),
   percent: toNumber(percent),
+  ...(amount != null && amount !== '' && Number.isFinite(Number(amount)) ? { amount: toNumber(amount) } : {}),
   ...(expectedExpenseRole ? { expectedExpenseRole } : {}),
 });
 
@@ -267,7 +290,7 @@ export const normalizeServiceEntry = raw => {
   const id = raw.id || createEntryId();
 
   if (raw.kind === 'percent') {
-    return makePercentOfPackageEntry(raw.packageId, raw.percent, { id, expectedExpenseRole: raw.expectedExpenseRole });
+    return makePercentOfPackageEntry(raw.packageId, raw.percent, { id, expectedExpenseRole: raw.expectedExpenseRole, amount: raw.amount });
   }
 
   if (raw.kind === 'package') {
@@ -342,7 +365,14 @@ export const setEntryField = (entry, field, value) => {
     return { ...entry, [field]: value };
   }
   if (entry.kind === 'percent') {
-    if (field === 'percent') return { ...entry, percent: toNumber(value) };
+    if (field === 'percent') {
+      // The one editable value field accepts a percent OR an absolute euro amount (design-tasks
+      // §1) - whichever the admin typed is what gets stored, never a silent conversion.
+      const { percent, amount } = parsePercentOrAmountInput(value);
+      const { amount: previousAmount, ...rest } = entry;
+      if (amount != null) return { ...rest, percent: 0, amount: toNumber(amount) };
+      return { ...rest, percent: toNumber(percent) };
+    }
     if (field === 'packageId') return { ...entry, packageId: String(value ?? '') };
     return entry;
   }
@@ -426,7 +456,11 @@ export const getEntryIdentityKey = entry => {
   if (entry.kind === 'package') return entry.catalogId ? `package:${entry.catalogId}` : `package:custom:${entry.id}`;
   if (entry.kind === 'packagePercent') return `package-percent:${entry.catalogId}:${entry.percent || 0}`;
   if (entry.kind === 'item') return `item:${entry.catalogId}`;
-  if (entry.kind === 'percent') return `percent:${entry.packageId}:${entry.percent}`;
+  if (entry.kind === 'percent') {
+    return entry.amount != null
+      ? `percent:${entry.packageId}:eur${entry.amount}`
+      : `percent:${entry.packageId}:${entry.percent}`;
+  }
   return `custom:${entry.name || ''}:${entry.price || 0}:${entry.description || ''}`;
 };
 
@@ -477,17 +511,29 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
     const packageAmount = pkg
       ? resolveBudgetPriceAmount(pkg.listedPrice, { ...priceContext, itemsById: catalogItemsById })
       : null;
-    const percent = Number(entry.percent) || 0;
-    const price = packageAmount == null ? 0 : roundMoney((packageAmount * percent) / 100);
+    // A fixed euro `amount` (typed instead of a percent - design-tasks §1) wins over `percent`:
+    // the row bills exactly that amount, and the percent becomes the derived, display-only figure.
+    const hasFixedAmount = entry.amount != null && entry.amount !== '' && Number.isFinite(Number(entry.amount));
+    const fixedAmount = hasFixedAmount ? roundMoney(entry.amount) : null;
+    const percent = hasFixedAmount
+      ? (packageAmount ? Math.round((fixedAmount / packageAmount) * 1e6) / 1e4 : 0)
+      : (Number(entry.percent) || 0);
+    const price = hasFixedAmount
+      ? fixedAmount
+      : (packageAmount == null ? 0 : roundMoney((packageAmount * percent) / 100));
+    const packageName = pkg?.name ?? `Package ${entry.packageId}`;
     return {
       key: entry.id,
       id: entry.id,
       kind: 'percent',
       packageId: entry.packageId,
       percent,
+      ...(hasFixedAmount ? { amount: fixedAmount } : {}),
       missing: !pkg,
       isCustomized: false,
-      name: `${formatPercentValue(percent)}% of ${pkg?.name ?? `Package ${entry.packageId}`}`,
+      name: hasFixedAmount
+        ? `${fixedAmount} EUR of ${packageName}`
+        : `${formatPercentValue(percent)}% of ${packageName}`,
       description: '',
       price,
       ...(entry.expectedExpenseRole ? { expectedExpenseRole: entry.expectedExpenseRole } : {}),

@@ -124,6 +124,17 @@ const styles = StyleSheet.create({
     color: PDF_COLOR.docInk,
     lineHeight: 1.4,
   },
+  labelCellDescription: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 7.5,
+    color: PDF_COLOR.inkSoft,
+    lineHeight: 1.4,
+    marginTop: 1.5,
+  },
+  // Dense variant: tighter row padding for the single-page Invoice (design-tasks §3).
+  denseCell: {
+    paddingVertical: 2,
+  },
   programCell: {
     width: PROGRAM_COL_WIDTH,
     paddingVertical: 3.5,
@@ -257,13 +268,13 @@ const styles = StyleSheet.create({
   },
 });
 
-const ProgramColumnsHead = ({ packages, leadLabel }) => (
+const ProgramColumnsHead = ({ packages, leadLabel, dense = false }) => (
   <View style={styles.tableHeadRow} wrap={false}>
-    <View style={styles.labelCell}>
+    <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
       <Text style={styles.labelCellHeadText}>{leadLabel}</Text>
     </View>
     {packages.map(program => (
-      <View key={program.id} style={styles.programCell}>
+      <View key={program.id} style={[styles.programCell, dense ? styles.denseCell : null]}>
         {program.label ? <Text style={styles.programCellHead}>{program.label}</Text> : null}
         <Text style={styles.programCellHeadPrice}>{program.priceLabel}</Text>
       </View>
@@ -281,21 +292,23 @@ export const IncludedServicesTable = ({
   includedRows,
   title = 'Included services by program',
   note = 'An "x" marks the services included in each program package.',
+  sectionStyle,
+  dense = false,
 }) => (includedRows.length ? (
-  <View style={styles.section}>
+  <View style={sectionStyle || styles.section}>
     <View wrap={false} minPresenceAhead={70}>
       <Text style={styles.sectionTitle}>{title}</Text>
-      <Text style={styles.sectionNote}>{note}</Text>
+      {note ? <Text style={styles.sectionNote}>{note}</Text> : null}
     </View>
     <View style={styles.table}>
-      <ProgramColumnsHead packages={packages} leadLabel="Provided service" />
+      <ProgramColumnsHead packages={packages} leadLabel="Provided service" dense={dense} />
       {includedRows.map(item => (
         <View key={item.id} style={styles.tableRow} wrap={false}>
-          <View style={styles.labelCell}>
+          <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
             <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
           </View>
           {packages.map(program => (
-            <View key={`${item.id}-${program.id}`} style={styles.programCell}>
+            <View key={`${item.id}-${program.id}`} style={[styles.programCell, dense ? styles.denseCell : null]}>
               <Text style={styles.markCellText}>{item.includedByPackageId.has(String(program.id)) ? 'x' : ''}</Text>
             </View>
           ))}
@@ -310,21 +323,26 @@ export const IncludedServicesTable = ({
 // (one per package column, same order as `packages`) - omit it when a column's total is already
 // shown once in that program's own header cell (ProgramColumnsHead), so the table doesn't just
 // repeat the same numbers at its foot (round7 spec A.1).
-export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment schedule' }) => (rows.length ? (
-  <View style={styles.scheduleSection}>
+// A cell amount may also be a free-text label (e.g. "GIFT") when the table renders invoice
+// breakdown rows - a string passes through as-is instead of being coerced to a number.
+export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment schedule', leadLabel = 'Milestone', sectionStyle, dense = false }) => (rows.length ? (
+  <View style={sectionStyle || styles.scheduleSection}>
     <View wrap={false} minPresenceAhead={70}>
       <Text style={styles.sectionTitle}>{title}</Text>
     </View>
     <View style={styles.table}>
-      <ProgramColumnsHead packages={packages} leadLabel="Milestone" />
+      <ProgramColumnsHead packages={packages} leadLabel={leadLabel} dense={dense} />
       {rows.map((row, rowIndex) => (
         <View key={`schedule-row-${rowIndex}`} style={styles.tableRow} wrap={false}>
-          <View style={styles.labelCell}>
+          <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
             <Text style={styles.labelCellText}>{`${rowIndex + 1}. ${sanitizePdfText(row.title)}`}</Text>
+            {row.description ? <Text style={styles.labelCellDescription}>{sanitizePdfText(row.description)}</Text> : null}
           </View>
           {row.amounts.map((amount, columnIndex) => (
-            <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={styles.programCell}>
-              <Text style={styles.amountCellText}>{amount == null ? '-' : formatAmount(amount)}</Text>
+            <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={[styles.programCell, dense ? styles.denseCell : null]}>
+              <Text style={styles.amountCellText}>
+                {amount == null ? '-' : (typeof amount === 'string' ? sanitizePdfText(amount) : formatAmount(amount))}
+              </Text>
             </View>
           ))}
         </View>
