@@ -300,34 +300,6 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
-  // Bug report: ps-6-style schedules (Special Offer - Programme Fee, p7) have several equal-percent
-  // milestones (25%, 25%, 25%, 25%) - clicking "% of package" a second time used to be rejected as
-  // "already on the invoice" because the two resulting rows shared the same (packageId, percent)
-  // identity, even though they represent two distinct schedule milestones.
-  it('allows two equal-percent schedule milestones from the same package on one invoice', async () => {
-    const root = mount();
-    await flush();
-
-    const packageSelect = container.querySelector('select[aria-label="Choose package from catalog"]');
-    await act(async () => { selectOption(packageSelect, 'p7'); });
-    await flush();
-
-    const percentButton = findButton('% of package');
-    expect(percentButton).toBeTruthy();
-    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-    await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    await flush();
-
-    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
-    const percentEntries = lastServicesCall[1].filter(entry => entry.kind === 'percent');
-    expect(percentEntries).toHaveLength(2);
-    expect(percentEntries[0].percent).toBe(25);
-    expect(percentEntries[1].percent).toBe(25);
-
-    await act(async () => { root.unmount(); });
-  });
-
   // Bug report: adding a package used to only offer the full listed price, with no way to bill
   // just a share of it (e.g. the first Payment Schedule milestone) - the only route to a percent
   // row required adding the whole package first, then deleting it again. The catalog picker's

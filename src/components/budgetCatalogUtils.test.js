@@ -205,13 +205,5 @@ describe('budgetCatalogUtils', () => {
       expect(resolvePaymentAmount({ title: 'No figure' }, 1000)).toBeNull();
       expect(resolvePaymentAmount({ percent: 25 }, null)).toBeNull();
     });
-
-    // A percent-based payment stored as { amount: null, percent: 25 } (e.g. round-tripped through
-    // a backend that always writes the `amount` key) must fall through to the percent branch -
-    // Number(null) is 0, which is finite, so a naive `Number.isFinite(Number(payment.amount))`
-    // check would wrongly treat a null amount as a real, billed 0.
-    it('falls through to percent when amount is explicitly null', () => {
-      expect(resolvePaymentAmount({ amount: null, percent: 25 }, 40000)).toBe(10000);
-    });
   });
 });

@@ -237,18 +237,14 @@ const ServiceItemRow = ({ row, isFirst }) => {
 // gated separately by the Builder's "Payment schedule" checkbox (`showSchedule`).
 const PackageBlock = ({ row, showSchedule }) => {
   const totalLabel = formatRowAmount(row);
-  const packageId = row.id || row.key || 'package';
   // The package's own name and total fee are already shown just above, in packageBlockHeader -
   // repeating them as this single column's header (round8 spec A) would just say the same thing
-  // twice, so the schedule column here carries only the currency. The included-services table's
-  // column has no amount at all (its cells are inclusion marks, not money), so it gets a blank
-  // header instead of reusing the schedule's "EUR" one.
-  const scheduleMeta = [{ id: packageId, label: '', priceLabel: 'EUR' }];
-  const includedMeta = [{ id: packageId, label: '', priceLabel: '' }];
+  // twice, so the column here carries only the currency.
+  const packageMeta = [{ id: row.id || row.key || 'package', label: '', priceLabel: 'EUR' }];
   const includedRows = (row.children || []).map((child, index) => ({
     id: child.id || child.key || `child-${index}`,
     name: child.name || '',
-    includedByPackageId: new Set([String(packageId)]),
+    includedByPackageId: new Set([String(packageMeta[0].id)]),
   }));
   const scheduleRows = (row.scheduleRows || []).map(payment => ({
     title: payment.title || 'Payment',
@@ -271,14 +267,14 @@ const PackageBlock = ({ row, showSchedule }) => {
       </View>
       {fullDetailNote ? <Text style={styles.sectionNote}>{sanitizePdfText(fullDetailNote)}</Text> : null}
       <IncludedServicesTable
-        packages={includedMeta}
+        packages={packageMeta}
         includedRows={includedRows}
         title="Included in this package"
         note="These services reflect the customisation made to this package."
       />
       {showSchedule ? (
         <PaymentScheduleTable
-          packages={scheduleMeta}
+          packages={packageMeta}
           rows={scheduleRows}
           title="Payment schedule for this package"
         />
@@ -325,20 +321,7 @@ const InvoicePdfDocument = ({
   // checkbox (includePackageInPdf), never implicitly by whether one happens to be on the invoice.
   // Any other top-level row is, by definition, a service confirmed for this case that sits outside
   // the standard package.
-  // A custom package (no catalogId) has no catalog "% of package" row to bill alongside it - its
-  // own resolved price is a real, always-billed invoice line (computeInvoiceSubtotal). Unlike a
-  // catalog-backed package (a reference-only block the checkbox may freely hide), hiding it would
-  // leave the Amount due including a charge with no visible line item explaining it, so every
-  // custom package always renders regardless of the checkbox. A catalog-backed package is capped
-  // at one: the Builder itself only ever surfaces/edits the first package row it finds (spec C),
-  // so an invoice saved before that restructure with several catalog packages would otherwise
-  // still render every extra one here with no way for the admin to see, edit, or remove it.
-  const packageRows = rows.reduce((acc, row) => {
-    if (row.kind !== 'package') return acc;
-    if (!row.catalogId) return [...acc, row];
-    if (!includePackageInPdf || acc.some(existing => existing.catalogId)) return acc;
-    return [...acc, row];
-  }, []);
+  const packageRows = includePackageInPdf ? rows.filter(row => row.kind === 'package') : [];
   const isPackageInvoice = packageRows.length > 0;
   // A "% of package" row (a programme milestone share) and any custom/catalog service row share one
   // "Breakdown" list, one row style, one running numbering - splitting them into two headed
