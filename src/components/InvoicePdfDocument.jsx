@@ -37,7 +37,11 @@ const formatRowAmount = row => row?.priceLabel || formatMoney(row?.price);
 // to the instructions they actually govern (see PaymentDetailsPdfDocument) - they no longer belong
 // on the Invoice itself. Matched by keyword rather than exact string so pre-existing notes data
 // (already carrying an older phrasing) is filtered out too, not just freshly authored ones.
-const PAYMENT_CAVEAT_PATTERNS = [/purpose of the payment/i, /sha option/i];
+const PAYMENT_CAVEAT_PATTERNS = [
+  /purpose of the payment/i,
+  /please make sure you pay the whole amount/i,
+  /sha option/i,
+];
 const isPaymentCaveatNote = note => PAYMENT_CAVEAT_PATTERNS.some(pattern => pattern.test(note));
 
 const styles = StyleSheet.create({

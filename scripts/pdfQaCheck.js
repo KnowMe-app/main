@@ -111,6 +111,15 @@ const checkNoBrandOnPages = (docName, pagesText, pageIndexes, brand) => {
   });
 };
 
+const checkStringsAbsent = (docName, pagesText, forbiddenStrings) => {
+  const combined = pagesText.join('\n');
+  forbiddenStrings.forEach(forbidden => {
+    if (combined.includes(forbidden)) {
+      fail(`${docName}: payment-only text "${forbidden}" must not appear in this document`);
+    }
+  });
+};
+
 async function checkInvoice() {
   const InvoicePdfDocument = require('../src/components/InvoicePdfDocument').default;
   const beneficiary = {
@@ -133,7 +142,11 @@ async function checkInvoice() {
     invoiceServices: [{ id: 'e1', kind: 'item', catalogId: '1' }, { id: 'e2', kind: 'item', catalogId: '2' }],
     catalogItemsById,
     priceContext: { itemsById: catalogItemsById, rates: null },
-    notes: [],
+    notes: [
+      'Purpose of the payment must be exactly like in invoice.',
+      'Please make sure you pay the whole amount. Do not use SHA option while making payment.',
+      'Regular invoice note for the client.',
+    ],
     taxPercent: 0,
     invoiceNumber: '09/07/2026',
     invoiceDate: '09.07.2026',
@@ -143,6 +156,11 @@ async function checkInvoice() {
   checkNoBlankPages('Invoice (service)', servicePages);
   checkStringsRoundTrip('Invoice (service)', servicePages, [
     'Pregnancy blood test', 'Blood test to confirm pregnancy, week 8.', 'Consultation services',
+    'Regular invoice note for the client.',
+  ]);
+  checkStringsAbsent('Invoice (service)', servicePages, [
+    'Purpose of the payment must be exactly like in invoice.',
+    'Please make sure you pay the whole amount. Do not use SHA option while making payment.',
   ]);
   checkNoBrandOnPages('Invoice (service)', servicePages, [1], 'UKRCOM');
   if (!servicePages[0].replace(/\s+/g, '').toUpperCase().includes('SERVICEINVOICE')) {

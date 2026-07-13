@@ -183,8 +183,7 @@ const PaymentDetailsPdfDocument = ({
           <View style={styles.noteRow}>
             <Text style={styles.noteMark}>**</Text>
             <Text style={styles.noteText}>
-              Please make sure you pay the whole amount due - any bank transfer fees on your side must not be
-              deducted from it.
+              Please make sure you pay the whole amount. Do not use SHA option while making payment.
             </Text>
           </View>
         </View>
