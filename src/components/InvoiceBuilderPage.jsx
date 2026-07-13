@@ -1176,7 +1176,9 @@ const PackageEntryCard = ({
 
 const ScheduleRow = ({ row, index, onCommit, onRemove }) => {
   const [titleDraft, setTitleDraft, titleEditingRef] = useFieldDraft(row.title);
-  const [amountDraft, setAmountDraft, amountEditingRef] = useFieldDraft(String(roundToCents(row.amount) ?? ''));
+  // row.amount == null means "not yet resolved" (e.g. a formula price waiting on NBU rates) -
+  // roundToCents(null) coerces to 0, so the null check must happen before calling it, not after.
+  const [amountDraft, setAmountDraft, amountEditingRef] = useFieldDraft(row.amount != null ? String(roundToCents(row.amount)) : '');
 
   return (
     <LineCard>
@@ -1204,7 +1206,7 @@ const ScheduleRow = ({ row, index, onCommit, onRemove }) => {
           onChange={event => setAmountDraft(event.target.value)}
           onBlur={() => {
             amountEditingRef.current = false;
-            const original = String(roundToCents(row.amount) ?? '');
+            const original = row.amount != null ? String(roundToCents(row.amount)) : '';
             if (amountDraft !== original) onCommit(index, 'amount', amountDraft);
           }}
         />
@@ -1709,6 +1711,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // it's a share of that package's price, not a standalone add option (spec item C).
   const percentSharePackage = packageRow && packageRow.catalogId ? packageRow : null;
 
+  // A catalog-backed package's schedule only ever renders inside its own PackageBlock in the PDF
+  // (round8 spec B), so it has nothing to attach to once that block is hidden by the Package
+  // checkbox. A custom package's block always stays visible (it's a real billed line, not a
+  // reference block - see computeInvoiceSubtotal), so its schedule checkbox stays enabled.
+  const scheduleCheckboxDisabled = !packageRow || (!data.includePackageInPdf && Boolean(packageRow.catalogId));
+
   // The flat "Invoice services" list (item/custom/percent rows) - the package itself is rendered
   // separately, in its own panel (round7 spec C).
   const serviceLineRows = useMemo(
@@ -2030,10 +2038,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   };
 
   const addEntryToInvoice = (entry, successMessage) => {
-    const identity = getEntryIdentityKey(entry);
-    if (data.invoiceServices.some(existing => getEntryIdentityKey(existing) === identity)) {
-      toast.error('This is already on the invoice.');
-      return;
+    // A "% of package" row represents one milestone of a payment schedule, not a single
+    // conceptual line - a schedule can legitimately have two equal-percent steps (e.g. two 25%
+    // installments), so unlike every other entry kind it must never be deduped by its resolved
+    // value alone.
+    if (entry?.kind !== 'percent') {
+      const identity = getEntryIdentityKey(entry);
+      if (data.invoiceServices.some(existing => getEntryIdentityKey(existing) === identity)) {
+        toast.error('This is already on the invoice.');
+        return;
+      }
     }
     persistInvoiceServices([...data.invoiceServices, entry], successMessage);
   };
@@ -2157,8 +2171,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // editing area (spec C.2).
 
   const setIncludePackageInPdf = value => {
-    setData(current => ({ ...current, includePackageInPdf: value }));
+    // The Payment schedule table only ever renders inside a catalog-backed package's own block
+    // (InvoicePdfDocument's PackageBlock) - hiding that block also silently drops its schedule
+    // from the PDF, so clear the schedule checkbox along with it instead of leaving it checked
+    // but with nothing left to render. A custom package's block stays visible regardless of this
+    // checkbox (it's a real billed line, not a reference block - see computeInvoiceSubtotal), so
+    // its schedule is unaffected.
+    const alsoHidesSchedule = !value && Boolean(packageRow?.catalogId) && data.includeScheduleInPdf;
+    setData(current => ({
+      ...current,
+      includePackageInPdf: value,
+      ...(alsoHidesSchedule ? { includeScheduleInPdf: false } : {}),
+    }));
     persistPath(`${INVOICE_DATA_PATH}/includePackageInPdf`, value);
+    if (alsoHidesSchedule) persistPath(`${INVOICE_DATA_PATH}/includeScheduleInPdf`, false);
   };
 
   const setIncludeScheduleInPdf = value => {
@@ -2201,10 +2227,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     if (!schedule) return;
     const pkg = catalogPackagesById.get(String(packageRow.catalogId));
     const listedPriceAmount = pkg ? resolveBudgetPriceAmount(pkg.listedPrice, priceContext) : null;
-    const rows = (schedule.payments || []).map(payment => ({
-      title: payment.title || '',
-      amount: resolvePaymentAmount(payment, listedPriceAmount) ?? 0,
-    }));
+    // Scaled to the package's own billed price (priceOverride included) the same way the live
+    // catalog-derived schedule already is in resolvePackageEntrySchedule - otherwise applying a
+    // catalog schedule to a package billed above/below its listed price would make the schedule
+    // total drift from "Total programme fee".
+    const billedPrice = Number(packageRow.price) || 0;
+    const scale = listedPriceAmount ? billedPrice / listedPriceAmount : 1;
+    const rows = (schedule.payments || []).map(payment => {
+      const amount = resolvePaymentAmount(payment, listedPriceAmount);
+      return { title: payment.title || '', amount: amount == null ? null : roundToCents(amount * scale) };
+    });
     commitPackageSchedule(packageRow.id, rows);
   };
 
@@ -3096,13 +3128,13 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               <FieldRow $align="center" style={{ marginTop: 10 }}>
                 <label
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 6, cursor: packageRow ? 'pointer' : 'not-allowed', opacity: packageRow ? 1 : 0.5,
+                    display: 'flex', alignItems: 'center', gap: 6, cursor: scheduleCheckboxDisabled ? 'not-allowed' : 'pointer', opacity: scheduleCheckboxDisabled ? 0.5 : 1,
                   }}
                 >
                   <input
                     type="checkbox"
                     checked={data.includeScheduleInPdf}
-                    disabled={!packageRow}
+                    disabled={scheduleCheckboxDisabled}
                     onChange={event => setIncludeScheduleInPdf(event.target.checked)}
                   />
                   <span>Payment schedule</span>
