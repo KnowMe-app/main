@@ -66,6 +66,56 @@ export const sanitizePdfText = value => String(value ?? '')
   .replace(/\s+/g, ' ')
   .trim();
 
+// --- Agency identity (backend-driven) ------------------------------------------------------
+//
+// Every branded document shows the same agency identity (wordmark + tagline in the brand row,
+// name/address/contacts in the footer). The values are data, not layout: they live on the backend
+// at budget/technical/agency and are pushed into this module (setPdfAgencyConfig) by whichever
+// page loads that config - Budget, Invoice Builder, or the SM profile export. The constants below
+// are only the offline fallback for when the backend record hasn't loaded (or lacks a field), so
+// a document is never rendered with a blank identity.
+const DEFAULT_AGENCY = {
+  name: 'Reproductive Agency "UKRCOM"',
+  name2: 'UKRCOM Reproductive Agency, Kyiv',
+  address: '31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine',
+  website: 'http://ukrcom.kyiv.ua/',
+  email: 'sm.kiev.ukr@gmail.com',
+  telegram: '@Contact_Us_Kyiv',
+};
+
+// The backend may store telegram as a full link (https://t.me/Contact_Us_Kyiv) - documents always
+// display the compact @handle form.
+const toTelegramHandle = value => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const match = /t(?:elegram)?\.me\/([^/?#\s]+)/i.exec(text);
+  const handle = match ? match[1] : text;
+  return handle.startsWith('@') ? handle : `@${handle}`;
+};
+
+let pdfAgency = { ...DEFAULT_AGENCY };
+
+export const setPdfAgencyConfig = raw => {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  pdfAgency = Object.keys(DEFAULT_AGENCY).reduce((merged, key) => {
+    const value = String(source[key] ?? '').trim();
+    return { ...merged, [key]: value || DEFAULT_AGENCY[key] };
+  }, {});
+  pdfAgency.telegram = toTelegramHandle(pdfAgency.telegram);
+};
+
+export const getPdfAgencyConfig = () => pdfAgency;
+
+// The full name/line ("UKRCOM Reproductive Agency, Kyiv") splits into the big wordmark (its first
+// word) and the tagline underneath it - the brand row never hardcodes either.
+const splitAgencyWordmark = () => {
+  const [wordmark, ...rest] = String(getPdfAgencyConfig().name2 || '').trim().split(/\s+/);
+  return {
+    wordmark: wordmark || DEFAULT_AGENCY.name2.split(' ')[0],
+    tagline: rest.join(' '),
+  };
+};
+
 // The one date format every document displays to a client (spec §4): "9 July 2026" - never
 // DD.MM.YYYY or DD/MM/YYYY. (The invoice number and the payment-purpose placeholder are a
 // separate concern - they intentionally keep their own numeric formats, since those are
@@ -318,20 +368,24 @@ export const DocSeries = ({ index, total, label, optional = false }) => (
   </Text>
 );
 
-// wordmark + tagline on the left, document meta (number/date/client) on the right.
-export const BrandRow = ({ metaLines = [] }) => (
-  <View style={pdfSharedStyles.brandRow}>
-    <View>
-      <Text style={pdfSharedStyles.wordmark}>UKRCOM</Text>
-      <Text style={pdfSharedStyles.wordmarkTagline}>Reproductive Agency, Kyiv</Text>
+// wordmark + tagline on the left, document meta (number/date/client) on the right. Both come from
+// the backend agency config (name2), never a per-document hardcoded string.
+export const BrandRow = ({ metaLines = [] }) => {
+  const { wordmark, tagline } = splitAgencyWordmark();
+  return (
+    <View style={pdfSharedStyles.brandRow}>
+      <View>
+        <Text style={pdfSharedStyles.wordmark}>{sanitizePdfText(wordmark)}</Text>
+        {tagline ? <Text style={pdfSharedStyles.wordmarkTagline}>{sanitizePdfText(tagline)}</Text> : null}
+      </View>
+      <View style={pdfSharedStyles.brandMeta}>
+        {metaLines.filter(Boolean).map((line, index) => (
+          <Text key={`meta-${index}`} style={pdfSharedStyles.brandMetaText}>{sanitizePdfText(line)}</Text>
+        ))}
+      </View>
     </View>
-    <View style={pdfSharedStyles.brandMeta}>
-      {metaLines.filter(Boolean).map((line, index) => (
-        <Text key={`meta-${index}`} style={pdfSharedStyles.brandMetaText}>{sanitizePdfText(line)}</Text>
-      ))}
-    </View>
-  </View>
-);
+  );
+};
 
 const ruleStyles = StyleSheet.create({
   wrap: {
@@ -389,8 +443,9 @@ export const BronzeMotif = () => (
 );
 
 // eyebrow -> H1 -> subrow with the key sum/context. Always left-aligned, never centered.
-export const TitleBlock = ({ eyebrow, title, subtitle }) => (
-  <View style={pdfSharedStyles.titleBlock}>
+// `style` lets a space-constrained document (the one-page Invoice) tighten the trailing margin.
+export const TitleBlock = ({ eyebrow, title, subtitle, style }) => (
+  <View style={style ? [pdfSharedStyles.titleBlock, style] : pdfSharedStyles.titleBlock}>
     {eyebrow ? <Text style={pdfSharedStyles.docEyebrow}>{sanitizePdfText(eyebrow)}</Text> : null}
     <Text style={pdfSharedStyles.docTitle}>{sanitizePdfText(title)}</Text>
     {subtitle ? <Text style={pdfSharedStyles.docSubtitle}>{sanitizePdfText(subtitle)}</Text> : null}
@@ -431,28 +486,29 @@ export const SummaryCard = ({ label, text }) => (text ? (
   </View>
 ) : null);
 
-const AGENCY_NAME = 'Reproductive Agency "UKRCOM"';
-const AGENCY_ADDRESS = '31/16 Reitarska Str., 1st floor, Kyiv, 01034, Ukraine';
-const AGENCY_CONTACT = 'http://ukrcom.kyiv.ua/  ·  sm.kiev.ukr@gmail.com  ·  @Contact_Us_Kyiv';
-
 // Identical agency footer on every page of every branded document (spec §1.2). `variant="neutral"`
 // drops the UKRCOM agency block entirely - required on the Payment Details page/document, whose
 // beneficiary (a sole proprietorship) is a legally separate party from the agency (spec §1.5).
-export const Footer = ({ variant = 'branded' } = {}) => (
-  <View style={pdfSharedStyles.footer} fixed>
-    {variant === 'neutral' ? <View style={pdfSharedStyles.footerColumn} /> : (
-      <View style={pdfSharedStyles.footerColumn}>
-        <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_NAME)}</Text>
-        <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_ADDRESS)}</Text>
-        <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(AGENCY_CONTACT)}</Text>
-      </View>
-    )}
-    <Text
-      style={pdfSharedStyles.footerPage}
-      render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-    />
-  </View>
-);
+// The identity lines themselves come from the backend agency config (see setPdfAgencyConfig above).
+export const Footer = ({ variant = 'branded' } = {}) => {
+  const agency = getPdfAgencyConfig();
+  const contactLine = [agency.website, agency.email, agency.telegram].filter(Boolean).join(' · ');
+  return (
+    <View style={pdfSharedStyles.footer} fixed>
+      {variant === 'neutral' ? <View style={pdfSharedStyles.footerColumn} /> : (
+        <View style={pdfSharedStyles.footerColumn}>
+          <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.name)}</Text>
+          <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.address)}</Text>
+          <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(contactLine)}</Text>
+        </View>
+      )}
+      <Text
+        style={pdfSharedStyles.footerPage}
+        render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+      />
+    </View>
+  );
+};
 
 // Short colophon shown at the top of overflow pages instead of repeating brand-row/title-block
 // (spec §1.10: "перехід на другу сторінку без повторення brand-row/title-block"). `fixed` makes

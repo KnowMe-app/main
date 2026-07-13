@@ -332,7 +332,7 @@ describe('InvoiceBuilderPage', () => {
     await flush();
 
     const nameField = container.querySelector('textarea[placeholder="New custom service name"]');
-    const priceField = container.querySelector('textarea[placeholder="Price or GIFT"]');
+    const priceField = container.querySelector('textarea[aria-label="New custom service price"]');
     await act(async () => {
       nameField.focus();
       setFieldValue(nameField, 'Courier fee');
@@ -366,7 +366,7 @@ describe('InvoiceBuilderPage', () => {
     await flush();
 
     const nameField = container.querySelector('textarea[placeholder="New custom service name"]');
-    const priceField = container.querySelector('textarea[placeholder="Price or GIFT"]');
+    const priceField = container.querySelector('textarea[aria-label="New custom service price"]');
     await act(async () => {
       nameField.focus();
       setFieldValue(nameField, 'Courier fee');
@@ -596,7 +596,7 @@ describe('InvoiceBuilderPage', () => {
       const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Custom line name…"]'));
       expect(milestoneNameFields).toHaveLength(2);
       const milestoneAddRow = milestoneNameFields[0].parentElement;
-      const priceField = milestoneAddRow.querySelector('textarea[placeholder="Price or GIFT"]');
+      const priceField = milestoneAddRow.querySelector('textarea[aria-label="New milestone service price"]');
       const addButton = Array.from(milestoneAddRow.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Add');
 
       await act(async () => {
@@ -853,9 +853,12 @@ describe('InvoiceBuilderPage', () => {
       expect(findButton('Recalculate')).toBeFalsy();
 
       const savedSchedules = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/recentPaymentSchedules').pop();
+      // `price` rides along so reloading the schedule from Recent restores the package total too
+      // (see loadRecentSchedule).
       expect(savedSchedules[1]).toEqual([{
         id: expect.any(String),
         name: 'Bespoke concierge programme',
+        price: 10000,
         payments: [{ title: 'Deposit', amount: 4000 }, { title: 'Final payment', amount: 6000 }],
       }]);
 

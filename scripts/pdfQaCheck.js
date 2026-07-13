@@ -349,11 +349,13 @@ async function checkBudget() {
     'Service item 1, week checkup', 'Programme package 1',
   ]);
 
+  // Client-facing reading order is Programs -> Payment schedule -> Included services (round7 spec
+  // A.2, see BudgetPdfDocument) - the schedule stays on page 1 right after Programs.
   const combined = pagesText.join('\n');
   const includedIndex = combined.indexOf('Included services by program');
   const scheduleIndex = combined.indexOf('Payment schedule');
-  if (includedIndex === -1 || scheduleIndex === -1 || includedIndex > scheduleIndex) {
-    fail('Program Budget: expected section order Programmes -> Included services -> Payment schedule -> Other expenses');
+  if (includedIndex === -1 || scheduleIndex === -1 || scheduleIndex > includedIndex) {
+    fail('Program Budget: expected section order Programmes -> Payment schedule -> Included services -> Other expenses');
   }
 }
 

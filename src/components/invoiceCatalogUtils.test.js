@@ -24,6 +24,7 @@ import {
   normalizeInvoiceData,
   normalizeServiceEntry,
   parseLegacyServiceString,
+  parsePercentOrAmountInput,
   removePackageChild,
   removeRecentEntry,
   reorderBeneficiaryIds,
@@ -607,6 +608,43 @@ describe('invoiceCatalogUtils', () => {
     expect(generateInvoiceIdentifiers('2026-05-23')).toEqual({
       invoiceNumber: '23/05/2026',
       invoiceDate: '23.05.2026',
+    });
+  });
+
+  describe('dual percent/amount input (design-tasks §1)', () => {
+    it('reads "25" and "25%" as a percent, "10000" and "€10,000" as an absolute EUR amount', () => {
+      expect(parsePercentOrAmountInput('25')).toEqual({ percent: 25 });
+      expect(parsePercentOrAmountInput('25%')).toEqual({ percent: 25 });
+      expect(parsePercentOrAmountInput('8,5')).toEqual({ percent: 8.5 });
+      expect(parsePercentOrAmountInput('10000')).toEqual({ amount: 10000 });
+      expect(parsePercentOrAmountInput('€10,000')).toEqual({ amount: 10000 });
+      expect(parsePercentOrAmountInput('10000 EUR')).toEqual({ amount: 10000 });
+      // An explicit marker always wins over the >100 heuristic.
+      expect(parsePercentOrAmountInput('150%')).toEqual({ percent: 150 });
+      expect(parsePercentOrAmountInput('50 EUR')).toEqual({ amount: 50 });
+    });
+
+    it('stores a typed EUR amount on a percent row, and it wins over the percent when priced', () => {
+      const entry = makePercentOfPackageEntry('7', 25);
+      const amountEntry = setEntryField(entry, 'percent', '10000');
+      expect(amountEntry).toMatchObject({ kind: 'percent', packageId: '7', amount: 10000 });
+
+      const priceContext = { packagesById: new Map([['7', { id: '7', name: 'FET program. Special offer', listedPrice: 29700 }]]) };
+      const row = resolveServiceRow(amountEntry, new Map(), priceContext);
+      expect(row.price).toBe(10000);
+      expect(row.amount).toBe(10000);
+      expect(row.percent).toBeCloseTo(33.67, 2);
+
+      // Typing a percent again drops the fixed amount and goes back to live tracking.
+      const percentEntry = setEntryField(amountEntry, 'percent', '25');
+      expect(percentEntry.amount).toBeUndefined();
+      expect(resolveServiceRow(percentEntry, new Map(), priceContext).price).toBe(7425);
+    });
+
+    it('round-trips the fixed amount through normalizeServiceEntry', () => {
+      const entry = normalizeServiceEntry({ id: 'e1', kind: 'percent', packageId: '7', percent: 0, amount: 10000 });
+      expect(entry).toMatchObject({ kind: 'percent', packageId: '7', amount: 10000 });
+      expect(getEntryIdentityKey(entry)).toBe('percent:7:eur10000');
     });
   });
 
