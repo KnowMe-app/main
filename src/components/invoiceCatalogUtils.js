@@ -285,12 +285,7 @@ export const normalizeServiceEntry = raw => {
       // an admin edits it in the Builder, at which point it freezes the schedule shown/billed on
       // this invoice instead of continuing to track the catalog's live payment schedule.
       ...(Array.isArray(raw.schedule)
-        ? {
-          schedule: raw.schedule.map(payment => ({
-            title: String(payment?.title || ''),
-            amount: payment?.amount == null ? null : toNumber(payment.amount),
-          })),
-        }
+        ? { schedule: raw.schedule.map(payment => ({ title: String(payment?.title || ''), amount: toNumber(payment?.amount) })) }
         : {}),
       children: normalizeServiceEntries(raw.children),
     };
@@ -415,17 +410,7 @@ export const addCatalogChildToPackage = (entry, catalogId) => {
 // billing choice for this one invoice, not a content edit, so it never flips `customized` (which
 // means "no longer matches the catalog package's actual line items").
 export const setPackageSchedule = (entry, schedule) => (entry?.kind === 'package'
-  ? {
-    ...entry,
-    // An unresolved (null) amount is kept null rather than coerced through toNumber - otherwise
-    // editing just one field of a schedule still showing an unresolved catalog price (e.g. its
-    // title) would silently freeze every other row's amount at 0 the moment it's materialized
-    // into this per-invoice override.
-    schedule: (Array.isArray(schedule) ? schedule : []).map(payment => ({
-      title: String(payment?.title || ''),
-      amount: payment?.amount == null ? null : toNumber(payment.amount),
-    })),
-  }
+  ? { ...entry, schedule: (Array.isArray(schedule) ? schedule : []).map(payment => ({ title: String(payment?.title || ''), amount: toNumber(payment?.amount) })) }
   : entry);
 
 // --- Queries ------------------------------------------------------------
@@ -467,9 +452,7 @@ export const resolvePackageEntrySchedule = (entry, listedPriceAmount, billedPric
     return entry.schedule.map((payment, index) => ({
       key: `${entry.id}-schedule-${index}`,
       title: payment.title || `Payment ${index + 1}`,
-      // Left unresolved (null) rather than zeroed - see the amount==null branch below, which
-      // is where an unresolved amount first reaches a stored per-invoice schedule.
-      amount: payment.amount == null ? null : roundMoney(payment.amount),
+      amount: roundMoney(payment.amount),
     }));
   }
   const pkg = priceContext.packagesById?.get?.(String(entry.catalogId));
@@ -483,10 +466,7 @@ export const resolvePackageEntrySchedule = (entry, listedPriceAmount, billedPric
     return {
       key: `${entry.id}-schedule-${index}`,
       title: payment.title || `Payment ${index + 1}`,
-      // A percent-based payment with no resolvable listed price (e.g. a formula-priced package
-      // while NBU rates are missing) has no real amount yet - stays null (rendered as "-") rather
-      // than a misleading €0, until the price resolves.
-      amount: amount == null ? null : roundMoney(amount * scale),
+      amount: amount == null ? 0 : roundMoney(amount * scale),
     };
   });
 };
