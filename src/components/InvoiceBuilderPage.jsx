@@ -454,6 +454,11 @@ const plainFieldStyle = css`
   flex: 1 1 auto;
   min-width: 0;
   display: block;
+  /* A textarea without an explicit width falls back to its intrinsic cols-based size (~half a
+     panel) the moment it renders - which is exactly the "description shrinks on focus" bug when
+     a collapsed full-width toggle flips into the editing textarea. Full width in block contexts;
+     in a flex row the flex properties above still decide the actual share. */
+  width: 100%;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -497,17 +502,25 @@ const PlainPriceBase = styled.textarea.attrs({ wrap: 'off' })`
 `;
 
 const PlainSelect = styled.select`
-  flex: 1 1 auto;
+  /* flex-basis 0 (not auto) and width 100%: a select's intrinsic width is its longest option
+     text, which for package names is wider than a phone screen - left as the basis it either
+     wraps the whole row or stretches the page container sideways. Basis 0 + grow shares the row
+     in flex contexts; width 100% covers block contexts. The browser ellipsizes the selected
+     option to whatever width results. */
+  flex: 1 1 0%;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
   border: none;
   background: transparent;
   color: var(--km-text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: ${({ $size }) => $size || '13px'};
   font-weight: 700;
   line-height: ${ROW_LINE_HEIGHT};
   padding: 0 2px;
   cursor: pointer;
+  text-overflow: ellipsis;
 
   &:hover,
   &:focus {
@@ -678,13 +691,14 @@ const PercentShareRow = ({
           <span
             title="This invoice's package is fixed at the top - see the Package field above"
             style={{
-              flex: '1 1 auto', minWidth: 0, padding: '0 2px', fontWeight: 700, lineHeight: ROW_LINE_HEIGHT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              flex: '1 1 auto', minWidth: 0, padding: '0 2px', fontWeight: 700, fontSize: isChild ? '12.5px' : '13px', lineHeight: ROW_LINE_HEIGHT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}
           >
             Scheduled payment
           </span>
         ) : (
           <PlainSelect
+            $size={isChild ? '12.5px' : '13px'}
             aria-label="Package this share is calculated from"
             value={row.packageId}
             onChange={event => onCommit('packageId', event.target.value)}
@@ -719,18 +733,18 @@ const PercentShareRow = ({
           <CustomizedTag title="Recalculated live from the package's price">≈ {formatEuroPreview(row.price)}</CustomizedTag>
         )}
         {row.missing ? <MissingTag title="This catalog package no longer exists">Missing</MissingTag> : null}
-        <RowActions>
+        <RowActions $dense={isChild}>
           {onMoveUp ? (
-            <IconButton type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
+            <IconButton $dense={isChild} type="button" onClick={onMoveUp} disabled={!canMoveUp} title="Move up" aria-label="Move up">
               <FaChevronUp />
             </IconButton>
           ) : null}
           {onMoveDown ? (
-            <IconButton type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
+            <IconButton $dense={isChild} type="button" onClick={onMoveDown} disabled={!canMoveDown} title="Move down" aria-label="Move down">
               <FaChevronDown />
             </IconButton>
           ) : null}
-          <IconDangerButton type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
+          <IconDangerButton $dense={isChild} type="button" onClick={onRemove} title={removeTitle} aria-label={removeTitle}>
             <FaTrash />
           </IconDangerButton>
         </RowActions>
@@ -800,7 +814,7 @@ const ServiceLineRow = ({
           as={PlainPriceBase}
           $bare
           $size={isChild ? '12.5px' : '13px'}
-          $width={isChild ? '76px' : '88px'}
+          $width={isChild ? '56px' : '64px'}
           value={priceDraft}
           placeholder="100"
           aria-label="Price (EUR)"
@@ -891,6 +905,49 @@ const PackageIcon = styled.span`
   font-size: 11px;
 `;
 
+// The package checkbox row (design-tasks-2 §2): the name truncates instead of ever running into
+// the switch button at the end of the row, and the checkbox's own hit-area is just the checkbox.
+const PackageToggleName = styled.span`
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: ${ROW_LINE_HEIGHT};
+`;
+
+// The "switch package from catalog" action, as a real tappable button at the end of the package
+// name row (design-tasks-2 §2) - visually a bordered chevron button, functionally still a native
+// <select> (stretched invisibly across the button) so the catalog list opens as a normal picker.
+const PackageSwitchButton = styled.span`
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 24px;
+  border: 1px solid var(--km-border);
+  border-radius: 6px;
+  background: var(--km-card);
+  color: var(--km-accent);
+  font-size: 10.5px;
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--km-accent);
+  }
+
+  select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+`;
+
 const PackageChildren = styled.div`
   margin: 6px 0 4px 28px;
   border-radius: 6px;
@@ -902,15 +959,17 @@ const PackageChildren = styled.div`
   }
 `;
 
+// $indent lines the add-controls up with a package card's children column; everywhere else they
+// sit flush with the panel's own rows.
 const PackageAddRow = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  margin: 6px 0 0 28px;
+  margin: 6px 0 0 ${({ $indent }) => ($indent ? '28px' : 0)};
 
   @media (max-width: 560px) {
-    margin-left: 10px;
+    margin-left: ${({ $indent }) => ($indent ? '10px' : 0)};
   }
 `;
 
@@ -925,10 +984,10 @@ const PackageQuickPrice = styled(PlainPriceBase)`
 `;
 
 const InlinePickerBox = styled.div`
-  margin: 6px 0 0 28px;
+  margin: 6px 0 0 ${({ $indent }) => ($indent ? '28px' : 0)};
 
   @media (max-width: 560px) {
-    margin-left: 10px;
+    margin-left: ${({ $indent }) => ($indent ? '10px' : 0)};
   }
 `;
 
@@ -1004,6 +1063,140 @@ const CatalogTabButton = styled.button`
   background: ${({ $active }) => ($active ? 'linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%)' : 'transparent')};
 `;
 
+// The one "add a line" control cluster (design-tasks-2 §7), rendered identically wherever lines
+// can be added - a package's children, an Expected Expenses milestone, and Other Expenses:
+// name + price + Add on the first row, "+ From catalog" (and any caller-specific extras, e.g.
+// "+ % From package") below, with the inline catalog picker underneath when open. When
+// `catalogPackages`/`onAddCatalogPackagePercent` are provided the picker also offers the
+// "% of package" tab (Other Expenses).
+const CustomLineAdder = ({
+  catalogItems,
+  excludeCatalogIds,
+  onAddCustom,
+  onAddCatalogItem,
+  catalogPackages = null,
+  onAddCatalogPackagePercent,
+  extraButtons = null,
+  indent = false,
+  addOnBlur = false,
+}) => {
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+  const [query, setQuery] = useState('');
+  const [pickerTab, setPickerTab] = useState('items');
+
+  const availableItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return catalogItems
+      .filter(item => !excludeCatalogIds.has(String(item.id)))
+      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
+      .slice(0, 30);
+  }, [catalogItems, excludeCatalogIds, query]);
+
+  const availablePackages = useMemo(() => {
+    if (!catalogPackages) return [];
+    const normalizedQuery = query.trim().toLowerCase();
+    return catalogPackages.filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
+  }, [catalogPackages, query]);
+
+  const handleAddCustom = () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      toast.error('Enter a name for the new service.');
+      return;
+    }
+    onAddCustom({ name: trimmedName, ...parseCustomPriceInput(price) });
+    setName('');
+    setPrice('');
+  };
+
+  const closePicker = () => {
+    setShowPicker(false);
+    setQuery('');
+  };
+
+  return (
+    <>
+      <div
+        onBlur={addOnBlur ? event => {
+          if (event.currentTarget.contains(event.relatedTarget)) return;
+          if (name.trim()) handleAddCustom();
+        } : undefined}
+      >
+        <PackageAddRow $indent={indent}>
+          <PackageQuickField
+            rows={1}
+            placeholder="Add a custom line…"
+            value={name}
+            onChange={event => setName(event.target.value)}
+          />
+          <PackageQuickPrice
+            rows={1}
+            placeholder="100"
+            aria-label="New custom line price"
+            value={price}
+            onChange={event => setPrice(event.target.value)}
+          />
+          <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
+        </PackageAddRow>
+        <PackageAddRow $indent={indent}>
+          <SmallButton type="button" onClick={() => (showPicker ? closePicker() : setShowPicker(true))}>
+            <FaPlus /> From catalog
+          </SmallButton>
+          {extraButtons}
+        </PackageAddRow>
+      </div>
+      {showPicker ? (
+        <InlinePickerBox $indent={indent}>
+          {catalogPackages ? (
+            <CatalogTabs>
+              <CatalogTabButton type="button" $active={pickerTab === 'items'} onClick={() => setPickerTab('items')}>
+                Services
+              </CatalogTabButton>
+              <CatalogTabButton type="button" $active={pickerTab === 'packages'} onClick={() => setPickerTab('packages')}>
+                % of package
+              </CatalogTabButton>
+            </CatalogTabs>
+          ) : null}
+          <CatalogSearchField
+            rows={1}
+            placeholder={pickerTab === 'packages' ? 'Search catalog packages…' : 'Search catalog services…'}
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+          />
+          <CatalogPickerList>
+            {pickerTab === 'packages' ? (
+              <>
+                {availablePackages.map(pkg => (
+                  <CatalogPickerButton
+                    key={pkg.id}
+                    type="button"
+                    onClick={() => { onAddCatalogPackagePercent(pkg); closePicker(); }}
+                    title="Bill only a share of this package's price (e.g. one Payment Schedule milestone) - the whole package itself is chosen in the Package panel above"
+                  >
+                    <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
+                  </CatalogPickerButton>
+                ))}
+                {!availablePackages.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
+              </>
+            ) : (
+              <>
+                {availableItems.map(item => (
+                  <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogItem(item.id); closePicker(); }}>
+                    <span>{item.name}</span>
+                  </CatalogPickerButton>
+                ))}
+                {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
+              </>
+            )}
+          </CatalogPickerList>
+        </InlinePickerBox>
+      ) : null}
+    </>
+  );
+};
+
 const PackageEntryCard = ({
   row,
   catalogItems,
@@ -1020,35 +1213,12 @@ const PackageEntryCard = ({
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
   const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(roundToCents(row.price) ?? ''));
-  const [showPicker, setShowPicker] = useState(false);
-  const [query, setQuery] = useState('');
-  const [customName, setCustomName] = useState('');
-  const [customPrice, setCustomPrice] = useState('');
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   const childCatalogIds = useMemo(
     () => new Set(row.children.filter(child => child.kind === 'item').map(child => String(child.catalogId))),
     [row.children],
   );
-
-  const availableItems = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return catalogItems
-      .filter(item => !childCatalogIds.has(String(item.id)))
-      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
-      .slice(0, 30);
-  }, [catalogItems, childCatalogIds, query]);
-
-  const handleAddCustom = () => {
-    const name = customName.trim();
-    if (!name) {
-      toast.error('Enter a name for the new service.');
-      return;
-    }
-    onAddCustomChild({ name, ...parseCustomPriceInput(customPrice) });
-    setCustomName('');
-    setCustomPrice('');
-  };
 
   return (
     <PackageCard>
@@ -1070,7 +1240,7 @@ const PackageEntryCard = ({
         />
         <AutoTextArea
           as={PlainPriceBase}
-          $width="92px"
+          $width="64px"
           inputMode="decimal"
           value={priceDraft}
           placeholder="0"
@@ -1106,7 +1276,7 @@ const PackageEntryCard = ({
         <AutoTextArea
           $size="11.5px"
           $weight="500"
-          style={{ color: 'var(--km-muted)', marginLeft: 28 }}
+          style={{ color: 'var(--km-muted)', marginLeft: 28, width: 'calc(100% - 28px)' }}
           value={descriptionDraft}
           placeholder="Add description…"
           aria-label="Package description"
@@ -1150,44 +1320,13 @@ const PackageEntryCard = ({
         {!row.children.length ? <PanelNote style={{ margin: '8px 0' }}>No services in this package.</PanelNote> : null}
       </PackageChildren>
 
-      <PackageAddRow>
-        <PackageQuickField
-          rows={1}
-          placeholder="Add a custom line to this package…"
-          value={customName}
-          onChange={event => setCustomName(event.target.value)}
-        />
-        <PackageQuickPrice
-          rows={1}
-          placeholder="100"
-          aria-label="New custom line price"
-          value={customPrice}
-          onChange={event => setCustomPrice(event.target.value)}
-        />
-        <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
-        <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
-          <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
-        </SmallButton>
-      </PackageAddRow>
-
-      {showPicker ? (
-        <InlinePickerBox>
-          <CatalogSearchField
-            rows={1}
-            placeholder="Search catalog services…"
-            value={query}
-            onChange={event => setQuery(event.target.value)}
-          />
-          <CatalogPickerList>
-            {availableItems.map(item => (
-              <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogChild(item.id); setShowPicker(false); setQuery(''); }}>
-                <span>{item.name}</span>
-              </CatalogPickerButton>
-            ))}
-            {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
-          </CatalogPickerList>
-        </InlinePickerBox>
-      ) : null}
+      <CustomLineAdder
+        indent
+        catalogItems={catalogItems}
+        excludeCatalogIds={childCatalogIds}
+        onAddCustom={onAddCustomChild}
+        onAddCatalogItem={onAddCatalogChild}
+      />
     </PackageCard>
   );
 };
@@ -1360,34 +1499,11 @@ const MilestoneCard = ({
   onAddCatalogService,
 }) => {
   const [taxDraft, setTaxDraft, taxEditingRef] = useFieldDraft(String(milestone.taxPercent ?? ''));
-  const [showPicker, setShowPicker] = useState(false);
-  const [query, setQuery] = useState('');
-  const [customName, setCustomName] = useState('');
-  const [customPrice, setCustomPrice] = useState('');
 
   const usedCatalogIds = useMemo(
     () => new Set(serviceRows.filter(row => row.kind === 'item').map(row => String(row.catalogId))),
     [serviceRows],
   );
-
-  const availableItems = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return catalogItems
-      .filter(item => !usedCatalogIds.has(String(item.id)))
-      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
-      .slice(0, 30);
-  }, [catalogItems, usedCatalogIds, query]);
-
-  const handleAddCustom = () => {
-    const name = customName.trim();
-    if (!name) {
-      toast.error('Enter a name for the new service.');
-      return;
-    }
-    onAddCustomService({ name, ...parseCustomPriceInput(customPrice) });
-    setCustomName('');
-    setCustomPrice('');
-  };
 
   return (
     <MilestoneDetails>
@@ -1440,39 +1556,13 @@ const MilestoneCard = ({
           {!serviceRows.length ? <PanelNote style={{ margin: '8px 0' }}>No services on this milestone yet.</PanelNote> : null}
         </PackageChildren>
 
-        <PackageAddRow>
-          <PackageQuickField
-            rows={1}
-            placeholder="Custom line name…"
-            value={customName}
-            onChange={event => setCustomName(event.target.value)}
-          />
-          <PackageQuickPrice
-            rows={1}
-            placeholder="100"
-            aria-label="New milestone service price"
-            value={customPrice}
-            onChange={event => setCustomPrice(event.target.value)}
-          />
-          <SmallButton type="button" onClick={handleAddCustom}><FaPlus /> Add</SmallButton>
-          <SmallButton type="button" onClick={() => setShowPicker(current => !current)}>
-            <FaPlus /> {showPicker ? 'Hide catalog' : 'From catalog'}
-          </SmallButton>
-        </PackageAddRow>
-
-        {showPicker ? (
-          <InlinePickerBox>
-            <CatalogSearchField rows={1} placeholder="Search catalog services…" value={query} onChange={event => setQuery(event.target.value)} />
-            <CatalogPickerList>
-              {availableItems.map(item => (
-                <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogService(item.id); setShowPicker(false); setQuery(''); }}>
-                  <span>{item.name}</span>
-                </CatalogPickerButton>
-              ))}
-              {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
-            </CatalogPickerList>
-          </InlinePickerBox>
-        ) : null}
+        <CustomLineAdder
+          indent
+          catalogItems={catalogItems}
+          excludeCatalogIds={usedCatalogIds}
+          onAddCustom={onAddCustomService}
+          onAddCatalogItem={onAddCatalogService}
+        />
       </MilestoneBody>
     </MilestoneDetails>
   );
@@ -1591,12 +1681,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [isGeneratingExpectedExpenses, setIsGeneratingExpectedExpenses] = useState(false);
   const [generatePaymentDetails, setGeneratePaymentDetails] = useState(true);
   const [invoiceDateInput, setInvoiceDateInput] = useState(getTodayYmd());
-  const [newCustomServiceName, setNewCustomServiceName] = useState('');
-  const [newCustomServicePrice, setNewCustomServicePrice] = useState('');
   const [newCustomPackageName, setNewCustomPackageName] = useState('');
-  const [catalogQuery, setCatalogQuery] = useState('');
-  const [showCatalogPicker, setShowCatalogPicker] = useState(false);
-  const [catalogTab, setCatalogTab] = useState('items');
   const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
   const [showCustomSchedulePicker, setShowCustomSchedulePicker] = useState(false);
   const [customPlanPackageName, setCustomPlanPackageName] = useState('');
@@ -1819,14 +1904,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     data.invoiceServices.filter(entry => entry.kind === 'package').map(entry => String(entry.catalogId)),
   ), [data.invoiceServices]);
 
-  const filteredCatalogItems = useMemo(() => {
-    const normalizedQuery = catalogQuery.trim().toLowerCase();
-    return catalogItems
-      .filter(item => !usedCatalogItemIds.has(String(item.id)))
-      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
-      .slice(0, 30);
-  }, [catalogItems, usedCatalogItemIds, catalogQuery]);
-
   // Hidden ("special offer") packages are excluded from the public Program Budget PDF but must
   // stay pickable here - an admin selects them deliberately, they're just not advertised.
   const visibleCatalogPackages = useMemo(
@@ -1834,12 +1911,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     [catalogPackages, priceContext],
   );
 
-  const filteredCatalogPackages = useMemo(() => {
-    const normalizedQuery = catalogQuery.trim().toLowerCase();
-    return visibleCatalogPackages
-      .filter(pkg => !usedCatalogPackageIds.has(String(pkg.id)))
-      .filter(pkg => !normalizedQuery || String(pkg.name || '').toLowerCase().includes(normalizedQuery));
-  }, [visibleCatalogPackages, usedCatalogPackageIds, catalogQuery]);
+  // Offered by the "% of package" picker tab in Other Expenses - percent shares can repeat, only
+  // a package already added whole (the Package panel) is excluded.
+  const availablePercentPackages = useMemo(
+    () => visibleCatalogPackages.filter(pkg => !usedCatalogPackageIds.has(String(pkg.id))),
+    [visibleCatalogPackages, usedCatalogPackageIds],
+  );
 
   const defaultExpectedExpensesTaxPercent = Number.isFinite(Number(catalogTechnical?.wireTransferSurchargeRate))
     ? Math.round(Number(catalogTechnical.wireTransferSurchargeRate) * 10000) / 100
@@ -2121,14 +2198,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const addCatalogServiceEntry = catalogId => {
     addEntryToInvoice(makeCatalogItemEntry(catalogId), 'Service added.');
-    setShowCatalogPicker(false);
-    setCatalogQuery('');
   };
 
   const addCatalogPackageEntry = pkg => {
     addEntryToInvoice(makeCatalogPackageEntry(pkg), 'Package added.');
-    setShowCatalogPicker(false);
-    setCatalogQuery('');
   };
 
   // The Package panel's programme selector (design-tasks §2): swaps the invoice's package for a
@@ -2139,21 +2212,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistInvoiceServices(next, 'Package switched.');
   };
 
-  const addCatalogPackagePercentEntry = pkg => {
-    addPercentServiceEntry(pkg.id);
-    setShowCatalogPicker(false);
-    setCatalogQuery('');
-  };
-
-  const addCustomServiceEntry = () => {
-    const name = newCustomServiceName.trim();
-    if (!name) {
-      toast.error('Enter a name for the new service.');
-      return;
-    }
-    addEntryToInvoice(makeCustomEntry({ name, ...parseCustomPriceInput(newCustomServicePrice) }), 'Service added.');
-    setNewCustomServiceName('');
-    setNewCustomServicePrice('');
+  const addCustomServiceEntry = fields => {
+    addEntryToInvoice(makeCustomEntry(fields), 'Service added.');
   };
 
   // A package with no Budget catalog entry - it can't reference the catalog because there is
@@ -2191,7 +2251,35 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     addEntryToInvoice(makePercentOfPackageEntry(packageId, defaultPercent), 'Service added.');
   };
 
-  const addRecentServiceEntry = entry => addEntryToInvoice(cloneEntryWithNewId(entry), 'Service added.');
+  // Clicking a Recent package while another package is active swaps them (design-tasks-2 §5): the
+  // clicked one becomes the invoice's package and the previously-active one drops back into
+  // Recent - never a silent no-op append behind the single package the panel shows.
+  const addRecentServiceEntry = entry => {
+    const clone = cloneEntryWithNewId(entry);
+    if (clone.kind === 'package') {
+      const existingPackage = data.invoiceServices.find(existing => existing.kind === 'package');
+      if (existingPackage) {
+        if (getEntryIdentityKey(existingPackage) === getEntryIdentityKey(clone)) {
+          toast.error('This is already on the invoice.');
+          return;
+        }
+        const nextRecentServices = upsertRecentEntry(data.recentServices, existingPackage);
+        setData(current => ({ ...current, recentServices: nextRecentServices }));
+        persistPath(`${INVOICE_DATA_PATH}/recentServices`, nextRecentServices);
+        persistInvoiceServices(
+          data.invoiceServices.map(existing => (existing.kind === 'package' ? clone : existing)),
+          'Package switched.',
+        );
+      } else {
+        addEntryToInvoice(clone, 'Package added.');
+      }
+      // The panel only shows the package while its PDF checkbox is on - activating a package
+      // from Recent must make it visible, not drop it into a hidden panel.
+      if (!data.includePackageInPdf) setIncludePackageInPdf(true);
+      return;
+    }
+    addEntryToInvoice(clone, 'Service added.');
+  };
 
   // round4 #3.2 (and, by the shared mechanism, #6): a trash icon on a recent entry removes just
   // that one record from the backend list - it never touches the current invoice's own services.
@@ -3191,37 +3279,34 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               <PanelHeading>
                 <H2>Package & PDF components</H2>
               </PanelHeading>
-              <PanelNote>
-                Choose which components are added to the generated Invoice PDF. A component enabled
-                below is shown and editable here; disabled, it is hidden from both this page and
-                the PDF.
-              </PanelNote>
 
               <FieldRow $align="center">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                {/* The label wraps only the checkbox (design-tasks-2 §2): clicking the package
+                    name or anywhere else on the row must never toggle PDF inclusion. */}
+                <label style={{ display: 'flex', alignItems: 'center', flex: '0 0 auto', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
+                    aria-label="Include the package in the PDF"
                     checked={data.includePackageInPdf}
                     onChange={event => setIncludePackageInPdf(event.target.checked)}
                   />
-                  <span>{`Package${packageRow ? ` — ${packageRow.name}` : ''}`}</span>
                 </label>
-              </FieldRow>
-
-              {data.includePackageInPdf ? (
-                packageRow ? (
-                  <>
-                    {/* Package/programme selector (design-tasks §2) - same select-from-catalog
-                        pattern as the payment-schedule selector below: picking a different
-                        programme replaces the current package outright. */}
-                    <PlainSelect
-                      aria-label="Switch to a different package from the catalog"
+                <PackageToggleName title={packageRow?.name || 'Package'}>
+                  {packageRow?.name || 'Package'}
+                </PackageToggleName>
+                {data.includePackageInPdf && packageRow ? (
+                  /* Switch-package action (design-tasks-2 §2): a real button at the end of the
+                     name row; picking a different programme replaces the current package
+                     outright, same as removing it and adding the new one in a single step. */
+                  <PackageSwitchButton title="Switch package from catalog">
+                    <FaChevronDown aria-hidden />
+                    <select
+                      aria-label="Switch package from catalog"
                       value=""
                       onChange={event => {
                         const pkg = visibleCatalogPackages.find(candidate => String(candidate.id) === event.target.value);
                         if (pkg) replacePackageEntry(pkg);
                       }}
-                      style={{ marginBottom: 6 }}
                     >
                       <option value="">Switch package from catalog…</option>
                       {visibleCatalogPackages
@@ -3229,7 +3314,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                         .map(pkg => (
                           <option key={pkg.id} value={pkg.id}>{pkg.hidden ? `${pkg.name} (Special offer)` : pkg.name}</option>
                         ))}
-                    </PlainSelect>
+                    </select>
+                  </PackageSwitchButton>
+                ) : null}
+              </FieldRow>
+
+              {data.includePackageInPdf ? (
+                packageRow ? (
+                  <>
                   <PackageEntryCard
                     row={packageRow}
                     catalogItems={catalogItems}
@@ -3359,11 +3451,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 <H2>Other expenses</H2>
               </PanelHeading>
 
+              {/* Same row component and sizing as a package item row in Package & PDF components
+                  (design-tasks-2 §6): custom lines, catalog items, and "% of package" shares all
+                  read as one list style. */}
               {serviceLineRows.map((row, index) => (
                 <ServiceLineRow
                   key={row.key}
                   row={row}
                   index={index}
+                  isChild
                   catalogPackages={visibleCatalogPackages}
                   onCommit={(field, value) => commitTopLevelField(row.id, field, value)}
                   onRemove={() => removeTopLevelEntry(row.id)}
@@ -3376,82 +3472,26 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               ))}
               {!serviceLineRows.length ? <PanelNote style={{ margin: 0 }}>No other expenses on this invoice yet.</PanelNote> : null}
 
-              <div
-                style={{ marginTop: 14 }}
-                onBlur={event => {
-                  if (event.currentTarget.contains(event.relatedTarget)) return;
-                  if (newCustomServiceName.trim()) addCustomServiceEntry();
-                }}
-              >
-                <FieldRow $align="center">
-                  <PlainTextBase
-                    $bare
-                    rows={1}
-                    placeholder="New custom service name"
-                    value={newCustomServiceName}
-                    onChange={event => setNewCustomServiceName(event.target.value)}
-                  />
-                  <PlainPriceBase
-                    $bare
-                    rows={1}
-                    placeholder="100"
-                    aria-label="New custom service price"
-                    value={newCustomServicePrice}
-                    onChange={event => setNewCustomServicePrice(event.target.value)}
-                  />
-                </FieldRow>
-                <FieldRow $align="center" style={{ marginTop: 8 }}>
-                  <SmallButton type="button" onClick={() => setShowCatalogPicker(current => !current)}>
-                    <FaPlus /> {showCatalogPicker ? 'Hide catalog' : 'Add from catalog'}
-                  </SmallButton>
-                  {percentSharePackage ? (
+              <div style={{ marginTop: 8 }}>
+                <CustomLineAdder
+                  addOnBlur
+                  catalogItems={catalogItems}
+                  excludeCatalogIds={usedCatalogItemIds}
+                  onAddCustom={addCustomServiceEntry}
+                  onAddCatalogItem={addCatalogServiceEntry}
+                  catalogPackages={availablePercentPackages}
+                  onAddCatalogPackagePercent={pkg => addPercentServiceEntry(pkg.id)}
+                  extraButtons={percentSharePackage ? (
                     <SmallButton
                       type="button"
                       title="Add a share of this invoice's package price (e.g. 20%)"
                       onClick={() => addPercentServiceEntry(percentSharePackage.catalogId)}
                     >
-                      <FaPlus /> Add % of package
+                      <FaPlus /> % From package
                     </SmallButton>
                   ) : null}
-                </FieldRow>
+                />
               </div>
-
-              {showCatalogPicker ? (
-                <div style={{ marginTop: 8 }}>
-                  <CatalogTabs>
-                    <CatalogTabButton type="button" $active={catalogTab === 'items'} onClick={() => setCatalogTab('items')}>
-                      Services
-                    </CatalogTabButton>
-                    <CatalogTabButton type="button" $active={catalogTab === 'packages'} onClick={() => setCatalogTab('packages')}>
-                      % of package
-                    </CatalogTabButton>
-                  </CatalogTabs>
-                  <CatalogSearchField
-                    rows={1}
-                    placeholder={catalogTab === 'items' ? 'Search catalog services…' : 'Search catalog packages…'}
-                    value={catalogQuery}
-                    onChange={event => setCatalogQuery(event.target.value)}
-                  />
-                  <CatalogPickerList>
-                    {catalogTab === 'items' ? filteredCatalogItems.map(item => (
-                      <CatalogPickerButton key={item.id} type="button" onClick={() => addCatalogServiceEntry(item.id)}>
-                        <span>{item.name}</span>
-                      </CatalogPickerButton>
-                    )) : filteredCatalogPackages.map(pkg => (
-                      <CatalogPickerButton
-                        key={pkg.id}
-                        type="button"
-                        onClick={() => addCatalogPackagePercentEntry(pkg)}
-                        title="Bill only a share of this package's price on this invoice (e.g. one Payment Schedule milestone) - the whole package itself is chosen in the Package panel above"
-                      >
-                        <span><FaLayerGroup style={{ marginRight: 6 }} />{pkg.name}{pkg.hidden ? <SpecialOfferBadge>Special offer</SpecialOfferBadge> : null}</span>
-                      </CatalogPickerButton>
-                    ))}
-                    {catalogTab === 'items' && !filteredCatalogItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
-                    {catalogTab === 'packages' && !filteredCatalogPackages.length ? <PanelNote style={{ margin: 0 }}>No matching catalog packages.</PanelNote> : null}
-                  </CatalogPickerList>
-                </div>
-              ) : null}
 
               {recentServiceSuggestions.length ? (
                 <>

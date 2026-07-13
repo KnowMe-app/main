@@ -278,7 +278,7 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { selectOption(packageSelect, 'p1'); });
     await flush();
 
-    const percentButton = findButton('% of package');
+    const percentButton = findButton('% From package');
     expect(percentButton).toBeTruthy();
     await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
@@ -312,7 +312,7 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { selectOption(packageSelect, 'p7'); });
     await flush();
 
-    const percentButton = findButton('% of package');
+    const percentButton = findButton('% From package');
     expect(percentButton).toBeTruthy();
     await act(async () => { percentButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
@@ -336,7 +336,7 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    await act(async () => { findButton('Add from catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { findButton('From catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
     await act(async () => { findButton('% of package', true).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
@@ -355,12 +355,50 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // design-tasks-2 §5: clicking a package under "Recent (click to add)" swaps it with the active
+  // package - the clicked one becomes the package in Package & PDF components, and the previously
+  // active one drops back into Recent - instead of invisibly appending a second package entry.
+  it('clicking a Recent package swaps it with the active package', async () => {
+    const activePackage = { id: 'entry-pkg-1', kind: 'package', catalogId: 'p1', children: [{ id: 'child-1', kind: 'item', catalogId: '10' }] };
+    const recentPackage = { id: 'recent-pkg-6', kind: 'package', catalogId: 'p6', children: [{ id: 'child-2', kind: 'item', catalogId: '10' }] };
+    get.mockImplementation(path => {
+      if (path === 'invoiceBuilder') {
+        return Promise.resolve({
+          exists: () => true,
+          val: () => ({ ...fixtureInvoiceData, invoiceServices: [activePackage], recentServices: [recentPackage] }),
+        });
+      }
+      if (path === 'budget/items') return Promise.resolve({ exists: () => true, val: () => fixtureItems });
+      if (path === 'budget/packages') return Promise.resolve({ exists: () => true, val: () => fixturePackages });
+      if (path === 'budget/technical') return Promise.resolve({ exists: () => true, val: () => fixtureTechnical });
+      return Promise.resolve({ exists: () => false, val: () => null });
+    });
+
+    const root = mount();
+    await flush();
+
+    const recentChip = findButton('Special Offer — Initial Payment');
+    expect(recentChip).toBeTruthy();
+    await act(async () => { recentChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    const packageEntries = lastServicesCall[1].filter(entry => entry.kind === 'package');
+    expect(packageEntries).toHaveLength(1);
+    expect(packageEntries[0].catalogId).toBe('p6');
+
+    const lastRecentCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/recentServices').pop();
+    expect(lastRecentCall[1].some(entry => entry.kind === 'package' && entry.catalogId === 'p1')).toBe(true);
+
+    await act(async () => { root.unmount(); });
+  });
+
   it('deletes a custom service from the invoice', async () => {
     const root = mount();
     await flush();
 
-    const nameField = container.querySelector('textarea[placeholder="New custom service name"]');
-    const priceField = container.querySelector('textarea[aria-label="New custom service price"]');
+    const nameField = container.querySelector('textarea[placeholder="Add a custom line…"]');
+    const priceField = container.querySelector('textarea[aria-label="New custom line price"]');
     await act(async () => {
       nameField.focus();
       setFieldValue(nameField, 'Courier fee');
@@ -393,8 +431,8 @@ describe('InvoiceBuilderPage', () => {
     const root = mount();
     await flush();
 
-    const nameField = container.querySelector('textarea[placeholder="New custom service name"]');
-    const priceField = container.querySelector('textarea[aria-label="New custom service price"]');
+    const nameField = container.querySelector('textarea[placeholder="Add a custom line…"]');
+    const priceField = container.querySelector('textarea[aria-label="New custom line price"]');
     await act(async () => {
       nameField.focus();
       setFieldValue(nameField, 'Courier fee');
@@ -621,10 +659,10 @@ describe('InvoiceBuilderPage', () => {
 
       await createPlan();
 
-      const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Custom line name…"]'));
+      const milestoneNameFields = Array.from(container.querySelectorAll('textarea[placeholder="Add a custom line…"]'));
       expect(milestoneNameFields).toHaveLength(2);
       const milestoneAddRow = milestoneNameFields[0].parentElement;
-      const priceField = milestoneAddRow.querySelector('textarea[aria-label="New milestone service price"]');
+      const priceField = milestoneAddRow.querySelector('textarea[aria-label="New custom line price"]');
       const addButton = Array.from(milestoneAddRow.querySelectorAll('button')).find(btn => btn.textContent.trim() === 'Add');
 
       await act(async () => {
