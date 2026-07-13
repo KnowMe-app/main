@@ -294,7 +294,7 @@ export const resolveProgramPaymentSchedule = (catalog, program) => {
 // (Budget/Invoice/Expected Expenses) funnels through here instead of reading `payment.amount`
 // directly, so the two formats can freely coexist in the same schedule.
 export const resolvePaymentAmount = (payment, listedPrice) => {
-  if (Number.isFinite(Number(payment?.amount))) return roundToCents(Number(payment.amount));
+  if (payment?.amount != null && Number.isFinite(Number(payment.amount))) return roundToCents(Number(payment.amount));
   if (Number.isFinite(Number(payment?.percent)) && listedPrice != null && Number.isFinite(Number(listedPrice))) {
     return roundToCents((Number(listedPrice) * Number(payment.percent)) / 100);
   }
