@@ -24,13 +24,7 @@
     "bronze": "#A2793F",
     "bronzeDeep": "#7C5B2E",
     "totalCardBg": "#362C22",
-    "totalCardAmount": "#EFDDB0",
-
-    "neutralBg": "#FDFCFA",
-    "neutralInk": "#3A362F",
-    "neutralSoft": "#8A8478",
-    "neutralLine": "#D8D2C2",
-    "neutralTotal": "#3A362F"
+    "totalCardAmount": "#EFDDB0"
   },
   "font": {
     "base": "Helvetica",

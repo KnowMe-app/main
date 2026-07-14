@@ -451,13 +451,16 @@ const ROW_LINE_HEIGHT = '20px';
 // each carrying its own padding. ($bare predates this - every field is bare now; the prop is
 // still accepted so call sites don't have to change.)
 const plainFieldStyle = css`
-  flex: 1 1 auto;
+  /* flex-basis 0 (not auto): with width 100% below, an auto basis makes the field demand the
+     whole row, wrapping the price/arrows/trash onto their own line - the multi-line row bug
+     (design-tasks-3 §3). Basis 0 + grow shares the row instead, exactly like PlainSelect. */
+  flex: 1 1 0%;
   min-width: 0;
   display: block;
   /* A textarea without an explicit width falls back to its intrinsic cols-based size (~half a
      panel) the moment it renders - which is exactly the "description shrinks on focus" bug when
      a collapsed full-width toggle flips into the editing textarea. Full width in block contexts;
-     in a flex row the flex properties above still decide the actual share. */
+     in a flex row the flex-basis above decides the actual share. */
   width: 100%;
   border: none;
   border-radius: 0;
@@ -574,10 +577,13 @@ const LineCard = styled.div`
   }
 `;
 
+// nowrap is the single-row guarantee (design-tasks-3 §3): numbering, name, amount, arrows, and
+// trash always share one line. The name field is the only flexible element - long names wrap
+// vertically inside it instead of pushing the amount/actions onto their own line.
 const LineMainRow = styled.div`
   display: flex;
   align-items: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
 `;
 
@@ -608,7 +614,7 @@ const CustomizedTag = styled.span`
   text-transform: uppercase;
   color: var(--km-accent);
   background: var(--km-accent-light);
-  border-radius: 999px;
+  border-radius: 5px;
   padding: 2px 7px;
   line-height: 12px;
   white-space: nowrap;
@@ -876,11 +882,13 @@ const ServiceLineRow = ({
 
 // --- Package group (a whole budget/packages program, editable/removable per line) ------------------------------------------------------
 
+// Same border/radius/background as every other sub-block on the page (CompactSection,
+// CustomerBlock, MilestoneDetails) - one block style, not a differently-tinted card per feature.
 const PackageCard = styled.div`
   margin-top: 10px;
   border: 1px solid var(--km-border);
   border-radius: 8px;
-  background: var(--km-accent-light);
+  background: var(--km-bg);
   padding: 8px 10px 10px;
 
   &:first-child {
@@ -1032,7 +1040,7 @@ const SpecialOfferBadge = styled.span`
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: 5px;
   background: var(--km-accent-light);
   color: var(--km-accent);
   padding: 2px 7px;
@@ -1047,14 +1055,14 @@ const CatalogTabs = styled.div`
   gap: 3px;
   padding: 3px;
   margin-bottom: 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--km-bg);
   border: 1px solid var(--km-border);
 `;
 
 const CatalogTabButton = styled.button`
   border: none;
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 5px 12px;
   font-size: 11px;
   font-weight: 800;
@@ -1600,8 +1608,10 @@ const ChipContainer = styled.div`
   gap: 1px;
   border: 1px dashed var(--km-border);
   background: var(--km-bg);
-  border-radius: 999px;
-  padding: 2px 3px 2px 10px;
+  /* Same soft corner as every other block on the page (design-tasks-3 §4) - the old pill shape
+     (999px) rounded so far in that multi-line chip text ran past the oval's edges. */
+  border-radius: 8px;
+  padding: 2px 3px 2px 8px;
 
   &:hover {
     border-color: var(--km-accent);
@@ -1633,6 +1643,12 @@ const ChipComposition = styled.span`
   font-weight: 500;
   color: var(--km-muted);
   margin-top: 1px;
+  /* Two lines at most - the full composition can run to a whole paragraph for a big package,
+     which turned each chip into a text block instead of a compact quick-pick. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 `;
 
 const ChipDeleteButton = styled.button`
@@ -1644,7 +1660,7 @@ const ChipDeleteButton = styled.button`
   height: 16px;
   flex-shrink: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: var(--km-muted);
   font-size: 8.5px;
@@ -3684,13 +3700,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   ) : null}
                 </div>
               </PanelHeading>
-              <PanelNote>
-                Pick a program package to auto-build a full billing forecast: one milestone per scheduled payment
-                (amount calculated automatically from the catalog), each editable, with room for extra one-off
-                services. The first milestone doubles as the program-introduction invoice (included services,
-                no per-item price, plus the whole schedule).
-              </PanelNote>
-
               {!expectedExpenses ? (
                 <div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -3714,11 +3723,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   ) : null}
                   {showCustomSchedulePicker ? (
                     <div style={{ marginTop: 8 }}>
-                      <PanelNote style={{ margin: '0 0 8px' }}>
-                        For a package with no Budget catalog entry: name it, set its total price, and build its
-                        payment schedule by hand (round4 #4). Each row bills a fixed amount - it has no live
-                        catalog price to track a percentage against.
-                      </PanelNote>
                       <FieldRow $align="center">
                         <PlainTextBase
                           rows={1}

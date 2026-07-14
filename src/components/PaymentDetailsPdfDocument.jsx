@@ -13,6 +13,9 @@ import { buildPayerLocation, buildPayerName } from './invoiceCatalogUtils';
 
 ensurePdfFontsRegistered();
 
+// Same paper/bronze palette as the Invoice PDF (design-tasks-3 §2): the card, rules, total card,
+// and note marks reuse the exact tokens InvoicePdfDocument/pdfBaseStyles use. Staying unbranded
+// (no wordmark/motif/agency footer) is a legal requirement and stays; matching colors is not.
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
   section: {
@@ -20,10 +23,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   paymentCard: {
-    backgroundColor: PDF_COLOR.neutralBg,
-    borderWidth: 1,
-    borderColor: PDF_COLOR.neutralLine,
-    borderStyle: 'solid',
+    backgroundColor: PDF_COLOR.card,
     borderRadius: 8,
     padding: 14,
   },
@@ -33,13 +33,13 @@ const styles = StyleSheet.create({
     fontSize: 7.5,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
-    color: PDF_COLOR.neutralSoft,
+    color: PDF_COLOR.bronzeDeep,
     marginBottom: 8,
   },
   paymentRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.neutralLine,
+    borderTopColor: PDF_COLOR.docLine,
     borderTopStyle: 'solid',
     paddingVertical: 6,
   },
@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     fontFamily: PDF_FONT.body,
     fontWeight: 600,
     fontSize: 8.5,
-    color: PDF_COLOR.neutralInk,
+    color: PDF_COLOR.docInk,
   },
   paymentValueCell: {
     flex: 1,
@@ -63,34 +63,21 @@ const styles = StyleSheet.create({
     fontFamily: PDF_FONT.body,
     fontSize: 8.5,
     lineHeight: 1.4,
-    color: PDF_COLOR.neutralInk,
+    color: PDF_COLOR.docInk,
   },
   amountCard: {
-    backgroundColor: PDF_COLOR.neutralTotal,
-    borderRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    ...pdfBaseStyles.totalCard,
     marginTop: 22,
   },
-  amountLabel: {
-    fontFamily: PDF_FONT.body,
-    fontWeight: 600,
-    fontSize: 7.5,
-    letterSpacing: 1.4,
-    color: PDF_COLOR.neutralSoft,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
+  amountLabel: pdfBaseStyles.totalCardLabel,
   amountValue: {
-    fontFamily: PDF_FONT.display,
-    fontWeight: 600,
+    ...pdfBaseStyles.totalCardAmount,
     fontSize: 26,
-    color: PDF_COLOR.white,
   },
   amountSub: {
     fontFamily: PDF_FONT.body,
     fontSize: 8.5,
-    color: PDF_COLOR.neutralBg,
+    color: PDF_COLOR.card,
     marginTop: 4,
   },
   noteRow: {
@@ -102,14 +89,14 @@ const styles = StyleSheet.create({
     fontFamily: PDF_FONT.body,
     fontWeight: 600,
     fontSize: 8.5,
-    color: PDF_COLOR.neutralSoft,
+    color: PDF_COLOR.bronze,
   },
   noteText: {
     flex: 1,
     fontFamily: PDF_FONT.body,
     fontSize: 8.5,
     lineHeight: 1.45,
-    color: PDF_COLOR.neutralInk,
+    color: PDF_COLOR.inkSoft,
   },
 });
 
