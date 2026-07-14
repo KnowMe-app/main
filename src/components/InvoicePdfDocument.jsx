@@ -45,12 +45,17 @@ const PAYMENT_CAVEAT_PATTERNS = [
 const isPaymentCaveatNote = note => PAYMENT_CAVEAT_PATTERNS.some(pattern => pattern.test(note));
 
 const styles = StyleSheet.create({
-  page: pdfBaseStyles.page,
+  // Slightly tighter top padding than the multi-page documents (design-tasks-4 §7): together with
+  // the compact metrics below it buys the ~100pt that keeps a full package invoice on one page.
+  page: {
+    ...pdfBaseStyles.page,
+    paddingTop: 38,
+  },
   // Tighter than the 26pt rhythm the multi-page documents use: the Invoice's blocks (Programme
   // package, Included in this package, Payment schedule, Breakdown) are compacted so the whole
   // document fits a single page whenever the content allows (design-tasks §3).
   section: {
-    marginTop: 10,
+    marginTop: 6,
   },
   // The very first block under the title carries no preceding marginBottom of its own to offset -
   // TitleBlock's trailing margin already does that job, so stacking the full section rhythm
@@ -66,9 +71,9 @@ const styles = StyleSheet.create({
   packageBlockHeader: {
     backgroundColor: PDF_COLOR.card,
     borderRadius: 8,
-    paddingVertical: 8,
+    paddingVertical: 4,
     paddingHorizontal: 12,
-    marginBottom: 6,
+    marginBottom: 3,
   },
   packageBlockName: {
     fontFamily: PDF_FONT.display,
@@ -96,17 +101,21 @@ const styles = StyleSheet.create({
   // payment schedule, breakdown, total - on one physical page whenever possible (design-tasks §3).
   totalCard: {
     ...pdfBaseStyles.totalCard,
-    marginTop: 8,
-    paddingVertical: 10,
+    marginTop: 6,
+    paddingVertical: 7,
+  },
+  totalCardLabel: {
+    ...pdfBaseStyles.totalCardLabel,
+    marginBottom: 2,
   },
   totalCardAmount: {
     ...pdfBaseStyles.totalCardAmount,
-    fontSize: 24,
+    fontSize: 18,
   },
   totalCardRule: {
     ...pdfBaseStyles.totalCardRule,
-    marginTop: 8,
-    marginBottom: 6,
+    marginTop: 5,
+    marginBottom: 4,
   },
   noteRow: {
     flexDirection: 'row',
@@ -151,11 +160,9 @@ const PackageBlock = ({ row, showSchedule }) => {
   // column has no amount at all (its cells are inclusion marks, not money), so it gets a blank
   // header instead of reusing the schedule's "EUR" one.
   const scheduleMeta = [{ id: packageId, label: '', priceLabel: 'EUR' }];
-  const includedMeta = [{ id: packageId, label: '', priceLabel: '' }];
   const includedRows = (row.children || []).map((child, index) => ({
     id: child.id || child.key || `child-${index}`,
     name: child.name || '',
-    includedByPackageId: new Set([String(packageId)]),
   }));
   const scheduleRows = (row.scheduleRows || []).map(payment => ({
     title: payment.title || 'Payment',
@@ -177,13 +184,14 @@ const PackageBlock = ({ row, showSchedule }) => {
         <Text style={styles.packageBlockFee}>{`Cost of the package ${totalLabel}`}</Text>
       </View>
       {fullDetailNote ? <Text style={styles.sectionNote}>{sanitizePdfText(fullDetailNote)}</Text> : null}
+      {/* Compact two-per-row layout (design-tasks-4 §7) - shared with Expected Expenses'
+          "Included in this programme" so the single-programme documents stay identical. */}
       <IncludedServicesTable
-        packages={includedMeta}
+        compact
         includedRows={includedRows}
         title="Included in this package"
         note={null}
         sectionStyle={styles.section}
-        dense
       />
       {showSchedule ? (
         <PaymentScheduleTable
@@ -271,12 +279,12 @@ const InvoicePdfDocument = ({
         <BronzeMotif />
         <ContinuedTag label={docLabel} />
         <BrandRow metaLines={[`Invoice No. ${invoiceNumber || ''}`, dateLabel, caseTitle]} />
-        <BrandRule />
+        <BrandRule style={{ marginBottom: 10 }} />
         <TitleBlock
           eyebrow={eyebrow}
           title={`Invoice No. ${invoiceNumber || ''}`}
           subtitle={`Prepared exclusively for ${payerName}${payerLocation ? ` · ${payerLocation}` : ''}.`}
-          style={{ marginBottom: 14 }}
+          style={{ marginBottom: 4 }}
         />
 
         {isPackageInvoice ? (
@@ -310,7 +318,7 @@ const InvoicePdfDocument = ({
           {/* wrap={false}: the card either fits under the breakdown or moves to the next page
               whole - it must never split its amount from its subtotal/tax rows. */}
           <View style={styles.totalCard} wrap={false}>
-            <Text style={pdfBaseStyles.totalCardLabel}>Amount due</Text>
+            <Text style={styles.totalCardLabel}>Amount due</Text>
             <Text style={styles.totalCardAmount}>{formatMoney(amountDue)}</Text>
             <View style={styles.totalCardRule} />
             <View style={pdfBaseStyles.totalCardRow}>

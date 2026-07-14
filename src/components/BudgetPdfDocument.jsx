@@ -131,9 +131,21 @@ const styles = StyleSheet.create({
     lineHeight: 1.4,
     marginTop: 1.5,
   },
-  // Dense variant: tighter row padding for the single-page Invoice (design-tasks §3).
+  // Dense variant: tighter row padding + slightly smaller cell text for the single-page Invoice
+  // (design-tasks §3, tightened further in design-tasks-4 §7 so a package invoice fits one page).
   denseCell: {
-    paddingVertical: 2,
+    paddingVertical: 1.5,
+  },
+  denseCellText: {
+    fontSize: 8,
+    lineHeight: 1.35,
+  },
+  // Column divider between the two service cells of a compact included-services row - the same
+  // hairline the program columns use, so the compact table still reads as part of one table family.
+  compactSecondCell: {
+    borderLeftWidth: 1,
+    borderLeftColor: PDF_COLOR.docLine,
+    borderLeftStyle: 'solid',
   },
   programCell: {
     width: PROGRAM_COL_WIDTH,
@@ -283,40 +295,81 @@ const ProgramColumnsHead = ({ packages, leadLabel, dense = false }) => (
 );
 
 // The "Included in this programme" table (spec §1.2/§2). Shared, byte-for-byte, between the
-// catalog-wide Program Budget (one column per programme) and the case-specific Expected Expenses
-// overview (a single column for the one chosen programme) - so the two documents can never drift
-// apart on how included services are listed.
+// catalog-wide Program Budget (one column per programme) and the case-specific single-programme
+// documents (the package Invoice and Expected Expenses) - so the documents can never drift apart
+// on how included services are listed.
 // packages: [{ id, label, priceLabel }] · includedRows: [{ id, name, includedByPackageId: Set<id> }]
+//
+// `compact` (design-tasks-4 §7) is the single-programme layout the Invoice and Expected Expenses
+// share: every listed service is included by definition, so the inclusion-mark column would be a
+// column of identical "x" marks against a mostly-empty right edge. Instead the services flow two
+// per row - same table frame, header, hairlines, and type as everywhere else - roughly halving
+// the table's height so a package invoice can fit one page.
 export const IncludedServicesTable = ({
-  packages,
+  packages = [],
   includedRows,
   title = 'Included services by program',
   note = 'An "x" marks the services included in each program package.',
   sectionStyle,
   dense = false,
-}) => (includedRows.length ? (
-  <View style={sectionStyle || styles.section}>
-    <View wrap={false} minPresenceAhead={70}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {note ? <Text style={styles.sectionNote}>{note}</Text> : null}
-    </View>
-    <View style={styles.table}>
-      <ProgramColumnsHead packages={packages} leadLabel="Provided service" dense={dense} />
-      {includedRows.map(item => (
-        <View key={item.id} style={styles.tableRow} wrap={false}>
-          <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
-            <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
+  compact = false,
+}) => {
+  if (!includedRows.length) return null;
+  if (compact) {
+    const pairedRows = [];
+    for (let index = 0; index < includedRows.length; index += 2) {
+      pairedRows.push(includedRows.slice(index, index + 2));
+    }
+    return (
+      <View style={sectionStyle || styles.section}>
+        <View wrap={false} minPresenceAhead={70}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {note ? <Text style={styles.sectionNote}>{note}</Text> : null}
+        </View>
+        <View style={styles.table}>
+          <View style={styles.tableHeadRow} wrap={false}>
+            <View style={[styles.labelCell, styles.denseCell]}>
+              <Text style={styles.labelCellHeadText}>Provided service</Text>
+            </View>
           </View>
-          {packages.map(program => (
-            <View key={`${item.id}-${program.id}`} style={[styles.programCell, dense ? styles.denseCell : null]}>
-              <Text style={styles.markCellText}>{item.includedByPackageId.has(String(program.id)) ? 'x' : ''}</Text>
+          {pairedRows.map((pair, rowIndex) => (
+            <View key={pair[0].id} style={styles.tableRow} wrap={false}>
+              <View style={[styles.labelCell, styles.denseCell]}>
+                <Text style={[styles.labelCellText, styles.denseCellText]}>{sanitizePdfText(pair[0].name)}</Text>
+              </View>
+              <View style={[styles.labelCell, styles.denseCell, styles.compactSecondCell]}>
+                {pair[1] ? <Text style={[styles.labelCellText, styles.denseCellText]}>{sanitizePdfText(pair[1].name)}</Text> : null}
+              </View>
             </View>
           ))}
         </View>
-      ))}
+      </View>
+    );
+  }
+  return (
+    <View style={sectionStyle || styles.section}>
+      <View wrap={false} minPresenceAhead={70}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {note ? <Text style={styles.sectionNote}>{note}</Text> : null}
+      </View>
+      <View style={styles.table}>
+        <ProgramColumnsHead packages={packages} leadLabel="Provided service" dense={dense} />
+        {includedRows.map(item => (
+          <View key={item.id} style={styles.tableRow} wrap={false}>
+            <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
+              <Text style={styles.labelCellText}>{sanitizePdfText(item.name)}</Text>
+            </View>
+            {packages.map(program => (
+              <View key={`${item.id}-${program.id}`} style={[styles.programCell, dense ? styles.denseCell : null]}>
+                <Text style={styles.markCellText}>{item.includedByPackageId.has(String(program.id)) ? 'x' : ''}</Text>
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
     </View>
-  </View>
-) : null);
+  );
+};
 
 // The "Payment schedule" table (spec §1.2/§2) - same sharing rationale as IncludedServicesTable
 // above. rows: [{ title, amounts: [amountOrNull, ...] }] · totals: optional [amountOrNull, ...]
@@ -335,12 +388,14 @@ export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment 
       {rows.map((row, rowIndex) => (
         <View key={`schedule-row-${rowIndex}`} style={styles.tableRow} wrap={false}>
           <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
-            <Text style={styles.labelCellText}>{`${rowIndex + 1}. ${sanitizePdfText(row.title)}`}</Text>
+            <Text style={dense ? [styles.labelCellText, styles.denseCellText] : styles.labelCellText}>
+              {`${rowIndex + 1}. ${sanitizePdfText(row.title)}`}
+            </Text>
             {row.description ? <Text style={styles.labelCellDescription}>{sanitizePdfText(row.description)}</Text> : null}
           </View>
           {row.amounts.map((amount, columnIndex) => (
             <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={[styles.programCell, dense ? styles.denseCell : null]}>
-              <Text style={styles.amountCellText}>
+              <Text style={dense ? [styles.amountCellText, styles.denseCellText] : styles.amountCellText}>
                 {amount == null ? '-' : (typeof amount === 'string' ? sanitizePdfText(amount) : formatAmount(amount))}
               </Text>
             </View>

@@ -1126,5 +1126,133 @@ describe('InvoiceBuilderPage', () => {
 
       await act(async () => { root.unmount(); });
     });
+
+    const openIssuedInvoices = async () => {
+      const revealButton = Array.from(container.querySelectorAll('[role="button"]'))
+        .find(node => node.textContent.includes('Issued invoices'));
+      await act(async () => { revealButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+    };
+
+    // design-tasks-4 §3: one package header line (duplicates collapsed), the scheduled share reads
+    // "Scheduled payment", and one-off services keep their own lines.
+    it('renders an issued invoice as package header + scheduled payment + one-off lines, deduping package rows', async () => {
+      mockInvoiceData({
+        issuedInvoices: [{
+          ...issuedInvoice,
+          rows: [
+            { name: 'IVF + ED + SM', price: 46000, kind: 'package' },
+            { name: 'IVF + ED + SM', price: 46000, kind: 'package' },
+            { name: 'IVF + ED + SM', price: 46000, kind: 'package' },
+            { name: '16000 EUR of IVF + ED + SM', price: 16000, kind: 'percent' },
+            { name: 'Deposit for medical expenses of SM', price: 300, kind: 'custom' },
+          ],
+          amountDue: 17686,
+        }],
+      });
+      const root = mount();
+      await flush();
+      await openIssuedInvoices();
+
+      // The package name appears exactly once, as an unnumbered header line.
+      expect(container.innerHTML.split('IVF + ED + SM').length - 1).toBe(1);
+      // The percent row reads "Scheduled payment", never "16000 EUR of ...".
+      expect(container.innerHTML).toContain('Scheduled payment');
+      expect(container.innerHTML).not.toContain('16000 EUR of');
+      expect(container.innerHTML).toContain('Deposit for medical expenses of SM');
+      // The summary counts the billed lines only (scheduled payment + deposit), not the header.
+      expect(container.innerHTML).toContain('2 items');
+
+      await act(async () => { root.unmount(); });
+    });
+
+    // design-tasks-4 §2: an issued invoice can be deleted from the history.
+    it('deletes an issued invoice from the history after confirmation', async () => {
+      mockInvoiceData({ issuedInvoices: [issuedInvoice] });
+      const root = mount();
+      await flush();
+      await openIssuedInvoices();
+
+      const deleteButton = Array.from(container.querySelectorAll('button'))
+        .find(btn => btn.title === 'Delete this invoice from Issued Invoices');
+      expect(deleteButton).toBeTruthy();
+      await act(async () => { deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      expect(window.confirm).toHaveBeenCalled();
+      const lastIssuedCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/issuedInvoices').pop();
+      expect(lastIssuedCall[1]).toEqual([]);
+
+      await act(async () => { root.unmount(); });
+    });
+
+    // design-tasks-4 §4/§6: a non-EUR receipt shows its EUR equivalent at the NBU rate, and the
+    // header amount goes green once the (converted) amount covers the Amount Due.
+    it('shows the NBU EUR conversion for a USD receipt and colors a fully-paid invoice green', async () => {
+      mockInvoiceData({
+        issuedInvoices: [{
+          ...issuedInvoice,
+          amountDue: 18011,
+          // 20000 USD -> 20000 * 42 / 46 = 18,260.87 EUR at the mocked NBU rates - full coverage.
+          payment: { receivedOn: '', amount: '20000', currency: 'USD' },
+        }],
+      });
+      const root = mount();
+      await flush();
+      await openIssuedInvoices();
+
+      expect(container.innerHTML).toContain('18,260.87');
+      expect(container.innerHTML).toContain('at the NBU rate');
+      // #3E7C4F -> jsdom serializes inline styles as rgb().
+      expect(container.innerHTML).toContain('rgb(62, 124, 79)');
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('colors a partially-paid invoice yellow', async () => {
+      mockInvoiceData({
+        issuedInvoices: [{
+          ...issuedInvoice,
+          amountDue: 18011,
+          payment: { receivedOn: '', amount: '5000', currency: 'EUR' },
+        }],
+      });
+      const root = mount();
+      await flush();
+      await openIssuedInvoices();
+
+      // #C08A2D -> rgb(192, 138, 45); no conversion line for a EUR receipt.
+      expect(container.innerHTML).toContain('rgb(192, 138, 45)');
+      expect(container.innerHTML).not.toContain('at the NBU rate');
+
+      await act(async () => { root.unmount(); });
+    });
+
+    // design-tasks-4 §3: duplicate package entries accumulated in older data collapse on load, so
+    // a reissue puts one package back into the editor, not several invisible copies.
+    it('reissuing a record with duplicated package entries restores a single package', async () => {
+      mockInvoiceData({
+        issuedInvoices: [{
+          ...issuedInvoice,
+          entries: [
+            { id: 'dup-1', kind: 'package', catalogId: 'p1', children: [] },
+            { id: 'dup-2', kind: 'package', catalogId: 'p1', children: [] },
+            { id: 'dup-3', kind: 'percent', packageId: 'p1', percent: 25 },
+          ],
+        }],
+      });
+      const root = mount();
+      await flush();
+      await openIssuedInvoices();
+
+      await act(async () => { findButton('Reissue invoice').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+      expect(lastServicesCall[1].filter(entry => entry.kind === 'package')).toHaveLength(1);
+      expect(lastServicesCall[1].some(entry => entry.kind === 'percent')).toBe(true);
+
+      await act(async () => { root.unmount(); });
+    });
   });
 });
