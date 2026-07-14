@@ -6,9 +6,11 @@ import {
   FaBoxOpen,
   FaChevronDown,
   FaChevronUp,
+  FaCopy,
   FaFilePdf,
   FaLayerGroup,
   FaPlus,
+  FaSave,
   FaSyncAlt,
   FaTrash,
   FaUndoAlt,
@@ -43,6 +45,7 @@ import {
   makeCatalogPackageEntry,
   makeCustomEntry,
   makeCustomPackageEntry,
+  makeIssuedInvoiceRecord,
   makePercentOfPackageEntry,
   movePackageChild,
   normalizeInvoiceData,
@@ -238,6 +241,22 @@ const DangerButton = styled(SmallButton)`
   &:hover:not(:disabled) {
     border-color: var(--km-danger);
     color: var(--km-danger);
+  }
+`;
+
+// A SmallButton that is really a native <select> (stretched invisibly across it, same trick as
+// PackageSwitchButton) - used for pick-one actions like "Copy from payer" so the option list
+// opens as a normal picker while the control still reads as a button.
+const SmallButtonSelect = styled(SmallButton).attrs({ as: 'span' })`
+  position: relative;
+
+  select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
   }
 `;
 
@@ -451,13 +470,16 @@ const ROW_LINE_HEIGHT = '20px';
 // each carrying its own padding. ($bare predates this - every field is bare now; the prop is
 // still accepted so call sites don't have to change.)
 const plainFieldStyle = css`
-  flex: 1 1 auto;
+  /* flex-basis 0 (not auto): with width 100% below, an auto basis makes the field demand the
+     whole row, wrapping the price/arrows/trash onto their own line - the multi-line row bug
+     (design-tasks-3 §3). Basis 0 + grow shares the row instead, exactly like PlainSelect. */
+  flex: 1 1 0%;
   min-width: 0;
   display: block;
   /* A textarea without an explicit width falls back to its intrinsic cols-based size (~half a
      panel) the moment it renders - which is exactly the "description shrinks on focus" bug when
      a collapsed full-width toggle flips into the editing textarea. Full width in block contexts;
-     in a flex row the flex properties above still decide the actual share. */
+     in a flex row the flex-basis above decides the actual share. */
   width: 100%;
   border: none;
   border-radius: 0;
@@ -574,10 +596,13 @@ const LineCard = styled.div`
   }
 `;
 
+// nowrap is the single-row guarantee (design-tasks-3 §3): numbering, name, amount, arrows, and
+// trash always share one line. The name field is the only flexible element - long names wrap
+// vertically inside it instead of pushing the amount/actions onto their own line.
 const LineMainRow = styled.div`
   display: flex;
   align-items: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
 `;
 
@@ -608,7 +633,7 @@ const CustomizedTag = styled.span`
   text-transform: uppercase;
   color: var(--km-accent);
   background: var(--km-accent-light);
-  border-radius: 999px;
+  border-radius: 5px;
   padding: 2px 7px;
   line-height: 12px;
   white-space: nowrap;
@@ -876,11 +901,13 @@ const ServiceLineRow = ({
 
 // --- Package group (a whole budget/packages program, editable/removable per line) ------------------------------------------------------
 
+// Same border/radius/background as every other sub-block on the page (CompactSection,
+// CustomerBlock, MilestoneDetails) - one block style, not a differently-tinted card per feature.
 const PackageCard = styled.div`
   margin-top: 10px;
   border: 1px solid var(--km-border);
   border-radius: 8px;
-  background: var(--km-accent-light);
+  background: var(--km-bg);
   padding: 8px 10px 10px;
 
   &:first-child {
@@ -1032,7 +1059,7 @@ const SpecialOfferBadge = styled.span`
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: 5px;
   background: var(--km-accent-light);
   color: var(--km-accent);
   padding: 2px 7px;
@@ -1047,14 +1074,14 @@ const CatalogTabs = styled.div`
   gap: 3px;
   padding: 3px;
   margin-bottom: 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--km-bg);
   border: 1px solid var(--km-border);
 `;
 
 const CatalogTabButton = styled.button`
   border: none;
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 5px 12px;
   font-size: 11px;
   font-weight: 800;
@@ -1568,6 +1595,125 @@ const MilestoneCard = ({
   );
 };
 
+// --- Issued invoices (design-tasks-3 §7) ------------------------------------------------------
+//
+// One previously-generated invoice, rendered read-only in the same collapsed-details style as an
+// Expected Expenses milestone: date, number, and amount on the summary line; the frozen service
+// rows and totals inside. The only editable parts are the admin's own payment-received tracking
+// (plain-text fields, same style as every other input) and the Reissue action.
+
+const ReadOnlyRowName = styled.span`
+  flex: 1 1 0%;
+  min-width: 0;
+  padding: 0 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: ${ROW_LINE_HEIGHT};
+`;
+
+const ReadOnlyRowPrice = styled.span`
+  flex: 0 0 auto;
+  padding: 0 2px;
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: ${ROW_LINE_HEIGHT};
+  color: var(--km-accent);
+  white-space: nowrap;
+`;
+
+const ISSUED_INVOICE_CURRENCIES = ['EUR', 'USD', 'UAH', 'GBP'];
+
+const IssuedInvoiceCard = ({ record, onCommitPayment, onReissue }) => {
+  const [receivedDraft, setReceivedDraft, receivedEditingRef] = useFieldDraft(record.payment.receivedOn);
+  const [amountDraft, setAmountDraft, amountEditingRef] = useFieldDraft(record.payment.amount);
+
+  return (
+    <MilestoneDetails>
+      <MilestoneSummary>
+        <MilestoneSummaryLeft>
+          <MilestoneNum>{record.invoiceDate}</MilestoneNum>
+          <MilestoneTitleText title={`Invoice No. ${record.invoiceNumber}`}>{`Invoice No. ${record.invoiceNumber}`}</MilestoneTitleText>
+          <MilestoneCount>{record.rows.length} item{record.rows.length === 1 ? '' : 's'}</MilestoneCount>
+        </MilestoneSummaryLeft>
+        <MilestoneSummaryRight>
+          <MilestoneDue>{formatEuroPreview(record.amountDue)}</MilestoneDue>
+          <MilestoneChevron>›</MilestoneChevron>
+        </MilestoneSummaryRight>
+      </MilestoneSummary>
+
+      <MilestoneBody>
+        <PackageChildren>
+          {record.rows.map((row, index) => (
+            <LineCard key={`${record.id}-row-${index}`}>
+              <LineMainRow>
+                <RowIndex>{index + 1}</RowIndex>
+                <ReadOnlyRowName>{row.name}</ReadOnlyRowName>
+                <ReadOnlyRowPrice>{row.priceLabel || formatEuroPreview(row.price)}</ReadOnlyRowPrice>
+              </LineMainRow>
+            </LineCard>
+          ))}
+          {!record.rows.length ? <PanelNote style={{ margin: '8px 0' }}>No services recorded.</PanelNote> : null}
+        </PackageChildren>
+        <MilestoneCheckboxRow>
+          <CustomizedTag title="Tax rate billed on this invoice">Tax: {record.taxPercent}%</CustomizedTag>
+          <CustomizedTag title="Final amount including taxes">Due: {formatEuroPreview(record.amountDue)}</CustomizedTag>
+        </MilestoneCheckboxRow>
+
+        <FieldRow $align="center">
+          <FieldTag>Payment received</FieldTag>
+          <AutoTextArea
+            $size="12.5px"
+            value={receivedDraft}
+            placeholder="Not received yet - add a date"
+            aria-label="Payment received on"
+            onFocus={() => { receivedEditingRef.current = true; }}
+            onChange={event => setReceivedDraft(event.target.value)}
+            onBlur={() => {
+              receivedEditingRef.current = false;
+              if (receivedDraft !== (record.payment.receivedOn ?? '')) onCommitPayment('receivedOn', receivedDraft);
+            }}
+          />
+          <AutoTextArea
+            as={PlainPriceBase}
+            $size="12.5px"
+            $width="72px"
+            inputMode="decimal"
+            value={amountDraft}
+            placeholder="0"
+            aria-label="Amount received"
+            onFocus={() => { amountEditingRef.current = true; }}
+            onChange={event => setAmountDraft(event.target.value)}
+            onBlur={() => {
+              amountEditingRef.current = false;
+              if (amountDraft !== (record.payment.amount ?? '')) onCommitPayment('amount', amountDraft);
+            }}
+          />
+          <PlainSelect
+            style={{ flex: '0 0 auto', width: 'auto' }}
+            aria-label="Currency of the received amount"
+            value={record.payment.currency || 'EUR'}
+            onChange={event => onCommitPayment('currency', event.target.value)}
+          >
+            {ISSUED_INVOICE_CURRENCIES.map(currency => (
+              <option key={currency} value={currency}>{currency}</option>
+            ))}
+          </PlainSelect>
+        </FieldRow>
+
+        <div style={{ marginTop: 8 }}>
+          <SmallButton
+            type="button"
+            onClick={onReissue}
+            title="Move this invoice's contents back into the editor; the editor's current content drops into Recent"
+          >
+            <FaSyncAlt /> Reissue invoice
+          </SmallButton>
+        </div>
+      </MilestoneBody>
+    </MilestoneDetails>
+  );
+};
+
 // --- Summary ------------------------------------------------------
 
 const SummaryGrid = styled.div`
@@ -1600,8 +1746,10 @@ const ChipContainer = styled.div`
   gap: 1px;
   border: 1px dashed var(--km-border);
   background: var(--km-bg);
-  border-radius: 999px;
-  padding: 2px 3px 2px 10px;
+  /* Same soft corner as every other block on the page (design-tasks-3 §4) - the old pill shape
+     (999px) rounded so far in that multi-line chip text ran past the oval's edges. */
+  border-radius: 8px;
+  padding: 2px 3px 2px 8px;
 
   &:hover {
     border-color: var(--km-accent);
@@ -1633,6 +1781,12 @@ const ChipComposition = styled.span`
   font-weight: 500;
   color: var(--km-muted);
   margin-top: 1px;
+  /* Two lines at most - the full composition can run to a whole paragraph for a big package,
+     which turned each chip into a text block instead of a compact quick-pick. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 `;
 
 const ChipDeleteButton = styled.button`
@@ -1644,7 +1798,7 @@ const ChipDeleteButton = styled.button`
   height: 16px;
   flex-shrink: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: var(--km-muted);
   font-size: 8.5px;
@@ -1689,6 +1843,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [customScheduleRows, setCustomScheduleRows] = useState([{ title: '', amount: '' }]);
   const [beneficiaryExpanded, setBeneficiaryExpanded] = useState(false);
   const [payerExpanded, setPayerExpanded] = useState(false);
+  const [issuedInvoicesOpen, setIssuedInvoicesOpen] = useState(false);
   // round7 spec D: Expected Expenses is a standalone section of the Builder, not a step inside the
   // regular invoice-creation flow - a top-level tab keeps the two entirely separate on screen.
   const [activeTab, setActiveTab] = useState('invoice');
@@ -1879,6 +2034,20 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const payerLocation = useMemo(() => buildPayerLocation(data.customers), [data.customers]);
   const caseTitle = useMemo(() => buildCaseTitle(data.customers), [data.customers]);
   const activePayerCaseId = data.payerCaseIds[0];
+
+  // Issued invoices are stored once, flat, newest first - the section only ever shows the active
+  // payer's own history (design-tasks-3 §7).
+  const payerIssuedInvoices = useMemo(
+    () => data.issuedInvoices.filter(record => String(record.payerCaseId) === String(activePayerCaseId)),
+    [data.issuedInvoices, activePayerCaseId],
+  );
+
+  // Other payers whose saved package/services can be copied into this invoice (design-tasks-3 §6).
+  const copySourcePayerCases = useMemo(
+    () => data.payerCases.filter(payerCase => String(payerCase.id) !== String(activePayerCaseId)
+      && Array.isArray(payerCase.savedServices) && payerCase.savedServices.length),
+    [data.payerCases, activePayerCaseId],
+  );
 
   // recentServices is already ordered most-recently-used first (reorderRecentServices) - so
   // deduping here by keeping only the first occurrence of each identity naturally keeps the
@@ -2143,6 +2312,62 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const persistInvoiceServices = (nextInvoiceServices, successMessage) => {
     setData(current => ({ ...current, invoiceServices: nextInvoiceServices }));
     persistPath(`${INVOICE_DATA_PATH}/invoiceServices`, nextInvoiceServices, successMessage);
+  };
+
+  // Saves the current package + one-off services onto the active payer case itself
+  // (design-tasks-3 §5) - a deliberate snapshot tied to this payer, not the live editor state.
+  const saveServicesForPayer = async () => {
+    if (!data.invoiceServices.length) {
+      toast.error('Nothing to save - the invoice has no package or services yet.');
+      return;
+    }
+    const nextPayerCases = data.payerCases.map(payerCase => (String(payerCase.id) === String(activePayerCaseId)
+      ? { ...payerCase, savedServices: data.invoiceServices }
+      : payerCase));
+    setData(current => ({ ...current, payerCases: nextPayerCases }));
+    await persistPath(`${INVOICE_DATA_PATH}/payerCases`, nextPayerCases, 'Package & services saved for this payer.');
+  };
+
+  // Copies another payer's saved package/services into this invoice (design-tasks-3 §6), replacing
+  // the editor's current content - entries are cloned with fresh ids so the two payers' saved
+  // sets never share rows.
+  const copyServicesFromPayer = payerCaseId => {
+    const source = data.payerCases.find(payerCase => String(payerCase.id) === String(payerCaseId));
+    if (!source || !Array.isArray(source.savedServices) || !source.savedServices.length) return;
+    const sourceName = buildPayerName(source.customers) || `Case ${source.id}`;
+    if (data.invoiceServices.length && typeof window !== 'undefined'
+      && !window.confirm(`Replace the current package & services with the ones saved for "${sourceName}"?`)) return;
+    persistInvoiceServices(source.savedServices.map(cloneEntryWithNewId), `Copied package & services from ${sourceName}.`);
+  };
+
+  // Issued invoices (design-tasks-3 §7) ------------------------------------------------------------
+
+  const persistIssuedInvoices = (nextIssuedInvoices, successMessage) => {
+    setData(current => ({ ...current, issuedInvoices: nextIssuedInvoices }));
+    persistPath(`${INVOICE_DATA_PATH}/issuedInvoices`, nextIssuedInvoices, successMessage);
+  };
+
+  const commitIssuedInvoicePayment = (invoiceId, field, value) => {
+    const nextIssuedInvoices = data.issuedInvoices.map(record => (String(record.id) === String(invoiceId)
+      ? { ...record, payment: { ...record.payment, [field]: value } }
+      : record));
+    persistIssuedInvoices(nextIssuedInvoices, 'Payment record updated.');
+  };
+
+  // The Reissue flow (design-tasks-3 §7): the issued invoice's contents move back into the active
+  // editor, and whatever the editor held drops into "Recent (click to add)" - then the admin edits
+  // and hits Generate PDF, which records the reissued version as a new issued invoice below.
+  const reissueInvoice = record => {
+    const nextRecentServices = reorderRecentServices(data.recentServices, data.invoiceServices);
+    const nextInvoiceServices = record.entries.map(cloneEntryWithNewId);
+    setData(current => ({ ...current, recentServices: nextRecentServices, invoiceServices: nextInvoiceServices }));
+    persistPath(`${INVOICE_DATA_PATH}/recentServices`, nextRecentServices);
+    persistPath(`${INVOICE_DATA_PATH}/invoiceServices`, nextInvoiceServices, 'Invoice moved back to the editor - edit and Generate PDF to reissue.');
+    // A reissued package must land visible in the Package panel, not behind an unchecked box -
+    // same rule as activating a package from Recent.
+    if (!data.includePackageInPdf && nextInvoiceServices.some(entry => entry.kind === 'package')) {
+      setIncludePackageInPdf(true);
+    }
   };
 
   const commitTopLevelField = (id, field, value) => {
@@ -2883,6 +3108,9 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         payerCases: nextPayerCases,
         payerCaseIds: nextPayerCaseIds,
         customers: uploadedActiveCase.customers,
+        // The issued-invoices history is backend truth, never part of the uploaded template -
+        // keep the local record instead of blanking it until the next reload.
+        issuedInvoices: data.issuedInvoices,
       };
       await Promise.all([
         set(ref(database, `${INVOICE_DATA_PATH}/beneficiaries`), nextData.beneficiaries),
@@ -3017,8 +3245,28 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       }
 
       const nextRecentServices = reorderRecentServices(data.recentServices, data.invoiceServices);
-      setData(current => ({ ...current, recentServices: nextRecentServices }));
-      await persistPath(`${INVOICE_DATA_PATH}/recentServices`, nextRecentServices);
+
+      // Record the generated invoice in the payer's Issued Invoices history (design-tasks-3 §7):
+      // display rows/totals are frozen as billed (never re-resolved against the live catalog),
+      // the raw entries ride along so Reissue can put them back into the editor.
+      const issuedRecord = makeIssuedInvoiceRecord({
+        payerCaseId: activePayerCaseId,
+        invoiceNumber,
+        invoiceDate: invoiceDateInput || getTodayYmd(),
+        rows: invoiceServiceRows.map(row => ({
+          name: row.name, price: row.price, priceLabel: row.priceLabel, kind: row.kind,
+        })),
+        entries: data.invoiceServices,
+        taxPercent: data.taxPercent,
+        debtOrDeposit: data.debtOrDeposit,
+        amountDue,
+      });
+      const nextIssuedInvoices = [issuedRecord, ...data.issuedInvoices];
+      setData(current => ({ ...current, recentServices: nextRecentServices, issuedInvoices: nextIssuedInvoices }));
+      await Promise.all([
+        persistPath(`${INVOICE_DATA_PATH}/recentServices`, nextRecentServices),
+        persistPath(`${INVOICE_DATA_PATH}/issuedInvoices`, nextIssuedInvoices),
+      ]);
 
       toast.success(generatePaymentDetails ? 'Invoice and payment details PDFs generated.' : 'Invoice PDF generated.');
     } catch (generateError) {
@@ -3278,6 +3526,32 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <Panel>
               <PanelHeading>
                 <H2>Package & PDF components</H2>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <SmallButton
+                    type="button"
+                    onClick={saveServicesForPayer}
+                    title="Save the current package & services on the backend, tied to this payer"
+                  >
+                    <FaSave /> Save for payer
+                  </SmallButton>
+                  {copySourcePayerCases.length ? (
+                    <SmallButtonSelect title="Copy the package & services saved for another payer">
+                      <FaCopy /> Copy from payer
+                      <select
+                        aria-label="Copy package & services from another payer"
+                        value=""
+                        onChange={event => { if (event.target.value) copyServicesFromPayer(event.target.value); }}
+                      >
+                        <option value="">Copy from payer…</option>
+                        {copySourcePayerCases.map(payerCase => (
+                          <option key={payerCase.id} value={payerCase.id}>
+                            {buildPayerName(payerCase.customers) || `Case ${payerCase.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </SmallButtonSelect>
+                  ) : null}
+                </div>
               </PanelHeading>
 
               <FieldRow $align="center">
@@ -3639,6 +3913,41 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               ))}
               {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
             </Panel>
+
+            {/* Issued Invoices (design-tasks-3 §7): a click-to-reveal block at the bottom of the
+                page - the same collapsed-summary pattern Beneficiary/Payer use - listing every
+                invoice ever generated for the active payer, read-only, newest first. */}
+            <Panel>
+              <CompactSection
+                $expanded={issuedInvoicesOpen}
+                onClick={() => setIssuedInvoicesOpen(current => !current)}
+                role="button"
+                aria-expanded={issuedInvoicesOpen}
+              >
+                <CompactInfo>
+                  <CompactLabel>Issued invoices</CompactLabel>
+                  <CompactValue>
+                    {payerIssuedInvoices.length
+                      ? `${payerIssuedInvoices.length} invoice${payerIssuedInvoices.length === 1 ? '' : 's'} · ${payerName || 'this payer'}`
+                      : 'No invoices issued for this payer yet'}
+                  </CompactValue>
+                </CompactInfo>
+                <CompactChevron>{issuedInvoicesOpen ? 'Hide ›' : 'Show ›'}</CompactChevron>
+              </CompactSection>
+              {issuedInvoicesOpen ? (
+                <>
+                  {payerIssuedInvoices.map(record => (
+                    <IssuedInvoiceCard
+                      key={record.id}
+                      record={record}
+                      onCommitPayment={(field, value) => commitIssuedInvoicePayment(record.id, field, value)}
+                      onReissue={() => reissueInvoice(record)}
+                    />
+                  ))}
+                  {!payerIssuedInvoices.length ? <PanelNote style={{ margin: 0 }}>No invoices issued for this payer yet.</PanelNote> : null}
+                </>
+              ) : null}
+            </Panel>
               </>
             ) : null}
 
@@ -3684,13 +3993,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   ) : null}
                 </div>
               </PanelHeading>
-              <PanelNote>
-                Pick a program package to auto-build a full billing forecast: one milestone per scheduled payment
-                (amount calculated automatically from the catalog), each editable, with room for extra one-off
-                services. The first milestone doubles as the program-introduction invoice (included services,
-                no per-item price, plus the whole schedule).
-              </PanelNote>
-
               {!expectedExpenses ? (
                 <div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -3714,11 +4016,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   ) : null}
                   {showCustomSchedulePicker ? (
                     <div style={{ marginTop: 8 }}>
-                      <PanelNote style={{ margin: '0 0 8px' }}>
-                        For a package with no Budget catalog entry: name it, set its total price, and build its
-                        payment schedule by hand (round4 #4). Each row bills a fixed amount - it has no live
-                        catalog price to track a percentage against.
-                      </PanelNote>
                       <FieldRow $align="center">
                         <PlainTextBase
                           rows={1}
