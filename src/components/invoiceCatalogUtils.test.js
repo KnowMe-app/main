@@ -19,7 +19,9 @@ import {
   makeCatalogPackageEntry,
   makeCustomEntry,
   makeCustomPackageEntry,
+  makeIssuedInvoiceRecord,
   makePercentOfPackageEntry,
+  normalizeIssuedInvoices,
   movePackageChild,
   normalizeInvoiceData,
   normalizeServiceEntry,
@@ -60,7 +62,29 @@ describe('invoiceCatalogUtils', () => {
       taxPercent: 0,
       debtOrDeposit: 0,
       paymentPurposeOverride: '',
+      issuedInvoices: [],
     });
+  });
+
+  // design-tasks-3 §7: an issued invoice is recorded with frozen display rows, the raw entries for
+  // Reissue, and a payment-tracking stub whose currency defaults to EUR when none is chosen.
+  it('normalizes an issued invoice record, defaulting the received currency to EUR', () => {
+    const record = makeIssuedInvoiceRecord({
+      payerCaseId: 'case-a',
+      invoiceNumber: '14/07/2026',
+      invoiceDate: '2026-07-14',
+      rows: [{ name: 'Service', price: 100.005, priceLabel: undefined, kind: 'item' }],
+      entries: [{ id: 'e1', kind: 'item', catalogId: '10' }],
+      taxPercent: '14',
+      debtOrDeposit: 0,
+      amountDue: 114,
+    });
+    expect(record.rows).toEqual([{ name: 'Service', price: 100.01, kind: 'item' }]);
+    expect(record.entries[0]).toMatchObject({ kind: 'item', catalogId: '10' });
+    expect(record.taxPercent).toBe(14);
+    expect(record.payment).toEqual({ receivedOn: '', amount: '', currency: 'EUR' });
+    // Round-trips through normalization unchanged (what gets written is what gets read back).
+    expect(normalizeIssuedInvoices([record])[0]).toEqual(record);
   });
 
   it('validates the invoice upload shape before normalization can empty missing collections', () => {

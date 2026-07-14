@@ -973,4 +973,158 @@ describe('InvoiceBuilderPage', () => {
       await act(async () => { root.unmount(); });
     });
   });
+
+  // design-tasks-3 §5/§6/§7: per-payer saved services, copying them across payers, and the
+  // read-only Issued Invoices history with payment tracking and the Reissue flow.
+  describe('payer saved services and issued invoices', () => {
+    const activeCase = { id: 'case-a', customers: [{ name: 'Amny Athamny', address: 'Netherlands' }] };
+    const otherCase = {
+      id: 'case-b',
+      customers: [{ name: 'Ben Adam', address: 'Israel' }],
+      savedServices: [
+        { id: 'saved-1', kind: 'item', catalogId: '11' },
+        { id: 'saved-2', kind: 'custom', name: 'Saved one-off', price: 500 },
+      ],
+    };
+    const issuedInvoice = {
+      id: 'issued-1',
+      payerCaseId: 'case-a',
+      invoiceNumber: '01/07/2026',
+      invoiceDate: '2026-07-01',
+      rows: [{ name: 'Baby care in hospital per day', price: 200, kind: 'item' }],
+      entries: [{ id: 'issued-entry-1', kind: 'item', catalogId: '10' }],
+      taxPercent: 0,
+      debtOrDeposit: 0,
+      amountDue: 200,
+      payment: { receivedOn: '', amount: '', currency: 'EUR' },
+    };
+
+    const mockInvoiceData = overrides => {
+      get.mockImplementation(path => {
+        if (path === 'invoiceBuilder') {
+          return Promise.resolve({
+            exists: () => true,
+            val: () => ({
+              ...fixtureInvoiceData,
+              payerCases: [activeCase, otherCase],
+              payerCaseIds: ['case-a', 'case-b'],
+              ...overrides,
+            }),
+          });
+        }
+        if (path === 'budget/items') return Promise.resolve({ exists: () => true, val: () => fixtureItems });
+        if (path === 'budget/packages') return Promise.resolve({ exists: () => true, val: () => fixturePackages });
+        if (path === 'budget/technical') return Promise.resolve({ exists: () => true, val: () => fixtureTechnical });
+        return Promise.resolve({ exists: () => false, val: () => null });
+      });
+    };
+
+    it('saves the current package & services onto the active payer case', async () => {
+      mockInvoiceData({});
+      const root = mount();
+      await flush();
+
+      await act(async () => { findButton('Save for payer').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      const lastCasesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/payerCases').pop();
+      expect(lastCasesCall).toBeTruthy();
+      const savedCase = lastCasesCall[1].find(payerCase => payerCase.id === 'case-a');
+      expect(savedCase.savedServices).toHaveLength(1);
+      expect(savedCase.savedServices[0]).toMatchObject({ kind: 'item', catalogId: '10' });
+      // The other payer's own saved set is untouched.
+      const untouchedCase = lastCasesCall[1].find(payerCase => payerCase.id === 'case-b');
+      expect(untouchedCase.savedServices).toHaveLength(2);
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('copies another payer\'s saved package & services into the editor with fresh ids', async () => {
+      mockInvoiceData({});
+      const root = mount();
+      await flush();
+
+      const copySelect = container.querySelector('select[aria-label="Copy package & services from another payer"]');
+      expect(copySelect).toBeTruthy();
+      await act(async () => { selectOption(copySelect, 'case-b'); });
+      await flush();
+
+      const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+      expect(lastServicesCall[1]).toHaveLength(2);
+      expect(lastServicesCall[1][0]).toMatchObject({ kind: 'item', catalogId: '11' });
+      expect(lastServicesCall[1][1]).toMatchObject({ kind: 'custom', name: 'Saved one-off', price: 500 });
+      // Cloned, never shared: the copies must not reuse the source case's entry ids.
+      expect(lastServicesCall[1].map(entry => entry.id)).not.toContain('saved-1');
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('shows the payer\'s issued invoices read-only and persists the payment tracking fields', async () => {
+      mockInvoiceData({ issuedInvoices: [issuedInvoice] });
+      const root = mount();
+      await flush();
+
+      // Collapsed by default - the reveal button shows the count for the active payer.
+      expect(container.innerHTML).toContain('1 invoice');
+      const revealButton = Array.from(container.querySelectorAll('[role="button"]'))
+        .find(node => node.textContent.includes('Issued invoices'));
+      expect(revealButton).toBeTruthy();
+      await act(async () => { revealButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      expect(container.innerHTML).toContain('Invoice No. 01/07/2026');
+
+      const amountField = container.querySelector('textarea[aria-label="Amount received"]');
+      expect(amountField).toBeTruthy();
+      await act(async () => {
+        amountField.focus();
+        setFieldValue(amountField, '150');
+        amountField.blur();
+      });
+      await flush();
+
+      const currencySelect = container.querySelector('select[aria-label="Currency of the received amount"]');
+      expect(currencySelect.value).toBe('EUR');
+      await act(async () => { selectOption(currencySelect, 'USD'); });
+      await flush();
+
+      const lastIssuedCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/issuedInvoices').pop();
+      expect(lastIssuedCall[1][0].payment).toMatchObject({ amount: '150', currency: 'USD' });
+      // The static record itself is never rewritten by payment tracking.
+      expect(lastIssuedCall[1][0].rows).toEqual(issuedInvoice.rows);
+
+      await act(async () => { root.unmount(); });
+    });
+
+    it('reissuing an invoice moves its contents into the editor and the editor content into Recent', async () => {
+      mockInvoiceData({
+        issuedInvoices: [{
+          ...issuedInvoice,
+          entries: [{ id: 'issued-entry-2', kind: 'custom', name: 'Reissued line', price: 750 }],
+        }],
+      });
+      const root = mount();
+      await flush();
+
+      const revealButton = Array.from(container.querySelectorAll('[role="button"]'))
+        .find(node => node.textContent.includes('Issued invoices'));
+      await act(async () => { revealButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      await act(async () => { findButton('Reissue invoice').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      await flush();
+
+      // The issued invoice's contents are back in the editor (cloned, fresh ids)...
+      const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+      expect(lastServicesCall[1]).toHaveLength(1);
+      expect(lastServicesCall[1][0]).toMatchObject({ kind: 'custom', name: 'Reissued line', price: 750 });
+      expect(lastServicesCall[1][0].id).not.toBe('issued-entry-2');
+
+      // ...and what the editor previously held (the id10 catalog service) dropped into Recent.
+      const lastRecentCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/recentServices').pop();
+      expect(lastRecentCall[1].some(entry => entry.kind === 'item' && entry.catalogId === '10')).toBe(true);
+
+      await act(async () => { root.unmount(); });
+    });
+  });
 });

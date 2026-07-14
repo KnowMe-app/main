@@ -88,6 +88,12 @@ const normalizePayerCases = raw => {
     ? rawPayerCases.map(payerCase => ({
       id: String(payerCase?.id ?? createEntryId()),
       customers: Array.isArray(payerCase?.customers) ? payerCase.customers : [],
+      // The payer's saved package + one-off services (design-tasks-3 §5): a deliberate snapshot
+      // the admin took with "Save for payer", kept on the case itself so it survives switching
+      // cases and can be copied to another payer (§6). Absent until the admin saves one.
+      ...(Array.isArray(payerCase?.savedServices)
+        ? { savedServices: normalizeServiceEntries(payerCase.savedServices) }
+        : {}),
     }))
     : [{ id: 'legacy', customers: legacyCustomers }];
   const knownIds = payerCases.map(payerCase => payerCase.id);
@@ -131,8 +137,49 @@ export const normalizeInvoiceData = raw => {
     // Empty string (the default) means "keep auto-generating it from the beneficiary's template" -
     // any other value is an admin edit for this invoice only and wins over the auto-generated text.
     paymentPurposeOverride: typeof raw?.paymentPurposeOverride === 'string' ? raw.paymentPurposeOverride : '',
+    // Every invoice ever generated (design-tasks-3 §7), newest first - each a frozen snapshot of
+    // what was billed (display rows + totals never re-resolve against the live catalog) plus the
+    // raw entries, kept so "Reissue" can put them back into the editor.
+    issuedInvoices: normalizeIssuedInvoices(raw?.issuedInvoices),
   };
 };
+
+// --- Issued invoices (design-tasks-3 §7) ------------------------------------------------------
+
+// One generated invoice, recorded at "Generate PDF" time. `rows` is the frozen display snapshot
+// (name/price as billed - a static record, deliberately not re-resolved against the live catalog);
+// `entries` is the raw editable form of the same services, kept only so the Reissue flow can move
+// them back into the active editor. `payment` is the admin's own receipt tracking - the currency
+// defaults to EUR whenever none was chosen.
+export const normalizeIssuedInvoice = raw => ({
+  id: raw?.id || createEntryId(),
+  payerCaseId: String(raw?.payerCaseId ?? ''),
+  invoiceNumber: String(raw?.invoiceNumber || ''),
+  invoiceDate: String(raw?.invoiceDate || ''),
+  rows: (Array.isArray(raw?.rows) ? raw.rows : []).map(row => ({
+    name: String(row?.name || ''),
+    price: roundMoney(row?.price),
+    ...(row?.priceLabel ? { priceLabel: String(row.priceLabel) } : {}),
+    ...(row?.kind ? { kind: String(row.kind) } : {}),
+  })),
+  entries: normalizeServiceEntries(raw?.entries),
+  taxPercent: toNumber(raw?.taxPercent),
+  debtOrDeposit: toNumber(raw?.debtOrDeposit),
+  amountDue: roundMoney(raw?.amountDue),
+  payment: {
+    receivedOn: typeof raw?.payment?.receivedOn === 'string' ? raw.payment.receivedOn : '',
+    amount: raw?.payment?.amount == null ? '' : String(raw.payment.amount),
+    currency: String(raw?.payment?.currency || '').trim() || 'EUR',
+  },
+});
+
+export const normalizeIssuedInvoices = list => (Array.isArray(list) ? list.map(normalizeIssuedInvoice) : []);
+
+export const makeIssuedInvoiceRecord = ({
+  payerCaseId, invoiceNumber, invoiceDate, rows, entries, taxPercent, debtOrDeposit, amountDue,
+} = {}) => normalizeIssuedInvoice({
+  id: createEntryId(), payerCaseId, invoiceNumber, invoiceDate, rows, entries, taxPercent, debtOrDeposit, amountDue,
+});
 
 export const isInvoiceDataShape = raw => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
