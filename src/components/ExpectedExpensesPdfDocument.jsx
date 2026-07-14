@@ -164,7 +164,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
   const milestones = Array.isArray(plan?.milestones) ? plan.milestones : [];
 
   const overviewRows = resolvePackageOverviewRows(plan?.packageSnapshot?.children, catalogItemsById, priceContext);
-  const includedRows = overviewRows.map(row => ({ id: row.id, name: row.name, includedByPackageId: new Set(['programme']) }));
+  const includedRows = overviewRows.map(row => ({ id: row.id, name: row.name }));
   const packagesMeta = [{ id: 'programme', label: 'Programme', priceLabel: formatAmount(listedPrice) }];
 
   const milestoneRows = milestones.map(milestone => resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext));
@@ -203,8 +203,10 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
         {/* Included services first, then the payment schedule (design-tasks §4) - the schedule's
             own Total row is dropped too: the programme fee is already stated once in the title
             block and each column's header. */}
+        {/* Compact two-per-row layout (design-tasks-4 §7) - the same variant the package Invoice's
+            "Included in this package" uses, so the single-programme documents stay identical. */}
         <IncludedServicesTable
-          packages={packagesMeta}
+          compact
           includedRows={includedRows}
           title="Included in this programme"
           note="Every item below is already covered by the programme fee."

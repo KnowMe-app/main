@@ -409,8 +409,9 @@ const ruleStyles = StyleSheet.create({
 
 // Thin rule with a bronze diamond marker — the required brand motif under the wordmark
 // on every branded document (all types except Payment Instructions, per spec §1.1/§1.5).
-export const BrandRule = () => (
-  <View style={ruleStyles.wrap}>
+// `style` lets a space-constrained document (the one-page Invoice) tighten the trailing margin.
+export const BrandRule = ({ style } = {}) => (
+  <View style={style ? [ruleStyles.wrap, style] : ruleStyles.wrap}>
     <View style={ruleStyles.line} />
     <View style={ruleStyles.diamond} />
     <View style={ruleStyles.line} />

@@ -102,6 +102,23 @@ const normalizePayerCases = raw => {
   return { payerCases, payerCaseIds };
 };
 
+// A catalog-backed package may appear at most once on an invoice (the Builder only ever surfaces
+// the first package row, and the PDF caps catalog packages at one) - but data saved before that
+// restructure could carry the same package several times, each copy invisible and uneditable.
+// Duplicates are dropped on load so they can't leak into issued-invoice snapshots (design-tasks-4
+// §3). Only same-catalog package copies are deduped: 'percent' rows legitimately repeat (two equal
+// installments), and custom packages are distinct by construction.
+export const dedupePackageEntries = entries => {
+  const seenPackageIds = new Set();
+  return (Array.isArray(entries) ? entries : []).filter(entry => {
+    if (entry?.kind !== 'package' || !entry.catalogId) return true;
+    const key = String(entry.catalogId);
+    if (seenPackageIds.has(key)) return false;
+    seenPackageIds.add(key);
+    return true;
+  });
+};
+
 export const normalizeInvoiceData = raw => {
   const { payerCases, payerCaseIds } = normalizePayerCases(raw);
   const activeCase = payerCases.find(payerCase => String(payerCase.id) === String(payerCaseIds[0])) || payerCases[0];
@@ -112,7 +129,7 @@ export const normalizeInvoiceData = raw => {
     payerCaseIds,
     customers: activeCase?.customers || [],
     recentServices: normalizeServiceEntries(raw?.recentServices),
-    invoiceServices: normalizeServiceEntries(raw?.invoiceServices),
+    invoiceServices: dedupePackageEntries(normalizeServiceEntries(raw?.invoiceServices)),
     // Which optional components the generated Invoice PDF includes (round7 spec C.1) - each is
     // independently toggled, editable in the Builder while on, and takes no space in the PDF (or
     // the Builder's own editing area) while off. Defaults to "on" so an admin who never touches
@@ -180,6 +197,47 @@ export const makeIssuedInvoiceRecord = ({
 } = {}) => normalizeIssuedInvoice({
   id: createEntryId(), payerCaseId, invoiceNumber, invoiceDate, rows, entries, taxPercent, debtOrDeposit, amountDue,
 });
+
+// "30.01.2026" (the format the Payment Received field suggests) or "2026-01-30" -> "2026-01-30",
+// so the NBU archive rates for the day the payment landed can be looked up. Anything else
+// (free text, a partial date) resolves to '' - callers fall back to the invoice-date rates.
+export const parseReceivedOnYmd = raw => {
+  const text = String(raw ?? '').trim();
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (isoMatch) return text;
+  const dottedMatch = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(text);
+  if (dottedMatch) return `${dottedMatch[3]}-${pad2(dottedMatch[2])}-${pad2(dottedMatch[1])}`;
+  return '';
+};
+
+// Converts a received amount to EUR through the NBU UAH cross-rates ({ usd, eur } = UAH per unit,
+// the same shape fetchNbuUahExchangeRatesByDate returns and formula pricing already consumes).
+// Returns null when the rates don't cover the currency (e.g. GBP) or haven't loaded.
+export const convertAmountToEur = (amount, currency, rates) => {
+  const numeric = Number(String(amount ?? '').replace(',', '.'));
+  if (!Number.isFinite(numeric)) return null;
+  const code = String(currency || 'EUR').trim().toUpperCase();
+  if (code === 'EUR') return roundMoney(numeric);
+  const eurToUah = Number(rates?.eur);
+  if (!Number.isFinite(eurToUah) || eurToUah <= 0) return null;
+  if (code === 'UAH') return roundMoney(numeric / eurToUah);
+  const currencyToUah = Number(rates?.[code.toLowerCase()]);
+  if (!Number.isFinite(currencyToUah) || currencyToUah <= 0) return null;
+  return roundMoney((numeric * currencyToUah) / eurToUah);
+};
+
+// Payment-status color coding for an issued invoice's header amount (design-tasks-4 §4):
+// 'full' once the received amount covers the Amount Due, 'partial' while something (but not
+// everything) has landed, 'none' otherwise. A non-EUR receipt is compared through its EUR
+// equivalent; if the rates can't resolve it, any positive amount reads as 'partial' - never
+// 'full' on an unverifiable figure.
+export const resolveIssuedInvoicePaymentStatus = (record, rates) => {
+  const numeric = Number(String(record?.payment?.amount ?? '').replace(',', '.'));
+  if (!Number.isFinite(numeric) || numeric <= 0) return 'none';
+  const eurAmount = convertAmountToEur(numeric, record?.payment?.currency, rates);
+  if (eurAmount != null && eurAmount >= (Number(record?.amountDue) || 0) - 0.01) return 'full';
+  return 'partial';
+};
 
 export const isInvoiceDataShape = raw => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;

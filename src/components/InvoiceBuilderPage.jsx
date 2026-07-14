@@ -35,7 +35,10 @@ import {
   computeInvoiceAmountDue,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
+  convertAmountToEur,
   createEntryId,
+  dedupePackageEntries,
+  formatInvoicePurposeDate,
   generateInvoiceIdentifiers,
   getActiveBeneficiary,
   getEntryIdentityKey,
@@ -51,12 +54,14 @@ import {
   normalizeInvoiceData,
   parseCustomPriceInput,
   parsePercentOrAmountInput,
+  parseReceivedOnYmd,
   removePackageChild,
   reorderBeneficiaryIds,
   reorderPayerCaseIds,
   reorderRecentServices,
   resetItemEntryOverrides,
   resetPackageEntryToCatalog,
+  resolveIssuedInvoicePaymentStatus,
   removeRecentEntry,
   resolveInvoiceServiceRows,
   resolveServiceRow,
@@ -521,6 +526,16 @@ const PlainPriceBase = styled.textarea.attrs({ wrap: 'off' })`
   color: var(--km-accent);
   white-space: nowrap;
   overflow-x: auto;
+
+  /* Every amount/price input hugs its content (design-tasks-4 §5): ~3 digits wide when short,
+     growing fluidly as more digits are typed. field-sizing does the measuring natively; browsers
+     without it keep the fixed fallback width above. */
+  @supports (field-sizing: content) {
+    field-sizing: content;
+    width: auto;
+    min-width: 3ch;
+    max-width: 132px;
+  }
 `;
 
 const PlainSelect = styled.select`
@@ -1008,6 +1023,11 @@ const PackageQuickField = styled(PlainTextBase)`
 
 const PackageQuickPrice = styled(PlainPriceBase)`
   flex: 0 0 76px;
+
+  /* The fixed flex-basis above would defeat the content-hugging width (design-tasks-4 §5). */
+  @supports (field-sizing: content) {
+    flex: 0 0 auto;
+  }
 `;
 
 const InlinePickerBox = styled.div`
@@ -1623,9 +1643,45 @@ const ReadOnlyRowPrice = styled.span`
 
 const ISSUED_INVOICE_CURRENCIES = ['EUR', 'USD', 'UAH', 'GBP'];
 
-const IssuedInvoiceCard = ({ record, onCommitPayment, onReissue }) => {
+// Header-amount color by payment status (design-tasks-4 §4): green once fully received,
+// yellow while only part of the amount has landed.
+const PAYMENT_STATUS_COLORS = {
+  full: '#3E7C4F',
+  partial: '#C08A2D',
+};
+
+const IssuedInvoiceCard = ({ record, exchangeRates, onCommitPayment, onReissue, onDelete }) => {
   const [receivedDraft, setReceivedDraft, receivedEditingRef] = useFieldDraft(record.payment.receivedOn);
   const [amountDraft, setAmountDraft, amountEditingRef] = useFieldDraft(record.payment.amount);
+
+  // One package header line above the payment lines, never a numbered/priced row of its own
+  // (design-tasks-4 §3) - and legacy records that accumulated duplicate package rows collapse
+  // to that single header. The scheduled "% of package" line reads as "Scheduled payment".
+  const packageHeaderRow = record.rows.find(row => row.kind === 'package') || null;
+  const lineRows = record.rows.filter(row => row.kind !== 'package');
+
+  // A non-EUR receipt shows its EUR equivalent at the NBU rate for the day it landed
+  // (design-tasks-4 §6), falling back to the invoice-date rates already loaded by the page while
+  // the received-on date is missing/unparseable or its archive lookup fails.
+  const paymentCurrency = record.payment.currency || 'EUR';
+  const receivedAmountNumber = Number(String(record.payment.amount ?? '').replace(',', '.'));
+  const needsEurConversion = paymentCurrency !== 'EUR' && Number.isFinite(receivedAmountNumber) && receivedAmountNumber > 0;
+  const receivedOnYmd = parseReceivedOnYmd(record.payment.receivedOn);
+  const [receivedDateRates, setReceivedDateRates] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setReceivedDateRates(null);
+    if (!needsEurConversion || !receivedOnYmd) return undefined;
+    fetchNbuUahExchangeRatesByDate(receivedOnYmd)
+      .then(rates => { if (!cancelled && rates) setReceivedDateRates(rates); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [needsEurConversion, receivedOnYmd]);
+  const conversionRates = receivedDateRates || exchangeRates;
+  const receivedEurAmount = needsEurConversion
+    ? convertAmountToEur(receivedAmountNumber, paymentCurrency, conversionRates)
+    : null;
+  const paymentStatus = resolveIssuedInvoicePaymentStatus(record, conversionRates);
 
   return (
     <MilestoneDetails>
@@ -1633,26 +1689,35 @@ const IssuedInvoiceCard = ({ record, onCommitPayment, onReissue }) => {
         <MilestoneSummaryLeft>
           <MilestoneNum>{record.invoiceDate}</MilestoneNum>
           <MilestoneTitleText title={`Invoice No. ${record.invoiceNumber}`}>{`Invoice No. ${record.invoiceNumber}`}</MilestoneTitleText>
-          <MilestoneCount>{record.rows.length} item{record.rows.length === 1 ? '' : 's'}</MilestoneCount>
+          <MilestoneCount>{lineRows.length} item{lineRows.length === 1 ? '' : 's'}</MilestoneCount>
         </MilestoneSummaryLeft>
         <MilestoneSummaryRight>
-          <MilestoneDue>{formatEuroPreview(record.amountDue)}</MilestoneDue>
+          <MilestoneDue style={PAYMENT_STATUS_COLORS[paymentStatus] ? { color: PAYMENT_STATUS_COLORS[paymentStatus] } : undefined}>
+            {formatEuroPreview(record.amountDue)}
+          </MilestoneDue>
           <MilestoneChevron>›</MilestoneChevron>
         </MilestoneSummaryRight>
       </MilestoneSummary>
 
       <MilestoneBody>
         <PackageChildren>
-          {record.rows.map((row, index) => (
+          {packageHeaderRow ? (
+            <LineCard>
+              <LineMainRow>
+                <ReadOnlyRowName style={{ fontWeight: 800 }} title="Programme package">{packageHeaderRow.name}</ReadOnlyRowName>
+              </LineMainRow>
+            </LineCard>
+          ) : null}
+          {lineRows.map((row, index) => (
             <LineCard key={`${record.id}-row-${index}`}>
               <LineMainRow>
                 <RowIndex>{index + 1}</RowIndex>
-                <ReadOnlyRowName>{row.name}</ReadOnlyRowName>
+                <ReadOnlyRowName>{row.kind === 'percent' ? 'Scheduled payment' : row.name}</ReadOnlyRowName>
                 <ReadOnlyRowPrice>{row.priceLabel || formatEuroPreview(row.price)}</ReadOnlyRowPrice>
               </LineMainRow>
             </LineCard>
           ))}
-          {!record.rows.length ? <PanelNote style={{ margin: '8px 0' }}>No services recorded.</PanelNote> : null}
+          {!lineRows.length && !packageHeaderRow ? <PanelNote style={{ margin: '8px 0' }}>No services recorded.</PanelNote> : null}
         </PackageChildren>
         <MilestoneCheckboxRow>
           <CustomizedTag title="Tax rate billed on this invoice">Tax: {record.taxPercent}%</CustomizedTag>
@@ -1664,7 +1729,7 @@ const IssuedInvoiceCard = ({ record, onCommitPayment, onReissue }) => {
           <AutoTextArea
             $size="12.5px"
             value={receivedDraft}
-            placeholder="Not received yet - add a date"
+            placeholder={formatInvoicePurposeDate(new Date())}
             aria-label="Payment received on"
             onFocus={() => { receivedEditingRef.current = true; }}
             onChange={event => setReceivedDraft(event.target.value)}
@@ -1699,8 +1764,15 @@ const IssuedInvoiceCard = ({ record, onCommitPayment, onReissue }) => {
             ))}
           </PlainSelect>
         </FieldRow>
+        {needsEurConversion ? (
+          <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--km-muted)', padding: '0 2px' }}>
+            {receivedEurAmount != null
+              ? `≈ ${formatEuroPreview(receivedEurAmount)} at the NBU rate`
+              : 'NBU rate unavailable for this currency/date'}
+          </div>
+        ) : null}
 
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <SmallButton
             type="button"
             onClick={onReissue}
@@ -1708,6 +1780,13 @@ const IssuedInvoiceCard = ({ record, onCommitPayment, onReissue }) => {
           >
             <FaSyncAlt /> Reissue invoice
           </SmallButton>
+          <DangerButton
+            type="button"
+            onClick={onDelete}
+            title="Delete this invoice from Issued Invoices"
+          >
+            <FaTrash /> Delete
+          </DangerButton>
         </div>
       </MilestoneBody>
     </MilestoneDetails>
@@ -2354,12 +2433,24 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     persistIssuedInvoices(nextIssuedInvoices, 'Payment record updated.');
   };
 
+  // Removes one entry from the Issued Invoices history (design-tasks-4 §2). Payment tracking
+  // lives on the record itself, so this drops it too - hence the confirm.
+  const deleteIssuedInvoice = record => {
+    if (typeof window !== 'undefined' && !window.confirm(`Delete invoice No. ${record.invoiceNumber} from Issued Invoices?`)) return;
+    persistIssuedInvoices(
+      data.issuedInvoices.filter(existing => String(existing.id) !== String(record.id)),
+      'Issued invoice deleted.',
+    );
+  };
+
   // The Reissue flow (design-tasks-3 §7): the issued invoice's contents move back into the active
   // editor, and whatever the editor held drops into "Recent (click to add)" - then the admin edits
   // and hits Generate PDF, which records the reissued version as a new issued invoice below.
   const reissueInvoice = record => {
     const nextRecentServices = reorderRecentServices(data.recentServices, data.invoiceServices);
-    const nextInvoiceServices = record.entries.map(cloneEntryWithNewId);
+    // Records saved while duplicate package rows could still accumulate reissue as one package,
+    // not several invisible copies (design-tasks-4 §3).
+    const nextInvoiceServices = dedupePackageEntries(record.entries).map(cloneEntryWithNewId);
     setData(current => ({ ...current, recentServices: nextRecentServices, invoiceServices: nextInvoiceServices }));
     persistPath(`${INVOICE_DATA_PATH}/recentServices`, nextRecentServices);
     persistPath(`${INVOICE_DATA_PATH}/invoiceServices`, nextInvoiceServices, 'Invoice moved back to the editor - edit and Generate PDF to reissue.');
@@ -3940,8 +4031,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     <IssuedInvoiceCard
                       key={record.id}
                       record={record}
+                      exchangeRates={exchangeRates}
                       onCommitPayment={(field, value) => commitIssuedInvoicePayment(record.id, field, value)}
                       onReissue={() => reissueInvoice(record)}
+                      onDelete={() => deleteIssuedInvoice(record)}
                     />
                   ))}
                   {!payerIssuedInvoices.length ? <PanelNote style={{ margin: 0 }}>No invoices issued for this payer yet.</PanelNote> : null}
