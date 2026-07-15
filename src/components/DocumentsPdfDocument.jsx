@@ -1,6 +1,6 @@
 // PDF renderer for the Documents page's generated legal statements. Unlike the branded UKRCOM
-// exports (Invoice/Budget/...), these documents reproduce the look of the reference clinic docx
-// (Kyogoku statements): Times-style serif (Tinos - metric-compatible with Times New Roman and
+// exports (Invoice/Budget/...), these documents reproduce the look of the reference statements
+// docx: Times-style serif (Tinos - metric-compatible with Times New Roman and
 // covering the full Ukrainian alphabet + №), justified paragraphs, an optional clinic logo
 // centered above the title, and either a single-language column or the uk|en two-column layout.
 // Every metric (font sizes, margins, spacing, indent, header/footer) comes from the formatting

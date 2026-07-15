@@ -116,24 +116,24 @@ describe('invoiceCatalogUtils', () => {
 
   describe('payer cases (P0: selecting a new client replaces, never merges, the active payer)', () => {
     it('migrates a legacy flat customers array into a single payer case', () => {
-      const data = normalizeInvoiceData({ customers: [{ name: 'Amny Athamny', address: 'Netherlands' }] });
-      expect(data.payerCases).toEqual([{ id: 'legacy', customers: [{ name: 'Amny Athamny', address: 'Netherlands' }] }]);
+      const data = normalizeInvoiceData({ customers: [{ name: 'Anna Example', address: 'Netherlands' }] });
+      expect(data.payerCases).toEqual([{ id: 'legacy', customers: [{ name: 'Anna Example', address: 'Netherlands' }] }]);
       expect(data.payerCaseIds).toEqual(['legacy']);
-      expect(data.customers).toEqual([{ name: 'Amny Athamny', address: 'Netherlands' }]);
+      expect(data.customers).toEqual([{ name: 'Anna Example', address: 'Netherlands' }]);
     });
 
     it('picks the active case customers from the first payerCaseId, mirrored onto data.customers', () => {
       const data = normalizeInvoiceData({
         payerCases: [
-          { id: 'case-1', customers: [{ name: 'Kyogoku', address: 'Japan' }] },
-          { id: 'case-2', customers: [{ name: 'Amny Athamny', address: 'Netherlands' }, { name: 'Fons Mitchell Drost', address: 'Netherlands' }] },
+          { id: 'case-1', customers: [{ name: 'Testov', address: 'Japan' }] },
+          { id: 'case-2', customers: [{ name: 'Anna Example', address: 'Netherlands' }, { name: 'Bob Sample Doe', address: 'Netherlands' }] },
         ],
         payerCaseIds: ['case-2', 'case-1'],
       });
       expect(getActivePayerCase(data).id).toBe('case-2');
       expect(data.customers).toEqual([
-        { name: 'Amny Athamny', address: 'Netherlands' },
-        { name: 'Fons Mitchell Drost', address: 'Netherlands' },
+        { name: 'Anna Example', address: 'Netherlands' },
+        { name: 'Bob Sample Doe', address: 'Netherlands' },
       ]);
     });
 
@@ -484,8 +484,8 @@ describe('invoiceCatalogUtils', () => {
       expect(row.children).toHaveLength(2);
       expect(row.isCustomized).toBe(false);
 
-      const renamed = setEntryField(pkg, 'name', 'Custom bundle for Amny');
-      expect(resolveServiceRow(renamed, catalogItemsById, { packagesById }).name).toBe('Custom bundle for Amny');
+      const renamed = setEntryField(pkg, 'name', 'Custom bundle for Anna');
+      expect(resolveServiceRow(renamed, catalogItemsById, { packagesById }).name).toBe('Custom bundle for Anna');
     });
 
     it('defaults an unoverridden package row to its catalog listed price, not the sum of its children', () => {
@@ -661,9 +661,9 @@ describe('invoiceCatalogUtils', () => {
   });
 
   it('builds the payer name and "Case of ..." title from customers', () => {
-    const customers = [{ name: 'Amny Athamny', address: 'Netherlands' }, { name: 'Fons Mitchell Drost', address: 'Netherlands' }];
-    expect(buildPayerName(customers)).toBe('Amny Athamny and Fons Mitchell Drost');
-    expect(buildCaseTitle(customers)).toBe('Case of Amny Athamny and Fons Mitchell Drost');
+    const customers = [{ name: 'Anna Example', address: 'Netherlands' }, { name: 'Bob Sample Doe', address: 'Netherlands' }];
+    expect(buildPayerName(customers)).toBe('Anna Example and Bob Sample Doe');
+    expect(buildCaseTitle(customers)).toBe('Case of Anna Example and Bob Sample Doe');
     expect(buildPayerLocation(customers)).toBe('Netherlands');
   });
 

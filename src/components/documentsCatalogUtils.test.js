@@ -16,6 +16,7 @@ import {
   upsertRecentCaseId,
 } from './documentsCatalogUtils';
 
+// All party fixtures below are fictional - tests must never carry real client data.
 const sampleCatalog = () => normalizeDocumentsCatalog(
   {
     couples: {
@@ -25,33 +26,33 @@ const sampleCatalog = () => normalizeDocumentsCatalog(
           {
             id: 'patient-1',
             role: 'wife',
-            name: { uk: { nominative: 'Кьогоку Ая', genitive: 'Кьогоку Аї' }, en: 'Kyogoku Aya' },
-            birthDate: '1982-01-21',
-            passport: { number: 'MJ3060804', issuedBy: { uk: 'МЗС', en: 'MFA' }, issueDate: '2024-02-08' },
+            name: { uk: { nominative: 'Тестова Марія', genitive: 'Тестової Марії' }, en: 'Testova Mariia' },
+            birthDate: '1990-01-01',
+            passport: { number: 'AA000001', issuedBy: { uk: 'МЗС', en: 'MFA' }, issueDate: '2020-02-02' },
           },
           {
             id: 'patient-2',
             role: 'husband',
-            name: { uk: { nominative: 'Кьогоку Кеіго' }, en: 'Kyogoku Keigo' },
-            birthDate: '1979-04-27',
+            name: { uk: { nominative: 'Тестовий Петро' }, en: 'Testovyi Petro' },
+            birthDate: '1989-03-03',
           },
         ],
-        marriage: { certificateNumber: 'C-04', certificateDate: '2020-11-22' },
-        address: { uk: 'Кіото, Японія', en: 'Kyoto, Japan' },
+        marriage: { certificateNumber: 'C-04', certificateDate: '2015-11-22' },
+        address: { uk: 'місто Тестове, Україна', en: 'Test City, Ukraine' },
       },
     },
     surrogateMothers: {
       'surrogate-mother-1': {
         id: 'surrogate-mother-1',
-        name: { uk: { nominative: 'Молвінських Юлія' }, en: 'Molvinskykh Yuliia' },
-        passport: { number: 'ЕВ409051' },
+        name: { uk: { nominative: 'Прикладова Оксана' }, en: 'Prykladova Oksana' },
+        passport: { number: 'BB000002' },
       },
     },
     representatives: {
-      'representative-1': { id: 'representative-1', name: { uk: { nominative: 'Коваль Олександр' }, en: 'Koval Oleksandr' } },
+      'representative-1': { id: 'representative-1', name: { uk: { nominative: 'Зразковий Іван' }, en: 'Zrazkovyi Ivan' } },
     },
     clinics: {
-      'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка «Вікторія»', en: 'Clinic "Victoria"' } },
+      'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка «Мрія»', en: 'Clinic "Mriia"' } },
     },
     cases: {
       'case-1': {
@@ -125,7 +126,7 @@ describe('mergeDocumentsCatalog', () => {
     const { catalog, summary } = mergeDocumentsCatalog(current, incoming);
     expect(summary.updated).toBe(1);
     const clinic = catalog.parties.clinics[0];
-    expect(clinic.name.uk).toBe('Клініка «Вікторія»');
+    expect(clinic.name.uk).toBe('Клініка «Мрія»');
     expect(clinic.license).toBe('L-123');
   });
 
@@ -165,21 +166,21 @@ describe('deepMergeRecords', () => {
 describe('placeholders', () => {
   it('resolves nested paths, cases and languages', () => {
     const context = resolveCaseContext(sampleCatalog(), 'case-1');
-    expect(fillPlaceholders('{{wife.name.uk.nominative}}', context, 'uk')).toBe('Кьогоку Ая');
-    expect(fillPlaceholders('{{wife.name.uk.genitive}}', context, 'uk')).toBe('Кьогоку Аї');
-    expect(fillPlaceholders('{{clinic.name.en}}', context, 'en')).toBe('Clinic "Victoria"');
+    expect(fillPlaceholders('{{wife.name.uk.nominative}}', context, 'uk')).toBe('Тестова Марія');
+    expect(fillPlaceholders('{{wife.name.uk.genitive}}', context, 'uk')).toBe('Тестової Марії');
+    expect(fillPlaceholders('{{clinic.name.en}}', context, 'en')).toBe('Clinic "Mriia"');
     expect(fillPlaceholders('{{case.surrogacyAgreement.number.uk}}', context, 'uk')).toBe('без номера');
   });
 
   it('falls back by language and to nominative when the path stops early', () => {
     const context = resolveCaseContext(sampleCatalog(), 'case-1');
-    expect(fillPlaceholders('{{clinic.name}}', context, 'en')).toBe('Clinic "Victoria"');
-    expect(fillPlaceholders('{{surrogateMother.name}}', context, 'uk')).toBe('Молвінських Юлія');
+    expect(fillPlaceholders('{{clinic.name}}', context, 'en')).toBe('Clinic "Mriia"');
+    expect(fillPlaceholders('{{surrogateMother.name}}', context, 'uk')).toBe('Прикладова Оксана');
   });
 
   it('formats ISO dates as DD.MM.YYYY and blanks missing values', () => {
     const context = resolveCaseContext(sampleCatalog(), 'case-1');
-    expect(fillPlaceholders('{{wife.birthDate}}', context, 'uk')).toBe('21.01.1982');
+    expect(fillPlaceholders('{{wife.birthDate}}', context, 'uk')).toBe('01.01.1990');
     expect(fillPlaceholders('{{husband.passport.number}}', context, 'uk')).toBe('__________');
     expect(formatDocumentDate('not-a-date')).toBe('not-a-date');
   });
@@ -188,8 +189,8 @@ describe('placeholders', () => {
     const catalog = sampleCatalog();
     const context = resolveCaseContext(catalog, 'case-1');
     const generated = buildGeneratedDocument(catalog.documents[0], context);
-    expect(generated.paragraphs[0].uk).toBe('Я, Кьогоку Ая, 21.01.1982 р.н.');
-    expect(generated.paragraphs[0].en).toBe('I, Kyogoku Aya, born 21.01.1982');
+    expect(generated.paragraphs[0].uk).toBe('Я, Тестова Марія, 01.01.1990 р.н.');
+    expect(generated.paragraphs[0].en).toBe('I, Testova Mariia, born 01.01.1990');
   });
 });
 
@@ -197,7 +198,7 @@ describe('case selector helpers', () => {
   it('builds a readable case label', () => {
     const catalog = sampleCatalog();
     expect(buildCaseLabel(catalog, catalog.parties.cases[0]))
-      .toBe('Kyogoku Aya & Kyogoku Keigo — SM Molvinskykh Yuliia');
+      .toBe('Testova Mariia & Testovyi Petro — SM Prykladova Oksana');
   });
 
   it('orders cases by most recently used first', () => {

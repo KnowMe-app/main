@@ -267,7 +267,7 @@ export const DOCUMENT_LAYOUTS = [
   { id: 'one-column-en', label: 'EN · 1 column' },
 ];
 
-// Defaults mirror the reference docx (Kyogoku statements): Times ~10pt body / 11pt bold titles,
+// Defaults mirror the reference statements docx: Times ~10pt body / 11pt bold titles,
 // single line spacing, zero after-paragraph spacing, A4 with 1.2/1.5/1.2/2.0 cm margins and a
 // ~5.5 cm wide clinic logo centered above the title.
 export const DEFAULT_DOC_FORMATTING = {

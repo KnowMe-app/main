@@ -391,6 +391,8 @@ async function checkDocuments() {
   const DocumentsPdfDocument = require('../src/components/DocumentsPdfDocument').default;
   const { DEFAULT_DOC_FORMATTING } = require('../src/components/documentsCatalogUtils');
 
+  // Fictional fixture data only - the render check needs Ukrainian glyph coverage
+  // (і/ї/є/ґ, №, «», —), never real client records.
   const generated = {
     id: 'embryo-transfer-consent',
     title: {
@@ -399,21 +401,21 @@ async function checkDocuments() {
     },
     paragraphs: [
       {
-        uk: 'Я (ми), жінка Кьогоку Ая, паспорт № MJ3060804, виданий Міністерством закордонних справ 08.02.2024,',
-        en: 'I (we), the wife, Kyogoku Aya, passport No. MJ3060804, issued by the Ministry of Foreign Affairs on 08.02.2024,',
+        uk: 'Я (ми), жінка Тестова Марія Іванівна, паспорт № AA000001, виданий Міністерством закордонних справ 02.02.2020,',
+        en: 'I (we), the wife, Testova Mariia, passport No. AA000001, issued by the Ministry of Foreign Affairs on 02.02.2020,',
       },
       {
-        uk: 'сурогатної матері Молвінських Юлії Володимирівни — здійснюється в клініці «Вікторія».',
-        en: 'of the surrogate mother Molvinskykh Yuliia Volodymyrivna — performed at the "Victoria" clinic.',
+        uk: 'сурогатної матері Прикладової Оксани Сергіївни — здійснюється в європейській клініці «Мрія» на ґрунті угоди.',
+        en: 'of the surrogate mother Prykladova Oksana Serhiivna — performed at the European "Mriia" clinic under the agreement.',
       },
     ],
   };
 
   const ukrainianStrings = [
     'Згода на перенесення ембріонів в порожнину матки',
-    'паспорт № MJ3060804',
-    'Молвінських Юлії Володимирівни',
-    'клініці «Вікторія»',
+    'паспорт № AA000001',
+    'Прикладової Оксани Сергіївни',
+    'клініці «Мрія» на ґрунті',
   ];
 
   const twoColumnPages = await renderPdf(React.createElement(DocumentsPdfDocument, {
@@ -426,11 +428,12 @@ async function checkDocuments() {
   // fragments short enough to stay on one extracted line.
   checkStringsRoundTrip('Documents (two-column)', twoColumnPages, [
     'Згода на перенесення',
-    'паспорт № MJ3060804',
-    'Молвінських Юлії Володимирівни',
-    'клініці «Вікторія»',
+    'AA000001',
+    '№',
+    'Оксани Сергіївни',
+    '«Мрія»',
     'Consent to the transfer',
-    'Molvinskykh Yuliia Volodymyrivna',
+    'Oksana Serhiivna',
     'Header line',
     'Footer line',
   ]);
