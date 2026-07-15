@@ -114,6 +114,26 @@ const mergeCollection = (existing, incoming, idPrefix, summary) => {
   return merged;
 };
 
+
+export const resolveMergedRecordsForPersistence = (currentRecords, mergedRecords, incomingRecords) => {
+  const existingIds = new Set((currentRecords || []).map(record => String(record?.id)));
+  const usedMergedIndexes = new Set();
+
+  return (incomingRecords || []).map(incomingRecord => {
+    const hasIncomingId = Boolean(incomingRecord?.id);
+    const incomingId = String(incomingRecord?.id);
+    const mergedIndex = (mergedRecords || []).findIndex((mergedRecord, index) => {
+      if (usedMergedIndexes.has(index)) return false;
+      if (hasIncomingId) return String(mergedRecord?.id) === incomingId;
+      return mergedRecord?.id && !existingIds.has(String(mergedRecord.id));
+    });
+
+    if (mergedIndex === -1) return incomingRecord;
+    usedMergedIndexes.add(mergedIndex);
+    return mergedRecords[mergedIndex];
+  });
+};
+
 // Never destructive: existing records survive untouched unless the incoming payload updates them
 // by id, and even then only field-by-field (see deepMergeRecords).
 export const mergeDocumentsCatalog = (current, incoming) => {
