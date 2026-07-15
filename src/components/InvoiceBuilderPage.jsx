@@ -811,7 +811,7 @@ const ServiceLineRow = ({
 }) => {
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
-  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(row.priceLabel || String(roundToCents(row.price) ?? ''));
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(row.priceInput || row.priceLabel || String(roundToCents(row.price) ?? ''));
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   if (row.kind === 'percent') {
@@ -863,7 +863,7 @@ const ServiceLineRow = ({
           onChange={event => setPriceDraft(event.target.value)}
           onBlur={() => {
             priceEditingRef.current = false;
-            const originalPriceDraft = row.priceLabel || String(roundToCents(row.price) ?? '');
+            const originalPriceDraft = row.priceInput || row.priceLabel || String(roundToCents(row.price) ?? '');
             if (priceDraft !== originalPriceDraft) onCommit('price', priceDraft);
           }}
         />
