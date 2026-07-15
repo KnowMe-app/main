@@ -1,0 +1,354 @@
+// Pure data logic for the Documents page (legal/client document generator). Everything here is
+// UI-free so it can be unit-tested: parsing the paste-and-parse technical input, additively
+// merging parsed records into the backend catalog, resolving a case's parties into a placeholder
+// context, filling {{placeholder}} tokens, and normalizing the backend-persisted settings record
+// (clinic logo + favourite formatting values).
+
+export const DOCUMENTS_PARTIES_PATH = 'documentsBuilder/parties';
+export const DOCUMENTS_TEMPLATES_PATH = 'documentsBuilder/templates';
+export const DOCUMENTS_SETTINGS_PATH = 'documentsBuilder/settings';
+
+export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases'];
+
+export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const toArray = value => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (isPlainObject(value)) return Object.values(value).filter(Boolean);
+  return [];
+};
+
+const makeRecordId = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+// --- Catalog -------------------------------------------------------------------------------
+
+export const emptyDocumentsCatalog = () => ({
+  parties: { couples: [], surrogateMothers: [], representatives: [], clinics: [], cases: [] },
+  documents: [],
+});
+
+// Backend stores every collection keyed by record id (so merges/deletes touch single children);
+// this converts a raw snapshot (or a pasted array) back into ordered arrays for the UI.
+export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
+  const catalog = emptyDocumentsCatalog();
+  PARTY_COLLECTIONS.forEach(collection => {
+    catalog.parties[collection] = toArray(rawParties?.[collection]).filter(record => isPlainObject(record));
+  });
+  catalog.documents = toArray(rawTemplates).filter(record => isPlainObject(record));
+  return catalog;
+};
+
+// --- Technical input (paste-and-parse) ------------------------------------------------------
+
+// Accepts the same JSON shape as surrogacy-documents-paragraphs-uk-en.json: `{ data: {...},
+// documents: [...] }`. Partial payloads are fine - `{ documents: [...] }` alone, `{ data: {...} }`
+// alone, or top-level party collections without the `data` wrapper.
+export const parseDocumentsTechnicalInput = rawText => {
+  const text = String(rawText || '')
+    .trim()
+    // Tolerate the JSON arriving wrapped in a markdown code fence.
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/, '')
+    .trim();
+  if (!text) throw new Error('Paste the documents JSON first.');
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error('Invalid JSON: the pasted text could not be parsed.');
+  }
+  if (!isPlainObject(parsed)) throw new Error('Invalid JSON: expected an object at the top level.');
+
+  const dataSource = isPlainObject(parsed.data) ? parsed.data : parsed;
+  const incoming = emptyDocumentsCatalog();
+  PARTY_COLLECTIONS.forEach(collection => {
+    incoming.parties[collection] = toArray(dataSource[collection]).filter(record => isPlainObject(record));
+  });
+  incoming.documents = toArray(parsed.documents).filter(record => isPlainObject(record));
+
+  const hasParties = PARTY_COLLECTIONS.some(collection => incoming.parties[collection].length > 0);
+  if (!hasParties && incoming.documents.length === 0) {
+    throw new Error('No parties or documents found in the pasted JSON.');
+  }
+  return incoming;
+};
+
+// Additive deep merge: objects merge recursively, arrays and scalars are replaced only when the
+// incoming side actually provides a value - `null`/`undefined`/`''` never wipe existing data.
+// Unknown keys are kept as-is on both sides, which is what lets records carry arbitrary extra
+// key/value pairs without a schema migration.
+export const deepMergeRecords = (base, incoming) => {
+  if (incoming === undefined || incoming === null) return base;
+  if (isPlainObject(base) && isPlainObject(incoming)) {
+    const merged = { ...base };
+    Object.keys(incoming).forEach(key => {
+      merged[key] = deepMergeRecords(base[key], incoming[key]);
+    });
+    return merged;
+  }
+  if (typeof incoming === 'string' && incoming.trim() === '' && base !== undefined && base !== null && base !== '') {
+    return base;
+  }
+  if (Array.isArray(incoming) && incoming.length === 0 && Array.isArray(base) && base.length > 0) {
+    return base;
+  }
+  return incoming;
+};
+
+const mergeCollection = (existing, incoming, idPrefix, summary) => {
+  const merged = [...existing];
+  const indexById = new Map(merged.map((record, index) => [String(record.id), index]));
+  incoming.forEach(record => {
+    const id = record.id ? String(record.id) : makeRecordId(idPrefix);
+    const withId = { ...record, id };
+    if (indexById.has(id)) {
+      merged[indexById.get(id)] = deepMergeRecords(merged[indexById.get(id)], withId);
+      summary.updated += 1;
+    } else {
+      indexById.set(id, merged.length);
+      merged.push(withId);
+      summary.added += 1;
+    }
+  });
+  return merged;
+};
+
+// Never destructive: existing records survive untouched unless the incoming payload updates them
+// by id, and even then only field-by-field (see deepMergeRecords).
+export const mergeDocumentsCatalog = (current, incoming) => {
+  const summary = { added: 0, updated: 0 };
+  const catalog = emptyDocumentsCatalog();
+  PARTY_COLLECTIONS.forEach(collection => {
+    catalog.parties[collection] = mergeCollection(
+      current?.parties?.[collection] || [],
+      incoming?.parties?.[collection] || [],
+      collection.replace(/s$/, ''),
+      summary,
+    );
+  });
+  catalog.documents = mergeCollection(current?.documents || [], incoming?.documents || [], 'document', summary);
+  return { catalog, summary };
+};
+
+// Firebase persistence shape: each collection keyed by id.
+export const catalogPartiesToBackend = catalog => PARTY_COLLECTIONS.reduce((acc, collection) => {
+  acc[collection] = (catalog.parties[collection] || []).reduce((byId, record) => {
+    byId[record.id] = record;
+    return byId;
+  }, {});
+  return acc;
+}, {});
+
+export const catalogTemplatesToBackend = catalog => (catalog.documents || []).reduce((byId, record) => {
+  byId[record.id] = record;
+  return byId;
+}, {});
+
+// --- Case context + placeholders ------------------------------------------------------------
+
+const findById = (records, id) => (records || []).find(record => String(record?.id) === String(id)) || null;
+
+export const resolveCaseContext = (catalog, caseId) => {
+  const caseRecord = findById(catalog?.parties?.cases, caseId);
+  if (!caseRecord) return null;
+  const couple = findById(catalog.parties.couples, caseRecord.coupleId);
+  const partners = toArray(couple?.partners);
+  const wife = partners.find(partner => partner?.role === 'wife') || partners[0] || null;
+  const husband = partners.find(partner => partner?.role === 'husband') || partners[1] || null;
+  const representatives = toArray(caseRecord.representativeIds)
+    .map(id => findById(catalog.parties.representatives, id))
+    .filter(Boolean);
+  return {
+    case: caseRecord,
+    couple,
+    wife,
+    husband,
+    surrogateMother: findById(catalog.parties.surrogateMothers, caseRecord.surrogateMotherId),
+    clinic: findById(catalog.parties.clinics, caseRecord.clinicId),
+    representative: representatives[0] || null,
+    representatives,
+  };
+};
+
+// Legal statements show dates as DD.MM.YYYY (see the reference docx), while the JSON stores ISO.
+export const formatDocumentDate = value => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+  if (!match) return value;
+  return `${match[3]}.${match[2]}.${match[1]}`;
+};
+
+export const MISSING_VALUE_PLACEHOLDER = '__________';
+
+const resolvePlaceholderValue = (context, path, lang) => {
+  let value = context;
+  for (const segment of String(path).split('.')) {
+    if (value === undefined || value === null) return undefined;
+    value = value[segment];
+  }
+  // A path that stops at a bilingual node ({uk, en}) resolves to the requested language; one that
+  // stops at a cased-name node resolves to the nominative form.
+  if (isPlainObject(value)) {
+    if (value[lang] !== undefined) value = value[lang];
+    else if (value.uk !== undefined) value = value.uk;
+  }
+  if (isPlainObject(value) && value.nominative !== undefined) value = value.nominative;
+  if (value === undefined || value === null || isPlainObject(value) || Array.isArray(value)) return undefined;
+  return formatDocumentDate(value);
+};
+
+// Missing data renders as a fill-in-by-hand blank, matching how the reference statements leave
+// unknown values (dates, counts) as underscores - never as a leaked {{token}}.
+export const fillPlaceholders = (text, context, lang = 'uk') => String(text || '').replace(
+  /\{\{\s*([\w.]+)\s*\}\}/g,
+  (token, path) => {
+    const value = context ? resolvePlaceholderValue(context, path, lang) : undefined;
+    const output = value === undefined || String(value).trim() === '' ? MISSING_VALUE_PLACEHOLDER : String(value);
+    return output;
+  },
+);
+
+const localizedText = (value, lang) => {
+  if (isPlainObject(value)) return String(value[lang] ?? value.uk ?? value.en ?? '');
+  return String(value ?? '');
+};
+
+// One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
+// with every placeholder already substituted from the case context.
+export const buildGeneratedDocument = (template, context) => ({
+  id: template.id,
+  title: {
+    uk: fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk'),
+    en: fillPlaceholders(localizedText(template.title, 'en'), context, 'en'),
+  },
+  paragraphs: toArray(template.paragraphs).map(paragraph => ({
+    uk: fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk'),
+    en: fillPlaceholders(localizedText(paragraph, 'en'), context, 'en'),
+  })),
+});
+
+// --- Case selector --------------------------------------------------------------------------
+
+export const buildCaseLabel = (catalog, caseRecord) => {
+  if (!caseRecord) return '';
+  const couple = findById(catalog?.parties?.couples, caseRecord.coupleId);
+  const partners = toArray(couple?.partners);
+  const coupleNames = partners
+    .map(partner => localizedText(partner?.name, 'en') || localizedText(partner?.name?.uk, 'uk'))
+    .filter(Boolean)
+    .join(' & ');
+  const surrogate = findById(catalog?.parties?.surrogateMothers, caseRecord.surrogateMotherId);
+  const surrogateName = localizedText(surrogate?.name, 'en');
+  const parts = [coupleNames, surrogateName ? `SM ${surrogateName}` : ''].filter(Boolean);
+  return parts.join(' — ') || String(caseRecord.id);
+};
+
+// Most recently used case first (spec §5), the rest keep catalog order.
+export const orderCasesByRecent = (cases, recentCaseIds) => {
+  const recent = toArray(recentCaseIds).map(String);
+  const rank = id => {
+    const index = recent.indexOf(String(id));
+    return index === -1 ? recent.length : index;
+  };
+  return [...(cases || [])].sort((a, b) => rank(a.id) - rank(b.id));
+};
+
+export const upsertRecentCaseId = (recentCaseIds, caseId) => {
+  if (!caseId) return toArray(recentCaseIds).map(String);
+  const id = String(caseId);
+  return [id, ...toArray(recentCaseIds).map(String).filter(existing => existing !== id)].slice(0, 20);
+};
+
+// --- Layouts + formatting settings ----------------------------------------------------------
+
+export const DOCUMENT_LAYOUTS = [
+  { id: 'two-column', label: 'UA + EN · 2 columns' },
+  { id: 'one-column-uk', label: 'UA · 1 column' },
+  { id: 'one-column-en', label: 'EN · 1 column' },
+];
+
+// Defaults mirror the reference statements docx: Times ~10pt body / 11pt bold titles,
+// single line spacing, zero after-paragraph spacing, A4 with 1.2/1.5/1.2/2.0 cm margins and a
+// ~5.5 cm wide clinic logo centered above the title.
+export const DEFAULT_DOC_FORMATTING = {
+  fontSize: 10,
+  titleFontSize: 11,
+  lineSpacing: 1,
+  paragraphSpacing: 0,
+  firstLineIndentCm: 0,
+  marginTopCm: 1.2,
+  marginRightCm: 1.5,
+  marginBottomCm: 1.2,
+  marginLeftCm: 2,
+  columnGapCm: 0.5,
+  logoWidthMm: 55,
+  showLogo: true,
+  headerText: '',
+  footerText: '',
+  showPageNumbers: true,
+};
+
+const clampNumber = (value, min, max, fallback) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+};
+
+export const normalizeDocFormatting = raw => {
+  const source = isPlainObject(raw) ? raw : {};
+  return {
+    fontSize: clampNumber(source.fontSize, 6, 24, DEFAULT_DOC_FORMATTING.fontSize),
+    titleFontSize: clampNumber(source.titleFontSize, 6, 32, DEFAULT_DOC_FORMATTING.titleFontSize),
+    lineSpacing: clampNumber(source.lineSpacing, 0.8, 3, DEFAULT_DOC_FORMATTING.lineSpacing),
+    paragraphSpacing: clampNumber(source.paragraphSpacing, 0, 36, DEFAULT_DOC_FORMATTING.paragraphSpacing),
+    firstLineIndentCm: clampNumber(source.firstLineIndentCm, 0, 5, DEFAULT_DOC_FORMATTING.firstLineIndentCm),
+    marginTopCm: clampNumber(source.marginTopCm, 0.5, 6, DEFAULT_DOC_FORMATTING.marginTopCm),
+    marginRightCm: clampNumber(source.marginRightCm, 0.5, 6, DEFAULT_DOC_FORMATTING.marginRightCm),
+    marginBottomCm: clampNumber(source.marginBottomCm, 0.5, 6, DEFAULT_DOC_FORMATTING.marginBottomCm),
+    marginLeftCm: clampNumber(source.marginLeftCm, 0.5, 6, DEFAULT_DOC_FORMATTING.marginLeftCm),
+    columnGapCm: clampNumber(source.columnGapCm, 0, 3, DEFAULT_DOC_FORMATTING.columnGapCm),
+    logoWidthMm: clampNumber(source.logoWidthMm, 10, 180, DEFAULT_DOC_FORMATTING.logoWidthMm),
+    showLogo: source.showLogo === undefined ? DEFAULT_DOC_FORMATTING.showLogo : Boolean(source.showLogo),
+    headerText: String(source.headerText ?? DEFAULT_DOC_FORMATTING.headerText),
+    footerText: String(source.footerText ?? DEFAULT_DOC_FORMATTING.footerText),
+    showPageNumbers: source.showPageNumbers === undefined
+      ? DEFAULT_DOC_FORMATTING.showPageNumbers
+      : Boolean(source.showPageNumbers),
+  };
+};
+
+// The backend settings record: the clinic logo (uploaded once, reused on every generated
+// document) plus the user's favourite formatting values and the recently-used case order.
+export const normalizeDocumentsSettings = raw => {
+  const source = isPlainObject(raw) ? raw : {};
+  const logo = isPlainObject(source.clinicLogo) && typeof source.clinicLogo.dataUrl === 'string' && source.clinicLogo.dataUrl.startsWith('data:image/')
+    ? {
+      dataUrl: source.clinicLogo.dataUrl,
+      width: clampNumber(source.clinicLogo.width, 1, 10000, 0) || 0,
+      height: clampNumber(source.clinicLogo.height, 1, 10000, 0) || 0,
+      name: String(source.clinicLogo.name || ''),
+    }
+    : null;
+  return {
+    formatting: normalizeDocFormatting(source.formatting),
+    clinicLogo: logo,
+    recentCaseIds: toArray(source.recentCaseIds).map(String),
+  };
+};
+
+// --- File naming ----------------------------------------------------------------------------
+
+export const buildDocumentsFileName = (catalog, caseRecord, layout, extension) => {
+  const label = buildCaseLabel(catalog, caseRecord)
+    .replace(/[^\p{L}\p{N}]+/gu, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'Case';
+  const langTag = layout === 'one-column-uk' ? 'UA' : layout === 'one-column-en' ? 'EN' : 'UA-EN';
+  const today = new Date();
+  const ymd = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+  return `Documents_${label}_${langTag}_${ymd}.${extension}`;
+};

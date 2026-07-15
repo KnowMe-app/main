@@ -12,6 +12,7 @@ import MedicationsPage from './MedicationsPage';
 import FlowManager from './FlowManager';
 import BudgetPage from './BudgetPage';
 import InvoiceBuilderPage from './InvoiceBuilderPage';
+import DocumentsPage from './DocumentsPage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
 import { resolveAccess } from 'utils/accessLevel';
@@ -104,6 +105,7 @@ export const App = () => {
       {isAdmin && <Route path="/flow" element={<FlowManager ownerId={auth.currentUser?.uid} />} />}
       {isAdmin && <Route path="/budget" element={<BudgetPage isAdmin={isAdmin} />} />}
       {canAccessInvoices && <Route path="/invoices" element={<InvoiceBuilderPage isAdmin={canAccessInvoices} />} />}
+      {canAccessInvoices && <Route path="/documents" element={<DocumentsPage isAdmin={canAccessInvoices} />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );

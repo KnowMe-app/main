@@ -47,7 +47,7 @@ const fixtureTechnical = {
 const fixtureInvoiceData = {
   beneficiaries: [{ id: 'b1', title: 'PE KOVAL OLEKSANDR', address: 'Kyiv', iban: 'UA1', bankName: 'Bank', swiftCode: 'SWIFT', paymentPurpose: '' }],
   beneficiaryIds: ['b1'],
-  customers: [{ name: 'Amny Athamny', address: 'Netherlands' }],
+  customers: [{ name: 'Anna Example', address: 'Netherlands' }],
   recentServices: [],
   invoiceServices: ['id10'],
   notes: [],
@@ -69,6 +69,9 @@ jest.mock('firebase/database', () => ({
 jest.mock('utils/accessLevel', () => ({
   isInvoiceBuilderUid: () => true,
 }));
+
+// The shared "⋮" page switcher needs a react-router context these page-level tests don't set up.
+jest.mock('./PageNavMenu', () => () => null);
 
 describe('InvoiceBuilderPage', () => {
   let container;
@@ -477,7 +480,7 @@ describe('InvoiceBuilderPage', () => {
     await flush();
 
     const activeNameFieldValues = () => Array.from(container.querySelectorAll('textarea[placeholder="Name"]')).map(field => field.value);
-    expect(activeNameFieldValues()).toEqual(['Amny Athamny']);
+    expect(activeNameFieldValues()).toEqual(['Anna Example']);
 
     await act(async () => { findButton('New case').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush();
@@ -489,24 +492,24 @@ describe('InvoiceBuilderPage', () => {
     const nameField = container.querySelector('textarea[placeholder="Name"]');
     await act(async () => {
       nameField.focus();
-      setFieldValue(nameField, 'Kyogoku');
+      setFieldValue(nameField, 'Testov');
       nameField.blur();
     });
     await flush();
 
-    expect(activeNameFieldValues()).toEqual(['Kyogoku']);
+    expect(activeNameFieldValues()).toEqual(['Testov']);
 
     // Switching back to the previous case must restore it exactly, still with no merging.
-    const caseSelect = Array.from(container.querySelectorAll('select')).find(select => Array.from(select.options).some(option => option.text.includes('Amny Athamny')));
+    const caseSelect = Array.from(container.querySelectorAll('select')).find(select => Array.from(select.options).some(option => option.text.includes('Anna Example')));
     expect(caseSelect).toBeTruthy();
-    const originalCaseOption = Array.from(caseSelect.options).find(option => option.text.includes('Amny Athamny'));
+    const originalCaseOption = Array.from(caseSelect.options).find(option => option.text.includes('Anna Example'));
     await act(async () => {
       caseSelect.value = originalCaseOption.value;
       caseSelect.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flush();
 
-    expect(activeNameFieldValues()).toEqual(['Amny Athamny']);
+    expect(activeNameFieldValues()).toEqual(['Anna Example']);
 
     await act(async () => { root.unmount(); });
   });
@@ -977,10 +980,10 @@ describe('InvoiceBuilderPage', () => {
   // design-tasks-3 §5/§6/§7: per-payer saved services, copying them across payers, and the
   // read-only Issued Invoices history with payment tracking and the Reissue flow.
   describe('payer saved services and issued invoices', () => {
-    const activeCase = { id: 'case-a', customers: [{ name: 'Amny Athamny', address: 'Netherlands' }] };
+    const activeCase = { id: 'case-a', customers: [{ name: 'Anna Example', address: 'Netherlands' }] };
     const otherCase = {
       id: 'case-b',
-      customers: [{ name: 'Ben Adam', address: 'Israel' }],
+      customers: [{ name: 'Carl Tester', address: 'Israel' }],
       savedServices: [
         { id: 'saved-1', kind: 'item', catalogId: '11' },
         { id: 'saved-2', kind: 'custom', name: 'Saved one-off', price: 500 },

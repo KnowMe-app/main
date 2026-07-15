@@ -23,6 +23,7 @@ import { setPdfAgencyConfig } from './pdfTheme';
 import { formatEuroSmart, getSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
+import PageNavMenu from './PageNavMenu';
 import {
   addCatalogChildToPackage,
   addCustomChildToPackage,
@@ -3392,6 +3393,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <Title>Invoice Builder</Title>
           </div>
           <HeaderActions>
+            <PageNavMenu />
             <input
               ref={fileInputRef}
               type="file"

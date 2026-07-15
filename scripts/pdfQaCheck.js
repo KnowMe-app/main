@@ -377,10 +377,85 @@ async function checkBudget() {
   }
 }
 
+// The Documents page's statements render in a Times-metric serif (Tinos) with the full Ukrainian
+// alphabet plus № - exactly the glyphs the shared Inter/Fraunces sanitize step strips, so the
+// round-trip check below is what guards against that font ever silently dropping them.
+async function checkDocuments() {
+  Font.register({
+    family: 'Tinos',
+    fonts: [
+      { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+      { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+    ],
+  });
+  const DocumentsPdfDocument = require('../src/components/DocumentsPdfDocument').default;
+  const { DEFAULT_DOC_FORMATTING } = require('../src/components/documentsCatalogUtils');
+
+  // Fictional fixture data only - the render check needs Ukrainian glyph coverage
+  // (і/ї/є/ґ, №, «», —), never real client records.
+  const generated = {
+    id: 'embryo-transfer-consent',
+    title: {
+      uk: 'Згода на перенесення ембріонів в порожнину матки',
+      en: 'Consent to the transfer of embryos into the uterine cavity',
+    },
+    paragraphs: [
+      {
+        uk: 'Я (ми), жінка Тестова Марія Іванівна, паспорт № AA000001, виданий Міністерством закордонних справ 02.02.2020,',
+        en: 'I (we), the wife, Testova Mariia, passport No. AA000001, issued by the Ministry of Foreign Affairs on 02.02.2020,',
+      },
+      {
+        uk: 'сурогатної матері Прикладової Оксани Сергіївни — здійснюється в європейській клініці «Мрія» на ґрунті угоди.',
+        en: 'of the surrogate mother Prykladova Oksana Serhiivna — performed at the European "Mriia" clinic under the agreement.',
+      },
+    ],
+  };
+
+  const ukrainianStrings = [
+    'Згода на перенесення ембріонів в порожнину матки',
+    'паспорт № AA000001',
+    'Прикладової Оксани Сергіївни',
+    'клініці «Мрія» на ґрунті',
+  ];
+
+  const twoColumnPages = await renderPdf(React.createElement(DocumentsPdfDocument, {
+    documents: [generated],
+    layout: 'two-column',
+    formatting: { ...DEFAULT_DOC_FORMATTING, headerText: 'Header line', footerText: 'Footer line' },
+  }));
+  checkNoBlankPages('Documents (two-column)', twoColumnPages);
+  // Titles wrap inside the half-width column cells, so the two-column round-trip checks use
+  // fragments short enough to stay on one extracted line.
+  checkStringsRoundTrip('Documents (two-column)', twoColumnPages, [
+    'Згода на перенесення',
+    'AA000001',
+    '№',
+    'Оксани Сергіївни',
+    '«Мрія»',
+    'Consent to the transfer',
+    'Oksana Serhiivna',
+    'Header line',
+    'Footer line',
+  ]);
+
+  const oneColumnPages = await renderPdf(React.createElement(DocumentsPdfDocument, {
+    documents: [generated],
+    layout: 'one-column-uk',
+    formatting: DEFAULT_DOC_FORMATTING,
+  }));
+  checkNoBlankPages('Documents (one-column uk)', oneColumnPages);
+  checkStringsRoundTrip('Documents (one-column uk)', oneColumnPages, ukrainianStrings);
+  const oneColumnCombined = oneColumnPages.join('\n');
+  if (oneColumnCombined.includes('Consent to the transfer')) {
+    fail('Documents (one-column uk): English text leaked into the Ukrainian-only layout');
+  }
+}
+
 async function main() {
   await checkInvoice();
   await checkExpectedExpenses();
   await checkBudget();
+  await checkDocuments();
 
   if (failures.length) {
     console.error(`PDF QA check FAILED (${failures.length} issue${failures.length === 1 ? '' : 's'}):`);

@@ -61,6 +61,9 @@ jest.mock('utils/accessLevel', () => ({
   isAdminUid: () => true,
 }));
 
+// The shared "⋮" page switcher needs a react-router context these page-level tests don't set up.
+jest.mock('./PageNavMenu', () => () => null);
+
 describe('BudgetPage edit mode', () => {
   let container;
 
