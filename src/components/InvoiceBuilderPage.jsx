@@ -2525,7 +2525,16 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // different catalog programme in place - the fresh entry drops any per-invoice customisation of
   // the old one, exactly like removing the package and adding the new one, but in a single step.
   const replacePackageEntry = pkg => {
-    const next = data.invoiceServices.map(entry => (entry.kind === 'package' ? makeCatalogPackageEntry(pkg) : entry));
+    const currentPackageEntry = data.invoiceServices.find(entry => entry.kind === 'package');
+    const oldPackageId = currentPackageEntry?.catalogId;
+    const newPackageId = String(pkg?.id ?? '');
+    const next = data.invoiceServices.map(entry => {
+      if (entry.kind === 'package') return makeCatalogPackageEntry(pkg);
+      if (entry.kind === 'percent' && oldPackageId && String(entry.packageId) === String(oldPackageId)) {
+        return { ...entry, packageId: newPackageId };
+      }
+      return entry;
+    });
     persistInvoiceServices(next, 'Package switched.');
   };
 
@@ -2559,7 +2568,13 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     const existingPercentRows = data.invoiceServices.filter(
       entry => entry.kind === 'percent' && String(entry.packageId) === String(packageId),
     );
-    const usedPercentTotal = existingPercentRows.reduce((sum, entry) => sum + (Number(entry.percent) || 0), 0);
+    const getEntrySharePercent = entry => {
+      if (entry.amount != null && listedPriceAmount) {
+        return Math.round(((Number(entry.amount) || 0) / listedPriceAmount) * 1e6) / 1e4;
+      }
+      return Number(entry.percent) || 0;
+    };
+    const usedPercentTotal = existingPercentRows.reduce((sum, entry) => sum + getEntrySharePercent(entry), 0);
     const nextPayment = schedule?.payments?.[existingPercentRows.length];
     const nextPaymentAmount = nextPayment ? resolvePaymentAmount(nextPayment, listedPriceAmount) : null;
     const defaultPercent = (nextPaymentAmount != null && listedPriceAmount)
@@ -2679,15 +2694,21 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   // The first edit "materializes" whatever schedule is currently showing (live from the catalog, or
   // an existing override) into a fresh per-invoice override, then applies the one field edit on top.
-  // The amount field accepts a percent too (design-tasks §1: "25" -> 25% of the package's billed
-  // price, "10000" -> 10,000 EUR) - a percent is resolved to euros against the package price once,
+  // The amount field remains EUR-first: bare values and explicit EUR values are stored as fixed
+  // amounts, while an explicit percent (for example "25%") is resolved against the package price once,
   // at commit time, since a schedule override stores plain euro amounts.
   const updateScheduleRow = (rowIndex, field, value) => {
     if (!packageRow) return;
     const resolveAmount = raw => {
-      const { percent, amount } = parsePercentOrAmountInput(raw);
-      if (amount != null) return amount;
-      return roundToCents(((Number(packageRow.price) || 0) * percent) / 100) || 0;
+      const text = String(raw ?? '').trim();
+      if (/%/.test(text)) {
+        const { percent } = parsePercentOrAmountInput(text);
+        return roundToCents(((Number(packageRow.price) || 0) * percent) / 100) || 0;
+      }
+      const normalized = text.replace(/€|eur/gi, '').replace(/\s+/g, '');
+      const numericText = /,\d{3}(?:\D|$)/.test(normalized) ? normalized.replace(/,/g, '') : normalized.replace(',', '.');
+      const amount = Number(numericText);
+      return Number.isFinite(amount) ? amount : 0;
     };
     const rows = packageRow.scheduleRows.map((row, index) => (index === rowIndex
       ? { ...row, [field]: field === 'amount' ? resolveAmount(value) : value }

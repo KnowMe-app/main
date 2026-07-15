@@ -407,6 +407,7 @@ const DocumentsPage = ({ isAdmin }) => {
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [clinicLogoPreview, setClinicLogoPreview] = useState(null);
+  const [clinicLogoLoading, setClinicLogoLoading] = useState(false);
   const logoInputRef = useRef(null);
   // Mirror of `settings` that persistSettings can read synchronously: two quick successive
   // saves (e.g. logo upload + favourite formatting) must each build on the other's result, and
@@ -669,6 +670,20 @@ const DocumentsPage = ({ isAdmin }) => {
     reader.readAsDataURL(file);
   };
 
+  const readImageDimensions = useCallback(dataUrl => new Promise(resolve => {
+    if (typeof window === 'undefined' || !dataUrl) {
+      resolve({ width: 0, height: 0 });
+      return;
+    }
+    const image = new window.Image();
+    image.onload = () => resolve({
+      width: image.naturalWidth || 0,
+      height: image.naturalHeight || 0,
+    });
+    image.onerror = () => resolve({ width: 0, height: 0 });
+    image.src = dataUrl;
+  }), []);
+
   const handleRemoveLogo = async () => {
     if (typeof window !== 'undefined' && !window.confirm('Remove the clinic logo from the backend?')) return;
     const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
@@ -722,33 +737,42 @@ const DocumentsPage = ({ isAdmin }) => {
   const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
   const selectedClinic = catalog.parties.clinics.find(item => String(item.id) === String(selectedCase?.clinicId || '')) || null;
-  const isGenerateDisabled = loading || Boolean(error) || isGenerating || !selectedTemplates.length || !selectedCase;
+  const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
   useEffect(() => {
     let cancelled = false;
     const logoNames = Array.isArray(selectedClinic?.logo) ? selectedClinic.logo.filter(Boolean).map(String) : [];
     const fileName = logoNames[logoNames.length - 1] || '';
+    setClinicLogoPreview(null);
     if (!selectedClinic?.id || !fileName) {
-      setClinicLogoPreview(null);
+      setClinicLogoLoading(false);
       return () => {
         cancelled = true;
       };
     }
 
+    setClinicLogoLoading(true);
     const filePath = `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${selectedClinic.id}/logo/${fileName}`;
     getStorageFileDataUrl(filePath)
-      .then(dataUrl => {
-        if (!cancelled) setClinicLogoPreview(dataUrl ? { dataUrl, name: fileName, width: 0, height: 0 } : null);
+      .then(async dataUrl => {
+        const dimensions = dataUrl ? await readImageDimensions(dataUrl) : { width: 0, height: 0 };
+        if (!cancelled) {
+          setClinicLogoPreview(dataUrl ? { dataUrl, name: fileName, ...dimensions } : null);
+          setClinicLogoLoading(false);
+        }
       })
       .catch(loadLogoError => {
         console.error('Unable to load clinic logo from Storage', loadLogoError);
-        if (!cancelled) setClinicLogoPreview(null);
+        if (!cancelled) {
+          setClinicLogoPreview(null);
+          setClinicLogoLoading(false);
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [selectedClinic]);
+  }, [readImageDimensions, selectedClinic]);
 
   const prepareGeneration = () => {
     const context = resolveCaseContext(catalog, selectedCaseId);
