@@ -601,6 +601,12 @@ const useFieldDraft = externalValue => {
 
 const formatEuroPreview = formatEuroSmart;
 
+const getFormulaAwarePriceDraft = row => {
+  const rawPrice = row?.priceInput || row?.priceLabel || String(roundToCents(row?.price) ?? '');
+  const displayPrice = row?.priceInput ? String(roundToCents(row?.price) ?? '') : rawPrice;
+  return { rawPrice, displayPrice };
+};
+
 // --- Service line item (top-level custom/catalog row, or a row nested inside a package) ------------------------------------------------------
 
 const LineCard = styled.div`
@@ -811,7 +817,8 @@ const ServiceLineRow = ({
 }) => {
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
-  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(row.priceInput || row.priceLabel || String(roundToCents(row.price) ?? ''));
+  const { rawPrice, displayPrice } = getFormulaAwarePriceDraft(row);
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(displayPrice);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   if (row.kind === 'percent') {
@@ -859,12 +866,15 @@ const ServiceLineRow = ({
           value={priceDraft}
           placeholder="100"
           aria-label="Price (EUR)"
-          onFocus={() => { priceEditingRef.current = true; }}
+          onFocus={() => {
+            priceEditingRef.current = true;
+            setPriceDraft(rawPrice);
+          }}
           onChange={event => setPriceDraft(event.target.value)}
           onBlur={() => {
             priceEditingRef.current = false;
-            const originalPriceDraft = row.priceInput || row.priceLabel || String(roundToCents(row.price) ?? '');
-            if (priceDraft !== originalPriceDraft) onCommit('price', priceDraft);
+            if (priceDraft !== rawPrice) onCommit('price', priceDraft);
+            setPriceDraft(priceDraft !== rawPrice ? priceDraft : displayPrice);
           }}
         />
         {row.missing ? <MissingTag title="This catalog reference no longer exists">Missing</MissingTag> : null}
@@ -1260,7 +1270,8 @@ const PackageEntryCard = ({
 }) => {
   const [nameDraft, setNameDraft, nameEditingRef] = useFieldDraft(row.name);
   const [descriptionDraft, setDescriptionDraft, descriptionEditingRef] = useFieldDraft(row.description);
-  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(String(roundToCents(row.price) ?? ''));
+  const { rawPrice, displayPrice } = getFormulaAwarePriceDraft(row);
+  const [priceDraft, setPriceDraft, priceEditingRef] = useFieldDraft(displayPrice);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   const childCatalogIds = useMemo(
@@ -1293,12 +1304,15 @@ const PackageEntryCard = ({
           value={priceDraft}
           placeholder="0"
           aria-label="Package price (EUR)"
-          onFocus={() => { priceEditingRef.current = true; }}
+          onFocus={() => {
+            priceEditingRef.current = true;
+            setPriceDraft(rawPrice);
+          }}
           onChange={event => setPriceDraft(event.target.value)}
           onBlur={() => {
             priceEditingRef.current = false;
-            const originalPriceDraft = String(roundToCents(row.price) ?? '');
-            if (priceDraft !== originalPriceDraft) onCommitField('price', priceDraft);
+            if (priceDraft !== rawPrice) onCommitField('price', priceDraft);
+            setPriceDraft(priceDraft !== rawPrice ? priceDraft : displayPrice);
           }}
         />
         {row.hasPriceOverride ? (
