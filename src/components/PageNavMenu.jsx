@@ -41,12 +41,19 @@ const Dropdown = styled.div`
   top: calc(100% + 4px);
   right: 0;
   min-width: 150px;
+  max-width: calc(100vw - 24px);
+  overflow: visible;
   background: var(--km-card, #fff);
   border: 1px solid var(--km-border, #d9d2c2);
   border-radius: 8px;
   box-shadow: 0 8px 22px rgba(43, 38, 32, 0.14);
   padding: 4px;
-  z-index: 40;
+  z-index: 1000;
+
+  @media (max-width: 560px) {
+    left: 0;
+    right: auto;
+  }
 `;
 
 const MenuItem = styled.button`
