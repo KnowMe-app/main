@@ -11,7 +11,7 @@ import { get, ref, set, update } from 'firebase/database';
 import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
-import { auth, database } from './config';
+import { auth, database, getUrlofUploadedAvatar } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
 import {
@@ -621,15 +621,31 @@ const DocumentsPage = ({ isAdmin }) => {
       const dataUrl = String(reader.result || '');
       const image = new window.Image();
       image.onload = async () => {
-        const saved = await persistSettings({
-          clinicLogo: {
-            dataUrl,
-            width: image.naturalWidth || 0,
-            height: image.naturalHeight || 0,
-            name: file.name,
-          },
-        });
-        if (saved) toast.success('Clinic logo uploaded to the backend.');
+        const userId = auth.currentUser?.uid;
+        if (!userId) {
+          toast.error('Sign in before uploading the clinic logo.');
+          return;
+        }
+
+        try {
+          const storageUrl = await getUrlofUploadedAvatar(file, userId, {
+            disableCompression: true,
+            rootFolder: 'documentsBuilder',
+          });
+          const saved = await persistSettings({
+            clinicLogo: {
+              dataUrl,
+              storageUrl,
+              width: image.naturalWidth || 0,
+              height: image.naturalHeight || 0,
+              name: file.name,
+            },
+          });
+          if (saved) toast.success('Clinic logo uploaded to the backend.');
+        } catch (uploadError) {
+          console.error('Unable to upload clinic logo', uploadError);
+          toast.error('Could not upload the logo to the backend.');
+        }
       };
       image.onerror = () => toast.error('Could not read the image file.');
       image.src = dataUrl;

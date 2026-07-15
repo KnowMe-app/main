@@ -289,15 +289,25 @@ const generateUploadFileId = () => {
   return `${Date.now()}-${randomSuffix}`;
 };
 
+const getUploadFileExtension = file => {
+  const originalExtension = String(file?.name || '').split('.').pop();
+  if (originalExtension && originalExtension !== file?.name) {
+    return originalExtension.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg';
+  }
+
+  const mimeExtension = String(file?.type || '').split('/').pop();
+  return mimeExtension ? mimeExtension.replace(/[^a-z0-9]/gi, '').toLowerCase() : 'jpg';
+};
+
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
-  const { disableCompression = false, maxSizeKB = 1024 } = options;
+  const { disableCompression = false, maxSizeKB = 1024, rootFolder = 'avatar' } = options;
   const file = shouldKeepOriginalUpload(photo, disableCompression, maxSizeKB)
     ? photo
     : await getFileBlob(await compressPhoto(photo, maxSizeKB));
 
   const uniqueId = generateUploadFileId(); // генеруємо унікальне ім"я для фото
-  const fileName = `${uniqueId}.jpg`; // Використовуємо унікальне ім'я для файлу
-  const pathSegments = ['avatar', userId];
+  const fileName = `${uniqueId}.${getUploadFileExtension(file)}`; // Використовуємо унікальне ім'я для файлу
+  const pathSegments = [rootFolder, userId];
   if (options?.subfolder) {
     pathSegments.push(options.subfolder);
   }
