@@ -14,6 +14,7 @@ import designTokens from '../data/designTokens.json';
 import { auth, database, getStorageFileDataUrl, uploadFileToStorageFolder } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
+import { useAutoResize } from '../hooks/useAutoResize';
 import {
   DEFAULT_DOC_FORMATTING,
   DOCUMENTS_PARTIES_PATH,
@@ -309,8 +310,9 @@ const InlineTextarea = styled.textarea`
   font-size: 12.5px;
   line-height: 1.45;
   padding: 4px 6px;
-  resize: vertical;
-  min-height: 40px;
+  resize: none;
+  min-height: 0;
+  overflow: hidden;
 
   &:hover {
     border-color: var(--km-border);
@@ -325,6 +327,29 @@ const InlineTextarea = styled.textarea`
 
 // In the two-column layout each UA paragraph is boxed together with its EN counterpart (spec §4)
 // so the pairing stays visible; one-column layouts render a single unboxed cell.
+
+// Auto-grow every editable document paragraph/title to the exact rendered text height so long
+// bilingual paragraphs look like normal document text while staying directly editable.
+const AutoInlineTextarea = React.forwardRef(({ value, ...rest }, forwardedRef) => {
+  const localRef = useRef(null);
+  const autoResize = useAutoResize(localRef, value);
+
+  return (
+    <InlineTextarea
+      ref={node => {
+        localRef.current = node;
+        autoResize(node);
+        if (typeof forwardedRef === 'function') forwardedRef(node);
+        else if (forwardedRef) forwardedRef.current = node;
+      }}
+      rows={1}
+      value={value}
+      {...rest}
+    />
+  );
+});
+AutoInlineTextarea.displayName = 'AutoInlineTextarea';
+
 const ParagraphPair = styled.div`
   display: grid;
   grid-template-columns: ${({ $single }) => ($single ? '1fr' : '1fr 1fr')};
@@ -1135,7 +1160,7 @@ const DocumentsPage = ({ isAdmin }) => {
                         ) : null}
                         <ParagraphPair $single={isSingle}>
                           {showUk ? (
-                            <InlineTextarea
+                            <AutoInlineTextarea
                               value={titleValue('uk')}
                               placeholder="Title (uk)"
                               readOnly={dataEditLocked}
@@ -1144,7 +1169,7 @@ const DocumentsPage = ({ isAdmin }) => {
                             />
                           ) : null}
                           {showEn ? (
-                            <InlineTextarea
+                            <AutoInlineTextarea
                               value={titleValue('en')}
                               placeholder="Title (en)"
                               readOnly={dataEditLocked}
@@ -1156,7 +1181,7 @@ const DocumentsPage = ({ isAdmin }) => {
                         {(template.paragraphs || []).map((paragraph, index) => (
                           <ParagraphPair key={`${template.id}-p-${index}`} $single={isSingle}>
                             {showUk ? (
-                              <InlineTextarea
+                              <AutoInlineTextarea
                                 value={paragraphValue(paragraph, index, 'uk')}
                                 placeholder="Paragraph (uk)"
                                 readOnly={dataEditLocked}
@@ -1165,7 +1190,7 @@ const DocumentsPage = ({ isAdmin }) => {
                               />
                             ) : null}
                             {showEn ? (
-                              <InlineTextarea
+                              <AutoInlineTextarea
                                 value={paragraphValue(paragraph, index, 'en')}
                                 placeholder="Paragraph (en)"
                                 readOnly={dataEditLocked}
