@@ -156,7 +156,6 @@ const PaymentDetailsPdfDocument = ({
           <View style={styles.amountCard}>
             <Text style={styles.amountLabel}>Amount due</Text>
             <Text style={styles.amountValue}>{formatMoney(amountDue)}</Text>
-            <Text style={styles.amountSub}>{sanitizePdfText(`See Invoice No. ${invoiceNumber || ''} for the full breakdown.`)}</Text>
           </View>
 
           {/* These payment caveats used to live on the Invoice PDF itself - they belong here,
