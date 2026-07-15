@@ -344,6 +344,7 @@ export const normalizeDocumentsSettings = raw => {
   const logo = isPlainObject(source.clinicLogo) && typeof source.clinicLogo.dataUrl === 'string' && source.clinicLogo.dataUrl.startsWith('data:image/')
     ? {
       dataUrl: source.clinicLogo.dataUrl,
+      storageUrl: typeof source.clinicLogo.storageUrl === 'string' ? source.clinicLogo.storageUrl : '',
       width: clampNumber(source.clinicLogo.width, 1, 10000, 0) || 0,
       height: clampNumber(source.clinicLogo.height, 1, 10000, 0) || 0,
       name: String(source.clinicLogo.name || ''),
