@@ -409,7 +409,7 @@ export const normalizeServiceEntry = raw => {
       ...(raw.name !== undefined ? { name: raw.name } : {}),
       ...(raw.description !== undefined ? { description: raw.description } : {}),
       ...(raw.priceOverride !== undefined && raw.priceOverride !== null && raw.priceOverride !== ''
-        ? { priceOverride: toNumber(raw.priceOverride) }
+        ? { priceOverride: isPriceFormulaInput(raw.priceOverride) ? String(raw.priceOverride).trim() : toNumber(raw.priceOverride) }
         : {}),
       ...(raw.billDirectly ? { billDirectly: true } : {}),
       // A per-invoice override of the package's payment schedule (round7 spec C.2) - absent until
@@ -498,7 +498,10 @@ export const setEntryField = (entry, field, value) => {
     return entry;
   }
   if (entry.kind === 'package') {
-    if (field === 'price') return { ...entry, priceOverride: toNumber(value), customized: true };
+    if (field === 'price') {
+      const text = String(value ?? '').trim();
+      return { ...entry, priceOverride: isPriceFormulaInput(text) ? text : toNumber(text), customized: true };
+    }
     if (field === 'name' || field === 'description') return { ...entry, [field]: value, customized: true };
     // A billing preference, not a content override - toggling it never marks the package
     // "customized" (that flag drives the PDF's "customised programme details" note and the
@@ -686,7 +689,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
     const children = Array.isArray(entry.children) ? entry.children : [];
     const resolvedChildren = children.map(child => resolveServiceRow(child, catalogItemsById, priceContext));
     const childrenTotal = roundMoney(resolvedChildren.reduce((sum, row) => sum + (Number(row.price) || 0), 0));
-    const hasPriceOverride = entry.priceOverride !== undefined && entry.priceOverride !== null;
+    const hasPriceOverride = entry.priceOverride !== undefined && entry.priceOverride !== null && entry.priceOverride !== '';
     // The billed price is the package's own listed price (a deliberately curated catalog figure),
     // not the sum of whatever line items happen to be attached - that sum is only a reference for
     // the admin to sanity-check budget coverage (see childrenTotal below), and is only ever billed
@@ -711,15 +714,22 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       isHiddenCatalog: Boolean(pkg?.hidden),
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? pkg?.description ?? '',
-      price: hasPriceOverride ? roundMoney(entry.priceOverride) : defaultPrice,
+      price: hasPriceOverride
+        ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
+        : defaultPrice,
       billDirectly: Boolean(entry.billDirectly),
       childrenTotal,
       hasPriceOverride,
+      ...((hasPriceOverride && isPriceFormulaInput(entry.priceOverride))
+        ? { priceInput: String(entry.priceOverride).trim() }
+        : (!hasPriceOverride && isPriceFormulaInput(pkg?.listedPrice) ? { priceInput: String(pkg.listedPrice).trim() } : {})),
       children: resolvedChildren,
       scheduleRows: resolvePackageEntrySchedule(
         entry,
         listedPriceAmount,
-        hasPriceOverride ? roundMoney(entry.priceOverride) : defaultPrice,
+        hasPriceOverride
+          ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
+          : defaultPrice,
         { ...priceContext, itemsById: catalogItemsById },
       ),
     };
