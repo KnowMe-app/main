@@ -57,9 +57,11 @@ export const buildDocumentsDocx = async ({
     children: [new TextRun({ text, size: bodySize })],
   });
 
+  // Exactly the Format panel's paragraph spacing - no hidden minimum - so the Word output keeps
+  // the same title-to-body rhythm as the PDF and the reference statements (spec §6).
   const titleParagraph = text => new Paragraph({
     alignment: AlignmentType.CENTER,
-    spacing: { after: Math.max(afterTwips, 120), line: lineTwips, lineRule: 'auto' },
+    spacing: paragraphSpacing,
     children: [new TextRun({ text, bold: true, size: titleSize })],
   });
 
@@ -89,11 +91,19 @@ export const buildDocumentsDocx = async ({
     if (formatting.showLogo && logo?.dataUrl) {
       const decoded = decodeLogoDataUrl(logo.dataUrl);
       if (decoded) {
-        const widthPx = Math.round(formatting.logoWidthMm * MM_TO_PX);
+        // Spec §7: compact logo at the tuned width above the two-column layout, the long variant
+        // stretched to the full text width in one-column layouts. 10 pt (200 twips) below the
+        // logo matches the PDF's LOGO_BOTTOM_GAP_PT.
+        const contentWidthTwips = 11906
+          - Math.round(formatting.marginLeftCm * CM_TO_TWIP)
+          - Math.round(formatting.marginRightCm * CM_TO_TWIP);
+        const widthPx = isTwoColumn
+          ? Math.round(formatting.logoWidthMm * MM_TO_PX)
+          : Math.round((contentWidthTwips / 1440) * 96);
         const ratio = logo.width && logo.height ? logo.height / logo.width : 0.25;
         children.push(new Paragraph({
           alignment: AlignmentType.CENTER,
-          spacing: { after: 160 },
+          spacing: { after: 200 },
           children: [new ImageRun({
             data: decoded.bytes,
             type: decoded.type,

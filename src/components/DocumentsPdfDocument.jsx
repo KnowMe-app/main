@@ -32,6 +32,12 @@ export const ensureDocumentsPdfFontsRegistered = () => {
   Font.registerHyphenationCallback(word => [word]);
 };
 
+// Word/PDF parity (spec §6): the gap under the clinic logo is the one fixed metric shared with
+// the DOCX builder (10 pt = 200 twips); everything else comes from the Format panel values.
+export const LOGO_BOTTOM_GAP_PT = 10;
+
+const A4_WIDTH_PT = 595.28;
+
 const styles = StyleSheet.create({
   headerText: {
     position: 'absolute',
@@ -45,20 +51,17 @@ const styles = StyleSheet.create({
   logo: {
     alignSelf: 'center',
   },
-  titleWrap: {
-    marginBottom: 8,
-  },
   row: {
     flexDirection: 'row',
   },
 });
 
-const DocumentBlock = ({ doc, layout, cellStyles }) => {
+const DocumentBlock = ({ doc, layout, cellStyles, titleGap }) => {
   const isTwoColumn = layout === 'two-column';
   const lang = layout === 'one-column-en' ? 'en' : 'uk';
   return (
     <View>
-      <View style={styles.titleWrap}>
+      <View style={{ marginBottom: titleGap }}>
         {isTwoColumn ? (
           <View style={styles.row}>
             <Text style={[cellStyles.title, cellStyles.leftCell]}>{doc.title.uk}</Text>
@@ -95,6 +98,10 @@ const DocumentsPdfDocument = ({
   const columnGap = formatting.columnGapCm * CM_TO_PT;
   const hasHeader = Boolean(formatting.headerText);
   const hasFooter = Boolean(formatting.footerText) || formatting.showPageNumbers;
+  // Spec §7: two-column pages share one compact logo at the tuned width; one-column pages get the
+  // long variant stretched across the full text width.
+  const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
+  const logoWidth = layout === 'two-column' ? formatting.logoWidthMm * MM_TO_PT : contentWidth;
 
   const cellStyles = StyleSheet.create({
     title: {
@@ -154,12 +161,12 @@ const DocumentsPdfDocument = ({
             <Image
               src={logoDataUrl}
               style={[styles.logo, {
-                width: formatting.logoWidthMm * MM_TO_PT,
-                marginBottom: 10,
+                width: logoWidth,
+                marginBottom: LOGO_BOTTOM_GAP_PT,
               }]}
             />
           ) : null}
-          <DocumentBlock doc={doc} layout={layout} cellStyles={cellStyles} />
+          <DocumentBlock doc={doc} layout={layout} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
           {hasFooter ? (
             <View
               fixed
