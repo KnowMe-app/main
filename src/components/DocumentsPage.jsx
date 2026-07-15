@@ -32,6 +32,7 @@ import {
   orderCasesByRecent,
   parseDocumentsTechnicalInput,
   resolveCaseContext,
+  resolveMergedRecordsForPersistence,
   upsertRecentCaseId,
 } from './documentsCatalogUtils';
 
@@ -486,15 +487,16 @@ const DocumentsPage = ({ isAdmin }) => {
       // so concurrent edits to other records on the backend are never clobbered.
       const partiesPatch = {};
       PARTY_COLLECTIONS.forEach(collection => {
-        incoming.parties[collection].forEach(record => {
-          const mergedRecord = merged.parties[collection].find(item => String(item.id) === String(record.id))
-            || record;
+        resolveMergedRecordsForPersistence(
+          catalog.parties[collection],
+          merged.parties[collection],
+          incoming.parties[collection],
+        ).forEach(mergedRecord => {
           partiesPatch[`${collection}/${mergedRecord.id}`] = mergedRecord;
         });
       });
       const templatesPatch = {};
-      incoming.documents.forEach(record => {
-        const mergedRecord = merged.documents.find(item => String(item.id) === String(record.id)) || record;
+      resolveMergedRecordsForPersistence(catalog.documents, merged.documents, incoming.documents).forEach(mergedRecord => {
         templatesPatch[mergedRecord.id] = mergedRecord;
       });
       if (Object.keys(partiesPatch).length) await update(ref(database, DOCUMENTS_PARTIES_PATH), partiesPatch);

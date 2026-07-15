@@ -13,6 +13,7 @@ import {
   orderCasesByRecent,
   parseDocumentsTechnicalInput,
   resolveCaseContext,
+  resolveMergedRecordsForPersistence,
   upsertRecentCaseId,
 } from './documentsCatalogUtils';
 
@@ -147,6 +148,31 @@ describe('mergeDocumentsCatalog', () => {
       '{"documents":[{"title":{"uk":"Без id","en":"No id"}}]}',
     ));
     expect(catalog.documents[0].id).toMatch(/^document-/);
+  });
+
+  it('resolves generated ids when building additive persistence patches', () => {
+    const current = sampleCatalog();
+    const incoming = parseDocumentsTechnicalInput(JSON.stringify({
+      data: { clinics: [{ name: { en: 'Generated Clinic' } }] },
+      documents: [{ title: { uk: 'Без id', en: 'No id' } }],
+    }));
+    const { catalog } = mergeDocumentsCatalog(current, incoming);
+
+    const [clinicPatchRecord] = resolveMergedRecordsForPersistence(
+      current.parties.clinics,
+      catalog.parties.clinics,
+      incoming.parties.clinics,
+    );
+    const [templatePatchRecord] = resolveMergedRecordsForPersistence(
+      current.documents,
+      catalog.documents,
+      incoming.documents,
+    );
+
+    expect(clinicPatchRecord.id).toMatch(/^clinic-/);
+    expect(clinicPatchRecord.name.en).toBe('Generated Clinic');
+    expect(templatePatchRecord.id).toMatch(/^document-/);
+    expect(templatePatchRecord.title.en).toBe('No id');
   });
 });
 
