@@ -25,6 +25,7 @@ import {
   KNOWN_CLIENT_NOTE_GROUPS,
 } from './budgetCatalogUtils';
 import { setPdfAgencyConfig } from './pdfTheme';
+import PageNavMenu from './PageNavMenu';
 
 const INCLUDED_PREVIEW_LIMIT = 6;
 const POPULAR_PACKAGE_ID = '3';
@@ -2051,6 +2052,7 @@ const BudgetPage = ({ isAdmin = false }) => {
             <Title>Program Budget</Title>
           </div>
           <HeaderActions>
+            <PageNavMenu />
             <MiniButton
               type="button"
               onClick={handleExportPdf}
