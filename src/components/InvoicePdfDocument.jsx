@@ -141,10 +141,20 @@ const styles = StyleSheet.create({
 // one-style breakdown line as every other row - without repeating the underlying percentage/
 // package wording in the PDF (design-tasks §3). Amounts stay bare numbers (or a free-text label
 // like "GIFT"): the table's own EUR column header already carries the currency.
+const formatBareAmount = value => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '-';
+  const rounded = Math.round(amount * 100) / 100;
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: Number.isInteger(rounded) ? 0 : 2,
+    maximumFractionDigits: Number.isInteger(rounded) ? 0 : 2,
+  }).format(rounded);
+};
+
 const buildBreakdownTableRow = row => ({
   title: row.kind === 'percent' ? 'Scheduled payment' : (row.name || ''),
   description: row.description || '',
-  amounts: [row.priceLabel ? row.priceLabel : row.price],
+  amounts: [row.priceLabel ? row.priceLabel : formatBareAmount(row.price)],
 });
 
 // The "Package block" (round7 spec C): a compact name/fee header, then the package's full
