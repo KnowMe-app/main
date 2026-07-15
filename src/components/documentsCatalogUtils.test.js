@@ -101,6 +101,18 @@ describe('parseDocumentsTechnicalInput', () => {
     expect(parsed.parties.clinics[0].id).toBe('clinic-2');
   });
 
+  it('strips exported clinic-logo nodes from parsed case records', () => {
+    const parsed = parseDocumentsTechnicalInput(JSON.stringify({
+      data: {
+        cases: {
+          'case-1': { id: 'case-1', clinicId: 'clinic-1' },
+          clinics: { 'clinic-1': { logo: ['square.jpg'] } },
+        },
+      },
+    }));
+    expect(parsed.parties.cases.map(record => record.id)).toEqual(['case-1']);
+  });
+
   it('rejects invalid or empty input', () => {
     expect(() => parseDocumentsTechnicalInput('')).toThrow(/Paste/);
     expect(() => parseDocumentsTechnicalInput('not json')).toThrow(/Invalid JSON/);
@@ -292,7 +304,9 @@ describe('clinic logos', () => {
   it('picks the squarest variant for two columns and the widest for one column', () => {
     const compact = { fileName: 'square.jpg', dataUrl: 'data:1', width: 200, height: 180 };
     const long = { fileName: 'wide.jpg', dataUrl: 'data:2', width: 900, height: 120 };
+    const portrait = { fileName: 'portrait.jpg', dataUrl: 'data:3', width: 100, height: 400 };
     expect(pickLogoVariantForLayout([compact, long], 'two-column')).toBe(compact);
+    expect(pickLogoVariantForLayout([portrait, compact], 'two-column')).toBe(compact);
     expect(pickLogoVariantForLayout([compact, long], 'one-column-uk')).toBe(long);
     expect(pickLogoVariantForLayout([compact, long], 'one-column-en')).toBe(long);
     expect(pickLogoVariantForLayout([long], 'two-column')).toBe(long);

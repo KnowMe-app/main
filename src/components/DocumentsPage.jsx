@@ -666,6 +666,22 @@ const DocumentsPage = ({ isAdmin }) => {
     const pruned = pruneDocOverride(caseRecord.docOverrides?.[docId], baseline);
     try {
       await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}/docOverrides/${docId}`), pruned);
+      setCatalog(previous => ({
+        ...previous,
+        parties: {
+          ...previous.parties,
+          cases: previous.parties.cases.map(item => {
+            if (String(item.id) !== String(caseRecord.id)) return item;
+            const docOverrides = { ...(item.docOverrides || {}) };
+            if (pruned) docOverrides[docId] = pruned;
+            else delete docOverrides[docId];
+            return {
+              ...item,
+              docOverrides: Object.keys(docOverrides).length ? docOverrides : undefined,
+            };
+          }),
+        },
+      }));
       setDirtyOverrideDocIds(previous => {
         const next = { ...previous };
         delete next[docId];

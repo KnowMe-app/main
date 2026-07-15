@@ -11,23 +11,29 @@
 // admin list (src/utils/accessLevel.js) contains '0ghb1LphfASV0Y3b6J010v4CDyD2' (…v4…) - a one
 // letter mismatch that silently rejects that admin's uploads ("Could not upload the logo to the
 // backend"). The UIDs below mirror accessLevel.js exactly: ADMIN_UIDS + INVOICE_BUILDER_UIDS
-// (the accounts that can open the Documents/Invoice builder pages).
+// (the accounts that can open the Documents/Invoice builder pages). Avatar writes intentionally
+// stay limited to owners and full admins only.
 rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Accounts allowed to use the admin builder pages (keep in sync with accessLevel.js).
-    function isBuilderAdmin() {
+    // Full admins (keep in sync with ADMIN_UIDS in accessLevel.js).
+    function isFullAdmin() {
       return request.auth != null && (
         request.auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'
         || request.auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'
-        || request.auth.uid == 'S0VhDLCYjuTFDNLalRa85u7fPcg2'
       );
+    }
+
+    // Accounts allowed to use the admin builder pages (keep in sync with accessLevel.js).
+    function isBuilderAdmin() {
+      return isFullAdmin()
+        || (request.auth != null && request.auth.uid == 'S0VhDLCYjuTFDNLalRa85u7fPcg2');
     }
 
     match /avatar/{userId}/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId || isBuilderAdmin();
+      allow write: if request.auth.uid == userId || isFullAdmin();
     }
 
     // Everything the builder pages store (invoice assets, clinic logos under
