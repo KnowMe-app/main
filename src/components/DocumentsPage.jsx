@@ -298,12 +298,13 @@ const DocSubtitle = styled.div`
   font-weight: 400;
 `;
 
-// "Styled as plain editable text": borderless until hovered/focused, same convention as the
-// app's other inline-editable fields.
+// "Styled as plain editable text" (the app-wide rule the Invoice Builder's plainFieldStyle also
+// follows): no border, no fill, no focus box - ever. The paragraph must read as document text
+// that happens to be editable, never as a form field sitting in the document.
 const InlineTextarea = styled.textarea`
   width: 100%;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  border: none;
+  border-radius: 0;
   background: transparent;
   color: var(--km-text);
   font-family: var(--km-font);
@@ -314,14 +315,11 @@ const InlineTextarea = styled.textarea`
   min-height: 0;
   overflow: hidden;
 
-  &:hover {
-    border-color: var(--km-border);
-  }
-
+  &:hover,
   &:focus {
     outline: none;
-    border-color: var(--km-accent);
-    background: var(--km-card);
+    background: transparent;
+    box-shadow: none;
   }
 `;
 

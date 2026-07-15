@@ -20,7 +20,7 @@ import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, fetchNbuUahExchangeRatesByDate } from './config';
 import { setPdfAgencyConfig } from './pdfTheme';
-import { formatEuroSmart, getSortedPackages, parseBudgetPriceValue, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
+import { formatEuroSmart, getItemDisplayAmount, getSortedPackages, isFromPricedItem, parseBudgetPriceValue, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule, roundToCents } from './budgetCatalogUtils';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
@@ -1083,6 +1083,17 @@ const CatalogPickerButton = styled.button`
   }
 `;
 
+// The catalog price shown next to each service in the picker (design-tasks-7 §6) - the same
+// accent/weight the row's own price field uses once the service is added, so the admin can pick
+// the right service at a glance without adding it first.
+const PickerPriceTag = styled.span`
+  flex: 0 0 auto;
+  align-self: center;
+  font-weight: 800;
+  color: var(--km-accent);
+  white-space: nowrap;
+`;
+
 // A package hidden from the public Program Budget PDF (a manually-offered "special offer") is
 // still pickable here - this badge is the only thing telling the admin it's not one of the
 // public programs.
@@ -1137,6 +1148,7 @@ const CustomLineAdder = ({
   extraButtons = null,
   indent = false,
   addOnBlur = false,
+  priceContext = null,
 }) => {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
@@ -1144,13 +1156,25 @@ const CustomLineAdder = ({
   const [query, setQuery] = useState('');
   const [pickerTab, setPickerTab] = useState('items');
 
+  // Never capped: the picker must offer the complete backend catalog (design-tasks-7 §7) - the
+  // list box scrolls, and the search field is the tool for narrowing it down, so truncating here
+  // silently hides real services.
   const availableItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return catalogItems
       .filter(item => !excludeCatalogIds.has(String(item.id)))
-      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery))
-      .slice(0, 30);
+      .filter(item => !normalizedQuery || String(item.name || '').toLowerCase().includes(normalizedQuery));
   }, [catalogItems, excludeCatalogIds, query]);
+
+  // "from"-priced catalog services keep their prefix so the picker never presents a minimum as
+  // the fixed price. No resolvable amount (formula waiting on NBU rates) shows nothing rather
+  // than a misleading €0.
+  const itemPriceLabel = item => {
+    if (!priceContext) return '';
+    const amount = getItemDisplayAmount(item, priceContext);
+    if (amount == null) return '';
+    return `${isFromPricedItem(item) ? 'from ' : ''}${formatEuroPreview(amount)}`;
+  };
 
   const availablePackages = useMemo(() => {
     if (!catalogPackages) return [];
@@ -1240,11 +1264,15 @@ const CustomLineAdder = ({
               </>
             ) : (
               <>
-                {availableItems.map(item => (
-                  <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogItem(item.id); closePicker(); }}>
-                    <span>{item.name}</span>
-                  </CatalogPickerButton>
-                ))}
+                {availableItems.map(item => {
+                  const priceLabel = itemPriceLabel(item);
+                  return (
+                    <CatalogPickerButton key={item.id} type="button" onClick={() => { onAddCatalogItem(item.id); closePicker(); }}>
+                      <span>{item.name}</span>
+                      {priceLabel ? <PickerPriceTag>{priceLabel}</PickerPriceTag> : null}
+                    </CatalogPickerButton>
+                  );
+                })}
                 {!availableItems.length ? <PanelNote style={{ margin: 0 }}>No matching catalog services.</PanelNote> : null}
               </>
             )}
@@ -3879,6 +3907,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   addOnBlur
                   catalogItems={catalogItems}
                   excludeCatalogIds={usedCatalogItemIds}
+                  priceContext={priceContext}
                   onAddCustom={addCustomServiceEntry}
                   onAddCatalogItem={addCatalogServiceEntry}
                   catalogPackages={availablePercentPackages}

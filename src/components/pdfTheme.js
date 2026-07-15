@@ -4,7 +4,7 @@
 // / bronze-motif / title-block / footer building blocks from here so every document reads as one
 // product. Tokens below mirror the UKRCOM Invoice Builder design spec (ukrcom-invoice-fullset.html).
 import React from 'react';
-import { Font, StyleSheet, Svg, Defs, LinearGradient, Stop, Line, Text, View } from '@react-pdf/renderer';
+import { Circle, Defs, Ellipse, Font, LinearGradient, Line, Link, Path, Rect, Stop, StyleSheet, Svg, Text, View } from '@react-pdf/renderer';
 import designTokens from '../data/designTokens.json';
 
 // Colors and font families are never hardcoded here - they live in src/data/designTokens.json,
@@ -93,12 +93,26 @@ const toTelegramHandle = value => {
   return handle.startsWith('@') ? handle : `@${handle}`;
 };
 
+// The clickable counterpart of the @handle above - the footer's Telegram contact opens a chat the
+// same way the email opens a mail client.
+const toTelegramLink = handle => {
+  const text = String(handle || '').trim().replace(/^@/, '');
+  return text ? `https://t.me/${text}` : '';
+};
+
+// One quotation-mark style across every document (design-tasks-7 §3): the backend agency record
+// may carry typographic quotes in one field and straight ones in another - normalized once here,
+// at config time, so 'Reproductive Agency "UKRCOM"' reads identically in every header and footer.
+const normalizeQuoteStyle = text => String(text ?? '')
+  .replace(/[“”«»]/g, '"')
+  .replace(/[‘’]/g, "'");
+
 let pdfAgency = { ...DEFAULT_AGENCY };
 
 export const setPdfAgencyConfig = raw => {
   const source = raw && typeof raw === 'object' ? raw : {};
   pdfAgency = Object.keys(DEFAULT_AGENCY).reduce((merged, key) => {
-    const value = String(source[key] ?? '').trim();
+    const value = normalizeQuoteStyle(source[key]).trim();
     return { ...merged, [key]: value || DEFAULT_AGENCY[key] };
   }, {});
   pdfAgency.telegram = toTelegramHandle(pdfAgency.telegram);
@@ -338,6 +352,30 @@ export const pdfBaseStyles = {
     color: PDF_COLOR.footerSoft,
     lineHeight: 1.5,
   },
+  footerContactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 1,
+  },
+  footerContactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  // Same metrics as footerText, as a Link: no browser-blue, no underline - the icon next to each
+  // contact is what signals it's actionable, the text stays part of the quiet footer line.
+  footerLink: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 7,
+    color: PDF_COLOR.footerSoft,
+    textDecoration: 'none',
+  },
+  footerContactDivider: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 7,
+    color: PDF_COLOR.footerSoft,
+    opacity: 0.5,
+    marginHorizontal: 5,
+  },
   footerPage: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
@@ -487,20 +525,76 @@ export const SummaryCard = ({ label, text }) => (text ? (
   </View>
 ) : null);
 
+// Tiny inline icons for the footer contact row, drawn with SVG primitives in the footer's own
+// muted color. The Telegram one is the recognizable paper plane - never a generic/other-platform
+// mark, so the @handle next to it can't be mistaken for e.g. an Instagram account
+// (design-tasks-7 §1).
+const FOOTER_ICON_SIZE = 6.5;
+const footerIconStyle = { width: FOOTER_ICON_SIZE, height: FOOTER_ICON_SIZE, marginRight: 3 };
+const footerIconStroke = { stroke: PDF_COLOR.footerSoft, strokeWidth: 2, fill: 'none' };
+
+const FooterGlobeIcon = () => (
+  <Svg style={footerIconStyle} viewBox="0 0 24 24">
+    <Circle cx="12" cy="12" r="10" {...footerIconStroke} />
+    <Ellipse cx="12" cy="12" rx="4.5" ry="10" {...footerIconStroke} />
+    <Line x1="2" y1="12" x2="22" y2="12" {...footerIconStroke} />
+  </Svg>
+);
+
+const FooterMailIcon = () => (
+  <Svg style={footerIconStyle} viewBox="0 0 24 24">
+    <Rect x="2" y="4.5" width="20" height="15" rx="2.5" {...footerIconStroke} />
+    <Path d="M3 6.5 L12 13.5 L21 6.5" {...footerIconStroke} />
+  </Svg>
+);
+
+// The Font Awesome paper-plane silhouette (FaTelegramPlane), filled - the unmistakable Telegram
+// glyph.
+const FooterTelegramIcon = () => (
+  <Svg style={footerIconStyle} viewBox="0 0 448 512">
+    <Path
+      fill={PDF_COLOR.footerSoft}
+      d="M446.7 98.6l-67.6 318.8c-5.1 22.5-18.4 28.1-37.3 17.5l-103-75.9-49.7 47.8c-5.5 5.5-10.1 10.1-20.7 10.1l7.4-104.9 190.9-172.5c8.3-7.4-1.8-11.5-12.9-4.1L117.8 284 16.2 252.2c-22.1-6.9-22.5-22.1 4.6-32.7L418.2 66.4c18.4-6.9 34.5 4.1 28.5 32.2z"
+    />
+  </Svg>
+);
+
+// One icon + clickable-text contact for the footer row below. Rendered only when both the value
+// and its target link resolve.
+const FooterContact = ({ icon, label, href }) => (label && href ? (
+  <View style={pdfSharedStyles.footerContactItem}>
+    {icon}
+    <Link src={href} style={pdfSharedStyles.footerLink}>{sanitizePdfText(label)}</Link>
+  </View>
+) : null);
+
 // Identical agency footer on every page of every branded document (spec §1.2). `variant="neutral"`
 // drops the UKRCOM agency block entirely - required on the Payment Details page/document, whose
 // beneficiary (a sole proprietorship) is a legally separate party from the agency (spec §1.5).
 // The identity lines themselves come from the backend agency config (see setPdfAgencyConfig above).
+// Website/email/Telegram render as icon-labelled live links (design-tasks-7 §1): the site opens in
+// a browser, the email as a mailto: draft, the @handle as a t.me chat.
 export const Footer = ({ variant = 'branded' } = {}) => {
   const agency = getPdfAgencyConfig();
-  const contactLine = [agency.website, agency.email, agency.telegram].filter(Boolean).join(' · ');
+  const contacts = [
+    { key: 'website', icon: <FooterGlobeIcon />, label: agency.website, href: agency.website },
+    { key: 'email', icon: <FooterMailIcon />, label: agency.email, href: agency.email ? `mailto:${agency.email}` : '' },
+    { key: 'telegram', icon: <FooterTelegramIcon />, label: agency.telegram, href: toTelegramLink(agency.telegram) },
+  ].filter(contact => contact.label && contact.href);
   return (
     <View style={pdfSharedStyles.footer} fixed>
       {variant === 'neutral' ? <View style={pdfSharedStyles.footerColumn} /> : (
         <View style={pdfSharedStyles.footerColumn}>
           <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.name)}</Text>
           <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.address)}</Text>
-          <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(contactLine)}</Text>
+          <View style={pdfSharedStyles.footerContactRow}>
+            {contacts.map((contact, index) => (
+              <React.Fragment key={contact.key}>
+                {index > 0 ? <Text style={pdfSharedStyles.footerContactDivider}>|</Text> : null}
+                <FooterContact icon={contact.icon} label={contact.label} href={contact.href} />
+              </React.Fragment>
+            ))}
+          </View>
         </View>
       )}
       <Text

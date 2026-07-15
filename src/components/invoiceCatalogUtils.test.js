@@ -704,6 +704,13 @@ describe('invoiceCatalogUtils', () => {
       expect(parsePercentOrAmountInput('50 EUR')).toEqual({ amount: 50 });
     });
 
+    it('computes a "=..." formula first, then applies the same percent-vs-amount split (design-tasks-7 §5)', () => {
+      expect(parsePercentOrAmountInput('=500/1,16')).toEqual({ amount: 431.03 });
+      expect(parsePercentOrAmountInput('=50/2')).toEqual({ percent: 25 });
+      // An unresolvable formula falls back to a harmless zero percent, never NaN.
+      expect(parsePercentOrAmountInput('=500/')).toEqual({ percent: 0 });
+    });
+
     it('stores a typed EUR amount on a percent row, and it wins over the percent when priced', () => {
       const entry = makePercentOfPackageEntry('7', 25);
       const amountEntry = setEntryField(entry, 'percent', '10000');

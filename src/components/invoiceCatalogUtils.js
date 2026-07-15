@@ -61,9 +61,17 @@ export const parseCustomPriceInput = raw => {
 // "25" or "25%" reads as 25% of the package price; "10000", "€10,000" or "10000 EUR" reads as a
 // fixed 10,000 EUR amount. An explicit % / € / EUR marker always wins; a bare number splits on the
 // only unambiguous boundary available - a percent share can't exceed 100.
+// A "=..." formula works here too (design-tasks-7 §5) - same engine as every other price field:
+// it's evaluated first, then the computed number goes through the same percent-vs-amount split
+// (e.g. "=500/1,16" -> 431.03, over 100, so a fixed EUR amount).
 export const parsePercentOrAmountInput = raw => {
   const text = String(raw ?? '').trim();
   if (!text) return { percent: 0 };
+  if (isPriceFormulaInput(text)) {
+    const computed = resolveBudgetPriceAmount(text);
+    if (computed == null) return { percent: 0 };
+    return computed > 100 ? { amount: computed } : { percent: computed };
+  }
   const hasPercentMark = /%/.test(text);
   const hasCurrencyMark = /€|eur/i.test(text);
   const cleaned = text.replace(/%|€|eur/gi, '').replace(/\s+/g, '');
