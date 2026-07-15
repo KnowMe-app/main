@@ -92,7 +92,15 @@ export const parseDocumentsTechnicalInput = rawText => {
   const dataSource = isPlainObject(parsed.data) ? parsed.data : parsed;
   const incoming = emptyDocumentsCatalog();
   PARTY_COLLECTIONS.forEach(collection => {
-    incoming.parties[collection] = toArray(dataSource[collection]).filter(record => isPlainObject(record));
+    let rawCollection = dataSource[collection];
+    // Backend exports include `data.cases.clinics` for clinic-logo filenames; it mirrors the
+    // Realtime Database storage path and is not a case record. Keep Technical merges from
+    // importing that logo node as a generated case.
+    if (collection === 'cases' && isPlainObject(rawCollection)) {
+      const { clinics: _clinicLogos, ...caseRecords } = rawCollection;
+      rawCollection = caseRecords;
+    }
+    incoming.parties[collection] = toArray(rawCollection).filter(record => isPlainObject(record));
   });
   incoming.documents = toArray(parsed.documents).filter(record => isPlainObject(record));
 
@@ -375,7 +383,8 @@ export const pickLogoVariantForLayout = (logoVariants, layout) => {
     const preferWide = layout !== 'two-column';
     const bestRatio = aspectRatio(best);
     const ratio = aspectRatio(variant);
-    return (preferWide ? ratio > bestRatio : ratio < bestRatio) ? variant : best;
+    const isBetter = preferWide ? ratio > bestRatio : Math.abs(ratio - 1) < Math.abs(bestRatio - 1);
+    return isBetter ? variant : best;
   }, null);
 };
 
