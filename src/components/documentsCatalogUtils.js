@@ -2,7 +2,7 @@
 // UI-free so it can be unit-tested: parsing the paste-and-parse technical input, additively
 // merging parsed records into the backend catalog, resolving a case's parties into a placeholder
 // context, filling {{placeholder}} tokens, and normalizing the backend-persisted settings record
-// (clinic logo + favourite formatting values).
+// (favourite formatting values + recently-used cases).
 
 export const DOCUMENTS_PARTIES_PATH = 'documentsBuilder/parties';
 export const DOCUMENTS_TEMPLATES_PATH = 'documentsBuilder/templates';
@@ -337,22 +337,13 @@ export const normalizeDocFormatting = raw => {
   };
 };
 
-// The backend settings record: the clinic logo (uploaded once, reused on every generated
-// document) plus the user's favourite formatting values and the recently-used case order.
+// The backend settings record stores formatting values and the recently-used case order.
+// Clinic logos live on each clinic record as Storage file names, not as URLs/data URLs here.
 export const normalizeDocumentsSettings = raw => {
   const source = isPlainObject(raw) ? raw : {};
-  const logo = isPlainObject(source.clinicLogo) && typeof source.clinicLogo.dataUrl === 'string' && source.clinicLogo.dataUrl.startsWith('data:image/')
-    ? {
-      dataUrl: source.clinicLogo.dataUrl,
-      storageUrl: typeof source.clinicLogo.storageUrl === 'string' ? source.clinicLogo.storageUrl : '',
-      width: clampNumber(source.clinicLogo.width, 1, 10000, 0) || 0,
-      height: clampNumber(source.clinicLogo.height, 1, 10000, 0) || 0,
-      name: String(source.clinicLogo.name || ''),
-    }
-    : null;
   return {
     formatting: normalizeDocFormatting(source.formatting),
-    clinicLogo: logo,
+    clinicLogo: null,
     recentCaseIds: toArray(source.recentCaseIds).map(String),
   };
 };

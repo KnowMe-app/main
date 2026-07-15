@@ -254,12 +254,10 @@ describe('settings', () => {
     expect(formatting.marginLeftCm).toBe(0.5);
   });
 
-  it('keeps only a valid stored clinic logo', () => {
-    const valid = normalizeDocumentsSettings({
+  it('does not store clinic logo data URLs in settings', () => {
+    const settings = normalizeDocumentsSettings({
       clinicLogo: { dataUrl: 'data:image/png;base64,AAA', width: 620, height: 128 },
     });
-    expect(valid.clinicLogo.width).toBe(620);
-    const invalid = normalizeDocumentsSettings({ clinicLogo: { dataUrl: 'https://evil.example/x.png' } });
-    expect(invalid.clinicLogo).toBeNull();
+    expect(settings.clinicLogo).toBeNull();
   });
 });
