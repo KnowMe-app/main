@@ -188,6 +188,45 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // design-tasks-7 §5 (verification): a "=..." formula typed into an Other Expenses price field
+  // must persist as the formula and display as the computed amount, never turn into a free-text
+  // price label or a zero.
+  it('computes a "=500/1,16" formula typed into an Other Expenses price field', async () => {
+    const root = mount();
+    await flush();
+
+    const priceField = container.querySelector('textarea[aria-label="Price (EUR)"]');
+    expect(priceField).toBeTruthy();
+    await act(async () => {
+      priceField.focus();
+      setFieldValue(priceField, '=500/1,16');
+      priceField.blur();
+    });
+    await flush();
+
+    const lastServicesCall = set.mock.calls.filter(([path]) => path === 'invoiceBuilder/invoiceServices').pop();
+    expect(lastServicesCall[1][0]).toMatchObject({ kind: 'item', catalogId: '10', price: '=500/1,16', customized: true });
+    expect(priceField.value).toBe('431.03');
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // design-tasks-7 §6/§7: the Other Expenses catalog picker shows every not-yet-added service
+  // with its catalog price next to the name.
+  it('lists catalog services with their prices in the Other Expenses picker', async () => {
+    const root = mount();
+    await flush();
+
+    await act(async () => { findButton('From catalog').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const pickerButton = findButton('Airport transfer');
+    expect(pickerButton).toBeTruthy();
+    expect(pickerButton.textContent).toContain('€90');
+
+    await act(async () => { root.unmount(); });
+  });
+
   it('adds a whole package from the catalog, then removing one of its services makes it a custom package', async () => {
     const root = mount();
     await flush();
