@@ -12,6 +12,8 @@ import {
   normalizeDocumentsSettings,
   orderCasesByRecent,
   parseDocumentsTechnicalInput,
+  pickLogoVariantForLayout,
+  pruneDocOverride,
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
   upsertRecentCaseId,
@@ -217,6 +219,84 @@ describe('placeholders', () => {
     const generated = buildGeneratedDocument(catalog.documents[0], context);
     expect(generated.paragraphs[0].uk).toBe('Я, Тестова Марія, 01.01.1990 р.н.');
     expect(generated.paragraphs[0].en).toBe('I, Testova Mariia, born 01.01.1990');
+  });
+});
+
+describe('data-mode overrides', () => {
+  it('applies per-case overrides on top of the resolved template text', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const generated = buildGeneratedDocument(catalog.documents[0], context, {
+      title: { en: 'Edited consent' },
+      paragraphs: { 0: { uk: 'Відредагований абзац' } },
+    });
+    expect(generated.title.en).toBe('Edited consent');
+    expect(generated.title.uk).toBe('Згода');
+    expect(generated.paragraphs[0].uk).toBe('Відредагований абзац');
+    expect(generated.paragraphs[0].en).toBe('I, Testova Mariia, born 01.01.1990');
+  });
+
+  it('accepts array-shaped paragraph overrides (Firebase dense-node shape)', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const generated = buildGeneratedDocument(catalog.documents[0], context, {
+      paragraphs: [{ en: 'Array override' }],
+    });
+    expect(generated.paragraphs[0].en).toBe('Array override');
+  });
+
+  it('pruneDocOverride keeps only real deviations from the baseline', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const baseline = buildGeneratedDocument(catalog.documents[0], context);
+    const pruned = pruneDocOverride({
+      title: { uk: 'Згода', en: 'Edited consent' },
+      paragraphs: { 0: { uk: baseline.paragraphs[0].uk, en: 'Changed' } },
+    }, baseline);
+    expect(pruned).toEqual({ title: { en: 'Edited consent' }, paragraphs: { 0: { en: 'Changed' } } });
+  });
+
+  it('pruneDocOverride returns null when everything matches the baseline again', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const baseline = buildGeneratedDocument(catalog.documents[0], context);
+    expect(pruneDocOverride({ title: { uk: baseline.title.uk } }, baseline)).toBeNull();
+    expect(pruneDocOverride(null, baseline)).toBeNull();
+  });
+});
+
+describe('clinic logos', () => {
+  it('reads file names from parties/cases/clinics without leaking them into cases', () => {
+    const catalog = normalizeDocumentsCatalog(
+      {
+        clinics: { 'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка' } } },
+        cases: {
+          'case-1': { id: 'case-1', clinicId: 'clinic-1' },
+          clinics: { 'clinic-1': { logo: ['a.jpg', 'b.png'] } },
+        },
+      },
+      null,
+    );
+    expect(catalog.clinicLogos['clinic-1']).toEqual(['a.jpg', 'b.png']);
+    expect(catalog.parties.cases.map(record => record.id)).toEqual(['case-1']);
+  });
+
+  it('falls back to legacy file names stored on the clinic record', () => {
+    const catalog = normalizeDocumentsCatalog(
+      { clinics: { 'clinic-1': { id: 'clinic-1', logo: ['legacy.jpg'] } } },
+      null,
+    );
+    expect(catalog.clinicLogos['clinic-1']).toEqual(['legacy.jpg']);
+  });
+
+  it('picks the squarest variant for two columns and the widest for one column', () => {
+    const compact = { fileName: 'square.jpg', dataUrl: 'data:1', width: 200, height: 180 };
+    const long = { fileName: 'wide.jpg', dataUrl: 'data:2', width: 900, height: 120 };
+    expect(pickLogoVariantForLayout([compact, long], 'two-column')).toBe(compact);
+    expect(pickLogoVariantForLayout([compact, long], 'one-column-uk')).toBe(long);
+    expect(pickLogoVariantForLayout([compact, long], 'one-column-en')).toBe(long);
+    expect(pickLogoVariantForLayout([long], 'two-column')).toBe(long);
+    expect(pickLogoVariantForLayout([], 'two-column')).toBeNull();
   });
 });
 

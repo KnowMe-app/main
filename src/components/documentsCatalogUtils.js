@@ -8,6 +8,13 @@ export const DOCUMENTS_PARTIES_PATH = 'documentsBuilder/parties';
 export const DOCUMENTS_TEMPLATES_PATH = 'documentsBuilder/templates';
 export const DOCUMENTS_SETTINGS_PATH = 'documentsBuilder/settings';
 
+// Clinic logos are stored as plain file names (never URLs): the image files live in the Storage
+// folder below and the same-shaped Realtime Database node keeps the array of file names
+// (`parties/cases/clinics/{clinicId}/logo/[a.jpg, b.jpg, ...]`, spec §5).
+export const clinicLogoDbPath = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
+export const clinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
+export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoStorageFolder(clinicId)}/${fileName}`;
+
 export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases'];
 
 export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -25,6 +32,7 @@ const makeRecordId = prefix => `${prefix}-${Date.now().toString(36)}-${Math.rand
 export const emptyDocumentsCatalog = () => ({
   parties: { couples: [], surrogateMothers: [], representatives: [], clinics: [], cases: [] },
   documents: [],
+  clinicLogos: {},
 });
 
 // Backend stores every collection keyed by record id (so merges/deletes touch single children);
@@ -32,9 +40,30 @@ export const emptyDocumentsCatalog = () => ({
 export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
   const catalog = emptyDocumentsCatalog();
   PARTY_COLLECTIONS.forEach(collection => {
-    catalog.parties[collection] = toArray(rawParties?.[collection]).filter(record => isPlainObject(record));
+    let rawCollection = rawParties?.[collection];
+    // `parties/cases/clinics` is the clinic-logo file-name store (see clinicLogoDbPath), not a
+    // case record - it must never leak into the cases list.
+    if (collection === 'cases' && isPlainObject(rawCollection)) {
+      const { clinics: _clinicLogos, ...caseRecords } = rawCollection;
+      rawCollection = caseRecords;
+    }
+    catalog.parties[collection] = toArray(rawCollection).filter(record => isPlainObject(record));
   });
   catalog.documents = toArray(rawTemplates).filter(record => isPlainObject(record));
+  const rawClinicLogos = rawParties?.cases?.clinics;
+  if (isPlainObject(rawClinicLogos)) {
+    Object.entries(rawClinicLogos).forEach(([clinicId, node]) => {
+      const names = toArray(node?.logo).map(String).filter(Boolean);
+      if (names.length) catalog.clinicLogos[clinicId] = names;
+    });
+  }
+  // Legacy fallback: earlier builds kept the file names on the clinic record itself.
+  catalog.parties.clinics.forEach(clinic => {
+    if (!catalog.clinicLogos[String(clinic.id)] && Array.isArray(clinic.logo)) {
+      const names = clinic.logo.map(String).filter(Boolean);
+      if (names.length) catalog.clinicLogos[String(clinic.id)] = names;
+    }
+  });
   return catalog;
 };
 
@@ -148,6 +177,7 @@ export const mergeDocumentsCatalog = (current, incoming) => {
     );
   });
   catalog.documents = mergeCollection(current?.documents || [], incoming?.documents || [], 'document', summary);
+  catalog.clinicLogos = { ...(current?.clinicLogos || {}) };
   return { catalog, summary };
 };
 
@@ -233,19 +263,64 @@ const localizedText = (value, lang) => {
   return String(value ?? '');
 };
 
+// Data-mode edits (spec: the "pencil" Data mode) are stored per case as sparse overrides of the
+// resolved text: `case.docOverrides[docId] = { title: {uk,en}, paragraphs: { [index]: {uk,en} } }`.
+// Firebase may hand dense numeric-keyed nodes back as arrays, so both shapes are accepted.
+const overrideAt = (overrides, index) => {
+  if (Array.isArray(overrides)) return overrides[index];
+  if (isPlainObject(overrides)) return overrides[index] ?? overrides[String(index)];
+  return undefined;
+};
+
+const overriddenText = (override, langKey, fallback) => (
+  typeof override?.[langKey] === 'string' ? override[langKey] : fallback
+);
+
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
-// with every placeholder already substituted from the case context.
-export const buildGeneratedDocument = (template, context) => ({
-  id: template.id,
-  title: {
-    uk: fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk'),
-    en: fillPlaceholders(localizedText(template.title, 'en'), context, 'en'),
-  },
-  paragraphs: toArray(template.paragraphs).map(paragraph => ({
-    uk: fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk'),
-    en: fillPlaceholders(localizedText(paragraph, 'en'), context, 'en'),
-  })),
-});
+// with every placeholder already substituted from the case context, then any per-case data-mode
+// overrides applied on top.
+export const buildGeneratedDocument = (template, context, docOverride = null) => {
+  const override = isPlainObject(docOverride) ? docOverride : {};
+  return {
+    id: template.id,
+    title: {
+      uk: overriddenText(override.title, 'uk', fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk')),
+      en: overriddenText(override.title, 'en', fillPlaceholders(localizedText(template.title, 'en'), context, 'en')),
+    },
+    paragraphs: toArray(template.paragraphs).map((paragraph, index) => {
+      const paragraphOverride = overrideAt(override.paragraphs, index);
+      return {
+        uk: overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
+        en: overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
+      };
+    }),
+  };
+};
+
+// Drops override entries that match the resolved template text again, so the backend only keeps
+// real deviations. Returns null when nothing is left (the node can then be deleted).
+export const pruneDocOverride = (docOverride, baselineDoc) => {
+  if (!isPlainObject(docOverride) || !baselineDoc) return null;
+  const pruned = {};
+  const title = {};
+  ['uk', 'en'].forEach(langKey => {
+    const value = docOverride.title?.[langKey];
+    if (typeof value === 'string' && value !== baselineDoc.title?.[langKey]) title[langKey] = value;
+  });
+  if (Object.keys(title).length) pruned.title = title;
+  const paragraphs = {};
+  (baselineDoc.paragraphs || []).forEach((baseline, index) => {
+    const paragraphOverride = overrideAt(docOverride.paragraphs, index);
+    const entry = {};
+    ['uk', 'en'].forEach(langKey => {
+      const value = paragraphOverride?.[langKey];
+      if (typeof value === 'string' && value !== baseline?.[langKey]) entry[langKey] = value;
+    });
+    if (Object.keys(entry).length) paragraphs[index] = entry;
+  });
+  if (Object.keys(paragraphs).length) pruned.paragraphs = paragraphs;
+  return Object.keys(pruned).length ? pruned : null;
+};
 
 // --- Case selector --------------------------------------------------------------------------
 
@@ -286,6 +361,23 @@ export const DOCUMENT_LAYOUTS = [
   { id: 'one-column-uk', label: 'UA · 1 column' },
   { id: 'one-column-en', label: 'EN · 1 column' },
 ];
+
+// A clinic can keep several logo file variants (spec §7): a compact/square one for the shared
+// logo above the two-column layout and a long full-width one for the one-column layouts. The
+// variant is picked by aspect ratio: squarest for two columns, widest for one column. With a
+// single uploaded file both layouts fall back to it.
+export const pickLogoVariantForLayout = (logoVariants, layout) => {
+  const variants = (logoVariants || []).filter(variant => variant && variant.dataUrl);
+  if (!variants.length) return null;
+  const aspectRatio = variant => (variant.width > 0 && variant.height > 0 ? variant.width / variant.height : 1);
+  return variants.reduce((best, variant) => {
+    if (!best) return variant;
+    const preferWide = layout !== 'two-column';
+    const bestRatio = aspectRatio(best);
+    const ratio = aspectRatio(variant);
+    return (preferWide ? ratio > bestRatio : ratio < bestRatio) ? variant : best;
+  }, null);
+};
 
 // Defaults mirror the reference statements docx: Times ~10pt body / 11pt bold titles,
 // single line spacing, zero after-paragraph spacing, A4 with 1.2/1.5/1.2/2.0 cm margins and a
@@ -338,7 +430,7 @@ export const normalizeDocFormatting = raw => {
 };
 
 // The backend settings record stores formatting values and the recently-used case order.
-// Clinic logos live on each clinic record as Storage file names, not as URLs/data URLs here.
+// Clinic logos live as Storage file names under clinicLogoDbPath, not as URLs/data URLs here.
 export const normalizeDocumentsSettings = raw => {
   const source = isPlainObject(raw) ? raw : {};
   return {

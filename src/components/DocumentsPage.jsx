@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, getStorageFileDataUrl, uploadFileToStorageFolder } from './config';
@@ -24,6 +24,9 @@ import {
   buildCaseLabel,
   buildDocumentsFileName,
   buildGeneratedDocument,
+  clinicLogoDbPath,
+  clinicLogoStorageFilePath,
+  clinicLogoStorageFolder,
   emptyDocumentsCatalog,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
@@ -31,6 +34,8 @@ import {
   normalizeDocumentsSettings,
   orderCasesByRecent,
   parseDocumentsTechnicalInput,
+  pickLogoVariantForLayout,
+  pruneDocOverride,
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
   upsertRecentCaseId,
@@ -205,17 +210,30 @@ const RowLine = styled.div`
   flex-wrap: wrap;
 `;
 
+// Plain-text convention (spec §3): every input on this page reads as editable text - borderless
+// and background-free until hovered or focused, like the app's other inline-editable fields.
 const Select = styled.select`
   flex: 1;
   min-width: 200px;
-  border: 1px solid var(--km-border);
-  background: var(--km-card);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--km-text);
   border-radius: 6px;
   min-height: 30px;
   padding: 4px 8px;
   font-size: 12.5px;
   font-family: var(--km-font);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--km-border);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--km-accent);
+    background: var(--km-card);
+  }
 `;
 
 const ToggleGroup = styled.div`
@@ -305,11 +323,19 @@ const InlineTextarea = styled.textarea`
   }
 `;
 
+// In the two-column layout each UA paragraph is boxed together with its EN counterpart (spec §4)
+// so the pairing stays visible; one-column layouts render a single unboxed cell.
 const ParagraphPair = styled.div`
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: ${({ $single }) => ($single ? '1fr' : '1fr 1fr')};
   gap: 6px;
   margin-top: 6px;
+  ${({ $single }) => ($single ? '' : `
+    border: 1px solid var(--km-border);
+    border-radius: 8px;
+    padding: 4px 6px;
+    background: rgba(162, 121, 63, 0.04);
+  `)}
 
   @media (max-width: 560px) {
     grid-template-columns: 1fr;
@@ -333,8 +359,8 @@ const Field = styled.label`
 `;
 
 const FieldInput = styled.input`
-  border: 1px solid var(--km-border);
-  background: var(--km-card);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--km-text);
   border-radius: 6px;
   min-height: 28px;
@@ -342,9 +368,14 @@ const FieldInput = styled.input`
   font-size: 12px;
   font-family: var(--km-font);
 
+  &:hover {
+    border-color: var(--km-border);
+  }
+
   &:focus {
     outline: none;
     border-color: var(--km-accent);
+    background: var(--km-card);
   }
 `;
 
@@ -367,12 +398,28 @@ const LogoPreview = styled.img`
   background: #fff;
 `;
 
+const LogoVariant = styled.div`
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+`;
+
+const LogoVariantCaption = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--km-muted);
+  font-size: 10px;
+  font-weight: 700;
+`;
+
 const TechnicalTextarea = styled.textarea`
   width: 100%;
   min-height: 110px;
-  border: 1px solid var(--km-border);
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: var(--km-card);
+  background: transparent;
   color: var(--km-text);
   font-family: monospace;
   font-size: 11.5px;
@@ -380,9 +427,14 @@ const TechnicalTextarea = styled.textarea`
   margin-top: 8px;
   resize: vertical;
 
+  &:hover {
+    border-color: var(--km-border);
+  }
+
   &:focus {
     outline: none;
     border-color: var(--km-accent);
+    background: var(--km-card);
   }
 `;
 
@@ -399,14 +451,19 @@ const DocumentsPage = ({ isAdmin }) => {
   const [selectedDocIds, setSelectedDocIds] = useState({});
   const [layout, setLayout] = useState('two-column');
   const [expandedDocId, setExpandedDocId] = useState('');
+  // Pencil toggle (spec §2): 'data' shows the resolved values and edits them as per-case
+  // overrides, 'template' shows the raw {{placeholder}} tokens and edits the shared template.
+  const [editMode, setEditMode] = useState('data');
   const [dirtyDocIds, setDirtyDocIds] = useState({});
+  const [dirtyOverrideDocIds, setDirtyOverrideDocIds] = useState({});
   const [technicalInput, setTechnicalInput] = useState('');
   const [isApplyingTechnical, setIsApplyingTechnical] = useState(false);
   const [formattingOpen, setFormattingOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [clinicLogoPreview, setClinicLogoPreview] = useState(null);
+  // Every uploaded logo variant of the selected clinic: { fileName, dataUrl, width, height }.
+  const [clinicLogos, setClinicLogos] = useState([]);
   const [clinicLogoLoading, setClinicLogoLoading] = useState(false);
   const logoInputRef = useRef(null);
   // Mirror of `settings` that persistSettings can read synchronously: two quick successive
@@ -558,6 +615,68 @@ const DocumentsPage = ({ isAdmin }) => {
     }
   };
 
+  // --- Data-mode editing (pencil "Data" mode, spec §2) ------------------------------------------
+  // Edits to the resolved text are kept per case as sparse overrides (case.docOverrides[docId])
+  // so the shared template with its {{tokens}} stays untouched.
+
+  const updateCaseDocOverride = (docId, updater) => {
+    if (!selectedCaseId) return;
+    setCatalog(previous => ({
+      ...previous,
+      parties: {
+        ...previous.parties,
+        cases: previous.parties.cases.map(caseRecord => (String(caseRecord.id) === selectedCaseId
+          ? {
+            ...caseRecord,
+            docOverrides: {
+              ...(caseRecord.docOverrides || {}),
+              [docId]: updater(caseRecord.docOverrides?.[docId] || {}),
+            },
+          }
+          : caseRecord)),
+      },
+    }));
+    setDirtyOverrideDocIds(previous => ({ ...previous, [docId]: true }));
+  };
+
+  const handleDataTitleChange = (docId, langKey, value) => {
+    updateCaseDocOverride(docId, override => ({
+      ...override,
+      title: { ...(override.title || {}), [langKey]: value },
+    }));
+  };
+
+  const handleDataParagraphChange = (docId, index, langKey, value) => {
+    updateCaseDocOverride(docId, override => ({
+      ...override,
+      paragraphs: {
+        ...(override.paragraphs || {}),
+        [index]: { ...(override.paragraphs?.[index] || {}), [langKey]: value },
+      },
+    }));
+  };
+
+  const persistDocOverride = async docId => {
+    if (!dirtyOverrideDocIds[docId] || !selectedCaseId) return;
+    const caseRecord = catalog.parties.cases.find(item => String(item.id) === selectedCaseId);
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!caseRecord || !template) return;
+    // Only real deviations from the resolved template survive on the backend.
+    const baseline = buildGeneratedDocument(template, resolveCaseContext(catalog, selectedCaseId));
+    const pruned = pruneDocOverride(caseRecord.docOverrides?.[docId], baseline);
+    try {
+      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}/docOverrides/${docId}`), pruned);
+      setDirtyOverrideDocIds(previous => {
+        const next = { ...previous };
+        delete next[docId];
+        return next;
+      });
+    } catch (saveError) {
+      console.error('Unable to save document data edits', saveError);
+      toast.error('Could not save the data edits.');
+    }
+  };
+
   // --- Deletes (always behind an explicit confirmation) ----------------------------------------
 
   const handleDeleteTemplate = async template => {
@@ -636,31 +755,40 @@ const DocumentsPage = ({ isAdmin }) => {
         }
 
         try {
-          const folderPath = `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
-          const { fileName } = await uploadFileToStorageFolder(file, folderPath, {
+          // Filename-based storage (spec §5): the image goes into the clinic's Storage logo
+          // folder, and only its file name is appended to the same-shaped Realtime Database node.
+          const { fileName } = await uploadFileToStorageFolder(file, clinicLogoStorageFolder(clinicId), {
             disableCompression: true,
           });
-          const nextLogoNames = [...(Array.isArray(selectedClinic?.logo) ? selectedClinic.logo : []), fileName];
-          await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), nextLogoNames);
+          const nextLogoNames = [...(catalog.clinicLogos[clinicId] || []), fileName];
+          await set(ref(database, clinicLogoDbPath(clinicId)), nextLogoNames);
+          // Clear the legacy on-clinic-record node so the normalize fallback can't resurrect
+          // stale file names after the migration to clinicLogoDbPath.
+          await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), null);
           setCatalog(previous => ({
             ...previous,
+            clinicLogos: { ...previous.clinicLogos, [clinicId]: nextLogoNames },
             parties: {
               ...previous.parties,
-              clinics: previous.parties.clinics.map(clinic => (String(clinic.id) === clinicId
-                ? { ...clinic, logo: nextLogoNames }
-                : clinic)),
+              clinics: previous.parties.clinics.map(clinic => {
+                if (String(clinic.id) !== clinicId) return clinic;
+                const { logo: _legacyLogo, ...rest } = clinic;
+                return rest;
+              }),
             },
           }));
-          setClinicLogoPreview({
+          setClinicLogos(previous => [...previous, {
+            fileName,
             dataUrl,
             width: image.naturalWidth || 0,
             height: image.naturalHeight || 0,
-            name: fileName,
-          });
+          }]);
           toast.success('Clinic logo uploaded to the backend.');
         } catch (uploadError) {
           console.error('Unable to upload clinic logo', uploadError);
-          toast.error('Could not upload the logo to the backend.');
+          toast.error(String(uploadError?.code || '').includes('unauthorized')
+            ? 'The Storage security rules rejected the upload — the documentsBuilder path must allow this account to write.'
+            : 'Could not upload the logo to the backend.');
         }
       };
       image.onerror = () => toast.error('Could not read the image file.');
@@ -684,21 +812,28 @@ const DocumentsPage = ({ isAdmin }) => {
     image.src = dataUrl;
   }), []);
 
-  const handleRemoveLogo = async () => {
-    if (typeof window !== 'undefined' && !window.confirm('Remove the clinic logo from the backend?')) return;
+  const handleRemoveLogoVariant = async fileName => {
+    if (typeof window !== 'undefined' && !window.confirm('Remove this clinic logo variant from the backend?')) return;
     const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
     if (!clinicId) return;
     try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), []);
+      const nextLogoNames = (catalog.clinicLogos[clinicId] || []).filter(name => name !== fileName);
+      await set(ref(database, clinicLogoDbPath(clinicId)), nextLogoNames.length ? nextLogoNames : null);
+      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), null);
       setCatalog(previous => ({
         ...previous,
+        clinicLogos: { ...previous.clinicLogos, [clinicId]: nextLogoNames },
         parties: {
           ...previous.parties,
-          clinics: previous.parties.clinics.map(clinic => (String(clinic.id) === clinicId ? { ...clinic, logo: [] } : clinic)),
+          clinics: previous.parties.clinics.map(clinic => {
+            if (String(clinic.id) !== clinicId) return clinic;
+            const { logo: _legacyLogo, ...rest } = clinic;
+            return rest;
+          }),
         },
       }));
-      setClinicLogoPreview(null);
-      toast.success('Clinic logo removed.');
+      setClinicLogos(previous => previous.filter(variant => variant.fileName !== fileName));
+      toast.success('Clinic logo variant removed.');
     } catch (removeError) {
       console.error('Unable to remove clinic logo', removeError);
       toast.error('Could not remove the clinic logo.');
@@ -737,14 +872,20 @@ const DocumentsPage = ({ isAdmin }) => {
   const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
   const selectedClinic = catalog.parties.clinics.find(item => String(item.id) === String(selectedCase?.clinicId || '')) || null;
+  const caseContext = resolveCaseContext(catalog, selectedCaseId);
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
+  const clinicLogoNames = (selectedClinic?.id && catalog.clinicLogos[String(selectedClinic.id)]) || [];
+  const clinicLogoNamesKey = `${selectedClinic?.id || ''}:${clinicLogoNames.join('|')}`;
+
+  // Fetch every stored logo variant of the selected clinic from Storage by its file name; the
+  // dimensions are what pickLogoVariantForLayout uses to tell compact from full-width variants.
   useEffect(() => {
     let cancelled = false;
-    const logoNames = Array.isArray(selectedClinic?.logo) ? selectedClinic.logo.filter(Boolean).map(String) : [];
-    const fileName = logoNames[logoNames.length - 1] || '';
-    setClinicLogoPreview(null);
-    if (!selectedClinic?.id || !fileName) {
+    const [clinicId, namesJoined] = clinicLogoNamesKey.split(':');
+    const names = namesJoined ? namesJoined.split('|').filter(Boolean) : [];
+    setClinicLogos([]);
+    if (!clinicId || !names.length) {
       setClinicLogoLoading(false);
       return () => {
         cancelled = true;
@@ -752,32 +893,40 @@ const DocumentsPage = ({ isAdmin }) => {
     }
 
     setClinicLogoLoading(true);
-    const filePath = `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${selectedClinic.id}/logo/${fileName}`;
-    getStorageFileDataUrl(filePath)
-      .then(async dataUrl => {
-        const dimensions = dataUrl ? await readImageDimensions(dataUrl) : { width: 0, height: 0 };
-        if (!cancelled) {
-          setClinicLogoPreview(dataUrl ? { dataUrl, name: fileName, ...dimensions } : null);
-          setClinicLogoLoading(false);
-        }
-      })
-      .catch(loadLogoError => {
+    Promise.all(names.map(async fileName => {
+      try {
+        const dataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
+        if (!dataUrl) return null;
+        const dimensions = await readImageDimensions(dataUrl);
+        return { fileName, dataUrl, ...dimensions };
+      } catch (loadLogoError) {
         console.error('Unable to load clinic logo from Storage', loadLogoError);
-        if (!cancelled) {
-          setClinicLogoPreview(null);
-          setClinicLogoLoading(false);
-        }
-      });
+        return null;
+      }
+    })).then(variants => {
+      if (!cancelled) {
+        setClinicLogos(variants.filter(Boolean));
+        setClinicLogoLoading(false);
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [readImageDimensions, selectedClinic]);
+  }, [readImageDimensions, clinicLogoNamesKey]);
 
   const prepareGeneration = () => {
     const context = resolveCaseContext(catalog, selectedCaseId);
-    const generated = selectedTemplates.map(template => buildGeneratedDocument(template, context));
-    return { generated, normalizedFormatting: normalizeDocFormatting(formatting) };
+    const generated = selectedTemplates.map(template => buildGeneratedDocument(
+      template,
+      context,
+      selectedCase?.docOverrides?.[template.id],
+    ));
+    return {
+      generated,
+      normalizedFormatting: normalizeDocFormatting(formatting),
+      logoVariant: pickLogoVariantForLayout(clinicLogos, layout),
+    };
   };
 
   const rememberRecentCase = () => {
@@ -788,7 +937,7 @@ const DocumentsPage = ({ isAdmin }) => {
     if (isGenerateDisabled) return;
     setIsGenerating(true);
     try {
-      const { generated, normalizedFormatting } = prepareGeneration();
+      const { generated, normalizedFormatting, logoVariant } = prepareGeneration();
       const [{ pdf }, documentsModule] = await Promise.all([
         import('@react-pdf/renderer'),
         import('./DocumentsPdfDocument'),
@@ -799,7 +948,7 @@ const DocumentsPage = ({ isAdmin }) => {
         documents: generated,
         layout,
         formatting: normalizedFormatting,
-        logoDataUrl: clinicLogoPreview?.dataUrl || null,
+        logoDataUrl: logoVariant?.dataUrl || null,
       })).toBlob();
       saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'pdf'));
       rememberRecentCase();
@@ -815,13 +964,13 @@ const DocumentsPage = ({ isAdmin }) => {
     if (isGenerateDisabled) return;
     setIsGenerating(true);
     try {
-      const { generated, normalizedFormatting } = prepareGeneration();
+      const { generated, normalizedFormatting, logoVariant } = prepareGeneration();
       const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
       const blob = await buildDocumentsDocx({
         documents: generated,
         layout,
         formatting: normalizedFormatting,
-        logo: clinicLogoPreview,
+        logo: logoVariant,
       });
       saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'docx'));
       rememberRecentCase();
@@ -908,12 +1057,51 @@ const DocumentsPage = ({ isAdmin }) => {
             <Section>
               <SectionHead>
                 <SectionTitle>Documents</SectionTitle>
+                <ToggleGroup>
+                  <ToggleOption
+                    type="button"
+                    $active={editMode === 'template'}
+                    onClick={() => setEditMode('template')}
+                    title="Edit the raw {{placeholder}} tokens of the shared template"
+                  >
+                    <FaPencilAlt /> Template
+                  </ToggleOption>
+                  <ToggleOption
+                    type="button"
+                    $active={editMode === 'data'}
+                    onClick={() => setEditMode('data')}
+                    title="Edit the resolved values of the selected case directly"
+                  >
+                    <FaPencilAlt /> Data
+                  </ToggleOption>
+                </ToggleGroup>
               </SectionHead>
               {!catalog.documents.length ? (
                 <DocSubtitle style={{ marginTop: 8 }}>No document templates yet — paste them in the technical field below.</DocSubtitle>
               ) : null}
               {catalog.documents.map(template => {
                 const isExpanded = expandedDocId === String(template.id);
+                const isDataMode = editMode === 'data';
+                // The builder view mirrors the selected layout mode (spec §1): both languages as
+                // grouped pairs in two-column mode, a single language otherwise.
+                const showUk = layout !== 'one-column-en';
+                const showEn = layout !== 'one-column-uk';
+                const isSingle = !(showUk && showEn);
+                const resolvedDoc = isExpanded && isDataMode
+                  ? buildGeneratedDocument(template, caseContext, selectedCase?.docOverrides?.[template.id])
+                  : null;
+                const titleValue = langKey => (isDataMode ? resolvedDoc?.title?.[langKey] ?? '' : template.title?.[langKey] || '');
+                const paragraphValue = (paragraph, index, langKey) => (isDataMode
+                  ? resolvedDoc?.paragraphs?.[index]?.[langKey] ?? ''
+                  : paragraph?.[langKey] || '');
+                const onTitleChange = langKey => event => (isDataMode
+                  ? handleDataTitleChange(template.id, langKey, event.target.value)
+                  : handleTitleChange(template.id, langKey, event.target.value));
+                const onParagraphChange = (index, langKey) => event => (isDataMode
+                  ? handleDataParagraphChange(template.id, index, langKey, event.target.value)
+                  : handleParagraphChange(template.id, index, langKey, event.target.value));
+                const onFieldBlur = () => (isDataMode ? persistDocOverride(template.id) : persistTemplate(template.id));
+                const dataEditLocked = isDataMode && !selectedCase;
                 return (
                   <DocRow key={template.id}>
                     <DocRowHead>
@@ -942,34 +1130,49 @@ const DocumentsPage = ({ isAdmin }) => {
                     </DocRowHead>
                     {isExpanded ? (
                       <div style={{ marginTop: 6 }}>
-                        <ParagraphPair>
-                          <InlineTextarea
-                            value={template.title?.uk || ''}
-                            placeholder="Title (uk)"
-                            onChange={event => handleTitleChange(template.id, 'uk', event.target.value)}
-                            onBlur={() => persistTemplate(template.id)}
-                          />
-                          <InlineTextarea
-                            value={template.title?.en || ''}
-                            placeholder="Title (en)"
-                            onChange={event => handleTitleChange(template.id, 'en', event.target.value)}
-                            onBlur={() => persistTemplate(template.id)}
-                          />
+                        {dataEditLocked ? (
+                          <DocSubtitle>Select a case first — Data mode shows and edits its resolved values.</DocSubtitle>
+                        ) : null}
+                        <ParagraphPair $single={isSingle}>
+                          {showUk ? (
+                            <InlineTextarea
+                              value={titleValue('uk')}
+                              placeholder="Title (uk)"
+                              readOnly={dataEditLocked}
+                              onChange={onTitleChange('uk')}
+                              onBlur={onFieldBlur}
+                            />
+                          ) : null}
+                          {showEn ? (
+                            <InlineTextarea
+                              value={titleValue('en')}
+                              placeholder="Title (en)"
+                              readOnly={dataEditLocked}
+                              onChange={onTitleChange('en')}
+                              onBlur={onFieldBlur}
+                            />
+                          ) : null}
                         </ParagraphPair>
                         {(template.paragraphs || []).map((paragraph, index) => (
-                          <ParagraphPair key={`${template.id}-p-${index}`}>
-                            <InlineTextarea
-                              value={paragraph?.uk || ''}
-                              placeholder="Paragraph (uk)"
-                              onChange={event => handleParagraphChange(template.id, index, 'uk', event.target.value)}
-                              onBlur={() => persistTemplate(template.id)}
-                            />
-                            <InlineTextarea
-                              value={paragraph?.en || ''}
-                              placeholder="Paragraph (en)"
-                              onChange={event => handleParagraphChange(template.id, index, 'en', event.target.value)}
-                              onBlur={() => persistTemplate(template.id)}
-                            />
+                          <ParagraphPair key={`${template.id}-p-${index}`} $single={isSingle}>
+                            {showUk ? (
+                              <InlineTextarea
+                                value={paragraphValue(paragraph, index, 'uk')}
+                                placeholder="Paragraph (uk)"
+                                readOnly={dataEditLocked}
+                                onChange={onParagraphChange(index, 'uk')}
+                                onBlur={onFieldBlur}
+                              />
+                            ) : null}
+                            {showEn ? (
+                              <InlineTextarea
+                                value={paragraphValue(paragraph, index, 'en')}
+                                placeholder="Paragraph (en)"
+                                readOnly={dataEditLocked}
+                                onChange={onParagraphChange(index, 'en')}
+                                onBlur={onFieldBlur}
+                              />
+                            ) : null}
                           </ParagraphPair>
                         ))}
                       </div>
@@ -1000,10 +1203,28 @@ const DocumentsPage = ({ isAdmin }) => {
               {formattingOpen ? (
                 <>
                   <RowLine style={{ marginTop: 10 }}>
-                    {clinicLogoPreview ? (
-                      <LogoPreview src={clinicLogoPreview.dataUrl} alt="Clinic logo" />
-                    ) : (
-                      <DocSubtitle>No clinic logo uploaded yet.</DocSubtitle>
+                    {clinicLogos.length ? clinicLogos.map(variant => {
+                      const usedFor = [
+                        pickLogoVariantForLayout(clinicLogos, 'two-column')?.fileName === variant.fileName ? '2 col' : '',
+                        pickLogoVariantForLayout(clinicLogos, 'one-column-uk')?.fileName === variant.fileName ? '1 col' : '',
+                      ].filter(Boolean).join(' · ');
+                      return (
+                        <LogoVariant key={variant.fileName}>
+                          <LogoPreview src={variant.dataUrl} alt="Clinic logo variant" />
+                          <LogoVariantCaption>
+                            {usedFor ? <span>Used: {usedFor}</span> : null}
+                            <DangerButton
+                              type="button"
+                              onClick={() => handleRemoveLogoVariant(variant.fileName)}
+                              title="Remove this logo variant"
+                            >
+                              <FaTrash />
+                            </DangerButton>
+                          </LogoVariantCaption>
+                        </LogoVariant>
+                      );
+                    }) : (
+                      <DocSubtitle>{clinicLogoLoading ? 'Loading the clinic logo…' : 'No clinic logo uploaded yet.'}</DocSubtitle>
                     )}
                     <input
                       ref={logoInputRef}
@@ -1013,13 +1234,8 @@ const DocumentsPage = ({ isAdmin }) => {
                       onChange={handleLogoFileChange}
                     />
                     <SmallButton type="button" onClick={() => logoInputRef.current?.click()}>
-                      <FaUpload /> {clinicLogoPreview ? 'Replace logo' : 'Upload logo'}
+                      <FaUpload /> {clinicLogos.length ? 'Add logo variant' : 'Upload logo'}
                     </SmallButton>
-                    {clinicLogoPreview ? (
-                      <DangerButton type="button" onClick={handleRemoveLogo}>
-                        <FaTrash /> Remove
-                      </DangerButton>
-                    ) : null}
                     <CheckLine>
                       <DocCheckbox
                         type="checkbox"
