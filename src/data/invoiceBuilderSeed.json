@@ -33,9 +33,6 @@
     "Deposit for transportation of SM || 300",
     "Deposit for medical expenses of SM || 300"
   ],
-  "notes": [
-    "Purpose of the payment must be exactly like in invoice.",
-    "Please make sure you pay the whole amount (don't use SHA option while making payment)."
-  ],
+  "notes": [],
   "taxPercent": 14
 }

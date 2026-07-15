@@ -241,7 +241,7 @@ const InvoicePdfDocument = ({
   const noteList = Array.isArray(notes)
     ? notes
       .filter(note => String(note || '').trim())
-      .filter(note => !generatePaymentDetails || !isPaymentCaveatNote(note))
+      .filter(note => !isPaymentCaveatNote(note))
     : [];
   const docType = invoiceType === 'service' || invoiceType === 'programme_milestone'
     ? invoiceType

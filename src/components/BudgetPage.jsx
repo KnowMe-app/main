@@ -297,12 +297,26 @@ const ServicePickerList = styled.div`
 `;
 
 const ServicePickerButton = styled(MiniButton)`
-  justify-content: flex-start;
+  justify-content: space-between;
   width: 100%;
   text-align: left;
   padding: 9px 12px;
   min-height: 38px;
   font-size: 13px;
+  gap: 12px;
+`;
+
+const ServicePickerName = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+`;
+
+const ServicePickerPrice = styled.span`
+  color: var(--km-accent);
+  font-weight: 900;
+  white-space: nowrap;
 `;
 
 const Section = styled.section`
@@ -1013,6 +1027,7 @@ const BudgetPage = ({ isAdmin = false }) => {
   const [showStickyContact, setShowStickyContact] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [insertChildTarget, setInsertChildTarget] = useState(null);
+  const [insertChildQuery, setInsertChildQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState({});
   const [exchangeRates, setExchangeRates] = useState(null);
@@ -1413,6 +1428,7 @@ const BudgetPage = ({ isAdmin = false }) => {
       ...children.slice(insertIndex),
     ];
     setInsertChildTarget(null);
+    setInsertChildQuery('');
     persistProgramChildren(program.id, nextChildren, 'Service added to package.');
   };
 
@@ -2414,9 +2430,21 @@ const BudgetPage = ({ isAdmin = false }) => {
       {insertChildTarget ? (() => {
         const program = catalog.packages.find(record => String(record.id) === String(insertChildTarget.programId));
         const children = Array.isArray(program?.children) ? program.children : [];
-        const availableItems = catalog.items.filter(item => !children.some(id => String(id) === String(item.id)));
+        const normalizedInsertQuery = insertChildQuery.trim().toLowerCase();
+        const allAvailableItems = catalog.items.filter(item => {
+          const itemId = String(item.id);
+          if (children.some(id => String(id) === itemId)) return false;
+          if (!isEditMode && item.hidden) return false;
+          if (!isEditMode && formulaReferencedItemIds.has(itemId)) return false;
+          return true;
+        });
+        const availableItems = allAvailableItems.filter(item => {
+          if (!normalizedInsertQuery) return true;
+          const searchableText = `${item.name || ''} ${item.description || ''} ${isEditMode ? item.internalNote || '' : ''}`.toLowerCase();
+          return searchableText.includes(normalizedInsertQuery);
+        });
         return (
-          <ModalBackdrop role="presentation" onMouseDown={() => setInsertChildTarget(null)}>
+          <ModalBackdrop role="presentation" onMouseDown={() => { setInsertChildTarget(null); setInsertChildQuery(''); }}>
             <ConfirmModal
               role="dialog"
               aria-modal="true"
@@ -2425,6 +2453,13 @@ const BudgetPage = ({ isAdmin = false }) => {
             >
               <ModalTitle id="budget-insert-child-title">Add service to package</ModalTitle>
               <ModalText>Choose a service to insert in the selected position.</ModalText>
+              <SearchInput
+                type="search"
+                value={insertChildQuery}
+                onChange={event => setInsertChildQuery(event.target.value)}
+                placeholder="Search available services..."
+                aria-label="Search available services"
+              />
               {availableItems.length ? (
                 <ModalScrollArea>
                   <ServicePickerList>
@@ -2434,14 +2469,21 @@ const BudgetPage = ({ isAdmin = false }) => {
                         key={item.id}
                         onClick={() => insertProgramChild(item.id)}
                       >
-                        <FaPlus /> {item.name || `Service ${item.id}`}
+                        <ServicePickerName><FaPlus /> {item.name || `Service ${item.id}`}</ServicePickerName>
+                        <ServicePickerPrice>{getExpensePriceLabel(item, priceContext)}</ServicePickerPrice>
                       </ServicePickerButton>
                     ))}
                   </ServicePickerList>
                 </ModalScrollArea>
-              ) : <ModalText>All available services are already included in this package.</ModalText>}
+              ) : (
+                <ModalText>
+                  {normalizedInsertQuery && allAvailableItems.length
+                    ? 'No matching available services.'
+                    : 'All available services are already included in this package.'}
+                </ModalText>
+              )}
               <ModalActions>
-                <SoftButton type="button" onClick={() => setInsertChildTarget(null)}>Cancel</SoftButton>
+                <SoftButton type="button" onClick={() => { setInsertChildTarget(null); setInsertChildQuery(''); }}>Cancel</SoftButton>
               </ModalActions>
             </ConfirmModal>
           </ModalBackdrop>

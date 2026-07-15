@@ -136,7 +136,7 @@ async function checkInvoice() {
   ]);
 
   // Service invoice - plain catalog items, no package/percent rows.
-  const servicePages = await renderPdf(React.createElement(InvoicePdfDocument, {
+  const serviceProps = {
     beneficiary,
     customers,
     invoiceServices: [{ id: 'e1', kind: 'item', catalogId: '1' }, { id: 'e2', kind: 'item', catalogId: '2' }],
@@ -151,7 +151,8 @@ async function checkInvoice() {
     invoiceNumber: '09/07/2026',
     invoiceDate: '09.07.2026',
     purposeOfPayment: 'Payment for services.',
-  }));
+  };
+  const servicePages = await renderPdf(React.createElement(InvoicePdfDocument, serviceProps));
   checkNoDebugStrings('Invoice (service)', servicePages);
   checkNoBlankPages('Invoice (service)', servicePages);
   checkStringsRoundTrip('Invoice (service)', servicePages, [
@@ -163,6 +164,29 @@ async function checkInvoice() {
     'Please make sure you pay the whole amount. Do not use SHA option while making payment.',
   ]);
   checkNoBrandOnPages('Invoice (service)', servicePages, [1], 'UKRCOM');
+
+  const invoiceOnlyPages = await renderPdf(React.createElement(InvoicePdfDocument, {
+    ...serviceProps,
+    generatePaymentDetails: false,
+  }));
+  checkStringsAbsent('Invoice (service, no payment details companion)', invoiceOnlyPages, [
+    'Purpose of the payment must be exactly like in invoice.',
+    'Please make sure you pay the whole amount. Do not use SHA option while making payment.',
+  ]);
+
+  const PaymentDetailsPdfDocument = require('../src/components/PaymentDetailsPdfDocument').default;
+  const paymentDetailsPages = await renderPdf(React.createElement(PaymentDetailsPdfDocument, {
+    beneficiary,
+    customers,
+    invoiceNumber: '09/07/2026',
+    invoiceDate: '09.07.2026',
+    purposeOfPayment: 'Payment for services.',
+    amountDue: 180,
+  }));
+  checkStringsRoundTrip('Payment details', paymentDetailsPages, [
+    'Purpose of the payment must be exactly like in invoice.',
+    'Please make sure you pay the whole amount. Do not use SHA option while making payment.',
+  ]);
   if (!servicePages[0].replace(/\s+/g, '').toUpperCase().includes('SERVICEINVOICE')) {
     fail('Invoice (service): expected a "Service invoice" eyebrow, got something else');
   }
