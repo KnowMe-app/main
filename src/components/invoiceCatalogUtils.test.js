@@ -565,6 +565,23 @@ describe('invoiceCatalogUtils', () => {
       expect(row.price).toBe(0);
     });
 
+
+    it('resolves formula prices typed directly on custom invoice rows', () => {
+      const entry = setEntryField(makeCustomEntry({ name: 'Adjustment. SM compensation $500' }), 'price', '=500/1,16');
+      expect(entry.price).toBe('=500/1,16');
+      expect(entry.priceLabel).toBeUndefined();
+      const row = resolveServiceRow(entry, new Map());
+      expect(row.price).toBe(431.03);
+      expect(row.priceInput).toBe('=500/1,16');
+    });
+
+    it('keeps legacy custom formulas as formulas instead of free-text labels', () => {
+      const entry = normalizeServiceEntry('Adjustment. SM compensation $500 || =500/1,16');
+      expect(entry.price).toBe('=500/1,16');
+      expect(entry.priceLabel).toBeUndefined();
+      expect(resolveServiceRow(entry, new Map()).price).toBe(431.03);
+    });
+
     // Catalog package rows are reference blocks (Payment Schedule mirrors the catalog programme for
     // context, like Budget) - their own prices must never be billed into this invoice's Subtotal,
     // only the other rows actually invoiced alongside them (custom/catalog items, or a % share) are.

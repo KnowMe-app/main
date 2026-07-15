@@ -25,7 +25,7 @@
 // ever sees objects.
 
 import {
-  getItemDisplayAmount, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule,
+  getItemDisplayAmount, parseBudgetPriceValue, resolveBudgetPriceAmount, resolvePaymentAmount, resolveProgramPaymentSchedule,
 } from './budgetCatalogUtils';
 
 const SERVICE_PRICE_SEPARATOR = '||';
@@ -53,6 +53,7 @@ export const createEntryId = () => `entry-${Date.now().toString(36)}-${Math.rand
 export const parseCustomPriceInput = raw => {
   const text = String(raw ?? '').trim();
   if (!text || PLAIN_NUMBER_STRING_REGEX.test(text)) return { price: toNumber(text), priceLabel: '' };
+  if (isPriceFormulaInput(text)) return { price: text, priceLabel: '' };
   return { price: 0, priceLabel: text };
 };
 
@@ -285,7 +286,7 @@ export const makeCustomEntry = ({ name = '', price = 0, description = '', priceL
   id: id || createEntryId(),
   kind: 'custom',
   name: String(name || '').trim(),
-  price: toNumber(price),
+  price: isPriceFormulaInput(price) ? String(price).trim() : toNumber(price),
   ...(String(description || '').trim() ? { description: String(description).trim() } : {}),
   ...(String(priceLabel || '').trim() ? { priceLabel: String(priceLabel).trim() } : {}),
 });
@@ -355,6 +356,7 @@ export const cloneEntryWithNewId = entry => {
 const CATALOG_ID_REGEX = new RegExp(`^${CATALOG_ID_PREFIX}(.+)$`, 'i');
 const PERCENT_VALUE_REGEX = /^(\d+(?:[.,]\d+)?)\s*%$/;
 const PLAIN_NUMBER_STRING_REGEX = /^[-+]?\d+(?:[.,]\d+)?$/;
+const isPriceFormulaInput = value => parseBudgetPriceValue(value).isFormula;
 
 // "id15" -> catalog reference · "Name || Price" -> a custom one-off line ·
 // "id1 || 20%" -> a share of that catalog package's listed price ·
@@ -371,10 +373,10 @@ export const parseLegacyServiceString = raw => {
     if (percentMatch && packageIdMatch) {
       return { kind: 'percent', packageId: packageIdMatch[1], percent: toNumber(percentMatch[1]) };
     }
-    if (pricePart && !PLAIN_NUMBER_STRING_REGEX.test(pricePart)) {
+    if (pricePart && !PLAIN_NUMBER_STRING_REGEX.test(pricePart) && !isPriceFormulaInput(pricePart)) {
       return { kind: 'custom', name: trimmedName, price: 0, priceLabel: pricePart };
     }
-    return { kind: 'custom', name: trimmedName, price: toNumber(pricePart) };
+    return { kind: 'custom', name: trimmedName, price: isPriceFormulaInput(pricePart) ? pricePart : toNumber(pricePart) };
   }
   const catalogMatch = CATALOG_ID_REGEX.exec(text);
   if (catalogMatch) return { kind: 'item', catalogId: catalogMatch[1] };
@@ -437,7 +439,7 @@ export const normalizeServiceEntry = raw => {
       id,
       kind: 'custom',
       name: raw.name || '',
-      price: toNumber(raw.price),
+      price: isPriceFormulaInput(raw.price) ? String(raw.price).trim() : toNumber(raw.price),
       ...(raw.description ? { description: raw.description } : {}),
       ...(raw.priceLabel ? { priceLabel: raw.priceLabel } : {}),
     };
@@ -451,7 +453,9 @@ export const normalizeServiceEntry = raw => {
     ...(raw.customized ? { customized: true } : {}),
     ...(raw.name !== undefined ? { name: raw.name } : {}),
     ...(raw.description !== undefined ? { description: raw.description } : {}),
-    ...(raw.price !== undefined && raw.price !== null && raw.price !== '' ? { price: toNumber(raw.price) } : {}),
+    ...(raw.price !== undefined && raw.price !== null && raw.price !== ''
+        ? { price: isPriceFormulaInput(raw.price) ? String(raw.price).trim() : toNumber(raw.price) }
+        : {}),
   };
 };
 
@@ -470,6 +474,7 @@ export const setEntryField = (entry, field, value) => {
       const text = String(value ?? '').trim();
       const { priceLabel, ...rest } = entry;
       if (!text || PLAIN_NUMBER_STRING_REGEX.test(text)) return { ...rest, price: toNumber(text) };
+      if (isPriceFormulaInput(text)) return { ...rest, price: text };
       // A non-numeric price (e.g. "GIFT") is kept as a free-text label instead of being coerced to 0.
       return { ...rest, price: 0, priceLabel: text };
     }
@@ -501,7 +506,13 @@ export const setEntryField = (entry, field, value) => {
     if (field === 'billDirectly') return { ...entry, billDirectly: Boolean(value) };
     return entry;
   }
-  return { ...entry, [field]: field === 'price' ? toNumber(value) : value, customized: true };
+  return {
+    ...entry,
+    [field]: field === 'price'
+      ? (isPriceFormulaInput(value) ? String(value).trim() : toNumber(value))
+      : value,
+    customized: true,
+  };
 };
 
 // Drops all local overrides on a catalog-item entry, reverting it to a plain live reference.
@@ -723,7 +734,8 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       isCustomized: true,
       name: entry.name || '',
       description: entry.description || '',
-      price: roundMoney(entry.price),
+      price: roundMoney(resolveBudgetPriceAmount(entry.price, { ...priceContext, itemsById: catalogItemsById }) ?? entry.price),
+      ...(isPriceFormulaInput(entry.price) ? { priceInput: String(entry.price).trim() } : {}),
       ...(entry.priceLabel ? { priceLabel: entry.priceLabel } : {}),
     };
   }
@@ -740,7 +752,10 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
     isCustomized: Boolean(entry?.customized),
     name: entry?.name ?? item?.name ?? `Unknown catalog service (id${catalogId})`,
     description: entry?.description ?? item?.description ?? '',
-    price: entry?.price !== undefined && entry?.price !== null ? roundMoney(entry.price) : roundMoney(catalogAmount),
+    price: entry?.price !== undefined && entry?.price !== null
+      ? roundMoney(resolveBudgetPriceAmount(entry.price, { ...priceContext, itemsById: catalogItemsById }) ?? entry.price)
+      : roundMoney(catalogAmount),
+    ...(isPriceFormulaInput(entry?.price) ? { priceInput: String(entry.price).trim() } : {}),
   };
 };
 
