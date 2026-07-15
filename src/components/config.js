@@ -299,6 +299,31 @@ const getUploadFileExtension = file => {
   return mimeExtension ? mimeExtension.replace(/[^a-z0-9]/gi, '').toLowerCase() : 'jpg';
 };
 
+export const uploadFileToStorageFolder = async (photo, folderPath, options = {}) => {
+  const { disableCompression = false, maxSizeKB = 1024 } = options;
+  const file = shouldKeepOriginalUpload(photo, disableCompression, maxSizeKB)
+    ? photo
+    : await getFileBlob(await compressPhoto(photo, maxSizeKB));
+
+  const uniqueId = generateUploadFileId();
+  const fileName = `${uniqueId}.${getUploadFileExtension(file)}`;
+  const normalizedFolder = String(folderPath || '').split('/').filter(Boolean).join('/');
+  const filePath = `${normalizedFolder}/${fileName}`;
+  const linkToFile = ref(storage, filePath);
+  await uploadBytes(linkToFile, file);
+  return { fileName, filePath };
+};
+
+export const getStorageFileDataUrl = async filePath => {
+  const normalizedPath = String(filePath || '').split('/').filter(Boolean).join('/');
+  if (!normalizedPath) return '';
+  const fileRef = ref(storage, normalizedPath);
+  const bytes = await getBytes(fileRef);
+  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const contentType = getStorageContentTypeFromBytes(byteArray) || getStorageContentTypeFromName({ name: normalizedPath }) || 'image/jpeg';
+  return `data:${contentType};base64,${bytesToBase64(byteArray)}`;
+};
+
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   const { disableCompression = false, maxSizeKB = 1024, rootFolder = 'avatar' } = options;
   const file = shouldKeepOriginalUpload(photo, disableCompression, maxSizeKB)

@@ -2,8 +2,8 @@
 // paragraph templates filled with a case's party data. Architecturally a sibling of the Invoice
 // Builder: same React + Firebase approach, same ivory/beige + bronze design system, same
 // page-scoped --km-* palette override. Data lives on the backend under documentsBuilder/*:
-// parties + cases, paragraph templates, and a settings record (clinic logo + favourite
-// formatting values + recently used cases).
+// parties + cases (including clinic logo file names), paragraph templates, and a settings record
+// (favourite formatting values + recently used cases).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
@@ -11,7 +11,7 @@ import { get, ref, set, update } from 'firebase/database';
 import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
-import { auth, database, getUrlofUploadedAvatar } from './config';
+import { auth, database, getStorageFileDataUrl, uploadFileToStorageFolder } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
 import {
@@ -406,6 +406,7 @@ const DocumentsPage = ({ isAdmin }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [clinicLogoPreview, setClinicLogoPreview] = useState(null);
   const logoInputRef = useRef(null);
   // Mirror of `settings` that persistSettings can read synchronously: two quick successive
   // saves (e.g. logo upload + favourite formatting) must each build on the other's result, and
@@ -627,21 +628,35 @@ const DocumentsPage = ({ isAdmin }) => {
           return;
         }
 
+        const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+        if (!clinicId) {
+          toast.error('Select a case with a clinic before uploading the logo.');
+          return;
+        }
+
         try {
-          const storageUrl = await getUrlofUploadedAvatar(file, userId, {
+          const folderPath = `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
+          const { fileName } = await uploadFileToStorageFolder(file, folderPath, {
             disableCompression: true,
-            rootFolder: 'documentsBuilder',
           });
-          const saved = await persistSettings({
-            clinicLogo: {
-              dataUrl,
-              storageUrl,
-              width: image.naturalWidth || 0,
-              height: image.naturalHeight || 0,
-              name: file.name,
+          const nextLogoNames = [...(Array.isArray(selectedClinic?.logo) ? selectedClinic.logo : []), fileName];
+          await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), nextLogoNames);
+          setCatalog(previous => ({
+            ...previous,
+            parties: {
+              ...previous.parties,
+              clinics: previous.parties.clinics.map(clinic => (String(clinic.id) === clinicId
+                ? { ...clinic, logo: nextLogoNames }
+                : clinic)),
             },
+          }));
+          setClinicLogoPreview({
+            dataUrl,
+            width: image.naturalWidth || 0,
+            height: image.naturalHeight || 0,
+            name: fileName,
           });
-          if (saved) toast.success('Clinic logo uploaded to the backend.');
+          toast.success('Clinic logo uploaded to the backend.');
         } catch (uploadError) {
           console.error('Unable to upload clinic logo', uploadError);
           toast.error('Could not upload the logo to the backend.');
@@ -656,8 +671,23 @@ const DocumentsPage = ({ isAdmin }) => {
 
   const handleRemoveLogo = async () => {
     if (typeof window !== 'undefined' && !window.confirm('Remove the clinic logo from the backend?')) return;
-    const saved = await persistSettings({ clinicLogo: null });
-    if (saved) toast.success('Clinic logo removed.');
+    const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+    if (!clinicId) return;
+    try {
+      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), []);
+      setCatalog(previous => ({
+        ...previous,
+        parties: {
+          ...previous.parties,
+          clinics: previous.parties.clinics.map(clinic => (String(clinic.id) === clinicId ? { ...clinic, logo: [] } : clinic)),
+        },
+      }));
+      setClinicLogoPreview(null);
+      toast.success('Clinic logo removed.');
+    } catch (removeError) {
+      console.error('Unable to remove clinic logo', removeError);
+      toast.error('Could not remove the clinic logo.');
+    }
   };
 
   // --- Formatting favourites --------------------------------------------------------------------
@@ -691,7 +721,34 @@ const DocumentsPage = ({ isAdmin }) => {
   const orderedCases = orderCasesByRecent(catalog.parties.cases, settings.recentCaseIds);
   const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
+  const selectedClinic = catalog.parties.clinics.find(item => String(item.id) === String(selectedCase?.clinicId || '')) || null;
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || !selectedTemplates.length || !selectedCase;
+
+  useEffect(() => {
+    let cancelled = false;
+    const logoNames = Array.isArray(selectedClinic?.logo) ? selectedClinic.logo.filter(Boolean).map(String) : [];
+    const fileName = logoNames[logoNames.length - 1] || '';
+    if (!selectedClinic?.id || !fileName) {
+      setClinicLogoPreview(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const filePath = `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${selectedClinic.id}/logo/${fileName}`;
+    getStorageFileDataUrl(filePath)
+      .then(dataUrl => {
+        if (!cancelled) setClinicLogoPreview(dataUrl ? { dataUrl, name: fileName, width: 0, height: 0 } : null);
+      })
+      .catch(loadLogoError => {
+        console.error('Unable to load clinic logo from Storage', loadLogoError);
+        if (!cancelled) setClinicLogoPreview(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClinic]);
 
   const prepareGeneration = () => {
     const context = resolveCaseContext(catalog, selectedCaseId);
@@ -718,7 +775,7 @@ const DocumentsPage = ({ isAdmin }) => {
         documents: generated,
         layout,
         formatting: normalizedFormatting,
-        logoDataUrl: settings.clinicLogo?.dataUrl || null,
+        logoDataUrl: clinicLogoPreview?.dataUrl || null,
       })).toBlob();
       saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'pdf'));
       rememberRecentCase();
@@ -740,7 +797,7 @@ const DocumentsPage = ({ isAdmin }) => {
         documents: generated,
         layout,
         formatting: normalizedFormatting,
-        logo: settings.clinicLogo,
+        logo: clinicLogoPreview,
       });
       saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'docx'));
       rememberRecentCase();
@@ -919,8 +976,8 @@ const DocumentsPage = ({ isAdmin }) => {
               {formattingOpen ? (
                 <>
                   <RowLine style={{ marginTop: 10 }}>
-                    {settings.clinicLogo ? (
-                      <LogoPreview src={settings.clinicLogo.dataUrl} alt="Clinic logo" />
+                    {clinicLogoPreview ? (
+                      <LogoPreview src={clinicLogoPreview.dataUrl} alt="Clinic logo" />
                     ) : (
                       <DocSubtitle>No clinic logo uploaded yet.</DocSubtitle>
                     )}
@@ -932,9 +989,9 @@ const DocumentsPage = ({ isAdmin }) => {
                       onChange={handleLogoFileChange}
                     />
                     <SmallButton type="button" onClick={() => logoInputRef.current?.click()}>
-                      <FaUpload /> {settings.clinicLogo ? 'Replace logo' : 'Upload logo'}
+                      <FaUpload /> {clinicLogoPreview ? 'Replace logo' : 'Upload logo'}
                     </SmallButton>
-                    {settings.clinicLogo ? (
+                    {clinicLogoPreview ? (
                       <DangerButton type="button" onClick={handleRemoveLogo}>
                         <FaTrash /> Remove
                       </DangerButton>
