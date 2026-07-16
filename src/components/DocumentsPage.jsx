@@ -2,8 +2,8 @@
 // paragraph templates filled with a case's party data. Architecturally a sibling of the Invoice
 // Builder: same React + Firebase approach, same ivory/beige + bronze design system, same
 // page-scoped --km-* palette override. Data lives on the backend under documentsBuilder/*:
-// parties + cases (including clinic logo file names), paragraph templates, and a settings record
-// (favourite formatting values + recently used cases).
+// parties + cases, paragraph templates, and a settings record (favourite formatting values +
+// recently used cases). Clinic logo files live directly in Firebase Storage by clinic id.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
@@ -11,7 +11,7 @@ import { get, ref, set, update } from 'firebase/database';
 import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
-import { auth, database, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
+import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -25,7 +25,6 @@ import {
   buildCaseLabel,
   buildDocumentsFileName,
   buildGeneratedDocument,
-  clinicLogoDbPath,
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
   emptyDocumentsCatalog,
@@ -489,6 +488,7 @@ const DocumentsPage = ({ isAdmin }) => {
   const [clinicLogos, setClinicLogos] = useState([]);
   const [clinicLogoLoading, setClinicLogoLoading] = useState(false);
   const [clinicLogoError, setClinicLogoError] = useState('');
+  const [clinicLogoRefreshKey, setClinicLogoRefreshKey] = useState(0);
   const logoInputRef = useRef(null);
   // Mirror of `settings` that persistSettings can read synchronously: two quick successive
   // saves (e.g. logo upload + favourite formatting) must each build on the other's result, and
@@ -795,34 +795,20 @@ const DocumentsPage = ({ isAdmin }) => {
         }
 
         try {
-          // Filename-based storage (spec §5): the image goes into the clinic's Storage logo
-          // folder, and only its file name is appended to the same-shaped Realtime Database node.
+          // Storage is the source of truth for clinic logos: PDF/DOCX generation lists this
+          // folder directly, so uploads no longer need a matching Realtime Database filename
+          // write that can fail independently and leave the visible logo state stale.
           const { fileName } = await uploadFileToStorageFolder(file, clinicLogoStorageFolder(clinicId), {
             disableCompression: true,
           });
-          const nextLogoNames = [...(catalog.clinicLogos[clinicId] || []), fileName];
-          await set(ref(database, clinicLogoDbPath(clinicId)), nextLogoNames);
-          // Clear the legacy on-clinic-record node so the normalize fallback can't resurrect
-          // stale file names after the migration to clinicLogoDbPath.
-          await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), null);
-          setCatalog(previous => ({
-            ...previous,
-            clinicLogos: { ...previous.clinicLogos, [clinicId]: nextLogoNames },
-            parties: {
-              ...previous.parties,
-              clinics: previous.parties.clinics.map(clinic => {
-                if (String(clinic.id) !== clinicId) return clinic;
-                const { logo: _legacyLogo, ...rest } = clinic;
-                return rest;
-              }),
-            },
-          }));
-          setClinicLogos(previous => [...previous, {
+          setClinicLogos(previous => [...previous.filter(variant => variant.fileName !== fileName), {
             fileName,
             dataUrl,
             width: image.naturalWidth || 0,
             height: image.naturalHeight || 0,
           }]);
+          setClinicLogoError('');
+          setClinicLogoRefreshKey(previous => previous + 1);
           toast.success('Clinic logo uploaded to the backend.');
         } catch (uploadError) {
           console.error('Unable to upload clinic logo', uploadError);
@@ -857,22 +843,9 @@ const DocumentsPage = ({ isAdmin }) => {
     const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
     if (!clinicId) return;
     try {
-      const nextLogoNames = (catalog.clinicLogos[clinicId] || []).filter(name => name !== fileName);
-      await set(ref(database, clinicLogoDbPath(clinicId)), nextLogoNames.length ? nextLogoNames : null);
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`), null);
-      setCatalog(previous => ({
-        ...previous,
-        clinicLogos: { ...previous.clinicLogos, [clinicId]: nextLogoNames },
-        parties: {
-          ...previous.parties,
-          clinics: previous.parties.clinics.map(clinic => {
-            if (String(clinic.id) !== clinicId) return clinic;
-            const { logo: _legacyLogo, ...rest } = clinic;
-            return rest;
-          }),
-        },
-      }));
+      await deleteStorageFile(clinicLogoStorageFilePath(clinicId, fileName));
       setClinicLogos(previous => previous.filter(variant => variant.fileName !== fileName));
+      setClinicLogoRefreshKey(previous => previous + 1);
       toast.success('Clinic logo variant removed.');
     } catch (removeError) {
       console.error('Unable to remove clinic logo', removeError);
@@ -914,19 +887,17 @@ const DocumentsPage = ({ isAdmin }) => {
   const caseContext = resolveCaseContext(catalog, selectedCaseId);
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
-  // The logo store is keyed by the case's clinicId - the exact key the upload handler writes
-  // with - so an uploaded logo still resolves even when no clinic record with that id exists in
-  // the parties catalog (uploading never required one either).
+  // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
+  // source of truth here, so logos uploaded through the app or Firebase Console are discovered
+  // without relying on a Realtime Database filename mirror.
   const logoClinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
-  const clinicLogoNames = (logoClinicId && catalog.clinicLogos[logoClinicId]) || [];
-  const clinicLogoNamesKey = `${logoClinicId}:${clinicLogoNames.join('|')}`;
+  const clinicLogoStorageKey = `${logoClinicId}:${clinicLogoRefreshKey}`;
 
-  // Fetch every stored logo variant of the selected clinic from Storage by its file name; the
-  // dimensions are what pickLogoVariantForLayout uses to tell compact from full-width variants.
+  // Fetch every stored logo variant of the selected clinic from Storage; the dimensions are what
+  // pickLogoVariantForLayout uses to tell compact from full-width variants.
   useEffect(() => {
     let cancelled = false;
-    const [clinicId, namesJoined] = clinicLogoNamesKey.split(':');
-    const names = namesJoined ? namesJoined.split('|').filter(Boolean) : [];
+    const [clinicId] = clinicLogoStorageKey.split(':');
     setClinicLogos([]);
     setClinicLogoError('');
     if (!clinicId) {
@@ -938,30 +909,19 @@ const DocumentsPage = ({ isAdmin }) => {
 
     setClinicLogoLoading(true);
     const loadVariants = async () => {
-      let fileNames = names;
+      let fileNames = [];
+      try {
+        fileNames = await listStorageFolderFileNames(clinicLogoStorageFolder(clinicId));
+      } catch (listError) {
+        console.error('Unable to list the clinic logo Storage folder', listError);
+        if (!cancelled) {
+          setClinicLogoError('Could not list the uploaded clinic logos from Storage - see the browser console.');
+          setClinicLogoLoading(false);
+        }
+        return;
+      }
+      if (cancelled) return;
       if (!fileNames.length) {
-        // Recovery path: the Storage folder itself is the source of truth for uploaded logo
-        // files. If the Realtime Database name list is missing (its write failed after the
-        // Storage upload succeeded, or it was lost later), list the folder and heal the node so
-        // the orphaned upload becomes visible again instead of silently never reaching the PDF.
-        try {
-          fileNames = await listStorageFolderFileNames(clinicLogoStorageFolder(clinicId));
-        } catch (listError) {
-          console.error('Unable to list the clinic logo Storage folder', listError);
-          fileNames = [];
-        }
-        if (cancelled) return;
-        if (fileNames.length) {
-          set(ref(database, clinicLogoDbPath(clinicId)), fileNames).catch(healError => {
-            console.error('Unable to restore clinic logo file names to the backend', healError);
-          });
-          // Updating the catalog re-keys this effect; the re-run then loads via the normal path.
-          setCatalog(previous => ({
-            ...previous,
-            clinicLogos: { ...previous.clinicLogos, [clinicId]: fileNames },
-          }));
-          return;
-        }
         setClinicLogoLoading(false);
         return;
       }
@@ -989,7 +949,7 @@ const DocumentsPage = ({ isAdmin }) => {
     return () => {
       cancelled = true;
     };
-  }, [readImageDimensions, clinicLogoNamesKey]);
+  }, [readImageDimensions, clinicLogoStorageKey]);
 
   const prepareGeneration = () => {
     const context = resolveCaseContext(catalog, selectedCaseId);
