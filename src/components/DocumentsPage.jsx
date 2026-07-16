@@ -13,6 +13,7 @@ import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
+import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import PageNavMenu from './PageNavMenu';
 import { useAutoResize } from '../hooks/useAutoResize';
 import {
@@ -968,8 +969,12 @@ const DocumentsPage = ({ isAdmin }) => {
 
       const variants = (await Promise.all(fileNames.map(async fileName => {
         try {
-          const dataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
-          if (!dataUrl) return null;
+          const rawDataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
+          if (!rawDataUrl) return null;
+          // Same re-encode the surrogate mother profile PDF export applies to uploaded photos:
+          // @react-pdf/renderer only reliably embeds baseline JPEG/PNG, so a progressive JPEG or
+          // EXIF-rotated logo can fail to appear in the generated PDF with no error.
+          const dataUrl = await reencodePdfImageDataUrl(rawDataUrl);
           const dimensions = await readImageDimensions(dataUrl);
           return { fileName, dataUrl, ...dimensions };
         } catch (loadLogoError) {

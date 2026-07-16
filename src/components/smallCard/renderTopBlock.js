@@ -53,6 +53,7 @@ import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { filterOutMedicationPhotos } from 'utils/photoFilters';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
+import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
@@ -1158,43 +1159,6 @@ const readBlobAsDataUrl = blob => new Promise((resolve, reject) => {
   reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
   reader.onerror = () => reject(reader.error);
   reader.readAsDataURL(blob);
-});
-
-// @react-pdf/renderer only reliably embeds baseline JPEG/PNG; re-encoding through
-// a canvas normalizes progressive JPEGs, unusual PNG color modes, and EXIF-rotated
-// photos that would otherwise render as a blank page with no error.
-const reencodePdfImageDataUrl = src => new Promise(resolve => {
-  // window.Image, not the react-pdf Image component imported above — that
-  // import shadows the global and `new Image()` here threw "not a constructor",
-  // killing the whole export.
-  if (typeof window === 'undefined' || typeof window.Image !== 'function' || typeof document === 'undefined') {
-    resolve(src);
-    return;
-  }
-
-  const img = new window.Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    try {
-      const width = img.naturalWidth || img.width;
-      const height = img.naturalHeight || img.height;
-      if (!width || !height) {
-        resolve(src);
-        return;
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.92));
-    } catch (error) {
-      console.error('Unable to re-encode PDF photo', error);
-      resolve(src);
-    }
-  };
-  img.onerror = () => resolve(src);
-  img.src = src;
 });
 
 const loadPdfEmbeddedImage = async photoUrl => {
