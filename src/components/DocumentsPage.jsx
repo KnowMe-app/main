@@ -49,6 +49,24 @@ const STALE_APP_MESSAGE = 'The app has been updated since this page was opened. 
 
 const MAX_LOGO_FILE_BYTES = 1024 * 1024;
 
+// Mobile admins can't easily reach the browser devtools console, so every Storage failure below
+// is folded into the on-screen/PDF message with the real Firebase/network error code - "see the
+// browser console" alone leaves them stuck with no way to report what actually went wrong.
+const describeStorageError = error =>
+  `${error?.code || error?.name || 'error'}: ${error?.message || String(error)}`.trim();
+
+// One-shot debug PDF, downloaded right after a clinic logo upload, that replays the exact
+// Storage-fetch + re-encode pipeline the real Documents PDF uses later and reports each step -
+// see clinicLogoDebugPdf.js for why this exists instead of just a console.log.
+const downloadClinicLogoDebugPdf = async entry => {
+  const [{ pdf }, { default: ClinicLogoDebugPdfDocument }] = await Promise.all([
+    import('@react-pdf/renderer'),
+    import('./clinicLogoDebugPdf'),
+  ]);
+  const blob = await pdf(React.createElement(ClinicLogoDebugPdfDocument, { entry })).toBlob();
+  saveAs(blob, `clinic-logo-debug-${entry.fileName}.pdf`);
+};
+
 // --- Layout shell (mirrors InvoiceBuilderPage's page-scoped palette) -------------------------
 
 const Page = styled.main`
@@ -811,6 +829,46 @@ const DocumentsPage = ({ isAdmin }) => {
           setClinicLogoError('');
           setClinicLogoRefreshKey(previous => previous + 1);
           toast.success('Clinic logo uploaded to the backend.');
+
+          // Replay the exact pipeline the Documents PDF relies on later (Storage fetch, then the
+          // canvas re-encode) right now, while the upload is fresh, and hand the admin a PDF that
+          // shows what happened at each step - the one place this is visible without devtools.
+          const storagePath = clinicLogoStorageFilePath(clinicId, fileName);
+          const debugEntry = {
+            uploadedAt: new Date().toISOString(),
+            clinicId,
+            fileName,
+            storagePath,
+            originalFile: `${file.name} · ${file.type} · ${(file.size / 1024).toFixed(1)} KB`,
+            originalDimensions: `${image.naturalWidth || 0}×${image.naturalHeight || 0}`,
+            fetchOk: false,
+            fetchError: '',
+            reencoded: false,
+            finalDimensions: '—',
+            previewSrc: '',
+          };
+          try {
+            const rawDataUrl = await getStorageFileDataUrl(storagePath);
+            debugEntry.fetchOk = Boolean(rawDataUrl);
+            if (!rawDataUrl) debugEntry.fetchError = 'empty response from Storage';
+            if (rawDataUrl) {
+              const reencodedDataUrl = await reencodePdfImageDataUrl(rawDataUrl);
+              debugEntry.reencoded = reencodedDataUrl !== rawDataUrl;
+              debugEntry.previewSrc = reencodedDataUrl;
+              const dimensions = await readImageDimensions(reencodedDataUrl);
+              debugEntry.finalDimensions = `${dimensions.width}×${dimensions.height}`;
+            }
+          } catch (debugFetchError) {
+            debugEntry.fetchOk = false;
+            debugEntry.fetchError = describeStorageError(debugFetchError);
+            console.error('[ClinicLogo] Debug round-trip fetch failed', storagePath, debugFetchError);
+          }
+          try {
+            await downloadClinicLogoDebugPdf(debugEntry);
+          } catch (debugPdfError) {
+            console.error('[ClinicLogo] Unable to build the debug PDF', debugPdfError);
+            toast.error('Uploaded, but could not build the debug PDF - see the console.');
+          }
         } catch (uploadError) {
           console.error('Unable to upload clinic logo', uploadError);
           toast.error(String(uploadError?.code || '').includes('unauthorized')
@@ -914,9 +972,9 @@ const DocumentsPage = ({ isAdmin }) => {
       try {
         fileNames = await listStorageFolderFileNames(clinicLogoStorageFolder(clinicId));
       } catch (listError) {
-        console.error('Unable to list the clinic logo Storage folder', listError);
+        console.error('[ClinicLogo] Unable to list', clinicLogoStorageFolder(clinicId), listError);
         if (!cancelled) {
-          setClinicLogoError('Could not list the uploaded clinic logos from Storage - see the browser console.');
+          setClinicLogoError(`Could not list the clinic logo Storage folder - ${describeStorageError(listError)}`);
           setClinicLogoLoading(false);
         }
         return;
@@ -927,26 +985,29 @@ const DocumentsPage = ({ isAdmin }) => {
         return;
       }
 
-      const variants = (await Promise.all(fileNames.map(async fileName => {
+      const results = await Promise.all(fileNames.map(async fileName => {
         try {
           const rawDataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
-          if (!rawDataUrl) return null;
+          if (!rawDataUrl) return { fileName, error: 'empty response from Storage' };
           // Same re-encode the surrogate mother profile PDF export applies to uploaded photos:
           // @react-pdf/renderer only reliably embeds baseline JPEG/PNG, so a progressive JPEG or
           // EXIF-rotated logo can fail to appear in the generated PDF with no error.
           const dataUrl = await reencodePdfImageDataUrl(rawDataUrl);
           const dimensions = await readImageDimensions(dataUrl);
-          return { fileName, dataUrl, ...dimensions };
+          return { fileName, variant: { fileName, dataUrl, ...dimensions } };
         } catch (loadLogoError) {
-          console.error('Unable to load clinic logo from Storage', loadLogoError);
-          return null;
+          console.error('[ClinicLogo] Unable to load', fileName, 'from', clinicLogoStorageFolder(clinicId), loadLogoError);
+          return { fileName, error: describeStorageError(loadLogoError) };
         }
-      }))).filter(Boolean);
+      }));
       if (cancelled) return;
+      const variants = results.map(result => result.variant).filter(Boolean);
+      const errors = results.filter(result => result.error).map(result => `${result.fileName} (${result.error})`);
       setClinicLogos(variants);
       // Files are registered but none could be fetched - say so instead of pretending nothing
-      // was ever uploaded (the difference between "upload it" and "fix access/see console").
-      setClinicLogoError(variants.length ? '' : 'Could not load the uploaded clinic logo from Storage - see the browser console.');
+      // was ever uploaded, and show the real error(s) since "see the browser console" is not
+      // reachable from a phone.
+      setClinicLogoError(variants.length ? '' : `Could not load the uploaded clinic logo from Storage: ${errors.join('; ') || 'unknown error'}`);
       setClinicLogoLoading(false);
     };
     loadVariants();
