@@ -5,7 +5,7 @@ import {
   SummaryCard, ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 import { formatMoney } from './budgetCatalogUtils';
-import { formatAmount, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
+import { formatAmount, formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import { buildCaseTitle, buildPayerName } from './invoiceCatalogUtils';
 import {
   computeMilestoneAmountDue,
@@ -174,9 +174,11 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
   // extra that belongs solely in that milestone's own Payments block below, never folded into this
   // total - otherwise a milestone with an extra would show more than its actual scheduled share here.
   const milestoneScheduledAmounts = milestoneRows.map(rows => computeMilestoneSubtotal(splitScheduledRows(rows).scheduledRows));
+  // Pre-formatted to two decimals (design-tasks-8 §9) so this schedule's amounts align on the
+  // decimal exactly like the Invoice's tables.
   const scheduleRows = milestones.map((milestone, index) => ({
     title: milestone.title || `Payment ${index + 1}`,
-    amounts: [milestoneScheduledAmounts[index]],
+    amounts: [formatAmountTwoDecimals(milestoneScheduledAmounts[index])],
   }));
 
   return (
@@ -212,7 +214,9 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
           note="Every item below is already covered by the programme fee."
         />
 
-        <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} />
+        {/* `light` (design-tasks-8 §1): single amount column, so no vertical divider before it -
+            same treatment as the Invoice's Breakdown, keeping the two documents unified. */}
+        <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} light />
 
         {milestones.length ? (
           <View>

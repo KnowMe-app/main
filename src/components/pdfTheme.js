@@ -158,7 +158,9 @@ export const pdfBaseStyles = {
 
   page: {
     paddingTop: 48,
-    paddingBottom: 68,
+    // Extra clearance above the footer (design-tasks-8 §3) so the last content block never sits
+    // flush against it.
+    paddingBottom: 78,
     paddingLeft: PAGE_MARGIN,
     paddingRight: PAGE_MARGIN,
     fontFamily: PDF_FONT.body,
@@ -292,12 +294,14 @@ export const pdfBaseStyles = {
     paddingHorizontal: 18,
     marginTop: 18,
   },
+  // Label a step more subdued than before (design-tasks-8 §4) so the amount figure, not the
+  // "AMOUNT DUE" caption, is what carries the block.
   totalCardLabel: {
     fontFamily: PDF_FONT.body,
     fontWeight: 600,
     fontSize: 7.5,
     letterSpacing: 1.4,
-    color: PDF_COLOR.footerSoft,
+    color: PDF_COLOR.footerInk,
     textTransform: 'uppercase',
     marginBottom: 6,
   },
@@ -331,17 +335,36 @@ export const pdfBaseStyles = {
     fontSize: 8.5,
     color: PDF_COLOR.card,
   },
+  // The footer frames the page bottom with the same diamond-rule brand element the page opens
+  // with (design-tasks-8 §3/§10), replacing the plain border-top hairline, and its text steps up
+  // from footerSoft to footerInk so the agency identity stops reading like an afterthought.
   footer: {
     position: 'absolute',
     left: PAGE_MARGIN,
     right: PAGE_MARGIN,
     bottom: 30,
+  },
+  footerRuleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 9,
+  },
+  footerRuleLine: {
+    flex: 1,
+    height: 0.75,
+    backgroundColor: PDF_COLOR.docLine,
+  },
+  // A more delicate echo of BrandRule's 5pt diamond - framing, not competing.
+  footerRuleDiamond: {
+    width: 3.5,
+    height: 3.5,
+    backgroundColor: PDF_COLOR.bronze,
+    transform: 'rotate(45deg)',
+    marginHorizontal: 6,
+  },
+  footerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.docLine,
-    borderTopStyle: 'solid',
-    paddingTop: 9,
   },
   footerColumn: {
     maxWidth: 280,
@@ -349,7 +372,7 @@ export const pdfBaseStyles = {
   footerText: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerSoft,
+    color: PDF_COLOR.footerInk,
     lineHeight: 1.5,
   },
   footerContactRow: {
@@ -366,20 +389,20 @@ export const pdfBaseStyles = {
   footerLink: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerSoft,
+    color: PDF_COLOR.footerInk,
     textDecoration: 'none',
   },
   footerContactDivider: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerSoft,
+    color: PDF_COLOR.footerInk,
     opacity: 0.5,
     marginHorizontal: 5,
   },
   footerPage: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerSoft,
+    color: PDF_COLOR.footerInk,
   },
   continuedTag: {
     position: 'absolute',
@@ -531,7 +554,7 @@ export const SummaryCard = ({ label, text }) => (text ? (
 // (design-tasks-7 §1).
 const FOOTER_ICON_SIZE = 6.5;
 const footerIconStyle = { width: FOOTER_ICON_SIZE, height: FOOTER_ICON_SIZE, marginRight: 3 };
-const footerIconStroke = { stroke: PDF_COLOR.footerSoft, strokeWidth: 2, fill: 'none' };
+const footerIconStroke = { stroke: PDF_COLOR.footerInk, strokeWidth: 2, fill: 'none' };
 
 const FooterGlobeIcon = () => (
   <Svg style={footerIconStyle} viewBox="0 0 24 24">
@@ -553,7 +576,7 @@ const FooterMailIcon = () => (
 const FooterTelegramIcon = () => (
   <Svg style={footerIconStyle} viewBox="0 0 448 512">
     <Path
-      fill={PDF_COLOR.footerSoft}
+      fill={PDF_COLOR.footerInk}
       d="M446.7 98.6l-67.6 318.8c-5.1 22.5-18.4 28.1-37.3 17.5l-103-75.9-49.7 47.8c-5.5 5.5-10.1 10.1-20.7 10.1l7.4-104.9 190.9-172.5c8.3-7.4-1.8-11.5-12.9-4.1L117.8 284 16.2 252.2c-22.1-6.9-22.5-22.1 4.6-32.7L418.2 66.4c18.4-6.9 34.5 4.1 28.5 32.2z"
     />
   </Svg>
@@ -583,24 +606,34 @@ export const Footer = ({ variant = 'branded' } = {}) => {
   ].filter(contact => contact.label && contact.href);
   return (
     <View style={pdfSharedStyles.footer} fixed>
-      {variant === 'neutral' ? <View style={pdfSharedStyles.footerColumn} /> : (
-        <View style={pdfSharedStyles.footerColumn}>
-          <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.name)}</Text>
-          <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.address)}</Text>
-          <View style={pdfSharedStyles.footerContactRow}>
-            {contacts.map((contact, index) => (
-              <React.Fragment key={contact.key}>
-                {index > 0 ? <Text style={pdfSharedStyles.footerContactDivider}>|</Text> : null}
-                <FooterContact icon={contact.icon} label={contact.label} href={contact.href} />
-              </React.Fragment>
-            ))}
+      {/* The page closes with the same diamond-rule element it opens with (design-tasks-8 §10) -
+          a smaller echo of BrandRule. The neutral (Payment Details) footer keeps a plain hairline
+          instead: the diamond is agency brand language and that document carries none. */}
+      <View style={pdfSharedStyles.footerRuleRow}>
+        <View style={pdfSharedStyles.footerRuleLine} />
+        {variant === 'neutral' ? null : <View style={pdfSharedStyles.footerRuleDiamond} />}
+        {variant === 'neutral' ? null : <View style={pdfSharedStyles.footerRuleLine} />}
+      </View>
+      <View style={pdfSharedStyles.footerRow}>
+        {variant === 'neutral' ? <View style={pdfSharedStyles.footerColumn} /> : (
+          <View style={pdfSharedStyles.footerColumn}>
+            <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.name)}</Text>
+            <Text style={pdfSharedStyles.footerText}>{sanitizePdfText(agency.address)}</Text>
+            <View style={pdfSharedStyles.footerContactRow}>
+              {contacts.map((contact, index) => (
+                <React.Fragment key={contact.key}>
+                  {index > 0 ? <Text style={pdfSharedStyles.footerContactDivider}>|</Text> : null}
+                  <FooterContact icon={contact.icon} label={contact.label} href={contact.href} />
+                </React.Fragment>
+              ))}
+            </View>
           </View>
-        </View>
-      )}
-      <Text
-        style={pdfSharedStyles.footerPage}
-        render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-      />
+        )}
+        <Text
+          style={pdfSharedStyles.footerPage}
+          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+        />
+      </View>
     </View>
   );
 };

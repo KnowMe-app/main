@@ -31,6 +31,15 @@ export const formatAmount = value => {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount);
 };
 
+// Two-decimal variant (design-tasks-8 §9) for the single-programme documents (Invoice, Expected
+// Expenses): "3,000.00" next to "431.03" keeps every decimal point on the same vertical line
+// down an amount column.
+export const formatAmountTwoDecimals = value => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '-';
+  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+};
+
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
   section: {
@@ -100,10 +109,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: PDF_COLOR.card,
   },
+  // Row hairlines sit a step lighter/thinner than the table frame (design-tasks-8 §1) so the
+  // grid recedes behind the content instead of reading like a spreadsheet.
   tableRow: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: PDF_COLOR.docLine,
+    borderTopWidth: 0.75,
+    borderTopColor: PDF_COLOR.docLineSoft,
     borderTopStyle: 'solid',
   },
   labelCell: {
@@ -132,9 +143,11 @@ const styles = StyleSheet.create({
     marginTop: 1.5,
   },
   // Dense variant: tighter row padding + slightly smaller cell text for the single-page Invoice
-  // (design-tasks §3, tightened further in design-tasks-4 §7 so a package invoice fits one page).
+  // (design-tasks §3, tightened further in design-tasks-4 §7 so a package invoice fits one page;
+  // relaxed a step in design-tasks-8 §1 - the rows needed breathing room more than the page
+  // needed those few points back).
   denseCell: {
-    paddingVertical: 1.5,
+    paddingVertical: 3,
   },
   denseCellText: {
     fontSize: 8,
@@ -143,8 +156,8 @@ const styles = StyleSheet.create({
   // Column divider between the two service cells of a compact included-services row - the same
   // hairline the program columns use, so the compact table still reads as part of one table family.
   compactSecondCell: {
-    borderLeftWidth: 1,
-    borderLeftColor: PDF_COLOR.docLine,
+    borderLeftWidth: 0.75,
+    borderLeftColor: PDF_COLOR.docLineSoft,
     borderLeftStyle: 'solid',
   },
   programCell: {
@@ -155,6 +168,12 @@ const styles = StyleSheet.create({
     borderLeftColor: PDF_COLOR.docLine,
     borderLeftStyle: 'solid',
     justifyContent: 'center',
+  },
+  // `light` tables (the single-amount-column Invoice/Expected-Expenses ones, design-tasks-8 §1)
+  // drop the vertical divider before the amount column entirely - with one column of numbers the
+  // hairline only added grid noise.
+  lightProgramCell: {
+    borderLeftWidth: 0,
   },
   programCellHead: {
     fontFamily: PDF_FONT.body,
@@ -178,6 +197,11 @@ const styles = StyleSheet.create({
     fontSize: 8.5,
     textAlign: 'center',
     color: PDF_COLOR.docInk,
+  },
+  // Credits/adjustments (design-tasks-8 §5): negative amounts step out of the ink color into the
+  // subdued bronze accent, so a credit reads as a different kind of line than a charge.
+  creditAmountCellText: {
+    color: PDF_COLOR.bronze,
   },
   markCellText: {
     fontFamily: PDF_FONT.body,
@@ -280,19 +304,31 @@ const styles = StyleSheet.create({
   },
 });
 
-const ProgramColumnsHead = ({ packages, leadLabel, dense = false }) => (
+const ProgramColumnsHead = ({ packages, leadLabel, dense = false, light = false }) => (
   <View style={styles.tableHeadRow} wrap={false}>
     <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
       <Text style={styles.labelCellHeadText}>{leadLabel}</Text>
     </View>
     {packages.map(program => (
-      <View key={program.id} style={[styles.programCell, dense ? styles.denseCell : null]}>
+      <View key={program.id} style={[styles.programCell, dense ? styles.denseCell : null, light ? styles.lightProgramCell : null]}>
         {program.label ? <Text style={styles.programCellHead}>{program.label}</Text> : null}
         <Text style={styles.programCellHeadPrice}>{program.priceLabel}</Text>
       </View>
     ))}
   </View>
 );
+
+// A schedule/breakdown cell amount is null (no value), a number (formatted bare), a pass-through
+// string (e.g. "GIFT" or a pre-formatted two-decimal amount), or - for the invoice's credit rows
+// (design-tasks-8 §5) - an object `{ label, tone: 'credit' }` whose label renders in the subdued
+// credit color.
+const renderAmountCell = amount => {
+  if (amount == null) return { label: '-', credit: false };
+  if (typeof amount === 'object') {
+    return { label: sanitizePdfText(amount.label), credit: amount.tone === 'credit' };
+  }
+  return { label: typeof amount === 'string' ? sanitizePdfText(amount) : formatAmount(amount), credit: false };
+};
 
 // The "Included in this programme" table (spec §1.2/§2). Shared, byte-for-byte, between the
 // catalog-wide Program Budget (one column per programme) and the case-specific single-programme
@@ -378,13 +414,16 @@ export const IncludedServicesTable = ({
 // repeat the same numbers at its foot (round7 spec A.1).
 // A cell amount may also be a free-text label (e.g. "GIFT") when the table renders invoice
 // breakdown rows - a string passes through as-is instead of being coerced to a number.
-export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment schedule', leadLabel = 'Milestone', sectionStyle, dense = false }) => (rows.length ? (
+// `light` (design-tasks-8 §1) drops the vertical divider before the amount column(s);
+// `titleStyle` lets a document promote one table's heading (the invoice's "Breakdown",
+// design-tasks-8 §2) without a second table component.
+export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment schedule', leadLabel = 'Milestone', sectionStyle, dense = false, light = false, titleStyle }) => (rows.length ? (
   <View style={sectionStyle || styles.scheduleSection}>
     <View wrap={false} minPresenceAhead={70}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={titleStyle ? [styles.sectionTitle, titleStyle] : styles.sectionTitle}>{title}</Text>
     </View>
     <View style={styles.table}>
-      <ProgramColumnsHead packages={packages} leadLabel={leadLabel} dense={dense} />
+      <ProgramColumnsHead packages={packages} leadLabel={leadLabel} dense={dense} light={light} />
       {rows.map((row, rowIndex) => (
         <View key={`schedule-row-${rowIndex}`} style={styles.tableRow} wrap={false}>
           <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
@@ -393,13 +432,22 @@ export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment 
             </Text>
             {row.description ? <Text style={styles.labelCellDescription}>{sanitizePdfText(row.description)}</Text> : null}
           </View>
-          {row.amounts.map((amount, columnIndex) => (
-            <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={[styles.programCell, dense ? styles.denseCell : null]}>
-              <Text style={dense ? [styles.amountCellText, styles.denseCellText] : styles.amountCellText}>
-                {amount == null ? '-' : (typeof amount === 'string' ? sanitizePdfText(amount) : formatAmount(amount))}
-              </Text>
-            </View>
-          ))}
+          {row.amounts.map((amount, columnIndex) => {
+            const cell = renderAmountCell(amount);
+            return (
+              <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={[styles.programCell, dense ? styles.denseCell : null, light ? styles.lightProgramCell : null]}>
+                <Text
+                  style={[
+                    styles.amountCellText,
+                    dense ? styles.denseCellText : null,
+                    cell.credit ? styles.creditAmountCellText : null,
+                  ]}
+                >
+                  {cell.label}
+                </Text>
+              </View>
+            );
+          })}
         </View>
       ))}
       {Array.isArray(totals) ? (
