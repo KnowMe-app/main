@@ -50,22 +50,10 @@ const STALE_APP_MESSAGE = 'The app has been updated since this page was opened. 
 const MAX_LOGO_FILE_BYTES = 1024 * 1024;
 
 // Mobile admins can't easily reach the browser devtools console, so every Storage failure below
-// is folded into the on-screen/PDF message with the real Firebase/network error code - "see the
+// is folded into the on-screen message with the real Firebase/network error code - "see the
 // browser console" alone leaves them stuck with no way to report what actually went wrong.
 const describeStorageError = error =>
   `${error?.code || error?.name || 'error'}: ${error?.message || String(error)}`.trim();
-
-// One-shot debug PDF, downloaded right after a clinic logo upload, that replays the exact
-// Storage-fetch + re-encode pipeline the real Documents PDF uses later and reports each step -
-// see clinicLogoDebugPdf.js for why this exists instead of just a console.log.
-const downloadClinicLogoDebugPdf = async entry => {
-  const [{ pdf }, { default: ClinicLogoDebugPdfDocument }] = await Promise.all([
-    import('@react-pdf/renderer'),
-    import('./clinicLogoDebugPdf'),
-  ]);
-  const blob = await pdf(React.createElement(ClinicLogoDebugPdfDocument, { entry })).toBlob();
-  saveAs(blob, `clinic-logo-debug-${entry.fileName}.pdf`);
-};
 
 // --- Layout shell (mirrors InvoiceBuilderPage's page-scoped palette) -------------------------
 
@@ -829,46 +817,6 @@ const DocumentsPage = ({ isAdmin }) => {
           setClinicLogoError('');
           setClinicLogoRefreshKey(previous => previous + 1);
           toast.success('Clinic logo uploaded to the backend.');
-
-          // Replay the exact pipeline the Documents PDF relies on later (Storage fetch, then the
-          // canvas re-encode) right now, while the upload is fresh, and hand the admin a PDF that
-          // shows what happened at each step - the one place this is visible without devtools.
-          const storagePath = clinicLogoStorageFilePath(clinicId, fileName);
-          const debugEntry = {
-            uploadedAt: new Date().toISOString(),
-            clinicId,
-            fileName,
-            storagePath,
-            originalFile: `${file.name} · ${file.type} · ${(file.size / 1024).toFixed(1)} KB`,
-            originalDimensions: `${image.naturalWidth || 0}×${image.naturalHeight || 0}`,
-            fetchOk: false,
-            fetchError: '',
-            reencoded: false,
-            finalDimensions: '—',
-            previewSrc: '',
-          };
-          try {
-            const rawDataUrl = await getStorageFileDataUrl(storagePath);
-            debugEntry.fetchOk = Boolean(rawDataUrl);
-            if (!rawDataUrl) debugEntry.fetchError = 'empty response from Storage';
-            if (rawDataUrl) {
-              const reencodedDataUrl = await reencodePdfImageDataUrl(rawDataUrl);
-              debugEntry.reencoded = reencodedDataUrl !== rawDataUrl;
-              debugEntry.previewSrc = reencodedDataUrl;
-              const dimensions = await readImageDimensions(reencodedDataUrl);
-              debugEntry.finalDimensions = `${dimensions.width}×${dimensions.height}`;
-            }
-          } catch (debugFetchError) {
-            debugEntry.fetchOk = false;
-            debugEntry.fetchError = describeStorageError(debugFetchError);
-            console.error('[ClinicLogo] Debug round-trip fetch failed', storagePath, debugFetchError);
-          }
-          try {
-            await downloadClinicLogoDebugPdf(debugEntry);
-          } catch (debugPdfError) {
-            console.error('[ClinicLogo] Unable to build the debug PDF', debugPdfError);
-            toast.error('Uploaded, but could not build the debug PDF - see the console.');
-          }
         } catch (uploadError) {
           console.error('Unable to upload clinic logo', uploadError);
           toast.error(String(uploadError?.code || '').includes('unauthorized')
