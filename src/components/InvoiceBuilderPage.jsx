@@ -1957,6 +1957,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [isGeneratingExpectedExpenses, setIsGeneratingExpectedExpenses] = useState(false);
   const [generatePaymentDetails, setGeneratePaymentDetails] = useState(true);
   const [invoiceDateInput, setInvoiceDateInput] = useState(getTodayYmd());
+  // Optional invoice due date (design-tasks-8 §7). Empty (the default) renders the invoice's
+  // "Payable upon receipt" line instead of a concrete date - same session-local lifecycle as
+  // invoiceDateInput above.
+  const [dueDateInput, setDueDateInput] = useState('');
   const [newCustomPackageName, setNewCustomPackageName] = useState('');
   const [showExpectedExpensesPicker, setShowExpectedExpensesPicker] = useState(false);
   const [showCustomSchedulePicker, setShowCustomSchedulePicker] = useState(false);
@@ -3361,6 +3365,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         debtOrDeposit: data.debtOrDeposit,
         invoiceNumber,
         invoiceDisplayDate,
+        dueDate: dueDateInput ? new Date(`${dueDateInput}T00:00:00`) : null,
         generatePaymentDetails,
         includePackageInPdf: data.includePackageInPdf,
         includeScheduleInPdf: data.includeScheduleInPdf,
@@ -3970,6 +3975,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   type="date"
                   value={invoiceDateInput}
                   onChange={event => setInvoiceDateInput(event.target.value)}
+                  style={{
+                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
+                  }}
+                />
+              </FieldRow>
+              <FieldRow>
+                <FieldTag title="Shown in the invoice's Amount Due block. Leave empty for 'Payable upon receipt'.">Due date</FieldTag>
+                <input
+                  type="date"
+                  value={dueDateInput}
+                  onChange={event => setDueDateInput(event.target.value)}
+                  aria-label="Due date (empty = payable upon receipt)"
                   style={{
                     flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
                   }}

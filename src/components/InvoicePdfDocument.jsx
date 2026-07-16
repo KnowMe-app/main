@@ -5,9 +5,8 @@ import {
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 import { formatMoney } from './budgetCatalogUtils';
-import { IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
+import { formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import {
-  buildCaseTitle,
   buildPayerLocation,
   buildPayerName,
   computeInvoiceAmountDue,
@@ -65,6 +64,18 @@ const styles = StyleSheet.create({
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
+  // The Breakdown heading gets real section-header weight (design-tasks-8 §2): a bit larger than
+  // the shared sectionTitle and with extra air above it, so it stops reading like body text.
+  breakdownSection: {
+    marginTop: 14,
+  },
+  breakdownSectionAfterTitle: {
+    marginTop: 6,
+  },
+  breakdownTitle: {
+    fontSize: 15,
+    marginBottom: 6,
+  },
   packageBlock: {
     marginTop: 2,
   },
@@ -99,23 +110,33 @@ const styles = StyleSheet.create({
   // A compacted copy of the shared total-card (same tokens, tighter metrics): together with the
   // 14pt section rhythm above it keeps a full package invoice - package block, included services,
   // payment schedule, breakdown, total - on one physical page whenever possible (design-tasks §3).
+  // design-tasks-8 §4 pushes the page's focal point further: a larger amount figure and more
+  // internal padding, with the label kept subdued relative to the figure.
   totalCard: {
     ...pdfBaseStyles.totalCard,
-    marginTop: 6,
-    paddingVertical: 7,
+    marginTop: 10,
+    paddingVertical: 12,
   },
   totalCardLabel: {
     ...pdfBaseStyles.totalCardLabel,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   totalCardAmount: {
     ...pdfBaseStyles.totalCardAmount,
-    fontSize: 18,
+    fontSize: 21,
+  },
+  // The due-date line (design-tasks-8 §7) sits right under the figure, quiet but readable.
+  totalCardDueDate: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 500,
+    fontSize: 8,
+    color: PDF_COLOR.footerSoft,
+    marginTop: 4,
   },
   totalCardRule: {
     ...pdfBaseStyles.totalCardRule,
-    marginTop: 5,
-    marginBottom: 4,
+    marginTop: 7,
+    marginBottom: 5,
   },
   noteRow: {
     flexDirection: 'row',
@@ -141,21 +162,42 @@ const styles = StyleSheet.create({
 // one-style breakdown line as every other row - without repeating the underlying percentage/
 // package wording in the PDF (design-tasks §3). Amounts stay bare numbers (or a free-text label
 // like "GIFT"): the table's own EUR column header already carries the currency.
-const formatBareAmount = value => {
+// Always two decimals (design-tasks-8 §9) via the shared table formatter, so decimal points line
+// up down the amount column here and in Expected Expenses alike.
+const formatBareAmount = formatAmountTwoDecimals;
+
+// A proper typographic minus for credits (design-tasks-8 §5) - a hyphen reads as a dash, U+2212
+// has the digit-matched width/height. sanitizePdfText leaves it alone (it only folds en/em
+// dashes) and both embedded body fonts carry the glyph.
+const TYPOGRAPHIC_MINUS = '−';
+
+// Two-decimal money for the Amount Due card's arithmetic rows (design-tasks-8 §6/§9) - same
+// EUR suffix as budgetCatalogUtils.formatMoney, but never dropping ".00", so the card's column
+// of figures lines up on the decimal.
+const formatMoneyTwoDecimals = value => {
   const amount = Number(value);
-  if (!Number.isFinite(amount)) return '-';
-  const rounded = Math.round(amount * 100) / 100;
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: Number.isInteger(rounded) ? 0 : 2,
-    maximumFractionDigits: Number.isInteger(rounded) ? 0 : 2,
-  }).format(rounded);
+  if (!Number.isFinite(amount)) return '- EUR';
+  return `${new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)} EUR`;
 };
 
-const buildBreakdownTableRow = row => ({
-  title: row.kind === 'percent' ? 'Scheduled payment' : (row.name || ''),
-  description: row.description || '',
-  amounts: [row.priceLabel ? row.priceLabel : formatBareAmount(row.price)],
-});
+const buildBreakdownTableRow = row => {
+  const price = Number(row.price);
+  // Credits/adjustments (design-tasks-8 §5): a negative amount renders with the typographic
+  // minus in the subdued credit tone, so charges and credits read as two kinds of line.
+  const isCredit = !row.priceLabel && Number.isFinite(price) && price < 0;
+  return {
+    title: row.kind === 'percent' ? 'Scheduled payment' : (row.name || ''),
+    description: row.description || '',
+    amounts: [row.priceLabel
+      ? row.priceLabel
+      : (isCredit
+        ? { label: `${TYPOGRAPHIC_MINUS}${formatBareAmount(Math.abs(price))}`, tone: 'credit' }
+        : formatBareAmount(price))],
+  };
+};
 
 // The "Package block" (round7 spec C): a compact name/fee header, then the package's full
 // composition - always shown, since the Builder's own "Package" checkbox already gates whether
@@ -174,9 +216,12 @@ const PackageBlock = ({ row, showSchedule }) => {
     id: child.id || child.key || `child-${index}`,
     name: child.name || '',
   }));
+  // Numbers are pre-formatted to two decimals here (design-tasks-8 §9) so this table's amounts
+  // line up on the decimal exactly like the Breakdown's, instead of the shared table's bare
+  // integer format.
   const scheduleRows = (row.scheduleRows || []).map(payment => ({
     title: payment.title || 'Payment',
-    amounts: [payment.amount],
+    amounts: [typeof payment.amount === 'number' ? formatBareAmount(payment.amount) : payment.amount],
   }));
   // Only a customised package gets an explanatory note above its breakdown - a stock catalog
   // package just shows its detail below with no note at all (round7 spec B.1: it no longer claims
@@ -210,6 +255,7 @@ const PackageBlock = ({ row, showSchedule }) => {
           title="Payment schedule for this package"
           sectionStyle={styles.section}
           dense
+          light
         />
       ) : null}
     </View>
@@ -227,6 +273,7 @@ const InvoicePdfDocument = ({
   priceContext,
   invoiceType,
   debtOrDeposit,
+  dueDate = null,
   generatePaymentDetails = true,
   includePackageInPdf = true,
   includeScheduleInPdf = true,
@@ -237,7 +284,16 @@ const InvoicePdfDocument = ({
   const amountDue = computeInvoiceAmountDue(total, debtOrDeposit);
   const payerName = buildPayerName(customers);
   const payerLocation = buildPayerLocation(customers);
-  const caseTitle = buildCaseTitle(customers);
+  // Transparent arithmetic for the Amount Due card (design-tasks-8 §6): the same rows the
+  // subtotal is computed from (computeInvoiceSubtotal's filter), split into positive charges and
+  // negative credits so the card can show how the line items add up to the figure billed.
+  const chargeableRows = rows.filter(row => row?.kind !== 'package' || !row.catalogId || row.billDirectly);
+  const creditsTotal = chargeableRows.reduce((sum, row) => {
+    const price = Number(row.price) || 0;
+    return price < 0 ? sum + price : sum;
+  }, 0);
+  const servicesTotal = subtotal - creditsTotal;
+  const taxAmount = total - subtotal;
   const noteList = Array.isArray(notes)
     ? notes
       .filter(note => String(note || '').trim())
@@ -288,7 +344,10 @@ const InvoicePdfDocument = ({
       <Page size="A4" style={styles.page} wrap>
         <BronzeMotif />
         <ContinuedTag label={docLabel} />
-        <BrandRow metaLines={[`Invoice No. ${invoiceNumber || ''}`, dateLabel, caseTitle]} />
+        {/* Invoice No. + date only (design-tasks-8 §8): the case/client identity already lives in
+            the "Prepared exclusively for" subtitle right below, so repeating it up here just
+            crowded the wordmark. */}
+        <BrandRow metaLines={[`Invoice No. ${invoiceNumber || ''}`, dateLabel]} />
         <BrandRule style={{ marginBottom: 10 }} />
         <TitleBlock
           eyebrow={eyebrow}
@@ -309,8 +368,10 @@ const InvoicePdfDocument = ({
             rows={breakdownTableRows}
             title="Breakdown"
             leadLabel="Provided service"
-            sectionStyle={!isPackageInvoice ? styles.sectionAfterTitle : styles.section}
+            sectionStyle={!isPackageInvoice ? styles.breakdownSectionAfterTitle : styles.breakdownSection}
+            titleStyle={styles.breakdownTitle}
             dense
+            light
           />
         ) : null}
 
@@ -329,15 +390,36 @@ const InvoicePdfDocument = ({
               whole - it must never split its amount from its subtotal/tax rows. */}
           <View style={styles.totalCard} wrap={false}>
             <Text style={styles.totalCardLabel}>Amount due</Text>
-            <Text style={styles.totalCardAmount}>{formatMoney(amountDue)}</Text>
+            <Text style={styles.totalCardAmount}>{formatMoneyTwoDecimals(amountDue)}</Text>
+            {/* When how much is stated, so is when (design-tasks-8 §7): a concrete due date when
+                the builder sets one, the payable-on-receipt default otherwise. */}
+            <Text style={styles.totalCardDueDate}>
+              {dueDate ? sanitizePdfText(`Due date · ${formatDisplayDate(dueDate)}`) : 'Payable upon receipt'}
+            </Text>
             <View style={styles.totalCardRule} />
+            {/* Transparent arithmetic (design-tasks-8 §6): the Services/Credits split renders only
+                when a credit exists - without one, Services would just repeat the Subtotal. */}
+            {creditsTotal < 0 ? (
+              <>
+                <View style={pdfBaseStyles.totalCardRow}>
+                  <Text style={pdfBaseStyles.totalCardRowLabel}>Services</Text>
+                  <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoneyTwoDecimals(servicesTotal)}</Text>
+                </View>
+                <View style={pdfBaseStyles.totalCardRow}>
+                  <Text style={pdfBaseStyles.totalCardRowLabel}>Credits</Text>
+                  <Text style={pdfBaseStyles.totalCardRowValue}>
+                    {`${TYPOGRAPHIC_MINUS}${formatMoneyTwoDecimals(Math.abs(creditsTotal))}`}
+                  </Text>
+                </View>
+              </>
+            ) : null}
             <View style={pdfBaseStyles.totalCardRow}>
               <Text style={pdfBaseStyles.totalCardRowLabel}>Subtotal</Text>
-              <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoney(subtotal)}</Text>
+              <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoneyTwoDecimals(subtotal)}</Text>
             </View>
             <View style={pdfBaseStyles.totalCardRow}>
-              <Text style={pdfBaseStyles.totalCardRowLabel}>Tax</Text>
-              <Text style={pdfBaseStyles.totalCardRowValue}>{`${sanitizePdfText(String(taxPercent ?? 0))}%`}</Text>
+              <Text style={pdfBaseStyles.totalCardRowLabel}>{`Tax (${sanitizePdfText(String(taxPercent ?? 0))}%)`}</Text>
+              <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoneyTwoDecimals(taxAmount)}</Text>
             </View>
             {/* Applied after tax, never folded into the taxable subtotal above it (spec follow-up):
                 a carried-over debt/deposit is settled money, not a billable service - zero (the
@@ -348,7 +430,7 @@ const InvoicePdfDocument = ({
                   {debtOrDeposit > 0 ? 'Debt of the previous payment' : 'Deposit of the previous payment'}
                 </Text>
                 <Text style={pdfBaseStyles.totalCardRowValue}>
-                  {`${debtOrDeposit > 0 ? '+' : '-'}${formatMoney(Math.abs(debtOrDeposit))}`}
+                  {`${debtOrDeposit > 0 ? '+' : TYPOGRAPHIC_MINUS}${formatMoneyTwoDecimals(Math.abs(debtOrDeposit))}`}
                 </Text>
               </View>
             ) : null}

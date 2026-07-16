@@ -11,7 +11,7 @@ import { get, ref, set, update } from 'firebase/database';
 import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
-import { auth, database, getStorageFileDataUrl, uploadFileToStorageFolder } from './config';
+import { auth, database, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -488,6 +488,7 @@ const DocumentsPage = ({ isAdmin }) => {
   // Every uploaded logo variant of the selected clinic: { fileName, dataUrl, width, height }.
   const [clinicLogos, setClinicLogos] = useState([]);
   const [clinicLogoLoading, setClinicLogoLoading] = useState(false);
+  const [clinicLogoError, setClinicLogoError] = useState('');
   const logoInputRef = useRef(null);
   // Mirror of `settings` that persistSettings can read synchronously: two quick successive
   // saves (e.g. logo upload + favourite formatting) must each build on the other's result, and
@@ -910,12 +911,15 @@ const DocumentsPage = ({ isAdmin }) => {
   const orderedCases = orderCasesByRecent(catalog.parties.cases, settings.recentCaseIds);
   const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
-  const selectedClinic = catalog.parties.clinics.find(item => String(item.id) === String(selectedCase?.clinicId || '')) || null;
   const caseContext = resolveCaseContext(catalog, selectedCaseId);
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
-  const clinicLogoNames = (selectedClinic?.id && catalog.clinicLogos[String(selectedClinic.id)]) || [];
-  const clinicLogoNamesKey = `${selectedClinic?.id || ''}:${clinicLogoNames.join('|')}`;
+  // The logo store is keyed by the case's clinicId - the exact key the upload handler writes
+  // with - so an uploaded logo still resolves even when no clinic record with that id exists in
+  // the parties catalog (uploading never required one either).
+  const logoClinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+  const clinicLogoNames = (logoClinicId && catalog.clinicLogos[logoClinicId]) || [];
+  const clinicLogoNamesKey = `${logoClinicId}:${clinicLogoNames.join('|')}`;
 
   // Fetch every stored logo variant of the selected clinic from Storage by its file name; the
   // dimensions are what pickLogoVariantForLayout uses to tell compact from full-width variants.
@@ -924,7 +928,8 @@ const DocumentsPage = ({ isAdmin }) => {
     const [clinicId, namesJoined] = clinicLogoNamesKey.split(':');
     const names = namesJoined ? namesJoined.split('|').filter(Boolean) : [];
     setClinicLogos([]);
-    if (!clinicId || !names.length) {
+    setClinicLogoError('');
+    if (!clinicId) {
       setClinicLogoLoading(false);
       return () => {
         cancelled = true;
@@ -932,22 +937,54 @@ const DocumentsPage = ({ isAdmin }) => {
     }
 
     setClinicLogoLoading(true);
-    Promise.all(names.map(async fileName => {
-      try {
-        const dataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
-        if (!dataUrl) return null;
-        const dimensions = await readImageDimensions(dataUrl);
-        return { fileName, dataUrl, ...dimensions };
-      } catch (loadLogoError) {
-        console.error('Unable to load clinic logo from Storage', loadLogoError);
-        return null;
-      }
-    })).then(variants => {
-      if (!cancelled) {
-        setClinicLogos(variants.filter(Boolean));
+    const loadVariants = async () => {
+      let fileNames = names;
+      if (!fileNames.length) {
+        // Recovery path: the Storage folder itself is the source of truth for uploaded logo
+        // files. If the Realtime Database name list is missing (its write failed after the
+        // Storage upload succeeded, or it was lost later), list the folder and heal the node so
+        // the orphaned upload becomes visible again instead of silently never reaching the PDF.
+        try {
+          fileNames = await listStorageFolderFileNames(clinicLogoStorageFolder(clinicId));
+        } catch (listError) {
+          console.error('Unable to list the clinic logo Storage folder', listError);
+          fileNames = [];
+        }
+        if (cancelled) return;
+        if (fileNames.length) {
+          set(ref(database, clinicLogoDbPath(clinicId)), fileNames).catch(healError => {
+            console.error('Unable to restore clinic logo file names to the backend', healError);
+          });
+          // Updating the catalog re-keys this effect; the re-run then loads via the normal path.
+          setCatalog(previous => ({
+            ...previous,
+            clinicLogos: { ...previous.clinicLogos, [clinicId]: fileNames },
+          }));
+          return;
+        }
         setClinicLogoLoading(false);
+        return;
       }
-    });
+
+      const variants = (await Promise.all(fileNames.map(async fileName => {
+        try {
+          const dataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
+          if (!dataUrl) return null;
+          const dimensions = await readImageDimensions(dataUrl);
+          return { fileName, dataUrl, ...dimensions };
+        } catch (loadLogoError) {
+          console.error('Unable to load clinic logo from Storage', loadLogoError);
+          return null;
+        }
+      }))).filter(Boolean);
+      if (cancelled) return;
+      setClinicLogos(variants);
+      // Files are registered but none could be fetched - say so instead of pretending nothing
+      // was ever uploaded (the difference between "upload it" and "fix access/see console").
+      setClinicLogoError(variants.length ? '' : 'Could not load the uploaded clinic logo from Storage - see the browser console.');
+      setClinicLogoLoading(false);
+    };
+    loadVariants();
 
     return () => {
       cancelled = true;
@@ -1263,7 +1300,7 @@ const DocumentsPage = ({ isAdmin }) => {
                         </LogoVariant>
                       );
                     }) : (
-                      <DocSubtitle>{clinicLogoLoading ? 'Loading the clinic logo…' : 'No clinic logo uploaded yet.'}</DocSubtitle>
+                      <DocSubtitle>{clinicLogoLoading ? 'Loading the clinic logo…' : (clinicLogoError || 'No clinic logo uploaded yet.')}</DocSubtitle>
                     )}
                     <input
                       ref={logoInputRef}
