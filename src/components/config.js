@@ -328,10 +328,27 @@ export const getStorageFileDataUrl = async filePath => {
   const normalizedPath = String(filePath || '').split('/').filter(Boolean).join('/');
   if (!normalizedPath) return '';
   const fileRef = ref(storage, normalizedPath);
-  const bytes = await getBytes(fileRef);
-  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const contentType = getStorageContentTypeFromBytes(byteArray) || getStorageContentTypeFromName({ name: normalizedPath }) || 'image/jpeg';
-  return `data:${contentType};base64,${bytesToBase64(byteArray)}`;
+  try {
+    const bytes = await getBytes(fileRef);
+    const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const contentType = getStorageContentTypeFromBytes(byteArray) || getStorageContentTypeFromName({ name: normalizedPath }) || 'image/jpeg';
+    return `data:${contentType};base64,${bytesToBase64(byteArray)}`;
+  } catch (bytesError) {
+    // getBytes() can fail even when the caller is allowed to read the file - e.g. a CORS
+    // preflight rejection on some browsers/network setups. getDownloadURL() + fetch() takes a
+    // different code path (a plain GET against a token-authenticated URL) that isn't subject to
+    // the same restriction, so it recovers files that getBytes alone would report as unloadable.
+    try {
+      const url = await getDownloadURL(fileRef);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      const blob = await response.blob();
+      return await blobToDataUrl(blob);
+    } catch (fetchError) {
+      console.error('Unable to load Storage file via getBytes or getDownloadURL/fetch', normalizedPath, bytesError, fetchError);
+      throw bytesError;
+    }
+  }
 };
 
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
