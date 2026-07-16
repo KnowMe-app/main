@@ -4,6 +4,14 @@
 // applied automatically - deploy it in the Firebase console (Storage -> Rules) or via
 // `firebase deploy --only storage` with a firebase.json that points at this file.
 //
+// CORS is a separate, bucket-level setting (not part of these rules) and has its own deployable
+// source of truth: storage.cors.json, deployed with `gsutil cors set storage.cors.json
+// gs://<bucket>`. Rules control *who* may read/write; CORS controls whether a browser on a given
+// origin is even allowed to see the response to a Storage request. Without it, requests that add
+// custom headers (the Storage SDK's getBytes()/uploadBytes(), which send an Authorization header)
+// can fail in the browser with a CORS error even though the rules above would have allowed them -
+// see storage.cors.json for the fix and setup steps.
+//
 // Why this file exists: the Documents Builder uploads clinic logos to
 // `documentsBuilder/parties/cases/clinics/{clinicId}/logo/{fileName}` and the previously deployed
 // rules only allowed writes under /documentsBuilder/** for two hardcoded UIDs. On top of that, the
