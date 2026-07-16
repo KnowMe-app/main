@@ -314,14 +314,19 @@ export const uploadFileToStorageFolder = async (photo, folderPath, options = {})
   return { fileName, filePath };
 };
 
-// File names (not URLs) directly under a Storage folder. Lets filename-based stores (e.g. the
-// documentsBuilder clinic logos) recover files whose names never made it into (or were lost from)
-// the matching Realtime Database node - the Storage folder itself stays the source of truth.
+// File names (not URLs) directly under a Storage folder. Documents Builder clinic logos use
+// the Storage folder itself as the source of truth instead of mirroring names into Realtime DB.
 export const listStorageFolderFileNames = async folderPath => {
   const normalizedFolder = String(folderPath || '').split('/').filter(Boolean).join('/');
   if (!normalizedFolder) return [];
   const list = await listAll(ref(storage, normalizedFolder));
   return list.items.map(item => item.name).filter(Boolean);
+};
+
+export const deleteStorageFile = async filePath => {
+  const normalizedPath = String(filePath || '').split('/').filter(Boolean).join('/');
+  if (!normalizedPath) return;
+  await deleteObject(ref(storage, normalizedPath));
 };
 
 export const getStorageFileDataUrl = async filePath => {

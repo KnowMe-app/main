@@ -8,9 +8,8 @@ export const DOCUMENTS_PARTIES_PATH = 'documentsBuilder/parties';
 export const DOCUMENTS_TEMPLATES_PATH = 'documentsBuilder/templates';
 export const DOCUMENTS_SETTINGS_PATH = 'documentsBuilder/settings';
 
-// Clinic logos are stored as plain file names (never URLs): the image files live in the Storage
-// folder below and the same-shaped Realtime Database node keeps the array of file names
-// (`parties/cases/clinics/{clinicId}/logo/[a.jpg, b.jpg, ...]`, spec §5).
+// Legacy clinic-logo filename helpers. Current UI lists the Storage folder directly, but these
+// paths still normalize older Realtime Database filename mirrors without treating them as cases.
 export const clinicLogoDbPath = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const clinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoStorageFolder(clinicId)}/${fileName}`;
@@ -439,7 +438,7 @@ export const normalizeDocFormatting = raw => {
 };
 
 // The backend settings record stores formatting values and the recently-used case order.
-// Clinic logos live as Storage file names under clinicLogoDbPath, not as URLs/data URLs here.
+// Clinic logos are resolved from Storage at render time, not stored as URLs/data URLs here.
 export const normalizeDocumentsSettings = raw => {
   const source = isPlainObject(raw) ? raw : {};
   return {
