@@ -563,21 +563,27 @@ export const buildCaseLabel = (catalog, caseRecord) => {
   return parts.join(' — ') || String(caseRecord.id);
 };
 
-// Most recently used case first (spec §5), the rest keep catalog order.
-export const orderCasesByRecent = (cases, recentCaseIds) => {
-  const recent = toArray(recentCaseIds).map(String);
+// Generic "most recently used first" ordering + upsert, shared by the case selector (spec §5) and
+// the Documents list (most recently downloaded templates float to the top): whatever isn't in the
+// recent list yet keeps its original catalog order, appended after every recent record.
+export const orderRecordsByRecentIds = (records, recentIds) => {
+  const recent = toArray(recentIds).map(String);
   const rank = id => {
     const index = recent.indexOf(String(id));
     return index === -1 ? recent.length : index;
   };
-  return [...(cases || [])].sort((a, b) => rank(a.id) - rank(b.id));
+  return [...(records || [])].sort((a, b) => rank(a.id) - rank(b.id));
 };
 
-export const upsertRecentCaseId = (recentCaseIds, caseId) => {
-  if (!caseId) return toArray(recentCaseIds).map(String);
-  const id = String(caseId);
-  return [id, ...toArray(recentCaseIds).map(String).filter(existing => existing !== id)].slice(0, 20);
+export const upsertRecentId = (recentIds, id) => {
+  if (!id) return toArray(recentIds).map(String);
+  const strId = String(id);
+  return [strId, ...toArray(recentIds).map(String).filter(existing => existing !== strId)].slice(0, 20);
 };
+
+export const orderCasesByRecent = (cases, recentCaseIds) => orderRecordsByRecentIds(cases, recentCaseIds);
+
+export const upsertRecentCaseId = (recentCaseIds, caseId) => upsertRecentId(recentCaseIds, caseId);
 
 // --- Layouts + formatting settings ----------------------------------------------------------
 
@@ -664,7 +670,8 @@ export const normalizeDocFormatting = raw => {
   };
 };
 
-// The backend settings record stores formatting values and the recently-used case order.
+// The backend settings record stores formatting values, the recently-used case order, and the
+// recently-downloaded document template order (spec: "самі популярні документи мають бути вгорі").
 // Clinic logos are resolved from Storage at render time, not stored as URLs/data URLs here.
 export const normalizeDocumentsSettings = raw => {
   const source = isPlainObject(raw) ? raw : {};
@@ -672,16 +679,22 @@ export const normalizeDocumentsSettings = raw => {
     formatting: normalizeDocFormatting(source.formatting),
     clinicLogo: null,
     recentCaseIds: toArray(source.recentCaseIds).map(String),
+    recentDocIds: toArray(source.recentDocIds).map(String),
   };
 };
 
 // --- File naming ----------------------------------------------------------------------------
 
-export const buildDocumentsFileName = (catalog, caseRecord, layout, extension) => {
-  const label = buildCaseLabel(catalog, caseRecord)
-    .replace(/[^\p{L}\p{N}]+/gu, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 60) || 'Case';
+const slugifyFileNamePart = value => String(value || '')
+  .replace(/[^\p{L}\p{N}]+/gu, '_')
+  .replace(/^_+|_+$/g, '');
+
+// Every selected document downloads as its own file (spec: "всі обрані документи ... мають бути
+// окремими файлами") - `doc` (a single generated document, when provided) adds its own title to
+// the name so a batch download doesn't produce several identically-named files.
+export const buildDocumentsFileName = (catalog, caseRecord, layout, extension, doc = null) => {
+  const label = slugifyFileNamePart(buildCaseLabel(catalog, caseRecord)).slice(0, 60) || 'Case';
+  const docLabel = doc ? slugifyFileNamePart(doc.title?.uk || doc.title?.en || doc.id).slice(0, 60) : '';
   const langTag = layout === 'one-column-uk' ? 'UA' : layout === 'one-column-en' ? 'EN' : 'UA-EN';
   const today = new Date();
   const ymd = [
@@ -689,5 +702,6 @@ export const buildDocumentsFileName = (catalog, caseRecord, layout, extension) =
     String(today.getMonth() + 1).padStart(2, '0'),
     String(today.getDate()).padStart(2, '0'),
   ].join('-');
-  return `Documents_${label}_${langTag}_${ymd}.${extension}`;
+  const parts = ['Documents', label, docLabel, langTag, ymd].filter(Boolean);
+  return `${parts.join('_')}.${extension}`;
 };
