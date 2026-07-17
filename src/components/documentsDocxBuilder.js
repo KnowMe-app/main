@@ -101,8 +101,9 @@ export const buildDocumentsDocx = async ({
         const contentWidthTwips = 11906
           - Math.round(formatting.marginLeftCm * CM_TO_TWIP)
           - Math.round(formatting.marginRightCm * CM_TO_TWIP);
+        const columnWidthTwips = Math.max(0, (contentWidthTwips - gapTwips) / 2);
         const widthPx = isTwoColumn
-          ? Math.round(formatting.logoWidthMm * MM_TO_PX)
+          ? Math.round(Math.min(formatting.logoWidthMm * MM_TO_PX, (columnWidthTwips / 1440) * 96))
           : Math.round((contentWidthTwips / 1440) * 96);
         const ratio = logo.width && logo.height ? logo.height / logo.width : 0.25;
         const logoParagraph = () => new Paragraph({

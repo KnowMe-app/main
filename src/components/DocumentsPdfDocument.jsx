@@ -104,7 +104,10 @@ const DocumentsPdfDocument = ({
   // (superseding the earlier single shared logo); one-column pages keep the long variant
   // stretched across the full text width.
   const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
-  const logoWidth = isTwoColumn ? formatting.logoWidthMm * MM_TO_PT : contentWidth;
+  const columnWidth = Math.max(0, (contentWidth - columnGap) / 2);
+  const logoWidth = isTwoColumn
+    ? Math.min(formatting.logoWidthMm * MM_TO_PT, columnWidth)
+    : contentWidth;
 
   const cellStyles = StyleSheet.create({
     title: {
