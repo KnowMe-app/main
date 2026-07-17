@@ -1,7 +1,9 @@
 import {
   DEFAULT_DOC_FORMATTING,
+  applyLogoLayoutAssignment,
   buildCaseLabel,
   buildGeneratedDocument,
+  clinicLogoEntriesToBackend,
   deepMergeRecords,
   emptyDocumentsCatalog,
   fillPlaceholders,
@@ -278,7 +280,7 @@ describe('data-mode overrides', () => {
 });
 
 describe('clinic logos', () => {
-  it('reads file names from parties/cases/clinics without leaking them into cases', () => {
+  it('reads legacy bare file names from parties/cases/clinics as unassigned entries', () => {
     const catalog = normalizeDocumentsCatalog(
       {
         clinics: { 'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка' } } },
@@ -289,8 +291,37 @@ describe('clinic logos', () => {
       },
       null,
     );
-    expect(catalog.clinicLogos['clinic-1']).toEqual(['a.jpg', 'b.png']);
+    expect(catalog.clinicLogos['clinic-1']).toEqual([
+      { file: 'a.jpg', layout: '' },
+      { file: 'b.png', layout: '' },
+    ]);
     expect(catalog.parties.cases.map(record => record.id)).toEqual(['case-1']);
+  });
+
+  it('reads { file, layout } entries and drops unknown layout tags', () => {
+    const catalog = normalizeDocumentsCatalog(
+      {
+        cases: {
+          clinics: {
+            'clinic-1': {
+              logo: [
+                { file: 'square.jpg', layout: '2col' },
+                { file: 'wide.jpg', layout: '1col' },
+                { file: 'spare.jpg', layout: 'diagonal' },
+                'legacy.jpg',
+              ],
+            },
+          },
+        },
+      },
+      null,
+    );
+    expect(catalog.clinicLogos['clinic-1']).toEqual([
+      { file: 'square.jpg', layout: '2col' },
+      { file: 'wide.jpg', layout: '1col' },
+      { file: 'spare.jpg', layout: '' },
+      { file: 'legacy.jpg', layout: '' },
+    ]);
   });
 
   it('falls back to legacy file names stored on the clinic record', () => {
@@ -298,10 +329,28 @@ describe('clinic logos', () => {
       { clinics: { 'clinic-1': { id: 'clinic-1', logo: ['legacy.jpg'] } } },
       null,
     );
-    expect(catalog.clinicLogos['clinic-1']).toEqual(['legacy.jpg']);
+    expect(catalog.clinicLogos['clinic-1']).toEqual([{ file: 'legacy.jpg', layout: '' }]);
   });
 
-  it('picks the squarest variant for two columns and the widest for one column', () => {
+  it('picks the variant assigned to the selected column mode', () => {
+    const twoCol = { fileName: 'square.jpg', dataUrl: 'data:1', layout: '2col', width: 200, height: 180 };
+    const oneCol = { fileName: 'wide.jpg', dataUrl: 'data:2', layout: '1col', width: 900, height: 120 };
+    const spare = { fileName: 'spare.jpg', dataUrl: 'data:3', layout: '', width: 1200, height: 100 };
+    expect(pickLogoVariantForLayout([oneCol, twoCol, spare], 'two-column')).toBe(twoCol);
+    expect(pickLogoVariantForLayout([oneCol, twoCol, spare], 'one-column-uk')).toBe(oneCol);
+    expect(pickLogoVariantForLayout([oneCol, twoCol, spare], 'one-column-en')).toBe(oneCol);
+  });
+
+  it('falls back to the other assigned variant instead of rendering no logo', () => {
+    const twoCol = { fileName: 'square.jpg', dataUrl: 'data:1', layout: '2col', width: 200, height: 180 };
+    const spare = { fileName: 'spare.jpg', dataUrl: 'data:3', layout: '', width: 1200, height: 100 };
+    // The '1 col' variant was deleted: the '2 col' variant is used, the unassigned one is not.
+    expect(pickLogoVariantForLayout([twoCol, spare], 'one-column-uk')).toBe(twoCol);
+    const oneCol = { fileName: 'wide.jpg', dataUrl: 'data:2', layout: '1col', width: 900, height: 120 };
+    expect(pickLogoVariantForLayout([oneCol, spare], 'two-column')).toBe(oneCol);
+  });
+
+  it('keeps the aspect-ratio heuristic while no variant is assigned', () => {
     const compact = { fileName: 'square.jpg', dataUrl: 'data:1', width: 200, height: 180 };
     const long = { fileName: 'wide.jpg', dataUrl: 'data:2', width: 900, height: 120 };
     const portrait = { fileName: 'portrait.jpg', dataUrl: 'data:3', width: 100, height: 400 };
@@ -311,6 +360,42 @@ describe('clinic logos', () => {
     expect(pickLogoVariantForLayout([compact, long], 'one-column-en')).toBe(long);
     expect(pickLogoVariantForLayout([long], 'two-column')).toBe(long);
     expect(pickLogoVariantForLayout([], 'two-column')).toBeNull();
+  });
+
+  it('assigns a layout with one tap, keeping at most one variant per layout', () => {
+    const variants = [
+      { fileName: 'a.jpg', layout: '1col' },
+      { fileName: 'b.jpg', layout: '' },
+    ];
+    // Assigning '1col' to b moves the assignment off a.
+    expect(applyLogoLayoutAssignment(variants, 'b.jpg', '1col')).toEqual([
+      { fileName: 'a.jpg', layout: '' },
+      { fileName: 'b.jpg', layout: '1col' },
+    ]);
+    // Tapping the active tag again unassigns.
+    expect(applyLogoLayoutAssignment(variants, 'a.jpg', '1col')).toEqual([
+      { fileName: 'a.jpg', layout: '' },
+      { fileName: 'b.jpg', layout: '' },
+    ]);
+    // Assigning the other layout leaves the '1col' assignment alone.
+    expect(applyLogoLayoutAssignment(variants, 'b.jpg', '2col')).toEqual([
+      { fileName: 'a.jpg', layout: '1col' },
+      { fileName: 'b.jpg', layout: '2col' },
+    ]);
+    // DB-shaped entries ({ file }) work the same way.
+    expect(applyLogoLayoutAssignment([{ file: 'a.jpg', layout: '' }], 'a.jpg', '2col')).toEqual([
+      { file: 'a.jpg', layout: '2col' },
+    ]);
+  });
+
+  it('persists every variant as { file, layout }, omitting layout while unassigned', () => {
+    expect(clinicLogoEntriesToBackend([
+      { fileName: 'square.jpg', dataUrl: 'data:1', layout: '2col', width: 200, height: 180 },
+      { fileName: 'spare.jpg', dataUrl: 'data:2', layout: '', width: 900, height: 120 },
+    ])).toEqual([
+      { file: 'square.jpg', layout: '2col' },
+      { file: 'spare.jpg' },
+    ]);
   });
 });
 

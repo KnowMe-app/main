@@ -64,12 +64,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
-  // The Breakdown heading renders in the shared promoted sectionTitle (design-tasks-8 §2,
-  // unified in design-tasks-11 §2) - what stays invoice-specific is the extra air above it, so
-  // it clearly separates from whatever precedes it: the "Prepared exclusively for..." title
+  // The Breakdown heading renders in the shared promoted sectionTitle (design-tasks-8 §2, unified
+  // across every document's headings in design-tasks-11 §2 - no more per-document size override)
+  // - what stays invoice-specific is the extra air above it, opened up further in design-tasks-9
+  // §2 so it clearly separates from whatever precedes it: the "Prepared exclusively for..." title
   // subrow on a plain-services invoice, the package's payment schedule on a package invoice.
   breakdownSection: {
-    marginTop: 16,
+    marginTop: 20,
   },
   breakdownSectionAfterTitle: {
     marginTop: 14,
@@ -135,6 +136,15 @@ const styles = StyleSheet.create({
     ...pdfBaseStyles.totalCardRule,
     marginTop: 7,
     marginBottom: 5,
+  },
+  // Hairline seam between the Breakdown (with its footnotes) and the Amount Due card
+  // (design-tasks-9 §4) - the same docLine hairline the document already uses for its rules,
+  // not a new visual element. The card's own marginTop provides the spacing below it.
+  amountDueDivider: {
+    borderTopWidth: 0.75,
+    borderTopColor: PDF_COLOR.docLine,
+    borderTopStyle: 'solid',
+    marginTop: 16,
   },
   noteRow: {
     flexDirection: 'row',
@@ -382,6 +392,8 @@ const InvoicePdfDocument = ({
               <Text style={styles.noteText}>{sanitizePdfText(note)}</Text>
             </View>
           ))}
+
+          <View style={styles.amountDueDivider} />
 
           {/* wrap={false}: the card either fits under the breakdown or moves to the next page
               whole - it must never split its amount from its subtotal/tax rows. */}

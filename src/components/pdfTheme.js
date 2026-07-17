@@ -159,8 +159,8 @@ export const pdfBaseStyles = {
   page: {
     paddingTop: 48,
     // Extra clearance above the footer (design-tasks-8 §3) so the last content block never sits
-    // flush against it.
-    paddingBottom: 78,
+    // flush against it - grown in step with the footer's taller rule spacing (design-tasks-9 §5).
+    paddingBottom: 82,
     paddingLeft: PAGE_MARGIN,
     paddingRight: PAGE_MARGIN,
     fontFamily: PDF_FONT.body,
@@ -336,12 +336,16 @@ export const pdfBaseStyles = {
   totalCardRowValue: {
     fontFamily: PDF_FONT.body,
     fontWeight: 600,
+    // Tabular figures (design-tasks-9 §3): the card's Services/Credits/Subtotal/Tax values stack
+    // vertically, so their digits and decimal points must line up like the tables' amount columns.
+    fontVariantNumeric: 'tabular-nums',
     fontSize: 8.5,
     color: PDF_COLOR.card,
   },
   // The footer frames the page bottom with the same diamond-rule brand element the page opens
-  // with (design-tasks-8 §3/§10), replacing the plain border-top hairline, and its text steps up
-  // from footerSoft to footerInk so the agency identity stops reading like an afterthought.
+  // with (design-tasks-8 §3/§10), replacing the plain border-top hairline. Its text has stepped
+  // up one more tone, footerInk -> inkSoft (design-tasks-9 §5), so the agency identity reads
+  // clearly without competing with body text.
   footer: {
     position: 'absolute',
     left: PAGE_MARGIN,
@@ -351,7 +355,8 @@ export const pdfBaseStyles = {
   footerRuleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 9,
+    // More air between the diamond-rule and the text block below it (design-tasks-9 §5).
+    marginBottom: 13,
   },
   footerRuleLine: {
     flex: 1,
@@ -376,7 +381,7 @@ export const pdfBaseStyles = {
   footerText: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerInk,
+    color: PDF_COLOR.inkSoft,
     lineHeight: 1.5,
   },
   footerContactRow: {
@@ -393,20 +398,20 @@ export const pdfBaseStyles = {
   footerLink: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerInk,
+    color: PDF_COLOR.inkSoft,
     textDecoration: 'none',
   },
   footerContactDivider: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerInk,
+    color: PDF_COLOR.inkSoft,
     opacity: 0.5,
     marginHorizontal: 5,
   },
   footerPage: {
     fontFamily: PDF_FONT.body,
     fontSize: 7,
-    color: PDF_COLOR.footerInk,
+    color: PDF_COLOR.inkSoft,
   },
   continuedTag: {
     position: 'absolute',
@@ -558,7 +563,9 @@ export const SummaryCard = ({ label, text }) => (text ? (
 // (design-tasks-7 §1).
 const FOOTER_ICON_SIZE = 6.5;
 const footerIconStyle = { width: FOOTER_ICON_SIZE, height: FOOTER_ICON_SIZE, marginRight: 3 };
-const footerIconStroke = { stroke: PDF_COLOR.footerInk, strokeWidth: 2, fill: 'none' };
+// Icons track the footer text tone (inkSoft since design-tasks-9 §5) so the icon+link pairs stay
+// one visual unit.
+const footerIconStroke = { stroke: PDF_COLOR.inkSoft, strokeWidth: 2, fill: 'none' };
 
 const FooterGlobeIcon = () => (
   <Svg style={footerIconStyle} viewBox="0 0 24 24">
@@ -580,7 +587,7 @@ const FooterMailIcon = () => (
 const FooterTelegramIcon = () => (
   <Svg style={footerIconStyle} viewBox="0 0 448 512">
     <Path
-      fill={PDF_COLOR.footerInk}
+      fill={PDF_COLOR.inkSoft}
       d="M446.7 98.6l-67.6 318.8c-5.1 22.5-18.4 28.1-37.3 17.5l-103-75.9-49.7 47.8c-5.5 5.5-10.1 10.1-20.7 10.1l7.4-104.9 190.9-172.5c8.3-7.4-1.8-11.5-12.9-4.1L117.8 284 16.2 252.2c-22.1-6.9-22.5-22.1 4.6-32.7L418.2 66.4c18.4-6.9 34.5 4.1 28.5 32.2z"
     />
   </Svg>
