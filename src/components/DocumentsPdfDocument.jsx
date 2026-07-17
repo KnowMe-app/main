@@ -278,10 +278,13 @@ const DocumentsPdfDocument = ({
               {formatting.showPageNumbers ? (
                 <Text
                   style={{ fontSize: Math.max(7, formatting.fontSize - 2) }}
-                  // Nothing worth counting on a one-page export - shown only once the export
-                  // actually runs to two or more pages, then on every page including the first
-                  // (same rule as the branded PDFs' shared Footer in pdfTheme.js).
-                  render={({ pageNumber, totalPages }) => (totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : '')}
+                  // subPageNumber/subPageTotalPages count only the physical pages that came from
+                  // THIS document's own <Page> element - each selected document gets its own 1-based
+                  // count (never the combined total across every selected document), and nothing
+                  // worth showing when this particular document fits on a single page.
+                  render={({ subPageNumber, subPageTotalPages }) => (
+                    subPageTotalPages > 1 ? `Page ${subPageNumber} of ${subPageTotalPages}` : ''
+                  )}
                 />
               ) : null}
             </View>

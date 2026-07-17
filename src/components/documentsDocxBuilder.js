@@ -199,29 +199,39 @@ export const buildDocumentsDocx = async ({
     }
     : undefined;
 
-  // A Word document's real page count is only known once Word itself lays the content out, not
-  // at generation time - unlike the PDF renderer, which gets a real totalPages from @react-pdf.
-  // documents.length is the best available proxy: every generated statement opens its own
-  // section/page, so 2+ selected statements guarantees 2+ pages, and this keeps the same "nothing
-  // worth counting on a single page" rule the PDF applies exactly.
-  const showPageNumbers = formatting.showPageNumbers && documents.length > 1;
-  const footerChildren = [];
-  if (formatting.footerText || showPageNumbers) {
-    const runs = [];
-    if (formatting.footerText) runs.push(new TextRun({ text: formatting.footerText, size: smallSize }));
-    if (showPageNumbers) {
-      if (formatting.footerText) runs.push(new TextRun({ text: '   ', size: smallSize }));
-      runs.push(new TextRun({ text: 'Page ', size: smallSize }));
-      runs.push(new TextRun({ children: [PageNumber.CURRENT], size: smallSize }));
-      runs.push(new TextRun({ text: ' of ', size: smallSize }));
-      runs.push(new TextRun({ children: [PageNumber.TOTAL_PAGES], size: smallSize }));
+  // One section per document (below), each with its own w:pgNumType/@start="1" (pageNumbers.start
+  // in pageSetup) so Word's PAGE field restarts at 1 for every document instead of counting
+  // through the whole combined export, and PageNumber.TOTAL_PAGES_IN_SECTION (the SECTIONPAGES
+  // field) so the "of N" total is this document's own page count, not the export's.
+  //
+  // A Word document's real page count is only known once Word itself lays the content out, not at
+  // generation time - unlike the PDF renderer, which gets a real subPageTotalPages from @react-pdf.
+  // Whether a *specific* document is worth numbering at all can't be measured up front the same
+  // way; `allowPageBreaks` (set on genuinely long templates) is the best available per-document
+  // proxy for "this one may run past a single page" and is used instead of the previous
+  // `documents.length > 1` guess, which judged the whole export rather than each document.
+  const anyDocumentCanShowPageNumbers = formatting.showPageNumbers && documents.some(doc => doc.allowPageBreaks);
+
+  const buildFooter = doc => {
+    const showPageNumbers = formatting.showPageNumbers && Boolean(doc.allowPageBreaks);
+    const footerChildren = [];
+    if (formatting.footerText || showPageNumbers) {
+      const runs = [];
+      if (formatting.footerText) runs.push(new TextRun({ text: formatting.footerText, size: smallSize }));
+      if (showPageNumbers) {
+        if (formatting.footerText) runs.push(new TextRun({ text: '   ', size: smallSize }));
+        runs.push(new TextRun({ text: 'Page ', size: smallSize }));
+        runs.push(new TextRun({ children: [PageNumber.CURRENT], size: smallSize }));
+        runs.push(new TextRun({ text: ' of ', size: smallSize }));
+        runs.push(new TextRun({ children: [PageNumber.TOTAL_PAGES_IN_SECTION], size: smallSize }));
+      }
+      footerChildren.push(new Paragraph({
+        alignment: formatting.footerText ? AlignmentType.LEFT : AlignmentType.CENTER,
+        children: runs,
+      }));
     }
-    footerChildren.push(new Paragraph({
-      alignment: formatting.footerText ? AlignmentType.LEFT : AlignmentType.CENTER,
-      children: runs,
-    }));
-  }
-  const footers = footerChildren.length ? { default: new Footer({ children: footerChildren }) } : undefined;
+    return footerChildren.length ? { default: new Footer({ children: footerChildren }) } : undefined;
+  };
 
   const pageSetup = {
     page: {
@@ -233,14 +243,15 @@ export const buildDocumentsDocx = async ({
         bottom: Math.round(formatting.marginBottomCm * CM_TO_TWIP),
         left: Math.round(formatting.marginLeftCm * CM_TO_TWIP),
       },
+      pageNumbers: { start: 1 },
     },
   };
 
   // One section per document so every statement starts on a fresh page with its own header/footer.
   const doc = new Document({
-    // The PAGE/NUMPAGES fields above are computed by Word itself, not by this builder - without
-    // this, Word shows their last-cached value (0) until the user manually recalculates (F9).
-    features: showPageNumbers ? { updateFields: true } : undefined,
+    // The PAGE/SECTIONPAGES fields above are computed by Word itself, not by this builder -
+    // without this, Word shows their last-cached value (0) until the user manually recalculates (F9).
+    features: anyDocumentCanShowPageNumbers ? { updateFields: true } : undefined,
     styles: {
       default: {
         document: {
@@ -251,7 +262,7 @@ export const buildDocumentsDocx = async ({
     sections: documents.map(generated => ({
       properties: pageSetup,
       headers,
-      footers,
+      footers: buildFooter(generated),
       children: buildDocChildren(generated),
     })),
   });
