@@ -64,17 +64,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
-  // The Breakdown heading renders in the shared promoted sectionTitle (design-tasks-8 §2, unified
-  // across every document's headings in design-tasks-11 §2 - no more per-document size override)
-  // - what stays invoice-specific is the extra air above it, opened up further in design-tasks-9
-  // §2 so it clearly separates from whatever precedes it: the "Prepared exclusively for..." title
-  // subrow on a plain-services invoice, the package's payment schedule on a package invoice.
-  breakdownSection: {
-    marginTop: 20,
-  },
-  breakdownSectionAfterTitle: {
-    marginTop: 14,
-  },
   packageBlock: {
     marginTop: 2,
   },
@@ -113,9 +102,10 @@ const styles = StyleSheet.create({
   // internal padding, with the label kept subdued relative to the figure. The gap above it is
   // plain whitespace, not a rule (design-tasks-12 §1 dropped the hairline seam that used to sit
   // here) - marginTop alone now carries the separation from the Breakdown table/notes above.
+  // marginTop moved out to the Batch 12 §1 spacing prop (applied inline at the usage site) so the
+  // admin can tune it; this default (20) is unchanged when the Builder's Spacing panel is untouched.
   totalCard: {
     ...pdfBaseStyles.totalCard,
-    marginTop: 20,
     paddingVertical: 12,
   },
   totalCardLabel: {
@@ -278,6 +268,7 @@ const InvoicePdfDocument = ({
   generatePaymentDetails = true,
   includePackageInPdf = true,
   includeScheduleInPdf = true,
+  spacing = {},
 }) => {
   const rows = resolveInvoiceServiceRows(invoiceServices, catalogItemsById, priceContext);
   const subtotal = computeInvoiceSubtotal(rows);
@@ -326,6 +317,14 @@ const InvoicePdfDocument = ({
     return [...acc, row];
   }, []);
   const isPackageInvoice = packageRows.length > 0;
+  // Batch 12 §1: admin-tunable gaps between blocks (Documents Builder Format panel's spacing
+  // controls, lighter version - just these two, everything else on the page stays fixed). Each
+  // falls back to the exact value design-tasks tuned when the Builder's Spacing panel is untouched
+  // - the "above Breakdown" default depends on whether a package block precedes it (20pt after a
+  // package, design-tasks-9 §2; 14pt directly under the title otherwise), same as before this was
+  // made tunable.
+  const aboveBreakdownGap = Number.isFinite(spacing.aboveBreakdown) ? spacing.aboveBreakdown : (isPackageInvoice ? 20 : 14);
+  const aboveAmountDueGap = Number.isFinite(spacing.aboveAmountDue) ? spacing.aboveAmountDue : 20;
   // A "% of package" row (a programme milestone share) and any custom/catalog service row share one
   // "Breakdown" table, one row style, one running numbering - splitting them into two headed
   // sections was the second-biggest source of clutter on this document (declutter spec §2).
@@ -369,7 +368,7 @@ const InvoicePdfDocument = ({
             rows={breakdownTableRows}
             title="Breakdown"
             leadLabel={SERVICE_TABLE_LEAD_LABEL}
-            sectionStyle={!isPackageInvoice ? styles.breakdownSectionAfterTitle : styles.breakdownSection}
+            sectionStyle={{ marginTop: aboveBreakdownGap }}
             dense
             light
           />
@@ -388,7 +387,7 @@ const InvoicePdfDocument = ({
 
           {/* wrap={false}: the card either fits under the breakdown or moves to the next page
               whole - it must never split its amount from its subtotal/tax rows. */}
-          <View style={styles.totalCard} wrap={false}>
+          <View style={[styles.totalCard, { marginTop: aboveAmountDueGap }]} wrap={false}>
             <Text style={styles.totalCardLabel}>Amount due</Text>
             <Text style={styles.totalCardAmount}>{formatMoneyTwoDecimals(amountDue)}</Text>
             {/* When how much is stated, so is when (design-tasks-8 §7): a concrete due date when

@@ -21,9 +21,6 @@ const formatPercentValue = percent => (Number.isInteger(percent) ? String(percen
 
 const styles = StyleSheet.create({
   page: pdfBaseStyles.page,
-  section: {
-    marginTop: 26,
-  },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
   forecastNotice: {
@@ -35,19 +32,21 @@ const styles = StyleSheet.create({
   },
   // No divider above this heading anymore (design-tasks-13 §2 dropped the hairline seam) - the
   // marginTop alone separates it from the payment-schedule table above, now that that table
-  // always opens its own fresh page.
+  // always opens its own fresh page. marginTop moved out to the Batch 12 §1 spacing prop (applied
+  // inline at the usage site) so the admin can tune it; this default (22) is unchanged when the
+  // Builder's Spacing panel is untouched.
   paymentsHeading: {
     ...pdfBaseStyles.sectionTitle,
-    marginTop: 22,
     marginBottom: 12,
   },
+  // marginBottom (the gap between consecutive Payment blocks) moved out to the Batch 12 §1 spacing
+  // prop, same as paymentsHeading above.
   paymentBlock: {
     borderWidth: 1,
     borderColor: PDF_COLOR.docLine,
     borderStyle: 'solid',
     borderRadius: 6,
     padding: 10,
-    marginBottom: 10,
   },
   paymentHeaderRow: {
     flexDirection: 'row',
@@ -109,13 +108,13 @@ const styles = StyleSheet.create({
 // every other row (SM deposits, catalog add-ons, gifts) as the same plain line, and the milestone's
 // own total. Never repeats the package name, included services, or payment schedule - those render
 // exactly once, above, in the shared programme-overview block.
-const PaymentBlock = ({ index, milestone, rows, currency }) => {
+const PaymentBlock = ({ index, milestone, rows, currency, gap }) => {
   const { scheduledRows, additionalRows } = splitScheduledRows(rows);
   const subtotal = computeMilestoneSubtotal(rows);
   const taxPercent = Number(milestone.taxPercent) || 0;
   const amountDue = computeMilestoneAmountDue(subtotal, taxPercent);
   return (
-    <View style={styles.paymentBlock} wrap={false}>
+    <View style={[styles.paymentBlock, { marginBottom: gap }]} wrap={false}>
       <View style={styles.paymentHeaderRow}>
         <Text style={styles.paymentTitle}>{sanitizePdfText(`Payment #${index + 1} — ${milestone.title}`)}</Text>
       </View>
@@ -157,8 +156,15 @@ const PaymentBlock = ({ index, milestone, rows, currency }) => {
 // two documents can never drift apart), followed by a compact "Payment #N" block per milestone.
 // Everything lives on one flowing, auto-paginating <Page>, so several compact payment blocks land
 // on the same physical page instead of each getting its own.
-const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate }) => {
+const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceContext, planDate, spacing = {} }) => {
   const caseTitle = buildCaseTitle(customers);
+  // Batch 12 §1: admin-tunable gaps between blocks (Documents Builder Format panel's spacing
+  // controls, lighter version). Each falls back to the exact value design-tasks tuned when the
+  // Builder's Spacing panel is untouched.
+  const aboveIncludedServicesGap = Number.isFinite(spacing.aboveIncludedServices) ? spacing.aboveIncludedServices : 26;
+  const abovePaymentScheduleGap = Number.isFinite(spacing.abovePaymentSchedule) ? spacing.abovePaymentSchedule : 23;
+  const abovePaymentsGap = Number.isFinite(spacing.abovePayments) ? spacing.abovePayments : 22;
+  const betweenPaymentsGap = Number.isFinite(spacing.betweenPayments) ? spacing.betweenPayments : 10;
   const payerName = buildPayerName(customers);
   const dateLabel = formatDisplayDate(planDate instanceof Date ? planDate : new Date(planDate || Date.now()));
   const programmeName = plan?.packageSnapshot?.name || 'Programme';
@@ -215,6 +221,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
           includedRows={includedRows}
           title="Included in this programme"
           note="Every item below is already covered by the programme fee."
+          sectionStyle={{ marginTop: aboveIncludedServicesGap }}
         />
 
         {/* `light` (design-tasks-8 §1): single amount column, so no vertical divider before it -
@@ -223,7 +230,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
             than trailing under Included services, conditioned on there being rows so an empty
             table (no milestones) never forces a blank page break with nothing on it. */}
         <View break={scheduleRows.length > 0}>
-          <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} light />
+          <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} light sectionStyle={{ marginTop: abovePaymentScheduleGap }} />
         </View>
 
         {milestones.length ? (
@@ -233,11 +240,11 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
                 keeps the heading from stranding at a page bottom with every block on the next. */}
             {milestones.map((milestone, index) => {
               const block = (
-                <PaymentBlock index={index} milestone={milestone} rows={milestoneRows[index]} currency={currency} />
+                <PaymentBlock index={index} milestone={milestone} rows={milestoneRows[index]} currency={currency} gap={betweenPaymentsGap} />
               );
               return index === 0 ? (
                 <View key={milestone.id || index} wrap={false}>
-                  <Text style={styles.paymentsHeading}>Payments</Text>
+                  <Text style={[styles.paymentsHeading, { marginTop: abovePaymentsGap }]}>Payments</Text>
                   {block}
                 </View>
               ) : (

@@ -2,7 +2,8 @@
 // exports (Invoice/Budget/...), these documents reproduce the look of the reference statements
 // docx: Times-style serif (Tinos - metric-compatible with Times New Roman and
 // covering the full Ukrainian alphabet + №), justified paragraphs, an optional clinic logo
-// centered above the title, and either a single-language column or the uk|en two-column layout.
+// above the title (once, centered, in one-column mode; once per column in two-column mode),
+// and either a single-language column or the uk|en two-column layout.
 // Every metric (font sizes, margins, spacing, indent, header/footer) comes from the formatting
 // settings the user tunes on the page - nothing visual is hardcoded beyond the defaults.
 import React from 'react';
@@ -98,10 +99,12 @@ const DocumentsPdfDocument = ({
   const columnGap = formatting.columnGapCm * CM_TO_PT;
   const hasHeader = Boolean(formatting.headerText);
   const hasFooter = Boolean(formatting.footerText) || formatting.showPageNumbers;
-  // Spec §7: two-column pages share one compact logo at the tuned width; one-column pages get the
-  // long variant stretched across the full text width.
+  const isTwoColumn = layout === 'two-column';
+  // Batch 12 §2: two-column pages get the compact logo rendered twice, once above each column
+  // (superseding the earlier single shared logo); one-column pages keep the long variant
+  // stretched across the full text width.
   const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
-  const logoWidth = layout === 'two-column' ? formatting.logoWidthMm * MM_TO_PT : contentWidth;
+  const logoWidth = isTwoColumn ? formatting.logoWidthMm * MM_TO_PT : contentWidth;
 
   const cellStyles = StyleSheet.create({
     title: {
@@ -158,13 +161,24 @@ const DocumentsPdfDocument = ({
             </Text>
           ) : null}
           {formatting.showLogo && logoDataUrl ? (
-            <Image
-              src={logoDataUrl}
-              style={[styles.logo, {
-                width: logoWidth,
-                marginBottom: LOGO_BOTTOM_GAP_PT,
-              }]}
-            />
+            isTwoColumn ? (
+              <View style={[styles.row, { marginBottom: LOGO_BOTTOM_GAP_PT }]}>
+                <View style={cellStyles.leftCell}>
+                  <Image src={logoDataUrl} style={[styles.logo, { width: logoWidth }]} />
+                </View>
+                <View style={cellStyles.rightCell}>
+                  <Image src={logoDataUrl} style={[styles.logo, { width: logoWidth }]} />
+                </View>
+              </View>
+            ) : (
+              <Image
+                src={logoDataUrl}
+                style={[styles.logo, {
+                  width: logoWidth,
+                  marginBottom: LOGO_BOTTOM_GAP_PT,
+                }]}
+              />
+            )
           ) : null}
           <DocumentBlock doc={doc} layout={layout} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
           {hasFooter ? (
@@ -180,7 +194,10 @@ const DocumentsPdfDocument = ({
               {formatting.showPageNumbers ? (
                 <Text
                   style={{ fontSize: Math.max(7, formatting.fontSize - 2) }}
-                  render={({ pageNumber }) => `${pageNumber}`}
+                  // Batch 12 §3: nothing worth counting on a one-page export - shown only once the
+                  // export actually runs to two or more pages, then on every page including the
+                  // first (same rule as the branded PDFs' shared Footer in pdfTheme.js).
+                  render={({ pageNumber, totalPages }) => (totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : '')}
                 />
               ) : null}
             </View>

@@ -1,8 +1,9 @@
 // Word (.docx) renderer for the Documents page, mirroring DocumentsPdfDocument: same formatting
 // settings (Times New Roman, justified, tunable sizes/margins/spacing/header/footer), same
-// one-column / two-column layouts, same optional clinic logo above the title. The `docx` package
-// is imported dynamically by the caller-facing builder so the library only loads when a Word
-// export is actually requested.
+// one-column / two-column layouts, same optional clinic logo above the title (once, centered, in
+// one-column mode; once per column in two-column mode). The `docx` package is imported
+// dynamically by the caller-facing builder so the library only loads when a Word export is
+// actually requested.
 import { DEFAULT_DOC_FORMATTING } from './documentsCatalogUtils';
 
 const CM_TO_TWIP = 567;
@@ -65,7 +66,7 @@ export const buildDocumentsDocx = async ({
     children: [new TextRun({ text, bold: true, size: titleSize })],
   });
 
-  const twoColumnCell = (text, paragraphBuilder, marginSide) => new TableCell({
+  const twoColumnCellFromParagraph = (paragraph, marginSide) => new TableCell({
     borders: noBorders,
     width: { size: 50, type: WidthType.PERCENTAGE },
     verticalAlign: VerticalAlign.TOP,
@@ -75,8 +76,10 @@ export const buildDocumentsDocx = async ({
       left: marginSide === 'right' ? Math.round(gapTwips / 2) : 0,
       right: marginSide === 'left' ? Math.round(gapTwips / 2) : 0,
     },
-    children: [paragraphBuilder(text)],
+    children: [paragraph],
   });
+
+  const twoColumnCell = (text, paragraphBuilder, marginSide) => twoColumnCellFromParagraph(paragraphBuilder(text), marginSide);
 
   const twoColumnRow = (uk, en, paragraphBuilder) => new TableRow({
     children: [
@@ -91,9 +94,10 @@ export const buildDocumentsDocx = async ({
     if (formatting.showLogo && logo?.dataUrl) {
       const decoded = decodeLogoDataUrl(logo.dataUrl);
       if (decoded) {
-        // Spec §7: compact logo at the tuned width above the two-column layout, the long variant
-        // stretched to the full text width in one-column layouts. 10 pt (200 twips) below the
-        // logo matches the PDF's LOGO_BOTTOM_GAP_PT.
+        // Batch 12 §2: compact logo at the tuned width, rendered once per column in two-column
+        // layouts (superseding the earlier single shared logo) - the long variant still stretches
+        // to the full text width, once, in one-column layouts. 10 pt (200 twips) below the logo
+        // matches the PDF's LOGO_BOTTOM_GAP_PT.
         const contentWidthTwips = 11906
           - Math.round(formatting.marginLeftCm * CM_TO_TWIP)
           - Math.round(formatting.marginRightCm * CM_TO_TWIP);
@@ -101,7 +105,7 @@ export const buildDocumentsDocx = async ({
           ? Math.round(formatting.logoWidthMm * MM_TO_PX)
           : Math.round((contentWidthTwips / 1440) * 96);
         const ratio = logo.width && logo.height ? logo.height / logo.width : 0.25;
-        children.push(new Paragraph({
+        const logoParagraph = () => new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 200 },
           children: [new ImageRun({
@@ -109,7 +113,21 @@ export const buildDocumentsDocx = async ({
             type: decoded.type,
             transformation: { width: widthPx, height: Math.round(widthPx * ratio) },
           })],
-        }));
+        });
+        if (isTwoColumn) {
+          children.push(new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
+            rows: [new TableRow({
+              children: [
+                twoColumnCellFromParagraph(logoParagraph(), 'left'),
+                twoColumnCellFromParagraph(logoParagraph(), 'right'),
+              ],
+            })],
+          }));
+        } else {
+          children.push(logoParagraph());
+        }
       }
     }
 
@@ -140,13 +158,22 @@ export const buildDocumentsDocx = async ({
     }
     : undefined;
 
+  // Batch 12 §3: a Word document's real page count is only known once Word itself lays the
+  // content out, not at generation time - unlike the PDF renderer, which gets a real totalPages
+  // from @react-pdf. documents.length is the best available proxy: every generated statement
+  // opens its own section/page, so 2+ selected statements guarantees 2+ pages, and this keeps the
+  // same "nothing worth counting on a single page" rule the PDF applies exactly.
+  const showPageNumbers = formatting.showPageNumbers && documents.length > 1;
   const footerChildren = [];
-  if (formatting.footerText || formatting.showPageNumbers) {
+  if (formatting.footerText || showPageNumbers) {
     const runs = [];
     if (formatting.footerText) runs.push(new TextRun({ text: formatting.footerText, size: smallSize }));
-    if (formatting.showPageNumbers) {
+    if (showPageNumbers) {
       if (formatting.footerText) runs.push(new TextRun({ text: '   ', size: smallSize }));
+      runs.push(new TextRun({ text: 'Page ', size: smallSize }));
       runs.push(new TextRun({ children: [PageNumber.CURRENT], size: smallSize }));
+      runs.push(new TextRun({ text: ' of ', size: smallSize }));
+      runs.push(new TextRun({ children: [PageNumber.TOTAL_PAGES], size: smallSize }));
     }
     footerChildren.push(new Paragraph({
       alignment: formatting.footerText ? AlignmentType.LEFT : AlignmentType.CENTER,
@@ -170,6 +197,9 @@ export const buildDocumentsDocx = async ({
 
   // One section per document so every statement starts on a fresh page with its own header/footer.
   const doc = new Document({
+    // The PAGE/NUMPAGES fields above are computed by Word itself, not by this builder - without
+    // this, Word shows their last-cached value (0) until the user manually recalculates (F9).
+    features: showPageNumbers ? { updateFields: true } : undefined,
     styles: {
       default: {
         document: {

@@ -599,6 +599,36 @@ const useFieldDraft = externalValue => {
   return [draft, setDraft, editingRef];
 };
 
+// Batch 12 §1: one numeric "plain editable text" field for a block-spacing value - a lighter
+// version of the Documents Builder's Format panel, spacing-between-blocks only. A blank field
+// clears the override and falls back to the document's own tuned default (shown as the
+// placeholder), it is never coerced to 0.
+const SpacingField = ({ label, value, placeholder, onCommit }) => {
+  const [draft, setDraft, editingRef] = useFieldDraft(value === undefined || value === null ? '' : String(value));
+  return (
+    <FieldRow $align="center">
+      <FieldTag>{label}</FieldTag>
+      <AutoTextArea
+        as={PlainPriceBase}
+        $width="56px"
+        inputMode="decimal"
+        value={draft}
+        placeholder={placeholder}
+        aria-label={label}
+        onFocus={() => { editingRef.current = true; }}
+        onChange={event => setDraft(event.target.value)}
+        onBlur={() => {
+          editingRef.current = false;
+          const trimmed = draft.trim();
+          if (trimmed === '') { onCommit(undefined); return; }
+          const parsed = Number(trimmed.replace(',', '.'));
+          onCommit(Number.isFinite(parsed) ? parsed : undefined);
+        }}
+      />
+    </FieldRow>
+  );
+};
+
 const formatEuroPreview = formatEuroSmart;
 
 const getFormulaAwarePriceDraft = row => {
@@ -1970,6 +2000,14 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [beneficiaryExpanded, setBeneficiaryExpanded] = useState(false);
   const [payerExpanded, setPayerExpanded] = useState(false);
   const [issuedInvoicesOpen, setIssuedInvoicesOpen] = useState(false);
+  // Batch 12 §1: a lighter version of the Documents Builder's Format panel - spacing between
+  // document blocks only, nothing else (fonts/margins stay fixed). Session-local, not persisted:
+  // an unset field falls back to the document's own tuned default (see InvoicePdfDocument /
+  // ExpectedExpensesPdfDocument), so leaving this panel untouched never changes existing output.
+  const [invoiceSpacing, setInvoiceSpacing] = useState({});
+  const [invoiceSpacingExpanded, setInvoiceSpacingExpanded] = useState(false);
+  const [expectedExpensesSpacing, setExpectedExpensesSpacing] = useState({});
+  const [expectedExpensesSpacingExpanded, setExpectedExpensesSpacingExpanded] = useState(false);
   // round7 spec D: Expected Expenses is a standalone section of the Builder, not a step inside the
   // regular invoice-creation flow - a top-level tab keeps the two entirely separate on screen.
   const [activeTab, setActiveTab] = useState('invoice');
@@ -3097,6 +3135,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         catalogItemsById,
         priceContext,
         planDate: new Date(`${invoiceDateInput || getTodayYmd()}T00:00:00`),
+        spacing: expectedExpensesSpacing,
       };
       let blob;
       try {
@@ -3369,6 +3408,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         generatePaymentDetails,
         includePackageInPdf: data.includePackageInPdf,
         includeScheduleInPdf: data.includeScheduleInPdf,
+        spacing: invoiceSpacing,
       };
 
       // @react-pdf/renderer's WASM layout engine can still be warming up on the
@@ -4088,6 +4128,45 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               {!data.notes.length ? <PanelNote style={{ margin: 0 }}>No notes yet.</PanelNote> : null}
             </Panel>
 
+            {/* Spacing (batch 12 §1): a lighter version of the Documents Builder's Format panel -
+                only the vertical gap between blocks (header/Breakdown/Amount due) is tunable here;
+                fonts, margins and everything else on the branded Invoice PDF stay fixed. */}
+            <Panel>
+              <CompactSection
+                $expanded={invoiceSpacingExpanded}
+                onClick={() => setInvoiceSpacingExpanded(current => !current)}
+                role="button"
+                aria-expanded={invoiceSpacingExpanded}
+              >
+                <CompactInfo>
+                  <CompactLabel>Spacing</CompactLabel>
+                  <CompactValue>
+                    {Object.values(invoiceSpacing).some(value => value !== undefined) ? 'Custom block spacing' : 'Default block spacing'}
+                  </CompactValue>
+                </CompactInfo>
+                <CompactChevron>{invoiceSpacingExpanded ? 'Hide ›' : 'Edit ›'}</CompactChevron>
+              </CompactSection>
+              {invoiceSpacingExpanded ? (
+                <>
+                  <PanelHeading>
+                    <H2>Spacing</H2>
+                  </PanelHeading>
+                  <SpacingField
+                    label="Above Breakdown (pt)"
+                    value={invoiceSpacing.aboveBreakdown}
+                    placeholder="auto"
+                    onCommit={value => setInvoiceSpacing(current => ({ ...current, aboveBreakdown: value }))}
+                  />
+                  <SpacingField
+                    label="Above Amount due (pt)"
+                    value={invoiceSpacing.aboveAmountDue}
+                    placeholder="20"
+                    onCommit={value => setInvoiceSpacing(current => ({ ...current, aboveAmountDue: value }))}
+                  />
+                </>
+              ) : null}
+            </Panel>
+
             {/* Issued Invoices (design-tasks-3 §7): a click-to-reveal block at the bottom of the
                 page - the same collapsed-summary pattern Beneficiary/Payer use - listing every
                 invoice ever generated for the active payer, read-only, newest first. */}
@@ -4374,6 +4453,57 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   ))}
                 </>
               )}
+            </Panel>
+
+            {/* Spacing (batch 12 §1): same lighter Format-panel pattern as the Invoice tab - only
+                the gap between programme sections/payments blocks is tunable, everything else on
+                the branded Expected Expenses PDF stays fixed. */}
+            <Panel>
+              <CompactSection
+                $expanded={expectedExpensesSpacingExpanded}
+                onClick={() => setExpectedExpensesSpacingExpanded(current => !current)}
+                role="button"
+                aria-expanded={expectedExpensesSpacingExpanded}
+              >
+                <CompactInfo>
+                  <CompactLabel>Spacing</CompactLabel>
+                  <CompactValue>
+                    {Object.values(expectedExpensesSpacing).some(value => value !== undefined) ? 'Custom block spacing' : 'Default block spacing'}
+                  </CompactValue>
+                </CompactInfo>
+                <CompactChevron>{expectedExpensesSpacingExpanded ? 'Hide ›' : 'Edit ›'}</CompactChevron>
+              </CompactSection>
+              {expectedExpensesSpacingExpanded ? (
+                <>
+                  <PanelHeading>
+                    <H2>Spacing</H2>
+                  </PanelHeading>
+                  <SpacingField
+                    label="Above included services (pt)"
+                    value={expectedExpensesSpacing.aboveIncludedServices}
+                    placeholder="26"
+                    onCommit={value => setExpectedExpensesSpacing(current => ({ ...current, aboveIncludedServices: value }))}
+                  />
+                  <SpacingField
+                    label="Above payment schedule (pt)"
+                    value={expectedExpensesSpacing.abovePaymentSchedule}
+                    placeholder="23"
+                    onCommit={value => setExpectedExpensesSpacing(current => ({ ...current, abovePaymentSchedule: value }))}
+                  />
+                  <SpacingField
+                    label="Above payments (pt)"
+                    value={expectedExpensesSpacing.abovePayments}
+                    placeholder="22"
+                    onCommit={value => setExpectedExpensesSpacing(current => ({ ...current, abovePayments: value }))}
+                  />
+                  <SpacingField
+                    label="Between payments (pt)"
+                    value={expectedExpensesSpacing.betweenPayments}
+                    placeholder="10"
+                    onCommit={value => setExpectedExpensesSpacing(current => ({ ...current, betweenPayments: value }))}
+                  />
+                </>
+              ) : null}
             </Panel>
               </>
             ) : null}
