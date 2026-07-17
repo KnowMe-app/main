@@ -184,7 +184,10 @@ const DocumentsPdfDocument = ({
   const hasHeader = Boolean(formatting.headerText);
   const hasFooter = Boolean(formatting.footerText) || formatting.showPageNumbers;
   const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
-  const logoWidth = formatting.logoWidthMm * MM_TO_PT;
+  const isTwoColumn = layout === 'two-column';
+  const columnContentWidth = (contentWidth - columnGap) / 2;
+  const configuredLogoWidth = formatting.logoWidthMm * MM_TO_PT;
+  const logoWidth = isTwoColumn ? Math.min(configuredLogoWidth, columnContentWidth) : configuredLogoWidth;
   // `showLogo` is only the global permission (spec §5: `canRenderLogo = formatting.showLogo !==
   // false`) - whether a logo actually renders still depends entirely on the template carrying a
   // {{logo}}/{{logo-long}} paragraph; clinicLogos being empty (or missing the matching variant)

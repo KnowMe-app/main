@@ -61,6 +61,7 @@ export const buildDocumentsDocx = async ({
   const contentWidthTwips = 11906
     - Math.round(formatting.marginLeftCm * CM_TO_TWIP)
     - Math.round(formatting.marginRightCm * CM_TO_TWIP);
+  const columnContentWidthTwips = (contentWidthTwips - gapTwips) / 2;
 
   const bodyParagraph = (text, { keepLines = true } = {}) => new Paragraph({
     alignment: AlignmentType.JUSTIFIED,
@@ -144,7 +145,11 @@ export const buildDocumentsDocx = async ({
       return [logoParagraph(decoded, widthPx, ratio)];
     }
 
-    const compactWidthPx = Math.round(formatting.logoWidthMm * MM_TO_PX);
+    const configuredCompactWidthPx = Math.round(formatting.logoWidthMm * MM_TO_PX);
+    const columnContentWidthPx = Math.round((columnContentWidthTwips / 1440) * 96);
+    const compactWidthPx = isTwoColumn
+      ? Math.min(configuredCompactWidthPx, columnContentWidthPx)
+      : configuredCompactWidthPx;
     if (isTwoColumn && showUk && showEn) {
       return [twoColumnTable([[
         logoParagraph(decoded, compactWidthPx, ratio),
