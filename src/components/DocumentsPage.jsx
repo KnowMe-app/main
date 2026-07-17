@@ -32,17 +32,19 @@ import {
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
   emptyDocumentsCatalog,
+  getClinicLogo,
+  getParagraphType,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
   orderCasesByRecent,
   parseDocumentsTechnicalInput,
-  pickLogoVariantForLayout,
   pruneDocOverride,
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
   upsertRecentCaseId,
+  validateDocumentTemplate,
 } from './documentsCatalogUtils';
 
 // Same stale-chunk detection as the Invoice Builder: a failed dynamic chunk means the deployed
@@ -52,11 +54,14 @@ const STALE_APP_MESSAGE = 'The app has been updated since this page was opened. 
 
 const MAX_LOGO_FILE_BYTES = 1024 * 1024;
 
-// The two layout tags a logo variant can be assigned to (one tap on the variant row); the column
-// mode selected at the top of the page then picks the matching variant automatically.
+// The two layout tags a logo variant can be assigned to (one tap on the variant row). Which
+// variant a document actually uses is decided by the template itself, not by the page's column
+// mode: a {{logo}} paragraph uses the '1col' variant (compact, duplicated above each visible
+// language column); a {{logo-long}} paragraph uses the '2col' variant (one shared full-width
+// logo, never duplicated). A template with neither token renders no logo at all.
 const LOGO_LAYOUT_OPTIONS = [
-  { tag: '2col', label: '2 col', title: 'Use this variant above the two-column (UA + EN) layout' },
-  { tag: '1col', label: '1 col', title: 'Use this variant full-width on the one-column (UA or EN) layouts' },
+  { tag: '1col', label: '{{logo}}', title: 'Use this variant for the {{logo}} token - compact, duplicated above each language column' },
+  { tag: '2col', label: '{{logo-long}}', title: 'Use this variant for the {{logo-long}} token - one shared full-width logo' },
 ];
 
 // Mobile admins can't easily reach the browser devtools console, so every Storage failure below
@@ -956,9 +961,25 @@ const DocumentsPage = ({ isAdmin }) => {
   const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
   const caseContext = resolveCaseContext(catalog, selectedCaseId);
-  // Exactly the variant PDF/Word generation will use for the selected column mode - shown as the
-  // live preview above the document list, so switching the mode swaps the logo immediately.
-  const activeLogoVariant = pickLogoVariantForLayout(clinicLogos, layout);
+  // A logo only ever appears where a template places a {{logo}}/{{logo-long}} paragraph (spec
+  // §5) - never automatically. `showLogo` is just the global permission gate.
+  const canRenderLogo = formatting.showLogo !== false;
+  const selectedHasLogoToken = canRenderLogo && selectedTemplates.some(
+    template => (template.paragraphs || []).some(paragraph => getParagraphType(paragraph) === 'logo'),
+  );
+  const selectedHasLogoLongToken = canRenderLogo && !selectedHasLogoToken && selectedTemplates.some(
+    template => (template.paragraphs || []).some(paragraph => getParagraphType(paragraph) === 'logo-long'),
+  );
+  // Live preview above the document list of whichever variant the selected documents will
+  // actually draw - or nothing, when none of them reference a logo token.
+  const activeLogoVariant = selectedHasLogoToken
+    ? getClinicLogo(clinicLogos, 'logo')
+    : (selectedHasLogoLongToken ? getClinicLogo(clinicLogos, 'logo-long') : null);
+  // Every unresolved {{path}} across the selected documents for the current case - shown as a
+  // non-blocking warning and confirmed again right before a final export (spec §15).
+  const unresolvedVariables = caseContext
+    ? [...new Set(selectedTemplates.flatMap(template => validateDocumentTemplate(template, caseContext)))].sort()
+    : [];
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
   // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
@@ -968,7 +989,7 @@ const DocumentsPage = ({ isAdmin }) => {
   const clinicLogoStorageKey = `${logoClinicId}:${clinicLogoRefreshKey}`;
 
   // Fetch every stored logo variant of the selected clinic from Storage; the dimensions are what
-  // pickLogoVariantForLayout uses to tell compact from full-width variants.
+  // the PDF/DOCX renderers use to scale each {{logo}}/{{logo-long}} image proportionally.
   useEffect(() => {
     let cancelled = false;
     const [clinicId] = clinicLogoStorageKey.split(':');
@@ -1046,7 +1067,6 @@ const DocumentsPage = ({ isAdmin }) => {
     return {
       generated,
       normalizedFormatting: normalizeDocFormatting(formatting),
-      logoVariant: pickLogoVariantForLayout(clinicLogos, layout),
     };
   };
 
@@ -1054,11 +1074,23 @@ const DocumentsPage = ({ isAdmin }) => {
     persistSettings({ recentCaseIds: upsertRecentCaseId(settings.recentCaseIds, selectedCaseId) });
   };
 
+  // A non-blocking warning is shown inline at all times (spec §15); the final export step still
+  // asks for a confirmation so an admin never ships blanks without noticing.
+  const confirmUnresolvedVariables = () => {
+    if (!unresolvedVariables.length) return true;
+    if (typeof window === 'undefined') return true;
+    return window.confirm(
+      `Не вдалося підставити ${unresolvedVariables.length} змінн${unresolvedVariables.length === 1 ? 'у' : 'их'}:\n`
+      + `${unresolvedVariables.map(path => `- ${path}`).join('\n')}\n\nЗгенерувати документ попри це?`,
+    );
+  };
+
   const handleGeneratePdf = async () => {
     if (isGenerateDisabled) return;
+    if (!confirmUnresolvedVariables()) return;
     setIsGenerating(true);
     try {
-      const { generated, normalizedFormatting, logoVariant } = prepareGeneration();
+      const { generated, normalizedFormatting } = prepareGeneration();
       const [{ pdf }, documentsModule] = await Promise.all([
         import('@react-pdf/renderer'),
         import('./DocumentsPdfDocument'),
@@ -1069,7 +1101,7 @@ const DocumentsPage = ({ isAdmin }) => {
         documents: generated,
         layout,
         formatting: normalizedFormatting,
-        logoDataUrl: logoVariant?.dataUrl || null,
+        clinicLogos,
       })).toBlob();
       saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'pdf'));
       rememberRecentCase();
@@ -1083,15 +1115,16 @@ const DocumentsPage = ({ isAdmin }) => {
 
   const handleGenerateDocx = async () => {
     if (isGenerateDisabled) return;
+    if (!confirmUnresolvedVariables()) return;
     setIsGenerating(true);
     try {
-      const { generated, normalizedFormatting, logoVariant } = prepareGeneration();
+      const { generated, normalizedFormatting } = prepareGeneration();
       const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
       const blob = await buildDocumentsDocx({
         documents: generated,
         layout,
         formatting: normalizedFormatting,
-        logo: logoVariant,
+        clinicLogos,
       });
       saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'docx'));
       rememberRecentCase();
@@ -1197,15 +1230,20 @@ const DocumentsPage = ({ isAdmin }) => {
                   </ToggleOption>
                 </ToggleGroup>
               </SectionHead>
-              {formatting.showLogo && activeLogoVariant ? (
+              {activeLogoVariant?.dataUrl ? (
                 <DocLogoPreviewRow>
                   <LogoPreview
                     src={activeLogoVariant.dataUrl}
-                    alt="Clinic logo for the selected column mode"
-                    title="The logo variant the selected column mode will render (also used by PDF/Word generation)"
-                    style={layout === 'two-column' ? undefined : { width: '100%', maxWidth: '100%' }}
+                    alt="Clinic logo used by the selected document(s)"
+                    title="The logo variant the selected document(s) will render, based on their {{logo}}/{{logo-long}} tokens"
+                    style={selectedHasLogoLongToken ? { width: '100%', maxWidth: '100%' } : undefined}
                   />
                 </DocLogoPreviewRow>
+              ) : null}
+              {unresolvedVariables.length ? (
+                <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
+                  Не вдалося підставити: {unresolvedVariables.join(', ')}
+                </DocSubtitle>
               ) : null}
               {!catalog.documents.length ? (
                 <DocSubtitle style={{ marginTop: 8 }}>No document templates yet — paste them in the technical field below.</DocSubtitle>

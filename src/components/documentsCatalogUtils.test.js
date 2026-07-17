@@ -8,6 +8,10 @@ import {
   emptyDocumentsCatalog,
   fillPlaceholders,
   formatDocumentDate,
+  getClinicLogo,
+  getParagraphType,
+  getValueByPath,
+  isSectionHeading,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -19,6 +23,7 @@ import {
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
   upsertRecentCaseId,
+  validateDocumentTemplate,
 } from './documentsCatalogUtils';
 
 // All party fixtures below are fictional - tests must never carry real client data.
@@ -438,5 +443,233 @@ describe('settings', () => {
       clinicLogo: { dataUrl: 'data:image/png;base64,AAA', width: 620, height: 128 },
     });
     expect(settings.clinicLogo).toBeNull();
+  });
+});
+
+// Catalog carrying the full clinic detail shape (spec §2) plus a template exercising both
+// {{logo}}/{{logo-long}} tokens and a long section-heading-bearing agreement.
+const richCatalog = () => normalizeDocumentsCatalog(
+  {
+    couples: {
+      'couple-1': {
+        id: 'couple-1',
+        partners: [
+          {
+            id: 'patient-2', role: 'husband', name: { en: 'Testovyi Petro', uk: { nominative: 'Тестовий Петро' } }, birthDate: '1979-04-27',
+          },
+          {
+            id: 'patient-1', role: 'wife', name: { en: 'Testova Mariia', uk: { nominative: 'Тестова Марія' } }, birthDate: '1982-01-21',
+          },
+        ],
+        marriage: { certificateNumber: 'C-04', certificateDate: '2020-11-22' },
+        address: { uk: 'місто Тестове', en: 'Test City' },
+      },
+    },
+    representatives: {},
+    clinics: {
+      'clinic-1': {
+        id: 'clinic-1',
+        name: { uk: 'Клініка «Вікторія»', en: 'Clinic "Victoria"' },
+        legalName: { uk: 'ТОВ «Вікторія»', en: 'Victoria LLC' },
+        medicalCenterName: { uk: 'МЦ «Вікторія»', en: 'MC "Victoria"' },
+        address: { uk: 'Київ', en: 'Kyiv' },
+        phone: '+380440000000',
+        email: 'info@victoria.example',
+        edrpou: '35085030',
+        taxId: '350850326598',
+        vatCertificateNumber: '200107025',
+        bank: {
+          account: '26001014039074',
+          mfo: '380333',
+          name: { uk: 'Укрексімбанк', en: 'Ukreximbank' },
+          address: { uk: 'Київ, банк', en: 'Kyiv, bank' },
+        },
+        license: { number: 'АД №063736', date: '2012-09-28', issuedBy: { uk: 'МОЗ України', en: 'Ministry of Health' } },
+        medicalDirector: {
+          name: {
+            uk: { nominative: 'Давид Лілія Володимирівна', genitive: 'Давид Лілії Володимирівни', short: 'Давид Л.В.' },
+            en: { full: 'Davyd Liliia Volodymyrivna', short: 'L.V. Davyd' },
+          },
+          authority: { type: { uk: 'Наказ', en: 'Order' }, number: '064', date: '2021-12-31' },
+        },
+      },
+    },
+    cases: {
+      'case-1': { id: 'case-1', coupleId: 'couple-1', clinicId: 'clinic-1', representativeIds: [] },
+      clinics: { 'clinic-1': { logo: [{ file: 'square.jpg', layout: '1col' }, { file: 'wide.jpg', layout: '2col' }] } },
+    },
+  },
+  {
+    'embryo-transfer-consent': {
+      id: 'embryo-transfer-consent',
+      title: { uk: 'Згода', en: 'Consent' },
+      paragraphs: [
+        { uk: '{{logo}}', en: '{{logo}}' },
+        { uk: 'Я, {{wife.name.uk.nominative}}, {{wife.birthDate}} р.н.', en: 'I, {{wife.name.en}}, born {{wife.birthDate}}' },
+        { uk: '{{clinic.medicalDirector.name.uk.genitive}}', en: '{{clinic.medicalDirector.name.en.full}}' },
+      ],
+    },
+  },
+);
+
+describe('spec: universal placeholder resolver', () => {
+  it('resolves an arbitrarily deep clinic.medicalDirector path (getValueByPath)', () => {
+    const context = resolveCaseContext(richCatalog(), 'case-1');
+    expect(getValueByPath(context, 'clinic.medicalDirector.name.uk.genitive')).toBe('Давид Лілії Володимирівни');
+    expect(fillPlaceholders('{{clinic.medicalDirector.name.uk.genitive}}', context, 'uk')).toBe('Давид Лілії Володимирівни');
+    expect(fillPlaceholders('{{clinic.medicalDirector.authority.date}}', context, 'uk')).toBe('31.12.2021');
+    expect(fillPlaceholders('{{clinic.bank.name.uk}}', context, 'uk')).toBe('Укрексімбанк');
+    expect(fillPlaceholders('{{clinic.license.issuedBy.en}}', context, 'en')).toBe('Ministry of Health');
+  });
+
+  it('formats an ISO date as DD.MM.YYYY', () => {
+    expect(formatDocumentDate('2024-02-08')).toBe('08.02.2024');
+  });
+
+  it('never turns a missing variable into the literal "undefined"/"null"/empty string', () => {
+    const context = resolveCaseContext(richCatalog(), 'case-1');
+    const output = fillPlaceholders('{{representative.powerOfAttorney.apostilleDate}}', context, 'uk');
+    expect(output).not.toBe('undefined');
+    expect(output).not.toBe('null');
+    expect(output.trim()).not.toBe('');
+    expect(output).toBe('__________');
+  });
+
+  it('lists genuinely unresolved variables without flagging logo/logo-long', () => {
+    const catalog = richCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      title: { uk: '{{logo}}', en: '' },
+      paragraphs: [
+        { uk: '{{representative.powerOfAttorney.apostilleDate}}', en: '{{representative.powerOfAttorney.apostilleDate}}' },
+        { uk: '{{logo-long}}', en: '{{logo-long}}' },
+      ],
+    };
+    // The fixture case has no representative at all, so this path never resolves.
+    expect(validateDocumentTemplate(template, context)).toEqual(['representative.powerOfAttorney.apostilleDate']);
+  });
+});
+
+describe('spec: logo paragraph type + clinic logo resolver', () => {
+  it('recognizes {{logo}} as a service block, never as text', () => {
+    expect(getParagraphType({ uk: '{{logo}}', en: '{{logo}}' })).toBe('logo');
+    expect(getParagraphType({ uk: '{{logo}}', en: '' })).toBe('logo');
+  });
+
+  it('recognizes {{logo-long}} distinctly from {{logo}}', () => {
+    expect(getParagraphType({ uk: '{{logo-long}}', en: '{{logo-long}}' })).toBe('logo-long');
+    expect(getParagraphType({ uk: 'Дата: ____________________', en: 'Date: ____________________' })).toBe('text');
+  });
+
+  it('maps {{logo}} to the 1col variant and {{logo-long}} to the 2col variant, never mixing them up', () => {
+    const variants = [
+      { file: 'square.jpg', dataUrl: 'data:1', layout: '1col' },
+      { file: 'wide.jpg', dataUrl: 'data:2', layout: '2col' },
+    ];
+    expect(getClinicLogo(variants, 'logo').file).toBe('square.jpg');
+    expect(getClinicLogo(variants, 'logo-long').file).toBe('wide.jpg');
+    // Also accepts the raw `{ logo: [...] }` shape.
+    expect(getClinicLogo({ logo: variants }, 'logo-long').file).toBe('wide.jpg');
+  });
+
+  it('returns null (never throws or fabricates a file name) when the matching variant is missing', () => {
+    expect(getClinicLogo([{ file: 'square.jpg', layout: '1col' }], 'logo-long')).toBeNull();
+    expect(getClinicLogo([], 'logo')).toBeNull();
+    expect(getClinicLogo(null, 'logo')).toBeNull();
+  });
+
+  it('a document without any logo token never gets a logo attached', () => {
+    const catalog = richCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const noLogoTemplate = {
+      id: 'medical-services-agreement',
+      title: { uk: 'Договір', en: 'Agreement' },
+      paragraphs: [{ uk: 'Текст без логотипу.', en: 'Text without a logo.' }],
+    };
+    const generated = buildGeneratedDocument(noLogoTemplate, context);
+    expect(generated.paragraphs.some(p => p.type === 'logo' || p.type === 'logo-long')).toBe(false);
+  });
+
+  it('tags a {{logo}} paragraph once per occurrence - a renderer never has to guess and never duplicates a logo-long block', () => {
+    const catalog = richCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const generated = buildGeneratedDocument(catalog.documents[0], context);
+    const logoParagraphs = generated.paragraphs.filter(p => p.type === 'logo');
+    expect(logoParagraphs).toHaveLength(1);
+    // The token itself is preserved (not blanked out by fillPlaceholders) for the renderer to act on.
+    expect(logoParagraphs[0].uk).toBe('{{logo}}');
+  });
+});
+
+describe('spec: section headings', () => {
+  it('flags a short numbered heading as bold-worthy', () => {
+    expect(isSectionHeading('1. Предмет Договору')).toBe(true);
+    expect(isSectionHeading('11. Реквізити та підписи сторін:')).toBe(true);
+  });
+
+  it('does not flag a long numbered clause as a heading', () => {
+    const longClause = '1.1. Клініка зобов\'язується надати Пацієнту медичні послуги у сфері застосування допоміжних репродуктивних технологій, відповідно до чинного законодавства України та ліцензії.';
+    expect(longClause.length).toBeGreaterThan(120);
+    expect(isSectionHeading(longClause)).toBe(false);
+  });
+
+  it('does not flag ordinary body text', () => {
+    expect(isSectionHeading('Дата: ____________________')).toBe(false);
+  });
+});
+
+describe('spec: long multi-page documents', () => {
+  it('renders every paragraph of a ~90-paragraph agreement without dropping any', () => {
+    const catalog = richCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const paragraphs = Array.from({ length: 90 }, (_, index) => ({
+      uk: `${index + 1}. Пункт договору номер ${index + 1}.`,
+      en: `${index + 1}. Agreement clause number ${index + 1}.`,
+    }));
+    const longTemplate = {
+      id: 'medical-services-agreement',
+      title: { uk: 'Договір', en: 'Agreement' },
+      allowPageBreaks: true,
+      paragraphs,
+    };
+    const generated = buildGeneratedDocument(longTemplate, context);
+    expect(generated.paragraphs).toHaveLength(90);
+    expect(generated.allowPageBreaks).toBe(true);
+    expect(generated.paragraphs[89].uk).toBe('90. Пункт договору номер 90.');
+  });
+});
+
+describe('spec: bilingual paragraph pairing stays in sync', () => {
+  it('keeps the uk/en text of one logical paragraph at the same array index', () => {
+    const catalog = richCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const generated = buildGeneratedDocument(catalog.documents[0], context);
+    // Index 1 in the fixture template is the wife paragraph - both languages describe the same
+    // person at the same position, never the uk half of one pair next to the en half of another.
+    expect(generated.paragraphs[1].uk).toContain('Тестова Марія');
+    expect(generated.paragraphs[1].en).toContain('Testova Mariia');
+  });
+});
+
+describe('spec: safe optional entities', () => {
+  it('finds partners by role even when the wife is not at index 0', () => {
+    // richCatalog() deliberately lists the husband before the wife.
+    const context = resolveCaseContext(richCatalog(), 'case-1');
+    expect(context.wife.name.uk.nominative).toBe('Тестова Марія');
+    expect(context.husband.name.uk.nominative).toBe('Тестовий Петро');
+  });
+
+  it('does not crash when the case has no surrogate mother, no representative and no clinic logo', () => {
+    const catalog = richCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(context.surrogateMother).toBeNull();
+    expect(context.representative).toBeNull();
+    expect(() => buildGeneratedDocument(catalog.documents[0], context)).not.toThrow();
+    const generated = buildGeneratedDocument(catalog.documents[0], context);
+    expect(generated.paragraphs[1].uk).toContain('Тестова Марія');
+  });
+
+  it('resolveCaseContext returns null for an unknown case instead of throwing', () => {
+    expect(resolveCaseContext(richCatalog(), 'no-such-case')).toBeNull();
   });
 });

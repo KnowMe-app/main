@@ -1,10 +1,11 @@
 // Word (.docx) renderer for the Documents page, mirroring DocumentsPdfDocument: same formatting
 // settings (Times New Roman, justified, tunable sizes/margins/spacing/header/footer), same
-// one-column / two-column layouts, same optional clinic logo above the title (once, centered, in
-// one-column mode; once per column in two-column mode). The `docx` package is imported
-// dynamically by the caller-facing builder so the library only loads when a Word export is
-// actually requested.
-import { DEFAULT_DOC_FORMATTING } from './documentsCatalogUtils';
+// one-column / two-column layouts. A clinic logo is never added automatically - it only appears
+// where the template itself places a {{logo}} (compact, once per visible language column) or
+// {{logo-long}} (one shared full-width logo) paragraph; see getParagraphType/getClinicLogo in
+// documentsCatalogUtils. The `docx` package is imported dynamically by the caller-facing builder
+// so the library only loads when a Word export is actually requested.
+import { DEFAULT_DOC_FORMATTING, allowsParagraphInternalBreak, getClinicLogo, isSectionHeading } from './documentsCatalogUtils';
 
 const CM_TO_TWIP = 567;
 const MM_TO_PX = 96 / 25.4; // docx ImageRun transformations are CSS pixels at 96dpi
@@ -28,7 +29,7 @@ export const buildDocumentsDocx = async ({
   documents = [],
   layout = 'two-column',
   formatting = DEFAULT_DOC_FORMATTING,
-  logo = null,
+  clinicLogos = [],
 }) => {
   const docx = await import('docx');
   const {
@@ -37,6 +38,8 @@ export const buildDocumentsDocx = async ({
   } = docx;
 
   const isTwoColumn = layout === 'two-column';
+  const showUk = layout !== 'one-column-en';
+  const showEn = layout !== 'one-column-uk';
   const lang = layout === 'one-column-en' ? 'en' : 'uk';
   const bodySize = halfPoints(formatting.fontSize);
   const titleSize = halfPoints(formatting.titleFontSize);
@@ -45,24 +48,45 @@ export const buildDocumentsDocx = async ({
   const afterTwips = Math.round(formatting.paragraphSpacing * 20);
   const firstLineTwips = Math.round(formatting.firstLineIndentCm * CM_TO_TWIP);
   const gapTwips = Math.round(formatting.columnGapCm * CM_TO_TWIP);
+  // `showLogo` is only the global permission (spec §5) - whether a logo actually renders still
+  // depends entirely on the template carrying a {{logo}}/{{logo-long}} paragraph.
+  const canRenderLogo = formatting.showLogo !== false;
+  const effectiveClinicLogos = canRenderLogo ? clinicLogos : [];
 
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
   const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
 
-  const paragraphSpacing = { after: afterTwips, line: lineTwips, lineRule: 'auto' };
+  const contentWidthTwips = 11906
+    - Math.round(formatting.marginLeftCm * CM_TO_TWIP)
+    - Math.round(formatting.marginRightCm * CM_TO_TWIP);
 
-  const bodyParagraph = text => new Paragraph({
+  const bodyParagraph = (text, { keepLines = true } = {}) => new Paragraph({
     alignment: AlignmentType.JUSTIFIED,
-    spacing: paragraphSpacing,
+    spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
     indent: firstLineTwips ? { firstLine: firstLineTwips } : undefined,
+    keepLines,
     children: [new TextRun({ text, size: bodySize })],
   });
 
+  // Short numbered section titles ("1. Предмет Договору") render bold, flush left, with extra
+  // room above and kept with the paragraph that follows so a heading never ends a page alone.
+  const headingParagraph = text => new Paragraph({
+    alignment: AlignmentType.LEFT,
+    spacing: { before: afterTwips, after: afterTwips, line: lineTwips, lineRule: 'auto' },
+    keepLines: true,
+    keepNext: true,
+    children: [new TextRun({ text, bold: true, size: bodySize })],
+  });
+
+  const cellParagraph = (text, allowPageBreaks, paragraph) => (isSectionHeading(text)
+    ? headingParagraph(text)
+    : bodyParagraph(text, { keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks) }));
+
   // Exactly the Format panel's paragraph spacing - no hidden minimum - so the Word output keeps
-  // the same title-to-body rhythm as the PDF and the reference statements (spec §6).
+  // the same title-to-body rhythm as the PDF and the reference statements.
   const titleParagraph = text => new Paragraph({
     alignment: AlignmentType.CENTER,
-    spacing: paragraphSpacing,
+    spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
     children: [new TextRun({ text, bold: true, size: titleSize })],
   });
 
@@ -79,71 +103,79 @@ export const buildDocumentsDocx = async ({
     children: [paragraph],
   });
 
-  const twoColumnCell = (text, paragraphBuilder, marginSide) => twoColumnCellFromParagraph(paragraphBuilder(text), marginSide);
-
-  const twoColumnRow = (uk, en, paragraphBuilder) => new TableRow({
-    children: [
-      twoColumnCell(uk, paragraphBuilder, 'left'),
-      twoColumnCell(en, paragraphBuilder, 'right'),
-    ],
+  const twoColumnTable = (rows, cantSplit) => new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
+    rows: rows.map(([left, right]) => new TableRow({
+      cantSplit,
+      children: [
+        twoColumnCellFromParagraph(left, 'left'),
+        twoColumnCellFromParagraph(right, 'right'),
+      ],
+    })),
   });
+
+  const logoImageRun = (decoded, widthPx, ratio) => new ImageRun({
+    data: decoded.bytes,
+    type: decoded.type,
+    transformation: { width: widthPx, height: Math.round(widthPx * ratio) },
+  });
+
+  const logoParagraph = (decoded, widthPx, ratio) => new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 200 },
+    children: [logoImageRun(decoded, widthPx, ratio)],
+  });
+
+  // {{logo}}: a compact logo duplicated above each visible language column (or once, centered,
+  // in a one-column export); {{logo-long}}: one shared full-width logo, never duplicated.
+  const buildLogoBlock = paragraphType => {
+    const variantKind = paragraphType === 'logo-long' ? 'logo-long' : 'logo';
+    const variant = getClinicLogo(effectiveClinicLogos, variantKind);
+    if (!variant?.dataUrl) return [];
+    const decoded = decodeLogoDataUrl(variant.dataUrl);
+    if (!decoded) return [];
+    const ratio = variant.width && variant.height ? variant.height / variant.width : 0.25;
+
+    if (variantKind === 'logo-long') {
+      const widthPx = Math.round((contentWidthTwips / 1440) * 96);
+      return [logoParagraph(decoded, widthPx, ratio)];
+    }
+
+    const compactWidthPx = Math.round(formatting.logoWidthMm * MM_TO_PX);
+    if (isTwoColumn && showUk && showEn) {
+      return [twoColumnTable([[
+        logoParagraph(decoded, compactWidthPx, ratio),
+        logoParagraph(decoded, compactWidthPx, ratio),
+      ]], true)];
+    }
+    return [logoParagraph(decoded, compactWidthPx, ratio)];
+  };
 
   const buildDocChildren = doc => {
     const children = [];
 
-    if (formatting.showLogo && logo?.dataUrl) {
-      const decoded = decodeLogoDataUrl(logo.dataUrl);
-      if (decoded) {
-        // Batch 12 §2: compact logo at the tuned width, rendered once per column in two-column
-        // layouts (superseding the earlier single shared logo) - the long variant still stretches
-        // to the full text width, once, in one-column layouts. 10 pt (200 twips) below the logo
-        // matches the PDF's LOGO_BOTTOM_GAP_PT.
-        const contentWidthTwips = 11906
-          - Math.round(formatting.marginLeftCm * CM_TO_TWIP)
-          - Math.round(formatting.marginRightCm * CM_TO_TWIP);
-        const widthPx = isTwoColumn
-          ? Math.round(formatting.logoWidthMm * MM_TO_PX)
-          : Math.round((contentWidthTwips / 1440) * 96);
-        const ratio = logo.width && logo.height ? logo.height / logo.width : 0.25;
-        const logoParagraph = () => new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 200 },
-          children: [new ImageRun({
-            data: decoded.bytes,
-            type: decoded.type,
-            transformation: { width: widthPx, height: Math.round(widthPx * ratio) },
-          })],
-        });
-        if (isTwoColumn) {
-          children.push(new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
-            rows: [new TableRow({
-              children: [
-                twoColumnCellFromParagraph(logoParagraph(), 'left'),
-                twoColumnCellFromParagraph(logoParagraph(), 'right'),
-              ],
-            })],
-          }));
-        } else {
-          children.push(logoParagraph());
-        }
-      }
-    }
-
     if (isTwoColumn) {
-      children.push(new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
-        rows: [
-          twoColumnRow(doc.title.uk, doc.title.en, titleParagraph),
-          ...doc.paragraphs.map(paragraph => twoColumnRow(paragraph.uk, paragraph.en, bodyParagraph)),
-        ],
-      }));
+      children.push(twoColumnTable([[titleParagraph(doc.title.uk), titleParagraph(doc.title.en)]], true));
     } else {
       children.push(titleParagraph(doc.title[lang]));
-      doc.paragraphs.forEach(paragraph => children.push(bodyParagraph(paragraph[lang])));
     }
+
+    doc.paragraphs.forEach(paragraph => {
+      if (paragraph.type !== 'text') {
+        children.push(...buildLogoBlock(paragraph.type));
+        return;
+      }
+      if (isTwoColumn) {
+        const cantSplit = !allowsParagraphInternalBreak(paragraph, doc.allowPageBreaks);
+        children.push(twoColumnTable([[
+          cellParagraph(paragraph.uk, doc.allowPageBreaks, paragraph),
+          cellParagraph(paragraph.en, doc.allowPageBreaks, paragraph),
+        ]], cantSplit));
+      } else {
+        children.push(cellParagraph(paragraph[lang], doc.allowPageBreaks, paragraph));
+      }
+    });
     return children;
   };
 
@@ -158,18 +190,18 @@ export const buildDocumentsDocx = async ({
     }
     : undefined;
 
-  // Batch 12 §3: a Word document's real page count is only known once Word itself lays the
-  // content out, not at generation time - unlike the PDF renderer, which gets a real totalPages
-  // from @react-pdf. documents.length is the best available proxy: every generated statement
-  // opens its own section/page, so 2+ selected statements guarantees 2+ pages, and this keeps the
-  // same "nothing worth counting on a single page" rule the PDF applies exactly.
+  // A Word document's real page count is only known once Word itself lays the content out, not
+  // at generation time - unlike the PDF renderer, which gets a real totalPages from @react-pdf.
+  // documents.length is the best available proxy: every generated statement opens its own
+  // section/page, so 2+ selected statements guarantees 2+ pages, and this keeps the same "nothing
+  // worth counting on a single page" rule the PDF applies exactly.
   const showPageNumbers = formatting.showPageNumbers && documents.length > 1;
   const footerChildren = [];
   if (formatting.footerText || showPageNumbers) {
     const runs = [];
     if (formatting.footerText) runs.push(new TextRun({ text: formatting.footerText, size: smallSize }));
     if (showPageNumbers) {
-      if (formatting.footerText) runs.push(new TextRun({ text: '   ', size: smallSize }));
+      if (formatting.footerText) runs.push(new TextRun({ text: '   ', size: smallSize }));
       runs.push(new TextRun({ text: 'Page ', size: smallSize }));
       runs.push(new TextRun({ children: [PageNumber.CURRENT], size: smallSize }));
       runs.push(new TextRun({ text: ' of ', size: smallSize }));
