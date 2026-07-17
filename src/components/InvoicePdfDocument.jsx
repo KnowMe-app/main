@@ -65,16 +65,18 @@ const styles = StyleSheet.create({
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
   // The Breakdown heading gets real section-header weight (design-tasks-8 §2): a bit larger than
-  // the shared sectionTitle and with extra air above it, so it stops reading like body text.
+  // the shared sectionTitle and with extra air above it - opened up further in design-tasks-9 §2
+  // so the heading separates cleanly from the "Prepared exclusively for..." intro line above and
+  // the table header row below.
   breakdownSection: {
-    marginTop: 14,
+    marginTop: 20,
   },
   breakdownSectionAfterTitle: {
-    marginTop: 6,
+    marginTop: 14,
   },
   breakdownTitle: {
     fontSize: 15,
-    marginBottom: 6,
+    marginBottom: 9,
   },
   packageBlock: {
     marginTop: 2,
@@ -137,6 +139,15 @@ const styles = StyleSheet.create({
     ...pdfBaseStyles.totalCardRule,
     marginTop: 7,
     marginBottom: 5,
+  },
+  // Hairline seam between the Breakdown (with its footnotes) and the Amount Due card
+  // (design-tasks-9 §4) - the same docLine hairline the document already uses for its rules,
+  // not a new visual element. The card's own marginTop provides the spacing below it.
+  amountDueDivider: {
+    borderTopWidth: 0.75,
+    borderTopColor: PDF_COLOR.docLine,
+    borderTopStyle: 'solid',
+    marginTop: 16,
   },
   noteRow: {
     flexDirection: 'row',
@@ -385,6 +396,8 @@ const InvoicePdfDocument = ({
               <Text style={styles.noteText}>{sanitizePdfText(note)}</Text>
             </View>
           ))}
+
+          <View style={styles.amountDueDivider} />
 
           {/* wrap={false}: the card either fits under the breakdown or moves to the next page
               whole - it must never split its amount from its subtotal/tax rows. */}

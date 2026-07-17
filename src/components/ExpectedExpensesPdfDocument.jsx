@@ -33,9 +33,18 @@ const styles = StyleSheet.create({
     color: PDF_COLOR.bronzeDeep,
     marginBottom: 22,
   },
+  // Same hairline seam the Invoice draws between its Breakdown and Amount Due card
+  // (design-tasks-9 §4), here between the payment-schedule table and the Payments blocks that
+  // carry the amount cards - keeping the three documents' section seams identical.
+  paymentsDivider: {
+    borderTopWidth: 0.75,
+    borderTopColor: PDF_COLOR.docLine,
+    borderTopStyle: 'solid',
+    marginTop: 26,
+  },
   paymentsHeading: {
     ...pdfBaseStyles.sectionTitle,
-    marginTop: 40,
+    marginTop: 12,
     marginBottom: 12,
   },
   paymentBlock: {
@@ -220,10 +229,23 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
 
         {milestones.length ? (
           <View>
-            <Text style={styles.paymentsHeading}>Payments</Text>
-            {milestones.map((milestone, index) => (
-              <PaymentBlock key={milestone.id || index} index={index} milestone={milestone} rows={milestoneRows[index]} currency={currency} />
-            ))}
+            {/* The divider + heading share one non-wrapping group with the first payment block:
+                minPresenceAhead is not honored this deep in the tree, so this is what actually
+                keeps the heading from stranding at a page bottom with every block on the next. */}
+            {milestones.map((milestone, index) => {
+              const block = (
+                <PaymentBlock index={index} milestone={milestone} rows={milestoneRows[index]} currency={currency} />
+              );
+              return index === 0 ? (
+                <View key={milestone.id || index} wrap={false}>
+                  <View style={styles.paymentsDivider} />
+                  <Text style={styles.paymentsHeading}>Payments</Text>
+                  {block}
+                </View>
+              ) : (
+                <React.Fragment key={milestone.id || index}>{block}</React.Fragment>
+              );
+            })}
           </View>
         ) : null}
 
