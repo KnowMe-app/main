@@ -2,6 +2,7 @@ import {
   DEFAULT_DOC_FORMATTING,
   applyLogoLayoutAssignment,
   buildCaseLabel,
+  buildDocumentsFileName,
   buildGeneratedDocument,
   clinicLogoEntriesToBackend,
   deepMergeRecords,
@@ -18,6 +19,7 @@ import {
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
   orderCasesByRecent,
+  orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
   pickLogoVariantForLayout,
   pruneDocOverride,
@@ -25,6 +27,7 @@ import {
   resolveMergedRecordsForPersistence,
   shiftDocOverrideParagraphIndices,
   upsertRecentCaseId,
+  upsertRecentId,
   validateDocumentTemplate,
 } from './documentsCatalogUtils';
 
@@ -500,12 +503,50 @@ describe('case selector helpers', () => {
   });
 });
 
+describe('spec: Documents list ordered by most recently downloaded', () => {
+  it('orderRecordsByRecentIds puts the most recently downloaded document first, same as cases', () => {
+    const documents = [{ id: 'doc-a' }, { id: 'doc-b' }, { id: 'doc-c' }];
+    expect(orderRecordsByRecentIds(documents, ['doc-c']).map(record => record.id)).toEqual(['doc-c', 'doc-a', 'doc-b']);
+    expect(orderRecordsByRecentIds(documents, []).map(record => record.id)).toEqual(['doc-a', 'doc-b', 'doc-c']);
+  });
+
+  it('the last document downloaded ends up first, even across several downloads', () => {
+    let recentDocIds = [];
+    recentDocIds = upsertRecentId(recentDocIds, 'doc-a');
+    recentDocIds = upsertRecentId(recentDocIds, 'doc-b');
+    // doc-a downloaded again, most recently of all - it should be back at the front.
+    recentDocIds = upsertRecentId(recentDocIds, 'doc-a');
+    expect(recentDocIds).toEqual(['doc-a', 'doc-b']);
+  });
+});
+
+describe('spec: every selected document downloads as its own separate file', () => {
+  it('includes the document title in the file name so a batch never collides on one name', () => {
+    const catalog = sampleCatalog();
+    const caseRecord = catalog.parties.cases[0];
+    const docA = { id: 'doc-a', title: { uk: 'Перший документ', en: 'First document' } };
+    const docB = { id: 'doc-b', title: { uk: 'Другий документ', en: 'Second document' } };
+    const nameA = buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf', docA);
+    const nameB = buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf', docB);
+    expect(nameA).not.toBe(nameB);
+    expect(nameA).toContain('Перший_документ');
+    expect(nameB).toContain('Другий_документ');
+  });
+
+  it('still produces a valid name when no specific document is given (batch-level fallback)', () => {
+    const catalog = sampleCatalog();
+    const caseRecord = catalog.parties.cases[0];
+    expect(buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf')).toMatch(/^Documents_.+\.pdf$/);
+  });
+});
+
 describe('settings', () => {
   it('provides reference-document defaults', () => {
     const settings = normalizeDocumentsSettings(null);
     expect(settings.formatting).toEqual(DEFAULT_DOC_FORMATTING);
     expect(settings.clinicLogo).toBeNull();
     expect(settings.recentCaseIds).toEqual([]);
+    expect(settings.recentDocIds).toEqual([]);
   });
 
   it('clamps out-of-range formatting values and keeps valid ones', () => {

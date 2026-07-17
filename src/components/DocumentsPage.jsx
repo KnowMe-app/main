@@ -40,12 +40,14 @@ import {
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
   orderCasesByRecent,
+  orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
   pruneDocOverride,
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
   shiftDocOverrideParagraphIndices,
   upsertRecentCaseId,
+  upsertRecentId,
   validateDocumentTemplate,
 } from './documentsCatalogUtils';
 
@@ -1080,7 +1082,10 @@ const DocumentsPage = ({ isAdmin }) => {
   // --- Generation --------------------------------------------------------------------------------
 
   const orderedCases = orderCasesByRecent(catalog.parties.cases, settings.recentCaseIds);
-  const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
+  // Most recently downloaded documents first (spec: "самі популярні документи мають бути вгорі") -
+  // whatever hasn't been downloaded yet keeps the catalog's own order, after every recent one.
+  const orderedDocuments = orderRecordsByRecentIds(catalog.documents, settings.recentDocIds);
+  const selectedTemplates = orderedDocuments.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
   const caseContext = resolveCaseContext(catalog, selectedCaseId);
   // A logo only ever appears where a template declares one - via the dedicated `logo` field, or
@@ -1197,6 +1202,14 @@ const DocumentsPage = ({ isAdmin }) => {
     persistSettings({ recentCaseIds: upsertRecentCaseId(settings.recentCaseIds, selectedCaseId) });
   };
 
+  // Bumps every just-downloaded document to the front of the Documents list, in download order -
+  // the last one downloaded ends up first (spec: "документ, скачаний останнім" is the most
+  // popular), the rest keep whatever relative order they already had.
+  const rememberRecentDocs = docIds => {
+    const nextRecentDocIds = docIds.reduce((recent, docId) => upsertRecentId(recent, docId), settings.recentDocIds);
+    persistSettings({ recentDocIds: nextRecentDocIds });
+  };
+
   // A non-blocking warning is shown inline at all times (spec §15); the final export step still
   // asks for a confirmation so an admin never ships blanks without noticing.
   const confirmUnresolvedVariables = () => {
@@ -1207,6 +1220,14 @@ const DocumentsPage = ({ isAdmin }) => {
       + `${unresolvedVariables.map(path => `- ${path}`).join('\n')}\n\nЗгенерувати документ попри це?`,
     );
   };
+
+  const sleep = ms => new Promise(resolve => { setTimeout(resolve, ms); });
+
+  // Every checked document downloads as its own file (spec: "всі обрані документи ... мають бути
+  // окремими файлами") - never bundled into one combined multi-page PDF/multi-section DOCX. A
+  // short pause between saves keeps the browser from treating a fast run of downloads as a
+  // pop-up-style flood and silently blocking everything after the first.
+  const MULTI_DOWNLOAD_DELAY_MS = 300;
 
   const handleGeneratePdf = async () => {
     if (isGenerateDisabled) return;
@@ -1220,14 +1241,19 @@ const DocumentsPage = ({ isAdmin }) => {
       ]);
       documentsModule.ensureDocumentsPdfFontsRegistered();
       const DocumentsPdfDocument = documentsModule.default;
-      const blob = await pdf(React.createElement(DocumentsPdfDocument, {
-        documents: generated,
-        layout,
-        formatting: normalizedFormatting,
-        clinicLogos,
-      })).toBlob();
-      saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'pdf'));
+      for (let index = 0; index < generated.length; index += 1) {
+        const doc = generated[index];
+        const blob = await pdf(React.createElement(DocumentsPdfDocument, {
+          documents: [doc],
+          layout,
+          formatting: normalizedFormatting,
+          clinicLogos,
+        })).toBlob();
+        saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'pdf', doc));
+        if (index < generated.length - 1) await sleep(MULTI_DOWNLOAD_DELAY_MS);
+      }
       rememberRecentCase();
+      rememberRecentDocs(generated.map(doc => doc.id));
     } catch (generateError) {
       console.error('Unable to generate documents PDF', generateError);
       toast.error(isStaleChunkError(generateError) ? STALE_APP_MESSAGE : 'Could not generate the PDF.');
@@ -1243,14 +1269,19 @@ const DocumentsPage = ({ isAdmin }) => {
     try {
       const { generated, normalizedFormatting } = prepareGeneration();
       const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
-      const blob = await buildDocumentsDocx({
-        documents: generated,
-        layout,
-        formatting: normalizedFormatting,
-        clinicLogos,
-      });
-      saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'docx'));
+      for (let index = 0; index < generated.length; index += 1) {
+        const doc = generated[index];
+        const blob = await buildDocumentsDocx({
+          documents: [doc],
+          layout,
+          formatting: normalizedFormatting,
+          clinicLogos,
+        });
+        saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'docx', doc));
+        if (index < generated.length - 1) await sleep(MULTI_DOWNLOAD_DELAY_MS);
+      }
       rememberRecentCase();
+      rememberRecentDocs(generated.map(doc => doc.id));
     } catch (generateError) {
       console.error('Unable to generate documents DOCX', generateError);
       toast.error(isStaleChunkError(generateError) ? STALE_APP_MESSAGE : 'Could not generate the Word file.');
@@ -1371,7 +1402,7 @@ const DocumentsPage = ({ isAdmin }) => {
               {!catalog.documents.length ? (
                 <DocSubtitle style={{ marginTop: 8 }}>No document templates yet — paste them in the technical field below.</DocSubtitle>
               ) : null}
-              {catalog.documents.map(template => {
+              {orderedDocuments.map(template => {
                 const isExpanded = expandedDocId === String(template.id);
                 const isDataMode = editMode === 'data';
                 // The builder view mirrors the selected layout mode (spec §1): both languages as
