@@ -727,6 +727,14 @@ describe('spec: template.logo field renders before the title', () => {
     expect(getTemplateLogoType({ paragraphs: [] })).toBeNull();
   });
 
+  // The logo field is edited as free text (spec: manually typing {{logo}}), so it must require the
+  // literal token including braces - a bare "logo" (e.g. from a stray write that stripped the
+  // braces) is not a graphical token and must never render a logo silently by accident.
+  it('requires the literal {{logo}}/{{logo-long}} token - a bare word does not count', () => {
+    expect(getTemplateLogoType({ logo: 'logo', paragraphs: [] })).toBeNull();
+    expect(getTemplateLogoType({ logo: 'logo-long', paragraphs: [] })).toBeNull();
+  });
+
   it('falls back to a legacy leading paragraph when there is no dedicated field', () => {
     expect(getTemplateLogoType({ paragraphs: [{ uk: '{{logo}}', en: '{{logo}}' }] })).toBe('logo');
     expect(getTemplateLogoType({ paragraphs: [{ uk: 'Body text.', en: 'Body text.' }] })).toBeNull();
