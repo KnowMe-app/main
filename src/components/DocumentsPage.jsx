@@ -378,7 +378,7 @@ const ParagraphPair = styled.div`
   grid-template-columns: ${({ $single }) => ($single ? '1fr' : '1fr 1fr')};
   gap: 6px;
   margin-top: 6px;
-  ${({ $single }) => ($single ? '' : `
+  ${({ $single, $plain }) => ($single || $plain ? '' : `
     border: 1px solid var(--km-border);
     border-radius: 8px;
     padding: 4px 6px;
@@ -398,7 +398,18 @@ const ParagraphControlsRow = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin-top: 8px;
+  margin-bottom: 4px;
+`;
+
+// Encloses one paragraph's controls (Insert/Remove) together with its own text, in one visible
+// border - so which paragraph a button acts on is never ambiguous, regardless of whether the
+// two-column ParagraphPair below would otherwise draw its own (now suppressed via $plain) border.
+const ParagraphEditorBlock = styled.div`
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  padding: 6px 8px 8px;
+  margin-top: 10px;
+  background: rgba(162, 121, 63, 0.025);
 `;
 
 const FieldGrid = styled.div`
@@ -702,10 +713,13 @@ const DocumentsPage = ({ isAdmin }) => {
     }));
   };
 
-  // The letterhead logo always renders before the title (spec: "лого відображай перед title").
-  // Current templates carry it as a dedicated `logo` field; older ones still have it embedded as
-  // the first paragraph. Editing keeps whichever shape the template is already using instead of
-  // introducing a second, conflicting source of truth.
+  // The letterhead logo always renders before the title (spec: "лого відображай перед title") and
+  // is edited as plain text (spec: "додай його як посилання {{logo}} ... щоб я зміг вручну його
+  // правити") - a free-text field the admin types {{logo}} / {{logo-long}} into directly, or
+  // clears to remove the logo, rather than picking from a constrained list. Current templates
+  // carry it as a dedicated `logo` field; older ones still have it embedded as the first
+  // paragraph. Editing keeps whichever shape the template is already using instead of introducing
+  // a second, conflicting source of truth.
   const handleLogoFieldChange = (docId, value) => {
     const token = value || '';
     updateTemplate(docId, template => {
@@ -1413,6 +1427,15 @@ const DocumentsPage = ({ isAdmin }) => {
                 const resolvedDoc = isExpanded && isDataMode
                   ? buildGeneratedDocument(template, caseContext, selectedCase?.docOverrides?.[template.id])
                   : null;
+                // Whichever source is currently authoritative (the dedicated `logo` field, or a
+                // legacy leading paragraph) shown as one plain-text value the admin can type into
+                // directly - never a normalized re-serialization, so a mid-edit/invalid value
+                // isn't silently rewritten out from under them.
+                const logoFieldValue = String(template.logo || '').trim()
+                  ? template.logo
+                  : (getParagraphType((template.paragraphs || [])[0]) !== 'text'
+                    ? ((template.paragraphs || [])[0]?.uk || (template.paragraphs || [])[0]?.en || '')
+                    : '');
                 const titleValue = langKey => (isDataMode ? resolvedDoc?.title?.[langKey] ?? '' : template.title?.[langKey] || '');
                 const paragraphValue = (paragraph, index, langKey) => (isDataMode
                   ? resolvedDoc?.paragraphs?.[index]?.[langKey] ?? ''
@@ -1459,16 +1482,14 @@ const DocumentsPage = ({ isAdmin }) => {
                         {!isDataMode ? (
                           <RowLine style={{ marginTop: 4 }}>
                             <DocSubtitle style={{ fontWeight: 700 }}>Logo (before title)</DocSubtitle>
-                            <Select
-                              value={getTemplateLogoType(template) || ''}
+                            <FieldInput
+                              type="text"
+                              value={logoFieldValue}
+                              placeholder="{{logo}} or {{logo-long}} - empty for no logo"
                               onChange={event => handleLogoFieldChange(template.id, event.target.value)}
                               onBlur={() => persistTemplate(template.id)}
-                              style={{ flex: 'unset', minWidth: 240 }}
-                            >
-                              <option value="">No logo</option>
-                              <option value="logo">{'{{logo}}'} — compact, one per language column</option>
-                              <option value="logo-long">{'{{logo-long}}'} — one shared full-width logo</option>
-                            </Select>
+                              style={{ flex: 1, minWidth: 240 }}
+                            />
                           </RowLine>
                         ) : null}
                         <ParagraphPair $single={isSingle}>
@@ -1492,26 +1513,8 @@ const DocumentsPage = ({ isAdmin }) => {
                           ) : null}
                         </ParagraphPair>
                         {(template.paragraphs || []).map((paragraph, index) => (
-                          <React.Fragment key={`${template.id}-p-${index}`}>
-                            {!isDataMode ? (
-                              <ParagraphControlsRow>
-                                <SmallButton
-                                  type="button"
-                                  onClick={() => handleInsertParagraph(template.id, index)}
-                                  title="Insert a new custom paragraph above this one"
-                                >
-                                  <FaPlus /> Insert paragraph
-                                </SmallButton>
-                                <DangerButton
-                                  type="button"
-                                  onClick={() => handleRemoveParagraph(template.id, index)}
-                                  title="Remove this paragraph"
-                                >
-                                  <FaTrash />
-                                </DangerButton>
-                              </ParagraphControlsRow>
-                            ) : null}
-                            <ParagraphPair $single={isSingle}>
+                          isDataMode ? (
+                            <ParagraphPair key={`${template.id}-p-${index}`} $single={isSingle}>
                               {showUk ? (
                                 <AutoInlineTextarea
                                   value={paragraphValue(paragraph, index, 'uk')}
@@ -1531,7 +1534,48 @@ const DocumentsPage = ({ isAdmin }) => {
                                 />
                               ) : null}
                             </ParagraphPair>
-                          </React.Fragment>
+                          ) : (
+                            // Boxed together so it's unambiguous which paragraph "Insert"/"Remove"
+                            // act on: both controls and the paragraph's own text live inside the
+                            // same visible border (spec: "щоб було зрозуміло ... до якого абзацу
+                            // відноситься").
+                            <ParagraphEditorBlock key={`${template.id}-p-${index}`}>
+                              <ParagraphControlsRow>
+                                <SmallButton
+                                  type="button"
+                                  onClick={() => handleInsertParagraph(template.id, index)}
+                                  title="Insert a new custom paragraph above this one"
+                                >
+                                  <FaPlus /> Insert paragraph
+                                </SmallButton>
+                                <DangerButton
+                                  type="button"
+                                  onClick={() => handleRemoveParagraph(template.id, index)}
+                                  title="Remove this paragraph"
+                                >
+                                  <FaTrash />
+                                </DangerButton>
+                              </ParagraphControlsRow>
+                              <ParagraphPair $single={isSingle} $plain>
+                                {showUk ? (
+                                  <AutoInlineTextarea
+                                    value={paragraphValue(paragraph, index, 'uk')}
+                                    placeholder="Paragraph (uk)"
+                                    onChange={onParagraphChange(index, 'uk')}
+                                    onBlur={onFieldBlur}
+                                  />
+                                ) : null}
+                                {showEn ? (
+                                  <AutoInlineTextarea
+                                    value={paragraphValue(paragraph, index, 'en')}
+                                    placeholder="Paragraph (en)"
+                                    onChange={onParagraphChange(index, 'en')}
+                                    onBlur={onFieldBlur}
+                                  />
+                                ) : null}
+                              </ParagraphPair>
+                            </ParagraphEditorBlock>
+                          )
                         ))}
                         {!isDataMode ? (
                           <ParagraphControlsRow style={{ justifyContent: 'flex-start' }}>
