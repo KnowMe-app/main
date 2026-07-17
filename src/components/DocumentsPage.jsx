@@ -23,9 +23,12 @@ import {
   DOCUMENTS_TEMPLATES_PATH,
   DOCUMENT_LAYOUTS,
   PARTY_COLLECTIONS,
+  applyLogoLayoutAssignment,
   buildCaseLabel,
   buildDocumentsFileName,
   buildGeneratedDocument,
+  clinicLogoDbPath,
+  clinicLogoEntriesToBackend,
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
   emptyDocumentsCatalog,
@@ -48,6 +51,13 @@ const isStaleChunkError = error => /loading (?:css )?chunk|chunkloaderror/i.test
 const STALE_APP_MESSAGE = 'The app has been updated since this page was opened. Refresh the page and try again.';
 
 const MAX_LOGO_FILE_BYTES = 1024 * 1024;
+
+// The two layout tags a logo variant can be assigned to (one tap on the variant row); the column
+// mode selected at the top of the page then picks the matching variant automatically.
+const LOGO_LAYOUT_OPTIONS = [
+  { tag: '2col', label: '2 col', title: 'Use this variant above the two-column (UA + EN) layout' },
+  { tag: '1col', label: '1 col', title: 'Use this variant full-width on the one-column (UA or EN) layouts' },
+];
 
 // Mobile admins can't easily reach the browser devtools console, so every Storage failure below
 // is folded into the on-screen message with the real Firebase/network error code - "see the
@@ -427,11 +437,21 @@ const LogoPreview = styled.img`
   background: #fff;
 `;
 
+// An unassigned variant is kept in the list but visually muted - it is not used on documents.
 const LogoVariant = styled.div`
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  opacity: ${({ $muted }) => ($muted ? 0.5 : 1)};
+`;
+
+// Live logo preview above the document list: swaps with the column-mode toggle, confirming which
+// variant is assigned where before anything is generated.
+const DocLogoPreviewRow = styled.div`
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
 `;
 
 const LogoVariantCaption = styled.div`
@@ -491,7 +511,8 @@ const DocumentsPage = ({ isAdmin }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  // Every uploaded logo variant of the selected clinic: { fileName, dataUrl, width, height }.
+  // Every uploaded logo variant of the selected clinic: { fileName, dataUrl, width, height,
+  // layout } where layout is the '2col' / '1col' assignment ('' while unassigned).
   const [clinicLogos, setClinicLogos] = useState([]);
   const [clinicLogoLoading, setClinicLogoLoading] = useState(false);
   const [clinicLogoError, setClinicLogoError] = useState('');
@@ -504,6 +525,13 @@ const DocumentsPage = ({ isAdmin }) => {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+  // Layout assignments ({ file, layout } entries per clinic) live in the catalog; the Storage
+  // listing effect reads them through this ref so a local assignment change never re-lists the
+  // whole Storage folder.
+  const clinicLogoAssignmentsRef = useRef(catalog.clinicLogos);
+  useEffect(() => {
+    clinicLogoAssignmentsRef.current = catalog.clinicLogos || {};
+  }, [catalog.clinicLogos]);
 
   const loadDocumentsData = useCallback(async () => {
     setLoading(true);
@@ -808,9 +836,12 @@ const DocumentsPage = ({ isAdmin }) => {
           const { fileName } = await uploadFileToStorageFolder(file, clinicLogoStorageFolder(clinicId), {
             disableCompression: true,
           });
+          // New variants start unassigned - the admin taps "2 col" / "1 col" on the row to say
+          // which column layout the file is for.
           setClinicLogos(previous => [...previous.filter(variant => variant.fileName !== fileName), {
             fileName,
             dataUrl,
+            layout: '',
             width: image.naturalWidth || 0,
             height: image.naturalHeight || 0,
           }]);
@@ -845,14 +876,47 @@ const DocumentsPage = ({ isAdmin }) => {
     image.src = dataUrl;
   }), []);
 
+  // Writes the clinic's DB logo node ({ file, layout } per variant) and, once the write landed,
+  // syncs the in-memory catalog mirror so a later Storage re-list re-applies the assignments.
+  const persistLogoAssignments = async (clinicId, variants) => {
+    const entries = clinicLogoEntriesToBackend(variants);
+    await set(ref(database, clinicLogoDbPath(clinicId)), entries);
+    setCatalog(previous => ({
+      ...previous,
+      clinicLogos: {
+        ...previous.clinicLogos,
+        [clinicId]: entries.map(entry => ({ file: entry.file, layout: entry.layout || '' })),
+      },
+    }));
+  };
+
+  const handleAssignLogoLayout = async (fileName, layoutTag) => {
+    const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+    if (!clinicId) return;
+    const previousVariants = clinicLogos;
+    const nextVariants = applyLogoLayoutAssignment(previousVariants, fileName, layoutTag);
+    setClinicLogos(nextVariants);
+    try {
+      await persistLogoAssignments(clinicId, nextVariants);
+    } catch (assignError) {
+      console.error('Unable to save clinic logo layout assignment', assignError);
+      setClinicLogos(previousVariants);
+      toast.error('Could not save the logo layout assignment.');
+    }
+  };
+
   const handleRemoveLogoVariant = async fileName => {
     if (typeof window !== 'undefined' && !window.confirm('Remove this clinic logo variant from the backend?')) return;
     const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
     if (!clinicId) return;
     try {
       await deleteStorageFile(clinicLogoStorageFilePath(clinicId, fileName));
-      setClinicLogos(previous => previous.filter(variant => variant.fileName !== fileName));
+      const remaining = clinicLogos.filter(variant => variant.fileName !== fileName);
+      setClinicLogos(remaining);
       setClinicLogoRefreshKey(previous => previous + 1);
+      // Best effort: drop the deleted file's DB entry too. A stale entry is harmless - the
+      // assignments only apply to files Storage still lists.
+      persistLogoAssignments(clinicId, remaining).catch(() => {});
       toast.success('Clinic logo variant removed.');
     } catch (removeError) {
       console.error('Unable to remove clinic logo', removeError);
@@ -892,6 +956,9 @@ const DocumentsPage = ({ isAdmin }) => {
   const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
   const caseContext = resolveCaseContext(catalog, selectedCaseId);
+  // Exactly the variant PDF/Word generation will use for the selected column mode - shown as the
+  // live preview above the document list, so switching the mode swaps the logo immediately.
+  const activeLogoVariant = pickLogoVariantForLayout(clinicLogos, layout);
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
   // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
@@ -933,6 +1000,10 @@ const DocumentsPage = ({ isAdmin }) => {
         return;
       }
 
+      // Storage lists the files; the DB logo node (catalog.clinicLogos) says which of them is
+      // assigned to which column layout.
+      const assignments = clinicLogoAssignmentsRef.current?.[clinicId] || [];
+      const layoutFor = fileName => assignments.find(entry => entry.file === fileName)?.layout || '';
       const results = await Promise.all(fileNames.map(async fileName => {
         try {
           const rawDataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
@@ -942,7 +1013,7 @@ const DocumentsPage = ({ isAdmin }) => {
           // EXIF-rotated logo can fail to appear in the generated PDF with no error.
           const dataUrl = await reencodePdfImageDataUrl(rawDataUrl);
           const dimensions = await readImageDimensions(dataUrl);
-          return { fileName, variant: { fileName, dataUrl, ...dimensions } };
+          return { fileName, variant: { fileName, dataUrl, layout: layoutFor(fileName), ...dimensions } };
         } catch (loadLogoError) {
           console.error('[ClinicLogo] Unable to load', fileName, 'from', clinicLogoStorageFolder(clinicId), loadLogoError);
           return { fileName, error: describeStorageError(loadLogoError) };
@@ -1126,6 +1197,16 @@ const DocumentsPage = ({ isAdmin }) => {
                   </ToggleOption>
                 </ToggleGroup>
               </SectionHead>
+              {formatting.showLogo && activeLogoVariant ? (
+                <DocLogoPreviewRow>
+                  <LogoPreview
+                    src={activeLogoVariant.dataUrl}
+                    alt="Clinic logo for the selected column mode"
+                    title="The logo variant the selected column mode will render (also used by PDF/Word generation)"
+                    style={layout === 'two-column' ? undefined : { width: '100%', maxWidth: '100%' }}
+                  />
+                </DocLogoPreviewRow>
+              ) : null}
               {!catalog.documents.length ? (
                 <DocSubtitle style={{ marginTop: 8 }}>No document templates yet — paste them in the technical field below.</DocSubtitle>
               ) : null}
@@ -1253,27 +1334,33 @@ const DocumentsPage = ({ isAdmin }) => {
               {formattingOpen ? (
                 <>
                   <RowLine style={{ marginTop: 10 }}>
-                    {clinicLogos.length ? clinicLogos.map(variant => {
-                      const usedFor = [
-                        pickLogoVariantForLayout(clinicLogos, 'two-column')?.fileName === variant.fileName ? '2 col' : '',
-                        pickLogoVariantForLayout(clinicLogos, 'one-column-uk')?.fileName === variant.fileName ? '1 col' : '',
-                      ].filter(Boolean).join(' · ');
-                      return (
-                        <LogoVariant key={variant.fileName}>
-                          <LogoPreview src={variant.dataUrl} alt="Clinic logo variant" />
-                          <LogoVariantCaption>
-                            {usedFor ? <span>Used: {usedFor}</span> : null}
-                            <DangerButton
-                              type="button"
-                              onClick={() => handleRemoveLogoVariant(variant.fileName)}
-                              title="Remove this logo variant"
-                            >
-                              <FaTrash />
-                            </DangerButton>
-                          </LogoVariantCaption>
-                        </LogoVariant>
-                      );
-                    }) : (
+                    {clinicLogos.length ? clinicLogos.map(variant => (
+                      <LogoVariant key={variant.fileName} $muted={!variant.layout}>
+                        <LogoPreview src={variant.dataUrl} alt="Clinic logo variant" />
+                        <LogoVariantCaption>
+                          <ToggleGroup>
+                            {LOGO_LAYOUT_OPTIONS.map(option => (
+                              <ToggleOption
+                                key={option.tag}
+                                type="button"
+                                $active={variant.layout === option.tag}
+                                onClick={() => handleAssignLogoLayout(variant.fileName, option.tag)}
+                                title={option.title}
+                              >
+                                {option.label}
+                              </ToggleOption>
+                            ))}
+                          </ToggleGroup>
+                          <DangerButton
+                            type="button"
+                            onClick={() => handleRemoveLogoVariant(variant.fileName)}
+                            title="Remove this logo variant"
+                          >
+                            <FaTrash />
+                          </DangerButton>
+                        </LogoVariantCaption>
+                      </LogoVariant>
+                    )) : (
                       <DocSubtitle>{clinicLogoLoading ? 'Loading the clinic logo…' : (clinicLogoError || 'No clinic logo uploaded yet.')}</DocSubtitle>
                     )}
                     <input
