@@ -8,8 +8,10 @@ export const DOCUMENTS_PARTIES_PATH = 'documentsBuilder/parties';
 export const DOCUMENTS_TEMPLATES_PATH = 'documentsBuilder/templates';
 export const DOCUMENTS_SETTINGS_PATH = 'documentsBuilder/settings';
 
-// Legacy clinic-logo filename helpers. Current UI lists the Storage folder directly, but these
-// paths still normalize older Realtime Database filename mirrors without treating them as cases.
+// Clinic-logo paths. The Storage folder holds the image files themselves (and is listed directly
+// as the source of truth for which variants exist); the Realtime Database node at the same path
+// holds the per-variant layout assignments as `{ file, layout }` entries (legacy nodes stored
+// bare filenames - both shapes are normalized by normalizeClinicLogoEntries).
 export const clinicLogoDbPath = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const clinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoStorageFolder(clinicId)}/${fileName}`;
@@ -25,6 +27,50 @@ const toArray = value => {
 };
 
 const makeRecordId = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+// --- Clinic logo variants --------------------------------------------------------------------
+
+// The column mode selected at the top of the page is the flag that decides which logo variant is
+// used (spec: batch 10): each variant carries one of these assignments, or '' when unassigned.
+export const LOGO_LAYOUT_TAGS = ['2col', '1col'];
+
+const normalizeLogoLayoutTag = value => (LOGO_LAYOUT_TAGS.includes(value) ? value : '');
+
+// The DB logo node stores one entry per uploaded variant. Current shape is `{ file, layout }`;
+// legacy nodes stored bare filenames, which normalize to unassigned entries.
+export const normalizeClinicLogoEntries = raw => toArray(raw)
+  .map(entry => {
+    if (typeof entry === 'string') return entry ? { file: entry, layout: '' } : null;
+    if (isPlainObject(entry) && entry.file) {
+      return { file: String(entry.file), layout: normalizeLogoLayoutTag(entry.layout) };
+    }
+    return null;
+  })
+  .filter(Boolean);
+
+// One tap on a variant's layout tag: assign that column mode to the variant, moving the
+// assignment off any other variant that held it (at most one variant per layout); tapping the
+// already-active tag unassigns. Works on both DB entries ({ file }) and the page's loaded
+// variants ({ fileName }).
+export const applyLogoLayoutAssignment = (variants, fileName, layoutTag) => {
+  const tag = normalizeLogoLayoutTag(layoutTag);
+  if (!tag) return [...(variants || [])];
+  return (variants || []).map(variant => {
+    const name = variant.file ?? variant.fileName;
+    if (name === fileName) return { ...variant, layout: variant.layout === tag ? '' : tag };
+    return variant.layout === tag ? { ...variant, layout: '' } : variant;
+  });
+};
+
+// Firebase persistence shape of the DB logo node: one entry per variant, the layout key present
+// only while assigned (Realtime Database has no use for the '' placeholder).
+export const clinicLogoEntriesToBackend = variants => (variants || [])
+  .map(variant => {
+    const file = String(variant.file ?? variant.fileName ?? '');
+    if (!file) return null;
+    return variant.layout ? { file, layout: variant.layout } : { file };
+  })
+  .filter(Boolean);
 
 // --- Catalog -------------------------------------------------------------------------------
 
@@ -52,15 +98,15 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
   const rawClinicLogos = rawParties?.cases?.clinics;
   if (isPlainObject(rawClinicLogos)) {
     Object.entries(rawClinicLogos).forEach(([clinicId, node]) => {
-      const names = toArray(node?.logo).map(String).filter(Boolean);
-      if (names.length) catalog.clinicLogos[clinicId] = names;
+      const entries = normalizeClinicLogoEntries(node?.logo);
+      if (entries.length) catalog.clinicLogos[clinicId] = entries;
     });
   }
   // Legacy fallback: earlier builds kept the file names on the clinic record itself.
   catalog.parties.clinics.forEach(clinic => {
     if (!catalog.clinicLogos[String(clinic.id)] && Array.isArray(clinic.logo)) {
-      const names = clinic.logo.map(String).filter(Boolean);
-      if (names.length) catalog.clinicLogos[String(clinic.id)] = names;
+      const entries = normalizeClinicLogoEntries(clinic.logo);
+      if (entries.length) catalog.clinicLogos[String(clinic.id)] = entries;
     }
   });
   return catalog;
@@ -369,13 +415,22 @@ export const DOCUMENT_LAYOUTS = [
   { id: 'one-column-en', label: 'EN · 1 column' },
 ];
 
-// A clinic can keep several logo file variants (spec §7): a compact/square one for the shared
-// logo above the two-column layout and a long full-width one for the one-column layouts. The
-// variant is picked by aspect ratio: squarest for two columns, widest for one column. With a
-// single uploaded file both layouts fall back to it.
+// A clinic can keep several logo file variants (spec §7): a compact one for the shared logo
+// above the two-column layout and a long full-width one for the one-column layouts. The column
+// mode selected at the top of the page is the flag that picks the variant: the one explicitly
+// assigned '2col' or '1col' (see applyLogoLayoutAssignment). If the mode's assigned variant is
+// missing, the variant assigned to the other layout is the fallback - generation never fails
+// over a logo. Unassigned variants are not used, except when no variant is assigned at all
+// (single legacy upload, freshly uploaded files): then the pre-assignment aspect-ratio heuristic
+// keeps picking - squarest for two columns, widest for one column.
 export const pickLogoVariantForLayout = (logoVariants, layout) => {
   const variants = (logoVariants || []).filter(variant => variant && variant.dataUrl);
   if (!variants.length) return null;
+  const desiredTag = layout === 'two-column' ? '2col' : '1col';
+  const otherTag = desiredTag === '2col' ? '1col' : '2col';
+  const assignedTo = tag => variants.find(variant => variant.layout === tag) || null;
+  const assigned = assignedTo(desiredTag) || assignedTo(otherTag);
+  if (assigned) return assigned;
   const aspectRatio = variant => (variant.width > 0 && variant.height > 0 ? variant.width / variant.height : 1);
   return variants.reduce((best, variant) => {
     if (!best) return variant;
