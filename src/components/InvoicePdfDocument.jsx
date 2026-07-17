@@ -5,7 +5,7 @@ import {
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 import { formatMoney } from './budgetCatalogUtils';
-import { formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
+import { formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable, SERVICE_TABLE_LEAD_LABEL } from './BudgetPdfDocument';
 import {
   buildPayerLocation,
   buildPayerName,
@@ -64,17 +64,15 @@ const styles = StyleSheet.create({
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
-  // The Breakdown heading gets real section-header weight (design-tasks-8 §2): a bit larger than
-  // the shared sectionTitle and with extra air above it, so it stops reading like body text.
+  // The Breakdown heading renders in the shared promoted sectionTitle (design-tasks-8 §2,
+  // unified in design-tasks-11 §2) - what stays invoice-specific is the extra air above it, so
+  // it clearly separates from whatever precedes it: the "Prepared exclusively for..." title
+  // subrow on a plain-services invoice, the package's payment schedule on a package invoice.
   breakdownSection: {
-    marginTop: 14,
+    marginTop: 16,
   },
   breakdownSectionAfterTitle: {
-    marginTop: 6,
-  },
-  breakdownTitle: {
-    fontSize: 15,
-    marginBottom: 6,
+    marginTop: 14,
   },
   packageBlock: {
     marginTop: 2,
@@ -367,9 +365,8 @@ const InvoicePdfDocument = ({
             packages={breakdownMeta}
             rows={breakdownTableRows}
             title="Breakdown"
-            leadLabel="Provided service"
+            leadLabel={SERVICE_TABLE_LEAD_LABEL}
             sectionStyle={!isPackageInvoice ? styles.breakdownSectionAfterTitle : styles.breakdownSection}
-            titleStyle={styles.breakdownTitle}
             dense
             light
           />
