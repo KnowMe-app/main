@@ -934,7 +934,7 @@ const DocumentsPage = ({ isAdmin }) => {
           // Same re-encode the surrogate mother profile PDF export applies to uploaded photos:
           // @react-pdf/renderer only reliably embeds baseline JPEG/PNG, so a progressive JPEG or
           // EXIF-rotated logo can fail to appear in the generated PDF with no error.
-          const dataUrl = await reencodePdfImageDataUrl(rawDataUrl);
+          const dataUrl = await reencodePdfImageDataUrl(rawDataUrl, { preserveTransparency: true });
           const dimensions = await readImageDimensions(dataUrl);
           return { fileName, dataUrl, ...dimensions };
         } catch (loadLogoError) {
