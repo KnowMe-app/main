@@ -109,9 +109,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: PDF_COLOR.card,
   },
-  // Row hairlines sit a step lighter/thinner than the table frame (design-tasks-8 §1, thinned
-  // again to a true 0.5pt hairline in design-tasks-9 §1) so the grid recedes behind the content
-  // instead of reading like a spreadsheet.
+  // Row hairlines sit a step lighter/thinner than the table frame (design-tasks-8 §1, thinned to
+  // a true 0.5pt hairline in design-tasks-9 §1/§11) so the grid recedes behind the content instead
+  // of reading like a spreadsheet - the taller row padding below does the separating, not the line.
   tableRow: {
     flexDirection: 'row',
     borderTopWidth: 0.5,
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
   },
   labelCell: {
     flex: 1,
-    paddingVertical: 3.5,
+    paddingVertical: 5,
     paddingHorizontal: 9,
     justifyContent: 'center',
   },
@@ -145,10 +145,13 @@ const styles = StyleSheet.create({
   },
   // Dense variant: tighter row padding + slightly smaller cell text for the single-page Invoice
   // (design-tasks §3, tightened further in design-tasks-4 §7 so a package invoice fits one page;
-  // relaxed a step in design-tasks-8 §1 - the rows needed breathing room more than the page
-  // needed those few points back).
+  // relaxed a step in design-tasks-8 §1 and again in design-tasks-11 §1 - the rows needed
+  // breathing room more than the page needed those few points back. The batch-11 step moves the
+  // fits-one-page boundary from ~10 to ~8 included package services; a fuller invoice wraps its
+  // total card whole onto page 2, which the design accepts in exchange for rows that no longer
+  // feel boxed in).
   denseCell: {
-    paddingVertical: 3,
+    paddingVertical: 3.5,
   },
   denseCellText: {
     fontSize: 8,
@@ -170,7 +173,7 @@ const styles = StyleSheet.create({
   },
   programCell: {
     width: PROGRAM_COL_WIDTH,
-    paddingVertical: 3.5,
+    paddingVertical: 5,
     paddingHorizontal: 4,
     borderLeftWidth: 1,
     borderLeftColor: PDF_COLOR.docLine,
@@ -312,6 +315,11 @@ const styles = StyleSheet.create({
   },
 });
 
+// The one lead-column header every service-listing table shows, in every document that lists
+// services (package invoice, plain-services invoice, Expected Expenses, Program Budget) - always
+// this exact label, never a per-document variant like "Description" (design-tasks-11 §3).
+export const SERVICE_TABLE_LEAD_LABEL = 'Provided service';
+
 const ProgramColumnsHead = ({ packages, leadLabel, dense = false, light = false }) => (
   <View style={styles.tableHeadRow} wrap={false}>
     <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
@@ -373,7 +381,7 @@ export const IncludedServicesTable = ({
         <View style={styles.table}>
           <View style={styles.tableHeadRow} wrap={false}>
             <View style={[styles.labelCell, styles.denseCell]}>
-              <Text style={styles.labelCellHeadText}>Provided service</Text>
+              <Text style={styles.labelCellHeadText}>{SERVICE_TABLE_LEAD_LABEL}</Text>
             </View>
           </View>
           {pairedRows.map((pair, rowIndex) => (
@@ -397,7 +405,7 @@ export const IncludedServicesTable = ({
         {note ? <Text style={styles.sectionNote}>{note}</Text> : null}
       </View>
       <View style={styles.table}>
-        <ProgramColumnsHead packages={packages} leadLabel="Provided service" dense={dense} />
+        <ProgramColumnsHead packages={packages} leadLabel={SERVICE_TABLE_LEAD_LABEL} dense={dense} />
         {includedRows.map(item => (
           <View key={item.id} style={styles.tableRow} wrap={false}>
             <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
@@ -422,13 +430,13 @@ export const IncludedServicesTable = ({
 // repeat the same numbers at its foot (round7 spec A.1).
 // A cell amount may also be a free-text label (e.g. "GIFT") when the table renders invoice
 // breakdown rows - a string passes through as-is instead of being coerced to a number.
-// `light` (design-tasks-8 §1) drops the vertical divider before the amount column(s);
-// `titleStyle` lets a document promote one table's heading (the invoice's "Breakdown",
-// design-tasks-8 §2) without a second table component.
-export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment schedule', leadLabel = 'Milestone', sectionStyle, dense = false, light = false, titleStyle }) => (rows.length ? (
+// `light` (design-tasks-8 §1) drops the vertical divider before the amount column(s). The heading
+// always renders in the one shared sectionTitle style (design-tasks-11 §2) - no per-document
+// heading overrides, so "Breakdown", "Payment schedule", etc. can never drift apart.
+export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment schedule', leadLabel = 'Milestone', sectionStyle, dense = false, light = false }) => (rows.length ? (
   <View style={sectionStyle || styles.scheduleSection}>
     <View wrap={false} minPresenceAhead={70}>
-      <Text style={titleStyle ? [styles.sectionTitle, titleStyle] : styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionTitle}>{title}</Text>
     </View>
     <View style={styles.table}>
       <ProgramColumnsHead packages={packages} leadLabel={leadLabel} dense={dense} light={light} />

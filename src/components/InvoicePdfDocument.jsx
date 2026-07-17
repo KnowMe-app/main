@@ -5,7 +5,7 @@ import {
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 import { formatMoney } from './budgetCatalogUtils';
-import { formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
+import { formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable, SERVICE_TABLE_LEAD_LABEL } from './BudgetPdfDocument';
 import {
   buildPayerLocation,
   buildPayerName,
@@ -64,19 +64,16 @@ const styles = StyleSheet.create({
   },
   sectionTitle: pdfBaseStyles.sectionTitle,
   sectionNote: pdfBaseStyles.sectionNote,
-  // The Breakdown heading gets real section-header weight (design-tasks-8 §2): a bit larger than
-  // the shared sectionTitle and with extra air above it - opened up further in design-tasks-9 §2
-  // so the heading separates cleanly from the "Prepared exclusively for..." intro line above and
-  // the table header row below.
+  // The Breakdown heading renders in the shared promoted sectionTitle (design-tasks-8 §2, unified
+  // across every document's headings in design-tasks-11 §2 - no more per-document size override)
+  // - what stays invoice-specific is the extra air above it, opened up further in design-tasks-9
+  // §2 so it clearly separates from whatever precedes it: the "Prepared exclusively for..." title
+  // subrow on a plain-services invoice, the package's payment schedule on a package invoice.
   breakdownSection: {
     marginTop: 20,
   },
   breakdownSectionAfterTitle: {
     marginTop: 14,
-  },
-  breakdownTitle: {
-    fontSize: 15,
-    marginBottom: 9,
   },
   packageBlock: {
     marginTop: 2,
@@ -113,10 +110,12 @@ const styles = StyleSheet.create({
   // 14pt section rhythm above it keeps a full package invoice - package block, included services,
   // payment schedule, breakdown, total - on one physical page whenever possible (design-tasks §3).
   // design-tasks-8 §4 pushes the page's focal point further: a larger amount figure and more
-  // internal padding, with the label kept subdued relative to the figure.
+  // internal padding, with the label kept subdued relative to the figure. The gap above it is
+  // plain whitespace, not a rule (design-tasks-12 §1 dropped the hairline seam that used to sit
+  // here) - marginTop alone now carries the separation from the Breakdown table/notes above.
   totalCard: {
     ...pdfBaseStyles.totalCard,
-    marginTop: 10,
+    marginTop: 20,
     paddingVertical: 12,
   },
   totalCardLabel: {
@@ -139,15 +138,6 @@ const styles = StyleSheet.create({
     ...pdfBaseStyles.totalCardRule,
     marginTop: 7,
     marginBottom: 5,
-  },
-  // Hairline seam between the Breakdown (with its footnotes) and the Amount Due card
-  // (design-tasks-9 §4) - the same docLine hairline the document already uses for its rules,
-  // not a new visual element. The card's own marginTop provides the spacing below it.
-  amountDueDivider: {
-    borderTopWidth: 0.75,
-    borderTopColor: PDF_COLOR.docLine,
-    borderTopStyle: 'solid',
-    marginTop: 16,
   },
   noteRow: {
     flexDirection: 'row',
@@ -378,9 +368,8 @@ const InvoicePdfDocument = ({
             packages={breakdownMeta}
             rows={breakdownTableRows}
             title="Breakdown"
-            leadLabel="Provided service"
+            leadLabel={SERVICE_TABLE_LEAD_LABEL}
             sectionStyle={!isPackageInvoice ? styles.breakdownSectionAfterTitle : styles.breakdownSection}
-            titleStyle={styles.breakdownTitle}
             dense
             light
           />
@@ -396,8 +385,6 @@ const InvoicePdfDocument = ({
               <Text style={styles.noteText}>{sanitizePdfText(note)}</Text>
             </View>
           ))}
-
-          <View style={styles.amountDueDivider} />
 
           {/* wrap={false}: the card either fits under the breakdown or moves to the next page
               whole - it must never split its amount from its subtotal/tax rows. */}

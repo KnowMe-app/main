@@ -273,13 +273,17 @@ export const pdfBaseStyles = {
     lineHeight: 1.6,
     color: PDF_COLOR.docInk,
   },
+  // Real section-header weight (design-tasks-11 §2): one promoted size for every section heading
+  // in every document ("Breakdown", "Included in this programme", "Payment schedule", ...) - the
+  // invoice's Breakdown no longer carries its own larger one-off style, the shared style is the
+  // header treatment.
   sectionTitle: {
     fontFamily: PDF_FONT.display,
     fontWeight: 600,
-    fontSize: 13.5,
+    fontSize: 15,
     letterSpacing: -0.1,
     color: PDF_COLOR.docInk,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   sectionNote: {
     fontFamily: PDF_FONT.body,
@@ -636,9 +640,12 @@ export const Footer = ({ variant = 'branded' } = {}) => {
             </View>
           </View>
         )}
+        {/* A single-page document has nothing worth counting - "Page 1 of 1" on every page was
+            just noise (design-tasks-12 §2). Shown only once a document actually runs to two or
+            more pages, and then on every page including the first, not just the ones after it. */}
         <Text
           style={pdfSharedStyles.footerPage}
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+          render={({ pageNumber, totalPages }) => (totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : '')}
         />
       </View>
     </View>
