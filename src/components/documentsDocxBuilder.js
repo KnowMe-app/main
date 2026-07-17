@@ -7,7 +7,7 @@
 // title; see getTemplateLogoType/getClinicLogo in documentsCatalogUtils. The `docx` package is
 // imported dynamically by the caller-facing builder so the library only loads when a Word export
 // is actually requested.
-import { DEFAULT_DOC_FORMATTING, allowsParagraphInternalBreak, getClinicLogo, isSectionHeading } from './documentsCatalogUtils';
+import { DEFAULT_DOC_FORMATTING, allowsParagraphInternalBreak, getClinicLogo, isParagraphBold } from './documentsCatalogUtils';
 
 const CM_TO_TWIP = 567;
 const MM_TO_PX = 96 / 25.4; // docx ImageRun transformations are CSS pixels at 96dpi
@@ -81,7 +81,7 @@ export const buildDocumentsDocx = async ({
     children: [new TextRun({ text, bold: true, size: bodySize })],
   });
 
-  const cellParagraph = (text, allowPageBreaks, paragraph) => (isSectionHeading(text)
+  const cellParagraph = (text, allowPageBreaks, paragraph) => (isParagraphBold(paragraph)
     ? headingParagraph(text)
     : bodyParagraph(text, { keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks) }));
 
