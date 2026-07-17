@@ -109,11 +109,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: PDF_COLOR.card,
   },
-  // Row hairlines sit a step lighter/thinner than the table frame (design-tasks-8 §1) so the
-  // grid recedes behind the content instead of reading like a spreadsheet.
+  // Row hairlines sit a step lighter/thinner than the table frame (design-tasks-8 §1, thinned
+  // again to a true 0.5pt hairline in design-tasks-9 §1) so the grid recedes behind the content
+  // instead of reading like a spreadsheet.
   tableRow: {
     flexDirection: 'row',
-    borderTopWidth: 0.75,
+    borderTopWidth: 0.5,
     borderTopColor: PDF_COLOR.docLineSoft,
     borderTopStyle: 'solid',
   },
@@ -153,10 +154,17 @@ const styles = StyleSheet.create({
     fontSize: 8,
     lineHeight: 1.35,
   },
+  // Extra breathing room inside the data rows of `light` tables - the Invoice's Breakdown and the
+  // single-programme payment schedules (design-tasks-9 §1). Listed after denseCell wherever both
+  // apply, so this padding wins over the dense metrics.
+  lightCell: {
+    paddingVertical: 4.5,
+  },
   // Column divider between the two service cells of a compact included-services row - the same
-  // hairline the program columns use, so the compact table still reads as part of one table family.
+  // 0.5pt hairline the row dividers use, so the compact table still reads as part of one table
+  // family.
   compactSecondCell: {
-    borderLeftWidth: 0.75,
+    borderLeftWidth: 0.5,
     borderLeftColor: PDF_COLOR.docLineSoft,
     borderLeftStyle: 'solid',
   },
@@ -426,7 +434,7 @@ export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment 
       <ProgramColumnsHead packages={packages} leadLabel={leadLabel} dense={dense} light={light} />
       {rows.map((row, rowIndex) => (
         <View key={`schedule-row-${rowIndex}`} style={styles.tableRow} wrap={false}>
-          <View style={[styles.labelCell, dense ? styles.denseCell : null]}>
+          <View style={[styles.labelCell, dense ? styles.denseCell : null, light ? styles.lightCell : null]}>
             <Text style={dense ? [styles.labelCellText, styles.denseCellText] : styles.labelCellText}>
               {`${rowIndex + 1}. ${sanitizePdfText(row.title)}`}
             </Text>
@@ -435,7 +443,7 @@ export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment 
           {row.amounts.map((amount, columnIndex) => {
             const cell = renderAmountCell(amount);
             return (
-              <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={[styles.programCell, dense ? styles.denseCell : null, light ? styles.lightProgramCell : null]}>
+              <View key={`schedule-cell-${rowIndex}-${columnIndex}`} style={[styles.programCell, dense ? styles.denseCell : null, light ? styles.lightProgramCell : null, light ? styles.lightCell : null]}>
                 <Text
                   style={[
                     styles.amountCellText,
@@ -456,7 +464,7 @@ export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment 
             <Text style={styles.labelCellHeadText}>Total</Text>
           </View>
           {totals.map((total, columnIndex) => (
-            <View key={`schedule-total-${columnIndex}`} style={styles.programCell}>
+            <View key={`schedule-total-${columnIndex}`} style={[styles.programCell, light ? styles.lightProgramCell : null]}>
               <Text style={styles.programCellHead}>{total == null ? '-' : formatAmount(total)}</Text>
             </View>
           ))}
