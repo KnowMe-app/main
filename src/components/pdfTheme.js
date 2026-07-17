@@ -640,12 +640,13 @@ export const Footer = ({ variant = 'branded' } = {}) => {
             </View>
           </View>
         )}
-        {/* A single-page document has nothing to count - "Page 1 of 1" on every page of every
-            document was just noise (design-tasks-12 §2). Shown only once there's an actual page
-            to distinguish it from. */}
+        {/* A one- or two-page document has nothing worth counting - "Page 1 of 1"/"Page 1 of 2"
+            on every page was just noise (design-tasks-12 §2, tightened design-tasks-13 §1). Shown
+            only once a document actually runs to three or more pages, and then on every page
+            including the first, not just the ones after it. */}
         <Text
           style={pdfSharedStyles.footerPage}
-          render={({ pageNumber, totalPages }) => (totalPages > 1 ? `Page ${pageNumber} of ${totalPages}` : '')}
+          render={({ pageNumber, totalPages }) => (totalPages > 2 ? `Page ${pageNumber} of ${totalPages}` : '')}
         />
       </View>
     </View>

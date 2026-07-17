@@ -33,18 +33,12 @@ const styles = StyleSheet.create({
     color: PDF_COLOR.bronzeDeep,
     marginBottom: 22,
   },
-  // Same hairline seam the Invoice draws between its Breakdown and Amount Due card
-  // (design-tasks-9 §4), here between the payment-schedule table and the Payments blocks that
-  // carry the amount cards - keeping the three documents' section seams identical.
-  paymentsDivider: {
-    borderTopWidth: 0.75,
-    borderTopColor: PDF_COLOR.docLine,
-    borderTopStyle: 'solid',
-    marginTop: 26,
-  },
+  // No divider above this heading anymore (design-tasks-13 §2 dropped the hairline seam) - the
+  // marginTop alone separates it from the payment-schedule table above, now that that table
+  // always opens its own fresh page.
   paymentsHeading: {
     ...pdfBaseStyles.sectionTitle,
-    marginTop: 12,
+    marginTop: 22,
     marginBottom: 12,
   },
   paymentBlock: {
@@ -224,12 +218,17 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
         />
 
         {/* `light` (design-tasks-8 §1): single amount column, so no vertical divider before it -
-            same treatment as the Invoice's Breakdown, keeping the two documents unified. */}
-        <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} light />
+            same treatment as the Invoice's Breakdown, keeping the two documents unified.
+            `break` (design-tasks-13 §2): Payment schedule always opens its own fresh page rather
+            than trailing under Included services, conditioned on there being rows so an empty
+            table (no milestones) never forces a blank page break with nothing on it. */}
+        <View break={scheduleRows.length > 0}>
+          <PaymentScheduleTable packages={packagesMeta} rows={scheduleRows} light />
+        </View>
 
         {milestones.length ? (
           <View>
-            {/* The divider + heading share one non-wrapping group with the first payment block:
+            {/* The heading shares one non-wrapping group with the first payment block:
                 minPresenceAhead is not honored this deep in the tree, so this is what actually
                 keeps the heading from stranding at a page bottom with every block on the next. */}
             {milestones.map((milestone, index) => {
@@ -238,7 +237,6 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
               );
               return index === 0 ? (
                 <View key={milestone.id || index} wrap={false}>
-                  <View style={styles.paymentsDivider} />
                   <Text style={styles.paymentsHeading}>Payments</Text>
                   {block}
                 </View>
