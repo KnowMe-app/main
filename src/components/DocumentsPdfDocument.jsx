@@ -4,8 +4,10 @@
 // covering the full Ukrainian alphabet + №), justified paragraphs, and either a single-language
 // column or the uk|en two-column layout.
 // A clinic logo is never added automatically - it only appears where the template itself places
-// a {{logo}} (one compact logo above each visible language column) or {{logo-long}} (one shared
-// full-width logo) paragraph; see getParagraphType/getClinicLogo in documentsCatalogUtils.
+// one, via the dedicated `logo` field (or, for older templates, a leading {{logo}}/{{logo-long}}
+// paragraph): {{logo}} draws one compact logo above each visible language column, {{logo-long}}
+// draws one shared full-width logo. Either way it renders once, before the title - see
+// getTemplateLogoType/getClinicLogo in documentsCatalogUtils.
 // Every metric (font sizes, margins, spacing, indent, header/footer) comes from the formatting
 // settings the user tunes on the page - nothing visual is hardcoded beyond the defaults.
 import React from 'react';
@@ -59,10 +61,12 @@ const styles = StyleSheet.create({
   },
 });
 
-// A logo paragraph draws graphics, not text - it never goes through the title/paragraph text
-// styles and never picks up the template's paragraphSpacing/indent (spec §5).
-const LogoParagraph = ({ paragraph, isTwoColumn, cellStyles, logoWidth, longLogoWidth, clinicLogos, showUk, showEn }) => {
-  if (paragraph.type === 'logo-long') {
+// A logo block draws graphics, not text - it never goes through the title/paragraph text styles
+// and never picks up the template's paragraphSpacing/indent (spec §5). `type` is 'logo' or
+// 'logo-long'; used both for the template's letterhead logo (rendered before the title) and for
+// any additional logo token still embedded mid-document.
+const LogoBlock = ({ type, isTwoColumn, cellStyles, logoWidth, longLogoWidth, clinicLogos, showUk, showEn }) => {
+  if (type === 'logo-long') {
     const variant = getClinicLogo(clinicLogos, 'logo-long');
     if (!variant?.dataUrl) return null;
     return (
@@ -121,8 +125,13 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
   const lang = layout === 'one-column-en' ? 'en' : 'uk';
   const showUk = layout !== 'one-column-en';
   const showEn = layout !== 'one-column-uk';
+  const logoBlockProps = { isTwoColumn, cellStyles, logoWidth, longLogoWidth, clinicLogos, showUk, showEn };
   return (
     <View>
+      {/* The template's letterhead logo (doc.logo) always renders before the title, whether it
+          came from the dedicated `logo` field or a legacy leading paragraph - see
+          getTemplateLogoType in documentsCatalogUtils. */}
+      {doc.logo ? <LogoBlock type={doc.logo} {...logoBlockProps} /> : null}
       <View style={{ marginBottom: titleGap }}>
         {isTwoColumn ? (
           <View style={styles.row}>
@@ -133,30 +142,26 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
           <Text style={cellStyles.title}>{doc.title[lang]}</Text>
         )}
       </View>
-      {doc.paragraphs.map((paragraph, index) => (
-        <View key={`p-${index}`} wrap>
-          {paragraph.type !== 'text' ? (
-            <LogoParagraph
-              paragraph={paragraph}
-              isTwoColumn={isTwoColumn}
-              cellStyles={cellStyles}
-              logoWidth={logoWidth}
-              longLogoWidth={longLogoWidth}
-              clinicLogos={clinicLogos}
-              showUk={showUk}
-              showEn={showEn}
-            />
-          ) : (
-            <TextParagraph
-              paragraph={paragraph}
-              isTwoColumn={isTwoColumn}
-              lang={lang}
-              cellStyles={cellStyles}
-              allowPageBreaks={doc.allowPageBreaks}
-            />
-          )}
-        </View>
-      ))}
+      {doc.paragraphs.map((paragraph, index) => {
+        // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render
+        // a second time in its old body position.
+        if (paragraph.type === 'logo-consumed') return null;
+        return (
+          <View key={`p-${index}`} wrap>
+            {paragraph.type !== 'text' ? (
+              <LogoBlock type={paragraph.type} {...logoBlockProps} />
+            ) : (
+              <TextParagraph
+                paragraph={paragraph}
+                isTwoColumn={isTwoColumn}
+                lang={lang}
+                cellStyles={cellStyles}
+                allowPageBreaks={doc.allowPageBreaks}
+              />
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 };

@@ -10,6 +10,7 @@ import {
   formatDocumentDate,
   getClinicLogo,
   getParagraphType,
+  getTemplateLogoType,
   getValueByPath,
   isSectionHeading,
   mergeDocumentsCatalog,
@@ -636,17 +637,54 @@ describe('spec: logo paragraph type + clinic logo resolver', () => {
       paragraphs: [{ uk: 'Текст без логотипу.', en: 'Text without a logo.' }],
     };
     const generated = buildGeneratedDocument(noLogoTemplate, context);
+    expect(generated.logo).toBeNull();
     expect(generated.paragraphs.some(p => p.type === 'logo' || p.type === 'logo-long')).toBe(false);
   });
 
-  it('tags a {{logo}} paragraph once per occurrence - a renderer never has to guess and never duplicates a logo-long block', () => {
+  it('a legacy leading {{logo}} paragraph becomes doc.logo and is not duplicated in the body', () => {
     const catalog = richCatalog();
     const context = resolveCaseContext(catalog, 'case-1');
     const generated = buildGeneratedDocument(catalog.documents[0], context);
-    const logoParagraphs = generated.paragraphs.filter(p => p.type === 'logo');
-    expect(logoParagraphs).toHaveLength(1);
-    // The token itself is preserved (not blanked out by fillPlaceholders) for the renderer to act on.
-    expect(logoParagraphs[0].uk).toBe('{{logo}}');
+    expect(generated.logo).toBe('logo');
+    // No paragraph renders as a body-level logo block - the former leading paragraph is consumed.
+    expect(generated.paragraphs.some(p => p.type === 'logo' || p.type === 'logo-long')).toBe(false);
+    expect(generated.paragraphs[0].type).toBe('logo-consumed');
+  });
+});
+
+describe('spec: template.logo field renders before the title', () => {
+  it('getTemplateLogoType reads the dedicated field first', () => {
+    expect(getTemplateLogoType({ logo: '{{logo}}', paragraphs: [] })).toBe('logo');
+    expect(getTemplateLogoType({ logo: '{{logo-long}}', paragraphs: [] })).toBe('logo-long');
+    expect(getTemplateLogoType({ paragraphs: [] })).toBeNull();
+  });
+
+  it('falls back to a legacy leading paragraph when there is no dedicated field', () => {
+    expect(getTemplateLogoType({ paragraphs: [{ uk: '{{logo}}', en: '{{logo}}' }] })).toBe('logo');
+    expect(getTemplateLogoType({ paragraphs: [{ uk: 'Body text.', en: 'Body text.' }] })).toBeNull();
+  });
+
+  it('buildGeneratedDocument exposes doc.logo from the dedicated field, with a clean paragraph body', () => {
+    const catalog = richCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'embryo-thawing-and-transfer-application',
+      logo: '{{logo}}',
+      title: { uk: 'Заява', en: 'Application' },
+      paragraphs: [
+        { uk: 'Я, {{wife.name.uk.nominative}}.', en: 'I, {{wife.name.en}}.' },
+      ],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.logo).toBe('logo');
+    expect(generated.paragraphs).toHaveLength(1);
+    expect(generated.paragraphs[0].type).toBe('text');
+    expect(generated.paragraphs[0].uk).toBe('Я, Тестова Марія.');
+  });
+
+  it('a template.logo of "{{logo-long}}" resolves to the wide, non-duplicated variant', () => {
+    const template = { logo: '{{logo-long}}', paragraphs: [] };
+    expect(getTemplateLogoType(template)).toBe('logo-long');
   });
 });
 

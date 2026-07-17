@@ -1,10 +1,12 @@
 // Word (.docx) renderer for the Documents page, mirroring DocumentsPdfDocument: same formatting
 // settings (Times New Roman, justified, tunable sizes/margins/spacing/header/footer), same
 // one-column / two-column layouts. A clinic logo is never added automatically - it only appears
-// where the template itself places a {{logo}} (compact, once per visible language column) or
-// {{logo-long}} (one shared full-width logo) paragraph; see getParagraphType/getClinicLogo in
-// documentsCatalogUtils. The `docx` package is imported dynamically by the caller-facing builder
-// so the library only loads when a Word export is actually requested.
+// where the template itself places one, via the dedicated `logo` field (or, for older templates,
+// a leading {{logo}}/{{logo-long}} paragraph): {{logo}} is compact, once per visible language
+// column; {{logo-long}} is one shared full-width logo. Either way it renders once, before the
+// title; see getTemplateLogoType/getClinicLogo in documentsCatalogUtils. The `docx` package is
+// imported dynamically by the caller-facing builder so the library only loads when a Word export
+// is actually requested.
 import { DEFAULT_DOC_FORMATTING, allowsParagraphInternalBreak, getClinicLogo, isSectionHeading } from './documentsCatalogUtils';
 
 const CM_TO_TWIP = 567;
@@ -155,6 +157,10 @@ export const buildDocumentsDocx = async ({
   const buildDocChildren = doc => {
     const children = [];
 
+    // The template's letterhead logo (doc.logo) always renders before the title, whether it came
+    // from the dedicated `logo` field or a legacy leading paragraph - see getTemplateLogoType.
+    if (doc.logo) children.push(...buildLogoBlock(doc.logo));
+
     if (isTwoColumn) {
       children.push(twoColumnTable([[titleParagraph(doc.title.uk), titleParagraph(doc.title.en)]], true));
     } else {
@@ -162,6 +168,9 @@ export const buildDocumentsDocx = async ({
     }
 
     doc.paragraphs.forEach(paragraph => {
+      // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render a
+      // second time in its old body position.
+      if (paragraph.type === 'logo-consumed') return;
       if (paragraph.type !== 'text') {
         children.push(...buildLogoBlock(paragraph.type));
         return;

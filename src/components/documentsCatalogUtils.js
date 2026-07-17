@@ -410,6 +410,20 @@ export const getClinicLogo = (clinicAssets, variant) => {
   return toArray(variants).find(item => item?.layout === expectedLayout) ?? null;
 };
 
+// A template's letterhead logo - rendered once, before the title, never as a body paragraph.
+// The current export shape carries it as a dedicated `template.logo` string field ("{{logo}}" /
+// "{{logo-long}}"), sitting next to `title`/`paragraphs` specifically so it's positioned ahead of
+// the title. Older exports embedded the same token as the first paragraph instead; that shape is
+// still recognized so previously-saved templates keep rendering their logo correctly.
+export const getTemplateLogoType = template => {
+  const field = String(template?.logo || '').trim();
+  if (field === '{{logo-long}}') return 'logo-long';
+  if (field === '{{logo}}') return 'logo';
+  if (field) return null; // an unrecognized `logo` value is not a graphical token - ignore it
+  const legacyLeadingType = getParagraphType(toArray(template?.paragraphs)[0]);
+  return legacyLeadingType === 'text' ? null : legacyLeadingType;
+};
+
 // Short numbered section titles ("1. Предмет Договору") are bolded; long numbered clauses
 // ("1.1. Клініка зобов'язується...") are not - only a short heading-shaped paragraph qualifies.
 const SECTION_HEADING_PATTERN = /^\d+(?:\.\d+)*\.\s+\S+/;
@@ -452,18 +466,30 @@ const overriddenText = (override, langKey, fallback) => (
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context, then any per-case data-mode
 // overrides applied on top. Logo/logo-long paragraphs are never text-substituted or overridden -
-// they stay tagged for the renderer to draw a graphical block instead (spec §5-§7).
+// they stay tagged for the renderer to draw a graphical block instead (spec §5-§7). The template's
+// letterhead logo (`logo`, below) always renders before the title - see getTemplateLogoType.
 export const buildGeneratedDocument = (template, context, docOverride = null) => {
   const override = isPlainObject(docOverride) ? docOverride : {};
+  const logo = getTemplateLogoType(template);
+  // A legacy template embeds its logo as the first paragraph instead of the dedicated `logo`
+  // field; once getTemplateLogoType has picked it up for the before-the-title block, that same
+  // paragraph must not also render a second time in its old body position. It's tagged
+  // 'logo-consumed' (a no-op for the renderer) rather than dropped from the array, so paragraph
+  // indices stay stable for per-case data-mode overrides (docOverrides[docId].paragraphs[index]).
+  const hasDedicatedLogoField = Boolean(String(template?.logo || '').trim());
   return {
     id: template.id,
     allowPageBreaks: Boolean(template.allowPageBreaks),
+    logo,
     title: {
       uk: overriddenText(override.title, 'uk', fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk')),
       en: overriddenText(override.title, 'en', fillPlaceholders(localizedText(template.title, 'en'), context, 'en')),
     },
     paragraphs: toArray(template.paragraphs).map((paragraph, index) => {
       const type = getParagraphType(paragraph);
+      if (index === 0 && type !== 'text' && !hasDedicatedLogoField) {
+        return { type: 'logo-consumed', uk: paragraph?.uk || '', en: paragraph?.en || '' };
+      }
       if (type !== 'text') {
         return { type, uk: paragraph?.uk || '', en: paragraph?.en || '' };
       }

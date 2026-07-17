@@ -34,6 +34,7 @@ import {
   emptyDocumentsCatalog,
   getClinicLogo,
   getParagraphType,
+  getTemplateLogoType,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -687,6 +688,28 @@ const DocumentsPage = ({ isAdmin }) => {
     }));
   };
 
+  // The letterhead logo always renders before the title (spec: "лого відображай перед title").
+  // Current templates carry it as a dedicated `logo` field; older ones still have it embedded as
+  // the first paragraph. Editing keeps whichever shape the template is already using instead of
+  // introducing a second, conflicting source of truth.
+  const handleLogoFieldChange = (docId, value) => {
+    const token = value || '';
+    updateTemplate(docId, template => {
+      const hasDedicatedLogoField = Boolean(String(template.logo || '').trim());
+      const legacyParagraphIsLogo = !hasDedicatedLogoField
+        && getParagraphType((template.paragraphs || [])[0]) !== 'text';
+      if (legacyParagraphIsLogo) {
+        return {
+          ...template,
+          paragraphs: (template.paragraphs || []).map((paragraph, index) => (
+            index === 0 ? { ...paragraph, uk: token, en: token } : paragraph
+          )),
+        };
+      }
+      return { ...template, logo: token };
+    });
+  };
+
   const handleTitleChange = (docId, langKey, value) => {
     updateTemplate(docId, template => ({
       ...template,
@@ -993,14 +1016,15 @@ const DocumentsPage = ({ isAdmin }) => {
   const selectedTemplates = catalog.documents.filter(template => selectedDocIds[template.id]);
   const selectedCase = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
   const caseContext = resolveCaseContext(catalog, selectedCaseId);
-  // A logo only ever appears where a template places a {{logo}}/{{logo-long}} paragraph (spec
-  // §5) - never automatically. `showLogo` is just the global permission gate.
+  // A logo only ever appears where a template declares one - via the dedicated `logo` field, or
+  // a legacy leading paragraph (spec §5) - never automatically. `showLogo` is just the global
+  // permission gate.
   const canRenderLogo = formatting.showLogo !== false;
   const selectedHasLogoToken = canRenderLogo && selectedTemplates.some(
-    template => (template.paragraphs || []).some(paragraph => getParagraphType(paragraph) === 'logo'),
+    template => getTemplateLogoType(template) === 'logo',
   );
   const selectedHasLogoLongToken = canRenderLogo && !selectedHasLogoToken && selectedTemplates.some(
-    template => (template.paragraphs || []).some(paragraph => getParagraphType(paragraph) === 'logo-long'),
+    template => getTemplateLogoType(template) === 'logo-long',
   );
   // Live preview above the document list of whichever variant the selected documents will
   // actually draw - or nothing, when none of them reference a logo token.
@@ -1333,6 +1357,21 @@ const DocumentsPage = ({ isAdmin }) => {
                       <div style={{ marginTop: 6 }}>
                         {dataEditLocked ? (
                           <DocSubtitle>Select a case first — Data mode shows and edits its resolved values.</DocSubtitle>
+                        ) : null}
+                        {!isDataMode ? (
+                          <RowLine style={{ marginTop: 4 }}>
+                            <DocSubtitle style={{ fontWeight: 700 }}>Logo (before title)</DocSubtitle>
+                            <Select
+                              value={getTemplateLogoType(template) || ''}
+                              onChange={event => handleLogoFieldChange(template.id, event.target.value)}
+                              onBlur={() => persistTemplate(template.id)}
+                              style={{ flex: 'unset', minWidth: 240 }}
+                            >
+                              <option value="">No logo</option>
+                              <option value="logo">{'{{logo}}'} — compact, one per language column</option>
+                              <option value="logo-long">{'{{logo-long}}'} — one shared full-width logo</option>
+                            </Select>
+                          </RowLine>
                         ) : null}
                         <ParagraphPair $single={isSingle}>
                           {showUk ? (
