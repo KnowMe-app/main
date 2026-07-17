@@ -424,15 +424,27 @@ export const getTemplateLogoType = template => {
   return legacyLeadingType === 'text' ? null : legacyLeadingType;
 };
 
-// Short numbered section titles ("1. Предмет Договору") are bolded; long numbered clauses
-// ("1.1. Клініка зобов'язується...") are not - only a short heading-shaped paragraph qualifies.
-const SECTION_HEADING_PATTERN = /^\d+(?:\.\d+)*\.\s+\S+/;
+// Short numbered section titles ("1. Предмет Договору") are bolded; numbered clauses of any
+// length ("5.4. Клініка надає...", "1.1. Клініка зобов'язується...") are never bolded, even when
+// short - only a single top-level number qualifies (no sub-level ".N" group after the first dot),
+// which is what actually distinguishes a section title from clause body text in these contracts.
+const SECTION_HEADING_PATTERN = /^\d+\.\s+\S+/;
 const SECTION_HEADING_MAX_LENGTH = 120;
 
 export const isSectionHeading = text => {
   const trimmed = String(text || '').trim();
   if (!trimmed || trimmed.length > SECTION_HEADING_MAX_LENGTH) return false;
   return SECTION_HEADING_PATTERN.test(trimmed);
+};
+
+// Auto-detection (above) can still be wrong for an edge case the admin spots visually; `bold` on
+// the paragraph itself (true/false) explicitly overrides it either way, undefined falls back to
+// isSectionHeading. Bold is a whole-paragraph property (both languages together), matching how
+// real section headings actually look in these bilingual documents.
+export const isParagraphBold = paragraph => {
+  if (paragraph?.bold === true) return true;
+  if (paragraph?.bold === false) return false;
+  return isSectionHeading(paragraph?.uk) || isSectionHeading(paragraph?.en);
 };
 
 // A paragraph long enough that forcing it to stay on one page (break-inside: avoid / wrap=false)
@@ -515,6 +527,7 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
       const paragraphOverride = overrideAt(override.paragraphs, index);
       return {
         type,
+        bold: paragraph?.bold,
         uk: overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
         en: overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
       };

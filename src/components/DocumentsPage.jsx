@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaBold, FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -35,6 +35,7 @@ import {
   getClinicLogo,
   getParagraphType,
   getTemplateLogoType,
+  isParagraphBold,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -195,6 +196,16 @@ const DangerButton = styled(SmallButton)`
     border-color: var(--km-danger);
     color: var(--km-danger);
   }
+`;
+
+// Highlighted while the paragraph currently renders bold (whether via auto-detection or an
+// explicit override), so the toggle's own state always matches what the exported document shows.
+const BoldToggleButton = styled(SmallButton)`
+  ${({ $active }) => ($active ? `
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+    background: var(--km-accent-light);
+  ` : '')}
 `;
 
 const Section = styled.section`
@@ -798,6 +809,32 @@ const DocumentsPage = ({ isAdmin }) => {
       atIndex,
       -1,
     );
+  };
+
+  // Auto-detection (isSectionHeading) can still be wrong for a case the admin spots visually -
+  // e.g. a numbered clause that happens to look heading-shaped. This sets an explicit override
+  // (true/false) directly on the paragraph, which always wins over auto-detection from then on.
+  // Persisted immediately, the same direct-write pattern as applyParagraphStructureChange (not the
+  // onChange/onBlur pattern used for text fields), since it's a single discrete click.
+  const handleToggleParagraphBold = async (docId, atIndex, nextBold) => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const nextTemplate = {
+      ...template,
+      paragraphs: (template.paragraphs || []).map((paragraph, index) => (
+        index === atIndex ? { ...paragraph, bold: nextBold } : paragraph
+      )),
+    };
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+    } catch (boldError) {
+      console.error('Unable to update the paragraph bold override', boldError);
+      toast.error('Could not save the bold change.');
+    }
   };
 
   const persistTemplate = async docId => {
@@ -1548,13 +1585,23 @@ const DocumentsPage = ({ isAdmin }) => {
                                 >
                                   <FaPlus /> Insert paragraph
                                 </SmallButton>
-                                <DangerButton
-                                  type="button"
-                                  onClick={() => handleRemoveParagraph(template.id, index)}
-                                  title="Remove this paragraph"
-                                >
-                                  <FaTrash />
-                                </DangerButton>
+                                <RowLine style={{ gap: 6 }}>
+                                  <BoldToggleButton
+                                    type="button"
+                                    $active={isParagraphBold(paragraph)}
+                                    onClick={() => handleToggleParagraphBold(template.id, index, !isParagraphBold(paragraph))}
+                                    title={isParagraphBold(paragraph) ? 'Remove bold from this paragraph' : 'Make this paragraph bold'}
+                                  >
+                                    <FaBold />
+                                  </BoldToggleButton>
+                                  <DangerButton
+                                    type="button"
+                                    onClick={() => handleRemoveParagraph(template.id, index)}
+                                    title="Remove this paragraph"
+                                  >
+                                    <FaTrash />
+                                  </DangerButton>
+                                </RowLine>
                               </ParagraphControlsRow>
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (

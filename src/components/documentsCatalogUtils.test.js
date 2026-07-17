@@ -13,6 +13,7 @@ import {
   getParagraphType,
   getTemplateLogoType,
   getValueByPath,
+  isParagraphBold,
   isSectionHeading,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
@@ -778,6 +779,43 @@ describe('spec: section headings', () => {
 
   it('does not flag ordinary body text', () => {
     expect(isSectionHeading('Дата: ____________________')).toBe(false);
+  });
+
+  // Regression: a short sub-clause (e.g. "5.4. ..." inside section "5") was previously matched by
+  // the same regex as a real top-level heading ("5. ...") because it only checked length, not
+  // numbering depth - bolding ordinary clause text in the exported document.
+  it('does not flag a short sub-clause as a heading just because it is short', () => {
+    const shortSubClause = '5.4. Клініка надає Пацієнту медичні послуги в межах сплачених сум.';
+    expect(shortSubClause.length).toBeLessThan(120);
+    expect(isSectionHeading(shortSubClause)).toBe(false);
+    expect(isSectionHeading('6.1. Протягом всього періоду дії даний Договір може бути достроково розірваний за згодою сторін.')).toBe(false);
+  });
+});
+
+describe('spec: manual bold override on a paragraph', () => {
+  it('falls back to auto-detection when bold is not explicitly set', () => {
+    expect(isParagraphBold({ uk: '1. Предмет Договору', en: '1. Subject' })).toBe(true);
+    expect(isParagraphBold({ uk: '5.4. Клініка надає...', en: '5.4. The Clinic provides...' })).toBe(false);
+  });
+
+  it('an explicit bold:false always wins, even over an auto-detected heading', () => {
+    expect(isParagraphBold({ uk: '1. Предмет Договору', en: '1. Subject', bold: false })).toBe(false);
+  });
+
+  it('an explicit bold:true always wins, even over ordinary body text', () => {
+    expect(isParagraphBold({ uk: 'Просто текст.', en: 'Just text.', bold: true })).toBe(true);
+  });
+
+  it('buildGeneratedDocument threads the bold override through to the generated paragraph', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'doc-with-bold',
+      title: { uk: 'Т', en: 'T' },
+      paragraphs: [{ uk: '5.4. Клініка надає...', en: '5.4. The Clinic provides...', bold: true }],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs[0].bold).toBe(true);
   });
 });
 

@@ -12,7 +12,7 @@
 // settings the user tunes on the page - nothing visual is hardcoded beyond the defaults.
 import React from 'react';
 import { Document, Font, Image, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
-import { DEFAULT_DOC_FORMATTING, allowsParagraphInternalBreak, getClinicLogo, isSectionHeading } from './documentsCatalogUtils';
+import { DEFAULT_DOC_FORMATTING, allowsParagraphInternalBreak, getClinicLogo, isParagraphBold } from './documentsCatalogUtils';
 
 const CM_TO_PT = 28.3465;
 const MM_TO_PT = 2.83465;
@@ -104,20 +104,17 @@ const LogoBlock = ({ type, isTwoColumn, cellStyles, logoWidth, longLogoWidth, cl
 
 const TextParagraph = ({ paragraph, isTwoColumn, lang, cellStyles, allowPageBreaks }) => {
   const wrap = allowsParagraphInternalBreak(paragraph, allowPageBreaks);
-  const ukHeading = isSectionHeading(paragraph.uk);
-  const enHeading = isSectionHeading(paragraph.en);
-  const cellStyle = heading => (heading ? cellStyles.paragraphHeading : cellStyles.paragraph);
+  const cellStyle = isParagraphBold(paragraph) ? cellStyles.paragraphHeading : cellStyles.paragraph;
   if (isTwoColumn) {
     return (
       <View style={styles.row} wrap={wrap}>
-        <Text style={[cellStyle(ukHeading), cellStyles.leftCell]}>{paragraph.uk}</Text>
-        <Text style={[cellStyle(enHeading), cellStyles.rightCell]}>{paragraph.en}</Text>
+        <Text style={[cellStyle, cellStyles.leftCell]}>{paragraph.uk}</Text>
+        <Text style={[cellStyle, cellStyles.rightCell]}>{paragraph.en}</Text>
       </View>
     );
   }
   const text = paragraph[lang];
-  const heading = lang === 'en' ? enHeading : ukHeading;
-  return <Text style={cellStyle(heading)} wrap={wrap}>{text}</Text>;
+  return <Text style={cellStyle} wrap={wrap}>{text}</Text>;
 };
 
 const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoWidth, clinicLogos }) => {
