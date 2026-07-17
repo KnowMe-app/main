@@ -125,6 +125,45 @@ describe('parseDocumentsTechnicalInput', () => {
     expect(() => parseDocumentsTechnicalInput('not json')).toThrow(/Invalid JSON/);
     expect(() => parseDocumentsTechnicalInput('{"foo": 1}')).toThrow(/No parties or documents/);
   });
+
+  // The backend's full documentsBuilder export (`{ parties, templates, settings }`, i.e.
+  // documentsBuilder/{parties,templates,settings} dumped together) previously produced nothing:
+  // party collections live one level deeper under `parties`, and templates are called `templates`
+  // (an id-keyed dict), not `documents` (an array).
+  it('parses the full backend export shape (parties.* nesting + id-keyed templates)', () => {
+    const parsed = parseDocumentsTechnicalInput(JSON.stringify({
+      parties: {
+        couples: { 'couple-1': { id: 'couple-1', partners: [] } },
+        cases: {
+          'case-1': { id: 'case-1', clinicId: 'clinic-1' },
+          clinics: { 'clinic-1': { logo: [{ file: 'square.jpg', layout: '1col' }, { file: 'wide.jpg', layout: '2col' }] } },
+        },
+        clinics: { 'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка' } } },
+      },
+      settings: { formatting: { fontSize: 12 }, recentCaseIds: ['case-1'] },
+      templates: {
+        'embryo-transfer-consent': { id: 'embryo-transfer-consent', title: { uk: 'Згода', en: 'Consent' }, paragraphs: [] },
+        'medical-services-agreement': { id: 'medical-services-agreement', title: { uk: 'Договір', en: 'Agreement' }, paragraphs: [] },
+      },
+    }));
+    expect(parsed.parties.couples.map(record => record.id)).toEqual(['couple-1']);
+    expect(parsed.parties.cases.map(record => record.id)).toEqual(['case-1']);
+    expect(parsed.parties.clinics.map(record => record.id)).toEqual(['clinic-1']);
+    expect(parsed.documents.map(record => record.id)).toEqual(['embryo-transfer-consent', 'medical-services-agreement']);
+    expect(parsed.clinicLogos['clinic-1']).toEqual([
+      { file: 'square.jpg', layout: '1col' },
+      { file: 'wide.jpg', layout: '2col' },
+    ]);
+  });
+
+  it('also accepts the full export shape wrapped in a markdown fence', () => {
+    const parsed = parseDocumentsTechnicalInput(`\`\`\`json\n${JSON.stringify({
+      parties: { clinics: { 'clinic-9': { id: 'clinic-9' } } },
+      templates: { 'doc-9': { id: 'doc-9', paragraphs: [] } },
+    })}\n\`\`\``);
+    expect(parsed.parties.clinics[0].id).toBe('clinic-9');
+    expect(parsed.documents[0].id).toBe('doc-9');
+  });
 });
 
 describe('mergeDocumentsCatalog', () => {
@@ -169,6 +208,16 @@ describe('mergeDocumentsCatalog', () => {
       '{"documents":[{"title":{"uk":"Без id","en":"No id"}}]}',
     ));
     expect(catalog.documents[0].id).toMatch(/^document-/);
+  });
+
+  it('merges incoming clinic logo layout assignments additively, keyed by clinic id', () => {
+    const current = { ...emptyDocumentsCatalog(), clinicLogos: { 'clinic-old': [{ file: 'kept.jpg', layout: '1col' }] } };
+    const incoming = parseDocumentsTechnicalInput(JSON.stringify({
+      parties: { cases: { clinics: { 'clinic-new': { logo: [{ file: 'new.jpg', layout: '2col' }] } } } },
+    }));
+    const { catalog } = mergeDocumentsCatalog(current, incoming);
+    expect(catalog.clinicLogos['clinic-old']).toEqual([{ file: 'kept.jpg', layout: '1col' }]);
+    expect(catalog.clinicLogos['clinic-new']).toEqual([{ file: 'new.jpg', layout: '2col' }]);
   });
 
   it('resolves generated ids when building additive persistence patches', () => {
