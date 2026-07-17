@@ -283,14 +283,23 @@ export const formatDocumentDate = value => {
 
 export const MISSING_VALUE_PLACEHOLDER = '__________';
 
+// Every {{...}} token in a template, e.g. {{wife.name.uk.nominative}}, {{logo}}, {{logo-long}}.
+// Deliberately permissive (any run of non-brace characters) so it also matches the two special
+// graphical tokens, which are not dotted paths.
+export const PLACEHOLDER_PATTERN = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+// Generic arbitrary-depth path walker - no assumption about how many levels a variable has
+// (spec: `clinic.medicalDirector.name.uk.genitive` must resolve exactly like a two-level path).
+export const getValueByPath = (source, path) => String(path).split('.').reduce((value, key) => {
+  if (value === null || value === undefined) return undefined;
+  return value[key];
+}, source);
+
 const resolvePlaceholderValue = (context, path, lang) => {
-  let value = context;
-  for (const segment of String(path).split('.')) {
-    if (value === undefined || value === null) return undefined;
-    value = value[segment];
-  }
+  let value = getValueByPath(context, path);
   // A path that stops at a bilingual node ({uk, en}) resolves to the requested language; one that
-  // stops at a cased-name node resolves to the nominative form.
+  // stops at a cased-name node resolves to the nominative form. These fallbacks only kick in when
+  // the path itself didn't already walk all the way down to a leaf.
   if (isPlainObject(value)) {
     if (value[lang] !== undefined) value = value[lang];
     else if (value.uk !== undefined) value = value.uk;
@@ -301,15 +310,104 @@ const resolvePlaceholderValue = (context, path, lang) => {
 };
 
 // Missing data renders as a fill-in-by-hand blank, matching how the reference statements leave
-// unknown values (dates, counts) as underscores - never as a leaked {{token}}.
+// unknown values (dates, counts) as underscores - never as a leaked {{token}} or the literal
+// strings "undefined"/"null". Unlike the bare {{token}} left in editor/template mode, this is the
+// resolved-for-export text; findUnresolvedVariables (below) is how callers warn about the same
+// paths before a final export.
 export const fillPlaceholders = (text, context, lang = 'uk') => String(text || '').replace(
-  /\{\{\s*([\w.]+)\s*\}\}/g,
-  (token, path) => {
+  PLACEHOLDER_PATTERN,
+  (token, rawPath) => {
+    const path = rawPath.trim();
+    if (path === 'logo' || path === 'logo-long') return token;
     const value = context ? resolvePlaceholderValue(context, path, lang) : undefined;
     const output = value === undefined || String(value).trim() === '' ? MISSING_VALUE_PLACEHOLDER : String(value);
     return output;
   },
 );
+
+// Spec-shaped helper kept alongside fillPlaceholders: a minimal resolver that only substitutes
+// values it can find and otherwise leaves the token untouched (used by the template/editor view,
+// where an unresolved {{path}} should stay visible rather than blank out).
+export const resolveTemplateText = (text, context) => {
+  if (typeof text !== 'string') return '';
+  return text.replace(PLACEHOLDER_PATTERN, (match, rawPath) => {
+    const path = rawPath.trim();
+    if (path === 'logo' || path === 'logo-long') return match;
+    const value = context ? getValueByPath(context, path) : undefined;
+    if (value === null || value === undefined) return match;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    return match;
+  });
+};
+
+// Every path referenced by a piece of template text, excluding the two graphical tokens (spec
+// §15: logo/logo-long must never show up in an "unresolved variables" list).
+export const findUnresolvedVariables = text => [...String(text || '').matchAll(PLACEHOLDER_PATTERN)]
+  .map(match => match[1].trim())
+  .filter(path => path !== 'logo' && path !== 'logo-long');
+
+// Paths from findUnresolvedVariables that actually fail to resolve against the given context -
+// what the pre-export warning is built from.
+export const getUnresolvedVariablePaths = (text, context, lang = 'uk') => findUnresolvedVariables(text)
+  .filter(path => resolvePlaceholderValue(context, path, lang) === undefined);
+
+// Scans every uk/en title + paragraph of a template and returns the sorted, de-duplicated list of
+// variable paths that won't resolve against the given context. Used before a final PDF/DOCX
+// export to show a confirmation instead of silently shipping blanks.
+export const validateDocumentTemplate = (template, context) => {
+  const missing = new Set();
+  const scan = (value, lang) => getUnresolvedVariablePaths(value, context, lang).forEach(path => missing.add(path));
+  ['uk', 'en'].forEach(lang => scan(template?.title?.[lang], lang));
+  toArray(template?.paragraphs).forEach(paragraph => {
+    ['uk', 'en'].forEach(lang => scan(paragraph?.[lang], lang));
+  });
+  return [...missing].sort();
+};
+
+// --- Special paragraph types (logo blocks) + section headings ------------------------------
+
+// A paragraph whose only content (in either language) is a graphical token is not text - it's a
+// place to draw the clinic logo, and must never be run through fillPlaceholders/resolveTemplateText.
+export const getParagraphType = paragraph => {
+  const uk = String(paragraph?.uk || '').trim();
+  const en = String(paragraph?.en || '').trim();
+  if (uk === '{{logo-long}}' || en === '{{logo-long}}') return 'logo-long';
+  if (uk === '{{logo}}' || en === '{{logo}}') return 'logo';
+  return 'text';
+};
+
+// {{logo}} duplicates a compact, single-column-wide logo above each language column (tagged
+// '1col' - sized for one column); {{logo-long}} is one shared full-width logo spanning both
+// columns (tagged '2col'). `clinicAssets` accepts either the raw `{ logo: [...] }` shape or the
+// flat variants array directly (both appear in this codebase).
+export const getClinicLogo = (clinicAssets, variant) => {
+  const variants = Array.isArray(clinicAssets) ? clinicAssets : clinicAssets?.logo;
+  const expectedLayout = variant === 'logo-long' ? '2col' : '1col';
+  return toArray(variants).find(item => item?.layout === expectedLayout) ?? null;
+};
+
+// Short numbered section titles ("1. Предмет Договору") are bolded; long numbered clauses
+// ("1.1. Клініка зобов'язується...") are not - only a short heading-shaped paragraph qualifies.
+const SECTION_HEADING_PATTERN = /^\d+(?:\.\d+)*\.\s+\S+/;
+const SECTION_HEADING_MAX_LENGTH = 120;
+
+export const isSectionHeading = text => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed || trimmed.length > SECTION_HEADING_MAX_LENGTH) return false;
+  return SECTION_HEADING_PATTERN.test(trimmed);
+};
+
+// A paragraph long enough that forcing it to stay on one page (break-inside: avoid / wrap=false)
+// would fight natural pagination - only relevant once the template opts into page breaks at all.
+const LONG_PARAGRAPH_CHAR_THRESHOLD = 1200;
+
+export const allowsParagraphInternalBreak = (paragraph, allowPageBreaks) => {
+  if (!allowPageBreaks) return false;
+  const longest = Math.max(String(paragraph?.uk || '').length, String(paragraph?.en || '').length);
+  return longest > LONG_PARAGRAPH_CHAR_THRESHOLD;
+};
 
 const localizedText = (value, lang) => {
   if (isPlainObject(value)) return String(value[lang] ?? value.uk ?? value.en ?? '');
@@ -331,18 +429,25 @@ const overriddenText = (override, langKey, fallback) => (
 
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context, then any per-case data-mode
-// overrides applied on top.
+// overrides applied on top. Logo/logo-long paragraphs are never text-substituted or overridden -
+// they stay tagged for the renderer to draw a graphical block instead (spec §5-§7).
 export const buildGeneratedDocument = (template, context, docOverride = null) => {
   const override = isPlainObject(docOverride) ? docOverride : {};
   return {
     id: template.id,
+    allowPageBreaks: Boolean(template.allowPageBreaks),
     title: {
       uk: overriddenText(override.title, 'uk', fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk')),
       en: overriddenText(override.title, 'en', fillPlaceholders(localizedText(template.title, 'en'), context, 'en')),
     },
     paragraphs: toArray(template.paragraphs).map((paragraph, index) => {
+      const type = getParagraphType(paragraph);
+      if (type !== 'text') {
+        return { type, uk: paragraph?.uk || '', en: paragraph?.en || '' };
+      }
       const paragraphOverride = overrideAt(override.paragraphs, index);
       return {
+        type,
         uk: overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
         en: overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
       };
