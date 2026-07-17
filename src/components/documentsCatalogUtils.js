@@ -114,9 +114,14 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
 
 // --- Technical input (paste-and-parse) ------------------------------------------------------
 
-// Accepts the same JSON shape as surrogacy-documents-paragraphs-uk-en.json: `{ data: {...},
-// documents: [...] }`. Partial payloads are fine - `{ documents: [...] }` alone, `{ data: {...} }`
-// alone, or top-level party collections without the `data` wrapper.
+// Accepts three JSON shapes, so the exact file the backend exports (documentsBuilder/*) can be
+// pasted or uploaded as-is, with no manual reshaping:
+//   1. The full backend export: `{ parties: { couples, cases, ... }, templates: {...}, settings }`
+//      - i.e. `documentsBuilder/{parties,templates,settings}` dumped together, party collections
+//      one level deeper under `parties`, documents keyed by id under `templates`.
+//   2. The older technical-paste shape: `{ data: {...party collections...}, documents: [...] }`,
+//      or top-level party collections without the `data` wrapper.
+//   3. Any partial mix of the two - `{ documents: [...] }` alone, `{ parties: {...} }` alone, etc.
 export const parseDocumentsTechnicalInput = rawText => {
   const text = String(rawText || '')
     .trim()
@@ -134,23 +139,37 @@ export const parseDocumentsTechnicalInput = rawText => {
   }
   if (!isPlainObject(parsed)) throw new Error('Invalid JSON: expected an object at the top level.');
 
-  const dataSource = isPlainObject(parsed.data) ? parsed.data : parsed;
+  const dataRoot = isPlainObject(parsed.data) ? parsed.data : parsed;
+  // Full export shape: party collections live under `parties`, not at the root.
+  const dataSource = isPlainObject(dataRoot.parties) ? dataRoot.parties : dataRoot;
+  // Full export shape names the document templates `templates` (an id-keyed dict, top-level,
+  // same as `parties`); the older technical-paste shape calls the same thing `documents` (an
+  // array, also top-level) - both normalize the same way via toArray.
+  const templatesSource = parsed.templates !== undefined ? parsed.templates : parsed.documents;
+
   const incoming = emptyDocumentsCatalog();
   PARTY_COLLECTIONS.forEach(collection => {
     let rawCollection = dataSource[collection];
-    // Backend exports include `data.cases.clinics` for clinic-logo filenames; it mirrors the
-    // Realtime Database storage path and is not a case record. Keep Technical merges from
-    // importing that logo node as a generated case.
+    // Backend exports include `cases.clinics` for clinic-logo layout assignments; it mirrors the
+    // Realtime Database storage path and is not a case record - carried into incoming.clinicLogos
+    // instead of being imported as a generated case.
     if (collection === 'cases' && isPlainObject(rawCollection)) {
-      const { clinics: _clinicLogos, ...caseRecords } = rawCollection;
+      const { clinics: clinicLogoNode, ...caseRecords } = rawCollection;
       rawCollection = caseRecords;
+      if (isPlainObject(clinicLogoNode)) {
+        Object.entries(clinicLogoNode).forEach(([clinicId, node]) => {
+          const entries = normalizeClinicLogoEntries(node?.logo);
+          if (entries.length) incoming.clinicLogos[clinicId] = entries;
+        });
+      }
     }
     incoming.parties[collection] = toArray(rawCollection).filter(record => isPlainObject(record));
   });
-  incoming.documents = toArray(parsed.documents).filter(record => isPlainObject(record));
+  incoming.documents = toArray(templatesSource).filter(record => isPlainObject(record));
 
   const hasParties = PARTY_COLLECTIONS.some(collection => incoming.parties[collection].length > 0);
-  if (!hasParties && incoming.documents.length === 0) {
+  const hasClinicLogos = Object.keys(incoming.clinicLogos).length > 0;
+  if (!hasParties && incoming.documents.length === 0 && !hasClinicLogos) {
     throw new Error('No parties or documents found in the pasted JSON.');
   }
   return incoming;
@@ -230,7 +249,10 @@ export const mergeDocumentsCatalog = (current, incoming) => {
     );
   });
   catalog.documents = mergeCollection(current?.documents || [], incoming?.documents || [], 'document', summary);
-  catalog.clinicLogos = { ...(current?.clinicLogos || {}) };
+  // Clinic-logo layout assignments are a per-clinic snapshot (not per-field records), so an
+  // incoming clinic's list simply replaces the existing one for that clinic id; every other
+  // clinic's assignments are kept untouched.
+  catalog.clinicLogos = { ...(current?.clinicLogos || {}), ...(incoming?.clinicLogos || {}) };
   return { catalog, summary };
 };
 

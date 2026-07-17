@@ -595,10 +595,14 @@ const DocumentsPage = ({ isAdmin }) => {
 
   // --- Technical input -----------------------------------------------------------------------
 
-  const handleApplyTechnical = async () => {
+  // `overrideText` lets the file-upload handler (below) hand over freshly-read file content
+  // directly, instead of first writing it to `technicalInput` state and waiting for a re-render -
+  // state updates aren't guaranteed to have flushed before the next line runs.
+  const handleApplyTechnical = async overrideText => {
+    const sourceText = typeof overrideText === 'string' ? overrideText : technicalInput;
     let incoming;
     try {
-      incoming = parseDocumentsTechnicalInput(technicalInput);
+      incoming = parseDocumentsTechnicalInput(sourceText);
     } catch (parseError) {
       toast.error(parseError.message);
       return;
@@ -624,16 +628,44 @@ const DocumentsPage = ({ isAdmin }) => {
       });
       if (Object.keys(partiesPatch).length) await update(ref(database, DOCUMENTS_PARTIES_PATH), partiesPatch);
       if (Object.keys(templatesPatch).length) await update(ref(database, DOCUMENTS_TEMPLATES_PATH), templatesPatch);
+      // A full backend export also carries each clinic's {{logo}}/{{logo-long}} layout
+      // assignments (parties.cases.clinics) - written per clinic id so an uploaded export
+      // restores them instead of leaving every logo variant unassigned.
+      const clinicIdsWithLogos = Object.keys(incoming.clinicLogos || {});
+      await Promise.all(clinicIdsWithLogos.map(clinicId => set(
+        ref(database, clinicLogoDbPath(clinicId)),
+        merged.clinicLogos[clinicId],
+      )));
       setCatalog(merged);
       if (!selectedCaseId && merged.parties.cases.length) setSelectedCaseId(String(merged.parties.cases[0].id));
       setTechnicalInput('');
-      toast.success(`Merged: ${summary.added} added, ${summary.updated} updated.`);
+      const logoNote = clinicIdsWithLogos.length ? `, ${clinicIdsWithLogos.length} clinic logo assignment(s)` : '';
+      toast.success(`Merged: ${summary.added} added, ${summary.updated} updated${logoNote}.`);
     } catch (applyError) {
       console.error('Unable to merge documents data', applyError);
       toast.error('Could not save the parsed data to the backend.');
     } finally {
       setIsApplyingTechnical(false);
     }
+  };
+
+  // File upload (spec: not just paste) - reads the selected .json export and runs it straight
+  // through the same parse+merge path as the textarea, so an admin can pick the exported file
+  // instead of having to open it and copy its contents in by hand.
+  const technicalFileInputRef = useRef(null);
+
+  const handleTechnicalFileChange = event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '');
+      setTechnicalInput(text);
+      handleApplyTechnical(text);
+    };
+    reader.onerror = () => toast.error('Could not read the selected file.');
+    reader.readAsText(file);
   };
 
   // --- Inline template editing ----------------------------------------------------------------
@@ -1468,14 +1500,31 @@ const DocumentsPage = ({ isAdmin }) => {
             <Section>
               <SectionHead>
                 <SectionTitle>Technical</SectionTitle>
-                <SmallButton type="button" onClick={handleApplyTechnical} disabled={isApplyingTechnical || !technicalInput.trim()}>
-                  <FaUpload /> {isApplyingTechnical ? 'Merging…' : 'Parse & merge'}
-                </SmallButton>
+                <RowLine>
+                  <input
+                    ref={technicalFileInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    style={{ display: 'none' }}
+                    onChange={handleTechnicalFileChange}
+                  />
+                  <SmallButton
+                    type="button"
+                    onClick={() => technicalFileInputRef.current?.click()}
+                    disabled={isApplyingTechnical}
+                    title="Upload the exported documentsBuilder JSON file directly"
+                  >
+                    <FaUpload /> {isApplyingTechnical ? 'Merging…' : 'Upload file'}
+                  </SmallButton>
+                  <SmallButton type="button" onClick={() => handleApplyTechnical()} disabled={isApplyingTechnical || !technicalInput.trim()}>
+                    {isApplyingTechnical ? 'Merging…' : 'Parse & merge'}
+                  </SmallButton>
+                </RowLine>
               </SectionHead>
               <TechnicalTextarea
                 value={technicalInput}
                 onChange={event => setTechnicalInput(event.target.value)}
-                placeholder='Paste the documents JSON here ({"data": {...}, "documents": [...]}) — records are merged additively, nothing is wiped.'
+                placeholder='Upload the exported JSON above, or paste it here ({"parties": {...}, "templates": {...}} or {"data": {...}, "documents": [...]}) — records are merged additively, nothing is wiped.'
                 spellCheck={false}
               />
             </Section>
