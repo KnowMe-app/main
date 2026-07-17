@@ -463,6 +463,25 @@ const overriddenText = (override, langKey, fallback) => (
   typeof override?.[langKey] === 'string' ? override[langKey] : fallback
 );
 
+// A custom paragraph can be inserted (or removed) at any position in a template (spec: "кастомний
+// абзац в будь-якому місці документу"). Because per-case data-mode overrides key into a template's
+// paragraphs by array index, a structural edit like that must reindex every existing override so
+// it keeps pointing at the same paragraph it always did - never silently drift onto the paragraph
+// that happens to now sit at that index. `delta` is +1 for an insertion, -1 for a removal; the
+// override entry that sat exactly at a removed index is dropped along with that paragraph.
+export const shiftDocOverrideParagraphIndices = (docOverride, atIndex, delta) => {
+  if (!isPlainObject(docOverride) || !docOverride.paragraphs) return docOverride;
+  const entries = Array.isArray(docOverride.paragraphs)
+    ? docOverride.paragraphs.map((value, index) => [index, value]).filter(([, value]) => value !== undefined)
+    : Object.entries(docOverride.paragraphs).map(([key, value]) => [Number(key), value]);
+  const nextParagraphs = {};
+  entries.forEach(([index, value]) => {
+    if (delta < 0 && index === atIndex) return;
+    nextParagraphs[index >= atIndex ? index + delta : index] = value;
+  });
+  return { ...docOverride, paragraphs: nextParagraphs };
+};
+
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context, then any per-case data-mode
 // overrides applied on top. Logo/logo-long paragraphs are never text-substituted or overridden -

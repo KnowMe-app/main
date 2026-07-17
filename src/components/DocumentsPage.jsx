@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -44,6 +44,7 @@ import {
   pruneDocOverride,
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
+  shiftDocOverrideParagraphIndices,
   upsertRecentCaseId,
   validateDocumentTemplate,
 } from './documentsCatalogUtils';
@@ -387,6 +388,17 @@ const ParagraphPair = styled.div`
   }
 `;
 
+// Structural paragraph controls (insert a custom paragraph here / remove this one) - kept slim and
+// visually distinct from the text itself, and only shown in Template mode: a paragraph's position
+// is a template-level concept, not a per-case data value.
+const ParagraphControlsRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 8px;
+`;
+
 const FieldGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -715,6 +727,61 @@ const DocumentsPage = ({ isAdmin }) => {
       ...template,
       title: { ...(template.title || {}), [langKey]: value },
     }));
+  };
+
+  // Inserting or removing a paragraph is a structural edit, not a text edit - persisted
+  // immediately (not deferred to blur, unlike the plain text fields above) and, since a
+  // paragraph's position is how per-case data-mode overrides key into it, reindexes every
+  // affected case's overrides in the same operation so an insert/remove at any position never
+  // silently misapplies an existing override to the wrong paragraph.
+  const applyParagraphStructureChange = async (docId, buildParagraphs, atIndex, delta) => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const nextTemplate = { ...template, paragraphs: buildParagraphs(template.paragraphs || []) };
+    const shiftedByCaseId = catalog.parties.cases
+      .filter(caseRecord => caseRecord.docOverrides?.[docId])
+      .map(caseRecord => [caseRecord.id, shiftDocOverrideParagraphIndices(caseRecord.docOverrides[docId], atIndex, delta)]);
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      const partiesPatch = {};
+      shiftedByCaseId.forEach(([caseId, override]) => {
+        partiesPatch[`cases/${caseId}/docOverrides/${docId}`] = override;
+      });
+      if (Object.keys(partiesPatch).length) await update(ref(database, DOCUMENTS_PARTIES_PATH), partiesPatch);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+        parties: {
+          ...previous.parties,
+          cases: previous.parties.cases.map(caseRecord => {
+            const shifted = shiftedByCaseId.find(([caseId]) => caseId === caseRecord.id);
+            if (!shifted) return caseRecord;
+            return { ...caseRecord, docOverrides: { ...(caseRecord.docOverrides || {}), [docId]: shifted[1] } };
+          }),
+        },
+      }));
+    } catch (structureError) {
+      console.error('Unable to update the document paragraph structure', structureError);
+      toast.error('Could not save the paragraph change.');
+    }
+  };
+
+  // `atIndex` may equal paragraphs.length to append a new custom paragraph after the last one.
+  const handleInsertParagraph = (docId, atIndex) => applyParagraphStructureChange(
+    docId,
+    paragraphs => [...paragraphs.slice(0, atIndex), { uk: '', en: '' }, ...paragraphs.slice(atIndex)],
+    atIndex,
+    1,
+  );
+
+  const handleRemoveParagraph = (docId, atIndex) => {
+    if (typeof window !== 'undefined' && !window.confirm('Remove this paragraph?')) return;
+    applyParagraphStructureChange(
+      docId,
+      paragraphs => paragraphs.filter((_, index) => index !== atIndex),
+      atIndex,
+      -1,
+    );
   };
 
   const persistTemplate = async docId => {
@@ -1394,27 +1461,58 @@ const DocumentsPage = ({ isAdmin }) => {
                           ) : null}
                         </ParagraphPair>
                         {(template.paragraphs || []).map((paragraph, index) => (
-                          <ParagraphPair key={`${template.id}-p-${index}`} $single={isSingle}>
-                            {showUk ? (
-                              <AutoInlineTextarea
-                                value={paragraphValue(paragraph, index, 'uk')}
-                                placeholder="Paragraph (uk)"
-                                readOnly={dataEditLocked}
-                                onChange={onParagraphChange(index, 'uk')}
-                                onBlur={onFieldBlur}
-                              />
+                          <React.Fragment key={`${template.id}-p-${index}`}>
+                            {!isDataMode ? (
+                              <ParagraphControlsRow>
+                                <SmallButton
+                                  type="button"
+                                  onClick={() => handleInsertParagraph(template.id, index)}
+                                  title="Insert a new custom paragraph above this one"
+                                >
+                                  <FaPlus /> Insert paragraph
+                                </SmallButton>
+                                <DangerButton
+                                  type="button"
+                                  onClick={() => handleRemoveParagraph(template.id, index)}
+                                  title="Remove this paragraph"
+                                >
+                                  <FaTrash />
+                                </DangerButton>
+                              </ParagraphControlsRow>
                             ) : null}
-                            {showEn ? (
-                              <AutoInlineTextarea
-                                value={paragraphValue(paragraph, index, 'en')}
-                                placeholder="Paragraph (en)"
-                                readOnly={dataEditLocked}
-                                onChange={onParagraphChange(index, 'en')}
-                                onBlur={onFieldBlur}
-                              />
-                            ) : null}
-                          </ParagraphPair>
+                            <ParagraphPair $single={isSingle}>
+                              {showUk ? (
+                                <AutoInlineTextarea
+                                  value={paragraphValue(paragraph, index, 'uk')}
+                                  placeholder="Paragraph (uk)"
+                                  readOnly={dataEditLocked}
+                                  onChange={onParagraphChange(index, 'uk')}
+                                  onBlur={onFieldBlur}
+                                />
+                              ) : null}
+                              {showEn ? (
+                                <AutoInlineTextarea
+                                  value={paragraphValue(paragraph, index, 'en')}
+                                  placeholder="Paragraph (en)"
+                                  readOnly={dataEditLocked}
+                                  onChange={onParagraphChange(index, 'en')}
+                                  onBlur={onFieldBlur}
+                                />
+                              ) : null}
+                            </ParagraphPair>
+                          </React.Fragment>
                         ))}
+                        {!isDataMode ? (
+                          <ParagraphControlsRow style={{ justifyContent: 'flex-start' }}>
+                            <SmallButton
+                              type="button"
+                              onClick={() => handleInsertParagraph(template.id, (template.paragraphs || []).length)}
+                              title="Append a new custom paragraph at the end of the document"
+                            >
+                              <FaPlus /> Add paragraph at the end
+                            </SmallButton>
+                          </ParagraphControlsRow>
+                        ) : null}
                       </div>
                     ) : null}
                   </DocRow>

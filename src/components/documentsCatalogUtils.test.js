@@ -23,6 +23,7 @@ import {
   pruneDocOverride,
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
+  shiftDocOverrideParagraphIndices,
   upsertRecentCaseId,
   validateDocumentTemplate,
 } from './documentsCatalogUtils';
@@ -331,6 +332,32 @@ describe('data-mode overrides', () => {
     const baseline = buildGeneratedDocument(catalog.documents[0], context);
     expect(pruneDocOverride({ title: { uk: baseline.title.uk } }, baseline)).toBeNull();
     expect(pruneDocOverride(null, baseline)).toBeNull();
+  });
+});
+
+describe('spec: inserting/removing a paragraph at any position reindexes existing overrides', () => {
+  it('shifts overrides at or after the insertion point up by one, keeping earlier ones untouched', () => {
+    const docOverride = { title: { en: 'Kept' }, paragraphs: { 0: { en: 'First' }, 2: { en: 'Third' } } };
+    const shifted = shiftDocOverrideParagraphIndices(docOverride, 1, 1);
+    expect(shifted.title).toEqual({ en: 'Kept' });
+    expect(shifted.paragraphs).toEqual({ 0: { en: 'First' }, 3: { en: 'Third' } });
+  });
+
+  it('shifts overrides after a removal down by one and drops the override at the removed index', () => {
+    const docOverride = { paragraphs: { 0: { en: 'First' }, 1: { en: 'Removed' }, 2: { en: 'Third' } } };
+    const shifted = shiftDocOverrideParagraphIndices(docOverride, 1, -1);
+    expect(shifted.paragraphs).toEqual({ 0: { en: 'First' }, 1: { en: 'Third' } });
+  });
+
+  it('handles the Firebase dense-array override shape the same way as the object shape', () => {
+    const docOverride = { paragraphs: [{ en: 'First' }, undefined, { en: 'Third' }] };
+    const shifted = shiftDocOverrideParagraphIndices(docOverride, 0, 1);
+    expect(shifted.paragraphs).toEqual({ 1: { en: 'First' }, 3: { en: 'Third' } });
+  });
+
+  it('leaves overrides without a doc-level paragraphs node untouched', () => {
+    expect(shiftDocOverrideParagraphIndices(null, 0, 1)).toBeNull();
+    expect(shiftDocOverrideParagraphIndices({ title: { en: 'Only title' } }, 0, 1)).toEqual({ title: { en: 'Only title' } });
   });
 });
 
