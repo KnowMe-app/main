@@ -671,6 +671,40 @@ describe('InvoiceBuilderPage', () => {
     await act(async () => { root.unmount(); });
   });
 
+  // Batch 14: the calculation rows (Taxes, Debt/Deposit, Subtotal, Amount to be paid) moved out of
+  // Summary and now live at the tail of Other Expenses, behind a single "Total" divider - Summary
+  // shrinks to just document metadata (Invoice date, Due date).
+  it('moves Taxes/Debt-Deposit/Subtotal/Amount-to-be-paid into the tail of Other expenses, out of Summary', async () => {
+    const root = mount();
+    await flush();
+
+    const otherExpensesHeading = Array.from(container.querySelectorAll('h2')).find(h2 => h2.textContent === 'Other expenses');
+    const summaryHeading = Array.from(container.querySelectorAll('h2')).find(h2 => h2.textContent === 'Summary');
+    expect(otherExpensesHeading).toBeTruthy();
+    expect(summaryHeading).toBeTruthy();
+
+    const otherExpensesPanel = otherExpensesHeading.closest('section');
+    const summaryPanel = summaryHeading.closest('section');
+    expect(otherExpensesPanel).not.toBe(summaryPanel);
+
+    // The totals tail (and its "Total" divider) now lives inside the Other expenses panel.
+    expect(otherExpensesPanel.textContent).toContain('Total');
+    expect(otherExpensesPanel.querySelector('textarea[aria-label="Taxes (%)"]')).toBeTruthy();
+    expect(otherExpensesPanel.textContent).toContain('Subtotal');
+    expect(otherExpensesPanel.textContent).toContain('Amount to be paid');
+    const debtField = Array.from(otherExpensesPanel.querySelectorAll('span')).find(span => span.textContent === 'Debt/Deposit');
+    expect(debtField).toBeTruthy();
+
+    // Summary keeps only document metadata - none of the totals fields leaked back into it.
+    expect(summaryPanel.querySelector('textarea[aria-label="Taxes (%)"]')).toBeNull();
+    expect(summaryPanel.textContent).not.toContain('Subtotal');
+    expect(summaryPanel.textContent).not.toContain('Amount to be paid');
+    expect(summaryPanel.textContent).toContain('Invoice date');
+    expect(summaryPanel.textContent).toContain('Due date');
+
+    await act(async () => { root.unmount(); });
+  });
+
   describe('expected expenses', () => {
     // round7 spec D: Expected Expenses lives behind its own top-level tab, structurally separate
     // from the regular invoice-creation flow - every test below must switch to it first.

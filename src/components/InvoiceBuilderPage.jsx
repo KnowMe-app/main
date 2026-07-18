@@ -1897,24 +1897,70 @@ const IssuedInvoiceCard = ({ record, exchangeRates, onCommitPayment, onReissue, 
   );
 };
 
-// --- Summary ------------------------------------------------------
+// --- Totals (batch 14: relocated from Summary to the tail of Other expenses) ------------------
+
+// "A single thin hairline with a small centered label" separating the item list/add-line controls
+// above from the totals below - the only divider in the tail, no card-in-card nesting.
+const TotalDivider = styled.div`
+  display: flex;
+  align-items: center;
+  margin: 10px 0 6px;
+  color: var(--km-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    border-top: 1px solid var(--km-border);
+  }
+
+  span {
+    padding: 0 8px;
+  }
+`;
 
 const SummaryGrid = styled.div`
   display: grid;
-  gap: 4px;
+  gap: 2px;
   font-size: 12.5px;
 `;
 
+// One slim line per total: small uppercase label left, tabular-figure value right - same row
+// typography as the rest of the admin page, never enlarged. The final row (Amount to be paid) is
+// always the last child, emphasized with the bronze accent rather than a large dark block (that
+// treatment belongs to the client PDF only).
 const SummaryLine = styled.div`
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 12px;
   padding: 3px 0;
+
+  span:first-child {
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--km-muted);
+  }
+
+  span:last-child {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
 
   &:last-child {
     border-top: 1px solid var(--km-border);
     margin-top: 3px;
     padding-top: 6px;
+  }
+
+  &:last-child span:first-child,
+  &:last-child span:last-child {
     font-weight: 900;
     color: var(--km-accent);
   }
@@ -4052,35 +4098,13 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   </ChipRow>
                 </>
               ) : null}
-            </Panel>
 
-            <Panel>
-              <PanelHeading>
-                <H2>Summary</H2>
-              </PanelHeading>
-              <FieldRow>
-                <FieldTag>Invoice date</FieldTag>
-                <input
-                  type="date"
-                  value={invoiceDateInput}
-                  onChange={event => setInvoiceDateInput(event.target.value)}
-                  style={{
-                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
-                  }}
-                />
-              </FieldRow>
-              <FieldRow>
-                <FieldTag title="Shown in the invoice's Amount Due block. Leave empty for 'Payable upon receipt'.">Due date</FieldTag>
-                <input
-                  type="date"
-                  value={dueDateInput}
-                  onChange={event => setDueDateInput(event.target.value)}
-                  aria-label="Due date (empty = payable upon receipt)"
-                  style={{
-                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
-                  }}
-                />
-              </FieldRow>
+              {/* Totals tail (batch 14): items and their math live together - the calculation rows
+                  used to sit in a separate Summary block, now attached to the end of the item list
+                  they total up. One hairline "TOTAL" divider, then Taxes/Debt-Deposit (unchanged
+                  editable behavior) and the computed Subtotal/Amount-to-be-paid rows - roughly 4
+                  slim rows, no card-in-card nesting. */}
+              <TotalDivider><span>Total</span></TotalDivider>
               <FieldRow>
                 <FieldTag>Taxes (%)</FieldTag>
                 <PlainPriceBase
@@ -4123,7 +4147,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   style={{ flex: '0 0 auto' }}
                 />
               </FieldRow>
-              <SummaryGrid style={{ marginTop: 10 }}>
+              <SummaryGrid style={{ marginTop: 6 }}>
                 <SummaryLine><span>Subtotal</span><span>{formatEuroPreview(subtotal)}</span></SummaryLine>
                 {data.debtOrDeposit ? (
                   <SummaryLine>
@@ -4133,6 +4157,35 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 ) : null}
                 <SummaryLine><span>Amount to be paid</span><span>{formatEuroPreview(amountDue)}</span></SummaryLine>
               </SummaryGrid>
+            </Panel>
+
+            <Panel>
+              <PanelHeading>
+                <H2>Summary</H2>
+              </PanelHeading>
+              <FieldRow>
+                <FieldTag>Invoice date</FieldTag>
+                <input
+                  type="date"
+                  value={invoiceDateInput}
+                  onChange={event => setInvoiceDateInput(event.target.value)}
+                  style={{
+                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
+                  }}
+                />
+              </FieldRow>
+              <FieldRow>
+                <FieldTag title="Shown in the invoice's Amount Due block. Leave empty for 'Payable upon receipt'.">Due date</FieldTag>
+                <input
+                  type="date"
+                  value={dueDateInput}
+                  onChange={event => setDueDateInput(event.target.value)}
+                  aria-label="Due date (empty = payable upon receipt)"
+                  style={{
+                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
+                  }}
+                />
+              </FieldRow>
             </Panel>
 
             <Panel>
