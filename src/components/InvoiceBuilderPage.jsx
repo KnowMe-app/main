@@ -1901,11 +1901,15 @@ const IssuedInvoiceCard = ({ record, exchangeRates, onCommitPayment, onReissue, 
 // One slim "INVOICE 18.07.2026 → DUE 25.07.2026" line, sitting right above the TOTAL divider -
 // dates + totals together read as the document's finalization zone.
 
+// Kept to a single line on purpose (spec: dates + totals = one finalization zone) - everything
+// below is sized to fit a narrow phone screen without wrapping; if a device is still too narrow
+// the row scrolls horizontally rather than breaking onto a second line.
 const DatesRow = styled.div`
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
   padding-top: 8px;
   margin-top: 10px;
   border-top: 1px solid var(--km-border);
@@ -1913,6 +1917,7 @@ const DatesRow = styled.div`
 `;
 
 const DateLabel = styled.span`
+  flex-shrink: 0;
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.05em;
@@ -1921,6 +1926,7 @@ const DateLabel = styled.span`
 `;
 
 const DateArrow = styled.span`
+  flex-shrink: 0;
   color: var(--km-accent);
   font-weight: 700;
   padding: 0 2px;
@@ -1933,11 +1939,12 @@ const DateValueWrap = styled.span`
   position: relative;
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 `;
 
 const DateEmptyOverlay = styled.span`
   position: absolute;
-  left: 6px;
+  left: 4px;
   pointer-events: none;
   font-style: italic;
   color: var(--km-muted);
@@ -1950,8 +1957,13 @@ const dateInputStyle = hasValue => ({
   color: hasValue ? 'var(--km-text)' : 'transparent',
   font: 'inherit',
   fontWeight: 700,
-  padding: '5px 6px',
+  padding: '4px',
   borderRadius: 6,
+  width: '92px',
+  flexShrink: 0,
+  boxSizing: 'border-box',
+  WebkitAppearance: 'none',
+  appearance: 'none',
 });
 
 // --- Totals (batch 14: relocated from Summary to the tail of Other expenses) ------------------
@@ -4187,7 +4199,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   editable behavior) and the computed Subtotal/Amount-to-be-paid rows - roughly 4
                   slim rows, no card-in-card nesting. */}
               <TotalDivider><span>Total</span></TotalDivider>
-              <FieldRow>
+              <FieldRow $align="center" style={{ flexWrap: 'wrap', rowGap: 6 }}>
                 <FieldTag>Taxes (%)</FieldTag>
                 <PlainPriceBase
                   rows={1}
@@ -4198,26 +4210,22 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   onBlur={commitTaxPercent}
                   style={{ flex: '0 0 auto' }}
                 />
+                {data.recentTaxRates.map(rate => (
+                  <ChipContainer key={rate.id}>
+                    <ChipButton type="button" onClick={() => applyRecentTaxRate(rate)}>
+                      <span>{rate.value}%</span>
+                    </ChipButton>
+                    <ChipDeleteButton
+                      type="button"
+                      onClick={() => removeRecentTaxRate(rate.id)}
+                      title="Remove this rate from recent"
+                      aria-label="Remove this rate from recent"
+                    >
+                      <FaTrash />
+                    </ChipDeleteButton>
+                  </ChipContainer>
+                ))}
               </FieldRow>
-              {data.recentTaxRates.length ? (
-                <ChipRow style={{ marginTop: 0, marginBottom: 8 }}>
-                  {data.recentTaxRates.map(rate => (
-                    <ChipContainer key={rate.id}>
-                      <ChipButton type="button" onClick={() => applyRecentTaxRate(rate)}>
-                        <span>{rate.value}%</span>
-                      </ChipButton>
-                      <ChipDeleteButton
-                        type="button"
-                        onClick={() => removeRecentTaxRate(rate.id)}
-                        title="Remove this rate from recent"
-                        aria-label="Remove this rate from recent"
-                      >
-                        <FaTrash />
-                      </ChipDeleteButton>
-                    </ChipContainer>
-                  ))}
-                </ChipRow>
-              ) : null}
               <FieldRow>
                 <FieldTag title="Applied after tax. Positive = debt owed from before, negative = deposit/credit.">Debt/Deposit</FieldTag>
                 <PlainPriceBase
@@ -4522,7 +4530,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       </PlainSelect>
                     </FieldRow>
                   ) : null}
-                  <FieldRow $align="center">
+                  <FieldRow $align="center" style={{ flexWrap: 'wrap', rowGap: 6 }}>
                     <FieldTag>Tax (%)</FieldTag>
                     <AutoTextArea
                       as={PlainPriceBase}
@@ -4540,26 +4548,22 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                         }
                       }}
                     />
+                    {data.recentTaxRates.map(rate => (
+                      <ChipContainer key={rate.id}>
+                        <ChipButton type="button" onClick={() => applyExpectedExpensesTaxPercent(rate.value)}>
+                          <span>{rate.value}%</span>
+                        </ChipButton>
+                        <ChipDeleteButton
+                          type="button"
+                          onClick={() => removeRecentTaxRate(rate.id)}
+                          title="Remove this rate from recent"
+                          aria-label="Remove this rate from recent"
+                        >
+                          <FaTrash />
+                        </ChipDeleteButton>
+                      </ChipContainer>
+                    ))}
                   </FieldRow>
-                  {data.recentTaxRates.length ? (
-                    <ChipRow style={{ marginTop: 0, marginBottom: 8 }}>
-                      {data.recentTaxRates.map(rate => (
-                        <ChipContainer key={rate.id}>
-                          <ChipButton type="button" onClick={() => applyExpectedExpensesTaxPercent(rate.value)}>
-                            <span>{rate.value}%</span>
-                          </ChipButton>
-                          <ChipDeleteButton
-                            type="button"
-                            onClick={() => removeRecentTaxRate(rate.id)}
-                            title="Remove this rate from recent"
-                            aria-label="Remove this rate from recent"
-                          >
-                            <FaTrash />
-                          </ChipDeleteButton>
-                        </ChipContainer>
-                      ))}
-                    </ChipRow>
-                  ) : null}
                   {expectedExpensesView?.shouldCheckPackageSharePercent && Math.round(expectedExpensesView.packageSharePercent * 100) / 100 !== 100 ? (
                     <PanelNote style={{ color: 'var(--km-danger)' }}>
                       The percent-of-package rows add up to {expectedExpensesView.packageSharePercent}% of the package price, not 100%.
