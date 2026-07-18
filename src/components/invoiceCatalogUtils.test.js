@@ -61,7 +61,6 @@ describe('invoiceCatalogUtils', () => {
       notes: [],
       taxPercent: 0,
       debtOrDeposit: 0,
-      paymentPurposeOverride: '',
       issuedInvoices: [],
     });
   });
@@ -756,9 +755,27 @@ describe('invoiceCatalogUtils', () => {
     }
   });
 
-  it('fills invoiceNumber/invoiceDate placeholders into the payment purpose', () => {
-    const template = 'Payment by the invoice № {invoiceNumber} of {invoiceDate} without VAT.';
+  it('fills {{invoiceNumber}}/{{invoiceDate}} placeholders into the payment purpose (double braces, unified with documentsBuilder)', () => {
+    const template = 'Payment by the invoice № {{invoiceNumber}} of {{invoiceDate}} without VAT.';
     expect(applyPaymentPurposePlaceholders(template, { invoiceNumber: '23/05/2026', invoiceDate: '23.05.2026' }))
       .toBe('Payment by the invoice № 23/05/2026 of 23.05.2026 without VAT.');
+  });
+
+  it('tolerates extra whitespace inside the braces, same as documentsBuilder', () => {
+    const template = 'No. {{ invoiceNumber }} dated {{ invoiceDate }}.';
+    expect(applyPaymentPurposePlaceholders(template, { invoiceNumber: '1/2026', invoiceDate: '01.01.2026' }))
+      .toBe('No. 1/2026 dated 01.01.2026.');
+  });
+
+  it('leaves an unrecognized {{token}} untouched instead of blanking it', () => {
+    const template = 'Ref {{invoiceNumber}} / {{somethingElse}}.';
+    expect(applyPaymentPurposePlaceholders(template, { invoiceNumber: '1/2026', invoiceDate: '01.01.2026' }))
+      .toBe('Ref 1/2026 / {{somethingElse}}.');
+  });
+
+  it('single braces are no longer treated as placeholders (old convention retired)', () => {
+    const template = 'Old style {invoiceNumber} stays literal.';
+    expect(applyPaymentPurposePlaceholders(template, { invoiceNumber: '1/2026', invoiceDate: '01.01.2026' }))
+      .toBe('Old style {invoiceNumber} stays literal.');
   });
 });

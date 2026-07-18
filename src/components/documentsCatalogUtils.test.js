@@ -3,6 +3,7 @@ import {
   DOCUMENT_LAYOUTS,
   applyLogoLayoutAssignment,
   applyPlainTextEdit,
+  estimateColumnPageCapacity,
   buildCaseLabel,
   buildDocumentsFileName,
   buildGeneratedDocument,
@@ -39,6 +40,7 @@ import {
   serializeFormattedRuns,
   shiftDocOverrideParagraphIndices,
   splitParagraphsIntoColumns,
+  splitParagraphsIntoPages,
   toggleInlineFormat,
   upsertRecentCaseId,
   upsertRecentId,
@@ -1019,6 +1021,43 @@ describe('spec: column layouts (batch 13 §4)', () => {
     const [left, right] = splitParagraphsIntoColumns(paragraphs, 'uk');
     expect(left).toEqual(paragraphs);
     expect(right).toEqual([]);
+  });
+});
+
+describe('spec: single-language 2-column pagination (bugfix - a column must never spill onto its own extra page)', () => {
+  it('estimateColumnPageCapacity grows with column width, page height, and shrinks with font size', () => {
+    const base = estimateColumnPageCapacity({ columnWidthPt: 250, pageContentHeightPt: 700, fontSize: 10, lineSpacing: 1 });
+    const widerColumn = estimateColumnPageCapacity({ columnWidthPt: 500, pageContentHeightPt: 700, fontSize: 10, lineSpacing: 1 });
+    const tallerPage = estimateColumnPageCapacity({ columnWidthPt: 250, pageContentHeightPt: 1400, fontSize: 10, lineSpacing: 1 });
+    const biggerFont = estimateColumnPageCapacity({ columnWidthPt: 250, pageContentHeightPt: 700, fontSize: 20, lineSpacing: 1 });
+    expect(widerColumn).toBeGreaterThan(base);
+    expect(tallerPage).toBeGreaterThan(base);
+    expect(biggerFont).toBeLessThan(base);
+  });
+
+  it('splits paragraphs into page-sized groups instead of one giant group', () => {
+    // 10 paragraphs of 100 chars each = 1000 chars/column capacity - two columns per page share a
+    // capacity of 2x that, so this must not all land in a single page group.
+    const paragraphs = Array.from({ length: 10 }, (_, i) => ({ uk: 'x'.repeat(100), en: '', id: i }));
+    const pages = splitParagraphsIntoPages(paragraphs, 'uk', 250);
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.flat()).toEqual(paragraphs);
+  });
+
+  it('never drops or duplicates a paragraph across page groups', () => {
+    const paragraphs = Array.from({ length: 37 }, (_, i) => ({ uk: 'y'.repeat((i % 5) + 1), en: '', id: i }));
+    const pages = splitParagraphsIntoPages(paragraphs, 'uk', 10);
+    expect(pages.flat()).toEqual(paragraphs);
+  });
+
+  it('a small document that fits easily stays on a single page group', () => {
+    const paragraphs = [{ uk: 'short', en: '' }, { uk: 'also short', en: '' }];
+    const pages = splitParagraphsIntoPages(paragraphs, 'uk', 10000);
+    expect(pages).toEqual([paragraphs]);
+  });
+
+  it('returns one empty page group for an empty document rather than an empty array', () => {
+    expect(splitParagraphsIntoPages([], 'uk', 100)).toEqual([[]]);
   });
 });
 

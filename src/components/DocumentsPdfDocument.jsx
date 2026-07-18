@@ -16,6 +16,7 @@ import designTokens from '../data/designTokens.json';
 import {
   DEFAULT_DOC_FORMATTING,
   allowsParagraphInternalBreak,
+  estimateColumnPageCapacity,
   getClinicLogo,
   getLayoutLang,
   isBilingualLayout,
@@ -23,6 +24,7 @@ import {
   isSingleLanguageTwoColumnLayout,
   parseFormattedRuns,
   splitParagraphsIntoColumns,
+  splitParagraphsIntoPages,
 } from './documentsCatalogUtils';
 
 const CM_TO_PT = 28.3465;
@@ -55,6 +57,7 @@ export const ensureDocumentsPdfFontsRegistered = () => {
 export const LOGO_BOTTOM_GAP_PT = 10;
 
 const A4_WIDTH_PT = 595.28;
+const A4_HEIGHT_PT = 841.89;
 
 const styles = StyleSheet.create({
   headerText: {
@@ -171,9 +174,24 @@ const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, 
   );
 };
 
+const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) => (
+  <View style={{ marginBottom: titleGap }}>
+    {isBilingual ? (
+      <View style={styles.row}>
+        <Text style={[cellStyles.title, cellStyles.leftCell]}><FormattedRuns text={doc.title.uk} /></Text>
+        <Text style={[cellStyles.title, cellStyles.rightCell]}><FormattedRuns text={doc.title.en} /></Text>
+      </View>
+    ) : (
+      <Text style={cellStyles.title}><FormattedRuns text={doc.title[lang]} /></Text>
+    )}
+  </View>
+);
+
+// The bilingual and single-column (1-language) layouts: everything lives on one <Page> JSX
+// element and react-pdf's own automatic wrap handles overflow onto further physical pages. The
+// single-language 2-column layout does NOT use this - see SingleLanguagePages below.
 const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoWidth, clinicLogos }) => {
   const isBilingual = isBilingualLayout(layout);
-  const isSingleLanguageFlow = isSingleLanguageTwoColumnLayout(layout);
   const lang = getLayoutLang(layout);
   const showUk = isBilingual || lang === 'uk';
   const showEn = isBilingual || lang === 'en';
@@ -184,26 +202,8 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
           came from the dedicated `logo` field or a legacy leading paragraph - see
           getTemplateLogoType in documentsCatalogUtils. */}
       {doc.logo ? <LogoBlock type={doc.logo} {...logoBlockProps} /> : null}
-      <View style={{ marginBottom: titleGap }}>
-        {isBilingual ? (
-          <View style={styles.row}>
-            <Text style={[cellStyles.title, cellStyles.leftCell]}><FormattedRuns text={doc.title.uk} /></Text>
-            <Text style={[cellStyles.title, cellStyles.rightCell]}><FormattedRuns text={doc.title.en} /></Text>
-          </View>
-        ) : (
-          <Text style={cellStyles.title}><FormattedRuns text={doc.title[lang]} /></Text>
-        )}
-      </View>
-      {isSingleLanguageFlow ? (
-        <SingleLanguageColumns
-          paragraphs={doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed')}
-          lang={lang}
-          cellStyles={cellStyles}
-          allowPageBreaks={doc.allowPageBreaks}
-          logoWidth={logoWidth}
-          clinicLogos={clinicLogos}
-        />
-      ) : doc.paragraphs.map((paragraph, index) => {
+      <DocumentTitleBlock doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} titleGap={titleGap} />
+      {doc.paragraphs.map((paragraph, index) => {
         // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render
         // a second time in its old body position.
         if (paragraph.type === 'logo-consumed') return null;
@@ -227,6 +227,60 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
   );
 };
 
+const PageHeader = ({ formatting, marginTop, marginLeft, marginRight }) => (!formatting.headerText ? null : (
+  <Text
+    fixed
+    style={[styles.headerText, {
+      top: Math.max(6, marginTop * 0.35),
+      left: marginLeft,
+      right: marginRight,
+      fontSize: Math.max(7, formatting.fontSize - 2),
+    }]}
+  >
+    {formatting.headerText}
+  </Text>
+));
+
+// Off by default (spec §3), a hairline rule between the two columns - `fixed` so it repeats at the
+// same x position on every physical page, matching the header/footer pattern.
+const PageDivider = ({ show, marginTop, marginBottom, left }) => (!show ? null : (
+  <View
+    fixed
+    style={{
+      position: 'absolute', top: marginTop, bottom: marginBottom, left, width: 1, backgroundColor: designTokens.color.docLine,
+    }}
+  />
+));
+
+// `staticPageInfo` (a known { number, total } pair) is used by the single-language 2-column
+// layout's manually pre-chunked pages (splitParagraphsIntoPages) - each is its own separate <Page>
+// JSX element, so react-pdf's per-element subPageNumber/subPageTotalPages render callback would
+// only ever see "1 of 1" for each and never show a number at all. Every other layout keeps the
+// original dynamic callback, since it's still one <Page> JSX element free to auto-wrap.
+const PageFooter = ({ formatting, marginBottom, marginLeft, marginRight, staticPageInfo }) => {
+  if (!formatting.footerText && !formatting.showPageNumbers) return null;
+  const smallSize = Math.max(7, formatting.fontSize - 2);
+  return (
+    <View fixed style={[styles.footerRow, { bottom: Math.max(6, marginBottom * 0.35), left: marginLeft, right: marginRight }]}>
+      <Text style={{ fontSize: smallSize }}>{formatting.footerText || ''}</Text>
+      {formatting.showPageNumbers ? (
+        staticPageInfo ? (
+          <Text style={{ fontSize: smallSize }}>
+            {staticPageInfo.total > 1 ? `Page ${staticPageInfo.number} of ${staticPageInfo.total}` : ''}
+          </Text>
+        ) : (
+          <Text
+            style={{ fontSize: smallSize }}
+            render={({ subPageNumber, subPageTotalPages }) => (
+              subPageTotalPages > 1 ? `Page ${subPageNumber} of ${subPageTotalPages}` : ''
+            )}
+          />
+        )
+      ) : null}
+    </View>
+  );
+};
+
 // `documents` - output of buildGeneratedDocument (placeholders already filled, logo paragraphs
 // tagged). Each document starts on its own page, like the separate statements in the reference
 // file; templates with `allowPageBreaks` (the long agreement) are free to spill onto further
@@ -242,8 +296,6 @@ const DocumentsPdfDocument = ({
   const marginLeft = formatting.marginLeftCm * CM_TO_PT;
   const marginRight = formatting.marginRightCm * CM_TO_PT;
   const columnGap = formatting.columnGapCm * CM_TO_PT;
-  const hasHeader = Boolean(formatting.headerText);
-  const hasFooter = Boolean(formatting.footerText) || formatting.showPageNumbers;
   const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
   // Both column layouts (bilingual UA|EN and single-language newspaper-style, spec §4) share the
   // same left/right cell geometry and divider - only how the paragraphs are distributed between
@@ -296,86 +348,84 @@ const DocumentsPdfDocument = ({
     },
   });
 
+  const pageStyle = {
+    paddingTop: marginTop,
+    paddingBottom: marginBottom,
+    paddingLeft: marginLeft,
+    paddingRight: marginRight,
+    fontFamily: 'Tinos',
+    fontSize: formatting.fontSize,
+  };
+  const dividerLeft = marginLeft + columnContentWidth + columnGap / 2 - 0.5;
+  const isSingleLanguageFlow = isSingleLanguageTwoColumnLayout(layout);
+  const lang = getLayoutLang(layout);
+
+  // The single-language 2-column layout can't rely on react-pdf's automatic wrap the way every
+  // other layout does (see splitParagraphsIntoPages for why) - it's pre-chunked into page-sized
+  // paragraph groups up front, each becoming its own explicit <Page> with the logo/title only on
+  // the first one and a statically-known "Page X of Y" footer.
+  const renderSingleLanguagePages = doc => {
+    const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed');
+    const pageContentHeightPt = A4_HEIGHT_PT - marginTop - marginBottom;
+    const capacity = estimateColumnPageCapacity({
+      columnWidthPt: columnContentWidth,
+      pageContentHeightPt,
+      fontSize: formatting.fontSize,
+      lineSpacing: formatting.lineSpacing,
+    });
+    const pageGroups = splitParagraphsIntoPages(bodyParagraphs, lang, capacity);
+    return pageGroups.map((pageParagraphs, pageIndex) => (
+      // eslint-disable-next-line react/no-array-index-key
+      <Page key={`${doc.id}-page-${pageIndex}`} size="A4" style={pageStyle}>
+        <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
+        <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
+        {pageIndex === 0 ? (
+          <>
+            {doc.logo ? (
+              <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
+            ) : null}
+            <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
+          </>
+        ) : null}
+        <SingleLanguageColumns
+          paragraphs={pageParagraphs}
+          lang={lang}
+          cellStyles={cellStyles}
+          allowPageBreaks={doc.allowPageBreaks}
+          logoWidth={logoWidth}
+          clinicLogos={effectiveClinicLogos}
+        />
+        <PageFooter
+          formatting={formatting}
+          marginBottom={marginBottom}
+          marginLeft={marginLeft}
+          marginRight={marginRight}
+          staticPageInfo={{ number: pageIndex + 1, total: pageGroups.length }}
+        />
+      </Page>
+    ));
+  };
+
+  const renderDocumentPage = doc => (
+    <Page key={doc.id} size="A4" style={pageStyle}>
+      <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
+      <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
+      <DocumentBlock
+        doc={doc}
+        layout={layout}
+        cellStyles={cellStyles}
+        titleGap={formatting.paragraphSpacing}
+        logoWidth={logoWidth}
+        longLogoWidth={contentWidth}
+        clinicLogos={effectiveClinicLogos}
+      />
+      <PageFooter formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
+    </Page>
+  );
+
   return (
     <Document>
-      {documents.map(doc => (
-        <Page
-          key={doc.id}
-          size="A4"
-          style={{
-            paddingTop: marginTop,
-            paddingBottom: marginBottom,
-            paddingLeft: marginLeft,
-            paddingRight: marginRight,
-            fontFamily: 'Tinos',
-            fontSize: formatting.fontSize,
-          }}
-        >
-          {hasHeader ? (
-            <Text
-              fixed
-              style={[styles.headerText, {
-                top: Math.max(6, marginTop * 0.35),
-                left: marginLeft,
-                right: marginRight,
-                fontSize: Math.max(7, formatting.fontSize - 2),
-              }]}
-            >
-              {formatting.headerText}
-            </Text>
-          ) : null}
-          {/* Off by default (spec §3), a hairline rule between the two columns - `fixed` so it
-              repeats at the same x position on every physical page of the document, matching the
-              header/footer pattern above rather than trying to size a divider to the dynamic
-              content height. */}
-          {showColumnDivider ? (
-            <View
-              fixed
-              style={{
-                position: 'absolute',
-                top: marginTop,
-                bottom: marginBottom,
-                left: marginLeft + columnContentWidth + columnGap / 2 - 0.5,
-                width: 1,
-                backgroundColor: designTokens.color.docLine,
-              }}
-            />
-          ) : null}
-          <DocumentBlock
-            doc={doc}
-            layout={layout}
-            cellStyles={cellStyles}
-            titleGap={formatting.paragraphSpacing}
-            logoWidth={logoWidth}
-            longLogoWidth={contentWidth}
-            clinicLogos={effectiveClinicLogos}
-          />
-          {hasFooter ? (
-            <View
-              fixed
-              style={[styles.footerRow, {
-                bottom: Math.max(6, marginBottom * 0.35),
-                left: marginLeft,
-                right: marginRight,
-              }]}
-            >
-              <Text style={{ fontSize: Math.max(7, formatting.fontSize - 2) }}>{formatting.footerText || ''}</Text>
-              {formatting.showPageNumbers ? (
-                <Text
-                  style={{ fontSize: Math.max(7, formatting.fontSize - 2) }}
-                  // subPageNumber/subPageTotalPages count only the physical pages that came from
-                  // THIS document's own <Page> element - each selected document gets its own 1-based
-                  // count (never the combined total across every selected document), and nothing
-                  // worth showing when this particular document fits on a single page.
-                  render={({ subPageNumber, subPageTotalPages }) => (
-                    subPageTotalPages > 1 ? `Page ${subPageNumber} of ${subPageTotalPages}` : ''
-                  )}
-                />
-              ) : null}
-            </View>
-          ) : null}
-        </Page>
-      ))}
+      {documents.flatMap(doc => (isSingleLanguageFlow ? renderSingleLanguagePages(doc) : [renderDocumentPage(doc)]))}
     </Document>
   );
 };

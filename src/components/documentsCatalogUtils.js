@@ -816,6 +816,57 @@ export const splitParagraphsIntoColumns = (paragraphs, lang) => {
   return [items.slice(0, splitIndex), items.slice(splitIndex)];
 };
 
+// Rough per-page-per-column character capacity for the single-language 2-column layout's manual
+// pagination (splitParagraphsIntoPages below). react-pdf has no native multi-column text flow: a
+// flex row's two columns can't independently continue onto a shared next page, so once a page's
+// content is taller than the page, the shorter column just ends while the taller one keeps going
+// alone onto the next physical page - a whole extra page with one empty-looking column. Chunking
+// paragraphs into page-sized groups up front (each safely under one page's two-column capacity)
+// avoids that - PROVIDED the estimate stays conservative: word-wrapped justified text never packs
+// as tightly as a bare characters-per-line division assumes (wrapping only ever breaks at a word
+// boundary, so most lines end short of the full column width), and if a page-group is even
+// slightly over-budget, react-pdf's own automatic overflow kicks in on that single manually-created
+// <Page> element and reproduces the exact bug this exists to prevent (plus a wrong, statically
+// hardcoded "Page X of Y" on the resulting extra physical page). SAFETY_FACTOR knowingly
+// underfills every page rather than risk that.
+const AVG_CHAR_WIDTH_EM = 0.5;
+const SAFETY_FACTOR = 0.75;
+
+export const estimateColumnPageCapacity = ({ columnWidthPt, pageContentHeightPt, fontSize, lineSpacing }) => {
+  const charsPerLine = Math.max(1, Math.floor(columnWidthPt / (fontSize * AVG_CHAR_WIDTH_EM)));
+  const lineHeightPt = fontSize * lineSpacing;
+  const linesPerColumn = Math.max(1, Math.floor(pageContentHeightPt / lineHeightPt));
+  return Math.max(1, Math.floor(charsPerLine * linesPerColumn * SAFETY_FACTOR));
+};
+
+const estimateParagraphChars = (paragraph, lang) => (paragraph?.type && paragraph.type !== 'text'
+  ? 0
+  : String(paragraph?.[lang] || '').length);
+
+// Groups paragraphs into page-sized chunks: each chunk's combined estimated character count stays
+// within one page's two-column capacity (columnCharCapacity is per column; a page holds two), so
+// every chunk can safely render as its own page with a same-page-only left/right split (see
+// splitParagraphsIntoColumns) instead of letting one column spill onto the next physical page while
+// its sibling sits empty.
+export const splitParagraphsIntoPages = (paragraphs, lang, columnCharCapacity) => {
+  const perPageCapacity = Math.max(1, columnCharCapacity) * 2;
+  const pages = [];
+  let current = [];
+  let currentChars = 0;
+  (paragraphs || []).forEach(paragraph => {
+    const chars = estimateParagraphChars(paragraph, lang);
+    if (current.length && currentChars + chars > perPageCapacity) {
+      pages.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(paragraph);
+    currentChars += chars;
+  });
+  if (current.length) pages.push(current);
+  return pages.length ? pages : [[]];
+};
+
 // A clinic can keep several logo file variants (spec §7): a compact one for the shared logo
 // above the two-column layout and a long full-width one for the one-column layouts. The column
 // mode selected at the top of the page is the flag that picks the variant: the one explicitly

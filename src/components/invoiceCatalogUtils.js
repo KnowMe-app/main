@@ -160,9 +160,6 @@ export const normalizeInvoiceData = raw => {
     // taxed): positive = the client still owes a debt from before, negative = they're sitting on a
     // deposit/credit. Zero (the default) means "nothing to carry over" and is never rendered.
     debtOrDeposit: Number.isFinite(Number(raw?.debtOrDeposit)) ? Number(raw.debtOrDeposit) : 0,
-    // Empty string (the default) means "keep auto-generating it from the beneficiary's template" -
-    // any other value is an admin edit for this invoice only and wins over the auto-generated text.
-    paymentPurposeOverride: typeof raw?.paymentPurposeOverride === 'string' ? raw.paymentPurposeOverride : '',
     // Every invoice ever generated (design-tasks-3 §7), newest first - each a frozen snapshot of
     // what was billed (display rows + totals never re-resolve against the live catalog) plus the
     // raw entries, kept so "Reissue" can put them back into the editor.
@@ -891,10 +888,18 @@ export const generateInvoiceIdentifiers = dateInput => {
   };
 };
 
-export const applyPaymentPurposePlaceholders = (template, { invoiceNumber, invoiceDate }) =>
-  String(template || '')
-    .replaceAll('{invoiceNumber}', invoiceNumber || '')
-    .replaceAll('{invoiceDate}', invoiceDate || '');
+// {{invoiceNumber}}/{{invoiceDate}} - double curly braces, unified with the same placeholder
+// convention documentsBuilder uses (see PLACEHOLDER_PATTERN in documentsCatalogUtils). An unknown
+// token is left untouched rather than blanked, matching documentsBuilder's own template/editor
+// behavior of never silently dropping something that looks like a placeholder but isn't recognized.
+const PAYMENT_PURPOSE_PLACEHOLDER_PATTERN = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+export const applyPaymentPurposePlaceholders = (template, { invoiceNumber, invoiceDate }) => {
+  const values = { invoiceNumber, invoiceDate };
+  return String(template || '').replace(PAYMENT_PURPOSE_PLACEHOLDER_PATTERN, (match, key) => (
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key] || '') : match
+  ));
+};
 
 export const getTodayYmd = () => {
   const today = new Date();

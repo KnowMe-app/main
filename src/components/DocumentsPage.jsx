@@ -922,6 +922,23 @@ const DocumentsPage = ({ isAdmin }) => {
     activeFieldRef.current = { docId, index, langKey };
   };
 
+  const preventSelectionLoss = event => event.preventDefault();
+
+  // Mobile browsers collapse the field's text selection the moment a tap lands anywhere outside
+  // it (including on this very toolbar button) unless the touch's own default is prevented -
+  // preventDefault on mousedown alone (enough on desktop) doesn't stop that. But preventing
+  // touchstart's default also suppresses the synthetic click mobile browsers would otherwise fire
+  // afterward, so the action has to run from touchend directly instead of waiting for onClick.
+  const formatButtonProps = attr => ({
+    onMouseDown: preventSelectionLoss,
+    onTouchStart: preventSelectionLoss,
+    onTouchEnd: event => {
+      event.preventDefault();
+      handleApplyInlineFormat(attr);
+    },
+    onClick: () => handleApplyInlineFormat(attr),
+  });
+
   // Persisted immediately (direct write), the same pattern applyParagraphStructureChange uses for
   // a discrete click - waiting for the field's own onBlur would miss this, since the toolbar
   // button click already blurred the field before this handler runs.
@@ -1674,8 +1691,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   <SmallButton
                                     type="button"
                                     disabled={dataEditLocked}
-                                    onMouseDown={event => event.preventDefault()}
-                                    onClick={() => handleApplyInlineFormat('bold')}
+                                    {...formatButtonProps('bold')}
                                     title="Bold the selected text"
                                   >
                                     <FaBold />
@@ -1683,8 +1699,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   <SmallButton
                                     type="button"
                                     disabled={dataEditLocked}
-                                    onMouseDown={event => event.preventDefault()}
-                                    onClick={() => handleApplyInlineFormat('italic')}
+                                    {...formatButtonProps('italic')}
                                     title="Italicize the selected text"
                                   >
                                     <FaItalic />

@@ -456,14 +456,6 @@ const StackedFieldHeader = styled.div`
   margin-bottom: 2px;
 `;
 
-const StackedFieldTag = styled.span`
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--km-muted);
-`;
-
 // One shared line-height every element of a row (index number, name, price, % sign, EUR chip,
 // arrows, trash icon) aligns to - the single-baseline rule of design-tasks §1. Everything below
 // that sits on a row either uses this line-height directly or centers itself inside it.
@@ -2175,24 +2167,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
 
   const { invoiceNumber, invoiceDate } = useMemo(() => generateInvoiceIdentifiers(invoiceDateInput), [invoiceDateInput]);
 
-  const defaultPurposeOfPayment = useMemo(
+  // Resolved live from the beneficiary's own payment-purpose template (Beneficiary panel) - no
+  // separate per-invoice override; editing the template there is the only place this is edited.
+  const purposeOfPayment = useMemo(
     () => applyPaymentPurposePlaceholders(activeBeneficiary?.paymentPurpose, { invoiceNumber, invoiceDate }),
     [activeBeneficiary, invoiceNumber, invoiceDate],
   );
-  // An explicit per-invoice override always wins over the auto-generated text (spec item E).
-  const purposeOfPayment = data.paymentPurposeOverride || defaultPurposeOfPayment;
-  const [purposeOfPaymentDraft, setPurposeOfPaymentDraft, purposeOfPaymentEditingRef] = useFieldDraft(purposeOfPayment);
-
-  const commitPurposeOfPayment = value => {
-    const nextValue = value === defaultPurposeOfPayment ? '' : value;
-    setData(current => ({ ...current, paymentPurposeOverride: nextValue }));
-    persistPath(`${INVOICE_DATA_PATH}/paymentPurposeOverride`, nextValue, 'Purpose of the payment updated.');
-  };
-
-  const resetPurposeOfPayment = () => {
-    setData(current => ({ ...current, paymentPurposeOverride: '' }));
-    persistPath(`${INVOICE_DATA_PATH}/paymentPurposeOverride`, '', 'Purpose of the payment reset to auto-generated.');
-  };
 
   const payerName = useMemo(() => buildPayerName(data.customers), [data.customers]);
   const payerLocation = useMemo(() => buildPayerLocation(data.customers), [data.customers]);
@@ -3641,7 +3621,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                           $bare
                           style={{ width: '100%' }}
                           value={activeBeneficiary.paymentPurpose || ''}
-                          placeholder="Payment purpose - {invoiceNumber} and {invoiceDate} are filled in automatically"
+                          placeholder="Payment purpose - {{invoiceNumber}} and {{invoiceDate}} are filled in automatically"
                           aria-label="Payment purpose"
                           onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
                           onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
@@ -4074,25 +4054,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   style={{ flex: '0 0 auto' }}
                 />
               </FieldRow>
-              <StackedFieldRow style={{ marginTop: 10 }}>
-                <StackedFieldHeader>
-                  <StackedFieldTag>Purpose of the payment</StackedFieldTag>
-                  {data.paymentPurposeOverride ? (
-                    <IconButton type="button" onClick={resetPurposeOfPayment} title="Revert to the auto-generated text" aria-label="Revert to the auto-generated text">
-                      <FaUndoAlt />
-                    </IconButton>
-                  ) : null}
-                </StackedFieldHeader>
-                <AutoTextArea
-                  style={{ width: '100%' }}
-                  value={purposeOfPaymentDraft}
-                  placeholder="Auto-generated from the beneficiary's payment purpose template"
-                  aria-label="Purpose of the payment"
-                  onFocus={() => { purposeOfPaymentEditingRef.current = true; }}
-                  onChange={event => setPurposeOfPaymentDraft(event.target.value)}
-                  onBlur={() => { purposeOfPaymentEditingRef.current = false; commitPurposeOfPayment(purposeOfPaymentDraft); }}
-                />
-              </StackedFieldRow>
               <SummaryGrid style={{ marginTop: 10 }}>
                 <SummaryLine><span>Subtotal</span><span>{formatEuroPreview(subtotal)}</span></SummaryLine>
                 {data.debtOrDeposit ? (
