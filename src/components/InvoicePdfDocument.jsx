@@ -5,7 +5,7 @@ import {
   ensurePdfFontsRegistered, formatDisplayDate, pdfBaseStyles, sanitizePdfText, TitleBlock,
 } from './pdfTheme';
 import { formatMoney } from './budgetCatalogUtils';
-import { formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable, SERVICE_TABLE_LEAD_LABEL } from './BudgetPdfDocument';
+import { formatAmountTwoDecimals, IncludedServicesTable, PaymentScheduleTable } from './BudgetPdfDocument';
 import {
   buildPayerLocation,
   buildPayerName,
@@ -147,14 +147,67 @@ const styles = StyleSheet.create({
     lineHeight: 1.45,
     color: PDF_COLOR.inkSoft,
   },
+  // Breakdown as a numbered list, not a boxed table (design-tasks-13 §1): a numeral column set
+  // slightly apart, then the service name and its comment stacked underneath, a plain hairline
+  // between rows, and the price sitting flush against the right edge with its own "EUR" suffix
+  // instead of a shared column header - the same rhythm the Program Budget's own Programs list
+  // already uses, just carrying a two-decimal, per-row currency label.
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderTopWidth: 1,
+    borderTopColor: PDF_COLOR.docLine,
+    borderTopStyle: 'solid',
+    paddingVertical: 6.5,
+  },
+  breakdownRowFirst: {
+    borderTopWidth: 0,
+  },
+  breakdownIndexCell: {
+    width: 22,
+  },
+  breakdownIndexText: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.5,
+    color: PDF_COLOR.bronze,
+  },
+  breakdownBody: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  breakdownName: {
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontSize: 8.8,
+    color: PDF_COLOR.docInk,
+    marginBottom: 1.5,
+  },
+  breakdownDescription: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8,
+    color: PDF_COLOR.inkSoft,
+    lineHeight: 1.4,
+  },
+  breakdownPrice: {
+    width: 88,
+    textAlign: 'right',
+    fontFamily: PDF_FONT.body,
+    fontWeight: 600,
+    fontVariantNumeric: 'tabular-nums',
+    fontSize: 8.8,
+    color: PDF_COLOR.bronzeDeep,
+  },
+  breakdownPriceCredit: {
+    color: PDF_COLOR.bronze,
+  },
 });
 
-// One row of the "Breakdown" table. A "% of package" row reads as "Scheduled payment" - the same
+// One row of the "Breakdown" list. A "% of package" row reads as "Scheduled payment" - the same
 // one-style breakdown line as every other row - without repeating the underlying percentage/
 // package wording in the PDF (design-tasks §3). Amounts stay bare numbers (or a free-text label
-// like "GIFT"): the table's own EUR column header already carries the currency.
-// Always two decimals (design-tasks-8 §9) via the shared table formatter, so decimal points line
-// up down the amount column here and in Expected Expenses alike.
+// like "GIFT"): the shared formatter below still gives them two decimals (design-tasks-8 §9), so
+// decimal points line up down the price column here and in Expected Expenses alike.
 const formatBareAmount = formatAmountTwoDecimals;
 
 // A proper typographic minus for credits (design-tasks-8 §5) - a hyphen reads as a dash, U+2212
@@ -174,7 +227,7 @@ const formatMoneyTwoDecimals = value => {
   }).format(amount)} EUR`;
 };
 
-const buildBreakdownTableRow = row => {
+const buildBreakdownRow = row => {
   const price = Number(row.price);
   // Credits/adjustments (design-tasks-8 §5): a negative amount renders with the typographic
   // minus in the subdued credit tone, so charges and credits read as two kinds of line.
@@ -182,13 +235,41 @@ const buildBreakdownTableRow = row => {
   return {
     title: row.kind === 'percent' ? 'Scheduled payment' : (row.name || ''),
     description: row.description || '',
-    amounts: [row.priceLabel
-      ? row.priceLabel
-      : (isCredit
-        ? { label: `${TYPOGRAPHIC_MINUS}${formatBareAmount(Math.abs(price))}`, tone: 'credit' }
-        : formatBareAmount(price))],
+    // A free-text price label (e.g. "GIFT") passes through as-is; a real amount always carries
+    // its own "EUR" suffix here since the list no longer has a shared column header to say it once.
+    priceLabel: row.priceLabel || `${isCredit ? TYPOGRAPHIC_MINUS : ''}${formatBareAmount(Math.abs(price))} EUR`,
+    credit: isCredit,
   };
 };
+
+// The "Breakdown" list (design-tasks-13 §1): numbered rows with the name and its comment stacked
+// underneath, a plain hairline between rows, and the price flush right with its own EUR suffix -
+// no boxed table, no "Provided service"/"EUR" header row.
+const BreakdownList = ({ rows, title = 'Breakdown', sectionStyle }) => (rows.length ? (
+  <View style={sectionStyle || styles.section}>
+    <View wrap={false} minPresenceAhead={70}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+    {rows.map((row, index) => (
+      <View
+        key={`breakdown-row-${index}`}
+        style={[styles.breakdownRow, index === 0 ? styles.breakdownRowFirst : null]}
+        wrap={false}
+      >
+        <View style={styles.breakdownIndexCell}>
+          <Text style={styles.breakdownIndexText}>{index + 1}</Text>
+        </View>
+        <View style={styles.breakdownBody}>
+          <Text style={styles.breakdownName}>{sanitizePdfText(row.title)}</Text>
+          {row.description ? <Text style={styles.breakdownDescription}>{sanitizePdfText(row.description)}</Text> : null}
+        </View>
+        <Text style={[styles.breakdownPrice, row.credit ? styles.breakdownPriceCredit : null]}>
+          {sanitizePdfText(row.priceLabel)}
+        </Text>
+      </View>
+    ))}
+  </View>
+) : null);
 
 // The "Package block" (round7 spec C): a compact name/fee header, then the package's full
 // composition - always shown, since the Builder's own "Package" checkbox already gates whether
@@ -329,10 +410,7 @@ const InvoicePdfDocument = ({
   // "Breakdown" table, one row style, one running numbering - splitting them into two headed
   // sections was the second-biggest source of clutter on this document (declutter spec §2).
   const breakdownRows = rows.filter(row => row.kind !== 'package');
-  const breakdownTableRows = breakdownRows.map(buildBreakdownTableRow);
-  // Single amount column, same visual style as the Payment Schedule table (design-tasks §3) - the
-  // column header carries the currency once, so cells stay bare numbers.
-  const breakdownMeta = [{ id: 'amount', label: '', priceLabel: 'EUR' }];
+  const breakdownListRows = breakdownRows.map(buildBreakdownRow);
   // The DD.MM.YYYY `invoiceDate` string (invoiceCatalogUtils.generateInvoiceIdentifiers) is the
   // legal-text date used inside the payment-purpose placeholder only - the human-readable date
   // shown here always uses the one shared display format (spec §4), never that dotted form or the
@@ -362,17 +440,7 @@ const InvoicePdfDocument = ({
           ))
         ) : null}
 
-        {breakdownTableRows.length ? (
-          <PaymentScheduleTable
-            packages={breakdownMeta}
-            rows={breakdownTableRows}
-            title="Breakdown"
-            leadLabel={SERVICE_TABLE_LEAD_LABEL}
-            sectionStyle={{ marginTop: aboveBreakdownGap }}
-            dense
-            light
-          />
-        ) : null}
+        <BreakdownList rows={breakdownListRows} sectionStyle={{ marginTop: aboveBreakdownGap }} />
 
         {/* No extra top margin here - noteRow/totalCard already carry their own spacing (spec §1.4),
             same as the flat layout above where they sit directly under the table with no gap of
