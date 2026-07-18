@@ -46,6 +46,7 @@ import {
   orderCasesByRecent,
   orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
+  parseFormattedRuns,
   plainTextOf,
   pruneDocOverride,
   resolveCaseContext,
@@ -418,6 +419,51 @@ const ParagraphEditorBlock = styled.div`
   margin-top: 10px;
   background: rgba(162, 121, 63, 0.025);
 `;
+
+// Wraps a Data-mode field together with its own formatted preview (below), so a two-column
+// ParagraphPair keeps each language's preview directly under that language's own textarea rather
+// than as one shared block under both.
+const ParagraphFieldColumn = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+// A plain <textarea> can never render partial bold/italic - Data mode edits the de-markup'd plain
+// text (spec §2), so pressing Bold/Italic on a selection changed the stored data with no visible
+// feedback at all in that box. This read-only preview (shown only once a paragraph actually has
+// formatting applied) renders the real bold/italic so the admin can confirm the toggle worked
+// without generating a PDF first.
+const FormattedPreviewLabel = styled.div`
+  margin-top: 3px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--km-muted);
+`;
+
+const FormattedPreviewText = styled.div`
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--km-text);
+  padding: 2px 6px 4px;
+  white-space: pre-wrap;
+`;
+
+const hasInlineFormatting = text => parseFormattedRuns(text).some(run => run.bold || run.italic);
+
+const FormattedRunsPreview = ({ text }) => (
+  <>
+    {parseFormattedRuns(text).map((run, index) => {
+      let node = run.text;
+      if (run.italic) node = <em>{node}</em>;
+      if (run.bold) node = <strong>{node}</strong>;
+      // eslint-disable-next-line react/no-array-index-key
+      return <React.Fragment key={index}>{node}</React.Fragment>;
+    })}
+  </>
+);
 
 const FieldGrid = styled.div`
   display: grid;
@@ -1716,26 +1762,46 @@ const DocumentsPage = ({ isAdmin }) => {
                               </ParagraphControlsRow>
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
-                                  <AutoInlineTextarea
-                                    ref={registerFieldNode(template.id, index, 'uk')}
-                                    value={paragraphValue(paragraph, index, 'uk')}
-                                    placeholder="Paragraph (uk)"
-                                    readOnly={dataEditLocked}
-                                    onFocus={handleRichFieldFocus(template.id, index, 'uk')}
-                                    onChange={onParagraphChange(paragraph, index, 'uk')}
-                                    onBlur={onFieldBlur}
-                                  />
+                                  <ParagraphFieldColumn>
+                                    <AutoInlineTextarea
+                                      ref={registerFieldNode(template.id, index, 'uk')}
+                                      value={paragraphValue(paragraph, index, 'uk')}
+                                      placeholder="Paragraph (uk)"
+                                      readOnly={dataEditLocked}
+                                      onFocus={handleRichFieldFocus(template.id, index, 'uk')}
+                                      onChange={onParagraphChange(paragraph, index, 'uk')}
+                                      onBlur={onFieldBlur}
+                                    />
+                                    {hasInlineFormatting(rawParagraphValue(paragraph, index, 'uk')) ? (
+                                      <>
+                                        <FormattedPreviewLabel>Preview (bold/italic applied)</FormattedPreviewLabel>
+                                        <FormattedPreviewText>
+                                          <FormattedRunsPreview text={rawParagraphValue(paragraph, index, 'uk')} />
+                                        </FormattedPreviewText>
+                                      </>
+                                    ) : null}
+                                  </ParagraphFieldColumn>
                                 ) : null}
                                 {showEn ? (
-                                  <AutoInlineTextarea
-                                    ref={registerFieldNode(template.id, index, 'en')}
-                                    value={paragraphValue(paragraph, index, 'en')}
-                                    placeholder="Paragraph (en)"
-                                    readOnly={dataEditLocked}
-                                    onFocus={handleRichFieldFocus(template.id, index, 'en')}
-                                    onChange={onParagraphChange(paragraph, index, 'en')}
-                                    onBlur={onFieldBlur}
-                                  />
+                                  <ParagraphFieldColumn>
+                                    <AutoInlineTextarea
+                                      ref={registerFieldNode(template.id, index, 'en')}
+                                      value={paragraphValue(paragraph, index, 'en')}
+                                      placeholder="Paragraph (en)"
+                                      readOnly={dataEditLocked}
+                                      onFocus={handleRichFieldFocus(template.id, index, 'en')}
+                                      onChange={onParagraphChange(paragraph, index, 'en')}
+                                      onBlur={onFieldBlur}
+                                    />
+                                    {hasInlineFormatting(rawParagraphValue(paragraph, index, 'en')) ? (
+                                      <>
+                                        <FormattedPreviewLabel>Preview (bold/italic applied)</FormattedPreviewLabel>
+                                        <FormattedPreviewText>
+                                          <FormattedRunsPreview text={rawParagraphValue(paragraph, index, 'en')} />
+                                        </FormattedPreviewText>
+                                      </>
+                                    ) : null}
+                                  </ParagraphFieldColumn>
                                 ) : null}
                               </ParagraphPair>
                             </ParagraphEditorBlock>

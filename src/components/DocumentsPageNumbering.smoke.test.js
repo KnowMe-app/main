@@ -14,6 +14,7 @@ import path from 'path';
 import React from 'react';
 import {
   DEFAULT_DOC_FORMATTING,
+  estimateCharsPerLine,
   estimateColumnPageCapacity,
   splitParagraphsIntoPages,
 } from './documentsCatalogUtils';
@@ -158,15 +159,100 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
     const columnGap = formatting.columnGapCm * CM_TO_PT;
     const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
     const columnContentWidth = (contentWidth - columnGap) / 2;
+    const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
     const capacity = estimateColumnPageCapacity({
       columnWidthPt: columnContentWidth,
       pageContentHeightPt: A4_HEIGHT_PT - marginTop - marginBottom,
       fontSize: formatting.fontSize,
       lineSpacing: formatting.lineSpacing,
     });
-    const expectedGroups = splitParagraphsIntoPages(longDoc.paragraphs, 'uk', capacity).length;
+    const expectedGroups = splitParagraphsIntoPages(longDoc.paragraphs, 'uk', capacity, charsPerLine).length;
 
     expect(expectedGroups).toBeGreaterThan(1); // the fixture must actually exercise multi-page pagination
     expect(renderedPages).toBe(expectedGroups);
+  }, 30000);
+
+  // Bugfix regression: the character-count capacity estimate is only ever approximate (it can't see
+  // e.g. a paragraph's own embedded line breaks), so a page-group occasionally still overflows past
+  // its intended one physical page despite SAFETY_FACTOR. Every page-group used to be its own
+  // separate <Page> JSX element with a hardcoded "Page X of Y" footer, so react-pdf continuing that
+  // one element onto an extra physical page produced a near-blank page repeating the exact same
+  // page number as the one before it. Now every page-group is a `break`-separated section inside a
+  // single <Page> per document, so an occasional extra overflow page just renders with the correct
+  // next subPageNumber - this proves that overflow renders cleanly (one extra real page) instead of
+  // silently corrupting the group count.
+  it('still renders cleanly when one page-group unavoidably overflows its predicted single page', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+
+    const formatting = { ...DEFAULT_DOC_FORMATTING, showPageNumbers: true };
+    // A single paragraph long enough, by itself, to exceed one whole page's two-column capacity -
+    // splitParagraphsIntoPages never splits a lone paragraph, so this group is guaranteed to spill
+    // over regardless of SAFETY_FACTOR, exercising the overflow path deterministically.
+    const hugeParagraph = {
+      type: 'text',
+      uk: Array.from({ length: 400 }, (_, i) => `Речення номер ${i + 1} для гарантованого переповнення сторінки.`).join(' '),
+      en: Array.from({ length: 400 }, (_, i) => `Sentence number ${i + 1} to guarantee page overflow.`).join(' '),
+    };
+    const overflowDoc = {
+      id: 'overflow-single-language-doc',
+      allowPageBreaks: true,
+      logo: null,
+      title: { uk: 'Договір з переповненням', en: 'Agreement with overflow' },
+      paragraphs: [
+        { type: 'text', uk: '1. Короткий пункт на початку.', en: '1. A short clause at the start.' },
+        hugeParagraph,
+        { type: 'text', uk: '3. Короткий пункт в кінці.', en: '3. A short clause at the end.' },
+      ],
+    };
+
+    const element = React.createElement(DocumentsPdfDocument, {
+      documents: [overflowDoc],
+      layout: 'two-column-uk',
+      clinicLogos: [],
+      formatting,
+    });
+    const stream = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      stream.on('data', chunk => chunks.push(chunk));
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+    const renderedPages = countPdfPages(Buffer.concat(chunks));
+
+    const CM_TO_PT = 28.3465;
+    const A4_WIDTH_PT = 595.28;
+    const A4_HEIGHT_PT = 841.89;
+    const marginLeft = formatting.marginLeftCm * CM_TO_PT;
+    const marginRight = formatting.marginRightCm * CM_TO_PT;
+    const marginTop = formatting.marginTopCm * CM_TO_PT;
+    const marginBottom = formatting.marginBottomCm * CM_TO_PT;
+    const columnGap = formatting.columnGapCm * CM_TO_PT;
+    const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
+    const columnContentWidth = (contentWidth - columnGap) / 2;
+    const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
+    const capacity = estimateColumnPageCapacity({
+      columnWidthPt: columnContentWidth,
+      pageContentHeightPt: A4_HEIGHT_PT - marginTop - marginBottom,
+      fontSize: formatting.fontSize,
+      lineSpacing: formatting.lineSpacing,
+    });
+    const predictedGroups = splitParagraphsIntoPages(overflowDoc.paragraphs, 'uk', capacity, charsPerLine).length;
+
+    // The huge paragraph is its own group (too big to share with a neighbor) and, by construction,
+    // too big for even one full page by itself - so the real render must need more physical pages
+    // than the naive one-page-per-group prediction, and it must still succeed (no thrown error, no
+    // dropped content).
+    expect(renderedPages).toBeGreaterThan(predictedGroups);
   }, 30000);
 });

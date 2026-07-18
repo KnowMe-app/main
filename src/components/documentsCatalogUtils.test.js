@@ -4,6 +4,7 @@ import {
   applyLogoLayoutAssignment,
   applyPlainTextEdit,
   estimateColumnPageCapacity,
+  estimateParagraphChars,
   buildCaseLabel,
   buildDocumentsFileName,
   buildGeneratedDocument,
@@ -891,8 +892,8 @@ describe('spec: safe optional entities', () => {
 });
 
 describe('spec: selection-based inline bold/italic (batch 13 §1)', () => {
-  it('parses ** and _ as independent bold/italic toggles', () => {
-    expect(parseFormattedRuns('Hello **world** and _everyone_ else')).toEqual([
+  it('parses ** and a lone * as independent bold/italic toggles', () => {
+    expect(parseFormattedRuns('Hello **world** and *everyone* else')).toEqual([
       { text: 'Hello ', bold: false, italic: false },
       { text: 'world', bold: true, italic: false },
       { text: ' and ', bold: false, italic: false },
@@ -902,18 +903,24 @@ describe('spec: selection-based inline bold/italic (batch 13 §1)', () => {
   });
 
   it('parses overlapping bold+italic markers on the same fragment', () => {
-    expect(parseFormattedRuns('**_both_**')).toEqual([
+    expect(parseFormattedRuns('***both***')).toEqual([
       { text: 'both', bold: true, italic: true },
     ]);
   });
 
   it('round-trips runs back to the same raw markup string', () => {
-    const raw = 'Hello **world** and _everyone_ else, **_both_** too.';
+    const raw = 'Hello **world** and *everyone* else, ***both*** too.';
     expect(serializeFormattedRuns(parseFormattedRuns(raw))).toBe(raw);
   });
 
   it('plainTextOf strips every marker, leaving only the readable text', () => {
-    expect(plainTextOf('Hello **world** and _everyone_ else')).toBe('Hello world and everyone else');
+    expect(plainTextOf('Hello **world** and *everyone* else')).toBe('Hello world and everyone else');
+  });
+
+  it('does not treat runs of literal underscores (blank fill-in lines) as italic markers', () => {
+    const raw = 'Дата: «___»_______ 2026 р.';
+    expect(plainTextOf(raw)).toBe(raw);
+    expect(parseFormattedRuns(raw)).toEqual([{ text: raw, bold: false, italic: false }]);
   });
 
   it('toggleInlineFormat bolds a plain-text range without disturbing the rest', () => {
@@ -1021,6 +1028,33 @@ describe('spec: column layouts (batch 13 §4)', () => {
     const [left, right] = splitParagraphsIntoColumns(paragraphs, 'uk');
     expect(left).toEqual(paragraphs);
     expect(right).toEqual([]);
+  });
+
+  // Bugfix: a paragraph authored with embedded newlines (dash-prefixed sub-items as manual line
+  // breaks within one paragraph, common in real contract text) forces a hard line break regardless
+  // of how much of the line width was used - plain character counting badly underestimates how tall
+  // it renders, which threw off both page-capacity chunking and this column balance for real
+  // documents full of numbered/bulleted sub-clauses.
+  it('estimateParagraphChars costs each newline-delimited segment by its own line count when charsPerLine is known', () => {
+    expect(estimateParagraphChars({ uk: 'a'.repeat(10) }, 'uk', 10)).toBe(10); // exactly one line
+    // Three short lines (each far under 10 chars) still cost 3 whole lines, not ~1 line worth of characters.
+    const threeShortLines = { uk: 'ab\ncd\nef' };
+    expect(estimateParagraphChars(threeShortLines, 'uk', 10)).toBe(30);
+    // Without charsPerLine (the original behavior), newlines are just characters - no line-cost awareness.
+    expect(estimateParagraphChars(threeShortLines, 'uk')).toBe(threeShortLines.uk.length);
+  });
+
+  it('splitParagraphsIntoColumns balances a newline-heavy paragraph correctly once charsPerLine is passed', () => {
+    // "Bulleted" has few raw characters but many forced line breaks (as tall as ~9 lines); a plain
+    // character count would wrongly call it "short" and load the whole rest onto the same column.
+    const bulleted = { uk: 'x\ny\nz\nx\ny\nz\nx\ny\nz' };
+    const plain = { uk: 'p'.repeat(90) };
+    const charsPerLine = 10;
+    const [, rightWithoutAwareness] = splitParagraphsIntoColumns([bulleted, plain], 'uk');
+    expect(rightWithoutAwareness).toEqual([]); // bulleted (17 raw chars) "looks" tiny next to 90 chars of plain text
+    const [leftAware, rightAware] = splitParagraphsIntoColumns([bulleted, plain], 'uk', charsPerLine);
+    expect(leftAware).toEqual([bulleted]);
+    expect(rightAware).toEqual([plain]);
   });
 });
 

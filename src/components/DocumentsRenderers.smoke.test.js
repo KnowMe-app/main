@@ -127,7 +127,7 @@ describe('Documents DOCX builder (real docx Packer)', () => {
       logo: null,
       title: { uk: 'Тест', en: 'Test' },
       paragraphs: [
-        { type: 'text', uk: 'Звичайний **жирний** та _курсивний_ текст.', en: 'Plain **bold** and _italic_ text.' },
+        { type: 'text', uk: 'Звичайний **жирний** та *курсивний* текст.', en: 'Plain **bold** and *italic* text.' },
       ],
     };
     const blob = await buildDocumentsDocx({ documents: [doc], layout: 'one-column-uk' });
@@ -173,8 +173,8 @@ describe('Documents PDF renderer - single-language 2-column layout + divider + i
       title: { uk: 'Тестовий договір', en: 'Test agreement' },
       paragraphs: Array.from({ length: 6 }, (_, i) => ({
         type: 'text',
-        uk: `Пункт ${i + 1} з **жирним** та _курсивним_ текстом всередині одного речення.`,
-        en: `Clause ${i + 1} with **bold** and _italic_ text.`,
+        uk: `Пункт ${i + 1} з **жирним** та *курсивним* текстом всередині одного речення.`,
+        en: `Clause ${i + 1} with **bold** and *italic* text.`,
       })),
     };
 

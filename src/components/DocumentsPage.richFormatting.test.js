@@ -107,6 +107,6 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
 
     await waitFor(() => expect(set).toHaveBeenCalled());
     const [, payload] = set.mock.calls[set.mock.calls.length - 1];
-    expect(payload.paragraphs[0].uk).toBe('Звичайний _текст_ без форматування.');
+    expect(payload.paragraphs[0].uk).toBe('Звичайний *текст* без форматування.');
   });
 });

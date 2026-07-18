@@ -16,6 +16,7 @@ import designTokens from '../data/designTokens.json';
 import {
   DEFAULT_DOC_FORMATTING,
   allowsParagraphInternalBreak,
+  estimateCharsPerLine,
   estimateColumnPageCapacity,
   getClinicLogo,
   getLayoutLang,
@@ -152,8 +153,8 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
 // groups, each stacked in its own column. That is an approximation of true reflow (a single very
 // long paragraph can't itself be split across the columns), the same atomic-paragraph limit the
 // bilingual layout already lives with.
-const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos }) => {
-  const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang);
+const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos, charsPerLine }) => {
+  const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang, charsPerLine);
   const renderColumn = columnParagraphs => columnParagraphs.map((paragraph, index) => (
     // eslint-disable-next-line react/no-array-index-key
     <View key={index} wrap>
@@ -252,30 +253,24 @@ const PageDivider = ({ show, marginTop, marginBottom, left }) => (!show ? null :
   />
 ));
 
-// `staticPageInfo` (a known { number, total } pair) is used by the single-language 2-column
-// layout's manually pre-chunked pages (splitParagraphsIntoPages) - each is its own separate <Page>
-// JSX element, so react-pdf's per-element subPageNumber/subPageTotalPages render callback would
-// only ever see "1 of 1" for each and never show a number at all. Every other layout keeps the
-// original dynamic callback, since it's still one <Page> JSX element free to auto-wrap.
-const PageFooter = ({ formatting, marginBottom, marginLeft, marginRight, staticPageInfo }) => {
+// Every layout (including the single-language 2-column flow's manually pre-chunked page groups,
+// see renderSingleLanguagePages) is exactly one <Page> JSX element per document, so
+// subPageNumber/subPageTotalPages always reflects every actual physical page that document ends
+// up spanning - including any accidental extra page from an imperfect capacity estimate - never a
+// hardcoded number that can desync from what react-pdf actually laid out.
+const PageFooter = ({ formatting, marginBottom, marginLeft, marginRight }) => {
   if (!formatting.footerText && !formatting.showPageNumbers) return null;
   const smallSize = Math.max(7, formatting.fontSize - 2);
   return (
     <View fixed style={[styles.footerRow, { bottom: Math.max(6, marginBottom * 0.35), left: marginLeft, right: marginRight }]}>
       <Text style={{ fontSize: smallSize }}>{formatting.footerText || ''}</Text>
       {formatting.showPageNumbers ? (
-        staticPageInfo ? (
-          <Text style={{ fontSize: smallSize }}>
-            {staticPageInfo.total > 1 ? `Page ${staticPageInfo.number} of ${staticPageInfo.total}` : ''}
-          </Text>
-        ) : (
-          <Text
-            style={{ fontSize: smallSize }}
-            render={({ subPageNumber, subPageTotalPages }) => (
-              subPageTotalPages > 1 ? `Page ${subPageNumber} of ${subPageTotalPages}` : ''
-            )}
-          />
-        )
+        <Text
+          style={{ fontSize: smallSize }}
+          render={({ subPageNumber, subPageTotalPages }) => (
+            subPageTotalPages > 1 ? `Page ${subPageNumber} of ${subPageTotalPages}` : ''
+          )}
+        />
       ) : null}
     </View>
   );
@@ -361,49 +356,60 @@ const DocumentsPdfDocument = ({
   const lang = getLayoutLang(layout);
 
   // The single-language 2-column layout can't rely on react-pdf's automatic wrap the way every
-  // other layout does (see splitParagraphsIntoPages for why) - it's pre-chunked into page-sized
-  // paragraph groups up front, each becoming its own explicit <Page> with the logo/title only on
-  // the first one and a statically-known "Page X of Y" footer.
+  // other layout does (see splitParagraphsIntoPages for why): a flex row's two columns can't
+  // continue onto a shared next page independently, so the paragraphs are pre-chunked into
+  // page-sized groups up front, each meant to occupy exactly one physical page. That grouping used
+  // to render as its own separate <Page> JSX element per group, with a hardcoded "Page X of Y"
+  // footer - but the character-count capacity estimate is only ever approximate (it has no way to
+  // know about e.g. a paragraph's embedded line breaks), so a page-group that's underestimated
+  // still occasionally overflows past its one physical page. When that happened, react-pdf would
+  // silently continue that SAME <Page> element onto an extra physical page to hold the overflow,
+  // and since the footer was a hardcoded per-element constant, that phantom extra page repeated
+  // the exact same "Page X of Y" as the page before it - a near-blank page with a duplicate number.
+  // Rendering one <Page> for the WHOLE document instead, with a manual `break` before every group
+  // after the first, keeps the same one-page-per-group layout in the normal case while letting
+  // react-pdf's own dynamic subPageNumber/subPageTotalPages count every actual physical page -
+  // including any accidental extra overflow page - so numbering can never desync from reality.
   const renderSingleLanguagePages = doc => {
     const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed');
     const pageContentHeightPt = A4_HEIGHT_PT - marginTop - marginBottom;
+    const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
     const capacity = estimateColumnPageCapacity({
       columnWidthPt: columnContentWidth,
       pageContentHeightPt,
       fontSize: formatting.fontSize,
       lineSpacing: formatting.lineSpacing,
     });
-    const pageGroups = splitParagraphsIntoPages(bodyParagraphs, lang, capacity);
-    return pageGroups.map((pageParagraphs, pageIndex) => (
-      // eslint-disable-next-line react/no-array-index-key
-      <Page key={`${doc.id}-page-${pageIndex}`} size="A4" style={pageStyle}>
+    const pageGroups = splitParagraphsIntoPages(bodyParagraphs, lang, capacity, charsPerLine);
+    return (
+      <Page key={doc.id} size="A4" style={pageStyle}>
         <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
         <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
-        {pageIndex === 0 ? (
-          <>
-            {doc.logo ? (
-              <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
+        {pageGroups.map((pageParagraphs, pageIndex) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <View key={pageIndex} break={pageIndex > 0}>
+            {pageIndex === 0 ? (
+              <>
+                {doc.logo ? (
+                  <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
+                ) : null}
+                <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
+              </>
             ) : null}
-            <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
-          </>
-        ) : null}
-        <SingleLanguageColumns
-          paragraphs={pageParagraphs}
-          lang={lang}
-          cellStyles={cellStyles}
-          allowPageBreaks={doc.allowPageBreaks}
-          logoWidth={logoWidth}
-          clinicLogos={effectiveClinicLogos}
-        />
-        <PageFooter
-          formatting={formatting}
-          marginBottom={marginBottom}
-          marginLeft={marginLeft}
-          marginRight={marginRight}
-          staticPageInfo={{ number: pageIndex + 1, total: pageGroups.length }}
-        />
+            <SingleLanguageColumns
+              paragraphs={pageParagraphs}
+              lang={lang}
+              cellStyles={cellStyles}
+              allowPageBreaks={doc.allowPageBreaks}
+              logoWidth={logoWidth}
+              clinicLogos={effectiveClinicLogos}
+              charsPerLine={charsPerLine}
+            />
+          </View>
+        ))}
+        <PageFooter formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
       </Page>
-    ));
+    );
   };
 
   const renderDocumentPage = doc => (

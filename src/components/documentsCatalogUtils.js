@@ -599,12 +599,16 @@ export const orderCasesByRecent = (cases, recentCaseIds) => orderRecordsByRecent
 export const upsertRecentCaseId = (recentCaseIds, caseId) => upsertRecentId(recentCaseIds, caseId);
 
 // --- Inline text formatting (bold/italic on a selected fragment, batch 13 §1) ----------------
-// Storage convention: `**` toggles bold and `_` toggles italic, scanned left-to-right as
+// Storage convention: `**` toggles bold and a lone `*` toggles italic, scanned left-to-right as
 // independent on/off flags (not matched pairs like Markdown) - simple to parse, trivial to
 // hand-edit in Template mode, and carries through unambiguously to both the PDF and DOCX runs.
+// Italic used to be a bare `_`, but real document text is full of underscore runs used as blank
+// fill-in lines ("«___»_______ 2026 р."), and every one of those was silently being parsed as an
+// italic toggle - eating the underscores themselves in Data mode's de-markup'd view. `*` doesn't
+// collide with real prose the same way.
 
 const BOLD_MARKER = '**';
-const ITALIC_MARKER = '_';
+const ITALIC_MARKER = '*';
 
 // Raw markup string -> ordered runs of { text, bold, italic }. Every character belongs to exactly
 // one run; consecutive runs never share the same bold/italic pair (kept minimal for serialization).
@@ -625,7 +629,7 @@ export const parseFormattedRuns = text => {
       i += 1;
       continue;
     }
-    if (str[i] === '_') {
+    if (str[i] === '*') {
       flush();
       italic = !italic;
       continue;
@@ -795,13 +799,56 @@ export const getLayoutColumnCount = layout => (isBilingualLayout(layout) || isSi
 // layout, which always shows both.
 export const getLayoutLang = layout => (layout === 'one-column-en' || layout === 'two-column-en' ? 'en' : 'uk');
 
+// Rough per-page-per-column character capacity for the single-language 2-column layout's manual
+// pagination (splitParagraphsIntoPages below). react-pdf has no native multi-column text flow: a
+// flex row's two columns can't independently continue onto a shared next page, so once a page's
+// content is taller than the page, the shorter column just ends while the taller one keeps going
+// alone onto the next physical page - a whole extra page with one empty-looking column. Chunking
+// paragraphs into page-sized groups up front (each safely under one page's two-column capacity)
+// avoids that - PROVIDED the estimate stays conservative: word-wrapped justified text never packs
+// as tightly as a bare characters-per-line division assumes (wrapping only ever breaks at a word
+// boundary, so most lines end short of the full column width), and if a page-group is even
+// slightly over-budget, react-pdf's own automatic overflow just continues that page onto an extra
+// physical page (see DocumentsPdfDocument's renderSingleLanguagePages - it's one <Page> per
+// document with manual `break`s, so an extra page here still gets correctly numbered rather than
+// duplicating the page before it). SAFETY_FACTOR knowingly underfills every page rather than risk
+// a column overflowing alone onto its own near-empty extra page.
+const AVG_CHAR_WIDTH_EM = 0.5;
+const SAFETY_FACTOR = 0.75;
+
+export const estimateCharsPerLine = ({ columnWidthPt, fontSize }) => Math.max(1, Math.floor(columnWidthPt / (fontSize * AVG_CHAR_WIDTH_EM)));
+
+export const estimateColumnPageCapacity = ({ columnWidthPt, pageContentHeightPt, fontSize, lineSpacing }) => {
+  const charsPerLine = estimateCharsPerLine({ columnWidthPt, fontSize });
+  const lineHeightPt = fontSize * lineSpacing;
+  const linesPerColumn = Math.max(1, Math.floor(pageContentHeightPt / lineHeightPt));
+  return Math.max(1, Math.floor(charsPerLine * linesPerColumn * SAFETY_FACTOR));
+};
+
+// Approximates a paragraph's rendered vertical cost as an equivalent character count. Plain
+// wrapped text costs its own length, but a paragraph authored with embedded newlines (e.g.
+// dash-prefixed sub-items as manual line breaks within one paragraph, rather than separate
+// paragraph entries) forces a hard line break regardless of how much of the line width the text
+// before it actually used - counting raw characters alone badly underestimates how tall these
+// paragraphs render, which was throwing off both the page-capacity chunking and the column
+// balance below for real contract text full of numbered/bulleted sub-clauses. charsPerLine (when
+// known) costs each newline-delimited segment by its own real line count instead; omitted, this
+// falls back to plain character length (the original, newline-blind behavior).
+export const estimateParagraphChars = (paragraph, lang, charsPerLine = Infinity) => {
+  if (paragraph?.type && paragraph.type !== 'text') return 0;
+  const text = String(paragraph?.[lang] || '');
+  if (!Number.isFinite(charsPerLine) || charsPerLine <= 0) return text.length;
+  const lines = text.split('\n').reduce((sum, segment) => sum + Math.max(1, Math.ceil(segment.length / charsPerLine)), 0);
+  return lines * charsPerLine;
+};
+
 // Splits one document's paragraphs into two newspaper-style columns for the single-language
 // 2-column layout: whole paragraphs (never split mid-paragraph, same atomic-block granularity the
 // bilingual layout already uses) are handed to the left column until it holds roughly half the
-// total character count of `lang`, the rest goes to the right column.
-export const splitParagraphsIntoColumns = (paragraphs, lang) => {
+// total estimated cost of `lang` (see estimateParagraphChars), the rest goes to the right column.
+export const splitParagraphsIntoColumns = (paragraphs, lang, charsPerLine = Infinity) => {
   const items = paragraphs || [];
-  const lengthOf = paragraph => (paragraph?.type && paragraph.type !== 'text' ? 0 : String(paragraph?.[lang] || '').length);
+  const lengthOf = paragraph => estimateParagraphChars(paragraph, lang, charsPerLine);
   const totalLength = items.reduce((sum, paragraph) => sum + lengthOf(paragraph), 0);
   const target = totalLength / 2;
   let running = 0;
@@ -816,45 +863,18 @@ export const splitParagraphsIntoColumns = (paragraphs, lang) => {
   return [items.slice(0, splitIndex), items.slice(splitIndex)];
 };
 
-// Rough per-page-per-column character capacity for the single-language 2-column layout's manual
-// pagination (splitParagraphsIntoPages below). react-pdf has no native multi-column text flow: a
-// flex row's two columns can't independently continue onto a shared next page, so once a page's
-// content is taller than the page, the shorter column just ends while the taller one keeps going
-// alone onto the next physical page - a whole extra page with one empty-looking column. Chunking
-// paragraphs into page-sized groups up front (each safely under one page's two-column capacity)
-// avoids that - PROVIDED the estimate stays conservative: word-wrapped justified text never packs
-// as tightly as a bare characters-per-line division assumes (wrapping only ever breaks at a word
-// boundary, so most lines end short of the full column width), and if a page-group is even
-// slightly over-budget, react-pdf's own automatic overflow kicks in on that single manually-created
-// <Page> element and reproduces the exact bug this exists to prevent (plus a wrong, statically
-// hardcoded "Page X of Y" on the resulting extra physical page). SAFETY_FACTOR knowingly
-// underfills every page rather than risk that.
-const AVG_CHAR_WIDTH_EM = 0.5;
-const SAFETY_FACTOR = 0.75;
-
-export const estimateColumnPageCapacity = ({ columnWidthPt, pageContentHeightPt, fontSize, lineSpacing }) => {
-  const charsPerLine = Math.max(1, Math.floor(columnWidthPt / (fontSize * AVG_CHAR_WIDTH_EM)));
-  const lineHeightPt = fontSize * lineSpacing;
-  const linesPerColumn = Math.max(1, Math.floor(pageContentHeightPt / lineHeightPt));
-  return Math.max(1, Math.floor(charsPerLine * linesPerColumn * SAFETY_FACTOR));
-};
-
-const estimateParagraphChars = (paragraph, lang) => (paragraph?.type && paragraph.type !== 'text'
-  ? 0
-  : String(paragraph?.[lang] || '').length);
-
 // Groups paragraphs into page-sized chunks: each chunk's combined estimated character count stays
 // within one page's two-column capacity (columnCharCapacity is per column; a page holds two), so
 // every chunk can safely render as its own page with a same-page-only left/right split (see
 // splitParagraphsIntoColumns) instead of letting one column spill onto the next physical page while
 // its sibling sits empty.
-export const splitParagraphsIntoPages = (paragraphs, lang, columnCharCapacity) => {
+export const splitParagraphsIntoPages = (paragraphs, lang, columnCharCapacity, charsPerLine = Infinity) => {
   const perPageCapacity = Math.max(1, columnCharCapacity) * 2;
   const pages = [];
   let current = [];
   let currentChars = 0;
   (paragraphs || []).forEach(paragraph => {
-    const chars = estimateParagraphChars(paragraph, lang);
+    const chars = estimateParagraphChars(paragraph, lang, charsPerLine);
     if (current.length && currentChars + chars > perPageCapacity) {
       pages.push(current);
       current = [];
