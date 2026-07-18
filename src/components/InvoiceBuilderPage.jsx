@@ -311,6 +311,7 @@ const Panel = styled.section`
 const PanelHeading = styled.div`
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 6px;
@@ -3891,7 +3892,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <Panel>
               <PanelHeading>
                 <H2>Package & PDF components</H2>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
                   <SmallButton
                     type="button"
                     onClick={saveServicesForPayer}
