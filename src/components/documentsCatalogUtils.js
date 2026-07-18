@@ -811,10 +811,14 @@ export const getLayoutLang = layout => (layout === 'one-column-en' || layout ===
 // slightly over-budget, react-pdf's own automatic overflow just continues that page onto an extra
 // physical page (see DocumentsPdfDocument's renderSingleLanguagePages - it's one <Page> per
 // document with manual `break`s, so an extra page here still gets correctly numbered rather than
-// duplicating the page before it). SAFETY_FACTOR knowingly underfills every page rather than risk
-// a column overflowing alone onto its own near-empty extra page.
+// duplicating the page before it) - an occasional under-filled or overflowing page is a much
+// cheaper mistake now than it used to be, since it can no longer desync the page numbering. That's
+// what SAFETY_FACTOR trades against: too low and pages look conspicuously half-empty (the original
+// complaint), too high and more pages need that graceful-overflow fallback. 0.92 was picked by
+// rendering a real multi-page contract (numbered clauses, the actual density this layout is used
+// for) at several factors and comparing page fullness against overflow risk.
 const AVG_CHAR_WIDTH_EM = 0.5;
-const SAFETY_FACTOR = 0.75;
+const SAFETY_FACTOR = 0.92;
 
 export const estimateCharsPerLine = ({ columnWidthPt, fontSize }) => Math.max(1, Math.floor(columnWidthPt / (fontSize * AVG_CHAR_WIDTH_EM)));
 
