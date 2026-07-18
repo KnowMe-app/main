@@ -5,6 +5,7 @@ import InvoiceBuilderPage from './InvoiceBuilderPage';
 import { fetchNbuUahExchangeRatesByDate } from './config';
 import { get, set } from 'firebase/database';
 import expectedExpensesSeed from '../data/expectedExpensesSeed.json';
+import { applyPaymentPurposePlaceholders, generateInvoiceIdentifiers, getTodayYmd } from './invoiceCatalogUtils';
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -572,6 +573,53 @@ describe('InvoiceBuilderPage', () => {
     expect(container.querySelector('textarea[placeholder="Title"]')).toBeTruthy();
     expect(container.querySelector('textarea[placeholder="IBAN"]')).toBeTruthy();
     expect(container.querySelector('textarea[placeholder="Name"]')).toBeTruthy();
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // Unification with documentsBuilder's Template/Data toggle: the beneficiary's payment-purpose
+  // template (with {{invoiceNumber}}/{{invoiceDate}} placeholders) can be viewed either as the raw
+  // template being edited, or as a live preview of what it currently resolves to - without needing
+  // a separate "Purpose of the payment" field elsewhere (that field was removed from Summary).
+  it('switches the payment purpose field between the raw template and its resolved preview', async () => {
+    const root = mount();
+    await flush();
+
+    const beneficiaryToggle = Array.from(container.querySelectorAll('[role="button"]')).find(el => el.textContent.includes('Beneficiary'));
+    await act(async () => { beneficiaryToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    const purposeField = container.querySelector('textarea[aria-label="Payment purpose"]');
+    expect(purposeField).toBeTruthy();
+    const template = 'Payment for invoice {{invoiceNumber}} dated {{invoiceDate}}.';
+    await act(async () => {
+      purposeField.focus();
+      setFieldValue(purposeField, template);
+      purposeField.blur();
+    });
+    await flush();
+
+    // Template mode (the default) shows the raw placeholders, unresolved.
+    expect(container.querySelector('textarea[aria-label="Payment purpose"]').value).toBe(template);
+    expect(container.querySelector('[aria-label="Payment purpose (resolved preview)"]')).toBeNull();
+
+    const dataToggle = findButton('Data', true);
+    expect(dataToggle).toBeTruthy();
+    await act(async () => { dataToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+
+    // Data mode shows the resolved preview instead of the editable template field.
+    expect(container.querySelector('textarea[aria-label="Payment purpose"]')).toBeNull();
+    const preview = container.querySelector('[aria-label="Payment purpose (resolved preview)"]');
+    expect(preview).toBeTruthy();
+    const { invoiceNumber, invoiceDate } = generateInvoiceIdentifiers(getTodayYmd());
+    expect(preview.textContent).toBe(applyPaymentPurposePlaceholders(template, { invoiceNumber, invoiceDate }));
+
+    // Switching back to Template restores the editable raw field with the same text.
+    const templateToggle = findButton('Template', true);
+    await act(async () => { templateToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    expect(container.querySelector('textarea[aria-label="Payment purpose"]').value).toBe(template);
 
     await act(async () => { root.unmount(); });
   });

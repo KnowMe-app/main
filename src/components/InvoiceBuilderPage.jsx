@@ -456,6 +456,45 @@ const StackedFieldHeader = styled.div`
   margin-bottom: 2px;
 `;
 
+// Raw template / resolved preview switch (documentsBuilder's own Template/Data toggle, unified
+// here) - lets the admin see the {{invoiceNumber}}/{{invoiceDate}} placeholders exactly as typed,
+// or what they currently resolve to, without needing a separate preview field elsewhere.
+const ModeToggleGroup = styled.div`
+  display: inline-flex;
+  border: 1px solid var(--km-border);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+`;
+
+const ModeToggleOption = styled.button`
+  border: none;
+  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'transparent')};
+  color: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-text)')};
+  padding: 4px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+
+  & + & {
+    border-left: 1px solid var(--km-border);
+  }
+`;
+
+// The resolved-preview side of the toggle - read-only (the template in Template mode is the only
+// place this is edited), styled a step quieter than the editable textarea so it reads as a preview.
+const PurposePreview = styled.div`
+  width: 100%;
+  min-height: 1.4em;
+  padding: 4px 2px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--km-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+`;
+
 // One shared line-height every element of a row (index number, name, price, % sign, EUR chip,
 // arrows, trash icon) aligns to - the single-baseline rule of design-tasks §1. Everything below
 // that sits on a row either uses this line-height directly or centers itself inside it.
@@ -1990,6 +2029,10 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   const [customPlanPackagePrice, setCustomPlanPackagePrice] = useState('');
   const [customScheduleRows, setCustomScheduleRows] = useState([{ title: '', amount: '' }]);
   const [beneficiaryExpanded, setBeneficiaryExpanded] = useState(false);
+  // Raw template vs resolved-preview switch for the beneficiary's payment purpose (documentsBuilder's
+  // Template/Data toggle, unified here) - 'template' edits the raw {{invoiceNumber}}/{{invoiceDate}}
+  // text, 'data' previews what it currently resolves to.
+  const [paymentPurposeViewMode, setPaymentPurposeViewMode] = useState('template');
   const [payerExpanded, setPayerExpanded] = useState(false);
   const [issuedInvoicesOpen, setIssuedInvoicesOpen] = useState(false);
   // Batch 12 §1: a lighter version of the Documents Builder's Format panel - spacing between
@@ -3617,15 +3660,41 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                         />
                       </StackedFieldRow>
                       <StackedFieldRow>
-                        <AutoTextArea
-                          $bare
-                          style={{ width: '100%' }}
-                          value={activeBeneficiary.paymentPurpose || ''}
-                          placeholder="Payment purpose - {{invoiceNumber}} and {{invoiceDate}} are filled in automatically"
-                          aria-label="Payment purpose"
-                          onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
-                          onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
-                        />
+                        <StackedFieldHeader>
+                          <ModeToggleGroup>
+                            <ModeToggleOption
+                              type="button"
+                              $active={paymentPurposeViewMode === 'template'}
+                              onClick={() => setPaymentPurposeViewMode('template')}
+                              title="Edit the raw template, with {{invoiceNumber}}/{{invoiceDate}} placeholders"
+                            >
+                              Template
+                            </ModeToggleOption>
+                            <ModeToggleOption
+                              type="button"
+                              $active={paymentPurposeViewMode === 'data'}
+                              onClick={() => setPaymentPurposeViewMode('data')}
+                              title="Preview what the placeholders currently resolve to"
+                            >
+                              Data
+                            </ModeToggleOption>
+                          </ModeToggleGroup>
+                        </StackedFieldHeader>
+                        {paymentPurposeViewMode === 'template' ? (
+                          <AutoTextArea
+                            $bare
+                            style={{ width: '100%' }}
+                            value={activeBeneficiary.paymentPurpose || ''}
+                            placeholder="Payment purpose - {{invoiceNumber}} and {{invoiceDate}} are filled in automatically"
+                            aria-label="Payment purpose"
+                            onChange={event => updateActiveBeneficiaryField('paymentPurpose', event.target.value)}
+                            onBlur={event => persistActiveBeneficiaryField('paymentPurpose', event.target.value)}
+                          />
+                        ) : (
+                          <PurposePreview aria-label="Payment purpose (resolved preview)">
+                            {purposeOfPayment || 'Nothing to preview yet - write a payment purpose template first.'}
+                          </PurposePreview>
+                        )}
                       </StackedFieldRow>
                     </>
                   ) : null}
