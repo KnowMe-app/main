@@ -118,5 +118,87 @@ describe('Documents DOCX builder (real docx Packer)', () => {
     });
     expect(blob.size).toBeGreaterThan(500);
   }, 20000);
+
+  it('renders a selection-formatted bold/italic run as real DOCX bold/italic, not a whole-paragraph flag', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = {
+      id: 'formatted-doc',
+      allowPageBreaks: false,
+      logo: null,
+      title: { uk: 'Тест', en: 'Test' },
+      paragraphs: [
+        { type: 'text', uk: 'Звичайний **жирний** та _курсивний_ текст.', en: 'Plain **bold** and _italic_ text.' },
+      ],
+    };
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'one-column-uk' });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const xml = await zip.file('word/document.xml').async('string');
+    // The raw markup characters must never leak into the exported text...
+    expect(xml).not.toContain('**');
+    expect(xml).not.toContain('жирним*');
+    // ...and the bolded/italicized fragments must carry real <w:b/>/<w:i/> runs, not a paragraph-wide flag.
+    expect(xml).toMatch(/<w:b\/>[\s\S]*?<w:t[^>]*>жирний<\/w:t>/);
+    expect(xml).toMatch(/<w:i\/>[\s\S]*?<w:t[^>]*>курсивний<\/w:t>/);
+  }, 20000);
+});
+
+describe('Documents PDF renderer - single-language 2-column layout + divider + inline formatting (batch 13 §1/§3/§4)', () => {
+  it('renders two-column-uk with a divider and distinct bold/italic font resources, without throwing', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    const { DEFAULT_DOC_FORMATTING } = await import('./documentsCatalogUtils');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+        { src: toDataUri('Tinos-Italic.ttf'), fontWeight: 400, fontStyle: 'italic' },
+        { src: toDataUri('Tinos-BoldItalic.ttf'), fontWeight: 700, fontStyle: 'italic' },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+
+    const doc = {
+      id: 'formatted-doc',
+      allowPageBreaks: true,
+      logo: null,
+      title: { uk: 'Тестовий договір', en: 'Test agreement' },
+      paragraphs: Array.from({ length: 6 }, (_, i) => ({
+        type: 'text',
+        uk: `Пункт ${i + 1} з **жирним** та _курсивним_ текстом всередині одного речення.`,
+        en: `Clause ${i + 1} with **bold** and _italic_ text.`,
+      })),
+    };
+
+    const element = React.createElement(DocumentsPdfDocument, {
+      documents: [doc],
+      layout: 'two-column-uk',
+      formatting: { ...DEFAULT_DOC_FORMATTING, columnDivider: true },
+      clinicLogos: [],
+    });
+    const buffer = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    const out = Buffer.concat(chunks);
+    expect(out.length).toBeGreaterThan(1000);
+    // Regression guard for the @react-pdf/layout font-substitution bug (patches/@react-pdf+layout+*.patch):
+    // an inline bold/italic fragment sharing the same glyph coverage as the surrounding regular text
+    // must still embed its own distinct font resource, not silently reuse the previous run's font.
+    const baseFonts = new Set([...out.toString('latin1').matchAll(/\/BaseFont\s*\/([A-Za-z0-9+-]+)/g)].map(m => m[1]));
+    const distinctFamilies = new Set([...baseFonts].map(name => name.replace(/^[A-Z]{6}\+/, '')));
+    expect(distinctFamilies).toEqual(new Set(['Tinos-Regular', 'Tinos-Bold', 'Tinos-Italic']));
+  }, 30000);
 });
 

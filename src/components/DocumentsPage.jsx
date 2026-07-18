@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaBold, FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaPencilAlt, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaBold, FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaPencilAlt, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -24,6 +24,7 @@ import {
   DOCUMENT_LAYOUTS,
   PARTY_COLLECTIONS,
   applyLogoLayoutAssignment,
+  applyPlainTextEdit,
   buildCaseLabel,
   buildDocumentsFileName,
   buildGeneratedDocument,
@@ -31,11 +32,13 @@ import {
   clinicLogoEntriesToBackend,
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
+  diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   getClinicLogo,
+  getLayoutLang,
   getParagraphType,
   getTemplateLogoType,
-  isParagraphBold,
+  isBilingualLayout,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -43,10 +46,13 @@ import {
   orderCasesByRecent,
   orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
+  plainTextOf,
   pruneDocOverride,
   resolveCaseContext,
+  resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
   shiftDocOverrideParagraphIndices,
+  toggleInlineFormat,
   upsertRecentCaseId,
   upsertRecentId,
   validateDocumentTemplate,
@@ -196,16 +202,6 @@ const DangerButton = styled(SmallButton)`
     border-color: var(--km-danger);
     color: var(--km-danger);
   }
-`;
-
-// Highlighted while the paragraph currently renders bold (whether via auto-detection or an
-// explicit override), so the toggle's own state always matches what the exported document shows.
-const BoldToggleButton = styled(SmallButton)`
-  ${({ $active }) => ($active ? `
-    border-color: var(--km-accent);
-    color: var(--km-accent);
-    background: var(--km-accent-light);
-  ` : '')}
 `;
 
 const Section = styled.section`
@@ -550,6 +546,11 @@ const DocumentsPage = ({ isAdmin }) => {
   const [technicalInput, setTechnicalInput] = useState('');
   const [isApplyingTechnical, setIsApplyingTechnical] = useState(false);
   const [formattingOpen, setFormattingOpen] = useState(false);
+  // Per-document format overrides (spec §5): '' targets the shared default/favourite formatting
+  // (the existing behavior); a document id targets that document's own working draft, which is
+  // the reference formatting merged with whatever override it already has.
+  const [formatDocId, setFormatDocId] = useState('');
+  const [docFormatDraft, setDocFormatDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -811,32 +812,6 @@ const DocumentsPage = ({ isAdmin }) => {
     );
   };
 
-  // Auto-detection (isSectionHeading) can still be wrong for a case the admin spots visually -
-  // e.g. a numbered clause that happens to look heading-shaped. This sets an explicit override
-  // (true/false) directly on the paragraph, which always wins over auto-detection from then on.
-  // Persisted immediately, the same direct-write pattern as applyParagraphStructureChange (not the
-  // onChange/onBlur pattern used for text fields), since it's a single discrete click.
-  const handleToggleParagraphBold = async (docId, atIndex, nextBold) => {
-    const template = catalog.documents.find(item => String(item.id) === String(docId));
-    if (!template) return;
-    const nextTemplate = {
-      ...template,
-      paragraphs: (template.paragraphs || []).map((paragraph, index) => (
-        index === atIndex ? { ...paragraph, bold: nextBold } : paragraph
-      )),
-    };
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (boldError) {
-      console.error('Unable to update the paragraph bold override', boldError);
-      toast.error('Could not save the bold change.');
-    }
-  };
-
   const persistTemplate = async docId => {
     if (!dirtyDocIds[docId]) return;
     const template = catalog.documents.find(item => String(item.id) === String(docId));
@@ -929,6 +904,72 @@ const DocumentsPage = ({ isAdmin }) => {
     } catch (saveError) {
       console.error('Unable to save document data edits', saveError);
       toast.error('Could not save the data edits.');
+    }
+  };
+
+  // --- Selection-based bold/italic (spec §1) -----------------------------------------------------
+  // The Bold/Italic toolbar buttons act on whichever paragraph field currently holds the browser
+  // text selection - tracked here rather than passed as props, since a toolbar click always blurs
+  // the field first (selectionStart/End survive that, but focus itself moves to the button).
+
+  const fieldNodesRef = useRef({});
+  const activeFieldRef = useRef(null);
+  const fieldKey = (docId, index, langKey) => `${docId}#${index}#${langKey}`;
+  const registerFieldNode = (docId, index, langKey) => node => {
+    fieldNodesRef.current[fieldKey(docId, index, langKey)] = node;
+  };
+  const handleRichFieldFocus = (docId, index, langKey) => () => {
+    activeFieldRef.current = { docId, index, langKey };
+  };
+
+  // Persisted immediately (direct write), the same pattern applyParagraphStructureChange uses for
+  // a discrete click - waiting for the field's own onBlur would miss this, since the toolbar
+  // button click already blurred the field before this handler runs.
+  const handleApplyInlineFormat = async attr => {
+    const active = activeFieldRef.current;
+    if (!active || !selectedCaseId) return;
+    const node = fieldNodesRef.current[fieldKey(active.docId, active.index, active.langKey)];
+    if (!node) return;
+    const start = node.selectionStart;
+    const end = node.selectionEnd;
+    if (start === end) {
+      toast.error('Select some text first.');
+      return;
+    }
+    const { docId, index, langKey } = active;
+    const caseRecord = catalog.parties.cases.find(item => String(item.id) === selectedCaseId);
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!caseRecord || !template) return;
+    const baseline = buildGeneratedDocument(template, resolveCaseContext(catalog, selectedCaseId));
+    const currentOverride = caseRecord.docOverrides?.[docId] || {};
+    const currentRaw = currentOverride.paragraphs?.[index]?.[langKey] ?? baseline.paragraphs[index]?.[langKey] ?? '';
+    const nextRaw = toggleInlineFormat(currentRaw, start, end, attr);
+    const nextOverride = {
+      ...currentOverride,
+      paragraphs: {
+        ...(currentOverride.paragraphs || {}),
+        [index]: { ...(currentOverride.paragraphs?.[index] || {}), [langKey]: nextRaw },
+      },
+    };
+    const pruned = pruneDocOverride(nextOverride, baseline);
+    try {
+      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}/docOverrides/${docId}`), pruned);
+      setCatalog(previous => ({
+        ...previous,
+        parties: {
+          ...previous.parties,
+          cases: previous.parties.cases.map(item => {
+            if (String(item.id) !== String(caseRecord.id)) return item;
+            const docOverrides = { ...(item.docOverrides || {}) };
+            if (pruned) docOverrides[docId] = pruned;
+            else delete docOverrides[docId];
+            return { ...item, docOverrides: Object.keys(docOverrides).length ? docOverrides : undefined };
+          }),
+        },
+      }));
+    } catch (formatError) {
+      console.error('Unable to save the inline formatting change', formatError);
+      toast.error('Could not save the formatting change.');
     }
   };
 
@@ -1104,7 +1145,21 @@ const DocumentsPage = ({ isAdmin }) => {
     }
   };
 
-  // --- Formatting favourites --------------------------------------------------------------------
+  // --- Formatting favourites + per-document overrides (spec §5) ---------------------------------
+
+  // The formatting values currently shown/edited in the panel: the shared defaults, or (when a
+  // specific document is targeted) that document's own working draft.
+  const activeFormatting = formatDocId ? (docFormatDraft || formatting) : formatting;
+
+  const handleFormatDocChange = nextDocId => {
+    setFormatDocId(nextDocId);
+    if (!nextDocId) {
+      setDocFormatDraft(null);
+      return;
+    }
+    const template = catalog.documents.find(item => String(item.id) === nextDocId);
+    setDocFormatDraft(resolveEffectiveDocFormatting(formatting, template?.format));
+  };
 
   const handleSaveFavouriteFormatting = async () => {
     const normalized = normalizeDocFormatting(formatting);
@@ -1113,8 +1168,44 @@ const DocumentsPage = ({ isAdmin }) => {
     if (saved) toast.success('Favourite formatting saved to the backend.');
   };
 
+  // Writes only the values that differ from the shared defaults into that document's `format`
+  // field - a value dialed back to match the default drops out of the overrides instead of
+  // persisting a redundant copy (spec §5).
+  const handleSaveDocFormatOverride = async () => {
+    const template = catalog.documents.find(item => String(item.id) === formatDocId);
+    if (!template) return;
+    const normalizedDraft = normalizeDocFormatting(docFormatDraft || formatting);
+    const overrides = diffDocFormattingOverrides(formatting, normalizedDraft);
+    const nextTemplate = { ...template };
+    if (Object.keys(overrides).length) nextTemplate.format = overrides;
+    else delete nextTemplate.format;
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${formatDocId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === formatDocId ? nextTemplate : item)),
+      }));
+      setDocFormatDraft(normalizedDraft);
+      toast.success('Format saved for this document.');
+    } catch (saveError) {
+      console.error('Unable to save the per-document format override', saveError);
+      toast.error('Could not save the format for this document.');
+    }
+  };
+
+  const handleSaveFormatting = () => (formatDocId ? handleSaveDocFormatOverride() : handleSaveFavouriteFormatting());
+
   const setFormattingField = (field, value) => {
-    setFormatting(previous => ({ ...previous, [field]: value }));
+    if (formatDocId) {
+      setDocFormatDraft(previous => ({ ...(previous || activeFormatting), [field]: value }));
+    } else {
+      setFormatting(previous => ({ ...previous, [field]: value }));
+    }
+  };
+
+  const resetActiveFormattingTo = source => {
+    if (formatDocId) setDocFormatDraft(source);
+    else setFormatting(source);
   };
 
   const numberField = (field, label, step = 1) => (
@@ -1123,9 +1214,9 @@ const DocumentsPage = ({ isAdmin }) => {
       <FieldInput
         type="number"
         step={step}
-        value={formatting[field]}
+        value={activeFormatting[field]}
         onChange={event => setFormattingField(field, event.target.value === '' ? '' : Number(event.target.value))}
-        onBlur={() => setFormatting(previous => normalizeDocFormatting(previous))}
+        onBlur={() => resetActiveFormattingTo(normalizeDocFormatting(activeFormatting))}
       />
     </Field>
   );
@@ -1243,9 +1334,12 @@ const DocumentsPage = ({ isAdmin }) => {
       context,
       selectedCase?.docOverrides?.[template.id],
     ));
+    // Each document renders with the shared defaults merged with its own format overrides (spec
+    // §5) - independent of whichever document (if any) the Format panel currently targets.
+    const formattingByDoc = selectedTemplates.map(template => resolveEffectiveDocFormatting(formatting, template.format));
     return {
       generated,
-      normalizedFormatting: normalizeDocFormatting(formatting),
+      formattingByDoc,
     };
   };
 
@@ -1285,7 +1379,7 @@ const DocumentsPage = ({ isAdmin }) => {
     if (!confirmUnresolvedVariables()) return;
     setIsGenerating(true);
     try {
-      const { generated, normalizedFormatting } = prepareGeneration();
+      const { generated, formattingByDoc } = prepareGeneration();
       const [{ pdf }, documentsModule] = await Promise.all([
         import('@react-pdf/renderer'),
         import('./DocumentsPdfDocument'),
@@ -1297,7 +1391,7 @@ const DocumentsPage = ({ isAdmin }) => {
         const blob = await pdf(React.createElement(DocumentsPdfDocument, {
           documents: [doc],
           layout,
-          formatting: normalizedFormatting,
+          formatting: formattingByDoc[index],
           clinicLogos,
         })).toBlob();
         saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'pdf', doc));
@@ -1318,14 +1412,14 @@ const DocumentsPage = ({ isAdmin }) => {
     if (!confirmUnresolvedVariables()) return;
     setIsGenerating(true);
     try {
-      const { generated, normalizedFormatting } = prepareGeneration();
+      const { generated, formattingByDoc } = prepareGeneration();
       const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
       for (let index = 0; index < generated.length; index += 1) {
         const doc = generated[index];
         const blob = await buildDocumentsDocx({
           documents: [doc],
           layout,
-          formatting: normalizedFormatting,
+          formatting: formattingByDoc[index],
           clinicLogos,
         });
         saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'docx', doc));
@@ -1456,10 +1550,11 @@ const DocumentsPage = ({ isAdmin }) => {
               {orderedDocuments.map(template => {
                 const isExpanded = expandedDocId === String(template.id);
                 const isDataMode = editMode === 'data';
-                // The builder view mirrors the selected layout mode (spec §1): both languages as
-                // grouped pairs in two-column mode, a single language otherwise.
-                const showUk = layout !== 'one-column-en';
-                const showEn = layout !== 'one-column-uk';
+                // The builder view mirrors the selected layout mode (spec §1/§4): both languages as
+                // grouped pairs in bilingual mode, a single language otherwise (1 or 2 columns).
+                const isBilingual = isBilingualLayout(layout);
+                const showUk = isBilingual || getLayoutLang(layout) === 'uk';
+                const showEn = isBilingual || getLayoutLang(layout) === 'en';
                 const isSingle = !(showUk && showEn);
                 const resolvedDoc = isExpanded && isDataMode
                   ? buildGeneratedDocument(template, caseContext, selectedCase?.docOverrides?.[template.id])
@@ -1474,15 +1569,26 @@ const DocumentsPage = ({ isAdmin }) => {
                     ? ((template.paragraphs || [])[0]?.uk || (template.paragraphs || [])[0]?.en || '')
                     : '');
                 const titleValue = langKey => (isDataMode ? resolvedDoc?.title?.[langKey] ?? '' : template.title?.[langKey] || '');
-                const paragraphValue = (paragraph, index, langKey) => (isDataMode
+                const rawParagraphValue = (paragraph, index, langKey) => (isDataMode
                   ? resolvedDoc?.paragraphs?.[index]?.[langKey] ?? ''
                   : paragraph?.[langKey] || '');
+                // Data mode shows/edits the de-markup'd plain text as the editing toolbar handles
+                // formatting (spec §2); Template mode shows the raw markup/encoding directly, so
+                // the admin can see and hand-edit exactly what is stored.
+                const paragraphValue = (paragraph, index, langKey) => (isDataMode
+                  ? plainTextOf(rawParagraphValue(paragraph, index, langKey))
+                  : rawParagraphValue(paragraph, index, langKey));
                 const onTitleChange = langKey => event => (isDataMode
                   ? handleDataTitleChange(template.id, langKey, event.target.value)
                   : handleTitleChange(template.id, langKey, event.target.value));
-                const onParagraphChange = (index, langKey) => event => (isDataMode
-                  ? handleDataParagraphChange(template.id, index, langKey, event.target.value)
-                  : handleParagraphChange(template.id, index, langKey, event.target.value));
+                const onParagraphChange = (paragraph, index, langKey) => event => {
+                  if (isDataMode) {
+                    const nextRaw = applyPlainTextEdit(rawParagraphValue(paragraph, index, langKey), event.target.value);
+                    handleDataParagraphChange(template.id, index, langKey, nextRaw);
+                  } else {
+                    handleParagraphChange(template.id, index, langKey, event.target.value);
+                  }
+                };
                 const onFieldBlur = () => (isDataMode ? persistDocOverride(template.id) : persistTemplate(template.id));
                 const dataEditLocked = isDataMode && !selectedCase;
                 return (
@@ -1551,51 +1657,41 @@ const DocumentsPage = ({ isAdmin }) => {
                         </ParagraphPair>
                         {(template.paragraphs || []).map((paragraph, index) => (
                           isDataMode ? (
-                            <ParagraphPair key={`${template.id}-p-${index}`} $single={isSingle}>
-                              {showUk ? (
-                                <AutoInlineTextarea
-                                  value={paragraphValue(paragraph, index, 'uk')}
-                                  placeholder="Paragraph (uk)"
-                                  readOnly={dataEditLocked}
-                                  onChange={onParagraphChange(index, 'uk')}
-                                  onBlur={onFieldBlur}
-                                />
-                              ) : null}
-                              {showEn ? (
-                                <AutoInlineTextarea
-                                  value={paragraphValue(paragraph, index, 'en')}
-                                  placeholder="Paragraph (en)"
-                                  readOnly={dataEditLocked}
-                                  onChange={onParagraphChange(index, 'en')}
-                                  onBlur={onFieldBlur}
-                                />
-                              ) : null}
-                            </ParagraphPair>
-                          ) : (
-                            // Boxed together so it's unambiguous which paragraph "Insert"/"Remove"
-                            // act on: both controls and the paragraph's own text live inside the
-                            // same visible border (spec: "щоб було зрозуміло ... до якого абзацу
-                            // відноситься").
+                            // Boxed together so it's unambiguous which paragraph the toolbar acts
+                            // on: the +/Bold/Italic/Delete controls and the paragraph's own text
+                            // live inside the same visible border.
                             <ParagraphEditorBlock key={`${template.id}-p-${index}`}>
                               <ParagraphControlsRow>
                                 <SmallButton
                                   type="button"
+                                  disabled={dataEditLocked}
                                   onClick={() => handleInsertParagraph(template.id, index)}
                                   title="Insert a new custom paragraph above this one"
                                 >
                                   <FaPlus /> Insert paragraph
                                 </SmallButton>
                                 <RowLine style={{ gap: 6 }}>
-                                  <BoldToggleButton
+                                  <SmallButton
                                     type="button"
-                                    $active={isParagraphBold(paragraph)}
-                                    onClick={() => handleToggleParagraphBold(template.id, index, !isParagraphBold(paragraph))}
-                                    title={isParagraphBold(paragraph) ? 'Remove bold from this paragraph' : 'Make this paragraph bold'}
+                                    disabled={dataEditLocked}
+                                    onMouseDown={event => event.preventDefault()}
+                                    onClick={() => handleApplyInlineFormat('bold')}
+                                    title="Bold the selected text"
                                   >
                                     <FaBold />
-                                  </BoldToggleButton>
+                                  </SmallButton>
+                                  <SmallButton
+                                    type="button"
+                                    disabled={dataEditLocked}
+                                    onMouseDown={event => event.preventDefault()}
+                                    onClick={() => handleApplyInlineFormat('italic')}
+                                    title="Italicize the selected text"
+                                  >
+                                    <FaItalic />
+                                  </SmallButton>
                                   <DangerButton
                                     type="button"
+                                    disabled={dataEditLocked}
                                     onClick={() => handleRemoveParagraph(template.id, index)}
                                     title="Remove this paragraph"
                                   >
@@ -1606,28 +1702,54 @@ const DocumentsPage = ({ isAdmin }) => {
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <AutoInlineTextarea
+                                    ref={registerFieldNode(template.id, index, 'uk')}
                                     value={paragraphValue(paragraph, index, 'uk')}
                                     placeholder="Paragraph (uk)"
-                                    onChange={onParagraphChange(index, 'uk')}
+                                    readOnly={dataEditLocked}
+                                    onFocus={handleRichFieldFocus(template.id, index, 'uk')}
+                                    onChange={onParagraphChange(paragraph, index, 'uk')}
                                     onBlur={onFieldBlur}
                                   />
                                 ) : null}
                                 {showEn ? (
                                   <AutoInlineTextarea
+                                    ref={registerFieldNode(template.id, index, 'en')}
                                     value={paragraphValue(paragraph, index, 'en')}
                                     placeholder="Paragraph (en)"
-                                    onChange={onParagraphChange(index, 'en')}
+                                    readOnly={dataEditLocked}
+                                    onFocus={handleRichFieldFocus(template.id, index, 'en')}
+                                    onChange={onParagraphChange(paragraph, index, 'en')}
                                     onBlur={onFieldBlur}
                                   />
                                 ) : null}
                               </ParagraphPair>
                             </ParagraphEditorBlock>
+                          ) : (
+                            <ParagraphPair key={`${template.id}-p-${index}`} $single={isSingle}>
+                              {showUk ? (
+                                <AutoInlineTextarea
+                                  value={paragraphValue(paragraph, index, 'uk')}
+                                  placeholder="Paragraph (uk)"
+                                  onChange={onParagraphChange(paragraph, index, 'uk')}
+                                  onBlur={onFieldBlur}
+                                />
+                              ) : null}
+                              {showEn ? (
+                                <AutoInlineTextarea
+                                  value={paragraphValue(paragraph, index, 'en')}
+                                  placeholder="Paragraph (en)"
+                                  onChange={onParagraphChange(paragraph, index, 'en')}
+                                  onBlur={onFieldBlur}
+                                />
+                              ) : null}
+                            </ParagraphPair>
                           )
                         ))}
-                        {!isDataMode ? (
+                        {isDataMode ? (
                           <ParagraphControlsRow style={{ justifyContent: 'flex-start' }}>
                             <SmallButton
                               type="button"
+                              disabled={dataEditLocked}
                               onClick={() => handleInsertParagraph(template.id, (template.paragraphs || []).length)}
                               title="Append a new custom paragraph at the end of the document"
                             >
@@ -1646,13 +1768,25 @@ const DocumentsPage = ({ isAdmin }) => {
               <SectionHead>
                 <SectionTitle>Format</SectionTitle>
                 <RowLine>
-                  <SmallButton type="button" onClick={handleSaveFavouriteFormatting} title="Save these values as the favourite (loaded on start)">
-                    <FaHeart /> Save favourite
+                  <SmallButton
+                    type="button"
+                    onClick={handleSaveFormatting}
+                    title={formatDocId ? 'Save these values as this document\'s format override' : 'Save these values as the favourite (loaded on start)'}
+                  >
+                    <FaHeart /> {formatDocId ? 'Save for this document' : 'Save favourite'}
                   </SmallButton>
-                  <SmallButton type="button" onClick={() => setFormatting(settings.formatting)} title="Back to the saved favourite values">
+                  <SmallButton
+                    type="button"
+                    onClick={() => resetActiveFormattingTo(settings.formatting)}
+                    title="Back to the saved favourite values"
+                  >
                     Favourite
                   </SmallButton>
-                  <SmallButton type="button" onClick={() => setFormatting(DEFAULT_DOC_FORMATTING)} title="Back to the reference-document defaults">
+                  <SmallButton
+                    type="button"
+                    onClick={() => resetActiveFormattingTo(formatDocId ? formatting : DEFAULT_DOC_FORMATTING)}
+                    title={formatDocId ? 'Back to the shared defaults - removes this document\'s overrides on save' : 'Back to the reference-document defaults'}
+                  >
                     Defaults
                   </SmallButton>
                   <SmallButton type="button" onClick={() => setFormattingOpen(previous => !previous)}>
@@ -1662,6 +1796,16 @@ const DocumentsPage = ({ isAdmin }) => {
               </SectionHead>
               {formattingOpen ? (
                 <>
+                  <RowLine style={{ marginTop: 8 }}>
+                    <Select value={formatDocId} onChange={event => handleFormatDocChange(event.target.value)}>
+                      <option value="">Format for: all documents (defaults)</option>
+                      {orderedDocuments.map(template => (
+                        <option key={template.id} value={String(template.id)}>
+                          Format for: {template.title?.uk || template.title?.en || template.id}
+                        </option>
+                      ))}
+                    </Select>
+                  </RowLine>
                   <RowLine style={{ marginTop: 10 }}>
                     {clinicLogos.length ? clinicLogos.map(variant => (
                       <LogoVariant key={variant.fileName} $muted={!variant.layout}>
@@ -1705,7 +1849,7 @@ const DocumentsPage = ({ isAdmin }) => {
                     <CheckLine>
                       <DocCheckbox
                         type="checkbox"
-                        checked={formatting.showLogo}
+                        checked={activeFormatting.showLogo}
                         onChange={event => setFormattingField('showLogo', event.target.checked)}
                       />
                       Show logo on documents
@@ -1729,7 +1873,7 @@ const DocumentsPage = ({ isAdmin }) => {
                       Header text
                       <FieldInput
                         type="text"
-                        value={formatting.headerText}
+                        value={activeFormatting.headerText}
                         onChange={event => setFormattingField('headerText', event.target.value)}
                       />
                     </Field>
@@ -1737,7 +1881,7 @@ const DocumentsPage = ({ isAdmin }) => {
                       Footer text
                       <FieldInput
                         type="text"
-                        value={formatting.footerText}
+                        value={activeFormatting.footerText}
                         onChange={event => setFormattingField('footerText', event.target.value)}
                       />
                     </Field>
@@ -1746,10 +1890,18 @@ const DocumentsPage = ({ isAdmin }) => {
                     <CheckLine>
                       <DocCheckbox
                         type="checkbox"
-                        checked={formatting.showPageNumbers}
+                        checked={activeFormatting.showPageNumbers}
                         onChange={event => setFormattingField('showPageNumbers', event.target.checked)}
                       />
                       Page numbers in the footer
+                    </CheckLine>
+                    <CheckLine>
+                      <DocCheckbox
+                        type="checkbox"
+                        checked={activeFormatting.columnDivider}
+                        onChange={event => setFormattingField('columnDivider', event.target.checked)}
+                      />
+                      Vertical divider between columns
                     </CheckLine>
                   </RowLine>
                 </>
