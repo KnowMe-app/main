@@ -7,7 +7,17 @@
 // title; see getTemplateLogoType/getClinicLogo in documentsCatalogUtils. The `docx` package is
 // imported dynamically by the caller-facing builder so the library only loads when a Word export
 // is actually requested.
-import { DEFAULT_DOC_FORMATTING, allowsParagraphInternalBreak, getClinicLogo, isParagraphBold } from './documentsCatalogUtils';
+import {
+  DEFAULT_DOC_FORMATTING,
+  allowsParagraphInternalBreak,
+  getClinicLogo,
+  getLayoutLang,
+  isBilingualLayout,
+  isParagraphBold,
+  isSingleLanguageTwoColumnLayout,
+  parseFormattedRuns,
+  splitParagraphsIntoColumns,
+} from './documentsCatalogUtils';
 
 const CM_TO_TWIP = 567;
 const MM_TO_PX = 96 / 25.4; // docx ImageRun transformations are CSS pixels at 96dpi
@@ -39,10 +49,15 @@ export const buildDocumentsDocx = async ({
     Paragraph, Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
   } = docx;
 
-  const isTwoColumn = layout === 'two-column';
-  const showUk = layout !== 'one-column-en';
-  const showEn = layout !== 'one-column-uk';
-  const lang = layout === 'one-column-en' ? 'en' : 'uk';
+  const isBilingual = isBilingualLayout(layout);
+  const isSingleLanguageFlow = isSingleLanguageTwoColumnLayout(layout);
+  // Both column layouts (bilingual UA|EN and single-language newspaper-style, spec §4) share the
+  // same two-cell geometry/logo clamping - only how paragraphs are distributed between the two
+  // cells differs (see singleLanguageColumnsTable below).
+  const isTwoColumn = isBilingual || isSingleLanguageFlow;
+  const lang = getLayoutLang(layout);
+  const showUk = isBilingual || lang === 'uk';
+  const showEn = isBilingual || lang === 'en';
   const bodySize = halfPoints(formatting.fontSize);
   const titleSize = halfPoints(formatting.titleFontSize);
   const smallSize = halfPoints(Math.max(7, formatting.fontSize - 2));
@@ -57,18 +72,34 @@ export const buildDocumentsDocx = async ({
 
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
   const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+  // Off by default (spec §3): a hairline rule between the two columns, drawn as a single border on
+  // the left cell only (the right cell stays borderless) so the table renders exactly one line at
+  // the boundary instead of a doubled one. Same docLine hairline weight the PDF renderer uses.
+  const showColumnDivider = isTwoColumn && Boolean(formatting.columnDivider);
+  const dividerBorder = { style: BorderStyle.SINGLE, size: 4, color: 'E6DCC7' };
 
   const contentWidthTwips = 11906
     - Math.round(formatting.marginLeftCm * CM_TO_TWIP)
     - Math.round(formatting.marginRightCm * CM_TO_TWIP);
   const columnContentWidthTwips = (contentWidthTwips - gapTwips) / 2;
 
+  // Splits `text` on its bold/italic markup (spec §1: selection-based, not whole-paragraph) into
+  // the TextRuns Word needs to render each fragment's own weight/style; `baseBold` is for a
+  // heading/title paragraph that's already bold throughout (an inline-italic fragment inside it
+  // still needs its own run to pick up the italic flag).
+  const formattedTextRuns = (text, { size, baseBold = false } = {}) => parseFormattedRuns(text).map(run => new TextRun({
+    text: run.text,
+    size,
+    bold: baseBold || run.bold,
+    italics: run.italic,
+  }));
+
   const bodyParagraph = (text, { keepLines = true } = {}) => new Paragraph({
     alignment: AlignmentType.JUSTIFIED,
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
     indent: firstLineTwips ? { firstLine: firstLineTwips } : undefined,
     keepLines,
-    children: [new TextRun({ text, size: bodySize })],
+    children: formattedTextRuns(text, { size: bodySize }),
   });
 
   // Short numbered section titles ("1. Предмет Договору") render bold, flush left, with extra
@@ -78,7 +109,7 @@ export const buildDocumentsDocx = async ({
     spacing: { before: afterTwips, after: afterTwips, line: lineTwips, lineRule: 'auto' },
     keepLines: true,
     keepNext: true,
-    children: [new TextRun({ text, bold: true, size: bodySize })],
+    children: formattedTextRuns(text, { size: bodySize, baseBold: true }),
   });
 
   const cellParagraph = (text, allowPageBreaks, paragraph) => (isParagraphBold(paragraph)
@@ -90,11 +121,11 @@ export const buildDocumentsDocx = async ({
   const titleParagraph = text => new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
-    children: [new TextRun({ text, bold: true, size: titleSize })],
+    children: formattedTextRuns(text, { size: titleSize, baseBold: true }),
   });
 
-  const twoColumnCellFromParagraph = (paragraph, marginSide) => new TableCell({
-    borders: noBorders,
+  const twoColumnCellFromParagraph = (paragraphOrParagraphs, marginSide) => new TableCell({
+    borders: showColumnDivider && marginSide === 'left' ? { ...noBorders, right: dividerBorder } : noBorders,
     width: { size: 50, type: WidthType.PERCENTAGE },
     verticalAlign: VerticalAlign.TOP,
     margins: {
@@ -103,7 +134,7 @@ export const buildDocumentsDocx = async ({
       left: marginSide === 'right' ? Math.round(gapTwips / 2) : 0,
       right: marginSide === 'left' ? Math.round(gapTwips / 2) : 0,
     },
-    children: [paragraph],
+    children: Array.isArray(paragraphOrParagraphs) ? paragraphOrParagraphs : [paragraphOrParagraphs],
   });
 
   const twoColumnTable = (rows, cantSplit) => new Table({
@@ -117,6 +148,30 @@ export const buildDocumentsDocx = async ({
       ],
     })),
   });
+
+  // The single-language 2-column layout (spec §4: newspaper-style, one language flowing across two
+  // columns). Word does support native multi-column section flow, but splitting it out would need
+  // a second, continuous-break section per document and would fight the per-document page-number
+  // restart every section already carries (pageNumbers.start: 1) - so, for parity with the PDF
+  // renderer (which has no native multi-column flow at all) and to keep the well-tested
+  // per-document section/pagination model untouched, this uses the same up-front split into two
+  // whole-paragraph groups as the PDF, laid out as a single borderless table row.
+  const singleLanguageColumnsTable = (paragraphs, allowPageBreaks) => {
+    const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang);
+    const buildColumnChildren = columnParagraphs => columnParagraphs.flatMap(paragraph => (
+      paragraph.type && paragraph.type !== 'text' ? buildLogoBlock(paragraph.type) : [cellParagraph(paragraph[lang], allowPageBreaks, paragraph)]
+    ));
+    return new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
+      rows: [new TableRow({
+        children: [
+          twoColumnCellFromParagraph(buildColumnChildren(leftParagraphs), 'left'),
+          twoColumnCellFromParagraph(buildColumnChildren(rightParagraphs), 'right'),
+        ],
+      })],
+    });
+  };
 
   const logoImageRun = (decoded, widthPx, ratio) => new ImageRun({
     data: decoded.bytes,
@@ -166,21 +221,28 @@ export const buildDocumentsDocx = async ({
     // from the dedicated `logo` field or a legacy leading paragraph - see getTemplateLogoType.
     if (doc.logo) children.push(...buildLogoBlock(doc.logo));
 
-    if (isTwoColumn) {
+    if (isBilingual) {
       children.push(twoColumnTable([[titleParagraph(doc.title.uk), titleParagraph(doc.title.en)]], true));
     } else {
       children.push(titleParagraph(doc.title[lang]));
     }
 
-    doc.paragraphs.forEach(paragraph => {
-      // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render a
-      // second time in its old body position.
-      if (paragraph.type === 'logo-consumed') return;
+    const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed');
+
+    if (isSingleLanguageFlow) {
+      // One shared table for the whole body (not one per paragraph, unlike the bilingual/1-column
+      // branches below) - the newspaper-style column split is decided once, up front, across every
+      // paragraph together (see splitParagraphsIntoColumns).
+      children.push(singleLanguageColumnsTable(bodyParagraphs, doc.allowPageBreaks));
+      return children;
+    }
+
+    bodyParagraphs.forEach(paragraph => {
       if (paragraph.type !== 'text') {
         children.push(...buildLogoBlock(paragraph.type));
         return;
       }
-      if (isTwoColumn) {
+      if (isBilingual) {
         const cantSplit = !allowsParagraphInternalBreak(paragraph, doc.allowPageBreaks);
         children.push(twoColumnTable([[
           cellParagraph(paragraph.uk, doc.allowPageBreaks, paragraph),

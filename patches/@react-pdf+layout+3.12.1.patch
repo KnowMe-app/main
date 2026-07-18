@@ -1,0 +1,46 @@
+diff --git a/node_modules/@react-pdf/layout/lib/index.cjs b/node_modules/@react-pdf/layout/lib/index.cjs
+index d6a58df..cff099d 100644
+--- a/node_modules/@react-pdf/layout/lib/index.cjs
++++ b/node_modules/@react-pdf/layout/lib/index.cjs
+@@ -236,8 +236,16 @@ var getFallbackFont = function getFallbackFont() {
+ };
+ var pickFontFromFontStack = function pickFontFromFontStack(codePoint, fontStack, lastFont) {
+   var fontStackWithFallback = [].concat(fontStack, [getFallbackFont()]);
+-  if (lastFont) {
+-    fontStackWithFallback.unshift(lastFont);
++  // Only prefer the previous character's font when it's already one of this run's own declared
++  // candidates (a real multi-font fallback stack, e.g. Latin+CJK) - sticking with it then avoids
++  // needless font hopping between equally-valid options. Unconditionally unshifting it (the
++  // original behavior) made an explicit style change on a single-font run (e.g. an inline bold
++  // fragment sharing the same glyph coverage as the surrounding text) silently lose to whatever
++  // font the previous character used, since that font also "has a glyph" for the new character.
++  if (lastFont && fontStackWithFallback.includes(lastFont)) {
++    fontStackWithFallback = [lastFont].concat(fontStackWithFallback.filter(function (font) {
++      return font !== lastFont;
++    }));
+   }
+   for (var i = 0; i < fontStackWithFallback.length; i += 1) {
+     var font = fontStackWithFallback[i];
+diff --git a/node_modules/@react-pdf/layout/lib/index.js b/node_modules/@react-pdf/layout/lib/index.js
+index cbd052c..ab48b41 100644
+--- a/node_modules/@react-pdf/layout/lib/index.js
++++ b/node_modules/@react-pdf/layout/lib/index.js
+@@ -201,8 +201,16 @@ var getFallbackFont = function getFallbackFont() {
+ };
+ var pickFontFromFontStack = function pickFontFromFontStack(codePoint, fontStack, lastFont) {
+   var fontStackWithFallback = [].concat(fontStack, [getFallbackFont()]);
+-  if (lastFont) {
+-    fontStackWithFallback.unshift(lastFont);
++  // Only prefer the previous character's font when it's already one of this run's own declared
++  // candidates (a real multi-font fallback stack, e.g. Latin+CJK) - sticking with it then avoids
++  // needless font hopping between equally-valid options. Unconditionally unshifting it (the
++  // original behavior) made an explicit style change on a single-font run (e.g. an inline bold
++  // fragment sharing the same glyph coverage as the surrounding text) silently lose to whatever
++  // font the previous character used, since that font also "has a glyph" for the new character.
++  if (lastFont && fontStackWithFallback.includes(lastFont)) {
++    fontStackWithFallback = [lastFont].concat(fontStackWithFallback.filter(function (font) {
++      return font !== lastFont;
++    }));
+   }
+   for (var i = 0; i < fontStackWithFallback.length; i += 1) {
+     var font = fontStackWithFallback[i];

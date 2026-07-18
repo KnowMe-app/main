@@ -598,13 +598,223 @@ export const orderCasesByRecent = (cases, recentCaseIds) => orderRecordsByRecent
 
 export const upsertRecentCaseId = (recentCaseIds, caseId) => upsertRecentId(recentCaseIds, caseId);
 
+// --- Inline text formatting (bold/italic on a selected fragment, batch 13 §1) ----------------
+// Storage convention: `**` toggles bold and `_` toggles italic, scanned left-to-right as
+// independent on/off flags (not matched pairs like Markdown) - simple to parse, trivial to
+// hand-edit in Template mode, and carries through unambiguously to both the PDF and DOCX runs.
+
+const BOLD_MARKER = '**';
+const ITALIC_MARKER = '_';
+
+// Raw markup string -> ordered runs of { text, bold, italic }. Every character belongs to exactly
+// one run; consecutive runs never share the same bold/italic pair (kept minimal for serialization).
+export const parseFormattedRuns = text => {
+  const str = String(text || '');
+  const runs = [];
+  let bold = false;
+  let italic = false;
+  let buffer = '';
+  const flush = () => {
+    if (buffer) runs.push({ text: buffer, bold, italic });
+    buffer = '';
+  };
+  for (let i = 0; i < str.length; i += 1) {
+    if (str[i] === '*' && str[i + 1] === '*') {
+      flush();
+      bold = !bold;
+      i += 1;
+      continue;
+    }
+    if (str[i] === '_') {
+      flush();
+      italic = !italic;
+      continue;
+    }
+    buffer += str[i];
+  }
+  flush();
+  return runs;
+};
+
+// Runs -> raw markup string. Emits a toggle marker only where the flag actually changes between
+// consecutive runs (and closes whatever is still open at the end) - the inverse of
+// parseFormattedRuns. Markers are closed in the reverse of the order they were opened (like
+// properly-nested Markdown/HTML) purely for readability of the hand-edited Template-mode source -
+// parseFormattedRuns itself doesn't care about nesting order, since `**`/`_` are independent toggles.
+export const serializeFormattedRuns = runs => {
+  let out = '';
+  let bold = false;
+  let italic = false;
+  const openOrder = [];
+  (runs || []).forEach(run => {
+    const nextBold = Boolean(run.bold);
+    const nextItalic = Boolean(run.italic);
+    for (let i = openOrder.length - 1; i >= 0; i -= 1) {
+      const marker = openOrder[i];
+      if (marker === 'bold' && bold && !nextBold) {
+        out += BOLD_MARKER;
+        bold = false;
+        openOrder.splice(i, 1);
+      } else if (marker === 'italic' && italic && !nextItalic) {
+        out += ITALIC_MARKER;
+        italic = false;
+        openOrder.splice(i, 1);
+      }
+    }
+    if (nextBold && !bold) {
+      out += BOLD_MARKER;
+      bold = true;
+      openOrder.push('bold');
+    }
+    if (nextItalic && !italic) {
+      out += ITALIC_MARKER;
+      italic = true;
+      openOrder.push('italic');
+    }
+    out += run.text;
+  });
+  for (let i = openOrder.length - 1; i >= 0; i -= 1) {
+    out += openOrder[i] === 'bold' ? BOLD_MARKER : ITALIC_MARKER;
+  }
+  return out;
+};
+
+// The text an admin actually reads/types in Data mode - the same string with every formatting
+// marker stripped out (Template mode shows the raw markup instead, spec §2).
+export const plainTextOf = text => parseFormattedRuns(text).map(run => run.text).join('');
+
+const withPlainOffsets = runs => {
+  let pos = 0;
+  return runs.map(run => {
+    const start = pos;
+    pos += run.text.length;
+    return { ...run, start, end: pos };
+  });
+};
+
+// Splits runs so that every cut offset (a plain-text position) lands exactly on a run boundary -
+// the shared step both toggleInlineFormat and applyPlainTextEdit need before they can act on an
+// arbitrary sub-range without disturbing formatting outside it.
+const splitRunsAtCuts = (runsWithOffsets, cuts) => {
+  const sortedCuts = [...new Set(cuts)].sort((a, b) => a - b);
+  const result = [];
+  runsWithOffsets.forEach(run => {
+    const localCuts = sortedCuts.filter(cut => cut > run.start && cut < run.end);
+    if (!localCuts.length) {
+      result.push(run);
+      return;
+    }
+    let offset = run.start;
+    [...localCuts, run.end].forEach(cut => {
+      result.push({
+        text: run.text.slice(offset - run.start, cut - run.start),
+        bold: run.bold,
+        italic: run.italic,
+        start: offset,
+        end: cut,
+      });
+      offset = cut;
+    });
+  });
+  return result;
+};
+
+const mergeAdjacentRuns = runs => runs.reduce((merged, run) => {
+  if (!run.text) return merged;
+  const last = merged[merged.length - 1];
+  if (last && last.bold === run.bold && last.italic === run.italic) last.text += run.text;
+  else merged.push({ text: run.text, bold: run.bold, italic: run.italic });
+  return merged;
+}, []);
+
+// MS Word toggle behavior: if every run inside [plainStart, plainEnd) already carries `attr`, the
+// whole selection loses it; otherwise the whole selection gains it (a partially-bold selection
+// becomes fully bold on the first press, matching Word rather than "toggle each run individually").
+export const toggleInlineFormat = (text, plainStart, plainEnd, attr) => {
+  if (!(plainEnd > plainStart)) return String(text || '');
+  const runs = withPlainOffsets(parseFormattedRuns(text));
+  const split = splitRunsAtCuts(runs, [plainStart, plainEnd]);
+  const within = run => run.start >= plainStart && run.end <= plainEnd && run.end > run.start;
+  const selected = split.filter(within);
+  const allActive = selected.length > 0 && selected.every(run => run[attr]);
+  const next = split.map(run => (within(run) ? { ...run, [attr]: !allActive } : run));
+  return serializeFormattedRuns(mergeAdjacentRuns(next));
+};
+
+// Applies a plain-text edit (whatever the admin just typed/pasted/deleted in the de-markup'd Data
+// mode field) back onto the raw markup string. Diffs old vs new plain text down to the single
+// changed region (the normal case for a live textarea onChange), then splices that same region
+// into the raw text - inserted text inherits the formatting of whatever precedes the caret, like
+// every mainstream text editor.
+export const applyPlainTextEdit = (rawText, newPlainValue) => {
+  const raw = String(rawText || '');
+  const oldPlain = plainTextOf(raw);
+  const nextPlain = String(newPlainValue || '');
+  if (oldPlain === nextPlain) return raw;
+  const maxCommonStart = Math.min(oldPlain.length, nextPlain.length);
+  let start = 0;
+  while (start < maxCommonStart && oldPlain[start] === nextPlain[start]) start += 1;
+  let oldEnd = oldPlain.length;
+  let newEnd = nextPlain.length;
+  while (oldEnd > start && newEnd > start && oldPlain[oldEnd - 1] === nextPlain[newEnd - 1]) {
+    oldEnd -= 1;
+    newEnd -= 1;
+  }
+  const inserted = nextPlain.slice(start, newEnd);
+  const runs = withPlainOffsets(parseFormattedRuns(raw));
+  const split = splitRunsAtCuts(runs, [start, oldEnd]);
+  const before = split.filter(run => run.end <= start);
+  const removed = split.filter(run => run.start >= start && run.end <= oldEnd);
+  const after = split.filter(run => run.start >= oldEnd);
+  const inheritFrom = before[before.length - 1] || removed[0] || after[0];
+  const insertedRun = inserted
+    ? [{ text: inserted, bold: Boolean(inheritFrom?.bold), italic: Boolean(inheritFrom?.italic) }]
+    : [];
+  return serializeFormattedRuns(mergeAdjacentRuns([...before, ...insertedRun, ...after]));
+};
+
 // --- Layouts + formatting settings ----------------------------------------------------------
 
+// Bilingual is always 2 columns (UA | EN side by side); a single language can render as either 1
+// flowing column or 2 newspaper-style columns of the same language (spec §4).
 export const DOCUMENT_LAYOUTS = [
   { id: 'two-column', label: 'UA + EN · 2 columns' },
   { id: 'one-column-uk', label: 'UA · 1 column' },
   { id: 'one-column-en', label: 'EN · 1 column' },
+  { id: 'two-column-uk', label: 'UA · 2 columns' },
+  { id: 'two-column-en', label: 'EN · 2 columns' },
 ];
+
+export const isBilingualLayout = layout => layout === 'two-column';
+
+export const isSingleLanguageTwoColumnLayout = layout => layout === 'two-column-uk' || layout === 'two-column-en';
+
+export const getLayoutColumnCount = layout => (isBilingualLayout(layout) || isSingleLanguageTwoColumnLayout(layout) ? 2 : 1);
+
+// Which language a single-language layout (1 or 2 columns) renders - meaningless for the bilingual
+// layout, which always shows both.
+export const getLayoutLang = layout => (layout === 'one-column-en' || layout === 'two-column-en' ? 'en' : 'uk');
+
+// Splits one document's paragraphs into two newspaper-style columns for the single-language
+// 2-column layout: whole paragraphs (never split mid-paragraph, same atomic-block granularity the
+// bilingual layout already uses) are handed to the left column until it holds roughly half the
+// total character count of `lang`, the rest goes to the right column.
+export const splitParagraphsIntoColumns = (paragraphs, lang) => {
+  const items = paragraphs || [];
+  const lengthOf = paragraph => (paragraph?.type && paragraph.type !== 'text' ? 0 : String(paragraph?.[lang] || '').length);
+  const totalLength = items.reduce((sum, paragraph) => sum + lengthOf(paragraph), 0);
+  const target = totalLength / 2;
+  let running = 0;
+  let splitIndex = items.length;
+  for (let index = 0; index < items.length; index += 1) {
+    if (index > 0 && running >= target) {
+      splitIndex = index;
+      break;
+    }
+    running += lengthOf(items[index]);
+  }
+  return [items.slice(0, splitIndex), items.slice(splitIndex)];
+};
 
 // A clinic can keep several logo file variants (spec §7): a compact one for the shared logo
 // above the two-column layout and a long full-width one for the one-column layouts. The column
@@ -652,6 +862,9 @@ export const DEFAULT_DOC_FORMATTING = {
   headerText: '',
   footerText: '',
   showPageNumbers: true,
+  // Off by default (spec §3): a thin vertical rule between the two columns, drawn only while a
+  // 2-column layout (bilingual or single-language) is actually active.
+  columnDivider: false,
 };
 
 const clampNumber = (value, min, max, fallback) => {
@@ -680,7 +893,36 @@ export const normalizeDocFormatting = raw => {
     showPageNumbers: source.showPageNumbers === undefined
       ? DEFAULT_DOC_FORMATTING.showPageNumbers
       : Boolean(source.showPageNumbers),
+    columnDivider: source.columnDivider === undefined
+      ? DEFAULT_DOC_FORMATTING.columnDivider
+      : Boolean(source.columnDivider),
   };
+};
+
+// --- Per-document format overrides (spec §5) ------------------------------------------------
+// A document's technical `format` field stores only the values that deviate from the reference
+// (default/favourite) formatting - an empty/absent field means "use the defaults as-is". Merging
+// is a flat shallow overlay since every DEFAULT_DOC_FORMATTING key is itself a scalar.
+
+// The formatting a document actually renders with: the shared reference settings with that
+// document's own overrides layered on top, then re-clamped/validated the same way any formatting
+// value is.
+export const resolveEffectiveDocFormatting = (referenceFormatting, docFormatOverride) => normalizeDocFormatting({
+  ...referenceFormatting,
+  ...(isPlainObject(docFormatOverride) ? docFormatOverride : {}),
+});
+
+// What actually gets written into a document's `format` field: only the keys where the working
+// value differs from the reference - if admin dials a field back to match the reference exactly,
+// it drops out of the overrides instead of persisting a redundant copy (spec §5).
+export const diffDocFormattingOverrides = (referenceFormatting, workingFormatting) => {
+  const reference = normalizeDocFormatting(referenceFormatting);
+  const working = normalizeDocFormatting(workingFormatting);
+  const overrides = {};
+  Object.keys(DEFAULT_DOC_FORMATTING).forEach(key => {
+    if (working[key] !== reference[key]) overrides[key] = working[key];
+  });
+  return overrides;
 };
 
 // The backend settings record stores formatting values, the recently-used case order, and the
@@ -708,7 +950,7 @@ const slugifyFileNamePart = value => String(value || '')
 export const buildDocumentsFileName = (catalog, caseRecord, layout, extension, doc = null) => {
   const label = slugifyFileNamePart(buildCaseLabel(catalog, caseRecord)).slice(0, 60) || 'Case';
   const docLabel = doc ? slugifyFileNamePart(doc.title?.uk || doc.title?.en || doc.id).slice(0, 60) : '';
-  const langTag = layout === 'one-column-uk' ? 'UA' : layout === 'one-column-en' ? 'EN' : 'UA-EN';
+  const langTag = isBilingualLayout(layout) ? 'UA-EN' : (getLayoutLang(layout) === 'en' ? 'EN' : 'UA');
   const today = new Date();
   const ymd = [
     today.getFullYear(),

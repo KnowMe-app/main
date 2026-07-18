@@ -1,20 +1,27 @@
 import {
   DEFAULT_DOC_FORMATTING,
+  DOCUMENT_LAYOUTS,
   applyLogoLayoutAssignment,
+  applyPlainTextEdit,
   buildCaseLabel,
   buildDocumentsFileName,
   buildGeneratedDocument,
   clinicLogoEntriesToBackend,
   deepMergeRecords,
+  diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   fillPlaceholders,
   formatDocumentDate,
   getClinicLogo,
+  getLayoutColumnCount,
+  getLayoutLang,
   getParagraphType,
   getTemplateLogoType,
   getValueByPath,
+  isBilingualLayout,
   isParagraphBold,
   isSectionHeading,
+  isSingleLanguageTwoColumnLayout,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -22,11 +29,17 @@ import {
   orderCasesByRecent,
   orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
+  parseFormattedRuns,
   pickLogoVariantForLayout,
+  plainTextOf,
   pruneDocOverride,
   resolveCaseContext,
+  resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
+  serializeFormattedRuns,
   shiftDocOverrideParagraphIndices,
+  splitParagraphsIntoColumns,
+  toggleInlineFormat,
   upsertRecentCaseId,
   upsertRecentId,
   validateDocumentTemplate,
@@ -872,5 +885,166 @@ describe('spec: safe optional entities', () => {
 
   it('resolveCaseContext returns null for an unknown case instead of throwing', () => {
     expect(resolveCaseContext(richCatalog(), 'no-such-case')).toBeNull();
+  });
+});
+
+describe('spec: selection-based inline bold/italic (batch 13 §1)', () => {
+  it('parses ** and _ as independent bold/italic toggles', () => {
+    expect(parseFormattedRuns('Hello **world** and _everyone_ else')).toEqual([
+      { text: 'Hello ', bold: false, italic: false },
+      { text: 'world', bold: true, italic: false },
+      { text: ' and ', bold: false, italic: false },
+      { text: 'everyone', bold: false, italic: true },
+      { text: ' else', bold: false, italic: false },
+    ]);
+  });
+
+  it('parses overlapping bold+italic markers on the same fragment', () => {
+    expect(parseFormattedRuns('**_both_**')).toEqual([
+      { text: 'both', bold: true, italic: true },
+    ]);
+  });
+
+  it('round-trips runs back to the same raw markup string', () => {
+    const raw = 'Hello **world** and _everyone_ else, **_both_** too.';
+    expect(serializeFormattedRuns(parseFormattedRuns(raw))).toBe(raw);
+  });
+
+  it('plainTextOf strips every marker, leaving only the readable text', () => {
+    expect(plainTextOf('Hello **world** and _everyone_ else')).toBe('Hello world and everyone else');
+  });
+
+  it('toggleInlineFormat bolds a plain-text range without disturbing the rest', () => {
+    const next = toggleInlineFormat('Hello world else', 6, 11, 'bold');
+    expect(plainTextOf(next)).toBe('Hello world else');
+    expect(parseFormattedRuns(next)).toEqual([
+      { text: 'Hello ', bold: false, italic: false },
+      { text: 'world', bold: true, italic: false },
+      { text: ' else', bold: false, italic: false },
+    ]);
+  });
+
+  it('pressing bold again on an already-bold selection removes it (MS Word behavior)', () => {
+    const bolded = toggleInlineFormat('Hello world else', 6, 11, 'bold');
+    const unbolded = toggleInlineFormat(bolded, 6, 11, 'bold');
+    expect(unbolded).toBe('Hello world else');
+  });
+
+  it('a partially-bold selection becomes fully bold on the first press, not toggled per-run', () => {
+    const partiallyBold = toggleInlineFormat('Hello world else', 6, 8, 'bold'); // "wo" -> bold
+    const fullyBold = toggleInlineFormat(partiallyBold, 6, 11, 'bold'); // whole "world" selected
+    expect(parseFormattedRuns(fullyBold).find(run => run.text === 'world').bold).toBe(true);
+  });
+
+  it('bold and italic apply independently to overlapping ranges', () => {
+    const bolded = toggleInlineFormat('Hello world else', 6, 11, 'bold');
+    const both = toggleInlineFormat(bolded, 8, 13, 'italic'); // "rld el" overlaps the bold range
+    const runs = parseFormattedRuns(both);
+    expect(plainTextOf(both)).toBe('Hello world else');
+    expect(runs.some(run => run.bold && run.italic)).toBe(true);
+  });
+
+  it('applyPlainTextEdit inserts new plain text inheriting the format at the caret', () => {
+    const bolded = toggleInlineFormat('Hello world', 6, 11, 'bold'); // "world" bold
+    // Insert " there" right after "world" (still inside the bold run) via a plain-text edit.
+    const edited = applyPlainTextEdit(bolded, 'Hello world there');
+    expect(plainTextOf(edited)).toBe('Hello world there');
+    expect(parseFormattedRuns(edited).find(run => run.text.includes('there')).bold).toBe(true);
+  });
+
+  it('applyPlainTextEdit deletes text without corrupting the surrounding markup', () => {
+    const bolded = toggleInlineFormat('Hello world else', 6, 11, 'bold');
+    const edited = applyPlainTextEdit(bolded, 'Hello world'); // trailing " else" deleted
+    expect(plainTextOf(edited)).toBe('Hello world');
+    expect(parseFormattedRuns(edited)).toEqual([
+      { text: 'Hello ', bold: false, italic: false },
+      { text: 'world', bold: true, italic: false },
+    ]);
+  });
+});
+
+describe('spec: column layouts (batch 13 §4)', () => {
+  it('exposes bilingual 2-col, single-language 1-col and single-language 2-col options', () => {
+    const ids = DOCUMENT_LAYOUTS.map(option => option.id);
+    expect(ids).toEqual(['two-column', 'one-column-uk', 'one-column-en', 'two-column-uk', 'two-column-en']);
+  });
+
+  it('isBilingualLayout is true only for the UA+EN layout', () => {
+    expect(isBilingualLayout('two-column')).toBe(true);
+    expect(isBilingualLayout('two-column-uk')).toBe(false);
+    expect(isBilingualLayout('one-column-uk')).toBe(false);
+  });
+
+  it('isSingleLanguageTwoColumnLayout flags only the newspaper-style single-language layouts', () => {
+    expect(isSingleLanguageTwoColumnLayout('two-column-uk')).toBe(true);
+    expect(isSingleLanguageTwoColumnLayout('two-column-en')).toBe(true);
+    expect(isSingleLanguageTwoColumnLayout('two-column')).toBe(false);
+    expect(isSingleLanguageTwoColumnLayout('one-column-uk')).toBe(false);
+  });
+
+  it('getLayoutColumnCount is 2 for both bilingual and single-language 2-col layouts', () => {
+    expect(getLayoutColumnCount('two-column')).toBe(2);
+    expect(getLayoutColumnCount('two-column-uk')).toBe(2);
+    expect(getLayoutColumnCount('two-column-en')).toBe(2);
+    expect(getLayoutColumnCount('one-column-uk')).toBe(1);
+    expect(getLayoutColumnCount('one-column-en')).toBe(1);
+  });
+
+  it('getLayoutLang resolves the single language for every non-bilingual layout', () => {
+    expect(getLayoutLang('one-column-uk')).toBe('uk');
+    expect(getLayoutLang('two-column-uk')).toBe('uk');
+    expect(getLayoutLang('one-column-en')).toBe('en');
+    expect(getLayoutLang('two-column-en')).toBe('en');
+  });
+
+  it('splitParagraphsIntoColumns balances whole paragraphs by character count of the given language', () => {
+    const paragraphs = [
+      { uk: 'a'.repeat(100), en: 'x' },
+      { uk: 'b'.repeat(10), en: 'x' },
+      { uk: 'c'.repeat(10), en: 'x' },
+    ];
+    const [left, right] = splitParagraphsIntoColumns(paragraphs, 'uk');
+    expect(left).toEqual([paragraphs[0]]);
+    expect(right).toEqual([paragraphs[1], paragraphs[2]]);
+  });
+
+  it('splitParagraphsIntoColumns never drops or duplicates a paragraph', () => {
+    const paragraphs = Array.from({ length: 7 }, (_, i) => ({ uk: `p${i}`.repeat(i + 1), en: '' }));
+    const [left, right] = splitParagraphsIntoColumns(paragraphs, 'uk');
+    expect([...left, ...right]).toEqual(paragraphs);
+  });
+
+  it('a single paragraph with no others stays whole (never split mid-paragraph)', () => {
+    const paragraphs = [{ uk: 'one long paragraph', en: '' }];
+    const [left, right] = splitParagraphsIntoColumns(paragraphs, 'uk');
+    expect(left).toEqual(paragraphs);
+    expect(right).toEqual([]);
+  });
+});
+
+describe('spec: per-document format overrides (batch 13 §5)', () => {
+  it('resolveEffectiveDocFormatting merges the reference formatting with a document override', () => {
+    const reference = normalizeDocFormatting({ fontSize: 10, columnDivider: false });
+    const effective = resolveEffectiveDocFormatting(reference, { fontSize: 12 });
+    expect(effective.fontSize).toBe(12);
+    expect(effective.columnDivider).toBe(false);
+  });
+
+  it('an empty/absent override resolves to exactly the reference formatting', () => {
+    const reference = normalizeDocFormatting({ fontSize: 10 });
+    expect(resolveEffectiveDocFormatting(reference, undefined)).toEqual(reference);
+    expect(resolveEffectiveDocFormatting(reference, {})).toEqual(reference);
+  });
+
+  it('diffDocFormattingOverrides keeps only the fields that differ from the reference', () => {
+    const reference = normalizeDocFormatting({ fontSize: 10, titleFontSize: 11, columnDivider: false });
+    const working = normalizeDocFormatting({ fontSize: 12, titleFontSize: 11, columnDivider: false });
+    expect(diffDocFormattingOverrides(reference, working)).toEqual({ fontSize: 12 });
+  });
+
+  it('dialing a value back to the reference drops it from the overrides instead of storing a redundant copy', () => {
+    const reference = normalizeDocFormatting({ fontSize: 10 });
+    const working = normalizeDocFormatting({ fontSize: 10 });
+    expect(diffDocFormattingOverrides(reference, working)).toEqual({});
   });
 });
