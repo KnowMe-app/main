@@ -117,8 +117,10 @@ describe('InvoiceBuilderPage', () => {
     .find(btn => (exact ? btn.textContent.trim() === text : btn.textContent.includes(text)));
 
   const nativeTextareaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
   const setFieldValue = (field, value) => {
-    nativeTextareaValueSetter.call(field, value);
+    const setter = field instanceof window.HTMLInputElement ? nativeInputValueSetter : nativeTextareaValueSetter;
+    setter.call(field, value);
     field.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
@@ -672,20 +674,15 @@ describe('InvoiceBuilderPage', () => {
   });
 
   // Batch 14: the calculation rows (Taxes, Debt/Deposit, Subtotal, Amount to be paid) moved out of
-  // Summary and now live at the tail of Other Expenses, behind a single "Total" divider - Summary
-  // shrinks to just document metadata (Invoice date, Due date).
+  // Summary and now live at the tail of Other Expenses, behind a single "Total" divider.
   it('moves Taxes/Debt-Deposit/Subtotal/Amount-to-be-paid into the tail of Other expenses, out of Summary', async () => {
     const root = mount();
     await flush();
 
     const otherExpensesHeading = Array.from(container.querySelectorAll('h2')).find(h2 => h2.textContent === 'Other expenses');
-    const summaryHeading = Array.from(container.querySelectorAll('h2')).find(h2 => h2.textContent === 'Summary');
     expect(otherExpensesHeading).toBeTruthy();
-    expect(summaryHeading).toBeTruthy();
 
     const otherExpensesPanel = otherExpensesHeading.closest('section');
-    const summaryPanel = summaryHeading.closest('section');
-    expect(otherExpensesPanel).not.toBe(summaryPanel);
 
     // The totals tail (and its "Total" divider) now lives inside the Other expenses panel.
     expect(otherExpensesPanel.textContent).toContain('Total');
@@ -695,12 +692,37 @@ describe('InvoiceBuilderPage', () => {
     const debtField = Array.from(otherExpensesPanel.querySelectorAll('span')).find(span => span.textContent === 'Debt/Deposit');
     expect(debtField).toBeTruthy();
 
-    // Summary keeps only document metadata - none of the totals fields leaked back into it.
-    expect(summaryPanel.querySelector('textarea[aria-label="Taxes (%)"]')).toBeNull();
-    expect(summaryPanel.textContent).not.toContain('Subtotal');
-    expect(summaryPanel.textContent).not.toContain('Amount to be paid');
-    expect(summaryPanel.textContent).toContain('Invoice date');
-    expect(summaryPanel.textContent).toContain('Due date');
+    // Batch 15: Summary is gone entirely - no heading left anywhere on the page.
+    const summaryHeading = Array.from(container.querySelectorAll('h2')).find(h2 => h2.textContent === 'Summary');
+    expect(summaryHeading).toBeFalsy();
+
+    await act(async () => { root.unmount(); });
+  });
+
+  // Batch 15: Invoice date/Due date relocated out of the (now-removed) Summary block into a slim
+  // inline row at the tail of Other Expenses, directly above the "Total" divider.
+  it('shows the Invoice/Due dates as an inline row in Other expenses, with an "upon receipt" placeholder when Due date is empty', async () => {
+    const root = mount();
+    await flush();
+
+    const otherExpensesHeading = Array.from(container.querySelectorAll('h2')).find(h2 => h2.textContent === 'Other expenses');
+    const otherExpensesPanel = otherExpensesHeading.closest('section');
+
+    const invoiceDateInput = otherExpensesPanel.querySelector('input[type="date"]:not([aria-label])');
+    const dueDateInput = otherExpensesPanel.querySelector('input[aria-label="Due date (empty = payable upon receipt)"]');
+    expect(invoiceDateInput).toBeTruthy();
+    expect(dueDateInput).toBeTruthy();
+    expect(otherExpensesPanel.textContent).toContain('→');
+
+    // Empty Due date renders the "upon receipt" placeholder text, matching the PDF default.
+    expect(dueDateInput.value).toBe('');
+    expect(otherExpensesPanel.textContent).toContain('upon receipt');
+
+    await act(async () => { setFieldValue(dueDateInput, '2026-07-25'); });
+    expect(otherExpensesPanel.textContent).not.toContain('upon receipt');
+
+    await act(async () => { setFieldValue(dueDateInput, ''); });
+    expect(otherExpensesPanel.textContent).toContain('upon receipt');
 
     await act(async () => { root.unmount(); });
   });

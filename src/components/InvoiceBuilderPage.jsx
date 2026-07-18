@@ -1897,6 +1897,63 @@ const IssuedInvoiceCard = ({ record, exchangeRates, onCommitPayment, onReissue, 
   );
 };
 
+// --- Dates row (batch 15: relocated from Summary, which is now removed entirely) ---------------
+// One slim "INVOICE 18.07.2026 → DUE 25.07.2026" line, sitting right above the TOTAL divider -
+// dates + totals together read as the document's finalization zone.
+
+const DatesRow = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  margin-top: 10px;
+  border-top: 1px solid var(--km-border);
+  font-size: 12.5px;
+`;
+
+const DateLabel = styled.span`
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--km-muted);
+`;
+
+const DateArrow = styled.span`
+  color: var(--km-accent);
+  font-weight: 700;
+  padding: 0 2px;
+`;
+
+// Wraps the Due-date input so an "upon receipt" label can sit visually on top of it while empty -
+// the real <input type="date"> stays underneath and fully clickable (pointer-events pass straight
+// through the label), so tapping either still opens the native picker.
+const DateValueWrap = styled.span`
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+`;
+
+const DateEmptyOverlay = styled.span`
+  position: absolute;
+  left: 6px;
+  pointer-events: none;
+  font-style: italic;
+  color: var(--km-muted);
+  white-space: nowrap;
+`;
+
+const dateInputStyle = hasValue => ({
+  border: 'none',
+  background: 'transparent',
+  color: hasValue ? 'var(--km-text)' : 'transparent',
+  font: 'inherit',
+  fontWeight: 700,
+  padding: '5px 6px',
+  borderRadius: 6,
+});
+
 // --- Totals (batch 14: relocated from Summary to the tail of Other expenses) ------------------
 
 // "A single thin hairline with a small centered label" separating the item list/add-line controls
@@ -4099,6 +4156,31 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 </>
               ) : null}
 
+              {/* Dates row (batch 15): Invoice/Due date relocated from the now-removed Summary
+                  block, right above the totals - together they read as the document's
+                  finalization zone. */}
+              <DatesRow>
+                <DateLabel>Invoice</DateLabel>
+                <input
+                  type="date"
+                  value={invoiceDateInput}
+                  onChange={event => setInvoiceDateInput(event.target.value)}
+                  style={dateInputStyle(true)}
+                />
+                <DateArrow>→</DateArrow>
+                <DateLabel>Due</DateLabel>
+                <DateValueWrap>
+                  <input
+                    type="date"
+                    value={dueDateInput}
+                    onChange={event => setDueDateInput(event.target.value)}
+                    aria-label="Due date (empty = payable upon receipt)"
+                    style={dateInputStyle(Boolean(dueDateInput))}
+                  />
+                  {!dueDateInput ? <DateEmptyOverlay>upon receipt</DateEmptyOverlay> : null}
+                </DateValueWrap>
+              </DatesRow>
+
               {/* Totals tail (batch 14): items and their math live together - the calculation rows
                   used to sit in a separate Summary block, now attached to the end of the item list
                   they total up. One hairline "TOTAL" divider, then Taxes/Debt-Deposit (unchanged
@@ -4157,35 +4239,6 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                 ) : null}
                 <SummaryLine><span>Amount to be paid</span><span>{formatEuroPreview(amountDue)}</span></SummaryLine>
               </SummaryGrid>
-            </Panel>
-
-            <Panel>
-              <PanelHeading>
-                <H2>Summary</H2>
-              </PanelHeading>
-              <FieldRow>
-                <FieldTag>Invoice date</FieldTag>
-                <input
-                  type="date"
-                  value={invoiceDateInput}
-                  onChange={event => setInvoiceDateInput(event.target.value)}
-                  style={{
-                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
-                  }}
-                />
-              </FieldRow>
-              <FieldRow>
-                <FieldTag title="Shown in the invoice's Amount Due block. Leave empty for 'Payable upon receipt'.">Due date</FieldTag>
-                <input
-                  type="date"
-                  value={dueDateInput}
-                  onChange={event => setDueDateInput(event.target.value)}
-                  aria-label="Due date (empty = payable upon receipt)"
-                  style={{
-                    flex: '0 0 auto', border: 'none', background: 'transparent', color: 'var(--km-text)', font: 'inherit', fontWeight: 700, padding: '5px 6px', borderRadius: 6,
-                  }}
-                />
-              </FieldRow>
             </Panel>
 
             <Panel>
