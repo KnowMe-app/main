@@ -1960,7 +1960,6 @@ const dateInputStyle = hasValue => ({
   fontWeight: 700,
   padding: '4px',
   borderRadius: 6,
-  width: '92px',
   flexShrink: 0,
   boxSizing: 'border-box',
   WebkitAppearance: 'none',
