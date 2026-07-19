@@ -44,7 +44,7 @@ const buildParties = () => ({
     'surrogate-1': { id: 'surrogate-1', name: { uk: { nominative: 'Сурогатна Матір' } }, taxId: '1234567890', address: { uk: 'Київ' } },
   },
   maternityHospitals: {
-    'hospital-1': { id: 'hospital-1', shortName: 'Пологовий будинок №1' },
+    'hospital-1': { id: 'hospital-1', shortName: { uk: 'Пологовий будинок №1', en: '' } },
   },
   notaries: {
     'notary-1': { id: 'notary-1', name: { uk: { nominative: 'Нотаріус Іванова Іванівна', short: 'Іванова І.І.' } } },
@@ -89,7 +89,12 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
   it('renders the maternity hospital select and the single child, without a child selector', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
 
-    expect(await screen.findByLabelText('Пологовий будинок')).toHaveValue('hospital-1');
+    const hospitalSelect = await screen.findByLabelText('Пологовий будинок');
+    expect(hospitalSelect).toHaveValue('hospital-1');
+    // shortName is a bilingual { uk, en } record (same shape as name/address on every other
+    // maternity hospital field) - rendering it as an <option> label must resolve to the uk string,
+    // not the object itself (which crashes React: "Objects are not valid as a React child").
+    expect(screen.getByText('Пологовий будинок №1')).toBeInTheDocument();
     expect(screen.getByText('Дитина 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Стать')).toHaveValue('female');
     expect(screen.queryByLabelText('Дитина для документа')).not.toBeInTheDocument();

@@ -344,7 +344,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
             <option value="">— не обрано —</option>
             {catalog.parties.maternityHospitals.map(hospital => (
               <option key={hospital.id} value={String(hospital.id)}>
-                {hospital.shortName || hospital.name?.uk || hospital.id}
+                {hospital.shortName?.uk || hospital.name?.uk || hospital.id}
               </option>
             ))}
           </Select>
