@@ -163,4 +163,29 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
     }));
     expect(payload[`cases/case-1/registrations/birth/transactionId`]).toBe(transactionId);
   });
+
+  // Regression: Firebase RTDB silently turns a JS array into a `{"1": {...}}`-shaped plain object
+  // once a child has ever been removed by key rather than re-set as a dense array (or the case was
+  // edited straight in the Firebase console) - `childbirthDraft.children.map(...)` then threw
+  // "children.map is not a function" with no error boundary to catch it, blanking the whole page.
+  it('does not crash when a case.childbirth.children arrives as a Firebase gap-object instead of an array', async () => {
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') {
+        const parties = buildParties();
+        // `.children` here is a plain-object field on the fixture, not a DOM node, but the
+        // testing-library lint rule can't tell the two apart from the property name alone.
+        // eslint-disable-next-line testing-library/no-node-access
+        parties.cases['case-1'].childbirth.children = { 1: parties.cases['case-1'].childbirth.children[0] };
+        return { exists: () => true, val: () => parties };
+      }
+      if (path === 'documentsBuilder/templates') return { exists: () => false, val: () => null };
+      return { exists: () => false, val: () => null };
+    });
+
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+
+    expect(await screen.findByLabelText('Пологовий будинок')).toHaveValue('hospital-1');
+    expect(screen.getByText('Дитина 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Стать')).toHaveValue('female');
+  });
 });

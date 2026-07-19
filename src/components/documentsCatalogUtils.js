@@ -34,7 +34,11 @@ const COLLECTION_ID_PREFIXES = { notaries: 'notary' };
 
 export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const toArray = value => {
+// Firebase RTDB silently turns a JS array into a plain `{"0": ..., "2": ...}` object once it has
+// ever been written with a gap (e.g. a record removed by key rather than re-set as a dense array),
+// so any array read back from the backend has to tolerate that shape - never assume `.val()` gives
+// back a real Array just because it was one when last saved.
+export const toArray = value => {
   if (Array.isArray(value)) return value.filter(Boolean);
   if (isPlainObject(value)) return Object.values(value).filter(Boolean);
   return [];
@@ -496,11 +500,94 @@ export const formatEnglishDateWords = value => {
   return `${EN_DAY_ORDINALS[day]} of ${EN_MONTHS[month]}, ${year}`;
 };
 
+// --- Party record shapes (Parties page, batch 19 §1) --------------------------------------------
+// Canonical "blank record" for each party collection - the shape a freshly-added record starts
+// from, matching exactly what resolveCaseContext/fillPlaceholders already expect to find (spec
+// §9/§10/§3/§5 fixtures in documentsCatalogUtils.test.js), so a record created here never needs a
+// follow-up migration the way legacy pasted data sometimes does.
+
+export const createEmptyPartner = ({ role = '' } = {}) => ({
+  id: makeRecordId('partner'),
+  role,
+  name: { uk: { nominative: '', genitive: '' }, en: '' },
+  birthDate: '',
+  citizenship: { uk: '', en: '' },
+  passport: { number: '', issuedBy: { uk: '', en: '' }, issueDate: '' },
+});
+
+export const createEmptyCouple = () => ({
+  id: makeRecordId('couple'),
+  partners: [createEmptyPartner({ role: 'wife' }), createEmptyPartner({ role: 'husband' })],
+  marriage: { certificateNumber: '', certificateDate: '' },
+  address: { uk: '', en: '' },
+});
+
+export const createEmptySurrogateMother = () => ({
+  id: makeRecordId('surrogate-mother'),
+  name: { uk: { nominative: '', genitive: '' }, en: '' },
+  birthDate: '',
+  passport: { number: '', issueDate: '' },
+  taxId: '',
+  address: { uk: '', en: '' },
+});
+
+export const createEmptyRepresentative = () => ({
+  id: makeRecordId('representative'),
+  name: { uk: { nominative: '', genitive: '' }, en: '' },
+  passport: { number: '' },
+  powerOfAttorney: { date: '', apostille: '' },
+});
+
+export const createEmptyClinic = () => ({
+  id: makeRecordId('clinic'),
+  name: { uk: '', en: '' },
+  legalName: { uk: '', en: '' },
+  medicalCenterName: { uk: '', en: '' },
+  address: { uk: '', en: '' },
+  phone: '',
+  email: '',
+  edrpou: '',
+  taxId: '',
+  vatCertificateNumber: '',
+  bank: {
+    account: '', mfo: '', name: { uk: '', en: '' }, address: { uk: '', en: '' },
+  },
+  license: { number: '', date: '', issuedBy: { uk: '', en: '' } },
+  medicalDirector: {
+    name: { uk: { nominative: '', genitive: '', short: '' }, en: { full: '', short: '' } },
+    authority: { type: { uk: '', en: '' }, number: '', date: '' },
+  },
+});
+
+export const createEmptyMaternityHospital = () => ({
+  id: makeRecordId('maternity-hospital'),
+  name: { uk: '', en: '' },
+  shortName: { uk: '', en: '' },
+  edrpou: '',
+  address: { uk: '', en: '' },
+});
+
+export const createEmptyNotary = () => ({
+  id: makeRecordId('notary'),
+  name: {
+    uk: {
+      nominative: '', genitive: '', short: '', instrumental: '',
+    },
+    en: { full: '', short: '' },
+  },
+  title: { uk: '', en: '' },
+  city: { uk: '', en: '' },
+});
+
 // --- Case shape (batch 18) --------------------------------------------------------------------
 // One case is one concrete combination of couple + clinic + surrogate mother + representative(s)
 // (spec: "один case — це одна конкретна комбінація"); changing the clinic or surrogate mother means
 // creating a new case rather than mutating this one in place, so there is no active/replaced/from/to
 // history to track inside a single case record.
+
+// A fresh id for a brand-new case (Parties page "+ New case") - same generated shape as
+// makeTransactionId/createChildRecord's id.
+export const makeCaseId = () => makeRecordId('case');
 
 // A freshly-created case: every relation blank, ready for the admin to pick a couple/clinic/
 // surrogate mother/representatives - never pre-filled from another case (spec §14: no auto-copy).
@@ -1187,6 +1274,39 @@ export const buildCaseLabel = (catalog, caseRecord) => {
   const surrogateName = localizedText(surrogate?.name, 'en');
   const parts = [coupleNames, surrogateName ? `SM ${surrogateName}` : ''].filter(Boolean);
   return parts.join(' — ') || String(caseRecord.id);
+};
+
+// Which cases/transactions currently point at a given party record (Parties page delete
+// confirmation, spec: "If a record is referenced by a case, the confirmation must say so") -
+// deletes are never blocked on this, only clearly labeled, same "sever the reference, never touch
+// the other record" spirit as removeTransactionReferences.
+export const findPartyReferences = (catalog, collection, id) => {
+  const targetId = String(id);
+  const referencingCases = (catalog?.parties?.cases || []).filter(rawCase => {
+    const caseRecord = normalizeCaseRecord(rawCase);
+    const relations = caseRecord.relations || {};
+    switch (collection) {
+      case 'couples': return String(relations.coupleId) === targetId;
+      case 'clinics': return String(relations.clinicId) === targetId;
+      case 'surrogateMothers': return String(relations.surrogateMotherId) === targetId;
+      case 'representatives': return toArray(relations.representativeIds).some(repId => String(repId) === targetId);
+      case 'maternityHospitals': return String(caseRecord.childbirth?.maternityHospitalId) === targetId;
+      default: return false;
+    }
+  });
+
+  const referencingTransactions = ['couples', 'surrogateMothers', 'notaries'].includes(collection)
+    ? (catalog?.parties?.transactions || []).filter(transaction => {
+      if (collection === 'couples') return String(transaction.coupleId) === targetId;
+      if (collection === 'surrogateMothers') return String(transaction.surrogateMotherId) === targetId;
+      return String(transaction.notaryId) === targetId;
+    })
+    : [];
+
+  return [
+    ...referencingCases.map(caseRecord => `case "${buildCaseLabel(catalog, caseRecord) || caseRecord.id}"`),
+    ...referencingTransactions.map(transaction => `transaction "${transaction.id}"`),
+  ];
 };
 
 // Generic "most recently used first" ordering + upsert, shared by the case selector (spec §5) and
