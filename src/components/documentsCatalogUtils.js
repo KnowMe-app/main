@@ -16,7 +16,12 @@ export const clinicLogoDbPath = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/cli
 export const clinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoStorageFolder(clinicId)}/${fileName}`;
 
-export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases'];
+export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases', 'maternityHospitals', 'notaries'];
+
+// mergeCollection derives an id prefix for un-identified incoming records by stripping a trailing
+// 's' off the collection name; 'notaries' isn't a simple plural ('notarys' would be wrong), so it
+// needs the explicit override.
+const COLLECTION_ID_PREFIXES = { notaries: 'notary' };
 
 export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -75,7 +80,9 @@ export const clinicLogoEntriesToBackend = variants => (variants || [])
 // --- Catalog -------------------------------------------------------------------------------
 
 export const emptyDocumentsCatalog = () => ({
-  parties: { couples: [], surrogateMothers: [], representatives: [], clinics: [], cases: [] },
+  parties: {
+    couples: [], surrogateMothers: [], representatives: [], clinics: [], cases: [], maternityHospitals: [], notaries: [],
+  },
   documents: [],
   clinicLogos: {},
 });
@@ -244,7 +251,7 @@ export const mergeDocumentsCatalog = (current, incoming) => {
     catalog.parties[collection] = mergeCollection(
       current?.parties?.[collection] || [],
       incoming?.parties?.[collection] || [],
-      collection.replace(/s$/, ''),
+      COLLECTION_ID_PREFIXES[collection] || collection.replace(/s$/, ''),
       summary,
     );
   });
@@ -274,6 +281,176 @@ export const catalogTemplatesToBackend = catalog => (catalog.documents || []).re
 
 const findById = (records, id) => (records || []).find(record => String(record?.id) === String(id)) || null;
 
+// --- Birth-registration surrogate-consent document (batch 16 §6) --------------------------------
+// Everything below is derived, not stored: the JSON only ever carries the bare `sex` enum
+// (female/male) and ISO dates - every Ukrainian grammatical form (дівчинки/хлопчика, народженої
+// мною/народженого мною, яка народилась/який народився...) is computed here so the backend record
+// never has to carry hand-typed inflected strings that could drift out of agreement with `sex`.
+export const getChildGenderForms = sex => {
+  if (sex === 'female') {
+    return {
+      uk: {
+        label: 'дівчинка',
+        childNominative: 'дівчинка',
+        childGenitive: 'дівчинки',
+        childAccusative: 'дівчинку',
+        bornByMe: 'народженої мною',
+        whichWasBorn: 'яка народилась',
+        born: 'народилась',
+        pronoun: 'вона',
+        pronounGenitive: 'її',
+      },
+      en: {
+        label: 'girl',
+        childNominative: 'girl',
+        childGenitive: 'girl',
+        bornByMe: 'born by me',
+        whichWasBorn: 'who was born',
+        pronoun: 'she',
+        pronounGenitive: 'her',
+      },
+    };
+  }
+  if (sex === 'male') {
+    return {
+      uk: {
+        label: 'хлопчик',
+        childNominative: 'хлопчик',
+        childGenitive: 'хлопчика',
+        childAccusative: 'хлопчика',
+        bornByMe: 'народженого мною',
+        whichWasBorn: 'який народився',
+        born: 'народився',
+        pronoun: 'він',
+        pronounGenitive: 'його',
+      },
+      en: {
+        label: 'boy',
+        childNominative: 'boy',
+        childGenitive: 'boy',
+        bornByMe: 'born by me',
+        whichWasBorn: 'who was born',
+        pronoun: 'he',
+        pronounGenitive: 'his',
+      },
+    };
+  }
+  return {
+    uk: {
+      label: '', childNominative: '', childGenitive: '', childAccusative: '', bornByMe: '', whichWasBorn: '', born: '', pronoun: '', pronounGenitive: '',
+    },
+    en: {
+      label: '', childNominative: '', childGenitive: '', bornByMe: '', whichWasBorn: '', pronoun: '', pronounGenitive: '',
+    },
+  };
+};
+
+export const buildChildContext = (childData = {}) => ({
+  ...childData,
+  gender: getChildGenderForms(childData?.sex),
+});
+
+// --- Ukrainian/English "date in words" (batch 16 §12) -------------------------------------------
+// Legal statements spell the signature date out in words (spec: "вісімнадцятого травня дві тисячі
+// двадцять шостого року"), not as digits - this is a fully generic day/month/year -> words
+// converter, not a lookup table for one date, so it has to actually do Ukrainian ordinal-genitive
+// numeral grammar rather than special-case 18/05/2026.
+export const isIsoDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+
+const UK_ONES_ORDINAL_GENITIVE = {
+  1: 'першого', 2: 'другого', 3: 'третього', 4: 'четвертого', 5: "п'ятого", 6: 'шостого', 7: 'сьомого', 8: 'восьмого', 9: "дев'ятого",
+};
+const UK_TEENS_ORDINAL_GENITIVE = {
+  10: 'десятого', 11: 'одинадцятого', 12: 'дванадцятого', 13: 'тринадцятого', 14: 'чотирнадцятого', 15: "п'ятнадцятого", 16: 'шістнадцятого', 17: 'сімнадцятого', 18: 'вісімнадцятого', 19: "дев'ятнадцятого",
+};
+const UK_TENS_ORDINAL_GENITIVE = {
+  1: 'десятого', 2: 'двадцятого', 3: 'тридцятого', 4: 'сорокового', 5: "п'ятдесятого", 6: 'шістдесятого', 7: 'сімдесятого', 8: 'вісімдесятого', 9: "дев'яностого",
+};
+const UK_TENS_CARDINAL = {
+  2: 'двадцять', 3: 'тридцять', 4: 'сорок', 5: "п'ятдесят", 6: 'шістдесят', 7: 'сімдесят', 8: 'вісімдесят', 9: "дев'яносто",
+};
+const UK_HUNDREDS_CARDINAL = {
+  1: 'сто', 2: 'двісті', 3: 'триста', 4: 'чотириста', 5: "п'ятсот", 6: 'шістсот', 7: 'сімсот', 8: 'вісімсот', 9: "дев'ятсот",
+};
+const UK_HUNDREDS_ORDINAL_GENITIVE = {
+  1: 'сотого', 2: 'двохсотого', 3: 'трьохсотого', 4: 'чотирьохсотого', 5: "п'ятисотого", 6: 'шестисотого', 7: 'семисотого', 8: 'восьмисотого', 9: "дев'ятисотого",
+};
+const UK_THOUSANDS_CARDINAL = {
+  1: 'тисяча', 2: 'дві тисячі', 3: 'три тисячі', 4: 'чотири тисячі', 5: "п'ять тисяч", 6: 'шість тисяч', 7: 'сім тисяч', 8: 'вісім тисяч', 9: "дев'ять тисяч",
+};
+const UK_EXACT_THOUSAND_ORDINAL_GENITIVE = {
+  1: 'тисячного', 2: 'двохтисячного', 3: 'трьохтисячного', 4: 'чотиритисячного', 5: "п'ятитисячного", 6: 'шеститисячного', 7: 'семитисячного', 8: 'восьмитисячного', 9: "дев'ятитисячного",
+};
+
+export const UK_MONTHS_GENITIVE = {
+  1: 'січня', 2: 'лютого', 3: 'березня', 4: 'квітня', 5: 'травня', 6: 'червня', 7: 'липня', 8: 'серпня', 9: 'вересня', 10: 'жовтня', 11: 'листопада', 12: 'грудня',
+};
+
+// A day-of-month (1-31) in ordinal genitive form - the same ones-place words double as the last
+// word of a year (see yearToGenitiveWords), since "шостого" means "the sixth" regardless of
+// whether it's completing a day or a year.
+const dayToGenitiveWords = day => {
+  if (day <= 9) return UK_ONES_ORDINAL_GENITIVE[day];
+  if (day <= 19) return UK_TEENS_ORDINAL_GENITIVE[day];
+  if (day % 10 === 0) return UK_TENS_ORDINAL_GENITIVE[Math.floor(day / 10)];
+  return `${UK_TENS_CARDINAL[Math.floor(day / 10)]} ${UK_ONES_ORDINAL_GENITIVE[day % 10]}`;
+};
+
+// A 0-999 remainder in words, where only the last (rightmost) nonzero group is ordinal-genitive and
+// everything before it is a plain cardinal numeral - e.g. 993 -> "дев'ятсот дев'яносто третього"
+// (cardinal hundred + cardinal tens + ordinal ones), 900 -> "дев'ятисотого" (ordinal hundred alone).
+const threeDigitToGenitiveWords = n => {
+  if (n === 0) return '';
+  const hundreds = Math.floor(n / 100);
+  const tensOnes = n % 100;
+  if (tensOnes === 0) return UK_HUNDREDS_ORDINAL_GENITIVE[hundreds];
+  const words = hundreds ? [UK_HUNDREDS_CARDINAL[hundreds]] : [];
+  if (tensOnes >= 10 && tensOnes <= 19) {
+    words.push(UK_TEENS_ORDINAL_GENITIVE[tensOnes]);
+  } else {
+    const tens = Math.floor(tensOnes / 10);
+    const ones = tensOnes % 10;
+    if (ones === 0) {
+      words.push(UK_TENS_ORDINAL_GENITIVE[tens]);
+    } else {
+      if (tens) words.push(UK_TENS_CARDINAL[tens]);
+      words.push(UK_ONES_ORDINAL_GENITIVE[ones]);
+    }
+  }
+  return words.join(' ');
+};
+
+const yearToGenitiveWords = year => {
+  const thousands = Math.floor(year / 1000);
+  const remainder = year % 1000;
+  if (!thousands) return threeDigitToGenitiveWords(remainder);
+  if (!remainder) return UK_EXACT_THOUSAND_ORDINAL_GENITIVE[thousands];
+  return `${UK_THOUSANDS_CARDINAL[thousands]} ${threeDigitToGenitiveWords(remainder)}`;
+};
+
+// Generic for any ISO date, not just the reference statement's 2026-05-18 (spec: "Функцію потрібно
+// зробити універсальною").
+export const formatUkrainianDateWords = value => {
+  if (!isIsoDate(value)) return '';
+  const [year, month, day] = String(value).trim().split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+  return `${dayToGenitiveWords(day)} ${UK_MONTHS_GENITIVE[month]} ${yearToGenitiveWords(year)} року`;
+};
+
+const EN_MONTHS = {
+  1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June', 7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December',
+};
+const EN_DAY_ORDINALS = {
+  1: 'first', 2: 'second', 3: 'third', 4: 'fourth', 5: 'fifth', 6: 'sixth', 7: 'seventh', 8: 'eighth', 9: 'ninth', 10: 'tenth', 11: 'eleventh', 12: 'twelfth', 13: 'thirteenth', 14: 'fourteenth', 15: 'fifteenth', 16: 'sixteenth', 17: 'seventeenth', 18: 'eighteenth', 19: 'nineteenth', 20: 'twentieth', 21: 'twenty-first', 22: 'twenty-second', 23: 'twenty-third', 24: 'twenty-fourth', 25: 'twenty-fifth', 26: 'twenty-sixth', 27: 'twenty-seventh', 28: 'twenty-eighth', 29: 'twenty-ninth', 30: 'thirtieth', 31: 'thirty-first',
+};
+
+export const formatEnglishDateWords = value => {
+  if (!isIsoDate(value)) return '';
+  const [year, month, day] = String(value).trim().split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+  return `${EN_DAY_ORDINALS[day]} of ${EN_MONTHS[month]}, ${year}`;
+};
+
 export const resolveCaseContext = (catalog, caseId) => {
   const caseRecord = findById(catalog?.parties?.cases, caseId);
   if (!caseRecord) return null;
@@ -284,6 +461,17 @@ export const resolveCaseContext = (catalog, caseId) => {
   const representatives = toArray(caseRecord.representativeIds)
     .map(id => findById(catalog.parties.representatives, id))
     .filter(Boolean);
+
+  const rawBirthRegistration = isPlainObject(caseRecord.birthRegistration) ? caseRecord.birthRegistration : {};
+  const medicalConclusion = isPlainObject(rawBirthRegistration.medicalConclusion) ? rawBirthRegistration.medicalConclusion : {};
+  const birthRegistration = {
+    ...rawBirthRegistration,
+    statementDateWords: {
+      uk: formatUkrainianDateWords(rawBirthRegistration.statementDate),
+      en: formatEnglishDateWords(rawBirthRegistration.statementDate),
+    },
+  };
+
   return {
     case: caseRecord,
     couple,
@@ -293,6 +481,11 @@ export const resolveCaseContext = (catalog, caseId) => {
     clinic: findById(catalog.parties.clinics, caseRecord.clinicId),
     representative: representatives[0] || null,
     representatives,
+    birthRegistration,
+    child: buildChildContext(isPlainObject(rawBirthRegistration.child) ? rawBirthRegistration.child : {}),
+    medicalConclusion,
+    maternityHospital: findById(catalog.parties.maternityHospitals, medicalConclusion.maternityHospitalId),
+    notary: findById(catalog.parties.notaries, rawBirthRegistration.notaryId),
   };
 };
 
@@ -382,10 +575,64 @@ export const validateDocumentTemplate = (template, context) => {
   const missing = new Set();
   const scan = (value, lang) => getUnresolvedVariablePaths(value, context, lang).forEach(path => missing.add(path));
   ['uk', 'en'].forEach(lang => scan(template?.title?.[lang], lang));
+  toArray(template?.beforeTitle).forEach(block => {
+    ['uk', 'en'].forEach(lang => scan(block?.[lang], lang));
+  });
   toArray(template?.paragraphs).forEach(paragraph => {
     ['uk', 'en'].forEach(lang => scan(paragraph?.[lang], lang));
   });
   return [...missing].sort();
+};
+
+// --- Birth-registration surrogate-consent: pre-export field checklist (batch 16 §20) --------
+// A non-blocking checklist of the fields this specific document needs, shown before export rather
+// than enforced while editing - missing hospital/notary lookups and malformed dates are reported
+// the same way as a genuinely empty field, never as a thrown error.
+export const validateBirthRegistrationCase = (catalog, caseId) => {
+  const context = resolveCaseContext(catalog, caseId);
+  if (!context) return ['case'];
+
+  const issues = [];
+  const isBlank = value => value === undefined || value === null || String(value).trim() === '';
+  const requirePresent = (value, path) => {
+    if (isBlank(value)) issues.push(path);
+  };
+
+  const { birthRegistration, surrogateMother, maternityHospital, notary } = context;
+  const child = birthRegistration.child || {};
+  const medicalConclusion = birthRegistration.medicalConclusion || {};
+
+  requirePresent(child.sex, 'birthRegistration.child.sex');
+  requirePresent(child.birthDate, 'birthRegistration.child.birthDate');
+  requirePresent(child.birthPlace?.uk, 'birthRegistration.child.birthPlace.uk');
+  requirePresent(medicalConclusion.number, 'birthRegistration.medicalConclusion.number');
+  requirePresent(medicalConclusion.date, 'birthRegistration.medicalConclusion.date');
+  requirePresent(medicalConclusion.maternityHospitalId, 'birthRegistration.medicalConclusion.maternityHospitalId');
+  requirePresent(birthRegistration.statementDate, 'birthRegistration.statementDate');
+  requirePresent(birthRegistration.notaryId, 'birthRegistration.notaryId');
+  requirePresent(surrogateMother?.taxId, 'surrogateMother.taxId');
+  requirePresent(surrogateMother?.address?.uk, 'surrogateMother.address.uk');
+
+  if (!isBlank(child.sex) && child.sex !== 'female' && child.sex !== 'male') {
+    issues.push('birthRegistration.child.sex (must be "female" or "male")');
+  }
+  if (!isBlank(child.birthDate) && !isIsoDate(child.birthDate)) {
+    issues.push('birthRegistration.child.birthDate (must be YYYY-MM-DD)');
+  }
+  if (!isBlank(medicalConclusion.date) && !isIsoDate(medicalConclusion.date)) {
+    issues.push('birthRegistration.medicalConclusion.date (must be YYYY-MM-DD)');
+  }
+  if (!isBlank(birthRegistration.statementDate) && !isIsoDate(birthRegistration.statementDate)) {
+    issues.push('birthRegistration.statementDate (must be YYYY-MM-DD)');
+  }
+  if (!isBlank(medicalConclusion.maternityHospitalId) && !maternityHospital) {
+    issues.push('birthRegistration.medicalConclusion.maternityHospitalId (no matching maternity hospital)');
+  }
+  if (!isBlank(birthRegistration.notaryId) && !notary) {
+    issues.push('birthRegistration.notaryId (no matching notary)');
+  }
+
+  return issues;
 };
 
 // --- Special paragraph types (logo blocks) + section headings ------------------------------
@@ -475,6 +722,37 @@ const overriddenText = (override, langKey, fallback) => (
   typeof override?.[langKey] === 'string' ? override[langKey] : fallback
 );
 
+// --- beforeTitle blocks (batch 16 §14/§17) ---------------------------------------------------
+// Free-standing text rendered between the letterhead logo and the title (e.g. "ЗА МІСЦЕМ ВИМОГИ",
+// right-aligned and bold) - never merged into `paragraphs`, so it always renders in that fixed
+// logo -> beforeTitle -> title -> paragraphs order regardless of how the body is edited.
+const ALLOWED_BLOCK_ALIGNMENTS = ['left', 'right', 'center', 'justify'];
+
+export const normalizeBlockAlign = align => (ALLOWED_BLOCK_ALIGNMENTS.includes(align) ? align : 'left');
+
+const resolveBeforeTitleBlocks = (template, context) => toArray(template?.beforeTitle).map(block => ({
+  align: normalizeBlockAlign(block?.align),
+  bold: Boolean(block?.bold),
+  uk: fillPlaceholders(localizedText(block, 'uk'), context, 'uk'),
+  en: fillPlaceholders(localizedText(block, 'en'), context, 'en'),
+}));
+
+// --- Template-level languages/columns (batch 16 §15/§16) -------------------------------------
+// A template can pin its own language set + column count (e.g. `languages: ["uk"], columns: 1` for
+// a currently-Ukrainian-only statement) instead of following whatever layout the admin has picked
+// for the export batch as a whole. `null` here means "the template doesn't opt in" - the renderers
+// fall back to the page-wide layout selector unchanged, so every template saved before this existed
+// keeps rendering exactly as it did (spec: "Для старих шаблонів... стара поведінка").
+const resolveDocLanguages = template => {
+  const languages = toArray(template?.languages).map(String).filter(lang => lang === 'uk' || lang === 'en');
+  return languages.length ? languages : null;
+};
+
+const resolveDocColumns = (template, languages) => {
+  if (!languages) return null;
+  return template?.columns === 1 || template?.columns === 2 ? template.columns : (languages.length === 1 ? 1 : 2);
+};
+
 // A custom paragraph can be inserted (or removed) at any position in a template (spec: "кастомний
 // абзац в будь-якому місці документу"). Because per-case data-mode overrides key into a template's
 // paragraphs by array index, a structural edit like that must reindex every existing override so
@@ -508,10 +786,14 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
   // 'logo-consumed' (a no-op for the renderer) rather than dropped from the array, so paragraph
   // indices stay stable for per-case data-mode overrides (docOverrides[docId].paragraphs[index]).
   const hasDedicatedLogoField = Boolean(String(template?.logo || '').trim());
+  const languages = resolveDocLanguages(template);
   return {
     id: template.id,
     allowPageBreaks: Boolean(template.allowPageBreaks),
     logo,
+    languages,
+    columns: resolveDocColumns(template, languages),
+    beforeTitle: resolveBeforeTitleBlocks(template, context),
     title: {
       uk: overriddenText(override.title, 'uk', fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk')),
       en: overriddenText(override.title, 'en', fillPlaceholders(localizedText(template.title, 'en'), context, 'en')),
@@ -528,6 +810,7 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
       return {
         type,
         bold: paragraph?.bold,
+        align: paragraph?.align !== undefined ? normalizeBlockAlign(paragraph.align) : undefined,
         uk: overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
         en: overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
       };
@@ -798,6 +1081,19 @@ export const getLayoutColumnCount = layout => (isBilingualLayout(layout) || isSi
 // Which language a single-language layout (1 or 2 columns) renders - meaningless for the bilingual
 // layout, which always shows both.
 export const getLayoutLang = layout => (layout === 'one-column-en' || layout === 'two-column-en' ? 'en' : 'uk');
+
+// A document whose template pinned its own `languages`/`columns` (batch 16 §15/§16) renders with
+// that layout regardless of the page-wide selector - e.g. `languages: ["uk"], columns: 1` always
+// renders one full-width UA column, even while the admin has "UA + EN" selected for the rest of the
+// batch. A template that never set `languages` (doc.languages is null) simply defers to whatever
+// layout the page/export call passes in, so every pre-existing template is unaffected.
+export const getEffectiveDocLayout = (doc, fallbackLayout) => {
+  if (!doc?.languages?.length) return fallbackLayout;
+  const [firstLang] = doc.languages;
+  if (doc.languages.length > 1) return 'two-column';
+  const lang = firstLang === 'en' ? 'en' : 'uk';
+  return doc.columns === 2 ? `two-column-${lang}` : `one-column-${lang}`;
+};
 
 // Rough per-page-per-column character capacity for the single-language 2-column layout's manual
 // pagination (splitParagraphsIntoPages below). react-pdf has no native multi-column text flow: a

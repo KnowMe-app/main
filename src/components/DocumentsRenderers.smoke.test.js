@@ -202,3 +202,76 @@ describe('Documents PDF renderer - single-language 2-column layout + divider + i
   }, 30000);
 });
 
+// batch 16 §6/§14/§15: a template opting into `languages: ["uk"], columns: 1` (the birth-
+// registration surrogate-consent statement) must render one full-width UA column - no empty EN
+// column, no divider - with its beforeTitle blocks appearing before the title, even while the page-
+// wide layout selector is set to the bilingual default.
+describe('Documents renderers - single-column template with beforeTitle (batch 16 §6/§14/§15)', () => {
+  const buildBirthRegistrationDoc = async () => {
+    const { buildGeneratedDocument } = await import('./documentsCatalogUtils');
+    const template = {
+      id: 'birth-registration-surrogate-consent',
+      languages: ['uk'],
+      columns: 1,
+      beforeTitle: [
+        { uk: 'ЗА МІСЦЕМ ВИМОГИ', align: 'right', bold: true },
+      ],
+      title: { uk: 'З А Я В А' },
+      paragraphs: [
+        { uk: 'Я, {{surrogateMother.name.uk.nominative}}, даю згоду.' },
+      ],
+    };
+    return buildGeneratedDocument(template, { surrogateMother: { name: { uk: { nominative: 'Молвінських Юлія Володимирівна' } } } });
+  };
+
+  it('renders as a PDF without throwing, ignoring the page-wide two-column selector', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+    const doc = await buildBirthRegistrationDoc();
+
+    const element = React.createElement(DocumentsPdfDocument, { documents: [doc], layout: 'two-column', clinicLogos: [] });
+    const buffer = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(1000);
+  }, 20000);
+
+  it('renders as a DOCX with beforeTitle text ordered before the title and before the body', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = await buildBirthRegistrationDoc();
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'two-column' });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const xml = await zip.file('word/document.xml').async('string');
+
+    const beforeTitleIndex = xml.indexOf('ЗА МІСЦЕМ ВИМОГИ');
+    const titleIndex = xml.indexOf('З А Я В А');
+    const bodyIndex = xml.indexOf('даю згоду');
+    expect(beforeTitleIndex).toBeGreaterThan(-1);
+    expect(titleIndex).toBeGreaterThan(beforeTitleIndex);
+    expect(bodyIndex).toBeGreaterThan(titleIndex);
+    // Single-column template: no second (EN) language column table for the title/body.
+    expect(xml).not.toContain('undefined');
+    expect(xml).not.toContain('[object Object]');
+  }, 20000);
+});
+
