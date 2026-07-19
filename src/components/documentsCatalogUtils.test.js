@@ -6,6 +6,7 @@ import {
   estimateColumnPageCapacity,
   estimateParagraphChars,
   buildCaseLabel,
+  buildChildContext,
   buildDocumentsFileName,
   buildGeneratedDocument,
   clinicLogoEntriesToBackend,
@@ -14,16 +15,22 @@ import {
   emptyDocumentsCatalog,
   fillPlaceholders,
   formatDocumentDate,
+  formatEnglishDateWords,
+  formatUkrainianDateWords,
+  getChildGenderForms,
   getClinicLogo,
+  getEffectiveDocLayout,
   getLayoutColumnCount,
   getLayoutLang,
   getParagraphType,
   getTemplateLogoType,
   getValueByPath,
   isBilingualLayout,
+  isIsoDate,
   isParagraphBold,
   isSectionHeading,
   isSingleLanguageTwoColumnLayout,
+  MISSING_VALUE_PLACEHOLDER,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -45,6 +52,7 @@ import {
   toggleInlineFormat,
   upsertRecentCaseId,
   upsertRecentId,
+  validateBirthRegistrationCase,
   validateDocumentTemplate,
 } from './documentsCatalogUtils';
 
@@ -1119,5 +1127,298 @@ describe('spec: per-document format overrides (batch 13 §5)', () => {
     const reference = normalizeDocFormatting({ fontSize: 10 });
     const working = normalizeDocFormatting({ fontSize: 10 });
     expect(diffDocFormattingOverrides(reference, working)).toEqual({});
+  });
+});
+
+// Fixture mirroring the reference statement (batch 16 §6): a surrogate mother's consent to the
+// birth registration of a child born for a Japanese couple, medical conclusion issued by a named
+// maternity hospital, signature witnessed by a named notary.
+const birthRegistrationCatalog = (birthRegistrationOverride = {}) => normalizeDocumentsCatalog(
+  {
+    couples: {
+      'couple-1': {
+        id: 'couple-1',
+        partners: [
+          {
+            id: 'wife-1', role: 'wife', name: { uk: { nominative: 'Кікава Харука' }, en: 'Kikawa Haruka' }, birthDate: '1988-12-03', citizenship: { uk: 'Японії', en: 'Japan' },
+          },
+          {
+            id: 'husband-1', role: 'husband', name: { uk: { nominative: 'Кікава Йосуке' }, en: 'Kikawa Yosuke' }, birthDate: '1988-09-02', citizenship: { uk: 'Японії', en: 'Japan' },
+          },
+        ],
+      },
+    },
+    surrogateMothers: {
+      'surrogate-1': {
+        id: 'surrogate-1',
+        name: { uk: { nominative: 'Молвінських Юлія Володимирівна' } },
+        birthDate: '1993-05-27',
+        passport: { number: 'ЕВ409051', issueDate: '2016-04-28' },
+        taxId: '3411512481',
+        address: { uk: 'Кіровоградська область, місто Гайворон' },
+      },
+    },
+    maternityHospitals: {
+      'maternity-hospital-1': {
+        id: 'maternity-hospital-1',
+        name: { uk: 'КОМУНАЛЬНЕ НЕКОМЕРЦІЙНЕ ПІДПРИЄМСТВО "ПЕРИНАТАЛЬНИЙ ЦЕНТР М. КИЄВА"', en: '' },
+        edrpou: '22964365',
+      },
+    },
+    notaries: {
+      'notary-1': {
+        id: 'notary-1',
+        name: { uk: { nominative: 'Алексашина Ю.Б.', instrumental: 'Алексашиною Ю.Б.' } },
+        title: { uk: 'приватний нотаріус Київського міського нотаріального округу' },
+        city: { uk: 'місто Київ, Україна', en: 'Kyiv, Ukraine' },
+      },
+    },
+    cases: {
+      'case-1': {
+        id: 'case-1',
+        coupleId: 'couple-1',
+        surrogateMotherId: 'surrogate-1',
+        birthRegistration: {
+          child: { sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'місто Київ', en: 'Kyiv' } },
+          medicalConclusion: { number: '1234-7H6A-2T6C-CK24', date: '2026-05-16', maternityHospitalId: 'maternity-hospital-1' },
+          statementDate: '2026-05-18',
+          notaryId: 'notary-1',
+          ...birthRegistrationOverride,
+        },
+      },
+    },
+  },
+  {
+    'birth-registration-surrogate-consent': {
+      id: 'birth-registration-surrogate-consent',
+      languages: ['uk'],
+      columns: 1,
+      beforeTitle: [
+        { uk: 'ЗА МІСЦЕМ ВИМОГИ', align: 'right', bold: true },
+        { uk: 'Дані сурогатної матері: {{surrogateMother.name.uk.nominative}}', align: 'left' },
+      ],
+      title: { uk: 'З А Я В А' },
+      paragraphs: [
+        {
+          uk: 'Я, {{surrogateMother.name.uk.nominative}}, даю згоду на те, щоб батьками, '
+            + '{{child.gender.uk.bornByMe}} {{child.birthDate}} року {{child.gender.uk.whichWasBorn}} '
+            + '{{child.gender.uk.childGenitive}}, були записані генетичні батьки.',
+        },
+      ],
+    },
+  },
+);
+
+describe('spec: birth-registration surrogate-consent document (batch 16 §6)', () => {
+  describe('child gender grammar (§3/§4/§21 #1-4)', () => {
+    it('female: "народженої мною" + "дівчинки"', () => {
+      const forms = getChildGenderForms('female');
+      expect(forms.uk.bornByMe).toBe('народженої мною');
+      expect(forms.uk.childGenitive).toBe('дівчинки');
+    });
+
+    it('female: "яка народилась"', () => {
+      expect(getChildGenderForms('female').uk.whichWasBorn).toBe('яка народилась');
+    });
+
+    it('male: "народженого мною" + "хлопчика"', () => {
+      const forms = getChildGenderForms('male');
+      expect(forms.uk.bornByMe).toBe('народженого мною');
+      expect(forms.uk.childGenitive).toBe('хлопчика');
+    });
+
+    it('male: "який народився"', () => {
+      expect(getChildGenderForms('male').uk.whichWasBorn).toBe('який народився');
+    });
+
+    it('buildChildContext keeps the raw child fields alongside the derived gender forms', () => {
+      const child = buildChildContext({ sex: 'female', birthDate: '2026-05-16' });
+      expect(child.sex).toBe('female');
+      expect(child.birthDate).toBe('2026-05-16');
+      expect(child.gender.uk.label).toBe('дівчинка');
+      expect(child.gender.en.label).toBe('girl');
+    });
+
+    it('an unknown/missing sex resolves to blank grammar forms rather than throwing (§21 #14)', () => {
+      const context = resolveCaseContext(birthRegistrationCatalog({ child: { birthDate: '2026-05-16' } }), 'case-1');
+      expect(context.child.gender.uk.label).toBe('');
+      expect(fillPlaceholders('{{child.gender.uk.label}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+    });
+  });
+
+  describe('maternity hospital + notary lookups (§7/§8, §21 #5-6/#12-13)', () => {
+    it('resolves the maternity hospital via medicalConclusion.maternityHospitalId', () => {
+      const context = resolveCaseContext(birthRegistrationCatalog(), 'case-1');
+      expect(context.maternityHospital.edrpou).toBe('22964365');
+      expect(fillPlaceholders('{{maternityHospital.name.uk}}', context, 'uk')).toContain('ПЕРИНАТАЛЬНИЙ ЦЕНТР');
+    });
+
+    it('resolves the notary via birthRegistration.notaryId', () => {
+      const context = resolveCaseContext(birthRegistrationCatalog(), 'case-1');
+      expect(context.notary.name.uk.nominative).toBe('Алексашина Ю.Б.');
+      expect(fillPlaceholders('{{notary.title.uk}}', context, 'uk')).toBe('приватний нотаріус Київського міського нотаріального округу');
+    });
+
+    it('an unresolvable maternityHospitalId never crashes - the variable is just unresolved', () => {
+      const catalog = birthRegistrationCatalog({ medicalConclusion: { number: 'X', date: '2026-05-16', maternityHospitalId: 'no-such-hospital' } });
+      const context = resolveCaseContext(catalog, 'case-1');
+      expect(context.maternityHospital).toBeNull();
+      expect(fillPlaceholders('{{maternityHospital.name.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+    });
+
+    it('an unresolvable notaryId never crashes - the variable is just unresolved', () => {
+      const catalog = birthRegistrationCatalog({ notaryId: 'no-such-notary' });
+      const context = resolveCaseContext(catalog, 'case-1');
+      expect(context.notary).toBeNull();
+      expect(fillPlaceholders('{{notary.title.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+    });
+  });
+
+  describe('Ukrainian date-in-words (§12, §21 #7) - generic, not hardcoded to one date', () => {
+    it.each([
+      ['2026-05-18', 'вісімнадцятого травня дві тисячі двадцять шостого року'],
+      ['1993-05-27', 'двадцять сьомого травня тисяча дев\'ятсот дев\'яносто третього року'],
+      ['2020-06-10', 'десятого червня дві тисячі двадцятого року'],
+      ['2024-01-01', 'першого січня дві тисячі двадцять четвертого року'],
+      ['1988-09-02', 'другого вересня тисяча дев\'ятсот вісімдесят восьмого року'],
+    ])('%s -> %s', (iso, expected) => {
+      expect(formatUkrainianDateWords(iso)).toBe(expected);
+    });
+
+    it('returns an empty string for a non-ISO or invalid value rather than throwing', () => {
+      expect(formatUkrainianDateWords('')).toBe('');
+      expect(formatUkrainianDateWords('18/05/2026')).toBe('');
+      expect(formatUkrainianDateWords(undefined)).toBe('');
+      expect(isIsoDate('2026-05-18')).toBe(true);
+      expect(isIsoDate('2026-5-18')).toBe(false);
+    });
+
+    it('formatEnglishDateWords is generic across dates too', () => {
+      expect(formatEnglishDateWords('2026-05-18')).toBe('eighteenth of May, 2026');
+      expect(formatEnglishDateWords('1993-05-27')).toBe('twenty-seventh of May, 1993');
+    });
+  });
+
+  describe('birthRegistration context + statement date words', () => {
+    it('exposes birthRegistration.statementDateWords.uk derived from statementDate', () => {
+      const context = resolveCaseContext(birthRegistrationCatalog(), 'case-1');
+      expect(context.birthRegistration.statementDateWords.uk).toBe('вісімнадцятого травня дві тисячі двадцять шостого року');
+      expect(fillPlaceholders('{{birthRegistration.statementDateWords.uk}}', context, 'uk')).toBe('вісімнадцятого травня дві тисячі двадцять шостого року');
+    });
+
+    it('renders child.birthDate as DD.MM.YYYY through the existing date formatter (§13)', () => {
+      const context = resolveCaseContext(birthRegistrationCatalog(), 'case-1');
+      expect(fillPlaceholders('{{child.birthDate}}', context, 'uk')).toBe('16.05.2026');
+    });
+
+    it('exposes medicalConclusion.* directly, not just nested under birthRegistration', () => {
+      const context = resolveCaseContext(birthRegistrationCatalog(), 'case-1');
+      expect(fillPlaceholders('{{medicalConclusion.number}}', context, 'uk')).toBe('1234-7H6A-2T6C-CK24');
+    });
+
+    it('resolves surrogateMother.taxId/address.uk and wife/husband.citizenship.uk via the generic path resolver (no code change needed, §9/§10)', () => {
+      const context = resolveCaseContext(birthRegistrationCatalog(), 'case-1');
+      expect(fillPlaceholders('{{surrogateMother.taxId}}', context, 'uk')).toBe('3411512481');
+      expect(fillPlaceholders('{{surrogateMother.address.uk}}', context, 'uk')).toBe('Кіровоградська область, місто Гайворон');
+      expect(fillPlaceholders('{{wife.citizenship.uk}}', context, 'uk')).toBe('Японії');
+      expect(fillPlaceholders('{{husband.citizenship.uk}}', context, 'uk')).toBe('Японії');
+    });
+  });
+
+  describe('pre-export validation (§20)', () => {
+    it('reports no issues for a fully-filled case', () => {
+      expect(validateBirthRegistrationCase(birthRegistrationCatalog(), 'case-1')).toEqual([]);
+    });
+
+    it('lists every missing required field without throwing', () => {
+      const catalog = birthRegistrationCatalog({
+        child: {}, medicalConclusion: {}, statementDate: '', notaryId: '',
+      });
+      const issues = validateBirthRegistrationCase(catalog, 'case-1');
+      expect(issues).toEqual(expect.arrayContaining([
+        'birthRegistration.child.sex',
+        'birthRegistration.child.birthDate',
+        'birthRegistration.child.birthPlace.uk',
+        'birthRegistration.medicalConclusion.number',
+        'birthRegistration.medicalConclusion.date',
+        'birthRegistration.medicalConclusion.maternityHospitalId',
+        'birthRegistration.statementDate',
+        'birthRegistration.notaryId',
+      ]));
+    });
+
+    it('flags an invalid sex value and a non-ISO date without blocking editing', () => {
+      const catalog = birthRegistrationCatalog({ child: { sex: 'other', birthDate: '16.05.2026', birthPlace: { uk: 'Київ' } } });
+      const issues = validateBirthRegistrationCase(catalog, 'case-1');
+      expect(issues).toContain('birthRegistration.child.sex (must be "female" or "male")');
+      expect(issues).toContain('birthRegistration.child.birthDate (must be YYYY-MM-DD)');
+    });
+
+    it('flags an unresolvable maternity hospital / notary id', () => {
+      const catalog = birthRegistrationCatalog({ notaryId: 'ghost-notary' });
+      const issues = validateBirthRegistrationCase(catalog, 'case-1');
+      expect(issues).toContain('birthRegistration.notaryId (no matching notary)');
+    });
+  });
+
+  describe('template-level languages/columns + beforeTitle (§14/§15/§16, §21 #8-11/#15)', () => {
+    it('a single-column template resolves to one-column-uk regardless of the page-wide layout (§21 #9)', () => {
+      const catalog = birthRegistrationCatalog();
+      const context = resolveCaseContext(catalog, 'case-1');
+      const generated = buildGeneratedDocument(catalog.documents[0], context);
+      expect(generated.languages).toEqual(['uk']);
+      expect(generated.columns).toBe(1);
+      expect(getEffectiveDocLayout(generated, 'two-column')).toBe('one-column-uk');
+    });
+
+    it('resolves beforeTitle blocks with placeholders filled and align/bold normalized, kept separate from paragraphs (§21 #8)', () => {
+      const catalog = birthRegistrationCatalog();
+      const context = resolveCaseContext(catalog, 'case-1');
+      const generated = buildGeneratedDocument(catalog.documents[0], context);
+      expect(generated.beforeTitle).toHaveLength(2);
+      expect(generated.beforeTitle[0]).toMatchObject({ uk: 'ЗА МІСЦЕМ ВИМОГИ', align: 'right', bold: true });
+      expect(generated.beforeTitle[1].uk).toBe('Дані сурогатної матері: Молвінських Юлія Володимирівна');
+      expect(generated.paragraphs.some(p => p.uk.includes('ЗА МІСЦЕМ ВИМОГИ'))).toBe(false);
+    });
+
+    it('a legacy template without languages/columns/beforeTitle keeps rendering under the page-wide layout unchanged (§21 #11)', () => {
+      const legacyTemplate = { id: 'legacy', title: { uk: 'Договір', en: 'Agreement' }, paragraphs: [{ uk: 'Текст.', en: 'Text.' }] };
+      const generated = buildGeneratedDocument(legacyTemplate, {});
+      expect(generated.languages).toBeNull();
+      expect(generated.columns).toBeNull();
+      expect(generated.beforeTitle).toEqual([]);
+      expect(getEffectiveDocLayout(generated, 'two-column')).toBe('two-column');
+    });
+
+    it('a missing `en` field never throws, undefined, or "null" (§21 #10) - localizedText falls back to the uk text', () => {
+      const generated = buildGeneratedDocument({ id: 'uk-only', title: { uk: 'Заява' }, beforeTitle: [{ uk: 'Блок' }], paragraphs: [{ uk: 'Текст.' }] }, {});
+      [generated.title.en, generated.beforeTitle[0].en, generated.paragraphs[0].en].forEach(value => {
+        expect(value).not.toBeUndefined();
+        expect(value).not.toBe('undefined');
+        expect(value).not.toBe('null');
+      });
+    });
+  });
+
+  describe('align/bold formatting on beforeTitle + paragraphs (§17, §21 #15)', () => {
+    it('an explicit paragraph.align overrides the default alignment', () => {
+      const generated = buildGeneratedDocument({
+        id: 'aligned',
+        title: { uk: 'Заява' },
+        paragraphs: [{ uk: 'Підпис', align: 'right' }, { uk: 'Звичайний абзац' }],
+      }, {});
+      expect(generated.paragraphs[0].align).toBe('right');
+      expect(generated.paragraphs[1].align).toBeUndefined();
+    });
+
+    it('an invalid align value normalizes to "left" rather than being passed through as-is', () => {
+      const generated = buildGeneratedDocument({
+        id: 'bad-align',
+        title: { uk: 'Заява' },
+        beforeTitle: [{ uk: 'Блок', align: 'diagonal' }],
+        paragraphs: [],
+      }, {});
+      expect(generated.beforeTitle[0].align).toBe('left');
+    });
   });
 });

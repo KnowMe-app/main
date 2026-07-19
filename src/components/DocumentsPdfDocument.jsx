@@ -19,6 +19,7 @@ import {
   estimateCharsPerLine,
   estimateColumnPageCapacity,
   getClinicLogo,
+  getEffectiveDocLayout,
   getLayoutLang,
   isBilingualLayout,
   isParagraphBold,
@@ -132,19 +133,22 @@ const LogoBlock = ({ type, isBilingual, cellStyles, logoWidth, longLogoWidth, cl
   );
 };
 
+// batch 16 §17: an explicit `align` on a paragraph overrides the default alignment (justified
+// body / flush-left heading) - never inferred from the text itself.
 const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBreaks }) => {
   const wrap = allowsParagraphInternalBreak(paragraph, allowPageBreaks);
   const cellStyle = isParagraphBold(paragraph) ? cellStyles.paragraphHeading : cellStyles.paragraph;
+  const alignStyle = paragraph.align ? { textAlign: paragraph.align } : undefined;
   if (isBilingual) {
     return (
       <View style={styles.row} wrap={wrap}>
-        <Text style={[cellStyle, cellStyles.leftCell]}><FormattedRuns text={paragraph.uk} /></Text>
-        <Text style={[cellStyle, cellStyles.rightCell]}><FormattedRuns text={paragraph.en} /></Text>
+        <Text style={[cellStyle, cellStyles.leftCell, alignStyle]}><FormattedRuns text={paragraph.uk} /></Text>
+        <Text style={[cellStyle, cellStyles.rightCell, alignStyle]}><FormattedRuns text={paragraph.en} /></Text>
       </View>
     );
   }
   const text = paragraph[lang];
-  return <Text style={cellStyle} wrap={wrap}><FormattedRuns text={text} /></Text>;
+  return <Text style={[cellStyle, alignStyle]} wrap={wrap}><FormattedRuns text={text} /></Text>;
 };
 
 // The single-language 2-column layout (spec §4: newspaper-style, one language flowing across two
@@ -188,6 +192,27 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
   </View>
 );
 
+// Free-standing text between the letterhead logo and the title (spec §14: "ЗА МІСЦЕМ ВИМОГИ" etc.)
+// - never merged into the paragraph list, so it always renders in this fixed position regardless of
+// how the body is edited. `align`/`bold` (spec §17) are resolved per block, not inferred from text.
+const BeforeTitleBlock = ({ block, isBilingual, lang, cellStyles }) => {
+  const runStyle = { textAlign: block.align, fontWeight: block.bold ? 700 : 400 };
+  if (isBilingual) {
+    return (
+      <View style={styles.row}>
+        <Text style={[cellStyles.beforeTitle, cellStyles.leftCell, runStyle]}><FormattedRuns text={block.uk} /></Text>
+        <Text style={[cellStyles.beforeTitle, cellStyles.rightCell, runStyle]}><FormattedRuns text={block.en} /></Text>
+      </View>
+    );
+  }
+  return <Text style={[cellStyles.beforeTitle, runStyle]}><FormattedRuns text={block[lang]} /></Text>;
+};
+
+const BeforeTitleBlocks = ({ blocks, isBilingual, lang, cellStyles }) => (blocks || []).map((block, index) => (
+  // eslint-disable-next-line react/no-array-index-key
+  <BeforeTitleBlock key={index} block={block} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} />
+));
+
 // The bilingual and single-column (1-language) layouts: everything lives on one <Page> JSX
 // element and react-pdf's own automatic wrap handles overflow onto further physical pages. The
 // single-language 2-column layout does NOT use this - see SingleLanguagePages below.
@@ -203,6 +228,7 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
           came from the dedicated `logo` field or a legacy leading paragraph - see
           getTemplateLogoType in documentsCatalogUtils. */}
       {doc.logo ? <LogoBlock type={doc.logo} {...logoBlockProps} /> : null}
+      <BeforeTitleBlocks blocks={doc.beforeTitle} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} />
       <DocumentTitleBlock doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} titleGap={titleGap} />
       {doc.paragraphs.map((paragraph, index) => {
         // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render
@@ -294,12 +320,11 @@ const DocumentsPdfDocument = ({
   const contentWidth = A4_WIDTH_PT - marginLeft - marginRight;
   // Both column layouts (bilingual UA|EN and single-language newspaper-style, spec §4) share the
   // same left/right cell geometry and divider - only how the paragraphs are distributed between
-  // the two cells differs (see DocumentBlock/SingleLanguageColumns).
-  const isTwoColumn = isBilingualLayout(layout) || isSingleLanguageTwoColumnLayout(layout);
+  // the two cells differs (see DocumentBlock/SingleLanguageColumns). Geometry here is shared across
+  // every document; which layout actually applies is resolved per document below (getEffectiveDocLayout),
+  // since a template can pin its own languages/columns regardless of the page-wide selector.
   const columnContentWidth = (contentWidth - columnGap) / 2;
-  const showColumnDivider = isTwoColumn && Boolean(formatting.columnDivider);
   const configuredLogoWidth = formatting.logoWidthMm * MM_TO_PT;
-  const logoWidth = isTwoColumn ? Math.min(configuredLogoWidth, columnContentWidth) : configuredLogoWidth;
   // `showLogo` is only the global permission (spec §5: `canRenderLogo = formatting.showLogo !==
   // false`) - whether a logo actually renders still depends entirely on the template carrying a
   // {{logo}}/{{logo-long}} paragraph; clinicLogos being empty (or missing the matching variant)
@@ -333,6 +358,12 @@ const DocumentsPdfDocument = ({
       marginTop: formatting.paragraphSpacing,
       marginBottom: formatting.paragraphSpacing,
     },
+    beforeTitle: {
+      fontFamily: 'Tinos',
+      fontSize: formatting.fontSize,
+      lineHeight: formatting.lineSpacing,
+      marginBottom: formatting.paragraphSpacing,
+    },
     leftCell: {
       flex: 1,
       marginRight: columnGap / 2,
@@ -352,8 +383,6 @@ const DocumentsPdfDocument = ({
     fontSize: formatting.fontSize,
   };
   const dividerLeft = marginLeft + columnContentWidth + columnGap / 2 - 0.5;
-  const isSingleLanguageFlow = isSingleLanguageTwoColumnLayout(layout);
-  const lang = getLayoutLang(layout);
 
   // The single-language 2-column layout can't rely on react-pdf's automatic wrap the way every
   // other layout does (see splitParagraphsIntoPages for why): a flex row's two columns can't
@@ -370,7 +399,10 @@ const DocumentsPdfDocument = ({
   // after the first, keeps the same one-page-per-group layout in the normal case while letting
   // react-pdf's own dynamic subPageNumber/subPageTotalPages count every actual physical page -
   // including any accidental extra overflow page - so numbering can never desync from reality.
-  const renderSingleLanguagePages = doc => {
+  const renderSingleLanguagePages = (doc, effectiveLayout) => {
+    const lang = getLayoutLang(effectiveLayout);
+    const showColumnDivider = Boolean(formatting.columnDivider);
+    const logoWidth = Math.min(configuredLogoWidth, columnContentWidth);
     const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed');
     const pageContentHeightPt = A4_HEIGHT_PT - marginTop - marginBottom;
     const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
@@ -393,6 +425,7 @@ const DocumentsPdfDocument = ({
                 {doc.logo ? (
                   <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
                 ) : null}
+                <BeforeTitleBlocks blocks={doc.beforeTitle} isBilingual={false} lang={lang} cellStyles={cellStyles} />
                 <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
               </>
             ) : null}
@@ -412,26 +445,36 @@ const DocumentsPdfDocument = ({
     );
   };
 
-  const renderDocumentPage = doc => (
-    <Page key={doc.id} size="A4" style={pageStyle}>
-      <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
-      <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
-      <DocumentBlock
-        doc={doc}
-        layout={layout}
-        cellStyles={cellStyles}
-        titleGap={formatting.paragraphSpacing}
-        logoWidth={logoWidth}
-        longLogoWidth={contentWidth}
-        clinicLogos={effectiveClinicLogos}
-      />
-      <PageFooter formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
-    </Page>
-  );
+  const renderDocumentPage = (doc, effectiveLayout) => {
+    const isTwoColumn = isBilingualLayout(effectiveLayout) || isSingleLanguageTwoColumnLayout(effectiveLayout);
+    const showColumnDivider = isTwoColumn && Boolean(formatting.columnDivider);
+    const logoWidth = isTwoColumn ? Math.min(configuredLogoWidth, columnContentWidth) : configuredLogoWidth;
+    return (
+      <Page key={doc.id} size="A4" style={pageStyle}>
+        <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
+        <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
+        <DocumentBlock
+          doc={doc}
+          layout={effectiveLayout}
+          cellStyles={cellStyles}
+          titleGap={formatting.paragraphSpacing}
+          logoWidth={logoWidth}
+          longLogoWidth={contentWidth}
+          clinicLogos={effectiveClinicLogos}
+        />
+        <PageFooter formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
+      </Page>
+    );
+  };
 
   return (
     <Document>
-      {documents.flatMap(doc => (isSingleLanguageFlow ? renderSingleLanguagePages(doc) : [renderDocumentPage(doc)]))}
+      {documents.flatMap(doc => {
+        const effectiveLayout = getEffectiveDocLayout(doc, layout);
+        return isSingleLanguageTwoColumnLayout(effectiveLayout)
+          ? renderSingleLanguagePages(doc, effectiveLayout)
+          : [renderDocumentPage(doc, effectiveLayout)];
+      })}
     </Document>
   );
 };

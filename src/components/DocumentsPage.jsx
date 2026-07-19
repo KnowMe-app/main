@@ -803,6 +803,37 @@ const DocumentsPage = ({ isAdmin }) => {
     }));
   };
 
+  // beforeTitle (spec §14): free-standing text rendered between the logo and the title - a
+  // template opts in by carrying the array at all (usually pasted in via the technical JSON), so
+  // editing here only touches existing blocks rather than letting the admin create the array from
+  // scratch.
+  const handleBeforeTitleChange = (docId, index, langKey, value) => {
+    updateTemplate(docId, template => ({
+      ...template,
+      beforeTitle: (template.beforeTitle || []).map((block, blockIndex) => (
+        blockIndex === index ? { ...block, [langKey]: value } : block
+      )),
+    }));
+  };
+
+  const handleBeforeTitleAlignChange = (docId, index, value) => {
+    updateTemplate(docId, template => ({
+      ...template,
+      beforeTitle: (template.beforeTitle || []).map((block, blockIndex) => (
+        blockIndex === index ? { ...block, align: value } : block
+      )),
+    }));
+  };
+
+  const handleBeforeTitleBoldChange = (docId, index, checked) => {
+    updateTemplate(docId, template => ({
+      ...template,
+      beforeTitle: (template.beforeTitle || []).map((block, blockIndex) => (
+        blockIndex === index ? { ...block, bold: checked } : block
+      )),
+    }));
+  };
+
   // Inserting or removing a paragraph is a structural edit, not a text edit - persisted
   // immediately (not deferred to blur, unlike the plain text fields above) and, since a
   // paragraph's position is how per-case data-mode overrides key into it, reindexes every
@@ -1697,6 +1728,55 @@ const DocumentsPage = ({ isAdmin }) => {
                               style={{ flex: 1, minWidth: 240 }}
                             />
                           </RowLine>
+                        ) : null}
+                        {!isDataMode && (template.beforeTitle || []).length ? (
+                          <div style={{ marginTop: 4 }}>
+                            <DocSubtitle style={{ fontWeight: 700 }}>Before title</DocSubtitle>
+                            {template.beforeTitle.map((block, index) => (
+                              // eslint-disable-next-line react/no-array-index-key
+                              <RowLine key={`${template.id}-before-title-${index}`} style={{ marginTop: 4 }}>
+                                <FieldInput
+                                  type="text"
+                                  value={block.uk || ''}
+                                  placeholder="Before title (uk)"
+                                  onChange={event => handleBeforeTitleChange(template.id, index, 'uk', event.target.value)}
+                                  onBlur={() => persistTemplate(template.id)}
+                                  style={{ flex: 1, minWidth: 180 }}
+                                />
+                                <FieldInput
+                                  type="text"
+                                  value={block.en || ''}
+                                  placeholder="Before title (en)"
+                                  onChange={event => handleBeforeTitleChange(template.id, index, 'en', event.target.value)}
+                                  onBlur={() => persistTemplate(template.id)}
+                                  style={{ flex: 1, minWidth: 180 }}
+                                />
+                                <select
+                                  value={block.align || 'left'}
+                                  onChange={event => {
+                                    handleBeforeTitleAlignChange(template.id, index, event.target.value);
+                                    persistTemplate(template.id);
+                                  }}
+                                >
+                                  <option value="left">left</option>
+                                  <option value="right">right</option>
+                                  <option value="center">center</option>
+                                  <option value="justify">justify</option>
+                                </select>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(block.bold)}
+                                    onChange={event => {
+                                      handleBeforeTitleBoldChange(template.id, index, event.target.checked);
+                                      persistTemplate(template.id);
+                                    }}
+                                  />
+                                  Bold
+                                </label>
+                              </RowLine>
+                            ))}
+                          </div>
                         ) : null}
                         <ParagraphPair $single={isSingle}>
                           {showUk ? (

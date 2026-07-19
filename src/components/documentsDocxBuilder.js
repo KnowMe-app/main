@@ -11,6 +11,7 @@ import {
   DEFAULT_DOC_FORMATTING,
   allowsParagraphInternalBreak,
   getClinicLogo,
+  getEffectiveDocLayout,
   getLayoutLang,
   isBilingualLayout,
   isParagraphBold,
@@ -49,15 +50,11 @@ export const buildDocumentsDocx = async ({
     Paragraph, Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
   } = docx;
 
-  const isBilingual = isBilingualLayout(layout);
-  const isSingleLanguageFlow = isSingleLanguageTwoColumnLayout(layout);
   // Both column layouts (bilingual UA|EN and single-language newspaper-style, spec §4) share the
   // same two-cell geometry/logo clamping - only how paragraphs are distributed between the two
-  // cells differs (see singleLanguageColumnsTable below).
-  const isTwoColumn = isBilingual || isSingleLanguageFlow;
-  const lang = getLayoutLang(layout);
-  const showUk = isBilingual || lang === 'uk';
-  const showEn = isBilingual || lang === 'en';
+  // cells differs (see singleLanguageColumnsTable below). Which layout actually applies is resolved
+  // per document below (getEffectiveDocLayout), since a template can pin its own languages/columns
+  // regardless of the page-wide selector (batch 16 §15/§16).
   const bodySize = halfPoints(formatting.fontSize);
   const titleSize = halfPoints(formatting.titleFontSize);
   const smallSize = halfPoints(Math.max(7, formatting.fontSize - 2));
@@ -75,7 +72,7 @@ export const buildDocumentsDocx = async ({
   // Off by default (spec §3): a hairline rule between the two columns, drawn as a single border on
   // the left cell only (the right cell stays borderless) so the table renders exactly one line at
   // the boundary instead of a doubled one. Same docLine hairline weight the PDF renderer uses.
-  const showColumnDivider = isTwoColumn && Boolean(formatting.columnDivider);
+  // Whether it actually applies is resolved per document (see showColumnDivider in buildDocChildren).
   const dividerBorder = { style: BorderStyle.SINGLE, size: 4, color: 'E6DCC7' };
 
   const contentWidthTwips = 11906
@@ -94,8 +91,17 @@ export const buildDocumentsDocx = async ({
     italics: run.italic,
   }));
 
-  const bodyParagraph = (text, { keepLines = true } = {}) => new Paragraph({
-    alignment: AlignmentType.JUSTIFIED,
+  // batch 16 §17: an explicit `align` on a paragraph (or beforeTitle block) overrides the default
+  // alignment (justified body / flush-left heading) - never inferred from the text itself.
+  const alignmentForBlock = align => {
+    if (align === 'right') return AlignmentType.RIGHT;
+    if (align === 'center') return AlignmentType.CENTER;
+    if (align === 'justify') return AlignmentType.JUSTIFIED;
+    return AlignmentType.LEFT;
+  };
+
+  const bodyParagraph = (text, { keepLines = true, alignmentOverride } = {}) => new Paragraph({
+    alignment: alignmentOverride || AlignmentType.JUSTIFIED,
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
     indent: firstLineTwips ? { firstLine: firstLineTwips } : undefined,
     keepLines,
@@ -104,17 +110,20 @@ export const buildDocumentsDocx = async ({
 
   // Short numbered section titles ("1. Предмет Договору") render bold, flush left, with extra
   // room above and kept with the paragraph that follows so a heading never ends a page alone.
-  const headingParagraph = text => new Paragraph({
-    alignment: AlignmentType.LEFT,
+  const headingParagraph = (text, alignmentOverride) => new Paragraph({
+    alignment: alignmentOverride || AlignmentType.LEFT,
     spacing: { before: afterTwips, after: afterTwips, line: lineTwips, lineRule: 'auto' },
     keepLines: true,
     keepNext: true,
     children: formattedTextRuns(text, { size: bodySize, baseBold: true }),
   });
 
-  const cellParagraph = (text, allowPageBreaks, paragraph) => (isParagraphBold(paragraph)
-    ? headingParagraph(text)
-    : bodyParagraph(text, { keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks) }));
+  const cellParagraph = (text, allowPageBreaks, paragraph) => {
+    const alignmentOverride = paragraph?.align ? alignmentForBlock(paragraph.align) : undefined;
+    return isParagraphBold(paragraph)
+      ? headingParagraph(text, alignmentOverride)
+      : bodyParagraph(text, { keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks), alignmentOverride });
+  };
 
   // Exactly the Format panel's paragraph spacing - no hidden minimum - so the Word output keeps
   // the same title-to-body rhythm as the PDF and the reference statements.
@@ -124,7 +133,15 @@ export const buildDocumentsDocx = async ({
     children: formattedTextRuns(text, { size: titleSize, baseBold: true }),
   });
 
-  const twoColumnCellFromParagraph = (paragraphOrParagraphs, marginSide) => new TableCell({
+  // Free-standing text between the letterhead logo and the title (spec §14/§17: "ЗА МІСЦЕМ
+  // ВИМОГИ" etc.) - `align`/`bold` are resolved per block, never inferred from the text itself.
+  const beforeTitleParagraph = (text, block) => new Paragraph({
+    alignment: alignmentForBlock(block.align),
+    spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
+    children: formattedTextRuns(text, { size: bodySize, baseBold: Boolean(block.bold) }),
+  });
+
+  const twoColumnCellFromParagraph = (paragraphOrParagraphs, marginSide, showColumnDivider) => new TableCell({
     borders: showColumnDivider && marginSide === 'left' ? { ...noBorders, right: dividerBorder } : noBorders,
     width: { size: 50, type: WidthType.PERCENTAGE },
     verticalAlign: VerticalAlign.TOP,
@@ -137,14 +154,14 @@ export const buildDocumentsDocx = async ({
     children: Array.isArray(paragraphOrParagraphs) ? paragraphOrParagraphs : [paragraphOrParagraphs],
   });
 
-  const twoColumnTable = (rows, cantSplit) => new Table({
+  const twoColumnTable = (rows, cantSplit, showColumnDivider = false) => new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
     rows: rows.map(([left, right]) => new TableRow({
       cantSplit,
       children: [
-        twoColumnCellFromParagraph(left, 'left'),
-        twoColumnCellFromParagraph(right, 'right'),
+        twoColumnCellFromParagraph(left, 'left', showColumnDivider),
+        twoColumnCellFromParagraph(right, 'right', showColumnDivider),
       ],
     })),
   });
@@ -156,18 +173,18 @@ export const buildDocumentsDocx = async ({
   // renderer (which has no native multi-column flow at all) and to keep the well-tested
   // per-document section/pagination model untouched, this uses the same up-front split into two
   // whole-paragraph groups as the PDF, laid out as a single borderless table row.
-  const singleLanguageColumnsTable = (paragraphs, allowPageBreaks) => {
+  const singleLanguageColumnsTable = (paragraphs, allowPageBreaks, lang, layoutCtx) => {
     const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang);
     const buildColumnChildren = columnParagraphs => columnParagraphs.flatMap(paragraph => (
-      paragraph.type && paragraph.type !== 'text' ? buildLogoBlock(paragraph.type) : [cellParagraph(paragraph[lang], allowPageBreaks, paragraph)]
+      paragraph.type && paragraph.type !== 'text' ? buildLogoBlock(paragraph.type, layoutCtx) : [cellParagraph(paragraph[lang], allowPageBreaks, paragraph)]
     ));
     return new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
       rows: [new TableRow({
         children: [
-          twoColumnCellFromParagraph(buildColumnChildren(leftParagraphs), 'left'),
-          twoColumnCellFromParagraph(buildColumnChildren(rightParagraphs), 'right'),
+          twoColumnCellFromParagraph(buildColumnChildren(leftParagraphs), 'left', layoutCtx.showColumnDivider),
+          twoColumnCellFromParagraph(buildColumnChildren(rightParagraphs), 'right', layoutCtx.showColumnDivider),
         ],
       })],
     });
@@ -187,7 +204,8 @@ export const buildDocumentsDocx = async ({
 
   // {{logo}}: a compact logo duplicated above each visible language column (or once, centered,
   // in a one-column export); {{logo-long}}: one shared full-width logo, never duplicated.
-  const buildLogoBlock = paragraphType => {
+  const buildLogoBlock = (paragraphType, layoutCtx) => {
+    const { isTwoColumn, showUk, showEn, showColumnDivider } = layoutCtx;
     const variantKind = paragraphType === 'logo-long' ? 'logo-long' : 'logo';
     const variant = getClinicLogo(effectiveClinicLogos, variantKind);
     if (!variant?.dataUrl) return [];
@@ -209,20 +227,44 @@ export const buildDocumentsDocx = async ({
       return [twoColumnTable([[
         logoParagraph(decoded, compactWidthPx, ratio),
         logoParagraph(decoded, compactWidthPx, ratio),
-      ]], true)];
+      ]], true, showColumnDivider)];
     }
     return [logoParagraph(decoded, compactWidthPx, ratio)];
   };
 
   const buildDocChildren = doc => {
+    const effectiveLayout = getEffectiveDocLayout(doc, layout);
+    const isBilingual = isBilingualLayout(effectiveLayout);
+    const isSingleLanguageFlow = isSingleLanguageTwoColumnLayout(effectiveLayout);
+    const isTwoColumn = isBilingual || isSingleLanguageFlow;
+    const lang = getLayoutLang(effectiveLayout);
+    const showUk = isBilingual || lang === 'uk';
+    const showEn = isBilingual || lang === 'en';
+    const showColumnDivider = isTwoColumn && Boolean(formatting.columnDivider);
+    const layoutCtx = {
+      isTwoColumn, showUk, showEn, showColumnDivider,
+    };
+
     const children = [];
 
     // The template's letterhead logo (doc.logo) always renders before the title, whether it came
     // from the dedicated `logo` field or a legacy leading paragraph - see getTemplateLogoType.
-    if (doc.logo) children.push(...buildLogoBlock(doc.logo));
+    if (doc.logo) children.push(...buildLogoBlock(doc.logo, layoutCtx));
+
+    // Free-standing text between the logo and the title (spec §14), never merged into the body.
+    (doc.beforeTitle || []).forEach(block => {
+      if (isBilingual) {
+        children.push(twoColumnTable([[
+          beforeTitleParagraph(block.uk, block),
+          beforeTitleParagraph(block.en, block),
+        ]], true, showColumnDivider));
+      } else {
+        children.push(beforeTitleParagraph(block[lang], block));
+      }
+    });
 
     if (isBilingual) {
-      children.push(twoColumnTable([[titleParagraph(doc.title.uk), titleParagraph(doc.title.en)]], true));
+      children.push(twoColumnTable([[titleParagraph(doc.title.uk), titleParagraph(doc.title.en)]], true, showColumnDivider));
     } else {
       children.push(titleParagraph(doc.title[lang]));
     }
@@ -233,13 +275,13 @@ export const buildDocumentsDocx = async ({
       // One shared table for the whole body (not one per paragraph, unlike the bilingual/1-column
       // branches below) - the newspaper-style column split is decided once, up front, across every
       // paragraph together (see splitParagraphsIntoColumns).
-      children.push(singleLanguageColumnsTable(bodyParagraphs, doc.allowPageBreaks));
+      children.push(singleLanguageColumnsTable(bodyParagraphs, doc.allowPageBreaks, lang, layoutCtx));
       return children;
     }
 
     bodyParagraphs.forEach(paragraph => {
       if (paragraph.type !== 'text') {
-        children.push(...buildLogoBlock(paragraph.type));
+        children.push(...buildLogoBlock(paragraph.type, layoutCtx));
         return;
       }
       if (isBilingual) {
@@ -247,7 +289,7 @@ export const buildDocumentsDocx = async ({
         children.push(twoColumnTable([[
           cellParagraph(paragraph.uk, doc.allowPageBreaks, paragraph),
           cellParagraph(paragraph.en, doc.allowPageBreaks, paragraph),
-        ]], cantSplit));
+        ]], cantSplit, showColumnDivider));
       } else {
         children.push(cellParagraph(paragraph[lang], doc.allowPageBreaks, paragraph));
       }
