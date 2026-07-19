@@ -110,3 +110,44 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     expect(payload.paragraphs[0].uk).toBe('Звичайний *текст* без форматування.');
   });
 });
+
+describe('spec: per-paragraph template/input/text mode switch replaces the global toggle', () => {
+  it('does not render the old global Template/Data section toggle', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    await screen.findByTitle('Edit paragraphs');
+    expect(screen.queryByTitle('Edit the raw {{placeholder}} tokens of the shared template')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Edit the resolved values of the selected case directly')).not.toBeInTheDocument();
+  });
+
+  it('switching one paragraph to Template mode edits and persists the shared template, not a per-case override', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    const expandButton = await screen.findByTitle('Edit paragraphs');
+    fireEvent.click(expandButton);
+
+    // Default mode ('input') shows the resolved value.
+    await screen.findByDisplayValue('Звичайний текст без форматування.');
+
+    const templateModeButton = screen.getByTitle('Raw {{placeholder}} markup - edits the shared template');
+    fireEvent.click(templateModeButton);
+
+    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
+    fireEvent.change(textarea, { target: { value: 'Змінений шаблонний текст.' } });
+    fireEvent.blur(textarea);
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({ paragraphs: [expect.objectContaining({ uk: 'Змінений шаблонний текст.' })] }),
+    ));
+  });
+
+  it('shows an inline-editable title input next to the document name', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    await screen.findByTitle('Edit paragraphs');
+
+    const titleInput = await screen.findByDisplayValue('Тест');
+    fireEvent.change(titleInput, { target: { value: 'Оновлена назва' } });
+    fireEvent.blur(titleInput);
+
+    await waitFor(() => expect(set).toHaveBeenCalled());
+  });
+});
