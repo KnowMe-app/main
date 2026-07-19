@@ -15,9 +15,9 @@ import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFo
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import PageNavMenu from './PageNavMenu';
+import CaseChildbirthTransactionEditor from './CaseChildbirthTransactionEditor';
 import { useAutoResize } from '../hooks/useAutoResize';
 import {
-  BIRTH_REGISTRATION_TRANSACTION_TYPE,
   DEFAULT_DOC_FORMATTING,
   DOCUMENTS_PARTIES_PATH,
   DOCUMENTS_SETTINGS_PATH,
@@ -33,8 +33,6 @@ import {
   clinicLogoEntriesToBackend,
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
-  createChildRecord,
-  createTransaction,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   getClinicLogo,
@@ -44,7 +42,6 @@ import {
   isBilingualLayout,
   legacyClinicLogoStorageFilePath,
   legacyClinicLogoStorageFolder,
-  makeTransactionId,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -59,7 +56,6 @@ import {
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
   shiftDocOverrideParagraphIndices,
-  toArray,
   toggleInlineFormat,
   upsertRecentCaseId,
   upsertRecentId,
@@ -235,15 +231,6 @@ const SectionTitle = styled.h2`
   font-family: var(--km-font-display);
   font-size: 15px;
   letter-spacing: -0.01em;
-`;
-
-const SectionSubhead = styled.h3`
-  margin: 12px 0 0;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--km-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 `;
 
 const StateCard = styled.div`
@@ -601,12 +588,9 @@ const DocumentsPage = ({ isAdmin }) => {
   const [selectedCaseId, setSelectedCaseId] = useState('');
   // Which of the selected case's childbirth.children[] documents are generated for ('' = default
   // to the first child, spec Batch 18 §2 - a case with just one child never needs this shown).
+  // Owned here (not inside CaseChildbirthTransactionEditor) because prepareGeneration/caseContext
+  // below need to read it too - the editor just reports changes via onSelectedChildIdChange.
   const [selectedChildId, setSelectedChildId] = useState('');
-  // Local editable copies of the selected case's childbirth/transaction data (Batch 18 §6, "Дані
-  // для заяви в РАЦС") - reset from the backend record whenever the selected case changes, saved
-  // back explicitly via their own Save buttons, same pattern as the per-document format draft.
-  const [childbirthDraft, setChildbirthDraft] = useState({ maternityHospitalId: '', children: [] });
-  const [transactionDraft, setTransactionDraft] = useState({ statementDate: '', notaryId: '', registryNumber: '' });
   const [selectedDocIds, setSelectedDocIds] = useState({});
   const [layout, setLayout] = useState('two-column');
   const [expandedDocId, setExpandedDocId] = useState('');
@@ -690,29 +674,6 @@ const DocumentsPage = ({ isAdmin }) => {
   useEffect(() => {
     loadDocumentsData();
   }, [loadDocumentsData]);
-
-  // Reload the Childbirth/Transaction editor drafts whenever the selected case changes - never
-  // carries a previous case's in-progress edits over onto the newly selected one.
-  useEffect(() => {
-    const caseRecord = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
-    // `childbirth.children` isn't re-validated by normalizeCaseRecord beyond "childbirth itself is
-    // an object" - a case saved before this editor existed (or edited straight in the Firebase
-    // console) can carry `children` as a Firebase gap-object instead of a real array, which crashed
-    // every `.map()` below with no error boundary to catch it (blank page, spec bug report).
-    setChildbirthDraft({
-      maternityHospitalId: caseRecord?.childbirth?.maternityHospitalId || '',
-      children: toArray(caseRecord?.childbirth?.children),
-    });
-    const transactionId = caseRecord?.registrations?.birth?.transactionId;
-    const existingTransaction = transactionId
-      ? catalog.parties.transactions.find(item => String(item.id) === String(transactionId))
-      : null;
-    setTransactionDraft(existingTransaction && existingTransaction.type === BIRTH_REGISTRATION_TRANSACTION_TYPE
-      ? { statementDate: existingTransaction.statementDate || '', notaryId: existingTransaction.notaryId || '', registryNumber: existingTransaction.registryNumber || '' }
-      : { statementDate: '', notaryId: '', registryNumber: '' });
-    setSelectedChildId('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCaseId]);
 
   // Warm the lazy PDF/DOCX chunks while this build is still deployed (see isStaleChunkError).
   useEffect(() => {
@@ -1174,108 +1135,6 @@ const DocumentsPage = ({ isAdmin }) => {
     } catch (deleteError) {
       console.error('Unable to delete case', deleteError);
       toast.error('Could not delete the case.');
-    }
-  };
-
-  // --- Childbirth + Transaction editor ("Дані для заяви в РАЦС", Batch 18 §6) --------------------
-  // Regrouped to match the actual backend shape: the maternity hospital + per-child birth details
-  // live under childbirth, while the notary/statementDate/registryNumber for the birth-registration
-  // surrogate-consent statement live on its own transaction record (batch 19).
-
-  const updateChildbirthField = (field, value) => setChildbirthDraft(previous => ({ ...previous, [field]: value }));
-
-  const updateChildField = (childId, field, value) => setChildbirthDraft(previous => ({
-    ...previous,
-    children: (previous.children || []).map(child => (child.id === childId ? { ...child, [field]: value } : child)),
-  }));
-
-  const updateChildNestedField = (childId, group, field, value) => setChildbirthDraft(previous => ({
-    ...previous,
-    children: (previous.children || []).map(child => (child.id === childId
-      ? { ...child, [group]: { ...(child[group] || {}), [field]: value } }
-      : child)),
-  }));
-
-  const handleAddChild = () => setChildbirthDraft(previous => ({
-    ...previous,
-    children: [...(previous.children || []), createChildRecord()],
-  }));
-
-  // Removing the currently-selected child falls back to the default (first child) rather than
-  // pointing the document generator at an id that no longer exists.
-  const handleRemoveChild = childId => {
-    setChildbirthDraft(previous => ({
-      ...previous,
-      children: (previous.children || []).filter(child => child.id !== childId),
-    }));
-    setSelectedChildId(previous => (previous === childId ? '' : previous));
-  };
-
-  const handleSaveChildbirth = async () => {
-    if (!selectedCase) return;
-    try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${selectedCase.id}/childbirth`), childbirthDraft);
-      setCatalog(previous => ({
-        ...previous,
-        parties: {
-          ...previous.parties,
-          cases: previous.parties.cases.map(item => (String(item.id) === selectedCaseId
-            ? { ...item, childbirth: childbirthDraft }
-            : item)),
-        },
-      }));
-      toast.success('Childbirth details saved.');
-    } catch (saveError) {
-      console.error('Unable to save childbirth details', saveError);
-      toast.error('Could not save the childbirth details.');
-    }
-  };
-
-  const updateTransactionField = (field, value) => setTransactionDraft(previous => ({ ...previous, [field]: value }));
-
-  // Creates the case's birth-registration-surrogate-consent transaction the first time this is
-  // saved, then only ever updates that same record afterward - a transaction keeps the couple/
-  // surrogate mother it was originally signed for (batch 19), so an update never re-pulls those
-  // ids from the case's current relations, only a brand-new transaction does.
-  const handleSaveTransaction = async () => {
-    if (!selectedCase) return;
-    const existingTransactionId = selectedCase.registrations?.birth?.transactionId;
-    const existingTransaction = existingTransactionId
-      ? catalog.parties.transactions.find(item => String(item.id) === String(existingTransactionId))
-      : null;
-    const isReusableTransaction = Boolean(existingTransaction) && existingTransaction.type === BIRTH_REGISTRATION_TRANSACTION_TYPE;
-    const transactionId = isReusableTransaction ? existingTransaction.id : makeTransactionId();
-    const nextTransaction = createTransaction({
-      transactionId,
-      caseId: selectedCase.id,
-      type: BIRTH_REGISTRATION_TRANSACTION_TYPE,
-      coupleId: isReusableTransaction ? existingTransaction.coupleId : (selectedCase.relations?.coupleId || ''),
-      surrogateMotherId: isReusableTransaction ? existingTransaction.surrogateMotherId : (selectedCase.relations?.surrogateMotherId || ''),
-      notaryId: transactionDraft.notaryId,
-      statementDate: transactionDraft.statementDate,
-      registryNumber: transactionDraft.registryNumber,
-    });
-    try {
-      await update(ref(database, DOCUMENTS_PARTIES_PATH), {
-        [`transactions/${transactionId}`]: nextTransaction,
-        [`cases/${selectedCase.id}/registrations/birth/transactionId`]: transactionId,
-      });
-      setCatalog(previous => ({
-        ...previous,
-        parties: {
-          ...previous.parties,
-          transactions: isReusableTransaction
-            ? previous.parties.transactions.map(item => (String(item.id) === transactionId ? nextTransaction : item))
-            : [...previous.parties.transactions, nextTransaction],
-          cases: previous.parties.cases.map(item => (String(item.id) === selectedCaseId
-            ? { ...item, registrations: { ...(item.registrations || {}), birth: { ...(item.registrations?.birth || {}), transactionId } } }
-            : item)),
-        },
-      }));
-      toast.success('Transaction saved.');
-    } catch (saveError) {
-      console.error('Unable to save the transaction', saveError);
-      toast.error('Could not save the transaction.');
     }
   };
 
@@ -1812,156 +1671,12 @@ const DocumentsPage = ({ isAdmin }) => {
               ) : null}
             </Section>
 
-            {selectedCase ? (
-              <Section>
-                <SectionHead>
-                  <SectionTitle>Дані для заяви в РАЦС</SectionTitle>
-                </SectionHead>
-
-                <SectionSubhead>Пологи</SectionSubhead>
-                <RowLine style={{ marginTop: 6 }}>
-                  <Field style={{ flex: 1, minWidth: 220 }}>
-                    Пологовий будинок
-                    <Select
-                      value={childbirthDraft.maternityHospitalId || ''}
-                      onChange={event => updateChildbirthField('maternityHospitalId', event.target.value)}
-                    >
-                      <option value="">— не обрано —</option>
-                      {catalog.parties.maternityHospitals.map(hospital => (
-                        <option key={hospital.id} value={String(hospital.id)}>
-                          {hospital.shortName || hospital.name?.uk || hospital.id}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </RowLine>
-
-                {(childbirthDraft.children || []).map((child, childIndex) => (
-                  <DocRow key={child.id}>
-                    <DocRowHead>
-                      <DocSubtitle style={{ fontWeight: 700 }}>Дитина {childIndex + 1}</DocSubtitle>
-                      <DangerButton
-                        type="button"
-                        onClick={() => handleRemoveChild(child.id)}
-                        title="Remove this child"
-                      >
-                        <FaTrash />
-                      </DangerButton>
-                    </DocRowHead>
-                    <FieldGrid>
-                      <Field>
-                        Стать
-                        <Select value={child.sex || ''} onChange={event => updateChildField(child.id, 'sex', event.target.value)}>
-                          <option value="">— не обрано —</option>
-                          <option value="female">жіноча</option>
-                          <option value="male">чоловіча</option>
-                        </Select>
-                      </Field>
-                      <Field>
-                        Дата народження
-                        <FieldInput
-                          type="date"
-                          value={child.birthDate || ''}
-                          onChange={event => updateChildField(child.id, 'birthDate', event.target.value)}
-                        />
-                      </Field>
-                      <Field>
-                        Місце народження (укр)
-                        <FieldInput
-                          type="text"
-                          value={child.birthPlace?.uk || ''}
-                          onChange={event => updateChildNestedField(child.id, 'birthPlace', 'uk', event.target.value)}
-                        />
-                      </Field>
-                      <Field>
-                        Місце народження (eng)
-                        <FieldInput
-                          type="text"
-                          value={child.birthPlace?.en || ''}
-                          onChange={event => updateChildNestedField(child.id, 'birthPlace', 'en', event.target.value)}
-                        />
-                      </Field>
-                      <Field>
-                        № медичного висновку
-                        <FieldInput
-                          type="text"
-                          value={child.medicalConclusion?.number || ''}
-                          onChange={event => updateChildNestedField(child.id, 'medicalConclusion', 'number', event.target.value)}
-                        />
-                      </Field>
-                      <Field>
-                        Дата медичного висновку
-                        <FieldInput
-                          type="date"
-                          value={child.medicalConclusion?.date || ''}
-                          onChange={event => updateChildNestedField(child.id, 'medicalConclusion', 'date', event.target.value)}
-                        />
-                      </Field>
-                    </FieldGrid>
-                  </DocRow>
-                ))}
-
-                <RowLine style={{ marginTop: 8 }}>
-                  <SmallButton type="button" onClick={handleAddChild}>
-                    <FaPlus /> Add child
-                  </SmallButton>
-                  <PrimaryMiniButton type="button" onClick={handleSaveChildbirth}>
-                    Save childbirth details
-                  </PrimaryMiniButton>
-                </RowLine>
-
-                {(childbirthDraft.children || []).length > 1 ? (
-                  <RowLine style={{ marginTop: 10 }}>
-                    <Field style={{ flex: 1, minWidth: 220 }}>
-                      Дитина для документа
-                      <Select value={selectedChildId} onChange={event => setSelectedChildId(event.target.value)}>
-                        {(childbirthDraft.children || []).map((child, childIndex) => (
-                          <option key={child.id} value={child.id}>
-                            Дитина {childIndex + 1}{child.sex ? ` (${child.sex === 'female' ? 'дівчинка' : 'хлопчик'})` : ''}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                  </RowLine>
-                ) : null}
-
-                <SectionSubhead style={{ marginTop: 14 }}>Заява до РАЦС (транзакція)</SectionSubhead>
-                <FieldGrid>
-                  <Field>
-                    Дата заяви
-                    <FieldInput
-                      type="date"
-                      value={transactionDraft.statementDate || ''}
-                      onChange={event => updateTransactionField('statementDate', event.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    Нотаріус
-                    <Select value={transactionDraft.notaryId || ''} onChange={event => updateTransactionField('notaryId', event.target.value)}>
-                      <option value="">— не обрано —</option>
-                      {catalog.parties.notaries.map(notary => (
-                        <option key={notary.id} value={String(notary.id)}>
-                          {notary.name?.uk?.short || notary.name?.uk?.nominative || notary.id}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field>
-                    Номер реєстру
-                    <FieldInput
-                      type="text"
-                      value={transactionDraft.registryNumber || ''}
-                      onChange={event => updateTransactionField('registryNumber', event.target.value)}
-                    />
-                  </Field>
-                </FieldGrid>
-                <RowLine style={{ marginTop: 8 }}>
-                  <PrimaryMiniButton type="button" onClick={handleSaveTransaction}>
-                    Save transaction
-                  </PrimaryMiniButton>
-                </RowLine>
-              </Section>
-            ) : null}
+            <CaseChildbirthTransactionEditor
+              catalog={catalog}
+              setCatalog={setCatalog}
+              caseId={selectedCaseId}
+              onSelectedChildIdChange={setSelectedChildId}
+            />
 
             <Section>
               <SectionHead>

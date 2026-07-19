@@ -13,11 +13,19 @@ import {
   clinicLogoEntriesToBackend,
   createChildRecord,
   createEmptyCase,
+  createEmptyClinic,
+  createEmptyCouple,
+  createEmptyMaternityHospital,
+  createEmptyNotary,
+  createEmptyPartner,
+  createEmptyRepresentative,
+  createEmptySurrogateMother,
   createTransaction,
   deepMergeRecords,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   fillPlaceholders,
+  findPartyReferences,
   formatDocumentDate,
   formatEnglishDateWords,
   formatUkrainianDateWords,
@@ -2184,5 +2192,62 @@ describe('spec: transactions (batch 19)', () => {
       const context = resolveCaseContext(twinsCatalog(), 'case-1', { childId: 'ghost-child' });
       expect(context.selectedChildId).toBe('child-1');
     });
+  });
+});
+
+// spec: Parties page (batch 19) - canonical blank records + reference-check for deletes.
+describe('spec: Parties page record shapes', () => {
+  it('creates blank couple/surrogateMother/representative/clinic/maternityHospital/notary records with a stable id and no undefined fields', () => {
+    const couple = createEmptyCouple();
+    expect(couple.id).toMatch(/^couple-/);
+    expect(couple.partners.map(partner => partner.role)).toEqual(['wife', 'husband']);
+    expect(couple.partners.every(partner => partner.name.uk.nominative === '')).toBe(true);
+
+    const partner = createEmptyPartner({ role: 'wife' });
+    expect(partner.role).toBe('wife');
+    expect(partner.id).toMatch(/^partner-/);
+
+    expect(createEmptySurrogateMother().id).toMatch(/^surrogate-mother-/);
+    expect(createEmptyRepresentative().id).toMatch(/^representative-/);
+    expect(createEmptyClinic().id).toMatch(/^clinic-/);
+    expect(createEmptyMaternityHospital().id).toMatch(/^maternity-hospital-/);
+    expect(createEmptyNotary().id).toMatch(/^notary-/);
+
+    // Two calls never collide, same guarantee makeRecordId already gives createChildRecord/createTransaction.
+    expect(createEmptyCouple().id).not.toBe(couple.id);
+  });
+
+  it('findPartyReferences reports the cases/transactions pointing at a party, without deleting or blocking anything', () => {
+    const catalog = normalizeDocumentsCatalog({
+      couples: { 'couple-1': { id: 'couple-1', partners: [{ id: 'p1', role: 'wife', name: { en: 'Jane Doe' } }] } },
+      clinics: { 'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка' } } },
+      surrogateMothers: { 'surrogate-1': { id: 'surrogate-1', name: { en: 'Jane Roe' } } },
+      representatives: { 'rep-1': { id: 'rep-1' } },
+      notaries: { 'notary-1': { id: 'notary-1' } },
+      maternityHospitals: { 'hospital-1': { id: 'hospital-1' } },
+      cases: {
+        'case-1': {
+          id: 'case-1',
+          relations: {
+            coupleId: 'couple-1', clinicId: 'clinic-1', surrogateMotherId: 'surrogate-1', representativeIds: ['rep-1'],
+          },
+          childbirth: { maternityHospitalId: 'hospital-1', children: [] },
+        },
+      },
+      transactions: {
+        'transaction-1': {
+          id: 'transaction-1', coupleId: 'couple-1', surrogateMotherId: 'surrogate-1', notaryId: 'notary-1',
+        },
+      },
+    });
+
+    expect(findPartyReferences(catalog, 'couples', 'couple-1')).toEqual([
+      expect.stringContaining('case'), expect.stringContaining('transaction "transaction-1"'),
+    ]);
+    expect(findPartyReferences(catalog, 'clinics', 'clinic-1')).toEqual([expect.stringContaining('case')]);
+    expect(findPartyReferences(catalog, 'representatives', 'rep-1')).toEqual([expect.stringContaining('case')]);
+    expect(findPartyReferences(catalog, 'maternityHospitals', 'hospital-1')).toEqual([expect.stringContaining('case')]);
+    expect(findPartyReferences(catalog, 'notaries', 'notary-1')).toEqual([expect.stringContaining('transaction "transaction-1"')]);
+    expect(findPartyReferences(catalog, 'couples', 'nobody')).toEqual([]);
   });
 });

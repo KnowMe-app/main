@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { path: '/documents', label: 'Documents' },
   { path: '/invoices', label: 'Invoice' },
   { path: '/budget', label: 'Budget' },
+  { path: '/parties', label: 'Parties' },
 ];
 
 const Wrap = styled.div`
