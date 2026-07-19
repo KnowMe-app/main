@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaBold, FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaPencilAlt, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaBold, FaChevronDown, FaChevronUp, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -586,9 +586,18 @@ const DocumentsPage = ({ isAdmin }) => {
   const [selectedDocIds, setSelectedDocIds] = useState({});
   const [layout, setLayout] = useState('two-column');
   const [expandedDocId, setExpandedDocId] = useState('');
-  // Pencil toggle (spec §2): 'data' shows the resolved values and edits them as per-case
-  // overrides, 'template' shows the raw {{placeholder}} tokens and edits the shared template.
-  const [editMode, setEditMode] = useState('data');
+  // Per-paragraph mode toggle (replaces the single global Template/Data switch): 'template' shows
+  // the raw {{placeholder}} markup and edits the shared template; 'input' shows the resolved value
+  // and edits it as a per-case override; 'text' is the same per-case editing with the formatted
+  // (bold/italic-applied) preview always shown as the primary view, approximating WYSIWYG - there
+  // is no contentEditable/rich-text engine here, so the actual editing surface underneath is still
+  // the plain textarea with selection-based Bold/Italic, exactly like 'input'. Defaults to 'input'
+  // (what an admin filling in a specific case wants most of the time); title uses the same map
+  // under the 'title' pseudo-index.
+  const [paragraphModes, setParagraphModes] = useState({});
+  const paragraphModeKey = (docId, index) => `${docId}#${index}`;
+  const getParagraphMode = (docId, index) => paragraphModes[paragraphModeKey(docId, index)] || 'input';
+  const setParagraphModeFor = (docId, index, mode) => setParagraphModes(previous => ({ ...previous, [paragraphModeKey(docId, index)]: mode }));
   const [dirtyDocIds, setDirtyDocIds] = useState({});
   const [dirtyOverrideDocIds, setDirtyOverrideDocIds] = useState({});
   const [technicalInput, setTechnicalInput] = useState('');
@@ -1637,24 +1646,6 @@ const DocumentsPage = ({ isAdmin }) => {
             <Section>
               <SectionHead>
                 <SectionTitle>Documents</SectionTitle>
-                <ToggleGroup>
-                  <ToggleOption
-                    type="button"
-                    $active={editMode === 'template'}
-                    onClick={() => setEditMode('template')}
-                    title="Edit the raw {{placeholder}} tokens of the shared template"
-                  >
-                    <FaPencilAlt /> Template
-                  </ToggleOption>
-                  <ToggleOption
-                    type="button"
-                    $active={editMode === 'data'}
-                    onClick={() => setEditMode('data')}
-                    title="Edit the resolved values of the selected case directly"
-                  >
-                    <FaPencilAlt /> Data
-                  </ToggleOption>
-                </ToggleGroup>
               </SectionHead>
               {activeLogoVariant?.dataUrl ? (
                 <DocLogoPreviewRow>
@@ -1676,16 +1667,15 @@ const DocumentsPage = ({ isAdmin }) => {
               ) : null}
               {orderedDocuments.map(template => {
                 const isExpanded = expandedDocId === String(template.id);
-                const isDataMode = editMode === 'data';
                 // The builder view mirrors the selected layout mode (spec §1/§4): both languages as
                 // grouped pairs in bilingual mode, a single language otherwise (1 or 2 columns).
                 const isBilingual = isBilingualLayout(layout);
                 const showUk = isBilingual || getLayoutLang(layout) === 'uk';
                 const showEn = isBilingual || getLayoutLang(layout) === 'en';
                 const isSingle = !(showUk && showEn);
-                const resolvedDoc = isExpanded && isDataMode
-                  ? buildGeneratedDocument(template, caseContext, selectedCase?.documents?.overrides?.[template.id])
-                  : null;
+                // Needed even while collapsed - the title input right in the row header (below)
+                // always shows/edits the resolved value once a case is selected.
+                const resolvedDoc = buildGeneratedDocument(template, caseContext, selectedCase?.documents?.overrides?.[template.id]);
                 // Whichever source is currently authoritative (the dedicated `logo` field, or a
                 // legacy leading paragraph) shown as one plain-text value the admin can type into
                 // directly - never a normalized re-serialization, so a mid-edit/invalid value
@@ -1695,29 +1685,17 @@ const DocumentsPage = ({ isAdmin }) => {
                   : (getParagraphType((template.paragraphs || [])[0]) !== 'text'
                     ? ((template.paragraphs || [])[0]?.uk || (template.paragraphs || [])[0]?.en || '')
                     : '');
-                const titleValue = langKey => (isDataMode ? resolvedDoc?.title?.[langKey] ?? '' : template.title?.[langKey] || '');
-                const rawParagraphValue = (paragraph, index, langKey) => (isDataMode
-                  ? resolvedDoc?.paragraphs?.[index]?.[langKey] ?? ''
-                  : paragraph?.[langKey] || '');
-                // Data mode shows/edits the de-markup'd plain text as the editing toolbar handles
-                // formatting (spec §2); Template mode shows the raw markup/encoding directly, so
-                // the admin can see and hand-edit exactly what is stored.
-                const paragraphValue = (paragraph, index, langKey) => (isDataMode
-                  ? plainTextOf(rawParagraphValue(paragraph, index, langKey))
-                  : rawParagraphValue(paragraph, index, langKey));
-                const onTitleChange = langKey => event => (isDataMode
+                // The document name's own inline input (shown right in the row header, spec: "input
+                // мого улюбленого формату поруч з назвою документу") always edits the resolved
+                // per-case title once a case is selected - the same per-case override every other
+                // resolved-value field uses - falling back to the raw template title when there is
+                // no case yet (nothing to resolve against).
+                const titleEditsCase = Boolean(selectedCase);
+                const titleValue = langKey => (titleEditsCase ? resolvedDoc?.title?.[langKey] ?? '' : template.title?.[langKey] || '');
+                const onTitleChange = langKey => event => (titleEditsCase
                   ? handleDataTitleChange(template.id, langKey, event.target.value)
                   : handleTitleChange(template.id, langKey, event.target.value));
-                const onParagraphChange = (paragraph, index, langKey) => event => {
-                  if (isDataMode) {
-                    const nextRaw = applyPlainTextEdit(rawParagraphValue(paragraph, index, langKey), event.target.value);
-                    handleDataParagraphChange(template.id, index, langKey, nextRaw);
-                  } else {
-                    handleParagraphChange(template.id, index, langKey, event.target.value);
-                  }
-                };
-                const onFieldBlur = () => (isDataMode ? persistDocOverride(template.id) : persistTemplate(template.id));
-                const dataEditLocked = isDataMode && !selectedCase;
+                const onTitleBlur = () => (titleEditsCase ? persistDocOverride(template.id) : persistTemplate(template.id));
                 return (
                   <DocRow key={template.id}>
                     <DocRowHead>
@@ -1729,40 +1707,37 @@ const DocumentsPage = ({ isAdmin }) => {
                       <DocTitleButton
                         type="button"
                         onClick={() => setExpandedDocId(isExpanded ? '' : String(template.id))}
-                      >
-                        {template.title?.uk || template.title?.en || template.id}
-                        {template.title?.en ? <DocSubtitle>{template.title.en}</DocSubtitle> : null}
-                      </DocTitleButton>
-                      <SmallButton
-                        type="button"
-                        onClick={() => setExpandedDocId(isExpanded ? '' : String(template.id))}
+                        style={{ flex: '0 0 auto', width: 'auto' }}
                         title={isExpanded ? 'Collapse' : 'Edit paragraphs'}
                       >
                         {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
-                      </SmallButton>
+                      </DocTitleButton>
+                      <AutoInlineTextarea
+                        value={titleValue('uk')}
+                        placeholder="Title (uk)"
+                        onChange={onTitleChange('uk')}
+                        onBlur={onTitleBlur}
+                        style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
+                        title="Edit the document's title directly - the resolved value for the selected case, or the shared template title otherwise"
+                      />
                       <DangerButton type="button" onClick={() => handleDeleteTemplate(template)} title="Delete document">
                         <FaTrash />
                       </DangerButton>
                     </DocRowHead>
                     {isExpanded ? (
                       <div style={{ marginTop: 6 }}>
-                        {dataEditLocked ? (
-                          <DocSubtitle>Select a case first — Data mode shows and edits its resolved values.</DocSubtitle>
-                        ) : null}
-                        {!isDataMode ? (
-                          <RowLine style={{ marginTop: 4 }}>
-                            <DocSubtitle style={{ fontWeight: 700 }}>Logo (before title)</DocSubtitle>
-                            <FieldInput
-                              type="text"
-                              value={logoFieldValue}
-                              placeholder="{{logo}} or {{logo-long}} - empty for no logo"
-                              onChange={event => handleLogoFieldChange(template.id, event.target.value)}
-                              onBlur={() => persistTemplate(template.id)}
-                              style={{ flex: 1, minWidth: 240 }}
-                            />
-                          </RowLine>
-                        ) : null}
-                        {!isDataMode && (template.beforeTitle || []).length ? (
+                        <RowLine style={{ marginTop: 4 }}>
+                          <DocSubtitle style={{ fontWeight: 700 }}>Logo (before title)</DocSubtitle>
+                          <FieldInput
+                            type="text"
+                            value={logoFieldValue}
+                            placeholder="{{logo}} or {{logo-long}} - empty for no logo"
+                            onChange={event => handleLogoFieldChange(template.id, event.target.value)}
+                            onBlur={() => persistTemplate(template.id)}
+                            style={{ flex: 1, minWidth: 240 }}
+                          />
+                        </RowLine>
+                        {(template.beforeTitle || []).length ? (
                           <div style={{ marginTop: 4 }}>
                             <DocSubtitle style={{ fontWeight: 700 }}>Before title</DocSubtitle>
                             {template.beforeTitle.map((block, index) => (
@@ -1811,61 +1786,105 @@ const DocumentsPage = ({ isAdmin }) => {
                             ))}
                           </div>
                         ) : null}
-                        <ParagraphPair $single={isSingle}>
-                          {showUk ? (
-                            <AutoInlineTextarea
-                              value={titleValue('uk')}
-                              placeholder="Title (uk)"
-                              readOnly={dataEditLocked}
-                              onChange={onTitleChange('uk')}
-                              onBlur={onFieldBlur}
-                            />
-                          ) : null}
-                          {showEn ? (
+                        {showEn ? (
+                          // The header input above only edits the uk title (space is tight in a
+                          // single row); the en title is edited here instead.
+                          <RowLine style={{ marginTop: 4 }}>
+                            <DocSubtitle style={{ fontWeight: 700 }}>Title (en)</DocSubtitle>
                             <AutoInlineTextarea
                               value={titleValue('en')}
                               placeholder="Title (en)"
-                              readOnly={dataEditLocked}
                               onChange={onTitleChange('en')}
-                              onBlur={onFieldBlur}
+                              onBlur={onTitleBlur}
+                              style={{ flex: 1, minWidth: 180 }}
                             />
-                          ) : null}
-                        </ParagraphPair>
-                        {(template.paragraphs || []).map((paragraph, index) => (
-                          isDataMode ? (
+                          </RowLine>
+                        ) : null}
+                        {(template.paragraphs || []).map((paragraph, index) => {
+                          // Per-paragraph mode (replaces the old global Template/Data switch):
+                          // 'template' edits the shared {{placeholder}} markup; 'input'/'text' both
+                          // edit this case's resolved-value override (Bold/Italic apply there) -
+                          // 'text' additionally keeps the formatted preview always visible, as the
+                          // closest approximation of WYSIWYG available without a rich-text editor.
+                          const mode = getParagraphMode(template.id, index);
+                          const isTemplateMode = mode === 'template';
+                          const caseModeLocked = !isTemplateMode && !selectedCase;
+                          const rawValue = langKey => (isTemplateMode
+                            ? paragraph?.[langKey] || ''
+                            : resolvedDoc?.paragraphs?.[index]?.[langKey] ?? '');
+                          const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(rawValue(langKey)));
+                          const onChange = langKey => event => {
+                            if (isTemplateMode) {
+                              handleParagraphChange(template.id, index, langKey, event.target.value);
+                            } else {
+                              const nextRaw = applyPlainTextEdit(rawValue(langKey), event.target.value);
+                              handleDataParagraphChange(template.id, index, langKey, nextRaw);
+                            }
+                          };
+                          const onBlur = () => (isTemplateMode ? persistTemplate(template.id) : persistDocOverride(template.id));
+                          const showPreview = langKey => mode === 'text' || hasInlineFormatting(rawValue(langKey));
+                          return (
                             // Boxed together so it's unambiguous which paragraph the toolbar acts
-                            // on: the +/Bold/Italic/Delete controls and the paragraph's own text
-                            // live inside the same visible border.
+                            // on: the +/mode-switch/Bold/Italic/Delete controls and the paragraph's
+                            // own text live inside the same visible border.
                             <ParagraphEditorBlock key={`${template.id}-p-${index}`}>
                               <ParagraphControlsRow>
                                 <SmallButton
                                   type="button"
-                                  disabled={dataEditLocked}
                                   onClick={() => handleInsertParagraph(template.id, index)}
                                   title="Insert a new custom paragraph above this one"
                                 >
                                   <FaPlus /> Insert paragraph
                                 </SmallButton>
                                 <RowLine style={{ gap: 6 }}>
-                                  <SmallButton
-                                    type="button"
-                                    disabled={dataEditLocked}
-                                    {...formatButtonProps('bold')}
-                                    title="Bold the selected text"
-                                  >
-                                    <FaBold />
-                                  </SmallButton>
-                                  <SmallButton
-                                    type="button"
-                                    disabled={dataEditLocked}
-                                    {...formatButtonProps('italic')}
-                                    title="Italicize the selected text"
-                                  >
-                                    <FaItalic />
-                                  </SmallButton>
+                                  <ToggleGroup>
+                                    <ToggleOption
+                                      type="button"
+                                      $active={mode === 'template'}
+                                      onClick={() => setParagraphModeFor(template.id, index, 'template')}
+                                      title="Raw {{placeholder}} markup - edits the shared template"
+                                    >
+                                      Template
+                                    </ToggleOption>
+                                    <ToggleOption
+                                      type="button"
+                                      $active={mode === 'input'}
+                                      onClick={() => setParagraphModeFor(template.id, index, 'input')}
+                                      title="Resolved value - edits this case's override"
+                                    >
+                                      Input
+                                    </ToggleOption>
+                                    <ToggleOption
+                                      type="button"
+                                      $active={mode === 'text'}
+                                      onClick={() => setParagraphModeFor(template.id, index, 'text')}
+                                      title="Final formatted text - edits this case's override, preview always shown"
+                                    >
+                                      Text
+                                    </ToggleOption>
+                                  </ToggleGroup>
+                                  {!isTemplateMode ? (
+                                    <>
+                                      <SmallButton
+                                        type="button"
+                                        disabled={caseModeLocked}
+                                        {...formatButtonProps('bold')}
+                                        title="Bold the selected text"
+                                      >
+                                        <FaBold />
+                                      </SmallButton>
+                                      <SmallButton
+                                        type="button"
+                                        disabled={caseModeLocked}
+                                        {...formatButtonProps('italic')}
+                                        title="Italicize the selected text"
+                                      >
+                                        <FaItalic />
+                                      </SmallButton>
+                                    </>
+                                  ) : null}
                                   <DangerButton
                                     type="button"
-                                    disabled={dataEditLocked}
                                     onClick={() => handleRemoveParagraph(template.id, index)}
                                     title="Remove this paragraph"
                                   >
@@ -1873,23 +1892,26 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </DangerButton>
                                 </RowLine>
                               </ParagraphControlsRow>
+                              {caseModeLocked ? (
+                                <DocSubtitle>Select a case first to edit its resolved values.</DocSubtitle>
+                              ) : null}
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>
                                     <AutoInlineTextarea
                                       ref={registerFieldNode(template.id, index, 'uk')}
-                                      value={paragraphValue(paragraph, index, 'uk')}
+                                      value={displayValue('uk')}
                                       placeholder="Paragraph (uk)"
-                                      readOnly={dataEditLocked}
+                                      readOnly={caseModeLocked}
                                       onFocus={handleRichFieldFocus(template.id, index, 'uk')}
-                                      onChange={onParagraphChange(paragraph, index, 'uk')}
-                                      onBlur={onFieldBlur}
+                                      onChange={onChange('uk')}
+                                      onBlur={onBlur}
                                     />
-                                    {hasInlineFormatting(rawParagraphValue(paragraph, index, 'uk')) ? (
+                                    {showPreview('uk') ? (
                                       <>
-                                        <FormattedPreviewLabel>Preview (bold/italic applied)</FormattedPreviewLabel>
+                                        <FormattedPreviewLabel>{mode === 'text' ? 'Final formatting' : 'Preview (bold/italic applied)'}</FormattedPreviewLabel>
                                         <FormattedPreviewText>
-                                          <FormattedRunsPreview text={rawParagraphValue(paragraph, index, 'uk')} />
+                                          <FormattedRunsPreview text={rawValue('uk')} />
                                         </FormattedPreviewText>
                                       </>
                                     ) : null}
@@ -1899,18 +1921,18 @@ const DocumentsPage = ({ isAdmin }) => {
                                   <ParagraphFieldColumn>
                                     <AutoInlineTextarea
                                       ref={registerFieldNode(template.id, index, 'en')}
-                                      value={paragraphValue(paragraph, index, 'en')}
+                                      value={displayValue('en')}
                                       placeholder="Paragraph (en)"
-                                      readOnly={dataEditLocked}
+                                      readOnly={caseModeLocked}
                                       onFocus={handleRichFieldFocus(template.id, index, 'en')}
-                                      onChange={onParagraphChange(paragraph, index, 'en')}
-                                      onBlur={onFieldBlur}
+                                      onChange={onChange('en')}
+                                      onBlur={onBlur}
                                     />
-                                    {hasInlineFormatting(rawParagraphValue(paragraph, index, 'en')) ? (
+                                    {showPreview('en') ? (
                                       <>
-                                        <FormattedPreviewLabel>Preview (bold/italic applied)</FormattedPreviewLabel>
+                                        <FormattedPreviewLabel>{mode === 'text' ? 'Final formatting' : 'Preview (bold/italic applied)'}</FormattedPreviewLabel>
                                         <FormattedPreviewText>
-                                          <FormattedRunsPreview text={rawParagraphValue(paragraph, index, 'en')} />
+                                          <FormattedRunsPreview text={rawValue('en')} />
                                         </FormattedPreviewText>
                                       </>
                                     ) : null}
@@ -1918,39 +1940,17 @@ const DocumentsPage = ({ isAdmin }) => {
                                 ) : null}
                               </ParagraphPair>
                             </ParagraphEditorBlock>
-                          ) : (
-                            <ParagraphPair key={`${template.id}-p-${index}`} $single={isSingle}>
-                              {showUk ? (
-                                <AutoInlineTextarea
-                                  value={paragraphValue(paragraph, index, 'uk')}
-                                  placeholder="Paragraph (uk)"
-                                  onChange={onParagraphChange(paragraph, index, 'uk')}
-                                  onBlur={onFieldBlur}
-                                />
-                              ) : null}
-                              {showEn ? (
-                                <AutoInlineTextarea
-                                  value={paragraphValue(paragraph, index, 'en')}
-                                  placeholder="Paragraph (en)"
-                                  onChange={onParagraphChange(paragraph, index, 'en')}
-                                  onBlur={onFieldBlur}
-                                />
-                              ) : null}
-                            </ParagraphPair>
-                          )
-                        ))}
-                        {isDataMode ? (
-                          <ParagraphControlsRow style={{ justifyContent: 'flex-start' }}>
-                            <SmallButton
-                              type="button"
-                              disabled={dataEditLocked}
-                              onClick={() => handleInsertParagraph(template.id, (template.paragraphs || []).length)}
-                              title="Append a new custom paragraph at the end of the document"
-                            >
-                              <FaPlus /> Add paragraph at the end
-                            </SmallButton>
-                          </ParagraphControlsRow>
-                        ) : null}
+                          );
+                        })}
+                        <ParagraphControlsRow style={{ justifyContent: 'flex-start' }}>
+                          <SmallButton
+                            type="button"
+                            onClick={() => handleInsertParagraph(template.id, (template.paragraphs || []).length)}
+                            title="Append a new custom paragraph at the end of the document"
+                          >
+                            <FaPlus /> Add paragraph at the end
+                          </SmallButton>
+                        </ParagraphControlsRow>
                       </div>
                     ) : null}
                   </DocRow>
