@@ -125,6 +125,10 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
       rawCollection = caseRecords;
     }
     catalog.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
+    // Batch 18: every case is migrated to the new relations/program/childbirth/registrations/
+    // documents shape right at ingestion, so nothing downstream ever has to branch on which shape
+    // a given case record happens to carry.
+    if (collection === 'cases') catalog.parties.cases = catalog.parties.cases.map(normalizeCaseRecord);
   });
   catalog.documents = toRecordsWithIdFromKey(rawTemplates).filter(record => isPlainObject(record));
   // Primary (batch 17 §1/§2): a clinic's own `logo` field, alongside its name/legalName/etc. - a
@@ -195,6 +199,9 @@ export const parseDocumentsTechnicalInput = rawText => {
       if (isPlainObject(clinicLogoNode)) legacyClinicLogoNode = clinicLogoNode;
     }
     incoming.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
+    // Batch 18: migrate every pasted case to the new relations/program/childbirth/registrations/
+    // documents shape right away, same as normalizeDocumentsCatalog.
+    if (collection === 'cases') incoming.parties.cases = incoming.parties.cases.map(normalizeCaseRecord);
   });
   incoming.documents = toRecordsWithIdFromKey(templatesSource).filter(record => isPlainObject(record));
 
@@ -489,19 +496,124 @@ export const formatEnglishDateWords = value => {
   return `${EN_DAY_ORDINALS[day]} of ${EN_MONTHS[month]}, ${year}`;
 };
 
+// --- Case shape (batch 18) --------------------------------------------------------------------
+// One case is one concrete combination of couple + clinic + surrogate mother + representative(s)
+// (spec: "один case — це одна конкретна комбінація"); changing the clinic or surrogate mother means
+// creating a new case rather than mutating this one in place, so there is no active/replaced/from/to
+// history to track inside a single case record.
+
+// A freshly-created case: every relation blank, ready for the admin to pick a couple/clinic/
+// surrogate mother/representatives - never pre-filled from another case (spec §14: no auto-copy).
+export const createEmptyCase = ({ caseId, programId = '' } = {}) => ({
+  id: caseId,
+  programId,
+  relations: {
+    coupleId: '', clinicId: '', surrogateMotherId: '', representativeIds: [],
+  },
+  program: {
+    type: 'surrogacy',
+    agreement: { number: { uk: '', en: '' }, date: '' },
+  },
+  childbirth: { maternityHospitalId: '', children: [] },
+  registrations: { birth: { statementDate: '', notaryId: '' } },
+  documents: { overrides: {} },
+});
+
+// A new child record for the childbirth.children editor (spec §13) - a stable generated id, never
+// the array index, since children can be reordered/removed independently of any document that
+// still references an earlier one by id.
+export const createChildRecord = () => ({
+  id: makeRecordId('child'),
+  sex: '',
+  birthDate: '',
+  birthPlace: { uk: '', en: '' },
+  medicalConclusion: { number: '', date: '' },
+});
+
+// Migrates a pre-batch-18 case record (coupleId/clinicId/surrogateMotherId/representativeIds at the
+// top level, surrogacyAgreement, birthRegistration.{child,medicalConclusion.maternityHospitalId,
+// statementDate,notaryId}, docOverrides) onto the new shape - spec §16: a temporary read-time
+// normalizer, but once normalized the legacy top-level fields are dropped rather than carried
+// forward, so re-saving a migrated case never recreates them (spec: "не записувати назад старі
+// поля"). Idempotent: a case that already has `relations`/`program`/`childbirth`/`registrations`/
+// `documents` passes through those as-is.
+export const normalizeCaseRecord = (rawCase = {}) => {
+  const {
+    coupleId, clinicId, surrogateMotherId, representativeIds,
+    surrogacyAgreement, birthRegistration: legacyBirthRegistration, docOverrides,
+    ...rest
+  } = isPlainObject(rawCase) ? rawCase : {};
+
+  const relations = isPlainObject(rest.relations) ? rest.relations : {
+    coupleId: coupleId ?? '',
+    clinicId: clinicId ?? '',
+    surrogateMotherId: surrogateMotherId ?? '',
+    representativeIds: Array.isArray(representativeIds) ? representativeIds : [],
+  };
+
+  const program = isPlainObject(rest.program) ? rest.program : {
+    type: 'surrogacy',
+    agreement: isPlainObject(surrogacyAgreement) ? surrogacyAgreement : { number: { uk: '', en: '' }, date: '' },
+  };
+
+  const legacyChild = isPlainObject(legacyBirthRegistration?.child) ? legacyBirthRegistration.child : null;
+  const legacyMedicalConclusion = isPlainObject(legacyBirthRegistration?.medicalConclusion) ? legacyBirthRegistration.medicalConclusion : {};
+  const childbirth = isPlainObject(rest.childbirth) ? rest.childbirth : {
+    maternityHospitalId: legacyMedicalConclusion.maternityHospitalId ?? '',
+    // maternityHospitalId moved up onto childbirth itself (shared by every child of one birth
+    // event) - never duplicated back onto the per-child medicalConclusion.
+    children: legacyChild ? [{
+      id: makeRecordId('child'),
+      ...legacyChild,
+      medicalConclusion: { number: legacyMedicalConclusion.number ?? '', date: legacyMedicalConclusion.date ?? '' },
+    }] : [],
+  };
+
+  const registrations = isPlainObject(rest.registrations) ? rest.registrations : {
+    birth: {
+      statementDate: legacyBirthRegistration?.statementDate ?? '',
+      notaryId: legacyBirthRegistration?.notaryId ?? '',
+    },
+  };
+
+  const documents = isPlainObject(rest.documents) ? rest.documents : {
+    overrides: isPlainObject(docOverrides) ? docOverrides : {},
+  };
+
+  return {
+    ...rest, relations, program, childbirth, registrations, documents,
+  };
+};
+
+// One case is one concrete relations combination (spec batch 18 §10); a case picked by programId
+// alone would be ambiguous (several cases can share a programId - see createEmptyCase) - the
+// currently-selected case is whatever the caller/UI passed as caseId, never an "active" flag.
 export const resolveCaseContext = (catalog, caseId) => {
-  const caseRecord = findById(catalog?.parties?.cases, caseId);
-  if (!caseRecord) return null;
-  const couple = findById(catalog.parties.couples, caseRecord.coupleId);
+  const rawCaseRecord = findById(catalog?.parties?.cases, caseId);
+  if (!rawCaseRecord) return null;
+  // Defensively re-normalized here too (idempotent) - a case can reach this function without
+  // having passed through normalizeDocumentsCatalog/parseDocumentsTechnicalInput first (e.g. a
+  // freshly created or duplicated case still held only in local UI state).
+  const caseRecord = normalizeCaseRecord(rawCaseRecord);
+  const relations = caseRecord.relations;
+
+  const couple = findById(catalog.parties.couples, relations.coupleId);
   const partners = toArray(couple?.partners);
   const wife = partners.find(partner => partner?.role === 'wife') || partners[0] || null;
   const husband = partners.find(partner => partner?.role === 'husband') || partners[1] || null;
-  const representatives = toArray(caseRecord.representativeIds)
+  const representatives = toArray(relations.representativeIds)
     .map(id => findById(catalog.parties.representatives, id))
     .filter(Boolean);
 
-  const rawBirthRegistration = isPlainObject(caseRecord.birthRegistration) ? caseRecord.birthRegistration : {};
-  const medicalConclusion = isPlainObject(rawBirthRegistration.medicalConclusion) ? rawBirthRegistration.medicalConclusion : {};
+  const childbirth = isPlainObject(caseRecord.childbirth) ? caseRecord.childbirth : {};
+  const rawChildren = toArray(childbirth.children);
+  // The first child is the current fallback for single-child documents (spec §4: "не прив'язувати
+  // систему назавжди лише до children[0]") - `children` (every child, gender-computed) is exposed
+  // alongside it so a future multi-child template isn't blocked on this shape.
+  const rawChild = isPlainObject(rawChildren[0]) ? rawChildren[0] : {};
+  const medicalConclusion = isPlainObject(rawChild.medicalConclusion) ? rawChild.medicalConclusion : {};
+
+  const rawBirthRegistration = isPlainObject(caseRecord.registrations?.birth) ? caseRecord.registrations.birth : {};
   const birthRegistration = {
     ...rawBirthRegistration,
     statementDateWords: {
@@ -512,17 +624,22 @@ export const resolveCaseContext = (catalog, caseId) => {
 
   return {
     case: caseRecord,
+    programId: caseRecord.programId ?? '',
+    relations,
+    program: isPlainObject(caseRecord.program) ? caseRecord.program : {},
     couple,
     wife,
     husband,
-    surrogateMother: findById(catalog.parties.surrogateMothers, caseRecord.surrogateMotherId),
-    clinic: findById(catalog.parties.clinics, caseRecord.clinicId),
+    surrogateMother: findById(catalog.parties.surrogateMothers, relations.surrogateMotherId),
+    clinic: findById(catalog.parties.clinics, relations.clinicId),
     representative: representatives[0] || null,
     representatives,
-    birthRegistration,
-    child: buildChildContext(isPlainObject(rawBirthRegistration.child) ? rawBirthRegistration.child : {}),
+    childbirth,
+    children: rawChildren.map(buildChildContext),
+    child: buildChildContext(rawChild),
     medicalConclusion,
-    maternityHospital: findById(catalog.parties.maternityHospitals, medicalConclusion.maternityHospitalId),
+    maternityHospital: findById(catalog.parties.maternityHospitals, childbirth.maternityHospitalId),
+    birthRegistration,
     notary: findById(catalog.parties.notaries, rawBirthRegistration.notaryId),
   };
 };
@@ -622,10 +739,36 @@ export const validateDocumentTemplate = (template, context) => {
   return [...missing].sort();
 };
 
-// --- Birth-registration surrogate-consent: pre-export field checklist (batch 16 §20) --------
-// A non-blocking checklist of the fields this specific document needs, shown before export rather
-// than enforced while editing - missing hospital/notary lookups and malformed dates are reported
-// the same way as a genuinely empty field, never as a thrown error.
+// --- Case completeness checklists (batch 18 §18) --------------------------------------------
+// Non-blocking checklists shown before saving/exporting rather than enforced while editing -
+// missing data is reported the same way as a genuinely empty field, never as a thrown error.
+
+// The base checklist any case should satisfy, independent of which documents it's used for.
+export const validateCaseRecord = rawCaseRecord => {
+  const caseRecord = normalizeCaseRecord(rawCaseRecord);
+  const issues = [];
+  const isBlank = value => value === undefined || value === null || String(value).trim() === '';
+  const requirePresent = (value, path) => {
+    if (isBlank(value)) issues.push(path);
+  };
+
+  requirePresent(caseRecord.id, 'case.id');
+  requirePresent(caseRecord.programId, 'case.programId');
+  requirePresent(caseRecord.relations?.coupleId, 'case.relations.coupleId');
+  requirePresent(caseRecord.relations?.clinicId, 'case.relations.clinicId');
+  requirePresent(caseRecord.relations?.surrogateMotherId, 'case.relations.surrogateMotherId');
+  requirePresent(caseRecord.program?.type, 'case.program.type');
+  if (!toArray(caseRecord.childbirth?.children).length) issues.push('case.childbirth.children');
+  if (isBlank(caseRecord.registrations?.birth?.statementDate) && isBlank(caseRecord.registrations?.birth?.notaryId)) {
+    issues.push('case.registrations.birth');
+  }
+
+  return issues;
+};
+
+// The birth-registration surrogate-consent statement's own checklist (spec batch 16 §20; field
+// locations updated for the batch 18 case shape) - missing hospital/notary lookups and malformed
+// dates are reported the same way as a genuinely empty field.
 export const validateBirthRegistrationCase = (catalog, caseId) => {
   const context = resolveCaseContext(catalog, caseId);
   if (!context) return ['case'];
@@ -636,38 +779,38 @@ export const validateBirthRegistrationCase = (catalog, caseId) => {
     if (isBlank(value)) issues.push(path);
   };
 
-  const { birthRegistration, surrogateMother, maternityHospital, notary } = context;
-  const child = birthRegistration.child || {};
-  const medicalConclusion = birthRegistration.medicalConclusion || {};
+  const {
+    childbirth, child, medicalConclusion, birthRegistration, surrogateMother, maternityHospital, notary,
+  } = context;
 
-  requirePresent(child.sex, 'birthRegistration.child.sex');
-  requirePresent(child.birthDate, 'birthRegistration.child.birthDate');
-  requirePresent(child.birthPlace?.uk, 'birthRegistration.child.birthPlace.uk');
-  requirePresent(medicalConclusion.number, 'birthRegistration.medicalConclusion.number');
-  requirePresent(medicalConclusion.date, 'birthRegistration.medicalConclusion.date');
-  requirePresent(medicalConclusion.maternityHospitalId, 'birthRegistration.medicalConclusion.maternityHospitalId');
-  requirePresent(birthRegistration.statementDate, 'birthRegistration.statementDate');
-  requirePresent(birthRegistration.notaryId, 'birthRegistration.notaryId');
+  requirePresent(childbirth.maternityHospitalId, 'case.childbirth.maternityHospitalId');
+  requirePresent(child.sex, 'case.childbirth.children[0].sex');
+  requirePresent(child.birthDate, 'case.childbirth.children[0].birthDate');
+  requirePresent(child.birthPlace?.uk, 'case.childbirth.children[0].birthPlace.uk');
+  requirePresent(medicalConclusion.number, 'case.childbirth.children[0].medicalConclusion.number');
+  requirePresent(medicalConclusion.date, 'case.childbirth.children[0].medicalConclusion.date');
+  requirePresent(birthRegistration.statementDate, 'case.registrations.birth.statementDate');
+  requirePresent(birthRegistration.notaryId, 'case.registrations.birth.notaryId');
   requirePresent(surrogateMother?.taxId, 'surrogateMother.taxId');
   requirePresent(surrogateMother?.address?.uk, 'surrogateMother.address.uk');
 
   if (!isBlank(child.sex) && child.sex !== 'female' && child.sex !== 'male') {
-    issues.push('birthRegistration.child.sex (must be "female" or "male")');
+    issues.push('case.childbirth.children[0].sex (must be "female" or "male")');
   }
   if (!isBlank(child.birthDate) && !isIsoDate(child.birthDate)) {
-    issues.push('birthRegistration.child.birthDate (must be YYYY-MM-DD)');
+    issues.push('case.childbirth.children[0].birthDate (must be YYYY-MM-DD)');
   }
   if (!isBlank(medicalConclusion.date) && !isIsoDate(medicalConclusion.date)) {
-    issues.push('birthRegistration.medicalConclusion.date (must be YYYY-MM-DD)');
+    issues.push('case.childbirth.children[0].medicalConclusion.date (must be YYYY-MM-DD)');
   }
   if (!isBlank(birthRegistration.statementDate) && !isIsoDate(birthRegistration.statementDate)) {
-    issues.push('birthRegistration.statementDate (must be YYYY-MM-DD)');
+    issues.push('case.registrations.birth.statementDate (must be YYYY-MM-DD)');
   }
-  if (!isBlank(medicalConclusion.maternityHospitalId) && !maternityHospital) {
-    issues.push('birthRegistration.medicalConclusion.maternityHospitalId (no matching maternity hospital)');
+  if (!isBlank(childbirth.maternityHospitalId) && !maternityHospital) {
+    issues.push('case.childbirth.maternityHospitalId (no matching maternity hospital)');
   }
   if (!isBlank(birthRegistration.notaryId) && !notary) {
-    issues.push('birthRegistration.notaryId (no matching notary)');
+    issues.push('case.registrations.birth.notaryId (no matching notary)');
   }
 
   return issues;
@@ -885,13 +1028,14 @@ export const pruneDocOverride = (docOverride, baselineDoc) => {
 
 export const buildCaseLabel = (catalog, caseRecord) => {
   if (!caseRecord) return '';
-  const couple = findById(catalog?.parties?.couples, caseRecord.coupleId);
+  const relations = normalizeCaseRecord(caseRecord).relations;
+  const couple = findById(catalog?.parties?.couples, relations.coupleId);
   const partners = toArray(couple?.partners);
   const coupleNames = partners
     .map(partner => localizedText(partner?.name, 'en') || localizedText(partner?.name?.uk, 'uk'))
     .filter(Boolean)
     .join(' & ');
-  const surrogate = findById(catalog?.parties?.surrogateMothers, caseRecord.surrogateMotherId);
+  const surrogate = findById(catalog?.parties?.surrogateMothers, relations.surrogateMotherId);
   const surrogateName = localizedText(surrogate?.name, 'en');
   const parts = [coupleNames, surrogateName ? `SM ${surrogateName}` : ''].filter(Boolean);
   return parts.join(' — ') || String(caseRecord.id);

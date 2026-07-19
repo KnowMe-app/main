@@ -846,13 +846,13 @@ const DocumentsPage = ({ isAdmin }) => {
     if (!template) return;
     const nextTemplate = { ...template, paragraphs: buildParagraphs(template.paragraphs || []) };
     const shiftedByCaseId = catalog.parties.cases
-      .filter(caseRecord => caseRecord.docOverrides?.[docId])
-      .map(caseRecord => [caseRecord.id, shiftDocOverrideParagraphIndices(caseRecord.docOverrides[docId], atIndex, delta)]);
+      .filter(caseRecord => caseRecord.documents?.overrides?.[docId])
+      .map(caseRecord => [caseRecord.id, shiftDocOverrideParagraphIndices(caseRecord.documents.overrides[docId], atIndex, delta)]);
     try {
       await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
       const partiesPatch = {};
       shiftedByCaseId.forEach(([caseId, override]) => {
-        partiesPatch[`cases/${caseId}/docOverrides/${docId}`] = override;
+        partiesPatch[`cases/${caseId}/documents/overrides/${docId}`] = override;
       });
       if (Object.keys(partiesPatch).length) await update(ref(database, DOCUMENTS_PARTIES_PATH), partiesPatch);
       setCatalog(previous => ({
@@ -863,7 +863,10 @@ const DocumentsPage = ({ isAdmin }) => {
           cases: previous.parties.cases.map(caseRecord => {
             const shifted = shiftedByCaseId.find(([caseId]) => caseId === caseRecord.id);
             if (!shifted) return caseRecord;
-            return { ...caseRecord, docOverrides: { ...(caseRecord.docOverrides || {}), [docId]: shifted[1] } };
+            return {
+              ...caseRecord,
+              documents: { ...(caseRecord.documents || {}), overrides: { ...(caseRecord.documents?.overrides || {}), [docId]: shifted[1] } },
+            };
           }),
         },
       }));
@@ -909,7 +912,7 @@ const DocumentsPage = ({ isAdmin }) => {
   };
 
   // --- Data-mode editing (pencil "Data" mode, spec §2) ------------------------------------------
-  // Edits to the resolved text are kept per case as sparse overrides (case.docOverrides[docId])
+  // Edits to the resolved text are kept per case as sparse overrides (case.documents.overrides[docId])
   // so the shared template with its {{tokens}} stays untouched.
 
   const updateCaseDocOverride = (docId, updater) => {
@@ -921,9 +924,12 @@ const DocumentsPage = ({ isAdmin }) => {
         cases: previous.parties.cases.map(caseRecord => (String(caseRecord.id) === selectedCaseId
           ? {
             ...caseRecord,
-            docOverrides: {
-              ...(caseRecord.docOverrides || {}),
-              [docId]: updater(caseRecord.docOverrides?.[docId] || {}),
+            documents: {
+              ...(caseRecord.documents || {}),
+              overrides: {
+                ...(caseRecord.documents?.overrides || {}),
+                [docId]: updater(caseRecord.documents?.overrides?.[docId] || {}),
+              },
             },
           }
           : caseRecord)),
@@ -956,21 +962,21 @@ const DocumentsPage = ({ isAdmin }) => {
     if (!caseRecord || !template) return;
     // Only real deviations from the resolved template survive on the backend.
     const baseline = buildGeneratedDocument(template, resolveCaseContext(catalog, selectedCaseId));
-    const pruned = pruneDocOverride(caseRecord.docOverrides?.[docId], baseline);
+    const pruned = pruneDocOverride(caseRecord.documents?.overrides?.[docId], baseline);
     try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}/docOverrides/${docId}`), pruned);
+      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}/documents/overrides/${docId}`), pruned);
       setCatalog(previous => ({
         ...previous,
         parties: {
           ...previous.parties,
           cases: previous.parties.cases.map(item => {
             if (String(item.id) !== String(caseRecord.id)) return item;
-            const docOverrides = { ...(item.docOverrides || {}) };
-            if (pruned) docOverrides[docId] = pruned;
-            else delete docOverrides[docId];
+            const overrides = { ...(item.documents?.overrides || {}) };
+            if (pruned) overrides[docId] = pruned;
+            else delete overrides[docId];
             return {
               ...item,
-              docOverrides: Object.keys(docOverrides).length ? docOverrides : undefined,
+              documents: { ...(item.documents || {}), overrides },
             };
           }),
         },
@@ -1037,7 +1043,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!caseRecord || !template) return;
     const baseline = buildGeneratedDocument(template, resolveCaseContext(catalog, selectedCaseId));
-    const currentOverride = caseRecord.docOverrides?.[docId] || {};
+    const currentOverride = caseRecord.documents?.overrides?.[docId] || {};
     const currentRaw = currentOverride.paragraphs?.[index]?.[langKey] ?? baseline.paragraphs[index]?.[langKey] ?? '';
     const nextRaw = toggleInlineFormat(currentRaw, start, end, attr);
     const nextOverride = {
@@ -1049,17 +1055,17 @@ const DocumentsPage = ({ isAdmin }) => {
     };
     const pruned = pruneDocOverride(nextOverride, baseline);
     try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}/docOverrides/${docId}`), pruned);
+      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}/documents/overrides/${docId}`), pruned);
       setCatalog(previous => ({
         ...previous,
         parties: {
           ...previous.parties,
           cases: previous.parties.cases.map(item => {
             if (String(item.id) !== String(caseRecord.id)) return item;
-            const docOverrides = { ...(item.docOverrides || {}) };
-            if (pruned) docOverrides[docId] = pruned;
-            else delete docOverrides[docId];
-            return { ...item, docOverrides: Object.keys(docOverrides).length ? docOverrides : undefined };
+            const overrides = { ...(item.documents?.overrides || {}) };
+            if (pruned) overrides[docId] = pruned;
+            else delete overrides[docId];
+            return { ...item, documents: { ...(item.documents || {}), overrides } };
           }),
         },
       }));
@@ -1140,7 +1146,7 @@ const DocumentsPage = ({ isAdmin }) => {
           return;
         }
 
-        const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+        const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
         if (!clinicId) {
           toast.error('Select a case with a clinic before uploading the logo.');
           return;
@@ -1208,7 +1214,7 @@ const DocumentsPage = ({ isAdmin }) => {
   };
 
   const handleAssignLogoLayout = async (fileName, layoutTag) => {
-    const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+    const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
     if (!clinicId) return;
     const previousVariants = clinicLogos;
     const nextVariants = applyLogoLayoutAssignment(previousVariants, fileName, layoutTag);
@@ -1224,7 +1230,7 @@ const DocumentsPage = ({ isAdmin }) => {
 
   const handleRemoveLogoVariant = async fileName => {
     if (typeof window !== 'undefined' && !window.confirm('Remove this clinic logo variant from the backend?')) return;
-    const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+    const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
     if (!clinicId) return;
     // A variant loaded via the legacy Storage-folder fallback still physically lives there.
     const isLegacyVariant = Boolean(clinicLogos.find(variant => variant.fileName === fileName)?.legacyFolder);
@@ -1355,7 +1361,7 @@ const DocumentsPage = ({ isAdmin }) => {
   // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
   // source of truth here, so logos uploaded through the app or Firebase Console are discovered
   // without relying on a Realtime Database filename mirror.
-  const logoClinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
+  const logoClinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
   const clinicLogoStorageKey = `${logoClinicId}:${clinicLogoRefreshKey}`;
 
   // Fetch every stored logo variant of the selected clinic from Storage; the dimensions are what
@@ -1453,7 +1459,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const generated = selectedTemplates.map(template => buildGeneratedDocument(
       template,
       context,
-      selectedCase?.docOverrides?.[template.id],
+      selectedCase?.documents?.overrides?.[template.id],
     ));
     // Each document renders with the shared defaults merged with its own format overrides (spec
     // §5) - independent of whichever document (if any) the Format panel currently targets.
@@ -1678,7 +1684,7 @@ const DocumentsPage = ({ isAdmin }) => {
                 const showEn = isBilingual || getLayoutLang(layout) === 'en';
                 const isSingle = !(showUk && showEn);
                 const resolvedDoc = isExpanded && isDataMode
-                  ? buildGeneratedDocument(template, caseContext, selectedCase?.docOverrides?.[template.id])
+                  ? buildGeneratedDocument(template, caseContext, selectedCase?.documents?.overrides?.[template.id])
                   : null;
                 // Whichever source is currently authoritative (the dedicated `logo` field, or a
                 // legacy leading paragraph) shown as one plain-text value the admin can type into
