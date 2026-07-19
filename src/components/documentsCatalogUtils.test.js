@@ -9,6 +9,7 @@ import {
   buildChildContext,
   buildDocumentsFileName,
   buildGeneratedDocument,
+  catalogPartiesToBackend,
   clinicLogoEntriesToBackend,
   deepMergeRecords,
   diffDocFormattingOverrides,
@@ -239,6 +240,41 @@ describe('parseDocumentsTechnicalInput', () => {
     expect(parsed.parties.clinics[0].id).toBe('clinic-9');
     expect(parsed.documents[0].id).toBe('doc-9');
   });
+
+  // batch 17 §1/§2/§8: parties.clinics[clinicId].logo is now the primary clinic-logo source when
+  // pasting technical input too (previously only normalizeDocumentsCatalog read it at all).
+  describe('clinic-logo priority (batch 17)', () => {
+    it('reads clinic.logo as the primary source for a pasted parties.clinics record', () => {
+      const parsed = parseDocumentsTechnicalInput(JSON.stringify({
+        parties: {
+          clinics: {
+            'clinic-1': { id: 'clinic-1', logo: [{ file: 'a.jpg', layout: '1col' }] },
+          },
+        },
+      }));
+      expect(parsed.clinicLogos['clinic-1']).toEqual([{ file: 'a.jpg', layout: '1col' }]);
+    });
+
+    it('clinic.logo wins over a pasted legacy parties.cases.clinics node for the same clinic', () => {
+      const parsed = parseDocumentsTechnicalInput(JSON.stringify({
+        parties: {
+          clinics: { 'clinic-1': { id: 'clinic-1', logo: [{ file: 'current.jpg', layout: '1col' }] } },
+          cases: { clinics: { 'clinic-1': { logo: [{ file: 'stale.jpg', layout: '1col' }] } } },
+        },
+      }));
+      expect(parsed.clinicLogos['clinic-1']).toEqual([{ file: 'current.jpg', layout: '1col' }]);
+    });
+
+    it('falls back to parties.cases.clinics only when the clinic record has no logo field of its own', () => {
+      const parsed = parseDocumentsTechnicalInput(JSON.stringify({
+        parties: {
+          clinics: { 'clinic-1': { id: 'clinic-1' } },
+          cases: { clinics: { 'clinic-1': { logo: [{ file: 'legacy.jpg', layout: '1col' }] } } },
+        },
+      }));
+      expect(parsed.clinicLogos['clinic-1']).toEqual([{ file: 'legacy.jpg', layout: '1col' }]);
+    });
+  });
 });
 
 describe('mergeDocumentsCatalog', () => {
@@ -435,7 +471,9 @@ describe('spec: inserting/removing a paragraph at any position reindexes existin
 });
 
 describe('clinic logos', () => {
-  it('reads legacy bare file names from parties/cases/clinics as unassigned entries', () => {
+  // batch 17 §8: parties.cases.clinics is a legacy fallback now - only consulted for a clinic that
+  // doesn't already carry its own `logo` field.
+  it('reads legacy bare file names from parties/cases/clinics as unassigned entries (fallback only)', () => {
     const catalog = normalizeDocumentsCatalog(
       {
         clinics: { 'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка' } } },
@@ -453,7 +491,7 @@ describe('clinic logos', () => {
     expect(catalog.parties.cases.map(record => record.id)).toEqual(['case-1']);
   });
 
-  it('reads { file, layout } entries and drops unknown layout tags', () => {
+  it('reads { file, layout } entries and drops unknown layout tags (legacy fallback path)', () => {
     const catalog = normalizeDocumentsCatalog(
       {
         cases: {
@@ -479,12 +517,56 @@ describe('clinic logos', () => {
     ]);
   });
 
-  it('falls back to legacy file names stored on the clinic record', () => {
+  // batch 17 §1/§2/§12: the clinic's own `logo` field is now the primary source - no
+  // `parties.cases.clinics` node is needed at all once a clinic carries it directly.
+  it('reads the logo directly from parties.clinics[clinicId].logo (primary, no cases.clinics needed)', () => {
     const catalog = normalizeDocumentsCatalog(
       { clinics: { 'clinic-1': { id: 'clinic-1', logo: ['legacy.jpg'] } } },
       null,
     );
     expect(catalog.clinicLogos['clinic-1']).toEqual([{ file: 'legacy.jpg', layout: '' }]);
+  });
+
+  it('parties.clinics[clinicId].logo wins over a stale parties.cases.clinics node for the same clinic (§12 #4)', () => {
+    const catalog = normalizeDocumentsCatalog(
+      {
+        clinics: {
+          'clinic-1': {
+            id: 'clinic-1',
+            logo: [{ file: 'current-1col.jpg', layout: '1col' }, { file: 'current-2col.jpg', layout: '2col' }],
+          },
+        },
+        cases: {
+          clinics: { 'clinic-1': { logo: [{ file: 'stale.jpg', layout: '1col' }] } },
+        },
+      },
+      null,
+    );
+    expect(catalog.clinicLogos['clinic-1']).toEqual([
+      { file: 'current-1col.jpg', layout: '1col' },
+      { file: 'current-2col.jpg', layout: '2col' },
+    ]);
+  });
+
+  it('resolveClinicLogo (getClinicLogo) reads {{logo}}/{{logo-long}} from parties.clinics[clinicId].logo (§12 #2/#3)', () => {
+    const catalog = normalizeDocumentsCatalog(
+      {
+        clinics: {
+          'clinic-1': {
+            id: 'clinic-1',
+            logo: [
+              { file: '1784230621524-mwe7prn3.jpg', layout: '1col' },
+              { file: '1784230642891-qzlngjn1.jpg', layout: '2col' },
+            ],
+          },
+        },
+        cases: { 'case-1': { id: 'case-1', clinicId: 'clinic-1' } },
+      },
+      null,
+    );
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(getClinicLogo(catalog.clinicLogos[context.clinic.id], 'logo').file).toBe('1784230621524-mwe7prn3.jpg');
+    expect(getClinicLogo(catalog.clinicLogos[context.clinic.id], 'logo-long').file).toBe('1784230642891-qzlngjn1.jpg');
   });
 
   it('picks the variant assigned to the selected column mode', () => {
@@ -1465,5 +1547,100 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
       }, {});
       expect(generated.beforeTitle[0].align).toBe('left');
     });
+  });
+});
+
+// Normalized structure (batch 17): the clinic's logo lives on the clinic record itself
+// (parties.clinics[clinicId].logo), never on a caseId - and a case only ever stores clinicId /
+// maternityHospitalId references, never the party data itself.
+describe('spec: normalized clinic + maternityHospital structure (batch 17)', () => {
+  const clinicAndHospitalCatalog = () => normalizeDocumentsCatalog(
+    {
+      clinics: {
+        'clinic-1': {
+          id: 'clinic-1',
+          name: { uk: 'Клініка генетики репродукції «Вікторія»', en: 'Reproductive Genetics Clinic "Victoria"' },
+          logo: [
+            { file: '1784230621524-mwe7prn3.jpg', layout: '1col' },
+            { file: '1784230642891-qzlngjn1.jpg', layout: '2col' },
+          ],
+        },
+      },
+      maternityHospitals: {
+        'maternity-hospital-1': {
+          id: 'maternity-hospital-1',
+          name: { uk: 'КОМУНАЛЬНЕ НЕКОМЕРЦІЙНЕ ПІДПРИЄМСТВО "ПЕРИНАТАЛЬНИЙ ЦЕНТР М. КИЄВА"', en: '' },
+          shortName: { uk: 'Перинатальний центр м. Києва', en: '' },
+          edrpou: '22964365',
+          address: { uk: 'місто Київ', en: 'Kyiv' },
+        },
+      },
+      cases: {
+        'case-1': {
+          id: 'case-1',
+          clinicId: 'clinic-1',
+          birthRegistration: {
+            medicalConclusion: { number: '1234-7H6A-2T6C-CK24', date: '2026-05-16', maternityHospitalId: 'maternity-hospital-1' },
+          },
+        },
+      },
+    },
+    {},
+  );
+
+  it('finds the clinic through case.clinicId, not a per-case node (§1, §12 #1)', () => {
+    const context = resolveCaseContext(clinicAndHospitalCatalog(), 'case-1');
+    expect(context.clinic.id).toBe('clinic-1');
+    expect(fillPlaceholders('{{clinic.name.uk}}', context, 'uk')).toBe('Клініка генетики репродукції «Вікторія»');
+  });
+
+  it('resolveClinicLogo picks the 1col/2col variant from parties.clinics[clinicId].logo, not tied to caseId (§2, §12 #2/#3)', () => {
+    const catalog = clinicAndHospitalCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const clinicLogos = catalog.clinicLogos[context.clinic.id];
+    expect(getClinicLogo(clinicLogos, 'logo').file).toBe('1784230621524-mwe7prn3.jpg');
+    expect(getClinicLogo(clinicLogos, 'logo-long').file).toBe('1784230642891-qzlngjn1.jpg');
+  });
+
+  it('exposes maternityHospital.shortName/address/edrpou through the generic resolver, no dedicated code (§3/§5)', () => {
+    const context = resolveCaseContext(clinicAndHospitalCatalog(), 'case-1');
+    expect(fillPlaceholders('{{maternityHospital.shortName.uk}}', context, 'uk')).toBe('Перинатальний центр м. Києва');
+    expect(fillPlaceholders('{{maternityHospital.address.uk}}', context, 'uk')).toBe('місто Київ');
+    expect(fillPlaceholders('{{maternityHospital.edrpou}}', context, 'uk')).toBe('22964365');
+  });
+
+  it('an unknown clinicId resolves clinic to null without crashing (§10, §12 #8)', () => {
+    const catalog = clinicAndHospitalCatalog();
+    catalog.parties.cases[0].clinicId = 'no-such-clinic';
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(context.clinic).toBeNull();
+    expect(() => fillPlaceholders('{{clinic.name.uk}}', context, 'uk')).not.toThrow();
+    expect(fillPlaceholders('{{clinic.name.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+  });
+
+  it('an unknown maternityHospitalId resolves maternityHospital to null without crashing (§10, §12 #9)', () => {
+    const catalog = clinicAndHospitalCatalog();
+    catalog.parties.cases[0].birthRegistration.medicalConclusion.maternityHospitalId = 'ghost-hospital';
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(context.maternityHospital).toBeNull();
+    expect(() => fillPlaceholders('{{maternityHospital.name.uk}}', context, 'uk')).not.toThrow();
+    expect(fillPlaceholders('{{maternityHospital.name.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+  });
+
+  it('old clinic.* variables keep working unchanged (§12 #11)', () => {
+    const context = resolveCaseContext(richCatalog(), 'case-1');
+    expect(fillPlaceholders('{{clinic.medicalDirector.name.uk.genitive}}', context, 'uk')).toBe('Давид Лілії Володимирівни');
+  });
+
+  it('persisting the catalog never re-creates parties.cases.clinics (§12 #12)', () => {
+    const catalog = clinicAndHospitalCatalog();
+    const backend = catalogPartiesToBackend(catalog);
+    expect(backend.cases['case-1'].clinics).toBeUndefined();
+    expect(Object.values(backend.cases).some(record => record && record.clinics)).toBe(false);
+    // The clinic record's own `logo` field is exactly what gets persisted - not a sibling node.
+    expect(backend.clinics['clinic-1'].logo).toEqual([
+      { file: '1784230621524-mwe7prn3.jpg', layout: '1col' },
+      { file: '1784230642891-qzlngjn1.jpg', layout: '2col' },
+    ]);
   });
 });

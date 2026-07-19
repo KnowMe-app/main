@@ -39,6 +39,8 @@ import {
   getParagraphType,
   getTemplateLogoType,
   isBilingualLayout,
+  legacyClinicLogoStorageFilePath,
+  legacyClinicLogoStorageFolder,
   mergeDocumentsCatalog,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -1224,8 +1226,12 @@ const DocumentsPage = ({ isAdmin }) => {
     if (typeof window !== 'undefined' && !window.confirm('Remove this clinic logo variant from the backend?')) return;
     const clinicId = selectedCase?.clinicId ? String(selectedCase.clinicId) : '';
     if (!clinicId) return;
+    // A variant loaded via the legacy Storage-folder fallback still physically lives there.
+    const isLegacyVariant = Boolean(clinicLogos.find(variant => variant.fileName === fileName)?.legacyFolder);
     try {
-      await deleteStorageFile(clinicLogoStorageFilePath(clinicId, fileName));
+      await deleteStorageFile(isLegacyVariant
+        ? legacyClinicLogoStorageFilePath(clinicId, fileName)
+        : clinicLogoStorageFilePath(clinicId, fileName));
       const remaining = clinicLogos.filter(variant => variant.fileName !== fileName);
       setClinicLogos(remaining);
       setClinicLogoRefreshKey(previous => previous + 1);
@@ -1369,15 +1375,33 @@ const DocumentsPage = ({ isAdmin }) => {
     setClinicLogoLoading(true);
     const loadVariants = async () => {
       let fileNames = [];
+      let activeFolder = clinicLogoStorageFolder(clinicId);
+      let usingLegacyFolder = false;
       try {
-        fileNames = await listStorageFolderFileNames(clinicLogoStorageFolder(clinicId));
+        fileNames = await listStorageFolderFileNames(activeFolder);
       } catch (listError) {
-        console.error('[ClinicLogo] Unable to list', clinicLogoStorageFolder(clinicId), listError);
+        console.error('[ClinicLogo] Unable to list', activeFolder, listError);
         if (!cancelled) {
           setClinicLogoError(`Could not list the clinic logo Storage folder - ${describeStorageError(listError)}`);
           setClinicLogoLoading(false);
         }
         return;
+      }
+      // Batch 17 §1/§2/§8: the canonical Storage folder moved from parties/cases/clinics/{id}/logo
+      // to parties/clinics/{id}/logo - a clinic that hasn't been re-uploaded under the new path yet
+      // still has its files at the old one, so fall back to reading (never writing) there.
+      if (!fileNames.length) {
+        const legacyFolder = legacyClinicLogoStorageFolder(clinicId);
+        try {
+          const legacyFileNames = await listStorageFolderFileNames(legacyFolder);
+          if (legacyFileNames.length) {
+            fileNames = legacyFileNames;
+            activeFolder = legacyFolder;
+            usingLegacyFolder = true;
+          }
+        } catch (legacyListError) {
+          console.error('[ClinicLogo] Unable to list legacy folder', legacyFolder, legacyListError);
+        }
       }
       if (cancelled) return;
       if (!fileNames.length) {
@@ -1391,16 +1415,19 @@ const DocumentsPage = ({ isAdmin }) => {
       const layoutFor = fileName => assignments.find(entry => entry.file === fileName)?.layout || '';
       const results = await Promise.all(fileNames.map(async fileName => {
         try {
-          const rawDataUrl = await getStorageFileDataUrl(clinicLogoStorageFilePath(clinicId, fileName));
+          const filePath = usingLegacyFolder
+            ? legacyClinicLogoStorageFilePath(clinicId, fileName)
+            : clinicLogoStorageFilePath(clinicId, fileName);
+          const rawDataUrl = await getStorageFileDataUrl(filePath);
           if (!rawDataUrl) return { fileName, error: 'empty response from Storage' };
           // Same re-encode the surrogate mother profile PDF export applies to uploaded photos:
           // @react-pdf/renderer only reliably embeds baseline JPEG/PNG, so a progressive JPEG or
           // EXIF-rotated logo can fail to appear in the generated PDF with no error.
           const dataUrl = await reencodePdfImageDataUrl(rawDataUrl, { preserveTransparency: true });
           const dimensions = await readImageDimensions(dataUrl);
-          return { fileName, variant: { fileName, dataUrl, layout: layoutFor(fileName), ...dimensions } };
+          return { fileName, variant: { fileName, dataUrl, layout: layoutFor(fileName), legacyFolder: usingLegacyFolder, ...dimensions } };
         } catch (loadLogoError) {
-          console.error('[ClinicLogo] Unable to load', fileName, 'from', clinicLogoStorageFolder(clinicId), loadLogoError);
+          console.error('[ClinicLogo] Unable to load', fileName, 'from', activeFolder, loadLogoError);
           return { fileName, error: describeStorageError(loadLogoError) };
         }
       }));
