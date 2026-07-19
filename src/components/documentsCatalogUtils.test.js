@@ -3,6 +3,8 @@ import {
   DOCUMENT_LAYOUTS,
   applyLogoLayoutAssignment,
   applyPlainTextEdit,
+  buildVariablePickerGroups,
+  collectContextLeafPaths,
   estimateColumnPageCapacity,
   estimateParagraphChars,
   buildCaseLabel,
@@ -64,7 +66,13 @@ import {
   shiftDocOverrideParagraphIndices,
   splitParagraphsIntoColumns,
   splitParagraphsIntoPages,
+  TITLE_SCOPE,
+  beforeTitleScope,
+  getTemplateScopeText,
+  paragraphScope,
+  withTemplateScopeText,
   toggleInlineFormat,
+  toggleRawInlineMarker,
   upsertRecentCaseId,
   upsertRecentId,
   validateBirthRegistrationCase,
@@ -1043,6 +1051,63 @@ describe('spec: safe optional entities', () => {
   });
 });
 
+describe('spec: insert-variable picker (collectContextLeafPaths / buildVariablePickerGroups)', () => {
+  it('walks every string/number/boolean leaf into a flat {path, value} list, dotted paths intact', () => {
+    const leaves = collectContextLeafPaths({
+      name: { uk: { nominative: 'Кьогоку Ая' }, en: 'Kyogoku Aya' },
+      birthDate: '1982-01-21',
+    }, 'wife');
+    expect(leaves).toEqual(expect.arrayContaining([
+      { path: 'wife.name.uk.nominative', value: 'Кьогоку Ая' },
+      { path: 'wife.name.en', value: 'Kyogoku Aya' },
+      { path: 'wife.birthDate', value: '1982-01-21' },
+    ]));
+  });
+
+  it('skips empty/blank strings, null/undefined, and arrays (never addresses a list as one placeholder)', () => {
+    const leaves = collectContextLeafPaths({
+      name: { uk: '', en: undefined },
+      logo: [{ file: 'a.jpg', layout: '1col' }],
+      taxId: null,
+    }, 'clinic');
+    expect(leaves).toEqual([]);
+  });
+
+  it('excludes the "id" field - never a useful placeholder', () => {
+    const leaves = collectContextLeafPaths({ id: 'patient-1', role: 'wife' }, 'wife');
+    expect(leaves).toEqual([{ path: 'wife.role', value: 'wife' }]);
+  });
+
+  it('buildVariablePickerGroups groups Пара/Сурогатна мати/Довірена особа/Клініка, spanning wife+husband+couple in one block', () => {
+    const context = {
+      wife: { name: { en: 'Kyogoku Aya' } },
+      husband: { name: { en: 'Kyogoku Keigo' } },
+      couple: { marriage: { certificateNumber: 'M-1' } },
+      surrogateMother: { name: { en: 'Molvinskykh Yuliia' } },
+      representative: { name: { en: 'Koval Oleksandr' } },
+      clinic: { name: { en: 'Victoria' } },
+    };
+    const groups = buildVariablePickerGroups(context);
+    expect(groups.map(g => g.label)).toEqual(['Пара', 'Сурогатна мати', 'Довірена особа', 'Клініка']);
+
+    const pairGroup = groups.find(g => g.label === 'Пара');
+    expect(pairGroup.items).toEqual(expect.arrayContaining([
+      { path: 'wife.name.en', value: 'Kyogoku Aya' },
+      { path: 'husband.name.en', value: 'Kyogoku Keigo' },
+      { path: 'couple.marriage.certificateNumber', value: 'M-1' },
+    ]));
+
+    const clinicGroup = groups.find(g => g.label === 'Клініка');
+    expect(clinicGroup.items).toEqual([{ path: 'clinic.name.en', value: 'Victoria' }]);
+  });
+
+  it('tolerates a missing root (null context, or a group whose root is null/undefined) without throwing', () => {
+    expect(() => buildVariablePickerGroups(null)).not.toThrow();
+    expect(buildVariablePickerGroups(null).every(group => group.items.length === 0)).toBe(true);
+    expect(buildVariablePickerGroups({ wife: null }).find(g => g.label === 'Пара').items).toEqual([]);
+  });
+});
+
 describe('spec: selection-based inline bold/italic (batch 13 §1)', () => {
   it('parses ** and a lone * as independent bold/italic toggles', () => {
     expect(parseFormattedRuns('Hello **world** and *everyone* else')).toEqual([
@@ -1111,6 +1176,43 @@ describe('spec: selection-based inline bold/italic (batch 13 §1)', () => {
     const edited = applyPlainTextEdit(bolded, 'Hello world there');
     expect(plainTextOf(edited)).toBe('Hello world there');
     expect(parseFormattedRuns(edited).find(run => run.text.includes('there')).bold).toBe(true);
+  });
+
+  it('toggleRawInlineMarker wraps a raw-text selection in the marker (Template-mode Bold/Italic)', () => {
+    expect(toggleRawInlineMarker('Я, {{wife.name.uk.nominative}}, кажу', 3, 30, 'bold'))
+      .toBe('Я, **{{wife.name.uk.nominative}}**, кажу');
+    expect(toggleRawInlineMarker('Hello world', 6, 11, 'italic')).toBe('Hello *world*');
+  });
+
+  it('toggleRawInlineMarker un-wraps when the selection sits exactly inside adjacent markers', () => {
+    const bolded = toggleRawInlineMarker('Hello world', 6, 11, 'bold');
+    expect(bolded).toBe('Hello **world**');
+    expect(toggleRawInlineMarker(bolded, 8, 13, 'bold')).toBe('Hello world');
+  });
+
+  it('toggleRawInlineMarker is a no-op for a collapsed (empty) selection', () => {
+    expect(toggleRawInlineMarker('Hello world', 5, 5, 'bold')).toBe('Hello world');
+  });
+
+  it('getTemplateScopeText/withTemplateScopeText address the title, a beforeTitle block, and a paragraph by one shared scope key', () => {
+    const template = {
+      title: { uk: 'Заява', en: 'Statement' },
+      beforeTitle: [{ uk: 'ЗА МІСЦЕМ ВИМОГИ', align: 'right' }],
+      paragraphs: [{ uk: 'Перший абзац', en: 'First paragraph' }],
+    };
+    expect(getTemplateScopeText(template, TITLE_SCOPE, 'uk')).toBe('Заява');
+    expect(getTemplateScopeText(template, beforeTitleScope(0), 'uk')).toBe('ЗА МІСЦЕМ ВИМОГИ');
+    expect(getTemplateScopeText(template, paragraphScope(0), 'en')).toBe('First paragraph');
+
+    const withNewTitle = withTemplateScopeText(template, TITLE_SCOPE, 'uk', 'З А Я В А');
+    expect(withNewTitle.title).toEqual({ uk: 'З А Я В А', en: 'Statement' });
+    expect(withNewTitle.beforeTitle).toBe(template.beforeTitle); // untouched branches are not copied
+
+    const withBoldedName = withTemplateScopeText(template, beforeTitleScope(0), 'uk', '**ЗА МІСЦЕМ ВИМОГИ**');
+    expect(withBoldedName.beforeTitle[0]).toEqual({ uk: '**ЗА МІСЦЕМ ВИМОГИ**', align: 'right' });
+
+    const withEditedParagraph = withTemplateScopeText(template, paragraphScope(0), 'uk', 'Змінений абзац');
+    expect(withEditedParagraph.paragraphs[0]).toEqual({ uk: 'Змінений абзац', en: 'First paragraph' });
   });
 
   it('applyPlainTextEdit deletes text without corrupting the surrounding markup', () => {
