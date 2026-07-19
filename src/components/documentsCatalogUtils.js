@@ -8,13 +8,22 @@ export const DOCUMENTS_PARTIES_PATH = 'documentsBuilder/parties';
 export const DOCUMENTS_TEMPLATES_PATH = 'documentsBuilder/templates';
 export const DOCUMENTS_SETTINGS_PATH = 'documentsBuilder/settings';
 
-// Clinic-logo paths. The Storage folder holds the image files themselves (and is listed directly
-// as the source of truth for which variants exist); the Realtime Database node at the same path
-// holds the per-variant layout assignments as `{ file, layout }` entries (legacy nodes stored
-// bare filenames - both shapes are normalized by normalizeClinicLogoEntries).
-export const clinicLogoDbPath = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
-export const clinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
+// Clinic-logo paths (batch 17 §1/§2: normalized under the clinic record itself, not a sibling
+// `cases.clinics` node - a clinic is shared across many cases, so its logo was never really
+// case-scoped). The Storage folder holds the image files themselves (and is listed directly as
+// the source of truth for which variants exist); the Realtime Database node at the same path holds
+// the per-variant layout assignments as `{ file, layout }` entries (legacy nodes stored bare
+// filenames - both shapes are normalized by normalizeClinicLogoEntries). Writing here writes
+// exactly the clinic record's own `logo` field, leaving every other clinic field untouched.
+export const clinicLogoDbPath = clinicId => `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`;
+export const clinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/clinics/${clinicId}/logo`;
 export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoStorageFolder(clinicId)}/${fileName}`;
+
+// Pre-batch-17 Storage location - kept only as a temporary read fallback while older clinics still
+// have their files there (spec §8); never written to again. Delete once every clinic's logo has
+// been re-uploaded under the new path above.
+export const legacyClinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
+export const legacyClinicLogoStorageFilePath = (clinicId, fileName) => `${legacyClinicLogoStorageFolder(clinicId)}/${fileName}`;
 
 export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases', 'maternityHospitals', 'notaries'];
 
@@ -108,8 +117,9 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
   const catalog = emptyDocumentsCatalog();
   PARTY_COLLECTIONS.forEach(collection => {
     let rawCollection = rawParties?.[collection];
-    // `parties/cases/clinics` is the clinic-logo file-name store (see clinicLogoDbPath), not a
-    // case record - it must never leak into the cases list.
+    // `parties/cases/clinics` was the pre-batch-17 clinic-logo file-name store, not a case record -
+    // it must never leak into the cases list, even though the canonical logo location has since
+    // moved onto the clinic record itself (see clinicLogoDbPath).
     if (collection === 'cases' && isPlainObject(rawCollection)) {
       const { clinics: _clinicLogos, ...caseRecords } = rawCollection;
       rawCollection = caseRecords;
@@ -117,20 +127,23 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
     catalog.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
   });
   catalog.documents = toRecordsWithIdFromKey(rawTemplates).filter(record => isPlainObject(record));
+  // Primary (batch 17 §1/§2): a clinic's own `logo` field, alongside its name/legalName/etc. - a
+  // clinic is shared across many cases, so its logo was never really case-scoped to begin with.
+  catalog.parties.clinics.forEach(clinic => {
+    const entries = normalizeClinicLogoEntries(clinic.logo);
+    if (entries.length) catalog.clinicLogos[String(clinic.id)] = entries;
+  });
+  // Legacy fallback (spec §8): pre-batch-17 exports kept the layout assignments on a sibling
+  // `parties/cases/clinics` node instead - only consulted for a clinic that doesn't already have
+  // its own `logo` field, so the new shape always wins once a clinic has been migrated.
   const rawClinicLogos = rawParties?.cases?.clinics;
   if (isPlainObject(rawClinicLogos)) {
     Object.entries(rawClinicLogos).forEach(([clinicId, node]) => {
+      if (catalog.clinicLogos[clinicId]) return;
       const entries = normalizeClinicLogoEntries(node?.logo);
       if (entries.length) catalog.clinicLogos[clinicId] = entries;
     });
   }
-  // Legacy fallback: earlier builds kept the file names on the clinic record itself.
-  catalog.parties.clinics.forEach(clinic => {
-    if (!catalog.clinicLogos[String(clinic.id)] && Array.isArray(clinic.logo)) {
-      const entries = normalizeClinicLogoEntries(clinic.logo);
-      if (entries.length) catalog.clinicLogos[String(clinic.id)] = entries;
-    }
-  });
   return catalog;
 };
 
@@ -170,24 +183,34 @@ export const parseDocumentsTechnicalInput = rawText => {
   const templatesSource = parsed.templates !== undefined ? parsed.templates : parsed.documents;
 
   const incoming = emptyDocumentsCatalog();
+  // Legacy (pre-batch-17) shape: `parties.cases.clinics` mirrored the clinic-logo layout
+  // assignments separately from the clinic record - it is not a case record, so it's carried aside
+  // here instead of being imported as a generated case; kept only as a fallback below.
+  let legacyClinicLogoNode = null;
   PARTY_COLLECTIONS.forEach(collection => {
     let rawCollection = dataSource[collection];
-    // Backend exports include `cases.clinics` for clinic-logo layout assignments; it mirrors the
-    // Realtime Database storage path and is not a case record - carried into incoming.clinicLogos
-    // instead of being imported as a generated case.
     if (collection === 'cases' && isPlainObject(rawCollection)) {
       const { clinics: clinicLogoNode, ...caseRecords } = rawCollection;
       rawCollection = caseRecords;
-      if (isPlainObject(clinicLogoNode)) {
-        Object.entries(clinicLogoNode).forEach(([clinicId, node]) => {
-          const entries = normalizeClinicLogoEntries(node?.logo);
-          if (entries.length) incoming.clinicLogos[clinicId] = entries;
-        });
-      }
+      if (isPlainObject(clinicLogoNode)) legacyClinicLogoNode = clinicLogoNode;
     }
     incoming.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
   });
   incoming.documents = toRecordsWithIdFromKey(templatesSource).filter(record => isPlainObject(record));
+
+  // Primary (batch 17 §1/§2): each clinic's own `logo` field.
+  incoming.parties.clinics.forEach(clinic => {
+    const entries = normalizeClinicLogoEntries(clinic.logo);
+    if (entries.length) incoming.clinicLogos[String(clinic.id)] = entries;
+  });
+  // Legacy fallback (spec §8): only for a clinic not already covered by its own `logo` field above.
+  if (isPlainObject(legacyClinicLogoNode)) {
+    Object.entries(legacyClinicLogoNode).forEach(([clinicId, node]) => {
+      if (incoming.clinicLogos[clinicId]) return;
+      const entries = normalizeClinicLogoEntries(node?.logo);
+      if (entries.length) incoming.clinicLogos[clinicId] = entries;
+    });
+  }
 
   const hasParties = PARTY_COLLECTIONS.some(collection => incoming.parties[collection].length > 0);
   const hasClinicLogos = Object.keys(incoming.clinicLogos).length > 0;
