@@ -13,6 +13,7 @@ import {
   clinicLogoEntriesToBackend,
   createChildRecord,
   createEmptyCase,
+  createTransaction,
   deepMergeRecords,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
@@ -46,9 +47,11 @@ import {
   pickLogoVariantForLayout,
   plainTextOf,
   pruneDocOverride,
+  removeTransactionReferences,
   resolveCaseContext,
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
+  resolveTransaction,
   serializeFormattedRuns,
   shiftDocOverrideParagraphIndices,
   splitParagraphsIntoColumns,
@@ -59,6 +62,7 @@ import {
   validateBirthRegistrationCase,
   validateCaseRecord,
   validateDocumentTemplate,
+  validateTransaction,
 } from './documentsCatalogUtils';
 
 // All party fixtures below are fictional - tests must never carry real client data.
@@ -1467,6 +1471,9 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
         child: {}, medicalConclusion: {}, statementDate: '', notaryId: '',
       });
       const issues = validateBirthRegistrationCase(catalog, 'case-1');
+      // batch 19: with statementDate/notaryId both blank and no transactionId either, there is
+      // nothing at all to point at a transaction - reported as one missing reference rather than
+      // two separate blank-field paths.
       expect(issues).toEqual(expect.arrayContaining([
         'case.childbirth.maternityHospitalId',
         'case.childbirth.children[0].sex',
@@ -1474,8 +1481,7 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
         'case.childbirth.children[0].birthPlace.uk',
         'case.childbirth.children[0].medicalConclusion.number',
         'case.childbirth.children[0].medicalConclusion.date',
-        'case.registrations.birth.statementDate',
-        'case.registrations.birth.notaryId',
+        'case.registrations.birth.transactionId',
       ]));
     });
 
@@ -1902,5 +1908,235 @@ describe('spec: normalized case structure (batch 18)', () => {
     expect(first.id).not.toBe(second.id);
     expect(first.id).toMatch(/^child-/);
     expect(first).toMatchObject({ sex: '', birthDate: '', birthPlace: { uk: '', en: '' }, medicalConclusion: { number: '', date: '' } });
+  });
+});
+
+// A transaction is one concrete combination of couple + surrogate mother + notary for a specific
+// legal act (batch 19): decoupled from the case's current relations, so the birth-registration
+// statement uses exactly the participants recorded on its own transaction, not whatever the case's
+// relations happen to be right now. The couple/surrogate mother below are deliberately different
+// from the transaction's, to prove the document really reads through the transaction.
+describe('spec: transactions (batch 19)', () => {
+  const transactionCatalog = (transactionOverride = {}, birthOverride = {}) => normalizeDocumentsCatalog(
+    {
+      couples: {
+        'couple-1': {
+          id: 'couple-1',
+          partners: [
+            { id: 'w1', role: 'wife', name: { uk: { nominative: 'Кікава Харука' }, en: 'Kikawa Haruka' } },
+            { id: 'h1', role: 'husband', name: { uk: { nominative: 'Кікава Йосуке' }, en: 'Kikawa Yosuke' } },
+          ],
+        },
+        'couple-2': {
+          id: 'couple-2',
+          partners: [{ id: 'w2', role: 'wife', name: { uk: { nominative: 'Інша Дружина' } } }],
+        },
+      },
+      surrogateMothers: {
+        'surrogate-1': { id: 'surrogate-1', name: { uk: { nominative: 'Молвінських Юлія Володимирівна' } }, taxId: '3411512481', address: { uk: 'Гайворон' } },
+        'surrogate-2': { id: 'surrogate-2', name: { uk: { nominative: 'Інша Сурогатна' } } },
+      },
+      notaries: {
+        'notary-1': {
+          id: 'notary-1',
+          name: { uk: { nominative: 'Алексашина Юлія Борисівна', genitive: 'Алексашиної Юлії Борисівни', short: 'Алексашина Ю.Б.' } },
+          title: { uk: 'приватний нотаріус Київського міського нотаріального округу' },
+          city: { uk: 'місто Київ, Україна' },
+        },
+      },
+      maternityHospitals: {},
+      transactions: {
+        'transaction-1': {
+          id: 'transaction-1',
+          type: 'birth-registration-surrogate-consent',
+          caseId: 'case-1',
+          coupleId: 'couple-1',
+          surrogateMotherId: 'surrogate-1',
+          notaryId: 'notary-1',
+          statementDate: '2026-05-18',
+          registryNumber: '',
+          ...transactionOverride,
+        },
+      },
+      cases: {
+        'case-1': {
+          id: 'case-1',
+          // Deliberately a different couple/surrogate mother than the transaction's, so a test
+          // failure here would mean the document fell back to case.relations instead.
+          relations: { coupleId: 'couple-2', surrogateMotherId: 'surrogate-2' },
+          childbirth: {
+            maternityHospitalId: '',
+            children: [{ id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' } }],
+          },
+          registrations: { birth: { transactionId: 'transaction-1', ...birthOverride } },
+        },
+      },
+    },
+    {},
+  );
+
+  it('the transaction is resolved via case.registrations.birth.transactionId (§18 #1)', () => {
+    const catalog = transactionCatalog();
+    const caseRecord = catalog.parties.cases[0];
+    const transaction = resolveTransaction(catalog, caseRecord, 'birth-registration-surrogate-consent');
+    expect(transaction.id).toBe('transaction-1');
+    // A type mismatch resolves to null, same as a missing transaction.
+    expect(resolveTransaction(catalog, caseRecord, 'some-other-document')).toBeNull();
+  });
+
+  it('the couple is read via transaction.coupleId, not case.relations (§18 #2, §18 #12)', () => {
+    const context = resolveCaseContext(transactionCatalog(), 'case-1');
+    expect(context.wife.name.uk.nominative).toBe('Кікава Харука');
+    expect(context.husband.name.uk.nominative).toBe('Кікава Йосуке');
+  });
+
+  it('the surrogate mother is read via transaction.surrogateMotherId, not case.relations (§18 #3, §18 #12)', () => {
+    const context = resolveCaseContext(transactionCatalog(), 'case-1');
+    expect(context.surrogateMother.name.uk.nominative).toBe('Молвінських Юлія Володимирівна');
+  });
+
+  it('the notary is read via transaction.notaryId (§18 #4)', () => {
+    const context = resolveCaseContext(transactionCatalog(), 'case-1');
+    expect(context.notary.name.uk.nominative).toBe('Алексашина Юлія Борисівна');
+    expect(fillPlaceholders('{{notary.name.uk.short}}', context, 'uk')).toBe('Алексашина Ю.Б.');
+    expect(fillPlaceholders('{{notary.title.uk}}', context, 'uk')).toBe('приватний нотаріус Київського міського нотаріального округу');
+  });
+
+  it('the statement date is read from transaction.statementDate (§18 #5)', () => {
+    const context = resolveCaseContext(transactionCatalog(), 'case-1');
+    expect(fillPlaceholders('{{birthRegistration.statementDate}}', context, 'uk')).toBe('18.05.2026');
+    expect(fillPlaceholders('{{transaction.statementDate}}', context, 'uk')).toBe('18.05.2026');
+    expect(fillPlaceholders('{{birthRegistration.statementDateWords.uk}}', context, 'uk')).toBe('вісімнадцятого травня дві тисячі двадцять шостого року');
+  });
+
+  it('the registry number is read from transaction.registryNumber (§18 #6)', () => {
+    const context = resolveCaseContext(transactionCatalog({ registryNumber: '12345' }), 'case-1');
+    expect(fillPlaceholders('{{birthRegistration.registryNumber}}', context, 'uk')).toBe('12345');
+    expect(fillPlaceholders('{{transaction.registryNumber}}', context, 'uk')).toBe('12345');
+  });
+
+  it('an empty registryNumber leaves a blank line to fill in by hand, never undefined/null (§18 #7)', () => {
+    const context = resolveCaseContext(transactionCatalog(), 'case-1');
+    const rendered = fillPlaceholders('Зареєстровано в реєстрі за № {{birthRegistration.registryNumber}}', context, 'uk');
+    expect(rendered).toBe(`Зареєстровано в реєстрі за № ${MISSING_VALUE_PLACEHOLDER}`);
+    expect(rendered).not.toContain('undefined');
+    expect(rendered).not.toContain('null');
+  });
+
+  it('case.registrations.birth carries only transactionId, never a duplicated notaryId/statementDate (§18 #8)', () => {
+    const emptyCase = createEmptyCase({ caseId: 'case-9', programId: 'program-9' });
+    expect(Object.keys(emptyCase.registrations.birth)).toEqual(['transactionId']);
+    const catalog = transactionCatalog();
+    expect(Object.keys(catalog.parties.cases[0].registrations.birth)).toEqual(['transactionId']);
+  });
+
+  it('a transaction never carries status/draft/active fields (§18 #9)', () => {
+    const transaction = createTransaction({
+      transactionId: 'transaction-9', caseId: 'case-9', type: 'birth-registration-surrogate-consent', coupleId: 'couple-1', surrogateMotherId: 'surrogate-1', notaryId: 'notary-1',
+    });
+    ['status', 'draft', 'active', 'replaced', 'createdAt', 'updatedAt'].forEach(key => expect(transaction).not.toHaveProperty(key));
+    expect(Object.keys(transaction).sort()).toEqual(
+      ['id', 'type', 'caseId', 'coupleId', 'surrogateMotherId', 'notaryId', 'statementDate', 'registryNumber'].sort(),
+    );
+  });
+
+  it('changing the notary on a transaction never touches the notary record itself (§18 #10)', () => {
+    const catalog = transactionCatalog();
+    const originalNotaryName = catalog.parties.notaries.find(n => n.id === 'notary-1').name.uk.nominative;
+    const updatedTransaction = { ...catalog.parties.transactions[0], notaryId: 'notary-1' };
+    const updatedCatalog = {
+      ...catalog,
+      parties: {
+        ...catalog.parties,
+        transactions: catalog.parties.transactions.map(t => (t.id === updatedTransaction.id ? updatedTransaction : t)),
+      },
+    };
+    expect(updatedCatalog.parties.notaries.find(n => n.id === 'notary-1').name.uk.nominative).toBe(originalNotaryName);
+  });
+
+  it('removeTransactionReferences deletes only the transaction and its case reference, never the couple/surrogate mother/notary (§18 #11)', () => {
+    const catalog = transactionCatalog();
+    const updated = removeTransactionReferences(catalog, 'transaction-1');
+    expect(updated.parties.transactions).toHaveLength(0);
+    expect(updated.parties.cases[0].registrations.birth.transactionId).toBeUndefined();
+    expect(updated.parties.couples.find(c => c.id === 'couple-1')).toBeDefined();
+    expect(updated.parties.surrogateMothers.find(s => s.id === 'surrogate-1')).toBeDefined();
+    expect(updated.parties.notaries.find(n => n.id === 'notary-1')).toBeDefined();
+  });
+
+  it('the generated document uses the specific transaction\'s own participants (§18 #12)', () => {
+    const catalog = transactionCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'birth-registration-surrogate-consent',
+      title: { uk: 'З А Я В А' },
+      paragraphs: [{ uk: 'Я, {{surrogateMother.name.uk.nominative}}, за участі {{wife.name.uk.nominative}} та {{husband.name.uk.nominative}}, нотаріус {{notary.name.uk.nominative}}.' }],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs[0].uk).toBe(
+      'Я, Молвінських Юлія Володимирівна, за участі Кікава Харука та Кікава Йосуке, нотаріус Алексашина Юлія Борисівна.',
+    );
+  });
+
+  it('a missing transactionId is reported as a validation warning, not a crash (§18 #13)', () => {
+    const catalog = transactionCatalog();
+    catalog.parties.cases[0].registrations.birth = {};
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(context.transaction).toBeNull();
+    expect(() => fillPlaceholders('{{notary.name.uk.nominative}}', context, 'uk')).not.toThrow();
+    expect(validateBirthRegistrationCase(catalog, 'case-1')).toContain('case.registrations.birth.transactionId');
+  });
+
+  it('an unresolvable notaryId on the transaction never crashes the preview (§18 #14)', () => {
+    const catalog = transactionCatalog({ notaryId: 'ghost-notary' });
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(context.notary).toBeNull();
+    expect(() => fillPlaceholders('{{notary.name.uk.nominative}}', context, 'uk')).not.toThrow();
+    expect(fillPlaceholders('{{notary.name.uk.nominative}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+    expect(validateTransaction(catalog, 'transaction-1')).toContain('transaction.notaryId (no matching notary)');
+  });
+
+  it('never leaks undefined/null/[object Object] into the generated statement (§18 #15)', () => {
+    const catalog = transactionCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'birth-registration-surrogate-consent',
+      title: { uk: 'З А Я В А' },
+      paragraphs: [{ uk: 'Зареєстровано в реєстрі за № {{birthRegistration.registryNumber}}, нотаріус {{notary.name.uk.short}}, {{notary.city.uk}}.' }],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs[0].uk).not.toContain('undefined');
+    expect(generated.paragraphs[0].uk).not.toContain('null');
+    expect(generated.paragraphs[0].uk).not.toContain('[object Object]');
+  });
+
+  describe('validateTransaction', () => {
+    it('reports no issues for a fully-filled transaction', () => {
+      const catalog = transactionCatalog();
+      expect(validateTransaction(catalog, 'transaction-1')).toEqual([]);
+    });
+
+    it('flags every missing required field, but never registryNumber (empty is allowed)', () => {
+      const catalog = transactionCatalog({
+        type: '', coupleId: '', surrogateMotherId: '', notaryId: '', statementDate: '', registryNumber: '',
+      });
+      const issues = validateTransaction(catalog, 'transaction-1');
+      expect(issues).toEqual(expect.arrayContaining([
+        'transaction.type', 'transaction.coupleId', 'transaction.surrogateMotherId', 'transaction.notaryId', 'transaction.statementDate',
+      ]));
+      expect(issues).not.toContain('transaction.registryNumber');
+    });
+
+    it('flags an unresolvable coupleId/surrogateMotherId', () => {
+      const catalog = transactionCatalog({ coupleId: 'ghost-couple', surrogateMotherId: 'ghost-sm' });
+      const issues = validateTransaction(catalog, 'transaction-1');
+      expect(issues).toContain('transaction.coupleId (no matching couple)');
+      expect(issues).toContain('transaction.surrogateMotherId (no matching surrogate mother)');
+    });
+
+    it('flags a non-ISO statementDate', () => {
+      const catalog = transactionCatalog({ statementDate: '18.05.2026' });
+      expect(validateTransaction(catalog, 'transaction-1')).toContain('transaction.statementDate (must be YYYY-MM-DD)');
+    });
   });
 });

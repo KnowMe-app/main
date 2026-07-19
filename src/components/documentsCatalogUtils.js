@@ -25,7 +25,7 @@ export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoSt
 export const legacyClinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const legacyClinicLogoStorageFilePath = (clinicId, fileName) => `${legacyClinicLogoStorageFolder(clinicId)}/${fileName}`;
 
-export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases', 'maternityHospitals', 'notaries'];
+export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases', 'maternityHospitals', 'notaries', 'transactions'];
 
 // mergeCollection derives an id prefix for un-identified incoming records by stripping a trailing
 // 's' off the collection name; 'notaries' isn't a simple plural ('notarys' would be wrong), so it
@@ -105,7 +105,7 @@ export const clinicLogoEntriesToBackend = variants => (variants || [])
 
 export const emptyDocumentsCatalog = () => ({
   parties: {
-    couples: [], surrogateMothers: [], representatives: [], clinics: [], cases: [], maternityHospitals: [], notaries: [],
+    couples: [], surrogateMothers: [], representatives: [], clinics: [], cases: [], maternityHospitals: [], notaries: [], transactions: [],
   },
   documents: [],
   clinicLogos: {},
@@ -515,7 +515,9 @@ export const createEmptyCase = ({ caseId, programId = '' } = {}) => ({
     agreement: { number: { uk: '', en: '' }, date: '' },
   },
   childbirth: { maternityHospitalId: '', children: [] },
-  registrations: { birth: { statementDate: '', notaryId: '' } },
+  // batch 19: the case only ever stores a transactionId - the actual notary/statementDate/
+  // registryNumber live on parties.transactions[transactionId] (see createTransaction).
+  registrations: { birth: { transactionId: '' } },
   documents: { overrides: {} },
 });
 
@@ -585,9 +587,56 @@ export const normalizeCaseRecord = (rawCase = {}) => {
   };
 };
 
+// --- Transactions (batch 19) -------------------------------------------------------------------
+// A transaction is one concrete combination of couple + surrogate mother + notary for a specific
+// legal act (e.g. the birth-registration surrogate-consent statement) - decoupled from the case's
+// current `relations` so a signed document keeps pointing at exactly who signed it even if the
+// case's relations were ever revisited later. The case only ever stores the transactionId; the
+// notary's own name/title/city live solely in `parties.notaries[notaryId]`, never copied in.
+export const createTransaction = ({
+  transactionId, caseId, type, coupleId, surrogateMotherId, notaryId, statementDate = '', registryNumber = '',
+}) => ({
+  id: transactionId,
+  type,
+  caseId,
+  coupleId,
+  surrogateMotherId,
+  notaryId,
+  statementDate,
+  registryNumber,
+});
+
+// `transactionType` guards against a stale/mistyped transactionId pointing at a transaction of a
+// different kind - resolves to null exactly like a missing transaction rather than silently
+// returning mismatched data.
+export const resolveTransaction = (catalog, caseRecord, transactionType) => {
+  const transactionId = caseRecord?.registrations?.birth?.transactionId;
+  const transaction = findById(catalog?.parties?.transactions, transactionId);
+  if (!transaction) return null;
+  if (transactionType && transaction.type !== transactionType) return null;
+  return transaction;
+};
+
+// Deleting a transaction (spec §14) never touches the couple/surrogate mother/notary records it
+// referenced - only the transaction itself and the transactionId reference(s) pointing at it.
+export const removeTransactionReferences = (catalog, transactionId) => ({
+  ...catalog,
+  parties: {
+    ...catalog.parties,
+    transactions: (catalog.parties.transactions || []).filter(item => String(item.id) !== String(transactionId)),
+    cases: (catalog.parties.cases || []).map(caseRecord => {
+      if (String(caseRecord.registrations?.birth?.transactionId) !== String(transactionId)) return caseRecord;
+      const { transactionId: _removed, ...restBirth } = caseRecord.registrations.birth;
+      return { ...caseRecord, registrations: { ...caseRecord.registrations, birth: restBirth } };
+    }),
+  },
+});
+
 // One case is one concrete relations combination (spec batch 18 §10); a case picked by programId
 // alone would be ambiguous (several cases can share a programId - see createEmptyCase) - the
 // currently-selected case is whatever the caller/UI passed as caseId, never an "active" flag.
+export const BIRTH_REGISTRATION_TRANSACTION_TYPE = 'birth-registration-surrogate-consent';
+
 export const resolveCaseContext = (catalog, caseId) => {
   const rawCaseRecord = findById(catalog?.parties?.cases, caseId);
   if (!rawCaseRecord) return null;
@@ -597,7 +646,16 @@ export const resolveCaseContext = (catalog, caseId) => {
   const caseRecord = normalizeCaseRecord(rawCaseRecord);
   const relations = caseRecord.relations;
 
-  const couple = findById(catalog.parties.couples, relations.coupleId);
+  const transaction = resolveTransaction(catalog, caseRecord, BIRTH_REGISTRATION_TRANSACTION_TYPE);
+  // A document tied to a specific transaction must use exactly that transaction's own couple/
+  // surrogate mother (spec §5: "не брати пару, СМ ... безпосередньо з інших блоків кейса"), never
+  // silently the case's current relations - but a case that hasn't reached that stage yet (no
+  // transaction created) still needs relations.coupleId/surrogateMotherId to resolve wife/husband/
+  // surrogateMother for every other document.
+  const coupleId = transaction?.coupleId || relations.coupleId;
+  const surrogateMotherId = transaction?.surrogateMotherId || relations.surrogateMotherId;
+
+  const couple = findById(catalog.parties.couples, coupleId);
   const partners = toArray(couple?.partners);
   const wife = partners.find(partner => partner?.role === 'wife') || partners[0] || null;
   const husband = partners.find(partner => partner?.role === 'husband') || partners[1] || null;
@@ -613,12 +671,20 @@ export const resolveCaseContext = (catalog, caseId) => {
   const rawChild = isPlainObject(rawChildren[0]) ? rawChildren[0] : {};
   const medicalConclusion = isPlainObject(rawChild.medicalConclusion) ? rawChild.medicalConclusion : {};
 
-  const rawBirthRegistration = isPlainObject(caseRecord.registrations?.birth) ? caseRecord.registrations.birth : {};
+  const rawBirth = isPlainObject(caseRecord.registrations?.birth) ? caseRecord.registrations.birth : {};
+  // Pre-batch-19 cases kept statementDate/notaryId directly on registrations.birth instead of
+  // pointing at a transaction - consulted only when there is no transaction yet, so a case that
+  // hasn't been migrated still resolves exactly as it did before (spec §16 is the rule for
+  // newly-authored data, not a forced rewrite of every existing case).
+  const statementDate = transaction?.statementDate ?? rawBirth.statementDate ?? '';
+  const notaryId = transaction?.notaryId ?? rawBirth.notaryId;
   const birthRegistration = {
-    ...rawBirthRegistration,
+    transactionId: rawBirth.transactionId,
+    statementDate,
+    registryNumber: transaction?.registryNumber ?? '',
     statementDateWords: {
-      uk: formatUkrainianDateWords(rawBirthRegistration.statementDate),
-      en: formatEnglishDateWords(rawBirthRegistration.statementDate),
+      uk: formatUkrainianDateWords(statementDate),
+      en: formatEnglishDateWords(statementDate),
     },
   };
 
@@ -627,10 +693,11 @@ export const resolveCaseContext = (catalog, caseId) => {
     programId: caseRecord.programId ?? '',
     relations,
     program: isPlainObject(caseRecord.program) ? caseRecord.program : {},
+    transaction,
     couple,
     wife,
     husband,
-    surrogateMother: findById(catalog.parties.surrogateMothers, relations.surrogateMotherId),
+    surrogateMother: findById(catalog.parties.surrogateMothers, surrogateMotherId),
     clinic: findById(catalog.parties.clinics, relations.clinicId),
     representative: representatives[0] || null,
     representatives,
@@ -640,7 +707,7 @@ export const resolveCaseContext = (catalog, caseId) => {
     medicalConclusion,
     maternityHospital: findById(catalog.parties.maternityHospitals, childbirth.maternityHospitalId),
     birthRegistration,
-    notary: findById(catalog.parties.notaries, rawBirthRegistration.notaryId),
+    notary: findById(catalog.parties.notaries, notaryId),
   };
 };
 
@@ -759,16 +826,57 @@ export const validateCaseRecord = rawCaseRecord => {
   requirePresent(caseRecord.relations?.surrogateMotherId, 'case.relations.surrogateMotherId');
   requirePresent(caseRecord.program?.type, 'case.program.type');
   if (!toArray(caseRecord.childbirth?.children).length) issues.push('case.childbirth.children');
-  if (isBlank(caseRecord.registrations?.birth?.statementDate) && isBlank(caseRecord.registrations?.birth?.notaryId)) {
+  // batch 19: registrations.birth normally carries only transactionId; the direct
+  // statementDate/notaryId fields are consulted too so a not-yet-migrated case isn't flagged.
+  if (isBlank(caseRecord.registrations?.birth?.transactionId)
+    && isBlank(caseRecord.registrations?.birth?.statementDate)
+    && isBlank(caseRecord.registrations?.birth?.notaryId)) {
     issues.push('case.registrations.birth');
   }
 
   return issues;
 };
 
+// A transaction's own checklist (spec batch 19 §17): couple/surrogate mother/notary presence AND
+// existence, plus a statement date - registryNumber may stay blank (it's fine to fill in by hand
+// after the document is signed).
+export const validateTransaction = (catalog, transactionId) => {
+  const transaction = findById(catalog?.parties?.transactions, transactionId);
+  if (!transaction) return ['transaction'];
+
+  const issues = [];
+  const isBlank = value => value === undefined || value === null || String(value).trim() === '';
+  const requirePresent = (value, path) => {
+    if (isBlank(value)) issues.push(path);
+  };
+
+  requirePresent(transaction.id, 'transaction.id');
+  requirePresent(transaction.type, 'transaction.type');
+  requirePresent(transaction.coupleId, 'transaction.coupleId');
+  requirePresent(transaction.surrogateMotherId, 'transaction.surrogateMotherId');
+  requirePresent(transaction.notaryId, 'transaction.notaryId');
+  requirePresent(transaction.statementDate, 'transaction.statementDate');
+
+  if (!isBlank(transaction.coupleId) && !findById(catalog?.parties?.couples, transaction.coupleId)) {
+    issues.push('transaction.coupleId (no matching couple)');
+  }
+  if (!isBlank(transaction.surrogateMotherId) && !findById(catalog?.parties?.surrogateMothers, transaction.surrogateMotherId)) {
+    issues.push('transaction.surrogateMotherId (no matching surrogate mother)');
+  }
+  if (!isBlank(transaction.notaryId) && !findById(catalog?.parties?.notaries, transaction.notaryId)) {
+    issues.push('transaction.notaryId (no matching notary)');
+  }
+  if (!isBlank(transaction.statementDate) && !isIsoDate(transaction.statementDate)) {
+    issues.push('transaction.statementDate (must be YYYY-MM-DD)');
+  }
+
+  return issues;
+};
+
 // The birth-registration surrogate-consent statement's own checklist (spec batch 16 §20; field
-// locations updated for the batch 18 case shape) - missing hospital/notary lookups and malformed
-// dates are reported the same way as a genuinely empty field.
+// locations updated for the batch 18 case shape, then again for the batch 19 transaction) -
+// missing hospital/notary/transaction lookups and malformed dates are reported the same way as a
+// genuinely empty field.
 export const validateBirthRegistrationCase = (catalog, caseId) => {
   const context = resolveCaseContext(catalog, caseId);
   if (!context) return ['case'];
@@ -780,7 +888,7 @@ export const validateBirthRegistrationCase = (catalog, caseId) => {
   };
 
   const {
-    childbirth, child, medicalConclusion, birthRegistration, surrogateMother, maternityHospital, notary,
+    childbirth, child, medicalConclusion, surrogateMother, maternityHospital,
   } = context;
 
   requirePresent(childbirth.maternityHospitalId, 'case.childbirth.maternityHospitalId');
@@ -789,8 +897,6 @@ export const validateBirthRegistrationCase = (catalog, caseId) => {
   requirePresent(child.birthPlace?.uk, 'case.childbirth.children[0].birthPlace.uk');
   requirePresent(medicalConclusion.number, 'case.childbirth.children[0].medicalConclusion.number');
   requirePresent(medicalConclusion.date, 'case.childbirth.children[0].medicalConclusion.date');
-  requirePresent(birthRegistration.statementDate, 'case.registrations.birth.statementDate');
-  requirePresent(birthRegistration.notaryId, 'case.registrations.birth.notaryId');
   requirePresent(surrogateMother?.taxId, 'surrogateMother.taxId');
   requirePresent(surrogateMother?.address?.uk, 'surrogateMother.address.uk');
 
@@ -803,14 +909,27 @@ export const validateBirthRegistrationCase = (catalog, caseId) => {
   if (!isBlank(medicalConclusion.date) && !isIsoDate(medicalConclusion.date)) {
     issues.push('case.childbirth.children[0].medicalConclusion.date (must be YYYY-MM-DD)');
   }
-  if (!isBlank(birthRegistration.statementDate) && !isIsoDate(birthRegistration.statementDate)) {
-    issues.push('case.registrations.birth.statementDate (must be YYYY-MM-DD)');
-  }
   if (!isBlank(childbirth.maternityHospitalId) && !maternityHospital) {
     issues.push('case.childbirth.maternityHospitalId (no matching maternity hospital)');
   }
-  if (!isBlank(birthRegistration.notaryId) && !notary) {
-    issues.push('case.registrations.birth.notaryId (no matching notary)');
+
+  const rawBirth = context.case.registrations?.birth || {};
+  if (rawBirth.transactionId) {
+    // The transaction is the source of truth (spec §17) - couple/surrogate mother/notary presence
+    // and existence are validated there, scoped to `transaction.*` paths.
+    issues.push(...validateTransaction(catalog, rawBirth.transactionId));
+  } else if (!isBlank(rawBirth.statementDate) || !isBlank(rawBirth.notaryId)) {
+    // Pre-batch-19 case still using the direct registrations.birth.{statementDate,notaryId} shape.
+    requirePresent(rawBirth.statementDate, 'case.registrations.birth.statementDate');
+    requirePresent(rawBirth.notaryId, 'case.registrations.birth.notaryId');
+    if (!isBlank(rawBirth.statementDate) && !isIsoDate(rawBirth.statementDate)) {
+      issues.push('case.registrations.birth.statementDate (must be YYYY-MM-DD)');
+    }
+    if (!isBlank(rawBirth.notaryId) && !context.notary) {
+      issues.push('case.registrations.birth.notaryId (no matching notary)');
+    }
+  } else {
+    issues.push('case.registrations.birth.transactionId');
   }
 
   return issues;
