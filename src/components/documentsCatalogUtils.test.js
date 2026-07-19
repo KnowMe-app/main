@@ -2139,4 +2139,50 @@ describe('spec: transactions (batch 19)', () => {
       expect(validateTransaction(catalog, 'transaction-1')).toContain('transaction.statementDate (must be YYYY-MM-DD)');
     });
   });
+
+  it('exposes transaction.statementDateWords.uk/en directly on the transaction, not only via birthRegistration (Batch 18 §3)', () => {
+    const context = resolveCaseContext(transactionCatalog(), 'case-1');
+    expect(fillPlaceholders('{{transaction.statementDateWords.uk}}', context, 'uk')).toBe('вісімнадцятого травня дві тисячі двадцять шостого року');
+    expect(fillPlaceholders('{{transaction.statementDateWords.en}}', context, 'en')).toBe('eighteenth of May, 2026');
+  });
+
+  it('a transactionId pointing at a differently-typed transaction is treated as missing, not validated as-is (type-check fix)', () => {
+    const catalog = transactionCatalog({ type: 'some-other-document' });
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(context.transaction).toBeNull();
+    const issues = validateBirthRegistrationCase(catalog, 'case-1');
+    expect(issues).toContain('case.registrations.birth.transactionId (transaction is not a birth-registration-surrogate-consent)');
+    // Never falls through to reporting the wrongly-typed transaction's own fields as if it were valid.
+    expect(issues).not.toContain('transaction.notaryId');
+  });
+
+  describe('child selector (Batch 18 §2: twins)', () => {
+    const twinsCatalog = () => {
+      const catalog = transactionCatalog();
+      catalog.parties.cases[0].childbirth.children.push({
+        id: 'child-2', sex: 'male', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-2', date: '2026-05-16' },
+      });
+      return catalog;
+    };
+
+    it('defaults to the first child when no childId is given', () => {
+      const context = resolveCaseContext(twinsCatalog(), 'case-1');
+      expect(context.selectedChildId).toBe('child-1');
+      expect(context.child.sex).toBe('female');
+      expect(context.children).toHaveLength(2);
+    });
+
+    it('selects the requested child by id, leaving the full children array untouched', () => {
+      const context = resolveCaseContext(twinsCatalog(), 'case-1', { childId: 'child-2' });
+      expect(context.selectedChildId).toBe('child-2');
+      expect(context.child.sex).toBe('male');
+      expect(context.medicalConclusion.number).toBe('MC-2');
+      expect(context.children.map(child => child.id)).toEqual(['child-1', 'child-2']);
+    });
+
+    it('an unresolvable childId falls back to the first child rather than crashing', () => {
+      const context = resolveCaseContext(twinsCatalog(), 'case-1', { childId: 'ghost-child' });
+      expect(context.selectedChildId).toBe('child-1');
+    });
+  });
 });
