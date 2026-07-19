@@ -59,6 +59,7 @@ import {
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
   shiftDocOverrideParagraphIndices,
+  toArray,
   toggleInlineFormat,
   upsertRecentCaseId,
   upsertRecentId,
@@ -694,7 +695,14 @@ const DocumentsPage = ({ isAdmin }) => {
   // carries a previous case's in-progress edits over onto the newly selected one.
   useEffect(() => {
     const caseRecord = catalog.parties.cases.find(item => String(item.id) === selectedCaseId) || null;
-    setChildbirthDraft(caseRecord?.childbirth || { maternityHospitalId: '', children: [] });
+    // `childbirth.children` isn't re-validated by normalizeCaseRecord beyond "childbirth itself is
+    // an object" - a case saved before this editor existed (or edited straight in the Firebase
+    // console) can carry `children` as a Firebase gap-object instead of a real array, which crashed
+    // every `.map()` below with no error boundary to catch it (blank page, spec bug report).
+    setChildbirthDraft({
+      maternityHospitalId: caseRecord?.childbirth?.maternityHospitalId || '',
+      children: toArray(caseRecord?.childbirth?.children),
+    });
     const transactionId = caseRecord?.registrations?.birth?.transactionId;
     const existingTransaction = transactionId
       ? catalog.parties.transactions.find(item => String(item.id) === String(transactionId))

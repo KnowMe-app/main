@@ -34,7 +34,11 @@ const COLLECTION_ID_PREFIXES = { notaries: 'notary' };
 
 export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const toArray = value => {
+// Firebase RTDB silently turns a JS array into a plain `{"0": ..., "2": ...}` object once it has
+// ever been written with a gap (e.g. a record removed by key rather than re-set as a dense array),
+// so any array read back from the backend has to tolerate that shape - never assume `.val()` gives
+// back a real Array just because it was one when last saved.
+export const toArray = value => {
   if (Array.isArray(value)) return value.filter(Boolean);
   if (isPlainObject(value)) return Object.values(value).filter(Boolean);
   return [];
