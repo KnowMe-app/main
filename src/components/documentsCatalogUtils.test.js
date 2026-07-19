@@ -11,6 +11,8 @@ import {
   buildGeneratedDocument,
   catalogPartiesToBackend,
   clinicLogoEntriesToBackend,
+  createChildRecord,
+  createEmptyCase,
   deepMergeRecords,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
@@ -33,6 +35,7 @@ import {
   isSingleLanguageTwoColumnLayout,
   MISSING_VALUE_PLACEHOLDER,
   mergeDocumentsCatalog,
+  normalizeCaseRecord,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
@@ -54,6 +57,7 @@ import {
   upsertRecentCaseId,
   upsertRecentId,
   validateBirthRegistrationCase,
+  validateCaseRecord,
   validateDocumentTemplate,
 } from './documentsCatalogUtils';
 
@@ -207,7 +211,8 @@ describe('parseDocumentsTechnicalInput', () => {
     }));
     expect(parsed.parties.cases).toHaveLength(1);
     expect(parsed.parties.cases[0].id).toBe('case-1');
-    expect(parsed.parties.cases[0].birthRegistration.notaryId).toBe('notary-1');
+    // batch 18: the legacy top-level birthRegistration is migrated onto case.registrations.birth.
+    expect(parsed.parties.cases[0].registrations.birth.notaryId).toBe('notary-1');
   });
 
   it('merging that id-less paste into an existing catalog updates case-1 in place instead of creating a second case', () => {
@@ -226,9 +231,8 @@ describe('parseDocumentsTechnicalInput', () => {
     expect(summary).toEqual({ added: 0, updated: 1 });
     expect(catalog.parties.cases[0]).toMatchObject({
       id: 'case-1',
-      coupleId: 'couple-1',
-      surrogateMotherId: 'surrogate-1',
-      birthRegistration: { statementDate: '2026-05-18', notaryId: 'notary-1' },
+      relations: { coupleId: 'couple-1', surrogateMotherId: 'surrogate-1' },
+      registrations: { birth: { statementDate: '2026-05-18', notaryId: 'notary-1' } },
     });
   });
 
@@ -311,7 +315,7 @@ describe('mergeDocumentsCatalog', () => {
     const caseRecord = catalog.parties.cases[0];
     expect(caseRecord.embryoCount).toBe(2);
     expect(caseRecord.extra.anything).toBe('goes');
-    expect(caseRecord.coupleId).toBe('couple-1');
+    expect(caseRecord.relations.coupleId).toBe('couple-1');
   });
 
   it('generates ids for records pasted without one', () => {
@@ -376,7 +380,8 @@ describe('placeholders', () => {
     expect(fillPlaceholders('{{wife.name.uk.nominative}}', context, 'uk')).toBe('Тестова Марія');
     expect(fillPlaceholders('{{wife.name.uk.genitive}}', context, 'uk')).toBe('Тестової Марії');
     expect(fillPlaceholders('{{clinic.name.en}}', context, 'en')).toBe('Clinic "Mriia"');
-    expect(fillPlaceholders('{{case.surrogacyAgreement.number.uk}}', context, 'uk')).toBe('без номера');
+    // batch 18: case.surrogacyAgreement was migrated onto case.program.agreement.
+    expect(fillPlaceholders('{{case.program.agreement.number.uk}}', context, 'uk')).toBe('без номера');
   });
 
   it('falls back by language and to nominative when the path stops early', () => {
@@ -1463,28 +1468,28 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
       });
       const issues = validateBirthRegistrationCase(catalog, 'case-1');
       expect(issues).toEqual(expect.arrayContaining([
-        'birthRegistration.child.sex',
-        'birthRegistration.child.birthDate',
-        'birthRegistration.child.birthPlace.uk',
-        'birthRegistration.medicalConclusion.number',
-        'birthRegistration.medicalConclusion.date',
-        'birthRegistration.medicalConclusion.maternityHospitalId',
-        'birthRegistration.statementDate',
-        'birthRegistration.notaryId',
+        'case.childbirth.maternityHospitalId',
+        'case.childbirth.children[0].sex',
+        'case.childbirth.children[0].birthDate',
+        'case.childbirth.children[0].birthPlace.uk',
+        'case.childbirth.children[0].medicalConclusion.number',
+        'case.childbirth.children[0].medicalConclusion.date',
+        'case.registrations.birth.statementDate',
+        'case.registrations.birth.notaryId',
       ]));
     });
 
     it('flags an invalid sex value and a non-ISO date without blocking editing', () => {
       const catalog = birthRegistrationCatalog({ child: { sex: 'other', birthDate: '16.05.2026', birthPlace: { uk: 'Київ' } } });
       const issues = validateBirthRegistrationCase(catalog, 'case-1');
-      expect(issues).toContain('birthRegistration.child.sex (must be "female" or "male")');
-      expect(issues).toContain('birthRegistration.child.birthDate (must be YYYY-MM-DD)');
+      expect(issues).toContain('case.childbirth.children[0].sex (must be "female" or "male")');
+      expect(issues).toContain('case.childbirth.children[0].birthDate (must be YYYY-MM-DD)');
     });
 
     it('flags an unresolvable maternity hospital / notary id', () => {
       const catalog = birthRegistrationCatalog({ notaryId: 'ghost-notary' });
       const issues = validateBirthRegistrationCase(catalog, 'case-1');
-      expect(issues).toContain('birthRegistration.notaryId (no matching notary)');
+      expect(issues).toContain('case.registrations.birth.notaryId (no matching notary)');
     });
   });
 
@@ -1611,7 +1616,7 @@ describe('spec: normalized clinic + maternityHospital structure (batch 17)', () 
 
   it('an unknown clinicId resolves clinic to null without crashing (§10, §12 #8)', () => {
     const catalog = clinicAndHospitalCatalog();
-    catalog.parties.cases[0].clinicId = 'no-such-clinic';
+    catalog.parties.cases[0].relations.clinicId = 'no-such-clinic';
     const context = resolveCaseContext(catalog, 'case-1');
     expect(context.clinic).toBeNull();
     expect(() => fillPlaceholders('{{clinic.name.uk}}', context, 'uk')).not.toThrow();
@@ -1620,7 +1625,7 @@ describe('spec: normalized clinic + maternityHospital structure (batch 17)', () 
 
   it('an unknown maternityHospitalId resolves maternityHospital to null without crashing (§10, §12 #9)', () => {
     const catalog = clinicAndHospitalCatalog();
-    catalog.parties.cases[0].birthRegistration.medicalConclusion.maternityHospitalId = 'ghost-hospital';
+    catalog.parties.cases[0].childbirth.maternityHospitalId = 'ghost-hospital';
     const context = resolveCaseContext(catalog, 'case-1');
     expect(context.maternityHospital).toBeNull();
     expect(() => fillPlaceholders('{{maternityHospital.name.uk}}', context, 'uk')).not.toThrow();
@@ -1642,5 +1647,260 @@ describe('spec: normalized clinic + maternityHospital structure (batch 17)', () 
       { file: '1784230621524-mwe7prn3.jpg', layout: '1col' },
       { file: '1784230642891-qzlngjn1.jpg', layout: '2col' },
     ]);
+  });
+});
+
+// One case is one concrete relations combination (batch 18 §10): couple + clinic + surrogate
+// mother + representative(s). Changing the clinic or surrogate mother means creating a new case,
+// never mutating this one's relations in place - there is no active/replaced/from/to history.
+describe('spec: normalized case structure (batch 18)', () => {
+  const twoCasesOneProgramCatalog = () => normalizeDocumentsCatalog(
+    {
+      couples: {
+        'couple-1': {
+          id: 'couple-1',
+          partners: [
+            { id: 'w1', role: 'wife', name: { uk: { nominative: 'Тестова Марія' }, en: 'Testova Mariia' } },
+            { id: 'h1', role: 'husband', name: { uk: { nominative: 'Тестовий Петро' }, en: 'Testovyi Petro' } },
+          ],
+        },
+      },
+      clinics: {
+        'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка А' } },
+        'clinic-2': { id: 'clinic-2', name: { uk: 'Клініка Б' } },
+      },
+      surrogateMothers: {
+        'surrogate-1': { id: 'surrogate-1', name: { uk: { nominative: 'Сурогатна Одна' } } },
+        'surrogate-2': { id: 'surrogate-2', name: { uk: { nominative: 'Сурогатна Два' } } },
+      },
+      representatives: {
+        'representative-1': { id: 'representative-1', name: { uk: { nominative: 'Представник Один' } } },
+      },
+      maternityHospitals: {
+        'maternity-hospital-1': { id: 'maternity-hospital-1', name: { uk: 'Пологовий 1' }, edrpou: '11111111' },
+      },
+      notaries: {
+        'notary-1': { id: 'notary-1', name: { uk: { nominative: 'Нотаріус Один' } } },
+      },
+      cases: {
+        'case-1': {
+          id: 'case-1',
+          programId: 'program-1',
+          relations: {
+            coupleId: 'couple-1', clinicId: 'clinic-1', surrogateMotherId: 'surrogate-1', representativeIds: ['representative-1'],
+          },
+          program: { type: 'surrogacy', agreement: { number: { uk: 'Договір №1', en: 'Agreement No.1' }, date: '2020-01-01' } },
+          childbirth: {
+            maternityHospitalId: 'maternity-hospital-1',
+            children: [
+              { id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' } },
+              { id: 'child-2', sex: 'male', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-2', date: '2026-05-16' } },
+            ],
+          },
+          registrations: { birth: { statementDate: '2026-05-18', notaryId: 'notary-1' } },
+          documents: { overrides: { 'doc-1': { title: { uk: 'Перейменована заява' } } } },
+        },
+        'case-2': {
+          id: 'case-2',
+          programId: 'program-1',
+          relations: { coupleId: 'couple-1', clinicId: 'clinic-2', surrogateMotherId: 'surrogate-2', representativeIds: [] },
+          program: { type: 'surrogacy', agreement: { number: { uk: '', en: '' }, date: '' } },
+          childbirth: { maternityHospitalId: '', children: [] },
+          registrations: { birth: { statementDate: '', notaryId: '' } },
+          documents: { overrides: {} },
+        },
+      },
+    },
+    {},
+  );
+
+  it('finds the couple through case.relations.coupleId (§19 #1)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.wife.name.uk.nominative).toBe('Тестова Марія');
+    expect(context.husband.name.uk.nominative).toBe('Тестовий Петро');
+  });
+
+  it('finds the clinic through case.relations.clinicId (§19 #2)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.clinic.name.uk).toBe('Клініка А');
+  });
+
+  it('finds the surrogate mother through case.relations.surrogateMotherId (§19 #3)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.surrogateMother.name.uk.nominative).toBe('Сурогатна Одна');
+  });
+
+  it('finds the representative through case.relations.representativeIds (§19 #4)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.representative.name.uk.nominative).toBe('Представник Один');
+  });
+
+  it('reads the agreement from case.program.agreement (§19 #5)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(fillPlaceholders('{{case.program.type}}', context, 'uk')).toBe('surrogacy');
+    expect(fillPlaceholders('{{case.program.agreement.number.uk}}', context, 'uk')).toBe('Договір №1');
+    expect(fillPlaceholders('{{case.program.agreement.date}}', context, 'uk')).toBe('01.01.2020');
+  });
+
+  it('reads the maternity hospital from case.childbirth.maternityHospitalId (§19 #6)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.maternityHospital.edrpou).toBe('11111111');
+  });
+
+  it('the first child lands in context.child (§19 #7)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.child.sex).toBe('female');
+    expect(context.child.gender.uk.label).toBe('дівчинка');
+  });
+
+  it('every child lands in context.children, gender-computed (§19 #8)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.children).toHaveLength(2);
+    expect(context.children[0].gender.uk.label).toBe('дівчинка');
+    expect(context.children[1].gender.uk.label).toBe('хлопчик');
+  });
+
+  it('medicalConclusion is read from the child, not the case (§19 #9)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.medicalConclusion.number).toBe('MC-1');
+  });
+
+  it('the birth registration is read from case.registrations.birth (§19 #10)', () => {
+    const context = resolveCaseContext(twoCasesOneProgramCatalog(), 'case-1');
+    expect(context.birthRegistration.statementDate).toBe('2026-05-18');
+    expect(context.notary.name.uk.nominative).toBe('Нотаріус Один');
+  });
+
+  it('per-case document overrides are read from case.documents.overrides (§19 #11)', () => {
+    const catalog = twoCasesOneProgramCatalog();
+    const caseRecord = catalog.parties.cases.find(item => item.id === 'case-1');
+    const template = { id: 'doc-1', title: { uk: 'Заява' }, paragraphs: [] };
+    const generated = buildGeneratedDocument(template, resolveCaseContext(catalog, 'case-1'), caseRecord.documents.overrides['doc-1']);
+    expect(generated.title.uk).toBe('Перейменована заява');
+  });
+
+  it('two cases sharing a programId can have different surrogate mothers (§19 #12)', () => {
+    const catalog = twoCasesOneProgramCatalog();
+    expect(resolveCaseContext(catalog, 'case-1').surrogateMother.id).toBe('surrogate-1');
+    expect(resolveCaseContext(catalog, 'case-2').surrogateMother.id).toBe('surrogate-2');
+  });
+
+  it('two cases sharing a programId can have different clinics (§19 #13)', () => {
+    const catalog = twoCasesOneProgramCatalog();
+    expect(resolveCaseContext(catalog, 'case-1').clinic.id).toBe('clinic-1');
+    expect(resolveCaseContext(catalog, 'case-2').clinic.id).toBe('clinic-2');
+  });
+
+  it('no case carries an active/replaced/from/to status (§19 #14)', () => {
+    const empty = createEmptyCase({ caseId: 'case-9', programId: 'program-9' });
+    expect(empty).not.toHaveProperty('active');
+    expect(empty).not.toHaveProperty('replaced');
+    expect(empty).not.toHaveProperty('from');
+    expect(empty).not.toHaveProperty('to');
+  });
+
+  it('the caseId the caller picks determines the current relations combination, not an "active" flag (§19 #15)', () => {
+    const catalog = twoCasesOneProgramCatalog();
+    const programCases = catalog.parties.cases.filter(item => item.programId === 'program-1');
+    expect(programCases).toHaveLength(2);
+    expect(resolveCaseContext(catalog, programCases[1].id).clinic.id).toBe('clinic-2');
+  });
+
+  it('a legacy-shaped case can be normalized (§19 #16)', () => {
+    const legacy = {
+      id: 'case-legacy',
+      coupleId: 'couple-1',
+      clinicId: 'clinic-1',
+      surrogateMotherId: 'surrogate-1',
+      representativeIds: ['representative-1'],
+      surrogacyAgreement: { number: { uk: 'без номера', en: 'without a number' }, date: '' },
+      birthRegistration: {
+        child: { sex: 'male', birthDate: '2026-01-01', birthPlace: { uk: 'Львів' } },
+        medicalConclusion: { number: 'MC-9', date: '2026-01-01', maternityHospitalId: 'maternity-hospital-1' },
+        statementDate: '2026-01-05',
+        notaryId: 'notary-1',
+      },
+      docOverrides: { 'doc-1': { title: { uk: 'X' } } },
+    };
+    const normalized = normalizeCaseRecord(legacy);
+    expect(normalized.relations).toEqual({
+      coupleId: 'couple-1', clinicId: 'clinic-1', surrogateMotherId: 'surrogate-1', representativeIds: ['representative-1'],
+    });
+    expect(normalized.program.agreement.number.uk).toBe('без номера');
+    expect(normalized.childbirth.maternityHospitalId).toBe('maternity-hospital-1');
+    expect(normalized.childbirth.children).toHaveLength(1);
+    expect(normalized.childbirth.children[0].sex).toBe('male');
+    expect(normalized.childbirth.children[0].medicalConclusion).toEqual({ number: 'MC-9', date: '2026-01-01' });
+    expect(normalized.registrations.birth).toEqual({ statementDate: '2026-01-05', notaryId: 'notary-1' });
+    expect(normalized.documents.overrides).toEqual({ 'doc-1': { title: { uk: 'X' } } });
+  });
+
+  it('after normalizing, the legacy top-level fields are dropped, not carried forward (§19 #17)', () => {
+    const normalized = normalizeCaseRecord({
+      id: 'case-legacy',
+      coupleId: 'couple-1',
+      clinicId: 'clinic-1',
+      surrogateMotherId: 'surrogate-1',
+      representativeIds: ['representative-1'],
+      surrogacyAgreement: { number: { uk: 'без номера', en: '' }, date: '' },
+      birthRegistration: { statementDate: '2026-01-05', notaryId: 'notary-1' },
+      docOverrides: {},
+    });
+    ['coupleId', 'clinicId', 'surrogateMotherId', 'representativeIds', 'surrogacyAgreement', 'birthRegistration', 'docOverrides']
+      .forEach(legacyKey => expect(normalized).not.toHaveProperty(legacyKey));
+  });
+
+  it('a two-child array does not break the generated preview (§19 #18)', () => {
+    const catalog = twoCasesOneProgramCatalog();
+    const template = {
+      id: 'doc-1',
+      title: { uk: 'Заява' },
+      paragraphs: [{ uk: '{{children.0.gender.uk.label}} та {{children.1.gender.uk.label}}' }],
+    };
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(() => buildGeneratedDocument(template, context)).not.toThrow();
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs[0].uk).toBe('дівчинка та хлопчик');
+  });
+
+  it('an empty children array does not break the component (§19 #19)', () => {
+    const catalog = twoCasesOneProgramCatalog();
+    const context = resolveCaseContext(catalog, 'case-2');
+    expect(context.children).toEqual([]);
+    expect(context.child.sex).toBeUndefined();
+    expect(context.child.gender.uk.label).toBe('');
+    expect(() => fillPlaceholders('{{child.birthDate}}', context, 'uk')).not.toThrow();
+    expect(fillPlaceholders('{{child.birthDate}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+  });
+
+  it('the birth-registration surrogate-consent statement keeps generating correctly (§19 #20)', () => {
+    const catalog = birthRegistrationCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const generated = buildGeneratedDocument(catalog.documents[0], context);
+    expect(generated.paragraphs[0].uk).toContain('народженої мною 16.05.2026 року');
+    expect(generated.paragraphs[0].uk).toContain('яка народилась');
+    expect(generated.paragraphs[0].uk).not.toContain('undefined');
+    expect(generated.paragraphs[0].uk).not.toContain('null');
+    expect(generated.paragraphs[0].uk).not.toContain('[object Object]');
+    expect(validateBirthRegistrationCase(catalog, 'case-1')).toEqual([]);
+  });
+
+  it('validateCaseRecord reports the base checklist without throwing on a bare/empty case', () => {
+    expect(validateCaseRecord({})).toEqual(expect.arrayContaining([
+      'case.id', 'case.programId', 'case.relations.coupleId', 'case.relations.clinicId',
+      'case.relations.surrogateMotherId', 'case.childbirth.children', 'case.registrations.birth',
+    ]));
+    expect(validateCaseRecord(createEmptyCase({ caseId: 'case-9', programId: 'program-9' }))).toEqual(expect.arrayContaining([
+      'case.relations.coupleId', 'case.relations.clinicId', 'case.relations.surrogateMotherId', 'case.childbirth.children', 'case.registrations.birth',
+    ]));
+    expect(validateCaseRecord(twoCasesOneProgramCatalog().parties.cases[0])).toEqual([]);
+  });
+
+  it('createChildRecord generates a stable id, never reusing an array index', () => {
+    const first = createChildRecord();
+    const second = createChildRecord();
+    expect(first.id).not.toBe(second.id);
+    expect(first.id).toMatch(/^child-/);
+    expect(first).toMatchObject({ sex: '', birthDate: '', birthPlace: { uk: '', en: '' }, medicalConclusion: { number: '', date: '' } });
   });
 });
