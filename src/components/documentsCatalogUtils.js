@@ -33,6 +33,21 @@ const toArray = value => {
 
 const makeRecordId = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+// Every collection is stored keyed by record id (catalogPartiesToBackend/catalogTemplatesToBackend
+// duplicate that id inside the record too, e.g. `cases/case-1/id: "case-1"`) - a hand-written
+// technical-input paste, or a partial edit straight in the Firebase console, can easily carry a
+// record under its correct key but without that inner `id` field, relying on the key alone. Plain
+// toArray (Object.values) would silently drop that key, and mergeCollection would then treat the
+// record as brand new (no `id` to match against an existing one) instead of updating case-1/etc in
+// place - this recovers the key as a fallback `id` first, never overriding one the record already has.
+const toRecordsWithIdFromKey = raw => {
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (!isPlainObject(raw)) return [];
+  return Object.entries(raw)
+    .filter(([, record]) => Boolean(record))
+    .map(([key, record]) => (isPlainObject(record) && record.id === undefined ? { ...record, id: key } : record));
+};
+
 // --- Clinic logo variants --------------------------------------------------------------------
 
 // The column mode selected at the top of the page is the flag that decides which logo variant is
@@ -99,9 +114,9 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
       const { clinics: _clinicLogos, ...caseRecords } = rawCollection;
       rawCollection = caseRecords;
     }
-    catalog.parties[collection] = toArray(rawCollection).filter(record => isPlainObject(record));
+    catalog.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
   });
-  catalog.documents = toArray(rawTemplates).filter(record => isPlainObject(record));
+  catalog.documents = toRecordsWithIdFromKey(rawTemplates).filter(record => isPlainObject(record));
   const rawClinicLogos = rawParties?.cases?.clinics;
   if (isPlainObject(rawClinicLogos)) {
     Object.entries(rawClinicLogos).forEach(([clinicId, node]) => {
@@ -170,9 +185,9 @@ export const parseDocumentsTechnicalInput = rawText => {
         });
       }
     }
-    incoming.parties[collection] = toArray(rawCollection).filter(record => isPlainObject(record));
+    incoming.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
   });
-  incoming.documents = toArray(templatesSource).filter(record => isPlainObject(record));
+  incoming.documents = toRecordsWithIdFromKey(templatesSource).filter(record => isPlainObject(record));
 
   const hasParties = PARTY_COLLECTIONS.some(collection => incoming.parties[collection].length > 0);
   const hasClinicLogos = Object.keys(incoming.clinicLogos).length > 0;
