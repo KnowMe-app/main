@@ -593,6 +593,12 @@ export const normalizeCaseRecord = (rawCase = {}) => {
 // current `relations` so a signed document keeps pointing at exactly who signed it even if the
 // case's relations were ever revisited later. The case only ever stores the transactionId; the
 // notary's own name/title/city live solely in `parties.notaries[notaryId]`, never copied in.
+
+// A fresh id for a brand-new transaction record (the case editor form needs one the first time it
+// saves the Transaction section, since createTransaction itself takes the id rather than making
+// one - same generated shape as createChildRecord's id).
+export const makeTransactionId = () => makeRecordId('transaction');
+
 export const createTransaction = ({
   transactionId, caseId, type, coupleId, surrogateMotherId, notaryId, statementDate = '', registryNumber = '',
 }) => ({
@@ -637,7 +643,7 @@ export const removeTransactionReferences = (catalog, transactionId) => ({
 // currently-selected case is whatever the caller/UI passed as caseId, never an "active" flag.
 export const BIRTH_REGISTRATION_TRANSACTION_TYPE = 'birth-registration-surrogate-consent';
 
-export const resolveCaseContext = (catalog, caseId) => {
+export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
   const rawCaseRecord = findById(catalog?.parties?.cases, caseId);
   if (!rawCaseRecord) return null;
   // Defensively re-normalized here too (idempotent) - a case can reach this function without
@@ -665,10 +671,12 @@ export const resolveCaseContext = (catalog, caseId) => {
 
   const childbirth = isPlainObject(caseRecord.childbirth) ? caseRecord.childbirth : {};
   const rawChildren = toArray(childbirth.children);
-  // The first child is the current fallback for single-child documents (spec §4: "не прив'язувати
-  // систему назавжди лише до children[0]") - `children` (every child, gender-computed) is exposed
-  // alongside it so a future multi-child template isn't blocked on this shape.
-  const rawChild = isPlainObject(rawChildren[0]) ? rawChildren[0] : {};
+  // The first child is the default fallback for single-child documents (spec §4: "не прив'язувати
+  // систему назавжди лише до children[0]") - a caller generating a document for a twin passes
+  // `childId` to pick a different one; `children` (every child, gender-computed) is exposed
+  // alongside it so the UI can offer a selector.
+  const selectedRawChild = childId ? rawChildren.find(item => String(item?.id) === String(childId)) : null;
+  const rawChild = isPlainObject(selectedRawChild) ? selectedRawChild : (isPlainObject(rawChildren[0]) ? rawChildren[0] : {});
   const medicalConclusion = isPlainObject(rawChild.medicalConclusion) ? rawChild.medicalConclusion : {};
 
   const rawBirth = isPlainObject(caseRecord.registrations?.birth) ? caseRecord.registrations.birth : {};
@@ -687,13 +695,23 @@ export const resolveCaseContext = (catalog, caseId) => {
       en: formatEnglishDateWords(statementDate),
     },
   };
+  // `{{transaction.statementDateWords.uk/en}}` (spec batch 18 §3) needs the words form directly on
+  // the transaction itself, not only on the `birthRegistration` legacy-named alias above - derived
+  // here rather than stored, same as every other date-in-words field.
+  const transactionContext = transaction ? {
+    ...transaction,
+    statementDateWords: {
+      uk: formatUkrainianDateWords(transaction.statementDate),
+      en: formatEnglishDateWords(transaction.statementDate),
+    },
+  } : null;
 
   return {
     case: caseRecord,
     programId: caseRecord.programId ?? '',
     relations,
     program: isPlainObject(caseRecord.program) ? caseRecord.program : {},
-    transaction,
+    transaction: transactionContext,
     couple,
     wife,
     husband,
@@ -704,6 +722,7 @@ export const resolveCaseContext = (catalog, caseId) => {
     childbirth,
     children: rawChildren.map(buildChildContext),
     child: buildChildContext(rawChild),
+    selectedChildId: rawChild?.id,
     medicalConclusion,
     maternityHospital: findById(catalog.parties.maternityHospitals, childbirth.maternityHospitalId),
     birthRegistration,
@@ -915,9 +934,19 @@ export const validateBirthRegistrationCase = (catalog, caseId) => {
 
   const rawBirth = context.case.registrations?.birth || {};
   if (rawBirth.transactionId) {
-    // The transaction is the source of truth (spec §17) - couple/surrogate mother/notary presence
-    // and existence are validated there, scoped to `transaction.*` paths.
-    issues.push(...validateTransaction(catalog, rawBirth.transactionId));
+    const linkedTransaction = findById(catalog?.parties?.transactions, rawBirth.transactionId);
+    if (linkedTransaction && linkedTransaction.type !== BIRTH_REGISTRATION_TRANSACTION_TYPE) {
+      // A transactionId can point at a transaction of a different document type (spec §3: "Find the
+      // transaction with type: 'birth-registration-surrogate-consent'") - resolveCaseContext already
+      // treats this as no transaction at all (context.transaction is null), so flagging it here keeps
+      // this checklist from passing while every `transaction.*`/`notary.*` template variable is
+      // actually unresolved.
+      issues.push('case.registrations.birth.transactionId (transaction is not a birth-registration-surrogate-consent)');
+    } else {
+      // The transaction is the source of truth (spec §17) - couple/surrogate mother/notary presence
+      // and existence are validated there, scoped to `transaction.*` paths.
+      issues.push(...validateTransaction(catalog, rawBirth.transactionId));
+    }
   } else if (!isBlank(rawBirth.statementDate) || !isBlank(rawBirth.notaryId)) {
     // Pre-batch-19 case still using the direct registrations.birth.{statementDate,notaryId} shape.
     requirePresent(rawBirth.statementDate, 'case.registrations.birth.statementDate');
