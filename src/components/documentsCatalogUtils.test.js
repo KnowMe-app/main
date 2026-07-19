@@ -186,6 +186,51 @@ describe('parseDocumentsTechnicalInput', () => {
     ]);
   });
 
+  // Bugfix regression: pasting `{ parties: { cases: { "case-1": { birthRegistration: {...} } } } }`
+  // straight from the Firebase console (no inner `id` field, only the object key) used to create a
+  // brand-new case with a random id instead of updating case-1, because toArray's Object.values()
+  // silently dropped the key and mergeCollection then had nothing to match against.
+  it('recovers a record\'s id from its object key when the record itself carries no `id` field', () => {
+    const parsed = parseDocumentsTechnicalInput(JSON.stringify({
+      parties: {
+        cases: {
+          'case-1': {
+            birthRegistration: {
+              child: { sex: 'female', birthDate: '2026-05-16' },
+              statementDate: '2026-05-18',
+              notaryId: 'notary-1',
+            },
+          },
+        },
+      },
+    }));
+    expect(parsed.parties.cases).toHaveLength(1);
+    expect(parsed.parties.cases[0].id).toBe('case-1');
+    expect(parsed.parties.cases[0].birthRegistration.notaryId).toBe('notary-1');
+  });
+
+  it('merging that id-less paste into an existing catalog updates case-1 in place instead of creating a second case', () => {
+    const current = normalizeDocumentsCatalog({
+      cases: {
+        'case-1': {
+          id: 'case-1', coupleId: 'couple-1', surrogateMotherId: 'surrogate-1',
+        },
+      },
+    }, {});
+    const incoming = parseDocumentsTechnicalInput(JSON.stringify({
+      parties: { cases: { 'case-1': { birthRegistration: { statementDate: '2026-05-18', notaryId: 'notary-1' } } } },
+    }));
+    const { catalog, summary } = mergeDocumentsCatalog(current, incoming);
+    expect(catalog.parties.cases).toHaveLength(1);
+    expect(summary).toEqual({ added: 0, updated: 1 });
+    expect(catalog.parties.cases[0]).toMatchObject({
+      id: 'case-1',
+      coupleId: 'couple-1',
+      surrogateMotherId: 'surrogate-1',
+      birthRegistration: { statementDate: '2026-05-18', notaryId: 'notary-1' },
+    });
+  });
+
   it('also accepts the full export shape wrapped in a markdown fence', () => {
     const parsed = parseDocumentsTechnicalInput(`\`\`\`json\n${JSON.stringify({
       parties: { clinics: { 'clinic-9': { id: 'clinic-9' } } },
