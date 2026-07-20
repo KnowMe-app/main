@@ -527,6 +527,16 @@ const CheckLine = styled.label`
   cursor: pointer;
 `;
 
+// Per-paragraph first-line indent (spec: "додай можливість їх совати") - a real draggable slider,
+// not a number box, so "move it" is literal.
+const RangeInput = styled.input`
+  flex: 1;
+  min-width: 90px;
+  max-width: 160px;
+  accent-color: var(--km-accent);
+  cursor: pointer;
+`;
+
 const LogoPreview = styled.img`
   max-width: 220px;
   max-height: 64px;
@@ -801,6 +811,40 @@ const DocumentsPage = ({ isAdmin }) => {
   // як параграфи") - `scope` picks which one via getTemplateScopeText/withTemplateScopeText.
   const handleTemplateScopeChange = (docId, scope, langKey, value) => {
     updateTemplate(docId, template => withTemplateScopeText(template, scope, langKey, value));
+  };
+
+  // Per-paragraph first-line indent (spec: "відступи теж повтори, додай можливість їх совати" -
+  // the reference notarial statement indents only its opening declaration, not the signature/
+  // registration lines after it, so one document-wide value can't express it). `value === null`
+  // clears the override, falling back to the document's own firstLineIndentCm again. Dragging the
+  // slider updates local state per tick (persisted on release, like every text field's onBlur);
+  // the reset button below is a single discrete click, so it writes directly instead - same
+  // stale-closure hazard applyParagraphStructureChange's own comment explains.
+  const withParagraphIndent = (template, index, value) => ({
+    ...template,
+    paragraphs: (template.paragraphs || []).map((paragraph, paragraphIndex) => (
+      paragraphIndex === index ? { ...paragraph, indentCm: value === null ? undefined : value } : paragraph
+    )),
+  });
+
+  const handleParagraphIndentChange = (docId, index, value) => {
+    updateTemplate(docId, template => withParagraphIndent(template, index, value));
+  };
+
+  const resetParagraphIndent = async (docId, index) => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const nextTemplate = withParagraphIndent(template, index, null);
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+    } catch (saveError) {
+      console.error('Unable to reset the paragraph indent', saveError);
+      toast.error('Could not save the indent change.');
+    }
   };
 
   // The letterhead logo always renders before the title (spec: "лого відображай перед title") and
@@ -1761,6 +1805,9 @@ const DocumentsPage = ({ isAdmin }) => {
                 // Needed even while collapsed - the title input right in the row header (below)
                 // always shows/edits the resolved value once a case is selected.
                 const resolvedDoc = buildGeneratedDocument(template, caseContext, selectedCase?.documents?.overrides?.[template.id]);
+                // The per-paragraph indent slider's "inherit" default - this document's own
+                // effective first-line indent, same value generation actually renders with.
+                const docFormatting = resolveEffectiveDocFormatting(formatting, template.format);
                 // Whichever source is currently authoritative (the dedicated `logo` field, or a
                 // legacy leading paragraph) shown as one plain-text value the admin can type into
                 // directly - never a normalized re-serialization, so a mid-edit/invalid value
@@ -2011,6 +2058,33 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </DangerButton>
                                 </RowLine>
                               </ParagraphControlsRow>
+                              <RowLine style={{ marginTop: 2, marginBottom: 2 }}>
+                                <DocSubtitle style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Відступ</DocSubtitle>
+                                <RangeInput
+                                  type="range"
+                                  min={0}
+                                  max={5}
+                                  step={0.05}
+                                  value={paragraph?.indentCm ?? docFormatting.firstLineIndentCm}
+                                  onChange={event => handleParagraphIndentChange(template.id, index, Number(event.target.value))}
+                                  onMouseUp={() => persistTemplate(template.id)}
+                                  onTouchEnd={() => persistTemplate(template.id)}
+                                  aria-label={`Відступ абзацу ${index + 1}`}
+                                  title="Перший рядок абзацу - перетягніть, щоб змінити відступ"
+                                />
+                                <DocSubtitle style={{ fontSize: 10, minWidth: 40 }}>
+                                  {(paragraph?.indentCm ?? docFormatting.firstLineIndentCm).toFixed(2)} см
+                                </DocSubtitle>
+                                {paragraph?.indentCm !== undefined ? (
+                                  <SmallButton
+                                    type="button"
+                                    onClick={() => resetParagraphIndent(template.id, index)}
+                                    title="Скинути до відступу документа"
+                                  >
+                                    ×
+                                  </SmallButton>
+                                ) : null}
+                              </RowLine>
                               {caseModeLocked ? (
                                 <DocSubtitle>Select a case first to edit its resolved values.</DocSubtitle>
                               ) : null}

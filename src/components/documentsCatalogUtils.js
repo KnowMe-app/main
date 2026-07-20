@@ -1267,6 +1267,11 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
         type,
         bold: paragraph?.bold,
         align: paragraph?.align !== undefined ? normalizeBlockAlign(paragraph.align) : undefined,
+        // Per-paragraph first-line indent override (spec: the reference notarial statement
+        // indents its opening declaration but not the signature/registration lines that follow -
+        // one document-wide firstLineIndentCm can't express that). undefined = inherit the
+        // document's own formatting.firstLineIndentCm, same as every paragraph did before this.
+        indentCm: paragraph?.indentCm !== undefined ? clampNumber(paragraph.indentCm, 0, 5, undefined) : undefined,
         uk: overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
         en: overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
       };

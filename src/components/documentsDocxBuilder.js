@@ -100,13 +100,19 @@ export const buildDocumentsDocx = async ({
     return AlignmentType.LEFT;
   };
 
-  const bodyParagraph = (text, { keepLines = true, alignmentOverride } = {}) => new Paragraph({
-    alignment: alignmentOverride || AlignmentType.JUSTIFIED,
-    spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
-    indent: firstLineTwips ? { firstLine: firstLineTwips } : undefined,
-    keepLines,
-    children: formattedTextRuns(text, { size: bodySize }),
-  });
+  const bodyParagraph = (text, { keepLines = true, alignmentOverride, indentTwipsOverride } = {}) => {
+    // Per-paragraph first-line indent (spec: the reference notarial statement indents only its
+    // opening declaration, not the signature/registration lines after it) - undefined falls back
+    // to the document-wide firstLineTwips, same as every paragraph did before this existed.
+    const firstLine = indentTwipsOverride !== undefined ? indentTwipsOverride : firstLineTwips;
+    return new Paragraph({
+      alignment: alignmentOverride || AlignmentType.JUSTIFIED,
+      spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
+      indent: firstLine ? { firstLine } : undefined,
+      keepLines,
+      children: formattedTextRuns(text, { size: bodySize }),
+    });
+  };
 
   // Short numbered section titles ("1. Предмет Договору") render bold, flush left, with extra
   // room above and kept with the paragraph that follows so a heading never ends a page alone.
@@ -120,9 +126,14 @@ export const buildDocumentsDocx = async ({
 
   const cellParagraph = (text, allowPageBreaks, paragraph) => {
     const alignmentOverride = paragraph?.align ? alignmentForBlock(paragraph.align) : undefined;
+    const indentTwipsOverride = paragraph?.indentCm !== undefined ? Math.round(paragraph.indentCm * CM_TO_TWIP) : undefined;
     return isParagraphBold(paragraph)
       ? headingParagraph(text, alignmentOverride)
-      : bodyParagraph(text, { keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks), alignmentOverride });
+      : bodyParagraph(text, {
+        keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks),
+        alignmentOverride,
+        indentTwipsOverride,
+      });
   };
 
   // Exactly the Format panel's paragraph spacing - no hidden minimum - so the Word output keeps

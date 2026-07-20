@@ -993,6 +993,24 @@ describe('spec: manual bold override on a paragraph', () => {
     const generated = buildGeneratedDocument(template, context);
     expect(generated.paragraphs[0].bold).toBe(true);
   });
+
+  it('buildGeneratedDocument threads a per-paragraph indentCm override through, clamped like the document-wide setting', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'doc-with-indent',
+      title: { uk: 'Т', en: 'T' },
+      paragraphs: [
+        { uk: 'Абзац з відступом.', en: 'Indented paragraph.', indentCm: 1.25 },
+        { uk: 'Абзац без відступу.', en: 'Non-indented paragraph.' },
+        { uk: 'Абзац з надто великим відступом.', en: 'Out-of-range indent.', indentCm: 99 },
+      ],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs[0].indentCm).toBe(1.25);
+    expect(generated.paragraphs[1].indentCm).toBeUndefined();
+    expect(generated.paragraphs[2].indentCm).toBe(5); // clamped to the same 0-5 range as firstLineIndentCm
+  });
 });
 
 describe('spec: long multi-page documents', () => {

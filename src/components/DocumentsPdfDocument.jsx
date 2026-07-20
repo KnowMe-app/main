@@ -134,21 +134,24 @@ const LogoBlock = ({ type, isBilingual, cellStyles, logoWidth, longLogoWidth, cl
 };
 
 // batch 16 §17: an explicit `align` on a paragraph overrides the default alignment (justified
-// body / flush-left heading) - never inferred from the text itself.
+// body / flush-left heading) - never inferred from the text itself. `indentCm` (spec: the
+// reference notarial statement indents only its opening declaration, not every paragraph) works
+// the same way - undefined leaves cellStyle's own document-wide firstLineIndentCm in place.
 const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBreaks }) => {
   const wrap = allowsParagraphInternalBreak(paragraph, allowPageBreaks);
   const cellStyle = isParagraphBold(paragraph) ? cellStyles.paragraphHeading : cellStyles.paragraph;
   const alignStyle = paragraph.align ? { textAlign: paragraph.align } : undefined;
+  const indentStyle = paragraph.indentCm !== undefined ? { textIndent: paragraph.indentCm * CM_TO_PT } : undefined;
   if (isBilingual) {
     return (
       <View style={styles.row} wrap={wrap}>
-        <Text style={[cellStyle, cellStyles.leftCell, alignStyle]}><FormattedRuns text={paragraph.uk} /></Text>
-        <Text style={[cellStyle, cellStyles.rightCell, alignStyle]}><FormattedRuns text={paragraph.en} /></Text>
+        <Text style={[cellStyle, cellStyles.leftCell, alignStyle, indentStyle]}><FormattedRuns text={paragraph.uk} /></Text>
+        <Text style={[cellStyle, cellStyles.rightCell, alignStyle, indentStyle]}><FormattedRuns text={paragraph.en} /></Text>
       </View>
     );
   }
   const text = paragraph[lang];
-  return <Text style={[cellStyle, alignStyle]} wrap={wrap}><FormattedRuns text={text} /></Text>;
+  return <Text style={[cellStyle, alignStyle, indentStyle]} wrap={wrap}><FormattedRuns text={text} /></Text>;
 };
 
 // The single-language 2-column layout (spec §4: newspaper-style, one language flowing across two
