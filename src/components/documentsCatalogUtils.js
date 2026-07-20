@@ -1188,6 +1188,46 @@ export const shiftDocOverrideParagraphIndices = (docOverride, atIndex, delta) =>
   return { ...docOverride, paragraphs: nextParagraphs };
 };
 
+// A row-editing "scope" identifies one editable raw-text slot on a template - the shared title,
+// one beforeTitle block, or one paragraph - so the Bold/Italic/Insert-variable toolbar can share
+// one pair of read/write helpers across all of them instead of one bespoke pair per element (spec:
+// "єдиний формат, як параграфи" - unify Logo/Title/Before title editing with the paragraph rows).
+export const TITLE_SCOPE = 'title';
+export const beforeTitleScope = index => `beforeTitle:${index}`;
+export const paragraphScope = index => `p:${index}`;
+
+export const getTemplateScopeText = (template, scope, langKey) => {
+  if (scope === TITLE_SCOPE) return template?.title?.[langKey] || '';
+  const beforeTitleMatch = /^beforeTitle:(\d+)$/.exec(scope);
+  if (beforeTitleMatch) return template?.beforeTitle?.[Number(beforeTitleMatch[1])]?.[langKey] || '';
+  const paragraphMatch = /^p:(\d+)$/.exec(scope);
+  if (paragraphMatch) return template?.paragraphs?.[Number(paragraphMatch[1])]?.[langKey] || '';
+  return '';
+};
+
+export const withTemplateScopeText = (template, scope, langKey, value) => {
+  if (scope === TITLE_SCOPE) {
+    return { ...template, title: { ...(template.title || {}), [langKey]: value } };
+  }
+  const beforeTitleMatch = /^beforeTitle:(\d+)$/.exec(scope);
+  if (beforeTitleMatch) {
+    const index = Number(beforeTitleMatch[1]);
+    return {
+      ...template,
+      beforeTitle: (template.beforeTitle || []).map((block, i) => (i === index ? { ...block, [langKey]: value } : block)),
+    };
+  }
+  const paragraphMatch = /^p:(\d+)$/.exec(scope);
+  if (paragraphMatch) {
+    const index = Number(paragraphMatch[1]);
+    return {
+      ...template,
+      paragraphs: (template.paragraphs || []).map((paragraph, i) => (i === index ? { ...paragraph, [langKey]: value } : paragraph)),
+    };
+  }
+  return template;
+};
+
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context, then any per-case data-mode
 // overrides applied on top. Logo/logo-long paragraphs are never text-substituted or overridden -
@@ -1227,6 +1267,11 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
         type,
         bold: paragraph?.bold,
         align: paragraph?.align !== undefined ? normalizeBlockAlign(paragraph.align) : undefined,
+        // Per-paragraph first-line indent override (spec: the reference notarial statement
+        // indents its opening declaration but not the signature/registration lines that follow -
+        // one document-wide firstLineIndentCm can't express that). undefined = inherit the
+        // document's own formatting.firstLineIndentCm, same as every paragraph did before this.
+        indentCm: paragraph?.indentCm !== undefined ? clampNumber(paragraph.indentCm, 0, 5, undefined) : undefined,
         uk: overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
         en: overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
       };
@@ -1308,6 +1353,43 @@ export const findPartyReferences = (catalog, collection, id) => {
     ...referencingTransactions.map(transaction => `transaction "${transaction.id}"`),
   ];
 };
+
+// --- Insert-variable picker (spec: "модальне вікно в якому можна обрати змінні") --------------
+// Generic arbitrary-depth leaf walker (same spirit as getValueByPath, run in reverse): turns a
+// resolved case-context object into a flat list of {path, value} pairs, one per string/number/
+// boolean leaf - `path` is the exact dotted placeholder path ("wife.name.uk.nominative"), `value`
+// is that leaf's resolved final-format text, so the picker can show real recognizable data instead
+// of a technical path (spec: "дані відображай в фінальному форматі"). Arrays are skipped - a
+// placeholder always addresses one scalar, never a list (partners, clinic.logo, etc).
+export const collectContextLeafPaths = (value, prefix = '') => {
+  if (value === null || value === undefined) return [];
+  if (typeof value === 'string') return value.trim() ? [{ path: prefix, value }] : [];
+  if (typeof value === 'number' || typeof value === 'boolean') return [{ path: prefix, value: String(value) }];
+  if (Array.isArray(value)) return [];
+  if (typeof value === 'object') {
+    return Object.keys(value)
+      .filter(key => key !== 'id')
+      .flatMap(key => collectContextLeafPaths(value[key], prefix ? `${prefix}.${key}` : key));
+  }
+  return [];
+};
+
+// The 4 blocks the picker groups variables into (spec: "данні по парі (чоловік, дружина,
+// спільні), дані по СМ, дані по довіреній особі, дані по клініці" - one Клініка block, not split
+// by language). Each root is a top-level key already exposed by resolveCaseContext.
+export const VARIABLE_PICKER_GROUPS = [
+  { label: 'Пара', roots: ['wife', 'husband', 'couple'] },
+  { label: 'Сурогатна мати', roots: ['surrogateMother'] },
+  { label: 'Довірена особа', roots: ['representative'] },
+  { label: 'Клініка', roots: ['clinic'] },
+];
+
+// Builds the picker's grouped leaf list from a resolved case context (or any similarly-shaped
+// object, e.g. an example record when no case is selected yet).
+export const buildVariablePickerGroups = context => VARIABLE_PICKER_GROUPS.map(group => ({
+  label: group.label,
+  items: group.roots.flatMap(root => collectContextLeafPaths(context?.[root], root)),
+}));
 
 // Generic "most recently used first" ordering + upsert, shared by the case selector (spec §5) and
 // the Documents list (most recently downloaded templates float to the top): whatever isn't in the
@@ -1476,6 +1558,24 @@ export const toggleInlineFormat = (text, plainStart, plainEnd, attr) => {
   const allActive = selected.length > 0 && selected.every(run => run[attr]);
   const next = split.map(run => (within(run) ? { ...run, [attr]: !allActive } : run));
   return serializeFormattedRuns(mergeAdjacentRuns(next));
+};
+
+// Bold/Italic in Template mode (raw markup, including beforeTitle/title/paragraphs alike) acts
+// directly on raw-text offsets - the field already shows the markers, so there is no plain/raw
+// translation to do (unlike toggleInlineFormat, which works from a de-markup'd Data-mode field).
+// Toggle, not just wrap: selecting exactly the marked-up text (markers just outside the selection)
+// strips those markers instead of nesting a second pair around them.
+export const toggleRawInlineMarker = (text, start, end, attr) => {
+  const raw = String(text || '');
+  if (!(end > start)) return raw;
+  const marker = attr === 'bold' ? BOLD_MARKER : ITALIC_MARKER;
+  const before = raw.slice(0, start);
+  const inner = raw.slice(start, end);
+  const after = raw.slice(end);
+  if (before.endsWith(marker) && after.startsWith(marker)) {
+    return before.slice(0, -marker.length) + inner + after.slice(marker.length);
+  }
+  return `${before}${marker}${inner}${marker}${after}`;
 };
 
 // Applies a plain-text edit (whatever the admin just typed/pasted/deleted in the de-markup'd Data

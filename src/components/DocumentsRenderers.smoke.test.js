@@ -105,6 +105,44 @@ describe('Documents PDF renderer (real @react-pdf render)', () => {
     expect(out.length).toBeGreaterThan(1000);
     fs.writeFileSync(path.join(os.tmpdir(), 'documents-pdf-smoke.pdf'), out);
   }, 20000);
+
+  it('renders a document with a per-paragraph indentCm override without throwing', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+
+    const doc = {
+      id: 'indented-doc',
+      allowPageBreaks: false,
+      logo: null,
+      title: { uk: 'Тест', en: 'Test' },
+      paragraphs: [
+        { type: 'text', uk: 'Абзац з відступом.', en: 'Indented.', indentCm: 1.5 },
+        { type: 'text', uk: 'Абзац без відступу.', en: 'Not indented.' },
+      ],
+    };
+    const element = React.createElement(DocumentsPdfDocument, {
+      documents: [doc],
+      layout: 'one-column-uk',
+      clinicLogos: [],
+    });
+    const buffer = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(500);
+  }, 20000);
 });
 
 describe('Documents DOCX builder (real docx Packer)', () => {
@@ -146,6 +184,36 @@ describe('Documents DOCX builder (real docx Packer)', () => {
     // ...and the bolded/italicized fragments must carry real <w:b/>/<w:i/> runs, not a paragraph-wide flag.
     expect(xml).toMatch(/<w:b\/>[\s\S]*?<w:t[^>]*>жирний<\/w:t>/);
     expect(xml).toMatch(/<w:i\/>[\s\S]*?<w:t[^>]*>курсивний<\/w:t>/);
+  }, 20000);
+
+  // spec: "відступи теж повтори" - the reference notarial statement indents only its opening
+  // declaration, not the paragraphs after it, so the override has to apply per paragraph, not
+  // reset the whole document's firstLineIndentCm.
+  it('renders a per-paragraph indentCm override as that paragraph\'s own firstLine indent, leaving the rest at the document default', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = {
+      id: 'indented-doc',
+      allowPageBreaks: false,
+      logo: null,
+      title: { uk: 'Тест', en: 'Test' },
+      paragraphs: [
+        { type: 'text', uk: 'Абзац з відступом.', en: 'Indented.', indentCm: 1 },
+        { type: 'text', uk: 'Абзац без відступу.', en: 'Not indented.' },
+      ],
+    };
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'one-column-uk' });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const xml = await zip.file('word/document.xml').async('string');
+    // 1cm * CM_TO_TWIP(567) = 567 twips, and only the overridden paragraph carries it.
+    const indentCount = (xml.match(/w:firstLine="567"/g) || []).length;
+    expect(indentCount).toBe(1);
   }, 20000);
 });
 

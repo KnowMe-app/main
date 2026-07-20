@@ -1,7 +1,10 @@
 // Real-DOM regression test for the Childbirth/Transaction case editor ("Дані для заяви в РАЦС",
-// Batch 18 §6): mounts the actual DocumentsPage component (Firebase mocked out) and drives the
+// Batch 18 §6): mounts the actual PartiesPage component (Firebase mocked out) and drives the
 // maternity hospital/child/transaction fields through real form controls, to catch wiring bugs
-// the pure-logic tests in documentsCatalogUtils.test.js can't see.
+// the pure-logic tests in documentsCatalogUtils.test.js can't see. This editor used to also be
+// mounted a second time on the Documents Builder page - a plain duplicate of what's here, since
+// both hosts rendered the exact same component - so it now lives solely on Parties (spec: "це
+// повтор зі сторінки Parties, прибери з documents").
 //
 // NOTE: this project's Jest config sets `resetMocks: true`, so mock bodies must be (re-)installed
 // in beforeEach rather than only in the jest.mock(...) factory.
@@ -20,21 +23,14 @@ jest.mock('firebase/database', () => ({
 jest.mock('./config', () => ({
   auth: { currentUser: { uid: 'test-admin' } },
   database: {},
-  deleteStorageFile: jest.fn(),
-  getStorageFileDataUrl: jest.fn(),
-  listStorageFolderFileNames: jest.fn(),
-  uploadFileToStorageFolder: jest.fn(),
 }));
 
 jest.mock('utils/accessLevel', () => ({ isInvoiceBuilderUid: () => true }));
-jest.mock('utils/pdfImageEncoding', () => ({ reencodePdfImageDataUrl: jest.fn() }));
 
 // eslint-disable-next-line import/first
 import { ref, get, set, update } from 'firebase/database';
 // eslint-disable-next-line import/first
-import { listStorageFolderFileNames } from './config';
-// eslint-disable-next-line import/first
-import DocumentsPage from './DocumentsPage';
+import PartiesPage from './PartiesPage';
 
 const buildParties = () => ({
   couples: {
@@ -43,6 +39,8 @@ const buildParties = () => ({
   surrogateMothers: {
     'surrogate-1': { id: 'surrogate-1', name: { uk: { nominative: 'Сурогатна Матір' } }, taxId: '1234567890', address: { uk: 'Київ' } },
   },
+  representatives: {},
+  clinics: {},
   maternityHospitals: {
     'hospital-1': { id: 'hospital-1', shortName: { uk: 'Пологовий будинок №1', en: '' } },
   },
@@ -69,25 +67,27 @@ const buildParties = () => ({
   },
 });
 
+const openCaseOne = async () => {
+  render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+  fireEvent.click(await screen.findByText('Cases'));
+  fireEvent.click(await screen.findByText(/Testova Mariia/));
+};
+
 beforeEach(() => {
   ref.mockImplementation((_db, path) => path);
   get.mockImplementation(async path => {
     if (path === 'documentsBuilder/parties') {
       return { exists: () => true, val: () => buildParties() };
     }
-    if (path === 'documentsBuilder/templates') {
-      return { exists: () => false, val: () => null };
-    }
     return { exists: () => false, val: () => null };
   });
   set.mockResolvedValue(undefined);
   update.mockResolvedValue(undefined);
-  listStorageFolderFileNames.mockResolvedValue([]);
 });
 
-describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
+describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', () => {
   it('renders the maternity hospital select and the single child, without a child selector', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    await openCaseOne();
 
     const hospitalSelect = await screen.findByLabelText('Пологовий будинок');
     expect(hospitalSelect).toHaveValue('hospital-1');
@@ -100,8 +100,8 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
     expect(screen.queryByLabelText('Дитина для документа')).not.toBeInTheDocument();
   });
 
-  it('"Add child" adds a second child card and reveals the child selector for the document', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+  it('"Add child" adds a second child card and reveals the child selector', async () => {
+    await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
     fireEvent.click(screen.getByRole('button', { name: /add child/i }));
@@ -111,7 +111,7 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
   });
 
   it('removing a child drops its card and the selector again if only one remains', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
     fireEvent.click(screen.getByRole('button', { name: /add child/i }));
@@ -126,7 +126,7 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
   });
 
   it('"Save childbirth details" persists the edited hospital/child fields to case.childbirth', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
     fireEvent.change(screen.getByLabelText('№ медичного висновку'), { target: { value: 'MC-99' } });
@@ -142,7 +142,7 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
   });
 
   it('"Save transaction" creates a birth-registration-surrogate-consent transaction and points the case at it', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
     fireEvent.change(screen.getByLabelText('Дата заяви'), { target: { value: '2026-05-18' } });
@@ -166,7 +166,7 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
       statementDate: '2026-05-18',
       registryNumber: '12345',
     }));
-    expect(payload[`cases/case-1/registrations/birth/transactionId`]).toBe(transactionId);
+    expect(payload['cases/case-1/registrations/birth/transactionId']).toBe(transactionId);
   });
 
   // Regression: Firebase RTDB silently turns a JS array into a `{"1": {...}}`-shaped plain object
@@ -183,11 +183,10 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6)', () => {
         parties.cases['case-1'].childbirth.children = { 1: parties.cases['case-1'].childbirth.children[0] };
         return { exists: () => true, val: () => parties };
       }
-      if (path === 'documentsBuilder/templates') return { exists: () => false, val: () => null };
       return { exists: () => false, val: () => null };
     });
 
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    await openCaseOne();
 
     expect(await screen.findByLabelText('Пологовий будинок')).toHaveValue('hospital-1');
     expect(screen.getByText('Дитина 1')).toBeInTheDocument();

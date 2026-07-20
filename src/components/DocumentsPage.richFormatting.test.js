@@ -8,7 +8,7 @@
 // beforeEach, not just in the jest.mock(...) factory (which only runs once at hoist time).
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('firebase/database', () => ({
@@ -79,7 +79,12 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     fireEvent.focus(textarea);
     textarea.setSelectionRange(10, 15); // "текст"
 
-    const boldButton = screen.getByTitle('Bold the selected text');
+    // Bold/Italic now also appear on the Title (en) row above (spec: unified format across every
+    // editable row) - scope the query to this paragraph's own boxed controls, same as a sighted
+    // admin would click the toolbar right above this specific field.
+    // eslint-disable-next-line testing-library/no-node-access
+    const paragraphBlock = textarea.closest('.paragraph-editor-block');
+    const boldButton = within(paragraphBlock).getByTitle('Bold the selected text');
     fireEvent.click(boldButton);
 
     await waitFor(() => expect(set).toHaveBeenCalled());
@@ -98,7 +103,9 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     fireEvent.focus(textarea);
     textarea.setSelectionRange(10, 15); // "текст"
 
-    const italicButton = screen.getByTitle('Italicize the selected text');
+    // eslint-disable-next-line testing-library/no-node-access
+    const paragraphBlock = textarea.closest('.paragraph-editor-block');
+    const italicButton = within(paragraphBlock).getByTitle('Italicize the selected text');
     // No fireEvent.click - mobile browsers won't synthesize one once touchstart's default is
     // prevented (exactly what the button needs to do to keep the selection alive), so the
     // touchend handler itself must be what triggers the action.
@@ -111,7 +118,7 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
   });
 });
 
-describe('spec: per-paragraph template/input/text mode switch replaces the global toggle', () => {
+describe('spec: per-paragraph template/text mode switch replaces the global toggle', () => {
   it('does not render the old global Template/Data section toggle', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     await screen.findByTitle('Edit paragraphs');
@@ -124,7 +131,7 @@ describe('spec: per-paragraph template/input/text mode switch replaces the globa
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    // Default mode ('input') shows the resolved value.
+    // Default mode ('text') shows the resolved value.
     await screen.findByDisplayValue('Звичайний текст без форматування.');
 
     const templateModeButton = screen.getByTitle('Raw {{placeholder}} markup - edits the shared template');
