@@ -198,17 +198,31 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
 // Free-standing text between the letterhead logo and the title (spec §14: "ЗА МІСЦЕМ ВИМОГИ" etc.)
 // - never merged into the paragraph list, so it always renders in this fixed position regardless of
 // how the body is edited. `align`/`bold` (spec §17) are resolved per block, not inferred from text.
+// `width` (spec batch 21 §8: the applicant/signatory data block is a *half-page-right* layout rule,
+// not just right-aligned text) constrains the block to that percentage of its column's width, still
+// pushed against whichever margin `align` names - a wide block wraps inside that strip instead of
+// spanning the full page width the way plain text-align would.
 const BeforeTitleBlock = ({ block, isBilingual, lang, cellStyles }) => {
   const runStyle = { textAlign: block.align, fontWeight: block.bold ? 700 : 400 };
+  const widthStyle = { width: `${block.width}%` };
+  const rowJustify = block.align === 'right' ? 'flex-end' : (block.align === 'center' ? 'center' : 'flex-start');
   if (isBilingual) {
     return (
       <View style={styles.row}>
-        <Text style={[cellStyles.beforeTitle, cellStyles.leftCell, runStyle]}><FormattedRuns text={block.uk} /></Text>
-        <Text style={[cellStyles.beforeTitle, cellStyles.rightCell, runStyle]}><FormattedRuns text={block.en} /></Text>
+        <View style={[cellStyles.leftCell, { flexDirection: 'row', justifyContent: rowJustify }]}>
+          <Text style={[cellStyles.beforeTitle, widthStyle, runStyle]}><FormattedRuns text={block.uk} /></Text>
+        </View>
+        <View style={[cellStyles.rightCell, { flexDirection: 'row', justifyContent: rowJustify }]}>
+          <Text style={[cellStyles.beforeTitle, widthStyle, runStyle]}><FormattedRuns text={block.en} /></Text>
+        </View>
       </View>
     );
   }
-  return <Text style={[cellStyles.beforeTitle, runStyle]}><FormattedRuns text={block[lang]} /></Text>;
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: rowJustify }}>
+      <Text style={[cellStyles.beforeTitle, widthStyle, runStyle]}><FormattedRuns text={block[lang]} /></Text>
+    </View>
+  );
 };
 
 const BeforeTitleBlocks = ({ blocks, isBilingual, lang, cellStyles }) => (blocks || []).map((block, index) => (

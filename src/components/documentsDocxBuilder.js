@@ -146,11 +146,26 @@ export const buildDocumentsDocx = async ({
 
   // Free-standing text between the letterhead logo and the title (spec §14/§17: "ЗА МІСЦЕМ
   // ВИМОГИ" etc.) - `align`/`bold` are resolved per block, never inferred from the text itself.
-  const beforeTitleParagraph = (text, block) => new Paragraph({
-    alignment: alignmentForBlock(block.align),
-    spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
-    children: formattedTextRuns(text, { size: bodySize, baseBold: Boolean(block.bold) }),
-  });
+  // `width` (spec batch 21 §8: the applicant/signatory data block is a half-page-right layout rule,
+  // not just right-aligned text) is expressed as an indent that eats the complementary space, the
+  // same technique Word itself uses for a "float" - so a wide block wraps inside that narrower
+  // strip instead of spanning the full column the way plain alignment would. `containerWidthTwips`
+  // is whichever width this paragraph's own column actually has (the full page in the single-
+  // column flow, or one table cell's width in the bilingual layout).
+  const beforeTitleParagraph = (text, block, containerWidthTwips) => {
+    const complementTwips = Math.round(containerWidthTwips * (1 - (block.width ?? 50) / 100));
+    const indent = block.align === 'right'
+      ? { left: complementTwips }
+      : (block.align === 'left'
+        ? { right: complementTwips }
+        : { left: Math.round(complementTwips / 2), right: Math.round(complementTwips / 2) });
+    return new Paragraph({
+      alignment: alignmentForBlock(block.align),
+      spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
+      indent,
+      children: formattedTextRuns(text, { size: bodySize, baseBold: Boolean(block.bold) }),
+    });
+  };
 
   const twoColumnCellFromParagraph = (paragraphOrParagraphs, marginSide, showColumnDivider) => new TableCell({
     borders: showColumnDivider && marginSide === 'left' ? { ...noBorders, right: dividerBorder } : noBorders,
@@ -266,11 +281,11 @@ export const buildDocumentsDocx = async ({
     (doc.beforeTitle || []).forEach(block => {
       if (isBilingual) {
         children.push(twoColumnTable([[
-          beforeTitleParagraph(block.uk, block),
-          beforeTitleParagraph(block.en, block),
+          beforeTitleParagraph(block.uk, block, columnContentWidthTwips),
+          beforeTitleParagraph(block.en, block, columnContentWidthTwips),
         ]], true, showColumnDivider));
       } else {
-        children.push(beforeTitleParagraph(block[lang], block));
+        children.push(beforeTitleParagraph(block[lang], block, contentWidthTwips));
       }
     });
 

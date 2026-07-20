@@ -37,6 +37,22 @@ import { listStorageFolderFileNames } from './config';
 // eslint-disable-next-line import/first
 import DocumentsPage from './DocumentsPage';
 
+// Text mode's field is a plain rendered display, not a textarea (spec batch 21 §2 - the display
+// itself is the editing surface), so there's no `.setSelectionRange` to drive a selection through.
+// This mirrors what a real browser drag-select does: build a Range over the container's own text
+// node and install it as the document's selection, then fire the mouseUp/touchEnd the component
+// listens on to know a selection was just made in that field.
+const selectTextInContainer = (container, start, end) => {
+  // eslint-disable-next-line testing-library/no-node-access
+  const textNode = container.firstChild;
+  const range = document.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, end);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
+
 beforeEach(() => {
   ref.mockImplementation((_db, path) => path);
   get.mockImplementation(async path => {
@@ -74,23 +90,24 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
+    // Default mode is 'text' (spec batch 21 §9) - the field is the rendered display itself.
+    const field = await screen.findByText('Звичайний текст без форматування.');
+    selectTextInContainer(field, 10, 15); // "текст"
+    fireEvent.mouseUp(field);
 
-    fireEvent.focus(textarea);
-    textarea.setSelectionRange(10, 15); // "текст"
-
-    // Bold/Italic now also appear on the Title (en) row above (spec: unified format across every
+    // Bold/Italic now also appear on the Title row above (spec: unified format across every
     // editable row) - scope the query to this paragraph's own boxed controls, same as a sighted
     // admin would click the toolbar right above this specific field.
     // eslint-disable-next-line testing-library/no-node-access
-    const paragraphBlock = textarea.closest('.paragraph-editor-block');
+    const paragraphBlock = field.closest('.paragraph-editor-block');
     const boldButton = within(paragraphBlock).getByTitle('Bold the selected text');
     fireEvent.click(boldButton);
 
     await waitFor(() => expect(set).toHaveBeenCalled());
     const [, payload] = set.mock.calls[set.mock.calls.length - 1];
     expect(payload.paragraphs[0].uk).toBe('Звичайний **текст** без форматування.');
-    expect(textarea.value).toBe('Звичайний текст без форматування.');
+    // The change is applied in place, right in the display - never a separate preview to catch up.
+    expect(await within(paragraphBlock).findByText('текст')).toBeInTheDocument();
   });
 
   it('also applies via touch (mobile), where preventing the selection-dismissing touchstart suppresses the synthetic click', async () => {
@@ -99,12 +116,12 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
-    fireEvent.focus(textarea);
-    textarea.setSelectionRange(10, 15); // "текст"
+    const field = await screen.findByText('Звичайний текст без форматування.');
+    selectTextInContainer(field, 10, 15); // "текст"
+    fireEvent.touchEnd(field);
 
     // eslint-disable-next-line testing-library/no-node-access
-    const paragraphBlock = textarea.closest('.paragraph-editor-block');
+    const paragraphBlock = field.closest('.paragraph-editor-block');
     const italicButton = within(paragraphBlock).getByTitle('Italicize the selected text');
     // No fireEvent.click - mobile browsers won't synthesize one once touchstart's default is
     // prevented (exactly what the button needs to do to keep the selection alive), so the
@@ -131,13 +148,18 @@ describe('spec: per-paragraph template/text mode switch replaces the global togg
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    // Default mode ('text') shows the resolved value.
-    await screen.findByDisplayValue('Звичайний текст без форматування.');
+    // Default mode ('text') shows the resolved value as a rendered display, not a textarea.
+    const field = await screen.findByText('Звичайний текст без форматування.');
+    // eslint-disable-next-line testing-library/no-node-access
+    const paragraphBlock = field.closest('.paragraph-editor-block');
 
-    const templateModeButton = screen.getByTitle('Raw {{placeholder}} markup - edits the shared template');
-    fireEvent.click(templateModeButton);
+    // One cycling button, not three separate ones (spec §3): text -> template is one tap.
+    const modeButton = within(paragraphBlock).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    );
+    fireEvent.click(modeButton);
 
-    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
+    const textarea = await within(paragraphBlock).findByDisplayValue('Звичайний текст без форматування.');
     fireEvent.change(textarea, { target: { value: 'Змінений шаблонний текст.' } });
     fireEvent.blur(textarea);
 
@@ -147,14 +169,19 @@ describe('spec: per-paragraph template/text mode switch replaces the global togg
     ));
   });
 
-  it('shows an inline-editable title input next to the document name', async () => {
+  it('shows an inline-editable Documents-list name next to the checkbox, separate from the in-document title', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     await screen.findByTitle('Edit paragraphs');
 
-    const titleInput = await screen.findByDisplayValue('Тест');
-    fireEvent.change(titleInput, { target: { value: 'Оновлена назва' } });
-    fireEvent.blur(titleInput);
+    // No catalogName saved yet, so the field falls back to showing the title text - but editing it
+    // writes catalogName only (spec batch 21 §6), never template.title.
+    const nameInput = await screen.findByDisplayValue('Тест');
+    fireEvent.change(nameInput, { target: { value: 'Оновлена назва' } });
+    fireEvent.blur(nameInput);
 
-    await waitFor(() => expect(set).toHaveBeenCalled());
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({ catalogName: 'Оновлена назва', title: expect.objectContaining({ uk: 'Тест' }) }),
+    ));
   });
 });

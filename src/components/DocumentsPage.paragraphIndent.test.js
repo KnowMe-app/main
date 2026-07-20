@@ -73,13 +73,13 @@ describe('spec: per-paragraph first-line indent slider', () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const indentedField = await screen.findByDisplayValue('Абзац з відступом.');
+    const indentedField = await screen.findByText('Абзац з відступом.');
     // eslint-disable-next-line testing-library/no-node-access
     const indentedBlock = indentedField.closest('.paragraph-editor-block');
     expect(within(indentedBlock).getByLabelText('Відступ абзацу 1')).toHaveValue('1');
     expect(within(indentedBlock).getByText('1.00 см')).toBeInTheDocument();
 
-    const plainField = screen.getByDisplayValue('Абзац без відступу.');
+    const plainField = screen.getByText('Абзац без відступу.');
     // eslint-disable-next-line testing-library/no-node-access
     const plainBlock = plainField.closest('.paragraph-editor-block');
     expect(within(plainBlock).getByLabelText('Відступ абзацу 2')).toHaveValue('0'); // document default
@@ -90,7 +90,7 @@ describe('spec: per-paragraph first-line indent slider', () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const plainField = await screen.findByDisplayValue('Абзац без відступу.');
+    const plainField = await screen.findByText('Абзац без відступу.');
     // eslint-disable-next-line testing-library/no-node-access
     const plainBlock = plainField.closest('.paragraph-editor-block');
     const slider = within(plainBlock).getByLabelText('Відступ абзацу 2');
@@ -116,7 +116,7 @@ describe('spec: per-paragraph first-line indent slider', () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const indentedField = await screen.findByDisplayValue('Абзац з відступом.');
+    const indentedField = await screen.findByText('Абзац з відступом.');
     // eslint-disable-next-line testing-library/no-node-access
     const indentedBlock = indentedField.closest('.paragraph-editor-block');
     fireEvent.click(within(indentedBlock).getByTitle('Скинути до відступу документа'));

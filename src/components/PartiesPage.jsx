@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaPlus, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaPen, FaPlus, FaTrash, FaUpload } from 'react-icons/fa';
 import designTokens from '../data/designTokens.json';
 import { auth, database } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
@@ -19,6 +19,8 @@ import {
   DOCUMENTS_TEMPLATES_PATH,
   PARTY_COLLECTIONS,
   buildCaseLabel,
+  buildVariablePickerGroups,
+  CLINIC_KINDS,
   createEmptyCase,
   createEmptyClinic,
   createEmptyCouple,
@@ -36,6 +38,7 @@ import {
   normalizeDocumentsCatalog,
   orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
+  resolveCaseContext,
   resolveMergedRecordsForPersistence,
   toArray,
   upsertRecentId,
@@ -162,6 +165,40 @@ const StateCard = styled.div`
   border: 1px solid var(--km-border);
   color: var(--km-muted);
   font-size: 13px;
+`;
+
+// --- Read mode (spec batch 21 §10: Budget's view/edit pattern) ---------------------------------
+// Grouped one-per-role, same shape the variable picker already uses (buildVariablePickerGroups) -
+// a read-only rundown of exactly the one selected case's resolved data, never the full directory.
+
+const ReadGroupBlock = styled.div`
+  margin-top: 10px;
+`;
+
+const ReadRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 2px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--km-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const ReadRowLabel = styled.span`
+  color: var(--km-muted);
+  font-family: monospace;
+  font-size: 10.5px;
+`;
+
+const ReadRowValue = styled.span`
+  color: var(--km-text);
+  font-weight: 600;
+  text-align: right;
 `;
 
 // --- Group panel + collapsed summary row (Beneficiary/Payer pattern from Invoice Builder) -------
@@ -352,8 +389,23 @@ const useFieldDraft = externalValue => {
   return [draft, setDraft, editingRef];
 };
 
-const RecordFieldInput = ({ label, value, type, onCommit }) => {
+const RecordFieldInput = ({ label, value, type, options, onCommit }) => {
   const [draft, setDraft, editingRef] = useFieldDraft(value || '');
+  if (type === 'select') {
+    return (
+      <Field>
+        {label}
+        <FieldInput
+          as="select"
+          value={draft}
+          aria-label={label}
+          onChange={event => { setDraft(event.target.value); onCommit(event.target.value); }}
+        >
+          {options.map(option => <option key={option} value={option}>{option}</option>)}
+        </FieldInput>
+      </Field>
+    );
+  }
   return (
     <Field>
       {label}
@@ -374,11 +426,12 @@ const RecordFieldInput = ({ label, value, type, onCommit }) => {
 
 const RecordFieldsGrid = ({ record, fieldDefs, onFieldChange }) => (
   <FieldGrid>
-    {fieldDefs.map(({ label, path, type }) => (
+    {fieldDefs.map(({ label, path, type, options }) => (
       <RecordFieldInput
         key={path}
         label={label}
         type={type}
+        options={options}
         value={getValueByPath(record, path)}
         onCommit={value => onFieldChange(path, value)}
       />
@@ -450,6 +503,7 @@ const REPRESENTATIVE_FIELDS = [
 ];
 
 const CLINIC_FIELDS = [
+  { label: 'Kind', path: 'kind', type: 'select', options: CLINIC_KINDS },
   { label: 'Name (uk)', path: 'name.uk' },
   { label: 'Name (en)', path: 'name.en' },
   { label: 'Legal name (uk)', path: 'legalName.uk' },
@@ -815,7 +869,7 @@ const RepresentativesSlot = ({ records, valueIds, onToggle }) => {
   );
 };
 
-const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen, onToggleGroup, recentIds, recordPartyUsage }) => {
+const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen, onToggleGroup, recentIds, recordPartyUsage, onSelectCase }) => {
   const cases = catalog.parties.cases;
   const orderedCouples = orderRecordsByRecentIds(catalog.parties.couples, recentIds.couples);
   const orderedClinics = orderRecordsByRecentIds(catalog.parties.clinics, recentIds.clinics);
@@ -829,6 +883,7 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
       await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseId}`), record);
       setCatalog(previous => ({ ...previous, parties: { ...previous.parties, cases: [...previous.parties.cases, record] } }));
       toggleRecord('cases', caseId, true);
+      onSelectCase(caseId);
       toast.success('Case created.');
     } catch (addError) {
       console.error('Unable to create case', addError);
@@ -892,7 +947,11 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
             const relations = caseRecord.relations || {};
             return (
               <RecordBlock key={caseRecord.id}>
-                <CompactSection onClick={() => toggleRecord('cases', caseRecord.id)} role="button" aria-expanded={expanded}>
+                <CompactSection
+                  onClick={() => { toggleRecord('cases', caseRecord.id); onSelectCase(caseRecord.id); }}
+                  role="button"
+                  aria-expanded={expanded}
+                >
                   <CompactInfo>
                     <CompactValue>{buildCaseLabel(catalog, caseRecord) || caseRecord.id}</CompactValue>
                   </CompactInfo>
@@ -1053,11 +1112,67 @@ const TechnicalSection = ({ catalog, setCatalog }) => {
   );
 };
 
+// Default read-mode view (spec batch 21 §10): the last-selected case's data only, grouped by role
+// exactly like the Documents Builder's variable picker (buildVariablePickerGroups reused as-is, so
+// the two stay in sync automatically as new party types/groups are added). "Create new case" sits
+// above the case data per spec; picking a different case (or creating one) updates the persisted
+// last-selected case, so switching into Edit mode and back never loses it.
+const CaseReadView = ({ catalog, selectedCaseId, onSelectCase, onCreateCase }) => {
+  const cases = catalog.parties.cases;
+  const selectedCase = cases.find(item => String(item.id) === String(selectedCaseId));
+  const context = selectedCase ? resolveCaseContext(catalog, selectedCase.id) : null;
+  const groups = context ? buildVariablePickerGroups(context) : [];
+
+  return (
+    <Panel>
+      <RowLine>
+        <SmallButton type="button" onClick={onCreateCase}><FaPlus /> Create new case</SmallButton>
+      </RowLine>
+      {cases.length ? (
+        <RowLine style={{ marginTop: 10 }}>
+          <Field style={{ flex: 1, minWidth: 200 }}>
+            Case
+            <FieldInput
+              as="select"
+              value={selectedCase ? selectedCase.id : ''}
+              onChange={event => onSelectCase(event.target.value)}
+            >
+              {!selectedCase ? <option value="">Select a case…</option> : null}
+              {cases.map(caseRecord => (
+                <option key={caseRecord.id} value={caseRecord.id}>{buildCaseLabel(catalog, caseRecord) || caseRecord.id}</option>
+              ))}
+            </FieldInput>
+          </Field>
+        </RowLine>
+      ) : (
+        <StateCard style={{ marginTop: 10 }}>No cases yet - create one above to see its data here.</StateCard>
+      )}
+      {selectedCase ? groups.map(group => (
+        <ReadGroupBlock key={group.label}>
+          <SectionSubhead>{group.label}</SectionSubhead>
+          {group.items.length
+            ? group.items.map(item => (
+              <ReadRow key={item.path}>
+                <ReadRowLabel>{item.path}</ReadRowLabel>
+                <ReadRowValue>{item.value}</ReadRowValue>
+              </ReadRow>
+            ))
+            : <CompactValue>No data</CompactValue>}
+        </ReadGroupBlock>
+      )) : null}
+    </Panel>
+  );
+};
+
 // --- Page ---------------------------------------------------------------------------------------
 
 const EMPTY_RECENT_IDS = {
   couples: [], clinics: [], surrogateMothers: [], representatives: [], notaries: [],
 };
+
+// Same view/edit pattern as the Budget page (spec batch 21 §10): read mode is the default, an
+// admin-only toggle unlocks editing, and the choice survives a reload via localStorage.
+const PARTIES_EDIT_MODE_STORAGE_KEY = 'parties:edit-mode';
 
 const PartiesPage = ({ isAdmin }) => {
   const isPartiesAdmin = Boolean(isAdmin) || isInvoiceBuilderUid(auth.currentUser?.uid) || (typeof window !== 'undefined'
@@ -1069,20 +1184,34 @@ const PartiesPage = ({ isAdmin }) => {
   const [error, setError] = useState('');
   const [openGroups, setOpenGroups] = useState({});
   const [expandedKeys, setExpandedKeys] = useState({});
+  const [isEditMode, setIsEditMode] = useState(() => (
+    typeof window !== 'undefined' && window.localStorage.getItem(PARTIES_EDIT_MODE_STORAGE_KEY) === '1'
+  ));
+  // The read view's "last-selected case" (spec §10) - loaded from the backend below, and never
+  // reset by switching modes, so it survives read <-> edit exactly like the selected case itself.
+  const [selectedCaseId, setSelectedCaseId] = useState('');
 
   const loadPartiesData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [partiesSnapshot, templatesSnapshot, settingsSnapshot] = await Promise.all([
+      const [partiesSnapshot, templatesSnapshot, settingsSnapshot, lastCaseSnapshot] = await Promise.all([
         get(ref(database, DOCUMENTS_PARTIES_PATH)),
         get(ref(database, DOCUMENTS_TEMPLATES_PATH)),
         get(ref(database, `${PARTIES_SETTINGS_PATH}/recentIds`)),
+        get(ref(database, `${PARTIES_SETTINGS_PATH}/lastCaseId`)),
       ]);
-      setCatalog(normalizeDocumentsCatalog(
+      const nextCatalog = normalizeDocumentsCatalog(
         partiesSnapshot.exists() ? partiesSnapshot.val() : null,
         templatesSnapshot.exists() ? templatesSnapshot.val() : null,
-      ));
+      );
+      setCatalog(nextCatalog);
+      const rawLastCaseId = lastCaseSnapshot.exists() ? String(lastCaseSnapshot.val()) : '';
+      // Falls back to the first case only when there's no persisted choice yet (or it no longer
+      // resolves to a real case) - never silently swaps out a case the admin deliberately picked.
+      setSelectedCaseId(nextCatalog.parties.cases.some(item => String(item.id) === rawLastCaseId)
+        ? rawLastCaseId
+        : (nextCatalog.parties.cases[0]?.id || ''));
       const rawRecentIds = settingsSnapshot.exists() ? settingsSnapshot.val() : null;
       setRecentIds({
         couples: toArray(rawRecentIds?.couples),
@@ -1124,6 +1253,48 @@ const PartiesPage = ({ isAdmin }) => {
     });
   };
 
+  // The read view's case selection (spec §10) - both picking a case in Read mode and expanding one
+  // in Edit mode's Cases group call this, so either surface always reflects the other.
+  const persistSelectedCase = id => {
+    setSelectedCaseId(id);
+    set(ref(database, `${PARTIES_SETTINGS_PATH}/lastCaseId`), id || null).catch(usageError => {
+      console.error('Unable to save the last-selected case', usageError);
+    });
+  };
+
+  // Read <-> edit never loses the selected case (spec §10) - selectedCaseId lives above both modes
+  // and neither mode switch touches it, so the same case is still there whichever way you toggle.
+  const enterEditModeOnCase = caseId => {
+    setIsEditMode(true);
+    if (typeof window !== 'undefined') window.localStorage.setItem(PARTIES_EDIT_MODE_STORAGE_KEY, '1');
+    setOpenGroups(previous => ({ ...previous, cases: true }));
+    toggleRecord('cases', caseId, true);
+  };
+
+  const handleToggleEditMode = () => {
+    const next = !isEditMode;
+    setIsEditMode(next);
+    if (typeof window !== 'undefined') window.localStorage.setItem(PARTIES_EDIT_MODE_STORAGE_KEY, next ? '1' : '0');
+  };
+
+  // "Create new case" sits above the read-mode case data (spec §10) - creates the record, selects
+  // it, and jumps into Edit mode with it already expanded so the admin can assign its parties right
+  // away via the full directory, per Batch 19's collapsible-groups design.
+  const handleCreateCaseFromReadView = async () => {
+    const caseId = makeCaseId();
+    const record = createEmptyCase({ caseId });
+    try {
+      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseId}`), record);
+      setCatalog(previous => ({ ...previous, parties: { ...previous.parties, cases: [...previous.parties.cases, record] } }));
+      persistSelectedCase(caseId);
+      enterEditModeOnCase(caseId);
+      toast.success('Case created.');
+    } catch (addError) {
+      console.error('Unable to create case', addError);
+      toast.error('Could not create the case.');
+    }
+  };
+
   if (!isPartiesAdmin) {
     return (
       <Page>
@@ -1143,6 +1314,9 @@ const PartiesPage = ({ isAdmin }) => {
             <Title>Parties</Title>
           </div>
           <HeaderActions>
+            <MiniButton type="button" onClick={handleToggleEditMode} aria-pressed={isEditMode} title={isEditMode ? 'Switch to read mode' : 'Edit parties'}>
+              <FaPen /> {isEditMode ? 'Read' : 'Edit'}
+            </MiniButton>
             <PageNavMenu />
           </HeaderActions>
         </Header>
@@ -1151,6 +1325,13 @@ const PartiesPage = ({ isAdmin }) => {
           <StateCard>Loading…</StateCard>
         ) : error ? (
           <StateCard>{error}</StateCard>
+        ) : !isEditMode ? (
+          <CaseReadView
+            catalog={catalog}
+            selectedCaseId={selectedCaseId}
+            onSelectCase={persistSelectedCase}
+            onCreateCase={handleCreateCaseFromReadView}
+          />
         ) : (
           <>
             <CouplesGroup
@@ -1240,6 +1421,7 @@ const PartiesPage = ({ isAdmin }) => {
               onToggleGroup={() => toggleGroup('cases')}
               recentIds={recentIds}
               recordPartyUsage={recordPartyUsage}
+              onSelectCase={persistSelectedCase}
             />
             <TechnicalSection catalog={catalog} setCatalog={setCatalog} />
           </>

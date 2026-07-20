@@ -538,8 +538,15 @@ export const createEmptyRepresentative = () => ({
   powerOfAttorney: { date: '', apostille: '' },
 });
 
+// A clinic is either the foreign fertility clinic the intended parents came from, or the
+// Ukrainian clinic actually performing the surrogacy procedure (spec batch 21 §1: the variable
+// picker needs to offer these as two separate groups) - unset/legacy records default to
+// 'ukrainian' since that's the common case pre-dating this field.
+export const CLINIC_KINDS = ['foreign', 'ukrainian'];
+
 export const createEmptyClinic = () => ({
   id: makeRecordId('clinic'),
+  kind: 'ukrainian',
   name: { uk: '', en: '' },
   legalName: { uk: '', en: '' },
   medicalCenterName: { uk: '', en: '' },
@@ -1120,8 +1127,11 @@ export const allowsParagraphInternalBreak = (paragraph, allowPageBreaks) => {
   return longest > LONG_PARAGRAPH_CHAR_THRESHOLD;
 };
 
+// Never backfills a missing translation from the other language (spec batch 21 §4: a paragraph/
+// title with no `en` value must render empty, not silently show the `uk` text as if it were a
+// translation) - a requested language that isn't on the record resolves to '', full stop.
 const localizedText = (value, lang) => {
-  if (isPlainObject(value)) return String(value[lang] ?? value.uk ?? value.en ?? '');
+  if (isPlainObject(value)) return String(value[lang] ?? '');
   return String(value ?? '');
 };
 
@@ -1138,6 +1148,19 @@ const overriddenText = (override, langKey, fallback) => (
   typeof override?.[langKey] === 'string' ? override[langKey] : fallback
 );
 
+// A paragraph that starts with a variable - commonly a lowercase date-in-words - must still read
+// as a proper sentence (spec batch 21 §7). Applied here, at render time, on the resolved output
+// only - the stored template/override text is never rewritten. Idempotent (capitalizing an
+// already-capitalized letter is a no-op), and skips past any leading bold/italic markers so
+// `**сьогодні...` capitalizes "Сьогодні", not the marker itself.
+const capitalizeFirstLetter = text => {
+  const value = String(text || '');
+  const match = /^(\*+)?([\s\S])([\s\S]*)$/.exec(value);
+  if (!match) return value;
+  const [, markers, firstChar, rest] = match;
+  return `${markers || ''}${firstChar.toUpperCase()}${rest}`;
+};
+
 // --- beforeTitle blocks (batch 16 §14/§17) ---------------------------------------------------
 // Free-standing text rendered between the letterhead logo and the title (e.g. "ЗА МІСЦЕМ ВИМОГИ",
 // right-aligned and bold) - never merged into `paragraphs`, so it always renders in that fixed
@@ -1146,9 +1169,17 @@ const ALLOWED_BLOCK_ALIGNMENTS = ['left', 'right', 'center', 'justify'];
 
 export const normalizeBlockAlign = align => (ALLOWED_BLOCK_ALIGNMENTS.includes(align) ? align : 'left');
 
+// A block's width as a percentage of its column (spec batch 21 §8: the applicant/signatory data
+// block under "ЗА МІСЦЕМ ВИМОГИ" is a half-page-right layout rule - defaults to 50, i.e. half the
+// page, pushed against whichever margin `align` names). Never below 10 (unreadably narrow) or
+// above 100 (full width).
+export const DEFAULT_BLOCK_WIDTH_PERCENT = 50;
+export const normalizeBlockWidth = width => clampNumber(width, 10, 100, DEFAULT_BLOCK_WIDTH_PERCENT);
+
 const resolveBeforeTitleBlocks = (template, context) => toArray(template?.beforeTitle).map(block => ({
   align: normalizeBlockAlign(block?.align),
   bold: Boolean(block?.bold),
+  width: normalizeBlockWidth(block?.width),
   uk: fillPlaceholders(localizedText(block, 'uk'), context, 'uk'),
   en: fillPlaceholders(localizedText(block, 'en'), context, 'en'),
 }));
@@ -1272,8 +1303,8 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
         // one document-wide firstLineIndentCm can't express that). undefined = inherit the
         // document's own formatting.firstLineIndentCm, same as every paragraph did before this.
         indentCm: paragraph?.indentCm !== undefined ? clampNumber(paragraph.indentCm, 0, 5, undefined) : undefined,
-        uk: overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
-        en: overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
+        uk: capitalizeFirstLetter(overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk'))),
+        en: capitalizeFirstLetter(overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en'))),
       };
     }),
   };
@@ -1368,28 +1399,37 @@ export const collectContextLeafPaths = (value, prefix = '') => {
   if (Array.isArray(value)) return [];
   if (typeof value === 'object') {
     return Object.keys(value)
-      .filter(key => key !== 'id')
+      .filter(key => key !== 'id' && key !== 'kind')
       .flatMap(key => collectContextLeafPaths(value[key], prefix ? `${prefix}.${key}` : key));
   }
   return [];
 };
 
-// The 4 blocks the picker groups variables into (spec: "данні по парі (чоловік, дружина,
-// спільні), дані по СМ, дані по довіреній особі, дані по клініці" - one Клініка block, not split
-// by language). Each root is a top-level key already exposed by resolveCaseContext.
+// One group per role (spec batch 21 §1: "split the couple into its natural roles rather than one
+// combined block" - extend similarly as new party types are added, never regroup by "couple").
+// Each root is a top-level key already exposed by resolveCaseContext; `predicate` (when present)
+// filters the group in/out of a given context instead of picking a root - used to split the single
+// `clinic` root into its two kinds (see CLINIC_KINDS) without needing two separate context keys.
 export const VARIABLE_PICKER_GROUPS = [
-  { label: 'Пара', roots: ['wife', 'husband', 'couple'] },
+  { label: 'Чоловік', roots: ['husband'] },
+  { label: 'Дружина', roots: ['wife'] },
+  { label: 'Спільне', roots: ['couple', 'program'] },
   { label: 'Сурогатна мати', roots: ['surrogateMother'] },
   { label: 'Довірена особа', roots: ['representative'] },
-  { label: 'Клініка', roots: ['clinic'] },
+  { label: 'Клініка — іноземна', roots: ['clinic'], predicate: context => context?.clinic?.kind === 'foreign' },
+  { label: 'Клініка — українська', roots: ['clinic'], predicate: context => context?.clinic?.kind !== 'foreign' },
 ];
 
 // Builds the picker's grouped leaf list from a resolved case context (or any similarly-shaped
-// object, e.g. an example record when no case is selected yet).
-export const buildVariablePickerGroups = context => VARIABLE_PICKER_GROUPS.map(group => ({
-  label: group.label,
-  items: group.roots.flatMap(root => collectContextLeafPaths(context?.[root], root)),
-}));
+// object, e.g. an example record when no case is selected yet). A group with a predicate that
+// evaluates false for this context (e.g. the clinic kind that isn't this case's clinic) is
+// dropped entirely rather than shown empty.
+export const buildVariablePickerGroups = context => VARIABLE_PICKER_GROUPS
+  .filter(group => !group.predicate || group.predicate(context))
+  .map(group => ({
+    label: group.label,
+    items: group.roots.flatMap(root => collectContextLeafPaths(context?.[root], root)),
+  }));
 
 // Generic "most recently used first" ordering + upsert, shared by the case selector (spec §5) and
 // the Documents list (most recently downloaded templates float to the top): whatever isn't in the
