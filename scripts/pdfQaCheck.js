@@ -425,10 +425,12 @@ async function checkDocuments() {
     },
     paragraphs: [
       {
+        type: 'text',
         uk: 'Я (ми), жінка Тестова Марія Іванівна, паспорт № AA000001, виданий Міністерством закордонних справ 02.02.2020,',
         en: 'I (we), the wife, Testova Mariia, passport No. AA000001, issued by the Ministry of Foreign Affairs on 02.02.2020,',
       },
       {
+        type: 'text',
         uk: 'сурогатної матері Прикладової Оксани Сергіївни — здійснюється в європейській клініці «Мрія» на ґрунті угоди.',
         en: 'of the surrogate mother Prykladova Oksana Serhiivna — performed at the European "Mriia" clinic under the agreement.',
       },
@@ -472,6 +474,47 @@ async function checkDocuments() {
   const oneColumnCombined = oneColumnPages.join('\n');
   if (oneColumnCombined.includes('Consent to the transfer')) {
     fail('Documents (one-column uk): English text leaked into the Ukrainian-only layout');
+  }
+
+  // Regression guard for a real bug (spec batch 21 follow-up): a paragraph's per-paragraph
+  // indentCm silently did nothing in the PDF, because FormattedRuns wrapped even a fully plain
+  // (no bold/italic) paragraph in a nested <Text>, and @react-pdf/layout's fragment collector
+  // (getFragments) only reads style like textIndent off the exact instance that owns the text -
+  // never inherited from an ancestor. checkStringsRoundTrip can't catch this (the text is still
+  // there, just not shifted), so this reads real glyph x-positions via pdfjs-dist directly.
+  const plainDoc = {
+    id: 'indent-regression',
+    title: { uk: 'ЗАЯВА' },
+    paragraphs: [
+      { type: 'text', uk: 'Абзац без відступу починається зліва.' },
+      { type: 'text', uk: 'Абзац з відступом починається правіше.', indentCm: 2 },
+    ],
+  };
+  const buffer = await (async () => {
+    const stream = await pdf(React.createElement(DocumentsPdfDocument, {
+      documents: [plainDoc], layout: 'one-column-uk', formatting: DEFAULT_DOC_FORMATTING,
+    })).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      stream.on('data', c => chunks.push(c));
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+    return Buffer.concat(chunks);
+  })();
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+  const page = await pdfDoc.getPage(1);
+  const content = await page.getTextContent();
+  const findX = needle => content.items.find(item => item.str.includes(needle))?.transform?.[4];
+  const plainX = findX('Абзац без відступу');
+  const indentedX = findX('Абзац з відступом');
+  const expectedDeltaPt = 2 * 28.3465; // indentCm=2 -> points
+  const actualDeltaPt = (indentedX ?? 0) - (plainX ?? 0);
+  if (plainX === undefined || indentedX === undefined) {
+    fail('Documents (indent regression): could not locate the test paragraphs in the rendered PDF at all');
+  } else if (Math.abs(actualDeltaPt - expectedDeltaPt) > 2) {
+    fail(`Documents (indent regression): indentCm=2 should shift the paragraph ~${expectedDeltaPt.toFixed(1)}pt right, got ${actualDeltaPt.toFixed(1)}pt (indentCm is not being applied)`);
   }
 }
 

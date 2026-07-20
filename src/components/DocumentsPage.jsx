@@ -979,6 +979,46 @@ const DocumentsPage = ({ isAdmin }) => {
     );
   };
 
+  // beforeTitle blocks have no per-case override to reindex (see getTemplateScopeText) - insert/
+  // remove is a direct template write, persisted immediately like the paragraph structure edits
+  // above, just without applyParagraphStructureChange's override-shifting.
+  const handleInsertBeforeTitle = async (docId, atIndex) => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const blocks = template.beforeTitle || [];
+    const nextTemplate = {
+      ...template,
+      beforeTitle: [...blocks.slice(0, atIndex), { uk: '', en: '', align: 'left' }, ...blocks.slice(atIndex)],
+    };
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+    } catch (structureError) {
+      console.error('Unable to insert the before-title block', structureError);
+      toast.error('Could not save the change.');
+    }
+  };
+
+  const handleRemoveBeforeTitle = async (docId, atIndex) => {
+    if (typeof window !== 'undefined' && !window.confirm('Remove this block?')) return;
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const nextTemplate = { ...template, beforeTitle: (template.beforeTitle || []).filter((_, index) => index !== atIndex) };
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+    } catch (structureError) {
+      console.error('Unable to remove the before-title block', structureError);
+      toast.error('Could not save the change.');
+    }
+  };
+
   const persistTemplate = async docId => {
     if (!dirtyDocIds[docId]) return;
     const template = catalog.documents.find(item => String(item.id) === String(docId));
@@ -1939,76 +1979,99 @@ const DocumentsPage = ({ isAdmin }) => {
                             style={{ width: '100%' }}
                           />
                         </ParagraphEditorBlock>
-                        {(template.beforeTitle || []).length ? (
-                          <>
-                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Before title</DocSubtitle>
-                            {template.beforeTitle.map((block, index) => {
-                              const scope = beforeTitleScope(index);
-                              // beforeTitle has no per-case override (see getTemplateScopeText) -
-                              // always the shared template's raw markup, position hardcoded by the
-                              // template itself (spec: "дані які зліва - їх положення хардкодь"),
-                              // never an admin-facing align/bold picker.
-                              const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
-                              const onChange = langKey => event => handleTemplateScopeChange(template.id, scope, langKey, event.target.value);
-                              const onBlur = () => persistTemplate(template.id);
-                              return (
-                                <ParagraphEditorBlock key={`${template.id}-before-title-${index}`}>
-                                  <ParagraphControlsRow>
-                                    <RowLine style={{ gap: 6 }}>
-                                      <SmallButton type="button" {...formatButtonProps('bold')} title="Bold the selected text"><FaBold /></SmallButton>
-                                      <SmallButton type="button" {...formatButtonProps('italic')} title="Italicize the selected text"><FaItalic /></SmallButton>
-                                      <SmallButton type="button" onMouseDown={preventSelectionLoss} onClick={openVariablePicker} title="Insert a variable"><FaCode /></SmallButton>
-                                    </RowLine>
-                                  </ParagraphControlsRow>
-                                  <RowLine style={{ marginTop: 2, marginBottom: 2 }}>
-                                    <DocSubtitle style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Ширина блоку</DocSubtitle>
-                                    <RangeInput
-                                      type="range"
-                                      min={10}
-                                      max={100}
-                                      step={5}
-                                      value={block.width ?? DEFAULT_BLOCK_WIDTH_PERCENT}
-                                      onChange={event => handleBeforeTitleWidthChange(template.id, index, Number(event.target.value))}
-                                      onMouseUp={() => persistTemplate(template.id)}
-                                      onTouchEnd={() => persistTemplate(template.id)}
-                                      aria-label={`Ширина блоку ${index + 1}`}
-                                      title="Ширина блоку, вирівняного від середини сторінки до краю - перетягніть, щоб змінити"
+                        <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Before title</DocSubtitle>
+                        {(template.beforeTitle || []).map((block, index) => {
+                          const scope = beforeTitleScope(index);
+                          // beforeTitle has no per-case override (see getTemplateScopeText) -
+                          // always the shared template's raw markup, position hardcoded by the
+                          // template itself (spec: "дані які зліва - їх положення хардкодь"),
+                          // never an admin-facing align/bold picker, and never the template/input/
+                          // text mode cycle paragraphs get (spec batch 21 follow-up: "вони немають
+                          // кнопки {}") - there's nothing to cycle to since it's always this one
+                          // raw-markup surface. Otherwise the same toolbar, same positions, as a
+                          // paragraph row: +, Bold, Italic, Insert-variable, Remove.
+                          const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
+                          const onChange = langKey => event => handleTemplateScopeChange(template.id, scope, langKey, event.target.value);
+                          const onBlur = () => persistTemplate(template.id);
+                          return (
+                            <ParagraphEditorBlock key={`${template.id}-before-title-${index}`}>
+                              <ParagraphControlsRow>
+                                <SmallButton
+                                  type="button"
+                                  onClick={() => handleInsertBeforeTitle(template.id, index)}
+                                  title="Insert a new block above this one"
+                                >
+                                  <FaPlus />
+                                </SmallButton>
+                                <RowLine style={{ gap: 6 }}>
+                                  <SmallButton type="button" {...formatButtonProps('bold')} title="Bold the selected text"><FaBold /></SmallButton>
+                                  <SmallButton type="button" {...formatButtonProps('italic')} title="Italicize the selected text"><FaItalic /></SmallButton>
+                                  <SmallButton type="button" onMouseDown={preventSelectionLoss} onClick={openVariablePicker} title="Insert a variable"><FaCode /></SmallButton>
+                                  <DangerButton
+                                    type="button"
+                                    onClick={() => handleRemoveBeforeTitle(template.id, index)}
+                                    title="Remove this block"
+                                  >
+                                    <FaTrash />
+                                  </DangerButton>
+                                </RowLine>
+                              </ParagraphControlsRow>
+                              <RowLine style={{ marginTop: 2, marginBottom: 2 }}>
+                                <DocSubtitle style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Ширина блоку</DocSubtitle>
+                                <RangeInput
+                                  type="range"
+                                  min={10}
+                                  max={100}
+                                  step={5}
+                                  value={block.width ?? DEFAULT_BLOCK_WIDTH_PERCENT}
+                                  onChange={event => handleBeforeTitleWidthChange(template.id, index, Number(event.target.value))}
+                                  onMouseUp={() => persistTemplate(template.id)}
+                                  onTouchEnd={() => persistTemplate(template.id)}
+                                  aria-label={`Ширина блоку ${index + 1}`}
+                                  title="Ширина блоку, вирівняного від середини сторінки до краю - перетягніть, щоб змінити"
+                                />
+                                <DocSubtitle style={{ fontSize: 10, minWidth: 32 }}>
+                                  {block.width ?? DEFAULT_BLOCK_WIDTH_PERCENT}%
+                                </DocSubtitle>
+                              </RowLine>
+                              <ParagraphPair $single={isSingle} $plain>
+                                {showUk ? (
+                                  <ParagraphFieldColumn>
+                                    <AutoInlineTextarea
+                                      ref={registerFieldNode(template.id, scope, 'uk')}
+                                      value={rawValue('uk')}
+                                      placeholder="Before title (uk)"
+                                      onFocus={handleRichFieldFocus(template.id, scope, 'uk', 'template')}
+                                      onChange={onChange('uk')}
+                                      onBlur={onBlur}
                                     />
-                                    <DocSubtitle style={{ fontSize: 10, minWidth: 32 }}>
-                                      {block.width ?? DEFAULT_BLOCK_WIDTH_PERCENT}%
-                                    </DocSubtitle>
-                                  </RowLine>
-                                  <ParagraphPair $single={isSingle} $plain>
-                                    {showUk ? (
-                                      <ParagraphFieldColumn>
-                                        <AutoInlineTextarea
-                                          ref={registerFieldNode(template.id, scope, 'uk')}
-                                          value={rawValue('uk')}
-                                          placeholder="Before title (uk)"
-                                          onFocus={handleRichFieldFocus(template.id, scope, 'uk', 'template')}
-                                          onChange={onChange('uk')}
-                                          onBlur={onBlur}
-                                        />
-                                      </ParagraphFieldColumn>
-                                    ) : null}
-                                    {showEn ? (
-                                      <ParagraphFieldColumn>
-                                        <AutoInlineTextarea
-                                          ref={registerFieldNode(template.id, scope, 'en')}
-                                          value={rawValue('en')}
-                                          placeholder="Before title (en)"
-                                          onFocus={handleRichFieldFocus(template.id, scope, 'en', 'template')}
-                                          onChange={onChange('en')}
-                                          onBlur={onBlur}
-                                        />
-                                      </ParagraphFieldColumn>
-                                    ) : null}
-                                  </ParagraphPair>
-                                </ParagraphEditorBlock>
-                              );
-                            })}
-                          </>
-                        ) : null}
+                                  </ParagraphFieldColumn>
+                                ) : null}
+                                {showEn ? (
+                                  <ParagraphFieldColumn>
+                                    <AutoInlineTextarea
+                                      ref={registerFieldNode(template.id, scope, 'en')}
+                                      value={rawValue('en')}
+                                      placeholder="Before title (en)"
+                                      onFocus={handleRichFieldFocus(template.id, scope, 'en', 'template')}
+                                      onChange={onChange('en')}
+                                      onBlur={onBlur}
+                                    />
+                                  </ParagraphFieldColumn>
+                                ) : null}
+                              </ParagraphPair>
+                            </ParagraphEditorBlock>
+                          );
+                        })}
+                        <ParagraphControlsRow style={{ justifyContent: 'flex-start' }}>
+                          <SmallButton
+                            type="button"
+                            onClick={() => handleInsertBeforeTitle(template.id, (template.beforeTitle || []).length)}
+                            title="Append a new block at the end of Before title"
+                          >
+                            <FaPlus />
+                          </SmallButton>
+                        </ParagraphControlsRow>
                         {(() => {
                           // Title (uk)/(en) always shown as a paired, symmetric row (spec batch 21
                           // §5) - the exact same template/input/text cycle paragraphs use (spec §3/
