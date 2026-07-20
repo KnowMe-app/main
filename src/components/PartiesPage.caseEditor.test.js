@@ -69,6 +69,7 @@ const buildParties = () => ({
 
 const openCaseOne = async () => {
   render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+  fireEvent.click(await screen.findByTitle('Edit parties'));
   fireEvent.click(await screen.findByText('Cases'));
   fireEvent.click(await screen.findByText(/Testova Mariia/));
 };
@@ -83,6 +84,7 @@ beforeEach(() => {
   });
   set.mockResolvedValue(undefined);
   update.mockResolvedValue(undefined);
+  window.localStorage.clear(); // read/edit mode persists across reloads (spec §10) - not across tests
 });
 
 describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', () => {

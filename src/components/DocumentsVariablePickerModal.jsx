@@ -1,6 +1,7 @@
 // Insert-variable picker (spec: "поруч з курсивом кнопку... модальне вікно в якому можна обрати
-// змінні"): grouped into 4 blocks (Пара/Сурогатна мати/Довірена особа/Клініка, see
-// buildVariablePickerGroups). Every item shows its resolved final-format value ("дані відображай
+// змінні"): grouped one group per party role (see VARIABLE_PICKER_GROUPS in documentsCatalogUtils
+// for the current list - husband/wife/shared/surrogate mother/representative/clinic-by-kind).
+// Every item shows its resolved final-format value ("дані відображай
 // в фінальному форматі") - the technical {{path}} only surfaces on a long press/hold ("при довгому
 // тапі відображай технічні дані"), then a tap inserts it at the field's captured cursor position.
 import React, { useEffect, useRef, useState } from 'react';

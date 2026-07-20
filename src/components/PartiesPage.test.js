@@ -67,11 +67,13 @@ beforeEach(() => {
   });
   set.mockResolvedValue(undefined);
   window.confirm = jest.fn(() => true);
+  window.localStorage.clear(); // read/edit mode persists across reloads (spec §10) - not across tests
 });
 
 describe('spec: Parties page', () => {
   it('renders every party-type group collapsed by default, with a record count', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
 
     expect(await screen.findByText('Couples')).toBeInTheDocument();
     expect(screen.getByText('Surrogate mothers')).toBeInTheDocument();
@@ -87,6 +89,7 @@ describe('spec: Parties page', () => {
 
   it('expanding a group reveals its records; expanding a record reveals its fields', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Clinics');
 
     fireEvent.click(screen.getByText('Clinics'));
@@ -99,6 +102,7 @@ describe('spec: Parties page', () => {
 
   it('editing a field on blur persists it additively to the record path', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Clinics');
     fireEvent.click(screen.getByText('Clinics'));
     fireEvent.click(await screen.findByText('Клініка Мрія'));
@@ -112,6 +116,7 @@ describe('spec: Parties page', () => {
 
   it('"Add" creates a new blank record and expands it', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Notaries');
     fireEvent.click(screen.getByText('Notaries'));
 
@@ -126,6 +131,7 @@ describe('spec: Parties page', () => {
 
   it('deleting a party referenced by a case includes the reference in the confirmation, but still deletes when confirmed', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Couples');
     fireEvent.click(screen.getByText('Couples'));
     fireEvent.click(await screen.findByText('Тестова Марія & Тестовий Петро'));
@@ -139,6 +145,7 @@ describe('spec: Parties page', () => {
   it('deleting a party skips the delete when the confirmation is declined', async () => {
     window.confirm = jest.fn(() => false);
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Notaries');
     fireEvent.click(screen.getByText('Clinics'));
     fireEvent.click(await screen.findByText('Клініка Мрія'));
@@ -151,6 +158,7 @@ describe('spec: Parties page', () => {
 
   it('a case relation slot picks from the existing records and persists the pick, most-recently-used tracked', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Cases');
     fireEvent.click(screen.getByText('Cases'));
     fireEvent.click(await screen.findByText('Testova Mariia & Testovyi Petro'));
@@ -164,10 +172,62 @@ describe('spec: Parties page', () => {
 
   it('renders the shared Childbirth/Transaction editor inside an expanded case', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Cases');
     fireEvent.click(screen.getByText('Cases'));
     fireEvent.click(await screen.findByText('Testova Mariia & Testovyi Petro'));
 
     expect(await screen.findByText('Дані для заяви в РАЦС')).toBeInTheDocument();
+  });
+});
+
+describe('spec: Parties page read/edit modes (batch 21 §10, Budget page pattern)', () => {
+  it('defaults to read mode, showing only the last-selected case\'s grouped data, with "Create new case" above it', async () => {
+    render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+
+    // Read mode is the default - none of the always-editable directory groups render at all.
+    await screen.findByRole('button', { name: /create new case/i });
+    expect(screen.queryByText('Couples')).not.toBeInTheDocument();
+    expect(screen.queryByText('Notaries')).not.toBeInTheDocument();
+
+    // No last-selected case was ever persisted, so it falls back to the only case in the catalog.
+    expect(screen.getByText('Тестова Марія')).toBeInTheDocument();
+    expect(screen.getByText('Дружина')).toBeInTheDocument();
+    expect(screen.getByText('Сурогатна мати')).toBeInTheDocument();
+  });
+
+  it('unlocks the full party directory (all records, all groups) only once switched into Edit mode', async () => {
+    render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    await screen.findByRole('button', { name: /create new case/i });
+
+    fireEvent.click(screen.getByTitle('Edit parties'));
+
+    expect(await screen.findByText('Couples')).toBeInTheDocument();
+    expect(screen.getByText('Surrogate mothers')).toBeInTheDocument();
+    expect(screen.getByText('Representatives')).toBeInTheDocument();
+    expect(screen.getByText('Clinics')).toBeInTheDocument();
+    expect(screen.getByText('Cases')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /create new case/i })).not.toBeInTheDocument();
+  });
+
+  it('switching from edit back to read mode does not lose the currently selected case', async () => {
+    render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    await screen.findByRole('button', { name: /create new case/i });
+    expect(screen.getByText('Тестова Марія')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Edit parties'));
+    await screen.findByText('Cases');
+    fireEvent.click(screen.getByTitle('Switch to read mode'));
+
+    await screen.findByRole('button', { name: /create new case/i });
+    expect(screen.getByText('Тестова Марія')).toBeInTheDocument();
+  });
+
+  it('picking a different case in the read view persists it as the last-selected case', async () => {
+    render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    const casePicker = await screen.findByLabelText('Case');
+    fireEvent.change(casePicker, { target: { value: 'case-1' } });
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/partiesSettings/lastCaseId', 'case-1'));
   });
 });

@@ -99,6 +99,30 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
       }),
     ));
   });
+
+  it('the width handle defaults to 50% and persists a dragged value on release (spec batch 21 §8)', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+    const slider = within(block).getByLabelText('Ширина блоку 1');
+    expect(slider).toHaveValue('50');
+
+    fireEvent.change(slider, { target: { value: '75' } });
+    expect(within(block).getByText('75%')).toBeInTheDocument();
+    expect(set).not.toHaveBeenCalled(); // not yet released
+
+    fireEvent.mouseUp(slider);
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        beforeTitle: [expect.objectContaining({ width: 75 })],
+      }),
+    ));
+  });
 });
 
 describe('spec: Bold/Italic also work on a paragraph while in Template mode', () => {
@@ -106,13 +130,18 @@ describe('spec: Bold/Italic also work on a paragraph while in Template mode', ()
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    fireEvent.click(screen.getByTitle('Raw {{placeholder}} markup - edits the shared template'));
-    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
+    // Default mode is 'text'; one tap of the cycling mode button goes straight to 'template'
+    // (spec §3: template -> input -> text -> template).
+    const field = await screen.findByText('Звичайний текст без форматування.');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = field.closest('.paragraph-editor-block');
+    fireEvent.click(within(block).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(block).findByDisplayValue('Звичайний текст без форматування.');
     fireEvent.focus(textarea);
     textarea.setSelectionRange(10, 15); // "текст"
 
-    // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
     fireEvent.click(within(block).getByTitle('Bold the selected text'));
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(

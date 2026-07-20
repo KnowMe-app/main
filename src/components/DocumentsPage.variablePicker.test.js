@@ -70,32 +70,41 @@ describe('spec: insert-variable button + modal', () => {
   it('is disabled outside Template mode and enabled once the paragraph is switched to Template mode', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-    const textarea = await screen.findByPlaceholderText('Paragraph (uk)');
+    const field = await screen.findByText('Я,');
     // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
+    const block = field.closest('.paragraph-editor-block');
 
     expect(within(block).getByTitle('Insert a variable')).toBeDisabled();
 
-    fireEvent.click(within(block).getByTitle('Raw {{placeholder}} markup - edits the shared template'));
+    fireEvent.click(within(block).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
     expect(within(block).getByTitle('Insert a variable')).toBeEnabled();
   });
 
-  it('opens the modal grouped into Пара/Сурогатна мати/Довірена особа/Клініка, showing the resolved value', async () => {
+  it('opens the modal grouped one-per-role (Дружина/Сурогатна мати/Довірена особа/...), showing the resolved value', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-    const textarea = await screen.findByPlaceholderText('Paragraph (uk)');
+    const field = await screen.findByText('Я,');
     // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
-    fireEvent.click(within(block).getByTitle('Raw {{placeholder}} markup - edits the shared template'));
+    const block = field.closest('.paragraph-editor-block');
+    // Default mode is 'text'; one tap of the cycling mode button goes straight to 'template'.
+    fireEvent.click(within(block).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(block).findByPlaceholderText('Paragraph (uk)');
     fireEvent.focus(textarea);
     textarea.setSelectionRange(3, 3);
 
     fireEvent.click(within(block).getByTitle('Insert a variable'));
 
-    expect(await screen.findByText('Пара')).toBeInTheDocument();
+    expect(await screen.findByText('Дружина')).toBeInTheDocument();
     expect(screen.getByText('Сурогатна мати')).toBeInTheDocument();
     expect(screen.getByText('Довірена особа')).toBeInTheDocument();
-    expect(screen.getByText('Клініка')).toBeInTheDocument();
+    // No clinic is linked, so it defaults into the Ukrainian group (empty); the foreign-clinic
+    // group's predicate fails entirely and it doesn't render at all.
+    expect(screen.getByText('Клініка — українська')).toBeInTheDocument();
+    expect(screen.queryByText('Клініка — іноземна')).not.toBeInTheDocument();
     // The picked wife's name is shown in its resolved final-format form, not the raw path.
     expect(screen.getByText('Кьогоку Ая')).toBeInTheDocument();
     expect(screen.queryByText('wife.name.uk.nominative')).not.toBeInTheDocument();
@@ -104,10 +113,14 @@ describe('spec: insert-variable button + modal', () => {
   it('clicking an item inserts {{path}} at the captured cursor position and persists to the template', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-    const textarea = await screen.findByPlaceholderText('Paragraph (uk)');
+    const field = await screen.findByText('Я,');
     // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
-    fireEvent.click(within(block).getByTitle('Raw {{placeholder}} markup - edits the shared template'));
+    const block = field.closest('.paragraph-editor-block');
+    // Default mode is 'text'; one tap of the cycling mode button goes straight to 'template'.
+    fireEvent.click(within(block).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(block).findByPlaceholderText('Paragraph (uk)');
     fireEvent.focus(textarea);
     textarea.setSelectionRange(3, 3); // right after "Я, "
 
@@ -121,22 +134,26 @@ describe('spec: insert-variable button + modal', () => {
       }),
     ));
     // The modal closes itself after a pick.
-    await waitFor(() => expect(screen.queryByText('Пара')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Дружина')).not.toBeInTheDocument());
   });
 
   it('locks page scroll while open and restores it on close (spec: modal scroll must never leak to the page)', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-    const textarea = await screen.findByPlaceholderText('Paragraph (uk)');
+    const field = await screen.findByText('Я,');
     // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
-    fireEvent.click(within(block).getByTitle('Raw {{placeholder}} markup - edits the shared template'));
+    const block = field.closest('.paragraph-editor-block');
+    // Default mode is 'text'; one tap of the cycling mode button goes straight to 'template'.
+    fireEvent.click(within(block).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(block).findByPlaceholderText('Paragraph (uk)');
     fireEvent.focus(textarea);
     textarea.setSelectionRange(3, 3);
 
     expect(document.body.style.overflow).not.toBe('hidden');
     fireEvent.click(within(block).getByTitle('Insert a variable'));
-    await screen.findByText('Пара');
+    await screen.findByText('Дружина');
     expect(document.body.style.overflow).toBe('hidden');
 
     fireEvent.click(screen.getByLabelText('Закрити'));
@@ -147,10 +164,14 @@ describe('spec: insert-variable button + modal', () => {
     jest.useFakeTimers({ advanceTimers: true });
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-    const textarea = await screen.findByPlaceholderText('Paragraph (uk)');
+    const field = await screen.findByText('Я,');
     // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
-    fireEvent.click(within(block).getByTitle('Raw {{placeholder}} markup - edits the shared template'));
+    const block = field.closest('.paragraph-editor-block');
+    // Default mode is 'text'; one tap of the cycling mode button goes straight to 'template'.
+    fireEvent.click(within(block).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(block).findByPlaceholderText('Paragraph (uk)');
     fireEvent.focus(textarea);
     textarea.setSelectionRange(3, 3);
     fireEvent.click(within(block).getByTitle('Insert a variable'));
@@ -170,17 +191,21 @@ describe('spec: insert-variable button + modal', () => {
   it('the × button and clicking the overlay both close the modal without inserting anything', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-    const textarea = await screen.findByPlaceholderText('Paragraph (uk)');
+    const field = await screen.findByText('Я,');
     // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
-    fireEvent.click(within(block).getByTitle('Raw {{placeholder}} markup - edits the shared template'));
+    const block = field.closest('.paragraph-editor-block');
+    // Default mode is 'text'; one tap of the cycling mode button goes straight to 'template'.
+    fireEvent.click(within(block).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(block).findByPlaceholderText('Paragraph (uk)');
     fireEvent.focus(textarea);
     textarea.setSelectionRange(3, 3);
 
     fireEvent.click(within(block).getByTitle('Insert a variable'));
     fireEvent.click(await screen.findByLabelText('Закрити'));
 
-    expect(screen.queryByText('Пара')).not.toBeInTheDocument();
+    expect(screen.queryByText('Дружина')).not.toBeInTheDocument();
     expect(set).not.toHaveBeenCalledWith('documentsBuilder/templates/doc-1', expect.anything());
   });
 });

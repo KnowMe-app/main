@@ -1096,33 +1096,45 @@ describe('spec: insert-variable picker (collectContextLeafPaths / buildVariableP
     expect(leaves).toEqual([{ path: 'wife.role', value: 'wife' }]);
   });
 
-  it('buildVariablePickerGroups groups Пара/Сурогатна мати/Довірена особа/Клініка, spanning wife+husband+couple in one block', () => {
+  it('buildVariablePickerGroups groups by role (Чоловік/Дружина/Спільне/Сурогатна мати/Довірена особа/Клініка — split by kind), never a combined "couple" block', () => {
     const context = {
       wife: { name: { en: 'Kyogoku Aya' } },
       husband: { name: { en: 'Kyogoku Keigo' } },
       couple: { marriage: { certificateNumber: 'M-1' } },
+      program: { type: 'gestational' },
       surrogateMother: { name: { en: 'Molvinskykh Yuliia' } },
       representative: { name: { en: 'Koval Oleksandr' } },
-      clinic: { name: { en: 'Victoria' } },
+      clinic: { kind: 'ukrainian', name: { en: 'Victoria' } },
     };
     const groups = buildVariablePickerGroups(context);
-    expect(groups.map(g => g.label)).toEqual(['Пара', 'Сурогатна мати', 'Довірена особа', 'Клініка']);
+    expect(groups.map(g => g.label)).toEqual([
+      'Чоловік', 'Дружина', 'Спільне', 'Сурогатна мати', 'Довірена особа', 'Клініка — українська',
+    ]);
 
-    const pairGroup = groups.find(g => g.label === 'Пара');
-    expect(pairGroup.items).toEqual(expect.arrayContaining([
-      { path: 'wife.name.en', value: 'Kyogoku Aya' },
-      { path: 'husband.name.en', value: 'Kyogoku Keigo' },
+    expect(groups.find(g => g.label === 'Чоловік').items).toEqual([{ path: 'husband.name.en', value: 'Kyogoku Keigo' }]);
+    expect(groups.find(g => g.label === 'Дружина').items).toEqual([{ path: 'wife.name.en', value: 'Kyogoku Aya' }]);
+
+    const sharedGroup = groups.find(g => g.label === 'Спільне');
+    expect(sharedGroup.items).toEqual(expect.arrayContaining([
       { path: 'couple.marriage.certificateNumber', value: 'M-1' },
+      { path: 'program.type', value: 'gestational' },
     ]));
 
-    const clinicGroup = groups.find(g => g.label === 'Клініка');
+    const clinicGroup = groups.find(g => g.label === 'Клініка — українська');
     expect(clinicGroup.items).toEqual([{ path: 'clinic.name.en', value: 'Victoria' }]);
+    expect(groups.find(g => g.label === 'Клініка — іноземна')).toBeUndefined();
+  });
+
+  it('splits the clinic group by kind: a foreign clinic only ever shows under "Клініка — іноземна"', () => {
+    const groups = buildVariablePickerGroups({ clinic: { kind: 'foreign', name: { en: 'Victoria' } } });
+    expect(groups.find(g => g.label === 'Клініка — іноземна').items).toEqual([{ path: 'clinic.name.en', value: 'Victoria' }]);
+    expect(groups.find(g => g.label === 'Клініка — українська')).toBeUndefined();
   });
 
   it('tolerates a missing root (null context, or a group whose root is null/undefined) without throwing', () => {
     expect(() => buildVariablePickerGroups(null)).not.toThrow();
     expect(buildVariablePickerGroups(null).every(group => group.items.length === 0)).toBe(true);
-    expect(buildVariablePickerGroups({ wife: null }).find(g => g.label === 'Пара').items).toEqual([]);
+    expect(buildVariablePickerGroups({ wife: null }).find(g => g.label === 'Дружина').items).toEqual([]);
   });
 });
 
@@ -1647,6 +1659,21 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
       expect(generated.paragraphs.some(p => p.uk.includes('ЗА МІСЦЕМ ВИМОГИ'))).toBe(false);
     });
 
+    it('a beforeTitle block defaults to 50% width, clamped to a sane 10-100 range (§21 #8)', () => {
+      const template = {
+        id: 'doc-1',
+        title: { uk: 'Заява' },
+        beforeTitle: [
+          { uk: 'За місцем вимоги', align: 'right' },
+          { uk: 'Явне значення', align: 'right', width: 70 },
+          { uk: 'Замале', align: 'right', width: 2 },
+          { uk: 'Завелике', align: 'right', width: 500 },
+        ],
+      };
+      const generated = buildGeneratedDocument(template, {});
+      expect(generated.beforeTitle.map(block => block.width)).toEqual([50, 70, 10, 100]);
+    });
+
     it('a legacy template without languages/columns/beforeTitle keeps rendering under the page-wide layout unchanged (§21 #11)', () => {
       const legacyTemplate = { id: 'legacy', title: { uk: 'Договір', en: 'Agreement' }, paragraphs: [{ uk: 'Текст.', en: 'Text.' }] };
       const generated = buildGeneratedDocument(legacyTemplate, {});
@@ -1656,12 +1683,10 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
       expect(getEffectiveDocLayout(generated, 'two-column')).toBe('two-column');
     });
 
-    it('a missing `en` field never throws, undefined, or "null" (§21 #10) - localizedText falls back to the uk text', () => {
+    it('a missing `en` field renders empty - never undefined, "null", or backfilled from the uk text (§21 #4/#10)', () => {
       const generated = buildGeneratedDocument({ id: 'uk-only', title: { uk: 'Заява' }, beforeTitle: [{ uk: 'Блок' }], paragraphs: [{ uk: 'Текст.' }] }, {});
       [generated.title.en, generated.beforeTitle[0].en, generated.paragraphs[0].en].forEach(value => {
-        expect(value).not.toBeUndefined();
-        expect(value).not.toBe('undefined');
-        expect(value).not.toBe('null');
+        expect(value).toBe('');
       });
     });
   });
@@ -1994,7 +2019,40 @@ describe('spec: normalized case structure (batch 18)', () => {
     const context = resolveCaseContext(catalog, 'case-1');
     expect(() => buildGeneratedDocument(template, context)).not.toThrow();
     const generated = buildGeneratedDocument(template, context);
-    expect(generated.paragraphs[0].uk).toBe('дівчинка та хлопчик');
+    // Auto-capitalized at render time (§21 #7) - the paragraph starts with a variable that
+    // resolved lowercase ("дівчинка"), so it must still read as a proper sentence.
+    expect(generated.paragraphs[0].uk).toBe('Дівчинка та хлопчик');
+  });
+
+  it('capitalizes the first letter of a paragraph that starts lowercase, without mutating the stored template (§21 #7)', () => {
+    const template = {
+      id: 'doc-1',
+      title: { uk: 'Заява' },
+      paragraphs: [{ uk: 'п\'ятого травня дві тисячі... народилася дитина.', en: 'on the fifth of may... a child was born.' }],
+    };
+    const generated = buildGeneratedDocument(template, {});
+    expect(generated.paragraphs[0].uk).toBe('П\'ятого травня дві тисячі... народилася дитина.');
+    expect(generated.paragraphs[0].en).toBe('On the fifth of may... a child was born.');
+    // The stored template text itself is untouched - only the resolved/rendered output changes.
+    expect(template.paragraphs[0].uk).toBe('п\'ятого травня дві тисячі... народилася дитина.');
+  });
+
+  it('capitalizes past any leading bold/italic markers, never the marker character itself', () => {
+    const template = { id: 'doc-1', title: { uk: 'Заява' }, paragraphs: [{ uk: '**сьогодні** гарний день.' }] };
+    const generated = buildGeneratedDocument(template, {});
+    expect(generated.paragraphs[0].uk).toBe('**Сьогодні** гарний день.');
+  });
+
+  it('is idempotent and leaves an already-capitalized or non-letter-leading paragraph unchanged', () => {
+    const template = {
+      id: 'doc-1',
+      title: { uk: 'Заява' },
+      paragraphs: [{ uk: 'Вже з великої літери.' }, { uk: '5 травня відбулося.' }, { uk: '' }],
+    };
+    const generated = buildGeneratedDocument(template, {});
+    expect(generated.paragraphs[0].uk).toBe('Вже з великої літери.');
+    expect(generated.paragraphs[1].uk).toBe('5 травня відбулося.');
+    expect(generated.paragraphs[2].uk).toBe('');
   });
 
   it('an empty children array does not break the component (§19 #19)', () => {
