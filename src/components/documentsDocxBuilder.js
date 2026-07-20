@@ -306,7 +306,7 @@ export const buildDocumentsDocx = async ({
     }
 
     bodyParagraphs.forEach(paragraph => {
-      if (paragraph.type !== 'text') {
+      if (paragraph.type && paragraph.type !== 'text') {
         children.push(...buildLogoBlock(paragraph.type, layoutCtx));
         return;
       }

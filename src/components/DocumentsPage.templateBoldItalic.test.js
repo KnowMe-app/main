@@ -66,6 +66,7 @@ beforeEach(() => {
   });
   set.mockResolvedValue(undefined);
   listStorageFolderFileNames.mockResolvedValue([]);
+  window.confirm = jest.fn(() => true);
 });
 
 describe('spec: beforeTitle rows drop the align/bold pickers, unified with paragraph style', () => {
@@ -78,6 +79,60 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
     expect(screen.queryByText('left')).not.toBeInTheDocument();
     expect(screen.queryByText('right')).not.toBeInTheDocument();
     expect(screen.queryByText('Bold')).not.toBeInTheDocument();
+  });
+
+  it('has the same +/Bold/Italic/Insert-variable/Remove buttons as a paragraph row, but no template/input/text mode button (spec follow-up)', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+
+    expect(within(block).getByTitle('Insert a new block above this one')).toBeInTheDocument();
+    expect(within(block).getByTitle('Bold the selected text')).toBeInTheDocument();
+    expect(within(block).getByTitle('Italicize the selected text')).toBeInTheDocument();
+    expect(within(block).getByTitle('Insert a variable')).toBeInTheDocument();
+    expect(within(block).getByTitle('Remove this block')).toBeInTheDocument();
+    // No template/input/text mode cycle - beforeTitle always edits the raw markup directly.
+    expect(within(block).queryByText('{}')).not.toBeInTheDocument();
+    expect(within(block).queryByText('I')).not.toBeInTheDocument();
+    expect(within(block).queryByText('T')).not.toBeInTheDocument();
+  });
+
+  it('"+" inserts a new block above this one, persisted straight to the template', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+    fireEvent.click(within(block).getByTitle('Insert a new block above this one'));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        beforeTitle: [
+          expect.objectContaining({ uk: '' }),
+          expect.objectContaining({ uk: 'Сурогатна мати {{surrogateMother.name.uk.nominative}}' }),
+        ],
+      }),
+    ));
+  });
+
+  it('"Remove" deletes this block, persisted straight to the template', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+    fireEvent.click(within(block).getByTitle('Remove this block'));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({ beforeTitle: [] }),
+    ));
   });
 
   it('Bold wraps the raw beforeTitle text in ** and writes it straight to the template (no case needed)', async () => {

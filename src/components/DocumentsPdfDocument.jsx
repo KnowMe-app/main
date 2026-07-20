@@ -81,13 +81,25 @@ const styles = StyleSheet.create({
 
 // Renders one piece of paragraph/title text as a run of nested <Text> spans so a bold/italic
 // fragment (spec §1: selection-based, not whole-paragraph) keeps its exact boundaries in the PDF -
-// react-pdf resolves each span's own font weight/style against the registered Tinos faces.
-const FormattedRuns = ({ text }) => parseFormattedRuns(text).map((run, index) => (
-  // eslint-disable-next-line react/no-array-index-key
-  <Text key={index} style={run.bold || run.italic ? { fontWeight: run.bold ? 700 : undefined, fontStyle: run.italic ? 'italic' : undefined } : undefined}>
-    {run.text}
-  </Text>
-));
+// react-pdf resolves each span's own font weight/style against the registered Tinos faces. A plain
+// (unformatted) run renders as a bare string instead of a nested <Text> - react-pdf's fragment
+// collector (@react-pdf/layout getFragments) reads paragraph-level attributes like textIndent only
+// from the exact instance that owns the text, never inherited into a nested <Text> child, so
+// wrapping every run - even a whole plain paragraph with no bold/italic at all - silently broke
+// indentCm (spec batch 21 §8/per-paragraph indent): the parent's indent was set, but the text that
+// actually needed it always lived one level too deep to see it.
+const FormattedRuns = ({ text }) => parseFormattedRuns(text).map((run, index) => {
+  if (!run.bold && !run.italic) {
+    // eslint-disable-next-line react/no-array-index-key
+    return <React.Fragment key={index}>{run.text}</React.Fragment>;
+  }
+  return (
+    // eslint-disable-next-line react/no-array-index-key
+    <Text key={index} style={{ fontWeight: run.bold ? 700 : undefined, fontStyle: run.italic ? 'italic' : undefined }}>
+      {run.text}
+    </Text>
+  );
+});
 
 // A logo block draws graphics, not text - it never goes through the title/paragraph text styles
 // and never picks up the template's paragraphSpacing/indent (spec §5). `type` is 'logo' or
@@ -253,7 +265,7 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
         if (paragraph.type === 'logo-consumed') return null;
         return (
           <View key={`p-${index}`} wrap>
-            {paragraph.type !== 'text' ? (
+            {paragraph.type && paragraph.type !== 'text' ? (
               <LogoBlock type={paragraph.type} {...logoBlockProps} />
             ) : (
               <TextParagraph
