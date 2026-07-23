@@ -36,6 +36,8 @@ import {
   getClinicLogo,
   getEffectiveDocLayout,
   getEffectiveParagraphAlign,
+  getEffectiveTitleAlign,
+  getTemplateScopeRecord,
   getLayoutColumnCount,
   getLayoutLang,
   getParagraphStyle,
@@ -2591,5 +2593,78 @@ describe('spec: Parties page record shapes', () => {
     expect(findPartyReferences(catalog, 'maternityHospitals', 'hospital-1')).toEqual([expect.stringContaining('case')]);
     expect(findPartyReferences(catalog, 'notaries', 'notary-1')).toEqual([expect.stringContaining('transaction "transaction-1"')]);
     expect(findPartyReferences(catalog, 'couples', 'nobody')).toEqual([]);
+  });
+});
+
+describe('spec: consecutive spaces are never normalized in storage (batch 2026-07-23 C §1)', () => {
+  it('parseDocumentsTechnicalInput keeps interior runs of spaces exactly as pasted', () => {
+    const incoming = parseDocumentsTechnicalInput(JSON.stringify({
+      documents: [{ id: 'doc-1', title: { uk: 'Т', en: 'T' }, paragraphs: [{ uk: 'Приватний нотаріус         Алексашина', en: '' }] }],
+    }));
+    expect(incoming.documents[0].paragraphs[0].uk).toBe('Приватний нотаріус         Алексашина');
+  });
+
+  it('normalizeDocumentsCatalog round-trips a run of spaces byte-for-byte, no collapse/trim', () => {
+    const catalog = normalizeDocumentsCatalog(null, {
+      'doc-1': { id: 'doc-1', title: { uk: 'Заява' }, paragraphs: [{ uk: 'A          B' }] },
+    });
+    expect(catalog.documents[0].paragraphs[0].uk).toBe('A          B');
+  });
+
+  it('buildGeneratedDocument never collapses spaces while filling placeholders', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = { id: 'doc-spaces', title: { uk: 'Т' }, paragraphs: [{ uk: 'A          {{wife.name.uk.nominative}}          B' }] };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs[0].uk).toMatch(/^A {10}.*B$/);
+    expect(generated.paragraphs[0].uk).toContain('          ');
+  });
+});
+
+describe('spec: title is an ordinary centered paragraph, with the standard toolbar (batch 2026-07-23 C §2)', () => {
+  it('defaults to Center when no style override is set, same shape as any paragraph', () => {
+    expect(getEffectiveTitleAlign({ uk: 'ЗАЯВА', en: 'STATEMENT' })).toBe('center');
+    expect(getEffectiveTitleAlign({ uk: 'ЗАЯВА', style: { align: 'left' } })).toBe('left');
+  });
+
+  it('getTemplateScopeRecord/withTemplateScopeStyle address the title through the same scope key as a paragraph', () => {
+    const template = { id: 'doc-1', title: { uk: 'ЗАЯВА', en: 'STATEMENT' } };
+    expect(getTemplateScopeRecord(template, TITLE_SCOPE)).toEqual(template.title);
+    const next = withTemplateScopeStyle(template, TITLE_SCOPE, { align: 'left', fontSize: 20 });
+    expect(next.title).toEqual({ uk: 'ЗАЯВА', en: 'STATEMENT', style: { align: 'left', fontSize: 20 } });
+    expect(getEffectiveTitleAlign(next.title)).toBe('left');
+  });
+
+  it('buildGeneratedDocument resolves the title\'s own align/fontSize from its consolidated style, like a paragraph', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = { id: 'doc-1', title: { uk: 'ЗАЯВА', en: 'STATEMENT', style: { align: 'left', fontSize: 20 } }, paragraphs: [] };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.title).toMatchObject({ uk: 'ЗАЯВА', en: 'STATEMENT', align: 'left', fontSize: 20 });
+  });
+
+  it('a template with no title key resolves to a blank title, never throwing', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = { id: 'doc-no-title', paragraphs: [{ uk: 'Тіло документа.', en: 'Body.' }] };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.title).toEqual({ uk: '', en: '' });
+    expect(generated.paragraphs).toHaveLength(1);
+  });
+
+  it('getTemplateScopeText/withTemplateScopeText tolerate a missing title record (deleted title)', () => {
+    const template = { id: 'doc-1', paragraphs: [] };
+    expect(getTemplateScopeText(template, TITLE_SCOPE, 'uk')).toBe('');
+    const next = withTemplateScopeText(template, TITLE_SCOPE, 'uk', 'Нова назва');
+    expect(next.title).toEqual({ uk: 'Нова назва' });
+  });
+
+  it('an old template stored with the pre-batch title shape (no `style` key) still resolves to Center, unchanged', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const legacyTemplate = { id: 'legacy-doc', title: { uk: 'Договір', en: 'Agreement' }, paragraphs: [] };
+    const generated = buildGeneratedDocument(legacyTemplate, context);
+    expect(generated.title.align).toBeUndefined(); // renderer's own default (Center) applies
+    expect(generated.title.uk).toBe('Договір');
   });
 });

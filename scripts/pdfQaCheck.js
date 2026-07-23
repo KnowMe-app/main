@@ -516,6 +516,61 @@ async function checkDocuments() {
   } else if (Math.abs(actualDeltaPt - expectedDeltaPt) > 2) {
     fail(`Documents (indent regression): indentCm=2 should shift the paragraph ~${expectedDeltaPt.toFixed(1)}pt right, got ${actualDeltaPt.toFixed(1)}pt (indentCm is not being applied)`);
   }
+
+  // Batch 2026-07-23 C §1: a run of consecutive spaces must survive as one unbroken run at
+  // render time (substituted for non-breaking spaces so the PDF engine never treats it as
+  // collapsible/wrap-swallowable trailing whitespace) - glyph-level, so only pdfjs-dist (this
+  // plain-Node script, never Jest) can actually verify it.
+  const renderOnePage = async doc => {
+    const stream = await pdf(React.createElement(DocumentsPdfDocument, {
+      documents: [doc], layout: 'one-column-uk', formatting: DEFAULT_DOC_FORMATTING,
+    })).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      stream.on('data', c => chunks.push(c));
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(Buffer.concat(chunks)) }).promise;
+    const page = await pdfDoc.getPage(1);
+    return page.getTextContent();
+  };
+
+  const spacesContent = await renderOnePage({
+    id: 'spaces-regression',
+    title: { uk: 'Т' },
+    paragraphs: [{ type: 'text', uk: 'Приватний нотаріус          Алексашина Юлія Борисівна' }],
+  });
+  const gapItem = spacesContent.items.find(item => /^\s+$/.test(item.str) && item.str.trim() === '');
+  if (!gapItem || gapItem.str.length !== 10) {
+    fail(`Documents (consecutive-spaces regression): expected one unbroken 10-character gap between "нотаріус" and "Алексашина", got ${gapItem ? `"${gapItem.str}" (length ${gapItem.str.length})` : 'no gap item at all'}`);
+  }
+
+  // Batch 2026-07-23 C §3: a trailing empty line inside a paragraph must render as a real blank
+  // line before the next paragraph, not collapse to nothing.
+  const withBlank = await renderOnePage({
+    id: 'trailing-blank-regression',
+    title: { uk: 'Т' },
+    paragraphs: [
+      { type: 'text', uk: 'ЗАЯВА\n' },
+      { type: 'text', uk: 'Наступний абзац.' },
+    ],
+  });
+  const withoutBlank = await renderOnePage({
+    id: 'no-blank-regression',
+    title: { uk: 'Т' },
+    paragraphs: [
+      { type: 'text', uk: 'ЗАЯВА' },
+      { type: 'text', uk: 'Наступний абзац.' },
+    ],
+  });
+  const yOf = (content, needle) => content.items.find(item => item.str.includes(needle))?.transform?.[5];
+  const gapWithBlank = (yOf(withBlank, 'ЗАЯВА') ?? 0) - (yOf(withBlank, 'Наступний абзац') ?? 0);
+  const gapNoBlank = (yOf(withoutBlank, 'ЗАЯВА') ?? 0) - (yOf(withoutBlank, 'Наступний абзац') ?? 0);
+  if (!(gapWithBlank > gapNoBlank * 1.5)) {
+    fail(`Documents (trailing-blank-line regression): a trailing "\\n" should add roughly one extra line of vertical space (got ${gapWithBlank.toFixed(1)}pt vs ${gapNoBlank.toFixed(1)}pt baseline) - the trailing blank line may be collapsing again`);
+  }
 }
 
 async function main() {
