@@ -41,6 +41,7 @@ import {
   emptyDocumentsCatalog,
   getClinicLogo,
   getLayoutLang,
+  getParagraphStyle,
   getParagraphType,
   getTemplateLogoType,
   getTemplateScopeText,
@@ -71,6 +72,7 @@ import {
   validateBirthRegistrationCase,
   validateCaseRecord,
   validateDocumentTemplate,
+  withParagraphStyle,
   withTemplateScopeText,
 } from './documentsCatalogUtils';
 
@@ -858,11 +860,13 @@ const DocumentsPage = ({ isAdmin }) => {
   // clears the override, falling back to the document's own firstLineIndentCm again. Dragging the
   // slider updates local state per tick (persisted on release, like every text field's onBlur);
   // the reset button below is a single discrete click, so it writes directly instead - same
-  // stale-closure hazard applyParagraphStructureChange's own comment explains.
+  // stale-closure hazard applyParagraphStructureChange's own comment explains. The value lives
+  // under the paragraph's single consolidated `style` key on the backend (withParagraphStyle),
+  // together with every other per-paragraph style.
   const withParagraphIndent = (template, index, value) => ({
     ...template,
     paragraphs: (template.paragraphs || []).map((paragraph, paragraphIndex) => (
-      paragraphIndex === index ? { ...paragraph, indentCm: value === null ? undefined : value } : paragraph
+      paragraphIndex === index ? withParagraphStyle(paragraph, { indentCm: value }) : paragraph
     )),
   });
 
@@ -983,10 +987,12 @@ const DocumentsPage = ({ isAdmin }) => {
   const handleInsertBeforeTitle = async (docId, atIndex) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
+    // A fresh block stores no style at all (batch 2026-07-23 B §1.1: nothing redundant) - it
+    // inherits every default; anything set later lands under its consolidated `style` key.
     const blocks = template.beforeTitle || [];
     const nextTemplate = {
       ...template,
-      beforeTitle: [...blocks.slice(0, atIndex), { uk: '', en: '', align: 'left' }, ...blocks.slice(atIndex)],
+      beforeTitle: [...blocks.slice(0, atIndex), { uk: '', en: '' }, ...blocks.slice(atIndex)],
     };
     try {
       await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
@@ -2204,6 +2210,9 @@ const DocumentsPage = ({ isAdmin }) => {
                           };
                           const onBlur = () => (isTemplateMode ? persistTemplate(template.id) : persistDocOverride(template.id));
                           const fieldKind = isTemplateMode ? 'template' : 'override';
+                          // This paragraph's own stored indent override, whichever backend shape
+                          // it's in (consolidated `style` key or legacy flat field).
+                          const paragraphIndentCm = getParagraphStyle(paragraph).indentCm;
                           return (
                             // Boxed together so it's unambiguous which paragraph the toolbar acts
                             // on: the +/mode-switch/Bold/Italic/Delete controls and the paragraph's
@@ -2266,7 +2275,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   min={0}
                                   max={5}
                                   step={0.05}
-                                  value={paragraph?.indentCm ?? docFormatting.firstLineIndentCm}
+                                  value={paragraphIndentCm ?? docFormatting.firstLineIndentCm}
                                   onChange={event => handleParagraphIndentChange(template.id, index, Number(event.target.value))}
                                   onMouseUp={() => persistTemplate(template.id)}
                                   onTouchEnd={() => persistTemplate(template.id)}
@@ -2274,9 +2283,9 @@ const DocumentsPage = ({ isAdmin }) => {
                                   title="Перший рядок абзацу - перетягніть, щоб змінити відступ"
                                 />
                                 <DocSubtitle style={{ fontSize: 10, minWidth: 40 }}>
-                                  {(paragraph?.indentCm ?? docFormatting.firstLineIndentCm).toFixed(2)} см
+                                  {(paragraphIndentCm ?? docFormatting.firstLineIndentCm).toFixed(2)} см
                                 </DocSubtitle>
-                                {paragraph?.indentCm !== undefined ? (
+                                {paragraphIndentCm !== undefined ? (
                                   <SmallButton
                                     type="button"
                                     onClick={() => resetParagraphIndent(template.id, index)}

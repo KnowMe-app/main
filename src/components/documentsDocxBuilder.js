@@ -101,7 +101,7 @@ export const buildDocumentsDocx = async ({
     return AlignmentType.LEFT;
   };
 
-  const bodyParagraph = (text, { keepLines = true, alignmentOverride, indentTwipsOverride } = {}) => {
+  const bodyParagraph = (text, { keepLines = true, alignmentOverride, indentTwipsOverride, sizeOverride } = {}) => {
     // Per-paragraph first-line indent (spec: the reference notarial statement indents only its
     // opening declaration, not the signature/registration lines after it) - undefined falls back
     // to the document-wide firstLineTwips, same as every paragraph did before this existed.
@@ -111,29 +111,33 @@ export const buildDocumentsDocx = async ({
       spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
       indent: firstLine ? { firstLine } : undefined,
       keepLines,
-      children: formattedTextRuns(text, { size: bodySize }),
+      children: formattedTextRuns(text, { size: sizeOverride ?? bodySize }),
     });
   };
 
   // Short numbered section titles ("1. Предмет Договору") render bold, flush left, with extra
   // room above and kept with the paragraph that follows so a heading never ends a page alone.
-  const headingParagraph = (text, alignmentOverride) => new Paragraph({
+  const headingParagraph = (text, alignmentOverride, sizeOverride) => new Paragraph({
     alignment: alignmentOverride || AlignmentType.LEFT,
     spacing: { before: afterTwips, after: afterTwips, line: lineTwips, lineRule: 'auto' },
     keepLines: true,
     keepNext: true,
-    children: formattedTextRuns(text, { size: bodySize, baseBold: true }),
+    children: formattedTextRuns(text, { size: sizeOverride ?? bodySize, baseBold: true }),
   });
 
   const cellParagraph = (text, allowPageBreaks, paragraph) => {
+    // align/indentCm/fontSize arrive already resolved from the paragraph's consolidated `style`
+    // key (buildGeneratedDocument) - undefined means "inherit the document-wide value".
     const alignmentOverride = paragraph?.align ? alignmentForBlock(paragraph.align) : undefined;
     const indentTwipsOverride = paragraph?.indentCm !== undefined ? Math.round(paragraph.indentCm * CM_TO_TWIP) : undefined;
+    const sizeOverride = paragraph?.fontSize !== undefined ? halfPoints(paragraph.fontSize) : undefined;
     return isParagraphBold(paragraph)
-      ? headingParagraph(text, alignmentOverride)
+      ? headingParagraph(text, alignmentOverride, sizeOverride)
       : bodyParagraph(text, {
         keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks),
         alignmentOverride,
         indentTwipsOverride,
+        sizeOverride,
       });
   };
 
@@ -165,7 +169,10 @@ export const buildDocumentsDocx = async ({
   const signerBlockParagraph = (text, block) => new Paragraph({
     alignment: block.bold ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
-    children: formattedTextRuns(text, { size: bodySize, baseBold: Boolean(block.bold) }),
+    children: formattedTextRuns(text, {
+      size: block.fontSize !== undefined ? halfPoints(block.fontSize) : bodySize,
+      baseBold: Boolean(block.bold),
+    }),
   });
 
   const signerBlockTable = (blocks, langKey, containerWidthTwips, offsetPercent) => {

@@ -101,15 +101,19 @@ describe('spec: per-paragraph first-line indent slider', () => {
 
     fireEvent.mouseUp(slider);
 
+    // All per-paragraph styles persist together under each paragraph's single `style` key - the
+    // legacy flat indentCm the first paragraph was loaded with is consolidated on the same write.
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
       expect.objectContaining({
         paragraphs: [
-          expect.objectContaining({ indentCm: 1 }),
-          expect.objectContaining({ indentCm: 2.5 }),
+          expect.objectContaining({ style: { indentCm: 1 } }),
+          expect.objectContaining({ style: { indentCm: 2.5 } }),
         ],
       }),
     ));
+    const [, persistedTemplate] = set.mock.calls.find(call => call[0] === 'documentsBuilder/templates/doc-1');
+    expect(persistedTemplate.paragraphs.some(paragraph => 'indentCm' in paragraph)).toBe(false);
   });
 
   it('the reset button clears the override back to the document default and persists immediately', async () => {
@@ -121,11 +125,13 @@ describe('spec: per-paragraph first-line indent slider', () => {
     const indentedBlock = indentedField.closest('.paragraph-editor-block');
     fireEvent.click(within(indentedBlock).getByTitle('Скинути до відступу документа'));
 
+    // Clearing the only style drops the paragraph's `style` key entirely - nothing redundant
+    // stays behind on the backend record.
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
       expect.objectContaining({
         paragraphs: [
-          expect.objectContaining({ indentCm: undefined }),
+          expect.not.objectContaining({ style: expect.anything() }),
           expect.anything(),
         ],
       }),

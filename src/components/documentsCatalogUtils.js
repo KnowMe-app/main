@@ -134,7 +134,10 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
     // a given case record happens to carry.
     if (collection === 'cases') catalog.parties.cases = catalog.parties.cases.map(normalizeCaseRecord);
   });
-  catalog.documents = toRecordsWithIdFromKey(rawTemplates).filter(record => isPlainObject(record));
+  // Same read-time migration idea as normalizeCaseRecord, for templates: per-paragraph styles
+  // are consolidated under each paragraph's single `style` key right at ingestion, so nothing
+  // downstream ever has to branch on which shape a stored paragraph happens to carry.
+  catalog.documents = toRecordsWithIdFromKey(rawTemplates).filter(record => isPlainObject(record)).map(consolidateTemplateStyles);
   // Primary (batch 17 §1/§2): a clinic's own `logo` field, alongside its name/legalName/etc. - a
   // clinic is shared across many cases, so its logo was never really case-scoped to begin with.
   catalog.parties.clinics.forEach(clinic => {
@@ -207,7 +210,9 @@ export const parseDocumentsTechnicalInput = rawText => {
     // documents shape right away, same as normalizeDocumentsCatalog.
     if (collection === 'cases') incoming.parties.cases = incoming.parties.cases.map(normalizeCaseRecord);
   });
-  incoming.documents = toRecordsWithIdFromKey(templatesSource).filter(record => isPlainObject(record));
+  // Pasted templates get the same style consolidation as normalizeDocumentsCatalog - a paragraph
+  // row copied out of the backend (either shape) merges in with its full style intact.
+  incoming.documents = toRecordsWithIdFromKey(templatesSource).filter(record => isPlainObject(record)).map(consolidateTemplateStyles);
 
   // Primary (batch 17 §1/§2): each clinic's own `logo` field.
   incoming.parties.clinics.forEach(clinic => {
@@ -1107,13 +1112,14 @@ export const isSectionHeading = text => {
   return SECTION_HEADING_PATTERN.test(trimmed);
 };
 
-// Auto-detection (above) can still be wrong for an edge case the admin spots visually; `bold` on
-// the paragraph itself (true/false) explicitly overrides it either way, undefined falls back to
+// Auto-detection (above) can still be wrong for an edge case the admin spots visually; an
+// explicit bold on the paragraph (true/false, under its consolidated `style` key or the legacy
+// flat field - see getParagraphStyle) overrides it either way, undefined falls back to
 // isSectionHeading. Bold is a whole-paragraph property (both languages together), matching how
 // real section headings actually look in these bilingual documents.
 export const isParagraphBold = paragraph => {
-  if (paragraph?.bold === true) return true;
-  if (paragraph?.bold === false) return false;
+  const { bold } = getParagraphStyle(paragraph);
+  if (bold !== undefined) return bold;
   return isSectionHeading(paragraph?.uk) || isSectionHeading(paragraph?.en);
 };
 
@@ -1176,6 +1182,79 @@ export const normalizeBlockAlign = align => (ALLOWED_BLOCK_ALIGNMENTS.includes(a
 export const DEFAULT_BLOCK_WIDTH_PERCENT = 50;
 export const normalizeBlockWidth = width => clampNumber(width, 10, 100, DEFAULT_BLOCK_WIDTH_PERCENT);
 
+// --- Consolidated per-paragraph styles (batch 2026-07-23 B §1.1) -----------------------------
+// Everything visual one paragraph (or beforeTitle block) carries lives together under its single
+// `style` key on the backend record: `{ fontSize?, indentCm?, align?, bold?, width? }` - only the
+// keys the admin actually set, so a paragraph without a key inherits the document default and
+// nothing redundant is stored. One key for all of it means a whole paragraph row copied on the
+// backend and pasted into another document brings every style with it, and a parser never has to
+// hunt for scattered flat fields. Legacy records stored the same values flat on the record
+// (bold/align/indentCm/width) - those are still read (a `style` entry wins per field), and every
+// write path re-consolidates them under `style` via withParagraphStyle.
+export const PARAGRAPH_STYLE_KEYS = ['fontSize', 'indentCm', 'align', 'bold', 'width'];
+
+// Per-field validation, shared by reads and writes: an invalid/cleared value normalizes to
+// undefined (= the key is absent, the paragraph inherits), never to a silently-substituted
+// default that would then be persisted as if the admin had set it.
+const normalizeStyleValue = (key, value) => {
+  if (value === undefined || value === null) return undefined;
+  switch (key) {
+    case 'fontSize': return clampNumber(value, 6, 32, undefined);
+    case 'indentCm': return clampNumber(value, 0, 5, undefined);
+    case 'align': return ALLOWED_BLOCK_ALIGNMENTS.includes(value) ? value : undefined;
+    case 'bold': return Boolean(value);
+    case 'width': return clampNumber(value, 10, 100, undefined);
+    default: return undefined;
+  }
+};
+
+// The normalized sparse style of a paragraph/beforeTitle block, whichever shape the record is in.
+export const getParagraphStyle = record => {
+  const consolidated = isPlainObject(record?.style) ? record.style : {};
+  const style = {};
+  PARAGRAPH_STYLE_KEYS.forEach(key => {
+    const raw = consolidated[key] !== undefined ? consolidated[key] : record?.[key];
+    const value = normalizeStyleValue(key, raw);
+    if (value !== undefined) style[key] = value;
+  });
+  return style;
+};
+
+// The record with `partial` merged into its consolidated style: a null/undefined value clears
+// that key (the paragraph inherits the document default again), an empty result drops the `style`
+// key entirely, and any legacy flat style fields are stripped - so from the first write onward
+// the consolidated key is the record's single style source of truth.
+export const withParagraphStyle = (record, partial = {}) => {
+  const style = getParagraphStyle(record);
+  Object.keys(partial || {}).forEach(key => {
+    if (!PARAGRAPH_STYLE_KEYS.includes(key)) return;
+    const value = normalizeStyleValue(key, partial[key]);
+    if (value === undefined) delete style[key];
+    else style[key] = value;
+  });
+  const rest = { ...record };
+  delete rest.style;
+  PARAGRAPH_STYLE_KEYS.forEach(key => {
+    delete rest[key];
+  });
+  return Object.keys(style).length ? { ...rest, style } : rest;
+};
+
+// Read-time migration for one template (idempotent, same spirit as normalizeCaseRecord): every
+// paragraph and beforeTitle block re-expressed with its styles consolidated under `style`, so the
+// next persist writes the new shape without a separate migration pass.
+export const consolidateTemplateStyles = template => {
+  if (!isPlainObject(template)) return template;
+  const next = { ...template };
+  if (template.paragraphs !== undefined) {
+    next.paragraphs = toArray(template.paragraphs).map(paragraph => (isPlainObject(paragraph) ? withParagraphStyle(paragraph) : paragraph));
+  }
+  if (template.beforeTitle !== undefined) {
+    next.beforeTitle = toArray(template.beforeTitle).map(block => (isPlainObject(block) ? withParagraphStyle(block) : block));
+  }
+  return next;
+};
+
 // The addressee/signer block's left offset (notarial layout standard): the whole beforeTitle
 // group renders as one strip from this offset to the right margin, in both the PDF and Word
 // exports. Stored per document as a single number - percent of the text width, so the same value
@@ -1191,13 +1270,17 @@ export const normalizeSignerBlockOffsetPercent = value => clampNumber(
   DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT,
 );
 
-const resolveBeforeTitleBlocks = (template, context) => toArray(template?.beforeTitle).map(block => ({
-  align: normalizeBlockAlign(block?.align),
-  bold: Boolean(block?.bold),
-  width: normalizeBlockWidth(block?.width),
-  uk: fillPlaceholders(localizedText(block, 'uk'), context, 'uk'),
-  en: fillPlaceholders(localizedText(block, 'en'), context, 'en'),
-}));
+const resolveBeforeTitleBlocks = (template, context) => toArray(template?.beforeTitle).map(block => {
+  const style = getParagraphStyle(block);
+  return {
+    align: normalizeBlockAlign(style.align),
+    bold: Boolean(style.bold),
+    width: normalizeBlockWidth(style.width),
+    fontSize: style.fontSize,
+    uk: fillPlaceholders(localizedText(block, 'uk'), context, 'uk'),
+    en: fillPlaceholders(localizedText(block, 'en'), context, 'en'),
+  };
+});
 
 // --- Template-level languages/columns (batch 16 §15/§16) -------------------------------------
 // A template can pin its own language set + column count (e.g. `languages: ["uk"], columns: 1` for
@@ -1310,15 +1393,18 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
         return { type, uk: paragraph?.uk || '', en: paragraph?.en || '' };
       }
       const paragraphOverride = overrideAt(override.paragraphs, index);
+      // Every visual override of this paragraph comes from its one consolidated `style` key (or
+      // the legacy flat fields, see getParagraphStyle) - resolved here into flat fields for the
+      // renderers. An absent key means "inherit the document's own formatting" (fontSize /
+      // firstLineIndentCm / default alignment), same as every paragraph did before overrides
+      // existed.
+      const style = getParagraphStyle(paragraph);
       return {
         type,
-        bold: paragraph?.bold,
-        align: paragraph?.align !== undefined ? normalizeBlockAlign(paragraph.align) : undefined,
-        // Per-paragraph first-line indent override (spec: the reference notarial statement
-        // indents its opening declaration but not the signature/registration lines that follow -
-        // one document-wide firstLineIndentCm can't express that). undefined = inherit the
-        // document's own formatting.firstLineIndentCm, same as every paragraph did before this.
-        indentCm: paragraph?.indentCm !== undefined ? clampNumber(paragraph.indentCm, 0, 5, undefined) : undefined,
+        bold: style.bold,
+        align: style.align,
+        indentCm: style.indentCm,
+        fontSize: style.fontSize,
         uk: capitalizeFirstLetter(overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk'))),
         en: capitalizeFirstLetter(overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en'))),
       };
