@@ -16,7 +16,11 @@ jest.mock('./config', () => ({
   updateFlowEntry: jest.fn(),
 }));
 
-const { flattenFlowEntriesFromBackend, parseFlowEntryLine } = require('./FlowManager');
+const {
+  calculateFlowRowCurrencyAmount,
+  flattenFlowEntriesFromBackend,
+  parseFlowEntryLine,
+} = require('./FlowManager');
 
 describe('parseFlowEntryLine', () => {
   it('keeps dollar-only formulas as a persistable USD formula amount', () => {
@@ -62,5 +66,35 @@ describe('parseFlowEntryLine', () => {
       amount: '=100÷EUR',
       description: 'coffee',
     });
+  });
+});
+
+describe('calculateFlowRowCurrencyAmount', () => {
+  const { resolveFlowExchangeRatesForMode } = require('./config');
+
+  it('converts negative amounts the same way as positive ones', () => {
+    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 40, eur: 44 });
+    const options = {
+      currency: 'usd',
+      exchangeRateMode: 'mono',
+      exchangeRates: { usd: 40, eur: 44 },
+      historicalRatesByDate: {},
+      customUsdRate: '',
+    };
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '500' } })).toBe(12.5);
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '-500' } })).toBe(-12.5);
+  });
+
+  it('keeps stored negative currency amounts when no rate is available', () => {
+    resolveFlowExchangeRatesForMode.mockReturnValue(null);
+    const options = {
+      currency: 'usd',
+      exchangeRateMode: 'mono',
+      exchangeRates: null,
+      historicalRatesByDate: {},
+      customUsdRate: '',
+    };
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '-500', amountUsd: '-12.5' } })).toBe(-12.5);
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '500', amountUsd: '12.5' } })).toBe(12.5);
   });
 });

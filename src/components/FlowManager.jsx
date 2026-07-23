@@ -560,7 +560,8 @@ const formatCategorySum = value => {
 
 const formatCurrencyValue = value => {
   if (!Number.isFinite(value)) return '0';
-  return value.toFixed(2).replace(/\.?0+$/, '');
+  const formatted = value.toFixed(2).replace(/\.?0+$/, '');
+  return formatted === '-0' ? '0' : formatted;
 };
 
 const normalizeCustomUsdRate = value => {
@@ -628,7 +629,7 @@ const getFlowRatesForRow = ({
   };
 };
 
-const calculateFlowRowCurrencyAmount = ({
+export const calculateFlowRowCurrencyAmount = ({
   row,
   currency = 'usd',
   exchangeRateMode,
@@ -650,7 +651,7 @@ const calculateFlowRowCurrencyAmount = ({
   }
 
   const storedAmount = toAmountNumber(currency === 'eur' ? row.amountEur : row.amountUsd);
-  return storedAmount > 0 ? storedAmount : 0;
+  return storedAmount;
 };
 
 const makeFlowCurrencyFormulaResolver = rates => name => {
@@ -2077,7 +2078,7 @@ export const FlowManager = ({ ownerId }) => {
                               historicalRatesByDate,
                               customUsdRate,
                             });
-                            return amountUsd > 0 ? ` / ${formatCurrencyValue(amountUsd)} $` : '';
+                            return amountUsd !== 0 ? ` / ${formatCurrencyValue(amountUsd)} $` : '';
                           })()}
                         </EventText>
                         <ChangeCategoryBtn
