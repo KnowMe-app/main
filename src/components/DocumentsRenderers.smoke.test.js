@@ -573,6 +573,15 @@ describe('Documents PDF renderer - toPdfRenderableText (batch 2026-07-23 C §1/�
     expect(stored).toBe('Приватний нотаріус          Алексашина'); // untouched
   });
 
+  it('expands a tab character to 4 spaces before collapsing space runs - real-world regression: notarial templates copy-pasted out of Word use a tab stop for the signature gap, not typed spaces, and a bare tab has zero width in this PDF engine', async () => {
+    const { toPdfRenderableText } = await import('./DocumentsPdfDocument');
+    expect(toPdfRenderableText('A\tB')).toBe(`A${'\u00A0'.repeat(4)}B`);
+    expect(toPdfRenderableText('Приватний нотаріус\t\t\tАлексашина Юлія Борисівна'))
+      .toBe(`Приватний нотаріус${'\u00A0'.repeat(12)}Алексашина Юлія Борисівна`);
+    // A mix of tabs and typed spaces around them still collapses into one unbroken run.
+    expect(toPdfRenderableText('A\t \tB')).toBe(`A${'\u00A0'.repeat(9)}B`);
+  });
+
   it('renders a document with multi-space runs and a trailing blank line without throwing', async () => {
     const { pdf, Font } = await import('@react-pdf/renderer');
     const documentsModule = await import('./DocumentsPdfDocument');

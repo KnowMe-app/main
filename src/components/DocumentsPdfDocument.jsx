@@ -80,19 +80,24 @@ const styles = StyleSheet.create({
   },
 });
 
-// Render-time-only text massaging (batch 2026-07-23 C §1/§3) - the stored template/override data
-// is never rewritten, both rules exist purely because of how the PDF layout engine treats
-// whitespace:
-// - A run of 2+ spaces becomes the same number of non-breaking spaces (U+00A0). The engine keeps
-//   interior space runs on an unbroken line, but a run that lands on a line-wrap boundary is
-//   swallowed as trailing whitespace - and these runs are deliberate (e.g. the physical gap for a
-//   notary's signature in "Приватний нотаріус         Алексашина"), so they must survive wrapping
-//   as one unbreakable block.
+// Render-time-only text massaging (batch 2026-07-23 C §1/§3, extended after a real-data
+// regression report) - the stored template/override data is never rewritten:
+// - Every tab character expands to 4 regular spaces first. Notarial templates are routinely
+//   copy-pasted out of Word, where a signature gap is a tab stop, not typed spaces - a bare `\t`
+//   has no width at all in this PDF engine (it isn't a real tab stop here), so left alone it
+//   collapsed the gap to nothing at all, worse than the original space-collapsing bug.
+// - Any run of 2+ spaces (including runs created by the tab expansion above) becomes that many
+//   non-breaking spaces (U+00A0). The engine keeps interior space runs on an unbroken line, but a
+//   run that lands on a line-wrap boundary is swallowed as trailing whitespace - and these runs
+//   are deliberate (e.g. the physical gap for a notary's signature in
+//   "Приватний нотаріус         Алексашина"), so they must survive wrapping as one unbreakable
+//   block.
 // - A trailing newline gets one NBSP appended after it, because the engine silently drops the
 //   final empty line of a text block - a trailing blank line the admin typed must render as one
 //   full blank line, exactly like the editor and the Word export show it.
 export const toPdfRenderableText = text => {
-  const value = String(text ?? '').replace(/ {2,}/g, spaces => '\u00A0'.repeat(spaces.length));
+  const withTabsExpanded = String(text ?? '').replace(/\t/g, '    ');
+  const value = withTabsExpanded.replace(/ {2,}/g, spaces => '\u00A0'.repeat(spaces.length));
   return value.endsWith('\n') ? `${value}\u00A0` : value;
 };
 
@@ -191,10 +196,13 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
   const firstLineIndent = indentStyle ? indentStyle.textIndent : (cellStyle.textIndent || 0);
   // An empty template paragraph is an explicit empty line (the notarial standard separates its
   // blocks only with those) - it must keep one line's height, not collapse to nothing the way an
-  // empty <Text> does.
+  // empty <Text> does. A plain breakable space doesn't survive that: the default body alignment is
+  // justify, and a justified line whose only content is ordinary whitespace gets trimmed away to
+  // zero width - and zero height along with it. A non-breaking space has real (if narrow) glyph
+  // width, so justification has something to keep and the line renders at its full height.
   const lineOf = value => (String(value || '').trim()
     ? <FormattedRuns text={value} firstLineIndent={firstLineIndent} />
-    : ' ');
+    : ' ');
   if (isBilingual) {
     return (
       <View style={styles.row} wrap={wrap}>
