@@ -545,3 +545,135 @@ describe('Documents DOCX builder - notarial signer block layout', () => {
   }, 20000);
 });
 
+// Batch 2026-07-23 C: four Documents Builder fixes, verified against the real renderers. Reading
+// back exact glyph text/positions needs pdfjs-dist, which can't load under this sandbox's Jest
+// (see DocumentsPageNumbering.smoke.test.js's note on the same limitation) - the pixel-level
+// space/blank-line checks live in scripts/pdfQaCheck.js (plain Node, `npm run qa:pdf`) instead.
+// These tests cover the pure render-time helper directly, plus render-without-throwing for the
+// title-deletion crash-proofing.
+describe('Documents PDF renderer - toPdfRenderableText (batch 2026-07-23 C §1/§3)', () => {
+  it('turns a run of 2+ spaces into the same number of non-breaking spaces, leaving single spaces alone', async () => {
+    const { toPdfRenderableText } = await import('./DocumentsPdfDocument');
+    expect(toPdfRenderableText('A B')).toBe('A B'); // single space untouched
+    expect(toPdfRenderableText('A          B')).toBe(`A${' '.repeat(10)}B`);
+    expect(toPdfRenderableText('A  B   C')).toBe(`A${'  '}B${'   '}C`);
+  });
+
+  it('appends one non-breaking space after a trailing newline, so the empty last line keeps its height', async () => {
+    const { toPdfRenderableText } = await import('./DocumentsPdfDocument');
+    expect(toPdfRenderableText('ЗАЯВА\n')).toBe('ЗАЯВА\n ');
+    expect(toPdfRenderableText('ЗАЯВА')).toBe('ЗАЯВА'); // no trailing newline, no change
+    expect(toPdfRenderableText('ЗАЯВА\n\n')).toBe('ЗАЯВА\n\n '); // only one sentinel needed
+  });
+
+  it('never mutates the stored text - it only ever runs at render time on a copy', async () => {
+    const { toPdfRenderableText } = await import('./DocumentsPdfDocument');
+    const stored = 'Приватний нотаріус          Алексашина';
+    toPdfRenderableText(stored);
+    expect(stored).toBe('Приватний нотаріус          Алексашина'); // untouched
+  });
+
+  it('renders a document with multi-space runs and a trailing blank line without throwing', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const { DEFAULT_DOC_FORMATTING } = await import('./documentsCatalogUtils');
+    const doc = {
+      id: 'spaces-and-blank-doc',
+      title: { uk: 'Т' },
+      paragraphs: [
+        { type: 'text', uk: 'Приватний нотаріус          Алексашина Юлія Борисівна\n' },
+        { type: 'text', uk: 'Наступний абзац.' },
+      ],
+    };
+    const buffer = await pdf(React.createElement(documentsModule.default, {
+      documents: [doc], layout: 'one-column-uk', formatting: DEFAULT_DOC_FORMATTING,
+    })).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(500);
+  }, 20000);
+});
+
+describe('Documents renderers - title deletion never crashes (batch 2026-07-23 C §2)', () => {
+  const registerFonts = async Font => {
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+  };
+
+  it('PDF export renders a document whose title was deleted, with no title block and no throw', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    await registerFonts(Font);
+    const { buildGeneratedDocument, DEFAULT_DOC_FORMATTING } = await import('./documentsCatalogUtils');
+    const template = { id: 'no-title-doc', paragraphs: [{ uk: 'ONLY_BODY_TEXT', en: 'ONLY_BODY_TEXT' }] };
+    const generated = buildGeneratedDocument(template, {});
+    const buffer = await pdf(React.createElement(documentsModule.default, {
+      documents: [generated], layout: 'one-column-uk', formatting: DEFAULT_DOC_FORMATTING,
+    })).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(500);
+  }, 20000);
+
+  it('DOCX export renders a document whose title was deleted, with no title paragraph and no throw', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const { buildGeneratedDocument } = await import('./documentsCatalogUtils');
+    const template = { id: 'no-title-doc', paragraphs: [{ uk: 'ONLY_BODY_TEXT', en: 'ONLY_BODY_TEXT' }] };
+    const generated = buildGeneratedDocument(template, {});
+    const blob = await buildDocumentsDocx({ documents: [generated], layout: 'one-column-uk' });
+    expect(blob.size).toBeGreaterThan(300);
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const xml = await zip.file('word/document.xml').async('string');
+    expect(xml).toContain('ONLY_BODY_TEXT');
+    expect(xml).not.toContain('undefined');
+  }, 20000);
+
+  it('an old template stored with a plain {uk, en} title (no `style` key) still renders centered, unchanged', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    await registerFonts(Font);
+    const { buildGeneratedDocument, DEFAULT_DOC_FORMATTING } = await import('./documentsCatalogUtils');
+    const legacyTemplate = { id: 'legacy-doc', title: { uk: 'ЗАЯВА', en: 'STATEMENT' }, paragraphs: [{ uk: 'Тіло.', en: 'Body.' }] };
+    const generated = buildGeneratedDocument(legacyTemplate, {});
+    expect(generated.title.align).toBeUndefined();
+    const buffer = await pdf(React.createElement(documentsModule.default, {
+      documents: [generated], layout: 'one-column-uk', formatting: DEFAULT_DOC_FORMATTING,
+    })).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(500);
+  }, 20000);
+});

@@ -1257,9 +1257,11 @@ export const nextParagraphAlign = align => {
 };
 
 // Scope-addressed style access, mirroring getTemplateScopeText/withTemplateScopeText: the same
-// alignment/formatting controls serve a beforeTitle block and a body paragraph through one pair
-// of helpers (the title has no per-row style, so TITLE_SCOPE deliberately resolves to nothing).
+// alignment/formatting controls serve the title, a beforeTitle block, and a body paragraph
+// through one pair of helpers (batch 2026-07-23 C §2: the title is an ordinary paragraph with the
+// standard toolbar, so TITLE_SCOPE resolves to the `title` record and its consolidated `style`).
 export const getTemplateScopeRecord = (template, scope) => {
+  if (scope === TITLE_SCOPE) return isPlainObject(template?.title) ? template.title : null;
   const beforeTitleMatch = /^beforeTitle:(\d+)$/.exec(scope);
   if (beforeTitleMatch) return toArray(template?.beforeTitle)[Number(beforeTitleMatch[1])] || null;
   const paragraphMatch = /^p:(\d+)$/.exec(scope);
@@ -1267,7 +1269,15 @@ export const getTemplateScopeRecord = (template, scope) => {
   return null;
 };
 
+// The title's effective alignment defaults to Center (batch 2026-07-23 C §2: an ordinary centered
+// paragraph), unlike body paragraphs whose default comes from their bold/heading status - an
+// explicit `style.align` set with the alignment button still wins, exactly like any paragraph.
+export const getEffectiveTitleAlign = titleRecord => getParagraphStyle(titleRecord).align ?? 'center';
+
 export const withTemplateScopeStyle = (template, scope, partialStyle) => {
+  if (scope === TITLE_SCOPE) {
+    return { ...template, title: withParagraphStyle(isPlainObject(template?.title) ? template.title : {}, partialStyle) };
+  }
   const beforeTitleMatch = /^beforeTitle:(\d+)$/.exec(scope);
   if (beforeTitleMatch) {
     const index = Number(beforeTitleMatch[1]);
@@ -1430,9 +1440,15 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
     columns: resolveDocColumns(template, languages),
     beforeTitle: resolveBeforeTitleBlocks(template, context),
     beforeTitleOffsetPercent: normalizeSignerBlockOffsetPercent(template?.beforeTitleOffsetPercent),
+    // The title is an ordinary centered paragraph (batch 2026-07-23 C §2): its own consolidated
+    // `style` resolves here the same way a body paragraph's does - sparse, undefined = inherit
+    // the document default (centered, titleFontSize). A template whose title was deleted simply
+    // resolves to empty strings; the renderers skip an all-blank title block entirely.
     title: {
       uk: overriddenText(override.title, 'uk', fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk')),
       en: overriddenText(override.title, 'en', fillPlaceholders(localizedText(template.title, 'en'), context, 'en')),
+      align: getParagraphStyle(template.title).align,
+      fontSize: getParagraphStyle(template.title).fontSize,
     },
     paragraphs: toArray(template.paragraphs).map((paragraph, index) => {
       const type = getParagraphType(paragraph);

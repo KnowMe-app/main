@@ -193,8 +193,14 @@ const DocumentsPdfPreview = ({ doc, layout, formatting, clinicLogos }) => {
         setError('');
         setRenderedGeneration(generation);
       } catch (previewError) {
+        // Never a silent generic failure (batch 2026-07-23 C §4): the full exception goes to the
+        // console, and its one-line cause is appended to the on-screen error state - mobile
+        // admins have no devtools, so the visible message is the only diagnostic they can report.
         console.error('Unable to build the PDF preview', previewError);
-        if (generationRef.current === generation) setError('Не вдалося побудувати прев\'ю PDF.');
+        if (generationRef.current === generation) {
+          const cause = `${previewError?.name || 'Error'}: ${previewError?.message || String(previewError)}`;
+          setError(`Не вдалося побудувати прев'ю PDF. ${cause}`);
+        }
       } finally {
         if (generationRef.current === generation) setUpdating(false);
       }

@@ -80,6 +80,22 @@ const styles = StyleSheet.create({
   },
 });
 
+// Render-time-only text massaging (batch 2026-07-23 C §1/§3) - the stored template/override data
+// is never rewritten, both rules exist purely because of how the PDF layout engine treats
+// whitespace:
+// - A run of 2+ spaces becomes the same number of non-breaking spaces (U+00A0). The engine keeps
+//   interior space runs on an unbroken line, but a run that lands on a line-wrap boundary is
+//   swallowed as trailing whitespace - and these runs are deliberate (e.g. the physical gap for a
+//   notary's signature in "Приватний нотаріус         Алексашина"), so they must survive wrapping
+//   as one unbreakable block.
+// - A trailing newline gets one NBSP appended after it, because the engine silently drops the
+//   final empty line of a text block - a trailing blank line the admin typed must render as one
+//   full blank line, exactly like the editor and the Word export show it.
+export const toPdfRenderableText = text => {
+  const value = String(text ?? '').replace(/ {2,}/g, spaces => '\u00A0'.repeat(spaces.length));
+  return value.endsWith('\n') ? `${value}\u00A0` : value;
+};
+
 // Renders one piece of paragraph/title text as a run of nested <Text> spans so a bold/italic
 // fragment (spec §1: selection-based, not whole-paragraph) keeps its exact boundaries in the PDF -
 // react-pdf resolves each span's own font weight/style against the registered Tinos faces. A plain
@@ -93,7 +109,7 @@ const styles = StyleSheet.create({
 // date-in-words line, `**Підпис**...`): the leading nested <Text> ignored the parent's indent, so
 // exactly the bolded lines lost their 1.5 cm first-line indent - `firstLineIndent` re-states the
 // paragraph's own resolved indent on that leading run.
-const FormattedRuns = ({ text, firstLineIndent }) => parseFormattedRuns(text).map((run, index) => {
+const FormattedRuns = ({ text, firstLineIndent }) => parseFormattedRuns(toPdfRenderableText(text)).map((run, index) => {
   if (!run.bold && !run.italic) {
     // eslint-disable-next-line react/no-array-index-key
     return <React.Fragment key={index}>{run.text}</React.Fragment>;
@@ -218,18 +234,34 @@ const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, 
   );
 };
 
-const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) => (
-  <View style={{ marginBottom: titleGap }}>
-    {isBilingual ? (
-      <View style={styles.row}>
-        <Text style={[cellStyles.title, cellStyles.leftCell]}><FormattedRuns text={doc.title.uk} /></Text>
-        <Text style={[cellStyles.title, cellStyles.rightCell]}><FormattedRuns text={doc.title.en} /></Text>
-      </View>
-    ) : (
-      <Text style={cellStyles.title}><FormattedRuns text={doc.title[lang]} /></Text>
-    )}
-  </View>
-);
+// A block whose text is blank in both languages (an empty template row, or - for the title - a
+// deleted title) renders nothing.
+const isBlankBlockText = value => !String(value || '').trim();
+
+// The title is an ordinary centered paragraph (batch 2026-07-23 C §2): default alignment Center
+// (cellStyles.title), its own sparse align/fontSize overrides applied like any paragraph's, and a
+// document whose title was deleted (both languages resolve blank) renders no title block at all -
+// never an empty centered line plus its titleGap.
+const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) => {
+  const title = doc.title || {};
+  if (isBlankBlockText(title.uk) && isBlankBlockText(title.en)) return null;
+  const overrideStyles = [
+    title.align ? { textAlign: title.align } : undefined,
+    title.fontSize !== undefined ? { fontSize: title.fontSize } : undefined,
+  ];
+  return (
+    <View style={{ marginBottom: titleGap }}>
+      {isBilingual ? (
+        <View style={styles.row}>
+          <Text style={[cellStyles.title, cellStyles.leftCell, ...overrideStyles]}><FormattedRuns text={title.uk} /></Text>
+          <Text style={[cellStyles.title, cellStyles.rightCell, ...overrideStyles]}><FormattedRuns text={title.en} /></Text>
+        </View>
+      ) : (
+        <Text style={[cellStyles.title, ...overrideStyles]}><FormattedRuns text={title[lang]} /></Text>
+      )}
+    </View>
+  );
+};
 
 // The addressee/signer block between the letterhead logo and the title (notarial layout standard
 // §3.2, "ЗА МІСЦЕМ ВИМОГИ" + the signer data) - never merged into the paragraph list, so it always
@@ -241,7 +273,6 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
 // first-line indent. Consecutive blocks are separated by exactly one empty line (empty blocks in
 // the template collapse into that same separator), and one empty line follows the whole strip
 // before the title (structure §3.4).
-const isBlankBlockText = value => !String(value || '').trim();
 
 // An explicitly aligned block (the §1.5 alignment button, stored under the block's `style` key)
 // overrides the strip's notarial default: bold caption flush-left, regular data justified.

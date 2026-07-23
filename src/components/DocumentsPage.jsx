@@ -40,6 +40,7 @@ import {
   emptyDocumentsCatalog,
   getClinicLogo,
   getEffectiveParagraphAlign,
+  getEffectiveTitleAlign,
   getLayoutLang,
   getParagraphStyle,
   getParagraphType,
@@ -467,6 +468,15 @@ const TextModeDisplay = styled.div`
   white-space: pre-wrap;
   cursor: text;
   user-select: text;
+
+  /* A zero-width space after the content: with pre-wrap, a trailing newline the admin typed
+     creates no visible line box on its own (batch 2026-07-23 C §3 - the blank line "disappeared"
+     in this read-only Text mode while the textarea modes showed it), so this sentinel gives the
+     final empty line something to render. Pseudo-element content is not part of textContent, so
+     the selection-offset math (plainTextOffsetInContainer) is unaffected. */
+  &::after {
+    content: '\\200B';
+  }
 `;
 
 const FormattedRunsPreview = ({ text }) => (
@@ -1036,7 +1046,11 @@ const DocumentsPage = ({ isAdmin }) => {
     if (!template) return;
     const record = getTemplateScopeRecord(template, scope);
     if (!record) return;
-    const nextTemplate = withTemplateScopeStyle(template, scope, { align: nextParagraphAlign(getEffectiveParagraphAlign(record)) });
+    // The title's un-overridden default is Center (an ordinary centered paragraph, batch
+    // 2026-07-23 C §2), not the body-paragraph bold/justify default - the cycle order itself is
+    // identical.
+    const currentAlign = scope === TITLE_SCOPE ? getEffectiveTitleAlign(record) : getEffectiveParagraphAlign(record);
+    const nextTemplate = withTemplateScopeStyle(template, scope, { align: nextParagraphAlign(currentAlign) });
     try {
       await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
       setCatalog(previous => ({
@@ -1171,6 +1185,64 @@ const DocumentsPage = ({ isAdmin }) => {
     } catch (structureError) {
       console.error('Unable to remove the before-title block', structureError);
       toast.error('Could not save the change.');
+    }
+  };
+
+  // The title is an ordinary paragraph with the standard toolbar, including delete (batch
+  // 2026-07-23 C §2). Removing it drops the template's `title` key entirely (a direct structural
+  // write, like the paragraph/beforeTitle structure edits above) and also clears every case's
+  // per-case title override for this document - otherwise a stale override would "resurrect" the
+  // deleted title next time that case resolves the document.
+  const handleRemoveTitle = async docId => {
+    if (typeof window !== 'undefined' && !window.confirm('Remove the title?')) return;
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const nextTemplate = { ...template };
+    delete nextTemplate.title;
+    const casesWithTitleOverride = catalog.parties.cases.filter(caseRecord => caseRecord.documents?.overrides?.[docId]?.title);
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      const partiesPatch = {};
+      casesWithTitleOverride.forEach(caseRecord => {
+        partiesPatch[`cases/${caseRecord.id}/documents/overrides/${docId}/title`] = null;
+      });
+      if (Object.keys(partiesPatch).length) await update(ref(database, DOCUMENTS_PARTIES_PATH), partiesPatch);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+        parties: {
+          ...previous.parties,
+          cases: previous.parties.cases.map(caseRecord => {
+            if (!caseRecord.documents?.overrides?.[docId]?.title) return caseRecord;
+            const { title: _removedTitle, ...restOverride } = caseRecord.documents.overrides[docId];
+            return {
+              ...caseRecord,
+              documents: { ...caseRecord.documents, overrides: { ...caseRecord.documents.overrides, [docId]: restOverride } },
+            };
+          }),
+        },
+      }));
+    } catch (structureError) {
+      console.error('Unable to remove the title', structureError);
+      toast.error('Could not remove the title.');
+    }
+  };
+
+  // The way back after a delete: an empty title record the admin can type into - without this a
+  // deleted title would be unrecoverable from the UI.
+  const handleAddTitle = async docId => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template || template.title != null) return;
+    const nextTemplate = { ...template, title: { uk: '', en: '' } };
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+    } catch (structureError) {
+      console.error('Unable to add the title', structureError);
+      toast.error('Could not add the title.');
     }
   };
 
@@ -2342,7 +2414,24 @@ const DocumentsPage = ({ isAdmin }) => {
                           // §5) - the exact same template/input/text cycle paragraphs use (spec §3/
                           // §9), never a separate uk-in-the-header + en-below split. Printed inside
                           // the document from title.uk/title.en only - never the catalogName above.
+                          // Batch 2026-07-23 C §2: an ordinary paragraph with the full standard
+                          // toolbar - alignment cycle (default Center), formatting popover, delete.
+                          // A template whose title was deleted shows only a "+" to add it back.
+                          if (template.title == null) {
+                            return (
+                              <ParagraphControlsRow style={{ justifyContent: 'flex-start', marginTop: 10 }}>
+                                <SmallButton
+                                  type="button"
+                                  onClick={() => handleAddTitle(template.id)}
+                                  title="Add a title to this document"
+                                >
+                                  <FaPlus /> Title
+                                </SmallButton>
+                              </ParagraphControlsRow>
+                            );
+                          }
                           const titleFieldKind = titleIsTemplateMode ? 'template' : (titleMode === 'input' ? 'override' : 'text-display');
+                          const titleStyle = getParagraphStyle(template.title);
                           return (
                             <ParagraphEditorBlock>
                               <ParagraphControlsRow>
@@ -2380,6 +2469,33 @@ const DocumentsPage = ({ isAdmin }) => {
                                   >
                                     <FaCode />
                                   </SmallButton>
+                                  <AlignCycleButton
+                                    align={getEffectiveTitleAlign(template.title)}
+                                    onCycle={() => handleCycleAlign(template.id, TITLE_SCOPE)}
+                                  />
+                                  <FormatPopoverButton
+                                    open={openFormatKey === formatPopoverKey(template.id, TITLE_SCOPE)}
+                                    onToggle={() => toggleFormatPopover(template.id, TITLE_SCOPE)}
+                                    onClose={() => closeFormatPopover(template.id)}
+                                    buttonTitle="Title formatting - font size (pt); empty = inherit the document's title size"
+                                    fields={[
+                                      {
+                                        key: 'fontSize',
+                                        label: 'Font size (pt)',
+                                        value: titleStyle.fontSize !== undefined ? String(titleStyle.fontSize) : '',
+                                        placeholder: String(docFormatting.titleFontSize),
+                                        onApply: raw => setScopeStyleField(template.id, TITLE_SCOPE, 'fontSize', raw),
+                                        onFieldBlur: () => persistTemplate(template.id),
+                                      },
+                                    ]}
+                                  />
+                                  <DangerButton
+                                    type="button"
+                                    onClick={() => handleRemoveTitle(template.id)}
+                                    title="Remove the title"
+                                  >
+                                    <FaTrash />
+                                  </DangerButton>
                                 </RowLine>
                               </ParagraphControlsRow>
                               {titleCaseModeLocked ? (

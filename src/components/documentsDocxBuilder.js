@@ -146,11 +146,17 @@ export const buildDocumentsDocx = async ({
   };
 
   // Exactly the Format panel's paragraph spacing - no hidden minimum - so the Word output keeps
-  // the same title-to-body rhythm as the PDF and the reference statements.
-  const titleParagraph = text => new Paragraph({
-    alignment: AlignmentType.CENTER,
+  // the same title-to-body rhythm as the PDF and the reference statements. The title is an
+  // ordinary centered paragraph (batch 2026-07-23 C §2): Center is only its default - its own
+  // sparse align/fontSize (resolved by buildGeneratedDocument from the title's consolidated
+  // `style`) override it like any paragraph's.
+  const titleParagraph = (text, title = {}) => new Paragraph({
+    alignment: title.align ? alignmentForBlock(title.align) : AlignmentType.CENTER,
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
-    children: formattedTextRuns(text, { size: titleSize, baseBold: true }),
+    children: formattedTextRuns(text, {
+      size: title.fontSize !== undefined ? halfPoints(title.fontSize) : titleSize,
+      baseBold: true,
+    }),
   });
 
   // The addressee/signer block between the letterhead logo and the title (notarial layout
@@ -335,10 +341,15 @@ export const buildDocumentsDocx = async ({
       children.push(emptyLineParagraph());
     }
 
-    if (isBilingual) {
-      children.push(twoColumnTable([[titleParagraph(doc.title.uk), titleParagraph(doc.title.en)]], true, showColumnDivider));
-    } else {
-      children.push(titleParagraph(doc.title[lang]));
+    // A document whose title was deleted (both languages resolve blank) gets no title paragraph
+    // at all - deleting the title must never crash or leave an empty centered line (§2).
+    const title = doc.title || {};
+    if (!isBlankBlockText(title.uk) || !isBlankBlockText(title.en)) {
+      if (isBilingual) {
+        children.push(twoColumnTable([[titleParagraph(title.uk, title), titleParagraph(title.en, title)]], true, showColumnDivider));
+      } else {
+        children.push(titleParagraph(title[lang], title));
+      }
     }
 
     const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed');
