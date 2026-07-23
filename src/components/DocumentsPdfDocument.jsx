@@ -159,13 +159,17 @@ const LogoBlock = ({ type, isBilingual, cellStyles, logoWidth, longLogoWidth, cl
 
 // batch 16 §17: an explicit `align` on a paragraph overrides the default alignment (justified
 // body / flush-left heading) - never inferred from the text itself. `indentCm` (spec: the
-// reference notarial statement indents only its opening declaration, not every paragraph) works
-// the same way - undefined leaves cellStyle's own document-wide firstLineIndentCm in place.
+// reference notarial statement indents only its opening declaration, not every paragraph) and
+// `fontSize` (batch 2026-07-23 B §1.1: a per-paragraph pt override of the document's font size)
+// work the same way - undefined leaves cellStyle's own document-wide value in place. All three
+// arrive already resolved from the paragraph's consolidated `style` key (buildGeneratedDocument).
 const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBreaks }) => {
   const wrap = allowsParagraphInternalBreak(paragraph, allowPageBreaks);
   const cellStyle = isParagraphBold(paragraph) ? cellStyles.paragraphHeading : cellStyles.paragraph;
   const alignStyle = paragraph.align ? { textAlign: paragraph.align } : undefined;
   const indentStyle = paragraph.indentCm !== undefined ? { textIndent: paragraph.indentCm * CM_TO_PT } : undefined;
+  // lineHeight in the cell styles is a unitless multiplier, so it scales with this automatically.
+  const sizeStyle = paragraph.fontSize !== undefined ? { fontSize: paragraph.fontSize } : undefined;
   // The indent this paragraph actually resolves to, re-applied to a leading bold/italic run
   // (see FormattedRuns) since react-pdf never inherits textIndent into a nested <Text>.
   const firstLineIndent = indentStyle ? indentStyle.textIndent : (cellStyle.textIndent || 0);
@@ -178,12 +182,12 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
   if (isBilingual) {
     return (
       <View style={styles.row} wrap={wrap}>
-        <Text style={[cellStyle, cellStyles.leftCell, alignStyle, indentStyle]}>{lineOf(paragraph.uk)}</Text>
-        <Text style={[cellStyle, cellStyles.rightCell, alignStyle, indentStyle]}>{lineOf(paragraph.en)}</Text>
+        <Text style={[cellStyle, cellStyles.leftCell, alignStyle, indentStyle, sizeStyle]}>{lineOf(paragraph.uk)}</Text>
+        <Text style={[cellStyle, cellStyles.rightCell, alignStyle, indentStyle, sizeStyle]}>{lineOf(paragraph.en)}</Text>
       </View>
     );
   }
-  return <Text style={[cellStyle, alignStyle, indentStyle]} wrap={wrap}>{lineOf(paragraph[lang])}</Text>;
+  return <Text style={[cellStyle, alignStyle, indentStyle, sizeStyle]} wrap={wrap}>{lineOf(paragraph[lang])}</Text>;
 };
 
 // The single-language 2-column layout (spec §4: newspaper-style, one language flowing across two
@@ -239,8 +243,17 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
 // before the title (structure §3.4).
 const isBlankBlockText = value => !String(value || '').trim();
 
+// An explicitly aligned block (the §1.5 alignment button, stored under the block's `style` key)
+// overrides the strip's notarial default: bold caption flush-left, regular data justified.
 const SignerBlockLine = ({ block, langKey, cellStyles }) => (
-  <Text style={[cellStyles.beforeTitle, block.bold ? { textAlign: 'left', fontWeight: 700 } : { textAlign: 'justify' }]}>
+  <Text
+    style={[
+      cellStyles.beforeTitle,
+      block.bold ? { fontWeight: 700 } : undefined,
+      { textAlign: block.align || (block.bold ? 'left' : 'justify') },
+      block.fontSize !== undefined ? { fontSize: block.fontSize } : undefined,
+    ]}
+  >
     <FormattedRuns text={block[langKey]} />
   </Text>
 );

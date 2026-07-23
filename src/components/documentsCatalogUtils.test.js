@@ -13,6 +13,7 @@ import {
   buildGeneratedDocument,
   catalogPartiesToBackend,
   clinicLogoEntriesToBackend,
+  consolidateTemplateStyles,
   createChildRecord,
   createEmptyCase,
   createEmptyClinic,
@@ -34,8 +35,10 @@ import {
   getChildGenderForms,
   getClinicLogo,
   getEffectiveDocLayout,
+  getEffectiveParagraphAlign,
   getLayoutColumnCount,
   getLayoutLang,
+  getParagraphStyle,
   getParagraphType,
   getTemplateLogoType,
   getValueByPath,
@@ -46,6 +49,7 @@ import {
   isSingleLanguageTwoColumnLayout,
   MISSING_VALUE_PLACEHOLDER,
   mergeDocumentsCatalog,
+  nextParagraphAlign,
   normalizeCaseRecord,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -70,6 +74,8 @@ import {
   beforeTitleScope,
   getTemplateScopeText,
   paragraphScope,
+  withParagraphStyle,
+  withTemplateScopeStyle,
   withTemplateScopeText,
   toggleInlineFormat,
   toggleRawInlineMarker,
@@ -1013,6 +1019,164 @@ describe('spec: manual bold override on a paragraph', () => {
   });
 });
 
+describe('spec: per-paragraph styles consolidated under one `style` key (batch 2026-07-23 B §1.1)', () => {
+  it('getParagraphStyle lifts legacy flat fields into the one normalized style object', () => {
+    expect(getParagraphStyle({ uk: 'Текст', en: 'Text', bold: true, align: 'center', indentCm: 1.25 }))
+      .toEqual({ bold: true, align: 'center', indentCm: 1.25 });
+  });
+
+  it('getParagraphStyle reads the consolidated `style` key, which wins per field over a leftover flat field', () => {
+    const paragraph = { uk: 'Текст', en: 'Text', indentCm: 3, style: { indentCm: 0.5, fontSize: 10 } };
+    expect(getParagraphStyle(paragraph)).toEqual({ indentCm: 0.5, fontSize: 10 });
+  });
+
+  it('getParagraphStyle drops invalid values instead of substituting defaults, and clamps numeric ones', () => {
+    expect(getParagraphStyle({ style: { align: 'diagonal', fontSize: 500, indentCm: -3 } }))
+      .toEqual({ fontSize: 32, indentCm: 0 });
+    expect(getParagraphStyle({ uk: 'Без стилів', en: 'No styles' })).toEqual({});
+  });
+
+  it('withParagraphStyle merges new values into `style`, stripping the legacy flat fields on the same write', () => {
+    const paragraph = { uk: 'Текст', en: 'Text', bold: true, indentCm: 1 };
+    expect(withParagraphStyle(paragraph, { fontSize: 10 }))
+      .toEqual({ uk: 'Текст', en: 'Text', style: { bold: true, indentCm: 1, fontSize: 10 } });
+  });
+
+  it('withParagraphStyle clears a key with null, and drops the `style` key entirely once nothing is left', () => {
+    const paragraph = { uk: 'Текст', en: 'Text', style: { indentCm: 2 } };
+    expect(withParagraphStyle(paragraph, { indentCm: null })).toEqual({ uk: 'Текст', en: 'Text' });
+  });
+
+  it('consolidateTemplateStyles migrates every paragraph and beforeTitle block at read time, idempotently', () => {
+    const template = {
+      id: 'doc-1',
+      title: { uk: 'Заява', en: 'Statement' },
+      beforeTitle: [{ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '', align: 'right', bold: true, width: 70 }],
+      paragraphs: [
+        { uk: 'Абзац.', en: 'Paragraph.', indentCm: 1.25, align: 'center' },
+        { uk: 'Без стилів.', en: 'Unstyled.' },
+      ],
+    };
+    const consolidated = consolidateTemplateStyles(template);
+    expect(consolidated.beforeTitle[0]).toEqual({ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '', style: { align: 'right', bold: true, width: 70 } });
+    expect(consolidated.paragraphs[0]).toEqual({ uk: 'Абзац.', en: 'Paragraph.', style: { indentCm: 1.25, align: 'center' } });
+    expect(consolidated.paragraphs[1]).toEqual({ uk: 'Без стилів.', en: 'Unstyled.' });
+    expect(consolidateTemplateStyles(consolidated)).toEqual(consolidated);
+  });
+
+  it('normalizeDocumentsCatalog consolidates stored templates right at ingestion', () => {
+    const catalog = normalizeDocumentsCatalog(null, {
+      'doc-1': {
+        id: 'doc-1',
+        title: { uk: 'Заява', en: 'Statement' },
+        paragraphs: [{ uk: 'Абзац.', en: 'Paragraph.', bold: false, indentCm: 2 }],
+      },
+    });
+    expect(catalog.documents[0].paragraphs[0]).toEqual({ uk: 'Абзац.', en: 'Paragraph.', style: { bold: false, indentCm: 2 } });
+  });
+
+  it('a whole paragraph row copied into another document carries every style with it (the copy-paste guarantee)', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const styledParagraph = {
+      uk: 'Скопійований абзац.',
+      en: 'Copied paragraph.',
+      style: { fontSize: 10, indentCm: 0.75, align: 'right', bold: true },
+    };
+    const generateWithin = templateId => buildGeneratedDocument(
+      { id: templateId, title: { uk: 'Т', en: 'T' }, paragraphs: [styledParagraph] },
+      context,
+    ).paragraphs[0];
+    const inSource = generateWithin('doc-source');
+    const inTarget = generateWithin('doc-target');
+    ['fontSize', 'indentCm', 'align', 'bold'].forEach(key => {
+      expect(inSource[key]).toEqual(styledParagraph.style[key]);
+      expect(inTarget[key]).toEqual(styledParagraph.style[key]);
+    });
+  });
+
+  it('buildGeneratedDocument threads a per-paragraph fontSize through, clamped, and resolves beforeTitle styles from the one key', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'doc-with-style',
+      title: { uk: 'Т', en: 'T' },
+      beforeTitle: [{ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '', style: { align: 'right', bold: true, fontSize: 11 } }],
+      paragraphs: [
+        { uk: 'Дрібний абзац.', en: 'Small paragraph.', style: { fontSize: 9 } },
+        { uk: 'Завеликий кегль.', en: 'Oversized font.', style: { fontSize: 500 } },
+        { uk: 'Успадкований кегль.', en: 'Inherited font.' },
+      ],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.beforeTitle[0]).toMatchObject({ align: 'right', bold: true, fontSize: 11 });
+    expect(generated.paragraphs[0].fontSize).toBe(9);
+    expect(generated.paragraphs[1].fontSize).toBe(32); // clamped
+    expect(generated.paragraphs[2].fontSize).toBeUndefined();
+  });
+});
+
+describe('spec: alignment button cycle, MS Word logic (batch 2026-07-23 B §1.5)', () => {
+  it('cycles Left → Center → Right → Justify → Left', () => {
+    expect(nextParagraphAlign('left')).toBe('center');
+    expect(nextParagraphAlign('center')).toBe('right');
+    expect(nextParagraphAlign('right')).toBe('justify');
+    expect(nextParagraphAlign('justify')).toBe('left');
+  });
+
+  it('effective alignment is the stored override, else the type default: justified body, flush-left heading', () => {
+    expect(getEffectiveParagraphAlign({ uk: 'Звичайний абзац.', en: 'Body text.' })).toBe('justify');
+    expect(getEffectiveParagraphAlign({ uk: '1. Предмет Договору', en: '1. Subject' })).toBe('left'); // auto-detected heading
+    expect(getEffectiveParagraphAlign({ uk: 'Звичайний абзац.', en: 'Body text.', style: { align: 'center' } })).toBe('center');
+    expect(getEffectiveParagraphAlign({ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '', style: { bold: true } })).toBe('left');
+  });
+
+  it('withTemplateScopeStyle writes a paragraph\'s or beforeTitle block\'s style through one scope key', () => {
+    const template = {
+      id: 'doc-1',
+      beforeTitle: [{ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '' }],
+      paragraphs: [{ uk: 'Абзац.', en: 'Paragraph.' }, { uk: 'Інший.', en: 'Other.' }],
+    };
+    const withParagraphAlign = withTemplateScopeStyle(template, paragraphScope(1), { align: 'right' });
+    expect(withParagraphAlign.paragraphs[1]).toEqual({ uk: 'Інший.', en: 'Other.', style: { align: 'right' } });
+    expect(withParagraphAlign.paragraphs[0]).toEqual(template.paragraphs[0]);
+    const withBlockAlign = withTemplateScopeStyle(template, beforeTitleScope(0), { align: 'center' });
+    expect(withBlockAlign.beforeTitle[0]).toEqual({ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '', style: { align: 'center' } });
+  });
+});
+
+describe('spec: empty lines are never stripped (batch 2026-07-23 B §3)', () => {
+  it('buildGeneratedDocument keeps in-paragraph blank lines and fully empty paragraphs verbatim', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'doc-blank-lines',
+      title: { uk: 'Т', en: 'T' },
+      paragraphs: [
+        { uk: 'Перший рядок.\n\nПісля порожнього рядка.', en: 'First line.\n\nAfter the blank line.' },
+        { uk: '', en: '' },
+        { uk: 'Останній абзац.', en: 'Last paragraph.' },
+      ],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs).toHaveLength(3);
+    expect(generated.paragraphs[0].uk).toBe('Перший рядок.\n\nПісля порожнього рядка.');
+    expect(generated.paragraphs[1].uk).toBe('');
+    expect(generated.paragraphs[2].uk).toBe('Останній абзац.');
+  });
+
+  it('a trailing empty line inside a paragraph survives the catalog normalization round-trip', () => {
+    const catalog = normalizeDocumentsCatalog(null, {
+      'doc-1': {
+        id: 'doc-1',
+        title: { uk: 'Заява', en: 'Statement' },
+        paragraphs: [{ uk: 'Текст абзацу.\n', en: 'Paragraph text.\n' }],
+      },
+    });
+    expect(catalog.documents[0].paragraphs[0].uk).toBe('Текст абзацу.\n');
+  });
+});
+
 describe('spec: long multi-page documents', () => {
   it('renders every paragraph of a ~90-paragraph agreement without dropping any', () => {
     const catalog = richCatalog();
@@ -1702,14 +1866,14 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
       expect(generated.paragraphs[1].align).toBeUndefined();
     });
 
-    it('an invalid align value normalizes to "left" rather than being passed through as-is', () => {
+    it('an invalid align value is dropped (the block falls back to the renderers\' notarial default) rather than passed through as-is', () => {
       const generated = buildGeneratedDocument({
         id: 'bad-align',
         title: { uk: 'Заява' },
         beforeTitle: [{ uk: 'Блок', align: 'diagonal' }],
         paragraphs: [],
       }, {});
-      expect(generated.beforeTitle[0].align).toBe('left');
+      expect(generated.beforeTitle[0].align).toBeUndefined();
     });
   });
 });
