@@ -155,27 +155,26 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
     ));
   });
 
-  it('the width handle defaults to 50% and persists a dragged value on release (spec batch 21 §8)', async () => {
+  // Notarial layout standard §3.3: the signer block gets one left-offset handle for the whole
+  // block (30-65% of the text width, default ≈47% = 8.5 cm), persisted per document as a single
+  // beforeTitleOffsetPercent field - not the old per-block width slider.
+  it('the signer-block offset handle defaults to 8.5 cm (≈47%) and persists a dragged value on release', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
-    // eslint-disable-next-line testing-library/no-node-access
-    const block = textarea.closest('.paragraph-editor-block');
-    const slider = within(block).getByLabelText('Ширина блоку 1');
-    expect(slider).toHaveValue('50');
+    await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    const slider = screen.getByLabelText('Відступ блоку підписанта');
+    expect(slider).toHaveValue('47.2');
 
-    fireEvent.change(slider, { target: { value: '75' } });
-    expect(within(block).getByText('75%')).toBeInTheDocument();
+    fireEvent.change(slider, { target: { value: '60' } });
+    expect(screen.getByText('60.0% (≈10.8 см)')).toBeInTheDocument();
     expect(set).not.toHaveBeenCalled(); // not yet released
 
     fireEvent.mouseUp(slider);
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
-      expect.objectContaining({
-        beforeTitle: [expect.objectContaining({ width: 75 })],
-      }),
+      expect.objectContaining({ beforeTitleOffsetPercent: 60 }),
     ));
   });
 });

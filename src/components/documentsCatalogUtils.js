@@ -1176,6 +1176,21 @@ export const normalizeBlockAlign = align => (ALLOWED_BLOCK_ALIGNMENTS.includes(a
 export const DEFAULT_BLOCK_WIDTH_PERCENT = 50;
 export const normalizeBlockWidth = width => clampNumber(width, 10, 100, DEFAULT_BLOCK_WIDTH_PERCENT);
 
+// The addressee/signer block's left offset (notarial layout standard): the whole beforeTitle
+// group renders as one strip from this offset to the right margin, in both the PDF and Word
+// exports. Stored per document as a single number - percent of the text width, so the same value
+// holds whatever margins the Format panel sets. The default matches the notarial reference file:
+// 8.5 cm of the standard 18.0 cm text width (the 4820-twip empty column of its layout table).
+export const DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT = 47.2;
+export const SIGNER_BLOCK_OFFSET_MIN_PERCENT = 30;
+export const SIGNER_BLOCK_OFFSET_MAX_PERCENT = 65;
+export const normalizeSignerBlockOffsetPercent = value => clampNumber(
+  value,
+  SIGNER_BLOCK_OFFSET_MIN_PERCENT,
+  SIGNER_BLOCK_OFFSET_MAX_PERCENT,
+  DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT,
+);
+
 const resolveBeforeTitleBlocks = (template, context) => toArray(template?.beforeTitle).map(block => ({
   align: normalizeBlockAlign(block?.align),
   bold: Boolean(block?.bold),
@@ -1281,6 +1296,7 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
     languages,
     columns: resolveDocColumns(template, languages),
     beforeTitle: resolveBeforeTitleBlocks(template, context),
+    beforeTitleOffsetPercent: normalizeSignerBlockOffsetPercent(template?.beforeTitleOffsetPercent),
     title: {
       uk: overriddenText(override.title, 'uk', fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk')),
       en: overriddenText(override.title, 'en', fillPlaceholders(localizedText(template.title, 'en'), context, 'en')),
@@ -1804,19 +1820,21 @@ export const pickLogoVariantForLayout = (logoVariants, layout) => {
   }, null);
 };
 
-// Defaults mirror the reference statements docx: Times ~10pt body / 11pt bold titles,
-// single line spacing, zero after-paragraph spacing, A4 with 1.2/1.5/1.2/2.0 cm margins and a
-// ~5.5 cm wide clinic logo centered above the title.
+// Defaults mirror the notarial layout standard measured from the reference statements docx:
+// Times New Roman 12 pt everywhere (the title is the same size as the body), single line spacing,
+// zero after-paragraph spacing (blocks are separated only by explicit empty lines), a 1.5 cm
+// first-line indent on body paragraphs, and A4 with 2.0 (top) / 1.5 / 1.0 (bottom) / 1.5 cm
+// margins - an 18.0 cm text width. The clinic logo stays ~5.5 cm wide, centered above the title.
 export const DEFAULT_DOC_FORMATTING = {
-  fontSize: 10,
-  titleFontSize: 11,
+  fontSize: 12,
+  titleFontSize: 12,
   lineSpacing: 1,
   paragraphSpacing: 0,
-  firstLineIndentCm: 0,
-  marginTopCm: 1.2,
+  firstLineIndentCm: 1.5,
+  marginTopCm: 2,
   marginRightCm: 1.5,
-  marginBottomCm: 1.2,
-  marginLeftCm: 2,
+  marginBottomCm: 1,
+  marginLeftCm: 1.5,
   columnGapCm: 0.5,
   logoWidthMm: 55,
   showLogo: true,

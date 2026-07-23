@@ -16,6 +16,7 @@ import {
   isBilingualLayout,
   isParagraphBold,
   isSingleLanguageTwoColumnLayout,
+  normalizeSignerBlockOffsetPercent,
   parseFormattedRuns,
   splitParagraphsIntoColumns,
 } from './documentsCatalogUtils';
@@ -144,26 +145,54 @@ export const buildDocumentsDocx = async ({
     children: formattedTextRuns(text, { size: titleSize, baseBold: true }),
   });
 
-  // Free-standing text between the letterhead logo and the title (spec §14/§17: "ЗА МІСЦЕМ
-  // ВИМОГИ" etc.) - `align`/`bold` are resolved per block, never inferred from the text itself.
-  // `width` (spec batch 21 §8: the applicant/signatory data block is a half-page-right layout rule,
-  // not just right-aligned text) is expressed as an indent that eats the complementary space, the
-  // same technique Word itself uses for a "float" - so a wide block wraps inside that narrower
-  // strip instead of spanning the full column the way plain alignment would. `containerWidthTwips`
-  // is whichever width this paragraph's own column actually has (the full page in the single-
-  // column flow, or one table cell's width in the bilingual layout).
-  const beforeTitleParagraph = (text, block, containerWidthTwips) => {
-    const complementTwips = Math.round(containerWidthTwips * (1 - (block.width ?? 50) / 100));
-    const indent = block.align === 'right'
-      ? { left: complementTwips }
-      : (block.align === 'left'
-        ? { right: complementTwips }
-        : { left: Math.round(complementTwips / 2), right: Math.round(complementTwips / 2) });
-    return new Paragraph({
-      alignment: alignmentForBlock(block.align),
-      spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
-      indent,
-      children: formattedTextRuns(text, { size: bodySize, baseBold: Boolean(block.bold) }),
+  // The addressee/signer block between the letterhead logo and the title (notarial layout
+  // standard §3.2: "ЗА МІСЦЕМ ВИМОГИ" + the signer data). Implemented exactly the way the
+  // reference notarial file does it: a borderless 2-column table across the full width of its
+  // container - column 1 empty (the left offset, default 8.5 cm), column 2 holding every
+  // beforeTitle block. Inside the block a bold paragraph (the caption) aligns to the block's left
+  // edge; a regular one (the signer data) is justified; neither ever carries a first-line indent.
+  // Consecutive blocks are separated by exactly one empty line (empty blocks in the template
+  // collapse into that same separator). `containerWidthTwips` is whichever width this block's own
+  // column actually has (the full page in the single-column flow, or one table cell's width in
+  // the bilingual layout).
+  const isBlankBlockText = value => !String(value || '').trim();
+
+  const emptyLineParagraph = () => new Paragraph({
+    spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
+    children: [new TextRun({ text: '', size: bodySize })],
+  });
+
+  const signerBlockParagraph = (text, block) => new Paragraph({
+    alignment: block.bold ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
+    spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
+    children: formattedTextRuns(text, { size: bodySize, baseBold: Boolean(block.bold) }),
+  });
+
+  const signerBlockTable = (blocks, langKey, containerWidthTwips, offsetPercent) => {
+    const offsetTwips = Math.round(containerWidthTwips * (offsetPercent / 100));
+    const blockWidthTwips = Math.max(1, Math.round(containerWidthTwips) - offsetTwips);
+    const cellChildren = blocks.flatMap((block, index) => [
+      ...(index > 0 ? [emptyLineParagraph()] : []),
+      signerBlockParagraph(block[langKey], block),
+    ]);
+    return new Table({
+      width: { size: offsetTwips + blockWidthTwips, type: WidthType.DXA },
+      columnWidths: [offsetTwips, blockWidthTwips],
+      borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
+      rows: [new TableRow({
+        children: [
+          new TableCell({
+            borders: noBorders,
+            width: { size: offsetTwips, type: WidthType.DXA },
+            children: [new Paragraph({ spacing: { after: 0, line: lineTwips, lineRule: 'auto' }, children: [] })],
+          }),
+          new TableCell({
+            borders: noBorders,
+            width: { size: blockWidthTwips, type: WidthType.DXA },
+            children: cellChildren,
+          }),
+        ],
+      })],
     });
   };
 
@@ -277,17 +306,21 @@ export const buildDocumentsDocx = async ({
     // from the dedicated `logo` field or a legacy leading paragraph - see getTemplateLogoType.
     if (doc.logo) children.push(...buildLogoBlock(doc.logo, layoutCtx));
 
-    // Free-standing text between the logo and the title (spec §14), never merged into the body.
-    (doc.beforeTitle || []).forEach(block => {
+    // The addressee/signer block between the logo and the title (§3.2), never merged into the
+    // body. One empty line separates the whole block from the title that follows (§3.4).
+    const signerBlocks = (doc.beforeTitle || []).filter(block => !isBlankBlockText(block.uk) || !isBlankBlockText(block.en));
+    if (signerBlocks.length) {
+      const offsetPercent = normalizeSignerBlockOffsetPercent(doc.beforeTitleOffsetPercent);
       if (isBilingual) {
         children.push(twoColumnTable([[
-          beforeTitleParagraph(block.uk, block, columnContentWidthTwips),
-          beforeTitleParagraph(block.en, block, columnContentWidthTwips),
+          signerBlockTable(signerBlocks, 'uk', columnContentWidthTwips, offsetPercent),
+          signerBlockTable(signerBlocks, 'en', columnContentWidthTwips, offsetPercent),
         ]], true, showColumnDivider));
       } else {
-        children.push(beforeTitleParagraph(block[lang], block, contentWidthTwips));
+        children.push(signerBlockTable(signerBlocks, lang, contentWidthTwips, offsetPercent));
       }
-    });
+      children.push(emptyLineParagraph());
+    }
 
     if (isBilingual) {
       children.push(twoColumnTable([[titleParagraph(doc.title.uk), titleParagraph(doc.title.en)]], true, showColumnDivider));
