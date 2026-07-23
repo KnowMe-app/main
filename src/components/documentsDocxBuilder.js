@@ -84,13 +84,17 @@ export const buildDocumentsDocx = async ({
   // Splits `text` on its bold/italic markup (spec §1: selection-based, not whole-paragraph) into
   // the TextRuns Word needs to render each fragment's own weight/style; `baseBold` is for a
   // heading/title paragraph that's already bold throughout (an inline-italic fragment inside it
-  // still needs its own run to pick up the italic flag).
-  const formattedTextRuns = (text, { size, baseBold = false } = {}) => parseFormattedRuns(text).map(run => new TextRun({
-    text: run.text,
+  // still needs its own run to pick up the italic flag). Embedded newlines become explicit
+  // <w:br/> line breaks (batch 2026-07-23 B §3: an empty line inside a paragraph - consecutive
+  // breaks - must survive into the Word output as a full blank line, never be silently dropped
+  // by a TextRun that doesn't understand "\n").
+  const formattedTextRuns = (text, { size, baseBold = false } = {}) => parseFormattedRuns(text).flatMap(run => String(run.text).split('\n').map((segment, segmentIndex) => new TextRun({
+    text: segment,
     size,
     bold: baseBold || run.bold,
     italics: run.italic,
-  }));
+    ...(segmentIndex > 0 ? { break: 1 } : {}),
+  })));
 
   // batch 16 §17: an explicit `align` on a paragraph (or beforeTitle block) overrides the default
   // alignment (justified body / flush-left heading) - never inferred from the text itself.
@@ -166,8 +170,10 @@ export const buildDocumentsDocx = async ({
     children: [new TextRun({ text: '', size: bodySize })],
   });
 
+  // An explicitly aligned block (the §1.5 alignment button, stored under the block's `style`
+  // key) overrides the strip's notarial default: bold caption flush-left, regular data justified.
   const signerBlockParagraph = (text, block) => new Paragraph({
-    alignment: block.bold ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
+    alignment: block.align ? alignmentForBlock(block.align) : (block.bold ? AlignmentType.LEFT : AlignmentType.JUSTIFIED),
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
     children: formattedTextRuns(text, {
       size: block.fontSize !== undefined ? halfPoints(block.fontSize) : bodySize,

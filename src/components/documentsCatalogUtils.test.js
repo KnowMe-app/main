@@ -35,6 +35,7 @@ import {
   getChildGenderForms,
   getClinicLogo,
   getEffectiveDocLayout,
+  getEffectiveParagraphAlign,
   getLayoutColumnCount,
   getLayoutLang,
   getParagraphStyle,
@@ -48,6 +49,7 @@ import {
   isSingleLanguageTwoColumnLayout,
   MISSING_VALUE_PLACEHOLDER,
   mergeDocumentsCatalog,
+  nextParagraphAlign,
   normalizeCaseRecord,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
@@ -73,6 +75,7 @@ import {
   getTemplateScopeText,
   paragraphScope,
   withParagraphStyle,
+  withTemplateScopeStyle,
   withTemplateScopeText,
   toggleInlineFormat,
   toggleRawInlineMarker,
@@ -1113,6 +1116,67 @@ describe('spec: per-paragraph styles consolidated under one `style` key (batch 2
   });
 });
 
+describe('spec: alignment button cycle, MS Word logic (batch 2026-07-23 B §1.5)', () => {
+  it('cycles Left → Center → Right → Justify → Left', () => {
+    expect(nextParagraphAlign('left')).toBe('center');
+    expect(nextParagraphAlign('center')).toBe('right');
+    expect(nextParagraphAlign('right')).toBe('justify');
+    expect(nextParagraphAlign('justify')).toBe('left');
+  });
+
+  it('effective alignment is the stored override, else the type default: justified body, flush-left heading', () => {
+    expect(getEffectiveParagraphAlign({ uk: 'Звичайний абзац.', en: 'Body text.' })).toBe('justify');
+    expect(getEffectiveParagraphAlign({ uk: '1. Предмет Договору', en: '1. Subject' })).toBe('left'); // auto-detected heading
+    expect(getEffectiveParagraphAlign({ uk: 'Звичайний абзац.', en: 'Body text.', style: { align: 'center' } })).toBe('center');
+    expect(getEffectiveParagraphAlign({ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '', style: { bold: true } })).toBe('left');
+  });
+
+  it('withTemplateScopeStyle writes a paragraph\'s or beforeTitle block\'s style through one scope key', () => {
+    const template = {
+      id: 'doc-1',
+      beforeTitle: [{ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '' }],
+      paragraphs: [{ uk: 'Абзац.', en: 'Paragraph.' }, { uk: 'Інший.', en: 'Other.' }],
+    };
+    const withParagraphAlign = withTemplateScopeStyle(template, paragraphScope(1), { align: 'right' });
+    expect(withParagraphAlign.paragraphs[1]).toEqual({ uk: 'Інший.', en: 'Other.', style: { align: 'right' } });
+    expect(withParagraphAlign.paragraphs[0]).toEqual(template.paragraphs[0]);
+    const withBlockAlign = withTemplateScopeStyle(template, beforeTitleScope(0), { align: 'center' });
+    expect(withBlockAlign.beforeTitle[0]).toEqual({ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: '', style: { align: 'center' } });
+  });
+});
+
+describe('spec: empty lines are never stripped (batch 2026-07-23 B §3)', () => {
+  it('buildGeneratedDocument keeps in-paragraph blank lines and fully empty paragraphs verbatim', () => {
+    const catalog = sampleCatalog();
+    const context = resolveCaseContext(catalog, 'case-1');
+    const template = {
+      id: 'doc-blank-lines',
+      title: { uk: 'Т', en: 'T' },
+      paragraphs: [
+        { uk: 'Перший рядок.\n\nПісля порожнього рядка.', en: 'First line.\n\nAfter the blank line.' },
+        { uk: '', en: '' },
+        { uk: 'Останній абзац.', en: 'Last paragraph.' },
+      ],
+    };
+    const generated = buildGeneratedDocument(template, context);
+    expect(generated.paragraphs).toHaveLength(3);
+    expect(generated.paragraphs[0].uk).toBe('Перший рядок.\n\nПісля порожнього рядка.');
+    expect(generated.paragraphs[1].uk).toBe('');
+    expect(generated.paragraphs[2].uk).toBe('Останній абзац.');
+  });
+
+  it('a trailing empty line inside a paragraph survives the catalog normalization round-trip', () => {
+    const catalog = normalizeDocumentsCatalog(null, {
+      'doc-1': {
+        id: 'doc-1',
+        title: { uk: 'Заява', en: 'Statement' },
+        paragraphs: [{ uk: 'Текст абзацу.\n', en: 'Paragraph text.\n' }],
+      },
+    });
+    expect(catalog.documents[0].paragraphs[0].uk).toBe('Текст абзацу.\n');
+  });
+});
+
 describe('spec: long multi-page documents', () => {
   it('renders every paragraph of a ~90-paragraph agreement without dropping any', () => {
     const catalog = richCatalog();
@@ -1802,14 +1866,14 @@ describe('spec: birth-registration surrogate-consent document (batch 16 §6)', (
       expect(generated.paragraphs[1].align).toBeUndefined();
     });
 
-    it('an invalid align value normalizes to "left" rather than being passed through as-is', () => {
+    it('an invalid align value is dropped (the block falls back to the renderers\' notarial default) rather than passed through as-is', () => {
       const generated = buildGeneratedDocument({
         id: 'bad-align',
         title: { uk: 'Заява' },
         beforeTitle: [{ uk: 'Блок', align: 'diagonal' }],
         paragraphs: [],
       }, {});
-      expect(generated.beforeTitle[0].align).toBe('left');
+      expect(generated.beforeTitle[0].align).toBeUndefined();
     });
   });
 });

@@ -1240,6 +1240,53 @@ export const withParagraphStyle = (record, partial = {}) => {
   return Object.keys(style).length ? { ...rest, style } : rest;
 };
 
+// One alignment button per paragraph toolbar, MS Word logic (batch 2026-07-23 B §1.5): each
+// click cycles to the next state, and Justify is in the cycle because the Заява's body/notary
+// blocks are justified per the notarial standard - without it one click would make justify
+// unreachable. The effective alignment (what the button's icon shows and what a never-clicked
+// paragraph renders with) is the stored override or the paragraph's type default: flush-left for
+// a bold/heading paragraph, justified body text otherwise - exactly what the renderers do.
+export const PARAGRAPH_ALIGN_CYCLE = ['left', 'center', 'right', 'justify'];
+
+export const getEffectiveParagraphAlign = record => getParagraphStyle(record).align
+  ?? (isParagraphBold(record) ? 'left' : 'justify');
+
+export const nextParagraphAlign = align => {
+  const index = PARAGRAPH_ALIGN_CYCLE.indexOf(align);
+  return PARAGRAPH_ALIGN_CYCLE[(index + 1) % PARAGRAPH_ALIGN_CYCLE.length];
+};
+
+// Scope-addressed style access, mirroring getTemplateScopeText/withTemplateScopeText: the same
+// alignment/formatting controls serve a beforeTitle block and a body paragraph through one pair
+// of helpers (the title has no per-row style, so TITLE_SCOPE deliberately resolves to nothing).
+export const getTemplateScopeRecord = (template, scope) => {
+  const beforeTitleMatch = /^beforeTitle:(\d+)$/.exec(scope);
+  if (beforeTitleMatch) return toArray(template?.beforeTitle)[Number(beforeTitleMatch[1])] || null;
+  const paragraphMatch = /^p:(\d+)$/.exec(scope);
+  if (paragraphMatch) return toArray(template?.paragraphs)[Number(paragraphMatch[1])] || null;
+  return null;
+};
+
+export const withTemplateScopeStyle = (template, scope, partialStyle) => {
+  const beforeTitleMatch = /^beforeTitle:(\d+)$/.exec(scope);
+  if (beforeTitleMatch) {
+    const index = Number(beforeTitleMatch[1]);
+    return {
+      ...template,
+      beforeTitle: toArray(template?.beforeTitle).map((block, i) => (i === index ? withParagraphStyle(block, partialStyle) : block)),
+    };
+  }
+  const paragraphMatch = /^p:(\d+)$/.exec(scope);
+  if (paragraphMatch) {
+    const index = Number(paragraphMatch[1]);
+    return {
+      ...template,
+      paragraphs: toArray(template?.paragraphs).map((paragraph, i) => (i === index ? withParagraphStyle(paragraph, partialStyle) : paragraph)),
+    };
+  }
+  return template;
+};
+
 // Read-time migration for one template (idempotent, same spirit as normalizeCaseRecord): every
 // paragraph and beforeTitle block re-expressed with its styles consolidated under `style`, so the
 // next persist writes the new shape without a separate migration pass.
@@ -1270,10 +1317,13 @@ export const normalizeSignerBlockOffsetPercent = value => clampNumber(
   DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT,
 );
 
+// `align` stays sparse here (undefined = never set): the signer-strip renderers fall back to
+// their own notarial default (bold caption flush-left, regular data justified), so only an
+// explicitly aligned block - stored or set with the alignment button (§1.5) - deviates from it.
 const resolveBeforeTitleBlocks = (template, context) => toArray(template?.beforeTitle).map(block => {
   const style = getParagraphStyle(block);
   return {
-    align: normalizeBlockAlign(style.align),
+    align: style.align,
     bold: Boolean(style.bold),
     width: normalizeBlockWidth(style.width),
     fontSize: style.fontSize,

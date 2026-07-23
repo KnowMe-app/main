@@ -81,7 +81,7 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
     expect(screen.queryByText('Bold')).not.toBeInTheDocument();
   });
 
-  it('has the same +/Bold/Italic/Insert-variable/Remove buttons as a paragraph row, but no template/input/text mode button (spec follow-up)', async () => {
+  it('exposes the identical paragraph-row button set, including the {}/I/T mode cycle, alignment and formatting (Task 2)', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
@@ -94,10 +94,12 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
     expect(within(block).getByTitle('Italicize the selected text')).toBeInTheDocument();
     expect(within(block).getByTitle('Insert a variable')).toBeInTheDocument();
     expect(within(block).getByTitle('Remove this block')).toBeInTheDocument();
-    // No template/input/text mode cycle - beforeTitle always edits the raw markup directly.
-    expect(within(block).queryByText('{}')).not.toBeInTheDocument();
-    expect(within(block).queryByText('I')).not.toBeInTheDocument();
-    expect(within(block).queryByText('T')).not.toBeInTheDocument();
+    // The same {}/I/T mode cycle as a paragraph row (Task 2: no block-specific exceptions);
+    // beforeTitle starts in template mode since raw markup is its canonical surface.
+    expect(within(block).getByText('{}')).toBeInTheDocument();
+    // §1.5 alignment button + §1.3 formatting popover button complete the unified set.
+    expect(within(block).getByLabelText(/Вирівнювання:/)).toBeInTheDocument();
+    expect(within(block).getByTitle("Block formatting - font size (pt) and the signer block's offset (%)")).toBeInTheDocument();
   });
 
   it('"+" inserts a new block above this one, persisted straight to the template', async () => {
@@ -155,22 +157,25 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
     ));
   });
 
-  // Notarial layout standard §3.3: the signer block gets one left-offset handle for the whole
-  // block (30-65% of the text width, default ≈47% = 8.5 cm), persisted per document as a single
-  // beforeTitleOffsetPercent field - not the old per-block width slider.
-  it('the signer-block offset handle defaults to 8.5 cm (≈47%) and persists a dragged value on release', async () => {
+  // Notarial layout standard §3.3 + batch 2026-07-23 B §1.3/§1.4: the signer-block offset is a
+  // numeric plain-text percent field in the block's formatting popover (default ≈47.2% = 8.5 cm)
+  // - the old draggable handle is gone.
+  it('the signer-block offset is edited as a number in % in the formatting popover, no slider', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
-    const slider = screen.getByLabelText('Відступ блоку підписанта');
-    expect(slider).toHaveValue('47.2');
+    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+    expect(screen.queryAllByRole('slider')).toHaveLength(0);
 
-    fireEvent.change(slider, { target: { value: '60' } });
-    expect(screen.getByText('60.0% (≈10.8 см)')).toBeInTheDocument();
-    expect(set).not.toHaveBeenCalled(); // not yet released
+    fireEvent.click(within(block).getByTitle("Block formatting - font size (pt) and the signer block's offset (%)"));
+    const offsetField = within(block).getByLabelText('Offset (%)');
+    expect(offsetField).toHaveValue('');
+    expect(offsetField).toHaveAttribute('placeholder', '47.2'); // 8.5 cm of the 18 cm text width
 
-    fireEvent.mouseUp(slider);
+    fireEvent.change(offsetField, { target: { value: '60' } });
+    fireEvent.blur(offsetField);
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',

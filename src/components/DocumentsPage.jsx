@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaBold, FaChevronDown, FaChevronUp, FaCode, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaPlus, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaPlus, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -16,6 +16,7 @@ import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import PageNavMenu from './PageNavMenu';
 import VariablePickerModal from './DocumentsVariablePickerModal';
+import DocumentsPdfPreview from './DocumentsPdfPreview';
 import { useAutoResize } from '../hooks/useAutoResize';
 import {
   DEFAULT_DOC_FORMATTING,
@@ -35,20 +36,21 @@ import {
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
   DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT,
-  SIGNER_BLOCK_OFFSET_MIN_PERCENT,
-  SIGNER_BLOCK_OFFSET_MAX_PERCENT,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   getClinicLogo,
+  getEffectiveParagraphAlign,
   getLayoutLang,
   getParagraphStyle,
   getParagraphType,
   getTemplateLogoType,
+  getTemplateScopeRecord,
   getTemplateScopeText,
   isBilingualLayout,
   legacyClinicLogoStorageFilePath,
   legacyClinicLogoStorageFolder,
   mergeDocumentsCatalog,
+  nextParagraphAlign,
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
@@ -72,7 +74,7 @@ import {
   validateBirthRegistrationCase,
   validateCaseRecord,
   validateDocumentTemplate,
-  withParagraphStyle,
+  withTemplateScopeStyle,
   withTemplateScopeText,
 } from './documentsCatalogUtils';
 
@@ -559,15 +561,119 @@ const CheckLine = styled.label`
   cursor: pointer;
 `;
 
-// Per-paragraph first-line indent (spec: "додай можливість їх совати") - a real draggable slider,
-// not a number box, so "move it" is literal.
-const RangeInput = styled.input`
-  flex: 1;
-  min-width: 90px;
-  max-width: 160px;
-  accent-color: var(--km-accent);
-  cursor: pointer;
+// --- Formatting popovers (batch 2026-07-23 B §1.2/§1.3/§1.4) ---------------------------------
+// The numeric plain-text fields in these popovers are the ONLY way to set the document defaults,
+// the per-paragraph overrides, and the before-title block offset - every slider is gone (§1.4).
+// Values apply live as typed; the popover closes on outside click or Esc, no OK/Apply buttons.
+
+const PopoverAnchor = styled.span`
+  position: relative;
+  display: inline-flex;
 `;
+
+const PopoverCard = styled.div`
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 180px;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 8px 20px rgba(60, 42, 16, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+// Inheritance display (§1.3): an empty field shows the inherited value as the ghost placeholder;
+// typing a number sets the override, clearing the field removes it - no separate reset control.
+// The draft is local so partially-typed values ("1.", "0,7") are never rewritten mid-keystroke by
+// the parsed state they commit into.
+const PlainNumberField = ({ label, initialValue, placeholder, onApply, onFieldBlur }) => {
+  const [draft, setDraft] = useState(initialValue);
+  return (
+    <Field>
+      {label}
+      <FieldInput
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        placeholder={placeholder}
+        onChange={event => {
+          setDraft(event.target.value);
+          onApply(event.target.value);
+        }}
+        onBlur={onFieldBlur}
+      />
+    </Field>
+  );
+};
+
+// One trigger button + its popover, sharing a boundary node so an outside-click close never
+// races the trigger's own toggle click.
+const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields }) => {
+  const anchorRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = event => {
+      if (anchorRef.current && !anchorRef.current.contains(event.target)) onClose();
+    };
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
+  return (
+    <PopoverAnchor ref={anchorRef}>
+      <SmallButton type="button" onClick={onToggle} title={buttonTitle}>
+        <FaSlidersH />
+      </SmallButton>
+      {open ? (
+        <PopoverCard>
+          {fields.map(field => (
+            <PlainNumberField
+              key={field.key}
+              label={field.label}
+              initialValue={field.value}
+              placeholder={field.placeholder}
+              onApply={field.onApply}
+              onFieldBlur={field.onFieldBlur}
+            />
+          ))}
+        </PopoverCard>
+      ) : null}
+    </PopoverAnchor>
+  );
+};
+
+// The §1.5 alignment button: its icon always shows the paragraph's current effective alignment;
+// each click cycles Left → Center → Right → Justify → Left (MS Word whole-paragraph behavior).
+const ALIGN_ICONS = {
+  left: FaAlignLeft, center: FaAlignCenter, right: FaAlignRight, justify: FaAlignJustify,
+};
+
+const AlignCycleButton = ({ align, onCycle }) => {
+  const Icon = ALIGN_ICONS[align] || FaAlignLeft;
+  return (
+    <SmallButton
+      type="button"
+      onClick={onCycle}
+      aria-label={`Вирівнювання: ${align}`}
+      title={`Alignment: ${align}. Tap to cycle Left → Center → Right → Justify.`}
+    >
+      <Icon />
+    </SmallButton>
+  );
+};
 
 const LogoPreview = styled.img`
   max-width: 220px;
@@ -665,7 +771,11 @@ const DocumentsPage = ({ isAdmin }) => {
   };
   const [paragraphModes, setParagraphModes] = useState({});
   const paragraphModeKey = (docId, index) => `${docId}#${index}`;
-  const getParagraphMode = (docId, index) => paragraphModes[paragraphModeKey(docId, index)] || 'text';
+  // beforeTitle rows carry the same mode cycle (Task 2: identical toolbars) but default to
+  // 'template' - they have no per-case override layer, so raw markup is their canonical surface
+  // and what every admin edited there before the modes were unified.
+  const getParagraphMode = (docId, scope) => paragraphModes[paragraphModeKey(docId, scope)]
+    || (String(scope).startsWith('beforeTitle') ? 'template' : 'text');
   const setParagraphModeFor = (docId, index, mode) => setParagraphModes(previous => ({ ...previous, [paragraphModeKey(docId, index)]: mode }));
   const [dirtyDocIds, setDirtyDocIds] = useState({});
   const [dirtyOverrideDocIds, setDirtyOverrideDocIds] = useState({});
@@ -854,48 +964,89 @@ const DocumentsPage = ({ isAdmin }) => {
     updateTemplate(docId, template => withTemplateScopeText(template, scope, langKey, value));
   };
 
-  // Per-paragraph first-line indent (spec: "відступи теж повтори, додай можливість їх совати" -
-  // the reference notarial statement indents only its opening declaration, not the signature/
-  // registration lines after it, so one document-wide value can't express it). `value === null`
-  // clears the override, falling back to the document's own firstLineIndentCm again. Dragging the
-  // slider updates local state per tick (persisted on release, like every text field's onBlur);
-  // the reset button below is a single discrete click, so it writes directly instead - same
-  // stale-closure hazard applyParagraphStructureChange's own comment explains. The value lives
-  // under the paragraph's single consolidated `style` key on the backend (withParagraphStyle),
-  // together with every other per-paragraph style.
-  const withParagraphIndent = (template, index, value) => ({
-    ...template,
-    paragraphs: (template.paragraphs || []).map((paragraph, paragraphIndex) => (
-      paragraphIndex === index ? withParagraphStyle(paragraph, { indentCm: value }) : paragraph
-    )),
-  });
-
-  const handleParagraphIndentChange = (docId, index, value) => {
-    updateTemplate(docId, template => withParagraphIndent(template, index, value));
+  // --- Formatting popovers + alignment (batch 2026-07-23 B §1.2/§1.3/§1.5) --------------------
+  // One popover open at a time, addressed as `${docId}#doc` (document defaults, §1.2) or
+  // `${docId}#<scope>` (a paragraph's or beforeTitle block's own overrides, §1.3). Values apply
+  // live as typed via updateTemplate (state), and persist on field blur / popover close through
+  // the same dirty-flag persistTemplate every text field already uses.
+  const [openFormatKey, setOpenFormatKey] = useState('');
+  const formatPopoverKey = (docId, scope) => `${docId}#${scope || 'doc'}`;
+  const toggleFormatPopover = (docId, scope) => {
+    const key = formatPopoverKey(docId, scope);
+    // Switching straight from one popover to another still flushes the first one's edits.
+    if (openFormatKey && openFormatKey !== key) persistTemplate(openFormatKey.split('#')[0]);
+    setOpenFormatKey(openFormatKey === key ? '' : key);
+  };
+  const closeFormatPopover = docId => {
+    setOpenFormatKey('');
+    persistTemplate(docId);
   };
 
-  const resetParagraphIndent = async (docId, index) => {
+  // '' clears the value (null), a parseable number applies, anything mid-typing/unparseable is
+  // ignored until it becomes a number ("1." and "0,7" both already parse).
+  const parsePlainNumber = raw => {
+    const text = String(raw ?? '').trim().replace(',', '.');
+    if (!text) return null;
+    const value = Number(text);
+    return Number.isFinite(value) ? value : undefined;
+  };
+
+  // §1.2: the document defaults (font size / first-line indent) every non-overridden paragraph
+  // inherits - stored in the template's existing sparse `format` override field, and dropped from
+  // it when cleared or dialed back to the shared reference value (nothing redundant persists).
+  const setDocFormatField = (docId, field, raw) => {
+    const parsed = parsePlainNumber(raw);
+    if (parsed === undefined) return;
+    updateTemplate(docId, template => {
+      const format = { ...(template.format || {}) };
+      if (parsed === null || parsed === formatting[field]) delete format[field];
+      else format[field] = parsed;
+      const next = { ...template };
+      if (Object.keys(format).length) next.format = format;
+      else delete next.format;
+      return next;
+    });
+  };
+
+  // §1.3: a paragraph's (or beforeTitle block's) own override, kept under its consolidated
+  // `style` key - clearing the field (null) removes the key and the row inherits again.
+  const setScopeStyleField = (docId, scope, styleKey, raw) => {
+    const parsed = parsePlainNumber(raw);
+    if (parsed === undefined) return;
+    updateTemplate(docId, template => withTemplateScopeStyle(template, scope, { [styleKey]: parsed }));
+  };
+
+  // §1.3: for the before-title block the popover's "indent" field is the whole block's offset in
+  // percent (notarial layout standard §3.3) - one number per document, '' restores the default.
+  const setBeforeTitleOffset = (docId, raw) => {
+    const parsed = parsePlainNumber(raw);
+    if (parsed === undefined) return;
+    updateTemplate(docId, template => {
+      const next = { ...template };
+      if (parsed === null) delete next.beforeTitleOffsetPercent;
+      else next.beforeTitleOffsetPercent = parsed;
+      return next;
+    });
+  };
+
+  // §1.5: one click = the next alignment state, written straight to the backend (a discrete
+  // click, so it uses the direct-set pattern applyParagraphStructureChange's comment explains).
+  const handleCycleAlign = async (docId, scope) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
-    const nextTemplate = withParagraphIndent(template, index, null);
+    const record = getTemplateScopeRecord(template, scope);
+    if (!record) return;
+    const nextTemplate = withTemplateScopeStyle(template, scope, { align: nextParagraphAlign(getEffectiveParagraphAlign(record)) });
     try {
       await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
       setCatalog(previous => ({
         ...previous,
         documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
       }));
-    } catch (saveError) {
-      console.error('Unable to reset the paragraph indent', saveError);
-      toast.error('Could not save the indent change.');
+    } catch (alignError) {
+      console.error('Unable to save the alignment change', alignError);
+      toast.error('Could not save the alignment change.');
     }
-  };
-
-  // The addressee/signer block's draggable left-offset handle (notarial layout standard §3.3):
-  // one handle for the whole block, persisted per document as a single number
-  // (beforeTitleOffsetPercent) that both the PDF and Word exports read - same
-  // drag-updates-locally/persists-on-release pattern as the paragraph indent slider above.
-  const handleSignerBlockOffsetChange = (docId, value) => {
-    updateTemplate(docId, template => ({ ...template, beforeTitleOffsetPercent: value }));
   };
 
   // The letterhead logo always renders before the title (spec: "лого відображай перед title") and
@@ -1194,6 +1345,19 @@ const DocumentsPage = ({ isAdmin }) => {
     }
     const { start, end } = offsets;
     const { docId, scope, langKey } = active;
+    // Input mode's field never takes Bold/Italic (the buttons are disabled there) - hard-stop in
+    // case a stale focus record from it is still the active field.
+    if (active.kind === 'input-plain') return;
+    // beforeTitle rows have no per-case override layer, so their Text mode applies Bold/Italic
+    // straight onto the shared template markup (plain-text offsets via toggleInlineFormat) -
+    // unlike title/paragraph Text mode below, which writes this case's resolved-text override.
+    if (active.kind === 'text-display' && /^beforeTitle:/.test(scope)) {
+      const template = catalog.documents.find(item => String(item.id) === String(docId));
+      if (!template) return;
+      const currentRaw = getTemplateScopeText(template, scope, langKey);
+      await commitTemplateScopeText(docId, scope, langKey, toggleInlineFormat(currentRaw, start, end, attr));
+      return;
+    }
     if (active.kind === 'template') {
       const template = catalog.documents.find(item => String(item.id) === String(docId));
       if (!template) return;
@@ -1964,6 +2128,32 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
+                      {/* §1.2: the document-level formatting defaults every non-overridden
+                          paragraph inherits - edited here, next to the delete button. */}
+                      <FormatPopoverButton
+                        open={openFormatKey === formatPopoverKey(template.id, '')}
+                        onToggle={() => toggleFormatPopover(template.id, '')}
+                        onClose={() => closeFormatPopover(template.id)}
+                        buttonTitle="Document formatting - font size (pt) and first-line indent (cm) inherited by all paragraphs"
+                        fields={[
+                          {
+                            key: 'fontSize',
+                            label: 'Font size (pt)',
+                            value: template.format?.fontSize !== undefined ? String(template.format.fontSize) : '',
+                            placeholder: String(formatting.fontSize),
+                            onApply: raw => setDocFormatField(template.id, 'fontSize', raw),
+                            onFieldBlur: () => persistTemplate(template.id),
+                          },
+                          {
+                            key: 'firstLineIndentCm',
+                            label: 'First line indent (cm)',
+                            value: template.format?.firstLineIndentCm !== undefined ? String(template.format.firstLineIndentCm) : '',
+                            placeholder: formatting.firstLineIndentCm.toFixed(1),
+                            onApply: raw => setDocFormatField(template.id, 'firstLineIndentCm', raw),
+                            onFieldBlur: () => persistTemplate(template.id),
+                          },
+                        ]}
+                      />
                       <DangerButton type="button" onClick={() => handleDeleteTemplate(template)} title="Delete document">
                         <FaTrash />
                       </DangerButton>
@@ -1984,47 +2174,31 @@ const DocumentsPage = ({ isAdmin }) => {
                           />
                         </ParagraphEditorBlock>
                         <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Before title</DocSubtitle>
-                        {(template.beforeTitle || []).length ? (() => {
-                          // Notarial layout standard §3.3: one draggable left-offset handle for
-                          // the whole addressee/signer block (30-65% of the text width, default
-                          // 8.5 cm), persisted per document as a single number that both the PDF
-                          // and Word exports read.
-                          const offsetPercent = template.beforeTitleOffsetPercent ?? DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT;
-                          const textWidthCm = 21 - docFormatting.marginLeftCm - docFormatting.marginRightCm;
-                          return (
-                            <RowLine style={{ marginTop: 2, marginBottom: 2 }}>
-                              <DocSubtitle style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Відступ блоку зліва</DocSubtitle>
-                              <RangeInput
-                                type="range"
-                                min={SIGNER_BLOCK_OFFSET_MIN_PERCENT}
-                                max={SIGNER_BLOCK_OFFSET_MAX_PERCENT}
-                                step={0.1}
-                                value={offsetPercent}
-                                onChange={event => handleSignerBlockOffsetChange(template.id, Number(event.target.value))}
-                                onMouseUp={() => persistTemplate(template.id)}
-                                onTouchEnd={() => persistTemplate(template.id)}
-                                aria-label="Відступ блоку підписанта"
-                                title="Лівий відступ блоку адресата/підписанта - перетягніть, щоб змінити"
-                              />
-                              <DocSubtitle style={{ fontSize: 10, minWidth: 90 }}>
-                                {`${offsetPercent.toFixed(1)}% (≈${(textWidthCm * offsetPercent / 100).toFixed(1)} см)`}
-                              </DocSubtitle>
-                            </RowLine>
-                          );
-                        })() : null}
                         {(template.beforeTitle || []).map((block, index) => {
                           const scope = beforeTitleScope(index);
-                          // beforeTitle has no per-case override (see getTemplateScopeText) -
-                          // always the shared template's raw markup, position hardcoded by the
-                          // template itself (spec: "дані які зліва - їх положення хардкодь"),
-                          // never an admin-facing align/bold picker, and never the template/input/
-                          // text mode cycle paragraphs get (spec batch 21 follow-up: "вони немають
-                          // кнопки {}") - there's nothing to cycle to since it's always this one
-                          // raw-markup surface. Otherwise the same toolbar, same positions, as a
-                          // paragraph row: +, Bold, Italic, Insert-variable, Remove.
+                          // Task 2: the identical toolbar every paragraph row has - the same
+                          // {}/I/T mode cycle, Bold, Italic, Insert-variable, alignment (§1.5),
+                          // formatting (§1.3), delete - no block-specific exceptions. beforeTitle
+                          // still has no per-case override layer (see getTemplateScopeText), so
+                          // all three modes read/write the shared template text: 'template' edits
+                          // the raw markup, 'input' retypes the de-markup'd wording, 'text'
+                          // applies Bold/Italic to a selection in place. In the formatting
+                          // popover the block's "indent" field is the whole signer block's offset
+                          // in percent (§1.3, notarial layout standard §3.3).
+                          const mode = getParagraphMode(template.id, scope);
+                          const isTemplateMode = mode === 'template';
+                          const isInputMode = mode === 'input';
+                          const isTextMode = mode === 'text';
                           const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
-                          const onChange = langKey => event => handleTemplateScopeChange(template.id, scope, langKey, event.target.value);
+                          const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(rawValue(langKey)));
+                          const onChange = langKey => event => {
+                            const nextRaw = isTemplateMode
+                              ? event.target.value
+                              : applyPlainTextEdit(rawValue(langKey), event.target.value);
+                            handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
+                          };
                           const onBlur = () => persistTemplate(template.id);
+                          const fieldKind = isTemplateMode ? 'template' : 'input-plain';
                           return (
                             <ParagraphEditorBlock key={`${template.id}-before-title-${index}`}>
                               <ParagraphControlsRow>
@@ -2036,9 +2210,66 @@ const DocumentsPage = ({ isAdmin }) => {
                                   <FaPlus />
                                 </SmallButton>
                                 <RowLine style={{ gap: 6 }}>
-                                  <SmallButton type="button" {...formatButtonProps('bold')} title="Bold the selected text"><FaBold /></SmallButton>
-                                  <SmallButton type="button" {...formatButtonProps('italic')} title="Italicize the selected text"><FaItalic /></SmallButton>
-                                  <SmallButton type="button" onMouseDown={preventSelectionLoss} onClick={openVariablePicker} title="Insert a variable"><FaCode /></SmallButton>
+                                  <SmallButton
+                                    type="button"
+                                    onClick={() => setParagraphModeFor(template.id, scope, nextParagraphMode(mode))}
+                                    title={PARAGRAPH_MODE_TITLE[mode]}
+                                  >
+                                    {PARAGRAPH_MODE_ICON[mode]}
+                                  </SmallButton>
+                                  <SmallButton
+                                    type="button"
+                                    disabled={isInputMode}
+                                    {...formatButtonProps('bold')}
+                                    title="Bold the selected text"
+                                  >
+                                    <FaBold />
+                                  </SmallButton>
+                                  <SmallButton
+                                    type="button"
+                                    disabled={isInputMode}
+                                    {...formatButtonProps('italic')}
+                                    title="Italicize the selected text"
+                                  >
+                                    <FaItalic />
+                                  </SmallButton>
+                                  <SmallButton
+                                    type="button"
+                                    disabled={!isTemplateMode}
+                                    onMouseDown={preventSelectionLoss}
+                                    onClick={openVariablePicker}
+                                    title="Insert a variable"
+                                  >
+                                    <FaCode />
+                                  </SmallButton>
+                                  <AlignCycleButton
+                                    align={getEffectiveParagraphAlign(block)}
+                                    onCycle={() => handleCycleAlign(template.id, scope)}
+                                  />
+                                  <FormatPopoverButton
+                                    open={openFormatKey === formatPopoverKey(template.id, scope)}
+                                    onToggle={() => toggleFormatPopover(template.id, scope)}
+                                    onClose={() => closeFormatPopover(template.id)}
+                                    buttonTitle="Block formatting - font size (pt) and the signer block's offset (%)"
+                                    fields={[
+                                      {
+                                        key: 'fontSize',
+                                        label: 'Font size (pt)',
+                                        value: getParagraphStyle(block).fontSize !== undefined ? String(getParagraphStyle(block).fontSize) : '',
+                                        placeholder: String(docFormatting.fontSize),
+                                        onApply: raw => setScopeStyleField(template.id, scope, 'fontSize', raw),
+                                        onFieldBlur: () => persistTemplate(template.id),
+                                      },
+                                      {
+                                        key: 'offsetPercent',
+                                        label: 'Offset (%)',
+                                        value: template.beforeTitleOffsetPercent !== undefined ? String(template.beforeTitleOffsetPercent) : '',
+                                        placeholder: DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT.toFixed(1),
+                                        onApply: raw => setBeforeTitleOffset(template.id, raw),
+                                        onFieldBlur: () => persistTemplate(template.id),
+                                      },
+                                    ]}
+                                  />
                                   <DangerButton
                                     type="button"
                                     onClick={() => handleRemoveBeforeTitle(template.id, index)}
@@ -2051,26 +2282,46 @@ const DocumentsPage = ({ isAdmin }) => {
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>
-                                    <AutoInlineTextarea
-                                      ref={registerFieldNode(template.id, scope, 'uk')}
-                                      value={rawValue('uk')}
-                                      placeholder="Before title (uk)"
-                                      onFocus={handleRichFieldFocus(template.id, scope, 'uk', 'template')}
-                                      onChange={onChange('uk')}
-                                      onBlur={onBlur}
-                                    />
+                                    {isTextMode ? (
+                                      <TextModeDisplay
+                                        ref={registerFieldNode(template.id, scope, 'uk')}
+                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
+                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
+                                      >
+                                        <FormattedRunsPreview text={rawValue('uk')} />
+                                      </TextModeDisplay>
+                                    ) : (
+                                      <AutoInlineTextarea
+                                        ref={registerFieldNode(template.id, scope, 'uk')}
+                                        value={displayValue('uk')}
+                                        placeholder="Before title (uk)"
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
+                                        onChange={onChange('uk')}
+                                        onBlur={onBlur}
+                                      />
+                                    )}
                                   </ParagraphFieldColumn>
                                 ) : null}
                                 {showEn ? (
                                   <ParagraphFieldColumn>
-                                    <AutoInlineTextarea
-                                      ref={registerFieldNode(template.id, scope, 'en')}
-                                      value={rawValue('en')}
-                                      placeholder="Before title (en)"
-                                      onFocus={handleRichFieldFocus(template.id, scope, 'en', 'template')}
-                                      onChange={onChange('en')}
-                                      onBlur={onBlur}
-                                    />
+                                    {isTextMode ? (
+                                      <TextModeDisplay
+                                        ref={registerFieldNode(template.id, scope, 'en')}
+                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
+                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
+                                      >
+                                        <FormattedRunsPreview text={rawValue('en')} />
+                                      </TextModeDisplay>
+                                    ) : (
+                                      <AutoInlineTextarea
+                                        ref={registerFieldNode(template.id, scope, 'en')}
+                                        value={displayValue('en')}
+                                        placeholder="Before title (en)"
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
+                                        onChange={onChange('en')}
+                                        onBlur={onBlur}
+                                      />
+                                    )}
                                   </ParagraphFieldColumn>
                                 ) : null}
                               </ParagraphPair>
@@ -2210,9 +2461,9 @@ const DocumentsPage = ({ isAdmin }) => {
                           };
                           const onBlur = () => (isTemplateMode ? persistTemplate(template.id) : persistDocOverride(template.id));
                           const fieldKind = isTemplateMode ? 'template' : 'override';
-                          // This paragraph's own stored indent override, whichever backend shape
-                          // it's in (consolidated `style` key or legacy flat field).
-                          const paragraphIndentCm = getParagraphStyle(paragraph).indentCm;
+                          // This paragraph's own stored overrides, whichever backend shape they
+                          // are in (consolidated `style` key or legacy flat fields).
+                          const paragraphStyle = getParagraphStyle(paragraph);
                           return (
                             // Boxed together so it's unambiguous which paragraph the toolbar acts
                             // on: the +/mode-switch/Bold/Italic/Delete controls and the paragraph's
@@ -2259,6 +2510,34 @@ const DocumentsPage = ({ isAdmin }) => {
                                   >
                                     <FaCode />
                                   </SmallButton>
+                                  <AlignCycleButton
+                                    align={getEffectiveParagraphAlign(paragraph)}
+                                    onCycle={() => handleCycleAlign(template.id, scope)}
+                                  />
+                                  <FormatPopoverButton
+                                    open={openFormatKey === formatPopoverKey(template.id, scope)}
+                                    onToggle={() => toggleFormatPopover(template.id, scope)}
+                                    onClose={() => closeFormatPopover(template.id)}
+                                    buttonTitle="Paragraph formatting - font size (pt) and first-line indent (cm); empty = inherit the document value"
+                                    fields={[
+                                      {
+                                        key: 'fontSize',
+                                        label: 'Font size (pt)',
+                                        value: paragraphStyle.fontSize !== undefined ? String(paragraphStyle.fontSize) : '',
+                                        placeholder: String(docFormatting.fontSize),
+                                        onApply: raw => setScopeStyleField(template.id, scope, 'fontSize', raw),
+                                        onFieldBlur: () => persistTemplate(template.id),
+                                      },
+                                      {
+                                        key: 'indentCm',
+                                        label: 'First line indent (cm)',
+                                        value: paragraphStyle.indentCm !== undefined ? String(paragraphStyle.indentCm) : '',
+                                        placeholder: docFormatting.firstLineIndentCm.toFixed(1),
+                                        onApply: raw => setScopeStyleField(template.id, scope, 'indentCm', raw),
+                                        onFieldBlur: () => persistTemplate(template.id),
+                                      },
+                                    ]}
+                                  />
                                   <DangerButton
                                     type="button"
                                     onClick={() => handleRemoveParagraph(template.id, index)}
@@ -2268,33 +2547,6 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </DangerButton>
                                 </RowLine>
                               </ParagraphControlsRow>
-                              <RowLine style={{ marginTop: 2, marginBottom: 2 }}>
-                                <DocSubtitle style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Відступ</DocSubtitle>
-                                <RangeInput
-                                  type="range"
-                                  min={0}
-                                  max={5}
-                                  step={0.05}
-                                  value={paragraphIndentCm ?? docFormatting.firstLineIndentCm}
-                                  onChange={event => handleParagraphIndentChange(template.id, index, Number(event.target.value))}
-                                  onMouseUp={() => persistTemplate(template.id)}
-                                  onTouchEnd={() => persistTemplate(template.id)}
-                                  aria-label={`Відступ абзацу ${index + 1}`}
-                                  title="Перший рядок абзацу - перетягніть, щоб змінити відступ"
-                                />
-                                <DocSubtitle style={{ fontSize: 10, minWidth: 40 }}>
-                                  {(paragraphIndentCm ?? docFormatting.firstLineIndentCm).toFixed(2)} см
-                                </DocSubtitle>
-                                {paragraphIndentCm !== undefined ? (
-                                  <SmallButton
-                                    type="button"
-                                    onClick={() => resetParagraphIndent(template.id, index)}
-                                    title="Скинути до відступу документа"
-                                  >
-                                    ×
-                                  </SmallButton>
-                                ) : null}
-                              </RowLine>
                               {caseModeLocked ? (
                                 <DocSubtitle>Select a case first to edit its resolved values.</DocSubtitle>
                               ) : null}
@@ -2358,6 +2610,14 @@ const DocumentsPage = ({ isAdmin }) => {
                             <FaPlus />
                           </SmallButton>
                         </ParagraphControlsRow>
+                        {/* Task 4: the document exactly as the exported PDF - same generation
+                            pipeline, same props - as the last block of the document. */}
+                        <DocumentsPdfPreview
+                          doc={resolvedDoc}
+                          layout={layout}
+                          formatting={docFormatting}
+                          clinicLogos={clinicLogos}
+                        />
                       </div>
                     ) : null}
                   </DocRow>

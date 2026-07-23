@@ -243,11 +243,14 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
 // before the title (structure §3.4).
 const isBlankBlockText = value => !String(value || '').trim();
 
+// An explicitly aligned block (the §1.5 alignment button, stored under the block's `style` key)
+// overrides the strip's notarial default: bold caption flush-left, regular data justified.
 const SignerBlockLine = ({ block, langKey, cellStyles }) => (
   <Text
     style={[
       cellStyles.beforeTitle,
-      block.bold ? { textAlign: 'left', fontWeight: 700 } : { textAlign: 'justify' },
+      block.bold ? { fontWeight: 700 } : undefined,
+      { textAlign: block.align || (block.bold ? 'left' : 'justify') },
       block.fontSize !== undefined ? { fontSize: block.fontSize } : undefined,
     ]}
   >

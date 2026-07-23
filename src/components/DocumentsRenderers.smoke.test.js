@@ -215,6 +215,116 @@ describe('Documents DOCX builder (real docx Packer)', () => {
     const indentCount = (xml.match(/w:firstLine="567"/g) || []).length;
     expect(indentCount).toBe(1);
   }, 20000);
+
+  // batch 2026-07-23 B §3: empty lines separate the notarial blocks and must survive into the
+  // Word output - an in-paragraph blank line ("\n\n") as two real <w:br/> line breaks, an empty
+  // paragraph as its own full-height paragraph, never silently dropped by a TextRun that
+  // doesn't understand "\n".
+  it('preserves an in-paragraph blank line as real <w:br/> breaks in the Word output', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = {
+      id: 'blank-lines-doc',
+      allowPageBreaks: false,
+      logo: null,
+      title: { uk: 'Тест', en: 'Test' },
+      paragraphs: [
+        { type: 'text', uk: 'Перший рядок.\n\nПісля порожнього рядка.', en: 'First line.\n\nAfter the blank line.' },
+        { type: 'text', uk: '', en: '' },
+        { type: 'text', uk: 'Останній абзац.', en: 'Last paragraph.' },
+      ],
+    };
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'one-column-uk' });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const xml = await zip.file('word/document.xml').async('string');
+    // "\n\n" = two explicit line breaks = one full blank line at the current line height.
+    const breakCount = (xml.match(/<w:br\/>/g) || []).length;
+    expect(breakCount).toBe(2);
+    // The text on both sides of the blank line is still there, un-merged.
+    expect(xml).toContain('Перший рядок.');
+    expect(xml).toContain('Після порожнього рядка.');
+  }, 20000);
+
+  // batch 2026-07-23 B §1.1/§1.6: a per-paragraph fontSize override (stored under the paragraph's
+  // one `style` key, resolved flat by buildGeneratedDocument) must reach the Word output as that
+  // paragraph's own run size, leaving every other paragraph at the document default.
+  it('renders a per-paragraph fontSize override as that paragraph\'s own run size', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = {
+      id: 'font-size-doc',
+      allowPageBreaks: false,
+      logo: null,
+      title: { uk: 'Тест', en: 'Test' },
+      paragraphs: [
+        { type: 'text', uk: 'Дрібний абзац.', en: 'Small paragraph.', fontSize: 10 },
+        { type: 'text', uk: 'Звичайний абзац.', en: 'Normal paragraph.' },
+      ],
+    };
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'one-column-uk' });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const xml = await zip.file('word/document.xml').async('string');
+    // 10 pt = 20 half-points, only on the overridden paragraph's run.
+    expect(xml).toMatch(/<w:sz w:val="20"\/>[\s\S]*?<w:t[^>]*>Дрібний абзац.<\/w:t>/);
+    expect(xml).toMatch(/<w:t[^>]*>Звичайний абзац.<\/w:t>/);
+  }, 20000);
+});
+
+// batch 2026-07-23 B §1.6/§3: the PDF renderer must accept the same per-paragraph style
+// resolution (fontSize/align/indent) and blank-line content the Word builder does.
+describe('Documents PDF renderer - per-paragraph styles + blank lines', () => {
+  it('renders fontSize/align overrides and in-paragraph blank lines without throwing', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+
+    const doc = {
+      id: 'styled-doc',
+      allowPageBreaks: false,
+      logo: null,
+      title: { uk: 'Тест', en: 'Test' },
+      beforeTitle: [{ uk: 'ЗА МІСЦЕМ ВИМОГИ', en: 'TO WHOM IT MAY CONCERN', bold: true, align: 'right', fontSize: 11 }],
+      paragraphs: [
+        { type: 'text', uk: 'Дрібний і по центру.', en: 'Small and centered.', fontSize: 9, align: 'center' },
+        { type: 'text', uk: 'Перший рядок.\n\nПісля порожнього рядка.', en: 'First.\n\nAfter blank.' },
+        { type: 'text', uk: '', en: '' },
+        { type: 'text', uk: 'Останній абзац.', en: 'Last paragraph.' },
+      ],
+    };
+    const element = React.createElement(DocumentsPdfDocument, {
+      documents: [doc],
+      layout: 'two-column',
+      clinicLogos: [],
+    });
+    const buffer = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(500);
+  }, 20000);
 });
 
 describe('Documents PDF renderer - single-language 2-column layout + divider + inline formatting (batch 13 §1/§3/§4)', () => {
