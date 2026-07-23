@@ -6,6 +6,8 @@ describe('cardIndex queries', () => {
     getCard,
     removeCard,
     serializeQueryFilters,
+    clearEmptySearchQueryCache,
+    getQueryEntry,
   } = require('../cardIndex');
   const { updateCard } = require('../cardsStorage');
 
@@ -38,6 +40,23 @@ describe('cardIndex queries', () => {
     removeCard('userId01');
     expect(getCard('userId01')).toBeNull();
     expect(getIdsByQuery('test')).toEqual([]);
+  });
+
+  it('clears cached empty search results but keeps other entries', () => {
+    updateCard('userId01', { name: 'A' });
+    setIdsForQuery('cards:search:name=іванова', [], { isNegativeHit: true });
+    setIdsForQuery('cards:search:name=петрова', ['userId01']);
+    setIdsForQuery('favorite', []);
+
+    expect(getQueryEntry('cards:search:name=іванова').isNegativeHit).toBe(true);
+
+    const removed = clearEmptySearchQueryCache();
+
+    expect(removed).toBe(1);
+    expect(getQueryEntry('cards:search:name=іванова').cachedAt).toBe(0);
+    expect(getQueryEntry('cards:search:name=іванова').isNegativeHit).toBe(false);
+    expect(getIdsByQuery('cards:search:name=петрова')).toEqual(['userId01']);
+    expect(getQueryEntry('favorite').cachedAt).toBeGreaterThan(0);
   });
 
   it('serializes filters with stable ordering', () => {

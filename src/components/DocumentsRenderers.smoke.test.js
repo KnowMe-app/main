@@ -343,3 +343,95 @@ describe('Documents renderers - single-column template with beforeTitle (batch 1
   }, 20000);
 });
 
+// Notarial layout standard (§3.2/§3.3): the addressee/signer block renders as a borderless
+// 2-column layout table - column 1 empty (the stored left offset, default 8.5 cm of the 18 cm
+// text width), column 2 holding the bold caption and the justified signer data with one empty
+// line between them - and both exports honour the per-document beforeTitleOffsetPercent field.
+describe('Documents DOCX builder - notarial signer block layout', () => {
+  const extractXml = async blob => {
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    return zip.file('word/document.xml').async('string');
+  };
+
+  const buildSignerDoc = async offsetPercent => {
+    const { buildGeneratedDocument } = await import('./documentsCatalogUtils');
+    const template = {
+      id: 'zayava-racs',
+      languages: ['uk'],
+      columns: 1,
+      ...(offsetPercent !== undefined ? { beforeTitleOffsetPercent: offsetPercent } : {}),
+      beforeTitle: [
+        { uk: 'ЗА МІСЦЕМ ВИМОГИ', bold: true },
+        { uk: '**Молвінських Юлія Володимирівна**, 27.05.1993 року народження, паспорт серії ЕВ409051.' },
+      ],
+      title: { uk: 'З А Я В А' },
+      paragraphs: [{ uk: 'Я, **Молвінських Юлія Володимирівна**, даю згоду.' }],
+    };
+    return buildGeneratedDocument(template, {});
+  };
+
+  it('renders the signer block as a borderless table with the default 8.5 cm offset column', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = await buildSignerDoc(undefined);
+    // Default text width with the standard 1.5 cm margins: 11906 - 851 - 851 = 10204 twips;
+    // default offset 47.2% of it = 4816 twips ≈ the reference file's 4820-twip empty column.
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'two-column' });
+    const xml = await extractXml(blob);
+
+    expect(xml).toContain('<w:tbl>');
+    expect(xml).toContain('w:w="4816"');
+    // The caption is bold; the signer block table precedes the title.
+    expect(xml).toMatch(/<w:b\/>[\s\S]*?<w:t[^>]*>ЗА МІСЦЕМ ВИМОГИ<\/w:t>/);
+    expect(xml.indexOf('<w:tbl>')).toBeLessThan(xml.indexOf('З А Я В А'));
+    // The inline **bold** name inside the data paragraph stays a real bold run, no markup leak.
+    expect(xml).not.toContain('**');
+  }, 20000);
+
+  it('uses the stored per-document offset for the empty column width', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = await buildSignerDoc(60);
+    expect(doc.beforeTitleOffsetPercent).toBe(60);
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'two-column' });
+    const xml = await extractXml(blob);
+    // 60% of the 10204-twip text width.
+    expect(xml).toContain('w:w="6122"');
+  }, 20000);
+
+  it('clamps an out-of-range stored offset into the 30-65% band', async () => {
+    const doc = await buildSignerDoc(90);
+    expect(doc.beforeTitleOffsetPercent).toBe(65);
+  });
+
+  it('renders the signer block in the PDF without throwing', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+    const doc = await buildSignerDoc(undefined);
+
+    const element = React.createElement(DocumentsPdfDocument, { documents: [doc], layout: 'two-column', clinicLogos: [] });
+    const buffer = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(1000);
+  }, 20000);
+});
+

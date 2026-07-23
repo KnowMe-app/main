@@ -24,6 +24,7 @@ import {
   isBilingualLayout,
   isParagraphBold,
   isSingleLanguageTwoColumnLayout,
+  normalizeSignerBlockOffsetPercent,
   parseFormattedRuns,
   splitParagraphsIntoColumns,
   splitParagraphsIntoPages,
@@ -87,15 +88,26 @@ const styles = StyleSheet.create({
 // from the exact instance that owns the text, never inherited into a nested <Text> child, so
 // wrapping every run - even a whole plain paragraph with no bold/italic at all - silently broke
 // indentCm (spec batch 21 §8/per-paragraph indent): the parent's indent was set, but the text that
-// actually needed it always lived one level too deep to see it.
-const FormattedRuns = ({ text }) => parseFormattedRuns(text).map((run, index) => {
+// actually needed it always lived one level too deep to see it. The same one-level-too-deep trap
+// applies to a paragraph that *starts* with a formatted run (the notarial standard's bold
+// date-in-words line, `**Підпис**...`): the leading nested <Text> ignored the parent's indent, so
+// exactly the bolded lines lost their 1.5 cm first-line indent - `firstLineIndent` re-states the
+// paragraph's own resolved indent on that leading run.
+const FormattedRuns = ({ text, firstLineIndent }) => parseFormattedRuns(text).map((run, index) => {
   if (!run.bold && !run.italic) {
     // eslint-disable-next-line react/no-array-index-key
     return <React.Fragment key={index}>{run.text}</React.Fragment>;
   }
   return (
-    // eslint-disable-next-line react/no-array-index-key
-    <Text key={index} style={{ fontWeight: run.bold ? 700 : undefined, fontStyle: run.italic ? 'italic' : undefined }}>
+    <Text
+      // eslint-disable-next-line react/no-array-index-key
+      key={index}
+      style={{
+        fontWeight: run.bold ? 700 : undefined,
+        fontStyle: run.italic ? 'italic' : undefined,
+        ...(index === 0 && firstLineIndent ? { textIndent: firstLineIndent } : {}),
+      }}
+    >
       {run.text}
     </Text>
   );
@@ -154,16 +166,24 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
   const cellStyle = isParagraphBold(paragraph) ? cellStyles.paragraphHeading : cellStyles.paragraph;
   const alignStyle = paragraph.align ? { textAlign: paragraph.align } : undefined;
   const indentStyle = paragraph.indentCm !== undefined ? { textIndent: paragraph.indentCm * CM_TO_PT } : undefined;
+  // The indent this paragraph actually resolves to, re-applied to a leading bold/italic run
+  // (see FormattedRuns) since react-pdf never inherits textIndent into a nested <Text>.
+  const firstLineIndent = indentStyle ? indentStyle.textIndent : (cellStyle.textIndent || 0);
+  // An empty template paragraph is an explicit empty line (the notarial standard separates its
+  // blocks only with those) - it must keep one line's height, not collapse to nothing the way an
+  // empty <Text> does.
+  const lineOf = value => (String(value || '').trim()
+    ? <FormattedRuns text={value} firstLineIndent={firstLineIndent} />
+    : ' ');
   if (isBilingual) {
     return (
       <View style={styles.row} wrap={wrap}>
-        <Text style={[cellStyle, cellStyles.leftCell, alignStyle, indentStyle]}><FormattedRuns text={paragraph.uk} /></Text>
-        <Text style={[cellStyle, cellStyles.rightCell, alignStyle, indentStyle]}><FormattedRuns text={paragraph.en} /></Text>
+        <Text style={[cellStyle, cellStyles.leftCell, alignStyle, indentStyle]}>{lineOf(paragraph.uk)}</Text>
+        <Text style={[cellStyle, cellStyles.rightCell, alignStyle, indentStyle]}>{lineOf(paragraph.en)}</Text>
       </View>
     );
   }
-  const text = paragraph[lang];
-  return <Text style={[cellStyle, alignStyle, indentStyle]} wrap={wrap}><FormattedRuns text={text} /></Text>;
+  return <Text style={[cellStyle, alignStyle, indentStyle]} wrap={wrap}>{lineOf(paragraph[lang])}</Text>;
 };
 
 // The single-language 2-column layout (spec §4: newspaper-style, one language flowing across two
@@ -207,40 +227,63 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
   </View>
 );
 
-// Free-standing text between the letterhead logo and the title (spec §14: "ЗА МІСЦЕМ ВИМОГИ" etc.)
-// - never merged into the paragraph list, so it always renders in this fixed position regardless of
-// how the body is edited. `align`/`bold` (spec §17) are resolved per block, not inferred from text.
-// `width` (spec batch 21 §8: the applicant/signatory data block is a *half-page-right* layout rule,
-// not just right-aligned text) constrains the block to that percentage of its column's width, still
-// pushed against whichever margin `align` names - a wide block wraps inside that strip instead of
-// spanning the full page width the way plain text-align would.
-const BeforeTitleBlock = ({ block, isBilingual, lang, cellStyles }) => {
-  const runStyle = { textAlign: block.align, fontWeight: block.bold ? 700 : 400 };
-  const widthStyle = { width: `${block.width}%` };
-  const rowJustify = block.align === 'right' ? 'flex-end' : (block.align === 'center' ? 'center' : 'flex-start');
-  if (isBilingual) {
-    return (
-      <View style={styles.row}>
-        <View style={[cellStyles.leftCell, { flexDirection: 'row', justifyContent: rowJustify }]}>
-          <Text style={[cellStyles.beforeTitle, widthStyle, runStyle]}><FormattedRuns text={block.uk} /></Text>
-        </View>
-        <View style={[cellStyles.rightCell, { flexDirection: 'row', justifyContent: rowJustify }]}>
-          <Text style={[cellStyles.beforeTitle, widthStyle, runStyle]}><FormattedRuns text={block.en} /></Text>
-        </View>
-      </View>
-    );
-  }
+// The addressee/signer block between the letterhead logo and the title (notarial layout standard
+// §3.2, "ЗА МІСЦЕМ ВИМОГИ" + the signer data) - never merged into the paragraph list, so it always
+// renders in this fixed position regardless of how the body is edited. The whole group occupies
+// one strip from the document's stored left offset (beforeTitleOffsetPercent, default 8.5 cm of
+// the 18 cm text width) to the right margin - the PDF equivalent of the borderless 2-column layout
+// table the reference file uses. Inside the strip a bold block (the caption) sits flush with the
+// strip's left edge; a regular block (the signer data) is justified; neither ever carries a
+// first-line indent. Consecutive blocks are separated by exactly one empty line (empty blocks in
+// the template collapse into that same separator), and one empty line follows the whole strip
+// before the title (structure §3.4).
+const isBlankBlockText = value => !String(value || '').trim();
+
+const SignerBlockLine = ({ block, langKey, cellStyles }) => (
+  <Text style={[cellStyles.beforeTitle, block.bold ? { textAlign: 'left', fontWeight: 700 } : { textAlign: 'justify' }]}>
+    <FormattedRuns text={block[langKey]} />
+  </Text>
+);
+
+const BlankLine = ({ cellStyles }) => <Text style={cellStyles.beforeTitle}> </Text>;
+
+const SignerBlockStrip = ({ blocks, offsetPercent, langKey, cellStyles }) => (
+  <View style={styles.row}>
+    <View style={{ width: `${offsetPercent}%` }} />
+    <View style={{ flex: 1 }}>
+      {blocks.map((block, index) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <React.Fragment key={index}>
+          {index > 0 ? <BlankLine cellStyles={cellStyles} /> : null}
+          <SignerBlockLine block={block} langKey={langKey} cellStyles={cellStyles} />
+        </React.Fragment>
+      ))}
+    </View>
+  </View>
+);
+
+const BeforeTitleBlocks = ({ doc, isBilingual, lang, cellStyles }) => {
+  const blocks = (doc.beforeTitle || []).filter(block => !isBlankBlockText(block.uk) || !isBlankBlockText(block.en));
+  if (!blocks.length) return null;
+  const offsetPercent = normalizeSignerBlockOffsetPercent(doc.beforeTitleOffsetPercent);
   return (
-    <View style={{ flexDirection: 'row', justifyContent: rowJustify }}>
-      <Text style={[cellStyles.beforeTitle, widthStyle, runStyle]}><FormattedRuns text={block[lang]} /></Text>
+    <View>
+      {isBilingual ? (
+        <View style={styles.row}>
+          <View style={cellStyles.leftCell}>
+            <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey="uk" cellStyles={cellStyles} />
+          </View>
+          <View style={cellStyles.rightCell}>
+            <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey="en" cellStyles={cellStyles} />
+          </View>
+        </View>
+      ) : (
+        <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey={lang} cellStyles={cellStyles} />
+      )}
+      <BlankLine cellStyles={cellStyles} />
     </View>
   );
 };
-
-const BeforeTitleBlocks = ({ blocks, isBilingual, lang, cellStyles }) => (blocks || []).map((block, index) => (
-  // eslint-disable-next-line react/no-array-index-key
-  <BeforeTitleBlock key={index} block={block} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} />
-));
 
 // The bilingual and single-column (1-language) layouts: everything lives on one <Page> JSX
 // element and react-pdf's own automatic wrap handles overflow onto further physical pages. The
@@ -257,7 +300,7 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
           came from the dedicated `logo` field or a legacy leading paragraph - see
           getTemplateLogoType in documentsCatalogUtils. */}
       {doc.logo ? <LogoBlock type={doc.logo} {...logoBlockProps} /> : null}
-      <BeforeTitleBlocks blocks={doc.beforeTitle} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} />
+      <BeforeTitleBlocks doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} />
       <DocumentTitleBlock doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} titleGap={titleGap} />
       {doc.paragraphs.map((paragraph, index) => {
         // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render
@@ -454,7 +497,7 @@ const DocumentsPdfDocument = ({
                 {doc.logo ? (
                   <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
                 ) : null}
-                <BeforeTitleBlocks blocks={doc.beforeTitle} isBilingual={false} lang={lang} cellStyles={cellStyles} />
+                <BeforeTitleBlocks doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} />
                 <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
               </>
             ) : null}

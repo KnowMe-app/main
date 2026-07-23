@@ -34,7 +34,9 @@ import {
   clinicLogoEntriesToBackend,
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
-  DEFAULT_BLOCK_WIDTH_PERCENT,
+  DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT,
+  SIGNER_BLOCK_OFFSET_MIN_PERCENT,
+  SIGNER_BLOCK_OFFSET_MAX_PERCENT,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   getClinicLogo,
@@ -884,16 +886,12 @@ const DocumentsPage = ({ isAdmin }) => {
     }
   };
 
-  // The signatory/applicant data block's draggable width handle (spec batch 21 §8: half-page-right
-  // layout, adjustable per document/template) - same drag-updates-locally/persists-on-release
-  // pattern as the paragraph indent slider above.
-  const handleBeforeTitleWidthChange = (docId, index, value) => {
-    updateTemplate(docId, template => ({
-      ...template,
-      beforeTitle: (template.beforeTitle || []).map((block, blockIndex) => (
-        blockIndex === index ? { ...block, width: value } : block
-      )),
-    }));
+  // The addressee/signer block's draggable left-offset handle (notarial layout standard §3.3):
+  // one handle for the whole block, persisted per document as a single number
+  // (beforeTitleOffsetPercent) that both the PDF and Word exports read - same
+  // drag-updates-locally/persists-on-release pattern as the paragraph indent slider above.
+  const handleSignerBlockOffsetChange = (docId, value) => {
+    updateTemplate(docId, template => ({ ...template, beforeTitleOffsetPercent: value }));
   };
 
   // The letterhead logo always renders before the title (spec: "лого відображай перед title") and
@@ -1980,6 +1978,34 @@ const DocumentsPage = ({ isAdmin }) => {
                           />
                         </ParagraphEditorBlock>
                         <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Before title</DocSubtitle>
+                        {(template.beforeTitle || []).length ? (() => {
+                          // Notarial layout standard §3.3: one draggable left-offset handle for
+                          // the whole addressee/signer block (30-65% of the text width, default
+                          // 8.5 cm), persisted per document as a single number that both the PDF
+                          // and Word exports read.
+                          const offsetPercent = template.beforeTitleOffsetPercent ?? DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT;
+                          const textWidthCm = 21 - docFormatting.marginLeftCm - docFormatting.marginRightCm;
+                          return (
+                            <RowLine style={{ marginTop: 2, marginBottom: 2 }}>
+                              <DocSubtitle style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Відступ блоку зліва</DocSubtitle>
+                              <RangeInput
+                                type="range"
+                                min={SIGNER_BLOCK_OFFSET_MIN_PERCENT}
+                                max={SIGNER_BLOCK_OFFSET_MAX_PERCENT}
+                                step={0.1}
+                                value={offsetPercent}
+                                onChange={event => handleSignerBlockOffsetChange(template.id, Number(event.target.value))}
+                                onMouseUp={() => persistTemplate(template.id)}
+                                onTouchEnd={() => persistTemplate(template.id)}
+                                aria-label="Відступ блоку підписанта"
+                                title="Лівий відступ блоку адресата/підписанта - перетягніть, щоб змінити"
+                              />
+                              <DocSubtitle style={{ fontSize: 10, minWidth: 90 }}>
+                                {`${offsetPercent.toFixed(1)}% (≈${(textWidthCm * offsetPercent / 100).toFixed(1)} см)`}
+                              </DocSubtitle>
+                            </RowLine>
+                          );
+                        })() : null}
                         {(template.beforeTitle || []).map((block, index) => {
                           const scope = beforeTitleScope(index);
                           // beforeTitle has no per-case override (see getTemplateScopeText) -
@@ -2016,24 +2042,6 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </DangerButton>
                                 </RowLine>
                               </ParagraphControlsRow>
-                              <RowLine style={{ marginTop: 2, marginBottom: 2 }}>
-                                <DocSubtitle style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Ширина блоку</DocSubtitle>
-                                <RangeInput
-                                  type="range"
-                                  min={10}
-                                  max={100}
-                                  step={5}
-                                  value={block.width ?? DEFAULT_BLOCK_WIDTH_PERCENT}
-                                  onChange={event => handleBeforeTitleWidthChange(template.id, index, Number(event.target.value))}
-                                  onMouseUp={() => persistTemplate(template.id)}
-                                  onTouchEnd={() => persistTemplate(template.id)}
-                                  aria-label={`Ширина блоку ${index + 1}`}
-                                  title="Ширина блоку, вирівняного від середини сторінки до краю - перетягніть, щоб змінити"
-                                />
-                                <DocSubtitle style={{ fontSize: 10, minWidth: 32 }}>
-                                  {block.width ?? DEFAULT_BLOCK_WIDTH_PERCENT}%
-                                </DocSubtitle>
-                              </RowLine>
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>

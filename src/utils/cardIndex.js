@@ -444,6 +444,26 @@ export const setIdsForQuery = (queryKey, ids, options = {}) => {
   logMatchingCacheDebug('query ids cache save', { key, idsCount: nextIds.length, isNegativeHit });
 };
 
+const SEARCH_QUERY_CACHE_PREFIX = 'cards:search';
+
+// Drops cached search entries with no ids (negative "not found" hits) so a
+// freshly created or updated profile becomes findable without a page reload.
+export const clearEmptySearchQueryCache = () => {
+  const queries = loadQueries();
+  const staleKeys = Object.keys(queries).filter(key => {
+    if (!key.startsWith(SEARCH_QUERY_CACHE_PREFIX)) return false;
+    const ids = Array.isArray(queries[key]?.ids) ? queries[key].ids : [];
+    return ids.length === 0;
+  });
+  if (staleKeys.length === 0) return 0;
+  staleKeys.forEach(key => {
+    delete queries[key];
+  });
+  saveQueries(queries);
+  logMatchingCacheDebug('cleared empty search query cache entries', { count: staleKeys.length });
+  return staleKeys.length;
+};
+
 export const getIndexIdsByQuery = (queryKey, options = {}) => {
   const {
     ttlMs = MATCHING_INDEX_TTL_MS,

@@ -82,7 +82,7 @@ describe('spec: per-paragraph first-line indent slider', () => {
     const plainField = screen.getByText('Абзац без відступу.');
     // eslint-disable-next-line testing-library/no-node-access
     const plainBlock = plainField.closest('.paragraph-editor-block');
-    expect(within(plainBlock).getByLabelText('Відступ абзацу 2')).toHaveValue('0'); // document default
+    expect(within(plainBlock).getByLabelText('Відступ абзацу 2')).toHaveValue('1.5'); // document default (notarial standard §3.1)
     expect(within(plainBlock).queryByTitle('Скинути до відступу документа')).not.toBeInTheDocument();
   });
 
@@ -130,7 +130,7 @@ describe('spec: per-paragraph first-line indent slider', () => {
         ],
       }),
     ));
-    await waitFor(() => expect(within(indentedBlock).getByLabelText('Відступ абзацу 1')).toHaveValue('0'));
+    await waitFor(() => expect(within(indentedBlock).getByLabelText('Відступ абзацу 1')).toHaveValue('1.5'));
     expect(within(indentedBlock).queryByTitle('Скинути до відступу документа')).not.toBeInTheDocument();
   });
 });

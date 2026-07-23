@@ -26,7 +26,7 @@ import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
-import { getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
@@ -2084,6 +2084,8 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
     await update(searchIdRef, searchIdUpdates);
   }
 
+  clearEmptySearchQueryCache();
+
   return {
     userId: newUserId,
     ...newUser,
@@ -2885,6 +2887,8 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
         console.error('Error updating lastLogin2 in users:', e);
       }
     }
+
+    clearEmptySearchQueryCache();
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database3:', error);
     throw error;
@@ -7336,6 +7340,7 @@ export const removeCardAndSearchId = async userId => {
     console.log(`Картка користувача видалена з newUsers: ${userId}`);
 
     removeCard(userId);
+    clearEmptySearchQueryCache();
 
     if (deletedFields.length) {
       toast.success(`Видалені дані:\n${deletedFields.join('\n')}`, {
