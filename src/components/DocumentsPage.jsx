@@ -1988,11 +1988,18 @@ const DocumentsPage = ({ isAdmin }) => {
                 const onCatalogNameChange = event => updateTemplate(template.id, current => ({ ...current, catalogName: event.target.value }));
                 const onCatalogNameBlur = () => persistTemplate(template.id);
                 // Title mode/state - same template/input/text cycle as every paragraph and
-                // beforeTitle block; always writes to the shared template, never a per-case value.
+                // beforeTitle block. Template and Input both edit the shared markup directly
+                // (never a per-case value). Text mode is a read-only preview of the paragraph
+                // resolved against the currently selected case - unlike beforeTitle (which has no
+                // case data to resolve against and always shows raw markup even in Text mode),
+                // the title/paragraph Text preview shows real substituted values so an admin can
+                // actually read it, not raw {{tokens}} - there is nowhere left to persist a Bold/
+                // Italic edit made against resolved text (that used to be a per-case override,
+                // which no longer exists), so Text mode is display-only here.
                 const titleMode = getParagraphMode(template.id, TITLE_SCOPE);
                 const titleIsTemplateMode = titleMode === 'template';
-                const titleIsInputMode = titleMode === 'input';
                 const titleRawValue = langKey => template.title?.[langKey] || '';
+                const titleResolvedValue = langKey => resolvedDoc?.title?.[langKey] ?? '';
                 const titleDisplayValue = langKey => (titleIsTemplateMode ? titleRawValue(langKey) : plainTextOf(titleRawValue(langKey)));
                 const onTitleFieldChange = langKey => event => {
                   const nextRaw = titleIsTemplateMode
@@ -2256,7 +2263,9 @@ const DocumentsPage = ({ isAdmin }) => {
                               </ParagraphControlsRow>
                             );
                           }
-                          const titleFieldKind = titleIsTemplateMode ? 'template' : (titleIsInputMode ? 'input-plain' : 'text-display');
+                          // Only reaches an AutoInlineTextarea in Template/Input mode - Text mode
+                          // renders the read-only TextModeDisplay below instead.
+                          const titleFieldKind = titleIsTemplateMode ? 'template' : 'input-plain';
                           const titleStyle = getParagraphStyle(template.title);
                           return (
                             <ParagraphEditorBlock>
@@ -2272,7 +2281,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={titleIsInputMode}
+                                    disabled={!titleIsTemplateMode}
                                     {...formatButtonProps('bold')}
                                     title="Bold the selected text"
                                   >
@@ -2280,7 +2289,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={titleIsInputMode}
+                                    disabled={!titleIsTemplateMode}
                                     {...formatButtonProps('italic')}
                                     title="Italicize the selected text"
                                   >
@@ -2328,12 +2337,8 @@ const DocumentsPage = ({ isAdmin }) => {
                                 {showUk ? (
                                   <ParagraphFieldColumn>
                                     {titleMode === 'text' ? (
-                                      <TextModeDisplay
-                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'uk')}
-                                        onMouseUp={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', 'text-display')}
-                                        onTouchEnd={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', 'text-display')}
-                                      >
-                                        <FormattedRunsPreview text={titleRawValue('uk')} />
+                                      <TextModeDisplay>
+                                        <FormattedRunsPreview text={titleResolvedValue('uk')} />
                                       </TextModeDisplay>
                                     ) : (
                                       <AutoInlineTextarea
@@ -2350,12 +2355,8 @@ const DocumentsPage = ({ isAdmin }) => {
                                 {showEn ? (
                                   <ParagraphFieldColumn>
                                     {titleMode === 'text' ? (
-                                      <TextModeDisplay
-                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'en')}
-                                        onMouseUp={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', 'text-display')}
-                                        onTouchEnd={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', 'text-display')}
-                                      >
-                                        <FormattedRunsPreview text={titleRawValue('en')} />
+                                      <TextModeDisplay>
+                                        <FormattedRunsPreview text={titleResolvedValue('en')} />
                                       </TextModeDisplay>
                                     ) : (
                                       <AutoInlineTextarea
@@ -2375,15 +2376,17 @@ const DocumentsPage = ({ isAdmin }) => {
                         })()}
                         {(template.paragraphs || []).map((paragraph, index) => {
                           const scope = paragraphScope(index);
-                          // Same template/input/text mode cycle as beforeTitle - always writes to
-                          // the shared template, never a per-case value (Bold/Italic only ever act
-                          // in Template mode, on the raw markers, or Text mode, on the rendered
-                          // display).
+                          // Same template/input/text mode cycle as beforeTitle - Template and
+                          // Input both edit the shared markup directly. Text mode is a read-only
+                          // preview resolved against the selected case (real values substituted,
+                          // not raw {{tokens}}) - there is nowhere left to persist a Bold/Italic
+                          // edit made against resolved text, so only Template mode's raw markers
+                          // stay editable for formatting.
                           const mode = getParagraphMode(template.id, scope);
                           const isTemplateMode = mode === 'template';
-                          const isInputMode = mode === 'input';
                           const isTextMode = mode === 'text';
                           const rawValue = langKey => paragraph?.[langKey] || '';
+                          const resolvedValue = langKey => resolvedDoc?.paragraphs?.[index]?.[langKey] ?? '';
                           const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(rawValue(langKey)));
                           const onChange = langKey => event => {
                             const nextRaw = isTemplateMode
@@ -2392,7 +2395,7 @@ const DocumentsPage = ({ isAdmin }) => {
                             handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
                           };
                           const onBlur = () => persistTemplate(template.id);
-                          const fieldKind = isTemplateMode ? 'template' : (isInputMode ? 'input-plain' : 'text-display');
+                          const fieldKind = isTemplateMode ? 'template' : 'input-plain';
                           // This paragraph's own stored style overrides, whichever backend shape
                           // they are in (consolidated `style` key or legacy flat fields).
                           const paragraphStyle = getParagraphStyle(paragraph);
@@ -2419,7 +2422,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={isInputMode}
+                                    disabled={!isTemplateMode}
                                     {...formatButtonProps('bold')}
                                     title="Bold the selected text"
                                   >
@@ -2427,7 +2430,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={isInputMode}
+                                    disabled={!isTemplateMode}
                                     {...formatButtonProps('italic')}
                                     title="Italicize the selected text"
                                   >
@@ -2483,12 +2486,8 @@ const DocumentsPage = ({ isAdmin }) => {
                                 {showUk ? (
                                   <ParagraphFieldColumn>
                                     {isTextMode ? (
-                                      <TextModeDisplay
-                                        ref={registerFieldNode(template.id, scope, 'uk')}
-                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
-                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
-                                      >
-                                        <FormattedRunsPreview text={rawValue('uk')} />
+                                      <TextModeDisplay>
+                                        <FormattedRunsPreview text={resolvedValue('uk')} />
                                       </TextModeDisplay>
                                     ) : (
                                       <AutoInlineTextarea
@@ -2505,12 +2504,8 @@ const DocumentsPage = ({ isAdmin }) => {
                                 {showEn ? (
                                   <ParagraphFieldColumn>
                                     {isTextMode ? (
-                                      <TextModeDisplay
-                                        ref={registerFieldNode(template.id, scope, 'en')}
-                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
-                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
-                                      >
-                                        <FormattedRunsPreview text={rawValue('en')} />
+                                      <TextModeDisplay>
+                                        <FormattedRunsPreview text={resolvedValue('en')} />
                                       </TextModeDisplay>
                                     ) : (
                                       <AutoInlineTextarea
