@@ -5,6 +5,7 @@
 // (favourite formatting values + recently-used cases).
 
 export const DOCUMENTS_PARTIES_PATH = 'documentsBuilder/parties';
+export const DOCUMENTS_CASES_PATH = 'documentsBuilder/cases';
 export const DOCUMENTS_TEMPLATES_PATH = 'documentsBuilder/templates';
 export const DOCUMENTS_SETTINGS_PATH = 'documentsBuilder/settings';
 
@@ -25,7 +26,7 @@ export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoSt
 export const legacyClinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const legacyClinicLogoStorageFilePath = (clinicId, fileName) => `${legacyClinicLogoStorageFolder(clinicId)}/${fileName}`;
 
-export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'cases', 'maternityHospitals', 'notaries', 'transactions'];
+export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'maternityHospitals', 'notaries'];
 
 // mergeCollection derives an id prefix for un-identified incoming records by stripping a trailing
 // 's' off the collection name; 'notaries' isn't a simple plural ('notarys' would be wrong), so it
@@ -108,53 +109,34 @@ export const clinicLogoEntriesToBackend = variants => (variants || [])
 // --- Catalog -------------------------------------------------------------------------------
 
 export const emptyDocumentsCatalog = () => ({
+  cases: [],
   parties: {
-    couples: [], surrogateMothers: [], representatives: [], clinics: [], cases: [], maternityHospitals: [], notaries: [], transactions: [],
+    couples: [], surrogateMothers: [], representatives: [], clinics: [], maternityHospitals: [], notaries: [],
   },
   documents: [],
   clinicLogos: {},
 });
 
 // Backend stores every collection keyed by record id (so merges/deletes touch single children);
-// this converts a raw snapshot (or a pasted array) back into ordered arrays for the UI.
-export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
+// this converts a raw snapshot (or a pasted array) back into ordered arrays for the UI. Cases live
+// at their own top-level `documentsBuilder/cases` path (sibling of `parties`/`templates`), so their
+// raw snapshot is passed in separately from the party collections.
+export const normalizeDocumentsCatalog = (rawParties, rawTemplates, rawCases) => {
   const catalog = emptyDocumentsCatalog();
   PARTY_COLLECTIONS.forEach(collection => {
-    let rawCollection = rawParties?.[collection];
-    // `parties/cases/clinics` was the pre-batch-17 clinic-logo file-name store, not a case record -
-    // it must never leak into the cases list, even though the canonical logo location has since
-    // moved onto the clinic record itself (see clinicLogoDbPath).
-    if (collection === 'cases' && isPlainObject(rawCollection)) {
-      const { clinics: _clinicLogos, ...caseRecords } = rawCollection;
-      rawCollection = caseRecords;
-    }
-    catalog.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
-    // Batch 18: every case is migrated to the new relations/program/childbirth/registrations/
-    // documents shape right at ingestion, so nothing downstream ever has to branch on which shape
-    // a given case record happens to carry.
-    if (collection === 'cases') catalog.parties.cases = catalog.parties.cases.map(normalizeCaseRecord);
+    catalog.parties[collection] = toRecordsWithIdFromKey(rawParties?.[collection]).filter(record => isPlainObject(record));
   });
+  catalog.cases = toRecordsWithIdFromKey(rawCases).filter(record => isPlainObject(record)).map(normalizeCaseRecord);
   // Same read-time migration idea as normalizeCaseRecord, for templates: per-paragraph styles
   // are consolidated under each paragraph's single `style` key right at ingestion, so nothing
   // downstream ever has to branch on which shape a stored paragraph happens to carry.
   catalog.documents = toRecordsWithIdFromKey(rawTemplates).filter(record => isPlainObject(record)).map(consolidateTemplateStyles);
-  // Primary (batch 17 §1/§2): a clinic's own `logo` field, alongside its name/legalName/etc. - a
-  // clinic is shared across many cases, so its logo was never really case-scoped to begin with.
+  // A clinic's own `logo` field, alongside its name/legalName/etc. - a clinic is shared across
+  // many cases, so its logo was never really case-scoped to begin with.
   catalog.parties.clinics.forEach(clinic => {
     const entries = normalizeClinicLogoEntries(clinic.logo);
     if (entries.length) catalog.clinicLogos[String(clinic.id)] = entries;
   });
-  // Legacy fallback (spec §8): pre-batch-17 exports kept the layout assignments on a sibling
-  // `parties/cases/clinics` node instead - only consulted for a clinic that doesn't already have
-  // its own `logo` field, so the new shape always wins once a clinic has been migrated.
-  const rawClinicLogos = rawParties?.cases?.clinics;
-  if (isPlainObject(rawClinicLogos)) {
-    Object.entries(rawClinicLogos).forEach(([clinicId, node]) => {
-      if (catalog.clinicLogos[clinicId]) return;
-      const entries = normalizeClinicLogoEntries(node?.logo);
-      if (entries.length) catalog.clinicLogos[clinicId] = entries;
-    });
-  }
   return catalog;
 };
 
@@ -162,10 +144,11 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates) => {
 
 // Accepts three JSON shapes, so the exact file the backend exports (documentsBuilder/*) can be
 // pasted or uploaded as-is, with no manual reshaping:
-//   1. The full backend export: `{ parties: { couples, cases, ... }, templates: {...}, settings }`
-//      - i.e. `documentsBuilder/{parties,templates,settings}` dumped together, party collections
-//      one level deeper under `parties`, documents keyed by id under `templates`.
-//   2. The older technical-paste shape: `{ data: {...party collections...}, documents: [...] }`,
+//   1. The full backend export: `{ cases: {...}, parties: { couples, ... }, templates: {...}, settings }`
+//      - i.e. `documentsBuilder/{cases,parties,templates,settings}` dumped together, party
+//      collections one level deeper under `parties`, cases and documents each keyed by id at
+//      their own top level.
+//   2. The older technical-paste shape: `{ data: {...party collections, cases...}, documents: [...] }`,
 //      or top-level party collections without the `data` wrapper.
 //   3. Any partial mix of the two - `{ documents: [...] }` alone, `{ parties: {...} }` alone, etc.
 export const parseDocumentsTechnicalInput = rawText => {
@@ -192,45 +175,27 @@ export const parseDocumentsTechnicalInput = rawText => {
   // same as `parties`); the older technical-paste shape calls the same thing `documents` (an
   // array, also top-level) - both normalize the same way via toArray.
   const templatesSource = parsed.templates !== undefined ? parsed.templates : parsed.documents;
+  // Cases live at the top level (`cases`), sibling to `parties`/`templates`; a bare paste without
+  // the `parties` wrapper carries them at the same top level too.
+  const casesSource = dataRoot.cases !== undefined ? dataRoot.cases : dataSource.cases;
 
   const incoming = emptyDocumentsCatalog();
-  // Legacy (pre-batch-17) shape: `parties.cases.clinics` mirrored the clinic-logo layout
-  // assignments separately from the clinic record - it is not a case record, so it's carried aside
-  // here instead of being imported as a generated case; kept only as a fallback below.
-  let legacyClinicLogoNode = null;
   PARTY_COLLECTIONS.forEach(collection => {
-    let rawCollection = dataSource[collection];
-    if (collection === 'cases' && isPlainObject(rawCollection)) {
-      const { clinics: clinicLogoNode, ...caseRecords } = rawCollection;
-      rawCollection = caseRecords;
-      if (isPlainObject(clinicLogoNode)) legacyClinicLogoNode = clinicLogoNode;
-    }
-    incoming.parties[collection] = toRecordsWithIdFromKey(rawCollection).filter(record => isPlainObject(record));
-    // Batch 18: migrate every pasted case to the new relations/program/childbirth/registrations/
-    // documents shape right away, same as normalizeDocumentsCatalog.
-    if (collection === 'cases') incoming.parties.cases = incoming.parties.cases.map(normalizeCaseRecord);
+    incoming.parties[collection] = toRecordsWithIdFromKey(dataSource[collection]).filter(record => isPlainObject(record));
   });
+  incoming.cases = toRecordsWithIdFromKey(casesSource).filter(record => isPlainObject(record)).map(normalizeCaseRecord);
   // Pasted templates get the same style consolidation as normalizeDocumentsCatalog - a paragraph
   // row copied out of the backend (either shape) merges in with its full style intact.
   incoming.documents = toRecordsWithIdFromKey(templatesSource).filter(record => isPlainObject(record)).map(consolidateTemplateStyles);
 
-  // Primary (batch 17 §1/§2): each clinic's own `logo` field.
   incoming.parties.clinics.forEach(clinic => {
     const entries = normalizeClinicLogoEntries(clinic.logo);
     if (entries.length) incoming.clinicLogos[String(clinic.id)] = entries;
   });
-  // Legacy fallback (spec §8): only for a clinic not already covered by its own `logo` field above.
-  if (isPlainObject(legacyClinicLogoNode)) {
-    Object.entries(legacyClinicLogoNode).forEach(([clinicId, node]) => {
-      if (incoming.clinicLogos[clinicId]) return;
-      const entries = normalizeClinicLogoEntries(node?.logo);
-      if (entries.length) incoming.clinicLogos[clinicId] = entries;
-    });
-  }
 
   const hasParties = PARTY_COLLECTIONS.some(collection => incoming.parties[collection].length > 0);
   const hasClinicLogos = Object.keys(incoming.clinicLogos).length > 0;
-  if (!hasParties && incoming.documents.length === 0 && !hasClinicLogos) {
+  if (!hasParties && incoming.documents.length === 0 && incoming.cases.length === 0 && !hasClinicLogos) {
     throw new Error('No parties or documents found in the pasted JSON.');
   }
   return incoming;
@@ -309,6 +274,7 @@ export const mergeDocumentsCatalog = (current, incoming) => {
       summary,
     );
   });
+  catalog.cases = mergeCollection(current?.cases || [], incoming?.cases || [], 'case', summary);
   catalog.documents = mergeCollection(current?.documents || [], incoming?.documents || [], 'document', summary);
   // Clinic-logo layout assignments are a per-clinic snapshot (not per-field records), so an
   // incoming clinic's list simply replaces the existing one for that clinic id; every other
@@ -324,6 +290,11 @@ export const catalogPartiesToBackend = catalog => PARTY_COLLECTIONS.reduce((acc,
     return byId;
   }, {});
   return acc;
+}, {});
+
+export const catalogCasesToBackend = catalog => (catalog.cases || []).reduce((byId, record) => {
+  byId[record.id] = record;
+  return byId;
 }, {});
 
 export const catalogTemplatesToBackend = catalog => (catalog.documents || []).reduce((byId, record) => {
@@ -591,38 +562,27 @@ export const createEmptyNotary = () => ({
   city: { uk: '', en: '' },
 });
 
-// --- Case shape (batch 18) --------------------------------------------------------------------
-// One case is one concrete combination of couple + clinic + surrogate mother + representative(s)
-// (spec: "один case — це одна конкретна комбінація"); changing the clinic or surrogate mother means
-// creating a new case rather than mutating this one in place, so there is no active/replaced/from/to
-// history to track inside a single case record.
+// --- Case shape ------------------------------------------------------------------------------
+// One case is one concrete combination of couple + clinic + surrogate mother + representative(s);
+// changing the clinic or surrogate mother means creating a new case rather than mutating this one
+// in place, so there is no active/replaced/from/to history to track inside a single case record.
+// Every case in this Documents Builder is a surrogacy-program case - no `programType`/`program`
+// field distinguishes cases from one another. Templates are static (configured once in
+// `templates`); a document is always `static template + current case data + derived formatting
+// context` - never a stored snapshot, version, or per-case override of resolved text.
 
 // A fresh id for a brand-new case (Parties page "+ New case") - same generated shape as
-// makeTransactionId/createChildRecord's id.
+// createChildRecord's id.
 export const makeCaseId = () => makeRecordId('case');
 
-// A freshly-created case: every relation blank, ready for the admin to pick a couple/clinic/
-// surrogate mother/representatives - never pre-filled from another case (spec §14: no auto-copy).
-export const createEmptyCase = ({ caseId, programId = '' } = {}) => ({
-  id: caseId,
-  programId,
-  relations: {
-    coupleId: '', clinicId: '', surrogateMotherId: '', representativeIds: [],
-  },
-  program: {
-    type: 'surrogacy',
-    agreement: { number: { uk: '', en: '' }, date: '' },
-  },
-  childbirth: { maternityHospitalId: '', children: [] },
-  // batch 19: the case only ever stores a transactionId - the actual notary/statementDate/
-  // registryNumber live on parties.transactions[transactionId] (see createTransaction).
-  registrations: { birth: { transactionId: '' } },
-  documents: { overrides: {} },
-});
+// A freshly-created case carries only its id - `relations`/`childbirth`/`documents` are added
+// only once the admin actually enters that data, never pre-populated with empty placeholder
+// branches.
+export const createEmptyCase = ({ caseId } = {}) => ({ id: caseId });
 
-// A new child record for the childbirth.children editor (spec §13) - a stable generated id, never
-// the array index, since children can be reordered/removed independently of any document that
-// still references an earlier one by id.
+// A new child record for the childbirth.children editor - a stable generated id, never the array
+// index, since children can be reordered/removed independently of any document that still
+// references an earlier one by id.
 export const createChildRecord = () => ({
   id: makeRecordId('child'),
   sex: '',
@@ -631,136 +591,40 @@ export const createChildRecord = () => ({
   medicalConclusion: { number: '', date: '' },
 });
 
-// Migrates a pre-batch-18 case record (coupleId/clinicId/surrogateMotherId/representativeIds at the
-// top level, surrogacyAgreement, birthRegistration.{child,medicalConclusion.maternityHospitalId,
-// statementDate,notaryId}, docOverrides) onto the new shape - spec §16: a temporary read-time
-// normalizer, but once normalized the legacy top-level fields are dropped rather than carried
-// forward, so re-saving a migrated case never recreates them (spec: "не записувати назад старі
-// поля"). Idempotent: a case that already has `relations`/`program`/`childbirth`/`registrations`/
-// `documents` passes through those as-is.
-export const normalizeCaseRecord = (rawCase = {}) => {
-  const {
-    coupleId, clinicId, surrogateMotherId, representativeIds,
-    surrogacyAgreement, birthRegistration: legacyBirthRegistration, docOverrides,
-    ...rest
-  } = isPlainObject(rawCase) ? rawCase : {};
+// Idempotent pass-through: a case record is used as-is (relations/childbirth/documents are all
+// optional - missing branches are handled by the `?.` reads below, not backfilled here) so a case
+// saved before a given field existed never crashes the UI, and re-saving it never recreates a
+// branch nobody ever asked for.
+export const normalizeCaseRecord = rawCase => (isPlainObject(rawCase) ? rawCase : {});
 
-  const relations = isPlainObject(rest.relations) ? rest.relations : {
-    coupleId: coupleId ?? '',
-    clinicId: clinicId ?? '',
-    surrogateMotherId: surrogateMotherId ?? '',
-    representativeIds: Array.isArray(representativeIds) ? representativeIds : [],
-  };
-
-  const program = isPlainObject(rest.program) ? rest.program : {
-    type: 'surrogacy',
-    agreement: isPlainObject(surrogacyAgreement) ? surrogacyAgreement : { number: { uk: '', en: '' }, date: '' },
-  };
-
-  const legacyChild = isPlainObject(legacyBirthRegistration?.child) ? legacyBirthRegistration.child : null;
-  const legacyMedicalConclusion = isPlainObject(legacyBirthRegistration?.medicalConclusion) ? legacyBirthRegistration.medicalConclusion : {};
-  const childbirth = isPlainObject(rest.childbirth) ? rest.childbirth : {
-    maternityHospitalId: legacyMedicalConclusion.maternityHospitalId ?? '',
-    // maternityHospitalId moved up onto childbirth itself (shared by every child of one birth
-    // event) - never duplicated back onto the per-child medicalConclusion.
-    children: legacyChild ? [{
-      id: makeRecordId('child'),
-      ...legacyChild,
-      medicalConclusion: { number: legacyMedicalConclusion.number ?? '', date: legacyMedicalConclusion.date ?? '' },
-    }] : [],
-  };
-
-  const registrations = isPlainObject(rest.registrations) ? rest.registrations : {
-    birth: {
-      statementDate: legacyBirthRegistration?.statementDate ?? '',
-      notaryId: legacyBirthRegistration?.notaryId ?? '',
-    },
-  };
-
-  const documents = isPlainObject(rest.documents) ? rest.documents : {
-    overrides: isPlainObject(docOverrides) ? docOverrides : {},
-  };
-
-  return {
-    ...rest, relations, program, childbirth, registrations, documents,
-  };
+// Strips undefined/null/''-valued fields (and now-empty objects) out of a case form draft before
+// it's written to Firebase, so saving a case that has no documents data yet never creates empty
+// placeholder branches like `documents: { surrogacyAgreement: {} }`. Never applied to `templates` -
+// blank lines/strings there can be a deliberate part of a document.
+export const removeEmptyCaseValues = value => {
+  if (Array.isArray(value)) return value.map(removeEmptyCaseValues);
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, child]) => [key, removeEmptyCaseValues(child)])
+        .filter(([, child]) => {
+          if (child === undefined || child === null || child === '') return false;
+          if (Array.isArray(child)) return true;
+          if (typeof child === 'object') return Object.keys(child).length > 0;
+          return true;
+        }),
+    );
+  }
+  return value;
 };
-
-// --- Transactions (batch 19) -------------------------------------------------------------------
-// A transaction is one concrete combination of couple + surrogate mother + notary for a specific
-// legal act (e.g. the birth-registration surrogate-consent statement) - decoupled from the case's
-// current `relations` so a signed document keeps pointing at exactly who signed it even if the
-// case's relations were ever revisited later. The case only ever stores the transactionId; the
-// notary's own name/title/city live solely in `parties.notaries[notaryId]`, never copied in.
-
-// A fresh id for a brand-new transaction record (the case editor form needs one the first time it
-// saves the Transaction section, since createTransaction itself takes the id rather than making
-// one - same generated shape as createChildRecord's id).
-export const makeTransactionId = () => makeRecordId('transaction');
-
-export const createTransaction = ({
-  transactionId, caseId, type, coupleId, surrogateMotherId, notaryId, statementDate = '', registryNumber = '',
-}) => ({
-  id: transactionId,
-  type,
-  caseId,
-  coupleId,
-  surrogateMotherId,
-  notaryId,
-  statementDate,
-  registryNumber,
-});
-
-// `transactionType` guards against a stale/mistyped transactionId pointing at a transaction of a
-// different kind - resolves to null exactly like a missing transaction rather than silently
-// returning mismatched data.
-export const resolveTransaction = (catalog, caseRecord, transactionType) => {
-  const transactionId = caseRecord?.registrations?.birth?.transactionId;
-  const transaction = findById(catalog?.parties?.transactions, transactionId);
-  if (!transaction) return null;
-  if (transactionType && transaction.type !== transactionType) return null;
-  return transaction;
-};
-
-// Deleting a transaction (spec §14) never touches the couple/surrogate mother/notary records it
-// referenced - only the transaction itself and the transactionId reference(s) pointing at it.
-export const removeTransactionReferences = (catalog, transactionId) => ({
-  ...catalog,
-  parties: {
-    ...catalog.parties,
-    transactions: (catalog.parties.transactions || []).filter(item => String(item.id) !== String(transactionId)),
-    cases: (catalog.parties.cases || []).map(caseRecord => {
-      if (String(caseRecord.registrations?.birth?.transactionId) !== String(transactionId)) return caseRecord;
-      const { transactionId: _removed, ...restBirth } = caseRecord.registrations.birth;
-      return { ...caseRecord, registrations: { ...caseRecord.registrations, birth: restBirth } };
-    }),
-  },
-});
-
-// One case is one concrete relations combination (spec batch 18 §10); a case picked by programId
-// alone would be ambiguous (several cases can share a programId - see createEmptyCase) - the
-// currently-selected case is whatever the caller/UI passed as caseId, never an "active" flag.
-export const BIRTH_REGISTRATION_TRANSACTION_TYPE = 'birth-registration-surrogate-consent';
 
 export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
-  const rawCaseRecord = findById(catalog?.parties?.cases, caseId);
+  const rawCaseRecord = findById(catalog?.cases, caseId);
   if (!rawCaseRecord) return null;
-  // Defensively re-normalized here too (idempotent) - a case can reach this function without
-  // having passed through normalizeDocumentsCatalog/parseDocumentsTechnicalInput first (e.g. a
-  // freshly created or duplicated case still held only in local UI state).
   const caseRecord = normalizeCaseRecord(rawCaseRecord);
-  const relations = caseRecord.relations;
+  const relations = isPlainObject(caseRecord.relations) ? caseRecord.relations : {};
 
-  const transaction = resolveTransaction(catalog, caseRecord, BIRTH_REGISTRATION_TRANSACTION_TYPE);
-  // A document tied to a specific transaction must use exactly that transaction's own couple/
-  // surrogate mother (spec §5: "не брати пару, СМ ... безпосередньо з інших блоків кейса"), never
-  // silently the case's current relations - but a case that hasn't reached that stage yet (no
-  // transaction created) still needs relations.coupleId/surrogateMotherId to resolve wife/husband/
-  // surrogateMother for every other document.
-  const coupleId = transaction?.coupleId || relations.coupleId;
-  const surrogateMotherId = transaction?.surrogateMotherId || relations.surrogateMotherId;
-
-  const couple = findById(catalog.parties.couples, coupleId);
+  const couple = findById(catalog.parties.couples, relations.coupleId);
   const partners = toArray(couple?.partners);
   const wife = partners.find(partner => partner?.role === 'wife') || partners[0] || null;
   const husband = partners.find(partner => partner?.role === 'husband') || partners[1] || null;
@@ -770,51 +634,32 @@ export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
 
   const childbirth = isPlainObject(caseRecord.childbirth) ? caseRecord.childbirth : {};
   const rawChildren = toArray(childbirth.children);
-  // The first child is the default fallback for single-child documents (spec §4: "не прив'язувати
-  // систему назавжди лише до children[0]") - a caller generating a document for a twin passes
-  // `childId` to pick a different one; `children` (every child, gender-computed) is exposed
-  // alongside it so the UI can offer a selector.
+  // The first child is the default fallback for single-child documents - a caller generating a
+  // document for a twin passes `childId` to pick a different one; `children` (every child,
+  // gender-computed) is exposed alongside it so the UI can offer a selector.
   const selectedRawChild = childId ? rawChildren.find(item => String(item?.id) === String(childId)) : null;
   const rawChild = isPlainObject(selectedRawChild) ? selectedRawChild : (isPlainObject(rawChildren[0]) ? rawChildren[0] : {});
   const medicalConclusion = isPlainObject(rawChild.medicalConclusion) ? rawChild.medicalConclusion : {};
 
-  const rawBirth = isPlainObject(caseRecord.registrations?.birth) ? caseRecord.registrations.birth : {};
-  // Pre-batch-19 cases kept statementDate/notaryId directly on registrations.birth instead of
-  // pointing at a transaction - consulted only when there is no transaction yet, so a case that
-  // hasn't been migrated still resolves exactly as it did before (spec §16 is the rule for
-  // newly-authored data, not a forced rewrite of every existing case).
-  const statementDate = transaction?.statementDate ?? rawBirth.statementDate ?? '';
-  const notaryId = transaction?.notaryId ?? rawBirth.notaryId;
+  const documents = isPlainObject(caseRecord.documents) ? caseRecord.documents : {};
+  const surrogacyAgreement = isPlainObject(documents.surrogacyAgreement) ? documents.surrogacyAgreement : {};
+  const rawBirthRegistration = isPlainObject(documents.birthRegistrationConsent) ? documents.birthRegistrationConsent : {};
+  const statementDate = rawBirthRegistration.statementDate ?? '';
   const birthRegistration = {
-    transactionId: rawBirth.transactionId,
-    statementDate,
-    registryNumber: transaction?.registryNumber ?? '',
+    ...rawBirthRegistration,
     statementDateWords: {
       uk: formatUkrainianDateWords(statementDate),
       en: formatEnglishDateWords(statementDate),
     },
   };
-  // `{{transaction.statementDateWords.uk/en}}` (spec batch 18 §3) needs the words form directly on
-  // the transaction itself, not only on the `birthRegistration` legacy-named alias above - derived
-  // here rather than stored, same as every other date-in-words field.
-  const transactionContext = transaction ? {
-    ...transaction,
-    statementDateWords: {
-      uk: formatUkrainianDateWords(transaction.statementDate),
-      en: formatEnglishDateWords(transaction.statementDate),
-    },
-  } : null;
 
   return {
     case: caseRecord,
-    programId: caseRecord.programId ?? '',
     relations,
-    program: isPlainObject(caseRecord.program) ? caseRecord.program : {},
-    transaction: transactionContext,
     couple,
     wife,
     husband,
-    surrogateMother: findById(catalog.parties.surrogateMothers, surrogateMotherId),
+    surrogateMother: findById(catalog.parties.surrogateMothers, relations.surrogateMotherId),
     clinic: findById(catalog.parties.clinics, relations.clinicId),
     representative: representatives[0] || null,
     representatives,
@@ -824,8 +669,9 @@ export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
     selectedChildId: rawChild?.id,
     medicalConclusion,
     maternityHospital: findById(catalog.parties.maternityHospitals, childbirth.maternityHospitalId),
+    surrogacyAgreement,
     birthRegistration,
-    notary: findById(catalog.parties.notaries, notaryId),
+    notary: findById(catalog.parties.notaries, rawBirthRegistration.notaryId),
   };
 };
 
@@ -938,63 +784,16 @@ export const validateCaseRecord = rawCaseRecord => {
   };
 
   requirePresent(caseRecord.id, 'case.id');
-  requirePresent(caseRecord.programId, 'case.programId');
   requirePresent(caseRecord.relations?.coupleId, 'case.relations.coupleId');
   requirePresent(caseRecord.relations?.clinicId, 'case.relations.clinicId');
   requirePresent(caseRecord.relations?.surrogateMotherId, 'case.relations.surrogateMotherId');
-  requirePresent(caseRecord.program?.type, 'case.program.type');
   if (!toArray(caseRecord.childbirth?.children).length) issues.push('case.childbirth.children');
-  // batch 19: registrations.birth normally carries only transactionId; the direct
-  // statementDate/notaryId fields are consulted too so a not-yet-migrated case isn't flagged.
-  if (isBlank(caseRecord.registrations?.birth?.transactionId)
-    && isBlank(caseRecord.registrations?.birth?.statementDate)
-    && isBlank(caseRecord.registrations?.birth?.notaryId)) {
-    issues.push('case.registrations.birth');
-  }
 
   return issues;
 };
 
-// A transaction's own checklist (spec batch 19 §17): couple/surrogate mother/notary presence AND
-// existence, plus a statement date - registryNumber may stay blank (it's fine to fill in by hand
-// after the document is signed).
-export const validateTransaction = (catalog, transactionId) => {
-  const transaction = findById(catalog?.parties?.transactions, transactionId);
-  if (!transaction) return ['transaction'];
-
-  const issues = [];
-  const isBlank = value => value === undefined || value === null || String(value).trim() === '';
-  const requirePresent = (value, path) => {
-    if (isBlank(value)) issues.push(path);
-  };
-
-  requirePresent(transaction.id, 'transaction.id');
-  requirePresent(transaction.type, 'transaction.type');
-  requirePresent(transaction.coupleId, 'transaction.coupleId');
-  requirePresent(transaction.surrogateMotherId, 'transaction.surrogateMotherId');
-  requirePresent(transaction.notaryId, 'transaction.notaryId');
-  requirePresent(transaction.statementDate, 'transaction.statementDate');
-
-  if (!isBlank(transaction.coupleId) && !findById(catalog?.parties?.couples, transaction.coupleId)) {
-    issues.push('transaction.coupleId (no matching couple)');
-  }
-  if (!isBlank(transaction.surrogateMotherId) && !findById(catalog?.parties?.surrogateMothers, transaction.surrogateMotherId)) {
-    issues.push('transaction.surrogateMotherId (no matching surrogate mother)');
-  }
-  if (!isBlank(transaction.notaryId) && !findById(catalog?.parties?.notaries, transaction.notaryId)) {
-    issues.push('transaction.notaryId (no matching notary)');
-  }
-  if (!isBlank(transaction.statementDate) && !isIsoDate(transaction.statementDate)) {
-    issues.push('transaction.statementDate (must be YYYY-MM-DD)');
-  }
-
-  return issues;
-};
-
-// The birth-registration surrogate-consent statement's own checklist (spec batch 16 §20; field
-// locations updated for the batch 18 case shape, then again for the batch 19 transaction) -
-// missing hospital/notary/transaction lookups and malformed dates are reported the same way as a
-// genuinely empty field.
+// The birth-registration surrogate-consent statement's own checklist - missing hospital/notary
+// lookups and malformed dates are reported the same way as a genuinely empty field.
 export const validateBirthRegistrationCase = (catalog, caseId) => {
   const context = resolveCaseContext(catalog, caseId);
   if (!context) return ['case'];
@@ -1006,7 +805,7 @@ export const validateBirthRegistrationCase = (catalog, caseId) => {
   };
 
   const {
-    childbirth, child, medicalConclusion, surrogateMother, maternityHospital,
+    childbirth, child, medicalConclusion, surrogateMother, maternityHospital, birthRegistration, notary,
   } = context;
 
   requirePresent(childbirth.maternityHospitalId, 'case.childbirth.maternityHospitalId');
@@ -1031,33 +830,13 @@ export const validateBirthRegistrationCase = (catalog, caseId) => {
     issues.push('case.childbirth.maternityHospitalId (no matching maternity hospital)');
   }
 
-  const rawBirth = context.case.registrations?.birth || {};
-  if (rawBirth.transactionId) {
-    const linkedTransaction = findById(catalog?.parties?.transactions, rawBirth.transactionId);
-    if (linkedTransaction && linkedTransaction.type !== BIRTH_REGISTRATION_TRANSACTION_TYPE) {
-      // A transactionId can point at a transaction of a different document type (spec §3: "Find the
-      // transaction with type: 'birth-registration-surrogate-consent'") - resolveCaseContext already
-      // treats this as no transaction at all (context.transaction is null), so flagging it here keeps
-      // this checklist from passing while every `transaction.*`/`notary.*` template variable is
-      // actually unresolved.
-      issues.push('case.registrations.birth.transactionId (transaction is not a birth-registration-surrogate-consent)');
-    } else {
-      // The transaction is the source of truth (spec §17) - couple/surrogate mother/notary presence
-      // and existence are validated there, scoped to `transaction.*` paths.
-      issues.push(...validateTransaction(catalog, rawBirth.transactionId));
-    }
-  } else if (!isBlank(rawBirth.statementDate) || !isBlank(rawBirth.notaryId)) {
-    // Pre-batch-19 case still using the direct registrations.birth.{statementDate,notaryId} shape.
-    requirePresent(rawBirth.statementDate, 'case.registrations.birth.statementDate');
-    requirePresent(rawBirth.notaryId, 'case.registrations.birth.notaryId');
-    if (!isBlank(rawBirth.statementDate) && !isIsoDate(rawBirth.statementDate)) {
-      issues.push('case.registrations.birth.statementDate (must be YYYY-MM-DD)');
-    }
-    if (!isBlank(rawBirth.notaryId) && !context.notary) {
-      issues.push('case.registrations.birth.notaryId (no matching notary)');
-    }
-  } else {
-    issues.push('case.registrations.birth.transactionId');
+  requirePresent(birthRegistration.statementDate, 'case.documents.birthRegistrationConsent.statementDate');
+  requirePresent(birthRegistration.notaryId, 'case.documents.birthRegistrationConsent.notaryId');
+  if (!isBlank(birthRegistration.statementDate) && !isIsoDate(birthRegistration.statementDate)) {
+    issues.push('case.documents.birthRegistrationConsent.statementDate (must be YYYY-MM-DD)');
+  }
+  if (!isBlank(birthRegistration.notaryId) && !notary) {
+    issues.push('case.documents.birthRegistrationConsent.notaryId (no matching notary)');
   }
 
   return issues;
@@ -1140,19 +919,6 @@ const localizedText = (value, lang) => {
   if (isPlainObject(value)) return String(value[lang] ?? '');
   return String(value ?? '');
 };
-
-// Data-mode edits (spec: the "pencil" Data mode) are stored per case as sparse overrides of the
-// resolved text: `case.docOverrides[docId] = { title: {uk,en}, paragraphs: { [index]: {uk,en} } }`.
-// Firebase may hand dense numeric-keyed nodes back as arrays, so both shapes are accepted.
-const overrideAt = (overrides, index) => {
-  if (Array.isArray(overrides)) return overrides[index];
-  if (isPlainObject(overrides)) return overrides[index] ?? overrides[String(index)];
-  return undefined;
-};
-
-const overriddenText = (override, langKey, fallback) => (
-  typeof override?.[langKey] === 'string' ? override[langKey] : fallback
-);
 
 // A paragraph that starts with a variable - commonly a lowercase date-in-words - must still read
 // as a proper sentence (spec batch 21 §7). Applied here, at render time, on the resolved output
@@ -1358,25 +1124,6 @@ const resolveDocColumns = (template, languages) => {
   return template?.columns === 1 || template?.columns === 2 ? template.columns : (languages.length === 1 ? 1 : 2);
 };
 
-// A custom paragraph can be inserted (or removed) at any position in a template (spec: "кастомний
-// абзац в будь-якому місці документу"). Because per-case data-mode overrides key into a template's
-// paragraphs by array index, a structural edit like that must reindex every existing override so
-// it keeps pointing at the same paragraph it always did - never silently drift onto the paragraph
-// that happens to now sit at that index. `delta` is +1 for an insertion, -1 for a removal; the
-// override entry that sat exactly at a removed index is dropped along with that paragraph.
-export const shiftDocOverrideParagraphIndices = (docOverride, atIndex, delta) => {
-  if (!isPlainObject(docOverride) || !docOverride.paragraphs) return docOverride;
-  const entries = Array.isArray(docOverride.paragraphs)
-    ? docOverride.paragraphs.map((value, index) => [index, value]).filter(([, value]) => value !== undefined)
-    : Object.entries(docOverride.paragraphs).map(([key, value]) => [Number(key), value]);
-  const nextParagraphs = {};
-  entries.forEach(([index, value]) => {
-    if (delta < 0 && index === atIndex) return;
-    nextParagraphs[index >= atIndex ? index + delta : index] = value;
-  });
-  return { ...docOverride, paragraphs: nextParagraphs };
-};
-
 // A row-editing "scope" identifies one editable raw-text slot on a template - the shared title,
 // one beforeTitle block, or one paragraph - so the Bold/Italic/Insert-variable toolbar can share
 // one pair of read/write helpers across all of them instead of one bespoke pair per element (spec:
@@ -1418,18 +1165,18 @@ export const withTemplateScopeText = (template, scope, langKey, value) => {
 };
 
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
-// with every placeholder already substituted from the case context, then any per-case data-mode
-// overrides applied on top. Logo/logo-long paragraphs are never text-substituted or overridden -
-// they stay tagged for the renderer to draw a graphical block instead (spec §5-§7). The template's
-// letterhead logo (`logo`, below) always renders before the title - see getTemplateLogoType.
-export const buildGeneratedDocument = (template, context, docOverride = null) => {
-  const override = isPlainObject(docOverride) ? docOverride : {};
+// with every placeholder already substituted from the case context. Logo/logo-long paragraphs are
+// never text-substituted - they stay tagged for the renderer to draw a graphical block instead.
+// The template's letterhead logo (`logo`, below) always renders before the title - see
+// getTemplateLogoType. Every render re-substitutes the template against the case's current data -
+// nothing generated is ever stored back onto the case or the template.
+export const buildGeneratedDocument = (template, context) => {
   const logo = getTemplateLogoType(template);
   // A legacy template embeds its logo as the first paragraph instead of the dedicated `logo`
   // field; once getTemplateLogoType has picked it up for the before-the-title block, that same
   // paragraph must not also render a second time in its old body position. It's tagged
   // 'logo-consumed' (a no-op for the renderer) rather than dropped from the array, so paragraph
-  // indices stay stable for per-case data-mode overrides (docOverrides[docId].paragraphs[index]).
+  // indices stay stable.
   const hasDedicatedLogoField = Boolean(String(template?.logo || '').trim());
   const languages = resolveDocLanguages(template);
   return {
@@ -1440,13 +1187,13 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
     columns: resolveDocColumns(template, languages),
     beforeTitle: resolveBeforeTitleBlocks(template, context),
     beforeTitleOffsetPercent: normalizeSignerBlockOffsetPercent(template?.beforeTitleOffsetPercent),
-    // The title is an ordinary centered paragraph (batch 2026-07-23 C §2): its own consolidated
-    // `style` resolves here the same way a body paragraph's does - sparse, undefined = inherit
-    // the document default (centered, titleFontSize). A template whose title was deleted simply
-    // resolves to empty strings; the renderers skip an all-blank title block entirely.
+    // The title is an ordinary centered paragraph: its own consolidated `style` resolves here the
+    // same way a body paragraph's does - sparse, undefined = inherit the document default
+    // (centered, titleFontSize). A template whose title was deleted simply resolves to empty
+    // strings; the renderers skip an all-blank title block entirely.
     title: {
-      uk: overriddenText(override.title, 'uk', fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk')),
-      en: overriddenText(override.title, 'en', fillPlaceholders(localizedText(template.title, 'en'), context, 'en')),
+      uk: fillPlaceholders(localizedText(template.title, 'uk'), context, 'uk'),
+      en: fillPlaceholders(localizedText(template.title, 'en'), context, 'en'),
       align: getParagraphStyle(template.title).align,
       fontSize: getParagraphStyle(template.title).fontSize,
     },
@@ -1458,12 +1205,10 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
       if (type !== 'text') {
         return { type, uk: paragraph?.uk || '', en: paragraph?.en || '' };
       }
-      const paragraphOverride = overrideAt(override.paragraphs, index);
       // Every visual override of this paragraph comes from its one consolidated `style` key (or
       // the legacy flat fields, see getParagraphStyle) - resolved here into flat fields for the
       // renderers. An absent key means "inherit the document's own formatting" (fontSize /
-      // firstLineIndentCm / default alignment), same as every paragraph did before overrides
-      // existed.
+      // firstLineIndentCm / default alignment).
       const style = getParagraphStyle(paragraph);
       return {
         type,
@@ -1471,43 +1216,18 @@ export const buildGeneratedDocument = (template, context, docOverride = null) =>
         align: style.align,
         indentCm: style.indentCm,
         fontSize: style.fontSize,
-        uk: capitalizeFirstLetter(overriddenText(paragraphOverride, 'uk', fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk'))),
-        en: capitalizeFirstLetter(overriddenText(paragraphOverride, 'en', fillPlaceholders(localizedText(paragraph, 'en'), context, 'en'))),
+        uk: capitalizeFirstLetter(fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
+        en: capitalizeFirstLetter(fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
       };
     }),
   };
-};
-
-// Drops override entries that match the resolved template text again, so the backend only keeps
-// real deviations. Returns null when nothing is left (the node can then be deleted).
-export const pruneDocOverride = (docOverride, baselineDoc) => {
-  if (!isPlainObject(docOverride) || !baselineDoc) return null;
-  const pruned = {};
-  const title = {};
-  ['uk', 'en'].forEach(langKey => {
-    const value = docOverride.title?.[langKey];
-    if (typeof value === 'string' && value !== baselineDoc.title?.[langKey]) title[langKey] = value;
-  });
-  if (Object.keys(title).length) pruned.title = title;
-  const paragraphs = {};
-  (baselineDoc.paragraphs || []).forEach((baseline, index) => {
-    const paragraphOverride = overrideAt(docOverride.paragraphs, index);
-    const entry = {};
-    ['uk', 'en'].forEach(langKey => {
-      const value = paragraphOverride?.[langKey];
-      if (typeof value === 'string' && value !== baseline?.[langKey]) entry[langKey] = value;
-    });
-    if (Object.keys(entry).length) paragraphs[index] = entry;
-  });
-  if (Object.keys(paragraphs).length) pruned.paragraphs = paragraphs;
-  return Object.keys(pruned).length ? pruned : null;
 };
 
 // --- Case selector --------------------------------------------------------------------------
 
 export const buildCaseLabel = (catalog, caseRecord) => {
   if (!caseRecord) return '';
-  const relations = normalizeCaseRecord(caseRecord).relations;
+  const relations = normalizeCaseRecord(caseRecord).relations || {};
   const couple = findById(catalog?.parties?.couples, relations.coupleId);
   const partners = toArray(couple?.partners);
   const coupleNames = partners
@@ -1520,13 +1240,12 @@ export const buildCaseLabel = (catalog, caseRecord) => {
   return parts.join(' — ') || String(caseRecord.id);
 };
 
-// Which cases/transactions currently point at a given party record (Parties page delete
-// confirmation, spec: "If a record is referenced by a case, the confirmation must say so") -
-// deletes are never blocked on this, only clearly labeled, same "sever the reference, never touch
-// the other record" spirit as removeTransactionReferences.
+// Which cases currently point at a given party record (Parties page delete confirmation) - deletes
+// are never blocked on this, only clearly labeled; the reference is severed, the other record (the
+// case) is never touched.
 export const findPartyReferences = (catalog, collection, id) => {
   const targetId = String(id);
-  const referencingCases = (catalog?.parties?.cases || []).filter(rawCase => {
+  const referencingCases = (catalog?.cases || []).filter(rawCase => {
     const caseRecord = normalizeCaseRecord(rawCase);
     const relations = caseRecord.relations || {};
     switch (collection) {
@@ -1535,22 +1254,12 @@ export const findPartyReferences = (catalog, collection, id) => {
       case 'surrogateMothers': return String(relations.surrogateMotherId) === targetId;
       case 'representatives': return toArray(relations.representativeIds).some(repId => String(repId) === targetId);
       case 'maternityHospitals': return String(caseRecord.childbirth?.maternityHospitalId) === targetId;
+      case 'notaries': return String(caseRecord.documents?.birthRegistrationConsent?.notaryId) === targetId;
       default: return false;
     }
   });
 
-  const referencingTransactions = ['couples', 'surrogateMothers', 'notaries'].includes(collection)
-    ? (catalog?.parties?.transactions || []).filter(transaction => {
-      if (collection === 'couples') return String(transaction.coupleId) === targetId;
-      if (collection === 'surrogateMothers') return String(transaction.surrogateMotherId) === targetId;
-      return String(transaction.notaryId) === targetId;
-    })
-    : [];
-
-  return [
-    ...referencingCases.map(caseRecord => `case "${buildCaseLabel(catalog, caseRecord) || caseRecord.id}"`),
-    ...referencingTransactions.map(transaction => `transaction "${transaction.id}"`),
-  ];
+  return referencingCases.map(caseRecord => `case "${buildCaseLabel(catalog, caseRecord) || caseRecord.id}"`);
 };
 
 // --- Insert-variable picker (spec: "модальне вікно в якому можна обрати змінні") --------------
@@ -1581,7 +1290,7 @@ export const collectContextLeafPaths = (value, prefix = '') => {
 export const VARIABLE_PICKER_GROUPS = [
   { label: 'Чоловік', roots: ['husband'] },
   { label: 'Дружина', roots: ['wife'] },
-  { label: 'Спільне', roots: ['couple', 'program'] },
+  { label: 'Спільне', roots: ['couple', 'surrogacyAgreement'] },
   { label: 'Сурогатна мати', roots: ['surrogateMother'] },
   { label: 'Довірена особа', roots: ['representative'] },
   { label: 'Клініка — іноземна', roots: ['clinic'], predicate: context => context?.clinic?.kind === 'foreign' },

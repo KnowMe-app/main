@@ -15,6 +15,7 @@ import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
 import CaseChildbirthTransactionEditor from './CaseChildbirthTransactionEditor';
 import {
+  DOCUMENTS_CASES_PATH,
   DOCUMENTS_PARTIES_PATH,
   DOCUMENTS_TEMPLATES_PATH,
   PARTY_COLLECTIONS,
@@ -561,14 +562,6 @@ const NOTARY_FIELDS = [
   { label: 'City (en)', path: 'city.en' },
 ];
 
-const PROGRAM_FIELDS = [
-  { label: 'Program ID', path: 'programId' },
-  { label: 'Program type', path: 'program.type' },
-  { label: 'Agreement number (uk)', path: 'program.agreement.number.uk' },
-  { label: 'Agreement number (en)', path: 'program.agreement.number.en' },
-  { label: 'Agreement date', path: 'program.agreement.date', type: 'date' },
-];
-
 // --- One party-type group (couples/surrogateMothers/representatives/clinics/maternityHospitals/
 // notaries) ---------------------------------------------------------------------------------------
 
@@ -870,7 +863,7 @@ const RepresentativesSlot = ({ records, valueIds, onToggle }) => {
 };
 
 const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen, onToggleGroup, recentIds, recordPartyUsage, onSelectCase }) => {
-  const cases = catalog.parties.cases;
+  const cases = catalog.cases;
   const orderedCouples = orderRecordsByRecentIds(catalog.parties.couples, recentIds.couples);
   const orderedClinics = orderRecordsByRecentIds(catalog.parties.clinics, recentIds.clinics);
   const orderedSurrogateMothers = orderRecordsByRecentIds(catalog.parties.surrogateMothers, recentIds.surrogateMothers);
@@ -880,8 +873,8 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
     const caseId = makeCaseId();
     const record = createEmptyCase({ caseId });
     try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseId}`), record);
-      setCatalog(previous => ({ ...previous, parties: { ...previous.parties, cases: [...previous.parties.cases, record] } }));
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${caseId}`), record);
+      setCatalog(previous => ({ ...previous, cases: [...previous.cases, record] }));
       toggleRecord('cases', caseId, true);
       onSelectCase(caseId);
       toast.success('Case created.');
@@ -892,15 +885,12 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
   };
 
   const updateCaseField = async (caseId, path, value) => {
-    const dbPath = `${DOCUMENTS_PARTIES_PATH}/cases/${caseId}/${path.split('.').join('/')}`;
+    const dbPath = `${DOCUMENTS_CASES_PATH}/${caseId}/${path.split('.').join('/')}`;
     try {
       await set(ref(database, dbPath), value);
       setCatalog(previous => ({
         ...previous,
-        parties: {
-          ...previous.parties,
-          cases: previous.parties.cases.map(item => (String(item.id) === String(caseId) ? setValueAtPath(item, path, value) : item)),
-        },
+        cases: previous.cases.map(item => (String(item.id) === String(caseId) ? setValueAtPath(item, path, value) : item)),
       }));
     } catch (updateError) {
       console.error('Unable to save case field', updateError);
@@ -919,10 +909,10 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
     const label = buildCaseLabel(catalog, caseRecord) || caseRecord.id;
     if (typeof window !== 'undefined' && !window.confirm(`Delete case "${label}"? Party records stay in the catalog.`)) return;
     try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseRecord.id}`), null);
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${caseRecord.id}`), null);
       setCatalog(previous => ({
         ...previous,
-        parties: { ...previous.parties, cases: previous.parties.cases.filter(item => String(item.id) !== String(caseRecord.id)) },
+        cases: previous.cases.filter(item => String(item.id) !== String(caseRecord.id)),
       }));
       toast.success('Case deleted.');
     } catch (deleteError) {
@@ -987,9 +977,6 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
                       onToggle={(repId, include) => handleToggleRepresentative(caseRecord, repId, include)}
                     />
 
-                    <SectionSubhead>Program</SectionSubhead>
-                    <RecordFieldsGrid record={caseRecord} fieldDefs={PROGRAM_FIELDS} onFieldChange={(path, value) => updateCaseField(caseRecord.id, path, value)} />
-
                     <CaseChildbirthTransactionEditor catalog={catalog} setCatalog={setCatalog} caseId={caseRecord.id} />
 
                     <RowLine style={{ marginTop: 8 }}>
@@ -1044,11 +1031,16 @@ const TechnicalSection = ({ catalog, setCatalog }) => {
           partiesPatch[`${collection}/${mergedRecord.id}`] = mergedRecord;
         });
       });
+      const casesPatch = {};
+      resolveMergedRecordsForPersistence(catalog.cases, merged.cases, incoming.cases).forEach(mergedRecord => {
+        casesPatch[mergedRecord.id] = mergedRecord;
+      });
       const templatesPatch = {};
       resolveMergedRecordsForPersistence(catalog.documents, merged.documents, incoming.documents).forEach(mergedRecord => {
         templatesPatch[mergedRecord.id] = mergedRecord;
       });
       if (Object.keys(partiesPatch).length) await update(ref(database, DOCUMENTS_PARTIES_PATH), partiesPatch);
+      if (Object.keys(casesPatch).length) await update(ref(database, DOCUMENTS_CASES_PATH), casesPatch);
       if (Object.keys(templatesPatch).length) await update(ref(database, DOCUMENTS_TEMPLATES_PATH), templatesPatch);
       setCatalog(merged);
       setTechnicalInput('');
@@ -1118,7 +1110,7 @@ const TechnicalSection = ({ catalog, setCatalog }) => {
 // above the case data per spec; picking a different case (or creating one) updates the persisted
 // last-selected case, so switching into Edit mode and back never loses it.
 const CaseReadView = ({ catalog, selectedCaseId, onSelectCase, onCreateCase }) => {
-  const cases = catalog.parties.cases;
+  const cases = catalog.cases;
   const selectedCase = cases.find(item => String(item.id) === String(selectedCaseId));
   const context = selectedCase ? resolveCaseContext(catalog, selectedCase.id) : null;
   const groups = context ? buildVariablePickerGroups(context) : [];
@@ -1195,8 +1187,9 @@ const PartiesPage = ({ isAdmin }) => {
     setLoading(true);
     setError('');
     try {
-      const [partiesSnapshot, templatesSnapshot, settingsSnapshot, lastCaseSnapshot] = await Promise.all([
+      const [partiesSnapshot, casesSnapshot, templatesSnapshot, settingsSnapshot, lastCaseSnapshot] = await Promise.all([
         get(ref(database, DOCUMENTS_PARTIES_PATH)),
+        get(ref(database, DOCUMENTS_CASES_PATH)),
         get(ref(database, DOCUMENTS_TEMPLATES_PATH)),
         get(ref(database, `${PARTIES_SETTINGS_PATH}/recentIds`)),
         get(ref(database, `${PARTIES_SETTINGS_PATH}/lastCaseId`)),
@@ -1204,14 +1197,15 @@ const PartiesPage = ({ isAdmin }) => {
       const nextCatalog = normalizeDocumentsCatalog(
         partiesSnapshot.exists() ? partiesSnapshot.val() : null,
         templatesSnapshot.exists() ? templatesSnapshot.val() : null,
+        casesSnapshot.exists() ? casesSnapshot.val() : null,
       );
       setCatalog(nextCatalog);
       const rawLastCaseId = lastCaseSnapshot.exists() ? String(lastCaseSnapshot.val()) : '';
       // Falls back to the first case only when there's no persisted choice yet (or it no longer
       // resolves to a real case) - never silently swaps out a case the admin deliberately picked.
-      setSelectedCaseId(nextCatalog.parties.cases.some(item => String(item.id) === rawLastCaseId)
+      setSelectedCaseId(nextCatalog.cases.some(item => String(item.id) === rawLastCaseId)
         ? rawLastCaseId
-        : (nextCatalog.parties.cases[0]?.id || ''));
+        : (nextCatalog.cases[0]?.id || ''));
       const rawRecentIds = settingsSnapshot.exists() ? settingsSnapshot.val() : null;
       setRecentIds({
         couples: toArray(rawRecentIds?.couples),
@@ -1284,8 +1278,8 @@ const PartiesPage = ({ isAdmin }) => {
     const caseId = makeCaseId();
     const record = createEmptyCase({ caseId });
     try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${caseId}`), record);
-      setCatalog(previous => ({ ...previous, parties: { ...previous.parties, cases: [...previous.parties.cases, record] } }));
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${caseId}`), record);
+      setCatalog(previous => ({ ...previous, cases: [...previous.cases, record] }));
       persistSelectedCase(caseId);
       enterEditModeOnCase(caseId);
       toast.success('Case created.');

@@ -35,7 +35,7 @@ import { listStorageFolderFileNames } from './config';
 // eslint-disable-next-line import/first
 import DocumentsPage from './DocumentsPage';
 
-const buildParties = (children) => ({
+const buildParties = () => ({
   couples: {
     'couple-1': { id: 'couple-1', partners: [{ id: 'p1', role: 'wife', name: { uk: { nominative: 'Тестова Марія' }, en: 'Testova Mariia' } }] },
   },
@@ -44,22 +44,20 @@ const buildParties = (children) => ({
     'hospital-1': { id: 'hospital-1', shortName: { uk: 'Пологовий будинок №1', en: '' } },
   },
   notaries: {},
-  transactions: {},
-  cases: {
-    'case-1': {
-      id: 'case-1',
-      relations: { coupleId: 'couple-1', clinicId: '', surrogateMotherId: '', representativeIds: [] },
-      program: { type: 'surrogacy', agreement: { number: { uk: '', en: '' }, date: '' } },
-      childbirth: { maternityHospitalId: 'hospital-1', children },
-      registrations: { birth: { transactionId: '' } },
-      documents: { overrides: {} },
-    },
+});
+
+const buildCases = children => ({
+  'case-1': {
+    id: 'case-1',
+    relations: { coupleId: 'couple-1', clinicId: '', surrogateMotherId: '', representativeIds: [] },
+    childbirth: { maternityHospitalId: 'hospital-1', children },
   },
 });
 
-const mockGet = parties => {
+const mockGet = children => {
   get.mockImplementation(async path => {
-    if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => parties };
+    if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => buildParties() };
+    if (path === 'documentsBuilder/cases') return { exists: () => true, val: () => buildCases(children) };
     if (path === 'documentsBuilder/templates') return { exists: () => false, val: () => null };
     return { exists: () => false, val: () => null };
   });
@@ -74,10 +72,10 @@ beforeEach(() => {
 
 describe('spec: РАЦС editor is not duplicated on Documents Builder', () => {
   it('never renders the childbirth/transaction editing form, even for a multi-child case', async () => {
-    mockGet(buildParties([
+    mockGet([
       { id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' } },
       { id: 'child-2', sex: 'male', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-2', date: '2026-05-16' } },
-    ]));
+    ]);
 
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     await screen.findByText('Case');
@@ -89,10 +87,10 @@ describe('spec: РАЦС editor is not duplicated on Documents Builder', () => {
   });
 
   it('shows a plain child picker for a multi-child case, defaulting to the first child', async () => {
-    mockGet(buildParties([
+    mockGet([
       { id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' } },
       { id: 'child-2', sex: 'male', birthDate: '2026-05-17', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-2', date: '2026-05-17' } },
-    ]));
+    ]);
 
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
 
@@ -103,9 +101,9 @@ describe('spec: РАЦС editor is not duplicated on Documents Builder', () => {
   });
 
   it('hides the child picker entirely for a single-child case', async () => {
-    mockGet(buildParties([
+    mockGet([
       { id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' } },
-    ]));
+    ]);
 
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     await screen.findByText('Case');
@@ -117,8 +115,7 @@ describe('spec: РАЦС editor is not duplicated on Documents Builder', () => {
   // array (same hazard PartiesPage.caseEditor.test.js covers for the editor) - this page's own
   // read of it (toArray) must tolerate that too.
   it('does not crash when case.childbirth.children arrives as a Firebase gap-object', async () => {
-    const parties = buildParties({ 1: { id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' } } });
-    mockGet(parties);
+    mockGet({ 1: { id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' } } });
 
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
 

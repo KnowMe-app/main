@@ -1,21 +1,20 @@
-// "Дані для заяви в РАЦС" (Childbirth + Transaction editor, Batch 18 §6 / Batch 19) - shared
-// between Documents Builder (editing a case while preparing to generate its documents) and the
-// Parties page (editing a case as part of assembling it), per the Parties spec: "reuse the ...
-// form structure ... rather than duplicating it". Self-contained: owns its own drafts, resets them
-// whenever the selected case changes, and persists additively to the same documentsBuilder/parties
-// tree either host page already reads/writes.
+// "Дані для заяви в РАЦС" (childbirth + documents editor) - shared between Documents Builder
+// (editing a case while preparing to generate its documents) and the Parties page (editing a case
+// as part of assembling it), so the form structure isn't duplicated. Self-contained: owns its own
+// drafts, resets them whenever the selected case changes, and persists additively to the
+// documentsBuilder/cases/{caseId} tree either host page already reads/writes. The case's
+// `documents` branch only ever holds structured input data (surrogacyAgreement, birth-registration
+// statement date/notary) - never a stored/overridden rendering of a document.
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
-import { ref, set, update } from 'firebase/database';
+import { ref, set } from 'firebase/database';
 import { FaPlus, FaTrash } from 'react-icons/fa';
 import { database } from './config';
 import {
-  BIRTH_REGISTRATION_TRANSACTION_TYPE,
-  DOCUMENTS_PARTIES_PATH,
+  DOCUMENTS_CASES_PATH,
   createChildRecord,
-  createTransaction,
-  makeTransactionId,
+  removeEmptyCaseValues,
   toArray,
 } from './documentsCatalogUtils';
 
@@ -193,33 +192,37 @@ const DangerButton = styled(SmallButton)`
 `;
 
 const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelectedChildIdChange }) => {
-  const selectedCase = catalog.parties.cases.find(item => String(item.id) === String(caseId)) || null;
+  const selectedCase = catalog.cases.find(item => String(item.id) === String(caseId)) || null;
 
   // Which of the selected case's childbirth.children[] documents are generated for ('' = default
   // to the first child - a case with just one child never needs this shown).
   const [selectedChildId, setSelectedChildId] = useState('');
-  // Local editable copies of the selected case's childbirth/transaction data - reset from the
+  // Local editable copies of the selected case's childbirth/documents data - reset from the
   // backend record whenever the selected case changes, saved back explicitly via their own Save
   // buttons, same pattern as the per-document format draft in Documents Builder.
   const [childbirthDraft, setChildbirthDraft] = useState({ maternityHospitalId: '', children: [] });
-  const [transactionDraft, setTransactionDraft] = useState({ statementDate: '', notaryId: '', registryNumber: '' });
+  const [surrogacyAgreementDraft, setSurrogacyAgreementDraft] = useState({ number: { uk: '', en: '' }, date: '' });
+  const [birthRegistrationDraft, setBirthRegistrationDraft] = useState({ statementDate: '', notaryId: '' });
 
   useEffect(() => {
-    // `childbirth.children` isn't re-validated by normalizeCaseRecord beyond "childbirth itself is
-    // an object" - a case saved before this editor existed (or edited straight in the Firebase
-    // console) can carry `children` as a Firebase gap-object instead of a real array, which crashed
-    // every `.map()` below with no error boundary to catch it (blank page).
+    // `childbirth.children` isn't guaranteed to be a real array - a case edited straight in the
+    // Firebase console can carry it as a gap-object, which crashed every `.map()` below with no
+    // error boundary to catch it (blank page).
     setChildbirthDraft({
       maternityHospitalId: selectedCase?.childbirth?.maternityHospitalId || '',
       children: toArray(selectedCase?.childbirth?.children),
     });
-    const transactionId = selectedCase?.registrations?.birth?.transactionId;
-    const existingTransaction = transactionId
-      ? catalog.parties.transactions.find(item => String(item.id) === String(transactionId))
-      : null;
-    setTransactionDraft(existingTransaction && existingTransaction.type === BIRTH_REGISTRATION_TRANSACTION_TYPE
-      ? { statementDate: existingTransaction.statementDate || '', notaryId: existingTransaction.notaryId || '', registryNumber: existingTransaction.registryNumber || '' }
-      : { statementDate: '', notaryId: '', registryNumber: '' });
+    setSurrogacyAgreementDraft({
+      number: {
+        uk: selectedCase?.documents?.surrogacyAgreement?.number?.uk || '',
+        en: selectedCase?.documents?.surrogacyAgreement?.number?.en || '',
+      },
+      date: selectedCase?.documents?.surrogacyAgreement?.date || '',
+    });
+    setBirthRegistrationDraft({
+      statementDate: selectedCase?.documents?.birthRegistrationConsent?.statementDate || '',
+      notaryId: selectedCase?.documents?.birthRegistrationConsent?.notaryId || '',
+    });
     setSelectedChildId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
@@ -260,15 +263,12 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   const handleSaveChildbirth = async () => {
     if (!selectedCase) return;
     try {
-      await set(ref(database, `${DOCUMENTS_PARTIES_PATH}/cases/${selectedCase.id}/childbirth`), childbirthDraft);
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/childbirth`), childbirthDraft);
       setCatalog(previous => ({
         ...previous,
-        parties: {
-          ...previous.parties,
-          cases: previous.parties.cases.map(item => (String(item.id) === String(selectedCase.id)
-            ? { ...item, childbirth: childbirthDraft }
-            : item)),
-        },
+        cases: previous.cases.map(item => (String(item.id) === String(selectedCase.id)
+          ? { ...item, childbirth: childbirthDraft }
+          : item)),
       }));
       toast.success('Childbirth details saved.');
     } catch (saveError) {
@@ -277,51 +277,59 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     }
   };
 
-  const updateTransactionField = (field, value) => setTransactionDraft(previous => ({ ...previous, [field]: value }));
+  const updateSurrogacyAgreementField = (path, value) => setSurrogacyAgreementDraft(previous => {
+    if (path === 'date') return { ...previous, date: value };
+    return { ...previous, number: { ...previous.number, [path]: value } };
+  });
 
-  // Creates the case's birth-registration-surrogate-consent transaction the first time this is
-  // saved, then only ever updates that same record afterward - a transaction keeps the couple/
-  // surrogate mother it was originally signed for (batch 19), so an update never re-pulls those
-  // ids from the case's current relations, only a brand-new transaction does.
-  const handleSaveTransaction = async () => {
+  const updateBirthRegistrationField = (field, value) => setBirthRegistrationDraft(previous => ({ ...previous, [field]: value }));
+
+  // Never writes an empty `documents.surrogacyAgreement`/`documents.birthRegistrationConsent`
+  // service object - clearing every field in a section and saving removes that node entirely
+  // instead of leaving `{}` behind.
+  const handleSaveSurrogacyAgreement = async () => {
     if (!selectedCase) return;
-    const existingTransactionId = selectedCase.registrations?.birth?.transactionId;
-    const existingTransaction = existingTransactionId
-      ? catalog.parties.transactions.find(item => String(item.id) === String(existingTransactionId))
-      : null;
-    const isReusableTransaction = Boolean(existingTransaction) && existingTransaction.type === BIRTH_REGISTRATION_TRANSACTION_TYPE;
-    const transactionId = isReusableTransaction ? existingTransaction.id : makeTransactionId();
-    const nextTransaction = createTransaction({
-      transactionId,
-      caseId: selectedCase.id,
-      type: BIRTH_REGISTRATION_TRANSACTION_TYPE,
-      coupleId: isReusableTransaction ? existingTransaction.coupleId : (selectedCase.relations?.coupleId || ''),
-      surrogateMotherId: isReusableTransaction ? existingTransaction.surrogateMotherId : (selectedCase.relations?.surrogateMotherId || ''),
-      notaryId: transactionDraft.notaryId,
-      statementDate: transactionDraft.statementDate,
-      registryNumber: transactionDraft.registryNumber,
-    });
+    const cleaned = removeEmptyCaseValues(surrogacyAgreementDraft);
+    const nextValue = Object.keys(cleaned).length ? cleaned : null;
     try {
-      await update(ref(database, DOCUMENTS_PARTIES_PATH), {
-        [`transactions/${transactionId}`]: nextTransaction,
-        [`cases/${selectedCase.id}/registrations/birth/transactionId`]: transactionId,
-      });
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/surrogacyAgreement`), nextValue);
       setCatalog(previous => ({
         ...previous,
-        parties: {
-          ...previous.parties,
-          transactions: isReusableTransaction
-            ? previous.parties.transactions.map(item => (String(item.id) === transactionId ? nextTransaction : item))
-            : [...previous.parties.transactions, nextTransaction],
-          cases: previous.parties.cases.map(item => (String(item.id) === String(selectedCase.id)
-            ? { ...item, registrations: { ...(item.registrations || {}), birth: { ...(item.registrations?.birth || {}), transactionId } } }
-            : item)),
-        },
+        cases: previous.cases.map(item => {
+          if (String(item.id) !== String(selectedCase.id)) return item;
+          const documents = { ...(item.documents || {}) };
+          if (nextValue) documents.surrogacyAgreement = nextValue;
+          else delete documents.surrogacyAgreement;
+          return { ...item, documents };
+        }),
       }));
-      toast.success('Transaction saved.');
+      toast.success('Surrogacy agreement saved.');
     } catch (saveError) {
-      console.error('Unable to save the transaction', saveError);
-      toast.error('Could not save the transaction.');
+      console.error('Unable to save the surrogacy agreement', saveError);
+      toast.error('Could not save the surrogacy agreement.');
+    }
+  };
+
+  const handleSaveBirthRegistration = async () => {
+    if (!selectedCase) return;
+    const cleaned = removeEmptyCaseValues(birthRegistrationDraft);
+    const nextValue = Object.keys(cleaned).length ? cleaned : null;
+    try {
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/birthRegistrationConsent`), nextValue);
+      setCatalog(previous => ({
+        ...previous,
+        cases: previous.cases.map(item => {
+          if (String(item.id) !== String(selectedCase.id)) return item;
+          const documents = { ...(item.documents || {}) };
+          if (nextValue) documents.birthRegistrationConsent = nextValue;
+          else delete documents.birthRegistrationConsent;
+          return { ...item, documents };
+        }),
+      }));
+      toast.success('Birth registration details saved.');
+    } catch (saveError) {
+      console.error('Unable to save the birth registration details', saveError);
+      toast.error('Could not save the birth registration details.');
     }
   };
 
@@ -440,19 +448,52 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
         </RowLine>
       ) : null}
 
-      <SectionSubhead style={{ marginTop: 14 }}>Заява до РАЦС (транзакція)</SectionSubhead>
+      <SectionSubhead style={{ marginTop: 14 }}>Договір сурогатного материнства</SectionSubhead>
+      <FieldGrid>
+        <Field>
+          Номер (укр)
+          <FieldInput
+            type="text"
+            value={surrogacyAgreementDraft.number.uk || ''}
+            onChange={event => updateSurrogacyAgreementField('uk', event.target.value)}
+          />
+        </Field>
+        <Field>
+          Номер (eng)
+          <FieldInput
+            type="text"
+            value={surrogacyAgreementDraft.number.en || ''}
+            onChange={event => updateSurrogacyAgreementField('en', event.target.value)}
+          />
+        </Field>
+        <Field>
+          Дата договору
+          <FieldInput
+            type="date"
+            value={surrogacyAgreementDraft.date || ''}
+            onChange={event => updateSurrogacyAgreementField('date', event.target.value)}
+          />
+        </Field>
+      </FieldGrid>
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveSurrogacyAgreement}>
+          Save surrogacy agreement
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Заява до РАЦС</SectionSubhead>
       <FieldGrid>
         <Field>
           Дата заяви
           <FieldInput
             type="date"
-            value={transactionDraft.statementDate || ''}
-            onChange={event => updateTransactionField('statementDate', event.target.value)}
+            value={birthRegistrationDraft.statementDate || ''}
+            onChange={event => updateBirthRegistrationField('statementDate', event.target.value)}
           />
         </Field>
         <Field>
           Нотаріус
-          <Select value={transactionDraft.notaryId || ''} onChange={event => updateTransactionField('notaryId', event.target.value)}>
+          <Select value={birthRegistrationDraft.notaryId || ''} onChange={event => updateBirthRegistrationField('notaryId', event.target.value)}>
             <option value="">— не обрано —</option>
             {catalog.parties.notaries.map(notary => (
               <option key={notary.id} value={String(notary.id)}>
@@ -461,18 +502,10 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
             ))}
           </Select>
         </Field>
-        <Field>
-          Номер реєстру
-          <FieldInput
-            type="text"
-            value={transactionDraft.registryNumber || ''}
-            onChange={event => updateTransactionField('registryNumber', event.target.value)}
-          />
-        </Field>
       </FieldGrid>
       <RowLine style={{ marginTop: 8 }}>
-        <PrimaryMiniButton type="button" onClick={handleSaveTransaction}>
-          Save transaction
+        <PrimaryMiniButton type="button" onClick={handleSaveBirthRegistration}>
+          Save birth registration details
         </PrimaryMiniButton>
       </RowLine>
     </Section>
