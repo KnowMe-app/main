@@ -192,6 +192,12 @@ const DangerButton = styled(SmallButton)`
   }
 `;
 
+// A generic "Could not save." toast leaves an admin stuck with no way to tell a permission-rules
+// rejection from a network blip from a real bug - none of which show up anywhere on a phone (no
+// devtools console to check). Every save handler below folds the real Firebase error code/message
+// into the toast itself, same idea as DocumentsPage's describeStorageError for Storage failures.
+const describeSaveError = error => `${error?.code || error?.name || 'error'}: ${error?.message || String(error)}`.trim();
+
 const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelectedChildIdChange }) => {
   const selectedCase = catalog.cases.find(item => String(item.id) === String(caseId)) || null;
 
@@ -284,7 +290,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       toast.success('Childbirth details saved.');
     } catch (saveError) {
       console.error('Unable to save childbirth details', saveError);
-      toast.error('Could not save the childbirth details.');
+      toast.error(`Could not save the childbirth details: ${describeSaveError(saveError)}`);
     }
   };
 
@@ -317,7 +323,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       toast.success('Surrogacy agreement saved.');
     } catch (saveError) {
       console.error('Unable to save the surrogacy agreement', saveError);
-      toast.error('Could not save the surrogacy agreement.');
+      toast.error(`Could not save the surrogacy agreement: ${describeSaveError(saveError)}`);
     }
   };
 
@@ -340,7 +346,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       toast.success('Birth registration details saved.');
     } catch (saveError) {
       console.error('Unable to save the birth registration details', saveError);
-      toast.error('Could not save the birth registration details.');
+      toast.error(`Could not save the birth registration details: ${describeSaveError(saveError)}`);
     }
   };
 
@@ -374,7 +380,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       toast.success('Embryo ownership statement details saved.');
     } catch (saveError) {
       console.error('Unable to save the embryo ownership statement details', saveError);
-      toast.error('Could not save the embryo ownership statement details.');
+      toast.error(`Could not save the embryo ownership statement details: ${describeSaveError(saveError)}`);
     }
   };
 
