@@ -762,27 +762,26 @@ const DocumentsPage = ({ isAdmin }) => {
   const [selectedDocIds, setSelectedDocIds] = useState({});
   const [layout, setLayout] = useState('two-column');
   const [expandedDocId, setExpandedDocId] = useState('');
-  // Per-row mode, one cycling button instead of separate toggles (spec batch 21 §3/§9): 'template'
-  // shows the raw {{placeholder}} markup and edits the shared template; 'input' shows the resolved
-  // value as plain text and edits it as a per-case override (retype the wording, no formatting);
-  // 'text' shows that same resolved value with bold/italic already rendered in place and is the
-  // *only* mode Bold/Italic can be applied in - the wording itself isn't editable there (spec §9:
-  // "the paragraph's wording itself is not directly editable... the only action available is
-  // selecting a fragment and applying Bold"). Defaults to 'text'. Shared by the title row (scope
-  // TITLE_SCOPE) and every paragraph (scope paragraphScope(index)).
+  // Per-row mode, one cycling button instead of separate toggles: 'template' shows the raw
+  // {{placeholder}} markup and edits the shared template directly; 'input' shows the de-markup'd
+  // plain wording and edits that same shared template (retype the wording, no formatting, no case
+  // involved - templates are static and shared across every case, so there is nothing left to
+  // override); 'text' shows that markup rendered (bold/italic applied in place, placeholders still
+  // unresolved) and is the *only* mode Bold/Italic can be applied in - the wording itself isn't
+  // editable there, only its formatting. All three modes write straight to the template, exactly
+  // like beforeTitle rows always have - title/paragraph rows now follow the identical mechanism.
   const PARAGRAPH_MODES = ['template', 'input', 'text'];
   const nextParagraphMode = mode => PARAGRAPH_MODES[(PARAGRAPH_MODES.indexOf(mode) + 1) % PARAGRAPH_MODES.length];
   const PARAGRAPH_MODE_ICON = { template: '{}', input: 'I', text: 'T' };
   const PARAGRAPH_MODE_TITLE = {
     template: 'Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.',
-    input: "Input mode - retyping this case's resolved wording. Tap to switch to Text mode.",
+    input: 'Input mode - retyping the shared wording as plain text. Tap to switch to Text mode.',
     text: 'Text mode - select text and press Bold/Italic; wording isn\'t editable here. Tap to switch to Template mode.',
   };
   const [paragraphModes, setParagraphModes] = useState({});
   const paragraphModeKey = (docId, index) => `${docId}#${index}`;
-  // beforeTitle rows carry the same mode cycle (Task 2: identical toolbars) but default to
-  // 'template' - they have no per-case override layer, so raw markup is their canonical surface
-  // and what every admin edited there before the modes were unified.
+  // beforeTitle rows default to 'template'; title/paragraph rows default to 'text' - same defaults
+  // every row has always had, now just backed by the same template-only mechanism throughout.
   const getParagraphMode = (docId, scope) => paragraphModes[paragraphModeKey(docId, scope)]
     || (String(scope).startsWith('beforeTitle') ? 'template' : 'text');
   const setParagraphModeFor = (docId, index, mode) => setParagraphModes(previous => ({ ...previous, [paragraphModeKey(docId, index)]: mode }));
@@ -1303,23 +1302,16 @@ const DocumentsPage = ({ isAdmin }) => {
     // Input mode's field never takes Bold/Italic (the buttons are disabled there) - hard-stop in
     // case a stale focus record from it is still the active field.
     if (active.kind === 'input-plain') return;
-    // beforeTitle rows have no template/text distinction in what they write - their Text mode
-    // applies Bold/Italic straight onto the shared template markup (plain-text offsets via
-    // toggleInlineFormat), exactly like Template mode does with raw offsets.
-    if (active.kind === 'text-display' && /^beforeTitle:/.test(scope)) {
-      const template = catalog.documents.find(item => String(item.id) === String(docId));
-      if (!template) return;
-      const currentRaw = getTemplateScopeText(template, scope, langKey);
-      await commitTemplateScopeText(docId, scope, langKey, toggleInlineFormat(currentRaw, start, end, attr));
-      return;
-    }
-    if (active.kind === 'template') {
-      const template = catalog.documents.find(item => String(item.id) === String(docId));
-      if (!template) return;
-      const currentRaw = getTemplateScopeText(template, scope, langKey);
-      const nextRaw = toggleRawInlineMarker(currentRaw, start, end, attr);
-      await commitTemplateScopeText(docId, scope, langKey, nextRaw);
-    }
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const currentRaw = getTemplateScopeText(template, scope, langKey);
+    // Every row (title, paragraph, beforeTitle) writes straight to the shared template - Text
+    // mode's field is the rendered display (plain-text offsets via toggleInlineFormat), Template
+    // mode's field is the raw markup itself (raw offsets via toggleRawInlineMarker).
+    const nextRaw = active.kind === 'text-display'
+      ? toggleInlineFormat(currentRaw, start, end, attr)
+      : toggleRawInlineMarker(currentRaw, start, end, attr);
+    await commitTemplateScopeText(docId, scope, langKey, nextRaw);
   };
 
   // Insert-variable modal (spec: "кнопка поруч з курсивом... модальне вікно... обрати змінні") -
@@ -1995,10 +1987,19 @@ const DocumentsPage = ({ isAdmin }) => {
                 const catalogNameValue = template.catalogName || template.title?.uk || template.title?.en || template.id;
                 const onCatalogNameChange = event => updateTemplate(template.id, current => ({ ...current, catalogName: event.target.value }));
                 const onCatalogNameBlur = () => persistTemplate(template.id);
-                // The title is always edited as raw template markup - templates are static and
-                // shared across every case, so there is no per-case resolved-text mode anymore.
+                // Title mode/state - same template/input/text cycle as every paragraph and
+                // beforeTitle block; always writes to the shared template, never a per-case value.
+                const titleMode = getParagraphMode(template.id, TITLE_SCOPE);
+                const titleIsTemplateMode = titleMode === 'template';
+                const titleIsInputMode = titleMode === 'input';
                 const titleRawValue = langKey => template.title?.[langKey] || '';
-                const onTitleFieldChange = langKey => event => handleTemplateScopeChange(template.id, TITLE_SCOPE, langKey, event.target.value);
+                const titleDisplayValue = langKey => (titleIsTemplateMode ? titleRawValue(langKey) : plainTextOf(titleRawValue(langKey)));
+                const onTitleFieldChange = langKey => event => {
+                  const nextRaw = titleIsTemplateMode
+                    ? event.target.value
+                    : applyPlainTextEdit(titleRawValue(langKey), event.target.value);
+                  handleTemplateScopeChange(template.id, TITLE_SCOPE, langKey, nextRaw);
+                };
                 const onTitleFieldBlur = () => persistTemplate(template.id);
                 return (
                   <DocRow key={template.id}>
@@ -2255,6 +2256,7 @@ const DocumentsPage = ({ isAdmin }) => {
                               </ParagraphControlsRow>
                             );
                           }
+                          const titleFieldKind = titleIsTemplateMode ? 'template' : (titleIsInputMode ? 'input-plain' : 'text-display');
                           const titleStyle = getParagraphStyle(template.title);
                           return (
                             <ParagraphEditorBlock>
@@ -2263,6 +2265,14 @@ const DocumentsPage = ({ isAdmin }) => {
                                 <RowLine style={{ gap: 6 }}>
                                   <SmallButton
                                     type="button"
+                                    onClick={() => setParagraphModeFor(template.id, TITLE_SCOPE, nextParagraphMode(titleMode))}
+                                    title={PARAGRAPH_MODE_TITLE[titleMode]}
+                                  >
+                                    {PARAGRAPH_MODE_ICON[titleMode]}
+                                  </SmallButton>
+                                  <SmallButton
+                                    type="button"
+                                    disabled={titleIsInputMode}
                                     {...formatButtonProps('bold')}
                                     title="Bold the selected text"
                                   >
@@ -2270,6 +2280,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
+                                    disabled={titleIsInputMode}
                                     {...formatButtonProps('italic')}
                                     title="Italicize the selected text"
                                   >
@@ -2277,6 +2288,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
+                                    disabled={!titleIsTemplateMode}
                                     onMouseDown={preventSelectionLoss}
                                     onClick={openVariablePicker}
                                     title="Insert a variable"
@@ -2315,26 +2327,46 @@ const DocumentsPage = ({ isAdmin }) => {
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>
-                                    <AutoInlineTextarea
-                                      ref={registerFieldNode(template.id, TITLE_SCOPE, 'uk')}
-                                      value={titleRawValue('uk')}
-                                      placeholder="Title (uk)"
-                                      onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', 'template')}
-                                      onChange={onTitleFieldChange('uk')}
-                                      onBlur={onTitleFieldBlur}
-                                    />
+                                    {titleMode === 'text' ? (
+                                      <TextModeDisplay
+                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'uk')}
+                                        onMouseUp={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', 'text-display')}
+                                        onTouchEnd={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', 'text-display')}
+                                      >
+                                        <FormattedRunsPreview text={titleRawValue('uk')} />
+                                      </TextModeDisplay>
+                                    ) : (
+                                      <AutoInlineTextarea
+                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'uk')}
+                                        value={titleDisplayValue('uk')}
+                                        placeholder="Title (uk)"
+                                        onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', titleFieldKind)}
+                                        onChange={onTitleFieldChange('uk')}
+                                        onBlur={onTitleFieldBlur}
+                                      />
+                                    )}
                                   </ParagraphFieldColumn>
                                 ) : null}
                                 {showEn ? (
                                   <ParagraphFieldColumn>
-                                    <AutoInlineTextarea
-                                      ref={registerFieldNode(template.id, TITLE_SCOPE, 'en')}
-                                      value={titleRawValue('en')}
-                                      placeholder="Title (en)"
-                                      onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', 'template')}
-                                      onChange={onTitleFieldChange('en')}
-                                      onBlur={onTitleFieldBlur}
-                                    />
+                                    {titleMode === 'text' ? (
+                                      <TextModeDisplay
+                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'en')}
+                                        onMouseUp={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', 'text-display')}
+                                        onTouchEnd={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', 'text-display')}
+                                      >
+                                        <FormattedRunsPreview text={titleRawValue('en')} />
+                                      </TextModeDisplay>
+                                    ) : (
+                                      <AutoInlineTextarea
+                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'en')}
+                                        value={titleDisplayValue('en')}
+                                        placeholder="Title (en)"
+                                        onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', titleFieldKind)}
+                                        onChange={onTitleFieldChange('en')}
+                                        onBlur={onTitleFieldBlur}
+                                      />
+                                    )}
                                   </ParagraphFieldColumn>
                                 ) : null}
                               </ParagraphPair>
@@ -2343,19 +2375,31 @@ const DocumentsPage = ({ isAdmin }) => {
                         })()}
                         {(template.paragraphs || []).map((paragraph, index) => {
                           const scope = paragraphScope(index);
-                          // A paragraph is always edited as raw template markup - templates are
-                          // static and shared across every case, so there is no per-case
-                          // resolved-text mode (Bold/Italic act on the raw `**`/`*` markers).
+                          // Same template/input/text mode cycle as beforeTitle - always writes to
+                          // the shared template, never a per-case value (Bold/Italic only ever act
+                          // in Template mode, on the raw markers, or Text mode, on the rendered
+                          // display).
+                          const mode = getParagraphMode(template.id, scope);
+                          const isTemplateMode = mode === 'template';
+                          const isInputMode = mode === 'input';
+                          const isTextMode = mode === 'text';
                           const rawValue = langKey => paragraph?.[langKey] || '';
-                          const onChange = langKey => event => handleTemplateScopeChange(template.id, scope, langKey, event.target.value);
+                          const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(rawValue(langKey)));
+                          const onChange = langKey => event => {
+                            const nextRaw = isTemplateMode
+                              ? event.target.value
+                              : applyPlainTextEdit(rawValue(langKey), event.target.value);
+                            handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
+                          };
                           const onBlur = () => persistTemplate(template.id);
+                          const fieldKind = isTemplateMode ? 'template' : (isInputMode ? 'input-plain' : 'text-display');
                           // This paragraph's own stored style overrides, whichever backend shape
                           // they are in (consolidated `style` key or legacy flat fields).
                           const paragraphStyle = getParagraphStyle(paragraph);
                           return (
                             // Boxed together so it's unambiguous which paragraph the toolbar acts
-                            // on: the +/Bold/Italic/Delete controls and the paragraph's own text
-                            // live inside the same visible border.
+                            // on: the +/mode-switch/Bold/Italic/Delete controls and the paragraph's
+                            // own text live inside the same visible border.
                             <ParagraphEditorBlock key={`${template.id}-p-${index}`}>
                               <ParagraphControlsRow>
                                 <SmallButton
@@ -2368,6 +2412,14 @@ const DocumentsPage = ({ isAdmin }) => {
                                 <RowLine style={{ gap: 6 }}>
                                   <SmallButton
                                     type="button"
+                                    onClick={() => setParagraphModeFor(template.id, scope, nextParagraphMode(mode))}
+                                    title={PARAGRAPH_MODE_TITLE[mode]}
+                                  >
+                                    {PARAGRAPH_MODE_ICON[mode]}
+                                  </SmallButton>
+                                  <SmallButton
+                                    type="button"
+                                    disabled={isInputMode}
                                     {...formatButtonProps('bold')}
                                     title="Bold the selected text"
                                   >
@@ -2375,6 +2427,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
+                                    disabled={isInputMode}
                                     {...formatButtonProps('italic')}
                                     title="Italicize the selected text"
                                   >
@@ -2382,6 +2435,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
+                                    disabled={!isTemplateMode}
                                     onMouseDown={preventSelectionLoss}
                                     onClick={openVariablePicker}
                                     title="Insert a variable"
@@ -2428,26 +2482,46 @@ const DocumentsPage = ({ isAdmin }) => {
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>
-                                    <AutoInlineTextarea
-                                      ref={registerFieldNode(template.id, scope, 'uk')}
-                                      value={rawValue('uk')}
-                                      placeholder="Paragraph (uk)"
-                                      onFocus={handleRichFieldFocus(template.id, scope, 'uk', 'template')}
-                                      onChange={onChange('uk')}
-                                      onBlur={onBlur}
-                                    />
+                                    {isTextMode ? (
+                                      <TextModeDisplay
+                                        ref={registerFieldNode(template.id, scope, 'uk')}
+                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
+                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
+                                      >
+                                        <FormattedRunsPreview text={rawValue('uk')} />
+                                      </TextModeDisplay>
+                                    ) : (
+                                      <AutoInlineTextarea
+                                        ref={registerFieldNode(template.id, scope, 'uk')}
+                                        value={displayValue('uk')}
+                                        placeholder="Paragraph (uk)"
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
+                                        onChange={onChange('uk')}
+                                        onBlur={onBlur}
+                                      />
+                                    )}
                                   </ParagraphFieldColumn>
                                 ) : null}
                                 {showEn ? (
                                   <ParagraphFieldColumn>
-                                    <AutoInlineTextarea
-                                      ref={registerFieldNode(template.id, scope, 'en')}
-                                      value={rawValue('en')}
-                                      placeholder="Paragraph (en)"
-                                      onFocus={handleRichFieldFocus(template.id, scope, 'en', 'template')}
-                                      onChange={onChange('en')}
-                                      onBlur={onBlur}
-                                    />
+                                    {isTextMode ? (
+                                      <TextModeDisplay
+                                        ref={registerFieldNode(template.id, scope, 'en')}
+                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
+                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
+                                      >
+                                        <FormattedRunsPreview text={rawValue('en')} />
+                                      </TextModeDisplay>
+                                    ) : (
+                                      <AutoInlineTextarea
+                                        ref={registerFieldNode(template.id, scope, 'en')}
+                                        value={displayValue('en')}
+                                        placeholder="Paragraph (en)"
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
+                                        onChange={onChange('en')}
+                                        onBlur={onBlur}
+                                      />
+                                    )}
                                   </ParagraphFieldColumn>
                                 ) : null}
                               </ParagraphPair>

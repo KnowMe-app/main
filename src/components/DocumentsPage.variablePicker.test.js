@@ -44,8 +44,13 @@ beforeEach(() => {
         exists: () => true,
         val: () => ({
           couples: { 'couple-1': { id: 'couple-1', partners: [{ id: 'p1', role: 'wife', name: { uk: { nominative: 'Кьогоку Ая' }, en: 'Kyogoku Aya' } }] } },
-          cases: { 'case-1': { id: 'case-1', relations: { coupleId: 'couple-1' } } },
         }),
+      };
+    }
+    if (path === 'documentsBuilder/cases') {
+      return {
+        exists: () => true,
+        val: () => ({ 'case-1': { id: 'case-1', relations: { coupleId: 'couple-1' } } }),
       };
     }
     if (path === 'documentsBuilder/templates') {

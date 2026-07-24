@@ -1,17 +1,17 @@
-// Real-DOM regression test for the selection-based Bold/Italic feature (batch 13 §1): mounts the
-// actual DocumentsPage component (Firebase mocked out) and drives a genuine browser textarea
-// selection through the Bold button, to catch any wiring bug independent of mobile-specific touch
-// quirks (this is the actual React component, not just the pure logic it calls).
+// Real-DOM regression test for the selection-based Bold/Italic feature: mounts the actual
+// DocumentsPage component (Firebase mocked out) and drives a genuine browser selection through
+// the Bold button, to catch any wiring bug independent of mobile-specific touch quirks (this is
+// the actual React component, not just the pure logic it calls).
 //
 // NOTE: this project's Jest config sets `resetMocks: true`, which strips every mock's
 // implementation before each test - so the mock bodies below must be (re-)installed in
 // beforeEach, not just in the jest.mock(...) factory (which only runs once at hoist time).
 //
-// Post-migration (batch 2026-07-24): the per-case "data mode" resolved-text overrides on
-// title/paragraph rows are gone. A paragraph (and the title) is now always the raw
-// `{{placeholder}}` template markup - there is no mode-toggle button and no rendered
-// resolved-value display for these rows anymore, so Bold/Italic act directly on the textarea's
-// native selection and always persist to the shared template.
+// Post-migration: the per-case "data mode" resolved-text override system is gone entirely - the
+// title/paragraph/beforeTitle rows all share one mechanism now (the same template/input/text mode
+// cycle beforeTitle always had), and every mode writes straight to the shared template. There is
+// no case dependency left in this toolbar: Bold/Italic on a Text-mode row is never gated on
+// whether a case is selected, since there is no per-case value to edit anymore.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
@@ -43,6 +43,22 @@ import { listStorageFolderFileNames } from './config';
 // eslint-disable-next-line import/first
 import DocumentsPage from './DocumentsPage';
 
+// Text mode's field is a plain rendered display, not a textarea (the display itself is the
+// editing surface), so there's no `.setSelectionRange` to drive a selection through. This mirrors
+// what a real browser drag-select does: build a Range over the container's own text node and
+// install it as the document's selection, then fire the mouseUp/touchEnd the component listens on
+// to know a selection was just made in that field.
+const selectTextInContainer = (container, start, end) => {
+  // eslint-disable-next-line testing-library/no-node-access
+  const textNode = container.firstChild;
+  const range = document.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, end);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
+
 beforeEach(() => {
   ref.mockImplementation((_db, path) => path);
   get.mockImplementation(async path => {
@@ -55,12 +71,7 @@ beforeEach(() => {
       };
     }
     if (path === 'documentsBuilder/cases') {
-      return {
-        exists: () => true,
-        val: () => ({
-          'case-1': { id: 'case-1', relations: { coupleId: 'couple-1' } },
-        }),
-      };
+      return { exists: () => false, val: () => null };
     }
     if (path === 'documentsBuilder/templates') {
       return {
@@ -81,33 +92,33 @@ beforeEach(() => {
 });
 
 describe('spec: selection-based bold/italic applies to the browser selection, not the whole paragraph', () => {
-  it('bolds only the selected fragment of a paragraph field (raw template markup)', async () => {
+  it('bolds only the selected fragment of a Text-mode paragraph field, with no case selected', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
 
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    // A paragraph is always the raw template textarea now - no mode to switch, no separate
-    // rendered display to select text in.
-    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
+    // Default mode is 'text' - the field is the rendered display itself. No case exists in this
+    // fixture at all, proving Bold/Italic here never depend on a case being selected.
+    const field = await screen.findByText('Звичайний текст без форматування.');
+    selectTextInContainer(field, 10, 15); // "текст"
+    fireEvent.mouseUp(field);
+
+    // Bold/Italic also appear on the Title row above (unified toolbar across every editable row)
+    // - scope the query to this paragraph's own boxed controls, same as a sighted admin would
+    // click the toolbar right above this specific field.
     // eslint-disable-next-line testing-library/no-node-access
-    const paragraphBlock = textarea.closest('.paragraph-editor-block');
-
-    fireEvent.focus(textarea);
-    textarea.setSelectionRange(10, 15); // "текст"
-
-    // Bold/Italic also appear on the Title row above (spec: unified format across every
-    // editable row) - scope the query to this paragraph's own boxed controls, same as a sighted
-    // admin would click the toolbar right above this specific field.
+    const paragraphBlock = field.closest('.paragraph-editor-block');
     const boldButton = within(paragraphBlock).getByTitle('Bold the selected text');
     fireEvent.click(boldButton);
 
-    await waitFor(() => expect(set).toHaveBeenCalled());
-    const [, payload] = set.mock.calls[set.mock.calls.length - 1];
-    expect(payload.paragraphs[0].uk).toBe('Звичайний **текст** без форматування.');
-    // The change is applied in place, right in the raw markup textarea - never a separate
-    // preview to catch up.
-    expect(await within(paragraphBlock).findByDisplayValue('Звичайний **текст** без форматування.')).toBeInTheDocument();
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({ paragraphs: [expect.objectContaining({ uk: 'Звичайний **текст** без форматування.' })] }),
+    ));
+    // The change is applied in place, right in the display - never a separate preview to catch up,
+    // and never written to a per-case override path.
+    expect(await within(paragraphBlock).findByText('текст')).toBeInTheDocument();
   });
 
   it('also applies via touch (mobile), where preventing the selection-dismissing touchstart suppresses the synthetic click', async () => {
@@ -116,13 +127,12 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
+    const field = await screen.findByText('Звичайний текст без форматування.');
+    selectTextInContainer(field, 10, 15); // "текст"
+    fireEvent.touchEnd(field);
+
     // eslint-disable-next-line testing-library/no-node-access
-    const paragraphBlock = textarea.closest('.paragraph-editor-block');
-
-    fireEvent.focus(textarea);
-    textarea.setSelectionRange(10, 15); // "текст"
-
+    const paragraphBlock = field.closest('.paragraph-editor-block');
     const italicButton = within(paragraphBlock).getByTitle('Italicize the selected text');
     // No fireEvent.click - mobile browsers won't synthesize one once touchstart's default is
     // prevented (exactly what the button needs to do to keep the selection alive), so the
@@ -130,13 +140,14 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     fireEvent.touchStart(italicButton);
     fireEvent.touchEnd(italicButton);
 
-    await waitFor(() => expect(set).toHaveBeenCalled());
-    const [, payload] = set.mock.calls[set.mock.calls.length - 1];
-    expect(payload.paragraphs[0].uk).toBe('Звичайний *текст* без форматування.');
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({ paragraphs: [expect.objectContaining({ uk: 'Звичайний *текст* без форматування.' })] }),
+    ));
   });
 });
 
-describe('spec: title/paragraph rows have a single always-template editing surface', () => {
+describe('spec: per-row template/input/text mode cycle replaces the old global toggle', () => {
   it('does not render the old global Template/Data section toggle', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     await screen.findByTitle('Edit paragraphs');
@@ -144,20 +155,23 @@ describe('spec: title/paragraph rows have a single always-template editing surfa
     expect(screen.queryByTitle('Edit the resolved values of the selected case directly')).not.toBeInTheDocument();
   });
 
-  it('editing a paragraph directly edits and persists the shared template, not a per-case override', async () => {
+  it('switching a paragraph to Template mode edits and persists the shared template directly, with no case needed', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    // Paragraphs no longer have a mode-toggle button (spec: raw {{placeholder}} markup is the
-    // only surface, shared across every case) - the textarea is already showing/editing it.
-    const textarea = await screen.findByDisplayValue('Звичайний текст без форматування.');
+    // Default mode ('text') shows the raw template text as a rendered display, not a textarea.
+    const field = await screen.findByText('Звичайний текст без форматування.');
     // eslint-disable-next-line testing-library/no-node-access
-    const paragraphBlock = textarea.closest('.paragraph-editor-block');
-    expect(within(paragraphBlock).queryByTitle(
-      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
-    )).not.toBeInTheDocument();
+    const paragraphBlock = field.closest('.paragraph-editor-block');
 
+    // One cycling button, not three separate ones: text -> template is one tap.
+    const modeButton = within(paragraphBlock).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    );
+    fireEvent.click(modeButton);
+
+    const textarea = await within(paragraphBlock).findByDisplayValue('Звичайний текст без форматування.');
     fireEvent.change(textarea, { target: { value: 'Змінений шаблонний текст.' } });
     fireEvent.blur(textarea);
 
@@ -172,7 +186,7 @@ describe('spec: title/paragraph rows have a single always-template editing surfa
     await screen.findByTitle('Edit paragraphs');
 
     // No catalogName saved yet, so the field falls back to showing the title text - but editing it
-    // writes catalogName only (spec batch 21 §6), never template.title.
+    // writes catalogName only, never template.title.
     const nameInput = await screen.findByDisplayValue('Тест');
     fireEvent.change(nameInput, { target: { value: 'Оновлена назва' } });
     fireEvent.blur(nameInput);
