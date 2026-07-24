@@ -7,11 +7,14 @@
 // implementation before each test - so the mock bodies below must be (re-)installed in
 // beforeEach, not just in the jest.mock(...) factory (which only runs once at hoist time).
 //
-// Post-migration: the per-case "data mode" resolved-text override system is gone entirely - the
-// title/paragraph/beforeTitle rows all share one mechanism now (the same template/input/text mode
-// cycle beforeTitle always had), and every mode writes straight to the shared template. There is
-// no case dependency left in this toolbar: Bold/Italic on a Text-mode row is never gated on
-// whether a case is selected, since there is no per-case value to edit anymore.
+// Post-migration: the per-case "data mode" resolved-text override system is gone entirely, but
+// title/paragraph rows keep the same template/input/text mode cycle beforeTitle always had.
+// Template and Input both edit the shared markup directly - Bold/Italic only ever act in Template
+// mode now, on the raw `**`/`*` markers, and are never gated on whether a case is selected (there
+// is no per-case value involved at all). Text mode became a read-only preview resolved against
+// whichever case is currently selected (real values substituted, not raw {{tokens}}) - there is
+// nowhere left to persist a formatting edit made against resolved text, so Bold/Italic are simply
+// disabled there.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
@@ -42,22 +45,6 @@ import { ref, get, set } from 'firebase/database';
 import { listStorageFolderFileNames } from './config';
 // eslint-disable-next-line import/first
 import DocumentsPage from './DocumentsPage';
-
-// Text mode's field is a plain rendered display, not a textarea (the display itself is the
-// editing surface), so there's no `.setSelectionRange` to drive a selection through. This mirrors
-// what a real browser drag-select does: build a Range over the container's own text node and
-// install it as the document's selection, then fire the mouseUp/touchEnd the component listens on
-// to know a selection was just made in that field.
-const selectTextInContainer = (container, start, end) => {
-  // eslint-disable-next-line testing-library/no-node-access
-  const textNode = container.firstChild;
-  const range = document.createRange();
-  range.setStart(textNode, start);
-  range.setEnd(textNode, end);
-  const selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
-};
 
 beforeEach(() => {
   ref.mockImplementation((_db, path) => path);
@@ -92,23 +79,29 @@ beforeEach(() => {
 });
 
 describe('spec: selection-based bold/italic applies to the browser selection, not the whole paragraph', () => {
-  it('bolds only the selected fragment of a Text-mode paragraph field, with no case selected', async () => {
+  it('bolds only the selected fragment of a Template-mode paragraph field, with no case selected', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
 
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
 
-    // Default mode is 'text' - the field is the rendered display itself. No case exists in this
-    // fixture at all, proving Bold/Italic here never depend on a case being selected.
+    // Default mode is 'text' (a read-only resolved preview - there's nowhere left to persist a
+    // formatting edit made against resolved text, since per-case overrides no longer exist), so
+    // switch to Template mode first to reach the editable raw-markup textarea.
     const field = await screen.findByText('Звичайний текст без форматування.');
-    selectTextInContainer(field, 10, 15); // "текст"
-    fireEvent.mouseUp(field);
+    // eslint-disable-next-line testing-library/no-node-access
+    const paragraphBlock = field.closest('.paragraph-editor-block');
+    fireEvent.click(within(paragraphBlock).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(paragraphBlock).findByDisplayValue('Звичайний текст без форматування.');
+    fireEvent.focus(textarea);
+    textarea.setSelectionRange(10, 15); // "текст"
 
     // Bold/Italic also appear on the Title row above (unified toolbar across every editable row)
     // - scope the query to this paragraph's own boxed controls, same as a sighted admin would
-    // click the toolbar right above this specific field.
-    // eslint-disable-next-line testing-library/no-node-access
-    const paragraphBlock = field.closest('.paragraph-editor-block');
+    // click the toolbar right above this specific field. No case exists in this fixture at all,
+    // proving Bold/Italic here never depend on a case being selected.
     const boldButton = within(paragraphBlock).getByTitle('Bold the selected text');
     fireEvent.click(boldButton);
 
@@ -116,9 +109,9 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
       'documentsBuilder/templates/doc-1',
       expect.objectContaining({ paragraphs: [expect.objectContaining({ uk: 'Звичайний **текст** без форматування.' })] }),
     ));
-    // The change is applied in place, right in the display - never a separate preview to catch up,
-    // and never written to a per-case override path.
-    expect(await within(paragraphBlock).findByText('текст')).toBeInTheDocument();
+    // The change is applied in place, right in the raw-markup textarea - never a separate preview
+    // to catch up, and never written to a per-case override path.
+    expect(await within(paragraphBlock).findByDisplayValue('Звичайний **текст** без форматування.')).toBeInTheDocument();
   });
 
   it('also applies via touch (mobile), where preventing the selection-dismissing touchstart suppresses the synthetic click', async () => {
@@ -128,11 +121,15 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
     fireEvent.click(expandButton);
 
     const field = await screen.findByText('Звичайний текст без форматування.');
-    selectTextInContainer(field, 10, 15); // "текст"
-    fireEvent.touchEnd(field);
-
     // eslint-disable-next-line testing-library/no-node-access
     const paragraphBlock = field.closest('.paragraph-editor-block');
+    fireEvent.click(within(paragraphBlock).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    const textarea = await within(paragraphBlock).findByDisplayValue('Звичайний текст без форматування.');
+    fireEvent.focus(textarea);
+    textarea.setSelectionRange(10, 15); // "текст"
+
     const italicButton = within(paragraphBlock).getByTitle('Italicize the selected text');
     // No fireEvent.click - mobile browsers won't synthesize one once touchstart's default is
     // prevented (exactly what the button needs to do to keep the selection alive), so the
@@ -144,6 +141,20 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
       'documentsBuilder/templates/doc-1',
       expect.objectContaining({ paragraphs: [expect.objectContaining({ uk: 'Звичайний *текст* без форматування.' })] }),
     ));
+  });
+});
+
+describe('spec: Text mode is a read-only preview resolved against the selected case', () => {
+  it('disables Bold/Italic in Text mode - there is nowhere left to persist a formatting edit against resolved text', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    const expandButton = await screen.findByTitle('Edit paragraphs');
+    fireEvent.click(expandButton);
+
+    const field = await screen.findByText('Звичайний текст без форматування.');
+    // eslint-disable-next-line testing-library/no-node-access
+    const paragraphBlock = field.closest('.paragraph-editor-block');
+    expect(within(paragraphBlock).getByTitle('Bold the selected text')).toBeDisabled();
+    expect(within(paragraphBlock).getByTitle('Italicize the selected text')).toBeDisabled();
   });
 });
 
