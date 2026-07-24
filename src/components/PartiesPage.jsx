@@ -33,6 +33,7 @@ import {
   createEmptySurrogateMother,
   emptyDocumentsCatalog,
   findPartyReferences,
+  getMaternityHospitalDisplayName,
   getValueByPath,
   isPlainObject,
   makeCaseId,
@@ -470,7 +471,7 @@ const nameFormOf = value => {
 };
 
 const partyDisplayName = record => nameFormOf(record?.name) || record?.id;
-const maternityDisplayName = record => nameFormOf(record?.name) || nameFormOf(record?.shortName) || record?.id;
+const maternityDisplayName = record => getMaternityHospitalDisplayName(record) || record?.id;
 const coupleDisplayName = record => {
   const names = toArray(record?.partners).map(partner => nameFormOf(partner?.name)).filter(Boolean);
   return names.length ? names.join(' & ') : record?.id;
@@ -550,9 +551,7 @@ const CLINIC_FIELDS = [
   { label: 'License issued by (en)', path: 'license.issuedBy.en' },
   { label: 'Medical director (uk, nominative)', path: 'medicalDirector.name.uk.nominative' },
   { label: 'Medical director (uk, genitive)', path: 'medicalDirector.name.uk.genitive' },
-  { label: 'Medical director (uk, short)', path: 'medicalDirector.name.uk.short' },
   { label: 'Medical director (en, full)', path: 'medicalDirector.name.en.full' },
-  { label: 'Medical director (en, short)', path: 'medicalDirector.name.en.short' },
   { label: 'Director authority type (uk)', path: 'medicalDirector.authority.type.uk' },
   { label: 'Director authority type (en)', path: 'medicalDirector.authority.type.en' },
   { label: 'Director authority number', path: 'medicalDirector.authority.number' },
@@ -570,23 +569,24 @@ const PARTNER_CLINIC_FIELDS = [
   { label: 'Address (en)', path: 'address.en' },
 ];
 
+// `shortName` is never stored (spec §6) - the maternity hospital's display name is always its
+// full bilingual `name`, read via getMaternityHospitalDisplayName (see maternityDisplayName
+// below), never a hand-typed abbreviation.
 const MATERNITY_HOSPITAL_FIELDS = [
   { label: 'Name (uk)', path: 'name.uk' },
   { label: 'Name (en)', path: 'name.en' },
-  { label: 'Short name (uk)', path: 'shortName.uk' },
-  { label: 'Short name (en)', path: 'shortName.en' },
   { label: 'EDRPOU', path: 'edrpou' },
   { label: 'Address (uk)', path: 'address.uk' },
   { label: 'Address (en)', path: 'address.en' },
 ];
 
+// `name.uk.short`/`name.en.short` are computed at template-context build time
+// (enrichNameWithDerivedFields), never hand-typed here. `name.uk.instrumental` is exactly the
+// kind of one-off grammatical-case workaround field spec §13 forbids adding.
 const NOTARY_FIELDS = [
   { label: 'Name (uk, nominative)', path: 'name.uk.nominative' },
   { label: 'Name (uk, genitive)', path: 'name.uk.genitive' },
-  { label: 'Name (uk, short)', path: 'name.uk.short' },
-  { label: 'Name (uk, instrumental)', path: 'name.uk.instrumental' },
   { label: 'Name (en, full)', path: 'name.en.full' },
-  { label: 'Name (en, short)', path: 'name.en.short' },
   { label: 'Title (uk)', path: 'title.uk' },
   { label: 'Title (en)', path: 'title.en' },
   { label: 'City (uk)', path: 'city.uk' },

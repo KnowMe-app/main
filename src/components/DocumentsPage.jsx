@@ -1319,6 +1319,10 @@ const DocumentsPage = ({ isAdmin }) => {
   // only meaningful for a template-kind field, since only the raw {{placeholder}} markup is ever
   // resolved against a case (an override is already-resolved final text - see buildGeneratedDocument).
   const [variablePickerOpen, setVariablePickerOpen] = useState(false);
+  // Which document the picker was opened for (spec §8: the picker's notary entry must resolve
+  // against that document's own notary, not a case-wide default) - state, not read off the ref
+  // during render, so the modal's context recomputes on the render the ref was set for.
+  const [variablePickerTemplateId, setVariablePickerTemplateId] = useState('');
   const pendingInsertRef = useRef(null);
 
   const openVariablePicker = () => {
@@ -1327,6 +1331,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const node = fieldNodesRef.current[fieldKey(active.docId, active.scope, active.langKey)];
     if (!node) return;
     pendingInsertRef.current = { ...active, start: node.selectionStart, end: node.selectionEnd };
+    setVariablePickerTemplateId(active.docId);
     setVariablePickerOpen(true);
   };
 
@@ -1603,7 +1608,12 @@ const DocumentsPage = ({ isAdmin }) => {
   // Editing children lives on the Parties page (CaseChildbirthTransactionEditor) - a twin case
   // only needs to say here which one this batch of documents resolves against.
   const selectedCaseChildren = toArray(selectedCase?.childbirth?.children);
+  // Case-level context, not scoped to any one document - used wherever a specific document's own
+  // notary doesn't matter (the completeness checklist, the logo preview, the fallback variable
+  // picker). A document that needs its own notary (spec §8: a case can use a different notary per
+  // document) resolves its own context via getContextForTemplate below instead.
   const caseContext = resolveCaseContext(catalog, selectedCaseId, { childId: selectedChildId });
+  const getContextForTemplate = templateId => resolveCaseContext(catalog, selectedCaseId, { childId: selectedChildId, templateId });
   // Every path referenced anywhere across the checked documents - used below to scope the
   // completeness checklist to what those specific documents actually need (spec 2026-07-24
   // follow-up: an early-stage document like a surrogacy agreement shouldn't warn about a birth
@@ -1653,11 +1663,19 @@ const DocumentsPage = ({ isAdmin }) => {
   const activeLogoVariant = selectedHasLogoToken
     ? getClinicLogo(clinicLogos, 'logo')
     : (selectedHasLogoLongToken ? getClinicLogo(clinicLogos, 'logo-long') : null);
+  // Each selected document resolves against its own context (spec §8: a case can use a different
+  // notary per document, so there is no single case-wide notary to validate every template
+  // against) - computed once here and reused below for both the unresolved-variables scan and the
+  // missing-notary check.
+  const selectedTemplateContexts = selectedTemplates.map(template => ({
+    template,
+    context: getContextForTemplate(template.id),
+  }));
   // Every unresolved {{path}} across the selected documents for the current case - shown as a
   // non-blocking warning and confirmed again right before a final export (spec §15).
-  const unresolvedVariables = caseContext
-    ? [...new Set(selectedTemplates.flatMap(template => validateDocumentTemplate(template, caseContext)))].sort()
-    : [];
+  const unresolvedVariables = [...new Set(selectedTemplateContexts.flatMap(({ template, context }) => (
+    context ? validateDocumentTemplate(template, context) : []
+  )))].sort();
   // A case with no partnerClinicId set (old cases, or one just cleared - spec §3) resolves
   // caseContext.partnerClinic to null, so every {{partnerClinic.*}} token in a selected template
   // shows up in unresolvedVariables like any other missing field - technically correct (never a
@@ -1666,9 +1684,18 @@ const DocumentsPage = ({ isAdmin }) => {
   // redundant per-field paths from the generic list.
   const missingPartnerClinic = Boolean(caseContext) && !caseContext.partnerClinic
     && unresolvedVariables.some(path => path.startsWith('partnerClinic.'));
-  const visibleUnresolvedVariables = missingPartnerClinic
-    ? unresolvedVariables.filter(path => !path.startsWith('partnerClinic.'))
-    : unresolvedVariables;
+  // Same idea for the notary (spec §8): a document that references {{notary...}} but whose own
+  // notaryId isn't set (or points at a deleted notary) never crashes - it just surfaces one clear
+  // message instead of a wall of unresolved notary.* paths.
+  const missingNotary = selectedTemplateContexts.some(({ template, context }) => (
+    Boolean(context) && !context.notary
+    && getTemplateReferencedPaths(template).some(path => path === 'notary' || path.startsWith('notary.'))
+  ));
+  const visibleUnresolvedVariables = unresolvedVariables.filter(path => {
+    if (missingPartnerClinic && path.startsWith('partnerClinic.')) return false;
+    if (missingNotary && (path === 'notary' || path.startsWith('notary.'))) return false;
+    return true;
+  });
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
   // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
@@ -1768,8 +1795,9 @@ const DocumentsPage = ({ isAdmin }) => {
   }, [readImageDimensions, clinicLogoStorageKey]);
 
   const prepareGeneration = () => {
-    const context = resolveCaseContext(catalog, selectedCaseId, { childId: selectedChildId });
-    const generated = selectedTemplates.map(template => buildGeneratedDocument(template, context));
+    // Each document resolves its own context (spec §8: per-document notary) rather than sharing
+    // one case-level context across every selected template.
+    const generated = selectedTemplates.map(template => buildGeneratedDocument(template, getContextForTemplate(template.id)));
     // Each document renders with the shared defaults merged with its own format overrides -
     // independent of whichever document (if any) the Format panel currently targets.
     const formattingByDoc = selectedTemplates.map(template => resolveEffectiveDocFormatting(formatting, template.format));
@@ -1798,6 +1826,9 @@ const DocumentsPage = ({ isAdmin }) => {
     const sections = [];
     if (missingPartnerClinic) {
       sections.push('Для цього документа не вибрана клініка-партнер.');
+    }
+    if (missingNotary) {
+      sections.push('Для цього документа не вибрано нотаріуса.');
     }
     if (visibleUnresolvedVariables.length) {
       sections.push(
@@ -2004,6 +2035,11 @@ const DocumentsPage = ({ isAdmin }) => {
                   Для цього документа не вибрана клініка-партнер.
                 </DocSubtitle>
               ) : null}
+              {missingNotary ? (
+                <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
+                  Для цього документа не вибрано нотаріуса.
+                </DocSubtitle>
+              ) : null}
               {visibleUnresolvedVariables.length ? (
                 <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
                   Не вдалося підставити: {visibleUnresolvedVariables.join(', ')}
@@ -2022,7 +2058,7 @@ const DocumentsPage = ({ isAdmin }) => {
                 const isSingle = !(showUk && showEn);
                 // Needed even while collapsed - the title input right in the row header (below)
                 // always shows/edits the resolved value once a case is selected.
-                const resolvedDoc = buildGeneratedDocument(template, caseContext);
+                const resolvedDoc = buildGeneratedDocument(template, getContextForTemplate(template.id));
                 // The per-paragraph indent slider's "inherit" default - this document's own
                 // effective first-line indent, same value generation actually renders with.
                 const docFormatting = resolveEffectiveDocFormatting(formatting, template.format);
@@ -2785,7 +2821,7 @@ const DocumentsPage = ({ isAdmin }) => {
       </Shell>
       {variablePickerOpen ? (
         <VariablePickerModal
-          context={caseContext}
+          context={variablePickerTemplateId ? getContextForTemplate(variablePickerTemplateId) : caseContext}
           onPick={handleInsertVariable}
           onClose={() => setVariablePickerOpen(false)}
         />
