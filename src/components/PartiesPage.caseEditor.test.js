@@ -47,22 +47,19 @@ const buildParties = () => ({
   notaries: {
     'notary-1': { id: 'notary-1', name: { uk: { nominative: 'Нотаріус Іванова Іванівна', short: 'Іванова І.І.' } } },
   },
-  transactions: {},
-  cases: {
-    'case-1': {
-      id: 'case-1',
-      relations: {
-        coupleId: 'couple-1', clinicId: '', surrogateMotherId: 'surrogate-1', representativeIds: [],
-      },
-      program: { type: 'surrogacy', agreement: { number: { uk: '', en: '' }, date: '' } },
-      childbirth: {
-        maternityHospitalId: 'hospital-1',
-        children: [{
-          id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ', en: 'Kyiv' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' },
-        }],
-      },
-      registrations: { birth: { transactionId: '' } },
-      documents: { overrides: {} },
+});
+
+const buildCases = () => ({
+  'case-1': {
+    id: 'case-1',
+    relations: {
+      coupleId: 'couple-1', clinicId: '', surrogateMotherId: 'surrogate-1', representativeIds: [],
+    },
+    childbirth: {
+      maternityHospitalId: 'hospital-1',
+      children: [{
+        id: 'child-1', sex: 'female', birthDate: '2026-05-16', birthPlace: { uk: 'Київ', en: 'Kyiv' }, medicalConclusion: { number: 'MC-1', date: '2026-05-16' },
+      }],
     },
   },
 });
@@ -79,6 +76,9 @@ beforeEach(() => {
   get.mockImplementation(async path => {
     if (path === 'documentsBuilder/parties') {
       return { exists: () => true, val: () => buildParties() };
+    }
+    if (path === 'documentsBuilder/cases') {
+      return { exists: () => true, val: () => buildCases() };
     }
     return { exists: () => false, val: () => null };
   });
@@ -135,7 +135,7 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', 
     fireEvent.click(screen.getByRole('button', { name: /save childbirth details/i }));
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
-      'documentsBuilder/parties/cases/case-1/childbirth',
+      'documentsBuilder/cases/case-1/childbirth',
       expect.objectContaining({
         maternityHospitalId: 'hospital-1',
         children: [expect.objectContaining({ id: 'child-1', medicalConclusion: expect.objectContaining({ number: 'MC-99' }) })],
@@ -143,32 +143,35 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', 
     ));
   });
 
-  it('"Save transaction" creates a birth-registration-surrogate-consent transaction and points the case at it', async () => {
+  it('"Save surrogacy agreement" persists the agreement number/date directly to case.documents.surrogacyAgreement', async () => {
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
+    fireEvent.change(screen.getByLabelText('Номер (укр)'), { target: { value: 'Д-1' } });
+    fireEvent.change(screen.getByLabelText('Дата договору'), { target: { value: '2026-05-01' } });
+    fireEvent.click(screen.getByRole('button', { name: /save surrogacy agreement/i }));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/cases/case-1/documents/surrogacyAgreement',
+      { number: { uk: 'Д-1' }, date: '2026-05-01' },
+    ));
+  });
+
+  it('"Save birth registration details" persists the statement date/notary directly to case.documents.birthRegistrationConsent, with no registry number field', async () => {
+    await openCaseOne();
+    await screen.findByLabelText('Пологовий будинок');
+
+    expect(screen.queryByLabelText('Номер реєстру')).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText('Дата заяви'), { target: { value: '2026-05-18' } });
     fireEvent.change(screen.getByLabelText('Нотаріус'), { target: { value: 'notary-1' } });
-    fireEvent.change(screen.getByLabelText('Номер реєстру'), { target: { value: '12345' } });
-    fireEvent.click(screen.getByRole('button', { name: /save transaction/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save birth registration details/i }));
 
-    await waitFor(() => expect(update).toHaveBeenCalled());
-    const [path, payload] = update.mock.calls[update.mock.calls.length - 1];
-    expect(path).toBe('documentsBuilder/parties');
-    const transactionKey = Object.keys(payload).find(key => key.startsWith('transactions/'));
-    expect(transactionKey).toBeDefined();
-    const transactionId = transactionKey.split('/')[1];
-    expect(payload[transactionKey]).toEqual(expect.objectContaining({
-      id: transactionId,
-      type: 'birth-registration-surrogate-consent',
-      caseId: 'case-1',
-      coupleId: 'couple-1',
-      surrogateMotherId: 'surrogate-1',
-      notaryId: 'notary-1',
-      statementDate: '2026-05-18',
-      registryNumber: '12345',
-    }));
-    expect(payload['cases/case-1/registrations/birth/transactionId']).toBe(transactionId);
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/cases/case-1/documents/birthRegistrationConsent',
+      { statementDate: '2026-05-18', notaryId: 'notary-1' },
+    ));
+    expect(update).not.toHaveBeenCalled();
   });
 
   // Regression: Firebase RTDB silently turns a JS array into a `{"1": {...}}`-shaped plain object
@@ -178,12 +181,15 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', 
   it('does not crash when a case.childbirth.children arrives as a Firebase gap-object instead of an array', async () => {
     get.mockImplementation(async path => {
       if (path === 'documentsBuilder/parties') {
-        const parties = buildParties();
+        return { exists: () => true, val: () => buildParties() };
+      }
+      if (path === 'documentsBuilder/cases') {
+        const cases = buildCases();
         // `.children` here is a plain-object field on the fixture, not a DOM node, but the
         // testing-library lint rule can't tell the two apart from the property name alone.
         // eslint-disable-next-line testing-library/no-node-access
-        parties.cases['case-1'].childbirth.children = { 1: parties.cases['case-1'].childbirth.children[0] };
-        return { exists: () => true, val: () => parties };
+        cases['case-1'].childbirth.children = { 1: cases['case-1'].childbirth.children[0] };
+        return { exists: () => true, val: () => cases };
       }
       return { exists: () => false, val: () => null };
     });

@@ -44,16 +44,13 @@ const buildParties = () => ({
   },
   maternityHospitals: {},
   notaries: {},
-  transactions: {},
-  cases: {
-    'case-1': {
-      id: 'case-1',
-      relations: { coupleId: 'couple-1', clinicId: '', surrogateMotherId: '', representativeIds: [] },
-      program: { type: 'surrogacy', agreement: { number: { uk: '', en: '' }, date: '' } },
-      childbirth: { maternityHospitalId: '', children: [] },
-      registrations: { birth: { transactionId: '' } },
-      documents: { overrides: {} },
-    },
+});
+
+const buildCases = () => ({
+  'case-1': {
+    id: 'case-1',
+    relations: { coupleId: 'couple-1', clinicId: '', surrogateMotherId: '', representativeIds: [] },
+    childbirth: { maternityHospitalId: '', children: [] },
   },
 });
 
@@ -61,6 +58,7 @@ beforeEach(() => {
   ref.mockImplementation((_db, path) => path);
   get.mockImplementation(async path => {
     if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => buildParties() };
+    if (path === 'documentsBuilder/cases') return { exists: () => true, val: () => buildCases() };
     if (path === 'documentsBuilder/templates') return { exists: () => false, val: () => null };
     if (path === 'documentsBuilder/partiesSettings/recentIds') return { exists: () => false, val: () => null };
     return { exists: () => false, val: () => null };
@@ -166,7 +164,7 @@ describe('spec: Parties page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clinic slot' }));
     fireEvent.click(await screen.findByText('Клініка Мрія'));
 
-    await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/parties/cases/case-1/relations/clinicId', 'clinic-1'));
+    await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/cases/case-1/relations/clinicId', 'clinic-1'));
     await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/partiesSettings/recentIds/clinics', ['clinic-1']));
   });
 
