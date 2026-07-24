@@ -26,12 +26,12 @@ export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoSt
 export const legacyClinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const legacyClinicLogoStorageFilePath = (clinicId, fileName) => `${legacyClinicLogoStorageFolder(clinicId)}/${fileName}`;
 
-export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'maternityHospitals', 'notaries'];
+export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'partnerClinics', 'maternityHospitals', 'notaries'];
 
 // mergeCollection derives an id prefix for un-identified incoming records by stripping a trailing
 // 's' off the collection name; 'notaries' isn't a simple plural ('notarys' would be wrong), so it
 // needs the explicit override.
-const COLLECTION_ID_PREFIXES = { notaries: 'notary' };
+const COLLECTION_ID_PREFIXES = { notaries: 'notary', partnerClinics: 'partner-clinic' };
 
 export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -111,7 +111,7 @@ export const clinicLogoEntriesToBackend = variants => (variants || [])
 export const emptyDocumentsCatalog = () => ({
   cases: [],
   parties: {
-    couples: [], surrogateMothers: [], representatives: [], clinics: [], maternityHospitals: [], notaries: [],
+    couples: [], surrogateMothers: [], representatives: [], clinics: [], partnerClinics: [], maternityHospitals: [], notaries: [],
   },
   documents: [],
   clinicLogos: {},
@@ -510,8 +510,15 @@ export const createEmptySurrogateMother = () => ({
 export const createEmptyRepresentative = () => ({
   id: makeRecordId('representative'),
   name: { uk: { nominative: '', genitive: '' }, en: '' },
-  passport: { number: '' },
-  powerOfAttorney: { date: '', apostille: '' },
+  passport: {
+    number: '', issuedBy: { uk: '', en: '' }, issueDate: '',
+  },
+  // `apostille` (legacy, freeform) is kept for whatever already reads it; `apostilleDate` is the
+  // discrete date a signature block needs (spec batch 2026-07-24 §10) - a separate field, not a
+  // rename, so no existing template silently loses its value.
+  powerOfAttorney: {
+    date: '', apostille: '', apostilleDate: '',
+  },
 });
 
 // A clinic is either the foreign fertility clinic the intended parents came from, or the
@@ -540,6 +547,16 @@ export const createEmptyClinic = () => ({
     name: { uk: { nominative: '', genitive: '', short: '' }, en: { full: '', short: '' } },
     authority: { type: { uk: '', en: '' }, number: '', date: '' },
   },
+});
+
+// A partner clinic is the foreign clinic embryos ship from - a distinct, deliberately simplified
+// party type from the Ukrainian `clinics` collection (which performs the surrogacy program itself
+// and carries a full legal/banking profile): no EDRPOU, license, director, bank details, or logo,
+// just the name and address a static document needs to reference it by.
+export const createEmptyPartnerClinic = () => ({
+  id: makeRecordId('partner-clinic'),
+  name: { uk: '', en: '' },
+  address: { uk: '', en: '' },
 });
 
 export const createEmptyMaternityHospital = () => ({
@@ -652,6 +669,15 @@ export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
       en: formatEnglishDateWords(statementDate),
     },
   };
+  // The Ukrainian clinic (parties.clinics, relations.clinicId) runs the surrogacy program and signs
+  // the documents; the partner clinic (parties.partnerClinics, relations.partnerClinicId) is the
+  // separate foreign clinic embryos ship from - never the same collection, never a second "main"
+  // clinic. Both are null-safe: an old case with no partnerClinicId simply resolves to null rather
+  // than throwing, so a template referencing partnerClinic degrades to a visible warning instead of
+  // a crash (see getUnresolvedVariablePaths/fillPlaceholders).
+  const partnerClinic = relations.partnerClinicId
+    ? findById(catalog.parties.partnerClinics, relations.partnerClinicId)
+    : null;
 
   return {
     case: caseRecord,
@@ -661,6 +687,7 @@ export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
     husband,
     surrogateMother: findById(catalog.parties.surrogateMothers, relations.surrogateMotherId),
     clinic: findById(catalog.parties.clinics, relations.clinicId),
+    partnerClinic,
     representative: representatives[0] || null,
     representatives,
     childbirth,
@@ -682,6 +709,22 @@ export const formatDocumentDate = value => {
   return `${match[3]}.${match[2]}.${match[1]}`;
 };
 
+// Read/write compatibility for a date field that's supposed to be stored as ISO (`ivfDate`): a
+// pre-prepared import may still carry the display form `DD.MM.YYYY` (spec §6) - this reads either
+// shape and always resolves to ISO, so fillPlaceholders' own ISO -> DD.MM.YYYY formatting
+// (formatDocumentDate) renders it correctly regardless of which shape happened to be stored. The
+// case editor calls this again on every save (see CaseChildbirthTransactionEditor's ivfDate
+// commit) so the backend is normalized to ISO from the next save onward; this is only a
+// compatibility shim for what's already stored, never a second source of truth.
+export const normalizeIsoDate = value => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  if (isIsoDate(trimmed)) return trimmed;
+  const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(trimmed);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  return trimmed;
+};
+
 export const MISSING_VALUE_PLACEHOLDER = '__________';
 
 // Every {{...}} token in a template, e.g. {{wife.name.uk.nominative}}, {{logo}}, {{logo-long}}.
@@ -696,6 +739,18 @@ export const getValueByPath = (source, path) => String(path).split('.').reduce((
   return value[key];
 }, source);
 
+// A passport number is stored compact ("ME680736"); every legal document that shows one wants a
+// space between the two-letter series and the digits ("ME 680736"). One shared formatter, applied
+// wherever a `...passport.number` path resolves (see resolvePlaceholderValue below), so no
+// template has to hand-write "серія {{...}} № ..." and risk duplicating a series/number split the
+// formatter already does (spec batch 2026-07-24 §10).
+export const formatPassportNumber = value => {
+  const trimmed = String(value || '').trim();
+  const match = /^([A-Za-zА-Яа-яЄЇІЄїієЇ]{1,3})\s*(\d+)$/.exec(trimmed);
+  if (!match) return trimmed;
+  return `${match[1].toUpperCase()} ${match[2]}`;
+};
+
 const resolvePlaceholderValue = (context, path, lang) => {
   let value = getValueByPath(context, path);
   // A path that stops at a bilingual node ({uk, en}) resolves to the requested language; one that
@@ -707,7 +762,8 @@ const resolvePlaceholderValue = (context, path, lang) => {
   }
   if (isPlainObject(value) && value.nominative !== undefined) value = value.nominative;
   if (value === undefined || value === null || isPlainObject(value) || Array.isArray(value)) return undefined;
-  return formatDocumentDate(value);
+  const formatted = formatDocumentDate(value);
+  return path.endsWith('passport.number') ? formatPassportNumber(formatted) : formatted;
 };
 
 // Missing data renders as a fill-in-by-hand blank, matching how the reference statements leave
@@ -1251,6 +1307,7 @@ export const findPartyReferences = (catalog, collection, id) => {
     switch (collection) {
       case 'couples': return String(relations.coupleId) === targetId;
       case 'clinics': return String(relations.clinicId) === targetId;
+      case 'partnerClinics': return String(relations.partnerClinicId) === targetId;
       case 'surrogateMothers': return String(relations.surrogateMotherId) === targetId;
       case 'representatives': return toArray(relations.representativeIds).some(repId => String(repId) === targetId);
       case 'maternityHospitals': return String(caseRecord.childbirth?.maternityHospitalId) === targetId;
@@ -1295,6 +1352,11 @@ export const VARIABLE_PICKER_GROUPS = [
   { label: 'Довірена особа', roots: ['representative'] },
   { label: 'Клініка — іноземна', roots: ['clinic'], predicate: context => context?.clinic?.kind === 'foreign' },
   { label: 'Клініка — українська', roots: ['clinic'], predicate: context => context?.clinic?.kind !== 'foreign' },
+  // Distinct from the `clinic` groups above: the partner clinic (parties.partnerClinics) is never
+  // the case's own `clinic` record under a different kind - it's the separate foreign clinic
+  // embryos ship from (spec: embryo-ownership-statement document). Shown whenever one is selected
+  // on the case; a case without a partnerClinicId simply doesn't offer this group.
+  { label: 'Клініка-партнер', roots: ['partnerClinic'], predicate: context => Boolean(context?.partnerClinic) },
 ];
 
 // Builds the picker's grouped leaf list from a resolved case context (or any similarly-shaped

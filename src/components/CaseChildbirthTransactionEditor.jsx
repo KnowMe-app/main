@@ -14,6 +14,7 @@ import { database } from './config';
 import {
   DOCUMENTS_CASES_PATH,
   createChildRecord,
+  normalizeIsoDate,
   removeEmptyCaseValues,
   toArray,
 } from './documentsCatalogUtils';
@@ -203,6 +204,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   const [childbirthDraft, setChildbirthDraft] = useState({ maternityHospitalId: '', children: [] });
   const [surrogacyAgreementDraft, setSurrogacyAgreementDraft] = useState({ number: { uk: '', en: '' }, date: '' });
   const [birthRegistrationDraft, setBirthRegistrationDraft] = useState({ statementDate: '', notaryId: '' });
+  const [embryoOwnershipDraft, setEmbryoOwnershipDraft] = useState({ shipmentPeriod: { uk: '', en: '' }, ivfDate: '' });
 
   useEffect(() => {
     // `childbirth.children` isn't guaranteed to be a real array - a case edited straight in the
@@ -222,6 +224,15 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     setBirthRegistrationDraft({
       statementDate: selectedCase?.documents?.birthRegistrationConsent?.statementDate || '',
       notaryId: selectedCase?.documents?.birthRegistrationConsent?.notaryId || '',
+    });
+    setEmbryoOwnershipDraft({
+      shipmentPeriod: {
+        uk: selectedCase?.documents?.embryoOwnershipStatement?.shipmentPeriod?.uk || '',
+        en: selectedCase?.documents?.embryoOwnershipStatement?.shipmentPeriod?.en || '',
+      },
+      // `<input type="date">` only ever shows/emits ISO - a still-legacy `DD.MM.YYYY` import (spec
+      // §6) has to be read into ISO here or the field would just render blank.
+      ivfDate: normalizeIsoDate(selectedCase?.documents?.embryoOwnershipStatement?.ivfDate || ''),
     });
     setSelectedChildId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -330,6 +341,40 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     } catch (saveError) {
       console.error('Unable to save the birth registration details', saveError);
       toast.error('Could not save the birth registration details.');
+    }
+  };
+
+  const updateEmbryoOwnershipField = (path, value) => setEmbryoOwnershipDraft(previous => {
+    if (path === 'ivfDate') return { ...previous, ivfDate: value };
+    return { ...previous, shipmentPeriod: { ...previous.shipmentPeriod, [path]: value } };
+  });
+
+  // Every save normalizes ivfDate to ISO (spec §6: "під час наступного збереження нормалізувати
+  // дату до ISO") - a no-op once the field is already ISO, since normalizeIsoDate is idempotent,
+  // and the source `<input type="date">` already only ever emits ISO itself.
+  const handleSaveEmbryoOwnership = async () => {
+    if (!selectedCase) return;
+    const cleaned = removeEmptyCaseValues({
+      shipmentPeriod: embryoOwnershipDraft.shipmentPeriod,
+      ivfDate: normalizeIsoDate(embryoOwnershipDraft.ivfDate),
+    });
+    const nextValue = Object.keys(cleaned).length ? cleaned : null;
+    try {
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/embryoOwnershipStatement`), nextValue);
+      setCatalog(previous => ({
+        ...previous,
+        cases: previous.cases.map(item => {
+          if (String(item.id) !== String(selectedCase.id)) return item;
+          const documents = { ...(item.documents || {}) };
+          if (nextValue) documents.embryoOwnershipStatement = nextValue;
+          else delete documents.embryoOwnershipStatement;
+          return { ...item, documents };
+        }),
+      }));
+      toast.success('Embryo ownership statement details saved.');
+    } catch (saveError) {
+      console.error('Unable to save the embryo ownership statement details', saveError);
+      toast.error('Could not save the embryo ownership statement details.');
     }
   };
 
@@ -506,6 +551,39 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       <RowLine style={{ marginTop: 8 }}>
         <PrimaryMiniButton type="button" onClick={handleSaveBirthRegistration}>
           Save birth registration details
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Приналежність ембріонів</SectionSubhead>
+      <FieldGrid>
+        <Field>
+          Період передачі ембріонів (укр)
+          <FieldInput
+            type="text"
+            value={embryoOwnershipDraft.shipmentPeriod.uk || ''}
+            onChange={event => updateEmbryoOwnershipField('uk', event.target.value)}
+          />
+        </Field>
+        <Field>
+          Період передачі ембріонів (eng)
+          <FieldInput
+            type="text"
+            value={embryoOwnershipDraft.shipmentPeriod.en || ''}
+            onChange={event => updateEmbryoOwnershipField('en', event.target.value)}
+          />
+        </Field>
+        <Field>
+          Дата програми ЗІВ
+          <FieldInput
+            type="date"
+            value={embryoOwnershipDraft.ivfDate || ''}
+            onChange={event => updateEmbryoOwnershipField('ivfDate', event.target.value)}
+          />
+        </Field>
+      </FieldGrid>
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveEmbryoOwnership}>
+          Save embryo ownership statement details
         </PrimaryMiniButton>
       </RowLine>
     </Section>

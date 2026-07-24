@@ -21,6 +21,7 @@ import {
   createEmptyMaternityHospital,
   createEmptyNotary,
   createEmptyPartner,
+  createEmptyPartnerClinic,
   createEmptyRepresentative,
   createEmptySurrogateMother,
   deepMergeRecords,
@@ -30,6 +31,7 @@ import {
   findPartyReferences,
   formatDocumentDate,
   formatEnglishDateWords,
+  formatPassportNumber,
   formatUkrainianDateWords,
   getChildGenderForms,
   getClinicLogo,
@@ -55,6 +57,7 @@ import {
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
+  normalizeIsoDate,
   orderCasesByRecent,
   orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
@@ -336,6 +339,68 @@ describe('mergeDocumentsCatalog', () => {
     expect(clinicPatchRecord.name.en).toBe('Generated Clinic');
     expect(templatePatchRecord.id).toMatch(/^document-/);
     expect(templatePatchRecord.title.en).toBe('No id');
+  });
+
+  // Spec (batch 2026-07-24) §11: importing `{"cases":{"case-1":{"relations":{"partnerClinicId":...}}}}`
+  // must never wipe clinicId/coupleId/surrogateMotherId/representativeIds already on that case -
+  // the merge into `relations` (and `documents`) has to be a deep, additive, field-by-field merge,
+  // exactly like every other nested case branch.
+  it('adding partnerClinicId via Parse & merge never wipes the case\'s existing relations (spec §11)', () => {
+    const current = { ...emptyDocumentsCatalog() };
+    current.cases = [{
+      id: 'case-1',
+      relations: {
+        clinicId: 'clinic-1', coupleId: 'couple-2', surrogateMotherId: 'surrogate-mother-2', representativeIds: ['representative-1'],
+      },
+    }];
+    const incoming = parseDocumentsTechnicalInput(JSON.stringify({
+      cases: { 'case-1': { relations: { partnerClinicId: 'partner-clinic-1' } } },
+    }));
+    const { catalog } = mergeDocumentsCatalog(current, incoming);
+    const mergedCase = catalog.cases[0];
+    expect(mergedCase.relations).toEqual({
+      clinicId: 'clinic-1',
+      coupleId: 'couple-2',
+      surrogateMotherId: 'surrogate-mother-2',
+      representativeIds: ['representative-1'],
+      partnerClinicId: 'partner-clinic-1',
+    });
+  });
+
+  it('merges parties.partnerClinics, cases.*.documents.embryoOwnershipStatement and templates.embryo-ownership-statement additively (spec §11)', () => {
+    const current = sampleCatalog();
+    const incoming = parseDocumentsTechnicalInput(JSON.stringify({
+      parties: {
+        partnerClinics: {
+          'partner-clinic-1': {
+            id: 'partner-clinic-1',
+            name: { uk: 'Клініка Оті Юме у м. Нагоя', en: 'Ochi Yume Clinic Nagoya' },
+            address: { uk: 'Нагоя', en: 'Nagoya' },
+          },
+        },
+      },
+      cases: {
+        'case-1': { relations: { partnerClinicId: 'partner-clinic-1' }, documents: { embryoOwnershipStatement: { ivfDate: '2021-08-17' } } },
+      },
+      templates: {
+        'embryo-ownership-statement': { id: 'embryo-ownership-statement', title: { uk: 'Щодо приналежності ембріонів', en: 'Regarding ownership of embryos' } },
+      },
+    }));
+    const { catalog } = mergeDocumentsCatalog(current, incoming);
+
+    expect(catalog.parties.partnerClinics.map(record => record.id)).toEqual(['partner-clinic-1']);
+    // Every party collection that wasn't touched by this import stays exactly as it was.
+    expect(catalog.parties.clinics.map(record => record.id)).toEqual(['clinic-1']);
+    expect(catalog.parties.couples.map(record => record.id)).toEqual(['couple-1']);
+
+    const mergedCase = catalog.cases.find(record => record.id === 'case-1');
+    expect(mergedCase.relations.coupleId).toBe('couple-1');
+    expect(mergedCase.relations.partnerClinicId).toBe('partner-clinic-1');
+    expect(mergedCase.documents.embryoOwnershipStatement.ivfDate).toBe('2021-08-17');
+
+    expect(catalog.documents.some(record => record.id === 'embryo-ownership-statement')).toBe(true);
+    // The pre-existing template survives the import untouched.
+    expect(catalog.documents.some(record => record.id === 'embryo-transfer-consent')).toBe(true);
   });
 });
 
@@ -691,6 +756,340 @@ describe('spec: universal placeholder resolver', () => {
     };
     // The fixture case has no representative at all, so this path never resolves.
     expect(validateDocumentTemplate(template, context)).toEqual(['representative.powerOfAttorney.apostilleDate']);
+  });
+});
+
+// --- spec (batch 2026-07-24): partner clinic + embryo ownership statement document -------------
+// The Ukrainian clinic (parties.clinics, case.relations.clinicId) runs the surrogacy program; the
+// partner clinic (parties.partnerClinics, case.relations.partnerClinicId) is a distinct, foreign,
+// deliberately simplified party - the clinic embryos ship from. Both must resolve independently on
+// the same case, and a case without a partnerClinicId must degrade gracefully, never crash.
+const partnerClinicCatalog = ({ withPartnerClinic = true, ivfDate = '2021-08-17' } = {}) => normalizeDocumentsCatalog(
+  {
+    clinics: {
+      'clinic-1': {
+        id: 'clinic-1',
+        medicalCenterName: { uk: 'МЦ «Надія»', en: 'MC "Nadiya"' },
+        legalName: { uk: 'ТОВ «Надія»', en: 'Nadiya LLC' },
+      },
+    },
+    partnerClinics: {
+      'partner-clinic-1': {
+        id: 'partner-clinic-1',
+        name: { uk: 'Клініка Оті Юме у м. Нагоя', en: 'Ochi Yume Clinic Nagoya' },
+        address: {
+          uk: 'Хісая Парксайд Будівля 8F, 3-19-12 Маруноуті, округ Нака, місто Нагоя, префектура Айті',
+          en: 'Hisaya Parkside Building 8F, 3-19-12 Marunouchi, Naka-ku, Nagoya City, Aichi Prefecture',
+        },
+      },
+    },
+    representatives: {
+      'representative-1': {
+        id: 'representative-1',
+        name: { uk: { nominative: 'Тестовий Тест Тестович' }, en: 'Testovyi Test' },
+        passport: { number: 'ME680736', issuedBy: { uk: 'ДМС України', en: 'SMS of Ukraine' }, issueDate: '2019-05-06' },
+        powerOfAttorney: { date: '2026-01-10', apostilleDate: '2026-01-15' },
+      },
+    },
+  },
+  {},
+  {
+    'case-1': {
+      id: 'case-1',
+      relations: {
+        clinicId: 'clinic-1',
+        ...(withPartnerClinic ? { partnerClinicId: 'partner-clinic-1' } : {}),
+        representativeIds: ['representative-1'],
+      },
+      documents: {
+        embryoOwnershipStatement: {
+          shipmentPeriod: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' },
+          ivfDate,
+        },
+      },
+    },
+  },
+);
+
+describe('spec: partner clinic is a distinct party type from the Ukrainian clinic', () => {
+  it('resolves context.partnerClinic from parties.partnerClinics via relations.partnerClinicId, independent of context.clinic', () => {
+    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    expect(context.clinic.id).toBe('clinic-1');
+    expect(context.partnerClinic.id).toBe('partner-clinic-1');
+    expect(fillPlaceholders('{{partnerClinic.name.uk}}', context, 'uk')).toBe('Клініка Оті Юме у м. Нагоя');
+    expect(fillPlaceholders('{{partnerClinic.name.en}}', context, 'en')).toBe('Ochi Yume Clinic Nagoya');
+    expect(fillPlaceholders('{{partnerClinic.address.uk}}', context, 'uk')).toContain('Нагоя');
+  });
+
+  it('resolves context.partnerClinic to null (not undefined, not a throw) when the case has no partnerClinicId (old cases)', () => {
+    const context = resolveCaseContext(partnerClinicCatalog({ withPartnerClinic: false }), 'case-1');
+    expect(context.partnerClinic).toBeNull();
+    expect(() => fillPlaceholders('{{partnerClinic.name.uk}}', context, 'uk')).not.toThrow();
+    expect(fillPlaceholders('{{partnerClinic.name.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+  });
+
+  it('flags {{partnerClinic.*}} as unresolved only when no partner clinic is selected, never when one is', () => {
+    const template = { title: { uk: '', en: '' }, paragraphs: [{ uk: '{{partnerClinic.name.uk}}', en: '{{partnerClinic.name.en}}' }] };
+    const withClinic = resolveCaseContext(partnerClinicCatalog({ withPartnerClinic: true }), 'case-1');
+    const withoutClinic = resolveCaseContext(partnerClinicCatalog({ withPartnerClinic: false }), 'case-1');
+    expect(validateDocumentTemplate(template, withClinic)).toEqual([]);
+    expect(validateDocumentTemplate(template, withoutClinic)).toEqual(['partnerClinic.name.en', 'partnerClinic.name.uk']);
+  });
+
+  it('deleting/never-setting partnerClinicId never disturbs clinicId/coupleId/etc on the same case (null-safe, additive)', () => {
+    const catalog = partnerClinicCatalog({ withPartnerClinic: false });
+    const context = resolveCaseContext(catalog, 'case-1');
+    expect(context.clinic.id).toBe('clinic-1');
+    expect(context.representatives).toHaveLength(1);
+  });
+});
+
+describe('spec: case.documents.embryoOwnershipStatement resolves through the existing `case` root', () => {
+  it('resolves shipmentPeriod.uk/en directly, no derived context field needed', () => {
+    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.shipmentPeriod.uk}}', context, 'uk')).toBe('квітні – травні 2026 року');
+    expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.shipmentPeriod.en}}', context, 'en')).toBe('April-May 2026');
+  });
+
+  it('formats an ISO-stored ivfDate as DD.MM.YYYY, same as every other document date', () => {
+    const context = resolveCaseContext(partnerClinicCatalog({ ivfDate: '2021-08-17' }), 'case-1');
+    expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.ivfDate}}', context, 'uk')).toBe('17.08.2021');
+  });
+
+  it('still renders a legacy DD.MM.YYYY-stored ivfDate correctly (read-time compatibility, spec §6)', () => {
+    const context = resolveCaseContext(partnerClinicCatalog({ ivfDate: '17.08.2021' }), 'case-1');
+    expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.ivfDate}}', context, 'uk')).toBe('17.08.2021');
+  });
+
+  it('normalizeIsoDate converts DD.MM.YYYY to ISO and is a no-op on ISO/empty input (used by the case editor on save)', () => {
+    expect(normalizeIsoDate('17.08.2021')).toBe('2021-08-17');
+    expect(normalizeIsoDate('2021-08-17')).toBe('2021-08-17');
+    expect(normalizeIsoDate('')).toBe('');
+    expect(normalizeIsoDate(undefined)).toBe('');
+  });
+});
+
+describe('spec: clinic name for the new document is medicalCenterName, not clinic.name', () => {
+  it('resolves clinic.medicalCenterName.uk/en for a clinic record that never set clinic.name', () => {
+    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    expect(context.clinic.name).toBeUndefined();
+    expect(fillPlaceholders('{{clinic.medicalCenterName.uk}}', context, 'uk')).toBe('МЦ «Надія»');
+    expect(fillPlaceholders('{{clinic.medicalCenterName.en}}', context, 'en')).toBe('MC "Nadiya"');
+  });
+
+  it('flags {{clinic.name.uk}} as unresolved when the real clinic record never populated `name` (spec §12)', () => {
+    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    const template = { title: { uk: '', en: '' }, paragraphs: [{ uk: '{{clinic.name.uk}}', en: '' }] };
+    expect(validateDocumentTemplate(template, context)).toEqual(['clinic.name.uk']);
+  });
+});
+
+describe('spec: representative passport/power-of-attorney fields + centralized passport-number formatting (§10)', () => {
+  it('resolves the extended representative.passport.issuedBy/issueDate and powerOfAttorney.apostilleDate fields', () => {
+    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    expect(fillPlaceholders('{{representative.passport.issuedBy.uk}}', context, 'uk')).toBe('ДМС України');
+    expect(fillPlaceholders('{{representative.passport.issuedBy.en}}', context, 'en')).toBe('SMS of Ukraine');
+    expect(fillPlaceholders('{{representative.passport.issueDate}}', context, 'uk')).toBe('06.05.2019');
+    expect(fillPlaceholders('{{representative.powerOfAttorney.apostilleDate}}', context, 'uk')).toBe('15.01.2026');
+  });
+
+  it('formatPassportNumber inserts one space between the series letters and the digits, uppercased', () => {
+    expect(formatPassportNumber('ME680736')).toBe('ME 680736');
+    expect(formatPassportNumber('me680736')).toBe('ME 680736');
+    expect(formatPassportNumber('ME 680736')).toBe('ME 680736');
+    expect(formatPassportNumber('')).toBe('');
+  });
+
+  it('fillPlaceholders formats representative.passport.number through the centralized formatter automatically', () => {
+    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    expect(fillPlaceholders('{{representative.passport.number}}', context, 'uk')).toBe('ME 680736');
+  });
+});
+
+// --- spec (batch 2026-07-24) §7-13: the "Щодо приналежності ембріонів" / "Regarding ownership of
+// embryos" template - registered the same way every other template is (a plain data record with
+// id `embryo-ownership-statement`, no dedicated rendering code), and exercised end-to-end here
+// against a Japanese-partner-clinic case shaped like the spec's own example (fictional data only).
+const EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE = {
+  id: 'embryo-ownership-statement',
+  title: { uk: 'Щодо приналежності ембріонів', en: 'Regarding ownership of embryos' },
+  logo: '{{logo}}',
+  paragraphs: [
+    {
+      uk: 'Ми, {{wife.name.uk.nominative}}, громадянка {{wife.citizenship.uk}}, паспорт № {{wife.passport.number}}, '
+        + 'виданий {{wife.passport.issuedBy.uk}} {{wife.passport.issueDate}}, та {{husband.name.uk.nominative}}, '
+        + 'громадянин {{husband.citizenship.uk}}, паспорт № {{husband.passport.number}}, виданий {{husband.passport.issuedBy.uk}} '
+        + '{{husband.passport.issueDate}}, спільно заявляємо таке:',
+      en: 'We, {{wife.name.en}}, a citizen of {{wife.citizenship.en}}, passport No. {{wife.passport.number}}, '
+        + 'issued on {{wife.passport.issueDate}}, by {{wife.passport.issuedBy.en}}, and {{husband.name.en}}, '
+        + 'a citizen of {{husband.citizenship.en}}, passport No. {{husband.passport.number}}, issued on '
+        + '{{husband.passport.issueDate}}, by {{husband.passport.issuedBy.en}}, jointly declare as follows:',
+    },
+    {
+      uk: 'У результаті проведення програми запліднення in vitro (ЗІВ) від {{case.documents.embryoOwnershipStatement.ivfDate}} '
+        + 'у клініці {{partnerClinic.name.uk}} (адреса: {{partnerClinic.address.uk}}), нами як генетичними батьками отримано '
+        + 'ембріони, що належать виключно нам.',
+      en: 'As a result of the in vitro fertilization (IVF) program dated {{case.documents.embryoOwnershipStatement.ivfDate}} '
+        + 'at {{partnerClinic.name.en}} (address: {{partnerClinic.address.en}}), embryos were obtained that belong '
+        + 'exclusively to us as the genetic parents.',
+    },
+    {
+      uk: 'Зазначені ембріони підлягають передачі (транспортуванню) у {{case.documents.embryoOwnershipStatement.shipmentPeriod.uk}} '
+        + 'до {{clinic.medicalCenterName.uk}} для подальшого використання в межах програми сурогатного материнства.',
+      en: 'The said embryos shall be transferred (shipped) in {{case.documents.embryoOwnershipStatement.shipmentPeriod.en}} '
+        + 'to {{clinic.medicalCenterName.en}} for further use within the surrogacy program.',
+    },
+    {
+      uk: 'Ми не заперечуємо проти такої передачі, транспортування та подальшого використання зазначених ембріонів і '
+        + 'підтверджуємо, що жодна третя особа не має щодо них жодних прав.',
+      en: 'We have no objection to such transfer, transportation and further use of the said embryos and confirm that '
+        + 'no third party has any rights to them.',
+    },
+    {
+      uk: 'Від нашого імені та в наших інтересах діє {{representative.name.uk.nominative}} на підставі довіреності від '
+        + '{{representative.powerOfAttorney.date}}, апостильованої {{representative.powerOfAttorney.apostilleDate}}, '
+        + 'паспорт № {{representative.passport.number}}, виданий {{representative.passport.issuedBy.uk}} {{representative.passport.issueDate}}.',
+      en: 'On our behalf and in our interests acts {{representative.name.en}}, under a power of attorney dated '
+        + '{{representative.powerOfAttorney.date}}, apostilled on {{representative.powerOfAttorney.apostilleDate}}, '
+        + 'passport No. {{representative.passport.number}}, issued on {{representative.passport.issueDate}}, by '
+        + '{{representative.passport.issuedBy.en}}.',
+    },
+    {
+      uk: 'Підпис представника: _________________ {{representative.name.uk.nominative}}',
+      en: 'Representative’s signature: _________________ {{representative.name.en}}',
+    },
+  ],
+};
+
+const katsuraStyleCatalog = () => normalizeDocumentsCatalog(
+  {
+    couples: {
+      'couple-2': {
+        id: 'couple-2',
+        partners: [
+          {
+            id: 'wife-2', role: 'wife', name: { uk: { nominative: 'Кацура Юкі' }, en: 'Katsura Yuki' }, citizenship: { uk: 'Японії', en: 'Japan' }, passport: { number: 'TZ1234567', issuedBy: { uk: 'Міністерством закордонних справ Японії', en: 'Ministry of Foreign Affairs of Japan' }, issueDate: '2018-03-12' },
+          },
+          {
+            id: 'husband-2', role: 'husband', name: { uk: { nominative: 'Кацура Хіро' }, en: 'Katsura Hiro' }, citizenship: { uk: 'Японії', en: 'Japan' }, passport: { number: 'TZ7654321', issuedBy: { uk: 'Міністерством закордонних справ Японії', en: 'Ministry of Foreign Affairs of Japan' }, issueDate: '2018-03-12' },
+          },
+        ],
+      },
+    },
+    surrogateMothers: { 'surrogate-mother-2': { id: 'surrogate-mother-2', name: { uk: { nominative: 'Тестова Тест Тестівна' } } } },
+    representatives: {
+      'representative-1': {
+        id: 'representative-1',
+        name: { uk: { nominative: 'Тестовий Тест Тестович' }, en: 'Testovyi Test' },
+        passport: { number: 'ME680736', issuedBy: { uk: 'ДМС України', en: 'SMS of Ukraine' }, issueDate: '2019-05-06' },
+        powerOfAttorney: { date: '2026-01-10', apostilleDate: '2026-01-15' },
+      },
+    },
+    clinics: {
+      'clinic-1': {
+        id: 'clinic-1',
+        medicalCenterName: { uk: 'МЦ «Надія»', en: 'MC "Nadiya"' },
+        legalName: { uk: 'ТОВ «Надія»', en: 'Nadiya LLC' },
+      },
+    },
+    partnerClinics: {
+      'partner-clinic-1': {
+        id: 'partner-clinic-1',
+        name: { uk: 'Клініка Оті Юме у м. Нагоя', en: 'Ochi Yume Clinic Nagoya' },
+        address: {
+          uk: 'Хісая Парксайд Будівля 8F, 3-19-12 Маруноуті, округ Нака, місто Нагоя, префектура Айті',
+          en: 'Hisaya Parkside Building 8F, 3-19-12 Marunouchi, Naka-ku, Nagoya City, Aichi Prefecture',
+        },
+      },
+    },
+  },
+  { 'embryo-ownership-statement': EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE },
+  {
+    'case-mrry82h1-bws4eb': {
+      id: 'case-mrry82h1-bws4eb',
+      relations: {
+        clinicId: 'clinic-1',
+        partnerClinicId: 'partner-clinic-1',
+        coupleId: 'couple-2',
+        surrogateMotherId: 'surrogate-mother-2',
+        representativeIds: ['representative-1'],
+      },
+      documents: {
+        embryoOwnershipStatement: {
+          shipmentPeriod: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' },
+          ivfDate: '2021-08-17',
+        },
+      },
+    },
+  },
+);
+
+describe('spec: embryo-ownership-statement template (batch 2026-07-24 §7-13)', () => {
+  it('is a plain data template - registered, listed and rendered the same generic way as any other template, no dedicated rendering code', () => {
+    const catalog = katsuraStyleCatalog();
+    expect(catalog.documents.find(doc => doc.id === 'embryo-ownership-statement')).toBeTruthy();
+  });
+
+  it('renders every paragraph in both languages with no leftover {{...}} tokens (spec §14 checklist #7)', () => {
+    const catalog = katsuraStyleCatalog();
+    const context = resolveCaseContext(catalog, 'case-mrry82h1-bws4eb');
+    const generated = buildGeneratedDocument(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context);
+    expect(generated.title.uk).toBe('Щодо приналежності ембріонів');
+    expect(generated.title.en).toBe('Regarding ownership of embryos');
+    generated.paragraphs.forEach(paragraph => {
+      expect(paragraph.uk).not.toMatch(/\{\{|}}/);
+      expect(paragraph.en).not.toMatch(/\{\{|}}/);
+    });
+    expect(validateDocumentTemplate(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context)).toEqual([]);
+  });
+
+  it('never duplicates the country after the passport-issuing authority (spec §9, §14 checklist #8)', () => {
+    const catalog = katsuraStyleCatalog();
+    const context = resolveCaseContext(catalog, 'case-mrry82h1-bws4eb');
+    const generated = buildGeneratedDocument(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context);
+    const [firstParagraph] = generated.paragraphs;
+    expect(firstParagraph.uk).toContain('виданий Міністерством закордонних справ Японії 12.03.2018');
+    expect(firstParagraph.uk).not.toContain('Японії Японії');
+    expect(firstParagraph.en).toContain('issued on 12.03.2018, by Ministry of Foreign Affairs of Japan');
+  });
+
+  it('uses clinic.medicalCenterName (not the nonexistent clinic.name) for the Ukrainian clinic (spec §8, §14 checklist #9)', () => {
+    const catalog = katsuraStyleCatalog();
+    const context = resolveCaseContext(catalog, 'case-mrry82h1-bws4eb');
+    const generated = buildGeneratedDocument(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context);
+    const shipmentParagraph = generated.paragraphs[2];
+    expect(shipmentParagraph.uk).toContain('МЦ «Надія»');
+    expect(shipmentParagraph.en).toContain('MC "Nadiya"');
+  });
+
+  it('resolves the Japanese partner clinic name/address independently of the Ukrainian clinic (spec §4)', () => {
+    const catalog = katsuraStyleCatalog();
+    const context = resolveCaseContext(catalog, 'case-mrry82h1-bws4eb');
+    const generated = buildGeneratedDocument(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context);
+    const ivfParagraph = generated.paragraphs[1];
+    expect(ivfParagraph.uk).toContain('Клініка Оті Юме у м. Нагоя');
+    expect(ivfParagraph.uk).toContain('17.08.2021');
+    expect(ivfParagraph.en).toContain('Ochi Yume Clinic Nagoya');
+  });
+
+  it('degrades to a clear warning, never a leaked {{partnerClinic...}} token, when the case has no partner clinic selected (spec §3, §14 checklist #10)', () => {
+    const catalog = katsuraStyleCatalog();
+    const caseWithoutPartnerClinic = {
+      ...catalog.cases[0],
+      relations: { ...catalog.cases[0].relations, partnerClinicId: undefined },
+    };
+    delete caseWithoutPartnerClinic.relations.partnerClinicId;
+    const catalogWithoutPartnerClinic = { ...catalog, cases: [caseWithoutPartnerClinic] };
+    const context = resolveCaseContext(catalogWithoutPartnerClinic, 'case-mrry82h1-bws4eb');
+    expect(context.partnerClinic).toBeNull();
+    const generated = buildGeneratedDocument(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context);
+    generated.paragraphs.forEach(paragraph => {
+      expect(paragraph.uk).not.toMatch(/\{\{|}}/);
+      expect(paragraph.en).not.toMatch(/\{\{|}}/);
+    });
+    expect(validateDocumentTemplate(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context)).toEqual(
+      expect.arrayContaining(['partnerClinic.address.uk', 'partnerClinic.name.uk']),
+    );
   });
 });
 
@@ -2135,6 +2534,12 @@ describe('spec: Parties page record shapes', () => {
     expect(createEmptyClinic().id).toMatch(/^clinic-/);
     expect(createEmptyMaternityHospital().id).toMatch(/^maternity-hospital-/);
     expect(createEmptyNotary().id).toMatch(/^notary-/);
+
+    // A partner clinic is a deliberately simplified party type (spec §5) - just name/address, no
+    // EDRPOU/license/director/bank/logo the Ukrainian clinic record carries.
+    const partnerClinic = createEmptyPartnerClinic();
+    expect(partnerClinic.id).toMatch(/^partner-clinic-/);
+    expect(partnerClinic).toEqual({ id: partnerClinic.id, name: { uk: '', en: '' }, address: { uk: '', en: '' } });
 
     // Two calls never collide, same guarantee makeRecordId already gives createChildRecord.
     expect(createEmptyCouple().id).not.toBe(couple.id);
