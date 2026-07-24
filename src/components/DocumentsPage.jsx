@@ -46,6 +46,7 @@ import {
   getParagraphStyle,
   getParagraphType,
   getTemplateLogoType,
+  getTemplateReferencedPaths,
   getTemplateScopeRecord,
   getTemplateScopeText,
   isBilingualLayout,
@@ -1603,10 +1604,39 @@ const DocumentsPage = ({ isAdmin }) => {
   // only needs to say here which one this batch of documents resolves against.
   const selectedCaseChildren = toArray(selectedCase?.childbirth?.children);
   const caseContext = resolveCaseContext(catalog, selectedCaseId, { childId: selectedChildId });
+  // Every path referenced anywhere across the checked documents - used below to scope the
+  // completeness checklist to what those specific documents actually need (spec 2026-07-24
+  // follow-up: an early-stage document like a surrogacy agreement shouldn't warn about a birth
+  // that hasn't happened yet, since it never references childbirth/birth-registration data at all).
+  const selectedTemplatePaths = selectedTemplates.flatMap(getTemplateReferencedPaths);
+  const referencesPathDomain = prefixes => prefixes.some(prefix => selectedTemplatePaths.some(
+    path => path === prefix || path.startsWith(`${prefix}.`),
+  ));
+  const referencesBirthDomain = referencesPathDomain([
+    'child', 'children', 'medicalConclusion', 'birthRegistration', 'case.childbirth', 'case.documents.birthRegistrationConsent',
+  ]);
+  // Which relation each base checklist issue actually gates on - an issue with no listed domain
+  // (case.id) is always relevant; everything else only matters once a checked document references
+  // that data at all.
+  const CHECKLIST_ISSUE_DOMAINS = {
+    'case.relations.coupleId': ['wife', 'husband', 'couple'],
+    'case.relations.clinicId': ['clinic'],
+    'case.relations.surrogateMotherId': ['surrogateMother'],
+    'case.childbirth.children': ['child', 'children', 'medicalConclusion', 'birthRegistration', 'case.childbirth', 'case.documents.birthRegistrationConsent'],
+  };
+  const isChecklistIssueRelevant = issue => {
+    const domains = CHECKLIST_ISSUE_DOMAINS[issue];
+    return !domains || referencesPathDomain(domains);
+  };
   // Pre-export completeness checklist (Batch 18 §5) - non-blocking while editing, listed before
-  // export alongside the unresolved-variable warning; missing lookups never crash resolution.
+  // export alongside the unresolved-variable warning; missing lookups never crash resolution. Only
+  // shown for issues actually relevant to the checked documents (see above) - checking nothing yet
+  // shows nothing.
   const caseChecklistIssues = selectedCaseId
-    ? [...new Set([...validateCaseRecord(selectedCase), ...validateBirthRegistrationCase(catalog, selectedCaseId)])]
+    ? [...new Set([
+      ...validateCaseRecord(selectedCase).filter(isChecklistIssueRelevant),
+      ...(referencesBirthDomain ? validateBirthRegistrationCase(catalog, selectedCaseId) : []),
+    ])]
     : [];
   // A logo only ever appears where a template declares one - via the dedicated `logo` field, or
   // a legacy leading paragraph (spec §5) - never automatically. `showLogo` is just the global
@@ -1912,7 +1942,16 @@ const DocumentsPage = ({ isAdmin }) => {
                 </RowLine>
               </SectionHead>
               <RowLine style={{ marginTop: 8 }}>
-                <Select value={selectedCaseId} onChange={event => setSelectedCaseId(event.target.value)}>
+                <Select
+                  value={selectedCaseId}
+                  onChange={event => {
+                    const nextCaseId = event.target.value;
+                    setSelectedCaseId(nextCaseId);
+                    // Opening a case (not just generating from it) bumps it to the front of this
+                    // list for next time (spec: "обирай першим той, який відкривався останнім").
+                    if (nextCaseId) persistSettings({ recentCaseIds: upsertRecentCaseId(settings.recentCaseIds, nextCaseId) });
+                  }}
+                >
                   {!orderedCases.length ? <option value="">No cases yet</option> : null}
                   {orderedCases.map(caseRecord => (
                     <option key={caseRecord.id} value={String(caseRecord.id)}>

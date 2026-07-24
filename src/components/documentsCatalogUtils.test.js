@@ -39,6 +39,7 @@ import {
   getEffectiveParagraphAlign,
   getEffectiveTitleAlign,
   getTemplateScopeRecord,
+  getTemplateReferencedPaths,
   getLayoutColumnCount,
   getLayoutLang,
   getParagraphStyle,
@@ -1090,6 +1091,33 @@ describe('spec: embryo-ownership-statement template (batch 2026-07-24 §7-13)', 
     expect(validateDocumentTemplate(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context)).toEqual(
       expect.arrayContaining(['partnerClinic.address.uk', 'partnerClinic.name.uk']),
     );
+  });
+});
+
+describe('spec: getTemplateReferencedPaths (batch 2026-07-24 follow-up: scope checklist warnings to checked documents)', () => {
+  it('collects every {{path}} in title/beforeTitle/paragraphs across both languages, deduplicated', () => {
+    const template = {
+      title: { uk: '{{clinic.medicalCenterName.uk}}', en: '{{clinic.medicalCenterName.en}}' },
+      beforeTitle: [{ uk: '{{wife.name.uk.nominative}}' }],
+      paragraphs: [
+        { uk: '{{wife.name.uk.nominative}} {{husband.name.uk.nominative}}', en: '{{wife.name.en}}' },
+        { uk: '{{logo}}', en: '{{logo}}' },
+      ],
+    };
+    const paths = getTemplateReferencedPaths(template);
+    expect(paths.sort()).toEqual([
+      'clinic.medicalCenterName.en',
+      'clinic.medicalCenterName.uk',
+      'husband.name.uk.nominative',
+      'wife.name.en',
+      'wife.name.uk.nominative',
+    ]);
+    expect(paths).not.toContain('logo');
+  });
+
+  it('a template that never references child/birth-registration data returns none of those paths', () => {
+    const paths = getTemplateReferencedPaths(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE);
+    expect(paths.some(path => path.startsWith('child.') || path.startsWith('case.childbirth'))).toBe(false);
   });
 });
 
