@@ -1628,6 +1628,17 @@ const DocumentsPage = ({ isAdmin }) => {
   const unresolvedVariables = caseContext
     ? [...new Set(selectedTemplates.flatMap(template => validateDocumentTemplate(template, caseContext)))].sort()
     : [];
+  // A case with no partnerClinicId set (old cases, or one just cleared - spec §3) resolves
+  // caseContext.partnerClinic to null, so every {{partnerClinic.*}} token in a selected template
+  // shows up in unresolvedVariables like any other missing field - technically correct (never a
+  // leaked {{token}}, never a crash) but "partnerClinic.name.uk, partnerClinic.address.uk, ..." is
+  // not a useful message on its own. Surface the actual cause instead, once, and drop the
+  // redundant per-field paths from the generic list.
+  const missingPartnerClinic = Boolean(caseContext) && !caseContext.partnerClinic
+    && unresolvedVariables.some(path => path.startsWith('partnerClinic.'));
+  const visibleUnresolvedVariables = missingPartnerClinic
+    ? unresolvedVariables.filter(path => !path.startsWith('partnerClinic.'))
+    : unresolvedVariables;
   const isGenerateDisabled = loading || Boolean(error) || isGenerating || clinicLogoLoading || !selectedTemplates.length || !selectedCase;
 
   // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
@@ -1755,10 +1766,13 @@ const DocumentsPage = ({ isAdmin }) => {
   const confirmUnresolvedVariables = () => {
     if (typeof window === 'undefined') return true;
     const sections = [];
-    if (unresolvedVariables.length) {
+    if (missingPartnerClinic) {
+      sections.push('Для цього документа не вибрана клініка-партнер.');
+    }
+    if (visibleUnresolvedVariables.length) {
       sections.push(
-        `Не вдалося підставити ${unresolvedVariables.length} змінн${unresolvedVariables.length === 1 ? 'у' : 'их'}:\n`
-        + `${unresolvedVariables.map(path => `- ${path}`).join('\n')}`,
+        `Не вдалося підставити ${visibleUnresolvedVariables.length} змінн${visibleUnresolvedVariables.length === 1 ? 'у' : 'их'}:\n`
+        + `${visibleUnresolvedVariables.map(path => `- ${path}`).join('\n')}`,
       );
     }
     if (caseChecklistIssues.length) {
@@ -1946,9 +1960,14 @@ const DocumentsPage = ({ isAdmin }) => {
                   />
                 </DocLogoPreviewRow>
               ) : null}
-              {unresolvedVariables.length ? (
+              {missingPartnerClinic ? (
                 <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
-                  Не вдалося підставити: {unresolvedVariables.join(', ')}
+                  Для цього документа не вибрана клініка-партнер.
+                </DocSubtitle>
+              ) : null}
+              {visibleUnresolvedVariables.length ? (
+                <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
+                  Не вдалося підставити: {visibleUnresolvedVariables.join(', ')}
                 </DocSubtitle>
               ) : null}
               {!catalog.documents.length ? (

@@ -24,6 +24,7 @@ import {
   CLINIC_KINDS,
   createEmptyCase,
   createEmptyClinic,
+  createEmptyPartnerClinic,
   createEmptyCouple,
   createEmptyMaternityHospital,
   createEmptyNotary,
@@ -378,6 +379,21 @@ const setValueAtPath = (obj, path, value) => {
   return { ...obj, [key]: setValueAtPath(child, rest.join('.'), value) };
 };
 
+// Firebase RTDB removes a node when it's written as `null`; this is the local-state twin of that
+// (spec §4: clearing partnerClinicId must delete the key, never leave a `''` sitting in
+// `relations` - an empty string is a value, and would still resolve as a "clinic selected" ID).
+const deleteValueAtPath = (obj, path) => {
+  const [key, ...rest] = String(path).split('.');
+  if (!isPlainObject(obj)) return obj;
+  if (!rest.length) {
+    const next = { ...obj };
+    delete next[key];
+    return next;
+  }
+  if (!isPlainObject(obj[key])) return obj;
+  return { ...obj, [key]: deleteValueAtPath(obj[key], rest.join('.')) };
+};
+
 // Resyncs from the backend value on every change, unless the field currently has focus (so an
 // in-progress keystroke never gets clobbered by a re-render triggered by an unrelated commit) -
 // same guard the Invoice Builder's plain fields use.
@@ -499,8 +515,12 @@ const REPRESENTATIVE_FIELDS = [
   { label: 'Name (uk, genitive)', path: 'name.uk.genitive' },
   { label: 'Name (en)', path: 'name.en' },
   { label: 'Passport number', path: 'passport.number' },
+  { label: 'Passport issued by (uk)', path: 'passport.issuedBy.uk' },
+  { label: 'Passport issued by (en)', path: 'passport.issuedBy.en' },
+  { label: 'Passport issue date', path: 'passport.issueDate', type: 'date' },
   { label: 'Power of attorney date', path: 'powerOfAttorney.date', type: 'date' },
   { label: 'Power of attorney apostille', path: 'powerOfAttorney.apostille' },
+  { label: 'Power of attorney apostille date', path: 'powerOfAttorney.apostilleDate', type: 'date' },
 ];
 
 const CLINIC_FIELDS = [
@@ -537,6 +557,17 @@ const CLINIC_FIELDS = [
   { label: 'Director authority type (en)', path: 'medicalDirector.authority.type.en' },
   { label: 'Director authority number', path: 'medicalDirector.authority.number' },
   { label: 'Director authority date', path: 'medicalDirector.authority.date', type: 'date' },
+];
+
+// A partner clinic is deliberately a simplified party type (spec §5): just the two bilingual
+// fields a static document needs to name and address it by - never the Ukrainian clinic's
+// EDRPOU/license/director/bank/logo fields, which don't apply to a clinic that never signs
+// anything itself.
+const PARTNER_CLINIC_FIELDS = [
+  { label: 'Name (uk)', path: 'name.uk' },
+  { label: 'Name (en)', path: 'name.en' },
+  { label: 'Address (uk)', path: 'address.uk' },
+  { label: 'Address (en)', path: 'address.en' },
 ];
 
 const MATERNITY_HOSPITAL_FIELDS = [
@@ -866,6 +897,7 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
   const cases = catalog.cases;
   const orderedCouples = orderRecordsByRecentIds(catalog.parties.couples, recentIds.couples);
   const orderedClinics = orderRecordsByRecentIds(catalog.parties.clinics, recentIds.clinics);
+  const orderedPartnerClinics = orderRecordsByRecentIds(catalog.parties.partnerClinics, recentIds.partnerClinics);
   const orderedSurrogateMothers = orderRecordsByRecentIds(catalog.parties.surrogateMothers, recentIds.surrogateMothers);
   const orderedRepresentatives = orderRecordsByRecentIds(catalog.parties.representatives, recentIds.representatives);
 
@@ -894,6 +926,23 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
       }));
     } catch (updateError) {
       console.error('Unable to save case field', updateError);
+      toast.error('Could not save.');
+    }
+  };
+
+  // Same dbPath convention as updateCaseField, but writes `null` so Firebase actually removes the
+  // node - used when a relation slot is cleared back to "— None —" (spec §4: partnerClinicId must
+  // never be persisted as an empty string).
+  const removeCaseField = async (caseId, path) => {
+    const dbPath = `${DOCUMENTS_CASES_PATH}/${caseId}/${path.split('.').join('/')}`;
+    try {
+      await set(ref(database, dbPath), null);
+      setCatalog(previous => ({
+        ...previous,
+        cases: previous.cases.map(item => (String(item.id) === String(caseId) ? deleteValueAtPath(item, path) : item)),
+      }));
+    } catch (updateError) {
+      console.error('Unable to clear case field', updateError);
       toast.error('Could not save.');
     }
   };
@@ -963,6 +1012,20 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
                       valueId={relations.clinicId}
                       displayName={partyDisplayName}
                       onPick={id => { updateCaseField(caseRecord.id, 'relations.clinicId', id); recordPartyUsage('clinics', id); }}
+                    />
+                    <RelationSlot
+                      label="Partner clinic"
+                      records={orderedPartnerClinics}
+                      valueId={relations.partnerClinicId}
+                      displayName={partyDisplayName}
+                      onPick={id => {
+                        if (id) {
+                          updateCaseField(caseRecord.id, 'relations.partnerClinicId', id);
+                          recordPartyUsage('partnerClinics', id);
+                        } else {
+                          removeCaseField(caseRecord.id, 'relations.partnerClinicId');
+                        }
+                      }}
                     />
                     <RelationSlot
                       label="Surrogate mother"
@@ -1159,7 +1222,7 @@ const CaseReadView = ({ catalog, selectedCaseId, onSelectCase, onCreateCase }) =
 // --- Page ---------------------------------------------------------------------------------------
 
 const EMPTY_RECENT_IDS = {
-  couples: [], clinics: [], surrogateMothers: [], representatives: [], notaries: [],
+  couples: [], clinics: [], partnerClinics: [], surrogateMothers: [], representatives: [], notaries: [],
 };
 
 // Same view/edit pattern as the Budget page (spec batch 21 §10): read mode is the default, an
@@ -1210,6 +1273,7 @@ const PartiesPage = ({ isAdmin }) => {
       setRecentIds({
         couples: toArray(rawRecentIds?.couples),
         clinics: toArray(rawRecentIds?.clinics),
+        partnerClinics: toArray(rawRecentIds?.partnerClinics),
         surrogateMothers: toArray(rawRecentIds?.surrogateMothers),
         representatives: toArray(rawRecentIds?.representatives),
         notaries: toArray(rawRecentIds?.notaries),
@@ -1377,6 +1441,20 @@ const PartiesPage = ({ isAdmin }) => {
               toggleRecord={toggleRecord}
               groupOpen={Boolean(openGroups.clinics)}
               onToggleGroup={() => toggleGroup('clinics')}
+            />
+            <SimplePartyGroup
+              title="Partner clinics"
+              collection="partnerClinics"
+              records={catalog.parties.partnerClinics}
+              fieldDefs={PARTNER_CLINIC_FIELDS}
+              displayName={partyDisplayName}
+              createEmpty={createEmptyPartnerClinic}
+              catalog={catalog}
+              setCatalog={setCatalog}
+              expandedKeys={expandedKeys}
+              toggleRecord={toggleRecord}
+              groupOpen={Boolean(openGroups.partnerClinics)}
+              onToggleGroup={() => toggleGroup('partnerClinics')}
             />
             <SimplePartyGroup
               title="Maternity hospitals"
