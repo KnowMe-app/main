@@ -826,6 +826,27 @@ export const validateDocumentTemplate = (template, context) => {
   return [...missing].sort();
 };
 
+// Every {{path}} referenced anywhere in a template (title, beforeTitle blocks, paragraphs, both
+// languages) - regardless of whether it currently resolves. Used to scope non-blocking case
+// completeness warnings (e.g. childbirth/birth-registration data) to only the documents actually
+// checked for generation, instead of nagging about a birth that hasn't happened yet while
+// generating an early-stage document like a surrogacy agreement that never references it.
+export const getTemplateReferencedPaths = template => {
+  const paths = new Set();
+  const scan = value => findUnresolvedVariables(value).forEach(path => paths.add(path));
+  scan(template?.title?.uk);
+  scan(template?.title?.en);
+  toArray(template?.beforeTitle).forEach(block => {
+    scan(block?.uk);
+    scan(block?.en);
+  });
+  toArray(template?.paragraphs).forEach(paragraph => {
+    scan(paragraph?.uk);
+    scan(paragraph?.en);
+  });
+  return [...paths];
+};
+
 // --- Case completeness checklists (batch 18 §18) --------------------------------------------
 // Non-blocking checklists shown before saving/exporting rather than enforced while editing -
 // missing data is reported the same way as a genuinely empty field, never as a thrown error.
