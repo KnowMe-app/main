@@ -554,10 +554,15 @@ const LayoutV2Letterhead = ({ block, clinicLogos }) => (
   </View>
 );
 
-const LayoutV2AlignedBox = ({ block }) => (
+// `widthMm` is normally explicit (e.g. the "Додаток 18" corner label needs its own width to compute
+// the right-push offset), but a block that omits it must still span the full content width rather
+// than collapse to 0 - a zero-width container forces every word onto its own line instead of
+// wrapping normally (the layoutV2 title-wrapping bug: a title authored as an alignedBox with no
+// widthMm rendered one word per line until this fallback was added).
+const LayoutV2AlignedBox = ({ block, contentWidthMm }) => (
   <View
     style={{
-      width: (block.widthMm || 0) * MM_TO_PT,
+      width: (block.widthMm || contentWidthMm || 0) * MM_TO_PT,
       alignSelf: block.horizontalAlign === 'right' ? 'flex-end' : (block.horizontalAlign === 'center' ? 'center' : 'flex-start'),
       marginTop: (block.marginTopMm || 0) * MM_TO_PT,
       marginBottom: (block.marginBottomMm || 0) * MM_TO_PT,
@@ -678,10 +683,10 @@ const LayoutV2SignatureTable = ({ block }) => (
   </View>
 );
 
-const LayoutV2Block = ({ block, clinicLogos }) => {
+const LayoutV2Block = ({ block, clinicLogos, contentWidthMm }) => {
   switch (block.type) {
     case 'letterhead': return <LayoutV2Letterhead block={block} clinicLogos={clinicLogos} />;
-    case 'alignedBox': return <LayoutV2AlignedBox block={block} />;
+    case 'alignedBox': return <LayoutV2AlignedBox block={block} contentWidthMm={contentWidthMm} />;
     case 'paragraph': return <LayoutV2Paragraph block={block} />;
     case 'richParagraph': return <LayoutV2RichParagraph block={block} />;
     case 'fieldLine': return <LayoutV2FieldLine block={block} />;
@@ -698,6 +703,9 @@ const renderLayoutV2DocumentPage = (doc, clinicLogos) => {
   };
   const widthPt = (page.widthMm || 210) * MM_TO_PT;
   const heightPt = (page.heightMm || 297) * MM_TO_PT;
+  // The template's own declared content width when set, otherwise derived from the page/margins -
+  // either way, the same "full width" an alignedBox with no widthMm of its own should fall back to.
+  const contentWidthMm = doc.layoutV2.contentWidthMm || ((page.widthMm || 210) - margins.left - margins.right);
   return (
     <Page
       key={doc.id}
@@ -713,7 +721,7 @@ const renderLayoutV2DocumentPage = (doc, clinicLogos) => {
       {doc.layoutV2.blocks.map((block, index) => (
         // eslint-disable-next-line react/no-array-index-key
         <View key={index} wrap>
-          <LayoutV2Block block={block} clinicLogos={clinicLogos} />
+          <LayoutV2Block block={block} clinicLogos={clinicLogos} contentWidthMm={contentWidthMm} />
         </View>
       ))}
     </Page>

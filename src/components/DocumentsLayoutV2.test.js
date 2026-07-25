@@ -5,12 +5,35 @@
 // double-underlines (border only), and letterSpacingPt actually reaches both backends.
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
 import React from 'react';
 import { buildGeneratedDocument, isLayoutV2Template } from './documentsCatalogUtils';
 
 const toDataUri = file => {
   const buf = fs.readFileSync(path.join(__dirname, '../../public/fonts', file));
   return `data:font/ttf;base64,${buf.toString('base64')}`;
+};
+
+// Counts PDF text-show operators (Tj/TJ) across every FlateDecode content stream in a generated
+// PDF buffer - a crude but effective proxy for "how many lines did this text actually wrap into".
+// A container collapsed to zero width (the title-wrapping bug: see DocumentsPdfDocument.jsx's
+// LayoutV2AlignedBox) forces one show-text call per word instead of per wrapped line, so a single
+// long sentence produces far more operators than a normally word-wrapped paragraph would.
+const countPdfTextShowOperators = buffer => {
+  const raw = buffer.toString('latin1');
+  const streamPattern = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let total = 0;
+  let match = streamPattern.exec(raw);
+  while (match) {
+    try {
+      const inflated = zlib.inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1');
+      total += (inflated.match(/\bTJ\b|\bTj\b/g) || []).length;
+    } catch (inflateError) {
+      // Not every stream is FlateDecode text content (e.g. embedded font binaries) - skip those.
+    }
+    match = streamPattern.exec(raw);
+  }
+  return total;
 };
 
 const TINY_PNG_DATA_URL = 'data:image/png;base64,'
@@ -211,6 +234,49 @@ describe('layoutV2 PDF renderer (real @react-pdf render)', () => {
       buffer.on('error', reject);
     });
     expect(Buffer.concat(chunks).length).toBeGreaterThan(500);
+  }, 20000);
+
+  // Batch 23 §1: a title (or any other block) authored as an alignedBox with no widthMm of its own
+  // must still span the full content width and wrap at word boundaries - not collapse to a 0-width
+  // container that forces one word per line (LayoutV2AlignedBox's contentWidthMm fallback).
+  it('wraps an alignedBox with no widthMm at word boundaries instead of collapsing to 0 width', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+    const longTitle = 'ДОВІДКА про генетичну спорідненість батьків та дитини, народженої з використанням допоміжних репродуктивних технологій';
+    const template = {
+      ...layoutV2Template(),
+      layoutV2: {
+        ...layoutV2Template().layoutV2,
+        blocks: [
+          { type: 'alignedBox', style: 'titleMain', horizontalAlign: 'center', lines: [longTitle] },
+        ],
+      },
+    };
+    const resolved = buildGeneratedDocument(template, context);
+    const element = React.createElement(DocumentsPdfDocument, {
+      documents: [resolved], layout: 'two-column', clinicLogos,
+    });
+    const buffer = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    const operatorCount = countPdfTextShowOperators(Buffer.concat(chunks));
+    // The sentence is 15 words - normal word-wrapping at 180mm/14pt bold fits it in ~2 lines, so a
+    // handful of show-text operators. The zero-width-container bug forces one per word (15+).
+    expect(operatorCount).toBeGreaterThan(0);
+    expect(operatorCount).toBeLessThan(8);
   }, 20000);
 });
 

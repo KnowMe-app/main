@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaMagic, FaPlus, FaSearch, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaCog, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaMagic, FaPlus, FaSearch, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -387,6 +387,50 @@ const DocSubtitle = styled.div`
   font-weight: 400;
 `;
 
+// Batch 23 §"observations": the unresolved-placeholders diagnostic is useful but shouldn't dominate
+// the screen as an always-expanded raw list - collapsed by default, one tap to expand.
+const WarningBanner = styled.div`
+  margin-top: 8px;
+  border: 1px solid var(--km-danger-border, var(--km-danger));
+  border-radius: 6px;
+  overflow: hidden;
+`;
+
+const WarningBannerHead = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--km-danger);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: left;
+`;
+
+const WarningBannerBody = styled.div`
+  padding: 0 10px 8px;
+  color: var(--km-danger);
+  font-size: 11px;
+`;
+
+const CollapsibleWarning = ({ label, children }) => {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <WarningBanner>
+      <WarningBannerHead type="button" onClick={() => setExpanded(previous => !previous)}>
+        <span>{label}</span>
+        {expanded ? <FaChevronUp /> : <FaChevronDown />}
+      </WarningBannerHead>
+      {expanded ? <WarningBannerBody>{children}</WarningBannerBody> : null}
+    </WarningBanner>
+  );
+};
+
 // "Styled as plain editable text" (the app-wide rule the Invoice Builder's plainFieldStyle also
 // follows): no border, no fill, no focus box - ever. The paragraph must read as document text
 // that happens to be editable, never as a form field sitting in the document.
@@ -695,6 +739,65 @@ const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields }) =
               onFieldBlur={field.onFieldBlur}
             />
           ))}
+        </PopoverCard>
+      ) : null}
+    </PopoverAnchor>
+  );
+};
+
+// Batch 23 §3: one settings button next to Delete replaces the always-visible "1 col / 2 col"
+// buttons (and, for a layoutV2-capable document, its renderer switch) with a small popover -
+// same open/close-on-outside-click/Esc boundary as FormatPopoverButton above.
+const DocLayoutSettingsPopoverButton = ({
+  open, onToggle, onClose, columnOptions, activeColumns, onSetColumns, hasLayoutV2, layoutV2Active, onToggleLayoutV2,
+}) => {
+  const anchorRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = event => {
+      if (anchorRef.current && !anchorRef.current.contains(event.target)) onClose();
+    };
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
+  return (
+    <PopoverAnchor ref={anchorRef}>
+      <SmallButton type="button" onClick={onToggle} title="Document layout settings - column count, layoutV2 renderer">
+        <FaCog />
+      </SmallButton>
+      {open ? (
+        <PopoverCard>
+          <Field>
+            Columns
+            <ToggleGroup>
+              {columnOptions.map(columnsOption => (
+                <ToggleOption
+                  key={columnsOption}
+                  type="button"
+                  $active={activeColumns === columnsOption}
+                  onClick={() => onSetColumns(columnsOption)}
+                  title={`Render this document with ${columnsOption} column${columnsOption > 1 ? 's' : ''}, regardless of the page's selector above. Tap again to clear the override.`}
+                >
+                  {columnsOption} col
+                </ToggleOption>
+              ))}
+            </ToggleGroup>
+          </Field>
+          {hasLayoutV2 ? (
+            <CheckLine>
+              <input type="checkbox" checked={layoutV2Active} onChange={onToggleLayoutV2} />
+              <FaMagic /> layoutV2 {layoutV2Active ? 'on' : 'off'}
+            </CheckLine>
+          ) : null}
         </PopoverCard>
       ) : null}
     </PopoverAnchor>
@@ -1042,6 +1145,12 @@ const DocumentsPage = ({ isAdmin }) => {
     setOpenFormatKey('');
     persistTemplate(docId);
   };
+
+  // Batch 23 §3: the per-document layout toggles (column count, layoutV2 on/off) live in one
+  // settings popover next to Delete instead of always-visible buttons on the row.
+  const [openLayoutSettingsDocId, setOpenLayoutSettingsDocId] = useState('');
+  const toggleLayoutSettingsPopover = docId => setOpenLayoutSettingsDocId(previous => (previous === docId ? '' : docId));
+  const closeLayoutSettingsPopover = () => setOpenLayoutSettingsDocId('');
 
   // '' clears the value (null), a parseable number applies, anything mid-typing/unparseable is
   // ignored until it becomes a number ("1." and "0,7" both already parse).
@@ -2175,9 +2284,11 @@ const DocumentsPage = ({ isAdmin }) => {
                 </DocSubtitle>
               ) : null}
               {visibleUnresolvedVariables.length ? (
-                <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
-                  Не вдалося підставити: {visibleUnresolvedVariables.join(', ')}
-                </DocSubtitle>
+                <CollapsibleWarning
+                  label={`Не вдалося підставити ${visibleUnresolvedVariables.length} змінн${visibleUnresolvedVariables.length === 1 ? 'у' : 'их'}`}
+                >
+                  {visibleUnresolvedVariables.join(', ')}
+                </CollapsibleWarning>
               ) : null}
               {!catalog.documents.length ? (
                 <DocSubtitle style={{ marginTop: 8 }}>No document templates yet — paste them in the technical field below.</DocSubtitle>
@@ -2260,37 +2371,21 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
-                      {/* Column count for this document - overrides the page-wide selector above
-                          once set (see handleSetDocColumns); tap the active option again to clear
-                          the override. */}
-                      <ToggleGroup>
-                        {DOC_COLUMN_OPTIONS.map(columnsOption => (
-                          <ToggleOption
-                            key={columnsOption}
-                            type="button"
-                            $active={template.columns === columnsOption}
-                            onClick={() => handleSetDocColumns(template.id, columnsOption)}
-                            title={`Render this document with ${columnsOption} column${columnsOption > 1 ? 's' : ''}, regardless of the page's selector above. Tap again to clear the override.`}
-                          >
-                            {columnsOption} col
-                          </ToggleOption>
-                        ))}
-                      </ToggleGroup>
-                      {/* Only a document that actually has layoutV2 blocks (spec: an exact-layout
-                          form like genetic-affinity-certificate) gets a switch between it and the
-                          legacy renderer - every other document never shows this. */}
-                      {template.layoutV2?.blocks ? (
-                        <SmallButton
-                          type="button"
-                          onClick={() => handleToggleLayoutV2(template.id)}
-                          title={isLayoutV2Template(template)
-                            ? 'Rendering with the exact-layout engine (layoutV2). Click to switch back to the legacy paragraph renderer.'
-                            : 'Rendering with the legacy paragraph renderer. Click to switch to the exact-layout engine (layoutV2).'}
-                          style={{ flex: '0 0 auto', width: 'auto', color: isLayoutV2Template(template) ? 'var(--km-accent)' : undefined }}
-                        >
-                          <FaMagic /> {isLayoutV2Template(template) ? 'layoutV2 on' : 'layoutV2 off'}
-                        </SmallButton>
-                      ) : null}
+                      {/* Column count + (for a layoutV2-capable document) the renderer switch,
+                          both in one settings popover (batch 23 §3) instead of always-visible
+                          buttons - column count overrides the page-wide selector above once set
+                          (see handleSetDocColumns); tap the active option again to clear it. */}
+                      <DocLayoutSettingsPopoverButton
+                        open={openLayoutSettingsDocId === String(template.id)}
+                        onToggle={() => toggleLayoutSettingsPopover(String(template.id))}
+                        onClose={closeLayoutSettingsPopover}
+                        columnOptions={DOC_COLUMN_OPTIONS}
+                        activeColumns={template.columns}
+                        onSetColumns={columnsOption => handleSetDocColumns(template.id, columnsOption)}
+                        hasLayoutV2={Boolean(template.layoutV2?.blocks)}
+                        layoutV2Active={isLayoutV2Template(template)}
+                        onToggleLayoutV2={() => handleToggleLayoutV2(template.id)}
+                      />
                       {/* §1.2: the document-level formatting defaults every non-overridden
                           paragraph inherits - edited here, next to the delete button. */}
                       <FormatPopoverButton

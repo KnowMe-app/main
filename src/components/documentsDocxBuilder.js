@@ -500,9 +500,11 @@ export const buildDocumentsDocx = async ({
 
   // A right-pushed, left-aligned block of text (spec §5.2, "Додаток 18") - simplest to reproduce
   // as an ordinary paragraph indented from the left by (content width - box width), rather than a
-  // table: text still wraps within the box's own width and stays left-aligned inside it.
+  // table: text still wraps within the box's own width and stays left-aligned inside it. A block
+  // that omits widthMm (e.g. a title centered via alignedBox) falls back to the full content width
+  // rather than collapsing to a 0-width box, which forced every word onto its own line.
   const layoutV2AlignedBox = (block, contentWidthTwips) => {
-    const boxWidthTwips = Math.round((block.widthMm || 0) * MM_TO_TWIP);
+    const boxWidthTwips = block.widthMm ? Math.round(block.widthMm * MM_TO_TWIP) : contentWidthTwips;
     const pushTwips = block.horizontalAlign === 'right' ? Math.max(0, contentWidthTwips - boxWidthTwips) : 0;
     const lines = block.lines || [];
     return lines.map((line, index) => new Paragraph({

@@ -1944,7 +1944,9 @@ export const withTemplateScopeText = (template, scope, langKey, value) => {
 // per renderer, never the resolved content or style.
 export const isLayoutV2Template = template => template?.rendererVersion === 2 && Array.isArray(template?.layoutV2?.blocks);
 
-const LAYOUT_V2_STYLE_KEYS = [
+// Exported for the Style Editor page (batch 23 §4), which needs the exact same canonical property
+// list to enumerate every toggleable field of a named style - never a second hand-maintained copy.
+export const LAYOUT_V2_STYLE_KEYS = [
   'fontFamily', 'fontSizePt', 'fontWeight', 'fontStyle', 'lineHeight', 'color', 'align',
   'spaceBeforePt', 'spaceAfterPt', 'textDecoration', 'textTransform', 'letterSpacingPt',
 ];
