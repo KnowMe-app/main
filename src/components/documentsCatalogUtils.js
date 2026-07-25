@@ -695,6 +695,11 @@ export const createEmptySurrogateMother = () => ({
 export const createEmptyRepresentative = () => ({
   id: makeRecordId('representative'),
   name: { uk: { nominative: '', genitive: '' }, en: '' },
+  // Needed by the surrogacy-agreement template (`{{representative.birthDate}}`,
+  // `{{representative.address.uk}}`) - a representative acting as attorney-in-fact is named
+  // there by birth date and registered address, same as any other signatory.
+  birthDate: '',
+  address: { uk: '', en: '' },
   passport: {
     number: '', issuedBy: { uk: '', en: '' }, issueDate: '',
   },
