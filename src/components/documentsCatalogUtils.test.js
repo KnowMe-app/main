@@ -2570,6 +2570,9 @@ describe('spec: Parties page record shapes', () => {
 
     expect(createEmptySurrogateMother().id).toMatch(/^surrogate-mother-/);
     expect(createEmptyRepresentative().id).toMatch(/^representative-/);
+    // Needed by the surrogacy-agreement template ({{representative.birthDate}},
+    // {{representative.address.uk}}) - previously missing from the blank record shape.
+    expect(createEmptyRepresentative()).toEqual(expect.objectContaining({ birthDate: '', address: { uk: '', en: '' } }));
     expect(createEmptyClinic().id).toMatch(/^clinic-/);
     expect(createEmptyMaternityHospital().id).toMatch(/^maternity-hospital-/);
     expect(createEmptyNotary().id).toMatch(/^notary-/);
