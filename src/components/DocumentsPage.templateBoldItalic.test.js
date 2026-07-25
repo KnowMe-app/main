@@ -45,8 +45,17 @@ beforeEach(() => {
         val: () => ({
           couples: { 'couple-1': { id: 'couple-1', partners: [{ id: 'p1', role: 'wife', name: { uk: { nominative: 'Тестова Марія' }, en: 'Testova Mariia' } }] } },
           surrogateMothers: { 'surrogate-1': { id: 'surrogate-1', name: { uk: { nominative: 'Сурогатна Матір' } } } },
-          cases: { 'case-1': { id: 'case-1', relations: { coupleId: 'couple-1', surrogateMotherId: 'surrogate-1' } } },
         }),
+      };
+    }
+    // Cases live at their own top-level path (DOCUMENTS_CASES_PATH), a sibling of `parties`, not
+    // nested under it - a case placed under `parties` here (as this fixture used to) is silently
+    // never loaded, so `selectedCaseId` stays unset and every case-resolved value falls back to
+    // the missing-value placeholder instead of the real data.
+    if (path === 'documentsBuilder/cases') {
+      return {
+        exists: () => true,
+        val: () => ({ 'case-1': { id: 'case-1', relations: { coupleId: 'couple-1', surrogateMotherId: 'surrogate-1' } } }),
       };
     }
     if (path === 'documentsBuilder/templates') {
@@ -155,6 +164,26 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
         beforeTitle: [expect.objectContaining({ uk: '**Сурогатна мати** {{surrogateMother.name.uk.nominative}}' })],
       }),
     ));
+  });
+
+  // Regression: Text mode used to render beforeTitle's raw `rawValue()` (unresolved {{tokens}})
+  // while the title/paragraph rows in the same mode already rendered `resolvedDoc`'s substituted
+  // values - same mode, same case selected, different result depending on row type. Text mode
+  // must resolve identically for every row (spec: "для всіх абзаців діє однакова логіка").
+  it('Text mode shows the beforeTitle text resolved against the selected case, not the raw {{token}} - same rule as title/paragraph rows', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+
+    // template -> input -> text: two taps of the shared mode-cycle button.
+    fireEvent.click(within(block).getByTitle('Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.'));
+    fireEvent.click(within(block).getByTitle('Input mode - retyping the shared wording as plain text. Tap to switch to Text mode.'));
+
+    expect(await within(block).findByText('Сурогатна мати Сурогатна Матір')).toBeInTheDocument();
+    expect(within(block).queryByText(/\{\{surrogateMother/)).not.toBeInTheDocument();
   });
 
   // Notarial layout standard §3.3 + batch 2026-07-23 B §1.3/§1.4: the signer-block offset is a
