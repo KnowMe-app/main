@@ -58,6 +58,7 @@ import {
   getValueByPath,
   isBilingualLayout,
   isIsoDate,
+  isOfficialFormStyle,
   isParagraphBold,
   isSectionHeading,
   isSingleLanguageTwoColumnLayout,
@@ -68,7 +69,9 @@ import {
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
+  normalizeDocumentStyle,
   normalizeIsoDate,
+  OFFICIAL_FORM_FORMATTING,
   orderCasesByRecent,
   orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
@@ -80,6 +83,7 @@ import {
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
   serializeFormattedRuns,
+  splitBlankFieldRuns,
   splitParagraphsIntoColumns,
   splitParagraphsIntoPages,
   stripDerivedFields,
@@ -1848,6 +1852,100 @@ describe('spec: per-document format overrides (batch 13 §5)', () => {
     const reference = normalizeDocFormatting({ fontSize: 10 });
     const working = normalizeDocFormatting({ fontSize: 10 });
     expect(diffDocFormattingOverrides(reference, working)).toEqual({});
+  });
+});
+
+// batch 22 §1: official-form documents (e.g. Додаток 18) must visually replicate a government
+// template - tighter margins, a smaller dense body, no branded-catalog styling - regardless of
+// whatever the admin's shared Format-panel favourites happen to be set to.
+describe('spec: official-form documentStyle (batch 22 §1)', () => {
+  it('normalizeDocumentStyle defaults every unrecognized/missing value to "branded"', () => {
+    expect(normalizeDocumentStyle(undefined)).toBe('branded');
+    expect(normalizeDocumentStyle('')).toBe('branded');
+    expect(normalizeDocumentStyle('something-else')).toBe('branded');
+    expect(normalizeDocumentStyle('official-form')).toBe('official-form');
+  });
+
+  it('isOfficialFormStyle reads a generated doc\'s documentStyle field', () => {
+    expect(isOfficialFormStyle({ documentStyle: 'official-form' })).toBe(true);
+    expect(isOfficialFormStyle({ documentStyle: 'branded' })).toBe(false);
+    expect(isOfficialFormStyle({})).toBe(false);
+    expect(isOfficialFormStyle(undefined)).toBe(false);
+  });
+
+  it('resolveEffectiveDocFormatting starts an official-form document from OFFICIAL_FORM_FORMATTING, never the branded reference', () => {
+    const brandedReference = normalizeDocFormatting({ fontSize: 12, marginTopCm: 2 });
+    const effective = resolveEffectiveDocFormatting(brandedReference, undefined, 'official-form');
+    expect(effective).toEqual(normalizeDocFormatting(OFFICIAL_FORM_FORMATTING));
+    expect(effective.fontSize).toBe(10);
+    expect(effective.titleFontSize).toBe(14);
+    expect(effective.marginTopCm).toBe(0.5);
+    expect(effective.marginRightCm).toBe(1.5);
+    expect(effective.marginBottomCm).toBe(1);
+    expect(effective.marginLeftCm).toBe(1.5);
+    expect(effective.paragraphSpacing).toBe(0);
+    expect(effective.lineSpacing).toBe(1);
+  });
+
+  it('resolveEffectiveDocFormatting still layers a document\'s own format override on top of the official-form baseline', () => {
+    const brandedReference = normalizeDocFormatting({ fontSize: 12 });
+    const effective = resolveEffectiveDocFormatting(brandedReference, { fontSize: 9 }, 'official-form');
+    expect(effective.fontSize).toBe(9);
+    expect(effective.marginTopCm).toBe(0.5);
+  });
+
+  it('a branded (default) document is unaffected - still starts from the shared reference formatting', () => {
+    const brandedReference = normalizeDocFormatting({ fontSize: 12, marginTopCm: 2 });
+    expect(resolveEffectiveDocFormatting(brandedReference, undefined, undefined)).toEqual(brandedReference);
+    expect(resolveEffectiveDocFormatting(brandedReference, undefined, 'branded')).toEqual(brandedReference);
+  });
+
+  it('buildGeneratedDocument carries the template\'s documentStyle through onto the generated doc', () => {
+    const context = { case: {} };
+    expect(buildGeneratedDocument({ id: 'x', documentStyle: 'official-form', title: {}, paragraphs: [] }, context).documentStyle).toBe('official-form');
+    expect(buildGeneratedDocument({ id: 'x', title: {}, paragraphs: [] }, context).documentStyle).toBe('branded');
+    expect(buildGeneratedDocument({ id: 'x', documentStyle: 'nonsense', title: {}, paragraphs: [] }, context).documentStyle).toBe('branded');
+  });
+});
+
+// batch 22 §1: a government form's blank fill-in line ("паспорт: тип: __________") is typed as a
+// run of underscores, same as in the reference docx - splitBlankFieldRuns is what lets the PDF/DOCX
+// renderers draw that stretch as an underlined blank instead of literal underscore glyphs, gated to
+// official-form documents only (see DocumentsPdfDocument/documentsDocxBuilder).
+describe('spec: blank fill-in fields (batch 22 §1)', () => {
+  it('splits a run of 2+ underscores out of a plain run as its own blank segment', () => {
+    const runs = parseFormattedRuns('Код країни: __________, № TM');
+    const result = splitBlankFieldRuns(runs);
+    expect(result.map(run => [run.text, Boolean(run.blank)])).toEqual([
+      ['Код країни: ', false],
+      ['__________', true],
+      [', № TM', false],
+    ]);
+  });
+
+  it('never splits a single underscore (not a blank-field token)', () => {
+    const runs = parseFormattedRuns('file_name stays intact');
+    expect(splitBlankFieldRuns(runs)).toEqual([{ text: 'file_name stays intact', bold: false, italic: false, blank: false }]);
+  });
+
+  it('preserves the bold/italic flags of the run a blank segment was split out of', () => {
+    const runs = parseFormattedRuns('**Підпис ___**');
+    const result = splitBlankFieldRuns(runs);
+    expect(result).toEqual([
+      { text: 'Підпис ', bold: true, italic: false, blank: false },
+      { text: '___', bold: true, italic: false, blank: true },
+    ]);
+  });
+
+  it('handles multiple blank stretches and a run that is entirely a blank stretch', () => {
+    expect(splitBlankFieldRuns(parseFormattedRuns('__ and __')).map(run => run.blank)).toEqual([true, false, true]);
+    expect(splitBlankFieldRuns(parseFormattedRuns('____')).map(run => run.blank)).toEqual([true]);
+  });
+
+  it('leaves ordinary text with no underscores as a single non-blank segment', () => {
+    expect(splitBlankFieldRuns(parseFormattedRuns('ordinary text'))).toEqual([
+      { text: 'ordinary text', bold: false, italic: false, blank: false },
+    ]);
   });
 });
 

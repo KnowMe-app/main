@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaPlus, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaLock, FaPlus, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -50,6 +50,7 @@ import {
   getTemplateScopeRecord,
   getTemplateScopeText,
   isBilingualLayout,
+  isOfficialFormStyle,
   legacyClinicLogoStorageFilePath,
   legacyClinicLogoStorageFolder,
   mergeDocumentsCatalog,
@@ -57,6 +58,7 @@ import {
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
+  OFFICIAL_FORM_FORMATTING,
   orderCasesByRecent,
   orderRecordsByRecentIds,
   paragraphScope,
@@ -1352,6 +1354,34 @@ const DocumentsPage = ({ isAdmin }) => {
     await commitTemplateScopeText(docId, scope, langKey, nextRaw);
   };
 
+  // A template can pin its own languages/columns (batch 16 §15/§16, getEffectiveDocLayout) so it
+  // always renders that way regardless of the page's UA/EN/UA+EN toggle - by design for documents
+  // that must always ship bilingual (e.g. a notarized declaration meant for a foreign clinic). That
+  // pin can currently only be set via the technical JSON paste, with no visible indicator on the
+  // document row - an admin who picks "UA · 1 column" for the whole case and still sees this one
+  // document preview bilingual has no way to tell it's an intentional per-document pin rather than
+  // a bug, or any way to clear it short of re-pasting JSON. This surfaces the pin as a small badge
+  // (below) and clears it here in one click - an immediate structural edit, same as the paragraph
+  // insert/remove above, not deferred to blur.
+  const handleClearDocLanguagePin = async docId => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const nextTemplate = { ...template };
+    delete nextTemplate.languages;
+    delete nextTemplate.columns;
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+      toast.success('This document now follows the page\'s language/column selector.');
+    } catch (pinError) {
+      console.error('Unable to clear the document language pin', pinError);
+      toast.error('Could not update the document.');
+    }
+  };
+
   // --- Deletes (always behind an explicit confirmation) ----------------------------------------
 
   const handleDeleteTemplate = async template => {
@@ -1538,7 +1568,7 @@ const DocumentsPage = ({ isAdmin }) => {
       return;
     }
     const template = catalog.documents.find(item => String(item.id) === nextDocId);
-    setDocFormatDraft(resolveEffectiveDocFormatting(formatting, template?.format));
+    setDocFormatDraft(resolveEffectiveDocFormatting(formatting, template?.format, template?.documentStyle));
   };
 
   const handleSaveFavouriteFormatting = async () => {
@@ -1555,7 +1585,12 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === formatDocId);
     if (!template) return;
     const normalizedDraft = normalizeDocFormatting(docFormatDraft || formatting);
-    const overrides = diffDocFormattingOverrides(formatting, normalizedDraft);
+    // An official-form document's own overrides are diffed against its OFFICIAL_FORM_FORMATTING
+    // baseline, not the shared branded favourites - otherwise every one of that baseline's values
+    // would be written out as a redundant per-document override the moment the admin opens this
+    // document in the Format panel (see resolveEffectiveDocFormatting).
+    const referenceFormatting = isOfficialFormStyle(template) ? OFFICIAL_FORM_FORMATTING : formatting;
+    const overrides = diffDocFormattingOverrides(referenceFormatting, normalizedDraft);
     const nextTemplate = { ...template };
     if (Object.keys(overrides).length) nextTemplate.format = overrides;
     else delete nextTemplate.format;
@@ -1811,7 +1846,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const generated = selectedTemplates.map(template => buildGeneratedDocument(template, getContextForTemplate(template.id)));
     // Each document renders with the shared defaults merged with its own format overrides -
     // independent of whichever document (if any) the Format panel currently targets.
-    const formattingByDoc = selectedTemplates.map(template => resolveEffectiveDocFormatting(formatting, template.format));
+    const formattingByDoc = selectedTemplates.map(template => resolveEffectiveDocFormatting(formatting, template.format, template.documentStyle));
     return {
       generated,
       formattingByDoc,
@@ -2072,7 +2107,14 @@ const DocumentsPage = ({ isAdmin }) => {
                 const resolvedDoc = buildGeneratedDocument(template, getContextForTemplate(template.id));
                 // The per-paragraph indent slider's "inherit" default - this document's own
                 // effective first-line indent, same value generation actually renders with.
-                const docFormatting = resolveEffectiveDocFormatting(formatting, template.format);
+                const docFormatting = resolveEffectiveDocFormatting(formatting, template.format, template.documentStyle);
+                // See handleClearDocLanguagePin above - a template-level languages/columns pin
+                // makes this document ignore the page's UA/EN/UA+EN toggle entirely; surfaced as a
+                // badge on the row so that's visible instead of looking like a preview bug.
+                const pinnedLanguages = toArray(template.languages).map(String).filter(langValue => langValue === 'uk' || langValue === 'en');
+                const languagePinLabel = pinnedLanguages.length > 1
+                  ? 'UA+EN'
+                  : (pinnedLanguages.length === 1 ? `${pinnedLanguages[0] === 'en' ? 'EN' : 'UA'} · ${template.columns === 2 ? '2 col' : '1 col'}` : '');
                 // Whichever source is currently authoritative (the dedicated `logo` field, or a
                 // legacy leading paragraph) shown as one plain-text value the admin can type into
                 // directly - never a normalized re-serialization, so a mid-edit/invalid value
@@ -2136,6 +2178,16 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
+                      {languagePinLabel ? (
+                        <SmallButton
+                          type="button"
+                          onClick={() => handleClearDocLanguagePin(template.id)}
+                          title={`This document is pinned to always render ${languagePinLabel}, ignoring the page's language/column selector above. Click to clear the pin so it follows the page selector instead.`}
+                          style={{ flex: '0 0 auto', width: 'auto', color: 'var(--km-accent)' }}
+                        >
+                          <FaLock /> {languagePinLabel}
+                        </SmallButton>
+                      ) : null}
                       {/* §1.2: the document-level formatting defaults every non-overridden
                           paragraph inherits - edited here, next to the delete button. */}
                       <FormatPopoverButton
