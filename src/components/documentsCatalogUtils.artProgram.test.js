@@ -220,8 +220,10 @@ describe('spec: null-safe artProgram resolvers (resolveShipment/resolveTransferA
   it('enrichShipment attaches sourceClinic (partnerClinics) and destinationClinic (clinics), null-safe', () => {
     const shipment = resolveShipment(caseWithDateRangePeriod, 'shipment-1');
     const enriched = enrichShipment(shipment, parties);
-    expect(enriched.sourceClinic).toBe(partnerClinic);
-    expect(enriched.destinationClinic).toBe(clinic);
+    // enrichShipment layers a declined-name fallback onto the party record (spec batch 2026-07-25),
+    // so this is no longer the exact same object reference as the fixture - just the same party.
+    expect(enriched.sourceClinic.id).toBe(partnerClinic.id);
+    expect(enriched.destinationClinic.id).toBe(clinic.id);
     expect(enrichShipment(null, parties)).toBeNull();
   });
 });
@@ -295,7 +297,9 @@ describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enri
     expect(enriched.ivfDateFormatted).toEqual({ uk: '17.08.2021', en: '17 August 2021' });
     expect(enriched.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
     expect(enriched.receivedDateFormatted.uk).toBe('27.08.2025');
-    expect(enriched.sourceClinic).toBe(partnerClinic);
+    // enrichShipment layers a declined-name fallback onto the party record (spec batch 2026-07-25),
+    // so this is no longer the exact same object reference as `partnerClinic` - just the same party.
+    expect(enriched.sourceClinic.id).toBe(partnerClinic.id);
     expect(enrichShipmentForTemplate(null)).toBeNull();
   });
 
@@ -306,7 +310,7 @@ describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enri
     expect(enriched.dateFormatted.uk).toBe('18.09.2025');
     expect(enriched.embryoCountText.uk).toBe('один ембріон');
     expect(enriched.embryoStageLabel.uk.genitive).toBe('бластоцисти');
-    expect(enriched.shipment.sourceClinic).toBe(partnerClinic);
+    expect(enriched.shipment.sourceClinic.id).toBe(partnerClinic.id);
     expect(enrichTransferForTemplate(null, shipment)).toBeNull();
   });
 
@@ -330,8 +334,8 @@ describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityC
   it('embryoOwnershipStatement resolves shipment via shipmentId (startDate/endDate case)', () => {
     const context = buildEmbryoOwnershipStatementContext(caseWithDateRangePeriod, parties, caseWithDateRangePeriod.documents.embryoOwnershipStatement);
     expect(context.shipment.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
-    expect(context.shipment.sourceClinic).toBe(partnerClinic);
-    expect(context.shipment.destinationClinic).toBe(clinic);
+    expect(context.shipment.sourceClinic.id).toBe(partnerClinic.id);
+    expect(context.shipment.destinationClinic.id).toBe(clinic.id);
   });
 
   it('embryoOwnershipStatement resolves shipment via shipmentId (migrated text case)', () => {
@@ -359,7 +363,7 @@ describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityC
       caseWithDateRangePeriod.documents.geneticAffinityCertificate,
     );
     expect(context.transferAttempt.embryoCountText.uk).toBe('один ембріон');
-    expect(context.transferAttempt.shipment.sourceClinic).toBe(partnerClinic);
+    expect(context.transferAttempt.shipment.sourceClinic.id).toBe(partnerClinic.id);
     expect(context.hcgTest.dateFormatted.uk).toBe('30.09.2025');
     expect(context.ultrasound.gestationalAgeText.uk).toBe('6–7 тижнів');
     expect(context.issueDateOrBlank.uk).toBe('20.10.2025');

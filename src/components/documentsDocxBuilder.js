@@ -24,6 +24,7 @@ import {
 } from './documentsCatalogUtils';
 
 const CM_TO_TWIP = 567;
+const MM_TO_TWIP = 56.6929; // 1440 twips/inch / 25.4mm/inch
 const MM_TO_PX = 96 / 25.4; // docx ImageRun transformations are CSS pixels at 96dpi
 
 const halfPoints = pt => Math.round(pt * 2);
@@ -402,6 +403,266 @@ export const buildDocumentsDocx = async ({
     return children;
   };
 
+  // --- layoutV2 (pixel-exact single-page forms, e.g. genetic-affinity-certificate) -------------
+  // Reads exactly the normalized tree buildLayoutV2Document produces (doc.layoutV2) - the same
+  // tree the PDF renderer reads (spec §8), just converted to twips/eighths-of-a-point instead of
+  // react-pdf's pt. A layoutV2 document is fully self-describing (its own page/margins/styles) and
+  // gets its own section below - no shared header/footer, no bilingual/column layout.
+  const eighthsFromPt = pt => Math.round((pt || 0) * 8); // OOXML border size unit
+  const halfPointsV2 = pt => Math.round((pt || 0) * 2);
+  const applyTextTransform = (text, transform) => (
+    transform === 'uppercase' ? String(text || '').toLocaleUpperCase('uk-UA') : String(text || '')
+  );
+  const lineTwipsFor = style => Math.round((style?.lineHeight || 1) * 240);
+  const marginBeforeTwips = block => (block.marginTopMm !== undefined
+    ? Math.round(block.marginTopMm * MM_TO_TWIP)
+    : Math.round((block.style?.spaceBeforePt || 0) * 20));
+  const marginAfterTwips = block => (block.marginBottomMm !== undefined
+    ? Math.round(block.marginBottomMm * MM_TO_TWIP)
+    : Math.round((block.style?.spaceAfterPt || 0) * 20));
+
+  const layoutV2Alignment = align => {
+    if (align === 'right') return AlignmentType.RIGHT;
+    if (align === 'center') return AlignmentType.CENTER;
+    if (align === 'justify') return AlignmentType.JUSTIFIED;
+    return AlignmentType.LEFT;
+  };
+
+  // textTransform is applied to the run's text right here (spec §5.5: "лише візуально. Не
+  // змінювати значення в context/Firebase") - the normalized tree itself, and everything upstream
+  // of it, keeps the original case; only this TextRun's rendered characters are uppercased.
+  // letterSpacingPt maps straight onto `characterSpacing`, which docx (like the reference docx's
+  // own `<w:spacing>`) expects in twentieths of a point - the same unit fontSize halves into.
+  const layoutV2TextRun = (text, style) => new TextRun({
+    text: applyTextTransform(text, style?.textTransform),
+    font: style?.fontFamily || 'Times New Roman',
+    size: halfPointsV2(style?.fontSizePt) || bodySize,
+    bold: (style?.fontWeight || 400) >= 600,
+    italics: style?.fontStyle === 'italic',
+    underline: style?.textDecoration === 'underline' ? {} : undefined,
+    characterSpacing: style?.letterSpacingPt ? Math.round(style.letterSpacingPt * 20) : undefined,
+  });
+
+  const layoutV2Content = (content, clinicLogos) => {
+    if (!content) return [new Paragraph({ children: [] })];
+    if (content.type === 'image') {
+      const variant = content.logoToken ? getClinicLogo(clinicLogos, content.logoToken) : null;
+      const dataUrl = variant?.dataUrl || content.source;
+      const decoded = dataUrl ? decodeLogoDataUrl(dataUrl) : null;
+      if (!decoded) return [new Paragraph({ children: [] })];
+      const ratio = variant?.width && variant?.height
+        ? variant.height / variant.width
+        : ((content.heightMm && content.widthMm) ? content.heightMm / content.widthMm : 0.25);
+      const widthPx = Math.round((content.widthMm || 0) * MM_TO_PX);
+      return [new Paragraph({ spacing: { after: 0 }, children: [logoImageRun(decoded, widthPx, ratio)] })];
+    }
+    if (content.type === 'stack') {
+      const alignment = content.horizontalAlign === 'right'
+        ? AlignmentType.RIGHT
+        : (content.horizontalAlign === 'center' ? AlignmentType.CENTER : AlignmentType.LEFT);
+      return (content.lines || []).map(line => new Paragraph({
+        alignment,
+        spacing: { after: 0, line: lineTwipsFor(content.style), lineRule: 'auto' },
+        children: [layoutV2TextRun(line, content.style)],
+      }));
+    }
+    return [new Paragraph({ children: [] })];
+  };
+
+  // The bottom border draws as one continuous rule across the whole 180mm width (batch 2026-07-25):
+  // each cell of the single row carries its own bottom border, but adjoining table cells share the
+  // same edge in Word, so the two lines render as one - exactly how the reference docx's own
+  // multi-paragraph pBdr achieves the same visual line.
+  const layoutV2Letterhead = (block, clinicLogos) => {
+    const gapTwips = Math.round((block.columnGapMm || 0) * MM_TO_TWIP);
+    const colTwips = (block.columns || []).map(column => Math.round((column.widthMm || 0) * MM_TO_TWIP));
+    const borderSize = eighthsFromPt(block.bottomBorder?.widthPt);
+    const borderColor = (block.bottomBorder?.color || '#000000').replace('#', '');
+    const bottomBorder = borderSize ? { style: BorderStyle.SINGLE, size: borderSize, color: borderColor } : noBorder;
+    const cells = (block.columns || []).map((column, index) => {
+      const isLast = index === block.columns.length - 1;
+      return new TableCell({
+        borders: { ...noBorders, bottom: bottomBorder },
+        width: { size: colTwips[index] + (isLast ? 0 : gapTwips), type: WidthType.DXA },
+        margins: {
+          top: 0, bottom: 0, left: 0, right: isLast ? 0 : gapTwips,
+        },
+        children: layoutV2Content(column.content, clinicLogos),
+      });
+    });
+    return new Table({
+      width: { size: colTwips.reduce((sum, w) => sum + w, 0) + gapTwips * Math.max(0, cells.length - 1), type: WidthType.DXA },
+      columnWidths: cells.map((_, index) => colTwips[index] + (index < cells.length - 1 ? gapTwips : 0)),
+      borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
+      rows: [new TableRow({ children: cells })],
+    });
+  };
+
+  // A right-pushed, left-aligned block of text (spec §5.2, "Додаток 18") - simplest to reproduce
+  // as an ordinary paragraph indented from the left by (content width - box width), rather than a
+  // table: text still wraps within the box's own width and stays left-aligned inside it.
+  const layoutV2AlignedBox = (block, contentWidthTwips) => {
+    const boxWidthTwips = Math.round((block.widthMm || 0) * MM_TO_TWIP);
+    const pushTwips = block.horizontalAlign === 'right' ? Math.max(0, contentWidthTwips - boxWidthTwips) : 0;
+    const lines = block.lines || [];
+    return lines.map((line, index) => new Paragraph({
+      alignment: AlignmentType.LEFT,
+      indent: pushTwips ? { left: pushTwips } : undefined,
+      spacing: {
+        before: index === 0 ? marginBeforeTwips(block) : 0,
+        after: index === lines.length - 1 ? marginAfterTwips(block) : 0,
+        line: lineTwipsFor(block.style),
+        lineRule: 'auto',
+      },
+      children: [layoutV2TextRun(line, block.style)],
+    }));
+  };
+
+  const layoutV2Paragraph = block => new Paragraph({
+    alignment: layoutV2Alignment(block.style?.align),
+    spacing: {
+      before: marginBeforeTwips(block), after: marginAfterTwips(block), line: lineTwipsFor(block.style), lineRule: 'auto',
+    },
+    children: [layoutV2TextRun(block.text || '', block.style)],
+  });
+
+  const layoutV2RichParagraph = block => new Paragraph({
+    alignment: layoutV2Alignment(block.style?.align),
+    spacing: {
+      before: marginBeforeTwips(block), after: marginAfterTwips(block), line: lineTwipsFor(block.style), lineRule: 'auto',
+    },
+    children: (block.runs || []).map(run => layoutV2TextRun(run.text, run.style)),
+  });
+
+  // The key element for matching the Word sample (spec §5.5): label + value cells in one borderless
+  // row, the value cell's own bottom border drawing the fill-to-margin line the value sits on -
+  // never a second underline mechanism (textDecoration) on the value style itself (spec batch
+  // 2026-07-25, pre-delivery review §3). The caption is a second row so it can center under the
+  // value column alone, matching `.field-caption { margin-left: var(--label-width) }`.
+  const layoutV2FieldLine = (block, contentWidthTwips) => {
+    const labelTwips = Math.max(1, Math.round((block.labelWidthMm || 0) * MM_TO_TWIP));
+    const valueTwips = Math.max(1, contentWidthTwips - labelTwips);
+    const lineSize = eighthsFromPt(block.line?.widthPt);
+    const lineColor = (block.line?.color || '#000000').replace('#', '');
+    const lineBorder = lineSize ? { style: BorderStyle.SINGLE, size: lineSize, color: lineColor } : noBorder;
+    const labelParagraph = new Paragraph({
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 0, line: lineTwipsFor(block.labelStyle), lineRule: 'auto' },
+      children: block.labelRuns
+        ? block.labelRuns.map(run => layoutV2TextRun(run.text, run.style))
+        : [layoutV2TextRun(block.label || '', block.labelStyle)],
+    });
+    const valueParagraph = new Paragraph({
+      alignment: layoutV2Alignment(block.valueStyle?.align),
+      spacing: { after: 0, line: lineTwipsFor(block.valueStyle), lineRule: 'auto' },
+      children: [layoutV2TextRun(block.value || '', block.valueStyle)],
+    });
+    const rows = [new TableRow({
+      children: [
+        new TableCell({ borders: noBorders, width: { size: labelTwips, type: WidthType.DXA }, children: block.labelWidthMm ? [labelParagraph] : [new Paragraph({ children: [] })] }),
+        new TableCell({ borders: { ...noBorders, bottom: lineBorder }, width: { size: valueTwips, type: WidthType.DXA }, children: [valueParagraph] }),
+      ],
+    })];
+    if (block.caption !== undefined) {
+      const captionParagraph = new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 0, line: lineTwipsFor(block.captionStyle), lineRule: 'auto' },
+        children: [layoutV2TextRun(block.caption, block.captionStyle)],
+      });
+      rows.push(new TableRow({
+        children: [
+          new TableCell({ borders: noBorders, width: { size: labelTwips, type: WidthType.DXA }, children: [new Paragraph({ children: [] })] }),
+          new TableCell({ borders: noBorders, width: { size: valueTwips, type: WidthType.DXA }, children: [captionParagraph] }),
+        ],
+      }));
+    }
+    return new Table({
+      width: { size: labelTwips + valueTwips, type: WidthType.DXA },
+      columnWidths: [labelTwips, valueTwips],
+      borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
+      rows,
+    });
+  };
+
+  const layoutV2SignatureTable = block => {
+    const colTwips = (block.columnWidthsMm || []).map(width => Math.round(width * MM_TO_TWIP));
+    const rows = (block.rows || []).map(row => {
+      if (row?.type === 'spacerRow') {
+        const heightTwips = Math.round((row.heightMm || 0) * MM_TO_TWIP);
+        return new TableRow({
+          children: colTwips.map(width => new TableCell({
+            borders: noBorders,
+            width: { size: width, type: WidthType.DXA },
+            children: [new Paragraph({ spacing: { before: heightTwips, after: 0 }, children: [] })],
+          })),
+        });
+      }
+      return new TableRow({
+        children: (row || []).map((cell, index) => new TableCell({
+          borders: {
+            ...noBorders,
+            bottom: cell?.bottomBorder
+              ? { style: BorderStyle.SINGLE, size: eighthsFromPt(cell.bottomBorder.widthPt), color: (cell.bottomBorder.color || '#000000').replace('#', '') }
+              : noBorder,
+          },
+          width: { size: colTwips[index] || 0, type: WidthType.DXA },
+          children: [new Paragraph({
+            alignment: layoutV2Alignment(cell?.style?.align),
+            spacing: { after: 0, line: lineTwipsFor(cell?.style), lineRule: 'auto' },
+            children: [layoutV2TextRun(cell?.text || '', cell?.style)],
+          })],
+        })),
+      });
+    });
+    return new Table({
+      width: { size: colTwips.reduce((sum, w) => sum + w, 0), type: WidthType.DXA },
+      columnWidths: colTwips,
+      borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
+      rows,
+    });
+  };
+
+  const layoutV2BlockChildren = (block, contentWidthTwips, clinicLogos) => {
+    switch (block.type) {
+      case 'letterhead': return [layoutV2Letterhead(block, clinicLogos)];
+      case 'alignedBox': return layoutV2AlignedBox(block, contentWidthTwips);
+      case 'paragraph': return [layoutV2Paragraph(block)];
+      case 'richParagraph': return [layoutV2RichParagraph(block)];
+      case 'fieldLine': return [layoutV2FieldLine(block, contentWidthTwips)];
+      case 'spacer': return [new Paragraph({ spacing: { before: Math.round((block.heightMm || 0) * MM_TO_TWIP), after: 0 }, children: [] })];
+      case 'signatureTable': return [layoutV2SignatureTable(block)];
+      default: return [];
+    }
+  };
+
+  const DEFAULT_LAYOUT_V2_MARGINS_MM = {
+    top: 5, right: 15, bottom: 10, left: 15,
+  };
+
+  const buildLayoutV2Children = doc => {
+    const page = doc.layoutV2.page || {};
+    const margins = page.marginsMm || DEFAULT_LAYOUT_V2_MARGINS_MM;
+    const widthTwips = Math.round((page.widthMm || 210) * MM_TO_TWIP);
+    const contentWidthTwips = widthTwips - Math.round(margins.left * MM_TO_TWIP) - Math.round(margins.right * MM_TO_TWIP);
+    return doc.layoutV2.blocks.flatMap(block => layoutV2BlockChildren(block, contentWidthTwips, effectiveClinicLogos));
+  };
+
+  const layoutV2PageSetup = doc => {
+    const page = doc.layoutV2.page || {};
+    const margins = page.marginsMm || DEFAULT_LAYOUT_V2_MARGINS_MM;
+    return {
+      page: {
+        size: { width: Math.round((page.widthMm || 210) * MM_TO_TWIP), height: Math.round((page.heightMm || 297) * MM_TO_TWIP) },
+        margin: {
+          top: Math.round(margins.top * MM_TO_TWIP),
+          right: Math.round(margins.right * MM_TO_TWIP),
+          bottom: Math.round(margins.bottom * MM_TO_TWIP),
+          left: Math.round(margins.left * MM_TO_TWIP),
+        },
+      },
+    };
+  };
+
   // An official-form document's letterhead logo lives in the page Header (batch 22 §1) instead of
   // the one-off body block every branded document uses - Word repeats a Header on every page of
   // its section automatically and reflows the body to start after it, so (unlike the PDF renderer)
@@ -491,7 +752,12 @@ export const buildDocumentsDocx = async ({
         },
       },
     },
-    sections: documents.map(generated => ({
+    sections: documents.map(generated => (generated.layoutV2 ? {
+      // A layoutV2 document is fully self-describing (its own page/margins/styles, spec §8) - no
+      // shared header/footer, no bilingual/column layout.
+      properties: layoutV2PageSetup(generated),
+      children: buildLayoutV2Children(generated),
+    } : {
       properties: pageSetup,
       headers: buildHeader(generated),
       footers: buildFooter(generated),

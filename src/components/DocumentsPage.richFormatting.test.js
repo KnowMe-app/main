@@ -9,12 +9,12 @@
 //
 // Post-migration: the per-case "data mode" resolved-text override system is gone entirely, but
 // title/paragraph rows keep the same template/input/text mode cycle beforeTitle always had.
-// Template and Input both edit the shared markup directly - Bold/Italic only ever act in Template
-// mode now, on the raw `**`/`*` markers, and are never gated on whether a case is selected (there
-// is no per-case value involved at all). Text mode became a read-only preview resolved against
-// whichever case is currently selected (real values substituted, not raw {{tokens}}) - there is
-// nowhere left to persist a formatting edit made against resolved text, so Bold/Italic are simply
-// disabled there.
+// Template and Input both edit the shared markup directly, and are never gated on whether a case
+// is selected (there is no per-case value involved at all). Text mode is a read-only preview
+// resolved against whichever case is currently selected (real values substituted, not raw
+// {{tokens}}) - the wording itself isn't editable there, but Bold/Italic still act on the
+// underlying raw markup through it (same as beforeTitle already did), so Text mode is enabled for
+// formatting alongside Template mode; only Input mode (retyping the plain wording) disables it.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
@@ -145,7 +145,11 @@ describe('spec: selection-based bold/italic applies to the browser selection, no
 });
 
 describe('spec: Text mode is a read-only preview resolved against the selected case', () => {
-  it('disables Bold/Italic in Text mode - there is nowhere left to persist a formatting edit against resolved text', async () => {
+  // Bug fix (batch 2026-07-25): Bold/Italic used to be disabled outside Template mode entirely,
+  // even though Text mode's underlying raw markup is perfectly editable through it (exactly how
+  // beforeTitle rows already worked) - only Input mode (retyping the plain de-markup'd wording)
+  // has nowhere to persist a formatting edit, since there is no raw-markup surface left there.
+  it('leaves Bold/Italic enabled in Text mode (default), disabled only in Input mode', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     const expandButton = await screen.findByTitle('Edit paragraphs');
     fireEvent.click(expandButton);
@@ -153,6 +157,17 @@ describe('spec: Text mode is a read-only preview resolved against the selected c
     const field = await screen.findByText('Звичайний текст без форматування.');
     // eslint-disable-next-line testing-library/no-node-access
     const paragraphBlock = field.closest('.paragraph-editor-block');
+    // Default mode is 'text'.
+    expect(within(paragraphBlock).getByTitle('Bold the selected text')).not.toBeDisabled();
+    expect(within(paragraphBlock).getByTitle('Italicize the selected text')).not.toBeDisabled();
+
+    // Cycle text -> template -> input.
+    fireEvent.click(within(paragraphBlock).getByTitle(
+      "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.",
+    ));
+    fireEvent.click(within(paragraphBlock).getByTitle(
+      'Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.',
+    ));
     expect(within(paragraphBlock).getByTitle('Bold the selected text')).toBeDisabled();
     expect(within(paragraphBlock).getByTitle('Italicize the selected text')).toBeDisabled();
   });
