@@ -221,6 +221,10 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   const [surrogacyAgreementDraft, setSurrogacyAgreementDraft] = useState({ number: { uk: '', en: '' }, date: '', notaryId: '' });
   const [birthRegistrationDraft, setBirthRegistrationDraft] = useState({ statementDate: '', notaryId: '' });
   const [maritalStatusDeclarationDraft, setMaritalStatusDeclarationDraft] = useState({ statementDate: '', notaryId: '' });
+  const [legalServicesDisclaimerDraft, setLegalServicesDisclaimerDraft] = useState({ statementDate: '', notaryId: '' });
+  // No notaryId field - this appendix isn't itself notarized (see TEMPLATE_DOCUMENT_CONFIG's
+  // usesNotary: false for surrogacy-agreement-appendix-1).
+  const [surrogacyAgreementAppendix1Draft, setSurrogacyAgreementAppendix1Draft] = useState({ date: '' });
   const [embryoOwnershipDraft, setEmbryoOwnershipDraft] = useState({ shipmentPeriod: { uk: '', en: '' }, ivfDate: '' });
 
   useEffect(() => {
@@ -246,6 +250,13 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     setMaritalStatusDeclarationDraft({
       statementDate: selectedCase?.documents?.maritalStatusDeclaration?.statementDate || '',
       notaryId: selectedCase?.documents?.maritalStatusDeclaration?.notaryId || '',
+    });
+    setLegalServicesDisclaimerDraft({
+      statementDate: selectedCase?.documents?.legalServicesDisclaimer?.statementDate || '',
+      notaryId: selectedCase?.documents?.legalServicesDisclaimer?.notaryId || '',
+    });
+    setSurrogacyAgreementAppendix1Draft({
+      date: selectedCase?.documents?.surrogacyAgreementAppendix1?.date || '',
     });
     setEmbryoOwnershipDraft({
       shipmentPeriod: {
@@ -390,6 +401,60 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     } catch (saveError) {
       console.error('Unable to save the marital status declaration details', saveError);
       toast.error(`Could not save the marital status declaration details: ${describeSaveError(saveError)}`);
+    }
+  };
+
+  const updateLegalServicesDisclaimerField = (field, value) => setLegalServicesDisclaimerDraft(previous => ({ ...previous, [field]: value }));
+
+  // Never writes an empty `documents.legalServicesDisclaimer` service object - same rule as every
+  // other document section above.
+  const handleSaveLegalServicesDisclaimer = async () => {
+    if (!selectedCase) return;
+    const cleaned = removeEmptyCaseValues(legalServicesDisclaimerDraft);
+    const nextValue = Object.keys(cleaned).length ? cleaned : null;
+    try {
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/legalServicesDisclaimer`), nextValue);
+      setCatalog(previous => ({
+        ...previous,
+        cases: previous.cases.map(item => {
+          if (String(item.id) !== String(selectedCase.id)) return item;
+          const documents = { ...(item.documents || {}) };
+          if (nextValue) documents.legalServicesDisclaimer = nextValue;
+          else delete documents.legalServicesDisclaimer;
+          return { ...item, documents };
+        }),
+      }));
+      toast.success('Legal services disclaimer details saved.');
+    } catch (saveError) {
+      console.error('Unable to save the legal services disclaimer details', saveError);
+      toast.error(`Could not save the legal services disclaimer details: ${describeSaveError(saveError)}`);
+    }
+  };
+
+  const updateSurrogacyAgreementAppendix1Field = (field, value) => setSurrogacyAgreementAppendix1Draft(previous => ({ ...previous, [field]: value }));
+
+  // Never writes an empty `documents.surrogacyAgreementAppendix1` service object - same rule as
+  // every other document section above.
+  const handleSaveSurrogacyAgreementAppendix1 = async () => {
+    if (!selectedCase) return;
+    const cleaned = removeEmptyCaseValues(surrogacyAgreementAppendix1Draft);
+    const nextValue = Object.keys(cleaned).length ? cleaned : null;
+    try {
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/surrogacyAgreementAppendix1`), nextValue);
+      setCatalog(previous => ({
+        ...previous,
+        cases: previous.cases.map(item => {
+          if (String(item.id) !== String(selectedCase.id)) return item;
+          const documents = { ...(item.documents || {}) };
+          if (nextValue) documents.surrogacyAgreementAppendix1 = nextValue;
+          else delete documents.surrogacyAgreementAppendix1;
+          return { ...item, documents };
+        }),
+      }));
+      toast.success('Surrogacy agreement appendix 1 details saved.');
+    } catch (saveError) {
+      console.error('Unable to save the surrogacy agreement appendix 1 details', saveError);
+      toast.error(`Could not save the surrogacy agreement appendix 1 details: ${describeSaveError(saveError)}`);
     }
   };
 
@@ -642,6 +707,54 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       <RowLine style={{ marginTop: 8 }}>
         <PrimaryMiniButton type="button" onClick={handleSaveMaritalStatusDeclaration}>
           Save marital status declaration
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Заява про ненадання юридичних послуг клінікою</SectionSubhead>
+      <FieldGrid>
+        <Field>
+          Дата заяви (юр. послуги)
+          <FieldInput
+            type="date"
+            value={legalServicesDisclaimerDraft.statementDate || ''}
+            onChange={event => updateLegalServicesDisclaimerField('statementDate', event.target.value)}
+          />
+        </Field>
+        <Field>
+          Нотаріус (юр. послуги)
+          <Select
+            value={legalServicesDisclaimerDraft.notaryId || ''}
+            onChange={event => updateLegalServicesDisclaimerField('notaryId', event.target.value)}
+          >
+            <option value="">— не обрано —</option>
+            {catalog.parties.notaries.map(notary => (
+              <option key={notary.id} value={String(notary.id)}>
+                {notaryOptionLabel(notary)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </FieldGrid>
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveLegalServicesDisclaimer}>
+          Save legal services disclaimer
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Додаток №1 до договору про сурогатне материнство</SectionSubhead>
+      <FieldGrid>
+        <Field>
+          Дата додатка
+          <FieldInput
+            type="date"
+            value={surrogacyAgreementAppendix1Draft.date || ''}
+            onChange={event => updateSurrogacyAgreementAppendix1Field('date', event.target.value)}
+          />
+        </Field>
+      </FieldGrid>
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveSurrogacyAgreementAppendix1}>
+          Save appendix 1
         </PrimaryMiniButton>
       </RowLine>
 
