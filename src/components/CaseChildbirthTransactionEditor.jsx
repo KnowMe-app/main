@@ -14,6 +14,8 @@ import { database } from './config';
 import {
   DOCUMENTS_CASES_PATH,
   createChildRecord,
+  formatShortNameUk,
+  getMaternityHospitalDisplayName,
   normalizeIsoDate,
   removeEmptyCaseValues,
   toArray,
@@ -198,6 +200,14 @@ const DangerButton = styled(SmallButton)`
 // into the toast itself, same idea as DocumentsPage's describeStorageError for Storage failures.
 const describeSaveError = error => `${error?.code || error?.name || 'error'}: ${error?.message || String(error)}`.trim();
 
+// A notary select's option label - the short display name computed on the fly (never read from a
+// stored `short` field, which no longer exists - spec §5/§13), falling back to the full nominative
+// name, then the raw id for a record with no name at all.
+const notaryOptionLabel = notary => {
+  const nominative = notary?.name?.uk?.nominative || '';
+  return formatShortNameUk(nominative) || nominative || notary?.id || '';
+};
+
 const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelectedChildIdChange }) => {
   const selectedCase = catalog.cases.find(item => String(item.id) === String(caseId)) || null;
 
@@ -208,8 +218,9 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   // backend record whenever the selected case changes, saved back explicitly via their own Save
   // buttons, same pattern as the per-document format draft in Documents Builder.
   const [childbirthDraft, setChildbirthDraft] = useState({ maternityHospitalId: '', children: [] });
-  const [surrogacyAgreementDraft, setSurrogacyAgreementDraft] = useState({ number: { uk: '', en: '' }, date: '' });
+  const [surrogacyAgreementDraft, setSurrogacyAgreementDraft] = useState({ number: { uk: '', en: '' }, date: '', notaryId: '' });
   const [birthRegistrationDraft, setBirthRegistrationDraft] = useState({ statementDate: '', notaryId: '' });
+  const [maritalStatusDeclarationDraft, setMaritalStatusDeclarationDraft] = useState({ statementDate: '', notaryId: '' });
   const [embryoOwnershipDraft, setEmbryoOwnershipDraft] = useState({ shipmentPeriod: { uk: '', en: '' }, ivfDate: '' });
 
   useEffect(() => {
@@ -226,10 +237,15 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
         en: selectedCase?.documents?.surrogacyAgreement?.number?.en || '',
       },
       date: selectedCase?.documents?.surrogacyAgreement?.date || '',
+      notaryId: selectedCase?.documents?.surrogacyAgreement?.notaryId || '',
     });
     setBirthRegistrationDraft({
       statementDate: selectedCase?.documents?.birthRegistrationConsent?.statementDate || '',
       notaryId: selectedCase?.documents?.birthRegistrationConsent?.notaryId || '',
+    });
+    setMaritalStatusDeclarationDraft({
+      statementDate: selectedCase?.documents?.maritalStatusDeclaration?.statementDate || '',
+      notaryId: selectedCase?.documents?.maritalStatusDeclaration?.notaryId || '',
     });
     setEmbryoOwnershipDraft({
       shipmentPeriod: {
@@ -295,7 +311,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   };
 
   const updateSurrogacyAgreementField = (path, value) => setSurrogacyAgreementDraft(previous => {
-    if (path === 'date') return { ...previous, date: value };
+    if (path === 'date' || path === 'notaryId') return { ...previous, [path]: value };
     return { ...previous, number: { ...previous.number, [path]: value } };
   });
 
@@ -347,6 +363,33 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     } catch (saveError) {
       console.error('Unable to save the birth registration details', saveError);
       toast.error(`Could not save the birth registration details: ${describeSaveError(saveError)}`);
+    }
+  };
+
+  const updateMaritalStatusDeclarationField = (field, value) => setMaritalStatusDeclarationDraft(previous => ({ ...previous, [field]: value }));
+
+  // Never writes an empty `documents.maritalStatusDeclaration` service object - same rule as
+  // surrogacyAgreement/birthRegistrationConsent above.
+  const handleSaveMaritalStatusDeclaration = async () => {
+    if (!selectedCase) return;
+    const cleaned = removeEmptyCaseValues(maritalStatusDeclarationDraft);
+    const nextValue = Object.keys(cleaned).length ? cleaned : null;
+    try {
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/maritalStatusDeclaration`), nextValue);
+      setCatalog(previous => ({
+        ...previous,
+        cases: previous.cases.map(item => {
+          if (String(item.id) !== String(selectedCase.id)) return item;
+          const documents = { ...(item.documents || {}) };
+          if (nextValue) documents.maritalStatusDeclaration = nextValue;
+          else delete documents.maritalStatusDeclaration;
+          return { ...item, documents };
+        }),
+      }));
+      toast.success('Marital status declaration details saved.');
+    } catch (saveError) {
+      console.error('Unable to save the marital status declaration details', saveError);
+      toast.error(`Could not save the marital status declaration details: ${describeSaveError(saveError)}`);
     }
   };
 
@@ -403,7 +446,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
             <option value="">— не обрано —</option>
             {catalog.parties.maternityHospitals.map(hospital => (
               <option key={hospital.id} value={String(hospital.id)}>
-                {hospital.shortName?.uk || hospital.name?.uk || hospital.id}
+                {getMaternityHospitalDisplayName(hospital) || hospital.id}
               </option>
             ))}
           </Select>
@@ -525,6 +568,17 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
             onChange={event => updateSurrogacyAgreementField('date', event.target.value)}
           />
         </Field>
+        <Field>
+          Нотаріус (договір)
+          <Select value={surrogacyAgreementDraft.notaryId || ''} onChange={event => updateSurrogacyAgreementField('notaryId', event.target.value)}>
+            <option value="">— не обрано —</option>
+            {catalog.parties.notaries.map(notary => (
+              <option key={notary.id} value={String(notary.id)}>
+                {notaryOptionLabel(notary)}
+              </option>
+            ))}
+          </Select>
+        </Field>
       </FieldGrid>
       <RowLine style={{ marginTop: 8 }}>
         <PrimaryMiniButton type="button" onClick={handleSaveSurrogacyAgreement}>
@@ -548,7 +602,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
             <option value="">— не обрано —</option>
             {catalog.parties.notaries.map(notary => (
               <option key={notary.id} value={String(notary.id)}>
-                {notary.name?.uk?.short || notary.name?.uk?.nominative || notary.id}
+                {notaryOptionLabel(notary)}
               </option>
             ))}
           </Select>
@@ -557,6 +611,37 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       <RowLine style={{ marginTop: 8 }}>
         <PrimaryMiniButton type="button" onClick={handleSaveBirthRegistration}>
           Save birth registration details
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Заява СМ про відсутність шлюбу</SectionSubhead>
+      <FieldGrid>
+        <Field>
+          Дата заяви (відсутність шлюбу)
+          <FieldInput
+            type="date"
+            value={maritalStatusDeclarationDraft.statementDate || ''}
+            onChange={event => updateMaritalStatusDeclarationField('statementDate', event.target.value)}
+          />
+        </Field>
+        <Field>
+          Нотаріус (відсутність шлюбу)
+          <Select
+            value={maritalStatusDeclarationDraft.notaryId || ''}
+            onChange={event => updateMaritalStatusDeclarationField('notaryId', event.target.value)}
+          >
+            <option value="">— не обрано —</option>
+            {catalog.parties.notaries.map(notary => (
+              <option key={notary.id} value={String(notary.id)}>
+                {notaryOptionLabel(notary)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </FieldGrid>
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveMaritalStatusDeclaration}>
+          Save marital status declaration
         </PrimaryMiniButton>
       </RowLine>
 

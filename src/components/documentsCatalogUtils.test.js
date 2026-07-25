@@ -1,6 +1,8 @@
 import {
   DEFAULT_DOC_FORMATTING,
+  DERIVED_CONTEXT_FIELD_KEYS,
   DOCUMENT_LAYOUTS,
+  TEMPLATE_DOCUMENT_CONFIG,
   applyLogoLayoutAssignment,
   applyPlainTextEdit,
   buildVariablePickerGroups,
@@ -27,13 +29,21 @@ import {
   deepMergeRecords,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
+  enrichNameWithDerivedFields,
   fillPlaceholders,
   findPartyReferences,
+  formatDateLongEn,
+  formatDateLongUk,
+  formatDateWordsEn,
+  formatDateWordsUk,
   formatDocumentDate,
   formatEnglishDateWords,
   formatPassportNumber,
+  formatShortNameEn,
+  formatShortNameUk,
   formatUkrainianDateWords,
   getChildGenderForms,
+  getMaternityHospitalDisplayName,
   getClinicLogo,
   getEffectiveDocLayout,
   getEffectiveParagraphAlign,
@@ -72,6 +82,7 @@ import {
   serializeFormattedRuns,
   splitParagraphsIntoColumns,
   splitParagraphsIntoPages,
+  stripDerivedFields,
   TITLE_SCOPE,
   beforeTitleScope,
   getTemplateScopeText,
@@ -2675,5 +2686,366 @@ describe('spec: title is an ordinary centered paragraph, with the standard toolb
     const generated = buildGeneratedDocument(legacyTemplate, context);
     expect(generated.title.align).toBeUndefined(); // renderer's own default (Center) applies
     expect(generated.title.uk).toBe('Договір');
+  });
+});
+
+// spec (2026-07-24 follow-up): surrogacy-agreement / surrogate-unmarried-declaration /
+// surrogacy-program-rules templates, per-document notary resolution, runtime-only short
+// names/derived dates, and a null-safe context for a case with no clinic/maternity-hospital
+// relations at all (fictional stand-in for the real "no optional relations" case in the spec).
+describe('spec: short names (§5) - computed at template-context build time, never stored', () => {
+  it('formatShortNameUk: surname unchanged, one initial per remaining word', () => {
+    expect(formatShortNameUk('Алексашина Юлія Борисівна')).toBe('Алексашина Ю.Б.');
+    expect(formatShortNameUk('Давид Лілія Володимирівна')).toBe('Давид Л.В.');
+  });
+
+  it('formatShortNameUk handles a two-component name with a single initial', () => {
+    expect(formatShortNameUk('Іванов Іван')).toBe('Іванов І.');
+  });
+
+  it('formatShortNameUk tolerates extra/irregular whitespace without changing the result', () => {
+    expect(formatShortNameUk('  Алексашина   Юлія  Борисівна  ')).toBe('Алексашина Ю.Б.');
+  });
+
+  it('formatShortNameUk returns an empty string for missing/single-word/non-string input, never throws', () => {
+    expect(formatShortNameUk('')).toBe('');
+    expect(formatShortNameUk(undefined)).toBe('');
+    expect(formatShortNameUk(null)).toBe('');
+    expect(formatShortNameUk('Одне')).toBe('');
+  });
+
+  it('formatShortNameEn puts the initials first, surname last (source is still surname-first)', () => {
+    expect(formatShortNameEn('Davyd Liliia Volodymyrivna')).toBe('L.V. Davyd');
+  });
+
+  it('formatShortNameEn returns an empty string for missing/single-word input', () => {
+    expect(formatShortNameEn('')).toBe('');
+    expect(formatShortNameEn('Surname')).toBe('');
+  });
+
+  it('enrichNameWithDerivedFields adds uk.short from uk.nominative, without mutating the source', () => {
+    const name = { uk: { nominative: 'Алексашина Юлія Борисівна' }, en: 'Aleksashyna Yuliia Borysivna' };
+    const enriched = enrichNameWithDerivedFields(name);
+    expect(enriched.uk.short).toBe('Алексашина Ю.Б.');
+    // name.en stored as a plain string is never restructured into an object (spec §5: the
+    // notary/wife/husband shape) - no en.short is fabricated for it.
+    expect(enriched.en).toBe('Aleksashyna Yuliia Borysivna');
+    expect(name.uk.short).toBeUndefined(); // original untouched
+  });
+
+  it('enrichNameWithDerivedFields adds en.short only when en is an object carrying .full', () => {
+    const name = { uk: { nominative: 'Давид Лілія Володимирівна' }, en: { full: 'Davyd Liliia Volodymyrivna' } };
+    const enriched = enrichNameWithDerivedFields(name);
+    expect(enriched.uk.short).toBe('Давид Л.В.');
+    expect(enriched.en.short).toBe('L.V. Davyd');
+  });
+
+  it('enrichNameWithDerivedFields tolerates a missing/malformed name without throwing', () => {
+    expect(enrichNameWithDerivedFields(null)).toBeNull();
+    expect(enrichNameWithDerivedFields(undefined)).toBeUndefined();
+    expect(enrichNameWithDerivedFields({})).toEqual({});
+  });
+});
+
+describe('spec: generic date formatters (§4/§12/§14) - not hardcoded to one date', () => {
+  it('formatDateWordsUk (same algorithm as formatUkrainianDateWords)', () => {
+    expect(formatDateWordsUk('2025-09-05')).toBe("п'ятого вересня дві тисячі двадцять п'ятого року");
+  });
+
+  it('formatDateLongUk: DD MMMM YYYY року', () => {
+    expect(formatDateLongUk('2025-09-05')).toBe('05 вересня 2025 року');
+  });
+
+  it('formatDateLongEn: DD Month YYYY', () => {
+    expect(formatDateLongEn('2025-09-05')).toBe('05 September 2025');
+  });
+
+  it('formatDateWordsEn: capitalized ordinal + spelled-out year', () => {
+    expect(formatDateWordsEn('2025-09-05')).toBe('Fifth of September two thousand twenty-five');
+  });
+
+  it('handles a leap-year day (Feb 29)', () => {
+    expect(formatDateLongUk('2024-02-29')).toBe('29 лютого 2024 року');
+    expect(formatDateLongEn('2024-02-29')).toBe('29 February 2024');
+    expect(formatDateWordsUk('2024-02-29')).toBe("двадцять дев'ятого лютого дві тисячі двадцять четвертого року");
+    expect(formatDateWordsEn('2024-02-29')).toBe('Twenty-ninth of February two thousand twenty-four');
+  });
+
+  it('handles the first day of a month', () => {
+    expect(formatDateWordsUk('2025-01-01')).toBe("першого січня дві тисячі двадцять п'ятого року");
+    expect(formatDateWordsEn('2025-01-01')).toBe('First of January two thousand twenty-five');
+  });
+
+  it('handles the second day of a month', () => {
+    expect(formatDateLongUk('1988-09-02')).toBe('02 вересня 1988 року');
+    expect(formatDateLongEn('1988-09-02')).toBe('02 September 1988');
+  });
+
+  it('handles the last day of a 31-day month', () => {
+    expect(formatDateWordsUk('2025-01-31')).toBe("тридцять першого січня дві тисячі двадцять п'ятого року");
+    expect(formatDateWordsEn('2025-01-31')).toBe('Thirty-first of January two thousand twenty-five');
+  });
+
+  it('covers January, February, September and October', () => {
+    expect(formatDateLongUk('2025-01-15')).toContain('січня');
+    expect(formatDateLongUk('2025-02-15')).toContain('лютого');
+    expect(formatDateLongUk('2025-09-15')).toContain('вересня');
+    expect(formatDateLongUk('2025-10-15')).toContain('жовтня');
+    expect(formatDateLongEn('2025-01-15')).toContain('January');
+    expect(formatDateLongEn('2025-02-15')).toContain('February');
+    expect(formatDateLongEn('2025-09-15')).toContain('September');
+    expect(formatDateLongEn('2025-10-15')).toContain('October');
+  });
+
+  it('spells out years after 2000, not just a lookup for one year', () => {
+    expect(formatDateWordsEn('2001-01-01')).toBe('First of January two thousand one');
+    expect(formatDateWordsEn('2020-12-31')).toBe('Thirty-first of December two thousand twenty');
+    expect(formatDateWordsEn('2000-01-01')).toBe('First of January two thousand');
+  });
+
+  it('returns an empty string for an empty value, never throwing', () => {
+    [formatDateWordsUk, formatDateWordsEn, formatDateLongUk, formatDateLongEn].forEach(fn => {
+      expect(fn('')).toBe('');
+      expect(fn(undefined)).toBe('');
+      expect(fn(null)).toBe('');
+    });
+  });
+
+  it('returns an empty string for an invalid/non-ISO date, never throwing', () => {
+    [formatDateWordsUk, formatDateWordsEn, formatDateLongUk, formatDateLongEn].forEach(fn => {
+      expect(fn('not-a-date')).toBe('');
+      expect(fn('18/05/2026')).toBe('');
+      expect(fn('2025-13-01')).toBe(''); // month out of range
+      expect(fn('2025-02-30')).not.toBe(undefined); // out-of-range day: still never throws
+    });
+  });
+});
+
+describe('spec: getMaternityHospitalDisplayName (§6) - safe replacement for the removed shortName', () => {
+  it('prefers the Ukrainian name, falls back to English, then blank', () => {
+    expect(getMaternityHospitalDisplayName({ name: { uk: 'Пологовий будинок №1', en: 'Maternity Hospital 1' } })).toBe('Пологовий будинок №1');
+    expect(getMaternityHospitalDisplayName({ name: { uk: '', en: 'Maternity Hospital 1' } })).toBe('Maternity Hospital 1');
+    expect(getMaternityHospitalDisplayName({ name: { uk: '', en: '' } })).toBe('');
+    expect(getMaternityHospitalDisplayName(null)).toBe('');
+  });
+});
+
+describe('spec: stripDerivedFields (§11) - excludes runtime-only keys before any serialization', () => {
+  it('recursively drops every key in DERIVED_CONTEXT_FIELD_KEYS, keeping everything else', () => {
+    const value = {
+      surrogateMother: { name: { uk: { nominative: 'X', short: 'X.' }, en: { full: 'X', short: 'X' } } },
+      birthRegistration: { statementDate: '2026-05-18', statementDateWords: { uk: 'a', en: 'b' } },
+      maritalStatusDeclaration: { statementDate: '2025-09-05', statementDateFormatted: { uk: 'c' }, statementDateWords: { uk: 'd' } },
+      surrogacyAgreement: { date: '2025-09-05', dateWords: { uk: 'e' } },
+      passport: { number: 'TT2633446', numberEn: 'should-not-exist' },
+      maternityHospital: { name: { uk: 'X' }, shortName: { uk: 'Y' } },
+      wordsAfterArticle: 'z',
+      case: { documents: { surrogacyAgreement: { date: '2025-09-05', dateDisplay: '05.09.2025' } } },
+    };
+    const stripped = stripDerivedFields(value);
+    expect(stripped).toEqual({
+      surrogateMother: { name: { uk: { nominative: 'X' }, en: { full: 'X' } } },
+      birthRegistration: { statementDate: '2026-05-18' },
+      maritalStatusDeclaration: { statementDate: '2025-09-05' },
+      surrogacyAgreement: { date: '2025-09-05' },
+      passport: { number: 'TT2633446' },
+      maternityHospital: { name: { uk: 'X' } },
+      case: { documents: { surrogacyAgreement: { date: '2025-09-05' } } },
+    });
+  });
+
+  it('never mutates the input and passes arrays/scalars through', () => {
+    const value = { list: [{ short: 'x', keep: 1 }, { keep: 2 }], n: 5, s: 'text' };
+    const stripped = stripDerivedFields(value);
+    expect(stripped).toEqual({ list: [{ keep: 1 }, { keep: 2 }], n: 5, s: 'text' });
+    expect(value.list[0].short).toBe('x'); // original untouched
+  });
+});
+
+// Fictional stand-in for the real "surrogacy" case that has no clinic/maternity-hospital
+// relations at all - only a couple, a surrogate mother and one representative, plus the new
+// surrogacyAgreement/maritalStatusDeclaration document data (spec §2/§3/§8/§9).
+const noClinicCaseCatalog = (overrides = {}) => normalizeDocumentsCatalog(
+  {
+    couples: {
+      'couple-9': {
+        id: 'couple-9',
+        partners: [
+          { id: 'partner-9a', role: 'wife', name: { uk: { nominative: 'Приклад Марія Іванівна' }, en: 'Prykllad Mariia' } },
+          { id: 'partner-9b', role: 'husband', name: { uk: { nominative: 'Приклад Петро Іванович' }, en: 'Prykllad Petro' } },
+        ],
+        address: { uk: 'Тестова адреса', en: 'Test address' },
+      },
+    },
+    surrogateMothers: {
+      'surrogate-9': {
+        id: 'surrogate-9',
+        name: { uk: { nominative: 'Зразкова Оксана Василівна', genitive: 'Зразкової Оксани Василівни' }, en: 'Zrazkova Oksana' },
+        passport: { number: 'TT9999999' },
+      },
+    },
+    representatives: {
+      'representative-9': {
+        id: 'representative-9',
+        name: { uk: { nominative: 'Довірений Максим Олегович' }, en: 'Dovirenyi Maksym' },
+        address: { uk: 'Адреса представника' },
+      },
+    },
+    notaries: {
+      'notary-9': {
+        id: 'notary-9',
+        name: { uk: { nominative: 'Тестова Анна Петрівна' }, en: 'Aleksashyna Yuliia' },
+        title: { uk: 'приватний нотаріус' },
+        city: { uk: 'місто Київ' },
+      },
+    },
+  },
+  {},
+  {
+    'case-no-clinic': {
+      id: 'case-no-clinic',
+      relations: {
+        coupleId: 'couple-9', surrogateMotherId: 'surrogate-9', representativeIds: ['representative-9'],
+      },
+      documents: {
+        surrogacyAgreement: { date: '2025-09-05', notaryId: 'notary-9' },
+        maritalStatusDeclaration: { statementDate: '2025-09-05', notaryId: 'notary-9' },
+        ...overrides.documents,
+      },
+    },
+  },
+);
+
+describe('spec §2/§3: null-safe context for a case with no clinic/maternity-hospital relations at all', () => {
+  it('never throws, and resolves clinic/maternityHospital/partnerClinic to null', () => {
+    const catalog = noClinicCaseCatalog();
+    expect(() => resolveCaseContext(catalog, 'case-no-clinic')).not.toThrow();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.clinic).toBeNull();
+    expect(context.maternityHospital).toBeNull();
+    expect(context.partnerClinic).toBeNull();
+    expect(context.wife.name.uk.nominative).toBe('Приклад Марія Іванівна');
+  });
+
+  it('a template referencing clinic/maternityHospital fields degrades to unresolved, never crashes', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(fillPlaceholders('{{clinic.medicalDirector.name.uk.short}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+    expect(fillPlaceholders('{{maternityHospital.name.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+  });
+});
+
+describe('spec §8/§9: TEMPLATE_DOCUMENT_CONFIG - notary resolved per current document, not one case-wide default', () => {
+  it('exposes the documented mapping', () => {
+    expect(TEMPLATE_DOCUMENT_CONFIG['birth-registration-surrogate-consent']).toEqual({ documentKey: 'birthRegistrationConsent' });
+    expect(TEMPLATE_DOCUMENT_CONFIG['surrogate-unmarried-declaration']).toEqual({ documentKey: 'maritalStatusDeclaration' });
+    expect(TEMPLATE_DOCUMENT_CONFIG['surrogacy-agreement']).toEqual({ documentKey: 'surrogacyAgreement' });
+    expect(TEMPLATE_DOCUMENT_CONFIG['surrogacy-program-rules']).toEqual({ documentKey: null });
+  });
+
+  it('resolves notary from documents.surrogacyAgreement.notaryId for the surrogacy-agreement template', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'surrogacy-agreement' });
+    expect(context.notary.name.uk.nominative).toBe('Тестова Анна Петрівна');
+    expect(context.notary.name.uk.short).toBe('Тестова А.П.');
+  });
+
+  it('resolves notary from documents.maritalStatusDeclaration.notaryId for the surrogate-unmarried-declaration template', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'surrogate-unmarried-declaration' });
+    expect(context.notary.name.uk.nominative).toBe('Тестова Анна Петрівна');
+  });
+
+  it('a template with documentKey: null (surrogacy-program-rules) never resolves a notary', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'surrogacy-program-rules' });
+    expect(context.notary).toBeNull();
+  });
+
+  it('a case whose two documents use different notaries resolves each independently', () => {
+    const catalog = noClinicCaseCatalog();
+    catalog.parties.notaries.push({
+      id: 'notary-10',
+      name: { uk: { nominative: 'Другий Нотаріус Богданович' } },
+    });
+    catalog.cases[0].documents.maritalStatusDeclaration.notaryId = 'notary-10';
+
+    const agreementContext = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'surrogacy-agreement' });
+    const declarationContext = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'surrogate-unmarried-declaration' });
+    expect(agreementContext.notary.name.uk.nominative).toBe('Тестова Анна Петрівна');
+    expect(declarationContext.notary.name.uk.nominative).toBe('Другий Нотаріус Богданович');
+  });
+
+  it('omitting templateId keeps the old default (birthRegistrationConsent) for backward compatibility', () => {
+    const catalog = noClinicCaseCatalog({ documents: { birthRegistrationConsent: { notaryId: 'notary-9', statementDate: '2026-05-18' } } });
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.notary.name.uk.nominative).toBe('Тестова Анна Петрівна');
+  });
+
+  it('a templateId not in TEMPLATE_DOCUMENT_CONFIG never resolves a notary (harmless - unused by that template)', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'embryo-transfer-consent' });
+    expect(context.notary).toBeNull();
+  });
+});
+
+describe('spec §4/§9: surrogacyAgreement.dateWords + maritalStatusDeclaration derived date fields', () => {
+  it('surrogacyAgreement.dateWords.uk is derived from documents.surrogacyAgreement.date', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.surrogacyAgreement.date).toBe('2025-09-05');
+    expect(context.surrogacyAgreement.dateWords.uk).toBe("п'ятого вересня дві тисячі двадцять п'ятого року");
+  });
+
+  it('maritalStatusDeclaration exposes statementDateFormatted and statementDateWords in both languages', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.maritalStatusDeclaration.statementDate).toBe('2025-09-05');
+    expect(context.maritalStatusDeclaration.statementDateFormatted.uk).toBe('05 вересня 2025 року');
+    expect(context.maritalStatusDeclaration.statementDateFormatted.en).toBe('05 September 2025');
+    expect(context.maritalStatusDeclaration.statementDateWords.uk).toBe("п'ятого вересня дві тисячі двадцять п'ятого року");
+    expect(context.maritalStatusDeclaration.statementDateWords.en).toBe('Fifth of September two thousand twenty-five');
+  });
+
+  it('a case with no surrogacyAgreement/maritalStatusDeclaration data resolves blank derived fields, never throwing', () => {
+    const catalog = noClinicCaseCatalog({ documents: { surrogacyAgreement: undefined, maritalStatusDeclaration: undefined } });
+    // normalizeDocumentsCatalog keeps whatever was actually passed; simulate a case with neither.
+    catalog.cases[0].documents = {};
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.surrogacyAgreement.dateWords).toEqual({ uk: '', en: '' });
+    expect(context.maritalStatusDeclaration.statementDateWords).toEqual({ uk: '', en: '' });
+    expect(context.maritalStatusDeclaration.statementDateFormatted).toEqual({ uk: '', en: '' });
+  });
+
+  it('these derived fields are never written back to Firebase (source records stay bare)', () => {
+    const catalog = noClinicCaseCatalog();
+    const rawCase = catalog.cases.find(item => item.id === 'case-no-clinic');
+    expect(rawCase.documents.surrogacyAgreement).toEqual({ date: '2025-09-05', notaryId: 'notary-9' });
+    expect(rawCase.documents.maritalStatusDeclaration).toEqual({ statementDate: '2025-09-05', notaryId: 'notary-9' });
+  });
+});
+
+describe('spec §5/§13: DERIVED_CONTEXT_FIELD_KEYS never created by createEmpty* factories', () => {
+  it('createEmptyNotary carries no short/instrumental field', () => {
+    const notary = createEmptyNotary();
+    expect(notary.name.uk.short).toBeUndefined();
+    expect(notary.name.uk.instrumental).toBeUndefined();
+    expect(notary.name.en.short).toBeUndefined();
+  });
+
+  it('createEmptyMaternityHospital carries no shortName field', () => {
+    expect(createEmptyMaternityHospital().shortName).toBeUndefined();
+  });
+
+  it('createEmptyClinic carries no medicalDirector.name short field', () => {
+    const clinic = createEmptyClinic();
+    expect(clinic.medicalDirector.name.uk.short).toBeUndefined();
+    expect(clinic.medicalDirector.name.en.short).toBeUndefined();
+  });
+
+  it('DERIVED_CONTEXT_FIELD_KEYS lists every forbidden persisted key from the spec', () => {
+    expect(DERIVED_CONTEXT_FIELD_KEYS).toEqual(expect.arrayContaining([
+      'short', 'shortName', 'dateWords', 'statementDateWords', 'statementDateFormatted', 'dateDisplay', 'numberEn', 'wordsAfterArticle',
+    ]));
   });
 });

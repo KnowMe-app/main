@@ -302,6 +302,32 @@ export const catalogTemplatesToBackend = catalog => (catalog.documents || []).re
   return byId;
 }, {});
 
+// Every key that only ever belongs in a runtime template context (short names, spelled-out/long
+// dates) and must never reach Firebase or a JSON export (spec §1/§11/§13). Kept as one shared
+// list so an export/serialization path can never drift from what the context builder actually
+// treats as derived.
+export const DERIVED_CONTEXT_FIELD_KEYS = [
+  'short', 'shortName', 'dateWords', 'statementDateWords', 'statementDateFormatted', 'dateDisplay', 'numberEn', 'wordsAfterArticle',
+];
+
+// Recursively strips every DERIVED_CONTEXT_FIELD_KEYS key out of a value before it's serialized
+// for export (spec §11: "Перед серіалізацією рекурсивно виключати похідні runtime-поля"). Source
+// data (catalog.cases/parties/documents straight from Firebase) never carries these keys in the
+// first place - this is a defensive final pass for whatever actually gets serialized, so an
+// export path can never accidentally leak an enrichment copy's derived fields even if one was
+// passed in by mistake. Never mutates its input.
+export const stripDerivedFields = value => {
+  if (Array.isArray(value)) return value.map(stripDerivedFields);
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !DERIVED_CONTEXT_FIELD_KEYS.includes(key))
+        .map(([key, child]) => [key, stripDerivedFields(child)]),
+    );
+  }
+  return value;
+};
+
 // --- Case context + placeholders ------------------------------------------------------------
 
 const findById = (records, id) => (records || []).find(record => String(record?.id) === String(id)) || null;
@@ -476,6 +502,165 @@ export const formatEnglishDateWords = value => {
   return `${EN_DAY_ORDINALS[day]} of ${EN_MONTHS[month]}, ${year}`;
 };
 
+// --- Shared date-context builder (spec 2026-07-24 follow-up §4/§12) --------------------------
+// One generic pair of "date in words" / "date, long form" formatters, reused by every document
+// that needs a spelled-out signature date (surrogacyAgreement.dateWords,
+// maritalStatusDeclaration.statementDateWords/.statementDateFormatted, and - via
+// withDerivedDateFields below - birthRegistration.statementDateWords) instead of one bespoke
+// formatter per document. `formatDateWordsUk` is the same generic Ukrainian day/month/year ->
+// words converter as formatUkrainianDateWords (kept as a separate export only for symmetry with
+// its English counterpart's name).
+export const formatDateWordsUk = formatUkrainianDateWords;
+
+// English number (0-9999) in plain cardinal words - "two thousand twenty-five" for 2025, not the
+// colloquial paired-year reading ("twenty twenty-five") - a real generic number-to-words
+// converter, not a lookup table for one date.
+const EN_ONES_CARDINAL = {
+  1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine',
+};
+const EN_TEENS_CARDINAL = {
+  10: 'ten', 11: 'eleven', 12: 'twelve', 13: 'thirteen', 14: 'fourteen', 15: 'fifteen', 16: 'sixteen', 17: 'seventeen', 18: 'eighteen', 19: 'nineteen',
+};
+const EN_TENS_CARDINAL = {
+  2: 'twenty', 3: 'thirty', 4: 'forty', 5: 'fifty', 6: 'sixty', 7: 'seventy', 8: 'eighty', 9: 'ninety',
+};
+
+const threeDigitToEnglishCardinalWords = n => {
+  if (n === 0) return '';
+  const hundreds = Math.floor(n / 100);
+  const remainder = n % 100;
+  const parts = [];
+  if (hundreds) parts.push(`${EN_ONES_CARDINAL[hundreds]} hundred`);
+  if (remainder) {
+    if (remainder < 10) parts.push(EN_ONES_CARDINAL[remainder]);
+    else if (remainder < 20) parts.push(EN_TEENS_CARDINAL[remainder]);
+    else {
+      const tens = Math.floor(remainder / 10);
+      const ones = remainder % 10;
+      parts.push(ones ? `${EN_TENS_CARDINAL[tens]}-${EN_ONES_CARDINAL[ones]}` : EN_TENS_CARDINAL[tens]);
+    }
+  }
+  return parts.join(' ');
+};
+
+const yearToEnglishCardinalWords = year => {
+  const thousands = Math.floor(year / 1000);
+  const remainder = year % 1000;
+  const parts = [];
+  if (thousands) parts.push(`${EN_ONES_CARDINAL[thousands]} thousand`);
+  if (remainder) parts.push(threeDigitToEnglishCardinalWords(remainder));
+  return parts.join(' ');
+};
+
+const capitalizeWord = word => (word ? `${word[0].toUpperCase()}${word.slice(1)}` : word);
+
+// A spelled-out English date used by legal statements (e.g. "Fifth of September two thousand
+// twenty-five") - distinct from formatEnglishDateWords (used by the RATS birth-registration
+// statement, "eighteenth of May, 2026", kept unchanged for backward compatibility).
+export const formatDateWordsEn = value => {
+  if (!isIsoDate(value)) return '';
+  const [year, month, day] = String(value).trim().split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+  return `${capitalizeWord(EN_DAY_ORDINALS[day])} of ${EN_MONTHS[month]} ${yearToEnglishCardinalWords(year)}`;
+};
+
+// "DD MMMM YYYY року" / "DD Month YYYY" - the long (numeric day, spelled-out month) date form
+// legal statements show alongside the fully spelled-out one (spec: maritalStatusDeclaration /
+// surrogacyAgreement dates).
+export const formatDateLongUk = value => {
+  if (!isIsoDate(value)) return '';
+  const [year, month, day] = String(value).trim().split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+  return `${String(day).padStart(2, '0')} ${UK_MONTHS_GENITIVE[month]} ${year} року`;
+};
+
+export const formatDateLongEn = value => {
+  if (!isIsoDate(value)) return '';
+  const [year, month, day] = String(value).trim().split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+  return `${String(day).padStart(2, '0')} ${EN_MONTHS[month]} ${year}`;
+};
+
+// Shared date-context builder (spec §4/§12: "винести у спільний date-context builder... не
+// дублювати логіку окремо для кожного документа"): augments a case document sub-record (e.g.
+// `case.documents.surrogacyAgreement`) with its derived spelled-out/long date fields, computed
+// from one caller-named ISO date field - never mutates the source, never persisted back to
+// Firebase (see buildGeneratedDocument/resolveCaseContext - the result only ever lives in the
+// in-memory template context). `wordsUk`/`wordsEn` are overridable so a pre-existing document
+// (birthRegistration) can keep its own already-shipped English wording while every new document
+// gets the shared default.
+const withDerivedDateFields = (raw, {
+  dateField, wordsKey, longKey, wordsUk = formatDateWordsUk, wordsEn = formatDateWordsEn,
+}) => {
+  const source = isPlainObject(raw) ? raw : {};
+  const value = source[dateField] ?? '';
+  const next = { ...source };
+  if (wordsKey) next[wordsKey] = { uk: wordsUk(value), en: wordsEn(value) };
+  if (longKey) next[longKey] = { uk: formatDateLongUk(value), en: formatDateLongEn(value) };
+  return next;
+};
+
+// --- Short names + runtime name enrichment (spec §5/§13) --------------------------------------
+// A person's short display name ("Алексашина Ю.Б." / "L.V. Davyd") is always computed from the
+// full name at template-context build time, never stored - the JSON only ever carries the full
+// name (`name.uk.nominative`, `name.en.full`). Whitespace-tolerant, never throws: a missing or
+// malformed name simply resolves to ''.
+export const formatShortNameUk = fullName => {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return '';
+  const [surname, ...rest] = parts;
+  const initials = rest.map(part => `${part[0].toUpperCase()}.`).join('');
+  return `${surname} ${initials}`;
+};
+
+// English short form reverses the order (initials first): the source full name still carries the
+// surname first ("Davyd Liliia Volodymyrivna"), same as the Ukrainian nominative - only the
+// rendered short form's word order differs ("L.V. Davyd").
+export const formatShortNameEn = fullName => {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return '';
+  const [surname, ...rest] = parts;
+  const initials = rest.map(part => `${part[0].toUpperCase()}.`).join('');
+  return `${initials} ${surname}`;
+};
+
+// Adds a `short` field alongside whatever a person's `name` node already carries - `uk.short`
+// whenever `uk.nominative` is a real string, `en.short` only when `en` is itself an object
+// carrying `.full` (spec §5: a `name.en` stored as a plain string, e.g. the notary/wife/husband
+// shape `{ en: "Aleksashyna..." }`, is never restructured into an object - templates already read
+// it directly as `{{notary.name.en}}`). Never mutates the source object.
+export const enrichNameWithDerivedFields = name => {
+  if (!isPlainObject(name)) return name;
+  const result = { ...name };
+  const ukNominative = name.uk?.nominative;
+  if (isPlainObject(name.uk) && ukNominative) {
+    result.uk = { ...name.uk, short: formatShortNameUk(ukNominative) };
+  }
+  const enFull = typeof name.en?.full === 'string' ? name.en.full : null;
+  if (isPlainObject(name.en) && enFull) {
+    result.en = { ...name.en, short: formatShortNameEn(enFull) };
+  }
+  return result;
+};
+
+// Same enrichment, applied to a whole person/party record's `name` field - used for every
+// name-carrying context entity (wife/husband/surrogateMother/representative/notary, and the
+// clinic's medicalDirector) so `{{x.name.uk.short}}`/`{{x.name.en.short}}` always resolve without
+// a stored `short` field ever existing in Firebase. Null-safe: a record with no `name` (or no
+// record at all) passes through unchanged.
+const enrichPersonName = person => {
+  if (!isPlainObject(person) || !person.name) return person;
+  return { ...person, name: enrichNameWithDerivedFields(person.name) };
+};
+
+// The maternity hospital's display name used to read a stored `shortName` field (spec §6: no
+// longer created or persisted) - this is the safe replacement: the full bilingual name, uk
+// preferred, falling back to en, never an automatic legal-name abbreviation (that algorithm is
+// for personal names, not organizations).
+export const getMaternityHospitalDisplayName = maternityHospital => (
+  maternityHospital?.name?.uk || maternityHospital?.name?.en || ''
+);
+
 // --- Party record shapes (Parties page, batch 19 §1) --------------------------------------------
 // Canonical "blank record" for each party collection - the shape a freshly-added record starts
 // from, matching exactly what resolveCaseContext/fillPlaceholders already expect to find (spec
@@ -544,7 +729,9 @@ export const createEmptyClinic = () => ({
   },
   license: { number: '', date: '', issuedBy: { uk: '', en: '' } },
   medicalDirector: {
-    name: { uk: { nominative: '', genitive: '', short: '' }, en: { full: '', short: '' } },
+    // `uk.short`/`en.short` are never stored (spec §5/§13) - computed at template-context build
+    // time by enrichNameWithDerivedFields, from `uk.nominative`/`en.full` below.
+    name: { uk: { nominative: '', genitive: '' }, en: { full: '' } },
     authority: { type: { uk: '', en: '' }, number: '', date: '' },
   },
 });
@@ -559,21 +746,23 @@ export const createEmptyPartnerClinic = () => ({
   address: { uk: '', en: '' },
 });
 
+// `shortName` is never stored (spec §6) - use getMaternityHospitalDisplayName wherever the UI
+// used to read `maternityHospital.shortName.uk`.
 export const createEmptyMaternityHospital = () => ({
   id: makeRecordId('maternity-hospital'),
   name: { uk: '', en: '' },
-  shortName: { uk: '', en: '' },
   edrpou: '',
   address: { uk: '', en: '' },
 });
 
+// `uk.short`/`en.short` are never stored (spec §5/§13) - computed at template-context build time
+// by enrichNameWithDerivedFields. `uk.instrumental` (a one-off grammatical case for a single past
+// document) is exactly the kind of workaround field spec §13 forbids adding.
 export const createEmptyNotary = () => ({
   id: makeRecordId('notary'),
   name: {
-    uk: {
-      nominative: '', genitive: '', short: '', instrumental: '',
-    },
-    en: { full: '', short: '' },
+    uk: { nominative: '', genitive: '' },
+    en: { full: '' },
   },
   title: { uk: '', en: '' },
   city: { uk: '', en: '' },
@@ -635,7 +824,26 @@ export const removeEmptyCaseValues = value => {
   return value;
 };
 
-export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
+// Which case-document sub-record supplies the notary for a given template (spec §8): a case can
+// use a different notary for each document it produces (birth-registration statement, marital
+// status declaration, surrogacy agreement each carry their own `notaryId`), so there is no single
+// case-wide "the" notary. `documentKey: null` means the template never needs a notary at all
+// (surrogacy-program-rules). Exported so other call sites (validators, tests) share the same map
+// instead of re-deriving it.
+export const TEMPLATE_DOCUMENT_CONFIG = {
+  'birth-registration-surrogate-consent': { documentKey: 'birthRegistrationConsent' },
+  'surrogate-unmarried-declaration': { documentKey: 'maritalStatusDeclaration' },
+  'surrogacy-agreement': { documentKey: 'surrogacyAgreement' },
+  'surrogacy-program-rules': { documentKey: null },
+};
+
+// `templateId` picks which document's own `notaryId` resolves as `notary` (spec §8/§9) - omitted
+// (every pre-existing call site that only ever needed the birth-registration statement's notary),
+// it defaults to `birthRegistrationConsent` so nothing that already calls resolveCaseContext
+// without a templateId changes behavior. A templateId not listed in TEMPLATE_DOCUMENT_CONFIG (an
+// older template that never references `{{notary...}}`) simply resolves to no notary - harmless,
+// since nothing reads it.
+export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}) => {
   const rawCaseRecord = findById(catalog?.cases, caseId);
   if (!rawCaseRecord) return null;
   const caseRecord = normalizeCaseRecord(rawCaseRecord);
@@ -643,11 +851,12 @@ export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
 
   const couple = findById(catalog.parties.couples, relations.coupleId);
   const partners = toArray(couple?.partners);
-  const wife = partners.find(partner => partner?.role === 'wife') || partners[0] || null;
-  const husband = partners.find(partner => partner?.role === 'husband') || partners[1] || null;
+  const rawWife = partners.find(partner => partner?.role === 'wife') || partners[0] || null;
+  const rawHusband = partners.find(partner => partner?.role === 'husband') || partners[1] || null;
   const representatives = toArray(relations.representativeIds)
     .map(id => findById(catalog.parties.representatives, id))
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(enrichPersonName);
 
   const childbirth = isPlainObject(caseRecord.childbirth) ? caseRecord.childbirth : {};
   const rawChildren = toArray(childbirth.children);
@@ -659,34 +868,68 @@ export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
   const medicalConclusion = isPlainObject(rawChild.medicalConclusion) ? rawChild.medicalConclusion : {};
 
   const documents = isPlainObject(caseRecord.documents) ? caseRecord.documents : {};
-  const surrogacyAgreement = isPlainObject(documents.surrogacyAgreement) ? documents.surrogacyAgreement : {};
-  const rawBirthRegistration = isPlainObject(documents.birthRegistrationConsent) ? documents.birthRegistrationConsent : {};
-  const statementDate = rawBirthRegistration.statementDate ?? '';
-  const birthRegistration = {
-    ...rawBirthRegistration,
-    statementDateWords: {
-      uk: formatUkrainianDateWords(statementDate),
-      en: formatEnglishDateWords(statementDate),
-    },
+
+  // birthRegistration keeps its already-shipped English wording (formatEnglishDateWords, e.g.
+  // "eighteenth of May, 2026") for backward compatibility; every new document uses the shared
+  // default formatters (withDerivedDateFields's own defaults).
+  const birthRegistration = withDerivedDateFields(documents.birthRegistrationConsent, {
+    dateField: 'statementDate',
+    wordsKey: 'statementDateWords',
+    wordsEn: formatEnglishDateWords,
+  });
+  const surrogacyAgreement = withDerivedDateFields(documents.surrogacyAgreement, {
+    dateField: 'date',
+    wordsKey: 'dateWords',
+  });
+  const maritalStatusDeclaration = withDerivedDateFields(documents.maritalStatusDeclaration, {
+    dateField: 'statementDate',
+    wordsKey: 'statementDateWords',
+    longKey: 'statementDateFormatted',
+  });
+
+  // Which document's notaryId is "the" notary for this render (spec §8) - defaults to the
+  // birth-registration statement so every existing caller (no templateId) keeps working exactly
+  // as before.
+  const notaryDocumentKey = templateId !== undefined
+    ? (TEMPLATE_DOCUMENT_CONFIG[templateId]?.documentKey ?? null)
+    : 'birthRegistrationConsent';
+  const notaryDocuments = {
+    birthRegistrationConsent: birthRegistration,
+    surrogacyAgreement,
+    maritalStatusDeclaration,
   };
+  const notaryId = notaryDocumentKey ? (notaryDocuments[notaryDocumentKey]?.notaryId ?? null) : null;
+  const notary = enrichPersonName(notaryId ? findById(catalog.parties.notaries, notaryId) : null);
+
   // The Ukrainian clinic (parties.clinics, relations.clinicId) runs the surrogacy program and signs
   // the documents; the partner clinic (parties.partnerClinics, relations.partnerClinicId) is the
   // separate foreign clinic embryos ship from - never the same collection, never a second "main"
-  // clinic. Both are null-safe: an old case with no partnerClinicId simply resolves to null rather
-  // than throwing, so a template referencing partnerClinic degrades to a visible warning instead of
-  // a crash (see getUnresolvedVariablePaths/fillPlaceholders).
+  // clinic. Both are null-safe: an old case with no partnerClinicId/clinicId simply resolves to
+  // null rather than throwing, so a template referencing it degrades to a visible warning instead
+  // of a crash (see getUnresolvedVariablePaths/fillPlaceholders) - e.g. a case with no clinicId at
+  // all (spec §2: case-kikawa has no clinic/maternity-hospital relations).
   const partnerClinic = relations.partnerClinicId
     ? findById(catalog.parties.partnerClinics, relations.partnerClinicId)
     : null;
+  const rawClinic = relations.clinicId ? findById(catalog.parties.clinics, relations.clinicId) : null;
+  const clinic = rawClinic ? {
+    ...rawClinic,
+    medicalDirector: rawClinic.medicalDirector ? {
+      ...rawClinic.medicalDirector,
+      name: enrichNameWithDerivedFields(rawClinic.medicalDirector.name),
+    } : rawClinic.medicalDirector,
+  } : null;
 
   return {
     case: caseRecord,
     relations,
     couple,
-    wife,
-    husband,
-    surrogateMother: findById(catalog.parties.surrogateMothers, relations.surrogateMotherId),
-    clinic: findById(catalog.parties.clinics, relations.clinicId),
+    wife: enrichPersonName(rawWife),
+    husband: enrichPersonName(rawHusband),
+    surrogateMother: enrichPersonName(relations.surrogateMotherId
+      ? findById(catalog.parties.surrogateMothers, relations.surrogateMotherId)
+      : null),
+    clinic,
     partnerClinic,
     representative: representatives[0] || null,
     representatives,
@@ -695,10 +938,13 @@ export const resolveCaseContext = (catalog, caseId, { childId } = {}) => {
     child: buildChildContext(rawChild),
     selectedChildId: rawChild?.id,
     medicalConclusion,
-    maternityHospital: findById(catalog.parties.maternityHospitals, childbirth.maternityHospitalId),
+    maternityHospital: childbirth.maternityHospitalId
+      ? findById(catalog.parties.maternityHospitals, childbirth.maternityHospitalId)
+      : null,
     surrogacyAgreement,
     birthRegistration,
-    notary: findById(catalog.parties.notaries, rawBirthRegistration.notaryId),
+    maritalStatusDeclaration,
+    notary,
   };
 };
 
@@ -1332,7 +1578,13 @@ export const findPartyReferences = (catalog, collection, id) => {
       case 'surrogateMothers': return String(relations.surrogateMotherId) === targetId;
       case 'representatives': return toArray(relations.representativeIds).some(repId => String(repId) === targetId);
       case 'maternityHospitals': return String(caseRecord.childbirth?.maternityHospitalId) === targetId;
-      case 'notaries': return String(caseRecord.documents?.birthRegistrationConsent?.notaryId) === targetId;
+      // A case can reference the same notary from up to three different documents (spec §8) -
+      // any one of them counts as a reference, not just the birth-registration statement.
+      case 'notaries': return [
+        caseRecord.documents?.birthRegistrationConsent?.notaryId,
+        caseRecord.documents?.surrogacyAgreement?.notaryId,
+        caseRecord.documents?.maritalStatusDeclaration?.notaryId,
+      ].some(notaryId => String(notaryId) === targetId);
       default: return false;
     }
   });

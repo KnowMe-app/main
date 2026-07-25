@@ -42,7 +42,7 @@ const buildParties = () => ({
   representatives: {},
   clinics: {},
   maternityHospitals: {
-    'hospital-1': { id: 'hospital-1', shortName: { uk: 'Пологовий будинок №1', en: '' } },
+    'hospital-1': { id: 'hospital-1', name: { uk: 'Пологовий будинок №1', en: '' } },
   },
   notaries: {
     'notary-1': { id: 'notary-1', name: { uk: { nominative: 'Нотаріус Іванова Іванівна', short: 'Іванова І.І.' } } },
@@ -93,9 +93,9 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', 
 
     const hospitalSelect = await screen.findByLabelText('Пологовий будинок');
     expect(hospitalSelect).toHaveValue('hospital-1');
-    // shortName is a bilingual { uk, en } record (same shape as name/address on every other
-    // maternity hospital field) - rendering it as an <option> label must resolve to the uk string,
-    // not the object itself (which crashes React: "Objects are not valid as a React child").
+    // name is a bilingual { uk, en } record - rendering it as an <option> label must resolve to
+    // the uk string, not the object itself (which crashes React: "Objects are not valid as a
+    // React child"). There is no separate `shortName` field (spec: never stored).
     expect(screen.getByText('Пологовий будинок №1')).toBeInTheDocument();
     expect(screen.getByText('Дитина 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Стать')).toHaveValue('female');
