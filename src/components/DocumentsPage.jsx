@@ -72,6 +72,7 @@ import {
   toggleRawInlineMarker,
   upsertRecentCaseId,
   upsertRecentId,
+  validateArtProgramReferences,
   validateBirthRegistrationCase,
   validateCaseRecord,
   validateDocumentTemplate,
@@ -1628,6 +1629,12 @@ const DocumentsPage = ({ isAdmin }) => {
   const referencesBirthDomain = referencesPathDomain([
     'child', 'children', 'medicalConclusion', 'birthRegistration', 'case.childbirth', 'case.documents.birthRegistrationConsent',
   ]);
+  // Same idea, scoped to the ART-program-referencing documents (spec §13/§15): a shipment/transfer/
+  // hCG/ultrasound id that no longer resolves gets its own specific message here instead of
+  // drowning in the generic unresolved-{{placeholder}} list below.
+  const referencesArtDomain = referencesPathDomain([
+    'embryoOwnershipStatement', 'geneticAffinityCertificate', 'racssClinicLetter', 'case.artProgram',
+  ]);
   // Which relation each base checklist issue actually gates on - an issue with no listed domain
   // (case.id) is always relevant; everything else only matters once a checked document references
   // that data at all.
@@ -1649,6 +1656,7 @@ const DocumentsPage = ({ isAdmin }) => {
     ? [...new Set([
       ...validateCaseRecord(selectedCase).filter(isChecklistIssueRelevant),
       ...(referencesBirthDomain ? validateBirthRegistrationCase(catalog, selectedCaseId) : []),
+      ...(referencesArtDomain ? validateArtProgramReferences(catalog, selectedCaseId) : []),
     ])]
     : [];
   // A logo only ever appears where a template declares one - via the dedicated `logo` field, or

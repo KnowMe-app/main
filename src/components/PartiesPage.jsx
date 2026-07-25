@@ -13,6 +13,7 @@ import designTokens from '../data/designTokens.json';
 import { auth, database } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
+import CaseArtProgramEditor from './CaseArtProgramEditor';
 import CaseChildbirthTransactionEditor from './CaseChildbirthTransactionEditor';
 import {
   DOCUMENTS_CASES_PATH,
@@ -1042,6 +1043,8 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
                       valueIds={relations.representativeIds}
                       onToggle={(repId, include) => handleToggleRepresentative(caseRecord, repId, include)}
                     />
+
+                    <CaseArtProgramEditor catalog={catalog} setCatalog={setCatalog} caseId={caseRecord.id} />
 
                     <CaseChildbirthTransactionEditor catalog={catalog} setCatalog={setCatalog} caseId={caseRecord.id} />
 

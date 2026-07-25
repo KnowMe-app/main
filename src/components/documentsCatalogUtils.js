@@ -308,6 +308,10 @@ export const catalogTemplatesToBackend = catalog => (catalog.documents || []).re
 // treats as derived.
 export const DERIVED_CONTEXT_FIELD_KEYS = [
   'short', 'shortName', 'dateWords', 'dateFormatted', 'statementDateWords', 'statementDateFormatted', 'dateDisplay', 'numberEn', 'wordsAfterArticle',
+  // ART program document contexts (spec §4/§6/§12) - computed fresh from case.artProgram on every
+  // resolveCaseContext call, never written back to Firebase.
+  'plannedPeriodFormatted', 'ivfDateFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
+  'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank',
 ];
 
 // Recursively strips every DERIVED_CONTEXT_FIELD_KEYS key out of a value before it's serialized
@@ -898,6 +902,342 @@ export const TEMPLATE_DOCUMENT_CONFIG = {
 // so nothing that already calls resolveCaseContext without a templateId changes behavior.
 const DEFAULT_NOTARY_TEMPLATE_CONFIG = { documentKey: 'birthRegistrationConsent', usesNotary: true };
 
+// --- ART program (case.artProgram) - resolvers, formatters, document contexts ----------------
+// The medical facts of a case's fertility program (diagnosis, embryo shipments, transfer attempts,
+// hCG tests, ultrasounds) live once at `case.artProgram`, keyed by id (never converted to arrays -
+// spec §12). Every document that references one of these events (embryoOwnershipStatement,
+// geneticAffinityCertificate, racssClinicLetter) stores only the id(s) it points at
+// (shipmentId/transferAttemptId/hcgTestId/ultrasoundId); editing the underlying event once (e.g.
+// the transfer date) is instantly reflected in every document that references it, since none of
+// them ever copy the fact - they resolve it fresh every render.
+
+// Null-safe lookups (spec §3) - a missing/unset id, or an id that no longer exists (a document
+// still pointing at a deleted event), resolves to null rather than throwing, so a template that
+// references it degrades to a visible "missing" blank instead of a white screen.
+export const resolveShipment = (caseData, shipmentId) => {
+  if (!shipmentId) return null;
+  return caseData?.artProgram?.embryoShipments?.[shipmentId] ?? null;
+};
+
+export const resolveTransferAttempt = (caseData, transferAttemptId) => {
+  if (!transferAttemptId) return null;
+  return caseData?.artProgram?.transferAttempts?.[transferAttemptId] ?? null;
+};
+
+export const resolveHcgTest = (transferAttempt, hcgTestId) => {
+  if (!hcgTestId) return null;
+  return transferAttempt?.hcgTests?.[hcgTestId] ?? null;
+};
+
+export const resolveUltrasound = (transferAttempt, ultrasoundId) => {
+  if (!ultrasoundId) return null;
+  return transferAttempt?.ultrasounds?.[ultrasoundId] ?? null;
+};
+
+// A shipment on its own only carries clinic ids - never mutates the stored record, just layers the
+// resolved party records on top (spec §3).
+export const enrichShipment = (shipment, parties) => {
+  if (!shipment) return null;
+  return {
+    ...shipment,
+    sourceClinic: findById(parties?.partnerClinics, shipment.sourceClinicId) ?? null,
+    destinationClinic: findById(parties?.clinics, shipment.destinationClinicId) ?? null,
+  };
+};
+
+// "DD.MM.YYYY" - same rendering every other document date uses (formatDocumentDate is defined
+// further down this file; referencing it here is safe since it's only ever called once the whole
+// module has finished loading, same pattern as DOCUMENT_DATE_CONFIG's longUk/longEn above). Unlike
+// formatDocumentDate itself (a generic "format if it's a date, else pass the value through
+// unchanged" helper used on arbitrary placeholder leaves), this always resolves a blank/invalid
+// input to '' - consistent with formatDateLongEn/formatDateWordsUk/etc, so an ART formatted-date
+// field is never accidentally set to a raw ISO string or undefined.
+export const formatDateNumericUk = value => (isIsoDate(value) ? formatDocumentDate(value) : '');
+
+// A date range, spelled out long-form in English and numeric in Ukrainian - "01.01.2026 – 01.02.2026"
+// / "01 January 2026 - 01 February 2026". Used only when a shipment's plannedPeriod carries real
+// startDate/endDate values (the new shape) rather than a migrated freeform text (see
+// formatShipmentPeriod).
+export const formatDateRange = (startDate, endDate, locale) => {
+  if (locale === 'en') return `${formatDateLongEn(startDate)} - ${formatDateLongEn(endDate)}`;
+  return `${formatDateNumericUk(startDate)} – ${formatDateNumericUk(endDate)}`;
+};
+
+// Supports both plannedPeriod shapes (spec §6): the new startDate/endDate pair, or a migrated
+// freeform text kept verbatim per locale - never both computed and stored, this only ever reads
+// whichever shape is actually present.
+export const formatShipmentPeriod = (period, locale = 'uk') => {
+  if (period?.startDate && period?.endDate) return formatDateRange(period.startDate, period.endDate, locale);
+  return period?.text?.[locale] ?? '';
+};
+
+// The stored code (e.g. "blastocyst") never carries its own display label - this is the lookup
+// table, extendable with more stages without touching any resolver/formatter call site.
+export const EMBRYO_STAGE_LABELS = {
+  blastocyst: {
+    uk: { nominative: 'бластоциста', genitive: 'бластоцисти' },
+    en: { nominative: 'blastocyst' },
+  },
+};
+
+const EMPTY_EMBRYO_STAGE_LABEL = { uk: { nominative: '', genitive: '' }, en: { nominative: '' } };
+
+export const resolveEmbryoStageLabel = code => EMBRYO_STAGE_LABELS[code] || EMPTY_EMBRYO_STAGE_LABEL;
+
+// Generic Ukrainian one/few/many noun-form picker (1 -> one, 2-4 -> few, 5+ -> many, with the
+// standard 11-14 exception falling into "many") - shared by the embryo count and gestational-age/
+// fetus-count wording below instead of one bespoke mod-arithmetic block per noun.
+const ukPluralForm = (count, [one, few, many]) => {
+  const n = Math.abs(Math.trunc(Number(count) || 0));
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) return few;
+  return many;
+};
+
+const UK_EMBRYO_COUNT_CARDINALS = {
+  1: 'один', 2: 'два', 3: 'три', 4: 'чотири', 5: "п'ять", 6: 'шість', 7: 'сім', 8: 'вісім', 9: "дев'ять", 10: 'десять',
+};
+
+// "1 -> один ембріон", "2 -> два ембріони", "3 -> три ембріони", "5 -> п'ять ембріонів" (spec §6) -
+// a real cardinal-number + noun-agreement formatter, not a lookup table for the four spec examples.
+export const formatEmbryoCountTextUk = count => {
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const word = UK_EMBRYO_COUNT_CARDINALS[n] || String(n);
+  return `${word} ${ukPluralForm(n, ['ембріон', 'ембріони', 'ембріонів'])}`;
+};
+
+// "6-7 тижнів" (a real range) or "6 тижнів" (a single value, either from/to alone) - spec §6 only
+// ever shows the range form, but a partially-filled ultrasound (only `from` recorded yet) should
+// still degrade to something readable rather than an empty string.
+export const formatGestationalAgeText = weeks => {
+  const from = weeks?.from;
+  const to = weeks?.to;
+  const hasFrom = from !== undefined && from !== null && from !== '';
+  const hasTo = to !== undefined && to !== null && to !== '';
+  if (hasFrom && hasTo && Number(from) !== Number(to)) return `${from}–${to} ${ukPluralForm(to, ['тиждень', 'тижні', 'тижнів'])}`;
+  const single = hasFrom ? from : (hasTo ? to : null);
+  if (single === null) return '';
+  return `${single} ${ukPluralForm(single, ['тиждень', 'тижні', 'тижнів'])}`;
+};
+
+const PREGNANCY_TYPE_LABELS_UK = { 1: 'одноплідна', 2: 'двоплідна', 3: 'триплідна' };
+
+// Determined solely by fetusCount (spec §6: "не створювати окреме source-поле pregnancyType") -
+// anything outside 1-3 (unset, 0, or an unusually high multiple) simply resolves to '', a blank in
+// the rendered document rather than a guessed label.
+export const formatPregnancyTypeTextUk = fetusCount => PREGNANCY_TYPE_LABELS_UK[Number(fetusCount)] || '';
+
+// Layers the formatted-for-template fields onto an already party-enriched shipment (see
+// enrichShipment) - the two are separate steps because embryoOwnershipStatement's legacy fallback
+// (spec §14) needs to synthesize just these formatted fields without a real shipment record to
+// enrich with parties.
+export const enrichShipmentForTemplate = shipment => {
+  if (!shipment) return null;
+  return {
+    ...shipment,
+    ivfDateFormatted: { uk: formatDateNumericUk(shipment.ivfDate), en: formatDateLongEn(shipment.ivfDate) },
+    plannedPeriodFormatted: { uk: formatShipmentPeriod(shipment.plannedPeriod, 'uk'), en: formatShipmentPeriod(shipment.plannedPeriod, 'en') },
+    receivedDateFormatted: { uk: formatDateNumericUk(shipment.receivedDate), en: formatDateLongEn(shipment.receivedDate) },
+  };
+};
+
+export const enrichTransferForTemplate = (transferAttempt, shipment) => {
+  if (!transferAttempt) return null;
+  return {
+    ...transferAttempt,
+    dateFormatted: { uk: formatDateNumericUk(transferAttempt.date), en: formatDateLongEn(transferAttempt.date) },
+    embryoCountText: { uk: formatEmbryoCountTextUk(transferAttempt.embryoCount) },
+    embryoStageLabel: resolveEmbryoStageLabel(transferAttempt.embryoStage),
+    shipment: enrichShipmentForTemplate(shipment),
+  };
+};
+
+export const enrichHcgTestForTemplate = hcgTest => {
+  if (!hcgTest) return null;
+  return {
+    ...hcgTest,
+    dateFormatted: { uk: formatDateNumericUk(hcgTest.date), en: formatDateLongEn(hcgTest.date) },
+  };
+};
+
+export const enrichUltrasoundForTemplate = ultrasound => {
+  if (!ultrasound) return null;
+  return {
+    ...ultrasound,
+    dateFormatted: { uk: formatDateNumericUk(ultrasound.date), en: formatDateLongEn(ultrasound.date) },
+    gestationalAgeText: { uk: formatGestationalAgeText(ultrasound.gestationalAgeWeeks) },
+    pregnancyTypeText: { uk: formatPregnancyTypeTextUk(ultrasound.fetusCount) },
+  };
+};
+
+// case.documents.embryoOwnershipStatement - spec §4. Backward compatible (spec §14): a case not
+// yet migrated off the old shape still carries `ivfDate`/`shipmentPeriod` directly on the document
+// instead of a shipmentId: those synthesize the same `.shipment.*` template fields the new shape
+// exposes, so an old template keeps rendering unchanged. A fresh save always writes shipmentId
+// (spec §14) - this fallback only ever reads what's already stored.
+export const buildEmbryoOwnershipStatementContext = (caseData, parties, ownershipData) => {
+  const data = isPlainObject(ownershipData) ? ownershipData : {};
+  const resolvedShipment = enrichShipmentForTemplate(enrichShipment(resolveShipment(caseData, data.shipmentId), parties));
+  const legacyShipment = !resolvedShipment && (data.ivfDate || data.shipmentPeriod) ? {
+    ivfDateFormatted: { uk: formatDateNumericUk(data.ivfDate), en: formatDateLongEn(data.ivfDate) },
+    plannedPeriodFormatted: { uk: data.shipmentPeriod?.uk || '', en: data.shipmentPeriod?.en || '' },
+    sourceClinic: null,
+    destinationClinic: null,
+  } : null;
+  return { ...data, shipment: resolvedShipment || legacyShipment };
+};
+
+// case.documents.geneticAffinityCertificate - spec §4.
+export const buildGeneticAffinityCertificateContext = (caseData, parties, certificateData) => {
+  const data = isPlainObject(certificateData) ? certificateData : {};
+  const transferAttempt = resolveTransferAttempt(caseData, data.transferAttemptId);
+  const shipment = enrichShipment(resolveShipment(caseData, transferAttempt?.shipmentId), parties);
+  return {
+    ...data,
+    transferAttempt: enrichTransferForTemplate(transferAttempt, shipment),
+    hcgTest: enrichHcgTestForTemplate(resolveHcgTest(transferAttempt, data.hcgTestId)),
+    ultrasound: enrichUltrasoundForTemplate(resolveUltrasound(transferAttempt, data.ultrasoundId)),
+    outgoingNumberOrBlank: data.outgoingNumber?.trim() || '______',
+    // A print-only blank, never persisted (spec §4) - a fully blank pattern rather than a
+    // hand-picked placeholder date, so it never silently doubles as a real value.
+    issueDateOrBlank: { uk: data.issueDate ? formatDateNumericUk(data.issueDate) : '__.__.____' },
+  };
+};
+
+// case.documents.racssClinicLetter - spec §4.
+export const buildRacssClinicLetterContext = (caseData, parties, letterData) => {
+  const data = isPlainObject(letterData) ? letterData : {};
+  const transferAttempt = resolveTransferAttempt(caseData, data.transferAttemptId);
+  const shipment = enrichShipment(resolveShipment(caseData, transferAttempt?.shipmentId), parties);
+  return {
+    ...data,
+    transferAttempt: enrichTransferForTemplate(transferAttempt, shipment),
+    ultrasound: enrichUltrasoundForTemplate(resolveUltrasound(transferAttempt, data.ultrasoundId)),
+  };
+};
+
+// case.documents.medicalServicesAgreement - spec §5.
+export const buildMedicalServicesAgreementContext = agreementData => {
+  const data = isPlainObject(agreementData) ? agreementData : {};
+  return {
+    ...data,
+    dateFormatted: {
+      uk: data.date ? formatDateNumericUk(data.date) : '',
+      en: data.date ? formatDateLongEn(data.date) : '',
+    },
+  };
+};
+
+// couple.marriage - spec §10: dateFormatted/certificateDateFormatted layered on top of whatever the
+// record already carries (old certificateNumber/certificateDate-only records, or the newer
+// date/certificateType/certificateIssuedBy shape) - never removes a field, never requires the new
+// ones to be present.
+export const enrichCoupleMarriage = couple => {
+  if (!isPlainObject(couple) || !isPlainObject(couple.marriage)) return couple;
+  const { marriage } = couple;
+  return {
+    ...couple,
+    marriage: {
+      ...marriage,
+      dateFormatted: { uk: marriage.date ? formatDateNumericUk(marriage.date) : '', en: marriage.date ? formatDateLongEn(marriage.date) : '' },
+      certificateDateFormatted: {
+        uk: marriage.certificateDate ? formatDateNumericUk(marriage.certificateDate) : '',
+        en: marriage.certificateDate ? formatDateLongEn(marriage.certificateDate) : '',
+      },
+    },
+  };
+};
+
+// Specific, actionable messages for a document reference that points at an event id that doesn't
+// exist (spec §13/§15) - deleted since the document was set up, mistyped on import, etc. Distinct
+// from the generic unresolved-{{placeholder}} warning (which would otherwise just list every
+// `geneticAffinityCertificate.transferAttempt.*` leaf as "missing" with no indication of why).
+export const validateArtProgramReferences = (catalog, caseId) => {
+  const rawCaseRecord = findById(catalog?.cases, caseId);
+  if (!rawCaseRecord) return [];
+  const caseRecord = normalizeCaseRecord(rawCaseRecord);
+  const documents = isPlainObject(caseRecord.documents) ? caseRecord.documents : {};
+  const issues = [];
+
+  const checkTransferAttempt = transferAttemptId => {
+    if (!transferAttemptId) return null;
+    const transferAttempt = resolveTransferAttempt(caseRecord, transferAttemptId);
+    if (!transferAttempt) issues.push(`Не знайдено спробу переносу ${transferAttemptId}.`);
+    return transferAttempt;
+  };
+
+  const ownership = documents.embryoOwnershipStatement;
+  if (ownership?.shipmentId && !resolveShipment(caseRecord, ownership.shipmentId)) {
+    issues.push(`Не знайдено доставлення ембріонів ${ownership.shipmentId}.`);
+  }
+
+  const certificate = documents.geneticAffinityCertificate;
+  if (certificate?.transferAttemptId || certificate?.hcgTestId || certificate?.ultrasoundId) {
+    const transferAttempt = checkTransferAttempt(certificate.transferAttemptId);
+    if (transferAttempt) {
+      if (certificate.hcgTestId && !resolveHcgTest(transferAttempt, certificate.hcgTestId)) {
+        issues.push(`Не знайдено аналіз ХГЧ ${certificate.hcgTestId} у переносі ${certificate.transferAttemptId}.`);
+      }
+      if (certificate.ultrasoundId && !resolveUltrasound(transferAttempt, certificate.ultrasoundId)) {
+        issues.push(`Не знайдено УЗД ${certificate.ultrasoundId} у переносі ${certificate.transferAttemptId}.`);
+      }
+    }
+  }
+
+  const letter = documents.racssClinicLetter;
+  if (letter?.transferAttemptId || letter?.ultrasoundId) {
+    const transferAttempt = checkTransferAttempt(letter.transferAttemptId);
+    if (transferAttempt && letter.ultrasoundId && !resolveUltrasound(transferAttempt, letter.ultrasoundId)) {
+      issues.push(`Не знайдено УЗД ${letter.ultrasoundId} у переносі ${letter.transferAttemptId}.`);
+    }
+  }
+
+  return issues;
+};
+
+// Human-readable dropdown labels (spec §9) - so an editor never makes the admin type/paste a raw
+// id: "Перенос 18.09.2025 — 1 ембріон", "Доставлення 27.08.2025 — Medical Park Shonan",
+// "ХГЧ 30.09.2025 — позитивний", "УЗД 17.10.2025 — 1 плід, 6–7 тижнів" - the label word and its
+// date are joined by a plain space, only the trailing detail is set off with an em dash.
+const joinOptionLabel = (label, dateText, details) => {
+  const prefix = [label, dateText].filter(Boolean).join(' ');
+  return [prefix, details].filter(Boolean).join(' — ');
+};
+
+export const formatShipmentOptionLabel = (shipment, parties) => {
+  if (!shipment) return '';
+  const enriched = enrichShipment(shipment, parties);
+  const clinicName = enriched?.sourceClinic?.name?.uk || enriched?.destinationClinic?.name?.uk || '';
+  const dateText = shipment.receivedDate ? formatDateNumericUk(shipment.receivedDate) : (shipment.ivfDate ? formatDateNumericUk(shipment.ivfDate) : '');
+  return joinOptionLabel('Доставлення', dateText, clinicName);
+};
+
+export const formatTransferOptionLabel = transferAttempt => {
+  if (!transferAttempt) return '';
+  const dateText = transferAttempt.date ? formatDateNumericUk(transferAttempt.date) : '';
+  const countText = transferAttempt.embryoCount ? formatEmbryoCountTextUk(transferAttempt.embryoCount) : '';
+  return joinOptionLabel('Перенос', dateText, countText);
+};
+
+export const formatHcgTestOptionLabel = hcgTest => {
+  if (!hcgTest) return '';
+  const dateText = hcgTest.date ? formatDateNumericUk(hcgTest.date) : '';
+  const resultText = hcgTest.positive === true ? 'позитивний' : (hcgTest.positive === false ? 'негативний' : '');
+  return joinOptionLabel('ХГЧ', dateText, resultText);
+};
+
+export const formatUltrasoundOptionLabel = ultrasound => {
+  if (!ultrasound) return '';
+  const dateText = ultrasound.date ? formatDateNumericUk(ultrasound.date) : '';
+  const fetusText = ultrasound.fetusCount ? `${ultrasound.fetusCount} ${ukPluralForm(ultrasound.fetusCount, ['плід', 'плоди', 'плодів'])}` : '';
+  const ageText = formatGestationalAgeText(ultrasound.gestationalAgeWeeks);
+  const details = [fetusText, ageText].filter(Boolean).join(', ');
+  return joinOptionLabel('УЗД', dateText, details);
+};
+
 export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}) => {
   const rawCaseRecord = findById(catalog?.cases, caseId);
   if (!rawCaseRecord) return null;
@@ -968,10 +1308,18 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
     } : rawClinic.medicalDirector,
   } : null;
 
+  // ART-program-referencing documents (spec §4/§7): each resolves its own referenced shipment/
+  // transfer/hcgTest/ultrasound fresh from `caseRecord.artProgram` on every call, so editing an
+  // event once (e.g. the transfer date) is reflected in every document that references it.
+  const embryoOwnershipStatement = buildEmbryoOwnershipStatementContext(caseRecord, catalog.parties, documents.embryoOwnershipStatement);
+  const geneticAffinityCertificate = buildGeneticAffinityCertificateContext(caseRecord, catalog.parties, documents.geneticAffinityCertificate);
+  const racssClinicLetter = buildRacssClinicLetterContext(caseRecord, catalog.parties, documents.racssClinicLetter);
+  const medicalServicesAgreement = buildMedicalServicesAgreementContext(documents.medicalServicesAgreement);
+
   return {
     case: caseRecord,
     relations,
-    couple,
+    couple: enrichCoupleMarriage(couple),
     wife: enrichPersonName(rawWife),
     husband: enrichPersonName(rawHusband),
     surrogateMother: enrichPersonName(relations.surrogateMotherId
@@ -994,6 +1342,10 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
     maritalStatusDeclaration,
     legalServicesDisclaimer,
     surrogacyAgreementAppendix1,
+    embryoOwnershipStatement,
+    geneticAffinityCertificate,
+    racssClinicLetter,
+    medicalServicesAgreement,
     notary,
   };
 };
@@ -1681,6 +2033,30 @@ export const VARIABLE_PICKER_GROUPS = [
   // embryos ship from (spec: embryo-ownership-statement document). Shown whenever one is selected
   // on the case; a case without a partnerClinicId simply doesn't offer this group.
   { label: 'Клініка-партнер', roots: ['partnerClinic'], predicate: context => Boolean(context?.partnerClinic) },
+  // ART program document contexts (spec §7) - each root is a top-level key resolveCaseContext
+  // already exposes. Shown only once the case actually carries that document's own service data
+  // (same idea as the partner-clinic group above) - an old case that never uses these documents at
+  // all shouldn't show four permanently-empty "Немає даних" groups in the picker.
+  {
+    label: 'Заява про належність ембріонів',
+    roots: ['embryoOwnershipStatement'],
+    predicate: context => Boolean(context?.case?.documents?.embryoOwnershipStatement),
+  },
+  {
+    label: 'Довідка про генетичну спорідненість',
+    roots: ['geneticAffinityCertificate'],
+    predicate: context => Boolean(context?.case?.documents?.geneticAffinityCertificate),
+  },
+  {
+    label: 'Лист клініки до РАЦС',
+    roots: ['racssClinicLetter'],
+    predicate: context => Boolean(context?.case?.documents?.racssClinicLetter),
+  },
+  {
+    label: 'Договір про медичні послуги',
+    roots: ['medicalServicesAgreement'],
+    predicate: context => Boolean(context?.case?.documents?.medicalServicesAgreement),
+  },
 ];
 
 // Builds the picker's grouped leaf list from a resolved case context (or any similarly-shaped
