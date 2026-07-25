@@ -767,10 +767,13 @@ const DocumentsPage = ({ isAdmin }) => {
   // {{placeholder}} markup and edits the shared template directly; 'input' shows the de-markup'd
   // plain wording and edits that same shared template (retype the wording, no formatting, no case
   // involved - templates are static and shared across every case, so there is nothing left to
-  // override); 'text' shows that markup rendered (bold/italic applied in place, placeholders still
-  // unresolved) and is the *only* mode Bold/Italic can be applied in - the wording itself isn't
-  // editable there, only its formatting. All three modes write straight to the template, exactly
-  // like beforeTitle rows always have - title/paragraph rows now follow the identical mechanism.
+  // override); 'text' is a read-only preview resolved against the currently selected case (real
+  // values substituted, never a raw {{token}} - see resolvedValue/titleResolvedValue/
+  // beforeTitleResolvedValue below, all three built from the same resolvedDoc) and is the *only*
+  // mode Bold/Italic can be applied in, acting on the underlying raw markup even though the
+  // resolved wording is what's shown - the wording itself isn't editable there, only its
+  // formatting. Every row - title, every paragraph, every beforeTitle block alike - follows this
+  // identical mechanism, no row-specific exceptions.
   const PARAGRAPH_MODES = ['template', 'input', 'text'];
   const nextParagraphMode = mode => PARAGRAPH_MODES[(PARAGRAPH_MODES.indexOf(mode) + 1) % PARAGRAPH_MODES.length];
   const PARAGRAPH_MODE_ICON = { template: '{}', input: 'I', text: 'T' };
@@ -2083,13 +2086,12 @@ const DocumentsPage = ({ isAdmin }) => {
                 const onCatalogNameBlur = () => persistTemplate(template.id);
                 // Title mode/state - same template/input/text cycle as every paragraph and
                 // beforeTitle block. Template and Input both edit the shared markup directly
-                // (never a per-case value). Text mode is a read-only preview of the paragraph
-                // resolved against the currently selected case - unlike beforeTitle (which has no
-                // case data to resolve against and always shows raw markup even in Text mode),
-                // the title/paragraph Text preview shows real substituted values so an admin can
-                // actually read it, not raw {{tokens}} - there is nowhere left to persist a Bold/
-                // Italic edit made against resolved text (that used to be a per-case override,
-                // which no longer exists), so Text mode is display-only here.
+                // (never a per-case value). Text mode is a read-only preview resolved against the
+                // currently selected case - same rule for the title, every paragraph, and every
+                // beforeTitle block alike, so an admin always reads real substituted values there,
+                // never a raw {{token}} - there is nowhere left to persist a Bold/Italic edit made
+                // against resolved text (that used to be a per-case override, which no longer
+                // exists), so Text mode is display-only here.
                 const titleMode = getParagraphMode(template.id, TITLE_SCOPE);
                 const titleIsTemplateMode = titleMode === 'template';
                 const titleRawValue = langKey => template.title?.[langKey] || '';
@@ -2189,6 +2191,11 @@ const DocumentsPage = ({ isAdmin }) => {
                           const isTextMode = mode === 'text';
                           const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
                           const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(rawValue(langKey)));
+                          // Same rule as the title/paragraph rows below: Text mode shows the
+                          // resolved-against-the-current-case value (real names/dates), never the
+                          // raw {{token}} markup - resolveBeforeTitleBlocks already fills every
+                          // placeholder when building resolvedDoc, this just has to read it.
+                          const beforeTitleResolvedValue = langKey => resolvedDoc?.beforeTitle?.[index]?.[langKey] ?? '';
                           const onChange = langKey => event => {
                             const nextRaw = isTemplateMode
                               ? event.target.value
@@ -2286,7 +2293,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         onMouseUp={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
                                         onTouchEnd={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
                                       >
-                                        <FormattedRunsPreview text={rawValue('uk')} />
+                                        <FormattedRunsPreview text={beforeTitleResolvedValue('uk')} />
                                       </TextModeDisplay>
                                     ) : (
                                       <AutoInlineTextarea
@@ -2308,7 +2315,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         onMouseUp={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
                                         onTouchEnd={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
                                       >
-                                        <FormattedRunsPreview text={rawValue('en')} />
+                                        <FormattedRunsPreview text={beforeTitleResolvedValue('en')} />
                                       </TextModeDisplay>
                                     ) : (
                                       <AutoInlineTextarea
