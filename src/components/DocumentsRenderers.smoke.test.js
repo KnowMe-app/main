@@ -615,6 +615,127 @@ describe('Documents PDF renderer - toPdfRenderableText (batch 2026-07-23 C §1/�
   }, 20000);
 });
 
+// batch 22 §1: an official-form document (documentStyle: 'official-form', e.g. Додаток 18) must
+// replicate a government form's look - its underscore blank fields render underlined instead of
+// literal, and its letterhead logo moves into the page Header instead of the body block every
+// branded document uses. A branded (default) document must render byte-for-byte the same as before
+// this feature existed - proven by the untouched suites above; this block only covers the new
+// official-form-gated behavior.
+describe('Documents renderers - official-form documentStyle (batch 22 §1)', () => {
+  const clinicLogoVariants = [
+    { fileName: 'square.png', dataUrl: TINY_PNG_DATA_URL, layout: '1col', width: 10, height: 4 },
+  ];
+
+  const officialFormDoc = async () => {
+    const { buildGeneratedDocument } = await import('./documentsCatalogUtils');
+    const template = {
+      id: 'genetic-affinity-certificate',
+      documentStyle: 'official-form',
+      logo: '{{logo}}',
+      languages: ['uk'],
+      columns: 1,
+      title: { uk: 'ДОВІДКА' },
+      paragraphs: [
+        { uk: 'паспорт: тип: __________, Код країни: __________, № TM 0250875' },
+      ],
+    };
+    return buildGeneratedDocument(template, {});
+  };
+
+  it('buildGeneratedDocument carries documentStyle onto the generated doc', async () => {
+    const doc = await officialFormDoc();
+    expect(doc.documentStyle).toBe('official-form');
+  });
+
+  it('DOCX: renders the blank field underlined with non-breaking spaces, never the literal underscores', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = await officialFormDoc();
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'two-column', clinicLogos: clinicLogoVariants });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const xml = await zip.file('word/document.xml').async('string');
+    expect(xml).not.toContain('__________');
+    expect(xml).toMatch(/<w:u w:val="single"\/>/);
+    expect(xml).toContain('Код країни:');
+  }, 20000);
+
+  it('DOCX: draws the letterhead logo in the page Header, not as a body paragraph before the title', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = await officialFormDoc();
+    const blob = await buildDocumentsDocx({ documents: [doc], layout: 'two-column', clinicLogos: clinicLogoVariants });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const documentXml = await zip.file('word/document.xml').async('string');
+    const headerFiles = Object.keys(zip.files).filter(name => /^word\/header\d*\.xml$/.test(name));
+    expect(headerFiles.length).toBeGreaterThan(0);
+    const headerXml = await zip.file(headerFiles[0]).async('string');
+    expect(headerXml).toContain('<w:drawing>');
+    // The body itself carries no drawing before the title - only the header does.
+    expect(documentXml.indexOf('<w:drawing>') === -1 || documentXml.indexOf('<w:drawing>') > documentXml.indexOf('ДОВІДКА')).toBe(true);
+  }, 20000);
+
+  it('a branded document (documentStyle absent) keeps rendering its logo as a body block, never in the Header', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const { buildGeneratedDocument } = await import('./documentsCatalogUtils');
+    const brandedDoc = buildGeneratedDocument({
+      id: 'branded-doc', logo: '{{logo}}', title: { uk: 'Т' }, paragraphs: [{ uk: '____' }],
+    }, {});
+    const blob = await buildDocumentsDocx({ documents: [brandedDoc], layout: 'one-column-uk', clinicLogos: clinicLogoVariants });
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    const documentXml = await zip.file('word/document.xml').async('string');
+    expect(documentXml).toContain('<w:drawing>');
+    // Underscores stay literal for a branded document - the blank-field rendering is official-form only.
+    expect(documentXml).toContain('____');
+  }, 20000);
+
+  it('PDF: renders an official-form document with a logo and blank fields without throwing', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+    const doc = await officialFormDoc();
+    const { DEFAULT_DOC_FORMATTING, OFFICIAL_FORM_FORMATTING, normalizeDocFormatting } = await import('./documentsCatalogUtils');
+    const formatting = normalizeDocFormatting({ ...DEFAULT_DOC_FORMATTING, ...OFFICIAL_FORM_FORMATTING });
+    const element = React.createElement(DocumentsPdfDocument, {
+      documents: [doc], layout: 'two-column', formatting, clinicLogos: clinicLogoVariants,
+    });
+    const buffer = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      buffer.on('data', chunk => chunks.push(chunk));
+      buffer.on('end', resolve);
+      buffer.on('error', reject);
+    });
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(500);
+  }, 20000);
+});
+
 describe('Documents renderers - title deletion never crashes (batch 2026-07-23 C §2)', () => {
   const registerFonts = async Font => {
     Font.register({

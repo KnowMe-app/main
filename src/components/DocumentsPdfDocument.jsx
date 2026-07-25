@@ -22,10 +22,12 @@ import {
   getEffectiveDocLayout,
   getLayoutLang,
   isBilingualLayout,
+  isOfficialFormStyle,
   isParagraphBold,
   isSingleLanguageTwoColumnLayout,
   normalizeSignerBlockOffsetPercent,
   parseFormattedRuns,
+  splitBlankFieldRuns,
   splitParagraphsIntoColumns,
   splitParagraphsIntoPages,
 } from './documentsCatalogUtils';
@@ -114,25 +116,34 @@ export const toPdfRenderableText = text => {
 // date-in-words line, `**Підпис**...`): the leading nested <Text> ignored the parent's indent, so
 // exactly the bolded lines lost their 1.5 cm first-line indent - `firstLineIndent` re-states the
 // paragraph's own resolved indent on that leading run.
-const FormattedRuns = ({ text, firstLineIndent }) => parseFormattedRuns(toPdfRenderableText(text)).map((run, index) => {
-  if (!run.bold && !run.italic) {
-    // eslint-disable-next-line react/no-array-index-key
-    return <React.Fragment key={index}>{run.text}</React.Fragment>;
-  }
-  return (
-    <Text
+// `blankFields` (official-form documents only, batch 22 §1) additionally splits each run at its
+// underscore stretches so a government form's typed "__________" fill-in line draws as an
+// underlined run of non-breaking spaces instead of literal underscore glyphs - see
+// splitBlankFieldRuns. Every other document leaves its underscores exactly as typed.
+const FormattedRuns = ({ text, firstLineIndent, blankFields }) => {
+  const runs = parseFormattedRuns(toPdfRenderableText(text));
+  const renderRuns = blankFields ? splitBlankFieldRuns(runs) : runs;
+  return renderRuns.map((run, index) => {
+    if (!run.bold && !run.italic && !run.blank) {
       // eslint-disable-next-line react/no-array-index-key
-      key={index}
-      style={{
-        fontWeight: run.bold ? 700 : undefined,
-        fontStyle: run.italic ? 'italic' : undefined,
-        ...(index === 0 && firstLineIndent ? { textIndent: firstLineIndent } : {}),
-      }}
-    >
-      {run.text}
-    </Text>
-  );
-});
+      return <React.Fragment key={index}>{run.text}</React.Fragment>;
+    }
+    return (
+      <Text
+        // eslint-disable-next-line react/no-array-index-key
+        key={index}
+        style={{
+          fontWeight: run.bold ? 700 : undefined,
+          fontStyle: run.italic ? 'italic' : undefined,
+          textDecoration: run.blank ? 'underline' : undefined,
+          ...(index === 0 && firstLineIndent ? { textIndent: firstLineIndent } : {}),
+        }}
+      >
+        {run.blank ? ' '.repeat(run.text.length) : run.text}
+      </Text>
+    );
+  });
+};
 
 // A logo block draws graphics, not text - it never goes through the title/paragraph text styles
 // and never picks up the template's paragraphSpacing/indent (spec §5). `type` is 'logo' or
@@ -184,7 +195,7 @@ const LogoBlock = ({ type, isBilingual, cellStyles, logoWidth, longLogoWidth, cl
 // `fontSize` (batch 2026-07-23 B §1.1: a per-paragraph pt override of the document's font size)
 // work the same way - undefined leaves cellStyle's own document-wide value in place. All three
 // arrive already resolved from the paragraph's consolidated `style` key (buildGeneratedDocument).
-const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBreaks }) => {
+const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBreaks, blankFields }) => {
   const wrap = allowsParagraphInternalBreak(paragraph, allowPageBreaks);
   const cellStyle = isParagraphBold(paragraph) ? cellStyles.paragraphHeading : cellStyles.paragraph;
   const alignStyle = paragraph.align ? { textAlign: paragraph.align } : undefined;
@@ -201,7 +212,7 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
   // zero width - and zero height along with it. A non-breaking space has real (if narrow) glyph
   // width, so justification has something to keep and the line renders at its full height.
   const lineOf = value => (String(value || '').trim()
-    ? <FormattedRuns text={value} firstLineIndent={firstLineIndent} />
+    ? <FormattedRuns text={value} firstLineIndent={firstLineIndent} blankFields={blankFields} />
     : ' ');
   if (isBilingual) {
     return (
@@ -220,7 +231,7 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
 // groups, each stacked in its own column. That is an approximation of true reflow (a single very
 // long paragraph can't itself be split across the columns), the same atomic-paragraph limit the
 // bilingual layout already lives with.
-const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos, charsPerLine }) => {
+const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos, charsPerLine, blankFields }) => {
   const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang, charsPerLine);
   const renderColumn = columnParagraphs => columnParagraphs.map((paragraph, index) => (
     // eslint-disable-next-line react/no-array-index-key
@@ -230,7 +241,7 @@ const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, 
         // compact and long variants are sized to fit the column, not the full page.
         <LogoBlock type={paragraph.type} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={logoWidth} clinicLogos={clinicLogos} showUk showEn />
       ) : (
-        <TextParagraph paragraph={paragraph} isBilingual={false} lang={lang} cellStyles={cellStyles} allowPageBreaks={allowPageBreaks} />
+        <TextParagraph paragraph={paragraph} isBilingual={false} lang={lang} cellStyles={cellStyles} allowPageBreaks={allowPageBreaks} blankFields={blankFields} />
       )}
     </View>
   ));
@@ -250,7 +261,7 @@ const isBlankBlockText = value => !String(value || '').trim();
 // (cellStyles.title), its own sparse align/fontSize overrides applied like any paragraph's, and a
 // document whose title was deleted (both languages resolve blank) renders no title block at all -
 // never an empty centered line plus its titleGap.
-const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) => {
+const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap, blankFields }) => {
   const title = doc.title || {};
   if (isBlankBlockText(title.uk) && isBlankBlockText(title.en)) return null;
   const overrideStyles = [
@@ -261,11 +272,11 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
     <View style={{ marginBottom: titleGap }}>
       {isBilingual ? (
         <View style={styles.row}>
-          <Text style={[cellStyles.title, cellStyles.leftCell, ...overrideStyles]}><FormattedRuns text={title.uk} /></Text>
-          <Text style={[cellStyles.title, cellStyles.rightCell, ...overrideStyles]}><FormattedRuns text={title.en} /></Text>
+          <Text style={[cellStyles.title, cellStyles.leftCell, ...overrideStyles]}><FormattedRuns text={title.uk} blankFields={blankFields} /></Text>
+          <Text style={[cellStyles.title, cellStyles.rightCell, ...overrideStyles]}><FormattedRuns text={title.en} blankFields={blankFields} /></Text>
         </View>
       ) : (
-        <Text style={[cellStyles.title, ...overrideStyles]}><FormattedRuns text={title[lang]} /></Text>
+        <Text style={[cellStyles.title, ...overrideStyles]}><FormattedRuns text={title[lang]} blankFields={blankFields} /></Text>
       )}
     </View>
   );
@@ -284,7 +295,7 @@ const DocumentTitleBlock = ({ doc, isBilingual, lang, cellStyles, titleGap }) =>
 
 // An explicitly aligned block (the §1.5 alignment button, stored under the block's `style` key)
 // overrides the strip's notarial default: bold caption flush-left, regular data justified.
-const SignerBlockLine = ({ block, langKey, cellStyles }) => (
+const SignerBlockLine = ({ block, langKey, cellStyles, blankFields }) => (
   <Text
     style={[
       cellStyles.beforeTitle,
@@ -293,13 +304,13 @@ const SignerBlockLine = ({ block, langKey, cellStyles }) => (
       block.fontSize !== undefined ? { fontSize: block.fontSize } : undefined,
     ]}
   >
-    <FormattedRuns text={block[langKey]} />
+    <FormattedRuns text={block[langKey]} blankFields={blankFields} />
   </Text>
 );
 
 const BlankLine = ({ cellStyles }) => <Text style={cellStyles.beforeTitle}> </Text>;
 
-const SignerBlockStrip = ({ blocks, offsetPercent, langKey, cellStyles }) => (
+const SignerBlockStrip = ({ blocks, offsetPercent, langKey, cellStyles, blankFields }) => (
   <View style={styles.row}>
     <View style={{ width: `${offsetPercent}%` }} />
     <View style={{ flex: 1 }}>
@@ -307,14 +318,14 @@ const SignerBlockStrip = ({ blocks, offsetPercent, langKey, cellStyles }) => (
         // eslint-disable-next-line react/no-array-index-key
         <React.Fragment key={index}>
           {index > 0 ? <BlankLine cellStyles={cellStyles} /> : null}
-          <SignerBlockLine block={block} langKey={langKey} cellStyles={cellStyles} />
+          <SignerBlockLine block={block} langKey={langKey} cellStyles={cellStyles} blankFields={blankFields} />
         </React.Fragment>
       ))}
     </View>
   </View>
 );
 
-const BeforeTitleBlocks = ({ doc, isBilingual, lang, cellStyles }) => {
+const BeforeTitleBlocks = ({ doc, isBilingual, lang, cellStyles, blankFields }) => {
   const blocks = (doc.beforeTitle || []).filter(block => !isBlankBlockText(block.uk) || !isBlankBlockText(block.en));
   if (!blocks.length) return null;
   const offsetPercent = normalizeSignerBlockOffsetPercent(doc.beforeTitleOffsetPercent);
@@ -323,10 +334,10 @@ const BeforeTitleBlocks = ({ doc, isBilingual, lang, cellStyles }) => {
       {isBilingual ? (
         <View style={styles.row}>
           <View style={cellStyles.leftCell}>
-            <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey="uk" cellStyles={cellStyles} />
+            <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey="uk" cellStyles={cellStyles} blankFields={blankFields} />
           </View>
           <View style={cellStyles.rightCell}>
-            <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey="en" cellStyles={cellStyles} />
+            <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey="en" cellStyles={cellStyles} blankFields={blankFields} />
           </View>
         </View>
       ) : (
@@ -346,14 +357,18 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
   const showUk = isBilingual || lang === 'uk';
   const showEn = isBilingual || lang === 'en';
   const logoBlockProps = { isBilingual, cellStyles, logoWidth, longLogoWidth, clinicLogos, showUk, showEn };
+  // An official-form document (batch 22 §1) draws its logo in the repeating page header instead
+  // (see HeaderLogo/renderDocumentPage) - never again here as a one-off body block.
+  const blankFields = isOfficialFormStyle(doc);
+  const showBodyLogo = doc.logo && !blankFields;
   return (
     <View>
       {/* The template's letterhead logo (doc.logo) always renders before the title, whether it
           came from the dedicated `logo` field or a legacy leading paragraph - see
           getTemplateLogoType in documentsCatalogUtils. */}
-      {doc.logo ? <LogoBlock type={doc.logo} {...logoBlockProps} /> : null}
-      <BeforeTitleBlocks doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} />
-      <DocumentTitleBlock doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} titleGap={titleGap} />
+      {showBodyLogo ? <LogoBlock type={doc.logo} {...logoBlockProps} /> : null}
+      <BeforeTitleBlocks doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} blankFields={blankFields} />
+      <DocumentTitleBlock doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} titleGap={titleGap} blankFields={blankFields} />
       {doc.paragraphs.map((paragraph, index) => {
         // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render
         // a second time in its old body position.
@@ -369,6 +384,7 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
                 lang={lang}
                 cellStyles={cellStyles}
                 allowPageBreaks={doc.allowPageBreaks}
+                blankFields={blankFields}
               />
             )}
           </View>
@@ -376,6 +392,42 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
       })}
     </View>
   );
+};
+
+// batch 22 §1: an official-form document's letterhead logo repeats in a small page header instead
+// of a one-off body block - meaningfully different from the branded doc.logo body block above once
+// a form runs past one page (a government form's crest should stay identifiable on every page, not
+// just the first). `fixed` redraws it at the same top-left position on every physical page; the
+// caller reserves real space for it in the page's own top padding (see headerLogoReserve in
+// renderDocumentPage/renderSingleLanguagePages) so body content never starts underneath it.
+const resolveLogoAspectRatio = variant => (variant?.width && variant?.height ? variant.height / variant.width : 0.28);
+
+const HeaderLogo = ({ doc, clinicLogos, widthPt, marginLeft, marginTop }) => {
+  if (!doc.logo) return null;
+  const variant = getClinicLogo(clinicLogos, doc.logo);
+  if (!variant?.dataUrl) return null;
+  return (
+    <Image
+      fixed
+      src={variant.dataUrl}
+      style={{
+        position: 'absolute', top: marginTop, left: marginLeft, width: widthPt,
+      }}
+    />
+  );
+};
+
+const OFFICIAL_FORM_HEADER_LOGO_GAP_PT = 6;
+
+// How much extra top padding an official-form page needs to reserve so its repeating HeaderLogo
+// never overlaps the body content that starts right after it - 0 for every branded document (its
+// logo stays a normal one-off body block, drawn in flow) and for an official-form document with no
+// logo token at all.
+const resolveHeaderLogoReserve = (doc, clinicLogos, widthPt) => {
+  if (!isOfficialFormStyle(doc) || !doc.logo) return 0;
+  const variant = getClinicLogo(clinicLogos, doc.logo);
+  if (!variant?.dataUrl) return 0;
+  return widthPt * resolveLogoAspectRatio(variant) + OFFICIAL_FORM_HEADER_LOGO_GAP_PT;
 };
 
 const PageHeader = ({ formatting, marginTop, marginLeft, marginRight }) => (!formatting.headerText ? null : (
@@ -527,8 +579,11 @@ const DocumentsPdfDocument = ({
     const lang = getLayoutLang(effectiveLayout);
     const showColumnDivider = Boolean(formatting.columnDivider);
     const logoWidth = Math.min(configuredLogoWidth, columnContentWidth);
+    const blankFields = isOfficialFormStyle(doc);
+    const headerLogoReserve = resolveHeaderLogoReserve(doc, effectiveClinicLogos, logoWidth);
+    const pageStyleForDoc = headerLogoReserve ? { ...pageStyle, paddingTop: marginTop + headerLogoReserve } : pageStyle;
     const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed');
-    const pageContentHeightPt = A4_HEIGHT_PT - marginTop - marginBottom;
+    const pageContentHeightPt = A4_HEIGHT_PT - marginTop - headerLogoReserve - marginBottom;
     const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
     const capacity = estimateColumnPageCapacity({
       columnWidthPt: columnContentWidth,
@@ -538,19 +593,22 @@ const DocumentsPdfDocument = ({
     });
     const pageGroups = splitParagraphsIntoPages(bodyParagraphs, lang, capacity, charsPerLine);
     return (
-      <Page key={doc.id} size="A4" style={pageStyle}>
+      <Page key={doc.id} size="A4" style={pageStyleForDoc}>
         <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
+        {headerLogoReserve ? (
+          <HeaderLogo doc={doc} clinicLogos={effectiveClinicLogos} widthPt={logoWidth} marginLeft={marginLeft} marginTop={marginTop} />
+        ) : null}
         <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
         {pageGroups.map((pageParagraphs, pageIndex) => (
           // eslint-disable-next-line react/no-array-index-key
           <View key={pageIndex} break={pageIndex > 0}>
             {pageIndex === 0 ? (
               <>
-                {doc.logo ? (
+                {doc.logo && !headerLogoReserve ? (
                   <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
                 ) : null}
-                <BeforeTitleBlocks doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} />
-                <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} />
+                <BeforeTitleBlocks doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} blankFields={blankFields} />
+                <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} blankFields={blankFields} />
               </>
             ) : null}
             <SingleLanguageColumns
@@ -561,6 +619,7 @@ const DocumentsPdfDocument = ({
               logoWidth={logoWidth}
               clinicLogos={effectiveClinicLogos}
               charsPerLine={charsPerLine}
+              blankFields={blankFields}
             />
           </View>
         ))}
@@ -573,9 +632,14 @@ const DocumentsPdfDocument = ({
     const isTwoColumn = isBilingualLayout(effectiveLayout) || isSingleLanguageTwoColumnLayout(effectiveLayout);
     const showColumnDivider = isTwoColumn && Boolean(formatting.columnDivider);
     const logoWidth = isTwoColumn ? Math.min(configuredLogoWidth, columnContentWidth) : configuredLogoWidth;
+    const headerLogoReserve = resolveHeaderLogoReserve(doc, effectiveClinicLogos, logoWidth);
+    const pageStyleForDoc = headerLogoReserve ? { ...pageStyle, paddingTop: marginTop + headerLogoReserve } : pageStyle;
     return (
-      <Page key={doc.id} size="A4" style={pageStyle}>
+      <Page key={doc.id} size="A4" style={pageStyleForDoc}>
         <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
+        {headerLogoReserve ? (
+          <HeaderLogo doc={doc} clinicLogos={effectiveClinicLogos} widthPt={logoWidth} marginLeft={marginLeft} marginTop={marginTop} />
+        ) : null}
         <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
         <DocumentBlock
           doc={doc}

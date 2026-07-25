@@ -1906,6 +1906,7 @@ export const buildGeneratedDocument = (template, context) => {
   const languages = resolveDocLanguages(template);
   return {
     id: template.id,
+    documentStyle: normalizeDocumentStyle(template?.documentStyle),
     allowPageBreaks: Boolean(template.allowPageBreaks),
     logo,
     languages,
@@ -2176,6 +2177,32 @@ export const serializeFormattedRuns = runs => {
   }
   return out;
 };
+
+// --- Blank fill-in fields (official-form documents, batch 22 §1) ----------------------------
+// A Ukrainian government form's blank line ("паспорт: тип: __________, Код країни: __________")
+// is typed as a run of underscores in the template text, the same way it was authored in the
+// reference docx - but a printed government form never shows literal underscore glyphs, it shows
+// an underlined blank space. This never touches how the underscores are typed/stored (still plain
+// `_` characters, so Data/Template mode round-trip unchanged); it only splits an already-formatted
+// run (parseFormattedRuns' output) at its underscore stretches, tagging each stretch `blank: true`,
+// so the PDF/DOCX renderers can draw that stretch as an underlined run of non-breaking spaces
+// instead of underscore characters - the renderer decides whether to actually do that (gated to
+// isOfficialFormStyle, batch 22 §1) so every other, non-official-form document keeps showing its
+// underscores exactly as before.
+const BLANK_FIELD_PATTERN = /_{2,}/g;
+
+export const splitBlankFieldRuns = runs => (runs || []).flatMap(run => {
+  const text = String(run.text || '');
+  const segments = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(BLANK_FIELD_PATTERN)) {
+    if (match.index > lastIndex) segments.push({ ...run, text: text.slice(lastIndex, match.index), blank: false });
+    segments.push({ ...run, text: match[0], blank: true });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length || !segments.length) segments.push({ ...run, text: text.slice(lastIndex), blank: false });
+  return segments;
+});
 
 // The text an admin actually reads/types in Data mode - the same string with every formatting
 // marker stripped out (Template mode shows the raw markup instead, spec §2).
@@ -2475,6 +2502,44 @@ const clampNumber = (value, min, max, fallback) => {
   return Math.min(max, Math.max(min, number));
 };
 
+// --- Document style classes (batch 22 §1) ---------------------------------------------------
+// Every template historically rendered with the one shared notarial layout above (the "branded"
+// class, tuned for consent letters/agreements). An official regulatory form (e.g. Додаток 18) has
+// to visually replicate a government template instead - tighter margins, a smaller dense body, no
+// paragraph gap beyond the reference's own empty lines - regardless of whatever the admin's shared
+// Format-panel favourites happen to be set to for the rest of the catalog. `documentStyle` is a
+// template-level flag (default 'branded', the untouched pre-existing behavior) picked up by
+// resolveEffectiveDocFormatting below; unrecognized/missing values always fall back to 'branded' so
+// every template saved before this existed keeps rendering exactly as it did.
+export const DOCUMENT_STYLES = ['branded', 'official-form'];
+
+export const normalizeDocumentStyle = value => (DOCUMENT_STYLES.includes(value) ? value : 'branded');
+
+export const isOfficialFormStyle = doc => normalizeDocumentStyle(doc?.documentStyle) === 'official-form';
+
+// Measured directly from the reference Додаток 18 docx's own XML (batch 22): pgMar top/right/
+// bottom/left = 284/851/567/851 twips = 0.5/1.5/1.0/1.5 cm, single line spacing, no after-paragraph
+// spacing (blocks separated only by explicit empty lines, same convention as the branded default),
+// a dense form body size and a 14 pt bold centered title.
+export const OFFICIAL_FORM_FORMATTING = {
+  fontSize: 10,
+  titleFontSize: 14,
+  lineSpacing: 1,
+  paragraphSpacing: 0,
+  firstLineIndentCm: 1,
+  marginTopCm: 0.5,
+  marginRightCm: 1.5,
+  marginBottomCm: 1,
+  marginLeftCm: 1.5,
+  columnGapCm: DEFAULT_DOC_FORMATTING.columnGapCm,
+  logoWidthMm: DEFAULT_DOC_FORMATTING.logoWidthMm,
+  showLogo: DEFAULT_DOC_FORMATTING.showLogo,
+  headerText: DEFAULT_DOC_FORMATTING.headerText,
+  footerText: DEFAULT_DOC_FORMATTING.footerText,
+  showPageNumbers: DEFAULT_DOC_FORMATTING.showPageNumbers,
+  columnDivider: DEFAULT_DOC_FORMATTING.columnDivider,
+};
+
 export const normalizeDocFormatting = raw => {
   const source = isPlainObject(raw) ? raw : {};
   return {
@@ -2506,11 +2571,15 @@ export const normalizeDocFormatting = raw => {
 // (default/favourite) formatting - an empty/absent field means "use the defaults as-is". Merging
 // is a flat shallow overlay since every DEFAULT_DOC_FORMATTING key is itself a scalar.
 
-// The formatting a document actually renders with: the shared reference settings with that
-// document's own overrides layered on top, then re-clamped/validated the same way any formatting
-// value is.
-export const resolveEffectiveDocFormatting = (referenceFormatting, docFormatOverride) => normalizeDocFormatting({
-  ...referenceFormatting,
+// The formatting a document actually renders with: an official-form document (batch 22 §1) starts
+// from the fixed OFFICIAL_FORM_FORMATTING baseline instead of the shared admin-tunable reference,
+// so it never inherits the branded catalog's margins/sizes just because the Format panel's
+// favourites happen to be set a certain way - a branded document (the default, `documentStyle`
+// absent/'branded') keeps starting from the shared reference exactly as before. Either way, that
+// document's own `format` overrides still layer on top, so an official-form template can still be
+// fine-tuned per document through the same panel.
+export const resolveEffectiveDocFormatting = (referenceFormatting, docFormatOverride, documentStyle) => normalizeDocFormatting({
+  ...(normalizeDocumentStyle(documentStyle) === 'official-form' ? OFFICIAL_FORM_FORMATTING : referenceFormatting),
   ...(isPlainObject(docFormatOverride) ? docFormatOverride : {}),
 });
 

@@ -14,10 +14,12 @@ import {
   getEffectiveDocLayout,
   getLayoutLang,
   isBilingualLayout,
+  isOfficialFormStyle,
   isParagraphBold,
   isSingleLanguageTwoColumnLayout,
   normalizeSignerBlockOffsetPercent,
   parseFormattedRuns,
+  splitBlankFieldRuns,
   splitParagraphsIntoColumns,
 } from './documentsCatalogUtils';
 
@@ -48,7 +50,7 @@ export const buildDocumentsDocx = async ({
   const docx = await import('docx');
   const {
     AlignmentType, BorderStyle, Document, Footer, Header, ImageRun, Packer, PageNumber,
-    Paragraph, Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
+    Paragraph, Table, TableCell, TableRow, TextRun, UnderlineType, VerticalAlign, WidthType,
   } = docx;
 
   // Both column layouts (bilingual UA|EN and single-language newspaper-style, spec §4) share the
@@ -88,13 +90,26 @@ export const buildDocumentsDocx = async ({
   // <w:br/> line breaks (batch 2026-07-23 B §3: an empty line inside a paragraph - consecutive
   // breaks - must survive into the Word output as a full blank line, never be silently dropped
   // by a TextRun that doesn't understand "\n").
-  const formattedTextRuns = (text, { size, baseBold = false } = {}) => parseFormattedRuns(text).flatMap(run => String(run.text).split('\n').map((segment, segmentIndex) => new TextRun({
-    text: segment,
-    size,
-    bold: baseBold || run.bold,
-    italics: run.italic,
-    ...(segmentIndex > 0 ? { break: 1 } : {}),
-  })));
+  // `blankFields` (official-form documents only, batch 22 §1) additionally splits each run at its
+  // underscore stretches (see splitBlankFieldRuns) so a government form's typed "__________"
+  // fill-in line renders as an underlined run of non-breaking spaces instead of literal underscore
+  // characters - the PDF renderer does the same, gated the same way. Every other document leaves
+  // its underscores exactly as typed.
+  const formattedTextRuns = (text, { size, baseBold = false, blankFields = false } = {}) => {
+    const runs = parseFormattedRuns(text);
+    const renderRuns = blankFields ? splitBlankFieldRuns(runs) : runs;
+    return renderRuns.flatMap(run => {
+      const runText = run.blank ? ' '.repeat(run.text.length) : String(run.text);
+      return runText.split('\n').map((segment, segmentIndex) => new TextRun({
+        text: segment,
+        size,
+        bold: baseBold || run.bold,
+        italics: run.italic,
+        underline: run.blank ? { type: UnderlineType.SINGLE } : undefined,
+        ...(segmentIndex > 0 ? { break: 1 } : {}),
+      }));
+    });
+  };
 
   // batch 16 §17: an explicit `align` on a paragraph (or beforeTitle block) overrides the default
   // alignment (justified body / flush-left heading) - never inferred from the text itself.
@@ -105,7 +120,7 @@ export const buildDocumentsDocx = async ({
     return AlignmentType.LEFT;
   };
 
-  const bodyParagraph = (text, { keepLines = true, alignmentOverride, indentTwipsOverride, sizeOverride } = {}) => {
+  const bodyParagraph = (text, { keepLines = true, alignmentOverride, indentTwipsOverride, sizeOverride, blankFields = false } = {}) => {
     // Per-paragraph first-line indent (spec: the reference notarial statement indents only its
     // opening declaration, not the signature/registration lines after it) - undefined falls back
     // to the document-wide firstLineTwips, same as every paragraph did before this existed.
@@ -115,33 +130,34 @@ export const buildDocumentsDocx = async ({
       spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
       indent: firstLine ? { firstLine } : undefined,
       keepLines,
-      children: formattedTextRuns(text, { size: sizeOverride ?? bodySize }),
+      children: formattedTextRuns(text, { size: sizeOverride ?? bodySize, blankFields }),
     });
   };
 
   // Short numbered section titles ("1. Предмет Договору") render bold, flush left, with extra
   // room above and kept with the paragraph that follows so a heading never ends a page alone.
-  const headingParagraph = (text, alignmentOverride, sizeOverride) => new Paragraph({
+  const headingParagraph = (text, alignmentOverride, sizeOverride, blankFields = false) => new Paragraph({
     alignment: alignmentOverride || AlignmentType.LEFT,
     spacing: { before: afterTwips, after: afterTwips, line: lineTwips, lineRule: 'auto' },
     keepLines: true,
     keepNext: true,
-    children: formattedTextRuns(text, { size: sizeOverride ?? bodySize, baseBold: true }),
+    children: formattedTextRuns(text, { size: sizeOverride ?? bodySize, baseBold: true, blankFields }),
   });
 
-  const cellParagraph = (text, allowPageBreaks, paragraph) => {
+  const cellParagraph = (text, allowPageBreaks, paragraph, blankFields = false) => {
     // align/indentCm/fontSize arrive already resolved from the paragraph's consolidated `style`
     // key (buildGeneratedDocument) - undefined means "inherit the document-wide value".
     const alignmentOverride = paragraph?.align ? alignmentForBlock(paragraph.align) : undefined;
     const indentTwipsOverride = paragraph?.indentCm !== undefined ? Math.round(paragraph.indentCm * CM_TO_TWIP) : undefined;
     const sizeOverride = paragraph?.fontSize !== undefined ? halfPoints(paragraph.fontSize) : undefined;
     return isParagraphBold(paragraph)
-      ? headingParagraph(text, alignmentOverride, sizeOverride)
+      ? headingParagraph(text, alignmentOverride, sizeOverride, blankFields)
       : bodyParagraph(text, {
         keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks),
         alignmentOverride,
         indentTwipsOverride,
         sizeOverride,
+        blankFields,
       });
   };
 
@@ -150,12 +166,13 @@ export const buildDocumentsDocx = async ({
   // ordinary centered paragraph (batch 2026-07-23 C §2): Center is only its default - its own
   // sparse align/fontSize (resolved by buildGeneratedDocument from the title's consolidated
   // `style`) override it like any paragraph's.
-  const titleParagraph = (text, title = {}) => new Paragraph({
+  const titleParagraph = (text, title = {}, blankFields = false) => new Paragraph({
     alignment: title.align ? alignmentForBlock(title.align) : AlignmentType.CENTER,
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
     children: formattedTextRuns(text, {
       size: title.fontSize !== undefined ? halfPoints(title.fontSize) : titleSize,
       baseBold: true,
+      blankFields,
     }),
   });
 
@@ -178,21 +195,22 @@ export const buildDocumentsDocx = async ({
 
   // An explicitly aligned block (the §1.5 alignment button, stored under the block's `style`
   // key) overrides the strip's notarial default: bold caption flush-left, regular data justified.
-  const signerBlockParagraph = (text, block) => new Paragraph({
+  const signerBlockParagraph = (text, block, blankFields = false) => new Paragraph({
     alignment: block.align ? alignmentForBlock(block.align) : (block.bold ? AlignmentType.LEFT : AlignmentType.JUSTIFIED),
     spacing: { after: afterTwips, line: lineTwips, lineRule: 'auto' },
     children: formattedTextRuns(text, {
       size: block.fontSize !== undefined ? halfPoints(block.fontSize) : bodySize,
       baseBold: Boolean(block.bold),
+      blankFields,
     }),
   });
 
-  const signerBlockTable = (blocks, langKey, containerWidthTwips, offsetPercent) => {
+  const signerBlockTable = (blocks, langKey, containerWidthTwips, offsetPercent, blankFields = false) => {
     const offsetTwips = Math.round(containerWidthTwips * (offsetPercent / 100));
     const blockWidthTwips = Math.max(1, Math.round(containerWidthTwips) - offsetTwips);
     const cellChildren = blocks.flatMap((block, index) => [
       ...(index > 0 ? [emptyLineParagraph()] : []),
-      signerBlockParagraph(block[langKey], block),
+      signerBlockParagraph(block[langKey], block, blankFields),
     ]);
     return new Table({
       width: { size: offsetTwips + blockWidthTwips, type: WidthType.DXA },
@@ -250,7 +268,7 @@ export const buildDocumentsDocx = async ({
   const singleLanguageColumnsTable = (paragraphs, allowPageBreaks, lang, layoutCtx) => {
     const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang);
     const buildColumnChildren = columnParagraphs => columnParagraphs.flatMap(paragraph => (
-      paragraph.type && paragraph.type !== 'text' ? buildLogoBlock(paragraph.type, layoutCtx) : [cellParagraph(paragraph[lang], allowPageBreaks, paragraph)]
+      paragraph.type && paragraph.type !== 'text' ? buildLogoBlock(paragraph.type, layoutCtx) : [cellParagraph(paragraph[lang], allowPageBreaks, paragraph, layoutCtx.blankFields)]
     ));
     return new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -315,15 +333,19 @@ export const buildDocumentsDocx = async ({
     const showUk = isBilingual || lang === 'uk';
     const showEn = isBilingual || lang === 'en';
     const showColumnDivider = isTwoColumn && Boolean(formatting.columnDivider);
+    // An official-form document (batch 22 §1) draws its logo in the page Header instead (see
+    // buildHeader below) - never again here as a one-off body block - and its underscore blank
+    // fields render underlined, not literal.
+    const blankFields = isOfficialFormStyle(doc);
     const layoutCtx = {
-      isTwoColumn, showUk, showEn, showColumnDivider,
+      isTwoColumn, showUk, showEn, showColumnDivider, blankFields,
     };
 
     const children = [];
 
     // The template's letterhead logo (doc.logo) always renders before the title, whether it came
     // from the dedicated `logo` field or a legacy leading paragraph - see getTemplateLogoType.
-    if (doc.logo) children.push(...buildLogoBlock(doc.logo, layoutCtx));
+    if (doc.logo && !blankFields) children.push(...buildLogoBlock(doc.logo, layoutCtx));
 
     // The addressee/signer block between the logo and the title (§3.2), never merged into the
     // body. One empty line separates the whole block from the title that follows (§3.4).
@@ -332,11 +354,11 @@ export const buildDocumentsDocx = async ({
       const offsetPercent = normalizeSignerBlockOffsetPercent(doc.beforeTitleOffsetPercent);
       if (isBilingual) {
         children.push(twoColumnTable([[
-          signerBlockTable(signerBlocks, 'uk', columnContentWidthTwips, offsetPercent),
-          signerBlockTable(signerBlocks, 'en', columnContentWidthTwips, offsetPercent),
+          signerBlockTable(signerBlocks, 'uk', columnContentWidthTwips, offsetPercent, blankFields),
+          signerBlockTable(signerBlocks, 'en', columnContentWidthTwips, offsetPercent, blankFields),
         ]], true, showColumnDivider));
       } else {
-        children.push(signerBlockTable(signerBlocks, lang, contentWidthTwips, offsetPercent));
+        children.push(signerBlockTable(signerBlocks, lang, contentWidthTwips, offsetPercent, blankFields));
       }
       children.push(emptyLineParagraph());
     }
@@ -346,9 +368,9 @@ export const buildDocumentsDocx = async ({
     const title = doc.title || {};
     if (!isBlankBlockText(title.uk) || !isBlankBlockText(title.en)) {
       if (isBilingual) {
-        children.push(twoColumnTable([[titleParagraph(title.uk, title), titleParagraph(title.en, title)]], true, showColumnDivider));
+        children.push(twoColumnTable([[titleParagraph(title.uk, title, blankFields), titleParagraph(title.en, title, blankFields)]], true, showColumnDivider));
       } else {
-        children.push(titleParagraph(title[lang], title));
+        children.push(titleParagraph(title[lang], title, blankFields));
       }
     }
 
@@ -370,26 +392,44 @@ export const buildDocumentsDocx = async ({
       if (isBilingual) {
         const cantSplit = !allowsParagraphInternalBreak(paragraph, doc.allowPageBreaks);
         children.push(twoColumnTable([[
-          cellParagraph(paragraph.uk, doc.allowPageBreaks, paragraph),
-          cellParagraph(paragraph.en, doc.allowPageBreaks, paragraph),
+          cellParagraph(paragraph.uk, doc.allowPageBreaks, paragraph, blankFields),
+          cellParagraph(paragraph.en, doc.allowPageBreaks, paragraph, blankFields),
         ]], cantSplit, showColumnDivider));
       } else {
-        children.push(cellParagraph(paragraph[lang], doc.allowPageBreaks, paragraph));
+        children.push(cellParagraph(paragraph[lang], doc.allowPageBreaks, paragraph, blankFields));
       }
     });
     return children;
   };
 
-  const headers = formatting.headerText
-    ? {
-      default: new Header({
-        children: [new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: formatting.headerText, size: smallSize })],
-        })],
-      }),
+  // An official-form document's letterhead logo lives in the page Header (batch 22 §1) instead of
+  // the one-off body block every branded document uses - Word repeats a Header on every page of
+  // its section automatically and reflows the body to start after it, so (unlike the PDF renderer)
+  // no manual space reservation is needed here. `formatting.headerText` still applies to every
+  // document the same way it always did, stacked below the logo when both are present.
+  const buildHeader = doc => {
+    const children = [];
+    if (isOfficialFormStyle(doc) && doc.logo) {
+      const variant = getClinicLogo(effectiveClinicLogos, doc.logo);
+      const decoded = variant?.dataUrl ? decodeLogoDataUrl(variant.dataUrl) : null;
+      if (decoded) {
+        const ratio = variant.width && variant.height ? variant.height / variant.width : 0.28;
+        const widthPx = Math.round(formatting.logoWidthMm * MM_TO_PX);
+        children.push(new Paragraph({
+          alignment: AlignmentType.LEFT,
+          spacing: { after: 80 },
+          children: [logoImageRun(decoded, widthPx, ratio)],
+        }));
+      }
     }
-    : undefined;
+    if (formatting.headerText) {
+      children.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: formatting.headerText, size: smallSize })],
+      }));
+    }
+    return children.length ? { default: new Header({ children }) } : undefined;
+  };
 
   // One section per document (below), each with its own w:pgNumType/@start="1" (pageNumbers.start
   // in pageSetup) so Word's PAGE field restarts at 1 for every document instead of counting
@@ -453,7 +493,7 @@ export const buildDocumentsDocx = async ({
     },
     sections: documents.map(generated => ({
       properties: pageSetup,
-      headers,
+      headers: buildHeader(generated),
       footers: buildFooter(generated),
       children: buildDocChildren(generated),
     })),
