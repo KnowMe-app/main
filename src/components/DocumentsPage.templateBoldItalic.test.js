@@ -180,10 +180,35 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
 
     // template -> input -> text: two taps of the shared mode-cycle button.
     fireEvent.click(within(block).getByTitle('Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.'));
-    fireEvent.click(within(block).getByTitle('Input mode - retyping the shared wording as plain text. Tap to switch to Text mode.'));
+    fireEvent.click(within(block).getByTitle('Input mode - shows the resolved wording (click it to retype as plain text). Tap to switch to Text mode.'));
 
     expect(await within(block).findByText('Сурогатна мати Сурогатна Матір')).toBeInTheDocument();
     expect(within(block).queryByText(/\{\{surrogateMother/)).not.toBeInTheDocument();
+  });
+
+  // Bug fix (batch 2026-07-25): Input mode used to show the raw {{token}} embedded in plain text
+  // at rest ("Input mode... а на посилання в форматі {}"), unlike Text mode which always showed
+  // the resolved wording. Input mode now shows the same resolved wording at rest, and only swaps
+  // to the editable plain-text field (still carrying the raw {{token}}, still de-markup'd) once
+  // that field is actually clicked into.
+  it('Input mode shows the resolved wording at rest (not a raw {{token}}), and swaps to the editable field once clicked', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const textarea = await screen.findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+
+    fireEvent.click(within(block).getByTitle('Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.'));
+
+    // At rest, Input mode shows the resolved wording, same as Text mode - never the raw token.
+    expect(await within(block).findByText('Сурогатна мати Сурогатна Матір')).toBeInTheDocument();
+    expect(within(block).queryByText(/\{\{surrogateMother/)).not.toBeInTheDocument();
+    expect(within(block).queryByDisplayValue(/.*/)).not.toBeInTheDocument();
+
+    // Clicking that resolved-text view swaps it to the editable de-markup'd field, raw token intact.
+    fireEvent.mouseDown(within(block).getByText('Сурогатна мати Сурогатна Матір'));
+    expect(await within(block).findByDisplayValue('Сурогатна мати {{surrogateMother.name.uk.nominative}}')).toBeInTheDocument();
   });
 
   // Notarial layout standard §3.3 + batch 2026-07-23 B §1.3/§1.4: the signer-block offset is a

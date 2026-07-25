@@ -2675,11 +2675,18 @@ describe('spec: Parties page record shapes', () => {
     expect(createEmptyMaternityHospital().id).toMatch(/^maternity-hospital-/);
     expect(createEmptyNotary().id).toMatch(/^notary-/);
 
-    // A partner clinic is a deliberately simplified party type (spec §5) - just name/address, no
-    // EDRPOU/license/director/bank/logo the Ukrainian clinic record carries.
+    // A partner clinic is a deliberately simplified party type (spec §5) - just name/address (plus
+    // the genitive name form and shipment-origin country, spec batch 2026-07-25), no EDRPOU/
+    // license/director/bank/logo the Ukrainian clinic record carries.
     const partnerClinic = createEmptyPartnerClinic();
     expect(partnerClinic.id).toMatch(/^partner-clinic-/);
-    expect(partnerClinic).toEqual({ id: partnerClinic.id, name: { uk: '', en: '' }, address: { uk: '', en: '' } });
+    expect(partnerClinic).toEqual({
+      id: partnerClinic.id,
+      name: { uk: '', en: '' },
+      nameGenitive: { uk: '', en: '' },
+      country: { uk: '', en: '' },
+      address: { uk: '', en: '' },
+    });
 
     // Two calls never collide, same guarantee makeRecordId already gives createChildRecord.
     expect(createEmptyCouple().id).not.toBe(couple.id);

@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaLock, FaPlus, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaMagic, FaPlus, FaSearch, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -50,6 +50,7 @@ import {
   getTemplateScopeRecord,
   getTemplateScopeText,
   isBilingualLayout,
+  isLayoutV2Template,
   isOfficialFormStyle,
   legacyClinicLogoStorageFilePath,
   legacyClinicLogoStorageFolder,
@@ -249,6 +250,38 @@ const SectionTitle = styled.h2`
   font-family: var(--km-font-display);
   font-size: 15px;
   letter-spacing: -0.01em;
+`;
+
+const SearchInputWrap = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 160px;
+  flex: 0 1 220px;
+  border: 1px solid var(--km-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--km-muted);
+  font-size: 12px;
+
+  &:focus-within {
+    border-color: var(--km-accent);
+    color: var(--km-text);
+  }
+`;
+
+const SearchInput = styled.input`
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--km-text);
+  font-size: 12px;
+  font-family: inherit;
+
+  &:focus {
+    outline: none;
+  }
 `;
 
 const StateCard = styled.div`
@@ -764,25 +797,32 @@ const DocumentsPage = ({ isAdmin }) => {
   // duplicated here) - this page only needs to know which one to resolve documents against.
   const [selectedChildId, setSelectedChildId] = useState('');
   const [selectedDocIds, setSelectedDocIds] = useState({});
+  // Quick filter for the Documents list below - matches the same label an admin already reads on
+  // each row (catalogName, falling back the same way the Format section's own dropdown does) so
+  // typing what's on screen always finds it. Never touches which documents are selected/generated -
+  // purely a display filter.
+  const [docSearchQuery, setDocSearchQuery] = useState('');
   const [layout, setLayout] = useState('two-column');
   const [expandedDocId, setExpandedDocId] = useState('');
   // Per-row mode, one cycling button instead of separate toggles: 'template' shows the raw
-  // {{placeholder}} markup and edits the shared template directly; 'input' shows the de-markup'd
-  // plain wording and edits that same shared template (retype the wording, no formatting, no case
-  // involved - templates are static and shared across every case, so there is nothing left to
-  // override); 'text' is a read-only preview resolved against the currently selected case (real
-  // values substituted, never a raw {{token}} - see resolvedValue/titleResolvedValue/
-  // beforeTitleResolvedValue below, all three built from the same resolvedDoc) and is the *only*
-  // mode Bold/Italic can be applied in, acting on the underlying raw markup even though the
-  // resolved wording is what's shown - the wording itself isn't editable there, only its
-  // formatting. Every row - title, every paragraph, every beforeTitle block alike - follows this
-  // identical mechanism, no row-specific exceptions.
+  // {{placeholder}} markup and edits the shared template directly; 'text' is a read-only preview
+  // resolved against the currently selected case (real values substituted, never a raw {{token}} -
+  // see resolvedValue/titleResolvedValue/beforeTitleResolvedValue below, all three built from the
+  // same resolvedDoc), where Bold/Italic act on the underlying raw markup even though the resolved
+  // wording is what's shown - the wording itself isn't editable there, only its formatting.
+  // 'input' shows that same resolved wording at rest (batch 2026-07-25: matches Text mode, never a
+  // raw {{token}}) but is still meant for retyping the plain wording - clicking into a field swaps
+  // it to an editable plain-text view (de-markup'd, `{{token}}`s intact) for that one field only,
+  // tracked by `activeFieldKey` since a ref alone can't drive the re-render. Bold/Italic apply in
+  // both Template and Text mode; only Input mode disables them (nothing raw is on screen there
+  // until a field is actually clicked into). Every row - title, every paragraph, every beforeTitle
+  // block alike - follows this identical mechanism, no row-specific exceptions.
   const PARAGRAPH_MODES = ['template', 'input', 'text'];
   const nextParagraphMode = mode => PARAGRAPH_MODES[(PARAGRAPH_MODES.indexOf(mode) + 1) % PARAGRAPH_MODES.length];
   const PARAGRAPH_MODE_ICON = { template: '{}', input: 'I', text: 'T' };
   const PARAGRAPH_MODE_TITLE = {
     template: 'Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.',
-    input: 'Input mode - retyping the shared wording as plain text. Tap to switch to Text mode.',
+    input: 'Input mode - shows the resolved wording (click it to retype as plain text). Tap to switch to Text mode.',
     text: 'Text mode - select text and press Bold/Italic; wording isn\'t editable here. Tap to switch to Template mode.',
   };
   const [paragraphModes, setParagraphModes] = useState({});
@@ -1244,6 +1284,12 @@ const DocumentsPage = ({ isAdmin }) => {
   const fieldNodesRef = useRef({});
   const activeFieldRef = useRef(null);
   const fieldKey = (docId, scope, langKey) => `${docId}#${scope}#${langKey}`;
+  // Input mode shows the resolved (final, case-substituted) wording at rest - same as Text mode -
+  // instead of the raw {{token}} markup, and swaps to the editable plain-text field only for
+  // whichever single field was last clicked into (batch 2026-07-25: "має показувати вже фінальну
+  // версію тексту... а не посилання в форматі {}"). `activeFieldRef` alone can't drive this (a ref
+  // mutation doesn't re-render), so this mirrors it into real state.
+  const [activeFieldKey, setActiveFieldKey] = useState('');
   const registerFieldNode = (docId, scope, langKey) => node => {
     fieldNodesRef.current[fieldKey(docId, scope, langKey)] = node;
   };
@@ -1251,6 +1297,7 @@ const DocumentsPage = ({ isAdmin }) => {
     activeFieldRef.current = {
       docId, scope, langKey, kind,
     };
+    setActiveFieldKey(fieldKey(docId, scope, langKey));
   };
 
   const preventSelectionLoss = event => event.preventDefault();
@@ -1356,28 +1403,48 @@ const DocumentsPage = ({ isAdmin }) => {
 
   // A template can pin its own languages/columns (batch 16 §15/§16, getEffectiveDocLayout) so it
   // always renders that way regardless of the page's UA/EN/UA+EN toggle - by design for documents
-  // that must always ship bilingual (e.g. a notarized declaration meant for a foreign clinic). That
-  // pin can currently only be set via the technical JSON paste, with no visible indicator on the
-  // document row - an admin who picks "UA · 1 column" for the whole case and still sees this one
-  // document preview bilingual has no way to tell it's an intentional per-document pin rather than
-  // a bug, or any way to clear it short of re-pasting JSON. This surfaces the pin as a small badge
-  // (below) and clears it here in one click - an immediate structural edit, same as the paragraph
-  // insert/remove above, not deferred to blur.
-  const handleClearDocLanguagePin = async docId => {
+  // that must always ship bilingual (e.g. a notarized declaration meant for a foreign clinic), or
+  // that flow a single language across 2 newspaper-style columns. Column count is edited directly
+  // on the document row (next to its delete button, same spot as the document formatting popover)
+  // instead of only being settable via the technical JSON paste - clicking the already-active
+  // column count clears the override so the document goes back to following whatever `languages`
+  // implies (or the page-wide selector, if `languages` isn't pinned either).
+  const DOC_COLUMN_OPTIONS = [1, 2];
+
+  const handleSetDocColumns = async (docId, columns) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
     const nextTemplate = { ...template };
-    delete nextTemplate.languages;
-    delete nextTemplate.columns;
+    if (template.columns === columns) delete nextTemplate.columns;
+    else nextTemplate.columns = columns;
     try {
       await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
       setCatalog(previous => ({
         ...previous,
         documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
       }));
-      toast.success('This document now follows the page\'s language/column selector.');
-    } catch (pinError) {
-      console.error('Unable to clear the document language pin', pinError);
+    } catch (columnsError) {
+      console.error('Unable to update the document column count', columnsError);
+      toast.error('Could not update the document.');
+    }
+  };
+
+  // A template carrying `layoutV2.blocks` can render two ways: the exact-layout engine
+  // (rendererVersion: 2, spec "Оновити renderer documentsBuilder") or the legacy paragraph
+  // renderer, useful for comparing the two before fully switching a document over. Only shown on a
+  // row that actually has layoutV2 data to switch to/from - every other document is unaffected.
+  const handleToggleLayoutV2 = async docId => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template) return;
+    const nextTemplate = { ...template, rendererVersion: template.rendererVersion === 2 ? 1 : 2 };
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+    } catch (rendererError) {
+      console.error('Unable to switch the document renderer', rendererError);
       toast.error('Could not update the document.');
     }
   };
@@ -1643,6 +1710,14 @@ const DocumentsPage = ({ isAdmin }) => {
   // catalog's own order, after every recent one.
   const orderedDocuments = orderRecordsByRecentIds(catalog.documents, settings.recentDocIds);
   const selectedTemplates = orderedDocuments.filter(template => selectedDocIds[template.id]);
+  // The row list only (never the Format section's "Format for: ..." dropdown, which always has to
+  // offer every document regardless of what's currently filtered on screen).
+  const docSearchNeedle = docSearchQuery.trim().toLowerCase();
+  const visibleDocuments = docSearchNeedle
+    ? orderedDocuments.filter(template => (
+      String(template.catalogName || template.title?.uk || template.title?.en || template.id).toLowerCase().includes(docSearchNeedle)
+    ))
+    : orderedDocuments;
   const selectedCase = catalog.cases.find(item => String(item.id) === selectedCaseId) || null;
   // Editing children lives on the Parties page (CaseChildbirthTransactionEditor) - a twin case
   // only needs to say here which one this batch of documents resolves against.
@@ -2065,7 +2140,20 @@ const DocumentsPage = ({ isAdmin }) => {
             <Section>
               <SectionHead>
                 <SectionTitle>Documents</SectionTitle>
+                <SearchInputWrap>
+                  <FaSearch aria-hidden="true" />
+                  <SearchInput
+                    type="search"
+                    value={docSearchQuery}
+                    onChange={event => setDocSearchQuery(event.target.value)}
+                    placeholder="Search documents…"
+                    aria-label="Search documents"
+                  />
+                </SearchInputWrap>
               </SectionHead>
+              {docSearchNeedle && !visibleDocuments.length ? (
+                <DocSubtitle style={{ marginTop: 8 }}>No documents match &ldquo;{docSearchQuery.trim()}&rdquo;.</DocSubtitle>
+              ) : null}
               {activeLogoVariant?.dataUrl ? (
                 <DocLogoPreviewRow>
                   <LogoPreview
@@ -2094,7 +2182,7 @@ const DocumentsPage = ({ isAdmin }) => {
               {!catalog.documents.length ? (
                 <DocSubtitle style={{ marginTop: 8 }}>No document templates yet — paste them in the technical field below.</DocSubtitle>
               ) : null}
-              {orderedDocuments.map(template => {
+              {visibleDocuments.map(template => {
                 const isExpanded = expandedDocId === String(template.id);
                 // The builder view mirrors the selected layout mode (spec §1/§4): both languages as
                 // grouped pairs in bilingual mode, a single language otherwise (1 or 2 columns).
@@ -2108,13 +2196,6 @@ const DocumentsPage = ({ isAdmin }) => {
                 // The per-paragraph indent slider's "inherit" default - this document's own
                 // effective first-line indent, same value generation actually renders with.
                 const docFormatting = resolveEffectiveDocFormatting(formatting, template.format, template.documentStyle);
-                // See handleClearDocLanguagePin above - a template-level languages/columns pin
-                // makes this document ignore the page's UA/EN/UA+EN toggle entirely; surfaced as a
-                // badge on the row so that's visible instead of looking like a preview bug.
-                const pinnedLanguages = toArray(template.languages).map(String).filter(langValue => langValue === 'uk' || langValue === 'en');
-                const languagePinLabel = pinnedLanguages.length > 1
-                  ? 'UA+EN'
-                  : (pinnedLanguages.length === 1 ? `${pinnedLanguages[0] === 'en' ? 'EN' : 'UA'} · ${template.columns === 2 ? '2 col' : '1 col'}` : '');
                 // Whichever source is currently authoritative (the dedicated `logo` field, or a
                 // legacy leading paragraph) shown as one plain-text value the admin can type into
                 // directly - never a normalized re-serialization, so a mid-edit/invalid value
@@ -2144,6 +2225,7 @@ const DocumentsPage = ({ isAdmin }) => {
                 // exists), so Text mode is display-only here.
                 const titleMode = getParagraphMode(template.id, TITLE_SCOPE);
                 const titleIsTemplateMode = titleMode === 'template';
+                const titleIsInputMode = titleMode === 'input';
                 const titleRawValue = langKey => template.title?.[langKey] || '';
                 const titleResolvedValue = langKey => resolvedDoc?.title?.[langKey] ?? '';
                 const titleDisplayValue = langKey => (titleIsTemplateMode ? titleRawValue(langKey) : plainTextOf(titleRawValue(langKey)));
@@ -2178,14 +2260,35 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
-                      {languagePinLabel ? (
+                      {/* Column count for this document - overrides the page-wide selector above
+                          once set (see handleSetDocColumns); tap the active option again to clear
+                          the override. */}
+                      <ToggleGroup>
+                        {DOC_COLUMN_OPTIONS.map(columnsOption => (
+                          <ToggleOption
+                            key={columnsOption}
+                            type="button"
+                            $active={template.columns === columnsOption}
+                            onClick={() => handleSetDocColumns(template.id, columnsOption)}
+                            title={`Render this document with ${columnsOption} column${columnsOption > 1 ? 's' : ''}, regardless of the page's selector above. Tap again to clear the override.`}
+                          >
+                            {columnsOption} col
+                          </ToggleOption>
+                        ))}
+                      </ToggleGroup>
+                      {/* Only a document that actually has layoutV2 blocks (spec: an exact-layout
+                          form like genetic-affinity-certificate) gets a switch between it and the
+                          legacy renderer - every other document never shows this. */}
+                      {template.layoutV2?.blocks ? (
                         <SmallButton
                           type="button"
-                          onClick={() => handleClearDocLanguagePin(template.id)}
-                          title={`This document is pinned to always render ${languagePinLabel}, ignoring the page's language/column selector above. Click to clear the pin so it follows the page selector instead.`}
-                          style={{ flex: '0 0 auto', width: 'auto', color: 'var(--km-accent)' }}
+                          onClick={() => handleToggleLayoutV2(template.id)}
+                          title={isLayoutV2Template(template)
+                            ? 'Rendering with the exact-layout engine (layoutV2). Click to switch back to the legacy paragraph renderer.'
+                            : 'Rendering with the legacy paragraph renderer. Click to switch to the exact-layout engine (layoutV2).'}
+                          style={{ flex: '0 0 auto', width: 'auto', color: isLayoutV2Template(template) ? 'var(--km-accent)' : undefined }}
                         >
-                          <FaLock /> {languagePinLabel}
+                          <FaMagic /> {isLayoutV2Template(template) ? 'layoutV2 on' : 'layoutV2 off'}
                         </SmallButton>
                       ) : null}
                       {/* §1.2: the document-level formatting defaults every non-overridden
@@ -2347,11 +2450,13 @@ const DocumentsPage = ({ isAdmin }) => {
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>
-                                    {isTextMode ? (
+                                    {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, 'uk')) ? (
                                       <TextModeDisplay
                                         ref={registerFieldNode(template.id, scope, 'uk')}
-                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
-                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'uk', 'text-display')}
+                                        onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, 'uk', 'text-display') : undefined}
+                                        onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, 'uk', 'text-display') : undefined}
+                                        onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, 'uk', fieldKind) : undefined}
+                                        title={isInputMode ? 'Click to edit the wording' : undefined}
                                       >
                                         <FormattedRunsPreview text={beforeTitleResolvedValue('uk')} />
                                       </TextModeDisplay>
@@ -2360,6 +2465,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         ref={registerFieldNode(template.id, scope, 'uk')}
                                         value={displayValue('uk')}
                                         placeholder="Before title (uk)"
+                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
                                         onChange={onChange('uk')}
                                         onBlur={onBlur}
@@ -2369,11 +2475,13 @@ const DocumentsPage = ({ isAdmin }) => {
                                 ) : null}
                                 {showEn ? (
                                   <ParagraphFieldColumn>
-                                    {isTextMode ? (
+                                    {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, 'en')) ? (
                                       <TextModeDisplay
                                         ref={registerFieldNode(template.id, scope, 'en')}
-                                        onMouseUp={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
-                                        onTouchEnd={handleRichFieldFocus(template.id, scope, 'en', 'text-display')}
+                                        onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, 'en', 'text-display') : undefined}
+                                        onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, 'en', 'text-display') : undefined}
+                                        onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, 'en', fieldKind) : undefined}
+                                        title={isInputMode ? 'Click to edit the wording' : undefined}
                                       >
                                         <FormattedRunsPreview text={beforeTitleResolvedValue('en')} />
                                       </TextModeDisplay>
@@ -2382,6 +2490,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         ref={registerFieldNode(template.id, scope, 'en')}
                                         value={displayValue('en')}
                                         placeholder="Before title (en)"
+                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
                                         onChange={onChange('en')}
                                         onBlur={onBlur}
@@ -2442,7 +2551,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={!titleIsTemplateMode}
+                                    disabled={titleIsInputMode}
                                     {...formatButtonProps('bold')}
                                     title="Bold the selected text"
                                   >
@@ -2450,7 +2559,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={!titleIsTemplateMode}
+                                    disabled={titleIsInputMode}
                                     {...formatButtonProps('italic')}
                                     title="Italicize the selected text"
                                   >
@@ -2497,8 +2606,11 @@ const DocumentsPage = ({ isAdmin }) => {
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>
-                                    {titleMode === 'text' ? (
-                                      <TextModeDisplay>
+                                    {titleMode === 'text' || (titleIsInputMode && activeFieldKey !== fieldKey(template.id, TITLE_SCOPE, 'uk')) ? (
+                                      <TextModeDisplay
+                                        onMouseDown={titleIsInputMode ? handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', titleFieldKind) : undefined}
+                                        title={titleIsInputMode ? 'Click to edit the wording' : undefined}
+                                      >
                                         <FormattedRunsPreview text={titleResolvedValue('uk')} />
                                       </TextModeDisplay>
                                     ) : (
@@ -2506,6 +2618,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         ref={registerFieldNode(template.id, TITLE_SCOPE, 'uk')}
                                         value={titleDisplayValue('uk')}
                                         placeholder="Title (uk)"
+                                        autoFocus={titleIsInputMode}
                                         onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', titleFieldKind)}
                                         onChange={onTitleFieldChange('uk')}
                                         onBlur={onTitleFieldBlur}
@@ -2515,8 +2628,11 @@ const DocumentsPage = ({ isAdmin }) => {
                                 ) : null}
                                 {showEn ? (
                                   <ParagraphFieldColumn>
-                                    {titleMode === 'text' ? (
-                                      <TextModeDisplay>
+                                    {titleMode === 'text' || (titleIsInputMode && activeFieldKey !== fieldKey(template.id, TITLE_SCOPE, 'en')) ? (
+                                      <TextModeDisplay
+                                        onMouseDown={titleIsInputMode ? handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', titleFieldKind) : undefined}
+                                        title={titleIsInputMode ? 'Click to edit the wording' : undefined}
+                                      >
                                         <FormattedRunsPreview text={titleResolvedValue('en')} />
                                       </TextModeDisplay>
                                     ) : (
@@ -2524,6 +2640,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         ref={registerFieldNode(template.id, TITLE_SCOPE, 'en')}
                                         value={titleDisplayValue('en')}
                                         placeholder="Title (en)"
+                                        autoFocus={titleIsInputMode}
                                         onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', titleFieldKind)}
                                         onChange={onTitleFieldChange('en')}
                                         onBlur={onTitleFieldBlur}
@@ -2545,6 +2662,7 @@ const DocumentsPage = ({ isAdmin }) => {
                           // stay editable for formatting.
                           const mode = getParagraphMode(template.id, scope);
                           const isTemplateMode = mode === 'template';
+                          const isInputMode = mode === 'input';
                           const isTextMode = mode === 'text';
                           const rawValue = langKey => paragraph?.[langKey] || '';
                           const resolvedValue = langKey => resolvedDoc?.paragraphs?.[index]?.[langKey] ?? '';
@@ -2583,7 +2701,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={!isTemplateMode}
+                                    disabled={isInputMode}
                                     {...formatButtonProps('bold')}
                                     title="Bold the selected text"
                                   >
@@ -2591,7 +2709,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                   </SmallButton>
                                   <SmallButton
                                     type="button"
-                                    disabled={!isTemplateMode}
+                                    disabled={isInputMode}
                                     {...formatButtonProps('italic')}
                                     title="Italicize the selected text"
                                   >
@@ -2646,8 +2764,11 @@ const DocumentsPage = ({ isAdmin }) => {
                               <ParagraphPair $single={isSingle} $plain>
                                 {showUk ? (
                                   <ParagraphFieldColumn>
-                                    {isTextMode ? (
-                                      <TextModeDisplay>
+                                    {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, 'uk')) ? (
+                                      <TextModeDisplay
+                                        onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, 'uk', fieldKind) : undefined}
+                                        title={isInputMode ? 'Click to edit the wording' : undefined}
+                                      >
                                         <FormattedRunsPreview text={resolvedValue('uk')} />
                                       </TextModeDisplay>
                                     ) : (
@@ -2655,6 +2776,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         ref={registerFieldNode(template.id, scope, 'uk')}
                                         value={displayValue('uk')}
                                         placeholder="Paragraph (uk)"
+                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
                                         onChange={onChange('uk')}
                                         onBlur={onBlur}
@@ -2664,8 +2786,11 @@ const DocumentsPage = ({ isAdmin }) => {
                                 ) : null}
                                 {showEn ? (
                                   <ParagraphFieldColumn>
-                                    {isTextMode ? (
-                                      <TextModeDisplay>
+                                    {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, 'en')) ? (
+                                      <TextModeDisplay
+                                        onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, 'en', fieldKind) : undefined}
+                                        title={isInputMode ? 'Click to edit the wording' : undefined}
+                                      >
                                         <FormattedRunsPreview text={resolvedValue('en')} />
                                       </TextModeDisplay>
                                     ) : (
@@ -2673,6 +2798,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         ref={registerFieldNode(template.id, scope, 'en')}
                                         value={displayValue('en')}
                                         placeholder="Paragraph (en)"
+                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
                                         onChange={onChange('en')}
                                         onBlur={onBlur}

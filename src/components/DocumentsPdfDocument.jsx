@@ -478,6 +478,248 @@ const PageFooter = ({ formatting, marginBottom, marginLeft, marginRight }) => {
   );
 };
 
+// --- layoutV2 (pixel-exact single-page forms, e.g. genetic-affinity-certificate) ---------------
+// Reads exactly the normalized tree buildLayoutV2Document produces (doc.layoutV2) - no formatting
+// prop, no bilingual/column layout, no header/footer text: a layoutV2 document is fully
+// self-describing (its own page/margins/styles), the same tree the DOCX builder reads too (spec
+// §8 - one engine, two mm/pt-aware backends).
+const layoutV2TextStyle = style => ({
+  fontFamily: 'Tinos',
+  fontSize: style?.fontSizePt,
+  fontWeight: style?.fontWeight,
+  fontStyle: style?.fontStyle,
+  lineHeight: style?.lineHeight,
+  color: style?.color,
+  textAlign: style?.align,
+  textDecoration: style?.textDecoration,
+  textTransform: style?.textTransform,
+  letterSpacing: style?.letterSpacingPt,
+});
+
+const LayoutV2Content = ({ content, clinicLogos }) => {
+  if (!content) return null;
+  if (content.type === 'image') {
+    const variant = content.logoToken ? getClinicLogo(clinicLogos, content.logoToken) : null;
+    const dataUrl = variant?.dataUrl || content.source;
+    if (!dataUrl) return null;
+    return (
+      <Image
+        src={dataUrl}
+        style={{
+          width: (content.widthMm || 0) * MM_TO_PT,
+          height: (content.heightMm || 0) * MM_TO_PT,
+          objectFit: content.fit || 'contain',
+          objectPosition: `${content.horizontalAlign || 'left'} ${content.verticalAlign || 'top'}`,
+        }}
+      />
+    );
+  }
+  if (content.type === 'stack') {
+    const align = content.horizontalAlign === 'right' ? 'flex-end' : (content.horizontalAlign === 'center' ? 'center' : 'flex-start');
+    return (
+      <View style={{ alignItems: align }}>
+        {content.lines.map((line, index) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <Text key={index} style={layoutV2TextStyle(content.style)}>{line}</Text>
+        ))}
+      </View>
+    );
+  }
+  return null;
+};
+
+const LayoutV2Letterhead = ({ block, clinicLogos }) => (
+  <View
+    style={{
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      paddingBottom: (block.paddingBottomMm || 0) * MM_TO_PT,
+      borderBottomWidth: block.bottomBorder?.widthPt || 0,
+      borderBottomColor: block.bottomBorder?.color || '#000000',
+      marginBottom: (block.marginBottomMm || 0) * MM_TO_PT,
+    }}
+  >
+    {block.columns.map((column, index) => (
+      <View
+        // eslint-disable-next-line react/no-array-index-key
+        key={index}
+        style={{
+          width: (column.widthMm || 0) * MM_TO_PT,
+          marginRight: index < block.columns.length - 1 ? (block.columnGapMm || 0) * MM_TO_PT : 0,
+        }}
+      >
+        <LayoutV2Content content={column.content} clinicLogos={clinicLogos} />
+      </View>
+    ))}
+  </View>
+);
+
+const LayoutV2AlignedBox = ({ block }) => (
+  <View
+    style={{
+      width: (block.widthMm || 0) * MM_TO_PT,
+      alignSelf: block.horizontalAlign === 'right' ? 'flex-end' : (block.horizontalAlign === 'center' ? 'center' : 'flex-start'),
+      marginTop: (block.marginTopMm || 0) * MM_TO_PT,
+      marginBottom: (block.marginBottomMm || 0) * MM_TO_PT,
+    }}
+  >
+    {block.lines.map((line, index) => (
+      // eslint-disable-next-line react/no-array-index-key
+      <Text key={index} style={[layoutV2TextStyle(block.style), { textAlign: 'left' }]}>{line}</Text>
+    ))}
+  </View>
+);
+
+const LayoutV2Paragraph = ({ block }) => (
+  <Text
+    style={[
+      layoutV2TextStyle(block.style),
+      { marginTop: (block.marginTopMm || 0) * MM_TO_PT, marginBottom: (block.marginBottomMm || 0) * MM_TO_PT },
+    ]}
+  >
+    {block.text || ' '}
+  </Text>
+);
+
+const LayoutV2RichParagraph = ({ block }) => (
+  <Text
+    style={{
+      ...layoutV2TextStyle(block.style),
+      marginTop: (block.marginTopMm || 0) * MM_TO_PT,
+      marginBottom: (block.marginBottomMm || 0) * MM_TO_PT,
+    }}
+  >
+    {block.runs.map((run, index) => (
+      // eslint-disable-next-line react/no-array-index-key
+      <Text key={index} style={layoutV2TextStyle(run.style)}>{run.text}</Text>
+    ))}
+  </Text>
+);
+
+// The key element for matching the Word sample (spec §5.5): a label cell, then a flexible value
+// area whose "fill" segments before/after the value are borderBottom lines - the value itself
+// carries the same borderBottom, so the line reads as one continuous rule under label-to-margin
+// with the value sitting on it. Never a second underline mechanism (textDecoration) on the value
+// style itself - the border here is the only line (spec batch 2026-07-25, pre-delivery review §3).
+const LayoutV2FieldLine = ({ block }) => {
+  const lineWidthPt = block.line?.widthPt || 0;
+  const lineColor = block.line?.color || '#000000';
+  const lineStyle = { borderBottomWidth: lineWidthPt, borderBottomColor: lineColor };
+  return (
+    <View style={{ marginTop: (block.marginTopMm || 0) * MM_TO_PT, marginBottom: (block.marginBottomMm || 0) * MM_TO_PT }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+        {block.labelWidthMm ? (
+          <View style={{ width: block.labelWidthMm * MM_TO_PT }}>
+            {block.labelRuns ? (
+              <Text style={layoutV2TextStyle(block.labelStyle)}>
+                {block.labelRuns.map((run, index) => (
+                  // eslint-disable-next-line react/no-array-index-key
+                  <Text key={index} style={layoutV2TextStyle(run.style)}>{run.text}</Text>
+                ))}
+              </Text>
+            ) : (
+              <Text style={layoutV2TextStyle(block.labelStyle)}>{block.label}</Text>
+            )}
+          </View>
+        ) : null}
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end' }}>
+          {block.line?.fillBeforeValue ? <View style={[{ flex: 1, minWidth: 4 * MM_TO_PT }, lineStyle]} /> : null}
+          <Text style={[layoutV2TextStyle(block.valueStyle), lineStyle, { paddingHorizontal: 1 * MM_TO_PT }]}>
+            {block.value}
+          </Text>
+          {block.line?.fillAfterValue ? <View style={[{ flex: 1, minWidth: 4 * MM_TO_PT }, lineStyle]} /> : null}
+        </View>
+      </View>
+      {block.caption !== undefined ? (
+        <View style={{ flexDirection: 'row' }}>
+          {block.labelWidthMm ? <View style={{ width: block.labelWidthMm * MM_TO_PT }} /> : null}
+          <Text style={[layoutV2TextStyle(block.captionStyle), { flex: 1 }]}>{block.caption}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
+const LayoutV2Spacer = ({ block }) => <View style={{ height: (block.heightMm || 0) * MM_TO_PT }} />;
+
+const LayoutV2SignatureTable = ({ block }) => (
+  <View
+    style={{
+      width: (block.widthMm || 0) * MM_TO_PT,
+      alignSelf: block.horizontalAlign === 'right' ? 'flex-end' : (block.horizontalAlign === 'center' ? 'center' : 'flex-start'),
+      marginTop: (block.marginTopMm || 0) * MM_TO_PT,
+      marginBottom: (block.marginBottomMm || 0) * MM_TO_PT,
+    }}
+  >
+    {block.rows.map((row, rowIndex) => (
+      row.type === 'spacerRow' ? (
+        // eslint-disable-next-line react/no-array-index-key
+        <View key={rowIndex} style={{ height: (row.heightMm || 0) * MM_TO_PT }} />
+      ) : (
+        // eslint-disable-next-line react/no-array-index-key
+        <View key={rowIndex} style={{ flexDirection: 'row' }}>
+          {row.map((cell, cellIndex) => (
+            <Text
+              // eslint-disable-next-line react/no-array-index-key
+              key={cellIndex}
+              style={{
+                ...layoutV2TextStyle(cell.style),
+                width: (block.columnWidthsMm[cellIndex] || 0) * MM_TO_PT,
+                borderBottomWidth: cell.bottomBorder?.widthPt || 0,
+                borderBottomColor: cell.bottomBorder?.color || '#000000',
+              }}
+            >
+              {cell.text || ' '}
+            </Text>
+          ))}
+        </View>
+      )
+    ))}
+  </View>
+);
+
+const LayoutV2Block = ({ block, clinicLogos }) => {
+  switch (block.type) {
+    case 'letterhead': return <LayoutV2Letterhead block={block} clinicLogos={clinicLogos} />;
+    case 'alignedBox': return <LayoutV2AlignedBox block={block} />;
+    case 'paragraph': return <LayoutV2Paragraph block={block} />;
+    case 'richParagraph': return <LayoutV2RichParagraph block={block} />;
+    case 'fieldLine': return <LayoutV2FieldLine block={block} />;
+    case 'spacer': return <LayoutV2Spacer block={block} />;
+    case 'signatureTable': return <LayoutV2SignatureTable block={block} />;
+    default: return null;
+  }
+};
+
+const renderLayoutV2DocumentPage = (doc, clinicLogos) => {
+  const page = doc.layoutV2.page || {};
+  const margins = page.marginsMm || {
+    top: 5, right: 15, bottom: 10, left: 15,
+  };
+  const widthPt = (page.widthMm || 210) * MM_TO_PT;
+  const heightPt = (page.heightMm || 297) * MM_TO_PT;
+  return (
+    <Page
+      key={doc.id}
+      size={{ width: widthPt, height: heightPt }}
+      style={{
+        paddingTop: margins.top * MM_TO_PT,
+        paddingRight: margins.right * MM_TO_PT,
+        paddingBottom: margins.bottom * MM_TO_PT,
+        paddingLeft: margins.left * MM_TO_PT,
+        fontFamily: 'Tinos',
+      }}
+    >
+      {doc.layoutV2.blocks.map((block, index) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <View key={index} wrap>
+          <LayoutV2Block block={block} clinicLogos={clinicLogos} />
+        </View>
+      ))}
+    </Page>
+  );
+};
+
 // `documents` - output of buildGeneratedDocument (placeholders already filled, logo paragraphs
 // tagged). Each document starts on its own page, like the separate statements in the reference
 // file; templates with `allowPageBreaks` (the long agreement) are free to spill onto further
@@ -658,6 +900,9 @@ const DocumentsPdfDocument = ({
   return (
     <Document>
       {documents.flatMap(doc => {
+        // A layoutV2 document is fully self-describing (its own page/margins/styles) and never
+        // follows the page-wide bilingual/column layout selector - see buildLayoutV2Document.
+        if (doc.layoutV2) return [renderLayoutV2DocumentPage(doc, effectiveClinicLogos)];
         const effectiveLayout = getEffectiveDocLayout(doc, layout);
         return isSingleLanguageTwoColumnLayout(effectiveLayout)
           ? renderSingleLanguagePages(doc, effectiveLayout)

@@ -681,13 +681,28 @@ export const createEmptyPartner = ({ role = '' } = {}) => ({
   name: { uk: { nominative: '', genitive: '' }, en: '' },
   birthDate: '',
   citizenship: { uk: '', en: '' },
-  passport: { number: '', issuedBy: { uk: '', en: '' }, issueDate: '' },
+  // `type`/`countryCode` (e.g. genetic-affinity-certificate's "паспорт: тип: ..., Код країни: ...")
+  // sit alongside the existing number/issuedBy/issueDate fields - optional, blank by default, never
+  // required by any other template that only ever read `passport.number`.
+  passport: {
+    type: '', countryCode: '', number: '', issuedBy: { uk: '', en: '' }, issueDate: '',
+  },
 });
 
 export const createEmptyCouple = () => ({
   id: makeRecordId('couple'),
   partners: [createEmptyPartner({ role: 'wife' }), createEmptyPartner({ role: 'husband' })],
-  marriage: { certificateNumber: '', certificateDate: '' },
+  // `date` (the marriage itself) is distinct from `certificateDate` (when the certificate was
+  // issued) - enrichCoupleMarriage above already reads both separately. `certificateType`/
+  // `certificateIssuedBy` are the newer bilingual fields that comment already anticipated; blank by
+  // default so older couples keep working unchanged until an admin fills them in.
+  marriage: {
+    date: '',
+    certificateType: { uk: '', en: '' },
+    certificateNumber: '',
+    certificateIssuedBy: { uk: '', en: '' },
+    certificateDate: '',
+  },
   address: { uk: '', en: '' },
 });
 
@@ -729,6 +744,11 @@ export const createEmptyClinic = () => ({
   id: makeRecordId('clinic'),
   kind: 'ukrainian',
   name: { uk: '', en: '' },
+  // The Ukrainian locative form of `name.uk` ("у клініці «Вікторія»", as opposed to the nominative
+  // "клініка «Вікторія»") - a document that names this clinic after "у" reads nameLocative.uk when
+  // filled in, falling back to the plain nominative name otherwise (see enrichShipment). Optional,
+  // never required by any template that only ever reads `name.uk`.
+  nameLocative: { uk: '', en: '' },
   legalName: { uk: '', en: '' },
   medicalCenterName: { uk: '', en: '' },
   address: { uk: '', en: '' },
@@ -756,6 +776,14 @@ export const createEmptyClinic = () => ({
 export const createEmptyPartnerClinic = () => ({
   id: makeRecordId('partner-clinic'),
   name: { uk: '', en: '' },
+  // The Ukrainian genitive form of `name.uk` ("з клініки «Оті Юме»", as opposed to the nominative
+  // "клініка «Оті Юме»") - a document that names this clinic after "з" reads nameGenitive.uk when
+  // filled in, falling back to the plain nominative name otherwise (see enrichShipment).
+  nameGenitive: { uk: '', en: '' },
+  // Country a shipment "from" this clinic is described as coming from (geneticAffinityCertificate's
+  // "з ..., Японія" - spec batch 2026-07-25). Optional, never required by any template that doesn't
+  // reference it.
+  country: { uk: '', en: '' },
   address: { uk: '', en: '' },
 });
 
@@ -934,14 +962,31 @@ export const resolveUltrasound = (transferAttempt, ultrasoundId) => {
   return transferAttempt?.ultrasounds?.[ultrasoundId] ?? null;
 };
 
+// A declined-form name field (nameGenitive on a partner clinic, nameLocative on a clinic) falls
+// back to the plain nominative `name` when the admin hasn't filled the grammatical variant in yet -
+// a document referencing "{{...sourceClinic.nameGenitive.uk}}" never renders blank just because
+// only the nominative name was ever entered (spec batch 2026-07-25: Ukrainian grammar after
+// "у"/"з" needs the clinic's name declined, not its bare nominative form).
+const withDeclinedNameFallback = (record, field) => {
+  if (!record) return record;
+  const declined = record[field] || {};
+  return {
+    ...record,
+    [field]: {
+      uk: declined.uk || record.name?.uk || '',
+      en: declined.en || record.name?.en || '',
+    },
+  };
+};
+
 // A shipment on its own only carries clinic ids - never mutates the stored record, just layers the
 // resolved party records on top (spec §3).
 export const enrichShipment = (shipment, parties) => {
   if (!shipment) return null;
   return {
     ...shipment,
-    sourceClinic: findById(parties?.partnerClinics, shipment.sourceClinicId) ?? null,
-    destinationClinic: findById(parties?.clinics, shipment.destinationClinicId) ?? null,
+    sourceClinic: withDeclinedNameFallback(findById(parties?.partnerClinics, shipment.sourceClinicId), 'nameGenitive'),
+    destinationClinic: withDeclinedNameFallback(findById(parties?.clinics, shipment.destinationClinicId), 'nameLocative'),
   };
 };
 
@@ -1889,6 +1934,169 @@ export const withTemplateScopeText = (template, scope, langKey, value) => {
   return template;
 };
 
+// --- layoutV2 (pixel-exact single-page forms, e.g. genetic-affinity-certificate) ---------------
+// A template opts in with `rendererVersion: 2` + a `layoutV2.blocks` array instead of the legacy
+// beforeTitle/title/paragraphs shape (spec: "Оновити renderer documentsBuilder"). Unlike the
+// legacy bilingual/two-column system, a layoutV2 document is always a single physical A4 sheet in
+// its own template.languages[0] - the page-wide UA/EN/UA+EN selector never applies to it (there is
+// no side-by-side column concept for a government form reproduced mm-for-mm). Preview, PDF and
+// DOCX all read this one normalized tree (spec §8) - only the mm/pt/twip unit conversion differs
+// per renderer, never the resolved content or style.
+export const isLayoutV2Template = template => template?.rendererVersion === 2 && Array.isArray(template?.layoutV2?.blocks);
+
+const LAYOUT_V2_STYLE_KEYS = [
+  'fontFamily', 'fontSizePt', 'fontWeight', 'fontStyle', 'lineHeight', 'color', 'align',
+  'spaceBeforePt', 'spaceAfterPt', 'textDecoration', 'textTransform', 'letterSpacingPt',
+];
+
+const pickLayoutV2StyleKeys = source => LAYOUT_V2_STYLE_KEYS.reduce((acc, key) => {
+  if (source && source[key] !== undefined) acc[key] = source[key];
+  return acc;
+}, {});
+
+export const resolveLayoutV2NamedStyle = (template, styleName) => (
+  styleName ? (template?.styleSheet?.[styleName] ?? {}) : {}
+);
+
+// block override -> named style -> document (spec §2/§7: a layoutV2 block never falls through to
+// template.format/global settings - it always names its own style, and `document` is the only
+// implicit base every named style inherits from).
+export const resolveLayoutV2Style = (template, styleName, overrides) => ({
+  ...pickLayoutV2StyleKeys(template?.styleSheet?.document),
+  ...pickLayoutV2StyleKeys(resolveLayoutV2NamedStyle(template, styleName)),
+  ...pickLayoutV2StyleKeys(overrides),
+});
+
+const resolveLayoutV2Text = (text, context, lang) => (text === undefined ? undefined : fillPlaceholders(text, context, lang));
+
+const resolveLayoutV2Runs = (runs, template, context, lang) => (runs || []).map(run => ({
+  text: resolveLayoutV2Text(run.text, context, lang) || '',
+  style: resolveLayoutV2Style(template, run.style, run.styleOverrides),
+}));
+
+// `{{logo}}`/`{{logo-long}}` are graphical tokens, never text-substituted (same convention as the
+// legacy renderer's getTemplateLogoType) - an `image` content block tags which clinic-logo variant
+// to draw instead of carrying a resolved data URL of its own.
+const LOGO_TOKEN_PATTERN = /^\{\{\s*(logo|logo-long)\s*\}\}$/;
+
+const normalizeLayoutV2Content = (content, template, context, lang) => {
+  if (!content) return null;
+  if (content.type === 'image') {
+    const logoMatch = LOGO_TOKEN_PATTERN.exec(String(content.source || '').trim());
+    return {
+      type: 'image',
+      logoToken: logoMatch ? logoMatch[1] : null,
+      source: logoMatch ? null : resolveLayoutV2Text(content.source, context, lang),
+      widthMm: content.widthMm,
+      heightMm: content.heightMm,
+      fit: content.fit,
+      horizontalAlign: content.horizontalAlign,
+      verticalAlign: content.verticalAlign,
+    };
+  }
+  if (content.type === 'stack') {
+    return {
+      type: 'stack',
+      style: resolveLayoutV2Style(template, content.style, content.styleOverrides),
+      horizontalAlign: content.horizontalAlign,
+      lines: (content.lines || []).map(line => resolveLayoutV2Text(line, context, lang)),
+    };
+  }
+  return { type: 'unknown', raw: content };
+};
+
+const normalizeLayoutV2Block = (block, template, context, lang) => {
+  const base = {
+    type: block?.type,
+    marginTopMm: block?.marginTopMm,
+    marginBottomMm: block?.marginBottomMm,
+  };
+  switch (block?.type) {
+    case 'letterhead':
+      return {
+        ...base,
+        heightMm: block.heightMm,
+        columnGapMm: block.columnGapMm,
+        bottomBorder: block.bottomBorder,
+        paddingBottomMm: block.paddingBottomMm,
+        columns: (block.columns || []).map(column => ({
+          widthMm: column.widthMm,
+          content: normalizeLayoutV2Content(column.content, template, context, lang),
+        })),
+      };
+    case 'alignedBox':
+      return {
+        ...base,
+        widthMm: block.widthMm,
+        horizontalAlign: block.horizontalAlign,
+        style: resolveLayoutV2Style(template, block.style, block.styleOverrides),
+        lines: (block.lines || []).map(line => resolveLayoutV2Text(line, context, lang)),
+      };
+    case 'paragraph':
+      return {
+        ...base,
+        style: resolveLayoutV2Style(template, block.style, block.styleOverrides),
+        text: resolveLayoutV2Text(block.text, context, lang) || '',
+      };
+    case 'richParagraph':
+      return {
+        ...base,
+        style: resolveLayoutV2Style(template, block.style, block.styleOverrides),
+        runs: resolveLayoutV2Runs(block.runs, template, context, lang),
+      };
+    case 'fieldLine':
+      return {
+        ...base,
+        label: block.label !== undefined ? resolveLayoutV2Text(block.label, context, lang) : undefined,
+        labelRuns: block.labelRuns ? resolveLayoutV2Runs(block.labelRuns, template, context, lang) : undefined,
+        labelWidthMm: block.labelWidthMm || 0,
+        labelStyle: resolveLayoutV2Style(template, block.style, block.styleOverrides),
+        value: resolveLayoutV2Text(block.value, context, lang) || '',
+        valueStyle: resolveLayoutV2Style(template, block.valueStyle, block.valueStyleOverrides),
+        line: block.line || {},
+        caption: block.caption !== undefined ? resolveLayoutV2Text(block.caption, context, lang) : undefined,
+        captionStyle: resolveLayoutV2Style(template, block.captionStyle, block.captionStyleOverrides),
+      };
+    case 'spacer':
+      return { ...base, heightMm: block.heightMm };
+    case 'signatureTable':
+      return {
+        ...base,
+        widthMm: block.widthMm,
+        horizontalAlign: block.horizontalAlign,
+        columnWidthsMm: block.columnWidthsMm || [],
+        cellPaddingMm: block.cellPaddingMm || 0,
+        rows: (block.rows || []).map(row => (
+          row?.type === 'spacerRow'
+            ? { type: 'spacerRow', heightMm: row.heightMm }
+            : (row || []).map(cell => ({
+              text: resolveLayoutV2Text(cell?.text, context, lang) || '',
+              style: resolveLayoutV2Style(template, cell?.style, cell?.styleOverrides),
+              bottomBorder: cell?.bottomBorder,
+            }))
+        )),
+      };
+    default:
+      // spec §9: an unknown block type never crashes the render - it's carried through as a
+      // diagnostic-only entry the renderers skip.
+      return { ...base, unknown: true };
+  }
+};
+
+// The single normalized tree preview/PDF/DOCX all read (spec §8) - `null` for any template that
+// isn't opted into layoutV2, so every caller can do `doc.layoutV2 &&` without a separate feature
+// check.
+export const buildLayoutV2Document = (template, context) => {
+  if (!isLayoutV2Template(template)) return null;
+  const lang = (resolveDocLanguages(template) || ['uk'])[0];
+  return {
+    lang,
+    page: template.page || null,
+    contentWidthMm: template.layoutV2.contentWidthMm,
+    blocks: template.layoutV2.blocks.map(block => normalizeLayoutV2Block(block, template, context, lang)),
+  };
+};
+
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context. Logo/logo-long paragraphs are
 // never text-substituted - they stay tagged for the renderer to draw a graphical block instead.
@@ -1908,6 +2116,12 @@ export const buildGeneratedDocument = (template, context) => {
     id: template.id,
     documentStyle: normalizeDocumentStyle(template?.documentStyle),
     allowPageBreaks: Boolean(template.allowPageBreaks),
+    // Non-null only for a `rendererVersion: 2` template (spec: "Не рендерити legacy та layoutV2
+    // одночасно") - every renderer checks this first and, when present, renders exclusively from
+    // it instead of the legacy fields below (which still resolve, harmlessly unused, since a
+    // template's own `layoutV2.renderLegacyContent` flag is the only source of truth for whether
+    // the legacy fields were ever meant to be read here).
+    layoutV2: buildLayoutV2Document(template, context),
     logo,
     languages,
     columns: resolveDocColumns(template, languages),

@@ -487,6 +487,8 @@ const PARTNER_FIELDS = [
   { label: 'Birth date', path: 'birthDate', type: 'date' },
   { label: 'Citizenship (uk)', path: 'citizenship.uk' },
   { label: 'Citizenship (en)', path: 'citizenship.en' },
+  { label: 'Passport type', path: 'passport.type' },
+  { label: 'Passport country code', path: 'passport.countryCode' },
   { label: 'Passport number', path: 'passport.number' },
   { label: 'Passport issued by (uk)', path: 'passport.issuedBy.uk' },
   { label: 'Passport issued by (en)', path: 'passport.issuedBy.en' },
@@ -494,7 +496,12 @@ const PARTNER_FIELDS = [
 ];
 
 const MARRIAGE_AND_ADDRESS_FIELDS = [
+  { label: 'Marriage date', path: 'marriage.date', type: 'date' },
+  { label: 'Marriage certificate type (uk)', path: 'marriage.certificateType.uk' },
+  { label: 'Marriage certificate type (en)', path: 'marriage.certificateType.en' },
   { label: 'Marriage certificate number', path: 'marriage.certificateNumber' },
+  { label: 'Marriage certificate issued by (uk)', path: 'marriage.certificateIssuedBy.uk' },
+  { label: 'Marriage certificate issued by (en)', path: 'marriage.certificateIssuedBy.en' },
   { label: 'Marriage certificate date', path: 'marriage.certificateDate', type: 'date' },
   { label: 'Address (uk)', path: 'address.uk' },
   { label: 'Address (en)', path: 'address.en' },
@@ -532,6 +539,9 @@ const CLINIC_FIELDS = [
   { label: 'Kind', path: 'kind', type: 'select', options: CLINIC_KINDS },
   { label: 'Name (uk)', path: 'name.uk' },
   { label: 'Name (en)', path: 'name.en' },
+  // Locative Ukrainian form ("у клініці «Вікторія»") - optional, falls back to the plain
+  // nominative Name above when blank (see enrichShipment/withDeclinedNameFallback).
+  { label: 'Name (uk, locative "у ...")', path: 'nameLocative.uk' },
   { label: 'Legal name (uk)', path: 'legalName.uk' },
   { label: 'Legal name (en)', path: 'legalName.en' },
   { label: 'Medical center name (uk)', path: 'medicalCenterName.uk' },
@@ -569,6 +579,11 @@ const CLINIC_FIELDS = [
 const PARTNER_CLINIC_FIELDS = [
   { label: 'Name (uk)', path: 'name.uk' },
   { label: 'Name (en)', path: 'name.en' },
+  // Genitive Ukrainian form ("з клініки «Оті Юме»") - optional, falls back to the plain nominative
+  // Name above when blank (see enrichShipment/withDeclinedNameFallback).
+  { label: 'Name (uk, genitive "з ...")', path: 'nameGenitive.uk' },
+  { label: 'Country (uk)', path: 'country.uk' },
+  { label: 'Country (en)', path: 'country.en' },
   { label: 'Address (uk)', path: 'address.uk' },
   { label: 'Address (en)', path: 'address.en' },
 ];
