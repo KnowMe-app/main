@@ -14,7 +14,11 @@ import { database } from './config';
 import {
   DOCUMENTS_CASES_PATH,
   createChildRecord,
+  formatHcgTestOptionLabel,
+  formatShipmentOptionLabel,
   formatShortNameUk,
+  formatTransferOptionLabel,
+  formatUltrasoundOptionLabel,
   getMaternityHospitalDisplayName,
   normalizeIsoDate,
   removeEmptyCaseValues,
@@ -225,7 +229,27 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   // No notaryId field - this appendix isn't itself notarized (see TEMPLATE_DOCUMENT_CONFIG's
   // usesNotary: false for surrogacy-agreement-appendix-1).
   const [surrogacyAgreementAppendix1Draft, setSurrogacyAgreementAppendix1Draft] = useState({ date: '' });
-  const [embryoOwnershipDraft, setEmbryoOwnershipDraft] = useState({ shipmentPeriod: { uk: '', en: '' }, ivfDate: '' });
+  // Spec §4/§14: a fresh pick always writes `shipmentId` (resolved against case.artProgram.
+  // embryoShipments); `legacyIvfDate`/`legacyShipmentPeriod` are read-only leftovers from a
+  // not-yet-migrated record, carried through unedited on save so simply opening/saving this editor
+  // (without touching the shipment dropdown) never destroys them.
+  const [embryoOwnershipDraft, setEmbryoOwnershipDraft] = useState({ shipmentId: '', legacyIvfDate: '', legacyShipmentPeriod: null });
+  const [geneticAffinityCertificateDraft, setGeneticAffinityCertificateDraft] = useState({
+    transferAttemptId: '', hcgTestId: '', ultrasoundId: '', issueDate: '', outgoingNumber: '',
+  });
+  const [racssClinicLetterDraft, setRacssClinicLetterDraft] = useState({ transferAttemptId: '', ultrasoundId: '' });
+  const [medicalServicesAgreementDraft, setMedicalServicesAgreementDraft] = useState({ date: '' });
+
+  // Every artProgram-referencing dropdown reads from the same source: the selected case's own
+  // shipments/transfer attempts (never converted to arrays for storage - see documentsCatalogUtils
+  // - only here, transiently, for rendering <option>s).
+  const artShipments = toArray(selectedCase?.artProgram?.embryoShipments);
+  const artTransferAttempts = toArray(selectedCase?.artProgram?.transferAttempts);
+  const certificateTransfer = artTransferAttempts.find(item => item.id === geneticAffinityCertificateDraft.transferAttemptId) || null;
+  const certificateHcgTests = toArray(certificateTransfer?.hcgTests);
+  const certificateUltrasounds = toArray(certificateTransfer?.ultrasounds);
+  const letterTransfer = artTransferAttempts.find(item => item.id === racssClinicLetterDraft.transferAttemptId) || null;
+  const letterUltrasounds = toArray(letterTransfer?.ultrasounds);
 
   useEffect(() => {
     // `childbirth.children` isn't guaranteed to be a real array - a case edited straight in the
@@ -259,13 +283,23 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       date: selectedCase?.documents?.surrogacyAgreementAppendix1?.date || '',
     });
     setEmbryoOwnershipDraft({
-      shipmentPeriod: {
-        uk: selectedCase?.documents?.embryoOwnershipStatement?.shipmentPeriod?.uk || '',
-        en: selectedCase?.documents?.embryoOwnershipStatement?.shipmentPeriod?.en || '',
-      },
-      // `<input type="date">` only ever shows/emits ISO - a still-legacy `DD.MM.YYYY` import (spec
-      // §6) has to be read into ISO here or the field would just render blank.
-      ivfDate: normalizeIsoDate(selectedCase?.documents?.embryoOwnershipStatement?.ivfDate || ''),
+      shipmentId: selectedCase?.documents?.embryoOwnershipStatement?.shipmentId || '',
+      legacyIvfDate: selectedCase?.documents?.embryoOwnershipStatement?.ivfDate || '',
+      legacyShipmentPeriod: selectedCase?.documents?.embryoOwnershipStatement?.shipmentPeriod || null,
+    });
+    setGeneticAffinityCertificateDraft({
+      transferAttemptId: selectedCase?.documents?.geneticAffinityCertificate?.transferAttemptId || '',
+      hcgTestId: selectedCase?.documents?.geneticAffinityCertificate?.hcgTestId || '',
+      ultrasoundId: selectedCase?.documents?.geneticAffinityCertificate?.ultrasoundId || '',
+      issueDate: selectedCase?.documents?.geneticAffinityCertificate?.issueDate || '',
+      outgoingNumber: selectedCase?.documents?.geneticAffinityCertificate?.outgoingNumber || '',
+    });
+    setRacssClinicLetterDraft({
+      transferAttemptId: selectedCase?.documents?.racssClinicLetter?.transferAttemptId || '',
+      ultrasoundId: selectedCase?.documents?.racssClinicLetter?.ultrasoundId || '',
+    });
+    setMedicalServicesAgreementDraft({
+      date: selectedCase?.documents?.medicalServicesAgreement?.date || '',
     });
     setSelectedChildId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -458,39 +492,86 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     }
   };
 
-  const updateEmbryoOwnershipField = (path, value) => setEmbryoOwnershipDraft(previous => {
-    if (path === 'ivfDate') return { ...previous, ivfDate: value };
-    return { ...previous, shipmentPeriod: { ...previous.shipmentPeriod, [path]: value } };
-  });
+  const updateEmbryoOwnershipShipmentId = shipmentId => setEmbryoOwnershipDraft(previous => ({ ...previous, shipmentId }));
 
-  // Every save normalizes ivfDate to ISO (spec §6: "під час наступного збереження нормалізувати
-  // дату до ISO") - a no-op once the field is already ISO, since normalizeIsoDate is idempotent,
-  // and the source `<input type="date">` already only ever emits ISO itself.
-  const handleSaveEmbryoOwnership = async () => {
+  // A generic "save one document sub-record" helper, shared by every document below - each just
+  // supplies its own storage key and cleaned payload; never writes an empty `{}` service object,
+  // same rule every document editor in this file already follows.
+  const saveCaseDocument = async (storageKey, payload, successMessage, failureLabel) => {
     if (!selectedCase) return;
-    const cleaned = removeEmptyCaseValues({
-      shipmentPeriod: embryoOwnershipDraft.shipmentPeriod,
-      ivfDate: normalizeIsoDate(embryoOwnershipDraft.ivfDate),
-    });
+    const cleaned = removeEmptyCaseValues(payload);
     const nextValue = Object.keys(cleaned).length ? cleaned : null;
     try {
-      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/embryoOwnershipStatement`), nextValue);
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/documents/${storageKey}`), nextValue);
       setCatalog(previous => ({
         ...previous,
         cases: previous.cases.map(item => {
           if (String(item.id) !== String(selectedCase.id)) return item;
           const documents = { ...(item.documents || {}) };
-          if (nextValue) documents.embryoOwnershipStatement = nextValue;
-          else delete documents.embryoOwnershipStatement;
+          if (nextValue) documents[storageKey] = nextValue;
+          else delete documents[storageKey];
           return { ...item, documents };
         }),
       }));
-      toast.success('Embryo ownership statement details saved.');
+      toast.success(successMessage);
     } catch (saveError) {
-      console.error('Unable to save the embryo ownership statement details', saveError);
-      toast.error(`Could not save the embryo ownership statement details: ${describeSaveError(saveError)}`);
+      console.error(`Unable to save ${failureLabel}`, saveError);
+      toast.error(`Could not save ${failureLabel}: ${describeSaveError(saveError)}`);
     }
   };
+
+  // Spec §14: a fresh save always writes shipmentId once the admin has actually picked one from
+  // the dropdown; only a case that's still untouched (no shipmentId chosen at all) keeps whatever
+  // legacy ivfDate/shipmentPeriod it already had, so simply opening and saving this editor never
+  // destroys not-yet-migrated data.
+  const handleSaveEmbryoOwnership = () => {
+    const payload = embryoOwnershipDraft.shipmentId
+      ? { shipmentId: embryoOwnershipDraft.shipmentId }
+      : {
+        ivfDate: normalizeIsoDate(embryoOwnershipDraft.legacyIvfDate),
+        shipmentPeriod: embryoOwnershipDraft.legacyShipmentPeriod,
+      };
+    return saveCaseDocument('embryoOwnershipStatement', payload, 'Embryo ownership statement details saved.', 'the embryo ownership statement details');
+  };
+
+  const updateGeneticAffinityCertificateField = (field, value) => setGeneticAffinityCertificateDraft(previous => {
+    // Picking a different transfer attempt invalidates whatever hCG test/ultrasound was selected
+    // from the previous one - they belong to a specific transfer, never shared across transfers.
+    if (field === 'transferAttemptId') return { ...previous, transferAttemptId: value, hcgTestId: '', ultrasoundId: '' };
+    return { ...previous, [field]: value };
+  });
+
+  const handleSaveGeneticAffinityCertificate = () => saveCaseDocument(
+    'geneticAffinityCertificate',
+    {
+      transferAttemptId: geneticAffinityCertificateDraft.transferAttemptId,
+      hcgTestId: geneticAffinityCertificateDraft.hcgTestId,
+      ultrasoundId: geneticAffinityCertificateDraft.ultrasoundId,
+      issueDate: normalizeIsoDate(geneticAffinityCertificateDraft.issueDate),
+      outgoingNumber: geneticAffinityCertificateDraft.outgoingNumber,
+    },
+    'Genetic affinity certificate details saved.',
+    'the genetic affinity certificate details',
+  );
+
+  const updateRacssClinicLetterField = (field, value) => setRacssClinicLetterDraft(previous => {
+    if (field === 'transferAttemptId') return { ...previous, transferAttemptId: value, ultrasoundId: '' };
+    return { ...previous, [field]: value };
+  });
+
+  const handleSaveRacssClinicLetter = () => saveCaseDocument(
+    'racssClinicLetter',
+    { transferAttemptId: racssClinicLetterDraft.transferAttemptId, ultrasoundId: racssClinicLetterDraft.ultrasoundId },
+    'RACSS clinic letter details saved.',
+    'the RACSS clinic letter details',
+  );
+
+  const handleSaveMedicalServicesAgreement = () => saveCaseDocument(
+    'medicalServicesAgreement',
+    { date: normalizeIsoDate(medicalServicesAgreementDraft.date) },
+    'Medical services agreement details saved.',
+    'the medical services agreement details',
+  );
 
   if (!selectedCase) return null;
 
@@ -758,36 +839,147 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
         </PrimaryMiniButton>
       </RowLine>
 
-      <SectionSubhead style={{ marginTop: 14 }}>Приналежність ембріонів</SectionSubhead>
+      <SectionSubhead style={{ marginTop: 14 }}>Заява про належність ембріонів</SectionSubhead>
+      <FieldGrid>
+        <Field style={{ flex: 1, minWidth: 220 }}>
+          Доставлення
+          <Select value={embryoOwnershipDraft.shipmentId || ''} onChange={event => updateEmbryoOwnershipShipmentId(event.target.value)}>
+            <option value="">— не обрано —</option>
+            {artShipments.map(shipment => (
+              <option key={shipment.id} value={shipment.id}>
+                {formatShipmentOptionLabel(shipment, catalog.parties) || shipment.id}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </FieldGrid>
+      {!embryoOwnershipDraft.shipmentId && (embryoOwnershipDraft.legacyIvfDate || embryoOwnershipDraft.legacyShipmentPeriod?.uk) ? (
+        <DocSubtitle style={{ marginTop: 6 }}>
+          Мігровані дані (зберігаються без змін, поки не обрано доставлення):
+          {' '}{embryoOwnershipDraft.legacyShipmentPeriod?.uk || ''} {embryoOwnershipDraft.legacyIvfDate || ''}
+        </DocSubtitle>
+      ) : null}
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveEmbryoOwnership}>
+          Save embryo ownership statement details
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Довідка про генетичну спорідненість</SectionSubhead>
       <FieldGrid>
         <Field>
-          Період передачі ембріонів (укр)
-          <FieldInput
-            type="text"
-            value={embryoOwnershipDraft.shipmentPeriod.uk || ''}
-            onChange={event => updateEmbryoOwnershipField('uk', event.target.value)}
-          />
+          Спроба переносу (довідка)
+          <Select
+            value={geneticAffinityCertificateDraft.transferAttemptId || ''}
+            onChange={event => updateGeneticAffinityCertificateField('transferAttemptId', event.target.value)}
+          >
+            <option value="">— не обрано —</option>
+            {artTransferAttempts.map(transferAttempt => (
+              <option key={transferAttempt.id} value={transferAttempt.id}>
+                {formatTransferOptionLabel(transferAttempt) || transferAttempt.id}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field>
-          Період передачі ембріонів (eng)
-          <FieldInput
-            type="text"
-            value={embryoOwnershipDraft.shipmentPeriod.en || ''}
-            onChange={event => updateEmbryoOwnershipField('en', event.target.value)}
-          />
+          ХГЧ (довідка)
+          <Select
+            value={geneticAffinityCertificateDraft.hcgTestId || ''}
+            onChange={event => updateGeneticAffinityCertificateField('hcgTestId', event.target.value)}
+            disabled={!certificateTransfer}
+          >
+            <option value="">— не обрано —</option>
+            {certificateHcgTests.map(hcgTest => (
+              <option key={hcgTest.id} value={hcgTest.id}>{formatHcgTestOptionLabel(hcgTest) || hcgTest.id}</option>
+            ))}
+          </Select>
         </Field>
         <Field>
-          Дата програми ЗІВ
+          УЗД (довідка)
+          <Select
+            value={geneticAffinityCertificateDraft.ultrasoundId || ''}
+            onChange={event => updateGeneticAffinityCertificateField('ultrasoundId', event.target.value)}
+            disabled={!certificateTransfer}
+          >
+            <option value="">— не обрано —</option>
+            {certificateUltrasounds.map(ultrasound => (
+              <option key={ultrasound.id} value={ultrasound.id}>{formatUltrasoundOptionLabel(ultrasound) || ultrasound.id}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field>
+          Дата видачі
           <FieldInput
             type="date"
-            value={embryoOwnershipDraft.ivfDate || ''}
-            onChange={event => updateEmbryoOwnershipField('ivfDate', event.target.value)}
+            value={geneticAffinityCertificateDraft.issueDate || ''}
+            onChange={event => updateGeneticAffinityCertificateField('issueDate', event.target.value)}
+          />
+        </Field>
+        <Field>
+          Вихідний номер
+          <FieldInput
+            type="text"
+            value={geneticAffinityCertificateDraft.outgoingNumber || ''}
+            onChange={event => updateGeneticAffinityCertificateField('outgoingNumber', event.target.value)}
           />
         </Field>
       </FieldGrid>
       <RowLine style={{ marginTop: 8 }}>
-        <PrimaryMiniButton type="button" onClick={handleSaveEmbryoOwnership}>
-          Save embryo ownership statement details
+        <PrimaryMiniButton type="button" onClick={handleSaveGeneticAffinityCertificate}>
+          Save genetic affinity certificate details
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Лист клініки до РАЦС</SectionSubhead>
+      <FieldGrid>
+        <Field>
+          Спроба переносу (лист РАЦС)
+          <Select
+            value={racssClinicLetterDraft.transferAttemptId || ''}
+            onChange={event => updateRacssClinicLetterField('transferAttemptId', event.target.value)}
+          >
+            <option value="">— не обрано —</option>
+            {artTransferAttempts.map(transferAttempt => (
+              <option key={transferAttempt.id} value={transferAttempt.id}>
+                {formatTransferOptionLabel(transferAttempt) || transferAttempt.id}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field>
+          УЗД (лист РАЦС)
+          <Select
+            value={racssClinicLetterDraft.ultrasoundId || ''}
+            onChange={event => updateRacssClinicLetterField('ultrasoundId', event.target.value)}
+            disabled={!letterTransfer}
+          >
+            <option value="">— не обрано —</option>
+            {letterUltrasounds.map(ultrasound => (
+              <option key={ultrasound.id} value={ultrasound.id}>{formatUltrasoundOptionLabel(ultrasound) || ultrasound.id}</option>
+            ))}
+          </Select>
+        </Field>
+      </FieldGrid>
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveRacssClinicLetter}>
+          Save RACSS clinic letter details
+        </PrimaryMiniButton>
+      </RowLine>
+
+      <SectionSubhead style={{ marginTop: 14 }}>Договір про медичні послуги</SectionSubhead>
+      <FieldGrid>
+        <Field>
+          Дата договору про медичні послуги
+          <FieldInput
+            type="date"
+            value={medicalServicesAgreementDraft.date || ''}
+            onChange={event => setMedicalServicesAgreementDraft({ date: event.target.value })}
+          />
+        </Field>
+      </FieldGrid>
+      <RowLine style={{ marginTop: 8 }}>
+        <PrimaryMiniButton type="button" onClick={handleSaveMedicalServicesAgreement}>
+          Save medical services agreement details
         </PrimaryMiniButton>
       </RowLine>
     </Section>
