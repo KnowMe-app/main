@@ -307,7 +307,7 @@ export const catalogTemplatesToBackend = catalog => (catalog.documents || []).re
 // list so an export/serialization path can never drift from what the context builder actually
 // treats as derived.
 export const DERIVED_CONTEXT_FIELD_KEYS = [
-  'short', 'shortName', 'dateWords', 'statementDateWords', 'statementDateFormatted', 'dateDisplay', 'numberEn', 'wordsAfterArticle',
+  'short', 'shortName', 'dateWords', 'dateFormatted', 'statementDateWords', 'statementDateFormatted', 'dateDisplay', 'numberEn', 'wordsAfterArticle',
 ];
 
 // Recursively strips every DERIVED_CONTEXT_FIELD_KEYS key out of a value before it's serialized
@@ -589,14 +589,18 @@ export const formatDateLongEn = value => {
 // in-memory template context). `wordsUk`/`wordsEn` are overridable so a pre-existing document
 // (birthRegistration) can keep its own already-shipped English wording while every new document
 // gets the shared default.
+// `longUk`/`longEn` default to the spelled-out-month long form (formatDateLongUk/En, e.g. "05
+// вересня 2025 року") - overridable so a document that instead wants the plain numeric DD.MM.YYYY
+// form (surrogacyAgreement/surrogacyAgreementAppendix1's `dateFormatted`, spec §5: "від
+// {{surrogacyAgreement.dateFormatted.uk}} р.") can pass formatDocumentDate instead.
 const withDerivedDateFields = (raw, {
-  dateField, wordsKey, longKey, wordsUk = formatDateWordsUk, wordsEn = formatDateWordsEn,
+  dateField, wordsKey, longKey, wordsUk = formatDateWordsUk, wordsEn = formatDateWordsEn, longUk = formatDateLongUk, longEn = formatDateLongEn,
 }) => {
   const source = isPlainObject(raw) ? raw : {};
   const value = source[dateField] ?? '';
   const next = { ...source };
   if (wordsKey) next[wordsKey] = { uk: wordsUk(value), en: wordsEn(value) };
-  if (longKey) next[longKey] = { uk: formatDateLongUk(value), en: formatDateLongEn(value) };
+  if (longKey) next[longKey] = { uk: longUk(value), en: longEn(value) };
   return next;
 };
 
@@ -829,25 +833,71 @@ export const removeEmptyCaseValues = value => {
   return value;
 };
 
-// Which case-document sub-record supplies the notary for a given template (spec §8): a case can
-// use a different notary for each document it produces (birth-registration statement, marital
-// status declaration, surrogacy agreement each carry their own `notaryId`), so there is no single
-// case-wide "the" notary. `documentKey: null` means the template never needs a notary at all
-// (surrogacy-program-rules). Exported so other call sites (validators, tests) share the same map
-// instead of re-deriving it.
-export const TEMPLATE_DOCUMENT_CONFIG = {
-  'birth-registration-surrogate-consent': { documentKey: 'birthRegistrationConsent' },
-  'surrogate-unmarried-declaration': { documentKey: 'maritalStatusDeclaration' },
-  'surrogacy-agreement': { documentKey: 'surrogacyAgreement' },
-  'surrogacy-program-rules': { documentKey: null },
+// One row per case-document sub-record that carries a derived spelled-out/long-form date - the
+// single source of truth for which ISO field on `case.documents.<key>` drives its derived
+// words/long-form fields and what those derived fields are called, so a new such document is one
+// table row instead of a new hand-written withDerivedDateFields call (spec: "логічно винести поля
+// нотаріус, дата"). `contextKey` is the property name it's exposed under on the resolved context -
+// every entry's matches its storage key except `birthRegistrationConsent`, exposed as
+// `birthRegistration` for historical reasons (that name predates this table). `wordsEn` is
+// overridable so a pre-existing document can keep its own already-shipped English wording
+// (birthRegistration's formatEnglishDateWords, "eighteenth of May, 2026") while every new document
+// gets the shared default (formatDateWordsEn).
+const DOCUMENT_DATE_CONFIG = {
+  birthRegistrationConsent: {
+    contextKey: 'birthRegistration', dateField: 'statementDate', wordsKey: 'statementDateWords', wordsEn: formatEnglishDateWords,
+  },
+  // `dateFormatted` here is the plain numeric DD.MM.YYYY form (formatDocumentDate), not the
+  // spelled-out-month long form maritalStatusDeclaration/legalServicesDisclaimer use for their
+  // `statementDateFormatted` - spec §5: "від {{surrogacyAgreement.dateFormatted.uk}} р." expects
+  // "05.09.2025", not "05 вересня 2025 року". Wrapped in an arrow so the reference to
+  // formatDocumentDate (defined further down this file) is only resolved at call time, not at this
+  // object's construction time.
+  surrogacyAgreement: {
+    contextKey: 'surrogacyAgreement',
+    dateField: 'date',
+    wordsKey: 'dateWords',
+    longKey: 'dateFormatted',
+    longUk: value => formatDocumentDate(value),
+    longEn: value => formatDocumentDate(value),
+  },
+  maritalStatusDeclaration: {
+    contextKey: 'maritalStatusDeclaration', dateField: 'statementDate', wordsKey: 'statementDateWords', longKey: 'statementDateFormatted',
+  },
+  legalServicesDisclaimer: {
+    contextKey: 'legalServicesDisclaimer', dateField: 'statementDate', wordsKey: 'statementDateWords', longKey: 'statementDateFormatted',
+  },
+  surrogacyAgreementAppendix1: {
+    contextKey: 'surrogacyAgreementAppendix1',
+    dateField: 'date',
+    wordsKey: 'dateWords',
+    longKey: 'dateFormatted',
+    longUk: value => formatDocumentDate(value),
+    longEn: value => formatDocumentDate(value),
+  },
 };
 
-// `templateId` picks which document's own `notaryId` resolves as `notary` (spec §8/§9) - omitted
-// (every pre-existing call site that only ever needed the birth-registration statement's notary),
-// it defaults to `birthRegistrationConsent` so nothing that already calls resolveCaseContext
-// without a templateId changes behavior. A templateId not listed in TEMPLATE_DOCUMENT_CONFIG (an
-// older template that never references `{{notary...}}`) simply resolves to no notary - harmless,
-// since nothing reads it.
+// Which case-document sub-record supplies the notary for a given template (spec §8): a case can
+// use a different notary for each document it produces (each of the documents below carries its
+// own `notaryId`), so there is no single case-wide "the" notary. `usesNotary: false` means the
+// template never resolves a notary from its own document data at all (surrogacy-program-rules has
+// no document data of its own; surrogacy-agreement-appendix-1 isn't itself notarized - it's an
+// unnotarized addendum to the already-notarized surrogacy agreement). Exported so other call sites
+// (validators, tests) share the same map instead of re-deriving it.
+export const TEMPLATE_DOCUMENT_CONFIG = {
+  'birth-registration-surrogate-consent': { documentKey: 'birthRegistrationConsent', usesNotary: true },
+  'surrogate-unmarried-declaration': { documentKey: 'maritalStatusDeclaration', usesNotary: true },
+  'surrogacy-agreement': { documentKey: 'surrogacyAgreement', usesNotary: true },
+  'surrogacy-program-rules': { documentKey: null, usesNotary: false },
+  'legal-services-disclaimer-statement': { documentKey: 'legalServicesDisclaimer', usesNotary: true },
+  'surrogacy-agreement-appendix-1': { documentKey: 'surrogacyAgreementAppendix1', usesNotary: false },
+};
+
+// The `documentKey`/`usesNotary` resolveCaseContext falls back to when `templateId` is omitted -
+// every pre-existing call site that only ever needed the birth-registration statement's notary,
+// so nothing that already calls resolveCaseContext without a templateId changes behavior.
+const DEFAULT_NOTARY_TEMPLATE_CONFIG = { documentKey: 'birthRegistrationConsent', usesNotary: true };
+
 export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}) => {
   const rawCaseRecord = findById(catalog?.cases, caseId);
   if (!rawCaseRecord) return null;
@@ -874,36 +924,29 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
 
   const documents = isPlainObject(caseRecord.documents) ? caseRecord.documents : {};
 
-  // birthRegistration keeps its already-shipped English wording (formatEnglishDateWords, e.g.
-  // "eighteenth of May, 2026") for backward compatibility; every new document uses the shared
-  // default formatters (withDerivedDateFields's own defaults).
-  const birthRegistration = withDerivedDateFields(documents.birthRegistrationConsent, {
-    dateField: 'statementDate',
-    wordsKey: 'statementDateWords',
-    wordsEn: formatEnglishDateWords,
-  });
-  const surrogacyAgreement = withDerivedDateFields(documents.surrogacyAgreement, {
-    dateField: 'date',
-    wordsKey: 'dateWords',
-  });
-  const maritalStatusDeclaration = withDerivedDateFields(documents.maritalStatusDeclaration, {
-    dateField: 'statementDate',
-    wordsKey: 'statementDateWords',
-    longKey: 'statementDateFormatted',
-  });
+  // Every date-bearing document sub-record, built generically from DOCUMENT_DATE_CONFIG - adding
+  // a new one (legalServicesDisclaimer, surrogacyAgreementAppendix1) never needs a new inline
+  // block here, only a new table row above. Keyed by storage key (case.documents.<key> - the same
+  // key TEMPLATE_DOCUMENT_CONFIG's `documentKey` uses), each value already carrying its
+  // `contextKey`'s derived fields.
+  const documentContextsByStorageKey = Object.fromEntries(
+    Object.entries(DOCUMENT_DATE_CONFIG).map(([storageKey, config]) => [
+      storageKey,
+      withDerivedDateFields(documents[storageKey], config),
+    ]),
+  );
+  const birthRegistration = documentContextsByStorageKey.birthRegistrationConsent;
+  const surrogacyAgreement = documentContextsByStorageKey.surrogacyAgreement;
+  const maritalStatusDeclaration = documentContextsByStorageKey.maritalStatusDeclaration;
+  const legalServicesDisclaimer = documentContextsByStorageKey.legalServicesDisclaimer;
+  const surrogacyAgreementAppendix1 = documentContextsByStorageKey.surrogacyAgreementAppendix1;
 
-  // Which document's notaryId is "the" notary for this render (spec §8) - defaults to the
-  // birth-registration statement so every existing caller (no templateId) keeps working exactly
-  // as before.
-  const notaryDocumentKey = templateId !== undefined
-    ? (TEMPLATE_DOCUMENT_CONFIG[templateId]?.documentKey ?? null)
-    : 'birthRegistrationConsent';
-  const notaryDocuments = {
-    birthRegistrationConsent: birthRegistration,
-    surrogacyAgreement,
-    maritalStatusDeclaration,
-  };
-  const notaryId = notaryDocumentKey ? (notaryDocuments[notaryDocumentKey]?.notaryId ?? null) : null;
+  // Which document's notaryId is "the" notary for this render (spec §8).
+  const notaryTemplateConfig = templateId !== undefined
+    ? (TEMPLATE_DOCUMENT_CONFIG[templateId] ?? { documentKey: null, usesNotary: false })
+    : DEFAULT_NOTARY_TEMPLATE_CONFIG;
+  const notaryDocumentKey = notaryTemplateConfig.usesNotary ? notaryTemplateConfig.documentKey : null;
+  const notaryId = notaryDocumentKey ? (documentContextsByStorageKey[notaryDocumentKey]?.notaryId ?? null) : null;
   const notary = enrichPersonName(notaryId ? findById(catalog.parties.notaries, notaryId) : null);
 
   // The Ukrainian clinic (parties.clinics, relations.clinicId) runs the surrogacy program and signs
@@ -949,6 +992,8 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
     surrogacyAgreement,
     birthRegistration,
     maritalStatusDeclaration,
+    legalServicesDisclaimer,
+    surrogacyAgreementAppendix1,
     notary,
   };
 };
@@ -1589,6 +1634,7 @@ export const findPartyReferences = (catalog, collection, id) => {
         caseRecord.documents?.birthRegistrationConsent?.notaryId,
         caseRecord.documents?.surrogacyAgreement?.notaryId,
         caseRecord.documents?.maritalStatusDeclaration?.notaryId,
+        caseRecord.documents?.legalServicesDisclaimer?.notaryId,
       ].some(notaryId => String(notaryId) === targetId);
       default: return false;
     }

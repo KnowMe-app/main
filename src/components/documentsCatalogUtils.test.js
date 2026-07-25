@@ -2913,6 +2913,8 @@ const noClinicCaseCatalog = (overrides = {}) => normalizeDocumentsCatalog(
       documents: {
         surrogacyAgreement: { date: '2025-09-05', notaryId: 'notary-9' },
         maritalStatusDeclaration: { statementDate: '2025-09-05', notaryId: 'notary-9' },
+        legalServicesDisclaimer: { statementDate: '2025-09-05', notaryId: 'notary-9' },
+        surrogacyAgreementAppendix1: { date: '2025-09-05' },
         ...overrides.documents,
       },
     },
@@ -2940,10 +2942,12 @@ describe('spec §2/§3: null-safe context for a case with no clinic/maternity-ho
 
 describe('spec §8/§9: TEMPLATE_DOCUMENT_CONFIG - notary resolved per current document, not one case-wide default', () => {
   it('exposes the documented mapping', () => {
-    expect(TEMPLATE_DOCUMENT_CONFIG['birth-registration-surrogate-consent']).toEqual({ documentKey: 'birthRegistrationConsent' });
-    expect(TEMPLATE_DOCUMENT_CONFIG['surrogate-unmarried-declaration']).toEqual({ documentKey: 'maritalStatusDeclaration' });
-    expect(TEMPLATE_DOCUMENT_CONFIG['surrogacy-agreement']).toEqual({ documentKey: 'surrogacyAgreement' });
-    expect(TEMPLATE_DOCUMENT_CONFIG['surrogacy-program-rules']).toEqual({ documentKey: null });
+    expect(TEMPLATE_DOCUMENT_CONFIG['birth-registration-surrogate-consent']).toEqual({ documentKey: 'birthRegistrationConsent', usesNotary: true });
+    expect(TEMPLATE_DOCUMENT_CONFIG['surrogate-unmarried-declaration']).toEqual({ documentKey: 'maritalStatusDeclaration', usesNotary: true });
+    expect(TEMPLATE_DOCUMENT_CONFIG['surrogacy-agreement']).toEqual({ documentKey: 'surrogacyAgreement', usesNotary: true });
+    expect(TEMPLATE_DOCUMENT_CONFIG['surrogacy-program-rules']).toEqual({ documentKey: null, usesNotary: false });
+    expect(TEMPLATE_DOCUMENT_CONFIG['legal-services-disclaimer-statement']).toEqual({ documentKey: 'legalServicesDisclaimer', usesNotary: true });
+    expect(TEMPLATE_DOCUMENT_CONFIG['surrogacy-agreement-appendix-1']).toEqual({ documentKey: 'surrogacyAgreementAppendix1', usesNotary: false });
   });
 
   it('resolves notary from documents.surrogacyAgreement.notaryId for the surrogacy-agreement template', () => {
@@ -2989,6 +2993,64 @@ describe('spec §8/§9: TEMPLATE_DOCUMENT_CONFIG - notary resolved per current d
     const catalog = noClinicCaseCatalog();
     const context = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'embryo-transfer-consent' });
     expect(context.notary).toBeNull();
+  });
+
+  it('resolves notary from documents.legalServicesDisclaimer.notaryId for the legal-services-disclaimer-statement template', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'legal-services-disclaimer-statement' });
+    expect(context.notary.name.uk.nominative).toBe('Тестова Анна Петрівна');
+  });
+
+  // usesNotary: false - this appendix isn't itself notarized (an addendum to the already-notarized
+  // surrogacy agreement) - so it never resolves a notary even though it has a documentKey and even
+  // if that document happened to carry its own notaryId.
+  it('surrogacy-agreement-appendix-1 never resolves a notary (usesNotary: false), even when its document data carries a notaryId', () => {
+    const catalog = noClinicCaseCatalog({ documents: { surrogacyAgreementAppendix1: { date: '2025-09-05', notaryId: 'notary-9' } } });
+    const context = resolveCaseContext(catalog, 'case-no-clinic', { templateId: 'surrogacy-agreement-appendix-1' });
+    expect(context.notary).toBeNull();
+  });
+});
+
+describe('spec: legalServicesDisclaimer / surrogacyAgreementAppendix1 derived date fields', () => {
+  it('legalServicesDisclaimer exposes statementDateWords and statementDateFormatted in both languages', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.legalServicesDisclaimer.statementDate).toBe('2025-09-05');
+    expect(context.legalServicesDisclaimer.statementDateWords.uk).toBe("п'ятого вересня дві тисячі двадцять п'ятого року");
+    expect(context.legalServicesDisclaimer.statementDateFormatted.uk).toBe('05 вересня 2025 року');
+  });
+
+  it('surrogacyAgreementAppendix1.dateWords.uk is derived from documents.surrogacyAgreementAppendix1.date', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.surrogacyAgreementAppendix1.date).toBe('2025-09-05');
+    expect(context.surrogacyAgreementAppendix1.dateWords.uk).toBe("п'ятого вересня дві тисячі двадцять п'ятого року");
+  });
+
+  // spec §5: "від {{surrogacyAgreement.dateFormatted.uk}} р." must read "05.09.2025", not the
+  // spelled-out long form (maritalStatusDeclaration/legalServicesDisclaimer's statementDateFormatted
+  // uses "05 вересня 2025 року" - a different `dateFormatted` meaning for these two documents).
+  it('surrogacyAgreement/surrogacyAgreementAppendix1 dateFormatted.uk is the plain numeric DD.MM.YYYY form, not the spelled-out long form', () => {
+    const catalog = noClinicCaseCatalog();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.surrogacyAgreement.dateFormatted.uk).toBe('05.09.2025');
+    expect(context.surrogacyAgreementAppendix1.dateFormatted.uk).toBe('05.09.2025');
+  });
+
+  it('a case with no legalServicesDisclaimer/surrogacyAgreementAppendix1 data resolves blank derived fields, never throwing', () => {
+    const catalog = noClinicCaseCatalog();
+    catalog.cases[0].documents = {};
+    expect(() => resolveCaseContext(catalog, 'case-no-clinic')).not.toThrow();
+    const context = resolveCaseContext(catalog, 'case-no-clinic');
+    expect(context.legalServicesDisclaimer.statementDateWords).toEqual({ uk: '', en: '' });
+    expect(context.surrogacyAgreementAppendix1.dateFormatted).toEqual({ uk: '', en: '' });
+  });
+
+  it('these derived fields are never written back to Firebase (source records stay bare)', () => {
+    const catalog = noClinicCaseCatalog();
+    const rawCase = catalog.cases.find(item => item.id === 'case-no-clinic');
+    expect(rawCase.documents.legalServicesDisclaimer).toEqual({ statementDate: '2025-09-05', notaryId: 'notary-9' });
+    expect(rawCase.documents.surrogacyAgreementAppendix1).toEqual({ date: '2025-09-05' });
   });
 });
 
@@ -3050,5 +3112,49 @@ describe('spec §5/§13: DERIVED_CONTEXT_FIELD_KEYS never created by createEmpty
     expect(DERIVED_CONTEXT_FIELD_KEYS).toEqual(expect.arrayContaining([
       'short', 'shortName', 'dateWords', 'statementDateWords', 'statementDateFormatted', 'dateDisplay', 'numberEn', 'wordsAfterArticle',
     ]));
+  });
+});
+
+// spec: importing an add-on export (new templates + new case.documents.* keys for an existing
+// case) must be purely additive - no code change needed in the importer itself, this just proves
+// mergeDocumentsCatalog already behaves that way for the two new document types.
+describe('spec: Parse & merge stays additive for new document keys on an existing case', () => {
+  it('adds legalServicesDisclaimer/surrogacyAgreementAppendix1 to an existing case without dropping its other documents', () => {
+    const current = normalizeDocumentsCatalog(
+      {},
+      {},
+      {
+        'case-1': {
+          id: 'case-1',
+          relations: { coupleId: 'couple-1', surrogateMotherId: 'surrogate-1' },
+          documents: { surrogacyAgreement: { date: '2025-09-05', notaryId: 'notary-1' } },
+        },
+      },
+    );
+    const incoming = parseDocumentsTechnicalInput(JSON.stringify({
+      cases: {
+        'case-1': {
+          documents: {
+            legalServicesDisclaimer: { statementDate: '2025-09-05', notaryId: 'notary-1' },
+            surrogacyAgreementAppendix1: { date: '2025-09-05' },
+          },
+        },
+      },
+      templates: {
+        'legal-services-disclaimer-statement': { id: 'legal-services-disclaimer-statement', title: { uk: 'ЗАЯВА' }, paragraphs: [] },
+        'surrogacy-agreement-appendix-1': { id: 'surrogacy-agreement-appendix-1', paragraphs: [] },
+      },
+    }));
+    const { catalog: merged } = mergeDocumentsCatalog(current, incoming);
+
+    expect(merged.cases).toHaveLength(1); // updated in place, not duplicated
+    expect(merged.cases[0].documents).toEqual({
+      surrogacyAgreement: { date: '2025-09-05', notaryId: 'notary-1' },
+      legalServicesDisclaimer: { statementDate: '2025-09-05', notaryId: 'notary-1' },
+      surrogacyAgreementAppendix1: { date: '2025-09-05' },
+    });
+    expect(merged.documents.map(template => template.id)).toEqual([
+      'legal-services-disclaimer-statement', 'surrogacy-agreement-appendix-1',
+    ]);
   });
 });
