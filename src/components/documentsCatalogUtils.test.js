@@ -97,6 +97,9 @@ import {
   withTemplateScopeText,
   toggleInlineFormat,
   toggleRawInlineMarker,
+  layoutV2ParagraphRuns,
+  layoutV2ParagraphPlainText,
+  toggleLayoutV2ParagraphBold,
   upsertRecentCaseId,
   upsertRecentId,
   validateBirthRegistrationCase,
@@ -1703,6 +1706,69 @@ describe('spec: selection-based inline bold/italic (batch 13 §1)', () => {
       { text: 'Hello ', bold: false, italic: false },
       { text: 'world', bold: true, italic: false },
     ]);
+  });
+});
+
+describe('spec: layoutV2 paragraph/richParagraph selection-based bold (batch 25 §3)', () => {
+  it('layoutV2ParagraphRuns/layoutV2ParagraphPlainText read a plain `paragraph` block as one unstyled run', () => {
+    const block = { type: 'paragraph', style: 'body', text: 'Hello world' };
+    expect(layoutV2ParagraphRuns(block)).toEqual([{ text: 'Hello world', style: undefined }]);
+    expect(layoutV2ParagraphPlainText(block)).toBe('Hello world');
+  });
+
+  it('bolds a plain-text range of a `paragraph` block, converting it to a `richParagraph`', () => {
+    const block = { type: 'paragraph', style: 'body', text: 'Hello world else' };
+    const next = toggleLayoutV2ParagraphBold(block, 6, 11); // "world"
+    expect(next.type).toBe('richParagraph');
+    expect(next.style).toBe('body'); // the paragraph's own named style is untouched
+    expect(next.text).toBeUndefined();
+    expect(next.runs).toEqual([
+      { text: 'Hello ', style: undefined },
+      { text: 'world', style: 'inlineEmphasis' },
+      { text: ' else', style: undefined },
+    ]);
+    expect(layoutV2ParagraphPlainText(next)).toBe('Hello world else');
+  });
+
+  it('pressing bold again on an already-bold selection removes it and collapses back to a plain `paragraph`', () => {
+    const block = { type: 'paragraph', style: 'body', text: 'Hello world else' };
+    const bolded = toggleLayoutV2ParagraphBold(block, 6, 11);
+    const unbolded = toggleLayoutV2ParagraphBold(bolded, 6, 11);
+    expect(unbolded).toEqual({
+      type: 'paragraph', style: 'body', text: 'Hello world else', runs: undefined,
+    });
+  });
+
+  it('a partially-bold selection becomes fully bold on the first press, not toggled per-run (MS Word behavior)', () => {
+    const block = { type: 'paragraph', text: 'Hello world else' };
+    const partiallyBold = toggleLayoutV2ParagraphBold(block, 6, 8); // "wo" -> bold
+    const fullyBold = toggleLayoutV2ParagraphBold(partiallyBold, 6, 11); // whole "world" selected
+    expect(layoutV2ParagraphRuns(fullyBold).find(run => run.text === 'world').style).toBe('inlineEmphasis');
+  });
+
+  it('bolds a fragment of an existing `richParagraph`, merging adjacent same-style runs', () => {
+    const block = {
+      type: 'richParagraph',
+      style: 'body',
+      runs: [
+        { text: 'Ільченко Вікторія Віталіївна', style: 'inlineEmphasis' },
+        { text: ', 18.07.1991 р.н.', style: undefined },
+      ],
+    };
+    // Extend the bold a few characters into the previously-unbolded run.
+    const plainText = layoutV2ParagraphPlainText(block);
+    const extendedEnd = plainText.indexOf(', 18') + ', 18'.length;
+    const next = toggleLayoutV2ParagraphBold(block, 0, extendedEnd);
+    expect(layoutV2ParagraphPlainText(next)).toBe(plainText);
+    expect(next.runs).toEqual([
+      { text: 'Ільченко Вікторія Віталіївна, 18', style: 'inlineEmphasis' },
+      { text: '.07.1991 р.н.', style: undefined },
+    ]);
+  });
+
+  it('is a no-op for a collapsed (empty) selection', () => {
+    const block = { type: 'paragraph', text: 'Hello world' };
+    expect(toggleLayoutV2ParagraphBold(block, 5, 5)).toBe(block);
   });
 });
 

@@ -4,7 +4,9 @@
 // after confirming) - never a bulk clear of the whole styleSheet.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render, screen, fireEvent, waitFor, within,
+} from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('firebase/database', () => ({
@@ -123,6 +125,31 @@ describe('DocumentStyleEditorPage', () => {
       '__root__',
       { 'documentsBuilder/templates/genetic-affinity-certificate/styleSheet/titleMain/fontSizePt': null },
     ));
+  });
+
+  // Batch 25 §2 reaffirms batch 23/24's request for Align and Bold/font-weight controls on this
+  // page - both are already wired into every style group via LAYOUT_V2_STYLE_KEYS/PROPERTY_CONTROLS
+  // (documentsCatalogUtils.js / DocumentStyleEditorPage.jsx), so this pins that down as a concrete
+  // regression test rather than leaving it as something only visible by reading the source.
+  it('offers an Align select (left/center/right/justify) and a Font weight select in every style group', async () => {
+    mockGet();
+    render(<MemoryRouter><DocumentStyleEditorPage isAdmin /></MemoryRouter>);
+    await screen.findByText('Genetic affinity certificate');
+    fireEvent.click(await screen.findByText(/titleMain/));
+
+    // eslint-disable-next-line testing-library/no-node-access
+    const alignRow = (await screen.findByText('Align')).closest('label');
+    const alignSelect = within(alignRow).getByRole('combobox');
+    expect(alignSelect).not.toBeDisabled();
+    expect(alignSelect).toHaveValue('center');
+    expect(Array.from(alignSelect.options).map(option => option.value)).toEqual(['left', 'center', 'right', 'justify']);
+
+    // eslint-disable-next-line testing-library/no-node-access
+    const fontWeightRow = (await screen.findByText('Font weight')).closest('label');
+    const fontWeightSelect = within(fontWeightRow).getByRole('combobox');
+    expect(fontWeightSelect).not.toBeDisabled();
+    expect(fontWeightSelect).toHaveValue('700');
+    expect(Array.from(fontWeightSelect.options).map(option => option.value)).toEqual(['400', '500', '600', '700']);
   });
 
   it('asks for confirmation before resetting a whole group, and clears only that named style', async () => {

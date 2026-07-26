@@ -2080,6 +2080,84 @@ export const buildLayoutV2Document = (template, context) => {
   };
 };
 
+// --- layoutV2 paragraph/richParagraph inline bold (batch 25 §3) --------------------------------
+// The legacy paragraph/beforeTitle/title editor already has a "select a fragment, press Bold"
+// mechanism (toggleInlineFormat, above) built on **markdown**-style runs; layoutV2's `paragraph`/
+// `richParagraph` blocks store runs as {text, style} instead (style names one of the template's
+// styleSheet entries, resolved by resolveLayoutV2Style), so bolding a fragment here means tagging
+// it with the 'inlineEmphasis' named style (already configurable in the Style Editor, batch 23 §4)
+// rather than writing a markup character. These operate on the block's raw, unresolved text/runs
+// (the same shared markup every case sees, {{tokens}} included) - identical in spirit to Template
+// mode for legacy paragraphs, since a layoutV2 block has no per-case resolved-text editing mode.
+
+// A block's runs as one flat {text, style}[] list regardless of whether it's still a plain
+// `paragraph` (single implicit run, no style override) or already a `richParagraph`.
+export const layoutV2ParagraphRuns = block => (block?.type === 'richParagraph'
+  ? (block.runs || []).map(run => ({ text: String(run?.text || ''), style: run?.style }))
+  : [{ text: String(block?.text || ''), style: undefined }]);
+
+export const layoutV2ParagraphPlainText = block => layoutV2ParagraphRuns(block).map(run => run.text).join('');
+
+const withLayoutV2RunOffsets = runs => {
+  let pos = 0;
+  return runs.map(run => {
+    const start = pos;
+    pos += run.text.length;
+    return { ...run, start, end: pos };
+  });
+};
+
+const splitLayoutV2RunsAtCuts = (runsWithOffsets, cuts) => {
+  const sortedCuts = [...new Set(cuts)].sort((a, b) => a - b);
+  const result = [];
+  runsWithOffsets.forEach(run => {
+    const localCuts = sortedCuts.filter(cut => cut > run.start && cut < run.end);
+    if (!localCuts.length) {
+      result.push(run);
+      return;
+    }
+    let offset = run.start;
+    [...localCuts, run.end].forEach(cut => {
+      result.push({
+        text: run.text.slice(offset - run.start, cut - run.start), style: run.style, start: offset, end: cut,
+      });
+      offset = cut;
+    });
+  });
+  return result;
+};
+
+const mergeAdjacentLayoutV2Runs = runs => runs.reduce((merged, run) => {
+  if (!run.text) return merged;
+  const last = merged[merged.length - 1];
+  if (last && last.style === run.style) last.text += run.text;
+  else merged.push({ text: run.text, style: run.style });
+  return merged;
+}, []);
+
+// MS Word toggle behavior (batch 17), same rule as toggleInlineFormat: if every run inside
+// [plainStart, plainEnd) is already 'inlineEmphasis', the whole selection loses it; otherwise the
+// whole selection gains it. Always returns a `richParagraph` (a plain `paragraph` block has no
+// runs of its own to hold a partial style yet) - collapsed back to a single-run `paragraph` when
+// the result ends up with no bold left anywhere, so an untouched/fully-unbolded block stays in its
+// simpler original shape instead of permanently upgrading.
+export const toggleLayoutV2ParagraphBold = (block, plainStart, plainEnd) => {
+  if (!(plainEnd > plainStart)) return block;
+  const runs = withLayoutV2RunOffsets(layoutV2ParagraphRuns(block));
+  const split = splitLayoutV2RunsAtCuts(runs, [plainStart, plainEnd]);
+  const within = run => run.start >= plainStart && run.end <= plainEnd && run.end > run.start;
+  const selected = split.filter(within);
+  const allBold = selected.length > 0 && selected.every(run => run.style === 'inlineEmphasis');
+  const next = split.map(run => (within(run) ? { ...run, style: allBold ? undefined : 'inlineEmphasis' } : run));
+  const mergedRuns = mergeAdjacentLayoutV2Runs(next);
+  if (mergedRuns.length <= 1 && !mergedRuns.some(run => run.style)) {
+    return {
+      ...block, type: 'paragraph', text: mergedRuns[0]?.text || '', runs: undefined,
+    };
+  }
+  return { ...block, type: 'richParagraph', runs: mergedRuns, text: undefined };
+};
+
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context. Logo/logo-long paragraphs are
 // never text-substituted - they stay tagged for the renderer to draw a graphical block instead.

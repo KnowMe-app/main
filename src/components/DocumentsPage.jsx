@@ -4,7 +4,9 @@
 // page-scoped --km-* palette override. Data lives on the backend under documentsBuilder/*:
 // parties + cases, paragraph templates, and a settings record (favourite formatting values +
 // recently used cases). Clinic logo files live directly in Firebase Storage by clinic id.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback, useEffect, useMemo, useRef, useState,
+} from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
@@ -52,6 +54,7 @@ import {
   isBilingualLayout,
   isLayoutV2Template,
   isOfficialFormStyle,
+  layoutV2ParagraphRuns,
   legacyClinicLogoStorageFilePath,
   legacyClinicLogoStorageFolder,
   mergeDocumentsCatalog,
@@ -72,6 +75,7 @@ import {
   TITLE_SCOPE,
   toArray,
   toggleInlineFormat,
+  toggleLayoutV2ParagraphBold,
   toggleRawInlineMarker,
   upsertRecentCaseId,
   upsertRecentId,
@@ -557,7 +561,28 @@ const TextModeDisplay = styled.div`
   &::after {
     content: '\\200B';
   }
+
+  &[contenteditable]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--km-muted);
+  }
+
+  &[contenteditable] {
+    outline: none;
+  }
 `;
+
+// layoutV2's {text, style} runs (batch 25 §3) - a run styled 'inlineEmphasis' renders bold, same
+// visual convention as FormattedRunsPreview's **markdown** runs below, just resolved from the
+// template's own named style instead of a markup character.
+const LayoutV2RunsPreview = ({ block }) => (
+  <>
+    {layoutV2ParagraphRuns(block).map((run, index) => (
+      // eslint-disable-next-line react/no-array-index-key
+      <React.Fragment key={index}>{run.style === 'inlineEmphasis' ? <strong>{run.text}</strong> : run.text}</React.Fragment>
+    ))}
+  </>
+);
 
 const FormattedRunsPreview = ({ text }) => (
   <>
@@ -570,6 +595,48 @@ const FormattedRunsPreview = ({ text }) => (
     })}
   </>
 );
+
+// Input mode's focused view (bug fix, batch 25 §1): tapping into an already-bold resolved-text
+// field must keep showing that bold, not just the plain wording - only the ability to place a
+// cursor and type is being added on focus, nothing about the formatting already on screen should
+// change. A native <textarea> can never render <strong>/<em> at all, so this makes the very same
+// rich preview (FormattedRunsPreview, identical to the at-rest view directly above) the editable
+// surface itself via contentEditable, instead of swapping to a plain-text control on focus.
+// The rich children are captured once, from whatever was on screen at the moment of focusing, and
+// never re-rendered from props afterward - only the browser's own in-place DOM edits drive it past
+// that point, translated back up to plain text on every input event (mirroring the old textarea's
+// onChange; Input mode still never reformats via typing here, see handleApplyInlineFormat's
+// input-plain hard-stop).
+const RichResolvedTextField = React.forwardRef(({
+  initialText, placeholder, onPlainTextChange, onFocus, onBlur,
+}, forwardedRef) => {
+  const localRef = useRef(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialChildren = useMemo(() => <FormattedRunsPreview text={initialText} />, []);
+
+  useEffect(() => {
+    localRef.current?.focus();
+  }, []);
+
+  return (
+    <TextModeDisplay
+      ref={node => {
+        localRef.current = node;
+        if (typeof forwardedRef === 'function') forwardedRef(node);
+        else if (forwardedRef) forwardedRef.current = node;
+      }}
+      contentEditable
+      suppressContentEditableWarning
+      data-placeholder={placeholder}
+      onInput={() => onPlainTextChange(localRef.current?.innerText ?? '')}
+      onFocus={onFocus}
+      onBlur={onBlur}
+    >
+      {initialChildren}
+    </TextModeDisplay>
+  );
+});
+RichResolvedTextField.displayName = 'RichResolvedTextField';
 
 // Text mode has no textarea to read `.selectionStart`/`.selectionEnd` from - the display above is
 // plain rendered HTML, so Bold/Italic instead reads the browser's native Selection and walks the
@@ -1477,6 +1544,46 @@ const DocumentsPage = ({ isAdmin }) => {
       ? toggleInlineFormat(currentRaw, start, end, attr)
       : toggleRawInlineMarker(currentRaw, start, end, attr);
     await commitTemplateScopeText(docId, scope, langKey, nextRaw);
+  };
+
+  // --- layoutV2 paragraph/richParagraph selection-based bold (batch 25 §3) -----------------------
+  // A layoutV2 block has no per-mode toolbar of its own (there is no per-case resolved view for it -
+  // a layoutV2 template is always edited as its own shared raw markup, same as legacy Template mode)
+  // - one Bold button per paragraph/richParagraph block, acting on whatever text is currently
+  // selected inside it (same native-Selection approach as Text mode's handleApplyInlineFormat,
+  // above, since this display is a rendered <div> too, not a textarea).
+  const layoutV2BlockNodesRef = useRef({});
+  const registerLayoutV2BlockNode = (docId, blockIndex) => node => {
+    layoutV2BlockNodesRef.current[`${docId}#${blockIndex}`] = node;
+  };
+  const handleLayoutV2BlockBold = async (docId, blockIndex) => {
+    const node = layoutV2BlockNodesRef.current[`${docId}#${blockIndex}`];
+    if (!node) return;
+    const offsets = getContainerSelectionOffsets(node);
+    if (!offsets) {
+      toast.error('Select some text first.');
+      return;
+    }
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    if (!template?.layoutV2?.blocks?.[blockIndex]) return;
+    const nextBlock = toggleLayoutV2ParagraphBold(template.layoutV2.blocks[blockIndex], offsets.start, offsets.end);
+    const nextTemplate = {
+      ...template,
+      layoutV2: {
+        ...template.layoutV2,
+        blocks: template.layoutV2.blocks.map((item, index) => (index === blockIndex ? nextBlock : item)),
+      },
+    };
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
+      }));
+    } catch (saveError) {
+      console.error('Unable to save the template change', saveError);
+      toast.error('Could not save the change.');
+    }
   };
 
   // Insert-variable modal (spec: "кнопка поруч з курсивом... модальне вікно... обрати змінні") -
@@ -2558,12 +2665,20 @@ const DocumentsPage = ({ isAdmin }) => {
                                       >
                                         <FormattedRunsPreview text={beforeTitleResolvedValue('uk')} />
                                       </TextModeDisplay>
+                                    ) : isInputMode ? (
+                                      <RichResolvedTextField
+                                        ref={registerFieldNode(template.id, scope, 'uk')}
+                                        initialText={beforeTitleResolvedValue('uk')}
+                                        placeholder="Before title (uk)"
+                                        onPlainTextChange={nextPlain => onChange('uk')({ target: { value: nextPlain } })}
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
+                                        onBlur={onBlur}
+                                      />
                                     ) : (
                                       <AutoInlineTextarea
                                         ref={registerFieldNode(template.id, scope, 'uk')}
                                         value={displayValue('uk')}
                                         placeholder="Before title (uk)"
-                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
                                         onChange={onChange('uk')}
                                         onBlur={onBlur}
@@ -2583,12 +2698,20 @@ const DocumentsPage = ({ isAdmin }) => {
                                       >
                                         <FormattedRunsPreview text={beforeTitleResolvedValue('en')} />
                                       </TextModeDisplay>
+                                    ) : isInputMode ? (
+                                      <RichResolvedTextField
+                                        ref={registerFieldNode(template.id, scope, 'en')}
+                                        initialText={beforeTitleResolvedValue('en')}
+                                        placeholder="Before title (en)"
+                                        onPlainTextChange={nextPlain => onChange('en')({ target: { value: nextPlain } })}
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
+                                        onBlur={onBlur}
+                                      />
                                     ) : (
                                       <AutoInlineTextarea
                                         ref={registerFieldNode(template.id, scope, 'en')}
                                         value={displayValue('en')}
                                         placeholder="Before title (en)"
-                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
                                         onChange={onChange('en')}
                                         onBlur={onBlur}
@@ -2711,12 +2834,20 @@ const DocumentsPage = ({ isAdmin }) => {
                                       >
                                         <FormattedRunsPreview text={titleResolvedValue('uk')} />
                                       </TextModeDisplay>
+                                    ) : titleIsInputMode ? (
+                                      <RichResolvedTextField
+                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'uk')}
+                                        initialText={titleResolvedValue('uk')}
+                                        placeholder="Title (uk)"
+                                        onPlainTextChange={nextPlain => onTitleFieldChange('uk')({ target: { value: nextPlain } })}
+                                        onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', titleFieldKind)}
+                                        onBlur={onTitleFieldBlur}
+                                      />
                                     ) : (
                                       <AutoInlineTextarea
                                         ref={registerFieldNode(template.id, TITLE_SCOPE, 'uk')}
                                         value={titleDisplayValue('uk')}
                                         placeholder="Title (uk)"
-                                        autoFocus={titleIsInputMode}
                                         onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'uk', titleFieldKind)}
                                         onChange={onTitleFieldChange('uk')}
                                         onBlur={onTitleFieldBlur}
@@ -2733,12 +2864,20 @@ const DocumentsPage = ({ isAdmin }) => {
                                       >
                                         <FormattedRunsPreview text={titleResolvedValue('en')} />
                                       </TextModeDisplay>
+                                    ) : titleIsInputMode ? (
+                                      <RichResolvedTextField
+                                        ref={registerFieldNode(template.id, TITLE_SCOPE, 'en')}
+                                        initialText={titleResolvedValue('en')}
+                                        placeholder="Title (en)"
+                                        onPlainTextChange={nextPlain => onTitleFieldChange('en')({ target: { value: nextPlain } })}
+                                        onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', titleFieldKind)}
+                                        onBlur={onTitleFieldBlur}
+                                      />
                                     ) : (
                                       <AutoInlineTextarea
                                         ref={registerFieldNode(template.id, TITLE_SCOPE, 'en')}
                                         value={titleDisplayValue('en')}
                                         placeholder="Title (en)"
-                                        autoFocus={titleIsInputMode}
                                         onFocus={handleRichFieldFocus(template.id, TITLE_SCOPE, 'en', titleFieldKind)}
                                         onChange={onTitleFieldChange('en')}
                                         onBlur={onTitleFieldBlur}
@@ -2869,12 +3008,20 @@ const DocumentsPage = ({ isAdmin }) => {
                                       >
                                         <FormattedRunsPreview text={resolvedValue('uk')} />
                                       </TextModeDisplay>
+                                    ) : isInputMode ? (
+                                      <RichResolvedTextField
+                                        ref={registerFieldNode(template.id, scope, 'uk')}
+                                        initialText={resolvedValue('uk')}
+                                        placeholder="Paragraph (uk)"
+                                        onPlainTextChange={nextPlain => onChange('uk')({ target: { value: nextPlain } })}
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
+                                        onBlur={onBlur}
+                                      />
                                     ) : (
                                       <AutoInlineTextarea
                                         ref={registerFieldNode(template.id, scope, 'uk')}
                                         value={displayValue('uk')}
                                         placeholder="Paragraph (uk)"
-                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'uk', fieldKind)}
                                         onChange={onChange('uk')}
                                         onBlur={onBlur}
@@ -2891,12 +3038,20 @@ const DocumentsPage = ({ isAdmin }) => {
                                       >
                                         <FormattedRunsPreview text={resolvedValue('en')} />
                                       </TextModeDisplay>
+                                    ) : isInputMode ? (
+                                      <RichResolvedTextField
+                                        ref={registerFieldNode(template.id, scope, 'en')}
+                                        initialText={resolvedValue('en')}
+                                        placeholder="Paragraph (en)"
+                                        onPlainTextChange={nextPlain => onChange('en')({ target: { value: nextPlain } })}
+                                        onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
+                                        onBlur={onBlur}
+                                      />
                                     ) : (
                                       <AutoInlineTextarea
                                         ref={registerFieldNode(template.id, scope, 'en')}
                                         value={displayValue('en')}
                                         placeholder="Paragraph (en)"
-                                        autoFocus={isInputMode}
                                         onFocus={handleRichFieldFocus(template.id, scope, 'en', fieldKind)}
                                         onChange={onChange('en')}
                                         onBlur={onBlur}
@@ -2917,6 +3072,46 @@ const DocumentsPage = ({ isAdmin }) => {
                             <FaPlus />
                           </SmallButton>
                         </ParagraphControlsRow>
+                        {/* layoutV2 paragraph/richParagraph blocks (batch 25 §3) - a separate
+                            rendering/editing path from the legacy title/beforeTitle/paragraphs
+                            fields above, so it gets its own section: select a text fragment inside
+                            one of these blocks and press Bold to mark just that fragment
+                            'inlineEmphasis' (configurable in the Style Editor). Only shown for a
+                            layoutV2 template, and only for its paragraph-shaped blocks - every other
+                            block type (letterhead, fieldLine, signatureTable, ...) has no free-text
+                            content to select. */}
+                        {isLayoutV2Template(template) ? (
+                          <ParagraphEditorBlock>
+                            <ParagraphControlsRow>
+                              <DocSubtitle style={{ fontWeight: 700 }}>layoutV2 paragraphs - select text, Bold the fragment</DocSubtitle>
+                            </ParagraphControlsRow>
+                            {template.layoutV2.blocks.map((block, blockIndex) => (
+                              (block?.type === 'paragraph' || block?.type === 'richParagraph') ? (
+                                // eslint-disable-next-line react/no-array-index-key
+                                <ParagraphFieldColumn key={`${template.id}-lv2-${blockIndex}`} style={{ marginTop: 6 }}>
+                                  <RowLine style={{ gap: 6, marginBottom: 4 }}>
+                                    <SmallButton
+                                      type="button"
+                                      onMouseDown={preventSelectionLoss}
+                                      onTouchStart={preventSelectionLoss}
+                                      onTouchEnd={event => {
+                                        event.preventDefault();
+                                        handleLayoutV2BlockBold(template.id, blockIndex);
+                                      }}
+                                      onClick={() => handleLayoutV2BlockBold(template.id, blockIndex)}
+                                      title="Bold the selected text"
+                                    >
+                                      <FaBold />
+                                    </SmallButton>
+                                  </RowLine>
+                                  <TextModeDisplay ref={registerLayoutV2BlockNode(template.id, blockIndex)}>
+                                    <LayoutV2RunsPreview block={block} />
+                                  </TextModeDisplay>
+                                </ParagraphFieldColumn>
+                              ) : null
+                            ))}
+                          </ParagraphEditorBlock>
+                        ) : null}
                         {/* Task 4: the document exactly as the exported PDF - same generation
                             pipeline, same props - as the last block of the document. */}
                         <DocumentsPdfPreview
