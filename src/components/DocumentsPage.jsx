@@ -1853,7 +1853,7 @@ const DocumentsPage = ({ isAdmin }) => {
       return;
     }
     const template = catalog.documents.find(item => String(item.id) === nextDocId);
-    setDocFormatDraft(resolveEffectiveDocFormatting(formatting, template?.format, template?.documentStyle));
+    setDocFormatDraft(resolveEffectiveDocFormatting(formatting, isLayoutV2Template(template) ? undefined : template?.format, template?.documentStyle));
   };
 
   const handleSaveFavouriteFormatting = async () => {
@@ -1868,7 +1868,9 @@ const DocumentsPage = ({ isAdmin }) => {
   // persisting a redundant copy (spec §5).
   const handleSaveDocFormatOverride = async () => {
     const template = catalog.documents.find(item => String(item.id) === formatDocId);
-    if (!template) return;
+    // A layoutV2 document's `format` is its own base style (spec §2/§3), never the legacy
+    // DEFAULT_DOC_FORMATTING override shape - never let this path write into it.
+    if (!template || isLayoutV2Template(template)) return;
     const normalizedDraft = normalizeDocFormatting(docFormatDraft || formatting);
     // An official-form document's own overrides are diffed against its OFFICIAL_FORM_FORMATTING
     // baseline, not the shared branded favourites - otherwise every one of that baseline's values
@@ -1928,6 +1930,12 @@ const DocumentsPage = ({ isAdmin }) => {
   // catalog's own order, after every recent one.
   const orderedDocuments = orderRecordsByRecentIds(catalog.documents, settings.recentDocIds);
   const selectedTemplates = orderedDocuments.filter(template => selectedDocIds[template.id]);
+  // A layoutV2 document is fully self-describing (its own `format`/styleSheet/lineStyles, spec
+  // §2/§3) and never reads the legacy per-document format override at all - offering it in this
+  // picker would let "Save for this document" overwrite that clean base style with the unrelated
+  // DEFAULT_DOC_FORMATTING shape (fontSize/marginTopCm/...) the legacy renderer expects there.
+  // Style Editor is where a layoutV2 document's own format/styles are edited instead.
+  const formatOverrideEligibleDocuments = orderedDocuments.filter(template => !isLayoutV2Template(template));
   // The row list only (never the Format section's "Format for: ..." dropdown, which always has to
   // offer every document regardless of what's currently filtered on screen).
   const docSearchNeedle = docSearchQuery.trim().toLowerCase();
@@ -3162,7 +3170,7 @@ const DocumentsPage = ({ isAdmin }) => {
                   <RowLine style={{ marginTop: 8 }}>
                     <Select value={formatDocId} onChange={event => handleFormatDocChange(event.target.value)}>
                       <option value="">Format for: all documents (defaults)</option>
-                      {orderedDocuments.map(template => (
+                      {formatOverrideEligibleDocuments.map(template => (
                         <option key={template.id} value={String(template.id)}>
                           Format for: {template.catalogName || template.title?.uk || template.title?.en || template.id}
                         </option>

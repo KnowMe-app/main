@@ -1941,14 +1941,60 @@ export const resolveLayoutV2NamedStyle = (template, styleName) => (
   styleName ? (template?.styleSheet?.[styleName] ?? {}) : {}
 );
 
-// block override -> named style -> document (spec §2/§7: a layoutV2 block never falls through to
-// template.format/global settings - it always names its own style, and `document` is the only
-// implicit base every named style inherits from).
+// block override -> named style -> template.format (clean layoutV2 template spec §2/§3: the base
+// style is the template's own `format` - never a required `styleSheet.document` entry, and never
+// the page-wide Format-panel settings, which a layoutV2 document never inherits at all). A template
+// that never sets `format` simply starts every block from {}, exactly like one whose named style
+// already covers everything itself.
 export const resolveLayoutV2Style = (template, styleName, overrides) => ({
-  ...pickLayoutV2StyleKeys(template?.styleSheet?.document),
+  ...pickLayoutV2StyleKeys(template?.format),
   ...pickLayoutV2StyleKeys(resolveLayoutV2NamedStyle(template, styleName)),
   ...pickLayoutV2StyleKeys(overrides),
 });
+
+// --- Page geometry (clean layoutV2 template spec §5/§6) ---------------------------------------
+// A clean template carries only `page.size`/`page.orientation`/`page.marginsMm` - never its own
+// widthMm/heightMm/contentWidthMm, which are always derivable and would otherwise just be a second
+// copy that could drift from the size/orientation actually selected.
+export const PAGE_SIZES_MM = {
+  A4: {
+    portrait: { width: 210, height: 297 },
+    landscape: { width: 297, height: 210 },
+  },
+};
+
+export const getPageGeometry = template => {
+  const page = template?.page ?? {};
+  const orientation = page.orientation === 'landscape' ? 'landscape' : 'portrait';
+  const size = PAGE_SIZES_MM[page.size] ? page.size : 'A4';
+  const dimensions = PAGE_SIZES_MM[size][orientation];
+  const margins = {
+    top: page?.marginsMm?.top ?? 0,
+    right: page?.marginsMm?.right ?? 0,
+    bottom: page?.marginsMm?.bottom ?? 0,
+    left: page?.marginsMm?.left ?? 0,
+  };
+  return {
+    widthMm: dimensions.width,
+    heightMm: dimensions.height,
+    margins,
+    contentWidthMm: dimensions.width - margins.left - margins.right,
+  };
+};
+
+// --- lineStyles (clean layoutV2 template spec §4) ----------------------------------------------
+// Repeated line/border parameters (letterhead divider, form-field underline, signature-cell rule)
+// live once under `lineStyles`, named by a block's own `lineStyle`/`bottomBorderStyle` - resolved
+// into a concrete object only in the normalized render tree, never written back onto the template.
+export const resolveLineStyle = (template, styleName) => {
+  if (!styleName) return null;
+  return template?.lineStyles?.[styleName] ?? null;
+};
+
+// A signatureTable's own width is always the sum of its columns - never a stored `widthMm` that
+// could drift from the columns actually defined.
+export const getSignatureTableWidthMm = block => (block?.columnWidthsMm || [])
+  .reduce((sum, width) => sum + (Number(width) || 0), 0);
 
 const resolveLayoutV2Text = (text, context, lang) => (text === undefined ? undefined : fillPlaceholders(text, context, lang));
 
@@ -2000,7 +2046,7 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
         ...base,
         heightMm: block.heightMm,
         columnGapMm: block.columnGapMm,
-        bottomBorder: block.bottomBorder,
+        bottomBorder: block.bottomBorder ?? resolveLineStyle(template, block.bottomBorderStyle),
         paddingBottomMm: block.paddingBottomMm,
         columns: (block.columns || []).map(column => ({
           widthMm: column.widthMm,
@@ -2036,7 +2082,9 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
         labelStyle: resolveLayoutV2Style(template, block.style, block.styleOverrides),
         value: resolveLayoutV2Text(block.value, context, lang) || '',
         valueStyle: resolveLayoutV2Style(template, block.valueStyle, block.valueStyleOverrides),
-        line: block.line || {},
+        // Both formats supported (spec §4/§16): an old inline `line` object wins if present, a new
+        // template names its border via `lineStyle` into the shared `lineStyles` map instead.
+        line: block.line ?? resolveLineStyle(template, block.lineStyle) ?? {},
         caption: block.caption !== undefined ? resolveLayoutV2Text(block.caption, context, lang) : undefined,
         captionStyle: resolveLayoutV2Style(template, block.captionStyle, block.captionStyleOverrides),
       };
@@ -2045,7 +2093,9 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
     case 'signatureTable':
       return {
         ...base,
-        widthMm: block.widthMm,
+        // A clean template never stores its own widthMm (spec §5/§10) - it's always the sum of
+        // columnWidthsMm; an old template's explicit widthMm (if any) still wins.
+        widthMm: block.widthMm ?? getSignatureTableWidthMm(block),
         horizontalAlign: block.horizontalAlign,
         columnWidthsMm: block.columnWidthsMm || [],
         cellPaddingMm: block.cellPaddingMm || 0,
@@ -2055,13 +2105,14 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
             : (row || []).map(cell => ({
               text: resolveLayoutV2Text(cell?.text, context, lang) || '',
               style: resolveLayoutV2Style(template, cell?.style, cell?.styleOverrides),
-              bottomBorder: cell?.bottomBorder,
+              bottomBorder: cell?.bottomBorder ?? resolveLineStyle(template, cell?.bottomBorderStyle),
             }))
         )),
       };
     default:
-      // spec §9: an unknown block type never crashes the render - it's carried through as a
-      // diagnostic-only entry the renderers skip.
+      // spec §7/§9: an unknown block type never crashes the render - it's carried through as a
+      // diagnostic-only entry the renderers skip, with a console warning for whoever authored it.
+      console.warn(`Unknown layoutV2 block type: ${block?.type}`);
       return { ...base, unknown: true };
   }
 };
@@ -2072,12 +2123,107 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
 export const buildLayoutV2Document = (template, context) => {
   if (!isLayoutV2Template(template)) return null;
   const lang = (resolveDocLanguages(template) || ['uk'])[0];
+  // Geometry is always derived (spec §5/§6) - a clean template's `page` never carries its own
+  // widthMm/heightMm/contentWidthMm, so getPageGeometry computes them from size/orientation/margins
+  // every render; an old template's explicit page.marginsMm still drives the same computation.
+  const geometry = getPageGeometry(template);
   return {
     lang,
-    page: template.page || null,
-    contentWidthMm: template.layoutV2.contentWidthMm,
+    page: {
+      ...(template.page || {}),
+      widthMm: geometry.widthMm,
+      heightMm: geometry.heightMm,
+      marginsMm: geometry.margins,
+    },
+    contentWidthMm: geometry.contentWidthMm,
     blocks: template.layoutV2.blocks.map(block => normalizeLayoutV2Block(block, template, context, lang)),
   };
+};
+
+// --- Validation (clean layoutV2 template spec §17) ---------------------------------------------
+// Best-effort diagnostics for a layoutV2 template - never thrown, always a { errors, warnings }
+// list an editor surface can show. A missing/unknown reference always falls back gracefully in the
+// renderers/normalizer themselves (undefined style, no border, etc.) - this only flags it for
+// whoever is authoring the template.
+const LAYOUT_V2_KNOWN_BLOCK_TYPES = ['letterhead', 'paragraph', 'alignedBox', 'richParagraph', 'fieldLine', 'spacer', 'signatureTable'];
+
+export const validateLayoutV2Template = template => {
+  const errors = [];
+  const warnings = [];
+  if (template?.rendererVersion !== 2) return { errors, warnings };
+  if (!Array.isArray(template?.layoutV2?.blocks)) {
+    errors.push('layoutV2.blocks is missing or is not an array.');
+    return { errors, warnings };
+  }
+
+  const geometry = getPageGeometry(template);
+  const styleNames = new Set(Object.keys(template?.styleSheet || {}));
+  const lineStyleNames = new Set(Object.keys(template?.lineStyles || {}));
+
+  const checkStyle = (styleName, where) => {
+    if (styleName && !styleNames.has(styleName)) warnings.push(`Unknown named style "${styleName}" (${where}).`);
+  };
+  const checkLineStyle = (styleName, where) => {
+    if (styleName && !lineStyleNames.has(styleName)) warnings.push(`Unknown lineStyle "${styleName}" (${where}).`);
+  };
+  const checkBottomBorderStyle = (styleName, where) => {
+    if (styleName && !lineStyleNames.has(styleName)) warnings.push(`Unknown bottomBorderStyle "${styleName}" (${where}).`);
+  };
+
+  template.layoutV2.blocks.forEach((block, index) => {
+    const where = `block[${index}] (${block?.type})`;
+    if (!LAYOUT_V2_KNOWN_BLOCK_TYPES.includes(block?.type)) {
+      warnings.push(`Unknown block type "${block?.type}" (${where}).`);
+      return;
+    }
+    if (block.type === 'letterhead') {
+      checkBottomBorderStyle(block.bottomBorderStyle, where);
+      const columnsWidthMm = (block.columns || []).reduce((sum, column) => sum + (Number(column.widthMm) || 0), 0)
+        + (Number(block.columnGapMm) || 0) * Math.max(0, (block.columns || []).length - 1);
+      if (columnsWidthMm > geometry.contentWidthMm) {
+        warnings.push(`Letterhead columns (${columnsWidthMm}mm) exceed the content width (${geometry.contentWidthMm}mm).`);
+      }
+      (block.columns || []).forEach(column => {
+        if (column?.content?.type === 'stack') checkStyle(column.content.style, where);
+      });
+    }
+    if (block.type === 'paragraph' || block.type === 'alignedBox') {
+      checkStyle(block.style, where);
+    }
+    if (block.type === 'richParagraph') {
+      (block.runs || []).forEach(run => checkStyle(run.style, where));
+    }
+    if (block.type === 'fieldLine') {
+      checkStyle(block.style, where);
+      checkStyle(block.valueStyle, where);
+      checkStyle(block.captionStyle, where);
+      checkLineStyle(block.lineStyle, where);
+    }
+    if (block.type === 'signatureTable') {
+      const tableWidthMm = getSignatureTableWidthMm(block);
+      if (tableWidthMm > geometry.contentWidthMm) {
+        warnings.push(`signatureTable columns (${tableWidthMm}mm) exceed the content width (${geometry.contentWidthMm}mm).`);
+      }
+      (block.rows || []).forEach(row => {
+        if (row?.type === 'spacerRow') return;
+        (row || []).forEach(cell => {
+          checkStyle(cell?.style, where);
+          checkBottomBorderStyle(cell?.bottomBorderStyle, where);
+        });
+      });
+    }
+  });
+
+  return { errors, warnings };
+};
+
+// Leftover `{{...}}` anywhere in an already-resolved layoutV2 render tree (buildLayoutV2Document's
+// output) means some placeholder in the template has no matching context value (spec §17/§18) -
+// returns the distinct unresolved tokens found, empty when everything resolved cleanly.
+export const findUnresolvedPlaceholders = layoutV2Doc => {
+  if (!layoutV2Doc) return [];
+  const serialized = JSON.stringify(layoutV2Doc);
+  return [...new Set(serialized.match(/\{\{[^}]+\}\}/g) || [])];
 };
 
 // --- layoutV2 paragraph/richParagraph inline bold (batch 25 §3) --------------------------------
