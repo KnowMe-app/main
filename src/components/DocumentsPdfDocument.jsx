@@ -614,7 +614,10 @@ const LayoutV2FieldLine = ({ block }) => {
     <View style={{ marginTop: (block.marginTopMm || 0) * MM_TO_PT, marginBottom: (block.marginBottomMm || 0) * MM_TO_PT }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
         {block.labelWidthMm ? (
-          <View style={{ width: block.labelWidthMm * MM_TO_PT }}>
+          // marginBottom nudges the label off the row's shared bottom edge (positive = up,
+          // negative = down) without moving the value/line it sits above - a purely cosmetic,
+          // per-block adjustment (spec: "пересувати лейбл по вертикалі").
+          <View style={{ width: block.labelWidthMm * MM_TO_PT, marginBottom: (block.labelOffsetMm || 0) * MM_TO_PT }}>
             {block.labelRuns ? (
               <Text style={layoutV2TextStyle(block.labelStyle)}>
                 {block.labelRuns.map((run, index) => (

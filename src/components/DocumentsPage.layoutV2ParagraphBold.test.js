@@ -220,6 +220,64 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
     ));
   });
 
+  it('toggles a fieldLine label off/on and sets its vertical offset, without touching label text/width', async () => {
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => ({}) };
+      if (path === 'documentsBuilder/cases') return { exists: () => false, val: () => null };
+      if (path === 'documentsBuilder/templates') {
+        return {
+          exists: () => true,
+          val: () => ({
+            'doc-1': {
+              id: 'doc-1',
+              catalogName: 'Genetic affinity certificate',
+              rendererVersion: 2,
+              languages: ['uk'],
+              layoutV2: {
+                blocks: [{
+                  type: 'fieldLine', style: 'body', label: 'дружина', labelWidthMm: 15, value: 'X', valueStyle: 'formValue',
+                }],
+              },
+            },
+          }),
+        };
+      }
+      return { exists: () => false, val: () => null };
+    });
+
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const labelPreview = await screen.findByText('дружина');
+    // eslint-disable-next-line testing-library/no-node-access
+    const labelBlock = labelPreview.closest('.paragraph-editor-block');
+    fireEvent.click(within(labelBlock).getByRole('checkbox', { name: 'Show label' }));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [{
+            type: 'fieldLine', style: 'body', label: 'дружина', labelWidthMm: 15, value: 'X', valueStyle: 'formValue', labelHidden: true,
+          }],
+        }),
+      }),
+    ));
+
+    const offsetField = within(labelBlock).getByLabelText('Vertical offset (mm, + = up)');
+    fireEvent.change(offsetField, { target: { value: '2' } });
+    fireEvent.blur(offsetField);
+
+    await waitFor(() => expect(set).toHaveBeenLastCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [expect.objectContaining({ label: 'дружина', labelWidthMm: 15, labelOffsetMm: 2 })],
+        }),
+      }),
+    ));
+  });
+
   it('does not show the layoutV2 paragraph section for a legacy (non-layoutV2) template', async () => {
     get.mockImplementation(async path => {
       if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => ({}) };

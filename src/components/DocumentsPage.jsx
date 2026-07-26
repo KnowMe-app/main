@@ -1609,6 +1609,28 @@ const DocumentsPage = ({ isAdmin }) => {
     }));
   };
 
+  // fieldLine label controls: `labelHidden` toggles the label off without discarding its text/
+  // width (so turning it back on needs no retyping - see the normalizer, documentsCatalogUtils.js),
+  // `labelOffsetMm` nudges it vertically, independent of the shared named style.
+  const handleToggleLayoutV2LabelHidden = (docId, blockIndex) => applyLayoutV2BlocksChange(
+    docId,
+    blocks => blocks.map((item, index) => (index === blockIndex ? { ...item, labelHidden: !item.labelHidden } : item)),
+  );
+
+  const setLayoutV2LabelOffset = (docId, blockIndex, raw) => {
+    const parsed = parsePlainNumber(raw);
+    if (parsed === undefined) return;
+    updateTemplate(docId, template => ({
+      ...template,
+      layoutV2: {
+        ...template.layoutV2,
+        blocks: (template.layoutV2?.blocks || []).map((item, index) => (
+          index === blockIndex ? { ...item, labelOffsetMm: parsed === null ? undefined : parsed } : item
+        )),
+      },
+    }));
+  };
+
   // Insert-variable modal (spec: "кнопка поруч з курсивом... модальне вікно... обрати змінні") -
   // only meaningful for a template-kind field, since only the raw {{placeholder}} markup is ever
   // resolved against a case (an override is already-resolved final text - see buildGeneratedDocument).
@@ -3276,6 +3298,45 @@ const DocumentsPage = ({ isAdmin }) => {
                                 <FaPlus />
                               </SmallButton>
                             </ParagraphControlsRow>
+                          </>
+                        ) : null}
+                        {/* fieldLine labels (e.g. "дружина", "та чоловік"): a per-block "Show
+                            label" toggle - hides it without discarding its text/width, so turning
+                            it back on needs no retyping - plus a vertical offset (mm, positive =
+                            up) independent of the shared named style, matching every other
+                            layoutV2 block's own styleOverrides convention. */}
+                        {isLayoutV2Template(template) ? (
+                          <>
+                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Field labels</DocSubtitle>
+                            {template.layoutV2.blocks.map((block, blockIndex) => {
+                              if (block?.type !== 'fieldLine') return null;
+                              const labelPreview = block.label || (block.labelRuns || []).map(run => run.text).join('') || '(no label)';
+                              return (
+                                // eslint-disable-next-line react/no-array-index-key
+                                <ParagraphEditorBlock key={`${template.id}-lv2-label-${blockIndex}`}>
+                                  <RowLine style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <span style={{ fontSize: 12.5, opacity: block.labelHidden ? 0.5 : 1, flex: '1 1 140px' }}>
+                                      {labelPreview}
+                                    </span>
+                                    <CheckLine>
+                                      <input
+                                        type="checkbox"
+                                        checked={!block.labelHidden}
+                                        onChange={() => handleToggleLayoutV2LabelHidden(template.id, blockIndex)}
+                                      />
+                                      Show label
+                                    </CheckLine>
+                                    <PlainNumberField
+                                      label="Vertical offset (mm, + = up)"
+                                      initialValue={block.labelOffsetMm !== undefined ? String(block.labelOffsetMm) : ''}
+                                      placeholder="0"
+                                      onApply={raw => setLayoutV2LabelOffset(template.id, blockIndex, raw)}
+                                      onFieldBlur={() => persistTemplate(template.id)}
+                                    />
+                                  </RowLine>
+                                </ParagraphEditorBlock>
+                              );
+                            })}
                           </>
                         ) : null}
                         {/* Task 4: the document exactly as the exported PDF - same generation

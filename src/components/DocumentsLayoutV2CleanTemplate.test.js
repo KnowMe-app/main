@@ -477,6 +477,31 @@ describe('clean layoutV2 template - normalization (buildGeneratedDocument)', () 
     });
   });
 
+  it('fieldLine labelHidden collapses the label column without discarding the underlying label/labelWidthMm', () => {
+    const template = cleanTemplate();
+    const wifeField = template.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.label === 'дружина');
+    wifeField.labelHidden = true;
+    const resolved = buildGeneratedDocument(template, fullContext());
+    const resolvedField = resolved.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.value.startsWith('Кікава'));
+    expect(resolvedField.label).toBeUndefined();
+    expect(resolvedField.labelWidthMm).toBe(0);
+    // Turning it back off (the admin's own undo) needs no retyping - the source template's own
+    // label/labelWidthMm were never touched.
+    expect(wifeField.label).toBe('дружина');
+    expect(wifeField.labelWidthMm).toBe(15);
+  });
+
+  it('fieldLine labelOffsetMm passes through as a plain number, defaulting to 0', () => {
+    const template = cleanTemplate();
+    const wifeField = template.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.label === 'дружина');
+    wifeField.labelOffsetMm = 1.5;
+    const resolved = buildGeneratedDocument(template, fullContext());
+    const resolvedField = resolved.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.value.startsWith('Кікава'));
+    expect(resolvedField.labelOffsetMm).toBe(1.5);
+    const otherField = resolved.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.value.startsWith('Молвінських'));
+    expect(otherField.labelOffsetMm).toBe(0);
+  });
+
   it('resolves signatureTable cell bottomBorderStyle and computes the table width from columnWidthsMm', () => {
     const resolved = buildGeneratedDocument(cleanTemplate(), fullContext());
     const table = resolved.layoutV2.blocks.find(block => block.type === 'signatureTable');

@@ -2129,11 +2129,19 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
         runs: resolveLayoutV2Runs(block.runs, template, context, lang),
       };
     case 'fieldLine':
+      // `labelHidden` toggles the label off without discarding its text/width - so re-enabling it
+      // (the admin's own undo) needs no retyping. Collapsing labelWidthMm to 0 alongside it is what
+      // actually removes the label's reserved column, the same way omitting labelWidthMm entirely
+      // already does for a field that never had one (see the fieldLine spec: "не вимагати повного
+      // об'єкта").
       return {
         ...base,
-        label: block.label !== undefined ? resolveLayoutV2Text(block.label, context, lang) : undefined,
-        labelRuns: block.labelRuns ? resolveLayoutV2Runs(block.labelRuns, template, context, lang) : undefined,
-        labelWidthMm: block.labelWidthMm || 0,
+        label: !block.labelHidden && block.label !== undefined ? resolveLayoutV2Text(block.label, context, lang) : undefined,
+        labelRuns: !block.labelHidden && block.labelRuns ? resolveLayoutV2Runs(block.labelRuns, template, context, lang) : undefined,
+        labelWidthMm: block.labelHidden ? 0 : (block.labelWidthMm || 0),
+        // Positive = nudge the label up off the value's baseline, negative = down - a purely
+        // cosmetic per-block adjustment, independent of the shared named style.
+        labelOffsetMm: block.labelOffsetMm || 0,
         labelStyle: resolveLayoutV2Style(template, block.style, block.styleOverrides),
         value: resolveLayoutV2Text(block.value, context, lang) || '',
         valueStyle: resolveLayoutV2Style(template, block.valueStyle, block.valueStyleOverrides),
