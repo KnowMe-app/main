@@ -142,6 +142,7 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllNewUsersFilterSetIndexes } from 'utils/newUsersFilterSetsIndex';
+import { mergeUserCollectionData } from 'utils/mergeUserCollections';
 import {
   LAST_ACTION2_FILTER,
   LAST_ACTION2_FILTER_STORAGE_KEY,
@@ -5033,8 +5034,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         userId,
         {
           userId,
-          ...(usersData[userId] || {}),
-          ...newUserRaw,
+          ...mergeUserCollectionData(usersData[userId], newUserRaw),
         },
       ];
     });

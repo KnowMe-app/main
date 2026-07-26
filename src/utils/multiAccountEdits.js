@@ -1,5 +1,6 @@
 import { get as firebaseGet, ref as ref2, remove, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+import { mergeUserCollectionData } from 'utils/mergeUserCollections';
 
 import { database } from 'components/config';
 
@@ -78,8 +79,7 @@ export const getCanonicalCard = async cardUserId => {
 
   return {
     userId: cardUserId,
-    ...usersData,
-    ...newUsersData,
+    ...mergeUserCollectionData(usersData, newUsersData),
   };
 };
 

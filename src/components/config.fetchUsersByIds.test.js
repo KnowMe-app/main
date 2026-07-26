@@ -1,33 +1,83 @@
 import fs from 'fs';
 import path from 'path';
+import { mergeUserCollectionData, mergeUserFieldValue } from '../utils/mergeUserCollections';
 
-describe('newUsers merge priority', () => {
+describe('newUsers/users merge behaviour', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
   const addNewProfileSource = fs.readFileSync(path.join(__dirname, 'AddNewProfile.jsx'), 'utf8');
 
-  it('fetchUsersByIds reads both collections by default and lets newUsers override users fields', () => {
+  it('mergeUserFieldValue keeps unique array values from both sides, newUsers first, users last', () => {
+    // 'b' is the confirmed/last value in users (primary) and must stay last even
+    // though it also appears earlier in newUsers (secondary) — MyProfile only
+    // shows the LAST array element to a regular (non-admin) user, so that tail
+    // position must always reflect the users collection.
+    expect(mergeUserFieldValue(['a', 'b'], ['b', 'c'])).toEqual(['c', 'a', 'b']);
+  });
+
+  it('mergeUserFieldValue treats RTDB "sparse array as object" the same as a real array', () => {
+    expect(mergeUserFieldValue({ 0: 'a', 1: 'b' }, ['b', 'c'])).toEqual(['c', 'a', 'b']);
+  });
+
+  it('mergeUserFieldValue keeps empty-string list items instead of dropping them', () => {
+    expect(mergeUserFieldValue(['a', ''], ['x'])).toEqual(['x', 'a', '']);
+  });
+
+  it('mergeUserFieldValue combines a scalar conflict into [newUsers, users] so nothing is lost', () => {
+    expect(mergeUserFieldValue('fresh-from-users', 'stale-from-newUsers')).toEqual([
+      'stale-from-newUsers',
+      'fresh-from-users',
+    ]);
+  });
+
+  it('mergeUserFieldValue returns the plain value when both sides already agree', () => {
+    expect(mergeUserFieldValue('same', 'same')).toBe('same');
+  });
+
+  it('mergeUserFieldValue falls back to the other side when only one side has the field', () => {
+    expect(mergeUserFieldValue(undefined, 'onlyInNewUsers')).toBe('onlyInNewUsers');
+    expect(mergeUserFieldValue('onlyInUsers', undefined)).toBe('onlyInUsers');
+  });
+
+  it('mergeUserCollectionData does not drop fields that only exist in newUsers, and keeps users last on conflicts', () => {
+    const merged = mergeUserCollectionData(
+      { surname: 'FreshSurname' },
+      { role: 'writer', surname: 'StaleSurname' }
+    );
+    expect(merged).toEqual({ surname: ['StaleSurname', 'FreshSurname'], role: 'writer' });
+  });
+
+  it('fetchUsersByIds merges users/newUsers per field instead of overwriting one side wholesale', () => {
     const fetchUsersByIdsBody = source.slice(
       source.indexOf('export const fetchUsersByIds'),
       source.indexOf('const addUserFromUsers')
     );
 
     expect(fetchUsersByIdsBody).toContain("const readSources = source ? [source] : ['users', 'newUsers'];");
-    expect(fetchUsersByIdsBody.indexOf('...(hasUser ? dataBySource.users : {})'))
-      .toBeLessThan(fetchUsersByIdsBody.indexOf('...(hasNewUser ? dataBySource.newUsers : {})'));
+    expect(fetchUsersByIdsBody).toContain('mergeUserCollectionData(');
     expect(fetchUsersByIdsBody).toContain("__sourceCollection: hasNewUser ? 'newUsers' : 'users'");
   });
 
-  it('addUserFromUsers lets newUsers override users fields in search results', () => {
+  it('addUserFromUsers merges users/newUsers per field in search results', () => {
     const addUserFromUsersBody = source.slice(
       source.indexOf('const addUserFromUsers'),
       source.indexOf('const searchBySearchIdUsers')
     );
 
-    expect(addUserFromUsersBody.indexOf('...userData'))
-      .toBeLessThan(addUserFromUsersBody.indexOf('...newUserData'));
+    expect(addUserFromUsersBody).toContain('mergeUserCollectionData(userData, newUserData)');
   });
 
-  it('bulk merged RTDB exports let newUsers override users fields', () => {
+  it('fetchUserById merges users/newUsers per field so stale newUsers data cannot shadow fresh users data', () => {
+    const fetchUserByIdBody = source.slice(
+      source.indexOf('export const fetchUserById'),
+      source.indexOf('export const removeKeyFromFirebase')
+    );
+
+    expect(fetchUserByIdBody).toContain(
+      'mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val())'
+    );
+  });
+
+  it('bulk merged RTDB exports merge users/newUsers per field', () => {
     const fetchAllFilteredUsersBody = source.slice(
       source.indexOf('export const fetchAllFilteredUsers'),
       source.indexOf('export const fetchAllUsersFromRTDB')
@@ -37,21 +87,17 @@ describe('newUsers merge priority', () => {
       source.indexOf('export const getAllUsersWithGetInTouch')
     );
 
-    expect(fetchAllFilteredUsersBody.indexOf('...(usersData[userId] || {})'))
-      .toBeLessThan(fetchAllFilteredUsersBody.indexOf('...newUserRaw'));
-    expect(fetchAllUsersFromRTDBBody.indexOf('...(usersData[userId] || {})'))
-      .toBeLessThan(fetchAllUsersFromRTDBBody.indexOf('...newUserRaw'));
+    expect(fetchAllFilteredUsersBody).toContain('mergeUserCollectionData(usersData[userId], newUserRaw)');
+    expect(fetchAllUsersFromRTDBBody).toContain('mergeUserCollectionData(usersData[userId], newUserRaw)');
   });
 
-
-  it('local export collection merge lets newUsers override users fields', () => {
+  it('local export collection merge merges users/newUsers per field', () => {
     const localExportMergeBody = addNewProfileSource.slice(
       addNewProfileSource.indexOf('const getMergedUsersFromLocalExportCollections'),
       addNewProfileSource.indexOf('const hasPhoneStartingWith38')
     );
 
-    expect(localExportMergeBody.indexOf('...(usersData[userId] || {})'))
-      .toBeLessThan(localExportMergeBody.indexOf('...newUserRaw'));
+    expect(localExportMergeBody).toContain('mergeUserCollectionData(usersData[userId], newUserRaw)');
   });
 
   it('marks fetchUserById records with their backing collection', () => {
