@@ -499,6 +499,11 @@ const layoutV2TextStyle = style => ({
 const LayoutV2Content = ({ content, clinicLogos }) => {
   if (!content) return null;
   if (content.type === 'image') {
+    // `hidden` skips the image but the column's own View (LayoutV2Letterhead) keeps its declared
+    // width regardless, so a sibling column never shifts (spec: "решта тексту ... не стрибала").
+    // offsetXMm/offsetYMm are plain margins on the image itself, inside that same fixed-width
+    // column - moving it never resizes/repositions the column box around it.
+    if (content.hidden) return null;
     const variant = content.logoToken ? getClinicLogo(clinicLogos, content.logoToken) : null;
     const dataUrl = variant?.dataUrl || content.source;
     if (!dataUrl) return null;
@@ -510,6 +515,8 @@ const LayoutV2Content = ({ content, clinicLogos }) => {
           height: (content.heightMm || 0) * MM_TO_PT,
           objectFit: content.fit || 'contain',
           objectPosition: `${content.horizontalAlign || 'left'} ${content.verticalAlign || 'top'}`,
+          marginLeft: (content.offsetXMm || 0) * MM_TO_PT,
+          marginTop: (content.offsetYMm || 0) * MM_TO_PT,
         }}
       />
     );
@@ -614,10 +621,7 @@ const LayoutV2FieldLine = ({ block }) => {
     <View style={{ marginTop: (block.marginTopMm || 0) * MM_TO_PT, marginBottom: (block.marginBottomMm || 0) * MM_TO_PT }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
         {block.labelWidthMm ? (
-          // marginBottom nudges the label off the row's shared bottom edge (positive = up,
-          // negative = down) without moving the value/line it sits above - a purely cosmetic,
-          // per-block adjustment (spec: "пересувати лейбл по вертикалі").
-          <View style={{ width: block.labelWidthMm * MM_TO_PT, marginBottom: (block.labelOffsetMm || 0) * MM_TO_PT }}>
+          <View style={{ width: block.labelWidthMm * MM_TO_PT }}>
             {block.labelRuns ? (
               <Text style={layoutV2TextStyle(block.labelStyle)}>
                 {block.labelRuns.map((run, index) => (

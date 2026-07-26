@@ -2067,8 +2067,13 @@ const normalizeLayoutV2Content = (content, template, context, lang) => {
   if (!content) return null;
   if (content.type === 'image') {
     const logoMatch = LOGO_TOKEN_PATTERN.exec(String(content.source || '').trim());
+    // `hidden` toggles the logo off without discarding its widthMm/heightMm/etc (turning it back
+    // on needs no re-entering); offsetXMm/offsetYMm nudge it within its own column - never the
+    // column's own widthMm, so a sibling column (the clinic contact block) never shifts when the
+    // logo moves (spec: "решта тексту ... не стрибала").
     return {
       type: 'image',
+      hidden: Boolean(content.hidden),
       logoToken: logoMatch ? logoMatch[1] : null,
       source: logoMatch ? null : resolveLayoutV2Text(content.source, context, lang),
       widthMm: content.widthMm,
@@ -2076,6 +2081,8 @@ const normalizeLayoutV2Content = (content, template, context, lang) => {
       fit: content.fit,
       horizontalAlign: content.horizontalAlign,
       verticalAlign: content.verticalAlign,
+      offsetXMm: content.offsetXMm || 0,
+      offsetYMm: content.offsetYMm || 0,
     };
   }
   if (content.type === 'stack') {
@@ -2129,19 +2136,11 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
         runs: resolveLayoutV2Runs(block.runs, template, context, lang),
       };
     case 'fieldLine':
-      // `labelHidden` toggles the label off without discarding its text/width - so re-enabling it
-      // (the admin's own undo) needs no retyping. Collapsing labelWidthMm to 0 alongside it is what
-      // actually removes the label's reserved column, the same way omitting labelWidthMm entirely
-      // already does for a field that never had one (see the fieldLine spec: "не вимагати повного
-      // об'єкта").
       return {
         ...base,
-        label: !block.labelHidden && block.label !== undefined ? resolveLayoutV2Text(block.label, context, lang) : undefined,
-        labelRuns: !block.labelHidden && block.labelRuns ? resolveLayoutV2Runs(block.labelRuns, template, context, lang) : undefined,
-        labelWidthMm: block.labelHidden ? 0 : (block.labelWidthMm || 0),
-        // Positive = nudge the label up off the value's baseline, negative = down - a purely
-        // cosmetic per-block adjustment, independent of the shared named style.
-        labelOffsetMm: block.labelOffsetMm || 0,
+        label: block.label !== undefined ? resolveLayoutV2Text(block.label, context, lang) : undefined,
+        labelRuns: block.labelRuns ? resolveLayoutV2Runs(block.labelRuns, template, context, lang) : undefined,
+        labelWidthMm: block.labelWidthMm || 0,
         labelStyle: resolveLayoutV2Style(template, block.style, block.styleOverrides),
         value: resolveLayoutV2Text(block.value, context, lang) || '',
         valueStyle: resolveLayoutV2Style(template, block.valueStyle, block.valueStyleOverrides),

@@ -1609,24 +1609,49 @@ const DocumentsPage = ({ isAdmin }) => {
     }));
   };
 
-  // fieldLine label controls: `labelHidden` toggles the label off without discarding its text/
-  // width (so turning it back on needs no retyping - see the normalizer, documentsCatalogUtils.js),
-  // `labelOffsetMm` nudges it vertically, independent of the shared named style.
-  const handleToggleLayoutV2LabelHidden = (docId, blockIndex) => applyLayoutV2BlocksChange(
+  // Clinic logo controls (letterhead image column): `hidden` toggles the logo off without
+  // discarding its geometry (turning it back on needs no re-entering widthMm/heightMm/etc.);
+  // offsetXMm/offsetYMm nudge it within its own column - never the column's own widthMm, so
+  // neighboring columns (the clinic contact block) never shift when the logo moves. Every
+  // letterhead column is addressed as [blockIndex, columnIndex] since a template could have more
+  // than one letterhead (or more than one image column) in principle.
+  const applyLayoutV2ImageContentChange = (docId, blockIndex, columnIndex, updateContent) => applyLayoutV2BlocksChange(
     docId,
-    blocks => blocks.map((item, index) => (index === blockIndex ? { ...item, labelHidden: !item.labelHidden } : item)),
+    blocks => blocks.map((item, index) => {
+      if (index !== blockIndex || item.type !== 'letterhead') return item;
+      return {
+        ...item,
+        columns: (item.columns || []).map((column, colIndex) => (
+          colIndex !== columnIndex ? column : { ...column, content: updateContent(column.content) }
+        )),
+      };
+    }),
   );
 
-  const setLayoutV2LabelOffset = (docId, blockIndex, raw) => {
+  const handleToggleLayoutV2LogoHidden = (docId, blockIndex, columnIndex) => applyLayoutV2ImageContentChange(
+    docId, blockIndex, columnIndex, content => ({ ...content, hidden: !content.hidden }),
+  );
+
+  const setLayoutV2LogoOffset = (docId, blockIndex, columnIndex, axisKey, raw) => {
     const parsed = parsePlainNumber(raw);
     if (parsed === undefined) return;
     updateTemplate(docId, template => ({
       ...template,
       layoutV2: {
         ...template.layoutV2,
-        blocks: (template.layoutV2?.blocks || []).map((item, index) => (
-          index === blockIndex ? { ...item, labelOffsetMm: parsed === null ? undefined : parsed } : item
-        )),
+        blocks: (template.layoutV2?.blocks || []).map((item, index) => {
+          if (index !== blockIndex || item.type !== 'letterhead') return item;
+          return {
+            ...item,
+            columns: (item.columns || []).map((column, colIndex) => {
+              if (colIndex !== columnIndex) return column;
+              const nextContent = { ...column.content };
+              if (parsed === null) delete nextContent[axisKey];
+              else nextContent[axisKey] = parsed;
+              return { ...column, content: nextContent };
+            }),
+          };
+        }),
       },
     }));
   };
@@ -3300,42 +3325,51 @@ const DocumentsPage = ({ isAdmin }) => {
                             </ParagraphControlsRow>
                           </>
                         ) : null}
-                        {/* fieldLine labels (e.g. "дружина", "та чоловік"): a per-block "Show
-                            label" toggle - hides it without discarding its text/width, so turning
-                            it back on needs no retyping - plus a vertical offset (mm, positive =
-                            up) independent of the shared named style, matching every other
-                            layoutV2 block's own styleOverrides convention. */}
+                        {/* Clinic logo (letterhead image column): a "Show logo" toggle - hides it
+                            without discarding its widthMm/heightMm/etc, so turning it back on
+                            needs no re-entering - plus horizontal/vertical offsets (mm) that move
+                            the logo image within its own fixed-width column, never the column's
+                            own widthMm. Every column (image or not) keeps its declared width
+                            regardless of the logo's offset, so the clinic contact block beside it
+                            never shifts when the logo moves (spec: "решта тексту ... не стрибала"). */}
                         {isLayoutV2Template(template) ? (
                           <>
-                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Field labels</DocSubtitle>
+                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Clinic logo</DocSubtitle>
                             {template.layoutV2.blocks.map((block, blockIndex) => {
-                              if (block?.type !== 'fieldLine') return null;
-                              const labelPreview = block.label || (block.labelRuns || []).map(run => run.text).join('') || '(no label)';
-                              return (
-                                // eslint-disable-next-line react/no-array-index-key
-                                <ParagraphEditorBlock key={`${template.id}-lv2-label-${blockIndex}`}>
-                                  <RowLine style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 12.5, opacity: block.labelHidden ? 0.5 : 1, flex: '1 1 140px' }}>
-                                      {labelPreview}
-                                    </span>
-                                    <CheckLine>
-                                      <input
-                                        type="checkbox"
-                                        checked={!block.labelHidden}
-                                        onChange={() => handleToggleLayoutV2LabelHidden(template.id, blockIndex)}
+                              if (block?.type !== 'letterhead') return null;
+                              return (block.columns || []).map((column, columnIndex) => {
+                                if (column?.content?.type !== 'image') return null;
+                                const { content } = column;
+                                return (
+                                  // eslint-disable-next-line react/no-array-index-key
+                                  <ParagraphEditorBlock key={`${template.id}-lv2-logo-${blockIndex}-${columnIndex}`}>
+                                    <RowLine style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      <CheckLine>
+                                        <input
+                                          type="checkbox"
+                                          checked={!content.hidden}
+                                          onChange={() => handleToggleLayoutV2LogoHidden(template.id, blockIndex, columnIndex)}
+                                        />
+                                        Show logo
+                                      </CheckLine>
+                                      <PlainNumberField
+                                        label="Horizontal offset (mm, + = right)"
+                                        initialValue={content.offsetXMm !== undefined ? String(content.offsetXMm) : ''}
+                                        placeholder="0"
+                                        onApply={raw => setLayoutV2LogoOffset(template.id, blockIndex, columnIndex, 'offsetXMm', raw)}
+                                        onFieldBlur={() => persistTemplate(template.id)}
                                       />
-                                      Show label
-                                    </CheckLine>
-                                    <PlainNumberField
-                                      label="Vertical offset (mm, + = up)"
-                                      initialValue={block.labelOffsetMm !== undefined ? String(block.labelOffsetMm) : ''}
-                                      placeholder="0"
-                                      onApply={raw => setLayoutV2LabelOffset(template.id, blockIndex, raw)}
-                                      onFieldBlur={() => persistTemplate(template.id)}
-                                    />
-                                  </RowLine>
-                                </ParagraphEditorBlock>
-                              );
+                                      <PlainNumberField
+                                        label="Vertical offset (mm, + = down)"
+                                        initialValue={content.offsetYMm !== undefined ? String(content.offsetYMm) : ''}
+                                        placeholder="0"
+                                        onApply={raw => setLayoutV2LogoOffset(template.id, blockIndex, columnIndex, 'offsetYMm', raw)}
+                                        onFieldBlur={() => persistTemplate(template.id)}
+                                      />
+                                    </RowLine>
+                                  </ParagraphEditorBlock>
+                                );
+                              });
                             })}
                           </>
                         ) : null}

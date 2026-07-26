@@ -433,11 +433,7 @@ export const buildDocumentsDocx = async ({
   // of it, keeps the original case; only this TextRun's rendered characters are uppercased.
   // letterSpacingPt maps straight onto `characterSpacing`, which docx (like the reference docx's
   // own `<w:spacing>`) expects in twentieths of a point - the same unit fontSize halves into.
-  // `extra` merges in run properties layoutV2TextRun doesn't otherwise expose - currently just
-  // fieldLine's label `position` (see layoutV2FieldLine), OOXML's own raise/lower-the-baseline
-  // property, which shifts text vertically without touching paragraph/cell layout at all - the
-  // DOCX analog of the PDF renderer's marginBottom nudge on the label's View.
-  const layoutV2TextRun = (text, style, extra) => new TextRun({
+  const layoutV2TextRun = (text, style) => new TextRun({
     text: applyTextTransform(text, style?.textTransform),
     font: style?.fontFamily || 'Times New Roman',
     size: halfPointsV2(style?.fontSizePt) || bodySize,
@@ -445,12 +441,18 @@ export const buildDocumentsDocx = async ({
     italics: style?.fontStyle === 'italic',
     underline: style?.textDecoration === 'underline' ? {} : undefined,
     characterSpacing: style?.letterSpacingPt ? Math.round(style.letterSpacingPt * 20) : undefined,
-    ...extra,
   });
 
   const layoutV2Content = (content, clinicLogos) => {
     if (!content) return [new Paragraph({ children: [] })];
     if (content.type === 'image') {
+      // `hidden` skips the image but still returns an empty paragraph - the column's own cell
+      // keeps its declared width regardless, so a sibling column never shifts (spec: "решта
+      // тексту ... не стрибала"). offsetXMm moves the image within its cell via a paragraph
+      // indent; offsetYMm approximates a downward nudge via spacing before (DOCX has no negative
+      // spacing, so a negative/"up" offset has no effect here - the PDF preview is authoritative
+      // for that direction).
+      if (content.hidden) return [new Paragraph({ children: [] })];
       const variant = content.logoToken ? getClinicLogo(clinicLogos, content.logoToken) : null;
       const dataUrl = variant?.dataUrl || content.source;
       const decoded = dataUrl ? decodeLogoDataUrl(dataUrl) : null;
@@ -459,7 +461,13 @@ export const buildDocumentsDocx = async ({
         ? variant.height / variant.width
         : ((content.heightMm && content.widthMm) ? content.heightMm / content.widthMm : 0.25);
       const widthPx = Math.round((content.widthMm || 0) * MM_TO_PX);
-      return [new Paragraph({ spacing: { after: 0 }, children: [logoImageRun(decoded, widthPx, ratio)] })];
+      const offsetXTwips = Math.round((content.offsetXMm || 0) * MM_TO_TWIP);
+      const offsetYTwips = Math.max(0, Math.round((content.offsetYMm || 0) * MM_TO_TWIP));
+      return [new Paragraph({
+        spacing: { before: offsetYTwips, after: 0 },
+        indent: offsetXTwips ? { left: offsetXTwips } : undefined,
+        children: [logoImageRun(decoded, widthPx, ratio)],
+      })];
     }
     if (content.type === 'stack') {
       const alignment = content.horizontalAlign === 'right'
@@ -552,16 +560,12 @@ export const buildDocumentsDocx = async ({
     const lineSize = eighthsFromPt(block.line?.widthPt);
     const lineColor = (block.line?.color || '#000000').replace('#', '');
     const lineBorder = lineSize ? { style: BorderStyle.SINGLE, size: lineSize, color: lineColor } : noBorder;
-    // Twentieths-of-a-point (OOXML's own unit for `position`) from mm - positive raises the label
-    // off the row, negative lowers it, same sign convention as the PDF renderer's marginBottom.
-    const labelPositionHalfPoints = block.labelOffsetMm ? Math.round((block.labelOffsetMm * MM_TO_TWIP) / 10) : undefined;
-    const labelRunExtra = labelPositionHalfPoints ? { position: String(labelPositionHalfPoints) } : undefined;
     const labelParagraph = new Paragraph({
       alignment: AlignmentType.LEFT,
       spacing: { after: 0, line: lineTwipsFor(block.labelStyle), lineRule: 'auto' },
       children: block.labelRuns
-        ? block.labelRuns.map(run => layoutV2TextRun(run.text, run.style, labelRunExtra))
-        : [layoutV2TextRun(block.label || '', block.labelStyle, labelRunExtra)],
+        ? block.labelRuns.map(run => layoutV2TextRun(run.text, run.style))
+        : [layoutV2TextRun(block.label || '', block.labelStyle)],
     });
     const valueParagraph = new Paragraph({
       alignment: layoutV2Alignment(block.valueStyle?.align),
