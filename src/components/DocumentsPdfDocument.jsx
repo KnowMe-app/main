@@ -499,26 +499,32 @@ const layoutV2TextStyle = style => ({
 const LayoutV2Content = ({ content, clinicLogos }) => {
   if (!content) return null;
   if (content.type === 'image') {
-    // `hidden` skips the image but the column's own View (LayoutV2Letterhead) keeps its declared
-    // width regardless, so a sibling column never shifts (spec: "решта тексту ... не стрибала").
-    // offsetXMm/offsetYMm are plain margins on the image itself, inside that same fixed-width
-    // column - moving it never resizes/repositions the column box around it.
-    if (content.hidden) return null;
     const variant = content.logoToken ? getClinicLogo(clinicLogos, content.logoToken) : null;
     const dataUrl = variant?.dataUrl || content.source;
-    if (!dataUrl) return null;
+    // The wrapper owns the logo's footprint. Hiding (or temporarily lacking) the bitmap must not
+    // shorten the letterhead row, and absolute offsets must not enlarge or move its column.
     return (
-      <Image
-        src={dataUrl}
+      <View
         style={{
           width: (content.widthMm || 0) * MM_TO_PT,
           height: (content.heightMm || 0) * MM_TO_PT,
-          objectFit: content.fit || 'contain',
-          objectPosition: `${content.horizontalAlign || 'left'} ${content.verticalAlign || 'top'}`,
-          marginLeft: (content.offsetXMm || 0) * MM_TO_PT,
-          marginTop: (content.offsetYMm || 0) * MM_TO_PT,
         }}
-      />
+      >
+        {!content.hidden && dataUrl ? (
+          <Image
+            src={dataUrl}
+            style={{
+              position: 'absolute',
+              left: (content.offsetXMm || 0) * MM_TO_PT,
+              top: (content.offsetYMm || 0) * MM_TO_PT,
+              width: (content.widthMm || 0) * MM_TO_PT,
+              height: (content.heightMm || 0) * MM_TO_PT,
+              objectFit: content.fit || 'contain',
+              objectPosition: `${content.horizontalAlign || 'left'} ${content.verticalAlign || 'top'}`,
+            }}
+          />
+        ) : null}
+      </View>
     );
   }
   if (content.type === 'stack') {
