@@ -2502,14 +2502,17 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
-                      {/* Column count + (for every document carrying layoutV2 blocks) the renderer
-                          switch, both in one settings popover (batch 23 §3) instead of
-                          always-visible buttons - column count overrides the page-wide selector
-                          above once set (see handleSetDocColumns); tap the active option again to
-                          clear it. Keep the renderer switch available even for layoutV2-only
-                          documents: an imported template or one disabled by an earlier version
-                          can have rendererVersion 1, and needs this control to recover exact-layout
-                          rendering instead of remaining stuck on its empty legacy fields. */}
+                      {/* Column count + renderer switch in one settings popover (batch 23 §3)
+                          instead of always-visible buttons - column count overrides the page-wide
+                          selector above once set (see handleSetDocColumns); tap the active option
+                          again to clear it. The renderer switch itself only ever shows when it's a
+                          real choice: either this document actually has legacy content to compare
+                          against, or its layoutV2 blocks exist but aren't currently active (an
+                          imported template, or one left on rendererVersion 1 by an earlier
+                          version) - shown so it can be recovered. A document that's already
+                          settled on layoutV2 with no legacy content at all (e.g.
+                          genetic-affinity-certificate) has no real "renderer" to switch to/from,
+                          so the control stays hidden for it instead of offering a fake choice. */}
                       <DocLayoutSettingsPopoverButton
                         open={openLayoutSettingsDocId === String(template.id)}
                         onToggle={() => toggleLayoutSettingsPopover(String(template.id))}
@@ -2517,7 +2520,7 @@ const DocumentsPage = ({ isAdmin }) => {
                         columnOptions={DOC_COLUMN_OPTIONS}
                         activeColumns={template.columns}
                         onSetColumns={columnsOption => handleSetDocColumns(template.id, columnsOption)}
-                        hasLayoutV2={Boolean(template.layoutV2?.blocks)}
+                        hasLayoutV2={Boolean(template.layoutV2?.blocks) && (hasLegacyDocContent || !isLayoutV2Template(template))}
                         layoutV2Active={isLayoutV2Template(template)}
                         onToggleLayoutV2={() => handleToggleLayoutV2(template.id)}
                       />

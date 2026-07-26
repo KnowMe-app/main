@@ -8,7 +8,7 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import {
-  render, screen, fireEvent, waitFor,
+  render, screen, fireEvent, waitFor, within,
 } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
@@ -143,5 +143,51 @@ describe('spec: layoutV2 paragraph blocks - selection-based Bold (batch 25 §3)'
     await screen.findByText('Звичайний текст.');
 
     expect(screen.queryByText('Paragraphs - select text, Bold the fragment')).not.toBeInTheDocument();
+  });
+
+  // A layoutV2-only document (no legacy beforeTitle/title/paragraphs/logo, e.g.
+  // genetic-affinity-certificate) has no real second renderer to switch to/from - the "Exact
+  // layout" toggle is a fake choice for it and must stay hidden, unlike a document that either
+  // still has real legacy content or is stuck on rendererVersion 1 despite carrying layoutV2
+  // blocks (the recovery case the toggle exists for).
+  it('hides the renderer toggle for a settled layoutV2-only document, but keeps it for recovery', async () => {
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => ({}) };
+      if (path === 'documentsBuilder/cases') return { exists: () => false, val: () => null };
+      if (path === 'documentsBuilder/templates') {
+        return {
+          exists: () => true,
+          val: () => ({
+            'settled-doc': {
+              id: 'settled-doc',
+              catalogName: 'Settled layoutV2-only doc',
+              rendererVersion: 2,
+              languages: ['uk'],
+              layoutV2: { blocks: [{ type: 'paragraph', style: 'body', text: 'Hello' }] },
+            },
+            'stuck-doc': {
+              id: 'stuck-doc',
+              catalogName: 'Stuck on rendererVersion 1',
+              rendererVersion: 1,
+              languages: ['uk'],
+              layoutV2: { blocks: [{ type: 'paragraph', style: 'body', text: 'Hello' }] },
+            },
+          }),
+        };
+      }
+      return { exists: () => false, val: () => null };
+    });
+
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+
+    // eslint-disable-next-line testing-library/no-node-access
+    const settledRowHead = (await screen.findByDisplayValue('Settled layoutV2-only doc')).closest('div');
+    fireEvent.click(within(settledRowHead).getByTitle(/Document layout settings/));
+    expect(screen.queryByText(/Exact layout/)).not.toBeInTheDocument();
+
+    // eslint-disable-next-line testing-library/no-node-access
+    const stuckRowHead = (await screen.findByDisplayValue('Stuck on rendererVersion 1')).closest('div');
+    fireEvent.click(within(stuckRowHead).getByTitle(/Document layout settings/));
+    expect(await screen.findByText(/Exact layout/)).toBeInTheDocument();
   });
 });
