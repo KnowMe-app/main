@@ -85,7 +85,6 @@ import {
   fetchUsersByIds,
   database,
   auth,
-  updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
 } from './config';
@@ -2087,7 +2086,9 @@ const Matching = () => {
       }
 
       const { todayDash } = getCurrentDate();
-      updateDataInNewUsersRTDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update');
+      // lastLogin2 sort queries (fetchUsersByLastLogin2) read from users only,
+      // so write straight there instead of routing through newUsers.
+      updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update');
 
     });
 

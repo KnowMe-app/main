@@ -8,6 +8,7 @@ import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 import { getUserStateShape, markUserPendingRemove, updateUserInState } from "./userStateUpdate";
+import { NEW_USERS_OWNED_FIELDS } from "utils/mergeUserCollections";
 
 export const handleChange = (
   setUsers,
@@ -403,24 +404,12 @@ export const handleSubmit = (userData, condition, removeKeys = []) => {
 };
 
 export const handleSubmitAll = async (userData, overwrite) => {
-  const fieldsForNewUsersOnly = [
-    'role',
-    'getInTouch',
-    'lastCycle',
-    'myComment',
-    'writer',
-    'cycleStatus',
-    'stimulationSchedule',
-  ];
-  const commonFields = [
-    'lastAction',
-    'lastLogin2',
-    'getInTouch',
-    'lastDelivery',
-    'ownKids',
-    'cycleStatus',
-    'stimulationSchedule',
-  ];
+  const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
+  // lastAction/lastLogin2 are the one exception kept in both collections:
+  // defaultFetchByLastActionRange (lastActionLoad.js) queries lastAction
+  // by orderByChild against newUsers only, so a long-userId card would drop
+  // out of "recently active" sorting if we stopped mirroring it here.
+  const fieldsKeptInBothCollections = ['lastAction', 'lastLogin2'];
 
   const { existingData } = await fetchUserById(userData.userId);
   const uploadedInfo =
@@ -441,7 +430,7 @@ export const handleSubmitAll = async (userData, overwrite) => {
 
     const cleanedStateForNewUsers = Object.fromEntries(
       Object.entries(uploadedInfo).filter(([key]) =>
-        [...fieldsForNewUsersOnly, ...commonFields].includes(key)
+        [...fieldsForNewUsersOnly, ...fieldsKeptInBothCollections].includes(key)
       )
     );
 

@@ -515,9 +515,7 @@ const EditProfile = () => {
       });
 
       const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) =>
-          [...fieldsForNewUsersOnly, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
-        )
+        Object.entries(updatedState).filter(([key]) => fieldsForNewUsersOnly.includes(key))
       );
       delete cleanedStateForNewUsers.cacheVersion;
       applyDeletedKeysToPayload(cleanedStateForNewUsers, deletedKeys);
@@ -890,9 +888,7 @@ const EditProfile = () => {
       await updateDataInRealtimeDB(mergedCard.userId, cleanedState, 'update');
       await updateDataInFiresoreDB(mergedCard.userId, cleanedState, 'check');
       const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(mergedCard).filter(([key]) =>
-          [...fieldsForNewUsersOnly, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
-        )
+        Object.entries(mergedCard).filter(([key]) => fieldsForNewUsersOnly.includes(key))
       );
       delete cleanedStateForNewUsers.cacheVersion;
       await updateDataInNewUsersRTDB(mergedCard.userId, cleanedStateForNewUsers, 'update', true);

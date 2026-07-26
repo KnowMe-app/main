@@ -1,15 +1,15 @@
 const isPlainObject = value =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
-// Ці поля редагуються та зберігаються в newUsers навіть для мігрованих карток.
+// Ці поля НІКОЛИ не пишуться в users — навіть для мігрованих (довгий userId)
+// карток вони й далі редагуються та зберігаються виключно в newUsers. Це не
+// дублювання (даних немає в users), тож синхронізувати їх нема з чим.
 // Єдиний список не дає правилам запису й читання колекцій розійтися.
 export const NEW_USERS_OWNED_FIELDS = [
   'role',
   'lastCycle',
   'myComment',
   'writer',
-  'cycleStatus',
-  'stimulationSchedule',
 ];
 
 // Firebase RTDB зберігає "діряві" масиви як об'єкти з числовими ключами,
