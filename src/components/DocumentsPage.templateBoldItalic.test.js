@@ -205,11 +205,80 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
     expect(within(block).queryByText(/\{\{surrogateMother/)).not.toBeInTheDocument();
     expect(within(block).queryByDisplayValue(/.*/)).not.toBeInTheDocument();
 
-    // Clicking that resolved-text view swaps it to an editable field showing that same resolved
-    // wording - not the raw {{token}} markup.
+    // Clicking that resolved-text view swaps it to an editable (contentEditable) view showing that
+    // same resolved wording - not the raw {{token}} markup, and not a plain <textarea> either (a
+    // native textarea can't preserve inline bold, see the batch 25 §1 test below).
     fireEvent.mouseDown(within(block).getByText('Сурогатна мати Сурогатна Матір'));
-    expect(await within(block).findByDisplayValue('Сурогатна мати Сурогатна Матір')).toBeInTheDocument();
+    const editable = await within(block).findByText('Сурогатна мати Сурогатна Матір');
+    expect(editable).toHaveAttribute('contenteditable', 'true');
     expect(within(block).queryByDisplayValue(/\{\{surrogateMother/)).not.toBeInTheDocument();
+  });
+
+  // Bug fix (batch 25 §1): tapping into an Input-mode field to place a cursor used to lose whatever
+  // inline bold formatting was already applied to that text (while correctly staying on the
+  // resolved wording, batch 24 §1's fix) - the field swapped to a plain <textarea>, which can never
+  // render <strong> at all. Focusing must only add the ability to place a cursor and edit; nothing
+  // about the formatting already on screen should change.
+  it('focusing an Input-mode field preserves inline bold already applied to the resolved text', async () => {
+    // A beforeTitle block whose raw markup already has "Сурогатна мати" bolded, so this test starts
+    // from a genuinely unfocused Input-mode row (no prior focus/selection needed to create the
+    // bold) - isolating the exact scenario the bug report describes.
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') {
+        return {
+          exists: () => true,
+          val: () => ({
+            couples: { 'couple-1': { id: 'couple-1', partners: [{ id: 'p1', role: 'wife', name: { uk: { nominative: 'Тестова Марія' }, en: 'Testova Mariia' } }] } },
+            surrogateMothers: { 'surrogate-1': { id: 'surrogate-1', name: { uk: { nominative: 'Сурогатна Матір' } } } },
+          }),
+        };
+      }
+      if (path === 'documentsBuilder/cases') {
+        return {
+          exists: () => true,
+          val: () => ({ 'case-1': { id: 'case-1', relations: { coupleId: 'couple-1', surrogateMotherId: 'surrogate-1' } } }),
+        };
+      }
+      if (path === 'documentsBuilder/templates') {
+        return {
+          exists: () => true,
+          val: () => ({
+            'doc-1': {
+              id: 'doc-1',
+              title: { uk: 'Заява', en: 'Statement' },
+              beforeTitle: [{ uk: '**Сурогатна мати** {{surrogateMother.name.uk.nominative}}', en: '', align: 'left' }],
+              paragraphs: [{ uk: 'Звичайний текст без форматування.', en: 'Plain text without formatting.' }],
+            },
+          }),
+        };
+      }
+      return { exists: () => false, val: () => null };
+    });
+
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const textarea = await screen.findByDisplayValue('**Сурогатна мати** {{surrogateMother.name.uk.nominative}}');
+    // eslint-disable-next-line testing-library/no-node-access
+    const block = textarea.closest('.paragraph-editor-block');
+
+    fireEvent.click(within(block).getByTitle('Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.'));
+
+    // At rest, Input mode shows the resolved wording with the bold already applied - nothing was
+    // focused/clicked yet.
+    const boldAtRest = await within(block).findByText('Сурогатна мати');
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(boldAtRest.closest('strong')).toBeInTheDocument();
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(boldAtRest.closest('[contenteditable]')).not.toBeInTheDocument();
+
+    // Tapping in to place a cursor must not strip that bold - only add editability.
+    fireEvent.mouseDown(boldAtRest);
+    const boldWhileEditing = await within(block).findByText('Сурогатна мати');
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(boldWhileEditing.closest('strong')).toBeInTheDocument();
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(boldWhileEditing.closest('[contenteditable]')).toBeInTheDocument();
   });
 
   // Notarial layout standard §3.3 + batch 2026-07-23 B §1.3/§1.4: the signer-block offset is a
