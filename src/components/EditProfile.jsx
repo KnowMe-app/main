@@ -29,7 +29,6 @@ import { normalizePhoneState } from './inputValidations';
 import toast from 'react-hot-toast';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
-import { NEW_USERS_OWNED_FIELDS } from 'utils/mergeUserCollections';
 import {
   acceptOverlayForUserCard,
   applyOverlayToCard,
@@ -164,11 +163,6 @@ const applyDeletedKeysToSnapshot = (snapshot, deletedKeys = []) => {
 
   return nextSnapshot;
 };
-
-const filterObjectByAllowedKeys = (source, isAllowedKey) =>
-  Object.fromEntries(
-    Object.entries(source || {}).filter(([key]) => isAllowedKey(key))
-  );
 
 const prepareSyncedSnapshot = (snapshot, deletedKeys = []) => {
   const cleaned = applyDeletedKeysToSnapshot(snapshot, deletedKeys);
@@ -454,15 +448,11 @@ const EditProfile = () => {
       };
     }
 
-    const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
-    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
-    const isMainProfileField = key => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key);
-
     if (updatedState?.userId?.length > 20) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 
-      const cleanedState = filterObjectByAllowedKeys(updatedState, isMainProfileField);
+      const cleanedState = { ...updatedState };
       delete cleanedState.cacheVersion;
       if (delCondition) {
         Object.keys(delCondition).forEach(key => {
@@ -483,8 +473,7 @@ const EditProfile = () => {
         },
       });
 
-      const mainProfileExistingData = filterObjectByAllowedKeys(existingData, isMainProfileField);
-      const sanitizedExistingData = applyDeletedKeysToSnapshot(mainProfileExistingData, deletedKeys);
+      const sanitizedExistingData = applyDeletedKeysToSnapshot(existingData, deletedKeys);
       const uploadedInfo = applyDeletedKeysToPayload(
         makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite),
         deletedKeys
@@ -513,14 +502,6 @@ const EditProfile = () => {
           surname: uploadedInfo?.surname,
         },
       });
-
-      const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) => fieldsForNewUsersOnly.includes(key))
-      );
-      delete cleanedStateForNewUsers.cacheVersion;
-      applyDeletedKeysToPayload(cleanedStateForNewUsers, deletedKeys);
-
-      await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update', true);
     } else if (updatedState?.userId) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
@@ -874,24 +855,14 @@ const EditProfile = () => {
   };
 
   const persistCanonicalByRules = async mergedCard => {
-    const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
-    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
-
     if (mergedCard?.userId?.length > 20) {
       const existingData = await fetchUserById(mergedCard.userId) || {};
       await syncUserSearchIdIndex(mergedCard.userId, existingData, mergedCard);
 
-      const cleanedState = Object.fromEntries(
-        Object.entries(mergedCard).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
-      );
+      const cleanedState = { ...mergedCard };
       delete cleanedState.cacheVersion;
       await updateDataInRealtimeDB(mergedCard.userId, cleanedState, 'update');
       await updateDataInFiresoreDB(mergedCard.userId, cleanedState, 'check');
-      const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(mergedCard).filter(([key]) => fieldsForNewUsersOnly.includes(key))
-      );
-      delete cleanedStateForNewUsers.cacheVersion;
-      await updateDataInNewUsersRTDB(mergedCard.userId, cleanedStateForNewUsers, 'update', true);
       return;
     }
 

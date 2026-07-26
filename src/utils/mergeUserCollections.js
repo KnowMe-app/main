@@ -1,17 +1,6 @@
 const isPlainObject = value =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
-// Ці поля НІКОЛИ не пишуться в users — навіть для мігрованих (довгий userId)
-// карток вони й далі редагуються та зберігаються виключно в newUsers. Це не
-// дублювання (даних немає в users), тож синхронізувати їх нема з чим.
-// Єдиний список не дає правилам запису й читання колекцій розійтися.
-export const NEW_USERS_OWNED_FIELDS = [
-  'role',
-  'lastCycle',
-  'myComment',
-  'writer',
-];
-
 // Firebase RTDB зберігає "діряві" масиви як об'єкти з числовими ключами,
 // тож той самий список-поле може прийти з однієї колекції масивом,
 // а з іншої — об'єктом. Приводимо обидва варіанти до списку значень.
@@ -79,11 +68,7 @@ export const mergeUserCollectionData = (primaryData = {}, secondaryData = {}) =>
   const keys = new Set([...Object.keys(primary), ...Object.keys(secondary)]);
   const merged = {};
   keys.forEach(key => {
-    // Для collection-specific полів newUsers є канонічним джерелом. Зокрема,
-    // не дозволяємо старій копії з users скасувати щойно збережене значення.
-    merged[key] = NEW_USERS_OWNED_FIELDS.includes(key) && secondary[key] !== undefined
-      ? secondary[key]
-      : mergeUserFieldValue(primary[key], secondary[key]);
+    merged[key] = mergeUserFieldValue(primary[key], secondary[key]);
   });
   return merged;
 };

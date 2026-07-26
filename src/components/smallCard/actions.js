@@ -8,7 +8,6 @@ import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 import { getUserStateShape, markUserPendingRemove, updateUserInState } from "./userStateUpdate";
-import { NEW_USERS_OWNED_FIELDS } from "utils/mergeUserCollections";
 
 export const handleChange = (
   setUsers,
@@ -404,13 +403,6 @@ export const handleSubmit = (userData, condition, removeKeys = []) => {
 };
 
 export const handleSubmitAll = async (userData, overwrite) => {
-  const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
-  // lastAction/lastLogin2 are the one exception kept in both collections:
-  // defaultFetchByLastActionRange (lastActionLoad.js) queries lastAction
-  // by orderByChild against newUsers only, so a long-userId card would drop
-  // out of "recently active" sorting if we stopped mirroring it here.
-  const fieldsKeptInBothCollections = ['lastAction', 'lastLogin2'];
-
   const { existingData } = await fetchUserById(userData.userId);
   const uploadedInfo =
     makeUploadedInfo(existingData, userData, overwrite) || {};
@@ -427,14 +419,6 @@ export const handleSubmitAll = async (userData, overwrite) => {
   if (userData?.userId?.length > 20) {
     await updateDataInRealtimeDB(userData.userId, uploadedInfo, 'update');
     await updateDataInFiresoreDB(userData.userId, uploadedInfo, 'check');
-
-    const cleanedStateForNewUsers = Object.fromEntries(
-      Object.entries(uploadedInfo).filter(([key]) =>
-        [...fieldsForNewUsersOnly, ...fieldsKeptInBothCollections].includes(key)
-      )
-    );
-
-    await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
   } else {
     await updateDataInNewUsersRTDB(userData.userId, uploadedInfo, 'update');
   }

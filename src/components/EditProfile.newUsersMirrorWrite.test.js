@@ -1,59 +1,63 @@
 import fs from 'fs';
 import path from 'path';
-import { NEW_USERS_OWNED_FIELDS } from '../utils/mergeUserCollections';
 
-describe('long-userId cards stop duplicating fields into newUsers', () => {
+describe('long-userId cards no longer write anything to newUsers', () => {
   const editProfileSource = fs.readFileSync(path.join(__dirname, 'EditProfile.jsx'), 'utf8');
   const actionsSource = fs.readFileSync(path.join(__dirname, 'smallCard/actions.js'), 'utf8');
   const mergeUtilSource = fs.readFileSync(path.join(__dirname, '../utils/mergeUserCollections.js'), 'utf8');
+  const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-  it('EditProfile no longer imports the newUsers mirror field list', () => {
+  it('EditProfile no longer imports any newUsers-ownership field list', () => {
     expect(editProfileSource).not.toContain("from './formFields'");
     expect(editProfileSource).not.toContain('newUsersMirrorFieldNames');
     expect(editProfileSource).not.toContain('ppTechnicalInputFields');
+    expect(editProfileSource).not.toContain('NEW_USERS_OWNED_FIELDS');
+    expect(editProfileSource).not.toContain('fieldsForNewUsersOnly');
   });
 
-  it('NEW_USERS_OWNED_FIELDS only lists fields never written to users at all (no duplication)', () => {
-    expect(NEW_USERS_OWNED_FIELDS).toEqual(['role', 'lastCycle', 'myComment', 'writer']);
-    expect(mergeUtilSource).not.toContain("'cycleStatus',\n  'stimulationSchedule',");
+  it('mergeUserCollections has no collection-ownership exception left', () => {
+    expect(mergeUtilSource).not.toContain('NEW_USERS_OWNED_FIELDS');
   });
 
-  it('remoteUpdate sends only newUsers-owned fields to newUsers for long-userId cards', () => {
+  it("remoteUpdate's long-userId branch never calls updateDataInNewUsersRTDB", () => {
     const remoteUpdateBody = editProfileSource.slice(
       editProfileSource.indexOf('async function remoteUpdate'),
       editProfileSource.indexOf('const enqueueProfileSync')
     );
-
-    expect(remoteUpdateBody).toContain(
-      "Object.entries(updatedState).filter(([key]) => fieldsForNewUsersOnly.includes(key))"
+    const longUserIdBranch = remoteUpdateBody.slice(
+      remoteUpdateBody.indexOf('updatedState?.userId?.length > 20'),
+      remoteUpdateBody.indexOf("} else if (updatedState?.userId)")
     );
+
+    expect(longUserIdBranch).not.toContain('updateDataInNewUsersRTDB');
+    expect(longUserIdBranch).toContain('updateDataInRealtimeDB(updatedState.userId, uploadedInfo');
   });
 
-  it('persistCanonicalByRules sends only newUsers-owned fields to newUsers for long-userId cards', () => {
+  it("persistCanonicalByRules' long-userId branch never calls updateDataInNewUsersRTDB", () => {
     const persistBody = editProfileSource.slice(
       editProfileSource.indexOf('const persistCanonicalByRules'),
       editProfileSource.indexOf('const effectiveCycleStatus')
     );
+    const longUserIdBranch = persistBody.slice(0, persistBody.indexOf('return;\n    }'));
 
-    expect(persistBody).toContain(
-      "Object.entries(mergedCard).filter(([key]) => fieldsForNewUsersOnly.includes(key))"
-    );
+    expect(longUserIdBranch).not.toContain('updateDataInNewUsersRTDB');
+    expect(longUserIdBranch).toContain('updateDataInRealtimeDB(mergedCard.userId, cleanedState');
   });
 
-  it('handleSubmitAll no longer mirrors contact/date fields into newUsers, except lastAction/lastLogin2', () => {
+  it("handleSubmitAll's long-userId branch never calls updateDataInNewUsersRTDB", () => {
     const handleSubmitAllBody = actionsSource.slice(
       actionsSource.indexOf('export const handleSubmitAll'),
     );
 
-    expect(handleSubmitAllBody).not.toContain('ppTechnicalInputFields');
-    expect(handleSubmitAllBody).toContain('NEW_USERS_OWNED_FIELDS');
-    expect(handleSubmitAllBody).toContain(
-      "[...fieldsForNewUsersOnly, ...fieldsKeptInBothCollections].includes(key)"
+    expect(handleSubmitAllBody).not.toContain('NEW_USERS_OWNED_FIELDS');
+    expect(handleSubmitAllBody).not.toContain('fieldsForNewUsersOnly');
+    expect(handleSubmitAllBody).not.toContain('fieldsKeptInBothCollections');
+
+    const longUserIdBranch = handleSubmitAllBody.slice(
+      handleSubmitAllBody.indexOf('userData?.userId?.length > 20'),
+      handleSubmitAllBody.indexOf('} else {')
     );
-    expect(handleSubmitAllBody).toContain("fieldsKeptInBothCollections = ['lastAction', 'lastLogin2']");
-    expect(handleSubmitAllBody).not.toContain("'getInTouch'");
-    expect(handleSubmitAllBody).not.toContain("'lastDelivery'");
-    expect(handleSubmitAllBody).not.toContain("'ownKids'");
+    expect(longUserIdBranch).not.toContain('updateDataInNewUsersRTDB');
   });
 
   it('handleSubmit (the newUsers-only quick-edit path with no userId length branch) is left untouched', () => {
@@ -67,10 +71,14 @@ describe('long-userId cards stop duplicating fields into newUsers', () => {
   });
 
   it('Matching.jsx writes the login timestamp straight to users instead of routing through newUsers', () => {
-    const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
     expect(matchingSource).not.toContain('updateDataInNewUsersRTDB');
     expect(matchingSource).toContain(
       "updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update');"
     );
+  });
+
+  it('defaultFetchByLastActionRange queries both collections so lastAction sorting keeps working without the newUsers write', () => {
+    const lastActionLoadSource = fs.readFileSync(path.join(__dirname, 'lastActionLoad.js'), 'utf8');
+    expect(lastActionLoadSource).toContain("['newUsers', 'users'].map(collectionName =>");
   });
 });

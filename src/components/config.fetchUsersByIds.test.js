@@ -35,16 +35,16 @@ describe('newUsers/users merge behaviour', () => {
     expect(mergeUserFieldValue('onlyInUsers', undefined)).toBe('onlyInUsers');
   });
 
-  it('mergeUserCollectionData preserves scalars and honors newUsers-owned fields', () => {
+  it('mergeUserCollectionData preserves scalars and lets users win on any conflict (no collection owns a field anymore)', () => {
     const merged = mergeUserCollectionData(
       { surname: 'FreshSurname' },
       { role: 'writer', surname: 'StaleSurname' }
     );
     expect(merged).toEqual({ surname: 'FreshSurname', role: 'writer' });
     expect(mergeUserCollectionData(
-      { role: 'stale-role', lastCycle: 'stale-cycle' },
-      { role: 'writer', lastCycle: 'fresh-cycle' }
-    )).toEqual({ role: 'writer', lastCycle: 'fresh-cycle' });
+      { role: 'fresh-role', lastCycle: 'fresh-cycle' },
+      { role: 'stale-role', lastCycle: 'stale-cycle' }
+    )).toEqual({ role: 'fresh-role', lastCycle: 'fresh-cycle' });
   });
 
   it('fetchUsersByIds merges users/newUsers per field instead of overwriting one side wholesale', () => {
