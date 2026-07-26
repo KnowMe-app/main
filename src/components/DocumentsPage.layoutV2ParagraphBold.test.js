@@ -8,7 +8,7 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import {
-  render, screen, fireEvent, waitFor, within,
+  render, screen, fireEvent, waitFor,
 } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
@@ -42,7 +42,10 @@ import DocumentsPage from './DocumentsPage';
 // Selection/Range, the same object getContainerSelectionOffsets (used by both the legacy Text-mode
 // Bold button and this new layoutV2 one) reads from.
 const selectTextNodeRange = (container, start, end) => {
-  const textNode = container.firstChild;
+  // Testing Library deliberately has no API for creating a browser Selection. Use a TreeWalker
+  // for this small browser-API boundary rather than reaching through the rendered element with
+  // firstChild; all discovery and assertions remain user-facing Testing Library queries.
+  const textNode = document.createTreeWalker(container, NodeFilter.SHOW_TEXT).nextNode();
   const range = document.createRange();
   range.setStart(textNode, start);
   range.setEnd(textNode, end);
@@ -95,11 +98,9 @@ describe('spec: layoutV2 paragraph blocks - selection-based Bold (batch 25 §3)'
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const field = await screen.findByText('Hello world else');
-    // eslint-disable-next-line testing-library/no-node-access
-    const blockColumn = field.closest('.paragraph-editor-block');
     selectTextNodeRange(field, 6, 11); // "world"
 
-    fireEvent.click(within(blockColumn).getByTitle('Bold the selected text'));
+    fireEvent.click(screen.getByTitle('Bold the selected text'));
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
@@ -119,9 +120,7 @@ describe('spec: layoutV2 paragraph blocks - selection-based Bold (batch 25 §3)'
     ));
 
     // The bold fragment now renders as <strong>, right in place - no separate preview to catch up.
-    const boldFragment = await within(blockColumn).findByText('world');
-    // eslint-disable-next-line testing-library/no-node-access
-    expect(boldFragment.closest('strong')).toBeInTheDocument();
+    expect(await screen.findByText('world', { selector: 'strong' })).toBeInTheDocument();
   });
 
   it('does not show the layoutV2 paragraph section for a legacy (non-layoutV2) template', async () => {
