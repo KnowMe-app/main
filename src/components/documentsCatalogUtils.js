@@ -1883,12 +1883,20 @@ export const TITLE_SCOPE = 'title';
 export const beforeTitleScope = index => `beforeTitle:${index}`;
 export const paragraphScope = index => `p:${index}`;
 
+// A `lv2:<index>` scope (layoutV2Scope) ignores langKey entirely - a layoutV2 paragraph/
+// richParagraph block is never bilingual (the whole template renders in its own single
+// `languages[0]`), so there is only ever one markup string to read/write, whichever langKey the
+// caller happens to pass.
+const layoutV2ScopeMatch = scope => /^lv2:(\d+)$/.exec(scope);
+
 export const getTemplateScopeText = (template, scope, langKey) => {
   if (scope === TITLE_SCOPE) return template?.title?.[langKey] || '';
   const beforeTitleMatch = /^beforeTitle:(\d+)$/.exec(scope);
   if (beforeTitleMatch) return template?.beforeTitle?.[Number(beforeTitleMatch[1])]?.[langKey] || '';
   const paragraphMatch = /^p:(\d+)$/.exec(scope);
   if (paragraphMatch) return template?.paragraphs?.[Number(paragraphMatch[1])]?.[langKey] || '';
+  const layoutV2Match = layoutV2ScopeMatch(scope);
+  if (layoutV2Match) return layoutV2ParagraphMarkup(template?.layoutV2?.blocks?.[Number(layoutV2Match[1])]);
   return '';
 };
 
@@ -1910,6 +1918,18 @@ export const withTemplateScopeText = (template, scope, langKey, value) => {
     return {
       ...template,
       paragraphs: (template.paragraphs || []).map((paragraph, i) => (i === index ? { ...paragraph, [langKey]: value } : paragraph)),
+    };
+  }
+  const layoutV2Match = layoutV2ScopeMatch(scope);
+  if (layoutV2Match) {
+    const index = Number(layoutV2Match[1]);
+    const blocks = template?.layoutV2?.blocks || [];
+    return {
+      ...template,
+      layoutV2: {
+        ...template.layoutV2,
+        blocks: blocks.map((block, i) => (i === index ? layoutV2ParagraphFromMarkup(block, value) : block)),
+      },
     };
   }
   return template;
@@ -2236,11 +2256,14 @@ export const findUnresolvedPlaceholders = layoutV2Doc => {
 // (the same shared markup every case sees, {{tokens}} included) - identical in spirit to Template
 // mode for legacy paragraphs, since a layoutV2 block has no per-case resolved-text editing mode.
 
-// A block's runs as one flat {text, style}[] list regardless of whether it's still a plain
-// `paragraph` (single implicit run, no style override) or already a `richParagraph`.
+// A block's runs as one flat {text, style, styleOverrides}[] list regardless of whether it's
+// still a plain `paragraph` (single implicit run, no style override) or already a `richParagraph`.
+// Bold is the 'inlineEmphasis' named style; italic (added alongside the full toolbar for layoutV2
+// paragraphs) is a plain `styleOverrides.fontStyle` instead of a named style, so it works on any
+// template regardless of whether its styleSheet defines one.
 export const layoutV2ParagraphRuns = block => (block?.type === 'richParagraph'
-  ? (block.runs || []).map(run => ({ text: String(run?.text || ''), style: run?.style }))
-  : [{ text: String(block?.text || ''), style: undefined }]);
+  ? (block.runs || []).map(run => ({ text: String(run?.text || ''), style: run?.style, styleOverrides: run?.styleOverrides }))
+  : [{ text: String(block?.text || ''), style: undefined, styleOverrides: undefined }]);
 
 export const layoutV2ParagraphPlainText = block => layoutV2ParagraphRuns(block).map(run => run.text).join('');
 
@@ -2265,7 +2288,7 @@ const splitLayoutV2RunsAtCuts = (runsWithOffsets, cuts) => {
     let offset = run.start;
     [...localCuts, run.end].forEach(cut => {
       result.push({
-        text: run.text.slice(offset - run.start, cut - run.start), style: run.style, start: offset, end: cut,
+        text: run.text.slice(offset - run.start, cut - run.start), style: run.style, styleOverrides: run.styleOverrides, start: offset, end: cut,
       });
       offset = cut;
     });
@@ -2273,20 +2296,27 @@ const splitLayoutV2RunsAtCuts = (runsWithOffsets, cuts) => {
   return result;
 };
 
+// Two runs merge only when both their bold (style) and italic (styleOverrides.fontStyle) state
+// match - either dimension differing keeps them apart, so toggling one never silently merges into
+// a neighbor that still differs in the other.
+const layoutV2RunFormatKey = run => `${run.style || ''}::${run.styleOverrides?.fontStyle || ''}`;
+
 const mergeAdjacentLayoutV2Runs = runs => runs.reduce((merged, run) => {
   if (!run.text) return merged;
   const last = merged[merged.length - 1];
-  if (last && last.style === run.style) last.text += run.text;
-  else merged.push({ text: run.text, style: run.style });
+  if (last && layoutV2RunFormatKey(last) === layoutV2RunFormatKey(run)) last.text += run.text;
+  else merged.push({ text: run.text, style: run.style, styleOverrides: run.styleOverrides });
   return merged;
 }, []);
+
+const isLayoutV2RunPlain = run => !run.style && !run.styleOverrides?.fontStyle;
 
 // MS Word toggle behavior (batch 17), same rule as toggleInlineFormat: if every run inside
 // [plainStart, plainEnd) is already 'inlineEmphasis', the whole selection loses it; otherwise the
 // whole selection gains it. Always returns a `richParagraph` (a plain `paragraph` block has no
 // runs of its own to hold a partial style yet) - collapsed back to a single-run `paragraph` when
-// the result ends up with no bold left anywhere, so an untouched/fully-unbolded block stays in its
-// simpler original shape instead of permanently upgrading.
+// the result ends up with no formatting left anywhere, so an untouched/fully-unformatted block
+// stays in its simpler original shape instead of permanently upgrading.
 export const toggleLayoutV2ParagraphBold = (block, plainStart, plainEnd) => {
   if (!(plainEnd > plainStart)) return block;
   const runs = withLayoutV2RunOffsets(layoutV2ParagraphRuns(block));
@@ -2296,13 +2326,71 @@ export const toggleLayoutV2ParagraphBold = (block, plainStart, plainEnd) => {
   const allBold = selected.length > 0 && selected.every(run => run.style === 'inlineEmphasis');
   const next = split.map(run => (within(run) ? { ...run, style: allBold ? undefined : 'inlineEmphasis' } : run));
   const mergedRuns = mergeAdjacentLayoutV2Runs(next);
-  if (mergedRuns.length <= 1 && !mergedRuns.some(run => run.style)) {
+  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
     return {
       ...block, type: 'paragraph', text: mergedRuns[0]?.text || '', runs: undefined,
     };
   }
   return { ...block, type: 'richParagraph', runs: mergedRuns, text: undefined };
 };
+
+// Same MS Word toggle rule as Bold, just flipping styleOverrides.fontStyle instead of the
+// 'inlineEmphasis' named style - independent of it, so a fragment can be bold, italic, or both.
+export const toggleLayoutV2ParagraphItalic = (block, plainStart, plainEnd) => {
+  if (!(plainEnd > plainStart)) return block;
+  const runs = withLayoutV2RunOffsets(layoutV2ParagraphRuns(block));
+  const split = splitLayoutV2RunsAtCuts(runs, [plainStart, plainEnd]);
+  const within = run => run.start >= plainStart && run.end <= plainEnd && run.end > run.start;
+  const selected = split.filter(within);
+  const allItalic = selected.length > 0 && selected.every(run => run.styleOverrides?.fontStyle === 'italic');
+  const next = split.map(run => (within(run)
+    ? { ...run, styleOverrides: allItalic ? undefined : { ...run.styleOverrides, fontStyle: 'italic' } }
+    : run));
+  const mergedRuns = mergeAdjacentLayoutV2Runs(next);
+  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
+    return {
+      ...block, type: 'paragraph', text: mergedRuns[0]?.text || '', runs: undefined,
+    };
+  }
+  return { ...block, type: 'richParagraph', runs: mergedRuns, text: undefined };
+};
+
+// --- layoutV2 paragraph full toolbar parity (mode cycle, Italic, Insert-variable) ---------------
+// The legacy paragraph/beforeTitle/title editor's whole toolbar (Template/Input/Text mode cycle,
+// Bold/Italic, Insert-variable) is built on one shared **bold**/*italic* markup string per row
+// (parseFormattedRuns/serializeFormattedRuns) addressed via getTemplateScopeText/
+// withTemplateScopeText. Converting a layoutV2 paragraph/richParagraph block to and from that same
+// markup shape lets a `lv2:<index>` scope (see layoutV2Scope) reuse that entire existing editor
+// unchanged, instead of duplicating a second toolbar/mode system just for layoutV2 blocks.
+export const layoutV2ParagraphMarkup = block => serializeFormattedRuns(layoutV2ParagraphRuns(block).map(run => ({
+  text: run.text,
+  bold: run.style === 'inlineEmphasis',
+  italic: run.styleOverrides?.fontStyle === 'italic',
+})));
+
+export const layoutV2ParagraphFromMarkup = (existingBlock, markup) => {
+  const runs = parseFormattedRuns(markup).map(run => ({
+    text: run.text,
+    style: run.bold ? 'inlineEmphasis' : undefined,
+    styleOverrides: run.italic ? { fontStyle: 'italic' } : undefined,
+  }));
+  if (runs.length <= 1 && runs.every(isLayoutV2RunPlain)) {
+    return {
+      ...existingBlock, type: 'paragraph', text: runs[0]?.text || '', runs: undefined,
+    };
+  }
+  return { ...existingBlock, type: 'richParagraph', runs, text: undefined };
+};
+
+// The scope key a layoutV2 paragraph/richParagraph block edits under (mirrors beforeTitleScope/
+// paragraphScope) - resolved by getTemplateScopeText/withTemplateScopeText below.
+export const layoutV2Scope = index => `lv2:${index}`;
+
+// The effective alignment a layoutV2 block renders with - unlike a legacy paragraph's own `style`
+// object, a layoutV2 block's `style` names a *shared* template style (resolveLayoutV2Style), so an
+// alignment override belongs on the block's own `styleOverrides` instead, never on the shared
+// named style every other block using it would also pick up.
+export const getEffectiveLayoutV2BlockAlign = (template, block) => resolveLayoutV2Style(template, block?.style, block?.styleOverrides).align || 'left';
 
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context. Logo/logo-long paragraphs are

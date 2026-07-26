@@ -41,7 +41,9 @@ import {
   DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
+  fillPlaceholders,
   getClinicLogo,
+  getEffectiveLayoutV2BlockAlign,
   getEffectiveParagraphAlign,
   getEffectiveTitleAlign,
   getLayoutLang,
@@ -54,7 +56,7 @@ import {
   isBilingualLayout,
   isLayoutV2Template,
   isOfficialFormStyle,
-  layoutV2ParagraphRuns,
+  layoutV2Scope,
   legacyClinicLogoStorageFilePath,
   legacyClinicLogoStorageFolder,
   mergeDocumentsCatalog,
@@ -75,7 +77,6 @@ import {
   TITLE_SCOPE,
   toArray,
   toggleInlineFormat,
-  toggleLayoutV2ParagraphBold,
   toggleRawInlineMarker,
   upsertRecentCaseId,
   upsertRecentId,
@@ -571,18 +572,6 @@ const TextModeDisplay = styled.div`
     outline: none;
   }
 `;
-
-// layoutV2's {text, style} runs (batch 25 §3) - a run styled 'inlineEmphasis' renders bold, same
-// visual convention as FormattedRunsPreview's **markdown** runs below, just resolved from the
-// template's own named style instead of a markup character.
-const LayoutV2RunsPreview = ({ block }) => (
-  <>
-    {layoutV2ParagraphRuns(block).map((run, index) => (
-      // eslint-disable-next-line react/no-array-index-key
-      <React.Fragment key={index}>{run.style === 'inlineEmphasis' ? <strong>{run.text}</strong> : run.text}</React.Fragment>
-    ))}
-  </>
-);
 
 const FormattedRunsPreview = ({ text }) => (
   <>
@@ -1546,33 +1535,24 @@ const DocumentsPage = ({ isAdmin }) => {
     await commitTemplateScopeText(docId, scope, langKey, nextRaw);
   };
 
-  // --- layoutV2 paragraph/richParagraph selection-based bold (batch 25 §3) -----------------------
-  // A layoutV2 block has no per-mode toolbar of its own (there is no per-case resolved view for it -
-  // a layoutV2 template is always edited as its own shared raw markup, same as legacy Template mode)
-  // - one Bold button per paragraph/richParagraph block, acting on whatever text is currently
-  // selected inside it (same native-Selection approach as Text mode's handleApplyInlineFormat,
-  // above, since this display is a rendered <div> too, not a textarea).
-  const layoutV2BlockNodesRef = useRef({});
-  const registerLayoutV2BlockNode = (docId, blockIndex) => node => {
-    layoutV2BlockNodesRef.current[`${docId}#${blockIndex}`] = node;
-  };
-  const handleLayoutV2BlockBold = async (docId, blockIndex) => {
-    const node = layoutV2BlockNodesRef.current[`${docId}#${blockIndex}`];
-    if (!node) return;
-    const offsets = getContainerSelectionOffsets(node);
-    if (!offsets) {
-      toast.error('Select some text first.');
-      return;
-    }
+  // --- layoutV2 paragraph/richParagraph full toolbar parity ---------------------------------------
+  // A layoutV2 paragraph/richParagraph block's raw content is just its own **bold**/*italic*
+  // markup string (layoutV2ParagraphMarkup/layoutV2ParagraphFromMarkup, documentsCatalogUtils.js) -
+  // addressed via a `lv2:<index>` scope (layoutV2Scope) that getTemplateScopeText/
+  // withTemplateScopeText already understand, exactly like `p:<index>`/`beforeTitle:<index>`/the
+  // title scope. That's what lets the mode cycle ({}/I/T), Bold/Italic, and Insert-variable buttons
+  // below reuse the very same generic handlers every other paragraph row already has
+  // (getParagraphMode/setParagraphModeFor, formatButtonProps, openVariablePicker,
+  // handleTemplateScopeChange/persistTemplate) with no bespoke layoutV2-only mechanism at all -
+  // only insert/delete/alignment/font-size need their own handlers below, since a layoutV2 block's
+  // `style` names a *shared* template style (resolveLayoutV2Style) rather than carrying its own
+  // inline style object the way a legacy paragraph's `style` does.
+  const applyLayoutV2BlocksChange = async (docId, buildBlocks) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
-    if (!template?.layoutV2?.blocks?.[blockIndex]) return;
-    const nextBlock = toggleLayoutV2ParagraphBold(template.layoutV2.blocks[blockIndex], offsets.start, offsets.end);
+    if (!template) return;
     const nextTemplate = {
       ...template,
-      layoutV2: {
-        ...template.layoutV2,
-        blocks: template.layoutV2.blocks.map((item, index) => (index === blockIndex ? nextBlock : item)),
-      },
+      layoutV2: { ...template.layoutV2, blocks: buildBlocks(template.layoutV2?.blocks || []) },
     };
     try {
       await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
@@ -1580,10 +1560,49 @@ const DocumentsPage = ({ isAdmin }) => {
         ...previous,
         documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
       }));
-    } catch (saveError) {
-      console.error('Unable to save the template change', saveError);
+    } catch (structureError) {
+      console.error('Unable to update the layoutV2 paragraph structure', structureError);
       toast.error('Could not save the change.');
     }
+  };
+
+  // `atIndex` may equal blocks.length to append a new paragraph after the last block.
+  const handleInsertLayoutV2Paragraph = (docId, atIndex) => applyLayoutV2BlocksChange(
+    docId,
+    blocks => [...blocks.slice(0, atIndex), { type: 'paragraph', style: 'body', text: '' }, ...blocks.slice(atIndex)],
+  );
+
+  const handleRemoveLayoutV2Block = (docId, atIndex) => {
+    if (typeof window !== 'undefined' && !window.confirm('Remove this paragraph?')) return;
+    applyLayoutV2BlocksChange(docId, blocks => blocks.filter((_, index) => index !== atIndex));
+  };
+
+  const handleCycleLayoutV2Align = (docId, blockIndex) => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    const block = template?.layoutV2?.blocks?.[blockIndex];
+    if (!block) return;
+    const nextAlign = nextParagraphAlign(getEffectiveLayoutV2BlockAlign(template, block));
+    applyLayoutV2BlocksChange(docId, blocks => blocks.map((item, index) => (
+      index === blockIndex ? { ...item, styleOverrides: { ...item.styleOverrides, align: nextAlign } } : item
+    )));
+  };
+
+  const setLayoutV2StyleOverrideField = (docId, blockIndex, styleKey, raw) => {
+    const parsed = parsePlainNumber(raw);
+    if (parsed === undefined) return;
+    updateTemplate(docId, template => ({
+      ...template,
+      layoutV2: {
+        ...template.layoutV2,
+        blocks: (template.layoutV2?.blocks || []).map((item, index) => {
+          if (index !== blockIndex) return item;
+          const nextOverrides = { ...item.styleOverrides };
+          if (parsed === null) delete nextOverrides[styleKey];
+          else nextOverrides[styleKey] = parsed;
+          return { ...item, styleOverrides: nextOverrides };
+        }),
+      },
+    }));
   };
 
   // Insert-variable modal (spec: "кнопка поруч з курсивом... модальне вікно... обрати змінні") -
@@ -2432,6 +2451,10 @@ const DocumentsPage = ({ isAdmin }) => {
                   || String(template.logo || '').trim(),
                 );
                 const isLayoutV2OnlyDoc = isLayoutV2Template(template) && !hasLegacyDocContent;
+                // A layoutV2 document always renders in its own single `languages[0]` (spec: never
+                // the page-wide bilingual/column selector) - its paragraph rows show one field,
+                // never a uk/en pair.
+                const layoutV2Lang = (Array.isArray(template.languages) && template.languages[0]) || 'uk';
                 // Needed even while collapsed - the title input right in the row header (below)
                 // always shows/edits the resolved value once a case is selected.
                 const resolvedDoc = buildGeneratedDocument(template, getContextForTemplate(template.id));
@@ -3105,43 +3128,151 @@ const DocumentsPage = ({ isAdmin }) => {
                         </ParagraphControlsRow>
                           </>
                         ) : null}
-                        {/* Paragraph/richParagraph blocks of a layoutV2 template (batch 25 §3):
-                            select a text fragment inside one of these blocks and press Bold to mark
-                            just that fragment 'inlineEmphasis' (configurable in the Style Editor).
-                            Only shown for a layoutV2 template, and only for its paragraph-shaped
-                            blocks - every other block type (letterhead, fieldLine, signatureTable,
-                            ...) has no free-text content to select. */}
+                        {/* Paragraph/richParagraph blocks of a layoutV2 template: the same toolbar
+                            every other paragraph row has (mode cycle, Bold, Italic, Insert-
+                            variable, alignment, formatting, insert/delete) - see
+                            applyLayoutV2BlocksChange and friends above for why this needs no
+                            bespoke editing mechanism of its own. Every other block type
+                            (letterhead, fieldLine, signatureTable, ...) has no free-text content
+                            to edit here at all. */}
                         {isLayoutV2Template(template) ? (
-                          <ParagraphEditorBlock>
-                            <ParagraphControlsRow>
-                              <DocSubtitle style={{ fontWeight: 700 }}>Paragraphs - select text, Bold the fragment</DocSubtitle>
-                            </ParagraphControlsRow>
-                            {template.layoutV2.blocks.map((block, blockIndex) => (
-                              (block?.type === 'paragraph' || block?.type === 'richParagraph') ? (
+                          <>
+                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Paragraphs</DocSubtitle>
+                            {template.layoutV2.blocks.map((block, blockIndex) => {
+                              if (block?.type !== 'paragraph' && block?.type !== 'richParagraph') return null;
+                              const scope = layoutV2Scope(blockIndex);
+                              const mode = getParagraphMode(template.id, scope);
+                              const isTemplateMode = mode === 'template';
+                              const isInputMode = mode === 'input';
+                              const isTextMode = mode === 'text';
+                              const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
+                              const resolvedValue = langKey => fillPlaceholders(rawValue(langKey), getContextForTemplate(template.id), langKey);
+                              const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(resolvedValue(langKey)));
+                              const onChange = langKey => event => {
+                                const nextRaw = isTemplateMode
+                                  ? event.target.value
+                                  : applyResolvedTextEdit(rawValue(langKey), getContextForTemplate(template.id), langKey, event.target.value);
+                                handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
+                              };
+                              const onBlur = () => persistTemplate(template.id);
+                              const fieldKind = isTemplateMode ? 'template' : 'input-plain';
+                              return (
                                 // eslint-disable-next-line react/no-array-index-key
-                                <ParagraphFieldColumn key={`${template.id}-lv2-${blockIndex}`} style={{ marginTop: 6 }}>
-                                  <RowLine style={{ gap: 6, marginBottom: 4 }}>
+                                <ParagraphEditorBlock key={`${template.id}-lv2-${blockIndex}`}>
+                                  <ParagraphControlsRow>
                                     <SmallButton
                                       type="button"
-                                      onMouseDown={preventSelectionLoss}
-                                      onTouchStart={preventSelectionLoss}
-                                      onTouchEnd={event => {
-                                        event.preventDefault();
-                                        handleLayoutV2BlockBold(template.id, blockIndex);
-                                      }}
-                                      onClick={() => handleLayoutV2BlockBold(template.id, blockIndex)}
-                                      title="Bold the selected text"
+                                      onClick={() => handleInsertLayoutV2Paragraph(template.id, blockIndex)}
+                                      title="Insert a new paragraph above this one"
                                     >
-                                      <FaBold />
+                                      <FaPlus />
                                     </SmallButton>
-                                  </RowLine>
-                                  <TextModeDisplay ref={registerLayoutV2BlockNode(template.id, blockIndex)}>
-                                    <LayoutV2RunsPreview block={block} />
-                                  </TextModeDisplay>
-                                </ParagraphFieldColumn>
-                              ) : null
-                            ))}
-                          </ParagraphEditorBlock>
+                                    <RowLine style={{ gap: 6 }}>
+                                      <SmallButton
+                                        type="button"
+                                        onClick={() => setParagraphModeFor(template.id, scope, nextParagraphMode(mode))}
+                                        title={PARAGRAPH_MODE_TITLE[mode]}
+                                      >
+                                        {PARAGRAPH_MODE_ICON[mode]}
+                                      </SmallButton>
+                                      <SmallButton
+                                        type="button"
+                                        disabled={isInputMode}
+                                        {...formatButtonProps('bold')}
+                                        title="Bold the selected text"
+                                      >
+                                        <FaBold />
+                                      </SmallButton>
+                                      <SmallButton
+                                        type="button"
+                                        disabled={isInputMode}
+                                        {...formatButtonProps('italic')}
+                                        title="Italicize the selected text"
+                                      >
+                                        <FaItalic />
+                                      </SmallButton>
+                                      <SmallButton
+                                        type="button"
+                                        disabled={!isTemplateMode}
+                                        onMouseDown={preventSelectionLoss}
+                                        onClick={openVariablePicker}
+                                        title="Insert a variable"
+                                      >
+                                        <FaCode />
+                                      </SmallButton>
+                                      <AlignCycleButton
+                                        align={getEffectiveLayoutV2BlockAlign(template, block)}
+                                        onCycle={() => handleCycleLayoutV2Align(template.id, blockIndex)}
+                                      />
+                                      <FormatPopoverButton
+                                        open={openFormatKey === formatPopoverKey(template.id, scope)}
+                                        onToggle={() => toggleFormatPopover(template.id, scope)}
+                                        onClose={() => closeFormatPopover(template.id)}
+                                        buttonTitle="Paragraph formatting - font size (pt); empty = inherit the template style"
+                                        fields={[
+                                          {
+                                            key: 'fontSizePt',
+                                            label: 'Font size (pt)',
+                                            value: block.styleOverrides?.fontSizePt !== undefined ? String(block.styleOverrides.fontSizePt) : '',
+                                            placeholder: '',
+                                            onApply: raw => setLayoutV2StyleOverrideField(template.id, blockIndex, 'fontSizePt', raw),
+                                            onFieldBlur: () => persistTemplate(template.id),
+                                          },
+                                        ]}
+                                      />
+                                      <DangerButton
+                                        type="button"
+                                        onClick={() => handleRemoveLayoutV2Block(template.id, blockIndex)}
+                                        title="Remove this paragraph"
+                                      >
+                                        <FaTrash />
+                                      </DangerButton>
+                                    </RowLine>
+                                  </ParagraphControlsRow>
+                                  <ParagraphFieldColumn>
+                                    {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
+                                      <TextModeDisplay
+                                        ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                        onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                        onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                        onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind) : undefined}
+                                        title={isInputMode ? 'Click to edit the wording' : undefined}
+                                      >
+                                        <FormattedRunsPreview text={resolvedValue(layoutV2Lang)} />
+                                      </TextModeDisplay>
+                                    ) : isInputMode ? (
+                                      <RichResolvedTextField
+                                        ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                        initialText={resolvedValue(layoutV2Lang)}
+                                        placeholder="Paragraph"
+                                        onPlainTextChange={nextPlain => onChange(layoutV2Lang)({ target: { value: nextPlain } })}
+                                        onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                        onBlur={onBlur}
+                                      />
+                                    ) : (
+                                      <AutoInlineTextarea
+                                        ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                        value={displayValue(layoutV2Lang)}
+                                        placeholder="Paragraph"
+                                        onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                        onChange={onChange(layoutV2Lang)}
+                                        onBlur={onBlur}
+                                      />
+                                    )}
+                                  </ParagraphFieldColumn>
+                                </ParagraphEditorBlock>
+                              );
+                            })}
+                            <ParagraphControlsRow style={{ justifyContent: 'flex-start' }}>
+                              <SmallButton
+                                type="button"
+                                onClick={() => handleInsertLayoutV2Paragraph(template.id, template.layoutV2.blocks.length)}
+                                title="Append a new paragraph at the end of the document"
+                              >
+                                <FaPlus />
+                              </SmallButton>
+                            </ParagraphControlsRow>
+                          </>
                         ) : null}
                         {/* Task 4: the document exactly as the exported PDF - same generation
                             pipeline, same props - as the last block of the document. */}
