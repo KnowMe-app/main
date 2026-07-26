@@ -2502,15 +2502,14 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
-                      {/* Column count + (only for a document that can genuinely render two ways -
-                          it carries layoutV2 blocks alongside real legacy content) the renderer
+                      {/* Column count + (for every document carrying layoutV2 blocks) the renderer
                           switch, both in one settings popover (batch 23 §3) instead of
                           always-visible buttons - column count overrides the page-wide selector
                           above once set (see handleSetDocColumns); tap the active option again to
-                          clear it. A layoutV2-only document (no legacy content to fall back to,
-                          e.g. genetic-affinity-certificate) has nothing to switch to/from, so the
-                          renderer toggle is hidden for it entirely rather than offered as a fake
-                          choice. */}
+                          clear it. Keep the renderer switch available even for layoutV2-only
+                          documents: an imported template or one disabled by an earlier version
+                          can have rendererVersion 1, and needs this control to recover exact-layout
+                          rendering instead of remaining stuck on its empty legacy fields. */}
                       <DocLayoutSettingsPopoverButton
                         open={openLayoutSettingsDocId === String(template.id)}
                         onToggle={() => toggleLayoutSettingsPopover(String(template.id))}
@@ -2518,7 +2517,7 @@ const DocumentsPage = ({ isAdmin }) => {
                         columnOptions={DOC_COLUMN_OPTIONS}
                         activeColumns={template.columns}
                         onSetColumns={columnsOption => handleSetDocColumns(template.id, columnsOption)}
-                        hasLayoutV2={Boolean(template.layoutV2?.blocks) && hasLegacyDocContent}
+                        hasLayoutV2={Boolean(template.layoutV2?.blocks)}
                         layoutV2Active={isLayoutV2Template(template)}
                         onToggleLayoutV2={() => handleToggleLayoutV2(template.id)}
                       />
