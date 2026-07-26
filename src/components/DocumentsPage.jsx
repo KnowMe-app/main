@@ -1612,10 +1612,33 @@ const DocumentsPage = ({ isAdmin }) => {
   // fieldLine label controls: `labelHidden` toggles the label off without discarding its text/
   // width (so turning it back on needs no retyping - see the normalizer, documentsCatalogUtils.js),
   // `labelOffsetMm` nudges it vertically, independent of the shared named style.
-  const handleToggleLayoutV2LabelHidden = (docId, blockIndex) => applyLayoutV2BlocksChange(
-    docId,
-    blocks => blocks.map((item, index) => (index === blockIndex ? { ...item, labelHidden: !item.labelHidden } : item)),
-  );
+  const handleToggleLayoutV2LabelHidden = async (docId, blockIndex) => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    const block = template?.layoutV2?.blocks?.[blockIndex];
+    if (!block) return;
+    const labelHidden = !block.labelHidden;
+
+    // Apply this immediately so a nearby offset edit is based on the toggled state. Persist only
+    // the leaf value: a pending toggle can then never replace newer edits with a captured template.
+    updateTemplate(docId, current => ({
+      ...current,
+      layoutV2: {
+        ...current.layoutV2,
+        blocks: (current.layoutV2?.blocks || []).map((item, index) => (
+          index === blockIndex ? { ...item, labelHidden } : item
+        )),
+      },
+    }));
+    try {
+      await set(
+        ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}/layoutV2/blocks/${blockIndex}/labelHidden`),
+        labelHidden,
+      );
+    } catch (saveError) {
+      console.error('Unable to update the layoutV2 field label visibility', saveError);
+      toast.error('Could not save the change.');
+    }
+  };
 
   const setLayoutV2LabelOffset = (docId, blockIndex, raw) => {
     const parsed = parsePlainNumber(raw);

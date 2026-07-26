@@ -614,10 +614,12 @@ const LayoutV2FieldLine = ({ block }) => {
     <View style={{ marginTop: (block.marginTopMm || 0) * MM_TO_PT, marginBottom: (block.marginBottomMm || 0) * MM_TO_PT }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
         {block.labelWidthMm ? (
-          // marginBottom nudges the label off the row's shared bottom edge (positive = up,
-          // negative = down) without moving the value/line it sits above - a purely cosmetic,
-          // per-block adjustment (spec: "пересувати лейбл по вертикалі").
-          <View style={{ width: block.labelWidthMm * MM_TO_PT, marginBottom: (block.labelOffsetMm || 0) * MM_TO_PT }}>
+          // Translate rather than adding margin: the offset is purely cosmetic and must not make
+          // Yoga resize this row (or move the value/underline and every following block).
+          <View style={{
+            width: block.labelWidthMm * MM_TO_PT,
+            transform: `translateY(${-(block.labelOffsetMm || 0) * MM_TO_PT}pt)`,
+          }}>
             {block.labelRuns ? (
               <Text style={layoutV2TextStyle(block.labelStyle)}>
                 {block.labelRuns.map((run, index) => (
