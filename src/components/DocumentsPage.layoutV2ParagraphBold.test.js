@@ -220,7 +220,7 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
     ));
   });
 
-  it('toggles a fieldLine label off/on and sets its vertical offset, without touching label text/width', async () => {
+  it('toggles the clinic logo off/on and sets its horizontal/vertical offset, without touching the column widths', async () => {
     get.mockImplementation(async path => {
       if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => ({}) };
       if (path === 'documentsBuilder/cases') return { exists: () => false, val: () => null };
@@ -235,7 +235,12 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
               languages: ['uk'],
               layoutV2: {
                 blocks: [{
-                  type: 'fieldLine', style: 'body', label: 'дружина', labelWidthMm: 15, value: 'X', valueStyle: 'formValue',
+                  type: 'letterhead',
+                  columnGapMm: 5,
+                  columns: [
+                    { widthMm: 64.4, content: { type: 'image', source: '{{logo}}', widthMm: 64.4, heightMm: 17 } },
+                    { widthMm: 110.6, content: { type: 'stack', lines: ['contact'] } },
+                  ],
                 }],
               },
             },
@@ -248,31 +253,42 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const labelPreview = await screen.findByText('дружина');
+    const logoCheckbox = await screen.findByRole('checkbox', { name: 'Show logo' });
     // eslint-disable-next-line testing-library/no-node-access
-    const labelBlock = labelPreview.closest('.paragraph-editor-block');
-    fireEvent.click(within(labelBlock).getByRole('checkbox', { name: 'Show label' }));
+    const logoBlock = logoCheckbox.closest('.paragraph-editor-block');
+    fireEvent.click(logoCheckbox);
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
       expect.objectContaining({
         layoutV2: expect.objectContaining({
-          blocks: [{
-            type: 'fieldLine', style: 'body', label: 'дружина', labelWidthMm: 15, value: 'X', valueStyle: 'formValue', labelHidden: true,
-          }],
+          blocks: [expect.objectContaining({
+            columns: [
+              expect.objectContaining({ widthMm: 64.4, content: expect.objectContaining({ widthMm: 64.4, heightMm: 17, hidden: true }) }),
+              expect.objectContaining({ widthMm: 110.6 }),
+            ],
+          })],
         }),
       }),
     ));
 
-    const offsetField = within(labelBlock).getByLabelText('Vertical offset (mm, + = up)');
-    fireEvent.change(offsetField, { target: { value: '2' } });
-    fireEvent.blur(offsetField);
+    const xField = within(logoBlock).getByLabelText('Horizontal offset (mm, + = right)');
+    fireEvent.change(xField, { target: { value: '3' } });
+    fireEvent.blur(xField);
+    const yField = within(logoBlock).getByLabelText('Vertical offset (mm, + = down)');
+    fireEvent.change(yField, { target: { value: '-2' } });
+    fireEvent.blur(yField);
 
     await waitFor(() => expect(set).toHaveBeenLastCalledWith(
       'documentsBuilder/templates/doc-1',
       expect.objectContaining({
         layoutV2: expect.objectContaining({
-          blocks: [expect.objectContaining({ label: 'дружина', labelWidthMm: 15, labelOffsetMm: 2 })],
+          blocks: [expect.objectContaining({
+            columns: [
+              expect.objectContaining({ widthMm: 64.4, content: expect.objectContaining({ offsetXMm: 3, offsetYMm: -2 }) }),
+              expect.objectContaining({ widthMm: 110.6 }),
+            ],
+          })],
         }),
       }),
     ));

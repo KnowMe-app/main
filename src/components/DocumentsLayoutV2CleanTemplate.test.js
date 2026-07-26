@@ -477,29 +477,32 @@ describe('clean layoutV2 template - normalization (buildGeneratedDocument)', () 
     });
   });
 
-  it('fieldLine labelHidden collapses the label column without discarding the underlying label/labelWidthMm', () => {
+  it('letterhead image `hidden` collapses without discarding widthMm/heightMm/etc, the column keeps its own widthMm', () => {
     const template = cleanTemplate();
-    const wifeField = template.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.label === 'дружина');
-    wifeField.labelHidden = true;
+    const letterhead = template.layoutV2.blocks.find(block => block.type === 'letterhead');
+    letterhead.columns[0].content.hidden = true;
     const resolved = buildGeneratedDocument(template, fullContext());
-    const resolvedField = resolved.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.value.startsWith('Кікава'));
-    expect(resolvedField.label).toBeUndefined();
-    expect(resolvedField.labelWidthMm).toBe(0);
-    // Turning it back off (the admin's own undo) needs no retyping - the source template's own
-    // label/labelWidthMm were never touched.
-    expect(wifeField.label).toBe('дружина');
-    expect(wifeField.labelWidthMm).toBe(15);
+    const resolvedLetterhead = resolved.layoutV2.blocks.find(block => block.type === 'letterhead');
+    expect(resolvedLetterhead.columns[0].content.hidden).toBe(true);
+    // The column's own widthMm is untouched - the clinic contact column beside it never shifts.
+    expect(resolvedLetterhead.columns[0].widthMm).toBe(64.4);
+    expect(resolvedLetterhead.columns[1].widthMm).toBe(110.6);
+    // The source template's own widthMm/heightMm were never touched - turning it back on needs no
+    // re-entering.
+    expect(letterhead.columns[0].content.widthMm).toBe(64.4);
+    expect(letterhead.columns[0].content.heightMm).toBe(17);
   });
 
-  it('fieldLine labelOffsetMm passes through as a plain number, defaulting to 0', () => {
+  it('letterhead image offsetXMm/offsetYMm pass through as plain numbers, defaulting to 0', () => {
     const template = cleanTemplate();
-    const wifeField = template.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.label === 'дружина');
-    wifeField.labelOffsetMm = 1.5;
+    const letterhead = template.layoutV2.blocks.find(block => block.type === 'letterhead');
+    letterhead.columns[0].content.offsetXMm = 3;
+    letterhead.columns[0].content.offsetYMm = -2;
     const resolved = buildGeneratedDocument(template, fullContext());
-    const resolvedField = resolved.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.value.startsWith('Кікава'));
-    expect(resolvedField.labelOffsetMm).toBe(1.5);
-    const otherField = resolved.layoutV2.blocks.find(block => block.type === 'fieldLine' && block.value.startsWith('Молвінських'));
-    expect(otherField.labelOffsetMm).toBe(0);
+    const resolvedContent = resolved.layoutV2.blocks.find(block => block.type === 'letterhead').columns[0].content;
+    expect(resolvedContent.offsetXMm).toBe(3);
+    expect(resolvedContent.offsetYMm).toBe(-2);
+    expect(resolvedContent.widthMm).toBe(64.4); // the offset never changes the image's own size
   });
 
   it('resolves signatureTable cell bottomBorderStyle and computes the table width from columnWidthsMm', () => {
