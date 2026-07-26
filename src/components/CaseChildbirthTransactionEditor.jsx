@@ -17,7 +17,6 @@ import {
   formatHcgTestOptionLabel,
   formatShipmentOptionLabel,
   formatShortNameUk,
-  formatTransferOptionLabel,
   formatUltrasoundOptionLabel,
   getMaternityHospitalDisplayName,
   normalizeIsoDate,
@@ -235,21 +234,20 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   // (without touching the shipment dropdown) never destroys them.
   const [embryoOwnershipDraft, setEmbryoOwnershipDraft] = useState({ shipmentId: '', legacyIvfDate: '', legacyShipmentPeriod: null });
   const [geneticAffinityCertificateDraft, setGeneticAffinityCertificateDraft] = useState({
-    transferAttemptId: '', hcgTestId: '', ultrasoundId: '', issueDate: '', outgoingNumber: '',
+    hcgTestId: '', ultrasoundId: '', issueDate: '', outgoingNumber: '',
   });
-  const [racssClinicLetterDraft, setRacssClinicLetterDraft] = useState({ transferAttemptId: '', ultrasoundId: '' });
+  const [racssClinicLetterDraft, setRacssClinicLetterDraft] = useState({ ultrasoundId: '' });
   const [medicalServicesAgreementDraft, setMedicalServicesAgreementDraft] = useState({ date: '' });
 
   // Every artProgram-referencing dropdown reads from the same source: the selected case's own
-  // shipments/transfer attempts (never converted to arrays for storage - see documentsCatalogUtils
-  // - only here, transiently, for rendering <option>s).
+  // shipments/transfer attempt (never converted to arrays for storage - see documentsCatalogUtils -
+  // only here, transiently, for rendering <option>s). There is only ever one transfer attempt
+  // (batch 24 §2), so its hCG tests/ultrasounds are the only thing still picked by id.
   const artShipments = toArray(selectedCase?.artProgram?.embryoShipments);
-  const artTransferAttempts = toArray(selectedCase?.artProgram?.transferAttempts);
-  const certificateTransfer = artTransferAttempts.find(item => item.id === geneticAffinityCertificateDraft.transferAttemptId) || null;
-  const certificateHcgTests = toArray(certificateTransfer?.hcgTests);
-  const certificateUltrasounds = toArray(certificateTransfer?.ultrasounds);
-  const letterTransfer = artTransferAttempts.find(item => item.id === racssClinicLetterDraft.transferAttemptId) || null;
-  const letterUltrasounds = toArray(letterTransfer?.ultrasounds);
+  const artTransferAttempt = selectedCase?.artProgram?.transferAttempt || null;
+  const certificateHcgTests = toArray(artTransferAttempt?.hcgTests);
+  const certificateUltrasounds = toArray(artTransferAttempt?.ultrasounds);
+  const letterUltrasounds = toArray(artTransferAttempt?.ultrasounds);
 
   useEffect(() => {
     // `childbirth.children` isn't guaranteed to be a real array - a case edited straight in the
@@ -288,14 +286,12 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       legacyShipmentPeriod: selectedCase?.documents?.embryoOwnershipStatement?.shipmentPeriod || null,
     });
     setGeneticAffinityCertificateDraft({
-      transferAttemptId: selectedCase?.documents?.geneticAffinityCertificate?.transferAttemptId || '',
       hcgTestId: selectedCase?.documents?.geneticAffinityCertificate?.hcgTestId || '',
       ultrasoundId: selectedCase?.documents?.geneticAffinityCertificate?.ultrasoundId || '',
       issueDate: selectedCase?.documents?.geneticAffinityCertificate?.issueDate || '',
       outgoingNumber: selectedCase?.documents?.geneticAffinityCertificate?.outgoingNumber || '',
     });
     setRacssClinicLetterDraft({
-      transferAttemptId: selectedCase?.documents?.racssClinicLetter?.transferAttemptId || '',
       ultrasoundId: selectedCase?.documents?.racssClinicLetter?.ultrasoundId || '',
     });
     setMedicalServicesAgreementDraft({
@@ -534,17 +530,11 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     return saveCaseDocument('embryoOwnershipStatement', payload, 'Embryo ownership statement details saved.', 'the embryo ownership statement details');
   };
 
-  const updateGeneticAffinityCertificateField = (field, value) => setGeneticAffinityCertificateDraft(previous => {
-    // Picking a different transfer attempt invalidates whatever hCG test/ultrasound was selected
-    // from the previous one - they belong to a specific transfer, never shared across transfers.
-    if (field === 'transferAttemptId') return { ...previous, transferAttemptId: value, hcgTestId: '', ultrasoundId: '' };
-    return { ...previous, [field]: value };
-  });
+  const updateGeneticAffinityCertificateField = (field, value) => setGeneticAffinityCertificateDraft(previous => ({ ...previous, [field]: value }));
 
   const handleSaveGeneticAffinityCertificate = () => saveCaseDocument(
     'geneticAffinityCertificate',
     {
-      transferAttemptId: geneticAffinityCertificateDraft.transferAttemptId,
       hcgTestId: geneticAffinityCertificateDraft.hcgTestId,
       ultrasoundId: geneticAffinityCertificateDraft.ultrasoundId,
       issueDate: normalizeIsoDate(geneticAffinityCertificateDraft.issueDate),
@@ -554,14 +544,11 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     'the genetic affinity certificate details',
   );
 
-  const updateRacssClinicLetterField = (field, value) => setRacssClinicLetterDraft(previous => {
-    if (field === 'transferAttemptId') return { ...previous, transferAttemptId: value, ultrasoundId: '' };
-    return { ...previous, [field]: value };
-  });
+  const updateRacssClinicLetterField = (field, value) => setRacssClinicLetterDraft(previous => ({ ...previous, [field]: value }));
 
   const handleSaveRacssClinicLetter = () => saveCaseDocument(
     'racssClinicLetter',
-    { transferAttemptId: racssClinicLetterDraft.transferAttemptId, ultrasoundId: racssClinicLetterDraft.ultrasoundId },
+    { ultrasoundId: racssClinicLetterDraft.ultrasoundId },
     'RACSS clinic letter details saved.',
     'the RACSS clinic letter details',
   );
@@ -868,25 +855,11 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       <SectionSubhead style={{ marginTop: 14 }}>Довідка про генетичну спорідненість</SectionSubhead>
       <FieldGrid>
         <Field>
-          Спроба переносу (довідка)
-          <Select
-            value={geneticAffinityCertificateDraft.transferAttemptId || ''}
-            onChange={event => updateGeneticAffinityCertificateField('transferAttemptId', event.target.value)}
-          >
-            <option value="">— не обрано —</option>
-            {artTransferAttempts.map(transferAttempt => (
-              <option key={transferAttempt.id} value={transferAttempt.id}>
-                {formatTransferOptionLabel(transferAttempt) || transferAttempt.id}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field>
           ХГЧ (довідка)
           <Select
             value={geneticAffinityCertificateDraft.hcgTestId || ''}
             onChange={event => updateGeneticAffinityCertificateField('hcgTestId', event.target.value)}
-            disabled={!certificateTransfer}
+            disabled={!artTransferAttempt}
           >
             <option value="">— не обрано —</option>
             {certificateHcgTests.map(hcgTest => (
@@ -899,7 +872,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
           <Select
             value={geneticAffinityCertificateDraft.ultrasoundId || ''}
             onChange={event => updateGeneticAffinityCertificateField('ultrasoundId', event.target.value)}
-            disabled={!certificateTransfer}
+            disabled={!artTransferAttempt}
           >
             <option value="">— не обрано —</option>
             {certificateUltrasounds.map(ultrasound => (
@@ -933,25 +906,11 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       <SectionSubhead style={{ marginTop: 14 }}>Лист клініки до РАЦС</SectionSubhead>
       <FieldGrid>
         <Field>
-          Спроба переносу (лист РАЦС)
-          <Select
-            value={racssClinicLetterDraft.transferAttemptId || ''}
-            onChange={event => updateRacssClinicLetterField('transferAttemptId', event.target.value)}
-          >
-            <option value="">— не обрано —</option>
-            {artTransferAttempts.map(transferAttempt => (
-              <option key={transferAttempt.id} value={transferAttempt.id}>
-                {formatTransferOptionLabel(transferAttempt) || transferAttempt.id}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field>
           УЗД (лист РАЦС)
           <Select
             value={racssClinicLetterDraft.ultrasoundId || ''}
             onChange={event => updateRacssClinicLetterField('ultrasoundId', event.target.value)}
-            disabled={!letterTransfer}
+            disabled={!artTransferAttempt}
           >
             <option value="">— не обрано —</option>
             {letterUltrasounds.map(ultrasound => (

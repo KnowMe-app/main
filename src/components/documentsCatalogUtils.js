@@ -931,13 +931,16 @@ export const TEMPLATE_DOCUMENT_CONFIG = {
 const DEFAULT_NOTARY_TEMPLATE_CONFIG = { documentKey: 'birthRegistrationConsent', usesNotary: true };
 
 // --- ART program (case.artProgram) - resolvers, formatters, document contexts ----------------
-// The medical facts of a case's fertility program (diagnosis, embryo shipments, transfer attempts,
-// hCG tests, ultrasounds) live once at `case.artProgram`, keyed by id (never converted to arrays -
-// spec §12). Every document that references one of these events (embryoOwnershipStatement,
+// The medical facts of a case's fertility program (diagnosis, embryo shipments, the one successful
+// transfer attempt, its hCG tests, its ultrasounds) live once at `case.artProgram`. Embryo
+// shipments and a transfer attempt's own hCG tests/ultrasounds stay keyed by id (never converted to
+// arrays - spec §12); the transfer attempt itself is a single object, not a log of attempts (batch
+// 24 §2 - only the one successful attempt ever matters once the program is underway). Every
+// document that references one of these events (embryoOwnershipStatement,
 // geneticAffinityCertificate, racssClinicLetter) stores only the id(s) it points at
-// (shipmentId/transferAttemptId/hcgTestId/ultrasoundId); editing the underlying event once (e.g.
-// the transfer date) is instantly reflected in every document that references it, since none of
-// them ever copy the fact - they resolve it fresh every render.
+// (shipmentId/hcgTestId/ultrasoundId); editing the underlying event once (e.g. the transfer date)
+// is instantly reflected in every document that references it, since none of them ever copy the
+// fact - they resolve it fresh every render.
 
 // Null-safe lookups (spec §3) - a missing/unset id, or an id that no longer exists (a document
 // still pointing at a deleted event), resolves to null rather than throwing, so a template that
@@ -947,10 +950,7 @@ export const resolveShipment = (caseData, shipmentId) => {
   return caseData?.artProgram?.embryoShipments?.[shipmentId] ?? null;
 };
 
-export const resolveTransferAttempt = (caseData, transferAttemptId) => {
-  if (!transferAttemptId) return null;
-  return caseData?.artProgram?.transferAttempts?.[transferAttemptId] ?? null;
-};
+export const resolveTransferAttempt = caseData => caseData?.artProgram?.transferAttempt ?? null;
 
 export const resolveHcgTest = (transferAttempt, hcgTestId) => {
   if (!hcgTestId) return null;
@@ -1135,10 +1135,12 @@ export const buildEmbryoOwnershipStatementContext = (caseData, parties, ownershi
   return { ...data, shipment: resolvedShipment || legacyShipment };
 };
 
-// case.documents.geneticAffinityCertificate - spec §4.
+// case.documents.geneticAffinityCertificate - spec §4. There is only ever one transfer attempt
+// (batch 24 §2), so it never needs an id of its own - only which of its hCG tests/ultrasounds this
+// certificate cites is still a choice (hcgTestId/ultrasoundId).
 export const buildGeneticAffinityCertificateContext = (caseData, parties, certificateData) => {
   const data = isPlainObject(certificateData) ? certificateData : {};
-  const transferAttempt = resolveTransferAttempt(caseData, data.transferAttemptId);
+  const transferAttempt = resolveTransferAttempt(caseData);
   const shipment = enrichShipment(resolveShipment(caseData, transferAttempt?.shipmentId), parties);
   return {
     ...data,
@@ -1152,10 +1154,10 @@ export const buildGeneticAffinityCertificateContext = (caseData, parties, certif
   };
 };
 
-// case.documents.racssClinicLetter - spec §4.
+// case.documents.racssClinicLetter - spec §4. Same single-transfer-attempt rule as above.
 export const buildRacssClinicLetterContext = (caseData, parties, letterData) => {
   const data = isPlainObject(letterData) ? letterData : {};
-  const transferAttempt = resolveTransferAttempt(caseData, data.transferAttemptId);
+  const transferAttempt = resolveTransferAttempt(caseData);
   const shipment = enrichShipment(resolveShipment(caseData, transferAttempt?.shipmentId), parties);
   return {
     ...data,
@@ -1206,13 +1208,7 @@ export const validateArtProgramReferences = (catalog, caseId) => {
   const caseRecord = normalizeCaseRecord(rawCaseRecord);
   const documents = isPlainObject(caseRecord.documents) ? caseRecord.documents : {};
   const issues = [];
-
-  const checkTransferAttempt = transferAttemptId => {
-    if (!transferAttemptId) return null;
-    const transferAttempt = resolveTransferAttempt(caseRecord, transferAttemptId);
-    if (!transferAttempt) issues.push(`Не знайдено спробу переносу ${transferAttemptId}.`);
-    return transferAttempt;
-  };
+  const transferAttempt = resolveTransferAttempt(caseRecord);
 
   const ownership = documents.embryoOwnershipStatement;
   if (ownership?.shipmentId && !resolveShipment(caseRecord, ownership.shipmentId)) {
@@ -1220,24 +1216,16 @@ export const validateArtProgramReferences = (catalog, caseId) => {
   }
 
   const certificate = documents.geneticAffinityCertificate;
-  if (certificate?.transferAttemptId || certificate?.hcgTestId || certificate?.ultrasoundId) {
-    const transferAttempt = checkTransferAttempt(certificate.transferAttemptId);
-    if (transferAttempt) {
-      if (certificate.hcgTestId && !resolveHcgTest(transferAttempt, certificate.hcgTestId)) {
-        issues.push(`Не знайдено аналіз ХГЧ ${certificate.hcgTestId} у переносі ${certificate.transferAttemptId}.`);
-      }
-      if (certificate.ultrasoundId && !resolveUltrasound(transferAttempt, certificate.ultrasoundId)) {
-        issues.push(`Не знайдено УЗД ${certificate.ultrasoundId} у переносі ${certificate.transferAttemptId}.`);
-      }
-    }
+  if (certificate?.hcgTestId && !resolveHcgTest(transferAttempt, certificate.hcgTestId)) {
+    issues.push(`Не знайдено аналіз ХГЧ ${certificate.hcgTestId}.`);
+  }
+  if (certificate?.ultrasoundId && !resolveUltrasound(transferAttempt, certificate.ultrasoundId)) {
+    issues.push(`Не знайдено УЗД ${certificate.ultrasoundId}.`);
   }
 
   const letter = documents.racssClinicLetter;
-  if (letter?.transferAttemptId || letter?.ultrasoundId) {
-    const transferAttempt = checkTransferAttempt(letter.transferAttemptId);
-    if (transferAttempt && letter.ultrasoundId && !resolveUltrasound(transferAttempt, letter.ultrasoundId)) {
-      issues.push(`Не знайдено УЗД ${letter.ultrasoundId} у переносі ${letter.transferAttemptId}.`);
-    }
+  if (letter?.ultrasoundId && !resolveUltrasound(transferAttempt, letter.ultrasoundId)) {
+    issues.push(`Не знайдено УЗД ${letter.ultrasoundId}.`);
   }
 
   return issues;
@@ -1258,13 +1246,6 @@ export const formatShipmentOptionLabel = (shipment, parties) => {
   const clinicName = enriched?.sourceClinic?.name?.uk || enriched?.destinationClinic?.name?.uk || '';
   const dateText = shipment.receivedDate ? formatDateNumericUk(shipment.receivedDate) : (shipment.ivfDate ? formatDateNumericUk(shipment.ivfDate) : '');
   return joinOptionLabel('Доставлення', dateText, clinicName);
-};
-
-export const formatTransferOptionLabel = transferAttempt => {
-  if (!transferAttempt) return '';
-  const dateText = transferAttempt.date ? formatDateNumericUk(transferAttempt.date) : '';
-  const countText = transferAttempt.embryoCount ? formatEmbryoCountTextUk(transferAttempt.embryoCount) : '';
-  return joinOptionLabel('Перенос', dateText, countText);
 };
 
 export const formatHcgTestOptionLabel = hcgTest => {
@@ -2530,6 +2511,101 @@ export const applyPlainTextEdit = (rawText, newPlainValue) => {
     ? [{ text: inserted, bold: Boolean(inheritFrom?.bold), italic: Boolean(inheritFrom?.italic) }]
     : [];
   return serializeFormattedRuns(mergeAdjacentRuns([...before, ...insertedRun, ...after]));
+};
+
+// --- Input mode: editing the resolved (case-substituted) wording directly -------------------
+// Input mode shows the resolved wording at rest and, per batch 24 §1, must keep showing it once a
+// field is focused too - never falling back to the raw {{token}} markup an admin never asked to
+// see. Since the underlying template stays the shared raw markup (case-agnostic), an edit made
+// against the resolved text has to be translated back onto that raw string. buildResolvedTextSegments
+// walks the raw plain text (markers already stripped, see plainTextOf) once, alternating literal
+// spans (which map 1:1 onto their resolved counterpart) and {{token}} spans (replaced by their
+// resolved value, almost always a different length) - recording both sides' offsets so an edit's
+// position can be translated between them.
+const buildResolvedTextSegments = (rawPlainText, context, lang) => {
+  const raw = String(rawPlainText || '');
+  const segments = [];
+  let rawPos = 0;
+  let resolvedPos = 0;
+  const pattern = new RegExp(PLACEHOLDER_PATTERN.source, 'g');
+  let match = pattern.exec(raw);
+  while (match) {
+    if (match.index > rawPos) {
+      const literal = raw.slice(rawPos, match.index);
+      segments.push({
+        token: false, rawStart: rawPos, rawEnd: match.index, resolvedStart: resolvedPos, resolvedEnd: resolvedPos + literal.length, text: literal,
+      });
+      resolvedPos += literal.length;
+    }
+    const path = match[1].trim();
+    const rawTokenEnd = match.index + match[0].length;
+    let resolvedText;
+    if (path === 'logo' || path === 'logo-long') {
+      resolvedText = match[0];
+    } else {
+      const value = context ? resolvePlaceholderValue(context, path, lang) : undefined;
+      resolvedText = value === undefined || String(value).trim() === '' ? MISSING_VALUE_PLACEHOLDER : String(value);
+    }
+    segments.push({
+      token: true, rawStart: match.index, rawEnd: rawTokenEnd, resolvedStart: resolvedPos, resolvedEnd: resolvedPos + resolvedText.length, text: resolvedText,
+    });
+    resolvedPos += resolvedText.length;
+    rawPos = rawTokenEnd;
+    match = pattern.exec(raw);
+  }
+  if (rawPos < raw.length || !segments.length) {
+    const literal = raw.slice(rawPos);
+    segments.push({
+      token: false, rawStart: rawPos, rawEnd: raw.length, resolvedStart: resolvedPos, resolvedEnd: resolvedPos + literal.length, text: literal,
+    });
+  }
+  return segments;
+};
+
+// Translates an edit made against the resolved wording (Input mode's focused field) back onto the
+// raw template markup, so the shared {{token}}s an admin never touched stay exactly as they were.
+// Mirrors applyPlainTextEdit's diff-the-single-changed-region approach, but the changed region is
+// first "snapped" outward to the nearest segment boundary whenever it lands inside a token's
+// resolved span - i.e. typing over part of a substituted name/date bakes that whole value in as
+// literal wording instead of corrupting the {{token}} it came from.
+export const applyResolvedTextEdit = (rawText, context, lang, newResolvedValue) => {
+  const raw = String(rawText || '');
+  const rawPlain = plainTextOf(raw);
+  const segments = buildResolvedTextSegments(rawPlain, context, lang);
+  const oldResolvedPlain = segments.map(segment => segment.text).join('');
+  const nextResolvedPlain = String(newResolvedValue || '');
+  if (oldResolvedPlain === nextResolvedPlain) return raw;
+
+  const maxCommonStart = Math.min(oldResolvedPlain.length, nextResolvedPlain.length);
+  let start = 0;
+  while (start < maxCommonStart && oldResolvedPlain[start] === nextResolvedPlain[start]) start += 1;
+  let oldEnd = oldResolvedPlain.length;
+  let newEnd = nextResolvedPlain.length;
+  while (oldEnd > start && newEnd > start && oldResolvedPlain[oldEnd - 1] === nextResolvedPlain[newEnd - 1]) {
+    oldEnd -= 1;
+    newEnd -= 1;
+  }
+
+  // Snap the changed region outward so it never ends inside a token's resolved span - editing into
+  // a substituted value bakes that whole value in as literal text rather than corrupting the token.
+  const enclosingToken = pos => segments.find(segment => segment.token && pos > segment.resolvedStart && pos < segment.resolvedEnd);
+  const startToken = enclosingToken(start);
+  const snappedStart = startToken ? startToken.resolvedStart : start;
+  const endToken = enclosingToken(oldEnd);
+  const snappedOldEnd = endToken ? endToken.resolvedEnd : oldEnd;
+  const snappedNewEnd = newEnd + (snappedOldEnd - oldEnd);
+  const insertedText = nextResolvedPlain.slice(snappedStart, snappedNewEnd);
+
+  const toRawPos = pos => {
+    const exact = segments.find(segment => pos === segment.resolvedStart || pos === segment.resolvedEnd);
+    if (exact) return pos === exact.resolvedStart ? exact.rawStart : exact.rawEnd;
+    const inside = segments.find(segment => !segment.token && pos > segment.resolvedStart && pos < segment.resolvedEnd);
+    return inside ? inside.rawStart + (pos - inside.resolvedStart) : rawPlain.length;
+  };
+  const rawStart = toRawPos(snappedStart);
+  const rawOldEnd = toRawPos(snappedOldEnd);
+  const nextRawPlain = `${rawPlain.slice(0, rawStart)}${insertedText}${rawPlain.slice(rawOldEnd)}`;
+  return applyPlainTextEdit(raw, nextRawPlain);
 };
 
 // --- Layouts + formatting settings ----------------------------------------------------------

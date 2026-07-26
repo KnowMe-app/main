@@ -27,7 +27,6 @@ import {
   formatPregnancyTypeTextUk,
   formatShipmentOptionLabel,
   formatShipmentPeriod,
-  formatTransferOptionLabel,
   formatUltrasoundOptionLabel,
   mergeDocumentsCatalog,
   normalizeDocumentsCatalog,
@@ -86,41 +85,30 @@ const caseWithDateRangePeriod = {
         receivedDate: '2025-08-27',
       },
     },
-    transferAttempts: {
-      'transfer-1': {
-        id: 'transfer-1',
-        shipmentId: 'shipment-1',
-        date: '2025-09-18',
-        embryoCount: 1,
-        embryoStage: 'blastocyst',
-        hcgTests: {
-          'hcg-1': { id: 'hcg-1', date: '2025-09-30', positive: true },
-        },
-        ultrasounds: {
-          'ultrasound-1': {
-            id: 'ultrasound-1', date: '2025-10-17', pregnancyConfirmed: true, fetusCount: 1, gestationalAgeWeeks: { from: 6, to: 7 },
-          },
-        },
+    // batch 24 §2: a single transfer attempt object, not a log of attempts - only the one
+    // successful attempt's data ever matters once the program is underway.
+    transferAttempt: {
+      shipmentId: 'shipment-1',
+      date: '2025-09-18',
+      embryoCount: 1,
+      embryoStage: 'blastocyst',
+      hcgTests: {
+        'hcg-1': { id: 'hcg-1', date: '2025-09-30', positive: true },
+        'hcg-2': { id: 'hcg-2', date: '2025-11-15', positive: false },
       },
-      'transfer-2': {
-        id: 'transfer-2',
-        shipmentId: 'shipment-1',
-        date: '2025-11-01',
-        embryoCount: 2,
-        embryoStage: 'blastocyst',
-        hcgTests: {
-          'hcg-2': { id: 'hcg-2', date: '2025-11-15', positive: false },
+      ultrasounds: {
+        'ultrasound-1': {
+          id: 'ultrasound-1', date: '2025-10-17', pregnancyConfirmed: true, fetusCount: 1, gestationalAgeWeeks: { from: 6, to: 7 },
         },
-        ultrasounds: {},
       },
     },
   },
   documents: {
     embryoOwnershipStatement: { shipmentId: 'shipment-1' },
     geneticAffinityCertificate: {
-      transferAttemptId: 'transfer-1', hcgTestId: 'hcg-1', ultrasoundId: 'ultrasound-1', issueDate: '2025-10-20', outgoingNumber: '42/1',
+      hcgTestId: 'hcg-1', ultrasoundId: 'ultrasound-1', issueDate: '2025-10-20', outgoingNumber: '42/1',
     },
-    racssClinicLetter: { transferAttemptId: 'transfer-1', ultrasoundId: 'ultrasound-1' },
+    racssClinicLetter: { ultrasoundId: 'ultrasound-1' },
     medicalServicesAgreement: { date: '2025-09-12' },
   },
 };
@@ -166,16 +154,14 @@ const caseWithBrokenReferences = {
     embryoShipments: {
       'shipment-1': { id: 'shipment-1', sourceClinicId: partnerClinic.id, destinationClinicId: clinic.id },
     },
-    transferAttempts: {
-      'transfer-1': {
-        id: 'transfer-1', shipmentId: 'shipment-1', date: '2025-09-18', hcgTests: {}, ultrasounds: {},
-      },
+    transferAttempt: {
+      shipmentId: 'shipment-1', date: '2025-09-18', hcgTests: {}, ultrasounds: {},
     },
   },
   documents: {
     embryoOwnershipStatement: { shipmentId: 'shipment-999' },
-    geneticAffinityCertificate: { transferAttemptId: 'transfer-999', hcgTestId: 'hcg-999', ultrasoundId: 'ultrasound-999' },
-    racssClinicLetter: { transferAttemptId: 'transfer-1', ultrasoundId: 'ultrasound-999' },
+    geneticAffinityCertificate: { hcgTestId: 'hcg-999', ultrasoundId: 'ultrasound-999' },
+    racssClinicLetter: { ultrasoundId: 'ultrasound-999' },
   },
 };
 
@@ -188,14 +174,14 @@ const buildCatalog = (...cases) => normalizeDocumentsCatalog(
 // --- Resolvers -------------------------------------------------------------------------------
 
 describe('spec: null-safe artProgram resolvers (resolveShipment/resolveTransferAttempt/resolveHcgTest/resolveUltrasound)', () => {
-  it('resolves an existing shipment/transferAttempt by id', () => {
+  it('resolves an existing shipment by id, and the case\'s one transfer attempt (no id needed, batch 24 §2)', () => {
     const { artProgram } = caseWithDateRangePeriod;
     expect(resolveShipment(caseWithDateRangePeriod, 'shipment-1')).toBe(artProgram.embryoShipments['shipment-1']);
-    expect(resolveTransferAttempt(caseWithDateRangePeriod, 'transfer-1')).toBe(artProgram.transferAttempts['transfer-1']);
+    expect(resolveTransferAttempt(caseWithDateRangePeriod)).toBe(artProgram.transferAttempt);
   });
 
-  it('resolves an existing hCG test/ultrasound from within its transfer attempt', () => {
-    const transfer = resolveTransferAttempt(caseWithDateRangePeriod, 'transfer-1');
+  it('resolves an existing hCG test/ultrasound from within the transfer attempt', () => {
+    const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
     expect(resolveHcgTest(transfer, 'hcg-1')).toBe(transfer.hcgTests['hcg-1']);
     expect(resolveUltrasound(transfer, 'ultrasound-1')).toBe(transfer.ultrasounds['ultrasound-1']);
   });
@@ -206,15 +192,17 @@ describe('spec: null-safe artProgram resolvers (resolveShipment/resolveTransferA
     expect(resolveShipment(caseWithDateRangePeriod, undefined)).toBeNull();
     expect(resolveShipment(caseWithoutArtProgram, 'shipment-1')).toBeNull();
     expect(resolveShipment(caseWithDateRangePeriod, 'shipment-999')).toBeNull();
-    expect(resolveTransferAttempt(caseWithoutArtProgram, 'transfer-1')).toBeNull();
+    expect(resolveTransferAttempt(caseWithoutArtProgram)).toBeNull();
+    expect(resolveTransferAttempt(null)).toBeNull();
     expect(resolveHcgTest(null, 'hcg-1')).toBeNull();
     expect(resolveHcgTest({ hcgTests: {} }, 'hcg-1')).toBeNull();
     expect(resolveUltrasound(null, 'ultrasound-1')).toBeNull();
   });
 
-  it('a second transfer attempt never overwrites or shadows the first (independent lookup by id)', () => {
-    expect(resolveTransferAttempt(caseWithDateRangePeriod, 'transfer-1').embryoCount).toBe(1);
-    expect(resolveTransferAttempt(caseWithDateRangePeriod, 'transfer-2').embryoCount).toBe(2);
+  it('a second hCG test never overwrites or shadows the first (independent lookup by id within the one transfer attempt)', () => {
+    const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
+    expect(resolveHcgTest(transfer, 'hcg-1').positive).toBe(true);
+    expect(resolveHcgTest(transfer, 'hcg-2').positive).toBe(false);
   });
 
   it('enrichShipment attaches sourceClinic (partnerClinics) and destinationClinic (clinics), null-safe', () => {
@@ -304,7 +292,7 @@ describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enri
   });
 
   it('enrichTransferForTemplate adds dateFormatted/embryoCountText/embryoStageLabel and nests the enriched shipment', () => {
-    const transfer = resolveTransferAttempt(caseWithDateRangePeriod, 'transfer-1');
+    const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
     const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod, transfer.shipmentId), parties);
     const enriched = enrichTransferForTemplate(transfer, shipment);
     expect(enriched.dateFormatted.uk).toBe('18.09.2025');
@@ -315,7 +303,7 @@ describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enri
   });
 
   it('enrichHcgTestForTemplate/enrichUltrasoundForTemplate add their own formatted fields, null-safe', () => {
-    const transfer = resolveTransferAttempt(caseWithDateRangePeriod, 'transfer-1');
+    const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
     const hcgTest = enrichHcgTestForTemplate(resolveHcgTest(transfer, 'hcg-1'));
     expect(hcgTest.dateFormatted.uk).toBe('30.09.2025');
     expect(enrichHcgTestForTemplate(null)).toBeNull();
@@ -371,7 +359,7 @@ describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityC
   });
 
   it('geneticAffinityCertificate falls back to print-only blanks (never persisted) when issueDate/outgoingNumber are unset', () => {
-    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, { transferAttemptId: 'transfer-1' });
+    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, {});
     expect(context.issueDateOrBlank.uk).toBe('__.__.____');
     expect(context.outgoingNumberOrBlank).toBe('______');
   });
@@ -430,14 +418,8 @@ describe('spec §13/§15: validateArtProgramReferences reports specific, actiona
     const catalog = buildCatalog(caseWithBrokenReferences);
     const issues = validateArtProgramReferences(catalog, 'case-broken');
     expect(issues).toContain('Не знайдено доставлення ембріонів shipment-999.');
-    expect(issues).toContain('Не знайдено спробу переносу transfer-999.');
-    expect(issues).toContain('Не знайдено УЗД ultrasound-999 у переносі transfer-1.');
-  });
-
-  it('a broken hcgTestId/ultrasoundId under a broken transferAttemptId is only reported once, via the transfer message', () => {
-    const catalog = buildCatalog(caseWithBrokenReferences);
-    const issues = validateArtProgramReferences(catalog, 'case-broken');
-    expect(issues.filter(issue => issue.includes('transfer-999')).length).toBe(1);
+    expect(issues).toContain('Не знайдено аналіз ХГЧ hcg-999.');
+    expect(issues).toContain('Не знайдено УЗД ultrasound-999.');
   });
 
   it('a fully-valid case reports no issues', () => {
@@ -455,12 +437,11 @@ describe('spec §13/§15: validateArtProgramReferences reports specific, actiona
 // --- Dropdown option labels (spec §9) -------------------------------------------------------------
 
 describe('spec §9: human-readable dropdown labels, never a raw id', () => {
-  it('formats a shipment/transfer/hcgTest/ultrasound as the exact spec example shapes', () => {
+  it('formats a shipment/hcgTest/ultrasound as the exact spec example shapes', () => {
     const shipment = resolveShipment(caseWithDateRangePeriod, 'shipment-1');
     expect(formatShipmentOptionLabel(shipment, parties)).toBe('Доставлення 27.08.2025 — Клініка Тестова');
 
-    const transfer = resolveTransferAttempt(caseWithDateRangePeriod, 'transfer-1');
-    expect(formatTransferOptionLabel(transfer)).toBe('Перенос 18.09.2025 — один ембріон');
+    const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
 
     const hcgTest = resolveHcgTest(transfer, 'hcg-1');
     expect(formatHcgTestOptionLabel(hcgTest)).toBe('ХГЧ 30.09.2025 — позитивний');
@@ -471,7 +452,6 @@ describe('spec §9: human-readable dropdown labels, never a raw id', () => {
 
   it('every label helper is null-safe', () => {
     expect(formatShipmentOptionLabel(null, parties)).toBe('');
-    expect(formatTransferOptionLabel(null)).toBe('');
     expect(formatHcgTestOptionLabel(null)).toBe('');
     expect(formatUltrasoundOptionLabel(null)).toBe('');
   });
@@ -522,10 +502,10 @@ describe('integration: resolveCaseContext wires every ART document context in, n
     expect(validateDocumentTemplate(template, context)).toEqual([]);
   });
 
-  it('spec §8/§9: editing a shared transfer/ultrasound once is reflected simultaneously in geneticAffinityCertificate and racssClinicLetter', () => {
+  it('spec §8/§9: editing the shared transfer attempt/ultrasound once is reflected simultaneously in geneticAffinityCertificate and racssClinicLetter', () => {
     const catalog = buildCatalog(caseWithDateRangePeriod);
     const edited = deepMergeRecords(catalog.cases.find(item => item.id === 'case-daterange'), {
-      artProgram: { transferAttempts: { 'transfer-1': { date: '2026-03-03' } } },
+      artProgram: { transferAttempt: { date: '2026-03-03' } },
     });
     const nextCatalog = { ...catalog, cases: catalog.cases.map(item => (item.id === 'case-daterange' ? edited : item)) };
     const context = resolveCaseContext(nextCatalog, 'case-daterange');
@@ -552,13 +532,13 @@ describe('integration: resolveCaseContext wires every ART document context in, n
     expect(validateArtProgramReferences(catalog, 'case-broken').length).toBeGreaterThan(0);
   });
 
-  it('hCG/ultrasound are selected strictly by id, not array order - picking the second test/scan of a transfer resolves the right one', () => {
+  it('hCG/ultrasound are selected strictly by id, not object order - picking hcg-2 resolves it, not hcg-1', () => {
     const catalog = buildCatalog(caseWithDateRangePeriod);
     const context = resolveCaseContext(catalog, 'case-daterange', undefined);
-    // transfer-2 carries only hcg-2 (negative) - a document referencing it must never accidentally
-    // resolve transfer-1's hcg-1 (positive) instead.
+    // hcg-2 (negative) is a second test on the same transfer attempt as hcg-1 (positive) - a
+    // document referencing it must never accidentally resolve hcg-1 instead.
     const caseRecord = catalog.cases.find(item => item.id === 'case-daterange');
-    const built = buildGeneticAffinityCertificateContext(caseRecord, catalog.parties, { transferAttemptId: 'transfer-2', hcgTestId: 'hcg-2' });
+    const built = buildGeneticAffinityCertificateContext(caseRecord, catalog.parties, { hcgTestId: 'hcg-2' });
     expect(built.hcgTest.positive).toBe(false);
     expect(built.hcgTest.dateFormatted.uk).toBe('15.11.2025');
     expect(context).toBeTruthy(); // context built successfully above too
@@ -597,33 +577,32 @@ describe('spec §11/§12: ART-derived fields are never written back to Firebase'
 
 // --- Import/export round trip stays additive (spec §12) ------------------------------------------
 
-describe('spec §12: import/merge keeps embryoShipments/transferAttempts as maps and merges per-event', () => {
-  it('parseDocumentsTechnicalInput + mergeDocumentsCatalog never converts embryoShipments/transferAttempts into arrays', () => {
+describe('spec §12: import/merge keeps embryoShipments/hcgTests/ultrasounds as maps, transferAttempt as one object', () => {
+  it('parseDocumentsTechnicalInput + mergeDocumentsCatalog never converts embryoShipments into arrays, and merges the one transferAttempt in place', () => {
     const currentCatalog = buildCatalog(caseWithDateRangePeriod);
     const pasted = parseDocumentsTechnicalInput(JSON.stringify({
-      cases: { 'case-daterange': { id: 'case-daterange', artProgram: { transferAttempts: { 'transfer-1': { date: '2026-04-04' } } } } },
+      cases: { 'case-daterange': { id: 'case-daterange', artProgram: { transferAttempt: { date: '2026-04-04' } } } },
     }));
     const { catalog: merged } = mergeDocumentsCatalog(currentCatalog, pasted);
     const mergedCase = merged.cases.find(item => item.id === 'case-daterange');
     expect(Array.isArray(mergedCase.artProgram.embryoShipments)).toBe(false);
-    expect(Array.isArray(mergedCase.artProgram.transferAttempts)).toBe(false);
-    // The edit to transfer-1 landed...
-    expect(mergedCase.artProgram.transferAttempts['transfer-1'].date).toBe('2026-04-04');
-    // ...without wiping transfer-2 or shipment-1, which the incoming payload never mentioned.
-    expect(mergedCase.artProgram.transferAttempts['transfer-2'].embryoCount).toBe(2);
+    // The edit landed...
+    expect(mergedCase.artProgram.transferAttempt.date).toBe('2026-04-04');
+    // ...without wiping embryoCount or shipment-1, which the incoming payload never mentioned.
+    expect(mergedCase.artProgram.transferAttempt.embryoCount).toBe(1);
     expect(mergedCase.artProgram.embryoShipments['shipment-1'].id).toBe('shipment-1');
   });
 
-  it('a deep merge of one hcgTest field never replaces its sibling hcgTests/ultrasounds on the same transfer', () => {
+  it('a deep merge of one hcgTest field never replaces its sibling hcgTests/ultrasounds on the transfer attempt', () => {
     const currentCatalog = buildCatalog(caseWithDateRangePeriod);
     const currentCase = currentCatalog.cases.find(item => item.id === 'case-daterange');
     const merged = deepMergeRecords(currentCase, {
-      artProgram: { transferAttempts: { 'transfer-1': { hcgTests: { 'hcg-1': { positive: false } } } } },
+      artProgram: { transferAttempt: { hcgTests: { 'hcg-1': { positive: false } } } },
     });
-    expect(merged.artProgram.transferAttempts['transfer-1'].hcgTests['hcg-1'].positive).toBe(false);
-    expect(merged.artProgram.transferAttempts['transfer-1'].hcgTests['hcg-1'].date).toBe('2025-09-30');
-    expect(merged.artProgram.transferAttempts['transfer-1'].ultrasounds['ultrasound-1'].fetusCount).toBe(1);
-    expect(merged.artProgram.transferAttempts['transfer-2'].embryoCount).toBe(2);
+    expect(merged.artProgram.transferAttempt.hcgTests['hcg-1'].positive).toBe(false);
+    expect(merged.artProgram.transferAttempt.hcgTests['hcg-1'].date).toBe('2025-09-30');
+    expect(merged.artProgram.transferAttempt.ultrasounds['ultrasound-1'].fetusCount).toBe(1);
+    expect(merged.artProgram.transferAttempt.hcgTests['hcg-2'].positive).toBe(false);
   });
 });
 

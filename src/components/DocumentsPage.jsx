@@ -27,7 +27,7 @@ import {
   DOCUMENT_LAYOUTS,
   PARTY_COLLECTIONS,
   applyLogoLayoutAssignment,
-  applyPlainTextEdit,
+  applyResolvedTextEdit,
   beforeTitleScope,
   buildCaseLabel,
   buildDocumentsFileName,
@@ -913,19 +913,21 @@ const DocumentsPage = ({ isAdmin }) => {
   // see resolvedValue/titleResolvedValue/beforeTitleResolvedValue below, all three built from the
   // same resolvedDoc), where Bold/Italic act on the underlying raw markup even though the resolved
   // wording is what's shown - the wording itself isn't editable there, only its formatting.
-  // 'input' shows that same resolved wording at rest (batch 2026-07-25: matches Text mode, never a
-  // raw {{token}}) but is still meant for retyping the plain wording - clicking into a field swaps
-  // it to an editable plain-text view (de-markup'd, `{{token}}`s intact) for that one field only,
-  // tracked by `activeFieldKey` since a ref alone can't drive the re-render. Bold/Italic apply in
-  // both Template and Text mode; only Input mode disables them (nothing raw is on screen there
-  // until a field is actually clicked into). Every row - title, every paragraph, every beforeTitle
-  // block alike - follows this identical mechanism, no row-specific exceptions.
+  // 'input' shows that same resolved wording at rest (matches Text mode, never a raw {{token}}) and
+  // keeps showing it once a field is clicked into (batch 24 §1) - the field just becomes an
+  // editable plain-text view of the resolved wording for that one field only, tracked by
+  // `activeFieldKey` since a ref alone can't drive the re-render. Typing there edits the resolved
+  // text directly; applyResolvedTextEdit translates that edit back onto the shared raw markup
+  // (baking in a substituted value as literal text if the edit actually reached into one). Only
+  // switching to Template mode ever shows the raw {{token}} markup. Bold/Italic apply in both
+  // Template and Text mode; only Input mode disables them. Every row - title, every paragraph,
+  // every beforeTitle block alike - follows this identical mechanism, no row-specific exceptions.
   const PARAGRAPH_MODES = ['template', 'input', 'text'];
   const nextParagraphMode = mode => PARAGRAPH_MODES[(PARAGRAPH_MODES.indexOf(mode) + 1) % PARAGRAPH_MODES.length];
   const PARAGRAPH_MODE_ICON = { template: '{}', input: 'I', text: 'T' };
   const PARAGRAPH_MODE_TITLE = {
     template: 'Template mode - editing the shared {{placeholder}} markup. Tap to switch to Input mode.',
-    input: 'Input mode - shows the resolved wording (click it to retype as plain text). Tap to switch to Text mode.',
+    input: 'Input mode - shows the resolved wording, editable in place. Tap to switch to Text mode.',
     text: 'Text mode - select text and press Bold/Italic; wording isn\'t editable here. Tap to switch to Template mode.',
   };
   const [paragraphModes, setParagraphModes] = useState({});
@@ -1394,10 +1396,10 @@ const DocumentsPage = ({ isAdmin }) => {
   const activeFieldRef = useRef(null);
   const fieldKey = (docId, scope, langKey) => `${docId}#${scope}#${langKey}`;
   // Input mode shows the resolved (final, case-substituted) wording at rest - same as Text mode -
-  // instead of the raw {{token}} markup, and swaps to the editable plain-text field only for
-  // whichever single field was last clicked into (batch 2026-07-25: "має показувати вже фінальну
-  // версію тексту... а не посилання в форматі {}"). `activeFieldRef` alone can't drive this (a ref
-  // mutation doesn't re-render), so this mirrors it into real state.
+  // instead of the raw {{token}} markup, and swaps to an editable field showing that same resolved
+  // wording (never the raw markup, batch 24 §1) for whichever single field was last clicked into.
+  // `activeFieldRef` alone can't drive this (a ref mutation doesn't re-render), so this mirrors it
+  // into real state.
   const [activeFieldKey, setActiveFieldKey] = useState('');
   const registerFieldNode = (docId, scope, langKey) => node => {
     fieldNodesRef.current[fieldKey(docId, scope, langKey)] = node;
@@ -2339,11 +2341,11 @@ const DocumentsPage = ({ isAdmin }) => {
                 const titleIsInputMode = titleMode === 'input';
                 const titleRawValue = langKey => template.title?.[langKey] || '';
                 const titleResolvedValue = langKey => resolvedDoc?.title?.[langKey] ?? '';
-                const titleDisplayValue = langKey => (titleIsTemplateMode ? titleRawValue(langKey) : plainTextOf(titleRawValue(langKey)));
+                const titleDisplayValue = langKey => (titleIsTemplateMode ? titleRawValue(langKey) : plainTextOf(titleResolvedValue(langKey)));
                 const onTitleFieldChange = langKey => event => {
                   const nextRaw = titleIsTemplateMode
                     ? event.target.value
-                    : applyPlainTextEdit(titleRawValue(langKey), event.target.value);
+                    : applyResolvedTextEdit(titleRawValue(langKey), getContextForTemplate(template.id), langKey, event.target.value);
                   handleTemplateScopeChange(template.id, TITLE_SCOPE, langKey, nextRaw);
                 };
                 const onTitleFieldBlur = () => persistTemplate(template.id);
@@ -2448,16 +2450,17 @@ const DocumentsPage = ({ isAdmin }) => {
                           const isInputMode = mode === 'input';
                           const isTextMode = mode === 'text';
                           const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
-                          const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(rawValue(langKey)));
-                          // Same rule as the title/paragraph rows below: Text mode shows the
-                          // resolved-against-the-current-case value (real names/dates), never the
-                          // raw {{token}} markup - resolveBeforeTitleBlocks already fills every
-                          // placeholder when building resolvedDoc, this just has to read it.
+                          // Same rule as the title/paragraph rows below: both Text mode and a
+                          // focused Input mode field show the resolved-against-the-current-case
+                          // value (real names/dates), never the raw {{token}} markup -
+                          // resolveBeforeTitleBlocks already fills every placeholder when building
+                          // resolvedDoc, this just has to read it (batch 24 §1).
                           const beforeTitleResolvedValue = langKey => resolvedDoc?.beforeTitle?.[index]?.[langKey] ?? '';
+                          const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(beforeTitleResolvedValue(langKey)));
                           const onChange = langKey => event => {
                             const nextRaw = isTemplateMode
                               ? event.target.value
-                              : applyPlainTextEdit(rawValue(langKey), event.target.value);
+                              : applyResolvedTextEdit(rawValue(langKey), getContextForTemplate(template.id), langKey, event.target.value);
                             handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
                           };
                           const onBlur = () => persistTemplate(template.id);
@@ -2761,11 +2764,11 @@ const DocumentsPage = ({ isAdmin }) => {
                           const isTextMode = mode === 'text';
                           const rawValue = langKey => paragraph?.[langKey] || '';
                           const resolvedValue = langKey => resolvedDoc?.paragraphs?.[index]?.[langKey] ?? '';
-                          const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(rawValue(langKey)));
+                          const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(resolvedValue(langKey)));
                           const onChange = langKey => event => {
                             const nextRaw = isTemplateMode
                               ? event.target.value
-                              : applyPlainTextEdit(rawValue(langKey), event.target.value);
+                              : applyResolvedTextEdit(rawValue(langKey), getContextForTemplate(template.id), langKey, event.target.value);
                             handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
                           };
                           const onBlur = () => persistTemplate(template.id);

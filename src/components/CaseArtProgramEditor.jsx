@@ -211,12 +211,18 @@ const nextSequentialId = (prefix, items) => {
   return `${prefix}-${maxSuffix + 1}`;
 };
 
+// One transfer attempt per case (batch 24 §2) - only the successful attempt's data ever matters
+// once the program is underway, so this is a single record, not a log of attempts.
+const emptyTransferAttempt = () => ({
+  shipmentId: '', date: '', embryoCount: '', embryoStage: '', hcgTests: [], ultrasounds: [],
+});
+
 const emptyArtProgramDraft = () => ({
   medicalIndication: { diagnosis: { uk: '' } },
   geneticMaterial: { oocyteSourcePartnerRole: '', spermSourcePartnerRole: '' },
   medicalTeam: { physician: { name: { uk: { nominative: '' } } } },
   embryoShipments: [],
-  transferAttempts: [],
+  transferAttempt: emptyTransferAttempt(),
 });
 
 const PARTNER_ROLE_OPTIONS = [
@@ -257,11 +263,12 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
       // toArray tolerates a Firebase map-with-gaps the same way every other reader in this app does
       // (see documentsCatalogUtils.toArray) - never assumes the backend snapshot is a real Array.
       embryoShipments: toArray(artProgram.embryoShipments),
-      transferAttempts: toArray(artProgram.transferAttempts).map(transfer => ({
-        ...transfer,
-        hcgTests: toArray(transfer.hcgTests),
-        ultrasounds: toArray(transfer.ultrasounds),
-      })),
+      transferAttempt: {
+        ...emptyTransferAttempt(),
+        ...artProgram.transferAttempt,
+        hcgTests: toArray(artProgram.transferAttempt?.hcgTests),
+        ultrasounds: toArray(artProgram.transferAttempt?.ultrasounds),
+      },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
@@ -309,63 +316,39 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
       : shipment)),
   }));
 
-  // --- Transfer attempts + nested hCG/ultrasound ------------------------------------------------
+  // --- The one transfer attempt + its nested hCG tests/ultrasounds ------------------------------
 
-  const addTransfer = () => setDraft(previous => ({
+  const updateTransferField = (field, value) => setDraft(previous => ({
     ...previous,
-    transferAttempts: [...previous.transferAttempts, {
-      id: nextSequentialId('transfer', previous.transferAttempts),
-      shipmentId: '',
-      date: '',
-      embryoCount: '',
-      embryoStage: '',
-      hcgTests: [],
-      ultrasounds: [],
-    }],
+    transferAttempt: { ...previous.transferAttempt, [field]: value },
   }));
 
-  const removeTransfer = transferId => setDraft(previous => ({
+  const updateTransferList = (listKey, updater) => setDraft(previous => ({
     ...previous,
-    transferAttempts: previous.transferAttempts.filter(transfer => transfer.id !== transferId),
+    transferAttempt: { ...previous.transferAttempt, [listKey]: updater(previous.transferAttempt[listKey]) },
   }));
 
-  const updateTransferField = (transferId, field, value) => setDraft(previous => ({
-    ...previous,
-    transferAttempts: previous.transferAttempts.map(transfer => (transfer.id === transferId ? { ...transfer, [field]: value } : transfer)),
-  }));
-
-  const updateTransferList = (transferId, listKey, updater) => setDraft(previous => ({
-    ...previous,
-    transferAttempts: previous.transferAttempts.map(transfer => (transfer.id === transferId
-      ? { ...transfer, [listKey]: updater(transfer[listKey]) }
-      : transfer)),
-  }));
-
-  const addHcgTest = transferId => updateTransferList(transferId, 'hcgTests', hcgTests => [...hcgTests, {
+  const addHcgTest = () => updateTransferList('hcgTests', hcgTests => [...hcgTests, {
     id: nextSequentialId('hcg', hcgTests), date: '', positive: '', value: '', unit: '',
   }]);
-  const removeHcgTest = (transferId, hcgTestId) => updateTransferList(transferId, 'hcgTests', hcgTests => hcgTests.filter(item => item.id !== hcgTestId));
-  const updateHcgTestField = (transferId, hcgTestId, field, value) => updateTransferList(
-    transferId,
+  const removeHcgTest = hcgTestId => updateTransferList('hcgTests', hcgTests => hcgTests.filter(item => item.id !== hcgTestId));
+  const updateHcgTestField = (hcgTestId, field, value) => updateTransferList(
     'hcgTests',
     hcgTests => hcgTests.map(item => (item.id === hcgTestId ? { ...item, [field]: value } : item)),
   );
 
-  const addUltrasound = transferId => updateTransferList(transferId, 'ultrasounds', ultrasounds => [...ultrasounds, {
+  const addUltrasound = () => updateTransferList('ultrasounds', ultrasounds => [...ultrasounds, {
     id: nextSequentialId('ultrasound', ultrasounds), date: '', pregnancyConfirmed: '', fetusCount: '', gestationalAgeWeeks: { from: '', to: '' },
   }]);
-  const removeUltrasound = (transferId, ultrasoundId) => updateTransferList(
-    transferId,
+  const removeUltrasound = ultrasoundId => updateTransferList(
     'ultrasounds',
     ultrasounds => ultrasounds.filter(item => item.id !== ultrasoundId),
   );
-  const updateUltrasoundField = (transferId, ultrasoundId, field, value) => updateTransferList(
-    transferId,
+  const updateUltrasoundField = (ultrasoundId, field, value) => updateTransferList(
     'ultrasounds',
     ultrasounds => ultrasounds.map(item => (item.id === ultrasoundId ? { ...item, [field]: value } : item)),
   );
-  const updateUltrasoundGestField = (transferId, ultrasoundId, field, value) => updateTransferList(
-    transferId,
+  const updateUltrasoundGestField = (ultrasoundId, field, value) => updateTransferList(
     'ultrasounds',
     ultrasounds => ultrasounds.map(item => (item.id === ultrasoundId
       ? { ...item, gestationalAgeWeeks: { ...(item.gestationalAgeWeeks || {}), [field]: value } }
@@ -393,17 +376,17 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
           endDate: normalizeIsoDate(shipment.plannedPeriod?.endDate),
         },
       }))),
-      transferAttempts: arrayToMap(draft.transferAttempts.map(transfer => ({
-        ...transfer,
-        date: normalizeIsoDate(transfer.date),
-        embryoCount: parseNumberOrBlank(transfer.embryoCount),
-        hcgTests: arrayToMap(transfer.hcgTests.map(hcgTest => ({
+      transferAttempt: {
+        ...draft.transferAttempt,
+        date: normalizeIsoDate(draft.transferAttempt.date),
+        embryoCount: parseNumberOrBlank(draft.transferAttempt.embryoCount),
+        hcgTests: arrayToMap(draft.transferAttempt.hcgTests.map(hcgTest => ({
           ...hcgTest,
           date: normalizeIsoDate(hcgTest.date),
           positive: parseTriState(hcgTest.positive),
           value: parseNumberOrBlank(hcgTest.value),
         }))),
-        ultrasounds: arrayToMap(transfer.ultrasounds.map(ultrasound => ({
+        ultrasounds: arrayToMap(draft.transferAttempt.ultrasounds.map(ultrasound => ({
           ...ultrasound,
           date: normalizeIsoDate(ultrasound.date),
           pregnancyConfirmed: parseTriState(ultrasound.pregnancyConfirmed),
@@ -413,7 +396,7 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
             to: parseNumberOrBlank(ultrasound.gestationalAgeWeeks?.to),
           },
         }))),
-      }))),
+      },
     };
     const cleaned = removeEmptyCaseValues(payload);
     const nextValue = Object.keys(cleaned).length ? cleaned : null;
@@ -550,173 +533,162 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
         </SmallButton>
       </RowLine>
 
-      <SectionSubhead style={{ marginTop: 14 }}>Спроби переносу</SectionSubhead>
-      {draft.transferAttempts.map((transfer, index) => (
-        <DocRow key={transfer.id}>
-          <DocRowHead>
-            <DocSubtitle style={{ fontWeight: 700 }}>{transfer.id || `Перенос ${index + 1}`}</DocSubtitle>
-            <DangerButton type="button" onClick={() => removeTransfer(transfer.id)} title="Remove this transfer attempt">
-              <FaTrash />
-            </DangerButton>
-          </DocRowHead>
-          <FieldGrid>
-            <Field>
-              Доставлення
-              <Select value={transfer.shipmentId || ''} onChange={event => updateTransferField(transfer.id, 'shipmentId', event.target.value)}>
-                <option value="">— не обрано —</option>
-                {draft.embryoShipments.map(shipment => (
-                  <option key={shipment.id} value={shipment.id}>
-                    {formatShipmentOptionLabel(shipment, catalog.parties) || shipment.id}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field>
-              Дата переносу
-              <FieldInput type="date" value={transfer.date || ''} onChange={event => updateTransferField(transfer.id, 'date', event.target.value)} />
-            </Field>
-            <Field>
-              Кількість ембріонів
-              <FieldInput
-                type="number"
-                min="0"
-                value={transfer.embryoCount ?? ''}
-                onChange={event => updateTransferField(transfer.id, 'embryoCount', event.target.value)}
-              />
-            </Field>
-            <Field>
-              Стадія ембріонів
-              <FieldInput
-                type="text"
-                list="art-embryo-stage-options"
-                placeholder="blastocyst"
-                value={transfer.embryoStage || ''}
-                onChange={event => updateTransferField(transfer.id, 'embryoStage', event.target.value)}
-              />
-            </Field>
-          </FieldGrid>
+      {/* One record only (batch 24 §2) - the successful transfer attempt's data, filled in once its
+          outcome is known. No add/remove: this is an edit form for that one record, not a list. */}
+      <SectionSubhead style={{ marginTop: 14 }}>Спроба переносу</SectionSubhead>
+      <DocRow>
+        <FieldGrid>
+          <Field>
+            Доставлення
+            <Select value={draft.transferAttempt.shipmentId || ''} onChange={event => updateTransferField('shipmentId', event.target.value)}>
+              <option value="">— не обрано —</option>
+              {draft.embryoShipments.map(shipment => (
+                <option key={shipment.id} value={shipment.id}>
+                  {formatShipmentOptionLabel(shipment, catalog.parties) || shipment.id}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field>
+            Дата переносу
+            <FieldInput type="date" value={draft.transferAttempt.date || ''} onChange={event => updateTransferField('date', event.target.value)} />
+          </Field>
+          <Field>
+            Кількість ембріонів
+            <FieldInput
+              type="number"
+              min="0"
+              value={draft.transferAttempt.embryoCount ?? ''}
+              onChange={event => updateTransferField('embryoCount', event.target.value)}
+            />
+          </Field>
+          <Field>
+            Стадія ембріонів
+            <FieldInput
+              type="text"
+              list="art-embryo-stage-options"
+              placeholder="blastocyst"
+              value={draft.transferAttempt.embryoStage || ''}
+              onChange={event => updateTransferField('embryoStage', event.target.value)}
+            />
+          </Field>
+        </FieldGrid>
 
-          <SectionSubhead style={{ marginTop: 10, fontSize: 10.5 }}>Аналізи ХГЧ</SectionSubhead>
-          {transfer.hcgTests.map((hcgTest, hcgIndex) => (
-            <NestedRow key={hcgTest.id}>
-              <DocRowHead>
-                <DocSubtitle style={{ fontWeight: 700 }}>{hcgTest.id || `ХГЧ ${hcgIndex + 1}`}</DocSubtitle>
-                <DangerButton type="button" onClick={() => removeHcgTest(transfer.id, hcgTest.id)} title="Remove this hCG test">
-                  <FaTrash />
-                </DangerButton>
-              </DocRowHead>
-              <FieldGrid>
-                <Field>
-                  Дата
-                  <FieldInput
-                    type="date"
-                    value={hcgTest.date || ''}
-                    onChange={event => updateHcgTestField(transfer.id, hcgTest.id, 'date', event.target.value)}
-                  />
-                </Field>
-                <Field>
-                  Результат
-                  <Select
-                    value={hcgTest.positive === true ? 'true' : (hcgTest.positive === false ? 'false' : '')}
-                    onChange={event => updateHcgTestField(transfer.id, hcgTest.id, 'positive', event.target.value)}
-                  >
-                    {TRI_STATE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </Select>
-                </Field>
-                <Field>
-                  Значення
-                  <FieldInput
-                    type="number"
-                    value={hcgTest.value ?? ''}
-                    onChange={event => updateHcgTestField(transfer.id, hcgTest.id, 'value', event.target.value)}
-                  />
-                </Field>
-                <Field>
-                  Одиниці вимірювання
-                  <FieldInput
-                    type="text"
-                    value={hcgTest.unit || ''}
-                    onChange={event => updateHcgTestField(transfer.id, hcgTest.id, 'unit', event.target.value)}
-                  />
-                </Field>
-              </FieldGrid>
-            </NestedRow>
-          ))}
-          <RowLine style={{ marginTop: 8 }}>
-            <SmallButton type="button" onClick={() => addHcgTest(transfer.id)}>
-              <FaPlus /> Add hCG test
-            </SmallButton>
-          </RowLine>
+        <SectionSubhead style={{ marginTop: 10, fontSize: 10.5 }}>Аналізи ХГЧ</SectionSubhead>
+        {draft.transferAttempt.hcgTests.map((hcgTest, hcgIndex) => (
+          <NestedRow key={hcgTest.id}>
+            <DocRowHead>
+              <DocSubtitle style={{ fontWeight: 700 }}>{hcgTest.id || `ХГЧ ${hcgIndex + 1}`}</DocSubtitle>
+              <DangerButton type="button" onClick={() => removeHcgTest(hcgTest.id)} title="Remove this hCG test">
+                <FaTrash />
+              </DangerButton>
+            </DocRowHead>
+            <FieldGrid>
+              <Field>
+                Дата
+                <FieldInput
+                  type="date"
+                  value={hcgTest.date || ''}
+                  onChange={event => updateHcgTestField(hcgTest.id, 'date', event.target.value)}
+                />
+              </Field>
+              <Field>
+                Результат
+                <Select
+                  value={hcgTest.positive === true ? 'true' : (hcgTest.positive === false ? 'false' : '')}
+                  onChange={event => updateHcgTestField(hcgTest.id, 'positive', event.target.value)}
+                >
+                  {TRI_STATE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </Select>
+              </Field>
+              <Field>
+                Значення
+                <FieldInput
+                  type="number"
+                  value={hcgTest.value ?? ''}
+                  onChange={event => updateHcgTestField(hcgTest.id, 'value', event.target.value)}
+                />
+              </Field>
+              <Field>
+                Одиниці вимірювання
+                <FieldInput
+                  type="text"
+                  value={hcgTest.unit || ''}
+                  onChange={event => updateHcgTestField(hcgTest.id, 'unit', event.target.value)}
+                />
+              </Field>
+            </FieldGrid>
+          </NestedRow>
+        ))}
+        <RowLine style={{ marginTop: 8 }}>
+          <SmallButton type="button" onClick={addHcgTest}>
+            <FaPlus /> Add hCG test
+          </SmallButton>
+        </RowLine>
 
-          <SectionSubhead style={{ marginTop: 10, fontSize: 10.5 }}>УЗД</SectionSubhead>
-          {transfer.ultrasounds.map((ultrasound, ultrasoundIndex) => (
-            <NestedRow key={ultrasound.id}>
-              <DocRowHead>
-                <DocSubtitle style={{ fontWeight: 700 }}>{ultrasound.id || `УЗД ${ultrasoundIndex + 1}`}</DocSubtitle>
-                <DangerButton type="button" onClick={() => removeUltrasound(transfer.id, ultrasound.id)} title="Remove this ultrasound">
-                  <FaTrash />
-                </DangerButton>
-              </DocRowHead>
-              <FieldGrid>
-                <Field>
-                  Дата
-                  <FieldInput
-                    type="date"
-                    value={ultrasound.date || ''}
-                    onChange={event => updateUltrasoundField(transfer.id, ultrasound.id, 'date', event.target.value)}
-                  />
-                </Field>
-                <Field>
-                  Вагітність підтверджена
-                  <Select
-                    value={ultrasound.pregnancyConfirmed === true ? 'true' : (ultrasound.pregnancyConfirmed === false ? 'false' : '')}
-                    onChange={event => updateUltrasoundField(transfer.id, ultrasound.id, 'pregnancyConfirmed', event.target.value)}
-                  >
-                    {TRI_STATE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </Select>
-                </Field>
-                <Field>
-                  Кількість плодів
-                  <FieldInput
-                    type="number"
-                    min="0"
-                    value={ultrasound.fetusCount ?? ''}
-                    onChange={event => updateUltrasoundField(transfer.id, ultrasound.id, 'fetusCount', event.target.value)}
-                  />
-                </Field>
-                <Field>
-                  Строк вагітності — від (тижнів)
-                  <FieldInput
-                    type="number"
-                    min="0"
-                    value={ultrasound.gestationalAgeWeeks?.from ?? ''}
-                    onChange={event => updateUltrasoundGestField(transfer.id, ultrasound.id, 'from', event.target.value)}
-                  />
-                </Field>
-                <Field>
-                  Строк вагітності — до (тижнів)
-                  <FieldInput
-                    type="number"
-                    min="0"
-                    value={ultrasound.gestationalAgeWeeks?.to ?? ''}
-                    onChange={event => updateUltrasoundGestField(transfer.id, ultrasound.id, 'to', event.target.value)}
-                  />
-                </Field>
-              </FieldGrid>
-            </NestedRow>
-          ))}
-          <RowLine style={{ marginTop: 8 }}>
-            <SmallButton type="button" onClick={() => addUltrasound(transfer.id)}>
-              <FaPlus /> Add ultrasound
-            </SmallButton>
-          </RowLine>
-        </DocRow>
-      ))}
-      <RowLine style={{ marginTop: 8 }}>
-        <SmallButton type="button" onClick={addTransfer}>
-          <FaPlus /> Add transfer attempt
-        </SmallButton>
-      </RowLine>
+        <SectionSubhead style={{ marginTop: 10, fontSize: 10.5 }}>УЗД</SectionSubhead>
+        {draft.transferAttempt.ultrasounds.map((ultrasound, ultrasoundIndex) => (
+          <NestedRow key={ultrasound.id}>
+            <DocRowHead>
+              <DocSubtitle style={{ fontWeight: 700 }}>{ultrasound.id || `УЗД ${ultrasoundIndex + 1}`}</DocSubtitle>
+              <DangerButton type="button" onClick={() => removeUltrasound(ultrasound.id)} title="Remove this ultrasound">
+                <FaTrash />
+              </DangerButton>
+            </DocRowHead>
+            <FieldGrid>
+              <Field>
+                Дата
+                <FieldInput
+                  type="date"
+                  value={ultrasound.date || ''}
+                  onChange={event => updateUltrasoundField(ultrasound.id, 'date', event.target.value)}
+                />
+              </Field>
+              <Field>
+                Вагітність підтверджена
+                <Select
+                  value={ultrasound.pregnancyConfirmed === true ? 'true' : (ultrasound.pregnancyConfirmed === false ? 'false' : '')}
+                  onChange={event => updateUltrasoundField(ultrasound.id, 'pregnancyConfirmed', event.target.value)}
+                >
+                  {TRI_STATE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </Select>
+              </Field>
+              <Field>
+                Кількість плодів
+                <FieldInput
+                  type="number"
+                  min="0"
+                  value={ultrasound.fetusCount ?? ''}
+                  onChange={event => updateUltrasoundField(ultrasound.id, 'fetusCount', event.target.value)}
+                />
+              </Field>
+              <Field>
+                Строк вагітності — від (тижнів)
+                <FieldInput
+                  type="number"
+                  min="0"
+                  value={ultrasound.gestationalAgeWeeks?.from ?? ''}
+                  onChange={event => updateUltrasoundGestField(ultrasound.id, 'from', event.target.value)}
+                />
+              </Field>
+              <Field>
+                Строк вагітності — до (тижнів)
+                <FieldInput
+                  type="number"
+                  min="0"
+                  value={ultrasound.gestationalAgeWeeks?.to ?? ''}
+                  onChange={event => updateUltrasoundGestField(ultrasound.id, 'to', event.target.value)}
+                />
+              </Field>
+            </FieldGrid>
+          </NestedRow>
+        ))}
+        <RowLine style={{ marginTop: 8 }}>
+          <SmallButton type="button" onClick={addUltrasound}>
+            <FaPlus /> Add ultrasound
+          </SmallButton>
+        </RowLine>
+      </DocRow>
 
       <datalist id="art-embryo-stage-options">
         <option value="blastocyst" />
