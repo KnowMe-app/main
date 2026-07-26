@@ -5,6 +5,7 @@ import {
   TEMPLATE_DOCUMENT_CONFIG,
   applyLogoLayoutAssignment,
   applyPlainTextEdit,
+  applyResolvedTextEdit,
   buildVariablePickerGroups,
   collectContextLeafPaths,
   estimateColumnPageCapacity,
@@ -1702,6 +1703,49 @@ describe('spec: selection-based inline bold/italic (batch 13 §1)', () => {
       { text: 'Hello ', bold: false, italic: false },
       { text: 'world', bold: true, italic: false },
     ]);
+  });
+});
+
+describe('spec: applyResolvedTextEdit (batch 24 §1 - editing Input mode\'s resolved wording)', () => {
+  const context = { wife: { name: { uk: { nominative: 'Іванова Марія' } } } };
+
+  it('an edit entirely outside any token maps straight back onto the surrounding raw text, token untouched', () => {
+    const raw = 'Дорога {{wife.name.uk.nominative}}, вітаю';
+    const resolved = 'Дорога Іванова Марія, вітаю';
+    const nextResolved = resolved.replace('вітаю', 'вітаємо');
+    const nextRaw = applyResolvedTextEdit(raw, context, 'uk', nextResolved);
+    expect(nextRaw).toBe('Дорога {{wife.name.uk.nominative}}, вітаємо');
+  });
+
+  it('an edit inserted right before a token leaves the token intact', () => {
+    const raw = '{{wife.name.uk.nominative}} вітає всіх';
+    const resolved = 'Іванова Марія вітає всіх';
+    const nextResolved = `Шановна ${resolved}`;
+    const nextRaw = applyResolvedTextEdit(raw, context, 'uk', nextResolved);
+    expect(nextRaw).toBe('Шановна {{wife.name.uk.nominative}} вітає всіх');
+  });
+
+  it('an edit reaching into the substituted value bakes that value in as literal text', () => {
+    const raw = 'Шановна {{wife.name.uk.nominative}}!';
+    const resolved = 'Шановна Іванова Марія!';
+    // Admin retypes the surname portion of the resolved name directly.
+    const nextResolved = resolved.replace('Іванова', 'Петрова');
+    const nextRaw = applyResolvedTextEdit(raw, context, 'uk', nextResolved);
+    expect(nextRaw).toBe('Шановна Петрова Марія!');
+  });
+
+  it('round-trips back to a no-op when the resolved text is unchanged', () => {
+    const raw = 'Дорога {{wife.name.uk.nominative}}';
+    const resolved = 'Дорога Іванова Марія';
+    expect(applyResolvedTextEdit(raw, context, 'uk', resolved)).toBe(raw);
+  });
+
+  it('preserves bold/italic markup on the untouched portion of the raw text', () => {
+    const raw = '**Шановна** {{wife.name.uk.nominative}}, дякуємо';
+    const resolved = 'Шановна Іванова Марія, дякуємо';
+    const nextResolved = resolved.replace('дякуємо', 'вітаємо');
+    const nextRaw = applyResolvedTextEdit(raw, context, 'uk', nextResolved);
+    expect(nextRaw).toBe('**Шановна** {{wife.name.uk.nominative}}, вітаємо');
   });
 });
 
