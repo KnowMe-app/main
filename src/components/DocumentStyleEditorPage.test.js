@@ -102,9 +102,8 @@ describe('DocumentStyleEditorPage', () => {
     render(<MemoryRouter><DocumentStyleEditorPage isAdmin /></MemoryRouter>);
     await screen.findByText('Genetic affinity certificate');
     fireEvent.click(await screen.findByText(/titleMain/));
-    const lineHeightRow = (await screen.findByText('Line height')).closest('label');
-    const checkbox = lineHeightRow.querySelector('input[type="checkbox"]');
-    expect(checkbox.checked).toBe(false);
+    const checkbox = await screen.findByRole('checkbox', { name: 'Line height' });
+    expect(checkbox).not.toBeChecked();
     fireEvent.click(checkbox);
     await waitFor(() => expect(update).toHaveBeenCalledWith(
       '__root__',
@@ -117,9 +116,8 @@ describe('DocumentStyleEditorPage', () => {
     render(<MemoryRouter><DocumentStyleEditorPage isAdmin /></MemoryRouter>);
     await screen.findByText('Genetic affinity certificate');
     fireEvent.click(await screen.findByText(/titleMain/));
-    const fontSizeRow = (await screen.findByText('Font size (pt)')).closest('label');
-    const checkbox = fontSizeRow.querySelector('input[type="checkbox"]');
-    expect(checkbox.checked).toBe(true);
+    const checkbox = await screen.findByRole('checkbox', { name: /^Font size \(pt\)/ });
+    expect(checkbox).toBeChecked();
     fireEvent.click(checkbox);
     await waitFor(() => expect(update).toHaveBeenCalledWith(
       '__root__',
