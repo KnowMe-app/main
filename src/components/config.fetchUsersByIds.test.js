@@ -6,16 +6,31 @@ describe('newUsers/users merge behaviour', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
   const addNewProfileSource = fs.readFileSync(path.join(__dirname, 'AddNewProfile.jsx'), 'utf8');
 
-  it('mergeUserFieldValue keeps unique array values from both sides without duplicates', () => {
-    expect(mergeUserFieldValue(['a', 'b'], ['b', 'c'])).toEqual(['a', 'b', 'c']);
+  it('mergeUserFieldValue keeps unique array values from both sides, newUsers first, users last', () => {
+    // 'b' is the confirmed/last value in users (primary) and must stay last even
+    // though it also appears earlier in newUsers (secondary) — MyProfile only
+    // shows the LAST array element to a regular (non-admin) user, so that tail
+    // position must always reflect the users collection.
+    expect(mergeUserFieldValue(['a', 'b'], ['b', 'c'])).toEqual(['c', 'a', 'b']);
   });
 
   it('mergeUserFieldValue treats RTDB "sparse array as object" the same as a real array', () => {
-    expect(mergeUserFieldValue({ 0: 'a', 1: 'b' }, ['b', 'c'])).toEqual(['a', 'b', 'c']);
+    expect(mergeUserFieldValue({ 0: 'a', 1: 'b' }, ['b', 'c'])).toEqual(['c', 'a', 'b']);
   });
 
-  it('mergeUserFieldValue prefers the users (primary) value when a scalar field truly conflicts', () => {
-    expect(mergeUserFieldValue('fresh-from-users', 'stale-from-newUsers')).toBe('fresh-from-users');
+  it('mergeUserFieldValue keeps empty-string list items instead of dropping them', () => {
+    expect(mergeUserFieldValue(['a', ''], ['x'])).toEqual(['x', 'a', '']);
+  });
+
+  it('mergeUserFieldValue combines a scalar conflict into [newUsers, users] so nothing is lost', () => {
+    expect(mergeUserFieldValue('fresh-from-users', 'stale-from-newUsers')).toEqual([
+      'stale-from-newUsers',
+      'fresh-from-users',
+    ]);
+  });
+
+  it('mergeUserFieldValue returns the plain value when both sides already agree', () => {
+    expect(mergeUserFieldValue('same', 'same')).toBe('same');
   });
 
   it('mergeUserFieldValue falls back to the other side when only one side has the field', () => {
@@ -23,12 +38,12 @@ describe('newUsers/users merge behaviour', () => {
     expect(mergeUserFieldValue('onlyInUsers', undefined)).toBe('onlyInUsers');
   });
 
-  it('mergeUserCollectionData does not drop fields that only exist in newUsers', () => {
+  it('mergeUserCollectionData does not drop fields that only exist in newUsers, and keeps users last on conflicts', () => {
     const merged = mergeUserCollectionData(
       { surname: 'FreshSurname' },
       { role: 'writer', surname: 'StaleSurname' }
     );
-    expect(merged).toEqual({ surname: 'FreshSurname', role: 'writer' });
+    expect(merged).toEqual({ surname: ['StaleSurname', 'FreshSurname'], role: 'writer' });
   });
 
   it('fetchUsersByIds merges users/newUsers per field instead of overwriting one side wholesale', () => {

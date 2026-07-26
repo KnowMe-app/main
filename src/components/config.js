@@ -2755,6 +2755,45 @@ const sanitizeUploadedInfoPhones = uploadedInfo => {
   };
 };
 
+// Для карток з довгим userId дані мають остаточно жити лише в "users". Коли поле
+// щойно записане в users, той самий ключ у "newUsers" — це застарілий дублікат
+// ще з часів подвійного запису, і саме він спричиняв баг з перезатиранням
+// свіжих даних під час мерджу колекцій. Видаляємо його з newUsers, але лише
+// після того, як перечитали users і переконались, що значення там дійсно є —
+// щоб не вийшло, що дані зникли з newUsers, а в users так і не з'явились.
+const pruneMigratedFieldsFromNewUsers = async (userId, fieldNames) => {
+  const candidateFields = [...new Set((fieldNames || []).filter(
+    field => field && field !== 'userId' && !transientUserDataKeys.includes(field)
+  ))];
+  if (!candidateFields.length) return;
+
+  try {
+    const [newUsersSnap, usersSnap] = await Promise.all([
+      get(ref2(database, `newUsers/${userId}`)),
+      get(ref2(database, `users/${userId}`)),
+    ]);
+    if (!newUsersSnap.exists() || !usersSnap.exists()) return;
+
+    const newUsersData = newUsersSnap.val() || {};
+    const usersData = usersSnap.val() || {};
+
+    const updates = {};
+    candidateFields.forEach(field => {
+      const presentInNewUsers = Object.prototype.hasOwnProperty.call(newUsersData, field);
+      const confirmedInUsers = Object.prototype.hasOwnProperty.call(usersData, field);
+      if (presentInNewUsers && confirmedInUsers) {
+        updates[`newUsers/${userId}/${field}`] = null;
+      }
+    });
+
+    if (Object.keys(updates).length > 0) {
+      await update(ref2(database), updates);
+    }
+  } catch (error) {
+    console.error('Не вдалось видалити мігровані поля з newUsers:', error);
+  }
+};
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
@@ -2765,6 +2804,10 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
       await update(userRefRTDB, cleanedUploadedInfo);
     } else {
       await set(userRefRTDB, cleanedUploadedInfo);
+    }
+
+    if (String(userId || '').length > 20) {
+      await pruneMigratedFieldsFromNewUsers(userId, Object.keys(cleanedUploadedInfo));
     }
   } catch (error) {
     console.error(
