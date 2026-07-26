@@ -1471,9 +1471,10 @@ export const mapResolvedSelectionToRaw = (rawMarkup, context, lang, start, end) 
       resolvedCursor += length;
     }
     const resolvedToken = fillPlaceholders(token, context, lang);
-    segments.push({ rawStart: tokenOffset, rawEnd: tokenOffset + token.length, resolvedStart: resolvedCursor, resolvedEnd: resolvedCursor + resolvedToken.length, placeholder: true });
+    const resolvedLength = plainTextOf(resolvedToken).length;
+    segments.push({ rawStart: tokenOffset, rawEnd: tokenOffset + token.length, resolvedStart: resolvedCursor, resolvedEnd: resolvedCursor + resolvedLength, placeholder: true });
     rawCursor = tokenOffset + token.length;
-    resolvedCursor += resolvedToken.length;
+    resolvedCursor += resolvedLength;
     return token;
   });
   if (rawCursor < rawText.length) {
@@ -2330,16 +2331,24 @@ const splitLayoutV2RunsAtCuts = (runsWithOffsets, cuts) => {
   return result;
 };
 
-// Two runs merge only when both their bold (style) and italic (styleOverrides.fontStyle) state
-// match - either dimension differing keeps them apart, so toggling one never silently merges into
-// a neighbor that still differs in the other.
-const layoutV2RunFormatKey = run => `${run.style || ''}::${run.styleOverrides?.fontStyle || ''}`;
+// Offsets are temporary editing data; every other field is persisted run metadata and must match
+// before adjacent text can be combined. In particular, runs with the same bold/italic state can
+// still carry different colors, sizes, or other renderer overrides.
+const layoutV2RunMetadata = run => {
+  const metadata = { ...run };
+  delete metadata.text;
+  delete metadata.start;
+  delete metadata.end;
+  return metadata;
+};
+
+const layoutV2RunFormatKey = run => JSON.stringify(layoutV2RunMetadata(run));
 
 const mergeAdjacentLayoutV2Runs = runs => runs.reduce((merged, run) => {
   if (!run.text) return merged;
   const last = merged[merged.length - 1];
   if (last && layoutV2RunFormatKey(last) === layoutV2RunFormatKey(run)) last.text += run.text;
-  else merged.push({ text: run.text, style: run.style, styleOverrides: run.styleOverrides });
+  else merged.push({ text: run.text, ...layoutV2RunMetadata(run) });
   return merged;
 }, []);
 
@@ -2702,11 +2711,6 @@ export const parseFormattedRuns = text => {
     buffer = '';
   };
   for (let i = 0; i < str.length; i += 1) {
-    if (str[i] === '\\' && (str[i + 1] === '*' || str[i + 1] === '\\')) {
-      buffer += str[i + 1];
-      i += 1;
-      continue;
-    }
     if (str[i] === '*' && str[i + 1] === '*') {
       flush();
       bold = !bold;
@@ -2759,7 +2763,7 @@ export const serializeFormattedRuns = runs => {
       italic = true;
       openOrder.push('italic');
     }
-    out += String(run.text || '').replace(/\\/g, '\\\\').replace(/\*/g, '\\*');
+    out += String(run.text || '');
   });
   for (let i = openOrder.length - 1; i >= 0; i -= 1) {
     out += openOrder[i] === 'bold' ? BOLD_MARKER : ITALIC_MARKER;

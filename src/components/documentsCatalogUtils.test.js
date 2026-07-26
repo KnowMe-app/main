@@ -1843,6 +1843,16 @@ describe('spec: layoutV2 paragraph full toolbar parity (Italic, markup round-tri
     });
   });
 
+  it('maps offsets using rendered placeholder text when its value contains formatting markers', () => {
+    const raw = 'Dear {{person.name}}, welcome home';
+    const context = { person: { name: 'A*B' } };
+    const resolved = plainTextOf(fillPlaceholders(raw, context, 'en'));
+    const start = resolved.indexOf('welcome');
+    expect(mapResolvedSelectionToRaw(raw, context, 'en', start, start + 7)).toEqual({
+      start: raw.indexOf('welcome'), end: raw.indexOf('welcome') + 7,
+    });
+  });
+
   it('keeps a selection inside a resolved value outside the raw placeholder token', () => {
     const raw = 'Dear {{person.name}}!';
     const context = { person: { name: 'Alexandria' } };
@@ -1863,11 +1873,23 @@ describe('spec: layoutV2 paragraph full toolbar parity (Italic, markup round-tri
     expect(Object.values(next.runs[0])).not.toContain(undefined);
   });
 
-  it('escapes literal asterisks in structured run text losslessly', () => {
-    const block = { type: 'richParagraph', runs: [{ text: 'Footnote * and \\ path', style: 'accent' }] };
-    const markup = layoutV2ParagraphMarkup(block);
-    expect(markup).toBe('Footnote \\* and \\\\ path');
-    expect(layoutV2ParagraphFromMarkup(block, markup).runs).toEqual(block.runs);
+  it('does not merge adjacent runs whose non-italic overrides differ', () => {
+    const block = {
+      type: 'richParagraph',
+      runs: [
+        { text: 'Red', style: 'accent', styleOverrides: { color: '#f00', fontSizePt: 12 } },
+        { text: 'Blue', style: 'accent', styleOverrides: { color: '#00f', fontSizePt: 14 } },
+      ],
+    };
+    expect(layoutV2ParagraphFromMarkup(block, layoutV2ParagraphMarkup(block)).runs).toEqual(block.runs);
+  });
+
+  it('keeps legacy backslashes literal instead of treating them as escapes', () => {
+    const raw = String.raw`UNC \\server and legacy \*value*`;
+    expect(plainTextOf(raw)).toBe(String.raw`UNC \\server and legacy \value`);
+    expect(parseFormattedRuns(String.raw`\\server`)).toEqual([
+      { text: String.raw`\\server`, bold: false, italic: false },
+    ]);
   });
 
   it('getTemplateScopeText/withTemplateScopeText dispatch a `lv2:<index>` scope to the block\'s markup, ignoring langKey', () => {
