@@ -1456,6 +1456,40 @@ export const fillPlaceholders = (text, context, lang = 'uk') => String(text || '
   },
 );
 
+// Text mode renders substituted placeholders, while formatting is stored against the unresolved
+// template text. Map display offsets back through those variable-sized substitutions so a range
+// after (or touching) a placeholder can never put formatting markers inside its {{token}}.
+export const mapResolvedSelectionToRaw = (rawMarkup, context, lang, start, end) => {
+  const rawText = plainTextOf(rawMarkup);
+  let rawCursor = 0;
+  let resolvedCursor = 0;
+  const segments = [];
+  rawText.replace(PLACEHOLDER_PATTERN, (token, rawPath, tokenOffset) => {
+    if (tokenOffset > rawCursor) {
+      const length = tokenOffset - rawCursor;
+      segments.push({ rawStart: rawCursor, rawEnd: tokenOffset, resolvedStart: resolvedCursor, resolvedEnd: resolvedCursor + length, placeholder: false });
+      resolvedCursor += length;
+    }
+    const resolvedToken = fillPlaceholders(token, context, lang);
+    segments.push({ rawStart: tokenOffset, rawEnd: tokenOffset + token.length, resolvedStart: resolvedCursor, resolvedEnd: resolvedCursor + resolvedToken.length, placeholder: true });
+    rawCursor = tokenOffset + token.length;
+    resolvedCursor += resolvedToken.length;
+    return token;
+  });
+  if (rawCursor < rawText.length) {
+    segments.push({ rawStart: rawCursor, rawEnd: rawText.length, resolvedStart: resolvedCursor, resolvedEnd: resolvedCursor + rawText.length - rawCursor, placeholder: false });
+  }
+  const mapOffset = (offset, isEnd) => {
+    const segment = segments.find(item => offset >= item.resolvedStart && offset <= item.resolvedEnd);
+    if (!segment) return rawText.length;
+    if (!segment.placeholder) return segment.rawStart + Math.min(offset - segment.resolvedStart, segment.rawEnd - segment.rawStart);
+    if (offset === segment.resolvedStart) return segment.rawStart;
+    if (offset === segment.resolvedEnd) return segment.rawEnd;
+    return isEnd ? segment.rawEnd : segment.rawStart;
+  };
+  return { start: mapOffset(start, false), end: mapOffset(end, true) };
+};
+
 // Spec-shaped helper kept alongside fillPlaceholders: a minimal resolver that only substitutes
 // values it can find and otherwise leaves the token untouched (used by the template/editor view,
 // where an unresolved {{path}} should stay visible rather than blank out).
@@ -2369,17 +2403,58 @@ export const layoutV2ParagraphMarkup = block => serializeFormattedRuns(layoutV2P
 })));
 
 export const layoutV2ParagraphFromMarkup = (existingBlock, markup) => {
-  const runs = parseFormattedRuns(markup).map(run => ({
-    text: run.text,
-    style: run.bold ? 'inlineEmphasis' : undefined,
-    styleOverrides: run.italic ? { fontStyle: 'italic' } : undefined,
-  }));
-  if (runs.length <= 1 && runs.every(isLayoutV2RunPlain)) {
-    return {
-      ...existingBlock, type: 'paragraph', text: runs[0]?.text || '', runs: undefined,
-    };
+  const previousRuns = layoutV2ParagraphRuns(existingBlock);
+  const previousText = previousRuns.map(run => run.text).join('');
+  const parsedRuns = parseFormattedRuns(markup);
+  const nextText = parsedRuns.map(run => run.text).join('');
+  let prefixLength = 0;
+  while (prefixLength < previousText.length && prefixLength < nextText.length && previousText[prefixLength] === nextText[prefixLength]) prefixLength += 1;
+  let suffixLength = 0;
+  while (suffixLength < previousText.length - prefixLength && suffixLength < nextText.length - prefixLength
+    && previousText[previousText.length - 1 - suffixLength] === nextText[nextText.length - 1 - suffixLength]) suffixLength += 1;
+  const previousAt = offset => {
+    if (offset === null) return null;
+    let cursor = 0;
+    return previousRuns.find(run => {
+      const contains = offset >= cursor && offset < cursor + run.text.length;
+      cursor += run.text.length;
+      return contains;
+    });
+  };
+  const oldOffsetFor = offset => {
+    if (offset < prefixLength) return offset;
+    if (offset >= nextText.length - suffixLength) return previousText.length - (nextText.length - offset);
+    return null;
+  };
+  const runs = [];
+  let nextOffset = 0;
+  parsedRuns.forEach(parsedRun => {
+    let pieceStart = 0;
+    while (pieceStart < parsedRun.text.length) {
+      const oldOffset = oldOffsetFor(nextOffset + pieceStart);
+      const previous = oldOffset === null ? null : previousAt(oldOffset);
+      let pieceEnd = pieceStart + 1;
+      while (pieceEnd < parsedRun.text.length && previousAt(oldOffsetFor(nextOffset + pieceEnd)) === previous) pieceEnd += 1;
+      const styleOverrides = { ...(previous?.styleOverrides || {}) };
+      if (parsedRun.italic) styleOverrides.fontStyle = 'italic';
+      else delete styleOverrides.fontStyle;
+      const nextRun = { ...(previous || {}), text: parsedRun.text.slice(pieceStart, pieceEnd) };
+      if (parsedRun.bold) nextRun.style = 'inlineEmphasis';
+      else if (nextRun.style === 'inlineEmphasis') delete nextRun.style;
+      if (Object.keys(styleOverrides).length) nextRun.styleOverrides = styleOverrides;
+      else delete nextRun.styleOverrides;
+      runs.push(nextRun);
+      pieceStart = pieceEnd;
+    }
+    nextOffset += parsedRun.text.length;
+  });
+  const mergedRuns = mergeAdjacentLayoutV2Runs(runs);
+  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
+    const { runs: ignoredRuns, ...plainBlock } = existingBlock;
+    return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
   }
-  return { ...existingBlock, type: 'richParagraph', runs, text: undefined };
+  const { text: ignoredText, ...richBlock } = existingBlock;
+  return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
 };
 
 // The scope key a layoutV2 paragraph/richParagraph block edits under (mirrors beforeTitleScope/
@@ -2627,6 +2702,11 @@ export const parseFormattedRuns = text => {
     buffer = '';
   };
   for (let i = 0; i < str.length; i += 1) {
+    if (str[i] === '\\' && (str[i + 1] === '*' || str[i + 1] === '\\')) {
+      buffer += str[i + 1];
+      i += 1;
+      continue;
+    }
     if (str[i] === '*' && str[i + 1] === '*') {
       flush();
       bold = !bold;
@@ -2648,7 +2728,7 @@ export const parseFormattedRuns = text => {
 // consecutive runs (and closes whatever is still open at the end) - the inverse of
 // parseFormattedRuns. Markers are closed in the reverse of the order they were opened (like
 // properly-nested Markdown/HTML) purely for readability of the hand-edited Template-mode source -
-// parseFormattedRuns itself doesn't care about nesting order, since `**`/`_` are independent toggles.
+// parseFormattedRuns itself doesn't care about nesting order, since `**`/`*` are independent toggles.
 export const serializeFormattedRuns = runs => {
   let out = '';
   let bold = false;
@@ -2679,7 +2759,7 @@ export const serializeFormattedRuns = runs => {
       italic = true;
       openOrder.push('italic');
     }
-    out += run.text;
+    out += String(run.text || '').replace(/\\/g, '\\\\').replace(/\*/g, '\\*');
   });
   for (let i = openOrder.length - 1; i >= 0; i -= 1) {
     out += openOrder[i] === 'bold' ? BOLD_MARKER : ITALIC_MARKER;
