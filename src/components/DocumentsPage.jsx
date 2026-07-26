@@ -838,7 +838,7 @@ const DocLayoutSettingsPopoverButton = ({
   }, [open, onClose]);
   return (
     <PopoverAnchor ref={anchorRef}>
-      <SmallButton type="button" onClick={onToggle} title="Document layout settings - column count, layoutV2 renderer">
+      <SmallButton type="button" onClick={onToggle} title="Document layout settings - column count, renderer">
         <FaCog />
       </SmallButton>
       {open ? (
@@ -862,7 +862,7 @@ const DocLayoutSettingsPopoverButton = ({
           {hasLayoutV2 ? (
             <CheckLine>
               <input type="checkbox" checked={layoutV2Active} onChange={onToggleLayoutV2} />
-              <FaMagic /> layoutV2 {layoutV2Active ? 'on' : 'off'}
+              <FaMagic /> Exact layout {layoutV2Active ? 'on' : 'off'}
             </CheckLine>
           ) : null}
         </PopoverCard>
@@ -2418,6 +2418,20 @@ const DocumentsPage = ({ isAdmin }) => {
                 const showUk = isBilingual || getLayoutLang(layout) === 'uk';
                 const showEn = isBilingual || getLayoutLang(layout) === 'en';
                 const isSingle = !(showUk && showEn);
+                // A document authored straight from a clean layoutV2 template (e.g.
+                // genetic-affinity-certificate) never has any legacy content - the Logo/Before
+                // title/Title/paragraph editors below are all empty for it, since its whole
+                // printed content lives in layoutV2.blocks instead. Rendering those empty legacy
+                // sections just clutters the editor for it (spec: "UI не має відрізнятись для
+                // цього документа") - they only ever make sense for a document that actually has
+                // legacy content to edit.
+                const hasLegacyDocContent = Boolean(
+                  (template.beforeTitle || []).length
+                  || template.title != null
+                  || (template.paragraphs || []).length
+                  || String(template.logo || '').trim(),
+                );
+                const isLayoutV2OnlyDoc = isLayoutV2Template(template) && !hasLegacyDocContent;
                 // Needed even while collapsed - the title input right in the row header (below)
                 // always shows/edits the resolved value once a case is selected.
                 const resolvedDoc = buildGeneratedDocument(template, getContextForTemplate(template.id));
@@ -2488,10 +2502,15 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
-                      {/* Column count + (for a layoutV2-capable document) the renderer switch,
-                          both in one settings popover (batch 23 §3) instead of always-visible
-                          buttons - column count overrides the page-wide selector above once set
-                          (see handleSetDocColumns); tap the active option again to clear it. */}
+                      {/* Column count + (only for a document that can genuinely render two ways -
+                          it carries layoutV2 blocks alongside real legacy content) the renderer
+                          switch, both in one settings popover (batch 23 §3) instead of
+                          always-visible buttons - column count overrides the page-wide selector
+                          above once set (see handleSetDocColumns); tap the active option again to
+                          clear it. A layoutV2-only document (no legacy content to fall back to,
+                          e.g. genetic-affinity-certificate) has nothing to switch to/from, so the
+                          renderer toggle is hidden for it entirely rather than offered as a fake
+                          choice. */}
                       <DocLayoutSettingsPopoverButton
                         open={openLayoutSettingsDocId === String(template.id)}
                         onToggle={() => toggleLayoutSettingsPopover(String(template.id))}
@@ -2499,7 +2518,7 @@ const DocumentsPage = ({ isAdmin }) => {
                         columnOptions={DOC_COLUMN_OPTIONS}
                         activeColumns={template.columns}
                         onSetColumns={columnsOption => handleSetDocColumns(template.id, columnsOption)}
-                        hasLayoutV2={Boolean(template.layoutV2?.blocks)}
+                        hasLayoutV2={Boolean(template.layoutV2?.blocks) && hasLegacyDocContent}
                         layoutV2Active={isLayoutV2Template(template)}
                         onToggleLayoutV2={() => handleToggleLayoutV2(template.id)}
                       />
@@ -2535,6 +2554,8 @@ const DocumentsPage = ({ isAdmin }) => {
                     </DocRowHead>
                     {isExpanded ? (
                       <div style={{ marginTop: 6 }}>
+                        {!isLayoutV2OnlyDoc ? (
+                          <>
                         <ParagraphEditorBlock>
                           <ParagraphControlsRow>
                             <DocSubtitle style={{ fontWeight: 700 }}>Logo (before title)</DocSubtitle>
@@ -3080,18 +3101,18 @@ const DocumentsPage = ({ isAdmin }) => {
                             <FaPlus />
                           </SmallButton>
                         </ParagraphControlsRow>
-                        {/* layoutV2 paragraph/richParagraph blocks (batch 25 §3) - a separate
-                            rendering/editing path from the legacy title/beforeTitle/paragraphs
-                            fields above, so it gets its own section: select a text fragment inside
-                            one of these blocks and press Bold to mark just that fragment
-                            'inlineEmphasis' (configurable in the Style Editor). Only shown for a
-                            layoutV2 template, and only for its paragraph-shaped blocks - every other
-                            block type (letterhead, fieldLine, signatureTable, ...) has no free-text
-                            content to select. */}
+                          </>
+                        ) : null}
+                        {/* Paragraph/richParagraph blocks of a layoutV2 template (batch 25 §3):
+                            select a text fragment inside one of these blocks and press Bold to mark
+                            just that fragment 'inlineEmphasis' (configurable in the Style Editor).
+                            Only shown for a layoutV2 template, and only for its paragraph-shaped
+                            blocks - every other block type (letterhead, fieldLine, signatureTable,
+                            ...) has no free-text content to select. */}
                         {isLayoutV2Template(template) ? (
                           <ParagraphEditorBlock>
                             <ParagraphControlsRow>
-                              <DocSubtitle style={{ fontWeight: 700 }}>layoutV2 paragraphs - select text, Bold the fragment</DocSubtitle>
+                              <DocSubtitle style={{ fontWeight: 700 }}>Paragraphs - select text, Bold the fragment</DocSubtitle>
                             </ParagraphControlsRow>
                             {template.layoutV2.blocks.map((block, blockIndex) => (
                               (block?.type === 'paragraph' || block?.type === 'richParagraph') ? (

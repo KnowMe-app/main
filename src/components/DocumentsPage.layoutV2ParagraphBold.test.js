@@ -142,6 +142,6 @@ describe('spec: layoutV2 paragraph blocks - selection-based Bold (batch 25 §3)'
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
     await screen.findByText('Звичайний текст.');
 
-    expect(screen.queryByText('layoutV2 paragraphs - select text, Bold the fragment')).not.toBeInTheDocument();
+    expect(screen.queryByText('Paragraphs - select text, Bold the fragment')).not.toBeInTheDocument();
   });
 });
