@@ -2759,10 +2759,12 @@ const sanitizeUploadedInfoPhones = uploadedInfo => {
 // щойно записане в users, той самий ключ у "newUsers" — це застарілий дублікат
 // ще з часів подвійного запису, і саме він спричиняв баг з перезатиранням
 // свіжих даних під час мерджу колекцій. Видаляємо його з newUsers, але лише
-// після того, як перечитали users і переконались, що значення там дійсно є —
-// щоб не вийшло, що дані зникли з newUsers, а в users так і не з'явились.
-const pruneMigratedFieldsFromNewUsers = async (userId, fieldNames) => {
-  const candidateFields = [...new Set((fieldNames || []).filter(
+// після того, як перечитали users і переконались, що значення там дійсно є.
+// Для успішного null-запису відсутність ключа в users якраз підтверджує його
+// видалення, тому такий ключ також треба прибрати зі старої копії newUsers.
+const pruneMigratedFieldsFromNewUsers = async (userId, writtenFields) => {
+  const fieldValues = writtenFields || {};
+  const candidateFields = [...new Set(Object.keys(fieldValues).filter(
     field => field && field !== 'userId' && !transientUserDataKeys.includes(field)
   ))];
   if (!candidateFields.length) return;
@@ -2772,7 +2774,7 @@ const pruneMigratedFieldsFromNewUsers = async (userId, fieldNames) => {
       get(ref2(database, `newUsers/${userId}`)),
       get(ref2(database, `users/${userId}`)),
     ]);
-    if (!newUsersSnap.exists() || !usersSnap.exists()) return;
+    if (!newUsersSnap.exists()) return;
 
     const newUsersData = newUsersSnap.val() || {};
     const usersData = usersSnap.val() || {};
@@ -2781,7 +2783,8 @@ const pruneMigratedFieldsFromNewUsers = async (userId, fieldNames) => {
     candidateFields.forEach(field => {
       const presentInNewUsers = Object.prototype.hasOwnProperty.call(newUsersData, field);
       const confirmedInUsers = Object.prototype.hasOwnProperty.call(usersData, field);
-      if (presentInNewUsers && confirmedInUsers) {
+      const confirmedDeletion = fieldValues[field] === null;
+      if (presentInNewUsers && (confirmedInUsers || confirmedDeletion)) {
         updates[`newUsers/${userId}/${field}`] = null;
       }
     });
@@ -2807,7 +2810,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     }
 
     if (String(userId || '').length > 20) {
-      await pruneMigratedFieldsFromNewUsers(userId, Object.keys(cleanedUploadedInfo));
+      await pruneMigratedFieldsFromNewUsers(userId, cleanedUploadedInfo);
     }
   } catch (error) {
     console.error(

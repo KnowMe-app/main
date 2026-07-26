@@ -22,10 +22,11 @@ describe('cleaning up migrated fields from newUsers after a users write', () => 
     expect(updateDataInRealtimeDBBody).toContain("String(userId || '').length > 20");
   });
 
-  it('never deletes a newUsers field unless the same field is confirmed present in users', () => {
+  it('deletes a duplicate after a users write or a successful null deletion', () => {
     expect(pruneFnBody).toContain("Object.prototype.hasOwnProperty.call(newUsersData, field)");
     expect(pruneFnBody).toContain("Object.prototype.hasOwnProperty.call(usersData, field)");
-    expect(pruneFnBody).toContain('if (presentInNewUsers && confirmedInUsers)');
+    expect(pruneFnBody).toContain('const confirmedDeletion = fieldValues[field] === null');
+    expect(pruneFnBody).toContain('if (presentInNewUsers && (confirmedInUsers || confirmedDeletion))');
   });
 
   it('re-reads both collections instead of trusting the in-memory payload', () => {

@@ -22,11 +22,8 @@ describe('newUsers/users merge behaviour', () => {
     expect(mergeUserFieldValue(['a', ''], ['x'])).toEqual(['x', 'a', '']);
   });
 
-  it('mergeUserFieldValue combines a scalar conflict into [newUsers, users] so nothing is lost', () => {
-    expect(mergeUserFieldValue('fresh-from-users', 'stale-from-newUsers')).toEqual([
-      'stale-from-newUsers',
-      'fresh-from-users',
-    ]);
+  it('mergeUserFieldValue preserves scalar schema and users ownership on a conflict', () => {
+    expect(mergeUserFieldValue('fresh-from-users', 'stale-from-newUsers')).toBe('fresh-from-users');
   });
 
   it('mergeUserFieldValue returns the plain value when both sides already agree', () => {
@@ -38,12 +35,16 @@ describe('newUsers/users merge behaviour', () => {
     expect(mergeUserFieldValue('onlyInUsers', undefined)).toBe('onlyInUsers');
   });
 
-  it('mergeUserCollectionData does not drop fields that only exist in newUsers, and keeps users last on conflicts', () => {
+  it('mergeUserCollectionData preserves scalars and honors newUsers-owned fields', () => {
     const merged = mergeUserCollectionData(
       { surname: 'FreshSurname' },
       { role: 'writer', surname: 'StaleSurname' }
     );
-    expect(merged).toEqual({ surname: ['StaleSurname', 'FreshSurname'], role: 'writer' });
+    expect(merged).toEqual({ surname: 'FreshSurname', role: 'writer' });
+    expect(mergeUserCollectionData(
+      { role: 'stale-role', lastCycle: 'stale-cycle' },
+      { role: 'writer', lastCycle: 'fresh-cycle' }
+    )).toEqual({ role: 'writer', lastCycle: 'fresh-cycle' });
   });
 
   it('fetchUsersByIds merges users/newUsers per field instead of overwriting one side wholesale', () => {

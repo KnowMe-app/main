@@ -30,6 +30,7 @@ import { normalizePhoneState } from './inputValidations';
 import toast from 'react-hot-toast';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
+import { NEW_USERS_OWNED_FIELDS } from 'utils/mergeUserCollections';
 import {
   acceptOverlayForUserCard,
   applyOverlayToCard,
@@ -454,7 +455,7 @@ const EditProfile = () => {
       };
     }
 
-    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
+    const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
     const ppTechnicalInputFields = newUsersMirrorFieldNames;
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
     const isMainProfileField = key => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key);
@@ -877,7 +878,7 @@ const EditProfile = () => {
   };
 
   const persistCanonicalByRules = async mergedCard => {
-    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
+    const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
     const ppTechnicalInputFields = newUsersMirrorFieldNames;
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
