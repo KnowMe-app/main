@@ -99,7 +99,12 @@ import {
   toggleRawInlineMarker,
   layoutV2ParagraphRuns,
   layoutV2ParagraphPlainText,
+  layoutV2ParagraphMarkup,
+  layoutV2ParagraphFromMarkup,
+  layoutV2Scope,
+  getEffectiveLayoutV2BlockAlign,
   toggleLayoutV2ParagraphBold,
+  toggleLayoutV2ParagraphItalic,
   upsertRecentCaseId,
   upsertRecentId,
   validateBirthRegistrationCase,
@@ -1769,6 +1774,83 @@ describe('spec: layoutV2 paragraph/richParagraph selection-based bold (batch 25 
   it('is a no-op for a collapsed (empty) selection', () => {
     const block = { type: 'paragraph', text: 'Hello world' };
     expect(toggleLayoutV2ParagraphBold(block, 5, 5)).toBe(block);
+  });
+});
+
+describe('spec: layoutV2 paragraph full toolbar parity (Italic, markup round-trip, scope dispatch)', () => {
+  it('italicizes a plain-text range independently of bold, converting to a `richParagraph`', () => {
+    const block = { type: 'paragraph', style: 'body', text: 'Hello world else' };
+    const next = toggleLayoutV2ParagraphItalic(block, 6, 11); // "world"
+    expect(next.type).toBe('richParagraph');
+    expect(next.style).toBe('body');
+    expect(next.runs).toEqual([
+      { text: 'Hello ', style: undefined, styleOverrides: undefined },
+      { text: 'world', style: undefined, styleOverrides: { fontStyle: 'italic' } },
+      { text: ' else', style: undefined, styleOverrides: undefined },
+    ]);
+  });
+
+  it('bold and italic combine independently on the same fragment', () => {
+    const block = { type: 'paragraph', style: 'body', text: 'Hello world else' };
+    const bolded = toggleLayoutV2ParagraphBold(block, 6, 11);
+    const both = toggleLayoutV2ParagraphItalic(bolded, 6, 11);
+    const worldRun = both.runs.find(run => run.text === 'world');
+    expect(worldRun.style).toBe('inlineEmphasis');
+    expect(worldRun.styleOverrides).toEqual({ fontStyle: 'italic' });
+  });
+
+  it('pressing italic again removes it and collapses back to a plain `paragraph` when nothing else is formatted', () => {
+    const block = { type: 'paragraph', style: 'body', text: 'Hello world else' };
+    const italicized = toggleLayoutV2ParagraphItalic(block, 6, 11);
+    const plain = toggleLayoutV2ParagraphItalic(italicized, 6, 11);
+    expect(plain).toEqual({
+      type: 'paragraph', style: 'body', text: 'Hello world else', runs: undefined,
+    });
+  });
+
+  it('layoutV2ParagraphMarkup/layoutV2ParagraphFromMarkup round-trip through the same **/* markup every legacy paragraph uses', () => {
+    const block = {
+      type: 'richParagraph',
+      style: 'body',
+      runs: [
+        { text: 'Hello ', style: undefined },
+        { text: 'world', style: 'inlineEmphasis', styleOverrides: { fontStyle: 'italic' } },
+        { text: ' else', style: undefined },
+      ],
+    };
+    const markup = layoutV2ParagraphMarkup(block);
+    expect(markup).toBe('Hello ***world*** else');
+    const roundTripped = layoutV2ParagraphFromMarkup(block, markup);
+    expect(roundTripped.type).toBe('richParagraph');
+    expect(roundTripped.style).toBe('body'); // the block's own named style survives the round-trip
+    expect(roundTripped.runs).toEqual(block.runs);
+  });
+
+  it('layoutV2ParagraphFromMarkup collapses plain (no **/*) markup back to a simple `paragraph`', () => {
+    const existing = { type: 'richParagraph', style: 'body', runs: [{ text: 'x', style: 'inlineEmphasis' }] };
+    const next = layoutV2ParagraphFromMarkup(existing, 'Hello world');
+    expect(next).toEqual({ type: 'paragraph', style: 'body', text: 'Hello world', runs: undefined });
+  });
+
+  it('getTemplateScopeText/withTemplateScopeText dispatch a `lv2:<index>` scope to the block\'s markup, ignoring langKey', () => {
+    const template = {
+      layoutV2: { blocks: [{ type: 'paragraph', style: 'body', text: 'Hello' }, { type: 'paragraph', style: 'title', text: 'World' }] },
+    };
+    const scope = layoutV2Scope(1);
+    expect(getTemplateScopeText(template, scope, 'uk')).toBe('World');
+    expect(getTemplateScopeText(template, scope, 'en')).toBe('World');
+    const next = withTemplateScopeText(template, scope, 'uk', '**World**');
+    expect(next.layoutV2.blocks[1]).toEqual({
+      type: 'richParagraph', style: 'title', text: undefined, runs: [{ text: 'World', style: 'inlineEmphasis', styleOverrides: undefined }],
+    });
+    expect(next.layoutV2.blocks[0]).toBe(template.layoutV2.blocks[0]); // untouched sibling block
+  });
+
+  it('getEffectiveLayoutV2BlockAlign reads the cascade (format/named style/styleOverrides), defaulting to left', () => {
+    const template = { format: {}, styleSheet: { title: { align: 'center' } } };
+    expect(getEffectiveLayoutV2BlockAlign(template, { style: 'title' })).toBe('center');
+    expect(getEffectiveLayoutV2BlockAlign(template, { style: 'title', styleOverrides: { align: 'right' } })).toBe('right');
+    expect(getEffectiveLayoutV2BlockAlign(template, { style: 'body' })).toBe('left');
   });
 });
 
