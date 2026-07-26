@@ -179,10 +179,15 @@ const ReadGroupBlock = styled.div`
   margin-top: 10px;
 `;
 
+// A grid (not flex-with-space-between) so each column gets a fixed, wrappable share of the row's
+// width regardless of content length - a flex row with no min-width/flex-basis on its children lets
+// a long unbroken path eat all the available width, leaving the value almost none to wrap into
+// (the bug: a long value like "Ministry of Health of Ukraine" wrapping one word per line, spilling
+// well past where the row visually ends).
 const ReadRow = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: start;
   gap: 10px;
   padding: 3px 2px;
   font-size: 12px;
@@ -194,12 +199,16 @@ const ReadRow = styled.div`
 `;
 
 const ReadRowLabel = styled.span`
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--km-muted);
   font-family: monospace;
   font-size: 10.5px;
 `;
 
 const ReadRowValue = styled.span`
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--km-text);
   font-weight: 600;
   text-align: right;

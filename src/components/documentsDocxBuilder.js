@@ -433,7 +433,11 @@ export const buildDocumentsDocx = async ({
   // of it, keeps the original case; only this TextRun's rendered characters are uppercased.
   // letterSpacingPt maps straight onto `characterSpacing`, which docx (like the reference docx's
   // own `<w:spacing>`) expects in twentieths of a point - the same unit fontSize halves into.
-  const layoutV2TextRun = (text, style) => new TextRun({
+  // `extra` merges in run properties layoutV2TextRun doesn't otherwise expose - currently just
+  // fieldLine's label `position` (see layoutV2FieldLine), OOXML's own raise/lower-the-baseline
+  // property, which shifts text vertically without touching paragraph/cell layout at all - the
+  // DOCX analog of the PDF renderer's marginBottom nudge on the label's View.
+  const layoutV2TextRun = (text, style, extra) => new TextRun({
     text: applyTextTransform(text, style?.textTransform),
     font: style?.fontFamily || 'Times New Roman',
     size: halfPointsV2(style?.fontSizePt) || bodySize,
@@ -441,6 +445,7 @@ export const buildDocumentsDocx = async ({
     italics: style?.fontStyle === 'italic',
     underline: style?.textDecoration === 'underline' ? {} : undefined,
     characterSpacing: style?.letterSpacingPt ? Math.round(style.letterSpacingPt * 20) : undefined,
+    ...extra,
   });
 
   const layoutV2Content = (content, clinicLogos) => {
@@ -547,12 +552,16 @@ export const buildDocumentsDocx = async ({
     const lineSize = eighthsFromPt(block.line?.widthPt);
     const lineColor = (block.line?.color || '#000000').replace('#', '');
     const lineBorder = lineSize ? { style: BorderStyle.SINGLE, size: lineSize, color: lineColor } : noBorder;
+    // Twentieths-of-a-point (OOXML's own unit for `position`) from mm - positive raises the label
+    // off the row, negative lowers it, same sign convention as the PDF renderer's marginBottom.
+    const labelPositionHalfPoints = block.labelOffsetMm ? Math.round((block.labelOffsetMm * MM_TO_TWIP) / 10) : undefined;
+    const labelRunExtra = labelPositionHalfPoints ? { position: String(labelPositionHalfPoints) } : undefined;
     const labelParagraph = new Paragraph({
       alignment: AlignmentType.LEFT,
       spacing: { after: 0, line: lineTwipsFor(block.labelStyle), lineRule: 'auto' },
       children: block.labelRuns
-        ? block.labelRuns.map(run => layoutV2TextRun(run.text, run.style))
-        : [layoutV2TextRun(block.label || '', block.labelStyle)],
+        ? block.labelRuns.map(run => layoutV2TextRun(run.text, run.style, labelRunExtra))
+        : [layoutV2TextRun(block.label || '', block.labelStyle, labelRunExtra)],
     });
     const valueParagraph = new Paragraph({
       alignment: layoutV2Alignment(block.valueStyle?.align),
