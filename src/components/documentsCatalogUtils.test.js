@@ -101,6 +101,7 @@ import {
   layoutV2ParagraphPlainText,
   layoutV2ParagraphMarkup,
   layoutV2ParagraphFromMarkup,
+  mapResolvedSelectionToRaw,
   layoutV2Scope,
   getEffectiveLayoutV2BlockAlign,
   toggleLayoutV2ParagraphBold,
@@ -1830,6 +1831,43 @@ describe('spec: layoutV2 paragraph full toolbar parity (Italic, markup round-tri
     const existing = { type: 'richParagraph', style: 'body', runs: [{ text: 'x', style: 'inlineEmphasis' }] };
     const next = layoutV2ParagraphFromMarkup(existing, 'Hello world');
     expect(next).toEqual({ type: 'paragraph', style: 'body', text: 'Hello world', runs: undefined });
+  });
+
+  it('maps Text-mode offsets after a resolved placeholder back to unresolved offsets', () => {
+    const raw = 'Dear {{person.name}}, welcome home';
+    const context = { person: { name: 'Alexandria' } };
+    const resolved = plainTextOf(fillPlaceholders(raw, context, 'en'));
+    const start = resolved.indexOf('welcome');
+    expect(mapResolvedSelectionToRaw(raw, context, 'en', start, start + 7)).toEqual({
+      start: raw.indexOf('welcome'), end: raw.indexOf('welcome') + 7,
+    });
+  });
+
+  it('keeps a selection inside a resolved value outside the raw placeholder token', () => {
+    const raw = 'Dear {{person.name}}!';
+    const context = { person: { name: 'Alexandria' } };
+    expect(mapResolvedSelectionToRaw(raw, context, 'en', 7, 10)).toEqual({
+      start: raw.indexOf('{{'), end: raw.indexOf('}}') + 2,
+    });
+  });
+
+  it('preserves custom run metadata and emits no undefined Firebase values', () => {
+    const block = {
+      type: 'richParagraph',
+      style: 'body',
+      runs: [{ text: 'Colored', style: 'accent', styleOverrides: { color: '#f00', fontSizePt: 14 } }],
+    };
+    const next = layoutV2ParagraphFromMarkup(block, layoutV2ParagraphMarkup(block));
+    expect(next.runs).toEqual(block.runs);
+    expect(JSON.stringify(next)).not.toContain('undefined');
+    expect(Object.values(next.runs[0])).not.toContain(undefined);
+  });
+
+  it('escapes literal asterisks in structured run text losslessly', () => {
+    const block = { type: 'richParagraph', runs: [{ text: 'Footnote * and \\ path', style: 'accent' }] };
+    const markup = layoutV2ParagraphMarkup(block);
+    expect(markup).toBe('Footnote \\* and \\\\ path');
+    expect(layoutV2ParagraphFromMarkup(block, markup).runs).toEqual(block.runs);
   });
 
   it('getTemplateScopeText/withTemplateScopeText dispatch a `lv2:<index>` scope to the block\'s markup, ignoring langKey', () => {

@@ -57,6 +57,7 @@ import {
   isLayoutV2Template,
   isOfficialFormStyle,
   layoutV2Scope,
+  mapResolvedSelectionToRaw,
   legacyClinicLogoStorageFilePath,
   legacyClinicLogoStorageFolder,
   mergeDocumentsCatalog,
@@ -1518,7 +1519,7 @@ const DocumentsPage = ({ isAdmin }) => {
       toast.error('Select some text first.');
       return;
     }
-    const { start, end } = offsets;
+    let { start, end } = offsets;
     const { docId, scope, langKey } = active;
     // Input mode's field never takes Bold/Italic (the buttons are disabled there) - hard-stop in
     // case a stale focus record from it is still the active field.
@@ -1526,6 +1527,9 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
     const currentRaw = getTemplateScopeText(template, scope, langKey);
+    if (active.kind === 'text-display') {
+      ({ start, end } = mapResolvedSelectionToRaw(currentRaw, getContextForTemplate(docId), langKey, start, end));
+    }
     // Every row (title, paragraph, beforeTitle) writes straight to the shared template - Text
     // mode's field is the rendered display (plain-text offsets via toggleInlineFormat), Template
     // mode's field is the raw markup itself (raw offsets via toggleRawInlineMarker).
