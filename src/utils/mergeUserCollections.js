@@ -1,6 +1,17 @@
 const isPlainObject = value =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
+// Ці поля редагуються та зберігаються в newUsers навіть для мігрованих карток.
+// Єдиний список не дає правилам запису й читання колекцій розійтися.
+export const NEW_USERS_OWNED_FIELDS = [
+  'role',
+  'lastCycle',
+  'myComment',
+  'writer',
+  'cycleStatus',
+  'stimulationSchedule',
+];
+
 // Firebase RTDB зберігає "діряві" масиви як об'єкти з числовими ключами,
 // тож той самий список-поле може прийти з однієї колекції масивом,
 // а з іншої — об'єктом. Приводимо обидва варіанти до списку значень.
@@ -37,11 +48,8 @@ const dedupeKeepingLastOccurrence = values => {
 };
 
 // primaryValue/secondaryValue — значення того самого поля з "users" (primary)
-// та "newUsers" (secondary). Коли значення відрізняються, результат — список,
-// де дані з "newUsers" стоять першими (піднімаються вгору), а дані з "users" —
-// завжди останніми, оскільки саме users містить те, що фінально зберіг
-// користувач, і саме останній елемент списку показується звичайному
-// користувачу. Вкладені (не список-подібні) об'єкти зливаються по ключах.
+// та "newUsers" (secondary). Об'єднуємо лише справжні списки; скалярне поле
+// мусить зберігати свою схему й брати значення зі своєї колекції-власника.
 export const mergeUserFieldValue = (primaryValue, secondaryValue) => {
   if (primaryValue === undefined) return secondaryValue;
   if (secondaryValue === undefined) return primaryValue;
@@ -60,9 +68,7 @@ export const mergeUserFieldValue = (primaryValue, secondaryValue) => {
 
   if (primaryValue === secondaryValue) return primaryValue;
 
-  // Скалярні значення, що справді відрізняються: нічого не втрачаємо —
-  // newUsers-значення йде першим, users-значення лишається останнім.
-  return [secondaryValue, primaryValue];
+  return primaryValue;
 };
 
 // Зливає дані картки з "users" (primaryData) та "newUsers" (secondaryData) по кожному
@@ -73,7 +79,11 @@ export const mergeUserCollectionData = (primaryData = {}, secondaryData = {}) =>
   const keys = new Set([...Object.keys(primary), ...Object.keys(secondary)]);
   const merged = {};
   keys.forEach(key => {
-    merged[key] = mergeUserFieldValue(primary[key], secondary[key]);
+    // Для collection-specific полів newUsers є канонічним джерелом. Зокрема,
+    // не дозволяємо старій копії з users скасувати щойно збережене значення.
+    merged[key] = NEW_USERS_OWNED_FIELDS.includes(key) && secondary[key] !== undefined
+      ? secondary[key]
+      : mergeUserFieldValue(primary[key], secondary[key]);
   });
   return merged;
 };
