@@ -51,7 +51,8 @@ export const buildDocumentsDocx = async ({
   const docx = await import('docx');
   const {
     AlignmentType, BorderStyle, Document, Footer, Header, ImageRun, Packer, PageNumber,
-    Paragraph, Table, TableCell, TableRow, TextRun, UnderlineType, VerticalAlign, WidthType,
+    HorizontalPositionRelativeFrom, Paragraph, Table, TableCell, TableLayoutType, TableRow,
+    TextRun, TextWrappingType, UnderlineType, VerticalAlign, VerticalPositionRelativeFrom, WidthType,
   } = docx;
 
   // Both column layouts (bilingual UA|EN and single-language newspaper-style, spec §4) share the
@@ -283,10 +284,11 @@ export const buildDocumentsDocx = async ({
     });
   };
 
-  const logoImageRun = (decoded, widthPx, ratio) => new ImageRun({
+  const logoImageRun = (decoded, widthPx, ratio, floating) => new ImageRun({
     data: decoded.bytes,
     type: decoded.type,
     transformation: { width: widthPx, height: Math.round(widthPx * ratio) },
+    floating,
   });
 
   const logoParagraph = (decoded, widthPx, ratio) => new Paragraph({
@@ -446,27 +448,25 @@ export const buildDocumentsDocx = async ({
   const layoutV2Content = (content, clinicLogos) => {
     if (!content) return [new Paragraph({ children: [] })];
     if (content.type === 'image') {
-      // `hidden` skips the image but still returns an empty paragraph - the column's own cell
-      // keeps its declared width regardless, so a sibling column never shifts (spec: "решта
-      // тексту ... не стрибала"). offsetXMm moves the image within its cell via a paragraph
-      // indent; offsetYMm approximates a downward nudge via spacing before (DOCX has no negative
-      // spacing, so a negative/"up" offset has no effect here - the PDF preview is authoritative
-      // for that direction).
-      if (content.hidden) return [new Paragraph({ children: [] })];
       const variant = content.logoToken ? getClinicLogo(clinicLogos, content.logoToken) : null;
       const dataUrl = variant?.dataUrl || content.source;
       const decoded = dataUrl ? decodeLogoDataUrl(dataUrl) : null;
-      if (!decoded) return [new Paragraph({ children: [] })];
       const ratio = variant?.width && variant?.height
         ? variant.height / variant.width
         : ((content.heightMm && content.widthMm) ? content.heightMm / content.widthMm : 0.25);
       const widthPx = Math.round((content.widthMm || 0) * MM_TO_PX);
       const offsetXTwips = Math.round((content.offsetXMm || 0) * MM_TO_TWIP);
-      const offsetYTwips = Math.max(0, Math.round((content.offsetYMm || 0) * MM_TO_TWIP));
+      const offsetYTwips = Math.round((content.offsetYMm || 0) * MM_TO_TWIP);
+      const heightTwips = Math.max(1, Math.round((content.heightMm || 0) * MM_TO_TWIP));
       return [new Paragraph({
-        spacing: { before: offsetYTwips, after: 0 },
-        indent: offsetXTwips ? { left: offsetXTwips } : undefined,
-        children: [logoImageRun(decoded, widthPx, ratio)],
+        // An exact-height anchor paragraph reserves the same row height with the image hidden.
+        // Floating offsets are visual only: unlike an indent, they never add to the cell width.
+        spacing: { after: 0, line: heightTwips, lineRule: 'exact' },
+        children: !content.hidden && decoded ? [logoImageRun(decoded, widthPx, ratio, {
+          horizontalPosition: { relative: HorizontalPositionRelativeFrom.CHARACTER, offset: offsetXTwips },
+          verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: offsetYTwips },
+          wrap: { type: TextWrappingType.NONE },
+        })] : [],
       })];
     }
     if (content.type === 'stack') {
@@ -506,6 +506,7 @@ export const buildDocumentsDocx = async ({
     return new Table({
       width: { size: colTwips.reduce((sum, w) => sum + w, 0) + gapTwips * Math.max(0, cells.length - 1), type: WidthType.DXA },
       columnWidths: cells.map((_, index) => colTwips[index] + (index < cells.length - 1 ? gapTwips : 0)),
+      layout: TableLayoutType.FIXED,
       borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
       rows: [new TableRow({ children: cells })],
     });
