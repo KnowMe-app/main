@@ -46,6 +46,7 @@ import {
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { searchByIndexOn } from './searchByIndexOn';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
+import { mergeUserCollectionData } from '../utils/mergeUserCollections';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -505,7 +506,7 @@ export const fetchAllUsers = async () => {
   ]);
   const allIds = [];
   ids.forEach(id => {
-    const merged = { ...(usersData[id] || {}), ...(newUsersData[id] || {}) };
+    const merged = mergeUserCollectionData(usersData[id], newUsersData[id]);
     updateCard(id, merged);
     allIds.push(id);
     Object.entries(merged).forEach(([key, value]) => {
@@ -1829,8 +1830,10 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
           if (!hasUser && !hasNewUser) return null;
           const data = {
             userId: id,
-            ...(hasUser ? dataBySource.users : {}),
-            ...(hasNewUser ? dataBySource.newUsers : {}),
+            ...mergeUserCollectionData(
+              hasUser ? dataBySource.users : {},
+              hasNewUser ? dataBySource.newUsers : {}
+            ),
             photos: [],
             __photosHydrated: false,
             __sourceCollection: hasNewUser ? 'newUsers' : 'users',
@@ -1864,8 +1867,7 @@ const addUserFromUsers = async (userId, users) => {
   if (userSnap.exists() || newUserSnap.exists()) {
     users[userId] = {
       userId,
-      ...userData,
-      ...newUserData,
+      ...mergeUserCollectionData(userData, newUserData),
     };
   }
 };
@@ -2144,17 +2146,10 @@ const addUserToResults = async (userId, users) => {
   if (!userSnapshotInNewUsers.exists() && !userSnapshotInUsers.exists()) {
     return;
   }
-  // users.push({
-  //   userId,
-  //   ...userFromNewUsers,
-  //   ...userFromUsers,
-  // });
-
-  // // Додаємо користувача у форматі userId -> userData
+  // Додаємо користувача у форматі userId -> userData
   users[userId] = {
     userId,
-    ...userFromNewUsers,
-    ...userFromUsers,
+    ...mergeUserCollectionData(userFromUsers, userFromNewUsers),
   };
 };
 
@@ -6808,8 +6803,7 @@ export const fetchUserById = async userId => {
       if (userSnapshotInUsers.exists()) {
         return {
           userId,
-          ...userSnapshotInUsers.val(),
-          ...newUserSnapshot.val(),
+          ...mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val()),
           photos,
           __sourceCollection: 'newUsers',
         };
@@ -7437,8 +7431,7 @@ export const fetchAllFilteredUsers = async (
         userId,
         {
           userId,
-          ...(usersData[userId] || {}),
-          ...newUserRaw,
+          ...mergeUserCollectionData(usersData[userId], newUserRaw),
         },
       ];
     });
@@ -7478,8 +7471,7 @@ export const fetchAllUsersFromRTDB = async () => {
         userId,
         {
           userId,
-          ...(usersData[userId] || {}),
-          ...newUserRaw,
+          ...mergeUserCollectionData(usersData[userId], newUserRaw),
         },
       ];
     });
