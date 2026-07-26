@@ -39,6 +39,7 @@ import {
   resolveCaseContext,
   resolveLayoutV2Style,
   upsertRecentCaseId,
+  validateLayoutV2Template,
 } from './documentsCatalogUtils';
 
 // --- Layout shell (same skeleton/palette as Invoice Builder, Documents Builder & Parties) -------
@@ -306,11 +307,13 @@ const PROPERTY_LABELS = {
 };
 
 // One property row: a checkbox that says whether this property is overridden at all, plus its
-// control (disabled, showing the effective/inherited value as a hint, while off).
+// control (disabled, showing the effective/inherited value as a hint, while off). `controls`/
+// `labels` default to the layoutV2 text-style maps but are swappable (see LineStyleGroup below,
+// which reuses this same row for lineStyles' widthPt/color/fill* properties).
 const StylePropertyRow = ({
-  property, rawValue, effectiveValue, onSet, onDelete,
+  property, rawValue, effectiveValue, onSet, onDelete, controls = PROPERTY_CONTROLS, labels = PROPERTY_LABELS,
 }) => {
-  const control = PROPERTY_CONTROLS[property];
+  const control = controls[property];
   const isOn = rawValue !== undefined;
   const [draft, setDraft] = useState(rawValue !== undefined ? String(rawValue) : '');
   useEffect(() => {
@@ -331,8 +334,15 @@ const StylePropertyRow = ({
         checked={isOn}
         onChange={event => (event.target.checked ? onSet(effectiveValue !== undefined ? effectiveValue : control.seed) : onDelete())}
       />
-      <PropertyLabel>{PROPERTY_LABELS[property] || property}</PropertyLabel>
-      {control.type === 'select' ? (
+      <PropertyLabel>{labels[property] || property}</PropertyLabel>
+      {control.type === 'boolean' ? (
+        <input
+          type="checkbox"
+          disabled={!isOn}
+          checked={isOn ? Boolean(rawValue) : Boolean(effectiveValue ?? control.seed)}
+          onChange={event => onSet(event.target.checked)}
+        />
+      ) : control.type === 'select' ? (
         <PropertySelect
           disabled={!isOn}
           value={isOn ? String(rawValue) : String(effectiveValue ?? control.seed)}
@@ -396,6 +406,46 @@ const StyleGroup = ({
   );
 };
 
+// The document's base style (clean layoutV2 template spec §2/§3: `template.format`, the layer
+// every named style/block sits on top of - never a required `styleSheet.document`). Same
+// collapsible-group shape as StyleGroup, just backed by `format/<property>` instead of
+// `styleSheet/<styleName>/<property>`.
+const FormatGroup = ({
+  template, onSetProperty, onDeleteProperty, onResetGroup,
+}) => {
+  const [open, setOpen] = useState(false);
+  const rawStyle = template.format || {};
+  const effectiveStyle = resolveLayoutV2Style(template, undefined, {});
+  const hasOverrides = Object.keys(rawStyle).length > 0;
+  return (
+    <GroupCard>
+      <GroupHead type="button" onClick={() => setOpen(previous => !previous)}>
+        <span>format (base style){hasOverrides ? ` (${Object.keys(rawStyle).length})` : ''}</span>
+        {open ? <FaChevronUp /> : <FaChevronDown />}
+      </GroupHead>
+      {open ? (
+        <GroupBody>
+          {LAYOUT_V2_STYLE_KEYS.map(property => (
+            <StylePropertyRow
+              key={property}
+              property={property}
+              rawValue={rawStyle[property]}
+              effectiveValue={effectiveStyle[property]}
+              onSet={value => onSetProperty(property, value)}
+              onDelete={() => onDeleteProperty(property)}
+            />
+          ))}
+          {hasOverrides ? (
+            <div>
+              <DangerLink type="button" onClick={onResetGroup}>Reset format to default</DangerLink>
+            </div>
+          ) : null}
+        </GroupBody>
+      ) : null}
+    </GroupCard>
+  );
+};
+
 const PAGE_GEOMETRY_MARGIN_SIDES = ['top', 'right', 'bottom', 'left'];
 const PAGE_SIZE_OPTIONS = ['A4', 'Letter'];
 
@@ -444,6 +494,69 @@ const PageGeometryGroup = ({ template, onSetPageField, onDeletePageField }) => {
               />
             </PropertyRow>
           ))}
+        </GroupBody>
+      ) : null}
+    </GroupCard>
+  );
+};
+
+// Known line-style names a genetic-affinity-certificate-family template is expected to carry (spec
+// §4) - shown even when a template's own `lineStyles` doesn't (yet) have that key, same pattern as
+// KNOWN_LAYOUT_V2_STYLE_NAMES/styleNamesFor above.
+const KNOWN_LINE_STYLE_NAMES = ['letterheadDivider', 'formLine', 'signatureLine'];
+
+const lineStyleNamesFor = template => [...new Set([
+  ...KNOWN_LINE_STYLE_NAMES,
+  ...Object.keys(template?.lineStyles || {}),
+])];
+
+const LINE_STYLE_PROPERTY_CONTROLS = {
+  widthPt: { seed: 0.75, type: 'number' },
+  color: { seed: '#000000', type: 'text' },
+  fillBeforeValue: { seed: true, type: 'boolean' },
+  fillAfterValue: { seed: true, type: 'boolean' },
+};
+
+const LINE_STYLE_PROPERTY_LABELS = {
+  widthPt: 'Width (pt)',
+  color: 'Color',
+  fillBeforeValue: 'Fill before value',
+  fillAfterValue: 'Fill after value',
+};
+
+// One collapsible group per named line style (spec §4/§15: "editing lineStyles"), same non-
+// destructive per-leaf writes as StyleGroup/PageGeometryGroup, just under `lineStyles.<name>.*`.
+const LineStyleGroup = ({
+  styleName, template, onSetProperty, onDeleteProperty, onResetGroup,
+}) => {
+  const [open, setOpen] = useState(false);
+  const rawStyle = template.lineStyles?.[styleName] || {};
+  const hasOverrides = Object.keys(rawStyle).length > 0;
+  return (
+    <GroupCard>
+      <GroupHead type="button" onClick={() => setOpen(previous => !previous)}>
+        <span>{styleName}{hasOverrides ? ` (${Object.keys(rawStyle).length})` : ''}</span>
+        {open ? <FaChevronUp /> : <FaChevronDown />}
+      </GroupHead>
+      {open ? (
+        <GroupBody>
+          {Object.keys(LINE_STYLE_PROPERTY_CONTROLS).map(property => (
+            <StylePropertyRow
+              key={property}
+              property={property}
+              rawValue={rawStyle[property]}
+              effectiveValue={undefined}
+              controls={LINE_STYLE_PROPERTY_CONTROLS}
+              labels={LINE_STYLE_PROPERTY_LABELS}
+              onSet={value => onSetProperty(styleName, property, value)}
+              onDelete={() => onDeleteProperty(styleName, property)}
+            />
+          ))}
+          {hasOverrides ? (
+            <div>
+              <DangerLink type="button" onClick={() => onResetGroup(styleName)}>Reset this whole line style to default</DangerLink>
+            </div>
+          ) : null}
         </GroupBody>
       ) : null}
     </GroupCard>
@@ -561,6 +674,59 @@ const DocumentStyleEditorPage = ({ isAdmin }) => {
     });
   };
 
+  // Base `format` (spec §2/§3) - same per-leaf write pattern as styleSheet, just at the template's
+  // own top-level `format` key instead of `styleSheet/<styleName>`.
+  const handleSetFormatProperty = (property, value) => {
+    if (!selectedTemplate) return;
+    writeTemplateLeaf(selectedTemplate.id, `format/${property}`, value, template => ({
+      ...template,
+      format: { ...template.format, [property]: value },
+    }));
+  };
+
+  const handleDeleteFormatProperty = property => {
+    if (!selectedTemplate) return;
+    writeTemplateLeaf(selectedTemplate.id, `format/${property}`, undefined, template => {
+      const nextFormat = { ...template.format };
+      delete nextFormat[property];
+      return { ...template, format: nextFormat };
+    });
+  };
+
+  const handleResetFormat = () => {
+    if (!selectedTemplate) return;
+    if (typeof window !== 'undefined' && !window.confirm('Reset the base format to default?')) return;
+    writeTemplateLeaf(selectedTemplate.id, 'format', undefined, template => ({ ...template, format: {} }));
+  };
+
+  // lineStyles (spec §4/§15) - same per-leaf write pattern as styleSheet, under `lineStyles.<name>`.
+  const handleSetLineStyleProperty = (styleName, property, value) => {
+    if (!selectedTemplate) return;
+    writeTemplateLeaf(selectedTemplate.id, `lineStyles/${styleName}/${property}`, value, template => ({
+      ...template,
+      lineStyles: { ...template.lineStyles, [styleName]: { ...template.lineStyles?.[styleName], [property]: value } },
+    }));
+  };
+
+  const handleDeleteLineStyleProperty = (styleName, property) => {
+    if (!selectedTemplate) return;
+    writeTemplateLeaf(selectedTemplate.id, `lineStyles/${styleName}/${property}`, undefined, template => {
+      const nextStyle = { ...template.lineStyles?.[styleName] };
+      delete nextStyle[property];
+      return { ...template, lineStyles: { ...template.lineStyles, [styleName]: nextStyle } };
+    });
+  };
+
+  const handleResetLineStyleGroup = styleName => {
+    if (!selectedTemplate) return;
+    if (typeof window !== 'undefined' && !window.confirm(`Reset every "${styleName}" line style override to default?`)) return;
+    writeTemplateLeaf(selectedTemplate.id, `lineStyles/${styleName}`, undefined, template => {
+      const nextLineStyles = { ...template.lineStyles };
+      delete nextLineStyles[styleName];
+      return { ...template, lineStyles: nextLineStyles };
+    });
+  };
+
   const handleSetPageField = (fieldPath, value) => {
     if (!selectedTemplate) return;
     writeTemplateLeaf(selectedTemplate.id, `page/${fieldPath}`, value, template => {
@@ -588,6 +754,10 @@ const DocumentStyleEditorPage = ({ isAdmin }) => {
   const previewDoc = selectedTemplate
     ? buildGeneratedDocument(selectedTemplate, resolveCaseContext(catalog, selectedCaseId, { templateId: selectedTemplate.id }) || {})
     : null;
+
+  // Best-effort diagnostics (spec §17): unknown style/lineStyle/bottomBorderStyle references,
+  // columns overflowing the page's content width, etc. - never blocks editing, just surfaced.
+  const validation = selectedTemplate ? validateLayoutV2Template(selectedTemplate) : { errors: [], warnings: [] };
 
   if (!isStyleEditorAdmin) {
     return (
@@ -645,9 +815,23 @@ const DocumentStyleEditorPage = ({ isAdmin }) => {
               ) : null}
             </Section>
 
+            {selectedTemplate && (validation.errors.length || validation.warnings.length) ? (
+              <Section>
+                <SectionTitle>Validation</SectionTitle>
+                {validation.errors.map(message => <StateCard key={message} style={{ marginBottom: 6, color: 'var(--km-danger)' }}>{message}</StateCard>)}
+                {validation.warnings.map(message => <StateCard key={message} style={{ marginBottom: 6 }}>{message}</StateCard>)}
+              </Section>
+            ) : null}
+
             {selectedTemplate ? (
               <Section>
                 <SectionTitle>Styles</SectionTitle>
+                <FormatGroup
+                  template={selectedTemplate}
+                  onSetProperty={handleSetFormatProperty}
+                  onDeleteProperty={handleDeleteFormatProperty}
+                  onResetGroup={handleResetFormat}
+                />
                 {styleNamesFor(selectedTemplate).map(styleName => (
                   <StyleGroup
                     key={styleName}
@@ -663,6 +847,22 @@ const DocumentStyleEditorPage = ({ isAdmin }) => {
                   onSetPageField={handleSetPageField}
                   onDeletePageField={handleDeletePageField}
                 />
+              </Section>
+            ) : null}
+
+            {selectedTemplate ? (
+              <Section>
+                <SectionTitle>Line styles</SectionTitle>
+                {lineStyleNamesFor(selectedTemplate).map(styleName => (
+                  <LineStyleGroup
+                    key={styleName}
+                    styleName={styleName}
+                    template={selectedTemplate}
+                    onSetProperty={handleSetLineStyleProperty}
+                    onDeleteProperty={handleDeleteLineStyleProperty}
+                    onResetGroup={handleResetLineStyleGroup}
+                  />
+                ))}
               </Section>
             ) : null}
 
