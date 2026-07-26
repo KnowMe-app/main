@@ -412,8 +412,6 @@ export const handleSubmitAll = async (userData, overwrite) => {
     'cycleStatus',
     'stimulationSchedule',
   ];
-  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
-  const ppTechnicalInputFields = ['name', 'surname', ...contacts];
   const commonFields = [
     'lastAction',
     'lastLogin2',
@@ -443,7 +441,7 @@ export const handleSubmitAll = async (userData, overwrite) => {
 
     const cleanedStateForNewUsers = Object.fromEntries(
       Object.entries(uploadedInfo).filter(([key]) =>
-        [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, ...commonFields].includes(key)
+        [...fieldsForNewUsersOnly, ...commonFields].includes(key)
       )
     );
 

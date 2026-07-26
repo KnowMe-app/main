@@ -11,7 +11,6 @@ import {
   auth,
 } from './config';
 import { ProfileForm } from './ProfileForm';
-import { newUsersMirrorFieldNames } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { TopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
@@ -456,7 +455,6 @@ const EditProfile = () => {
     }
 
     const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
-    const ppTechnicalInputFields = newUsersMirrorFieldNames;
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
     const isMainProfileField = key => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key);
 
@@ -518,7 +516,7 @@ const EditProfile = () => {
 
       const cleanedStateForNewUsers = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) =>
-          [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
+          [...fieldsForNewUsersOnly, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
       delete cleanedStateForNewUsers.cacheVersion;
@@ -879,7 +877,6 @@ const EditProfile = () => {
 
   const persistCanonicalByRules = async mergedCard => {
     const fieldsForNewUsersOnly = NEW_USERS_OWNED_FIELDS;
-    const ppTechnicalInputFields = newUsersMirrorFieldNames;
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (mergedCard?.userId?.length > 20) {
@@ -894,7 +891,7 @@ const EditProfile = () => {
       await updateDataInFiresoreDB(mergedCard.userId, cleanedState, 'check');
       const cleanedStateForNewUsers = Object.fromEntries(
         Object.entries(mergedCard).filter(([key]) =>
-          [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
+          [...fieldsForNewUsersOnly, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
       delete cleanedStateForNewUsers.cacheVersion;
