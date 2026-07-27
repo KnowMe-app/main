@@ -290,6 +290,7 @@ export const removeField = (
 
   const removalKey = removedKey ?? nestedKey;
   const removalList = removalKey ? [removalKey] : [];
+  const topLevelKey = keys[0];
   const triggerHistorySnapshot = payload => {
     if (typeof options?.onSubmitHistorySnapshot !== 'function') {
       return;
@@ -298,28 +299,54 @@ export const removeField = (
     options.onSubmitHistorySnapshot(snapshot);
   };
 
+  // handleSubmit (called below) fires an un-queued, un-awaited backend write,
+  // so it must never run *inside* the setUsers updater callback — same
+  // hazard as EditProfile's handleClear/handleDelKeyValue. Worse here: the
+  // old code sent the *entire* locally-known card object as the write
+  // payload. Since these writes race with no ordering guarantee, deleting
+  // two different fields back-to-back could land out of order, and
+  // whichever write's local snapshot was captured *before* the other
+  // field's deletion would silently resurrect it. Only capture what changed
+  // here (pure, no side effects); submit a payload containing nothing but
+  // the one top-level field that actually changed (+ lastAction) — it can
+  // never carry a stale value for any other field, so it can never
+  // resurrect one, regardless of write ordering.
+  let capturedUserId;
+  let capturedTopLevelValue;
+  let capturedChanged = false;
+
   setUsers(prev => {
     const shape = getUserStateShape(prev);
-    let submitted = false;
     const next = updateUserInState(prev, userId, currentUser => {
       const { changed, value } = removePath(currentUser);
       if (!changed) return currentUser;
       const updated = value ?? {};
       const resolvedUserId = userId || updated.userId;
       if (resolvedUserId) {
-        submitted = true;
+        capturedChanged = true;
+        capturedUserId = resolvedUserId;
+        capturedTopLevelValue = Object.prototype.hasOwnProperty.call(updated, topLevelKey)
+          ? updated[topLevelKey]
+          : null;
         triggerHistorySnapshot({ ...updated, userId: resolvedUserId });
-        handleSubmit({ ...updated, userId: resolvedUserId }, 'overwrite', removalList);
       }
       return updated;
     });
 
-    if (shape === 'unknown' || submitted || next !== prev) {
+    if (shape === 'unknown' || capturedChanged || next !== prev) {
       return next;
     }
 
     return prev;
   });
+
+  if (capturedChanged && capturedUserId) {
+    handleSubmit(
+      { userId: capturedUserId, [topLevelKey]: capturedTopLevelValue },
+      'overwrite',
+      removalList,
+    );
+  }
 };
 
 export const handleSubmit = (userData, condition, removeKeys = []) => {
