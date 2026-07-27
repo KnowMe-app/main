@@ -19,6 +19,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
 import { resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
+import { startVersionWatcher } from 'utils/versionCheck';
+import toast from 'react-hot-toast';
 
 export const App = () => {
 
@@ -39,6 +41,45 @@ export const App = () => {
     if (stored === 'true') {
       setIsLoggedIn(true);
     }
+  }, []);
+
+  // A tab that's just switched away-and-back (not actually reloaded) keeps
+  // running whatever code was loaded when it was first opened, however long
+  // ago that was - a new deploy changes nothing for it. Whenever this tab
+  // comes back to the foreground and a newer version has shipped since it
+  // loaded, prompt a reload instead of leaving that silently stale.
+  useEffect(() => {
+    const stopWatching = startVersionWatcher(() => {
+      toast(
+        t => (
+          <span>
+            Доступна нова версія застосунку.{' '}
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(t.id);
+                window.location.reload();
+              }}
+              style={{
+                marginLeft: 8,
+                textDecoration: 'underline',
+                background: 'none',
+                border: 'none',
+                color: 'inherit',
+                cursor: 'pointer',
+                padding: 0,
+                font: 'inherit',
+              }}
+            >
+              Оновити
+            </button>
+          </span>
+        ),
+        { duration: Infinity, id: 'new-version-available' }
+      );
+    });
+
+    return stopWatching;
   }, []);
 
   useEffect(() => {

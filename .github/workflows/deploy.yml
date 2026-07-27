@@ -33,6 +33,10 @@ jobs:
           echo "REACT_APP_OPENAI_API_KEY=${{ secrets.REACT_APP_OPENAI_API_KEY }}" >> .env
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
 
+      - name: Write version.json 🏷️
+        run: |
+          echo "{\"buildId\": \"${{ github.sha }}\", \"builtAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > public/version.json
+
       - name: Install, lint, build 🔧
         run: |
           npm install
