@@ -2813,6 +2813,20 @@ const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
       updates[`newUsers/${userId}/${field}`] = null;
     });
 
+    // userId (і будь-які клієнтські технічні ключі) ніколи не потрапляють у
+    // updates вище, тож саме вони й лишаться в newUsers після застосування
+    // цих правок. Якщо це буде єдине, що лишилось — картка вже повністю
+    // мігрована, і сам вузол newUsers/{userId} більше не потрібен.
+    const leftoverKeys = Object.keys(newUsersData).filter(
+      field => field === 'userId' || transientUserDataKeys.includes(field)
+    );
+    const onlyUserIdWouldRemain = leftoverKeys.length === 1 && leftoverKeys[0] === 'userId';
+
+    if (onlyUserIdWouldRemain) {
+      await update(ref2(database), { [`newUsers/${userId}`]: null });
+      return;
+    }
+
     if (Object.keys(updates).length > 0) {
       await update(ref2(database), updates);
     }

@@ -57,4 +57,19 @@ describe('every long-userId card save migrates the whole stale newUsers record i
     expect(migrateFnBody).toContain("field === 'userId'");
     expect(migrateFnBody).toContain('transientUserDataKeys.includes(field)');
   });
+
+  it('deletes the whole newUsers/{userId} node once userId is all that would be left', () => {
+    expect(migrateFnBody).toContain(
+      "const leftoverKeys = Object.keys(newUsersData).filter("
+    );
+    expect(migrateFnBody).toContain(
+      "const onlyUserIdWouldRemain = leftoverKeys.length === 1 && leftoverKeys[0] === 'userId';"
+    );
+    expect(migrateFnBody).toContain("await update(ref2(database), { [`newUsers/${userId}`]: null });");
+
+    const wholeNodeDeleteIndex = migrateFnBody.indexOf('onlyUserIdWouldRemain');
+    const perFieldUpdateIndex = migrateFnBody.indexOf('if (Object.keys(updates).length > 0)');
+    expect(wholeNodeDeleteIndex).toBeGreaterThan(-1);
+    expect(perFieldUpdateIndex).toBeGreaterThan(wholeNodeDeleteIndex);
+  });
 });
