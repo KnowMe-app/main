@@ -30,6 +30,7 @@ import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeC
 import { updateCard } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
+import { enqueueUserWrite } from '../utils/userWriteQueue';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
 import { getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
@@ -2835,29 +2836,41 @@ const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
   }
 };
 
-export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
-  try {
-    const userRefRTDB = ref2(database, `users/${userId}`);
-    const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
-      markForRealtimeDeletion: condition === 'update',
-    });
-    if (condition === 'update') {
-      await update(userRefRTDB, cleanedUploadedInfo);
-    } else {
-      await set(userRefRTDB, cleanedUploadedInfo);
-    }
+// Кілька збережень тієї самої картки (наприклад, швидке послідовне
+// видалення 2-4 полів) можуть стартувати майже одночасно з різних місць
+// (EditProfile, smallCard/actions.js) без жодної спільної черги. Якщо їм
+// дозволити виконуватись паралельно, кожен виклик migrateLongUserIdCardFromNewUsers
+// читає users/newUsers "наосліп" відносно інших ще не завершених викликів:
+// він бачить полe, яке паралельний виклик щойно видалив з users, не знає, що
+// воно було видалене свідомо (бо це не поле з ЙОГО власного payload), і
+// тому переносить застаріле значення назад з newUsers — так "воскресає"
+// щойно видалене поле. Серіалізуючи update()+migrate() за userId, кожен
+// наступний виклик стартує вже після повного завершення попереднього і
+// бачить дійсно актуальний стан обох колекцій.
+export const updateDataInRealtimeDB = (userId, uploadedInfo, condition) =>
+  enqueueUserWrite(`updateDataInRealtimeDB:${userId}`, async () => {
+    try {
+      const userRefRTDB = ref2(database, `users/${userId}`);
+      const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
+        markForRealtimeDeletion: condition === 'update',
+      });
+      if (condition === 'update') {
+        await update(userRefRTDB, cleanedUploadedInfo);
+      } else {
+        await set(userRefRTDB, cleanedUploadedInfo);
+      }
 
-    if (String(userId || '').length > 20) {
-      await migrateLongUserIdCardFromNewUsers(userId, cleanedUploadedInfo);
+      if (String(userId || '').length > 20) {
+        await migrateLongUserIdCardFromNewUsers(userId, cleanedUploadedInfo);
+      }
+    } catch (error) {
+      console.error(
+        'Сталася помилка під час збереження даних в Realtime Database2:',
+        error
+      );
+      throw error;
     }
-  } catch (error) {
-    console.error(
-      'Сталася помилка під час збереження даних в Realtime Database2:',
-      error
-    );
-    throw error;
-  }
-};
+  });
 
 export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, skipIndexing = false) => {
   try {

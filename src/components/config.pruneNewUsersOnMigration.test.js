@@ -22,6 +22,23 @@ describe('every long-userId card save migrates the whole stale newUsers record i
     expect(updateDataInRealtimeDBBody).toContain("String(userId || '').length > 20");
   });
 
+  it('serializes update()+migrate() per userId, so two rapid saves for the same card never run their migration sweeps concurrently', () => {
+    expect(source).toContain("import { enqueueUserWrite } from '../utils/userWriteQueue';");
+    expect(updateDataInRealtimeDBBody).toContain(
+      "enqueueUserWrite(`updateDataInRealtimeDB:${userId}`, async () => {"
+    );
+    // The whole update()+migrate() sequence must be inside the queued task,
+    // not just fired off after it — otherwise a second save for the same
+    // userId could still start its own migration sweep before the first
+    // one's update() (or migration) has actually finished.
+    const queueCallIndex = updateDataInRealtimeDBBody.indexOf('enqueueUserWrite(');
+    const writeIndex = updateDataInRealtimeDBBody.indexOf('await update(userRefRTDB, cleanedUploadedInfo)');
+    const migrateCallIndex = updateDataInRealtimeDBBody.indexOf('await migrateLongUserIdCardFromNewUsers(');
+    expect(queueCallIndex).toBeGreaterThan(-1);
+    expect(writeIndex).toBeGreaterThan(queueCallIndex);
+    expect(migrateCallIndex).toBeGreaterThan(writeIndex);
+  });
+
   it('sweeps every field still present in newUsers, not just the fields from this save', () => {
     expect(migrateFnBody).toContain('Object.keys(newUsersData).forEach(field =>');
   });
