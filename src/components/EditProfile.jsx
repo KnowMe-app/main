@@ -776,6 +776,18 @@ const EditProfile = () => {
     await acceptFocusedFieldChanges(baseFieldName);
   };
 
+  // handleSubmit (called below) does its own setState and enqueues the actual
+  // network write, so it must never run *inside* a setState updater callback —
+  // nested/side-effecting setState calls interleave unpredictably once several
+  // deletions fire in quick succession (React can invoke an updater more than
+  // once, e.g. StrictMode's double-invoke check), and a stale `newState` from
+  // a re-run updater could silently win, resurrecting a field a later click
+  // already deleted and shipping it back to the backend on the next sync.
+  // Still use the functional setState form to compute newState — that's what
+  // guarantees each click sees the previous click's deletion even when React
+  // batches several updates before committing — but only *capture* the result
+  // via a plain local variable; call handleSubmit afterwards, as a normal
+  // top-level call once setState has returned.
   const handleClear = (fieldName, idx) => {
     debugProfileSave('handleClear:start', {
       fieldName,
@@ -788,6 +800,9 @@ const EditProfile = () => {
     if (!hasIndex) {
       deletingFieldsRef.current.add(fieldName);
     }
+
+    let capturedNewState;
+    let capturedDelCondition;
 
     setState(prev => {
       const newState = { ...prev };
@@ -809,84 +824,70 @@ const EditProfile = () => {
         } else {
           delete newState[fieldName];
         }
-
-        const delCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
-          ? undefined
-          : { [fieldName]: removedValue };
-
-        debugProfileSave('handleClear:computed', {
-          fieldName,
-          idx,
-          newValue: newState?.[fieldName],
-          hasKeyInNewState: Object.prototype.hasOwnProperty.call(newState, fieldName),
-          delCondition,
-        });
-
-        debugProfileSave('handleClear:submit', {
-          fieldName,
-          idx,
-          submitSource: 'handleClear',
-          submittedValue: newState?.[fieldName],
-          delCondition,
-        });
-
-        handleSubmit(newState, 'overwrite', delCondition, 'handleClear');
-        return newState;
-      }
-
-      const isArray = Array.isArray(currentValue);
-
-      if (isArray) {
-        const filtered = currentValue.filter((_, i) => i !== idx);
-        removedValue = currentValue[idx];
-
-        if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
-          delete newState[fieldName];
-        } else if (filtered.length === 1) {
-          newState[fieldName] = filtered[0];
-        } else {
-          newState[fieldName] = filtered;
-        }
       } else {
-        removedValue = currentValue;
-        delete newState[fieldName];
+        const isArray = Array.isArray(currentValue);
+
+        if (isArray) {
+          const filtered = currentValue.filter((_, i) => i !== idx);
+          removedValue = currentValue[idx];
+
+          if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
+            delete newState[fieldName];
+          } else if (filtered.length === 1) {
+            newState[fieldName] = filtered[0];
+          } else {
+            newState[fieldName] = filtered;
+          }
+        } else {
+          removedValue = currentValue;
+          delete newState[fieldName];
+        }
       }
 
-      const delCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
+      capturedNewState = newState;
+      capturedDelCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
         ? undefined
         : { [fieldName]: removedValue };
 
-      debugProfileSave('handleClear:computed', {
-        fieldName,
-        idx,
-        newValue: newState?.[fieldName],
-        hasKeyInNewState: Object.prototype.hasOwnProperty.call(newState, fieldName),
-        delCondition,
-      });
-
-      debugProfileSave('handleClear:submit', {
-        fieldName,
-        idx,
-        submitSource: 'handleClear',
-        submittedValue: newState?.[fieldName],
-        delCondition,
-      });
-
-      const submitPromise = handleSubmit(newState, 'overwrite', delCondition, 'handleClear');
-      clearDeletingFieldAfterSubmit(fieldName, submitPromise);
       return newState;
     });
+
+    debugProfileSave('handleClear:computed', {
+      fieldName,
+      idx,
+      newValue: capturedNewState?.[fieldName],
+      hasKeyInNewState: Object.prototype.hasOwnProperty.call(capturedNewState, fieldName),
+      delCondition: capturedDelCondition,
+    });
+
+    debugProfileSave('handleClear:submit', {
+      fieldName,
+      idx,
+      submitSource: 'handleClear',
+      submittedValue: capturedNewState?.[fieldName],
+      delCondition: capturedDelCondition,
+    });
+
+    const submitPromise = handleSubmit(capturedNewState, 'overwrite', capturedDelCondition, 'handleClear');
+    if (!hasIndex) {
+      clearDeletingFieldAfterSubmit(fieldName, submitPromise);
+    }
   };
 
   const handleDelKeyValue = fieldName => {
+    let capturedNewState;
+    let capturedDeletedValue;
+
     setState(prev => {
       const newState = { ...prev };
-      const deletedValue = newState[fieldName];
+      capturedDeletedValue = newState[fieldName];
       delete newState[fieldName];
-      pendingDeletedKeysRef.current.add(fieldName);
-      handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
+      capturedNewState = newState;
       return newState;
     });
+
+    pendingDeletedKeysRef.current.add(fieldName);
+    handleSubmit(capturedNewState, 'overwrite', { [fieldName]: capturedDeletedValue });
   };
 
   const persistCanonicalByRules = async mergedCard => {
