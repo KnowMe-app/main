@@ -174,29 +174,6 @@ const prepareSyncedSnapshot = (snapshot, deletedKeys = []) => {
   return cleaned;
 };
 
-const DEBUG_PROFILE_SAVE = true;
-
-const debugProfileSave = (step, data = {}) => {
-  const isAllowedMode =
-    process.env.NODE_ENV === 'development' ||
-    process.env.NODE_ENV === 'test' ||
-    isAdminUid(auth.currentUser?.uid);
-
-  if (!DEBUG_PROFILE_SAVE || !isAllowedMode) return;
-
-  console.groupCollapsed(
-    `%c[ProfileSaveDebug] ${step}`,
-    'color:#8b5cf6;font-weight:bold;'
-  );
-  console.log({
-    time: new Date().toISOString(),
-    ...data,
-  });
-  console.trace('[ProfileSaveDebug trace]');
-  console.groupEnd();
-};
-
-
 const resolveOverlayIncomingValue = change => {
   if (!change || typeof change !== 'object') return undefined;
 
@@ -485,30 +462,12 @@ const EditProfile = () => {
           deletePayload[key] = null;
         });
 
-        debugProfileSave('remoteUpdate:delete-only', {
-          delCondition,
-          deleteOnlyKeys,
-        });
-
         await syncUserSearchIdIndex(updatedState.userId, existingData, deletePayload, deletedKeys);
         await updateDataInRealtimeDB(updatedState.userId, deletePayload, 'update');
         await updateDataInFiresoreDB(updatedState.userId, deletePayload, 'check', delCondition);
-
-        debugProfileSave('remoteUpdate:success', { delCondition, deleteOnlyKeys });
       } else {
         const cleanedState = { ...updatedState };
         delete cleanedState.cacheVersion;
-
-        debugProfileSave('remoteUpdate:start', {
-          overwrite,
-          delCondition,
-          cleanedStateWatched: {
-            surname: cleanedState?.surname,
-            name: cleanedState?.name,
-            phone: cleanedState?.phone,
-            email: cleanedState?.email,
-          },
-        });
 
         const sanitizedExistingData = applyDeletedKeysToSnapshot(existingData, deletedKeys);
         const uploadedInfo = applyDeletedKeysToPayload(
@@ -518,27 +477,8 @@ const EditProfile = () => {
 
         await syncUserSearchIdIndex(updatedState.userId, existingData, uploadedInfo, deletedKeys);
 
-        debugProfileSave('remoteUpdate:payload-before-backend', {
-          delCondition,
-          uploadedInfoWatched: {
-            surname: uploadedInfo?.surname,
-            name: uploadedInfo?.name,
-            phone: uploadedInfo?.phone,
-            email: uploadedInfo?.email,
-          },
-          uploadedInfoHasSurname: Object.prototype.hasOwnProperty.call(uploadedInfo, 'surname'),
-          fullPayload: uploadedInfo,
-        });
-
         await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
         await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
-
-        debugProfileSave('remoteUpdate:success', {
-          delCondition,
-          uploadedInfoWatched: {
-            surname: uploadedInfo?.surname,
-          },
-        });
       }
     } else if (updatedState?.userId) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
@@ -706,21 +646,6 @@ const EditProfile = () => {
   }, [userId, refreshOverlays, currentUid, isAdmin, location.key]);
 
   const handleSubmit = async (newState, overwrite, delCondition, submitSource) => {
-    const submitState = newState || state || {};
-
-    debugProfileSave('handleSubmit:start', {
-      submitSource,
-      overwrite,
-      delCondition,
-      keys: Object.keys(submitState),
-      watchedValues: {
-        surname: submitState?.surname,
-        name: submitState?.name,
-        phone: submitState?.phone,
-        email: submitState?.email,
-      },
-    });
-
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
@@ -788,27 +713,22 @@ const EditProfile = () => {
   const handleBlur = async name => {
     const baseFieldName = String(name || '').replace(/-\d+$/, '');
 
-    debugProfileSave('handleBlur:start', {
-      fieldName: baseFieldName,
-      rawNameFromBlur: name,
-      baseFieldName,
-      valueInState: state?.[baseFieldName],
-    });
-
     const normalizedState = normalizePhoneState(state);
     if (normalizedState !== state) {
       setState(normalizedState);
     }
 
-    debugProfileSave('handleBlur:submit', {
-      submitSource: 'handleBlur',
-      rawNameFromBlur: name,
-      baseFieldName,
-      submittedValue: normalizedState?.[baseFieldName],
-      fullFieldExists: Object.prototype.hasOwnProperty.call(normalizedState || {}, baseFieldName),
-    });
-
-    await handleSubmit(normalizedState, undefined, undefined, 'handleBlur');
+    // Every other submit path here (handleClear, handleDelKeyValue) passes
+    // 'overwrite' so a changed scalar field cleanly replaces the stored
+    // value. This one didn't, so makeUploadedInfo's no-overwrite branch
+    // turned any edited text field (name, surname, email, phone...) that
+    // differed from the server copy into a `[oldValue, newValue]` array
+    // instead of just saving the new value — the edit was technically
+    // written, but not as the plain value the UI expects, so it looked like
+    // nothing was saved until a later, unrelated 'overwrite' submit (e.g. a
+    // getInTouch button click, which resubmits the whole local state)
+    // happened to replace the array with the correct scalar.
+    await handleSubmit(normalizedState, 'overwrite', undefined, 'handleBlur');
     if (!isAdmin || !baseFieldName) return;
     if (focusedField && focusedField !== baseFieldName) return;
     await acceptFocusedFieldChanges(baseFieldName);
@@ -827,12 +747,6 @@ const EditProfile = () => {
   // via a plain local variable; call handleSubmit afterwards, as a normal
   // top-level call once setState has returned.
   const handleClear = (fieldName, idx) => {
-    debugProfileSave('handleClear:start', {
-      fieldName,
-      idx,
-      prevValue: state?.[fieldName],
-    });
-
     const hasIndex = Number.isInteger(idx);
 
     if (!hasIndex) {
@@ -888,22 +802,6 @@ const EditProfile = () => {
         : { [fieldName]: removedValue };
 
       return newState;
-    });
-
-    debugProfileSave('handleClear:computed', {
-      fieldName,
-      idx,
-      newValue: capturedNewState?.[fieldName],
-      hasKeyInNewState: Object.prototype.hasOwnProperty.call(capturedNewState, fieldName),
-      delCondition: capturedDelCondition,
-    });
-
-    debugProfileSave('handleClear:submit', {
-      fieldName,
-      idx,
-      submitSource: 'handleClear',
-      submittedValue: capturedNewState?.[fieldName],
-      delCondition: capturedDelCondition,
     });
 
     const submitPromise = handleSubmit(capturedNewState, 'overwrite', capturedDelCondition, 'handleClear');

@@ -2763,11 +2763,6 @@ ${entries.join('\n')}`;
                           }));
                         }}
                         onBlur={() => {
-                          console.log('[ProfileSaveDebug] ProfileForm array input blur', {
-                            fieldName: field.name,
-                            idx,
-                            value: state?.[field.name],
-                          });
                           handleBlur(`${field.name}-${idx}`);
                         }}
                       />
@@ -2787,42 +2782,19 @@ ${entries.join('\n')}`;
                           <ClearButton
                           type="button"
                           onPointerDownCapture={e => {
-                            console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
-                              eventType: e.type,
-                              fieldName: field.name,
-                              idx,
-                              valueBeforeClear: state?.[field.name],
-                            });
                             e.preventDefault();
                             e.stopPropagation();
                           }}
                           onTouchStartCapture={e => {
-                            console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
-                              eventType: e.type,
-                              fieldName: field.name,
-                              idx,
-                              valueBeforeClear: state?.[field.name],
-                            });
                             e.preventDefault();
                             e.stopPropagation();
                           }}
                           onMouseDownCapture={e => {
-                            console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
-                              eventType: e.type,
-                              fieldName: field.name,
-                              idx,
-                              valueBeforeClear: state?.[field.name],
-                            });
                             e.preventDefault();
                             e.stopPropagation();
                           }}
                           onMouseDown={e => e.preventDefault()}
                           onClick={() => {
-                            console.log('[ProfileSaveDebug] ProfileForm clear click', {
-                              fieldName: field.name,
-                              idx,
-                              valueBeforeClear: state?.[field.name],
-                            });
                             if (field.name === ADDITIONAL_ACCESS_FIELD) {
                               handleRemoveAdditionalAccessRuleInput(idx, 'clear');
                               return;
@@ -2949,12 +2921,6 @@ ${entries.join('\n')}`;
                           },
                           onBlur: () => {
                             const latestDraft = latestProfileDraftRef.current || state || {};
-                            console.log('[ProfileSaveDebug] ProfileForm scalar input blur', {
-                              fieldName: field.name,
-                              value: latestDraft?.[field.name],
-                              source: 'blur',
-                              version: profileFormVersionRef.current,
-                            });
 
                             if (deletingFieldsRef?.current?.has(field.name)) return;
 
@@ -3035,42 +3001,19 @@ ${entries.join('\n')}`;
                     <ClearButton
                       type="button"
                       onPointerDownCapture={e => {
-                        console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
-                          eventType: e.type,
-                          fieldName: field.name,
-                          idx: undefined,
-                          valueBeforeClear: state?.[field.name],
-                        });
                         e.preventDefault();
                         e.stopPropagation();
                       }}
                       onTouchStartCapture={e => {
-                        console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
-                          eventType: e.type,
-                          fieldName: field.name,
-                          idx: undefined,
-                          valueBeforeClear: state?.[field.name],
-                        });
                         e.preventDefault();
                         e.stopPropagation();
                       }}
                       onMouseDownCapture={e => {
-                        console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
-                          eventType: e.type,
-                          fieldName: field.name,
-                          idx: undefined,
-                          valueBeforeClear: state?.[field.name],
-                        });
                         e.preventDefault();
                         e.stopPropagation();
                       }}
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => {
-                        console.log('[ProfileSaveDebug] ProfileForm clear click', {
-                          fieldName: field.name,
-                          idx: undefined,
-                          valueBeforeClear: state?.[field.name],
-                        });
                         if (field.name === ADDITIONAL_ACCESS_FIELD) {
                           handleRemoveAdditionalAccessRuleInput(null, 'clear');
                           return;
