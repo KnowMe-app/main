@@ -1164,6 +1164,21 @@ export const fetchUserComment = async (ownerId, cardId) => {
   }
 };
 
+// Зберігає (або, для порожнього тексту, видаляє) особистий коментар поточного
+// адміна до картки в multiData/comments — замінює старий підхід "писати прямо
+// в поле myComment на картці".
+export const saveMyCardComment = async (cardId, text, ownerId) => {
+  const trimmed = (text || '').trim();
+  if (!trimmed) {
+    const existing = await fetchUserComment(ownerId, cardId);
+    await Promise.all(
+      existing.map(({ commentId }) => deleteCommentByOwner({ ownerId, commentId }))
+    );
+    return null;
+  }
+  return setUserComment(cardId, text, ownerId);
+};
+
 export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
     incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);
@@ -2698,6 +2713,11 @@ const removeUndefined = obj => {
   return obj;
 };
 
+// Ключі, які ніколи не мають лишатись записаними на самій картці users/newUsers:
+// клієнтські кеш-мітки (транзитні за природою) та 'myComment', яке мігрувало в
+// окреме сховище multiData/comments (per-адмін коментарі, config.js: setUserComment
+// / fetchUserComment). Останнє тут не тому, що воно транзитне, а тому, що для
+// нього тепер є власне джерело правди — картка більше не повинна його дублювати.
 const transientUserDataKeys = [
   '__sourceCollection',
   '__photosHydrated',
@@ -2711,6 +2731,7 @@ const transientUserDataKeys = [
   '__profileSnapshotVersion',
   '__profileSnapshotSource',
   '__profileSnapshotUpdatedAt',
+  'myComment',
 ];
 
 const stripTransientUserDataFields = (payload, options = {}) => {

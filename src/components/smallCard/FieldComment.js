@@ -1,17 +1,35 @@
-import { handleChange, removeField } from './actions';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize';
+import { auth, fetchUserComment, saveMyCardComment } from '../config';
 
-export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} }) => {
-  // console.log('userData in RenderCommentInput :>> ', userData);
+// Персональний коментар поточного адміна до картки — зберігається в
+// multiData/comments/{ownerId}, а не прямо в самій картці (users/newUsers).
+export const FieldComment = ({ userData }) => {
   const textareaRef = useRef(null);
-  const autoResize = useAutoResize(textareaRef, userData.myComment);
+  const [text, setText] = useState('');
+  const autoResize = useAutoResize(textareaRef, text);
+  const ownerId = auth.currentUser?.uid;
+  const cardId = userData.userId;
 
-  const handleInputChange = e => {
-    handleChange(setUsers, setState, userData.userId, 'myComment', e.target.value);
+  useEffect(() => {
+    let cancelled = false;
+    setText('');
+    if (!ownerId || !cardId) return undefined;
+
+    fetchUserComment(ownerId, cardId).then(existing => {
+      if (cancelled) return;
+      setText(existing.length ? existing[0].text : '');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerId, cardId]);
+
+  const persist = value => {
+    if (!ownerId || !cardId) return;
+    saveMyCardComment(cardId, value, ownerId);
   };
-
-  // autoResize will adjust height on mount and when value changes
 
   return (
     <div
@@ -26,23 +44,14 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
     >
       <textarea
         ref={textareaRef}
-        placeholder="Додайте коментар"
-        value={userData.myComment || ''}
+        placeholder="Додайте свій коментар"
+        value={text}
         onChange={e => {
-          handleInputChange(e);
+          setText(e.target.value);
           autoResize(e.target);
         }}
         onBlur={() => {
-          const currentComment = textareaRef.current?.value ?? '';
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'myComment',
-            currentComment,
-            true,
-            submitOptions,
-          );
+          persist(textareaRef.current?.value ?? '');
         }}
         style={{
           // marginLeft: '10px',
@@ -51,17 +60,18 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
           resize: 'none',
           overflowY: 'hidden',
           padding: '5px',
-          paddingRight: userData.myComment ? '32px' : '5px',
+          paddingRight: text ? '32px' : '5px',
           boxSizing: 'border-box',
         }}
       />
-      {userData.myComment && (
+      {text && (
         <button
           type="button"
           aria-label="Очистити коментар"
           onClick={event => {
             event.stopPropagation();
-            removeField(userData.userId, 'myComment', setUsers, setState, 'myComment', submitOptions);
+            setText('');
+            persist('');
           }}
           style={{
             position: 'absolute',

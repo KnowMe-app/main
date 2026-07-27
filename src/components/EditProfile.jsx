@@ -8,6 +8,8 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   syncUserSearchIdIndex,
+  fetchUserComment,
+  saveMyCardComment,
   auth,
 } from './config';
 import { ProfileForm } from './ProfileForm';
@@ -448,6 +450,14 @@ const EditProfile = () => {
       };
     }
 
+    if (updatedState?.userId && Object.prototype.hasOwnProperty.call(updatedState, 'myComment')) {
+      const previousComment = lastSyncedSnapshotRef.current?.myComment ?? '';
+      const nextComment = updatedState.myComment ?? '';
+      if (nextComment !== previousComment) {
+        await saveMyCardComment(updatedState.userId, nextComment, editorUserId);
+      }
+    }
+
     if (updatedState?.userId?.length > 20) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
@@ -624,6 +634,31 @@ const EditProfile = () => {
 
     load();
   }, [state, userId]);
+
+  // myComment no longer lives on the card itself — it's a per-admin note
+  // in multiData/comments (setUserComment/fetchUserComment). Once the card is
+  // loaded, overlay the current admin's own comment onto state.myComment so
+  // the existing ProfileForm textarea keeps working exactly as before, and
+  // mirror it into lastSyncedSnapshotRef so remoteUpdate's change-detection
+  // below has an accurate "before" value to diff against.
+  useEffect(() => {
+    if (!userId || !currentUid || !isAdmin || !dataSource) return;
+    let cancelled = false;
+
+    (async () => {
+      const existing = await fetchUserComment(currentUid, userId);
+      if (cancelled) return;
+      const myComment = existing.length ? existing[0].text : '';
+      setState(prev => (prev && prev.userId === userId ? { ...prev, myComment } : prev));
+      if (lastSyncedSnapshotRef.current) {
+        lastSyncedSnapshotRef.current = { ...lastSyncedSnapshotRef.current, myComment };
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, currentUid, isAdmin, dataSource]);
 
   useEffect(() => {
     if (!userId) return;

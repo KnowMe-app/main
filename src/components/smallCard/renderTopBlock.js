@@ -2123,12 +2123,7 @@ export const TopBlock = ({
       </div>
       <div style={commentsSectionStyle}>
         {fieldWriter({ userData: cardData, setUsers, setState, submitOptions, updateContext })}
-        <FieldComment
-          userData={cardData}
-          setUsers={setUsers}
-          setState={setState}
-          submitOptions={submitOptions}
-        />
+        <FieldComment userData={cardData} />
         {multiDataComments.map(comment => (
           <div key={comment.commentId || `${comment.authorId}-${comment.text}`} style={multiCommentRowStyle}>
             <button
