@@ -2755,19 +2755,15 @@ const sanitizeUploadedInfoPhones = uploadedInfo => {
   };
 };
 
-// Для карток з довгим userId дані мають остаточно жити лише в "users". Коли поле
-// щойно записане в users, той самий ключ у "newUsers" — це застарілий дублікат
-// ще з часів подвійного запису, і саме він спричиняв баг з перезатиранням
-// свіжих даних під час мерджу колекцій. Видаляємо його з newUsers, але лише
-// після того, як перечитали users і переконались, що значення там дійсно є.
-// Для успішного null-запису відсутність ключа в users якраз підтверджує його
-// видалення, тому такий ключ також треба прибрати зі старої копії newUsers.
-const pruneMigratedFieldsFromNewUsers = async (userId, writtenFields) => {
+// Для карток з довгим userId дані мають остаточно жити лише в "users". Будь-яке
+// збереження такої картки є тригером для повної міграції: усе, що ще лишилось
+// у "newUsers" для цього userId, або переноситься в "users" (якщо там цього
+// поля ще нема — щоб нічого не втратити), або просто видаляється з newUsers
+// (якщо в users воно вже є, чи щойно було свідомо видалене цим самим збереженням).
+// Це не обмежується полями поточного payload — прибираємо весь застарілий
+// дублікат картки з newUsers поступово, за кожним редагуванням.
+const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
   const fieldValues = writtenFields || {};
-  const candidateFields = [...new Set(Object.keys(fieldValues).filter(
-    field => field && field !== 'userId' && !transientUserDataKeys.includes(field)
-  ))];
-  if (!candidateFields.length) return;
 
   try {
     const [newUsersSnap, usersSnap] = await Promise.all([
@@ -2777,23 +2773,30 @@ const pruneMigratedFieldsFromNewUsers = async (userId, writtenFields) => {
     if (!newUsersSnap.exists()) return;
 
     const newUsersData = newUsersSnap.val() || {};
-    const usersData = usersSnap.val() || {};
+    const usersData = usersSnap.exists() ? usersSnap.val() : {};
 
     const updates = {};
-    candidateFields.forEach(field => {
-      const presentInNewUsers = Object.prototype.hasOwnProperty.call(newUsersData, field);
+    Object.keys(newUsersData).forEach(field => {
+      if (!field || field === 'userId' || transientUserDataKeys.includes(field)) return;
+
       const confirmedInUsers = Object.prototype.hasOwnProperty.call(usersData, field);
-      const confirmedDeletion = fieldValues[field] === null;
-      if (presentInNewUsers && (confirmedInUsers || confirmedDeletion)) {
-        updates[`newUsers/${userId}/${field}`] = null;
+      const explicitlyDeletedNow = Object.prototype.hasOwnProperty.call(fieldValues, field)
+        && fieldValues[field] === null;
+
+      if (!confirmedInUsers && !explicitlyDeletedNow) {
+        // Це поле є лише в застарілій копії newUsers — переносимо його
+        // значення в users, перш ніж прибрати звідти дублікат.
+        updates[`users/${userId}/${field}`] = newUsersData[field];
       }
+
+      updates[`newUsers/${userId}/${field}`] = null;
     });
 
     if (Object.keys(updates).length > 0) {
       await update(ref2(database), updates);
     }
   } catch (error) {
-    console.error('Не вдалось видалити мігровані поля з newUsers:', error);
+    console.error('Не вдалось перенести дані картки з newUsers у users:', error);
   }
 };
 
@@ -2810,7 +2813,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     }
 
     if (String(userId || '').length > 20) {
-      await pruneMigratedFieldsFromNewUsers(userId, cleanedUploadedInfo);
+      await migrateLongUserIdCardFromNewUsers(userId, cleanedUploadedInfo);
     }
   } catch (error) {
     console.error(
