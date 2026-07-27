@@ -361,18 +361,23 @@ export const handleSubmit = (userData, condition, removeKeys = []) => {
   // Оновлюємо поле lastAction поточною датою в мілісекундах
   uploadedInfo.lastAction = Date.now();
 
-  // Фільтруємо ключі, щоб видалити зайві поля
-  const cleanedStateForNewUsers = Object.fromEntries(
-    Object.entries(uploadedInfo).filter(([key]) =>
-      [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, ...commonFields, ...dublicateFields].includes(key)
-    )
-  );
+  // Для карток з довгим userId дані живуть лише в users — там немає сенсу
+  // фільтрувати поля під newUsers, пишемо все як є. Для коротких userId
+  // (де newUsers лишається єдиним сховищем) лишаємо той самий вибірковий набір.
+  const isLongUserId = String(userData?.userId || '').length > 20;
+  const basePayload = isLongUserId
+    ? { ...uploadedInfo }
+    : Object.fromEntries(
+        Object.entries(uploadedInfo).filter(([key]) =>
+          [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, ...commonFields, ...dublicateFields].includes(key)
+        )
+      );
 
   const removalTargets = Array.isArray(removeKeys)
     ? removeKeys.map(key => String(key)).filter(Boolean)
     : [];
 
-  const backendPayload = { ...cleanedStateForNewUsers };
+  const backendPayload = { ...basePayload };
   const nestedRemovalPayload = {};
 
   removalTargets.forEach(path => {
@@ -395,11 +400,12 @@ export const handleSubmit = (userData, condition, removeKeys = []) => {
     { ...backendPayload, userId: userData.userId },
     { removeKeys: removalTargets },
   );
-  void updateDataInNewUsersRTDB(
-    userData.userId,
-    payloadForBackend,
-    'update',
-  );
+
+  if (isLongUserId) {
+    void updateDataInRealtimeDB(userData.userId, payloadForBackend, 'update');
+  } else {
+    void updateDataInNewUsersRTDB(userData.userId, payloadForBackend, 'update');
+  }
 };
 
 export const handleSubmitAll = async (userData, overwrite) => {

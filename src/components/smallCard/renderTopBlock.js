@@ -1339,6 +1339,13 @@ export const TopBlock = ({
     });
     return Array.from(uniq.values());
   }, [localMultiDataComments, backendMultiComments]);
+  // FieldComment already renders (and edits) the current admin's own multiData
+  // comment as an input, so drop it here to avoid showing it a second time as
+  // a read-only line right underneath.
+  const otherAdminsComments = React.useMemo(() => {
+    const currentUid = auth.currentUser?.uid || '';
+    return multiDataComments.filter(comment => (comment.ownerId || comment.authorId || '') !== currentUid);
+  }, [multiDataComments]);
   const region = normalizeRegion(cardData.region);
   const showSideActions = !additionalActions;
   const hasHiddenCycleFieldRole = hasRoleWithoutCycle(cardData);
@@ -2124,7 +2131,7 @@ export const TopBlock = ({
       <div style={commentsSectionStyle}>
         {fieldWriter({ userData: cardData, setUsers, setState, submitOptions, updateContext })}
         <FieldComment userData={cardData} />
-        {multiDataComments.map(comment => (
+        {otherAdminsComments.map(comment => (
           <div key={comment.commentId || `${comment.authorId}-${comment.text}`} style={multiCommentRowStyle}>
             <button
               type="button"
@@ -2238,7 +2245,7 @@ export const TopBlock = ({
           ? createPortal(photosModalContent, document.body)
           : photosModalContent;
       })()}
-      {isCommentModalOpen && (
+      {isCommentModalOpen && typeof document !== 'undefined' && createPortal(
         <div
           style={inlineModalOverlayStyle}
           onClick={event => {
@@ -2273,9 +2280,10 @@ export const TopBlock = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-      {commentToDelete && (
+      {commentToDelete && typeof document !== 'undefined' && createPortal(
         <div
           style={inlineModalOverlayStyle}
           onClick={event => {
@@ -2313,7 +2321,8 @@ export const TopBlock = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>
