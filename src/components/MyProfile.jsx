@@ -857,14 +857,15 @@ export const MyProfile = () => {
         ...profileData,
         userRole: profileData.userRole || 'ed',
       };
-      // 'overwrite' makes a changed scalar field cleanly replace the stored
-      // value. Without it, makeUploadedInfo turns a field that differs from
-      // the server copy into a [oldValue, newValue] array instead - every
-      // edit piling up as one more array entry rather than replacing the
-      // last one, which isn't how a single user editing their own profile
-      // is supposed to behave. directFields still forces the actively-saved
-      // field's own value through untouched, as a belt-and-suspenders check.
-      const uploadedInfo = makeUploadedInfo(existingData, normalizedProfileData, 'overwrite');
+      // No 'overwrite' here, by design: a field that differs from the
+      // server copy is meant to accumulate into a [oldValue, newValue, ...]
+      // array rather than replace it, preserving every value the user has
+      // ever entered (MyProfile's own UI only ever displays the last
+      // element - see normalizeProfileData - so this is invisible to them).
+      // directFields below still forces the field being actively submitted
+      // in *this* call through as a plain scalar, so a normal single-field
+      // edit or clear doesn't itself produce an array.
+      const uploadedInfo = makeUploadedInfo(existingData, normalizedProfileData);
       directFields.forEach(field => {
         if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {
           uploadedInfo[field] = normalizedProfileData[field];
