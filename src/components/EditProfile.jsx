@@ -458,66 +458,104 @@ const EditProfile = () => {
       }
     }
 
+    // A submit whose sole purpose is deleting field(s) (handleClear/
+    // handleDelKeyValue set delCondition exactly when a field disappears
+    // entirely from newState) gets a minimal, targeted null-only payload
+    // instead of going through makeUploadedInfo's full-profile merge. That
+    // merge rebuilds uploadedInfo from a locally-captured snapshot merged
+    // against a freshly fetched server copy — when several deletions fire in
+    // quick succession, a later call's merge can end up re-including a field
+    // an earlier, still-in-flight call already deleted, resurrecting it on
+    // the backend. A payload containing nothing but explicit nulls for the
+    // fields we know are deleted (deletedKeys — the accumulated set, so an
+    // earlier not-yet-confirmed deletion gets reinforced too) can never
+    // resurrect anything, because it never carries any other field's value.
+    const deleteOnlyKeys = delCondition
+      ? (deletedKeys || []).filter(key => key && key !== 'userId')
+      : [];
+    const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;
+
     if (updatedState?.userId?.length > 20) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 
-      const cleanedState = { ...updatedState };
-      delete cleanedState.cacheVersion;
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
-          if (key !== 'userId') {
-            delete cleanedState[key];
-          }
+      if (isDeleteOnlySubmit) {
+        const deletePayload = { lastAction: updatedState.lastAction };
+        deleteOnlyKeys.forEach(key => {
+          deletePayload[key] = null;
+        });
+
+        debugProfileSave('remoteUpdate:delete-only', {
+          delCondition,
+          deleteOnlyKeys,
+        });
+
+        await syncUserSearchIdIndex(updatedState.userId, existingData, deletePayload, deletedKeys);
+        await updateDataInRealtimeDB(updatedState.userId, deletePayload, 'update');
+        await updateDataInFiresoreDB(updatedState.userId, deletePayload, 'check', delCondition);
+
+        debugProfileSave('remoteUpdate:success', { delCondition, deleteOnlyKeys });
+      } else {
+        const cleanedState = { ...updatedState };
+        delete cleanedState.cacheVersion;
+
+        debugProfileSave('remoteUpdate:start', {
+          overwrite,
+          delCondition,
+          cleanedStateWatched: {
+            surname: cleanedState?.surname,
+            name: cleanedState?.name,
+            phone: cleanedState?.phone,
+            email: cleanedState?.email,
+          },
+        });
+
+        const sanitizedExistingData = applyDeletedKeysToSnapshot(existingData, deletedKeys);
+        const uploadedInfo = applyDeletedKeysToPayload(
+          makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite),
+          deletedKeys
+        );
+
+        await syncUserSearchIdIndex(updatedState.userId, existingData, uploadedInfo, deletedKeys);
+
+        debugProfileSave('remoteUpdate:payload-before-backend', {
+          delCondition,
+          uploadedInfoWatched: {
+            surname: uploadedInfo?.surname,
+            name: uploadedInfo?.name,
+            phone: uploadedInfo?.phone,
+            email: uploadedInfo?.email,
+          },
+          uploadedInfoHasSurname: Object.prototype.hasOwnProperty.call(uploadedInfo, 'surname'),
+          fullPayload: uploadedInfo,
+        });
+
+        await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
+        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+
+        debugProfileSave('remoteUpdate:success', {
+          delCondition,
+          uploadedInfoWatched: {
+            surname: uploadedInfo?.surname,
+          },
         });
       }
-
-      debugProfileSave('remoteUpdate:start', {
-        overwrite,
-        delCondition,
-        cleanedStateWatched: {
-          surname: cleanedState?.surname,
-          name: cleanedState?.name,
-          phone: cleanedState?.phone,
-          email: cleanedState?.email,
-        },
-      });
-
-      const sanitizedExistingData = applyDeletedKeysToSnapshot(existingData, deletedKeys);
-      const uploadedInfo = applyDeletedKeysToPayload(
-        makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite),
-        deletedKeys
-      );
-
-      await syncUserSearchIdIndex(updatedState.userId, existingData, uploadedInfo, deletedKeys);
-
-      debugProfileSave('remoteUpdate:payload-before-backend', {
-        delCondition,
-        uploadedInfoWatched: {
-          surname: uploadedInfo?.surname,
-          name: uploadedInfo?.name,
-          phone: uploadedInfo?.phone,
-          email: uploadedInfo?.email,
-        },
-        uploadedInfoHasSurname: Object.prototype.hasOwnProperty.call(uploadedInfo, 'surname'),
-        fullPayload: uploadedInfo,
-      });
-
-      await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-      await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
-
-      debugProfileSave('remoteUpdate:success', {
-        delCondition,
-        uploadedInfoWatched: {
-          surname: uploadedInfo?.surname,
-        },
-      });
     } else if (updatedState?.userId) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
-      const payloadForNewUsers = applyDeletedKeysToPayload({ ...updatedState }, deletedKeys);
-      await syncUserSearchIdIndex(updatedState.userId, existingData, payloadForNewUsers, deletedKeys);
-      await updateDataInNewUsersRTDB(updatedState.userId, payloadForNewUsers, 'update', true);
+
+      if (isDeleteOnlySubmit) {
+        const deletePayload = { lastAction: updatedState.lastAction };
+        deleteOnlyKeys.forEach(key => {
+          deletePayload[key] = null;
+        });
+        await syncUserSearchIdIndex(updatedState.userId, existingData, deletePayload, deletedKeys);
+        await updateDataInNewUsersRTDB(updatedState.userId, deletePayload, 'update', true);
+      } else {
+        const payloadForNewUsers = applyDeletedKeysToPayload({ ...updatedState }, deletedKeys);
+        await syncUserSearchIdIndex(updatedState.userId, existingData, payloadForNewUsers, deletedKeys);
+        await updateDataInNewUsersRTDB(updatedState.userId, payloadForNewUsers, 'update', true);
+      }
     }
 
     return prepareSyncedSnapshot(updatedState, deletedKeys);
