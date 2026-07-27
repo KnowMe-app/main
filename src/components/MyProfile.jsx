@@ -24,6 +24,7 @@ import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
 import { persistUserWithFallback } from './authProfilePersistence';
+import { enqueueUserWrite } from 'utils/userWriteQueue';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { KnowMeBrand } from './styles/knowme';
@@ -355,7 +356,6 @@ export const MyProfile = () => {
   const programmaticScrollTimeoutRef = useRef(null);
   const scrollFrameRef = useRef(null);
   const latestFetchUidRef = useRef('');
-  const saveQueueRef = useRef(Promise.resolve());
   const stateRef = useRef(state);
   const editedFieldsRef = useRef(new Set());
   const authHintTimersRef = useRef([]);
@@ -850,32 +850,40 @@ export const MyProfile = () => {
     const targetUserId = userId || nextState?.userId || stateRef.current.userId;
     if (!targetUserId) return Promise.resolve();
 
-    saveQueueRef.current = saveQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const { existingData } = await fetchUserData(targetUserId);
-        const { password: _password, ...profileData } = nextState;
-        const normalizedProfileData = {
-          ...profileData,
-          userRole: profileData.userRole || 'ed',
-        };
-        const uploadedInfo = makeUploadedInfo(existingData, normalizedProfileData);
-        directFields.forEach(field => {
-          if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {
-            uploadedInfo[field] = normalizedProfileData[field];
-          }
-        });
-        delete uploadedInfo.password;
-        await persistUserProfile(targetUserId, uploadedInfo, 'check');
+    return enqueueUserWrite(`myProfileSave:${targetUserId}`, async () => {
+      const { existingData } = await fetchUserData(targetUserId);
+      const { password: _password, ...profileData } = nextState;
+      const normalizedProfileData = {
+        ...profileData,
+        userRole: profileData.userRole || 'ed',
+      };
+      // 'overwrite' makes a changed scalar field cleanly replace the stored
+      // value. Without it, makeUploadedInfo turns a field that differs from
+      // the server copy into a [oldValue, newValue] array instead - every
+      // edit piling up as one more array entry rather than replacing the
+      // last one, which isn't how a single user editing their own profile
+      // is supposed to behave. directFields still forces the actively-saved
+      // field's own value through untouched, as a belt-and-suspenders check.
+      const uploadedInfo = makeUploadedInfo(existingData, normalizedProfileData, 'overwrite');
+      directFields.forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {
+          uploadedInfo[field] = normalizedProfileData[field];
+        }
       });
-
-    return saveQueueRef.current;
+      delete uploadedInfo.password;
+      await persistUserProfile(targetUserId, uploadedInfo, 'check');
+    });
   };
 
   const triggerAutosave = (nextState, options) => {
-    saveState(nextState, options).catch(error => {
-      console.warn('Autosave failed in MyProfile.', error);
-    });
+    saveState(nextState, options)
+      .then(() => {
+        toast.success('Збережено', { id: 'my-profile-save-success', duration: 1500 });
+      })
+      .catch(error => {
+        console.warn('Autosave failed in MyProfile.', error);
+        toast.error(`Не вдалося зберегти зміни профілю.\n${error?.message || String(error)}`);
+      });
   };
 
   const getSectionKeyByField = fieldName => visibleSections.find(section => section.fields.includes(fieldName))?.key || 'personal';
