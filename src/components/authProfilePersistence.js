@@ -44,6 +44,11 @@ export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCon
   );
 };
 
+export const buildAuthSessionPayload = ({ todayDays, todayDash }) => ({
+  lastLogin: todayDays,
+  lastLogin2: todayDash,
+});
+
 export const buildAuthProfilePayload = ({
   email,
   userId,
@@ -57,8 +62,7 @@ export const buildAuthProfilePayload = ({
   email,
   areTermsConfirmed: todayDays,
   ...(isRegistration ? { registrationDate: todayDays } : {}),
-  lastLogin: todayDays,
-  lastLogin2: todayDash,
+  ...buildAuthSessionPayload({ todayDays, todayDash }),
   userId,
   userRole,
 });
