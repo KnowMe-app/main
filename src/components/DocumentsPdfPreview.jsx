@@ -16,6 +16,7 @@ const PreviewBlock = styled.div.attrs({ className: 'pdf-preview-block' })`
   padding: 6px 8px 8px;
   margin-top: 10px;
   background: rgba(162, 121, 63, 0.025);
+  overflow: hidden;
 `;
 
 const PreviewHead = styled.div`
@@ -70,10 +71,13 @@ const ChromeButton = styled.button`
 const PageViewport = styled.div`
   margin-top: 6px;
   touch-action: pan-y;
+  max-width: 100%;
 
   canvas {
     display: block;
     width: 100%;
+    max-width: 100%;
+    height: auto;
     border: 1px solid var(--km-border);
     border-radius: 4px;
     background: #fff;

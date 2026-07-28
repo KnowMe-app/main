@@ -29,7 +29,16 @@ export const loadPdfDocument = async data => {
 };
 
 // Renders one page at the container's CSS width × devicePixelRatio (spec §4.1), so the preview is
-// the exported page's own rasterization at native screen density - not an HTML approximation.
+// the exported page's own rasterization at native screen density - not an HTML approximation. Only
+// the canvas's intrinsic bitmap size (`.width`/`.height`) is set here - its *displayed* size is left
+// to CSS (`width: 100%; height: auto;`, see DocumentsPdfPreview's PageViewport), never a matching
+// inline `style.width`/`style.height` pixel pair. A fixed inline pixel width is exactly what let
+// the preview break out of its card: it only ever matched the container's width at the moment this
+// function last ran, so any later container resize (a narrower viewport, the sidebar toggling, a
+// page whose own configured width happens to differ from what `cssWidth` was computed from) left a
+// stale absolute width the container had since shrunk past. Percentage CSS instead recomputes on
+// every layout change with no extra wiring, and stays correct regardless of the PDF page's own
+// width.
 export const renderPdfPageToCanvas = async (pdfDocument, pageNumber, canvas, cssWidth, devicePixelRatio = 1) => {
   const page = await pdfDocument.getPage(pageNumber);
   const baseViewport = page.getViewport({ scale: 1 });
@@ -37,7 +46,5 @@ export const renderPdfPageToCanvas = async (pdfDocument, pageNumber, canvas, css
   const viewport = page.getViewport({ scale });
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
-  canvas.style.width = `${cssWidth}px`;
-  canvas.style.height = `${Math.floor(viewport.height / devicePixelRatio)}px`;
   await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
 };
