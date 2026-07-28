@@ -808,7 +808,17 @@ const EditProfile = () => {
       fullFieldExists: Object.prototype.hasOwnProperty.call(normalizedState || {}, baseFieldName),
     });
 
-    await handleSubmit(normalizedState, undefined, undefined, 'handleBlur');
+    // Every other submit path here (handleClear, handleDelKeyValue) passes
+    // 'overwrite' so a changed scalar field cleanly replaces the stored
+    // value. This one didn't, so makeUploadedInfo's no-overwrite branch
+    // turned any edited text field (name, surname, email, phone...) that
+    // differed from the server copy into a `[oldValue, newValue]` array
+    // instead of just saving the new value — the edit was technically
+    // written, but not as the plain value the UI expects, so it looked like
+    // nothing was saved until a later, unrelated 'overwrite' submit (e.g. a
+    // getInTouch button click, which resubmits the whole local state)
+    // happened to replace the array with the correct scalar.
+    await handleSubmit(normalizedState, 'overwrite', undefined, 'handleBlur');
     if (!isAdmin || !baseFieldName) return;
     if (focusedField && focusedField !== baseFieldName) return;
     await acceptFocusedFieldChanges(baseFieldName);
