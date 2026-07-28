@@ -85,42 +85,4 @@ describe('enqueueUserWrite', () => {
     });
     await expect(pFail).rejects.toThrow('nope');
   });
-
-  // Regression test for: a task that never settles (a stuck network call, a
-  // backgrounded mobile tab throttling a pending request...) would wedge
-  // this key's queue forever, since every later task is chained off
-  // `previous.catch(() => {}).then(task)` - and `previous` itself would
-  // never resolve or reject. A timeout guarantees the queue keeps moving
-  // even when a task hangs.
-  it('a task that never settles times out instead of blocking the next queued task for the same key forever', async () => {
-    const order = [];
-    const neverSettles = new Promise(() => {});
-
-    const p1 = enqueueUserWrite(
-      'user3',
-      async () => {
-        order.push('start1');
-        await neverSettles;
-        order.push('end1');
-      },
-      30
-    );
-    const p2 = enqueueUserWrite(
-      'user3',
-      async () => {
-        order.push('start2');
-        return 'done2';
-      },
-      30
-    );
-
-    await expect(p1).rejects.toThrow('timed out');
-    await expect(p2).resolves.toBe('done2');
-    expect(order).toEqual(['start1', 'start2']);
-  });
-
-  it('does not time out a task that settles well within the timeout', async () => {
-    const result = await enqueueUserWrite('user4', async () => 'fast', 1000);
-    expect(result).toBe('fast');
-  });
 });

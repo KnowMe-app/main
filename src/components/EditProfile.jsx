@@ -238,21 +238,6 @@ const getCanonicalCardFromCache = cardUserId => {
   };
 };
 
-const runSyncWithTimeout = (promise, timeoutMs, message) =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    promise.then(
-      value => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      error => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-
 const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -516,6 +501,7 @@ const EditProfile = () => {
     return prepareSyncedSnapshot(updatedState, deletedKeys);
   }
 
+
   const enqueueProfileSync = useCallback(({ updatedState, overwrite, delCondition, deletedKeys, submitSeq }) => {
     const queuedUserId = updatedState?.userId;
     const queuedGeneration = profileSyncGenerationRef.current;
@@ -523,24 +509,12 @@ const EditProfile = () => {
     setIsSyncing(true);
 
     const runSync = async () => {
-      // remoteUpdate can hang indefinitely (a stuck network call, a
-      // backgrounded mobile tab throttling a pending request...). Without a
-      // timeout, that would wedge syncQueueRef forever - every later submit
-      // on this page chains off syncQueueRef.current, so one hung write
-      // would silently and permanently block every edit made afterwards,
-      // with no error ever surfacing anywhere.
-      let syncedSnapshot;
-      try {
-        syncedSnapshot = await runSyncWithTimeout(
-          remoteUpdate({ updatedState, overwrite, delCondition, deletedKeys }),
-          20000,
-          'Збереження профілю не завершилось за 20 секунд'
-        );
-      } catch (error) {
-        console.error('Profile sync failed', error);
-        toast.error(`Не вдалося зберегти зміни профілю.\n${error?.message || String(error)}`);
-        throw error;
-      }
+      const syncedSnapshot = await remoteUpdate({
+        updatedState,
+        overwrite,
+        delCondition,
+        deletedKeys,
+      });
 
       const finalSnapshot = prepareSyncedSnapshot(syncedSnapshot || updatedState, deletedKeys);
       const isCurrentProfile =
