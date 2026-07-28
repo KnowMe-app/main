@@ -6610,6 +6610,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       <InnerContainer>
         {isLoggedIn && (
           <TopButtons>
+            {/* Batch 26 §11: the "⋮" menu first, matching every other UKRCOM admin page's header
+                (PageNavMenu is always the first action button there). */}
+            <DotsButton
+              aria-label="Відкрити меню профілю"
+              onClick={() => {
+                setShowInfoModal('dotsMenu');
+              }}
+            >
+              ⋮
+            </DotsButton>
             {state.userId && (
               <>
                 <EditActionButton
@@ -6692,14 +6702,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               📦
               <DownloadSizeToastStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</DownloadSizeToastStatus>
             </DownloadSizeToastToggleButton>
-            <DotsButton
-              aria-label="Відкрити меню профілю"
-              onClick={() => {
-                setShowInfoModal('dotsMenu');
-              }}
-            >
-              ⋮
-            </DotsButton>
           </TopButtons>
         )}
 
