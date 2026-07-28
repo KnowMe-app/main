@@ -54,4 +54,21 @@ describe('MyProfile account isolation', () => {
     expect(source).toContain("editedFieldsRef.current = new Set();");
     expect(source).toContain('auth.currentUser?.uid !== targetUserId');
   });
+
+  it('clears a local draft before exposing an initially authenticated profile', () => {
+    expect(source).toContain('const hasLocalProfileState = Object.keys(stateRef.current || {}).length > 0;');
+    expect(source).toContain('activeAuthUidRef.current !== uid && (activeAuthUidRef.current || hasLocalProfileState)');
+  });
+
+  it('explicitly reloads an existing account after sign-in', () => {
+    expect(existingAccountBranch).toContain('await loadAuthenticatedProfile(userCredential.user.uid)');
+  });
+
+  it('flushes queued autosaves before invalidating the logout session', () => {
+    const logoutBody = source.slice(
+      source.indexOf('const handleExit = async () => {'),
+      source.indexOf('const dotsMenu = () => (')
+    );
+    expect(logoutBody.indexOf('await saveQueueRef.current')).toBeLessThan(logoutBody.indexOf('resetAuthenticatedProfileState();'));
+  });
 });
