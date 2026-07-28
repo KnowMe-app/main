@@ -377,7 +377,10 @@ export const buildDocumentsDocx = async ({
       }
     }
 
-    const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed');
+    // A conditionally-hidden paragraph (batch 26 §6) is the same kind of no-op-for-the-renderer tag
+    // an already-consumed logo paragraph is - excluded here, kept (not spliced out) in
+    // doc.paragraphs itself so every other paragraph's index stays stable for the editor.
+    const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed' && paragraph.type !== 'condition-hidden');
 
     if (isSingleLanguageFlow) {
       // One shared table for the whole body (not one per paragraph, unlike the bilingual/1-column

@@ -8,6 +8,7 @@ import {
   DERIVED_CONTEXT_FIELD_KEYS,
   MISSING_VALUE_PLACEHOLDER,
   buildEmbryoOwnershipStatementContext,
+  buildGeneratedDocument,
   buildGeneticAffinityCertificateContext,
   buildMedicalServicesAgreementContext,
   buildRacssClinicLetterContext,
@@ -18,6 +19,7 @@ import {
   enrichShipmentForTemplate,
   enrichTransferForTemplate,
   enrichUltrasoundForTemplate,
+  evaluateBlockCondition,
   fillPlaceholders,
   formatDateNumericUk,
   formatDateRange,
@@ -376,6 +378,18 @@ describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityC
     expect(context.outgoingNumberOrBlank).toBe('42/1');
   });
 
+  it('batch 26 §6: geneticAffinityCertificate exposes oocyteSourceIsWife, shared/cross-referenced by any other document conditioning a block on it', () => {
+    const isWife = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, {});
+    expect(isWife.oocyteSourceIsWife).toBe(true);
+
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'donor' } } });
+    const isDonor = buildGeneticAffinityCertificateContext(donorCase, parties, {});
+    expect(isDonor.oocyteSourceIsWife).toBe(false);
+
+    // No geneticMaterial data at all (old/incomplete case) degrades to false, never throwing.
+    expect(buildGeneticAffinityCertificateContext(caseWithoutArtProgram, parties, {}).oocyteSourceIsWife).toBe(false);
+  });
+
   it('geneticAffinityCertificate falls back to print-only blanks (never persisted) when issueDate/outgoingNumber are unset', () => {
     const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, {});
     expect(context.issueDateOrBlank.uk).toBe('__.__.____');
@@ -634,5 +648,56 @@ describe('spec §10: passport.type/countryCode are optional and never transliter
   it('a passport number is never transliterated, only formatted with a space (spec §10)', () => {
     const context = { husband: { passport: { number: 'TS0299493' } } };
     expect(fillPlaceholders('{{husband.passport.number}}', context, 'uk')).toBe('TS 0299493');
+  });
+});
+
+// --- Conditional block rendering (batch 26 §6) -----------------------------------------------
+
+describe('spec (batch 26 §6): evaluateBlockCondition - a block prints only when its condition path resolves truthy', () => {
+  it('no condition at all always renders (backward compatible)', () => {
+    expect(evaluateBlockCondition(undefined, {})).toBe(true);
+    expect(evaluateBlockCondition('', { anything: false })).toBe(true);
+  });
+
+  it('a plain path is truthy/falsy exactly like the value it points at', () => {
+    expect(evaluateBlockCondition('geneticAffinityCertificate.oocyteSourceIsWife', { geneticAffinityCertificate: { oocyteSourceIsWife: true } })).toBe(true);
+    expect(evaluateBlockCondition('geneticAffinityCertificate.oocyteSourceIsWife', { geneticAffinityCertificate: { oocyteSourceIsWife: false } })).toBe(false);
+    expect(evaluateBlockCondition('geneticAffinityCertificate.oocyteSourceIsWife', {})).toBe(false);
+  });
+
+  it('a leading "!" negates the path', () => {
+    expect(evaluateBlockCondition('!geneticAffinityCertificate.oocyteSourceIsWife', { geneticAffinityCertificate: { oocyteSourceIsWife: true } })).toBe(false);
+    expect(evaluateBlockCondition('!geneticAffinityCertificate.oocyteSourceIsWife', { geneticAffinityCertificate: { oocyteSourceIsWife: false } })).toBe(true);
+  });
+});
+
+describe('spec (batch 26 §6): buildGeneratedDocument drops a conditionally-hidden paragraph entirely, never as a blank/unresolved value', () => {
+  const buildTemplate = () => ({
+    id: 'birth-registration-surrogate-consent',
+    title: { uk: '' },
+    paragraphs: [
+      { uk: 'Ми, подружжя,', en: 'We, the spouses,' },
+      {
+        uk: "та генетичною матір'ю – Кацура Юкако, звертаємось із заявою.",
+        en: 'and the genetic mother Katsura Yukako, apply with this statement.',
+        condition: 'geneticAffinityCertificate.oocyteSourceIsWife',
+      },
+      { uk: 'Просимо зареєструвати дитину.', en: 'We ask to register the child.' },
+    ],
+  });
+
+  it('prints the conditional paragraph when the wife is the oocyte donor', () => {
+    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, {});
+    const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
+    expect(generated.paragraphs.map(p => p.type)).toEqual(['text', 'text', 'text']);
+    expect(generated.paragraphs[1].uk).toContain('Кацура Юкако');
+  });
+
+  it('fully omits the paragraph (never a blank/unresolved value) when any other oocyte source is set, keeping every other paragraph\'s position stable', () => {
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'donor' } } });
+    const context = buildGeneticAffinityCertificateContext(donorCase, parties, {});
+    const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
+    expect(generated.paragraphs.map(p => p.type)).toEqual(['text', 'condition-hidden', 'text']);
+    expect(generated.paragraphs[2].uk).toBe('Просимо зареєструвати дитину.');
   });
 });

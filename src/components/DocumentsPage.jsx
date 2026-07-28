@@ -766,6 +766,27 @@ const PlainNumberField = ({ label, initialValue, placeholder, onApply, onFieldBl
   );
 };
 
+// Same shape/behavior as PlainNumberField, for a field whose value is arbitrary text rather than a
+// number (e.g. a block's `condition` path - batch 26 §6) - no numeric parsing/keypad hint at all.
+const PlainTextField = ({ label, initialValue, placeholder, onApply, onFieldBlur }) => {
+  const [draft, setDraft] = useState(initialValue);
+  return (
+    <Field>
+      {label}
+      <FieldInput
+        type="text"
+        value={draft}
+        placeholder={placeholder}
+        onChange={event => {
+          setDraft(event.target.value);
+          onApply(event.target.value);
+        }}
+        onBlur={onFieldBlur}
+      />
+    </Field>
+  );
+};
+
 // One trigger button + its popover, sharing a boundary node so an outside-click close never
 // races the trigger's own toggle click.
 const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields, children }) => {
@@ -794,16 +815,19 @@ const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields, chi
       </SmallButton>
       {open ? (
         <PopoverCard>
-          {children || fields.map(field => (
-            <PlainNumberField
-              key={field.key}
-              label={field.label}
-              initialValue={field.value}
-              placeholder={field.placeholder}
-              onApply={field.onApply}
-              onFieldBlur={field.onFieldBlur}
-            />
-          ))}
+          {children || fields.map(field => {
+            const FieldComponent = field.type === 'text' ? PlainTextField : PlainNumberField;
+            return (
+              <FieldComponent
+                key={field.key}
+                label={field.label}
+                initialValue={field.value}
+                placeholder={field.placeholder}
+                onApply={field.onApply}
+                onFieldBlur={field.onFieldBlur}
+              />
+            );
+          })}
         </PopoverCard>
       ) : null}
     </PopoverAnchor>
@@ -1275,6 +1299,24 @@ const DocumentsPage = ({ isAdmin }) => {
     updateTemplate(docId, template => withTemplateScopeStyle(template, scope, { [styleKey]: parsed }));
   };
 
+  // Batch 26 §6: a body paragraph's own condition (evaluateBlockCondition, documentsCatalogUtils) -
+  // a plain context path (optionally `!`-negated) that must resolve truthy against the selected
+  // case for the paragraph to print at all. Blank clears it back to "always shown". Unlike the
+  // style fields above this is a top-level paragraph field, not one more entry under `style`.
+  const setParagraphCondition = (docId, index, raw) => {
+    const trimmed = raw.trim();
+    updateTemplate(docId, template => ({
+      ...template,
+      paragraphs: toArray(template.paragraphs).map((paragraph, i) => {
+        if (i !== index) return paragraph;
+        const next = { ...paragraph };
+        if (trimmed) next.condition = trimmed;
+        else delete next.condition;
+        return next;
+      }),
+    }));
+  };
+
   // §1.3: for the before-title block the popover's "indent" field is the whole block's offset in
   // percent (notarial layout standard §3.3) - one number per document, '' restores the default.
   const setBeforeTitleOffset = (docId, raw) => {
@@ -1559,6 +1601,26 @@ const DocumentsPage = ({ isAdmin }) => {
           if (parsed === null) delete nextOverrides[styleKey];
           else nextOverrides[styleKey] = parsed;
           return { ...item, styleOverrides: nextOverrides };
+        }),
+      },
+    }));
+  };
+
+  // Batch 26 §6: same condition support as a legacy paragraph's (setParagraphCondition), for a
+  // layoutV2 paragraph/richParagraph block - a top-level `condition` field, never one more entry
+  // under styleOverrides.
+  const setLayoutV2BlockCondition = (docId, blockIndex, raw) => {
+    const trimmed = raw.trim();
+    updateTemplate(docId, template => ({
+      ...template,
+      layoutV2: {
+        ...template.layoutV2,
+        blocks: (template.layoutV2?.blocks || []).map((item, index) => {
+          if (index !== blockIndex) return item;
+          const next = { ...item };
+          if (trimmed) next.condition = trimmed;
+          else delete next.condition;
+          return next;
         }),
       },
     }));
@@ -3004,7 +3066,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                     open={openFormatKey === formatPopoverKey(template.id, scope)}
                                     onToggle={() => toggleFormatPopover(template.id, scope)}
                                     onClose={() => closeFormatPopover(template.id)}
-                                    buttonTitle="Paragraph formatting - font size (pt) and first-line indent (cm); empty = inherit the document value"
+                                    buttonTitle="Paragraph formatting - font size (pt), first-line indent (cm), and condition; empty = inherit/always shown"
                                     fields={[
                                       {
                                         key: 'fontSize',
@@ -3020,6 +3082,15 @@ const DocumentsPage = ({ isAdmin }) => {
                                         value: paragraphStyle.indentCm !== undefined ? String(paragraphStyle.indentCm) : '',
                                         placeholder: docFormatting.firstLineIndentCm.toFixed(1),
                                         onApply: raw => setScopeStyleField(template.id, scope, 'indentCm', raw),
+                                        onFieldBlur: () => persistTemplate(template.id),
+                                      },
+                                      {
+                                        key: 'condition',
+                                        type: 'text',
+                                        label: 'Condition (context path, ! to negate; empty = always shown)',
+                                        value: paragraph?.condition || '',
+                                        placeholder: 'e.g. geneticAffinityCertificate.oocyteSourceIsWife',
+                                        onApply: raw => setParagraphCondition(template.id, index, raw),
                                         onFieldBlur: () => persistTemplate(template.id),
                                       },
                                     ]}
@@ -3243,7 +3314,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         open={openFormatKey === formatPopoverKey(template.id, scope)}
                                         onToggle={() => toggleFormatPopover(template.id, scope)}
                                         onClose={() => closeFormatPopover(template.id)}
-                                        buttonTitle="Paragraph formatting - font size (pt); empty = inherit the template style"
+                                        buttonTitle="Paragraph formatting - font size (pt) and condition; empty = inherit/always shown"
                                         fields={[
                                           {
                                             key: 'fontSizePt',
@@ -3251,6 +3322,15 @@ const DocumentsPage = ({ isAdmin }) => {
                                             value: block.styleOverrides?.fontSizePt !== undefined ? String(block.styleOverrides.fontSizePt) : '',
                                             placeholder: '',
                                             onApply: raw => setLayoutV2StyleOverrideField(template.id, blockIndex, 'fontSizePt', raw),
+                                            onFieldBlur: () => persistTemplate(template.id),
+                                          },
+                                          {
+                                            key: 'condition',
+                                            type: 'text',
+                                            label: 'Condition (context path, ! to negate; empty = always shown)',
+                                            value: block.condition || '',
+                                            placeholder: 'e.g. geneticAffinityCertificate.oocyteSourceIsWife',
+                                            onApply: raw => setLayoutV2BlockCondition(template.id, blockIndex, raw),
                                             onFieldBlur: () => persistTemplate(template.id),
                                           },
                                         ]}

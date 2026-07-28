@@ -74,7 +74,7 @@ beforeEach(() => {
   listStorageFolderFileNames.mockResolvedValue([]);
 });
 
-const PARAGRAPH_FORMAT_TITLE = 'Paragraph formatting - font size (pt) and first-line indent (cm); empty = inherit the document value';
+const PARAGRAPH_FORMAT_TITLE = 'Paragraph formatting - font size (pt), first-line indent (cm), and condition; empty = inherit/always shown';
 
 const openParagraphPopover = async paragraphText => {
   const field = await screen.findByText(paragraphText);

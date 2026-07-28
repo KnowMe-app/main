@@ -1214,6 +1214,11 @@ export const buildGeneticAffinityCertificateContext = (caseData, parties, certif
     // A print-only blank, never persisted (spec §4) - a fully blank pattern rather than a
     // hand-picked placeholder date, so it never silently doubles as a real value.
     issueDateOrBlank: { uk: data.issueDate ? formatDateNumericUk(data.issueDate) : '__.__.____' },
+    // Batch 26 §6: shared/cross-referenced by any other document conditioning a block on whether
+    // the wife herself was the oocyte donor (e.g. the RATS/birth-registration statement's "та
+    // генетичною матір'ю ..." clause) - the "У лікувальній програмі ДРТ використано яйцеклітини..."
+    // field this certificate itself prints from case.artProgram.geneticMaterial.
+    oocyteSourceIsWife: caseData?.artProgram?.geneticMaterial?.oocyteSourcePartnerRole === 'wife',
   };
 };
 
@@ -1510,6 +1515,26 @@ export const fillPlaceholders = (text, context, lang = 'uk') => String(text || '
   },
 );
 
+// Conditional block rendering (batch 26 §6): a paragraph/layoutV2 block can carry a `condition` -
+// a plain context path (optionally `!`-negated) that must resolve truthy for the block to render
+// at all. Unlike a placeholder inside the block's own text (which degrades to a visible "missing"
+// blank when unresolved), a block whose condition doesn't hold is dropped from the generated
+// document entirely - e.g. "та генетичною матір'ю ... Кацура Юкако," in the RATS/birth-
+// registration statement must only print when the wife herself was the oocyte donor
+// (geneticAffinityCertificate.oocyteSourceIsWife, shared/cross-referenced off the same
+// case.artProgram.geneticMaterial.oocyteSourcePartnerRole every genetic-affinity-certificate
+// resolves from - see buildGeneticAffinityCertificateContext), never shown with a blank/unresolved
+// value for any other oocyte source. No `condition` at all (the vast majority of blocks) always
+// renders, so this is fully backward compatible.
+export const evaluateBlockCondition = (condition, context) => {
+  const trimmed = String(condition || '').trim();
+  if (!trimmed) return true;
+  const negate = trimmed.startsWith('!');
+  const path = negate ? trimmed.slice(1).trim() : trimmed;
+  const value = getValueByPath(context, path);
+  return negate ? !value : Boolean(value);
+};
+
 // Text mode renders substituted placeholders, while formatting is stored against the unresolved
 // template text. Map display offsets back through those variable-sized substitutions so a range
 // after (or touching) a placeholder can never put formatting markers inside its {{token}}.
@@ -1584,6 +1609,10 @@ export const validateDocumentTemplate = (template, context) => {
     ['uk', 'en'].forEach(lang => scan(block?.[lang], lang));
   });
   toArray(template?.paragraphs).forEach(paragraph => {
+    // A conditionally-hidden paragraph (batch 26 §6) never prints, so its own unresolved
+    // placeholders (if any) are never a real problem for this export - skip it rather than
+    // nagging about a value that will never actually appear.
+    if (!evaluateBlockCondition(paragraph?.condition, context)) return;
     ['uk', 'en'].forEach(lang => scan(paragraph?.[lang], lang));
   });
   return [...missing].sort();
@@ -2252,7 +2281,11 @@ export const buildLayoutV2Document = (template, context) => {
       marginsMm: geometry.margins,
     },
     contentWidthMm: geometry.contentWidthMm,
-    blocks: template.layoutV2.blocks.map(block => normalizeLayoutV2Block(block, template, context, lang)),
+    // A conditional block (batch 26 §6, evaluateBlockCondition) that doesn't hold is dropped
+    // entirely, before normalization - never rendered with a blank/unresolved value.
+    blocks: template.layoutV2.blocks
+      .filter(block => evaluateBlockCondition(block?.condition, context))
+      .map(block => normalizeLayoutV2Block(block, template, context, lang)),
   };
 };
 
@@ -2580,10 +2613,24 @@ export const buildGeneratedDocument = (template, context) => {
       align: getParagraphStyle(template.title).align,
       fontSize: getParagraphStyle(template.title).fontSize,
     },
+    // A conditional paragraph (batch 26 §6, evaluateBlockCondition) that doesn't hold is dropped
+    // from the array entirely, never left in as a blank/unresolved entry - the `visible` flag is
+    // computed against each paragraph's own original index (so index-0 logo detection above is
+    // never thrown off by an earlier paragraph having been conditionally hidden) and stripped again
+    // once the filter has run.
     paragraphs: toArray(template.paragraphs).map((paragraph, index) => {
       const type = getParagraphType(paragraph);
       if (index === 0 && type !== 'text' && !hasDedicatedLogoField) {
         return { type: 'logo-consumed', uk: paragraph?.uk || '', en: paragraph?.en || '' };
+      }
+      // A conditionally-hidden paragraph (batch 26 §6, evaluateBlockCondition) is tagged the same
+      // no-op-for-the-renderer way an already-consumed logo paragraph is, rather than dropped from
+      // the array - dropping it would shift every later paragraph's index, which the editor UI
+      // (resolvedDoc.paragraphs[index], keyed by the *template's* paragraph index) relies on
+      // staying stable. Each renderer's own bodyParagraphs filter (see DocumentsPdfDocument.jsx/
+      // documentsDocxBuilder.js) already skips unknown/no-op types the same way.
+      if (!evaluateBlockCondition(paragraph?.condition, context)) {
+        return { type: 'condition-hidden', uk: paragraph?.uk || '', en: paragraph?.en || '' };
       }
       if (type !== 'text') {
         return { type, uk: paragraph?.uk || '', en: paragraph?.en || '' };
