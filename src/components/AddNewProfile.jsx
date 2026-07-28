@@ -1661,10 +1661,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     isMountedRef.current = false;
   }, []);
 
-  const handleBlur = () => {
+  const handleBlur = name => {
+    const baseFieldName = String(name || '').replace(/-\d+$/, '');
     setState(prevState => {
       const normalizedState = normalizePhoneState(prevState);
-      handleSubmit(normalizedState, 'overwrite');
+      handleSubmit(normalizedState, baseFieldName);
       return normalizedState;
     });
   };
