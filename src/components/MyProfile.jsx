@@ -496,7 +496,7 @@ export const MyProfile = () => {
 
     stateRef.current = nextState;
     setState(nextState);
-    triggerAutosave(nextState, { directFields: [name] });
+    triggerAutosave(nextState);
   };
 
   const clearFieldValue = (name, field) => {
@@ -964,7 +964,7 @@ export const MyProfile = () => {
                   setMissing(prev => ({ ...prev, [name]: false }));
                   stateRef.current = nextState;
                   setState(nextState);
-                  triggerAutosave(nextState, { directFields: [name] });
+                  triggerAutosave(nextState);
                 }}
                 type="button"
               >
