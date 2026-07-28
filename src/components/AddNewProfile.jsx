@@ -1664,7 +1664,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleBlur = () => {
     setState(prevState => {
       const normalizedState = normalizePhoneState(prevState);
-      handleSubmit(normalizedState);
+      handleSubmit(normalizedState, 'overwrite');
       return normalizedState;
     });
   };
@@ -1770,7 +1770,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
-  const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
+  const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
@@ -1900,13 +1900,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           });
         }
 
-        if (!makeIndex) {
-          console.log('[SAVE] payload to firebase:', uploadedInfo);
-          await Promise.all([
-            updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
-            updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
-          ]);
-        }
+        console.log('[SAVE] payload to firebase:', uploadedInfo);
+        await Promise.all([
+          updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
+          updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
+        ]);
 
       } else {
         if (newState) {

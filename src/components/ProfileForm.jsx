@@ -1286,6 +1286,15 @@ export const ProfileForm = ({
     return matchedByInputIndex;
   }, [localSearchKeyPayload]);
 
+  // ProfileForm is shared by multiple host components (EditProfile.jsx,
+  // AddNewProfile.jsx), each supplying its own `handleSubmit` prop. Every
+  // call below passes 'submitWithNormalization' as handleSubmit's 4th
+  // argument, purely as a debug/source label - EditProfile.jsx's
+  // handleSubmit treats it that way. A host must never repurpose that
+  // positional slot as a functional flag (e.g. a truthy value meaning
+  // "skip the write") - a previous host did exactly that, and since this
+  // label is always a truthy string, it silently skipped every write that
+  // went through submitWithNormalization (i.e. every scalar field's blur).
   const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition, options = {}) => {
     const payload =
       nextState && typeof nextState === 'object'
