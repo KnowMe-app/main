@@ -24,18 +24,21 @@ describe('AddNewProfile.jsx no longer has a hidden write-skip gate on handleSubm
 
   it('handleSubmit no longer accepts a 4th "makeIndex" parameter', () => {
     expect(source).not.toContain('makeIndex');
-    expect(source).toContain('const handleSubmit = async (newState, overwrite, delCondition) => {');
+    expect(source).toContain('const handleSubmit = (newState, overwrite, delCondition) => {');
   });
 
   it('the long-userId branch writes to Firebase unconditionally (no truthy-string-skips-write gate)', () => {
-    const handleSubmitBody = source.slice(
-      source.indexOf('const handleSubmit = async (newState, overwrite, delCondition) => {'),
-      source.indexOf('console.log(\'[LS cards before]\'')
+    // The actual network write moved from handleSubmit into remoteUpdate
+    // (see AddNewProfile.deletionRace.test.js for that refactor), so this
+    // now checks remoteUpdate's non-delete-only long-userId sub-branch.
+    const remoteUpdateBody = source.slice(
+      source.indexOf('async function remoteUpdate('),
+      source.indexOf('const enqueueProfileSync = params => {')
     );
-    const longUserIdBranchStart = handleSubmitBody.indexOf('syncedState?.userId?.length > 20');
-    const longUserIdBranch = handleSubmitBody.slice(
+    const longUserIdBranchStart = remoteUpdateBody.indexOf('syncedState?.userId?.length > 20');
+    const longUserIdBranch = remoteUpdateBody.slice(
       longUserIdBranchStart,
-      handleSubmitBody.indexOf('} else {', longUserIdBranchStart)
+      remoteUpdateBody.indexOf('} else {\n      if (isDeleteOnlySubmit) {', longUserIdBranchStart)
     );
 
     expect(longUserIdBranch).toContain('updateDataInRealtimeDB(syncedState.userId, uploadedInfo, \'update\')');

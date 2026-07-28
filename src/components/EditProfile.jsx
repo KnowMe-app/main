@@ -303,6 +303,18 @@ const EditProfile = () => {
   const lastSyncedSnapshotRef = useRef(prepareSyncedSnapshot(state || {}));
   const syncedSnapshotVersionRef = useRef(0);
   const overlayRefreshSequenceRef = useRef(0);
+  // Deletion handlers below must read/write this synchronously (plain JS,
+  // never inside a setState updater function) rather than rely on React's
+  // "eager state" optimization actually running that updater before the next
+  // rapid click. That optimization only fires when no other update is
+  // already pending on this fiber - which isn't guaranteed once handleSubmit
+  // immediately does its own setState right after - so a stale/undefined
+  // captured snapshot could otherwise be submitted for the 2nd+ rapid delete.
+  const liveFieldsRef = useRef(state);
+
+  useEffect(() => {
+    liveFieldsRef.current = state;
+  }, [state]);
 
 
   const refreshOverlays = useCallback(async () => {
@@ -799,6 +811,7 @@ const EditProfile = () => {
       setIsOverlayResolved(false);
     }
 
+    liveFieldsRef.current = updatedState;
     setState(updatedState);
 
     const removeKeys = normalizeDeletedKeys(delCondition);
@@ -897,15 +910,14 @@ const EditProfile = () => {
   // handleSubmit (called below) does its own setState and enqueues the actual
   // network write, so it must never run *inside* a setState updater callback —
   // nested/side-effecting setState calls interleave unpredictably once several
-  // deletions fire in quick succession (React can invoke an updater more than
-  // once, e.g. StrictMode's double-invoke check), and a stale `newState` from
-  // a re-run updater could silently win, resurrecting a field a later click
-  // already deleted and shipping it back to the backend on the next sync.
-  // Still use the functional setState form to compute newState — that's what
-  // guarantees each click sees the previous click's deletion even when React
-  // batches several updates before committing — but only *capture* the result
-  // via a plain local variable; call handleSubmit afterwards, as a normal
-  // top-level call once setState has returned.
+  // deletions fire in quick succession. Relying on setState's functional form
+  // to compute newState doesn't fix this either: React only runs that updater
+  // synchronously via an internal "eager state" optimization, and only when
+  // no other update is already pending on this fiber - not guaranteed once
+  // handleSubmit's own setState schedules one right after. So instead of
+  // capturing a value out of a setState callback, read/write liveFieldsRef
+  // directly with plain synchronous JS - that has no scheduling ambiguity, so
+  // each rapid click deterministically builds on the previous click's result.
   const handleClear = (fieldName, idx) => {
     debugProfileSave('handleClear:start', {
       fieldName,
@@ -919,56 +931,53 @@ const EditProfile = () => {
       deletingFieldsRef.current.add(fieldName);
     }
 
-    let capturedNewState;
-    let capturedDelCondition;
+    const prev = liveFieldsRef.current;
+    const newState = { ...prev };
+    let removedValue;
+    const currentValue = prev[fieldName];
 
-    setState(prev => {
-      const newState = { ...prev };
-      let removedValue;
-      const currentValue = prev[fieldName];
+    if (hasIndex) {
+      const sourceArray = Array.isArray(currentValue)
+        ? currentValue
+        : (currentValue !== undefined && currentValue !== null ? [currentValue] : []);
 
-      if (hasIndex) {
-        const sourceArray = Array.isArray(currentValue)
-          ? currentValue
-          : (currentValue !== undefined && currentValue !== null ? [currentValue] : []);
+      const filtered = sourceArray.filter((_, i) => i !== idx);
+      removedValue = sourceArray[idx];
 
-        const filtered = sourceArray.filter((_, i) => i !== idx);
-        removedValue = sourceArray[idx];
+      if (filtered.length > 1) {
+        newState[fieldName] = filtered;
+      } else if (filtered.length === 1 && filtered[0] !== '') {
+        newState[fieldName] = filtered[0];
+      } else {
+        delete newState[fieldName];
+      }
+    } else {
+      const isArray = Array.isArray(currentValue);
 
-        if (filtered.length > 1) {
-          newState[fieldName] = filtered;
-        } else if (filtered.length === 1 && filtered[0] !== '') {
+      if (isArray) {
+        const filtered = currentValue.filter((_, i) => i !== idx);
+        removedValue = currentValue[idx];
+
+        if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
+          delete newState[fieldName];
+        } else if (filtered.length === 1) {
           newState[fieldName] = filtered[0];
         } else {
-          delete newState[fieldName];
+          newState[fieldName] = filtered;
         }
       } else {
-        const isArray = Array.isArray(currentValue);
-
-        if (isArray) {
-          const filtered = currentValue.filter((_, i) => i !== idx);
-          removedValue = currentValue[idx];
-
-          if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
-            delete newState[fieldName];
-          } else if (filtered.length === 1) {
-            newState[fieldName] = filtered[0];
-          } else {
-            newState[fieldName] = filtered;
-          }
-        } else {
-          removedValue = currentValue;
-          delete newState[fieldName];
-        }
+        removedValue = currentValue;
+        delete newState[fieldName];
       }
+    }
 
-      capturedNewState = newState;
-      capturedDelCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
-        ? undefined
-        : { [fieldName]: removedValue };
+    const capturedNewState = newState;
+    const capturedDelCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
+      ? undefined
+      : { [fieldName]: removedValue };
 
-      return newState;
-    });
+    liveFieldsRef.current = capturedNewState;
+    setState(capturedNewState);
 
     debugProfileSave('handleClear:computed', {
       fieldName,
@@ -993,16 +1002,14 @@ const EditProfile = () => {
   };
 
   const handleDelKeyValue = fieldName => {
-    let capturedNewState;
-    let capturedDeletedValue;
+    const prev = liveFieldsRef.current;
+    const newState = { ...prev };
+    const capturedDeletedValue = newState[fieldName];
+    delete newState[fieldName];
+    const capturedNewState = newState;
 
-    setState(prev => {
-      const newState = { ...prev };
-      capturedDeletedValue = newState[fieldName];
-      delete newState[fieldName];
-      capturedNewState = newState;
-      return newState;
-    });
+    liveFieldsRef.current = capturedNewState;
+    setState(capturedNewState);
 
     pendingDeletedKeysRef.current.add(fieldName);
     handleSubmit(capturedNewState, 'overwrite', { [fieldName]: capturedDeletedValue });
