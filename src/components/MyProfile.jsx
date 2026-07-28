@@ -23,7 +23,13 @@ import InfoModal from './InfoModal';
 import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
-import { persistUserWithFallback } from './authProfilePersistence';
+import {
+  buildAuthProfilePayload,
+  buildAuthSessionPayload,
+  markAuthSession,
+  MY_PROFILE_DRAFT_STORAGE_KEY,
+  persistUserWithFallback,
+} from './authProfilePersistence';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { KnowMeBrand } from './styles/knowme';
@@ -301,8 +307,6 @@ const baseSections = [
 ];
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
-const MY_PROFILE_DRAFT_STORAGE_KEY = 'myProfileDraft';
-
 const readMyProfileDraft = () => {
   const savedDraft = localStorage.getItem(MY_PROFILE_DRAFT_STORAGE_KEY);
   if (!savedDraft) return null;
@@ -355,6 +359,8 @@ export const MyProfile = () => {
   const programmaticScrollTimeoutRef = useRef(null);
   const scrollFrameRef = useRef(null);
   const latestFetchUidRef = useRef('');
+  const activeAuthUidRef = useRef('');
+  const authSessionGenerationRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
   const stateRef = useRef(state);
   const editedFieldsRef = useRef(new Set());
@@ -363,6 +369,19 @@ export const MyProfile = () => {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  const resetAuthenticatedProfileState = useCallback(() => {
+    authSessionGenerationRef.current += 1;
+    latestFetchUidRef.current = '';
+    activeAuthUidRef.current = '';
+    saveQueueRef.current = Promise.resolve();
+    editedFieldsRef.current = new Set();
+    stateRef.current = {};
+    setState({});
+    setUserId('');
+    setMissing({});
+    setHasAgreed(false);
+  }, []);
 
   const restoreLocalDraft = useCallback(() => {
     if (userId || stateRef.current.userId) return;
@@ -532,12 +551,16 @@ export const MyProfile = () => {
       if (!user?.uid) {
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('ownerId');
-        setUserId('');
+        resetAuthenticatedProfileState();
         restoreLocalDraft();
         return;
       }
 
       const uid = user.uid;
+      if (activeAuthUidRef.current && activeAuthUidRef.current !== uid) {
+        resetAuthenticatedProfileState();
+      }
+      activeAuthUidRef.current = uid;
       latestFetchUidRef.current = uid;
       setUserId(uid);
 
@@ -563,7 +586,7 @@ export const MyProfile = () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [restoreLocalDraft]);
+  }, [resetAuthenticatedProfileState, restoreLocalDraft]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
@@ -579,6 +602,7 @@ export const MyProfile = () => {
   }, [state.areTermsConfirmed, hasAgreed]);
 
   const handleExit = async () => {
+    resetAuthenticatedProfileState();
     await signOut(auth);
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('ownerId');
@@ -786,47 +810,40 @@ export const MyProfile = () => {
 
       if (methods.length > 0) {
         userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-        uploadedInfo = {
-          ...draftProfileData,
-          email: normalizedEmail,
-          areTermsConfirmed: todayDays,
-          lastLogin: todayDays,
-          lastLogin2: todayDash,
-          userId: userCredential.user.uid,
-          userRole: 'ed',
-        };
+        resetAuthenticatedProfileState();
+        activeAuthUidRef.current = userCredential.user.uid;
+        latestFetchUidRef.current = userCredential.user.uid;
+        setUserId(userCredential.user.uid);
+        uploadedInfo = buildAuthSessionPayload({ todayDays, todayDash });
         await persistUserProfile(userCredential.user.uid, uploadedInfo, 'update');
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
         await sendEmailVerification(userCredential.user);
-        uploadedInfo = {
-          ...draftProfileData,
+        uploadedInfo = buildAuthProfilePayload({
           email: normalizedEmail,
-          areTermsConfirmed: todayDays,
-          registrationDate: todayDays,
-          lastLogin: todayDays,
-          lastLogin2: todayDash,
           userId: userCredential.user.uid,
-          userRole: 'ed',
-        };
+          todayDays,
+          todayDash,
+          isRegistration: true,
+          extraProfileData: draftProfileData,
+        });
         await persistUserProfile(userCredential.user.uid, uploadedInfo, 'set');
       }
 
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userEmail', normalizedEmail);
-      localStorage.setItem('ownerId', userCredential.user.uid);
-      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+      markAuthSession({ email: normalizedEmail, userId: userCredential.user.uid });
 
       setHasAgreed(true);
       setUserId(userCredential.user.uid);
       setMissing({});
-      const nextState = {
-        ...stateRef.current,
-        ...uploadedInfo,
-        password: stateRef.current.password,
-      };
-      stateRef.current = nextState;
-      setState(nextState);
+      if (methods.length === 0) {
+        const nextState = {
+          ...stateRef.current,
+          ...uploadedInfo,
+          password: stateRef.current.password,
+        };
+        stateRef.current = nextState;
+        setState(nextState);
+      }
     } catch (error) {
       const errorCode = String(error?.code || '');
 
@@ -849,11 +866,20 @@ export const MyProfile = () => {
   const saveState = (nextState, { directFields = [] } = {}) => {
     const targetUserId = userId || nextState?.userId || stateRef.current.userId;
     if (!targetUserId) return Promise.resolve();
+    const sessionGeneration = authSessionGenerationRef.current;
 
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
+        if (
+          authSessionGenerationRef.current !== sessionGeneration ||
+          auth.currentUser?.uid !== targetUserId
+        ) return;
         const { existingData } = await fetchUserData(targetUserId);
+        if (
+          authSessionGenerationRef.current !== sessionGeneration ||
+          auth.currentUser?.uid !== targetUserId
+        ) return;
         const { password: _password, ...profileData } = nextState;
         const normalizedProfileData = {
           ...profileData,
