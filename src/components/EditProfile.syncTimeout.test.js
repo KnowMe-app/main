@@ -41,11 +41,4 @@ describe('enqueueProfileSync times out a hung remoteUpdate and surfaces failures
     expect(helperBody).toContain('setTimeout(() => reject(new Error(message)), timeoutMs)');
     expect(helperBody).toContain('clearTimeout(timer);');
   });
-
-  it('confirms a successful save with toast.success, so "nothing happened" no longer looks the same as "it worked"', () => {
-    const successBlock = runSyncBody.slice(
-      runSyncBody.indexOf('lastSyncedSnapshotRef.current = finalSnapshot;')
-    );
-    expect(successBlock).toContain("toast.success('Збережено', { id: 'profile-save-success', duration: 1500 });");
-  });
 });

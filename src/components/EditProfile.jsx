@@ -554,11 +554,6 @@ const EditProfile = () => {
 
       lastSyncedSnapshotRef.current = finalSnapshot;
       deletedKeys.forEach(key => pendingDeletedKeysRef.current.delete(key));
-      // Saving used to be silent either way - no confirmation on success, no
-      // error on failure - so a save that quietly didn't happen looked
-      // identical to one that did. Pairs with the toast.error above: now
-      // every submit ends in a visible outcome.
-      toast.success('Збережено', { id: 'profile-save-success', duration: 1500 });
 
       if (submitSeq === submitSequenceRef.current) {
         await refreshOverlays();
