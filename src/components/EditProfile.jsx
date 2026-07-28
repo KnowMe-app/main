@@ -300,10 +300,18 @@ const EditProfile = () => {
   const [deletedOverlayFields, setDeletedOverlayFields] = useState([]);
   const [focusedField, setFocusedField] = useState('');
   const [isOverlayResolved, setIsOverlayResolved] = useState(isAdminUid(auth.currentUser?.uid));
+  const lastSyncedSnapshotRef = useRef(prepareSyncedSnapshot(state || {}));
+  const syncedSnapshotVersionRef = useRef(0);
+  const overlayRefreshSequenceRef = useRef(0);
 
 
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
+
+    const refreshSequence = overlayRefreshSequenceRef.current + 1;
+    overlayRefreshSequenceRef.current = refreshSequence;
+    const snapshotVersionAtStart = syncedSnapshotVersionRef.current;
+    const syncedSnapshotAtStart = lastSyncedSnapshotRef.current;
 
     if (!isAdmin && currentUid) {
       setIsOverlayResolved(false);
@@ -340,6 +348,16 @@ const EditProfile = () => {
       return;
     }
 
+    // A save (or a newer refresh) that completed while these reads were in
+    // flight owns the newer baseline. Applying this response against that
+    // mutable baseline could reintroduce values fetched before the save.
+    if (
+      refreshSequence !== overlayRefreshSequenceRef.current ||
+      snapshotVersionAtStart !== syncedSnapshotVersionRef.current
+    ) {
+      return;
+    }
+
     const hasMeaningfulValue = value => {
       if (value === null || value === undefined) return false;
       if (typeof value === 'string') return value.trim() !== '';
@@ -369,9 +387,31 @@ const EditProfile = () => {
       lastDelivery: formatDateToDisplay(cardForEditor?.lastDelivery),
     };
 
-    setState(prevState =>
-      mergeCardStatePreservingKnownFields(prevState, normalizedIncomingState, lastSyncedSnapshotRef.current)
-    );
+    setState(prevState => {
+      if (
+        refreshSequence !== overlayRefreshSequenceRef.current ||
+        snapshotVersionAtStart !== syncedSnapshotVersionRef.current
+      ) {
+        return prevState;
+      }
+
+      const mergedState = mergeCardStatePreservingKnownFields(
+        prevState,
+        normalizedIncomingState,
+        syncedSnapshotAtStart
+      );
+      const advancedSnapshot = { ...syncedSnapshotAtStart };
+
+      Object.keys(normalizedIncomingState).forEach(key => {
+        if (prevState?.[key] === syncedSnapshotAtStart?.[key]) {
+          advancedSnapshot[key] = normalizedIncomingState[key];
+        }
+      });
+
+      lastSyncedSnapshotRef.current = prepareSyncedSnapshot(advancedSnapshot);
+      syncedSnapshotVersionRef.current += 1;
+      return mergedState;
+    });
 
     const visibleOverlays = overlays;
 
@@ -417,7 +457,6 @@ const EditProfile = () => {
 
   const deletingFieldsRef = useRef(new Set());
   const pendingDeletedKeysRef = useRef(new Set());
-  const lastSyncedSnapshotRef = useRef(prepareSyncedSnapshot(state || {}));
   const syncQueueRef = useRef(Promise.resolve());
   const activeSyncCountRef = useRef(0);
   const submitSequenceRef = useRef(0);
@@ -613,6 +652,7 @@ const EditProfile = () => {
       }
 
       lastSyncedSnapshotRef.current = finalSnapshot;
+      syncedSnapshotVersionRef.current += 1;
       deletedKeys.forEach(key => pendingDeletedKeysRef.current.delete(key));
 
       if (submitSeq === submitSequenceRef.current) {
@@ -660,6 +700,8 @@ const EditProfile = () => {
     const cachedCard = getCard(userId) || location.state || null;
     setState(cachedCard);
     lastSyncedSnapshotRef.current = prepareSyncedSnapshot(cachedCard || {});
+    syncedSnapshotVersionRef.current += 1;
+    overlayRefreshSequenceRef.current += 1;
     pendingDeletedKeysRef.current.clear();
     syncQueueRef.current = Promise.resolve();
     activeSyncCountRef.current = 0;
@@ -689,6 +731,7 @@ const EditProfile = () => {
             : { userId };
         setState(formatted);
         lastSyncedSnapshotRef.current = prepareSyncedSnapshot(formatted);
+        syncedSnapshotVersionRef.current += 1;
         updateCachedUser(formatted);
         setDataSource('backend');
       } catch (error) {
@@ -716,6 +759,7 @@ const EditProfile = () => {
       setState(prev => (prev && prev.userId === userId ? { ...prev, myComment } : prev));
       if (lastSyncedSnapshotRef.current) {
         lastSyncedSnapshotRef.current = { ...lastSyncedSnapshotRef.current, myComment };
+        syncedSnapshotVersionRef.current += 1;
       }
     })();
 

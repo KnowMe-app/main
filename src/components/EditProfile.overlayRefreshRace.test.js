@@ -50,6 +50,23 @@ describe('mergeCardStatePreservingKnownFields does not let a stale background re
     expect(result.name).toBe('Оксана');
   });
 
+  it('can apply consecutive remote changes when the accepted value advances the baseline', () => {
+    const firstBaseline = { userId: 'abc', name: 'Марія' };
+    const firstResult = mergeCardStatePreservingKnownFields(
+      { userId: 'abc', name: 'Марія' },
+      { userId: 'abc', name: 'Оксана' },
+      firstBaseline
+    );
+
+    const secondResult = mergeCardStatePreservingKnownFields(
+      firstResult,
+      { userId: 'abc', name: 'Ірина' },
+      { ...firstBaseline, name: 'Оксана' }
+    );
+
+    expect(secondResult.name).toBe('Ірина');
+  });
+
   it('falls back to a full overwrite when there is no lastSyncedSnapshot yet', () => {
     const prevState = { userId: 'abc', city: 'NewCity' };
     const nextCardState = { userId: 'abc', city: 'OldCity' };
