@@ -3,56 +3,72 @@ import path from 'path';
 
 // Regression test for: deleting several fields in quick succession could
 // resurrect an earlier-deleted field and ship it back to the backend.
-// Root cause: handleClear/handleDelKeyValue called handleSubmit (which does
-// its own setState + enqueues the network write) *from inside* the
-// setState(prev => ...) updater callback. Nested/side-effecting setState
-// calls interleave unpredictably once several deletions queue up before any
-// of them commit, so a stale newState snapshot could win and get re-synced.
-describe('handleClear/handleDelKeyValue no longer call handleSubmit inside a setState updater', () => {
+// Root cause (two compounding bugs, fixed independently):
+//  1) handleClear/handleDelKeyValue used to call handleSubmit (which does its
+//     own setState + enqueues the network write) *from inside* the
+//     setState(prev => ...) updater callback - nested/side-effecting setState
+//     calls interleave unpredictably once several deletions queue up.
+//  2) Even after moving handleSubmit outside the updater, capturing the
+//     computed value via a `let captured...` variable assigned inside a
+//     setState functional updater still isn't safe: React only runs that
+//     updater synchronously (before setState() returns) via an internal
+//     "eager state" optimization, and only when no other update is already
+//     pending on the fiber - not guaranteed once handleSubmit's own setState
+//     call schedules one immediately afterward. So the fix reads and writes a
+//     plain ref (liveFieldsRef) with ordinary synchronous JS instead of
+//     depending on setState's callback ever running before the next
+//     statement.
+describe('handleClear/handleDelKeyValue read/write liveFieldsRef synchronously instead of capturing via a setState updater', () => {
   const source = fs.readFileSync(path.join(__dirname, 'EditProfile.jsx'), 'utf8');
 
-  const extractUpdaterBody = (fnBody, updaterStartMarker) => {
-    const start = fnBody.indexOf(updaterStartMarker);
+  const extractFnBody = (startMarker, endMarker) => {
+    const start = source.indexOf(startMarker);
     expect(start).toBeGreaterThan(-1);
-    const closeMarker = '\n      return newState;\n    });';
-    const end = fnBody.indexOf(closeMarker, start);
+    const end = source.indexOf(endMarker, start);
     expect(end).toBeGreaterThan(start);
-    return {
-      updaterBody: fnBody.slice(start, end),
-      afterUpdater: fnBody.slice(end + closeMarker.length),
-    };
+    return source.slice(start, end);
   };
 
-  it('handleClear computes newState via a pure functional setState updater, then calls handleSubmit afterwards', () => {
-    const fnBody = source.slice(
-      source.indexOf('const handleClear = (fieldName, idx) => {'),
-      source.indexOf('const handleDelKeyValue = fieldName => {')
+  it('handleClear reads liveFieldsRef.current directly, writes it back, then calls handleSubmit', () => {
+    const fnBody = extractFnBody(
+      'const handleClear = (fieldName, idx) => {',
+      'const handleDelKeyValue = fieldName => {'
     );
-    const { updaterBody, afterUpdater } = extractUpdaterBody(fnBody, 'setState(prev => {');
 
-    expect(updaterBody).not.toContain('handleSubmit(');
-    expect(afterUpdater).toContain(
+    expect(fnBody).not.toMatch(/setState\(\s*prev(State)?\s*=>/);
+    expect(fnBody).toContain('const prev = liveFieldsRef.current;');
+    expect(fnBody.indexOf('liveFieldsRef.current = capturedNewState;')).toBeLessThan(
+      fnBody.indexOf('setState(capturedNewState);')
+    );
+    expect(fnBody).toContain(
       "handleSubmit(capturedNewState, 'overwrite', capturedDelCondition, 'handleClear')"
     );
   });
 
-  it('handleDelKeyValue computes newState via a pure functional setState updater, then calls handleSubmit afterwards', () => {
-    const fnBody = source.slice(
-      source.indexOf('const handleDelKeyValue = fieldName => {'),
-      source.indexOf('const persistCanonicalByRules = async mergedCard => {')
+  it('handleDelKeyValue reads liveFieldsRef.current directly, writes it back, then calls handleSubmit', () => {
+    const fnBody = extractFnBody(
+      'const handleDelKeyValue = fieldName => {',
+      'const persistCanonicalByRules = async mergedCard => {'
     );
-    const updaterStart = fnBody.indexOf('setState(prev => {');
-    expect(updaterStart).toBeGreaterThan(-1);
-    const closeMarker = '\n      return newState;\n    });';
-    const updaterEnd = fnBody.indexOf(closeMarker, updaterStart);
-    expect(updaterEnd).toBeGreaterThan(updaterStart);
 
-    const updaterBody = fnBody.slice(updaterStart, updaterEnd);
-    const afterUpdater = fnBody.slice(updaterEnd + closeMarker.length);
+    expect(fnBody).not.toMatch(/setState\(\s*prev(State)?\s*=>/);
+    expect(fnBody).toContain('const prev = liveFieldsRef.current;');
+    expect(fnBody.indexOf('liveFieldsRef.current = capturedNewState;')).toBeLessThan(
+      fnBody.indexOf('setState(capturedNewState);')
+    );
+    expect(fnBody).toContain(
+      "handleSubmit(capturedNewState, 'overwrite', { [fieldName]: capturedDeletedValue });"
+    );
+  });
 
-    expect(updaterBody).not.toContain('handleSubmit(');
-    expect(afterUpdater).toContain(
-      "handleSubmit(capturedNewState, 'overwrite', { [fieldName]: capturedDeletedValue })"
+  it('handleSubmit keeps liveFieldsRef in sync with its own optimistic setState(updatedState) call', () => {
+    const fnBody = extractFnBody(
+      'const handleSubmit = async (newState, overwrite, delCondition, submitSource) => {',
+      'const handleFieldFocus = fieldName => {'
+    );
+
+    expect(fnBody.indexOf('liveFieldsRef.current = updatedState;')).toBeLessThan(
+      fnBody.indexOf('setState(updatedState);')
     );
   });
 });

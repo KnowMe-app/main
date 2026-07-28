@@ -1084,6 +1084,49 @@ const normalizeExcelPhone = rawPhone => {
   return phone;
 };
 
+const normalizeDeletedKeys = (...sources) => {
+  const deleted = new Set();
+
+  sources.forEach(source => {
+    if (!source) return;
+
+    if (Array.isArray(source)) {
+      source.forEach(key => {
+        if (key && key !== 'userId') deleted.add(String(key));
+      });
+      return;
+    }
+
+    if (source instanceof Set) {
+      source.forEach(key => {
+        if (key && key !== 'userId') deleted.add(String(key));
+      });
+      return;
+    }
+
+    if (typeof source === 'object') {
+      Object.keys(source).forEach(key => {
+        if (key && key !== 'userId') deleted.add(String(key));
+      });
+    }
+  });
+
+  return [...deleted];
+};
+
+const hasOwn = (object, key) =>
+  Object.prototype.hasOwnProperty.call(object || {}, key);
+
+const applyDeletedKeysToPayload = (payload, deletedKeys = []) => {
+  deletedKeys.forEach(key => {
+    if (key && key !== 'userId') {
+      payload[key] = null;
+    }
+  });
+
+  return payload;
+};
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const cloneProfileState = useCallback(profileState => JSON.parse(JSON.stringify(profileState || {})), []);
   const toComparableHistoryState = useCallback(profileState => {
@@ -1448,6 +1491,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const profileFetchRequestRef = useRef(0);
   const backendInitialLoadUserIdsRef = useRef(new Set());
   const latestProfileSnapshotRef = useRef(state);
+  // Deletion handlers below must read/write this synchronously (plain JS,
+  // never inside a setState updater function) instead of capturing a value
+  // out of a functional setState callback: React only runs that callback
+  // synchronously via an internal, unguaranteed "eager state" optimization,
+  // which stops applying once another update is already pending on this
+  // fiber - easily true here since handleSubmit immediately does its own
+  // setState right after. `latestProfileSnapshotRef` above doesn't help
+  // either, since it's only ever written from inside that same kind of
+  // functional updater (see the setState wrapper below).
+  const liveFieldsRef = useRef(state);
+  // Accumulated, not-yet-confirmed deleted field names for the currently
+  // open profile - lets a queued write reinforce an earlier, still-in-flight
+  // deletion even if this call's own delCondition is a different field.
+  const pendingDeletedKeysRef = useRef(new Set());
+  // Serializes the actual backend writes so they land in submission order,
+  // regardless of how fast each call's own fetch/merge happens to resolve.
+  const syncQueueRef = useRef(Promise.resolve());
   const logProfileSnapshotUpdate = useCallback((source, payload = {}) => {
     const entry = {
       source,
@@ -1771,7 +1831,255 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
-  const handleSubmit = async (newState, overwrite, delCondition) => {
+  // The actual network write, run one at a time (see enqueueProfileSync)
+  // rather than concurrently: several rapid deletions used to each do their
+  // own unserialized fetch+merge+write, so whichever finished last could
+  // resurrect fields a faster-finishing sibling call had already deleted,
+  // regardless of the order the user actually clicked delete in.
+  async function remoteUpdate({
+    syncedState,
+    overwrite,
+    delCondition,
+    deletedKeys,
+    optimisticCard,
+    hasNewState,
+    formattedLastDelivery,
+  }) {
+    if (!isAdmin) {
+      if (!syncedState?.userId) {
+        toast.error('Немає userId для збереження правки');
+        return;
+      }
+
+      const canonical = await getCanonicalCard(syncedState.userId);
+      const overlayFields = buildOverlayFromDraft(canonical, syncedState);
+      await saveOverlayForUserCard({
+        editorUserId: auth.currentUser?.uid,
+        cardUserId: syncedState.userId,
+        fields: overlayFields,
+      });
+      return;
+    }
+
+    let existingData = null;
+    if (syncedState?.userId) {
+      try {
+        existingData = await fetchUserById(syncedState.userId);
+      } catch (fetchError) {
+        const details = fetchError?.message || String(fetchError);
+        console.error('Submit: failed to fetch existing user before save', fetchError);
+        toast.error(`Збереження: не вдалося прочитати поточні дані (${details})`);
+        existingData = null;
+      }
+    }
+
+    if (syncedState?.userId) {
+      try {
+        const isUsersCollectionId = syncedState.userId.length > 20;
+        const searchKeySyncTasks = [
+          syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
+        ];
+        if (isUsersCollectionId) {
+          searchKeySyncTasks.push(
+            syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState, {
+              rootPath: 'searchKey/users',
+            })
+          );
+        }
+
+        await Promise.all([
+          syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
+          ...searchKeySyncTasks,
+        ]);
+      } catch (indexError) {
+        const details = indexError?.message || String(indexError);
+        console.error('Submit: search index sync failed, continuing with save', indexError);
+        toast.error(`Індексація не виконана (${details}), продовжуємо збереження`);
+      }
+    }
+    refillGitAfterGetInTouchChange(optimisticCard, existingData);
+
+    console.log('[SAVE] userId:', syncedState.userId);
+
+    // A submit whose sole purpose is deleting field(s) gets a minimal,
+    // targeted null-only payload instead of going through makeUploadedInfo's
+    // full-profile merge. That merge rebuilds the payload from a
+    // locally-captured snapshot merged against a freshly fetched server
+    // copy — when several deletions fire in quick succession, a later
+    // call's merge could re-include a field an earlier, still-in-flight
+    // call already deleted, resurrecting it. A payload containing nothing
+    // but explicit nulls for the accumulated deletedKeys (so an earlier,
+    // not-yet-confirmed deletion gets reinforced too) can never resurrect
+    // anything, because it never carries any other field's value.
+    const deleteOnlyKeys = delCondition
+      ? (deletedKeys || []).filter(key => key && key !== 'userId')
+      : [];
+    const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;
+
+    if (syncedState?.userId?.length > 20) {
+
+      if (isDeleteOnlySubmit) {
+        const deletePayload = { lastAction: syncedState.lastAction };
+        deleteOnlyKeys
+          .filter(key => isUsersAllowedField(key))
+          .forEach(key => {
+            deletePayload[key] = null;
+          });
+
+        console.log('[SAVE] payload to firebase:', deletePayload);
+        await Promise.all([
+          updateDataInRealtimeDB(syncedState.userId, deletePayload, 'update'),
+          updateDataInFiresoreDB(syncedState.userId, deletePayload, 'check', delCondition),
+        ]);
+      } else {
+        const cleanedState = sanitizeTechnicalPayload(pickUsersAllowedFields(syncedState));
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (key !== 'userId' && isUsersAllowedField(key)) {
+              delete cleanedState[key];
+            }
+          });
+        }
+
+        const sanitizedExistingData = sanitizeTechnicalPayload(pickUsersAllowedFields(existingData || {}));
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (key !== 'userId' && isUsersAllowedField(key)) {
+              delete sanitizedExistingData[key];
+            }
+          });
+        }
+
+        const uploadedInfo = applyDeletedKeysToPayload(
+          makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite),
+          deletedKeys
+        );
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (isUsersAllowedField(key)) {
+              uploadedInfo[key] = null;
+            }
+          });
+        }
+
+        console.log('[SAVE] payload to firebase:', uploadedInfo);
+        await Promise.all([
+          updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
+          updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
+        ]);
+      }
+
+    } else {
+      if (isDeleteOnlySubmit) {
+        const deletePayload = { lastAction: syncedState.lastAction };
+        deleteOnlyKeys.forEach(key => {
+          deletePayload[key] = null;
+        });
+        console.log('[SAVE] payload to firebase:', deletePayload);
+        await updateDataInNewUsersRTDB(syncedState.userId, deletePayload, 'update');
+      } else if (hasNewState) {
+        const newStateWithDelivery = applyDeletedKeysToPayload(
+          sanitizeNewUsersPayload({ ...syncedState }),
+          deletedKeys
+        );
+
+        if (formattedLastDelivery) {
+          newStateWithDelivery.lastDelivery = formattedLastDelivery;
+        } else {
+          delete newStateWithDelivery.lastDelivery;
+        }
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            newStateWithDelivery[key] = null;
+          });
+        }
+        console.log('[SAVE] payload to firebase:', newStateWithDelivery);
+        await updateDataInNewUsersRTDB(
+          syncedState.userId,
+          newStateWithDelivery,
+          'update'
+        );
+      } else {
+        const cleanedNewUsersState = applyDeletedKeysToPayload(
+          sanitizeNewUsersPayload(syncedState),
+          deletedKeys
+        );
+        console.log('[SAVE] payload to firebase:', cleanedNewUsersState);
+        await updateDataInNewUsersRTDB(syncedState.userId, cleanedNewUsersState, 'update');
+      }
+    }
+  }
+
+  // Chains every write onto the same promise so they execute strictly in
+  // submission order, regardless of how fast each call's own fetch/merge
+  // happens to resolve - the actual fix for the deletion-order race.
+  const enqueueProfileSync = params => {
+    const { syncedState, saveRequestId, localSaveVersion, removeKeys, deletedKeys } = params;
+
+    const runSync = async () => {
+      try {
+        await remoteUpdate(params);
+
+        if (!isAdmin) {
+          return;
+        }
+
+        console.log('[LS cards before]', getLocalStorageCardsDebugSnapshot());
+        const currentUserId = String((latestProfileSnapshotRef.current || {}).userId || '');
+        const isStaleSaveResponse =
+          profileSaveRequestRef.current !== saveRequestId ||
+          profileSnapshotVersionRef.current !== localSaveVersion ||
+          currentUserId !== String(syncedState.userId || '');
+
+        if (isStaleSaveResponse) {
+          logProfileSnapshotUpdate('saveResponse', {
+            caller: 'handleSubmit:finish',
+            requestId: saveRequestId,
+            userId: syncedState.userId,
+            localSaveVersion,
+            currentVersion: profileSnapshotVersionRef.current,
+            currentUserId,
+            applied: false,
+            reason: 'stale-save-response-local-snapshot-is-newer',
+          });
+          return;
+        }
+
+        deletedKeys.forEach(key => pendingDeletedKeysRef.current.delete(key));
+
+        const savedCachedCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
+        cacheFetchedUsers({ [syncedState.userId]: savedCachedCard }, cacheLoad2Users, filters);
+        liveFieldsRef.current = savedCachedCard;
+        setState(savedCachedCard, {
+          source: 'saveResponse',
+          caller: 'handleSubmit:finish',
+          reason: 'background-save-confirmed-current-snapshot',
+        });
+        setUsers(prev => {
+          if (!prev || !Object.prototype.hasOwnProperty.call(prev, syncedState.userId)) {
+            return prev;
+          }
+          return { ...prev, [syncedState.userId]: savedCachedCard };
+        });
+        console.log('[LS cards after]', getLocalStorageCardsDebugSnapshot());
+      } catch (submitError) {
+        const details = submitError?.message || String(submitError);
+        console.error('Submit failed', submitError);
+        toast.error(`Збереження не виконано: ${details}`);
+      }
+    };
+
+    const queuedSync = syncQueueRef.current
+      .catch(error => {
+        console.error('Previous profile sync failed', error);
+      })
+      .then(runSync);
+
+    syncQueueRef.current = queuedSync.catch(() => {});
+    return queuedSync;
+  };
+
+  const handleSubmit = (newState, overwrite, delCondition) => {
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
@@ -1792,187 +2100,65 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     registerHistorySnapshot(syncedState);
 
-    try {
-      if (!isAdmin) {
-        if (!syncedState?.userId) {
-          toast.error('Немає userId для збереження правки');
-          return;
-        }
+    const hasNewState = Boolean(newState);
 
-        const canonical = await getCanonicalCard(syncedState.userId);
-        const overlayFields = buildOverlayFromDraft(canonical, syncedState);
-        await saveOverlayForUserCard({
-          editorUserId: auth.currentUser?.uid,
-          cardUserId: syncedState.userId,
-          fields: overlayFields,
-        });
-        return;
-      }
-
-      // Optimistically update the only full-card cache and UI state before syncing with server.
-      const removeKeys = delCondition ? Object.keys(delCondition) : [];
-      const optimisticCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
-      const localSaveVersion = profileSnapshotVersionRef.current + 1;
-      setState(optimisticCard, {
-        source: 'userChange',
-        caller: 'handleSubmit:optimistic-update',
-        reason: 'optimistic-local-save-start',
+    if (!isAdmin) {
+      return enqueueProfileSync({
+        syncedState,
+        overwrite,
+        delCondition,
+        deletedKeys: [],
+        optimisticCard: syncedState,
+        removeKeys: [],
+        hasNewState,
+        formattedLastDelivery,
       });
-      logProfileSnapshotUpdate('saveResponse', {
-        caller: 'handleSubmit:start',
-        requestId: saveRequestId,
-        userId: syncedState.userId,
-        applied: true,
-        reason: 'background-save-started-local-is-source-of-truth',
-      });
-      cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
-      const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(optimisticCard);
-      const offlineCardHidden = hideOfflineCardAndLoadNext(optimisticCard);
-      if (!gitNewCardHidden && !offlineCardHidden) {
-        setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
-      }
-
-      let existingData = null;
-      if (syncedState?.userId) {
-        try {
-          existingData = await fetchUserById(syncedState.userId);
-        } catch (fetchError) {
-          const details = fetchError?.message || String(fetchError);
-          console.error('Submit: failed to fetch existing user before save', fetchError);
-          toast.error(`Збереження: не вдалося прочитати поточні дані (${details})`);
-          existingData = null;
-        }
-      }
-
-      if (syncedState?.userId) {
-        try {
-          const isUsersCollectionId = syncedState.userId.length > 20;
-          const searchKeySyncTasks = [
-            syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
-          ];
-          if (isUsersCollectionId) {
-            searchKeySyncTasks.push(
-              syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState, {
-                rootPath: 'searchKey/users',
-              })
-            );
-          }
-
-          await Promise.all([
-            syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
-            ...searchKeySyncTasks,
-          ]);
-        } catch (indexError) {
-          const details = indexError?.message || String(indexError);
-          console.error('Submit: search index sync failed, continuing with save', indexError);
-          toast.error(`Індексація не виконана (${details}), продовжуємо збереження`);
-        }
-      }
-      refillGitAfterGetInTouchChange(optimisticCard, existingData);
-
-      console.log('[SAVE] userId:', syncedState.userId);
-
-      if (syncedState?.userId?.length > 20) {
-
-        const cleanedState = sanitizeTechnicalPayload(pickUsersAllowedFields(syncedState));
-        if (delCondition) {
-          Object.keys(delCondition).forEach(key => {
-            if (key !== 'userId' && isUsersAllowedField(key)) {
-              delete cleanedState[key];
-            }
-          });
-        }
-
-        const sanitizedExistingData = sanitizeTechnicalPayload(pickUsersAllowedFields(existingData || {}));
-        if (delCondition) {
-          Object.keys(delCondition).forEach(key => {
-            if (key !== 'userId' && isUsersAllowedField(key)) {
-              delete sanitizedExistingData[key];
-            }
-          });
-        }
-
-        const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
-        if (delCondition) {
-          Object.keys(delCondition).forEach(key => {
-            if (isUsersAllowedField(key)) {
-              uploadedInfo[key] = null;
-            }
-          });
-        }
-
-        console.log('[SAVE] payload to firebase:', uploadedInfo);
-        await Promise.all([
-          updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
-          updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
-        ]);
-
-      } else {
-        if (newState) {
-          const newStateWithDelivery = sanitizeNewUsersPayload({ ...syncedState });
-
-          if (formattedLastDelivery) {
-            newStateWithDelivery.lastDelivery = formattedLastDelivery;
-          } else {
-            delete newStateWithDelivery.lastDelivery;
-          }
-          if (delCondition) {
-            Object.keys(delCondition).forEach(key => {
-              newStateWithDelivery[key] = null;
-            });
-          }
-          console.log('[SAVE] payload to firebase:', newStateWithDelivery);
-          await updateDataInNewUsersRTDB(
-            syncedState.userId,
-            newStateWithDelivery,
-            'update'
-          );
-        } else {
-          const cleanedNewUsersState = sanitizeNewUsersPayload(syncedState);
-          console.log('[SAVE] payload to firebase:', cleanedNewUsersState);
-          await updateDataInNewUsersRTDB(syncedState.userId, cleanedNewUsersState, 'update');
-        }
-      }
-      console.log('[LS cards before]', getLocalStorageCardsDebugSnapshot());
-      const currentUserId = String((latestProfileSnapshotRef.current || {}).userId || '');
-      const isStaleSaveResponse =
-        profileSaveRequestRef.current !== saveRequestId ||
-        profileSnapshotVersionRef.current !== localSaveVersion ||
-        currentUserId !== String(syncedState.userId || '');
-
-      if (isStaleSaveResponse) {
-        logProfileSnapshotUpdate('saveResponse', {
-          caller: 'handleSubmit:finish',
-          requestId: saveRequestId,
-          userId: syncedState.userId,
-          localSaveVersion,
-          currentVersion: profileSnapshotVersionRef.current,
-          currentUserId,
-          applied: false,
-          reason: 'stale-save-response-local-snapshot-is-newer',
-        });
-        return;
-      }
-
-      const savedCachedCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
-      cacheFetchedUsers({ [syncedState.userId]: savedCachedCard }, cacheLoad2Users, filters);
-      setState(savedCachedCard, {
-        source: 'saveResponse',
-        caller: 'handleSubmit:finish',
-        reason: 'background-save-confirmed-current-snapshot',
-      });
-      setUsers(prev => {
-        if (!prev || !Object.prototype.hasOwnProperty.call(prev, syncedState.userId)) {
-          return prev;
-        }
-        return { ...prev, [syncedState.userId]: savedCachedCard };
-      });
-      console.log('[LS cards after]', getLocalStorageCardsDebugSnapshot());
-    } catch (submitError) {
-      const details = submitError?.message || String(submitError);
-      console.error('Submit failed', submitError);
-      toast.error(`Збереження не виконано: ${details}`);
     }
+
+    // Optimistically update the only full-card cache and UI state before syncing with server.
+    const removeKeys = normalizeDeletedKeys(delCondition);
+    pendingDeletedKeysRef.current.forEach(key => {
+      if (hasOwn(syncedState, key) && !removeKeys.includes(key)) {
+        pendingDeletedKeysRef.current.delete(key);
+      }
+    });
+    removeKeys.forEach(key => pendingDeletedKeysRef.current.add(key));
+    const deletedKeys = normalizeDeletedKeys(pendingDeletedKeysRef.current, removeKeys);
+
+    const optimisticCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
+    const localSaveVersion = profileSnapshotVersionRef.current + 1;
+    liveFieldsRef.current = optimisticCard;
+    setState(optimisticCard, {
+      source: 'userChange',
+      caller: 'handleSubmit:optimistic-update',
+      reason: 'optimistic-local-save-start',
+    });
+    logProfileSnapshotUpdate('saveResponse', {
+      caller: 'handleSubmit:start',
+      requestId: saveRequestId,
+      userId: syncedState.userId,
+      applied: true,
+      reason: 'background-save-started-local-is-source-of-truth',
+    });
+    cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
+    const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(optimisticCard);
+    const offlineCardHidden = hideOfflineCardAndLoadNext(optimisticCard);
+    if (!gitNewCardHidden && !offlineCardHidden) {
+      setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
+    }
+
+    return enqueueProfileSync({
+      syncedState,
+      overwrite,
+      delCondition,
+      deletedKeys,
+      optimisticCard,
+      removeKeys,
+      saveRequestId,
+      localSaveVersion,
+      hasNewState,
+      formattedLastDelivery,
+    });
   };
 
   const handleExit = async () => {
@@ -2069,58 +2255,61 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //   setState(prevState => ({ ...prevState, [fieldName]: '' }));
   // };
 
+  // Reads/writes liveFieldsRef with plain synchronous JS instead of
+  // capturing a value out of a setState functional updater: React only runs
+  // that updater synchronously via an internal, unguaranteed "eager state"
+  // optimization, which stops applying once another update is already
+  // pending on this fiber - easily true here since handleSubmit immediately
+  // does its own setState right after. Reading/writing a ref has no such
+  // scheduling ambiguity, so each rapid click deterministically builds on
+  // the previous click's result.
   const handleClear = (fieldName, idx) => {
-    setState(prevState => {
-      const isArray = Array.isArray(prevState[fieldName]);
-      const applyDelLikeRemoval = deletedValue => {
-        const nextState = { ...prevState };
-        delete nextState[fieldName];
-        handleSubmit(nextState, 'overwrite', { [fieldName]: deletedValue });
-        return nextState;
-      };
+    const prevState = liveFieldsRef.current;
+    const isArray = Array.isArray(prevState[fieldName]);
+    const newState = { ...prevState };
+    let delCondition;
 
-      const newState = { ...prevState };
+    if (isArray) {
+      const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
+      const removedValue = prevState[fieldName][idx];
+      const normalizedFilteredArray = filteredArray.filter(
+        value => !(typeof value === 'string' && value.trim() === '')
+      );
 
-      if (isArray) {
-        const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
-        const removedValue = prevState[fieldName][idx];
-        const normalizedFilteredArray = filteredArray.filter(
-          value => !(typeof value === 'string' && value.trim() === '')
-        );
-
-        if (normalizedFilteredArray.length === 0) {
-          return applyDelLikeRemoval(removedValue);
-        } else if (normalizedFilteredArray.length === 1) {
-          newState[fieldName] = normalizedFilteredArray[0];
-        } else {
-          newState[fieldName] = normalizedFilteredArray;
-        }
-        handleSubmit(newState, 'overwrite');
-        return newState;
+      if (normalizedFilteredArray.length === 0) {
+        delete newState[fieldName];
+        delCondition = { [fieldName]: removedValue };
+      } else if (normalizedFilteredArray.length === 1) {
+        newState[fieldName] = normalizedFilteredArray[0];
       } else {
-        const removedValue = prevState[fieldName];
-        return applyDelLikeRemoval(removedValue);
+        newState[fieldName] = normalizedFilteredArray;
       }
-    });
+    } else {
+      const removedValue = prevState[fieldName];
+      delete newState[fieldName];
+      delCondition = { [fieldName]: removedValue };
+    }
+
+    liveFieldsRef.current = newState;
+    setState(newState);
+
+    if (delCondition) {
+      pendingDeletedKeysRef.current.add(fieldName);
+    }
+    handleSubmit(newState, 'overwrite', delCondition);
   };
 
   const handleDelKeyValue = fieldName => {
-    setState(prevState => {
-      // Створюємо копію попереднього стану
-      const newState = { ...prevState };
+    const prevState = liveFieldsRef.current;
+    const newState = { ...prevState };
+    const deletedValue = newState[fieldName];
+    delete newState[fieldName];
 
-      const deletedValue = newState[fieldName];
+    liveFieldsRef.current = newState;
+    setState(newState);
 
-      // Видаляємо ключ з нового стану
-      delete newState[fieldName];
-
-
-      // Встановлюємо значення 'del_key' для видалення
-      //  newState[fieldName] = 'del_key';
-
-      handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
-      return newState; // Повертаємо оновлений стан
-    });
+    pendingDeletedKeysRef.current.add(fieldName);
+    handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
   };
 
   const [isEmailVerified, setIsEmailVerified] = useState(false);
@@ -2706,6 +2895,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     localStorage.removeItem(EDIT_PROFILE_USER_ID_KEY);
   }, [state?.userId, EDIT_PROFILE_USER_ID_KEY]);
+
+  useEffect(() => {
+    liveFieldsRef.current = state;
+  }, [state]);
+
+  // AddNewProfile is a single persistent instance that can switch which
+  // profile is "open" (state.userId) without unmounting - clear accumulated
+  // not-yet-confirmed deletions from the previous profile so they can never
+  // leak into a different profile's delete-only payload.
+  useEffect(() => {
+    pendingDeletedKeysRef.current.clear();
+  }, [state.userId]);
 
   useEffect(() => {
     if (!searchBarQueryActive) return;
