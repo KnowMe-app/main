@@ -253,6 +253,10 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
+    // The logo's Show-logo/offset controls live behind the same "☰" settings popover every
+    // paragraph block has (batch 26 §2) - open it before the fields inside are reachable.
+    fireEvent.click(await screen.findByTitle('Clinic logo - show/hide and offset (mm)'));
+
     const logoCheckbox = await screen.findByRole('checkbox', { name: 'Show logo' });
     // eslint-disable-next-line testing-library/no-node-access
     const logoBlock = logoCheckbox.closest('.paragraph-editor-block');

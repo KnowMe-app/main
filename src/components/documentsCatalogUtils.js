@@ -35,6 +35,55 @@ const COLLECTION_ID_PREFIXES = { notaries: 'notary', partnerClinics: 'partner-cl
 
 export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+// The Firebase RTDB client rejects `set()`/`update()` outright (a synchronous throw, before any
+// network round-trip) the instant the value tree contains a bare `undefined` anywhere - and a
+// handful of edit paths genuinely produce one (e.g. a formatting toggle that spreads
+// `{ ...block, runs: undefined }` to clear the other shape's field instead of deleting the key).
+// That single stray `undefined`, buried several levels deep in a whole-template write, used to
+// surface as the same unexplained "Could not save the paragraph edits" no matter what the admin
+// had actually just typed. Stripping it here, right before every write, means an edit that
+// otherwise produces perfectly good content is never rejected over a bookkeeping artifact the
+// admin had no way to see or work around.
+export const stripUndefinedDeep = value => {
+  if (Array.isArray(value)) return value.map(stripUndefinedDeep);
+  if (isPlainObject(value)) {
+    const next = {};
+    Object.keys(value).forEach(key => {
+      if (value[key] === undefined) return;
+      next[key] = stripUndefinedDeep(value[key]);
+    });
+    return next;
+  }
+  return value;
+};
+
+// Turns a raw save-path Error into a specific, actionable toast message instead of one generic
+// "Could not save..." string that gave no indication of what actually failed (validation? size
+// limit? network? malformed markup from a pasted link?) - named causes an admin can actually act
+// on (retry, reconnect, shorten the text) instead of a dead end. `fallback` is the call site's own
+// still-specific-to-the-action message, used only once none of these known failure shapes match,
+// so an unclassified rejection still reads as "the alignment change" or "the paragraph edits"
+// rather than being swallowed into one page-wide generic string.
+export const describeDocumentSaveError = (error, fallback) => {
+  const message = String(error?.message || error?.code || error || '');
+  if (/contains undefined in property/i.test(message)) {
+    return 'Could not save: the edit left behind an empty value the backend rejects - please retry it.';
+  }
+  if (/PERMISSION_DENIED/i.test(message)) {
+    return 'Could not save: you do not have permission to edit this document.';
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return 'Could not save: you are offline - reconnect and try again.';
+  }
+  if (/network|fetch|timed? ?out|ECONNRESET|ENOTFOUND|disconnect/i.test(message)) {
+    return 'Could not save: network error while saving - please retry.';
+  }
+  if (/too large|exceeds|maximum|max.{0,12}size|16777216|too big/i.test(message)) {
+    return 'Could not save: this content exceeds the size limit - please shorten it.';
+  }
+  return fallback || 'Could not save the edit.';
+};
+
 // Firebase RTDB silently turns a JS array into a plain `{"0": ..., "2": ...}` object once it has
 // ever been written with a gap (e.g. a record removed by key rather than re-set as a dense array),
 // so any array read back from the backend has to tolerate that shape - never assume `.val()` gives
@@ -931,23 +980,35 @@ export const TEMPLATE_DOCUMENT_CONFIG = {
 const DEFAULT_NOTARY_TEMPLATE_CONFIG = { documentKey: 'birthRegistrationConsent', usesNotary: true };
 
 // --- ART program (case.artProgram) - resolvers, formatters, document contexts ----------------
-// The medical facts of a case's fertility program (diagnosis, embryo shipments, the one successful
-// transfer attempt, its hCG tests, its ultrasounds) live once at `case.artProgram`. Embryo
-// shipments and a transfer attempt's own hCG tests/ultrasounds stay keyed by id (never converted to
-// arrays - spec §12); the transfer attempt itself is a single object, not a log of attempts (batch
-// 24 §2 - only the one successful attempt ever matters once the program is underway). Every
-// document that references one of these events (embryoOwnershipStatement,
-// geneticAffinityCertificate, racssClinicLetter) stores only the id(s) it points at
-// (shipmentId/hcgTestId/ultrasoundId); editing the underlying event once (e.g. the transfer date)
-// is instantly reflected in every document that references it, since none of them ever copy the
-// fact - they resolve it fresh every render.
+// The medical facts of a case's fertility program (diagnosis, the one embryo shipment, the one
+// successful transfer attempt, its hCG tests, its ultrasounds) live once at `case.artProgram`
+// (plus the one shipment itself, at `case.relations.shipment` - batch 26 §5). A transfer attempt's
+// own hCG tests/ultrasounds stay keyed by id (never converted to arrays - spec §12); the transfer
+// attempt itself is a single object, not a log of attempts (batch 24 §2 - only the one successful
+// attempt ever matters once the program is underway). Every document that references one of these
+// events (embryoOwnershipStatement, geneticAffinityCertificate, racssClinicLetter) resolves the
+// case's one shipment/transfer attempt directly, with only which of the transfer attempt's hCG
+// tests/ultrasounds it cites still an id choice (hcgTestId/ultrasoundId); editing the underlying
+// event once (e.g. the transfer date) is instantly reflected in every document that references it,
+// since none of them ever copy the fact - they resolve it fresh every render.
 
-// Null-safe lookups (spec §3) - a missing/unset id, or an id that no longer exists (a document
-// still pointing at a deleted event), resolves to null rather than throwing, so a template that
-// references it degrades to a visible "missing" blank instead of a white screen.
-export const resolveShipment = (caseData, shipmentId) => {
-  if (!shipmentId) return null;
-  return caseData?.artProgram?.embryoShipments?.[shipmentId] ?? null;
+// One case now carries at most one embryo shipment, stored directly on its relations (batch 26 §5:
+// "one case = one partner clinic = one shipment" - a case that ever needs a second shipment is a
+// second case, not a second entry here). This removes the old shipmentId indirection entirely - the
+// three documents that reference a shipment (embryoOwnershipStatement, and via the transfer attempt,
+// geneticAffinityCertificate/racssClinicLetter) used to each carry their own separate shipmentId
+// pointer, any one of which could be left unset/stale even after a shipment's own fields were filled
+// in, silently rendering that document's shipment.* fields blank with no indication why (the exact
+// failure this batch's partner-clinic-data-not-substituting report traced back to). A case still on
+// the pre-batch-26 shape (relations.shipment unset) falls back to whichever of those old pointers is
+// present, read-only - a fresh save always writes relations.shipment only (see
+// CaseArtProgramEditor.jsx), so every case migrates the next time its shipment is touched.
+export const resolveShipment = caseData => {
+  if (caseData?.relations?.shipment) return caseData.relations.shipment;
+  const legacyShipmentId = caseData?.artProgram?.transferAttempt?.shipmentId
+    || caseData?.documents?.embryoOwnershipStatement?.shipmentId;
+  if (!legacyShipmentId) return null;
+  return caseData?.artProgram?.embryoShipments?.[legacyShipmentId] ?? null;
 };
 
 export const resolveTransferAttempt = caseData => caseData?.artProgram?.transferAttempt ?? null;
@@ -1118,14 +1179,15 @@ export const enrichUltrasoundForTemplate = ultrasound => {
   };
 };
 
-// case.documents.embryoOwnershipStatement - spec §4. Backward compatible (spec §14): a case not
-// yet migrated off the old shape still carries `ivfDate`/`shipmentPeriod` directly on the document
-// instead of a shipmentId: those synthesize the same `.shipment.*` template fields the new shape
-// exposes, so an old template keeps rendering unchanged. A fresh save always writes shipmentId
-// (spec §14) - this fallback only ever reads what's already stored.
+// case.documents.embryoOwnershipStatement - spec §4. There is only ever the case's one shipment
+// now (batch 26 §5, resolveShipment) - no shipmentId of its own to pick. Backward compatible with
+// the even older pre-shipment shape (spec §14): a case that never had any shipment data at all
+// still carries `ivfDate`/`shipmentPeriod` directly on the document, which synthesize the same
+// `.shipment.*` template fields the resolved shape exposes, so an old template keeps rendering
+// unchanged.
 export const buildEmbryoOwnershipStatementContext = (caseData, parties, ownershipData) => {
   const data = isPlainObject(ownershipData) ? ownershipData : {};
-  const resolvedShipment = enrichShipmentForTemplate(enrichShipment(resolveShipment(caseData, data.shipmentId), parties));
+  const resolvedShipment = enrichShipmentForTemplate(enrichShipment(resolveShipment(caseData), parties));
   const legacyShipment = !resolvedShipment && (data.ivfDate || data.shipmentPeriod) ? {
     ivfDateFormatted: { uk: formatDateNumericUk(data.ivfDate), en: formatDateLongEn(data.ivfDate) },
     plannedPeriodFormatted: { uk: data.shipmentPeriod?.uk || '', en: data.shipmentPeriod?.en || '' },
@@ -1136,12 +1198,13 @@ export const buildEmbryoOwnershipStatementContext = (caseData, parties, ownershi
 };
 
 // case.documents.geneticAffinityCertificate - spec §4. There is only ever one transfer attempt
-// (batch 24 §2), so it never needs an id of its own - only which of its hCG tests/ultrasounds this
-// certificate cites is still a choice (hcgTestId/ultrasoundId).
+// (batch 24 §2) referencing the case's one shipment (batch 26 §5) - neither needs an id of its own;
+// only which of the transfer attempt's hCG tests/ultrasounds this certificate cites is still a
+// choice (hcgTestId/ultrasoundId).
 export const buildGeneticAffinityCertificateContext = (caseData, parties, certificateData) => {
   const data = isPlainObject(certificateData) ? certificateData : {};
   const transferAttempt = resolveTransferAttempt(caseData);
-  const shipment = enrichShipment(resolveShipment(caseData, transferAttempt?.shipmentId), parties);
+  const shipment = enrichShipment(resolveShipment(caseData), parties);
   return {
     ...data,
     transferAttempt: enrichTransferForTemplate(transferAttempt, shipment),
@@ -1154,11 +1217,12 @@ export const buildGeneticAffinityCertificateContext = (caseData, parties, certif
   };
 };
 
-// case.documents.racssClinicLetter - spec §4. Same single-transfer-attempt rule as above.
+// case.documents.racssClinicLetter - spec §4. Same single-transfer-attempt/single-shipment rule as
+// above.
 export const buildRacssClinicLetterContext = (caseData, parties, letterData) => {
   const data = isPlainObject(letterData) ? letterData : {};
   const transferAttempt = resolveTransferAttempt(caseData);
-  const shipment = enrichShipment(resolveShipment(caseData, transferAttempt?.shipmentId), parties);
+  const shipment = enrichShipment(resolveShipment(caseData), parties);
   return {
     ...data,
     transferAttempt: enrichTransferForTemplate(transferAttempt, shipment),
@@ -1210,11 +1274,9 @@ export const validateArtProgramReferences = (catalog, caseId) => {
   const issues = [];
   const transferAttempt = resolveTransferAttempt(caseRecord);
 
-  const ownership = documents.embryoOwnershipStatement;
-  if (ownership?.shipmentId && !resolveShipment(caseRecord, ownership.shipmentId)) {
-    issues.push(`Не знайдено доставлення ембріонів ${ownership.shipmentId}.`);
-  }
-
+  // No shipmentId to dangle any more (batch 26 §5: the case's one shipment, resolveShipment) - a
+  // case simply has one or doesn't; that's the ordinary unresolved-{{placeholder}} case, not a
+  // broken reference worth its own message here.
   const certificate = documents.geneticAffinityCertificate;
   if (certificate?.hcgTestId && !resolveHcgTest(transferAttempt, certificate.hcgTestId)) {
     issues.push(`Не знайдено аналіз ХГЧ ${certificate.hcgTestId}.`);
@@ -1238,14 +1300,6 @@ export const validateArtProgramReferences = (catalog, caseId) => {
 const joinOptionLabel = (label, dateText, details) => {
   const prefix = [label, dateText].filter(Boolean).join(' ');
   return [prefix, details].filter(Boolean).join(' — ');
-};
-
-export const formatShipmentOptionLabel = (shipment, parties) => {
-  if (!shipment) return '';
-  const enriched = enrichShipment(shipment, parties);
-  const clinicName = enriched?.sourceClinic?.name?.uk || enriched?.destinationClinic?.name?.uk || '';
-  const dateText = shipment.receivedDate ? formatDateNumericUk(shipment.receivedDate) : (shipment.ivfDate ? formatDateNumericUk(shipment.ivfDate) : '');
-  return joinOptionLabel('Доставлення', dateText, clinicName);
 };
 
 export const formatHcgTestOptionLabel = hcgTest => {
@@ -2376,12 +2430,15 @@ export const toggleLayoutV2ParagraphBold = (block, plainStart, plainEnd) => {
   const allBold = selected.length > 0 && selected.every(run => run.style === 'inlineEmphasis');
   const next = split.map(run => (within(run) ? { ...run, style: allBold ? undefined : 'inlineEmphasis' } : run));
   const mergedRuns = mergeAdjacentLayoutV2Runs(next);
+  // Firebase's `set()` rejects a value tree containing a bare `undefined` outright (batch 26 §3) -
+  // dropping the now-unused key via destructuring, rather than assigning it `undefined`, keeps
+  // this block always directly writable.
   if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
-    return {
-      ...block, type: 'paragraph', text: mergedRuns[0]?.text || '', runs: undefined,
-    };
+    const { runs: ignoredRuns, ...plainBlock } = block;
+    return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
   }
-  return { ...block, type: 'richParagraph', runs: mergedRuns, text: undefined };
+  const { text: ignoredText, ...richBlock } = block;
+  return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
 };
 
 // Same MS Word toggle rule as Bold, just flipping styleOverrides.fontStyle instead of the
@@ -2398,11 +2455,11 @@ export const toggleLayoutV2ParagraphItalic = (block, plainStart, plainEnd) => {
     : run));
   const mergedRuns = mergeAdjacentLayoutV2Runs(next);
   if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
-    return {
-      ...block, type: 'paragraph', text: mergedRuns[0]?.text || '', runs: undefined,
-    };
+    const { runs: ignoredRuns, ...plainBlock } = block;
+    return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
   }
-  return { ...block, type: 'richParagraph', runs: mergedRuns, text: undefined };
+  const { text: ignoredText, ...richBlock } = block;
+  return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
 };
 
 // --- layoutV2 paragraph full toolbar parity (mode cycle, Italic, Insert-variable) ---------------

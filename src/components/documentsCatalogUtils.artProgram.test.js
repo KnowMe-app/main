@@ -25,7 +25,6 @@ import {
   formatGestationalAgeText,
   formatHcgTestOptionLabel,
   formatPregnancyTypeTextUk,
-  formatShipmentOptionLabel,
   formatShipmentPeriod,
   formatUltrasoundOptionLabel,
   mergeDocumentsCatalog,
@@ -67,28 +66,29 @@ const rawParties = {
 // normalizeDocumentsCatalog), never the raw id-keyed map a Firebase snapshot carries.
 const parties = normalizeDocumentsCatalog(rawParties, {}, {}).parties;
 
-// A case that uses the new startDate/endDate planned-period shape (spec: "Kikawa" scenario).
+// A case that uses the new startDate/endDate planned-period shape (spec: "Kikawa" scenario). The
+// case's one shipment (batch 26 §5: "one case = one partner clinic = one shipment") lives directly
+// on relations, never a shipmentId-addressed list - no document referencing it needs an id at all.
 const caseWithDateRangePeriod = {
   id: 'case-daterange',
-  relations: { clinicId: clinic.id, partnerClinicId: partnerClinic.id },
+  relations: {
+    clinicId: clinic.id,
+    partnerClinicId: partnerClinic.id,
+    shipment: {
+      sourceClinicId: partnerClinic.id,
+      destinationClinicId: clinic.id,
+      ivfDate: '2021-08-17',
+      plannedPeriod: { startDate: '2026-01-01', endDate: '2026-02-01' },
+      receivedDate: '2025-08-27',
+    },
+  },
   artProgram: {
     medicalIndication: { diagnosis: { uk: 'Тестовий діагноз' } },
     geneticMaterial: { oocyteSourcePartnerRole: 'wife', spermSourcePartnerRole: 'husband' },
     medicalTeam: { physician: { name: { uk: { nominative: 'Тестова Лікарка Лікарівна' } } } },
-    embryoShipments: {
-      'shipment-1': {
-        id: 'shipment-1',
-        sourceClinicId: partnerClinic.id,
-        destinationClinicId: clinic.id,
-        ivfDate: '2021-08-17',
-        plannedPeriod: { startDate: '2026-01-01', endDate: '2026-02-01' },
-        receivedDate: '2025-08-27',
-      },
-    },
     // batch 24 §2: a single transfer attempt object, not a log of attempts - only the one
     // successful attempt's data ever matters once the program is underway.
     transferAttempt: {
-      shipmentId: 'shipment-1',
       date: '2025-09-18',
       embryoCount: 1,
       embryoStage: 'blastocyst',
@@ -104,7 +104,6 @@ const caseWithDateRangePeriod = {
     },
   },
   documents: {
-    embryoOwnershipStatement: { shipmentId: 'shipment-1' },
     geneticAffinityCertificate: {
       hcgTestId: 'hcg-1', ultrasoundId: 'ultrasound-1', issueDate: '2025-10-20', outgoingNumber: '42/1',
     },
@@ -116,6 +115,23 @@ const caseWithDateRangePeriod = {
 // A case that only ever carries the migrated freeform text period (spec: "Katsura" scenario).
 const caseWithTextPeriod = {
   id: 'case-textperiod',
+  relations: {
+    clinicId: clinic.id,
+    partnerClinicId: partnerClinic.id,
+    shipment: {
+      sourceClinicId: partnerClinic.id,
+      destinationClinicId: clinic.id,
+      ivfDate: '2021-08-17',
+      plannedPeriod: { text: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' } },
+    },
+  },
+};
+
+// A pre-batch-26 case: its one shipment is still stored the old, shipmentId-addressed way
+// (artProgram.embryoShipments, referenced from transferAttempt.shipmentId) - resolveShipment must
+// still find it read-only, so nothing already entered goes blank the moment this ships.
+const caseWithLegacyShipmentShape = {
+  id: 'case-legacy-shipment',
   relations: { clinicId: clinic.id, partnerClinicId: partnerClinic.id },
   artProgram: {
     embryoShipments: {
@@ -123,13 +139,10 @@ const caseWithTextPeriod = {
         id: 'shipment-1',
         sourceClinicId: partnerClinic.id,
         destinationClinicId: clinic.id,
-        ivfDate: '2021-08-17',
-        plannedPeriod: { text: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' } },
+        receivedDate: '2025-08-27',
       },
     },
-  },
-  documents: {
-    embryoOwnershipStatement: { shipmentId: 'shipment-1' },
+    transferAttempt: { shipmentId: 'shipment-1', date: '2025-09-18', hcgTests: {}, ultrasounds: {} },
   },
 };
 
@@ -146,20 +159,16 @@ const caseWithoutArtProgram = {
   },
 };
 
-// Every document reference points at an id that doesn't exist (spec §13/§15).
+// The transfer attempt's own hCG/ultrasound references point at ids that don't exist (spec
+// §13/§15) - the case has no shipment at all, which is an ordinary "not set" state, not a broken
+// reference (batch 26 §5 removed the shipmentId a document could dangle on in the first place).
 const caseWithBrokenReferences = {
   id: 'case-broken',
   relations: { clinicId: clinic.id },
   artProgram: {
-    embryoShipments: {
-      'shipment-1': { id: 'shipment-1', sourceClinicId: partnerClinic.id, destinationClinicId: clinic.id },
-    },
-    transferAttempt: {
-      shipmentId: 'shipment-1', date: '2025-09-18', hcgTests: {}, ultrasounds: {},
-    },
+    transferAttempt: { date: '2025-09-18', hcgTests: {}, ultrasounds: {} },
   },
   documents: {
-    embryoOwnershipStatement: { shipmentId: 'shipment-999' },
     geneticAffinityCertificate: { hcgTestId: 'hcg-999', ultrasoundId: 'ultrasound-999' },
     racssClinicLetter: { ultrasoundId: 'ultrasound-999' },
   },
@@ -174,10 +183,15 @@ const buildCatalog = (...cases) => normalizeDocumentsCatalog(
 // --- Resolvers -------------------------------------------------------------------------------
 
 describe('spec: null-safe artProgram resolvers (resolveShipment/resolveTransferAttempt/resolveHcgTest/resolveUltrasound)', () => {
-  it('resolves an existing shipment by id, and the case\'s one transfer attempt (no id needed, batch 24 §2)', () => {
+  it('resolves the case\'s one shipment straight off relations, and its one transfer attempt (no id needed for either, batch 24 §2/batch 26 §5)', () => {
     const { artProgram } = caseWithDateRangePeriod;
-    expect(resolveShipment(caseWithDateRangePeriod, 'shipment-1')).toBe(artProgram.embryoShipments['shipment-1']);
+    expect(resolveShipment(caseWithDateRangePeriod)).toBe(caseWithDateRangePeriod.relations.shipment);
     expect(resolveTransferAttempt(caseWithDateRangePeriod)).toBe(artProgram.transferAttempt);
+  });
+
+  it('falls back to the pre-batch-26 shipmentId-addressed shape, read-only, when relations.shipment is unset', () => {
+    const legacyShipment = caseWithLegacyShipmentShape.artProgram.embryoShipments['shipment-1'];
+    expect(resolveShipment(caseWithLegacyShipmentShape)).toBe(legacyShipment);
   });
 
   it('resolves an existing hCG test/ultrasound from within the transfer attempt', () => {
@@ -186,12 +200,10 @@ describe('spec: null-safe artProgram resolvers (resolveShipment/resolveTransferA
     expect(resolveUltrasound(transfer, 'ultrasound-1')).toBe(transfer.ultrasounds['ultrasound-1']);
   });
 
-  it('never throws and returns null for a missing/unset id, a missing artProgram, or a missing case', () => {
-    expect(resolveShipment(null, 'shipment-1')).toBeNull();
-    expect(resolveShipment(caseWithDateRangePeriod, '')).toBeNull();
-    expect(resolveShipment(caseWithDateRangePeriod, undefined)).toBeNull();
-    expect(resolveShipment(caseWithoutArtProgram, 'shipment-1')).toBeNull();
-    expect(resolveShipment(caseWithDateRangePeriod, 'shipment-999')).toBeNull();
+  it('never throws and returns null for a case with no shipment/artProgram at all, or a missing case', () => {
+    expect(resolveShipment(null)).toBeNull();
+    expect(resolveShipment(caseWithoutArtProgram)).toBeNull();
+    expect(resolveShipment(caseWithBrokenReferences)).toBeNull();
     expect(resolveTransferAttempt(caseWithoutArtProgram)).toBeNull();
     expect(resolveTransferAttempt(null)).toBeNull();
     expect(resolveHcgTest(null, 'hcg-1')).toBeNull();
@@ -206,7 +218,7 @@ describe('spec: null-safe artProgram resolvers (resolveShipment/resolveTransferA
   });
 
   it('enrichShipment attaches sourceClinic (partnerClinics) and destinationClinic (clinics), null-safe', () => {
-    const shipment = resolveShipment(caseWithDateRangePeriod, 'shipment-1');
+    const shipment = resolveShipment(caseWithDateRangePeriod);
     const enriched = enrichShipment(shipment, parties);
     // enrichShipment layers a declined-name fallback onto the party record (spec batch 2026-07-25),
     // so this is no longer the exact same object reference as the fixture - just the same party.
@@ -280,7 +292,7 @@ describe('spec §6: ART formatters', () => {
 
 describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enrichHcgTestForTemplate/enrichUltrasoundForTemplate', () => {
   it('enrichShipmentForTemplate adds formatted date/period fields on top of the party-enriched shipment', () => {
-    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod, 'shipment-1'), parties);
+    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod), parties);
     const enriched = enrichShipmentForTemplate(shipment);
     expect(enriched.ivfDateFormatted).toEqual({ uk: '17.08.2021', en: '17 August 2021' });
     expect(enriched.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
@@ -293,7 +305,7 @@ describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enri
 
   it('enrichTransferForTemplate adds dateFormatted/embryoCountText/embryoStageLabel and nests the enriched shipment', () => {
     const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
-    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod, transfer.shipmentId), parties);
+    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod), parties);
     const enriched = enrichTransferForTemplate(transfer, shipment);
     expect(enriched.dateFormatted.uk).toBe('18.09.2025');
     expect(enriched.embryoCountText.uk).toBe('один ембріон');
@@ -319,29 +331,35 @@ describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enri
 // --- Document contexts -------------------------------------------------------------------------
 
 describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityCertificate/racssClinicLetter/medicalServicesAgreement)', () => {
-  it('embryoOwnershipStatement resolves shipment via shipmentId (startDate/endDate case)', () => {
-    const context = buildEmbryoOwnershipStatementContext(caseWithDateRangePeriod, parties, caseWithDateRangePeriod.documents.embryoOwnershipStatement);
+  it('embryoOwnershipStatement resolves the case\'s one shipment automatically, no shipmentId of its own needed (startDate/endDate case)', () => {
+    const context = buildEmbryoOwnershipStatementContext(caseWithDateRangePeriod, parties, undefined);
     expect(context.shipment.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
     expect(context.shipment.sourceClinic.id).toBe(partnerClinic.id);
     expect(context.shipment.destinationClinic.id).toBe(clinic.id);
   });
 
-  it('embryoOwnershipStatement resolves shipment via shipmentId (migrated text case)', () => {
-    const context = buildEmbryoOwnershipStatementContext(caseWithTextPeriod, parties, caseWithTextPeriod.documents.embryoOwnershipStatement);
+  it('embryoOwnershipStatement resolves the case\'s one shipment automatically (migrated text case)', () => {
+    const context = buildEmbryoOwnershipStatementContext(caseWithTextPeriod, parties, undefined);
     expect(context.shipment.plannedPeriodFormatted.uk).toBe('квітні – травні 2026 року');
     expect(context.shipment.plannedPeriodFormatted.en).toBe('April-May 2026');
   });
 
-  it('spec §14: falls back to legacy ivfDate/shipmentPeriod fields when no shipmentId is set, never throwing', () => {
+  it('spec §14: falls back to legacy ivfDate/shipmentPeriod fields when the case has no shipment at all, never throwing', () => {
     const context = buildEmbryoOwnershipStatementContext(caseWithoutArtProgram, parties, caseWithoutArtProgram.documents.embryoOwnershipStatement);
     expect(context.shipment.ivfDateFormatted.uk).toBe('17.08.2021');
     expect(context.shipment.plannedPeriodFormatted.uk).toBe('квітні – травні 2026 року');
     expect(context.shipment.sourceClinic).toBeNull();
   });
 
-  it('a case with neither a shipmentId nor legacy fields resolves shipment to null, never throwing', () => {
+  it('a case with neither a shipment nor legacy fields resolves shipment to null, never throwing', () => {
     const context = buildEmbryoOwnershipStatementContext({ id: 'bare-case' }, parties, undefined);
     expect(context.shipment).toBeNull();
+  });
+
+  it('falls back to the pre-batch-26 shipmentId-addressed shape, read-only, when relations.shipment is unset', () => {
+    const context = buildEmbryoOwnershipStatementContext(caseWithLegacyShipmentShape, parties, undefined);
+    expect(context.shipment.sourceClinic.id).toBe(partnerClinic.id);
+    expect(context.shipment.receivedDateFormatted.uk).toBe('27.08.2025');
   });
 
   it('geneticAffinityCertificate resolves transferAttempt/hcgTest/ultrasound by id and computes the print-only fallback fields', () => {
@@ -417,7 +435,6 @@ describe('spec §13/§15: validateArtProgramReferences reports specific, actiona
   it('reports one message per broken reference, never a generic "field missing"', () => {
     const catalog = buildCatalog(caseWithBrokenReferences);
     const issues = validateArtProgramReferences(catalog, 'case-broken');
-    expect(issues).toContain('Не знайдено доставлення ембріонів shipment-999.');
     expect(issues).toContain('Не знайдено аналіз ХГЧ hcg-999.');
     expect(issues).toContain('Не знайдено УЗД ultrasound-999.');
   });
@@ -437,10 +454,7 @@ describe('spec §13/§15: validateArtProgramReferences reports specific, actiona
 // --- Dropdown option labels (spec §9) -------------------------------------------------------------
 
 describe('spec §9: human-readable dropdown labels, never a raw id', () => {
-  it('formats a shipment/hcgTest/ultrasound as the exact spec example shapes', () => {
-    const shipment = resolveShipment(caseWithDateRangePeriod, 'shipment-1');
-    expect(formatShipmentOptionLabel(shipment, parties)).toBe('Доставлення 27.08.2025 — Клініка Тестова');
-
+  it('formats an hcgTest/ultrasound as the exact spec example shapes', () => {
     const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
 
     const hcgTest = resolveHcgTest(transfer, 'hcg-1');
@@ -451,7 +465,6 @@ describe('spec §9: human-readable dropdown labels, never a raw id', () => {
   });
 
   it('every label helper is null-safe', () => {
-    expect(formatShipmentOptionLabel(null, parties)).toBe('');
     expect(formatHcgTestOptionLabel(null)).toBe('');
     expect(formatUltrasoundOptionLabel(null)).toBe('');
   });
@@ -577,20 +590,20 @@ describe('spec §11/§12: ART-derived fields are never written back to Firebase'
 
 // --- Import/export round trip stays additive (spec §12) ------------------------------------------
 
-describe('spec §12: import/merge keeps embryoShipments/hcgTests/ultrasounds as maps, transferAttempt as one object', () => {
-  it('parseDocumentsTechnicalInput + mergeDocumentsCatalog never converts embryoShipments into arrays, and merges the one transferAttempt in place', () => {
+describe('spec §12: import/merge keeps hcgTests/ultrasounds as maps, transferAttempt/relations.shipment as one object each', () => {
+  it('parseDocumentsTechnicalInput + mergeDocumentsCatalog merges the one transferAttempt in place, without disturbing relations.shipment', () => {
     const currentCatalog = buildCatalog(caseWithDateRangePeriod);
     const pasted = parseDocumentsTechnicalInput(JSON.stringify({
       cases: { 'case-daterange': { id: 'case-daterange', artProgram: { transferAttempt: { date: '2026-04-04' } } } },
     }));
     const { catalog: merged } = mergeDocumentsCatalog(currentCatalog, pasted);
     const mergedCase = merged.cases.find(item => item.id === 'case-daterange');
-    expect(Array.isArray(mergedCase.artProgram.embryoShipments)).toBe(false);
     // The edit landed...
     expect(mergedCase.artProgram.transferAttempt.date).toBe('2026-04-04');
-    // ...without wiping embryoCount or shipment-1, which the incoming payload never mentioned.
+    // ...without wiping embryoCount, or the case's one shipment, which the incoming payload never
+    // mentioned (batch 26 §5: relations.shipment, not a shipmentId-addressed map any more).
     expect(mergedCase.artProgram.transferAttempt.embryoCount).toBe(1);
-    expect(mergedCase.artProgram.embryoShipments['shipment-1'].id).toBe('shipment-1');
+    expect(mergedCase.relations.shipment.sourceClinicId).toBe(partnerClinic.id);
   });
 
   it('a deep merge of one hcgTest field never replaces its sibling hcgTests/ultrasounds on the transfer attempt', () => {

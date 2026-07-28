@@ -28,6 +28,7 @@ import {
   createEmptyRepresentative,
   createEmptySurrogateMother,
   deepMergeRecords,
+  describeDocumentSaveError,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   enrichNameWithDerivedFields,
@@ -88,6 +89,7 @@ import {
   splitParagraphsIntoColumns,
   splitParagraphsIntoPages,
   stripDerivedFields,
+  stripUndefinedDeep,
   TITLE_SCOPE,
   beforeTitleScope,
   getTemplateScopeText,
@@ -3513,5 +3515,64 @@ describe('spec: Parse & merge stays additive for new document keys on an existin
     expect(merged.documents.map(template => template.id)).toEqual([
       'legal-services-disclaimer-statement', 'surrogacy-agreement-appendix-1',
     ]);
+  });
+});
+
+describe('spec (batch 26 §3): stripUndefinedDeep - the Firebase RTDB client rejects set() outright '
+  + 'the instant a value tree contains a bare `undefined` anywhere, so a whole-template save must '
+  + 'never carry one through, no matter how deeply buried', () => {
+  it('drops a top-level undefined key, keeping every other key intact', () => {
+    expect(stripUndefinedDeep({ type: 'paragraph', text: 'Hello', runs: undefined })).toEqual({ type: 'paragraph', text: 'Hello' });
+  });
+
+  it('drops an undefined key nested arbitrarily deep inside objects and arrays alike', () => {
+    const value = {
+      layoutV2: {
+        blocks: [
+          { type: 'richParagraph', runs: [{ text: 'a', style: 'inlineEmphasis' }, { text: 'b', style: undefined }] },
+          { type: 'letterhead', columns: [{ content: { offsetXMm: -3, hidden: undefined } }] },
+        ],
+      },
+    };
+    expect(stripUndefinedDeep(value)).toEqual({
+      layoutV2: {
+        blocks: [
+          { type: 'richParagraph', runs: [{ text: 'a', style: 'inlineEmphasis' }, { text: 'b' }] },
+          { type: 'letterhead', columns: [{ content: { offsetXMm: -3 } }] },
+        ],
+      },
+    });
+  });
+
+  it('leaves null, falsy, and zero values untouched - only undefined is stripped', () => {
+    expect(stripUndefinedDeep({ a: null, b: 0, c: '', d: false })).toEqual({ a: null, b: 0, c: '', d: false });
+  });
+
+  it('passes primitives and arrays of primitives through unchanged', () => {
+    expect(stripUndefinedDeep('Hello')).toBe('Hello');
+    expect(stripUndefinedDeep(['a', 'b'])).toEqual(['a', 'b']);
+  });
+});
+
+describe('spec (batch 26 §3): describeDocumentSaveError - names the actual save failure instead of '
+  + 'one generic "Could not save..." string regardless of cause', () => {
+  it('names a stray-undefined-value rejection distinctly from every other cause', () => {
+    const error = new Error("Reference.set failed: First argument contains undefined in property 'layoutV2.blocks.0.runs'");
+    expect(describeDocumentSaveError(error, 'fallback')).toMatch(/empty value/i);
+  });
+
+  it('names a permission-denied rejection distinctly', () => {
+    const error = new Error('PERMISSION_DENIED: Permission denied');
+    expect(describeDocumentSaveError(error, 'fallback')).toMatch(/permission/i);
+  });
+
+  it('names a network-failure rejection distinctly', () => {
+    const error = new Error('network error');
+    expect(describeDocumentSaveError(error, 'fallback')).toMatch(/network/i);
+  });
+
+  it('falls back to the call site\'s own specific message for an unclassified error', () => {
+    const error = new Error('some unrelated backend hiccup');
+    expect(describeDocumentSaveError(error, 'Could not save the alignment change.')).toBe('Could not save the alignment change.');
   });
 });

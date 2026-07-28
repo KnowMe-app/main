@@ -39,6 +39,7 @@ import {
   clinicLogoStorageFilePath,
   clinicLogoStorageFolder,
   DEFAULT_SIGNER_BLOCK_OFFSET_PERCENT,
+  describeDocumentSaveError,
   diffDocFormattingOverrides,
   emptyDocumentsCatalog,
   fillPlaceholders,
@@ -75,6 +76,7 @@ import {
   resolveCaseContext,
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
+  stripUndefinedDeep,
   TITLE_SCOPE,
   toArray,
   toggleInlineFormat,
@@ -738,14 +740,20 @@ const PopoverCard = styled.div`
 // typing a number sets the override, clearing the field removes it - no separate reset control.
 // The draft is local so partially-typed values ("1.", "0,7") are never rewritten mid-keystroke by
 // the parsed state they commit into.
-const PlainNumberField = ({ label, initialValue, placeholder, onApply, onFieldBlur }) => {
+// `inputMode="decimal"` gets a numeric-only mobile keypad with no minus key on most Android
+// keyboards (Gboard included) - fine for always-positive values (font size, margins, ...), but it
+// silently makes a negative value untypeable on a phone even though parsePlainNumber/onApply
+// happily accept one. Fields whose value can legitimately go negative (the logo's offsetXMm/
+// offsetYMm, "+ = right"/"+ = down") opt into the full text keyboard via `negative` so the minus
+// key is actually reachable.
+const PlainNumberField = ({ label, initialValue, placeholder, onApply, onFieldBlur, negative = false }) => {
   const [draft, setDraft] = useState(initialValue);
   return (
     <Field>
       {label}
       <FieldInput
         type="text"
-        inputMode="decimal"
+        inputMode={negative ? 'text' : 'decimal'}
         value={draft}
         placeholder={placeholder}
         onChange={event => {
@@ -760,7 +768,7 @@ const PlainNumberField = ({ label, initialValue, placeholder, onApply, onFieldBl
 
 // One trigger button + its popover, sharing a boundary node so an outside-click close never
 // races the trigger's own toggle click.
-const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields }) => {
+const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields, children }) => {
   const anchorRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
@@ -786,7 +794,7 @@ const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields }) =
       </SmallButton>
       {open ? (
         <PopoverCard>
-          {fields.map(field => (
+          {children || fields.map(field => (
             <PlainNumberField
               key={field.key}
               label={field.label}
@@ -1173,6 +1181,28 @@ const DocumentsPage = ({ isAdmin }) => {
 
   // --- Inline template editing ----------------------------------------------------------------
 
+  // Single choke point for every direct-write template save below (persistTemplate's deferred-blur
+  // flush, plus every structural insert/remove/alignment/format handler that writes immediately):
+  // sanitizes away any stray `undefined` the edit may have produced (Firebase's set() rejects the
+  // *entire* write the instant one appears anywhere in the tree, batch 26 §3 - the underlying cause
+  // behind edits being silently rejected on save, not just the message describing it), writes it,
+  // and on failure names the actual cause instead of every call site's old identical generic toast.
+  const writeTemplateToFirebase = async (docId, nextTemplate, fallbackMessage) => {
+    const sanitized = stripUndefinedDeep(nextTemplate);
+    try {
+      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), sanitized);
+      setCatalog(previous => ({
+        ...previous,
+        documents: previous.documents.map(item => (String(item.id) === String(docId) ? sanitized : item)),
+      }));
+      return true;
+    } catch (saveError) {
+      console.error('Unable to save document template', saveError);
+      toast.error(describeDocumentSaveError(saveError, fallbackMessage));
+      return false;
+    }
+  };
+
   const updateTemplate = (docId, updater) => {
     setCatalog(previous => ({
       ...previous,
@@ -1270,16 +1300,7 @@ const DocumentsPage = ({ isAdmin }) => {
     // identical.
     const currentAlign = scope === TITLE_SCOPE ? getEffectiveTitleAlign(record) : getEffectiveParagraphAlign(record);
     const nextTemplate = withTemplateScopeStyle(template, scope, { align: nextParagraphAlign(currentAlign) });
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (alignError) {
-      console.error('Unable to save the alignment change', alignError);
-      toast.error('Could not save the alignment change.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not save the alignment change.');
   };
 
   // The letterhead logo always renders before the title (spec: "лого відображай перед title") and
@@ -1313,16 +1334,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
     const nextTemplate = { ...template, paragraphs: buildParagraphs(template.paragraphs || []) };
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (structureError) {
-      console.error('Unable to update the document paragraph structure', structureError);
-      toast.error('Could not save the paragraph change.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not save the paragraph change.');
   };
 
   // `atIndex` may equal paragraphs.length to append a new custom paragraph after the last one.
@@ -1352,16 +1364,7 @@ const DocumentsPage = ({ isAdmin }) => {
       ...template,
       beforeTitle: [...blocks.slice(0, atIndex), { uk: '', en: '' }, ...blocks.slice(atIndex)],
     };
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (structureError) {
-      console.error('Unable to insert the before-title block', structureError);
-      toast.error('Could not save the change.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not save the change.');
   };
 
   const handleRemoveBeforeTitle = async (docId, atIndex) => {
@@ -1369,16 +1372,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
     const nextTemplate = { ...template, beforeTitle: (template.beforeTitle || []).filter((_, index) => index !== atIndex) };
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (structureError) {
-      console.error('Unable to remove the before-title block', structureError);
-      toast.error('Could not save the change.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not save the change.');
   };
 
   // The title is an ordinary paragraph with the standard toolbar, including delete (batch
@@ -1392,16 +1386,7 @@ const DocumentsPage = ({ isAdmin }) => {
     if (!template) return;
     const nextTemplate = { ...template };
     delete nextTemplate.title;
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (structureError) {
-      console.error('Unable to remove the title', structureError);
-      toast.error('Could not remove the title.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not remove the title.');
   };
 
   // The way back after a delete: an empty title record the admin can type into - without this a
@@ -1410,32 +1395,20 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template || template.title != null) return;
     const nextTemplate = { ...template, title: { uk: '', en: '' } };
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (structureError) {
-      console.error('Unable to add the title', structureError);
-      toast.error('Could not add the title.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not add the title.');
   };
 
   const persistTemplate = async docId => {
     if (!dirtyDocIds[docId]) return;
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), template);
+    const saved = await writeTemplateToFirebase(docId, template, 'Could not save the paragraph edits.');
+    if (saved) {
       setDirtyDocIds(previous => {
         const next = { ...previous };
         delete next[docId];
         return next;
       });
-    } catch (saveError) {
-      console.error('Unable to save document template', saveError);
-      toast.error('Could not save the paragraph edits.');
     }
   };
 
@@ -1493,16 +1466,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
     const nextTemplate = withTemplateScopeText(template, scope, langKey, nextRaw);
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (saveError) {
-      console.error('Unable to save the template change', saveError);
-      toast.error('Could not save the change.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not save the change.');
   };
 
   const handleApplyInlineFormat = async attr => {
@@ -1558,16 +1522,7 @@ const DocumentsPage = ({ isAdmin }) => {
       ...template,
       layoutV2: { ...template.layoutV2, blocks: buildBlocks(template.layoutV2?.blocks || []) },
     };
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (structureError) {
-      console.error('Unable to update the layoutV2 paragraph structure', structureError);
-      toast.error('Could not save the change.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not save the change.');
   };
 
   // `atIndex` may equal blocks.length to append a new paragraph after the last block.
@@ -1705,16 +1660,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const nextTemplate = { ...template };
     if (template.columns === columns) delete nextTemplate.columns;
     else nextTemplate.columns = columns;
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (columnsError) {
-      console.error('Unable to update the document column count', columnsError);
-      toast.error('Could not update the document.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not update the document.');
   };
 
   // A template carrying `layoutV2.blocks` can render two ways: the exact-layout engine
@@ -1725,16 +1671,7 @@ const DocumentsPage = ({ isAdmin }) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
     const nextTemplate = { ...template, rendererVersion: template.rendererVersion === 2 ? 1 : 2 };
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${docId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === String(docId) ? nextTemplate : item)),
-      }));
-    } catch (rendererError) {
-      console.error('Unable to switch the document renderer', rendererError);
-      toast.error('Could not update the document.');
-    }
+    await writeTemplateToFirebase(docId, nextTemplate, 'Could not update the document.');
   };
 
   // --- Deletes (always behind an explicit confirmation) ----------------------------------------
@@ -1951,17 +1888,10 @@ const DocumentsPage = ({ isAdmin }) => {
     const nextTemplate = { ...template };
     if (Object.keys(overrides).length) nextTemplate.format = overrides;
     else delete nextTemplate.format;
-    try {
-      await set(ref(database, `${DOCUMENTS_TEMPLATES_PATH}/${formatDocId}`), nextTemplate);
-      setCatalog(previous => ({
-        ...previous,
-        documents: previous.documents.map(item => (String(item.id) === formatDocId ? nextTemplate : item)),
-      }));
+    const saved = await writeTemplateToFirebase(formatDocId, nextTemplate, 'Could not save the format for this document.');
+    if (saved) {
       setDocFormatDraft(normalizedDraft);
       toast.success('Format saved for this document.');
-    } catch (saveError) {
-      console.error('Unable to save the per-document format override', saveError);
-      toast.error('Could not save the format for this document.');
     }
   };
 
@@ -3188,8 +3118,62 @@ const DocumentsPage = ({ isAdmin }) => {
                             to edit here at all. */}
                         {isLayoutV2Template(template) ? (
                           <>
-                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Paragraphs</DocSubtitle>
+                            {/* Task 2 (batch 26): one continuous list, in the template's own
+                                blocks order (letterhead first, same as it prints) - a block holding
+                                the clinic logo gets the exact same card/border/spacing as one
+                                holding text, never a visually special-cased section of its own. */}
+                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Blocks</DocSubtitle>
                             {template.layoutV2.blocks.map((block, blockIndex) => {
+                              if (block?.type === 'letterhead') {
+                                return (block.columns || []).map((column, columnIndex) => {
+                                  if (column?.content?.type !== 'image') return null;
+                                  const { content } = column;
+                                  const logoScope = `letterhead-${blockIndex}-${columnIndex}`;
+                                  return (
+                                    // eslint-disable-next-line react/no-array-index-key
+                                    <ParagraphEditorBlock key={`${template.id}-lv2-logo-${blockIndex}-${columnIndex}`}>
+                                      <ParagraphControlsRow>
+                                        <RowLine style={{ gap: 6 }}>
+                                          <FormatPopoverButton
+                                            open={openFormatKey === formatPopoverKey(template.id, logoScope)}
+                                            onToggle={() => toggleFormatPopover(template.id, logoScope)}
+                                            onClose={() => closeFormatPopover(template.id)}
+                                            buttonTitle="Clinic logo - show/hide and offset (mm)"
+                                          >
+                                            <CheckLine>
+                                              <input
+                                                type="checkbox"
+                                                checked={!content.hidden}
+                                                onChange={() => handleToggleLayoutV2LogoHidden(template.id, blockIndex, columnIndex)}
+                                              />
+                                              Show logo
+                                            </CheckLine>
+                                            <PlainNumberField
+                                              label="Horizontal offset (mm, + = right)"
+                                              initialValue={content.offsetXMm !== undefined ? String(content.offsetXMm) : ''}
+                                              placeholder="0"
+                                              negative
+                                              onApply={raw => setLayoutV2LogoOffset(template.id, blockIndex, columnIndex, 'offsetXMm', raw)}
+                                              onFieldBlur={() => persistTemplate(template.id)}
+                                            />
+                                            <PlainNumberField
+                                              label="Vertical offset (mm, + = down)"
+                                              initialValue={content.offsetYMm !== undefined ? String(content.offsetYMm) : ''}
+                                              placeholder="0"
+                                              negative
+                                              onApply={raw => setLayoutV2LogoOffset(template.id, blockIndex, columnIndex, 'offsetYMm', raw)}
+                                              onFieldBlur={() => persistTemplate(template.id)}
+                                            />
+                                          </FormatPopoverButton>
+                                        </RowLine>
+                                      </ParagraphControlsRow>
+                                      <ParagraphFieldColumn>
+                                        <TextModeDisplay>Clinic logo</TextModeDisplay>
+                                      </ParagraphFieldColumn>
+                                    </ParagraphEditorBlock>
+                                  );
+                                });
+                              }
                               if (block?.type !== 'paragraph' && block?.type !== 'richParagraph') return null;
                               const scope = layoutV2Scope(blockIndex);
                               const mode = getParagraphMode(template.id, scope);
@@ -3323,54 +3307,6 @@ const DocumentsPage = ({ isAdmin }) => {
                                 <FaPlus />
                               </SmallButton>
                             </ParagraphControlsRow>
-                          </>
-                        ) : null}
-                        {/* Clinic logo (letterhead image column): a "Show logo" toggle - hides it
-                            without discarding its widthMm/heightMm/etc, so turning it back on
-                            needs no re-entering - plus horizontal/vertical offsets (mm) that move
-                            the logo image within its own fixed-width column, never the column's
-                            own widthMm. Every column (image or not) keeps its declared width
-                            regardless of the logo's offset, so the clinic contact block beside it
-                            never shifts when the logo moves (spec: "решта тексту ... не стрибала"). */}
-                        {isLayoutV2Template(template) ? (
-                          <>
-                            <DocSubtitle style={{ fontWeight: 700, marginTop: 10 }}>Clinic logo</DocSubtitle>
-                            {template.layoutV2.blocks.map((block, blockIndex) => {
-                              if (block?.type !== 'letterhead') return null;
-                              return (block.columns || []).map((column, columnIndex) => {
-                                if (column?.content?.type !== 'image') return null;
-                                const { content } = column;
-                                return (
-                                  // eslint-disable-next-line react/no-array-index-key
-                                  <ParagraphEditorBlock key={`${template.id}-lv2-logo-${blockIndex}-${columnIndex}`}>
-                                    <RowLine style={{ gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                                      <CheckLine>
-                                        <input
-                                          type="checkbox"
-                                          checked={!content.hidden}
-                                          onChange={() => handleToggleLayoutV2LogoHidden(template.id, blockIndex, columnIndex)}
-                                        />
-                                        Show logo
-                                      </CheckLine>
-                                      <PlainNumberField
-                                        label="Horizontal offset (mm, + = right)"
-                                        initialValue={content.offsetXMm !== undefined ? String(content.offsetXMm) : ''}
-                                        placeholder="0"
-                                        onApply={raw => setLayoutV2LogoOffset(template.id, blockIndex, columnIndex, 'offsetXMm', raw)}
-                                        onFieldBlur={() => persistTemplate(template.id)}
-                                      />
-                                      <PlainNumberField
-                                        label="Vertical offset (mm, + = down)"
-                                        initialValue={content.offsetYMm !== undefined ? String(content.offsetYMm) : ''}
-                                        placeholder="0"
-                                        onApply={raw => setLayoutV2LogoOffset(template.id, blockIndex, columnIndex, 'offsetYMm', raw)}
-                                        onFieldBlur={() => persistTemplate(template.id)}
-                                      />
-                                    </RowLine>
-                                  </ParagraphEditorBlock>
-                                );
-                              });
-                            })}
                           </>
                         ) : null}
                         {/* Task 4: the document exactly as the exported PDF - same generation
