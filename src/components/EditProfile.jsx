@@ -235,7 +235,19 @@ const normalizeEditorOverlayFields = fields => {
   }, {});
 };
 
-const mergeCardStatePreservingKnownFields = (prevState, nextCardState) => {
+// refreshOverlays() fetches canonical/overlay data in the background - on
+// mount, and again after every submit - and its snapshot is captured at the
+// start of that specific async call. If the user types into a field and
+// blurs (submitting the edit) while an earlier, still-in-flight
+// refreshOverlays() call is pending (e.g. the very first edit right after
+// opening a card, before its background canonical/overlay fetch has
+// resolved), that call's eventual setState used to unconditionally spread
+// `nextCardState` over `prevState` - silently reverting the just-saved edit
+// back to the pre-edit value with no error, since `nextCardState` was
+// fetched before the edit happened. Only let incoming data win for fields
+// that haven't been changed locally since the last confirmed sync, so a
+// stale in-flight refresh can't clobber a fresher local edit.
+const mergeCardStatePreservingKnownFields = (prevState, nextCardState, lastSyncedSnapshot) => {
   if (!nextCardState || typeof nextCardState !== 'object') {
     return prevState || nextCardState;
   }
@@ -244,10 +256,22 @@ const mergeCardStatePreservingKnownFields = (prevState, nextCardState) => {
     return nextCardState;
   }
 
-  return {
-    ...prevState,
-    ...nextCardState,
-  };
+  if (!lastSyncedSnapshot || typeof lastSyncedSnapshot !== 'object') {
+    return {
+      ...prevState,
+      ...nextCardState,
+    };
+  }
+
+  const merged = { ...prevState };
+  Object.keys(nextCardState).forEach(key => {
+    const isLocallyModifiedSinceLastSync = prevState[key] !== lastSyncedSnapshot[key];
+    if (!isLocallyModifiedSinceLastSync) {
+      merged[key] = nextCardState[key];
+    }
+  });
+
+  return merged;
 };
 
 const getCanonicalCardFromCache = cardUserId => {
@@ -345,7 +369,9 @@ const EditProfile = () => {
       lastDelivery: formatDateToDisplay(cardForEditor?.lastDelivery),
     };
 
-    setState(prevState => mergeCardStatePreservingKnownFields(prevState, normalizedIncomingState));
+    setState(prevState =>
+      mergeCardStatePreservingKnownFields(prevState, normalizedIncomingState, lastSyncedSnapshotRef.current)
+    );
 
     const visibleOverlays = overlays;
 
