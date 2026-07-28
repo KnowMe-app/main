@@ -91,9 +91,6 @@ out
 # Production build output
 build/
 
-# Generated fresh on every deploy (see deploy.yml) - never committed
-public/version.json
-
 # Nuxt.js build / generate output
 .nuxt
 dist
