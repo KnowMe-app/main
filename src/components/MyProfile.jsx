@@ -452,7 +452,7 @@ export const MyProfile = () => {
     }
   }, []);
 
-  const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
+  const normalizeProfileData = useCallback((data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
     if (key === 'password') {
       return acc;
     }
@@ -469,9 +469,9 @@ export const MyProfile = () => {
 
     acc[key] = value;
     return acc;
-  }, {});
+  }, {}), []);
 
-  const mergeLoadedProfileData = (loadedData, uid) => {
+  const mergeLoadedProfileData = useCallback((loadedData, uid) => {
     setState(prevState => {
       const protectedFields = editedFieldsRef.current;
       const nextState = { userRole: 'ed', ...loadedData, userId: uid };
@@ -485,7 +485,31 @@ export const MyProfile = () => {
       stateRef.current = nextState;
       return nextState;
     });
-  };
+  }, []);
+
+  const loadAuthenticatedProfile = useCallback(async (uid, shouldApply = () => true) => {
+    latestFetchUidRef.current = uid;
+    setUserId(uid);
+
+    try {
+      const { existingData } = await fetchUserData(uid);
+
+      if (!shouldApply() || latestFetchUidRef.current !== uid) {
+        return false;
+      }
+
+      mergeLoadedProfileData(normalizeProfileData(existingData || {}), uid);
+      return true;
+    } catch (error) {
+      console.warn('Failed to load MyProfile profile data.', error);
+      if (!shouldApply() || latestFetchUidRef.current !== uid) {
+        return false;
+      }
+      setUserId('');
+      restoreLocalDraft();
+      return false;
+    }
+  }, [mergeLoadedProfileData, normalizeProfileData, restoreLocalDraft]);
 
   const updateFieldValue = (name, value, field) => {
     const updatedValue = inputUpdateValue(value, field);
@@ -557,36 +581,19 @@ export const MyProfile = () => {
       }
 
       const uid = user.uid;
-      if (activeAuthUidRef.current && activeAuthUidRef.current !== uid) {
+      const hasLocalProfileState = Object.keys(stateRef.current || {}).length > 0;
+      if (activeAuthUidRef.current !== uid && (activeAuthUidRef.current || hasLocalProfileState)) {
         resetAuthenticatedProfileState();
       }
       activeAuthUidRef.current = uid;
-      latestFetchUidRef.current = uid;
-      setUserId(uid);
-
-      try {
-        const { existingData } = await fetchUserData(uid);
-
-        if (!isMounted || latestFetchUidRef.current !== uid) {
-          return;
-        }
-
-        mergeLoadedProfileData(normalizeProfileData(existingData || {}), uid);
-      } catch (error) {
-        console.warn('Failed to load MyProfile profile data.', error);
-        if (!isMounted || latestFetchUidRef.current !== uid) {
-          return;
-        }
-        setUserId('');
-        restoreLocalDraft();
-      }
+      await loadAuthenticatedProfile(uid, () => isMounted);
     });
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [resetAuthenticatedProfileState, restoreLocalDraft]);
+  }, [loadAuthenticatedProfile, resetAuthenticatedProfileState, restoreLocalDraft]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
@@ -602,6 +609,9 @@ export const MyProfile = () => {
   }, [state.areTermsConfirmed, hasAgreed]);
 
   const handleExit = async () => {
+    await saveQueueRef.current.catch(error => {
+      console.warn('Failed to finish MyProfile autosave before logout.', error);
+    });
     resetAuthenticatedProfileState();
     await signOut(auth);
     localStorage.removeItem('isLoggedIn');
@@ -806,6 +816,7 @@ export const MyProfile = () => {
       const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
       let userCredential;
       let uploadedInfo;
+      let authenticatedProfileLoaded = true;
       const { password: _password, userId: _userId, ...draftProfileData } = stateRef.current;
 
       if (methods.length > 0) {
@@ -816,6 +827,7 @@ export const MyProfile = () => {
         setUserId(userCredential.user.uid);
         uploadedInfo = buildAuthSessionPayload({ todayDays, todayDash });
         await persistUserProfile(userCredential.user.uid, uploadedInfo, 'update');
+        authenticatedProfileLoaded = await loadAuthenticatedProfile(userCredential.user.uid);
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
         await sendEmailVerification(userCredential.user);
@@ -833,7 +845,9 @@ export const MyProfile = () => {
       markAuthSession({ email: normalizedEmail, userId: userCredential.user.uid });
 
       setHasAgreed(true);
-      setUserId(userCredential.user.uid);
+      if (authenticatedProfileLoaded) {
+        setUserId(userCredential.user.uid);
+      }
       setMissing({});
       if (methods.length === 0) {
         const nextState = {
