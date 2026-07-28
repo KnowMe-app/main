@@ -1322,9 +1322,9 @@ export const TopBlock = ({
       source: 'local',
     }));
     const fromBackend = backendMultiComments.map(item => ({
-      commentId: item.commentId,
+      commentId: item.ownerId || '',
       text: item.text,
-      authorId: item.authorId || item.ownerId || '',
+      authorId: item.ownerId || '',
       ownerId: item.ownerId || '',
       source: 'backend',
       lastAction: Number(item.lastAction) || 0,
@@ -1598,10 +1598,9 @@ export const TopBlock = ({
     }
 
     let result = null;
-    if (selectedComment?.ownerId && selectedComment?.commentId) {
+    if (selectedComment?.ownerId) {
       result = await updateCommentByOwner({
         ownerId: selectedComment.ownerId,
-        commentId: selectedComment.commentId,
         cardId: cardData.userId,
         text: prepared,
       });
@@ -1614,7 +1613,7 @@ export const TopBlock = ({
     }
     setBackendMultiComments(prev =>
       prev.map(item =>
-        item.commentId === targetCommentId && (item.ownerId || '') === (selectedComment?.ownerId || '')
+        (item.ownerId || '') === (selectedComment?.ownerId || '')
           ? { ...item, text: prepared, lastAction: result.lastAction || Date.now() }
           : item
       )
@@ -1625,20 +1624,20 @@ export const TopBlock = ({
   };
 
   const handleDeleteComment = async comment => {
-    if (!isAdmin || !comment?.ownerId || !comment?.commentId) {
+    if (!isAdmin || !comment?.ownerId) {
       toast.error('Видалення недоступне');
       return;
     }
     const isDeleted = await deleteCommentByOwner({
       ownerId: comment.ownerId,
-      commentId: comment.commentId,
+      cardId: cardData.userId,
     });
     if (!isDeleted) {
       toast.error('Не вдалося видалити коментар');
       return;
     }
     setBackendMultiComments(prev =>
-      prev.filter(item => !(item.commentId === comment.commentId && item.ownerId === comment.ownerId))
+      prev.filter(item => item.ownerId !== comment.ownerId)
     );
     toast.success('Коментар видалено');
   };

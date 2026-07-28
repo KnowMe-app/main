@@ -81,7 +81,7 @@ import {
   filterMain,
   searchUsersOnly,
   fetchUserComments,
-  setUserComment,
+  saveMyCardComment,
   fetchUsersByIds,
   database,
   auth,
@@ -1936,14 +1936,13 @@ const Matching = () => {
     fetchedEntries.forEach(({ owner, comments: ownerComments = {}, requestedIds = [] }) => {
       nextStore[owner] = { ...(nextStore[owner] || {}) };
       requestedIds.forEach(id => {
-        const serverComments = ownerComments?.[id] || [];
-        const newestServer = [...serverComments].sort((a, b) => (b.lastAction || 0) - (a.lastAction || 0))[0];
+        const serverComment = ownerComments?.[id] || null;
         const local = nextStore[owner][id];
-        if (shouldUseServerComment(newestServer, local)) {
+        if (shouldUseServerComment(serverComment, local)) {
           nextStore[owner][id] = {
-            ...newestServer,
-            text: String(newestServer.text || ''),
-            lastAction: newestServer.lastAction || Date.now(),
+            ...serverComment,
+            text: String(serverComment.text || ''),
+            lastAction: serverComment.lastAction || Date.now(),
             cachedAt: Date.now(),
           };
         } else if (local) {
@@ -2034,7 +2033,7 @@ const Matching = () => {
               paths: accessOwnerIds.map(sharedOwnerId => ({
                 favorites: `multiData/favorites/${sharedOwnerId}`,
                 dislikes: `multiData/dislikes/${sharedOwnerId}`,
-                comments: `multiData/comments/${sharedOwnerId}`,
+                comments: `comments/${sharedOwnerId}`,
               })),
             });
             setMultiDataOwnerIds(resolvedOwnerIds);
@@ -5865,7 +5864,7 @@ const Matching = () => {
                       onCommentBlur={async () => {
                         if (auth.currentUser) {
                           const text = comments[user.userId] || '';
-                          const res = await setUserComment(user.userId, text, ownerId);
+                          const res = await saveMyCardComment(user.userId, text, ownerId);
                           setLocalComment(ownerId, user.userId, text, res?.lastAction);
                         }
                       }}

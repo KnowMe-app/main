@@ -3,7 +3,7 @@ import { useAutoResize } from '../../hooks/useAutoResize';
 import { auth, fetchUserComment, saveMyCardComment } from '../config';
 
 // Персональний коментар поточного адміна до картки — зберігається в
-// multiData/comments/{ownerId}, а не прямо в самій картці (users/newUsers).
+// comments/{ownerId}/{cardId}, а не прямо в самій картці (users/newUsers).
 export const FieldComment = ({ userData }) => {
   const textareaRef = useRef(null);
   const [text, setText] = useState('');
@@ -18,7 +18,7 @@ export const FieldComment = ({ userData }) => {
 
     fetchUserComment(ownerId, cardId).then(existing => {
       if (cancelled) return;
-      setText(existing.length ? existing[0].text : '');
+      setText(existing?.text || '');
     });
 
     return () => {

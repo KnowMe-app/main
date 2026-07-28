@@ -113,7 +113,7 @@ import {
   sanitizeTechnicalPayload,
 } from './formFields';
 import { PAGE_SIZE, database } from './config';
-import { get as firebaseGet, push, ref } from 'firebase/database';
+import { get as firebaseGet, ref } from 'firebase/database';
 import {
   getBackendDownloadToastsEnabled,
   setBackendDownloadToastsEnabled,
@@ -1662,7 +1662,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const commentsJson = { [EXCEL_COMMENTS_OWNER_ID]: {} };
         const dislikesJson = { [EXCEL_COMMENTS_OWNER_ID]: {} };
         const todayTimestamp = Date.now();
-        const commentsOwnerRef = ref(database, `multiData/comments/${EXCEL_COMMENTS_OWNER_ID}`);
 
         dataRows.forEach((row, index) => {
           const rowArray = Array.isArray(row) ? row : [];
@@ -1682,14 +1681,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ...(phone ? { phone } : {}),
           };
 
-          const commentId = push(commentsOwnerRef).key || `comment-${userId}`;
-
-          commentsJson[EXCEL_COMMENTS_OWNER_ID][commentId] = {
-            authorId: EXCEL_COMMENTS_OWNER_ID,
-            cardId: userId,
-            lastAction: todayTimestamp,
-            text: commentText,
-          };
+          if (commentText) {
+            commentsJson[EXCEL_COMMENTS_OWNER_ID][userId] = {
+              text: commentText,
+              updatedAt: todayTimestamp,
+            };
+          }
 
           dislikesJson[EXCEL_COMMENTS_OWNER_ID][userId] = true;
         });
