@@ -1070,6 +1070,9 @@ export const fetchCycleUsersData = async (
   }
 };
 
+// Особистий коментар адміна до картки — comments/{ownerId}/{cardId} = { text, updatedAt }.
+// Рівно один запис на пару ownerId+cardId: повторне збереження оновлює його
+// (set), а не створює новий запис із випадковим ключем (push() не використовується).
 export const setUserComment = async (cardId, text, ownerId) => {
   try {
     const user = auth.currentUser;
@@ -1080,62 +1083,43 @@ export const setUserComment = async (cardId, text, ownerId) => {
       throw new Error('cardId і text обовʼязкові');
     }
     const commentsOwnerId = ownerId || user.uid;
-    const commentsRef = ref2(database, `multiData/comments/${commentsOwnerId}`);
-    const q = query(commentsRef, orderByChild('cardId'), equalTo(cardId));
-    const snap = await get(q);
-    const lastAction = Date.now();
-    if (snap.exists()) {
-      const key = Object.keys(snap.val())[0];
-      await set(ref2(database, `multiData/comments/${commentsOwnerId}/${key}`), {
-        cardId,
-        text,
-        authorId: commentsOwnerId,
-        lastAction,
-      });
-      return { commentId: key, lastAction };
-    }
-    const newRef = push(commentsRef);
-    await set(newRef, { cardId, text, authorId: commentsOwnerId, lastAction });
-    return { commentId: newRef.key, lastAction };
+    const updatedAt = Date.now();
+    await set(ref2(database, `comments/${commentsOwnerId}/${cardId}`), { text, updatedAt });
+    return { lastAction: updatedAt };
   } catch (error) {
     console.error('Error setting comment:', error);
     return null;
   }
 };
 
-export const updateCommentByOwner = async ({ ownerId, commentId, cardId, text }) => {
+export const updateCommentByOwner = async ({ ownerId, cardId, text }) => {
   try {
     const user = auth.currentUser;
     if (!user) {
       throw new Error('User not authenticated');
     }
-    if (!ownerId || !commentId || !cardId || typeof text !== 'string') {
-      throw new Error('ownerId, commentId, cardId і text обовʼязкові');
+    if (!ownerId || !cardId || typeof text !== 'string') {
+      throw new Error('ownerId, cardId і text обовʼязкові');
     }
-    const lastAction = Date.now();
-    await set(ref2(database, `multiData/comments/${ownerId}/${commentId}`), {
-      cardId,
-      text,
-      authorId: ownerId,
-      lastAction,
-    });
-    return { commentId, lastAction, ownerId };
+    const updatedAt = Date.now();
+    await set(ref2(database, `comments/${ownerId}/${cardId}`), { text, updatedAt });
+    return { lastAction: updatedAt, ownerId };
   } catch (error) {
     console.error('Error updating comment by owner:', error);
     return null;
   }
 };
 
-export const deleteCommentByOwner = async ({ ownerId, commentId }) => {
+export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
   try {
     const user = auth.currentUser;
     if (!user) {
       throw new Error('User not authenticated');
     }
-    if (!ownerId || !commentId) {
-      throw new Error('ownerId і commentId обовʼязкові');
+    if (!ownerId || !cardId) {
+      throw new Error('ownerId і cardId обовʼязкові');
     }
-    await remove(ref2(database, `multiData/comments/${ownerId}/${commentId}`));
+    await remove(ref2(database, `comments/${ownerId}/${cardId}`));
     return true;
   } catch (error) {
     console.error('Error deleting comment by owner:', error);
@@ -1145,35 +1129,28 @@ export const deleteCommentByOwner = async ({ ownerId, commentId }) => {
 
 export const fetchUserComment = async (ownerId, cardId) => {
   try {
-    const q = query(
-      ref2(database, `multiData/comments/${ownerId}`),
-      orderByChild('cardId'),
-      equalTo(cardId)
-    );
-    const snap = await get(q);
-    if (!snap.exists()) return [];
-    return Object.entries(snap.val()).map(([commentId, value]) => ({
-      commentId,
-      cardId: value.cardId,
-      text: value.text,
-      lastAction: value.lastAction || 0,
-    }));
+    if (!ownerId || !cardId) return null;
+    const snap = await get(ref2(database, `comments/${ownerId}/${cardId}`));
+    if (!snap.exists()) return null;
+    const value = snap.val();
+    return {
+      text: typeof value?.text === 'string' ? value.text : '',
+      lastAction: typeof value?.updatedAt === 'number' ? value.updatedAt : 0,
+    };
   } catch (error) {
     console.error('Error fetching comment:', error);
-    return [];
+    return null;
   }
 };
 
 // Зберігає (або, для порожнього тексту, видаляє) особистий коментар поточного
-// адміна до картки в multiData/comments — замінює старий підхід "писати прямо
+// адміна до картки в comments/{ownerId}/{cardId} — замінює старий підхід "писати прямо
 // в поле myComment на картці".
 export const saveMyCardComment = async (cardId, text, ownerId) => {
   const trimmed = (text || '').trim();
   if (!trimmed) {
-    const existing = await fetchUserComment(ownerId, cardId);
-    await Promise.all(
-      existing.map(({ commentId }) => deleteCommentByOwner({ ownerId, commentId }))
-    );
+    const commentsOwnerId = ownerId || auth.currentUser?.uid;
+    await deleteCommentByOwner({ ownerId: commentsOwnerId, cardId });
     return null;
   }
   return setUserComment(cardId, text, ownerId);
@@ -1182,22 +1159,18 @@ export const saveMyCardComment = async (cardId, text, ownerId) => {
 export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
     incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);
-    const commentsRef = ref2(database, `multiData/comments/${ownerId}`);
-    const snaps = await Promise.all(
-      cardIds.map(cardId =>
-        get(query(commentsRef, orderByChild('cardId'), equalTo(cardId)))
-      )
-    );
+    if (!ownerId || !Array.isArray(cardIds) || !cardIds.length) return {};
+    const snap = await get(ref2(database, `comments/${ownerId}`));
+    if (!snap.exists()) return {};
+    const ownerComments = snap.val() || {};
     const result = {};
-    snaps.forEach((snap, idx) => {
-      if (snap.exists()) {
-        const arr = Object.entries(snap.val()).map(([commentId, val]) => ({
-          commentId,
-          text: val.text || '',
-          lastAction: val.lastAction || 0,
-        }));
-        result[cardIds[idx]] = arr;
-      }
+    cardIds.forEach(cardId => {
+      const value = ownerComments[cardId];
+      if (!value || typeof value !== 'object') return;
+      result[cardId] = {
+        text: typeof value.text === 'string' ? value.text : '',
+        lastAction: typeof value.updatedAt === 'number' ? value.updatedAt : 0,
+      };
     });
     return result;
   } catch (error) {
@@ -1209,28 +1182,21 @@ export const fetchUserComments = async (ownerId, cardIds = []) => {
 export const fetchAllCommentsByCardId = async cardId => {
   try {
     if (!cardId) return [];
-    const snap = await get(ref2(database, 'multiData/comments'));
+    const snap = await get(ref2(database, 'comments'));
     if (!snap.exists()) return [];
 
-    const normalizedCardId = String(cardId).trim().toLowerCase();
     const result = [];
 
     Object.entries(snap.val() || {}).forEach(([ownerId, ownerComments]) => {
       if (!ownerComments || typeof ownerComments !== 'object') return;
-      Object.entries(ownerComments).forEach(([commentId, value]) => {
-        if (!value || typeof value !== 'object') return;
-        const candidateCardId = String(value.cardId || '').trim().toLowerCase();
-        if (candidateCardId !== normalizedCardId) return;
-        const text = String(value.text || '').trim();
-        if (!text) return;
-        result.push({
-          ownerId,
-          commentId,
-          cardId: value.cardId || cardId,
-          text,
-          authorId: value.authorId || ownerId,
-          lastAction: value.lastAction || 0,
-        });
+      const value = ownerComments[cardId];
+      if (!value || typeof value !== 'object') return;
+      const text = String(value.text || '').trim();
+      if (!text) return;
+      result.push({
+        ownerId,
+        text,
+        lastAction: typeof value.updatedAt === 'number' ? value.updatedAt : 0,
       });
     });
 
@@ -2715,7 +2681,7 @@ const removeUndefined = obj => {
 
 // Ключі, які ніколи не мають лишатись записаними на самій картці users/newUsers:
 // клієнтські кеш-мітки (транзитні за природою) та 'myComment', яке мігрувало в
-// окреме сховище multiData/comments (per-адмін коментарі, config.js: setUserComment
+// окреме сховище comments/{ownerId}/{cardId} (per-адмін коментарі, config.js: setUserComment
 // / fetchUserComment). Останнє тут не тому, що воно транзитне, а тому, що для
 // нього тепер є власне джерело правди — картка більше не повинна його дублювати.
 const transientUserDataKeys = [

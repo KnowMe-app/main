@@ -14,11 +14,11 @@ describe('FieldComment', () => {
   beforeEach(() => {
     fetchUserComment.mockReset();
     saveMyCardComment.mockReset();
-    fetchUserComment.mockResolvedValue([]);
+    fetchUserComment.mockResolvedValue(null);
   });
 
   it("loads the current admin's own comment for this card, not a card field", async () => {
-    fetchUserComment.mockResolvedValue([{ commentId: 'c1', text: 'my private note' }]);
+    fetchUserComment.mockResolvedValue({ text: 'my private note', updatedAt: 123 });
 
     render(<FieldComment userData={{ userId: 'user-1', myComment: 'legacy card value' }} />);
 
@@ -39,7 +39,7 @@ describe('FieldComment', () => {
   });
 
   it('clearing the comment persists an empty value', async () => {
-    fetchUserComment.mockResolvedValue([{ commentId: 'c1', text: 'existing' }]);
+    fetchUserComment.mockResolvedValue({ text: 'existing', updatedAt: 123 });
     render(<FieldComment userData={{ userId: 'user-1' }} />);
 
     const clearButton = await screen.findByLabelText('Очистити коментар');
