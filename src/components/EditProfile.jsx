@@ -906,20 +906,7 @@ const EditProfile = () => {
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
           <TopBlock
             userData={state}
-            // TopBlock's own click-triggered actions (getInTouch date
-            // shortcuts, dislike/favorite reactions, photo hydration...) only
-            // ever persist to the backend through setUsers - handleChange's
-            // click path calls submitWithHistory/handleSubmit from *inside*
-            // the setUsers(prev => ...) updater, and that updater only runs
-            // if setUsers actually invokes it (like a real state setter
-            // does). A no-op stub here silently discarded that updater, so
-            // none of these actions ever saved on their own; the change only
-            // looked saved locally until some unrelated ProfileForm field
-            // blur happened to sweep it up along with whatever else was
-            // pending. state is always a single card object here (matching
-            // TopBlock's 'single' mode, same as userStateUpdate.js expects),
-            // so setState is a safe, real setUsers.
-            setUsers={setState}
+            setUsers={() => {}}
             setShowInfoModal={() => {}}
             setState={setState}
             setUserIdToDelete={() => {}}
