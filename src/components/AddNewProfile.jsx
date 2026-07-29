@@ -866,7 +866,11 @@ const SaveModalActionTitle = styled.strong`
 
 
 const PROFILE_RESTORE_LOG_PREFIX = '[ProfileRestore]';
-const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
+// Batch 26 §8: whether ProfileForm/TopBlock show their backend-navigation arrows (the ones that
+// jump a field straight to where it's stored in Firebase) - off by default, so the profile-card
+// edit page stays uncluttered until an admin actually needs to inspect the backend, and persisted
+// so the choice survives a reload the same way the other toolbar toggles here do.
+const PROFILE_FORM_EXTENDED_MODE_KEY = 'profileFormExtendedMode';
 const LOAD_DEBUG_LOG_PREFIX = '[AddNewProfileLoad]';
 const CONTACT_EXPORT_LOG_PREFIX = '[ContactsExport]';
 const CONTACT_EXPORT_DEBUG_USER_ID = '-Ots_t0kim8mWxe7BT_P';
@@ -1240,10 +1244,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const searchListIsolationRef = useRef(Boolean((search || '').trim()));
   const [isExcelImporting, setIsExcelImporting] = useState(false);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
-  const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(() => (
-    typeof localStorage !== 'undefined' && localStorage.getItem(MATCHING_DEBUG_LOG_MODE_KEY) === 'file'
-      ? 'file'
-      : 'console'
+  const [extendedMode, setExtendedMode] = useState(() => (
+    typeof localStorage !== 'undefined' && localStorage.getItem(PROFILE_FORM_EXTENDED_MODE_KEY) === 'true'
   ));
   const excelImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
@@ -1612,24 +1614,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     console.log(LOAD_DEBUG_LOG_PREFIX, step, entry);
     return entry;
   }, []);
-
-  const downloadMatchingDebugLogs = useCallback(() => {
-    if (typeof window === 'undefined') return 0;
-
-    const logs = Array.isArray(window.__MATCHING_DEBUG_LOGS)
-      ? window.__MATCHING_DEBUG_LOGS
-      : [];
-
-    downloadJsonFile(`matching-debug-${buildJsonDownloadStamp()}.json`, {
-      userAgent: window.navigator?.userAgent || '',
-      url: window.location?.href || '',
-      timestamp: new Date().toISOString(),
-      logsCount: logs.length,
-      logs,
-    });
-
-    return logs.length;
-  }, [downloadJsonFile]);
 
   const handleExcelProfilesUpload = useCallback(
     async event => {
@@ -6144,30 +6128,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleDownloadSizeToastsToggle = () => {
     setDownloadSizeToastsEnabled(prev => !prev);
   };
-  const handleMatchingDebugLogModeToggle = () => {
-    const nextMode = matchingDebugLogMode === 'file' ? 'console' : 'file';
-    const downloadedLogsCount = matchingDebugLogMode === 'file'
-      ? downloadMatchingDebugLogs()
-      : null;
-
-    if (typeof window !== 'undefined') {
-      window.__MATCHING_DEBUG_LOG_MODE = nextMode;
-      if (nextMode === 'file') window.__MATCHING_DEBUG_LOGS = [];
-      window.dispatchEvent(new CustomEvent('matchingDebugLogModeChange', {
-        detail: { mode: nextMode },
-      }));
-    }
-
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(MATCHING_DEBUG_LOG_MODE_KEY, nextMode);
-    }
-
-    setMatchingDebugLogMode(nextMode);
-    toast.success(
-      nextMode === 'file'
-        ? 'Режим file-логів Matching увімкнено.'
-        : `Режим console-логів Matching увімкнено. Log-файл завантажено (${downloadedLogsCount || 0}).`
-    );
+  const handleExtendedModeToggle = () => {
+    setExtendedMode(prev => {
+      const next = !prev;
+      if (typeof localStorage !== 'undefined') localStorage.setItem(PROFILE_FORM_EXTENDED_MODE_KEY, String(next));
+      return next;
+    });
   };
 
   const fieldsToRender = getFieldsToRender(state);
@@ -6644,6 +6610,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       <InnerContainer>
         {isLoggedIn && (
           <TopButtons>
+            {/* Batch 26 §11: the "⋮" menu first, matching every other UKRCOM admin page's header
+                (PageNavMenu is always the first action button there). */}
+            <DotsButton
+              aria-label="Відкрити меню профілю"
+              onClick={() => {
+                setShowInfoModal('dotsMenu');
+              }}
+            >
+              ⋮
+            </DotsButton>
             {state.userId && (
               <>
                 <EditActionButton
@@ -6698,6 +6674,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             )}
             <DownloadSizeToastToggleButton
               type="button"
+              $active={extendedMode}
+              aria-pressed={extendedMode}
+              title={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
+              aria-label={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
+              onClick={handleExtendedModeToggle}
+            >
+              🧭
+              <DownloadSizeToastStatus>{extendedMode ? 'EXT' : 'STD'}</DownloadSizeToastStatus>
+            </DownloadSizeToastToggleButton>
+            <DownloadSizeToastToggleButton
+              type="button"
               $active={downloadSizeToastsEnabled}
               aria-pressed={downloadSizeToastsEnabled}
               title={
@@ -6715,27 +6702,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               📦
               <DownloadSizeToastStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</DownloadSizeToastStatus>
             </DownloadSizeToastToggleButton>
-            {isAdmin && (
-              <DownloadSizeToastToggleButton
-                type="button"
-                $active={matchingDebugLogMode === 'file'}
-                aria-pressed={matchingDebugLogMode === 'file'}
-                title={matchingDebugLogMode === 'file' ? 'Перемкнути логи Matching у консоль' : 'Перемкнути логи Matching у файл'}
-                aria-label={matchingDebugLogMode === 'file' ? 'Перемкнути логи Matching у консоль' : 'Перемкнути логи Matching у файл'}
-                onClick={handleMatchingDebugLogModeToggle}
-              >
-                🧾
-                <DownloadSizeToastStatus>{matchingDebugLogMode === 'file' ? 'FILE' : 'LOG'}</DownloadSizeToastStatus>
-              </DownloadSizeToastToggleButton>
-            )}
-            <DotsButton
-              aria-label="Відкрити меню профілю"
-              onClick={() => {
-                setShowInfoModal('dotsMenu');
-              }}
-            >
-              ⋮
-            </DotsButton>
           </TopButtons>
         )}
 
@@ -6877,6 +6843,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setState={setState}
                 setUserIdToDelete={setUserIdToDelete}
                 isFromListOfUsers={false}
+                extendedMode={extendedMode}
                 favoriteUsers={favoriteUsersData}
                 setFavoriteUsers={setFavoriteUsersData}
                 dislikeUsers={dislikeUsersData}
@@ -6973,6 +6940,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               handleDelKeyValue={handleDelKeyValue}
               dataSource={profileSource}
               isAdmin={isAdmin}
+              extendedMode={extendedMode}
             />
           </>
         ) : (

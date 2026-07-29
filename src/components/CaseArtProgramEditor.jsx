@@ -1,10 +1,12 @@
 // "Програма ДРТ" (case.artProgram editor) - the shared, once-only medical facts of a case's
-// fertility program: diagnosis/genetic material/attending physician, embryo shipments from a
-// partner clinic, and transfer attempts (each carrying its own hCG tests and ultrasounds). Every
-// document that references one of these events (embryoOwnershipStatement,
-// geneticAffinityCertificate, racssClinicLetter - edited in CaseChildbirthTransactionEditor) only
+// fertility program: diagnosis/genetic material/attending physician, the one embryo shipment from
+// the case's one partner clinic (batch 26 §5, stored at relations.shipment - "one case = one
+// partner clinic = one shipment"), and the transfer attempt (carrying its own hCG tests and
+// ultrasounds). Every document that references the transfer attempt's hCG tests/ultrasounds
+// (geneticAffinityCertificate, racssClinicLetter - edited in CaseChildbirthTransactionEditor) only
 // ever stores the id it points at, never a copy of the fact itself - editing an event here is
-// instantly reflected in every document that references it.
+// instantly reflected in every document that references it. The shipment itself needs no id at
+// all any more - every document just resolves the case's one shipment directly.
 //
 // Self-contained (same reasoning as CaseChildbirthTransactionEditor's own header comment): no
 // dependency on the host page's internals, so it drops into any --km-* scoped page as-is.
@@ -16,7 +18,6 @@ import { FaPlus, FaTrash } from 'react-icons/fa';
 import { database } from './config';
 import {
   DOCUMENTS_CASES_PATH,
-  formatShipmentOptionLabel,
   normalizeIsoDate,
   removeEmptyCaseValues,
   toArray,
@@ -212,16 +213,24 @@ const nextSequentialId = (prefix, items) => {
 };
 
 // One transfer attempt per case (batch 24 §2) - only the successful attempt's data ever matters
-// once the program is underway, so this is a single record, not a log of attempts.
+// once the program is underway, so this is a single record, not a log of attempts. It references
+// no shipment id of its own any more (batch 26 §5) - there is only ever the case's one shipment.
 const emptyTransferAttempt = () => ({
-  shipmentId: '', date: '', embryoCount: '', embryoStage: '', hcgTests: [], ultrasounds: [],
+  date: '', embryoCount: '', embryoStage: '', hcgTests: [], ultrasounds: [],
+});
+
+// One shipment per case (batch 26 §5: "one case = one partner clinic = one shipment" - a case that
+// ever needs a second shipment is a second case, not a second entry here), stored directly under
+// the case's relations rather than in a shipmentId-addressed list, so no document referencing it
+// can ever point at the wrong (or no) entry.
+const emptyShipment = () => ({
+  sourceClinicId: '', destinationClinicId: '', ivfDate: '', plannedPeriod: { startDate: '', endDate: '' }, receivedDate: '',
 });
 
 const emptyArtProgramDraft = () => ({
   medicalIndication: { diagnosis: { uk: '' } },
   geneticMaterial: { oocyteSourcePartnerRole: '', spermSourcePartnerRole: '' },
   medicalTeam: { physician: { name: { uk: { nominative: '' } } } },
-  embryoShipments: [],
   transferAttempt: emptyTransferAttempt(),
 });
 
@@ -248,6 +257,9 @@ const arrayToMap = items => (items || []).reduce((byId, item) => {
 const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
   const selectedCase = catalog.cases.find(item => String(item.id) === String(caseId)) || null;
   const [draft, setDraft] = useState(emptyArtProgramDraft());
+  // The case's one shipment (batch 26 §5) lives at relations.shipment, a separate backend path from
+  // artProgram - its own draft/save, same pattern the format-override draft elsewhere uses.
+  const [shipmentDraft, setShipmentDraft] = useState(emptyShipment());
 
   useEffect(() => {
     const artProgram = selectedCase?.artProgram || {};
@@ -260,14 +272,19 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
       medicalTeam: {
         physician: { name: { uk: { nominative: artProgram.medicalTeam?.physician?.name?.uk?.nominative || '' } } },
       },
-      // toArray tolerates a Firebase map-with-gaps the same way every other reader in this app does
-      // (see documentsCatalogUtils.toArray) - never assumes the backend snapshot is a real Array.
-      embryoShipments: toArray(artProgram.embryoShipments),
       transferAttempt: {
         ...emptyTransferAttempt(),
         ...artProgram.transferAttempt,
         hcgTests: toArray(artProgram.transferAttempt?.hcgTests),
         ultrasounds: toArray(artProgram.transferAttempt?.ultrasounds),
+      },
+    });
+    setShipmentDraft({
+      ...emptyShipment(),
+      ...(selectedCase?.relations?.shipment || {}),
+      plannedPeriod: {
+        ...emptyShipment().plannedPeriod,
+        ...(selectedCase?.relations?.shipment?.plannedPeriod || {}),
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -283,38 +300,48 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
     medicalTeam: { physician: { name: { uk: { nominative: value } } } },
   }));
 
-  // --- Embryo shipments ------------------------------------------------------------------------
+  // --- The one embryo shipment (batch 26 §5) --------------------------------------------------
 
-  const addShipment = () => setDraft(previous => ({
-    ...previous,
-    embryoShipments: [...previous.embryoShipments, {
-      id: nextSequentialId('shipment', previous.embryoShipments),
-      sourceClinicId: '',
-      destinationClinicId: '',
-      ivfDate: '',
-      plannedPeriod: { startDate: '', endDate: '' },
-      receivedDate: '',
-    }],
-  }));
-
-  const removeShipment = shipmentId => setDraft(previous => ({
-    ...previous,
-    embryoShipments: previous.embryoShipments.filter(shipment => shipment.id !== shipmentId),
-  }));
-
-  const updateShipmentField = (shipmentId, field, value) => setDraft(previous => ({
-    ...previous,
-    embryoShipments: previous.embryoShipments.map(shipment => (shipment.id === shipmentId ? { ...shipment, [field]: value } : shipment)),
-  }));
+  const updateShipmentField = (field, value) => setShipmentDraft(previous => ({ ...previous, [field]: value }));
 
   // A migrated shipment may still carry `plannedPeriod.text` (spec §6) - preserved untouched here
   // (spread first) since there's no input for it; only startDate/endDate are ever edited.
-  const updateShipmentPeriodField = (shipmentId, field, value) => setDraft(previous => ({
+  const updateShipmentPeriodField = (field, value) => setShipmentDraft(previous => ({
     ...previous,
-    embryoShipments: previous.embryoShipments.map(shipment => (shipment.id === shipmentId
-      ? { ...shipment, plannedPeriod: { ...(shipment.plannedPeriod || {}), [field]: value } }
-      : shipment)),
+    plannedPeriod: { ...(previous.plannedPeriod || {}), [field]: value },
   }));
+
+  const handleSaveShipment = async () => {
+    if (!selectedCase) return;
+    const cleaned = removeEmptyCaseValues({
+      ...shipmentDraft,
+      ivfDate: normalizeIsoDate(shipmentDraft.ivfDate),
+      receivedDate: normalizeIsoDate(shipmentDraft.receivedDate),
+      plannedPeriod: {
+        ...(shipmentDraft.plannedPeriod || {}),
+        startDate: normalizeIsoDate(shipmentDraft.plannedPeriod?.startDate),
+        endDate: normalizeIsoDate(shipmentDraft.plannedPeriod?.endDate),
+      },
+    });
+    const nextValue = Object.keys(cleaned).length ? cleaned : null;
+    try {
+      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${selectedCase.id}/relations/shipment`), nextValue);
+      setCatalog(previous => ({
+        ...previous,
+        cases: previous.cases.map(item => {
+          if (String(item.id) !== String(selectedCase.id)) return item;
+          const relations = { ...(item.relations || {}) };
+          if (nextValue) relations.shipment = nextValue;
+          else delete relations.shipment;
+          return { ...item, relations };
+        }),
+      }));
+      toast.success('Shipment details saved.');
+    } catch (saveError) {
+      console.error('Unable to save the shipment details', saveError);
+      toast.error(`Could not save the shipment details: ${describeSaveError(saveError)}`);
+    }
+  };
 
   // --- The one transfer attempt + its nested hCG tests/ultrasounds ------------------------------
 
@@ -366,16 +393,6 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
       medicalIndication: draft.medicalIndication,
       geneticMaterial: draft.geneticMaterial,
       medicalTeam: draft.medicalTeam,
-      embryoShipments: arrayToMap(draft.embryoShipments.map(shipment => ({
-        ...shipment,
-        ivfDate: normalizeIsoDate(shipment.ivfDate),
-        receivedDate: normalizeIsoDate(shipment.receivedDate),
-        plannedPeriod: {
-          ...(shipment.plannedPeriod || {}),
-          startDate: normalizeIsoDate(shipment.plannedPeriod?.startDate),
-          endDate: normalizeIsoDate(shipment.plannedPeriod?.endDate),
-        },
-      }))),
       transferAttempt: {
         ...draft.transferAttempt,
         date: normalizeIsoDate(draft.transferAttempt.date),
@@ -460,77 +477,72 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
         </Field>
       </FieldGrid>
 
+      {/* One shipment only (batch 26 §5: "one case = one partner clinic = one shipment") - an edit
+          form for that one record, not a list; no add/remove, and no shipmentId for any document to
+          get out of sync with (the exact failure mode the old list model allowed). */}
       <SectionSubhead style={{ marginTop: 14 }}>Доставлення ембріонів</SectionSubhead>
-      {draft.embryoShipments.map((shipment, index) => (
-        <DocRow key={shipment.id}>
-          <DocRowHead>
-            <DocSubtitle style={{ fontWeight: 700 }}>{shipment.id || `Доставлення ${index + 1}`}</DocSubtitle>
-            <DangerButton type="button" onClick={() => removeShipment(shipment.id)} title="Remove this shipment">
-              <FaTrash />
-            </DangerButton>
-          </DocRowHead>
-          <FieldGrid>
-            <Field>
-              Клініка-відправник
-              <Select value={shipment.sourceClinicId || ''} onChange={event => updateShipmentField(shipment.id, 'sourceClinicId', event.target.value)}>
-                <option value="">— не обрано —</option>
-                {catalog.parties.partnerClinics.map(partnerClinic => (
-                  <option key={partnerClinic.id} value={String(partnerClinic.id)}>{partnerClinic.name?.uk || partnerClinic.id}</option>
-                ))}
-              </Select>
-            </Field>
-            <Field>
-              Клініка-отримувач
-              <Select
-                value={shipment.destinationClinicId || ''}
-                onChange={event => updateShipmentField(shipment.id, 'destinationClinicId', event.target.value)}
-              >
-                <option value="">— не обрано —</option>
-                {catalog.parties.clinics.map(clinic => (
-                  <option key={clinic.id} value={String(clinic.id)}>{clinic.name?.uk || clinic.medicalCenterName?.uk || clinic.id}</option>
-                ))}
-              </Select>
-            </Field>
-            <Field>
-              Дата ЗІВ
-              <FieldInput type="date" value={shipment.ivfDate || ''} onChange={event => updateShipmentField(shipment.id, 'ivfDate', event.target.value)} />
-            </Field>
-            <Field>
-              Запланований період — початок
-              <FieldInput
-                type="date"
-                value={shipment.plannedPeriod?.startDate || ''}
-                onChange={event => updateShipmentPeriodField(shipment.id, 'startDate', event.target.value)}
-              />
-            </Field>
-            <Field>
-              Запланований період — кінець
-              <FieldInput
-                type="date"
-                value={shipment.plannedPeriod?.endDate || ''}
-                onChange={event => updateShipmentPeriodField(shipment.id, 'endDate', event.target.value)}
-              />
-            </Field>
-            <Field>
-              Дата фактичного отримання
-              <FieldInput
-                type="date"
-                value={shipment.receivedDate || ''}
-                onChange={event => updateShipmentField(shipment.id, 'receivedDate', event.target.value)}
-              />
-            </Field>
-          </FieldGrid>
-          {shipment.plannedPeriod?.text?.uk || shipment.plannedPeriod?.text?.en ? (
-            <DocSubtitle style={{ marginTop: 6 }}>
-              Мігрований текстовий період: {shipment.plannedPeriod.text.uk || shipment.plannedPeriod.text.en}
-            </DocSubtitle>
-          ) : null}
-        </DocRow>
-      ))}
+      <DocRow>
+        <FieldGrid>
+          <Field>
+            Клініка-відправник
+            <Select value={shipmentDraft.sourceClinicId || ''} onChange={event => updateShipmentField('sourceClinicId', event.target.value)}>
+              <option value="">— не обрано —</option>
+              {catalog.parties.partnerClinics.map(partnerClinic => (
+                <option key={partnerClinic.id} value={String(partnerClinic.id)}>{partnerClinic.name?.uk || partnerClinic.id}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field>
+            Клініка-отримувач
+            <Select
+              value={shipmentDraft.destinationClinicId || ''}
+              onChange={event => updateShipmentField('destinationClinicId', event.target.value)}
+            >
+              <option value="">— не обрано —</option>
+              {catalog.parties.clinics.map(clinic => (
+                <option key={clinic.id} value={String(clinic.id)}>{clinic.name?.uk || clinic.medicalCenterName?.uk || clinic.id}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field>
+            Дата ЗІВ
+            <FieldInput type="date" value={shipmentDraft.ivfDate || ''} onChange={event => updateShipmentField('ivfDate', event.target.value)} />
+          </Field>
+          <Field>
+            Запланований період — початок
+            <FieldInput
+              type="date"
+              value={shipmentDraft.plannedPeriod?.startDate || ''}
+              onChange={event => updateShipmentPeriodField('startDate', event.target.value)}
+            />
+          </Field>
+          <Field>
+            Запланований період — кінець
+            <FieldInput
+              type="date"
+              value={shipmentDraft.plannedPeriod?.endDate || ''}
+              onChange={event => updateShipmentPeriodField('endDate', event.target.value)}
+            />
+          </Field>
+          <Field>
+            Дата фактичного отримання
+            <FieldInput
+              type="date"
+              value={shipmentDraft.receivedDate || ''}
+              onChange={event => updateShipmentField('receivedDate', event.target.value)}
+            />
+          </Field>
+        </FieldGrid>
+        {shipmentDraft.plannedPeriod?.text?.uk || shipmentDraft.plannedPeriod?.text?.en ? (
+          <DocSubtitle style={{ marginTop: 6 }}>
+            Мігрований текстовий період: {shipmentDraft.plannedPeriod.text.uk || shipmentDraft.plannedPeriod.text.en}
+          </DocSubtitle>
+        ) : null}
+      </DocRow>
       <RowLine style={{ marginTop: 8 }}>
-        <SmallButton type="button" onClick={addShipment}>
-          <FaPlus /> Add shipment
-        </SmallButton>
+        <PrimaryMiniButton type="button" onClick={handleSaveShipment}>
+          Save shipment
+        </PrimaryMiniButton>
       </RowLine>
 
       {/* One record only (batch 24 §2) - the successful transfer attempt's data, filled in once its
@@ -538,17 +550,6 @@ const CaseArtProgramEditor = ({ catalog, setCatalog, caseId }) => {
       <SectionSubhead style={{ marginTop: 14 }}>Спроба переносу</SectionSubhead>
       <DocRow>
         <FieldGrid>
-          <Field>
-            Доставлення
-            <Select value={draft.transferAttempt.shipmentId || ''} onChange={event => updateTransferField('shipmentId', event.target.value)}>
-              <option value="">— не обрано —</option>
-              {draft.embryoShipments.map(shipment => (
-                <option key={shipment.id} value={shipment.id}>
-                  {formatShipmentOptionLabel(shipment, catalog.parties) || shipment.id}
-                </option>
-              ))}
-            </Select>
-          </Field>
           <Field>
             Дата переносу
             <FieldInput type="date" value={draft.transferAttempt.date || ''} onChange={event => updateTransferField('date', event.target.value)} />

@@ -47,4 +47,28 @@ describe('FieldComment', () => {
 
     expect(saveMyCardComment).toHaveBeenCalledWith('user-1', '', 'admin-1');
   });
+
+  it('batch 26 §8: the backend-navigation arrow is hidden by default, shown only in extended mode', async () => {
+    const { rerender } = render(<FieldComment userData={{ userId: 'user-1' }} />);
+    await screen.findByPlaceholderText('Додайте свій коментар');
+    expect(screen.queryByLabelText('Відкрити запис коментаря у Firebase')).toBeNull();
+
+    rerender(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
+    expect(await screen.findByLabelText('Відкрити запис коментаря у Firebase')).toBeTruthy();
+  });
+
+  it('the backend-navigation arrow opens the comment\'s own comments/{ownerId}/{cardId} console URL', async () => {
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
+
+    const arrow = await screen.findByLabelText('Відкрити запис коментаря у Firebase');
+    fireEvent.click(arrow);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const [url] = openSpy.mock.calls[0];
+    expect(url).toContain('admin-1');
+    expect(url).toContain('user-1');
+    expect(url).toContain('comments');
+    openSpy.mockRestore();
+  });
 });

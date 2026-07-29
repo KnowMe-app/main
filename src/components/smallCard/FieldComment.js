@@ -1,10 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
+import { FaArrowRight } from 'react-icons/fa';
 import { useAutoResize } from '../../hooks/useAutoResize';
 import { auth, fetchUserComment, saveMyCardComment } from '../config';
 
+const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
+const getFirebaseConsoleProjectId = () => process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
+const getFirebaseRealtimeDatabaseName = () => {
+  const fallbackProjectId = getFirebaseConsoleProjectId();
+  const databaseUrl = process.env.REACT_APP_DATABASE_URL || '';
+  try {
+    const { hostname } = new URL(databaseUrl);
+    return hostname.split('.')[0] || `${fallbackProjectId}-default-rtdb`;
+  } catch (error) {
+    return `${fallbackProjectId}-default-rtdb`;
+  }
+};
+
+// Same backend-navigation shortcut ProfileForm's other fields already have (batch 26 §8) - jumps
+// straight to this comment's own comments/{ownerId}/{cardId} record in the Firebase console.
+const buildCommentBackendUrl = (ownerId, cardId) => {
+  if (!ownerId || !cardId) return '';
+  const projectId = getFirebaseConsoleProjectId();
+  const databaseName = getFirebaseRealtimeDatabaseName();
+  const encodedPath = ['comments', ownerId, cardId]
+    .map(segment => `~2F${encodeURIComponent(segment)}`)
+    .join('');
+  return `https://console.firebase.google.com/u/0/project/${projectId}/database/${databaseName}/data/${encodedPath}`;
+};
+
 // Персональний коментар поточного адміна до картки — зберігається в
 // comments/{ownerId}/{cardId}, а не прямо в самій картці (users/newUsers).
-export const FieldComment = ({ userData }) => {
+export const FieldComment = ({ userData, extendedMode = false }) => {
   const textareaRef = useRef(null);
   const [text, setText] = useState('');
   const autoResize = useAutoResize(textareaRef, text);
@@ -30,6 +56,8 @@ export const FieldComment = ({ userData }) => {
     if (!ownerId || !cardId) return;
     saveMyCardComment(cardId, value, ownerId);
   };
+
+  const showBackendShortcut = extendedMode && Boolean(ownerId && cardId);
 
   return (
     <div
@@ -60,10 +88,36 @@ export const FieldComment = ({ userData }) => {
           resize: 'none',
           overflowY: 'hidden',
           padding: '5px',
-          paddingRight: text ? '32px' : '5px',
+          paddingRight: showBackendShortcut ? '58px' : text ? '32px' : '5px',
           boxSizing: 'border-box',
         }}
       />
+      {showBackendShortcut && (
+        <button
+          type="button"
+          aria-label="Відкрити запис коментаря у Firebase"
+          title="Відкрити запис коментаря у Firebase"
+          onMouseDown={event => event.preventDefault()}
+          onClick={event => {
+            event.stopPropagation();
+            window.open(buildCommentBackendUrl(ownerId, cardId), '_blank', 'noopener,noreferrer');
+          }}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            right: text ? '30px' : '6px',
+            transform: 'translateY(-50%)',
+            cursor: 'pointer',
+            border: 'none',
+            background: 'transparent',
+            color: '#ebe0c2',
+            padding: 0,
+            display: 'inline-flex',
+          }}
+        >
+          <FaArrowRight size={14} />
+        </button>
+      )}
       {text && (
         <button
           type="button"

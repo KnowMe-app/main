@@ -1402,10 +1402,12 @@ const PartiesPage = ({ isAdmin }) => {
             <Title>Parties</Title>
           </div>
           <HeaderActions>
+            {/* Batch 26 §11: PageNavMenu first, matching every other UKRCOM admin page's header -
+                this was the one page with it last, after the Edit/Read toggle. */}
+            <PageNavMenu />
             <MiniButton type="button" onClick={handleToggleEditMode} aria-pressed={isEditMode} title={isEditMode ? 'Switch to read mode' : 'Edit parties'}>
               <FaPen /> {isEditMode ? 'Read' : 'Edit'}
             </MiniButton>
-            <PageNavMenu />
           </HeaderActions>
         </Header>
 

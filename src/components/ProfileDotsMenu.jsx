@@ -1,7 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
+import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaPalette, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { useAppSettings } from 'hooks/useAppSettings';
@@ -223,6 +223,9 @@ export const ProfileDotsMenu = ({
     ...(isAdmin ? [{ path: '/invoices', label: 'Invoices', description: 'Create and export client invoices', icon: <FaFileInvoiceDollar /> }] : []),
     ...(isAdmin ? [{ path: '/documents', label: 'Documents', description: 'Generate case documents from templates', icon: <FaFileAlt /> }] : []),
     ...(isAdmin ? [{ path: '/parties', label: 'Parties', description: 'Manage clinics, couples and other case parties', icon: <FaAddressBook /> }] : []),
+    // Batch 26 §10: the last of the UKRCOM admin pages PageNavMenu already lists - keeps both
+    // menus offering the same set of destinations.
+    ...(isAdmin ? [{ path: '/document-styles', label: 'Style Editor', description: 'Edit document styles and page layout', icon: <FaPalette /> }] : []),
   ];
 
   return (

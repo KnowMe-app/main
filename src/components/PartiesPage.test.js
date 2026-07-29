@@ -162,7 +162,10 @@ describe('spec: Parties page', () => {
     fireEvent.click(await screen.findByText('Testova Mariia & Testovyi Petro'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Clinic slot' }));
-    fireEvent.click(await screen.findByText('Клініка Мрія'));
+    // Disambiguated by role: the case's ART-program shipment editor (batch 26 §5) also always
+    // renders a "Клініка-отримувач" <option> of the same name now that it's no longer gated behind
+    // "+ Add shipment" first.
+    fireEvent.click(await screen.findByRole('button', { name: 'Клініка Мрія' }));
 
     await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/cases/case-1/relations/clinicId', 'clinic-1'));
     await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/partiesSettings/recentIds/clinics', ['clinic-1']));

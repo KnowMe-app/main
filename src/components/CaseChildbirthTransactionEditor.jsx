@@ -15,7 +15,6 @@ import {
   DOCUMENTS_CASES_PATH,
   createChildRecord,
   formatHcgTestOptionLabel,
-  formatShipmentOptionLabel,
   formatShortNameUk,
   formatUltrasoundOptionLabel,
   getMaternityHospitalDisplayName,
@@ -228,11 +227,6 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   // No notaryId field - this appendix isn't itself notarized (see TEMPLATE_DOCUMENT_CONFIG's
   // usesNotary: false for surrogacy-agreement-appendix-1).
   const [surrogacyAgreementAppendix1Draft, setSurrogacyAgreementAppendix1Draft] = useState({ date: '' });
-  // Spec §4/§14: a fresh pick always writes `shipmentId` (resolved against case.artProgram.
-  // embryoShipments); `legacyIvfDate`/`legacyShipmentPeriod` are read-only leftovers from a
-  // not-yet-migrated record, carried through unedited on save so simply opening/saving this editor
-  // (without touching the shipment dropdown) never destroys them.
-  const [embryoOwnershipDraft, setEmbryoOwnershipDraft] = useState({ shipmentId: '', legacyIvfDate: '', legacyShipmentPeriod: null });
   const [geneticAffinityCertificateDraft, setGeneticAffinityCertificateDraft] = useState({
     hcgTestId: '', ultrasoundId: '', issueDate: '', outgoingNumber: '',
   });
@@ -240,10 +234,10 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   const [medicalServicesAgreementDraft, setMedicalServicesAgreementDraft] = useState({ date: '' });
 
   // Every artProgram-referencing dropdown reads from the same source: the selected case's own
-  // shipments/transfer attempt (never converted to arrays for storage - see documentsCatalogUtils -
-  // only here, transiently, for rendering <option>s). There is only ever one transfer attempt
-  // (batch 24 §2), so its hCG tests/ultrasounds are the only thing still picked by id.
-  const artShipments = toArray(selectedCase?.artProgram?.embryoShipments);
+  // transfer attempt (never converted to arrays for storage - see documentsCatalogUtils - only
+  // here, transiently, for rendering <option>s). There is only ever one transfer attempt (batch 24
+  // §2), so its hCG tests/ultrasounds are the only thing still picked by id - the shipment itself
+  // (batch 26 §5, edited in CaseArtProgramEditor) needs no id/picker anywhere any more.
   const artTransferAttempt = selectedCase?.artProgram?.transferAttempt || null;
   const certificateHcgTests = toArray(artTransferAttempt?.hcgTests);
   const certificateUltrasounds = toArray(artTransferAttempt?.ultrasounds);
@@ -279,11 +273,6 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     });
     setSurrogacyAgreementAppendix1Draft({
       date: selectedCase?.documents?.surrogacyAgreementAppendix1?.date || '',
-    });
-    setEmbryoOwnershipDraft({
-      shipmentId: selectedCase?.documents?.embryoOwnershipStatement?.shipmentId || '',
-      legacyIvfDate: selectedCase?.documents?.embryoOwnershipStatement?.ivfDate || '',
-      legacyShipmentPeriod: selectedCase?.documents?.embryoOwnershipStatement?.shipmentPeriod || null,
     });
     setGeneticAffinityCertificateDraft({
       hcgTestId: selectedCase?.documents?.geneticAffinityCertificate?.hcgTestId || '',
@@ -488,8 +477,6 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
     }
   };
 
-  const updateEmbryoOwnershipShipmentId = shipmentId => setEmbryoOwnershipDraft(previous => ({ ...previous, shipmentId }));
-
   // A generic "save one document sub-record" helper, shared by every document below - each just
   // supplies its own storage key and cleaned payload; never writes an empty `{}` service object,
   // same rule every document editor in this file already follows.
@@ -514,20 +501,6 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       console.error(`Unable to save ${failureLabel}`, saveError);
       toast.error(`Could not save ${failureLabel}: ${describeSaveError(saveError)}`);
     }
-  };
-
-  // Spec §14: a fresh save always writes shipmentId once the admin has actually picked one from
-  // the dropdown; only a case that's still untouched (no shipmentId chosen at all) keeps whatever
-  // legacy ivfDate/shipmentPeriod it already had, so simply opening and saving this editor never
-  // destroys not-yet-migrated data.
-  const handleSaveEmbryoOwnership = () => {
-    const payload = embryoOwnershipDraft.shipmentId
-      ? { shipmentId: embryoOwnershipDraft.shipmentId }
-      : {
-        ivfDate: normalizeIsoDate(embryoOwnershipDraft.legacyIvfDate),
-        shipmentPeriod: embryoOwnershipDraft.legacyShipmentPeriod,
-      };
-    return saveCaseDocument('embryoOwnershipStatement', payload, 'Embryo ownership statement details saved.', 'the embryo ownership statement details');
   };
 
   const updateGeneticAffinityCertificateField = (field, value) => setGeneticAffinityCertificateDraft(previous => ({ ...previous, [field]: value }));
@@ -826,31 +799,9 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
         </PrimaryMiniButton>
       </RowLine>
 
-      <SectionSubhead style={{ marginTop: 14 }}>Заява про належність ембріонів</SectionSubhead>
-      <FieldGrid>
-        <Field style={{ flex: 1, minWidth: 220 }}>
-          Доставлення
-          <Select value={embryoOwnershipDraft.shipmentId || ''} onChange={event => updateEmbryoOwnershipShipmentId(event.target.value)}>
-            <option value="">— не обрано —</option>
-            {artShipments.map(shipment => (
-              <option key={shipment.id} value={shipment.id}>
-                {formatShipmentOptionLabel(shipment, catalog.parties) || shipment.id}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </FieldGrid>
-      {!embryoOwnershipDraft.shipmentId && (embryoOwnershipDraft.legacyIvfDate || embryoOwnershipDraft.legacyShipmentPeriod?.uk) ? (
-        <DocSubtitle style={{ marginTop: 6 }}>
-          Мігровані дані (зберігаються без змін, поки не обрано доставлення):
-          {' '}{embryoOwnershipDraft.legacyShipmentPeriod?.uk || ''} {embryoOwnershipDraft.legacyIvfDate || ''}
-        </DocSubtitle>
-      ) : null}
-      <RowLine style={{ marginTop: 8 }}>
-        <PrimaryMiniButton type="button" onClick={handleSaveEmbryoOwnership}>
-          Save embryo ownership statement details
-        </PrimaryMiniButton>
-      </RowLine>
+      {/* Заява про належність ембріонів no longer needs its own editor here (batch 26 §5) - it
+          resolves the case's one shipment directly (edited in CaseArtProgramEditor), with no
+          shipmentId of its own left to pick or get out of sync. */}
 
       <SectionSubhead style={{ marginTop: 14 }}>Довідка про генетичну спорідненість</SectionSubhead>
       <FieldGrid>

@@ -990,6 +990,10 @@ export const ProfileForm = ({
   overlayFieldAdditions = {},
   refreshOverlayForEditor,
   deletingFieldsRef,
+  // Batch 26 §8: whether the per-field backend-navigation arrows (SearchIdBackendButton) show at
+  // all - defaults to true so a caller that hasn't wired up the toggle yet (no regression) keeps
+  // today's always-visible behavior; AddNewProfile.jsx passes its own persisted toggle state.
+  extendedMode = true,
 }) => {
   const latestProfileDraftRef = useRef(state || {});
   const profileFormVersionRef = useRef(0);
@@ -2780,7 +2784,7 @@ ${entries.join('\n')}`;
                           handleBlur(`${field.name}-${idx}`);
                         }}
                       />
-                      {canOpenSearchIdBackendShortcut(field.name, value) && (
+                      {extendedMode && canOpenSearchIdBackendShortcut(field.name, value) && (
                         <SearchIdBackendButton
                           type="button"
                           title="Відкрити запис searchId у Firebase"
@@ -3028,7 +3032,7 @@ ${entries.join('\n')}`;
                         })}
                   />
                   )}
-                  {canOpenSearchIdBackendShortcut(field.name, state[field.name]) && (
+                  {extendedMode && canOpenSearchIdBackendShortcut(field.name, state[field.name]) && (
                     <SearchIdBackendButton
                       type="button"
                       title="Відкрити запис searchId у Firebase"
