@@ -2936,14 +2936,15 @@ describe('spec: Parties page record shapes', () => {
 
     // A partner clinic is a deliberately simplified party type (spec §5) - just name/address (plus
     // the genitive name form and shipment-origin country, spec batch 2026-07-25), no EDRPOU/
-    // license/director/bank/logo the Ukrainian clinic record carries.
+    // license/director/bank/logo the Ukrainian clinic record carries. name.uk/country.uk carry
+    // their grammatical forms directly (spec v5: the same {nominative, genitive, ...} shape every
+    // party's name uses), not a separate nameGenitive field.
     const partnerClinic = createEmptyPartnerClinic();
     expect(partnerClinic.id).toMatch(/^partner-clinic-/);
     expect(partnerClinic).toEqual({
       id: partnerClinic.id,
-      name: { uk: '', en: '' },
-      nameGenitive: { uk: '', en: '' },
-      country: { uk: '', en: '' },
+      name: { uk: { nominative: '', genitive: '' }, en: '' },
+      country: { uk: { nominative: '', genitive: '' }, en: '' },
       address: { uk: '', en: '' },
     });
 

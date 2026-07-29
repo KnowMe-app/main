@@ -546,14 +546,16 @@ const REPRESENTATIVE_FIELDS = [
 
 const CLINIC_FIELDS = [
   { label: 'Kind', path: 'kind', type: 'select', options: CLINIC_KINDS },
-  { label: 'Name (uk)', path: 'name.uk' },
+  // Every template reads these grammatical forms straight off name.uk (e.g.
+  // {{clinic.name.uk.nominative}}, {{clinic.name.uk.accusative}} "у клініку «Вікторія»") - genitive/
+  // accusative are optional, blank until an admin fills them in.
+  { label: 'Name (uk, nominative)', path: 'name.uk.nominative' },
+  { label: 'Name (uk, genitive)', path: 'name.uk.genitive' },
+  { label: 'Name (uk, accusative "у ...")', path: 'name.uk.accusative' },
   { label: 'Name (en)', path: 'name.en' },
-  // Locative Ukrainian form ("у клініці «Вікторія»") - optional, falls back to the plain
-  // nominative Name above when blank (see enrichShipment/withDeclinedNameFallback).
-  { label: 'Name (uk, locative "у ...")', path: 'nameLocative.uk' },
-  { label: 'Legal name (uk)', path: 'legalName.uk' },
+  { label: 'Legal name (uk, nominative)', path: 'legalName.uk.nominative' },
   { label: 'Legal name (en)', path: 'legalName.en' },
-  { label: 'Medical center name (uk)', path: 'medicalCenterName.uk' },
+  { label: 'Medical center name (uk, nominative)', path: 'medicalCenterName.uk.nominative' },
   { label: 'Medical center name (en)', path: 'medicalCenterName.en' },
   { label: 'Address (uk)', path: 'address.uk' },
   { label: 'Address (en)', path: 'address.en' },
@@ -586,12 +588,14 @@ const CLINIC_FIELDS = [
 // EDRPOU/license/director/bank/logo fields, which don't apply to a clinic that never signs
 // anything itself.
 const PARTNER_CLINIC_FIELDS = [
-  { label: 'Name (uk)', path: 'name.uk' },
+  // Every template reads these grammatical forms straight off name.uk/country.uk (e.g.
+  // {{partnerClinic.name.uk.genitive}}, {{partnerClinic.country.uk.genitive}} "з клініки «Оті Юме»,
+  // Японії") - genitive is optional, blank until an admin fills it in.
+  { label: 'Name (uk, nominative)', path: 'name.uk.nominative' },
+  { label: 'Name (uk, genitive "з ...")', path: 'name.uk.genitive' },
   { label: 'Name (en)', path: 'name.en' },
-  // Genitive Ukrainian form ("з клініки «Оті Юме»") - optional, falls back to the plain nominative
-  // Name above when blank (see enrichShipment/withDeclinedNameFallback).
-  { label: 'Name (uk, genitive "з ...")', path: 'nameGenitive.uk' },
-  { label: 'Country (uk)', path: 'country.uk' },
+  { label: 'Country (uk, nominative)', path: 'country.uk.nominative' },
+  { label: 'Country (uk, genitive "з ...")', path: 'country.uk.genitive' },
   { label: 'Country (en)', path: 'country.en' },
   { label: 'Address (uk)', path: 'address.uk' },
   { label: 'Address (en)', path: 'address.en' },
@@ -601,7 +605,7 @@ const PARTNER_CLINIC_FIELDS = [
 // full bilingual `name`, read via getMaternityHospitalDisplayName (see maternityDisplayName
 // below), never a hand-typed abbreviation.
 const MATERNITY_HOSPITAL_FIELDS = [
-  { label: 'Name (uk)', path: 'name.uk' },
+  { label: 'Name (uk, nominative)', path: 'name.uk.nominative' },
   { label: 'Name (en)', path: 'name.en' },
   { label: 'EDRPOU', path: 'edrpou' },
   { label: 'Address (uk)', path: 'address.uk' },

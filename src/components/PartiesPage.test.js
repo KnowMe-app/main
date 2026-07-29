@@ -40,7 +40,7 @@ const buildParties = () => ({
   },
   representatives: {},
   clinics: {
-    'clinic-1': { id: 'clinic-1', name: { uk: 'Клініка Мрія' } },
+    'clinic-1': { id: 'clinic-1', name: { uk: { nominative: 'Клініка Мрія' } } },
   },
   maternityHospitals: {},
   notaries: {},
@@ -92,10 +92,10 @@ describe('spec: Parties page', () => {
 
     fireEvent.click(screen.getByText('Clinics'));
     const clinicRow = await screen.findByText('Клініка Мрія');
-    expect(screen.queryByLabelText('Name (uk)')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Name (uk, nominative)')).not.toBeInTheDocument();
 
     fireEvent.click(clinicRow);
-    expect(await screen.findByLabelText('Name (uk)')).toHaveValue('Клініка Мрія');
+    expect(await screen.findByLabelText('Name (uk, nominative)')).toHaveValue('Клініка Мрія');
   });
 
   it('editing a field on blur persists it additively to the record path', async () => {

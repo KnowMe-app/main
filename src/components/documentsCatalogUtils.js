@@ -714,10 +714,19 @@ const enrichPersonName = person => {
 // The maternity hospital's display name used to read a stored `shortName` field (spec §6: no
 // longer created or persisted) - this is the safe replacement: the full bilingual name, uk
 // preferred, falling back to en, never an automatic legal-name abbreviation (that algorithm is
-// for personal names, not organizations).
-export const getMaternityHospitalDisplayName = maternityHospital => (
-  maternityHospital?.name?.uk || maternityHospital?.name?.en || ''
-);
+// for personal names, not organizations). `name.uk`/`name.en` can be stored either as a plain
+// string (createEmptyMaternityHospital's shape) or as a `{nominative, genitive, ...}` object (the
+// same grammatical-forms shape every other party's name uses) - never assume one over the other,
+// or a real record on the shape this function doesn't expect renders a raw object as a React
+// child (a hard crash, not just a blank field) wherever this string is displayed.
+export const getMaternityHospitalDisplayName = maternityHospital => {
+  const { uk, en } = maternityHospital?.name || {};
+  if (typeof uk === 'string' && uk) return uk;
+  if (isPlainObject(uk) && (uk.nominative || uk.short)) return uk.nominative || uk.short;
+  if (typeof en === 'string' && en) return en;
+  if (isPlainObject(en) && (en.full || en.short)) return en.full || en.short;
+  return '';
+};
 
 // --- Party record shapes (Parties page, batch 19 §1) --------------------------------------------
 // Canonical "blank record" for each party collection - the shape a freshly-added record starts
@@ -793,14 +802,14 @@ export const CLINIC_KINDS = ['foreign', 'ukrainian'];
 export const createEmptyClinic = () => ({
   id: makeRecordId('clinic'),
   kind: 'ukrainian',
-  name: { uk: '', en: '' },
-  // The Ukrainian locative form of `name.uk` ("у клініці «Вікторія»", as opposed to the nominative
-  // "клініка «Вікторія»") - a document that names this clinic after "у" reads nameLocative.uk when
-  // filled in, falling back to the plain nominative name otherwise (see enrichShipment). Optional,
-  // never required by any template that only ever reads `name.uk`.
-  nameLocative: { uk: '', en: '' },
-  legalName: { uk: '', en: '' },
-  medicalCenterName: { uk: '', en: '' },
+  // `name.uk`/`legalName.uk`/`medicalCenterName.uk` carry their grammatical forms directly as
+  // siblings of `nominative` (`{{clinic.name.uk.accusative}}`, `{{clinic.name.uk.nominative}}` -
+  // real templates read these paths straight off the clinic, never through a separate
+  // nameLocative-style field) - genitive/accusative are optional, blank until an admin fills them
+  // in, never required by a template that only ever reads `.nominative`.
+  name: { uk: { nominative: '', genitive: '', accusative: '' }, en: '' },
+  legalName: { uk: { nominative: '' }, en: '' },
+  medicalCenterName: { uk: { nominative: '' }, en: '' },
   address: { uk: '', en: '' },
   phone: '',
   email: '',
@@ -825,23 +834,22 @@ export const createEmptyClinic = () => ({
 // just the name and address a static document needs to reference it by.
 export const createEmptyPartnerClinic = () => ({
   id: makeRecordId('partner-clinic'),
-  name: { uk: '', en: '' },
-  // The Ukrainian genitive form of `name.uk` ("з клініки «Оті Юме»", as opposed to the nominative
-  // "клініка «Оті Юме»") - a document that names this clinic after "з" reads nameGenitive.uk when
-  // filled in, falling back to the plain nominative name otherwise (see enrichShipment).
-  nameGenitive: { uk: '', en: '' },
-  // Country a shipment "from" this clinic is described as coming from (geneticAffinityCertificate's
-  // "з ..., Японія" - spec batch 2026-07-25). Optional, never required by any template that doesn't
-  // reference it.
-  country: { uk: '', en: '' },
+  // `name.uk`/`country.uk` carry their grammatical forms directly as siblings of `nominative`
+  // ({{partnerClinic.name.uk.genitive}}, {{partnerClinic.country.uk.genitive}} - real templates
+  // read these paths straight off the partner clinic) - genitive is optional, blank until an admin
+  // fills it in, never required by a template that only ever reads `.nominative`/plain `.en`.
+  name: { uk: { nominative: '', genitive: '' }, en: '' },
+  country: { uk: { nominative: '', genitive: '' }, en: '' },
   address: { uk: '', en: '' },
 });
 
 // `shortName` is never stored (spec §6) - use getMaternityHospitalDisplayName wherever the UI
-// used to read `maternityHospital.shortName.uk`.
+// used to read `maternityHospital.shortName.uk`. `name.uk` carries its nominative form as an
+// object sibling (`{{maternityHospital.name.uk}}` resolves it via the generic nominative fallback
+// in fillPlaceholders), same shape every other party's name uses - never a plain string.
 export const createEmptyMaternityHospital = () => ({
   id: makeRecordId('maternity-hospital'),
-  name: { uk: '', en: '' },
+  name: { uk: { nominative: '' }, en: '' },
   edrpou: '',
   address: { uk: '', en: '' },
 });
@@ -1252,20 +1260,20 @@ export const resolveGeneticSourceLabel = (source, { wife, husband } = {}) => {
   return { uk: source, en: source };
 };
 
-// A declined-form name field (nameGenitive on a partner clinic, nameLocative on a clinic) falls
-// back to the plain nominative `name` when the admin hasn't filled the grammatical variant in yet -
-// a document referencing "{{...sourceClinic.nameGenitive.uk}}" never renders blank just because
-// only the nominative name was ever entered (spec batch 2026-07-25: Ukrainian grammar after
-// "у"/"з" needs the clinic's name declined, not its bare nominative form).
-const withDeclinedNameFallback = (record, field) => {
+// A name's declined grammatical form (genitive "з клініки «Оті Юме»", accusative "у клініку
+// «Вікторія»") lives directly on `name.uk` as a sibling of `nominative` (spec: the same
+// {nominative, genitive, accusative} shape every party's name uses) - falls back to the plain
+// nominative form when the admin hasn't filled the declined variant in yet, and to '' (never a
+// leaked object) when `name.uk` is still a plain, not-yet-migrated string.
+const withDeclinedNameFallback = (record, grammaticalCase) => {
   if (!record) return record;
-  const declined = record[field] || {};
+  const nameUk = record?.name?.uk;
+  const nameEn = record?.name?.en;
+  const declinedUk = isPlainObject(nameUk) ? (nameUk[grammaticalCase] || nameUk.nominative || '') : (nameUk || '');
+  const declinedEn = isPlainObject(nameEn) ? (nameEn.full || nameEn.short || '') : (nameEn || '');
   return {
     ...record,
-    [field]: {
-      uk: declined.uk || record.name?.uk || '',
-      en: declined.en || record.name?.en || '',
-    },
+    [grammaticalCase]: { uk: declinedUk, en: declinedEn },
   };
 };
 
@@ -1273,12 +1281,15 @@ const withDeclinedNameFallback = (record, field) => {
 // clinic and Ukrainian destination clinic are the case's own relations
 // (relations.partnerClinicId/ukrainianClinicId), already resolved once in resolveCaseContext and
 // passed in here - never mutates the stored shipment, just layers the resolved party records on top.
+// The real templates read `{{partnerClinic.name.uk.genitive}}`/`{{clinic.name.uk.accusative}}`
+// directly (never through this shipment-nested alias) - `sourceClinic`/`destinationClinic` are kept
+// as a convenience alias for any template that does reference them through the shipment.
 export const enrichShipment = (shipment, { partnerClinic, clinic } = {}) => {
   if (!shipment) return null;
   return {
     ...shipment,
-    sourceClinic: withDeclinedNameFallback(partnerClinic, 'nameGenitive'),
-    destinationClinic: withDeclinedNameFallback(clinic, 'nameLocative'),
+    sourceClinic: withDeclinedNameFallback(partnerClinic, 'genitive'),
+    destinationClinic: withDeclinedNameFallback(clinic, 'accusative'),
   };
 };
 
