@@ -205,6 +205,102 @@ describe('layoutV2 normalization (buildGeneratedDocument)', () => {
   });
 });
 
+// spec: an admin should be able to place the clinic logo by typing {{logo}}/{{logo-long}} into an
+// ordinary paragraph or richParagraph block (the full T/B/I/align/condition toolbar every other
+// block has), not only through the dedicated letterhead/image block - same convention the legacy
+// (non-layoutV2) renderer already applies to a leading paragraph.
+describe('layoutV2: {{logo}}/{{logo-long}} typed as a plain paragraph/richParagraph block', () => {
+  const templateWithLogoParagraph = () => ({
+    ...layoutV2Template(),
+    layoutV2: {
+      ...layoutV2Template().layoutV2,
+      blocks: [
+        { type: 'paragraph', style: 'body', text: '{{logo}}' },
+        { type: 'richParagraph', style: 'body', runs: [{ text: '{{logo-long}}' }] },
+        { type: 'paragraph', style: 'titleMain', text: 'ДОВІДКА' },
+      ],
+    },
+  });
+
+  it('tags the block with logoToken instead of leaving literal {{logo}} text, and carries no other paragraph fields', () => {
+    const resolved = buildGeneratedDocument(templateWithLogoParagraph(), context);
+    const [logoBlock, logoLongBlock, titleBlock] = resolved.layoutV2.blocks;
+    expect(logoBlock.logoToken).toBe('logo');
+    expect(logoBlock.text).toBeUndefined();
+    expect(logoLongBlock.logoToken).toBe('logo-long');
+    expect(logoLongBlock.runs).toBeUndefined();
+    expect(titleBlock.text).toBe('ДОВІДКА');
+    const serialized = JSON.stringify(resolved.layoutV2);
+    expect(serialized).not.toMatch(/\{\{[^}]+\}\}/);
+  });
+
+  it('a plain paragraph/richParagraph whose text is NOT exactly {{logo}} keeps rendering as ordinary text', () => {
+    const template = {
+      ...templateWithLogoParagraph(),
+      layoutV2: {
+        ...templateWithLogoParagraph().layoutV2,
+        blocks: [
+          { type: 'paragraph', style: 'body', text: '{{logo}} in the middle of a sentence' },
+          { type: 'richParagraph', style: 'body', runs: [{ text: '{{logo}}' }, { text: ' plus another run' }] },
+        ],
+      },
+    };
+    const resolved = buildGeneratedDocument(template, context);
+    expect(resolved.layoutV2.blocks[0].logoToken).toBeUndefined();
+    expect(resolved.layoutV2.blocks[0].text).toContain('in the middle of a sentence');
+    expect(resolved.layoutV2.blocks[1].logoToken).toBeUndefined();
+    expect(resolved.layoutV2.blocks[1].runs.map(run => run.text).join('')).toContain('plus another run');
+  });
+
+  it('renders a real PDF that embeds the logo image from a plain paragraph typed as {{logo}}', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [{ src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 }],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+    const collect = async streamPromise => {
+      const stream = await streamPromise;
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        stream.on('data', chunk => chunks.push(chunk));
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      return Buffer.concat(chunks);
+    };
+
+    const resolved = buildGeneratedDocument(templateWithLogoParagraph(), context);
+    const withLogoElement = React.createElement(DocumentsPdfDocument, { documents: [resolved], layout: 'two-column', clinicLogos });
+    const withLogo = await collect(pdf(withLogoElement).toBuffer());
+
+    const withoutLogoResolved = buildGeneratedDocument({
+      ...templateWithLogoParagraph(),
+      layoutV2: { ...templateWithLogoParagraph().layoutV2, blocks: [{ type: 'paragraph', style: 'titleMain', text: 'ДОВІДКА' }] },
+    }, context);
+    const withoutLogoElement = React.createElement(DocumentsPdfDocument, { documents: [withoutLogoResolved], layout: 'two-column', clinicLogos });
+    const withoutLogo = await collect(pdf(withoutLogoElement).toBuffer());
+
+    // Embedding the (tiny, base64) logo image twice (once per {{logo}}/{{logo-long}} block) makes
+    // the PDF meaningfully bigger than the same document with no logo blocks at all.
+    expect(withLogo.length).toBeGreaterThan(withoutLogo.length);
+  }, 20000);
+
+  it('builds a real DOCX that embeds the logo image from a plain paragraph typed as {{logo}}', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const resolved = buildGeneratedDocument(templateWithLogoParagraph(), context);
+    const withLogoBlob = await buildDocumentsDocx({ documents: [resolved], layout: 'two-column', clinicLogos });
+    const withoutLogoResolved = buildGeneratedDocument({
+      ...templateWithLogoParagraph(),
+      layoutV2: { ...templateWithLogoParagraph().layoutV2, blocks: [{ type: 'paragraph', style: 'titleMain', text: 'ДОВІДКА' }] },
+    }, context);
+    const withoutLogoBlob = await buildDocumentsDocx({ documents: [withoutLogoResolved], layout: 'two-column', clinicLogos });
+    expect(withLogoBlob.size).toBeGreaterThan(withoutLogoBlob.size);
+  }, 20000);
+});
+
 describe('layoutV2 PDF renderer (real @react-pdf render)', () => {
   it('renders a layoutV2 document without throwing', async () => {
     const { pdf, Font } = await import('@react-pdf/renderer');

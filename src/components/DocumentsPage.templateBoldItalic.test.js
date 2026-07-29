@@ -294,7 +294,7 @@ describe('spec: beforeTitle rows drop the align/bold pickers, unified with parag
     expect(screen.queryAllByRole('slider')).toHaveLength(0);
 
     fireEvent.click(within(block).getByTitle("Block formatting - font size (pt) and the signer block's offset (%)"));
-    const offsetField = within(block).getByLabelText('Offset (%)');
+    const offsetField = screen.getByLabelText('Offset (%)');
     expect(offsetField).toHaveValue('');
     expect(offsetField).toHaveAttribute('placeholder', '47.2'); // 8.5 cm of the 18 cm text width
 

@@ -590,6 +590,28 @@ const LayoutV2AlignedBox = ({ block, contentWidthMm }) => (
   </View>
 );
 
+// A plain paragraph/richParagraph block typed as just {{logo}}/{{logo-long}} (spec: same
+// convention the legacy renderer already applies to a leading paragraph) - draws the actual
+// clinic logo image instead of literal text, centered, sized from the page's configured logo
+// width (the same default the letterhead/image block's own author-chosen widthMm otherwise
+// covers). Renders nothing (not even its own margins) when no logo variant is uploaded yet -
+// consistent with the legacy LogoBlock, which never leaves an empty placeholder box behind.
+const LayoutV2LogoParagraph = ({ block, clinicLogos, logoWidthPt }) => {
+  const variant = getClinicLogo(clinicLogos, block.logoToken);
+  if (!variant?.dataUrl) return null;
+  return (
+    <View
+      style={{
+        alignItems: 'center',
+        marginTop: (block.marginTopMm || 0) * MM_TO_PT,
+        marginBottom: (block.marginBottomMm || 0) * MM_TO_PT,
+      }}
+    >
+      <Image src={variant.dataUrl} style={{ width: logoWidthPt || 156 }} />
+    </View>
+  );
+};
+
 const LayoutV2Paragraph = ({ block }) => (
   <Text
     style={[
@@ -698,7 +720,10 @@ const LayoutV2SignatureTable = ({ block }) => (
   </View>
 );
 
-const LayoutV2Block = ({ block, clinicLogos, contentWidthMm }) => {
+const LayoutV2Block = ({
+  block, clinicLogos, contentWidthMm, logoWidthPt,
+}) => {
+  if (block.logoToken) return <LayoutV2LogoParagraph block={block} clinicLogos={clinicLogos} logoWidthPt={logoWidthPt} />;
   switch (block.type) {
     case 'letterhead': return <LayoutV2Letterhead block={block} clinicLogos={clinicLogos} />;
     case 'alignedBox': return <LayoutV2AlignedBox block={block} contentWidthMm={contentWidthMm} />;
@@ -711,7 +736,7 @@ const LayoutV2Block = ({ block, clinicLogos, contentWidthMm }) => {
   }
 };
 
-const renderLayoutV2DocumentPage = (doc, clinicLogos) => {
+const renderLayoutV2DocumentPage = (doc, clinicLogos, logoWidthPt) => {
   const page = doc.layoutV2.page || {};
   const margins = page.marginsMm || {
     top: 5, right: 15, bottom: 10, left: 15,
@@ -736,7 +761,7 @@ const renderLayoutV2DocumentPage = (doc, clinicLogos) => {
       {doc.layoutV2.blocks.map((block, index) => (
         // eslint-disable-next-line react/no-array-index-key
         <View key={index} wrap>
-          <LayoutV2Block block={block} clinicLogos={clinicLogos} contentWidthMm={contentWidthMm} />
+          <LayoutV2Block block={block} clinicLogos={clinicLogos} contentWidthMm={contentWidthMm} logoWidthPt={logoWidthPt} />
         </View>
       ))}
     </Page>
@@ -925,7 +950,7 @@ const DocumentsPdfDocument = ({
       {documents.flatMap(doc => {
         // A layoutV2 document is fully self-describing (its own page/margins/styles) and never
         // follows the page-wide bilingual/column layout selector - see buildLayoutV2Document.
-        if (doc.layoutV2) return [renderLayoutV2DocumentPage(doc, effectiveClinicLogos)];
+        if (doc.layoutV2) return [renderLayoutV2DocumentPage(doc, effectiveClinicLogos, configuredLogoWidth)];
         const effectiveLayout = getEffectiveDocLayout(doc, layout);
         return isSingleLanguageTwoColumnLayout(effectiveLayout)
           ? renderSingleLanguagePages(doc, effectiveLayout)

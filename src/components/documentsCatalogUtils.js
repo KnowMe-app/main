@@ -2483,18 +2483,30 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
         style: resolveLayoutV2Style(template, block.style, block.styleOverrides),
         lines: (block.lines || []).map(line => resolveLayoutV2Text(line, context, lang)),
       };
-    case 'paragraph':
+    // A plain paragraph/richParagraph whose whole (unresolved) text is exactly {{logo}}/
+    // {{logo-long}} - same convention the legacy (non-layoutV2) renderer already uses
+    // (getTemplateLogoType) - draws an actual clinic logo image instead of literal text, so an
+    // admin can place the logo anywhere by just typing the token into an ordinary paragraph (full
+    // T/B/I/align/condition toolbar), not only through the dedicated letterhead/image block.
+    case 'paragraph': {
+      const logoMatch = LOGO_TOKEN_PATTERN.exec(String(block.text || '').trim());
+      if (logoMatch) return { ...base, logoToken: logoMatch[1] };
       return {
         ...base,
         style: resolveLayoutV2Style(template, block.style, block.styleOverrides),
         text: resolveLayoutV2Text(block.text, context, lang) || '',
       };
-    case 'richParagraph':
+    }
+    case 'richParagraph': {
+      const runs = block.runs || [];
+      const logoMatch = runs.length === 1 ? LOGO_TOKEN_PATTERN.exec(String(runs[0]?.text || '').trim()) : null;
+      if (logoMatch) return { ...base, logoToken: logoMatch[1] };
       return {
         ...base,
         style: resolveLayoutV2Style(template, block.style, block.styleOverrides),
         runs: resolveLayoutV2Runs(block.runs, template, context, lang),
       };
+    }
     case 'fieldLine':
       return {
         ...base,
