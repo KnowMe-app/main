@@ -2578,7 +2578,7 @@ describe('spec: normalized clinic + maternityHospital structure (batch 17)', () 
 
   it('an unknown clinicId resolves clinic to null without crashing (§10, §12 #8)', () => {
     const catalog = clinicAndHospitalCatalog();
-    catalog.cases[0].relations.clinicId = 'no-such-clinic';
+    catalog.cases[0].relations.ukrainianClinicId = 'no-such-clinic';
     const context = resolveCaseContext(catalog, 'case-1');
     expect(context.clinic).toBeNull();
     expect(() => fillPlaceholders('{{clinic.name.uk}}', context, 'uk')).not.toThrow();
@@ -2753,11 +2753,16 @@ describe('spec: normalized case structure', () => {
     expect(resolveCaseContext(catalog, 'case-2').clinic.id).toBe('clinic-2');
   });
 
-  it('normalizeCaseRecord is an idempotent pass-through - no legacy migration, missing branches never crash', () => {
-    expect(normalizeCaseRecord({ id: 'case-bare' })).toEqual({ id: 'case-bare' });
+  it('normalizeCaseRecord runs the v5 migration boundary, idempotently, missing branches never crash', () => {
+    expect(normalizeCaseRecord({ id: 'case-bare' })).toEqual({ id: 'case-bare', relations: {}, documents: {} });
     expect(normalizeCaseRecord(null)).toEqual({});
     const withData = { id: 'case-1', relations: { coupleId: 'couple-1' } };
-    expect(normalizeCaseRecord(withData)).toBe(withData);
+    const normalized = normalizeCaseRecord(withData);
+    expect(normalized).toEqual({ id: 'case-1', relations: { coupleId: 'couple-1' }, documents: {} });
+    // Never mutates the source object the caller passed in.
+    expect(withData).toEqual({ id: 'case-1', relations: { coupleId: 'couple-1' } });
+    // Re-normalizing an already-v5 case changes nothing further.
+    expect(normalizeCaseRecord(normalized)).toEqual(normalized);
   });
 
   it('a two-child array does not break the generated preview', () => {
@@ -2830,11 +2835,11 @@ describe('spec: normalized case structure', () => {
 
   it('validateCaseRecord reports the base checklist without throwing on a bare/empty case', () => {
     expect(validateCaseRecord({})).toEqual(expect.arrayContaining([
-      'case.id', 'case.relations.coupleId', 'case.relations.clinicId',
+      'case.id', 'case.relations.coupleId', 'case.relations.ukrainianClinicId',
       'case.relations.surrogateMotherId', 'case.childbirth.children',
     ]));
     expect(validateCaseRecord(createEmptyCase({ caseId: 'case-9' }))).toEqual(expect.arrayContaining([
-      'case.relations.coupleId', 'case.relations.clinicId', 'case.relations.surrogateMotherId', 'case.childbirth.children',
+      'case.relations.coupleId', 'case.relations.ukrainianClinicId', 'case.relations.surrogateMotherId', 'case.childbirth.children',
     ]));
     expect(validateCaseRecord(twoCasesCatalog().cases[0])).toEqual([]);
   });

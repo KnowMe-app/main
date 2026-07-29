@@ -1,17 +1,23 @@
-// Unit + integration tests for the ART program (case.artProgram) support: resolvers, formatters,
-// the four document contexts that reference it (embryoOwnershipStatement, geneticAffinityCertificate,
-// racssClinicLetter, medicalServicesAgreement), and couple.marriage enrichment.
+// Unit + integration tests for the ART program (case.artProgram) support: v5 resolvers/formatters,
+// the singleton embryoShipment/transferAttempt/hcgTest/ultrasound model, the scalar oocyteSource/
+// spermSource genetic-material fields, the v5 migration boundary (migrateCaseToV5/migrateCasesToV5),
+// and the four document contexts that reference artProgram (embryoOwnershipStatement,
+// geneticAffinityCertificate, racssClinicLetter, medicalServicesAgreement).
 //
 // All fixtures below are fictional - tests must never carry real client data (same rule as
 // documentsCatalogUtils.test.js).
 import {
+  CURRENT_SCHEMA_VERSION,
   DERIVED_CONTEXT_FIELD_KEYS,
+  GENETIC_SOURCE_ROLE_VALUES,
   MISSING_VALUE_PLACEHOLDER,
+  auditTemplateVariables,
   buildEmbryoOwnershipStatementContext,
   buildGeneratedDocument,
   buildGeneticAffinityCertificateContext,
   buildMedicalServicesAgreementContext,
   buildRacssClinicLetterContext,
+  classifyTemplateVariablePath,
   deepMergeRecords,
   enrichCoupleMarriage,
   enrichHcgTestForTemplate,
@@ -25,21 +31,25 @@ import {
   formatDateRange,
   formatEmbryoCountTextUk,
   formatGestationalAgeText,
-  formatHcgTestOptionLabel,
   formatPregnancyTypeTextUk,
   formatShipmentPeriod,
-  formatUltrasoundOptionLabel,
+  isDocumentsSchemaV5,
+  isGeneticSourceDonorCode,
   mergeDocumentsCatalog,
+  migrateCaseToV5,
+  migrateCasesToV5,
+  normalizeCaseRecord,
   normalizeDocumentsCatalog,
+  normalizeDocumentsSettings,
   parseDocumentsTechnicalInput,
   resolveCaseContext,
   resolveEmbryoStageLabel,
+  resolveGeneticSourceLabel,
   resolveHcgTest,
   resolveShipment,
   resolveTransferAttempt,
   resolveUltrasound,
   stripDerivedFields,
-  validateArtProgramReferences,
   validateDocumentTemplate,
 } from './documentsCatalogUtils';
 
@@ -58,58 +68,54 @@ const clinic = {
   legalName: { uk: 'ТОВ «Приклад»', en: 'Example LLC' },
 };
 
+const couple = {
+  id: 'couple-fixture',
+  partners: [
+    { id: 'wife-fixture', role: 'wife', name: { uk: { nominative: 'Кацура Юкако' }, en: 'Katsura Yukako' } },
+    { id: 'husband-fixture', role: 'husband', name: { uk: { nominative: 'Кацура Кеіго' }, en: 'Katsura Keigo' } },
+  ],
+};
+
 const rawParties = {
   clinics: { [clinic.id]: clinic },
   partnerClinics: { [partnerClinic.id]: partnerClinic },
+  couples: { [couple.id]: couple },
 };
 
-// enrichShipment (and everything built on it) reads `parties.clinics`/`parties.partnerClinics` as
-// arrays - the same normalized shape resolveCaseContext always passes it (catalog.parties from
-// normalizeDocumentsCatalog), never the raw id-keyed map a Firebase snapshot carries.
+// enrichShipment (and everything built on it) reads the case's own resolved clinic/partnerClinic
+// (spec v5 §1.2/§1.4: a shipment carries no clinic ids of its own) - the same `{ clinic, partnerClinic }`
+// pair resolveCaseContext always resolves from the case's relations and passes in.
 const parties = normalizeDocumentsCatalog(rawParties, {}, {}).parties;
+const resolvedClinics = { clinic, partnerClinic };
 
-// A case that uses the new startDate/endDate planned-period shape (spec: "Kikawa" scenario). The
-// case's one shipment (batch 26 §5: "one case = one partner clinic = one shipment") lives directly
-// on relations, never a shipmentId-addressed list - no document referencing it needs an id at all.
+// A case using the v5 shape throughout (spec §1.3): the one embryo shipment lives at
+// `artProgram.embryoShipment` (no id, no clinic ids of its own - those are the case's own
+// relations), the one transfer attempt at `artProgram.transferAttempt`, its hCG test/ultrasound
+// nested directly as singletons (no id, no map, existence alone means positive/confirmed).
 const caseWithDateRangePeriod = {
   id: 'case-daterange',
-  relations: {
-    clinicId: clinic.id,
-    partnerClinicId: partnerClinic.id,
-    shipment: {
-      sourceClinicId: partnerClinic.id,
-      destinationClinicId: clinic.id,
+  relations: { coupleId: couple.id, ukrainianClinicId: clinic.id, partnerClinicId: partnerClinic.id },
+  artProgram: {
+    medicalIndications: { uk: 'Тестовий діагноз' },
+    oocyteSource: 'wife',
+    spermSource: 'husband',
+    medicalTeam: { physician: { name: { uk: { nominative: 'Тестова Лікарка Лікарівна' } } } },
+    embryoShipment: {
       ivfDate: '2021-08-17',
       plannedPeriod: { startDate: '2026-01-01', endDate: '2026-02-01' },
       receivedDate: '2025-08-27',
     },
-  },
-  artProgram: {
-    medicalIndication: { diagnosis: { uk: 'Тестовий діагноз' } },
-    geneticMaterial: { oocyteSourcePartnerRole: 'wife', spermSourcePartnerRole: 'husband' },
-    medicalTeam: { physician: { name: { uk: { nominative: 'Тестова Лікарка Лікарівна' } } } },
-    // batch 24 §2: a single transfer attempt object, not a log of attempts - only the one
-    // successful attempt's data ever matters once the program is underway.
     transferAttempt: {
       date: '2025-09-18',
       embryoCount: 1,
       embryoStage: 'blastocyst',
-      hcgTests: {
-        'hcg-1': { id: 'hcg-1', date: '2025-09-30', positive: true },
-        'hcg-2': { id: 'hcg-2', date: '2025-11-15', positive: false },
-      },
-      ultrasounds: {
-        'ultrasound-1': {
-          id: 'ultrasound-1', date: '2025-10-17', pregnancyConfirmed: true, fetusCount: 1, gestationalAgeWeeks: { from: 6, to: 7 },
-        },
-      },
+      hcgTest: { date: '2025-09-30' },
+      ultrasound: { date: '2025-10-17', fetusCount: 1, gestationalAgeWeeks: { from: 6, to: 7 } },
     },
   },
   documents: {
-    geneticAffinityCertificate: {
-      hcgTestId: 'hcg-1', ultrasoundId: 'ultrasound-1', issueDate: '2025-10-20', outgoingNumber: '42/1',
-    },
-    racssClinicLetter: { ultrasoundId: 'ultrasound-1' },
+    geneticAffinityCertificate: { issueDate: '2025-10-20', outgoingNumber: '42/1' },
+    racssClinicLetter: {},
     medicalServicesAgreement: { date: '2025-09-12' },
   },
 };
@@ -117,63 +123,28 @@ const caseWithDateRangePeriod = {
 // A case that only ever carries the migrated freeform text period (spec: "Katsura" scenario).
 const caseWithTextPeriod = {
   id: 'case-textperiod',
-  relations: {
-    clinicId: clinic.id,
-    partnerClinicId: partnerClinic.id,
-    shipment: {
-      sourceClinicId: partnerClinic.id,
-      destinationClinicId: clinic.id,
+  relations: { ukrainianClinicId: clinic.id, partnerClinicId: partnerClinic.id },
+  artProgram: {
+    embryoShipment: {
       ivfDate: '2021-08-17',
       plannedPeriod: { text: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' } },
     },
   },
 };
 
-// A pre-batch-26 case: its one shipment is still stored the old, shipmentId-addressed way
-// (artProgram.embryoShipments, referenced from transferAttempt.shipmentId) - resolveShipment must
-// still find it read-only, so nothing already entered goes blank the moment this ships.
-const caseWithLegacyShipmentShape = {
-  id: 'case-legacy-shipment',
-  relations: { clinicId: clinic.id, partnerClinicId: partnerClinic.id },
-  artProgram: {
-    embryoShipments: {
-      'shipment-1': {
-        id: 'shipment-1',
-        sourceClinicId: partnerClinic.id,
-        destinationClinicId: clinic.id,
-        receivedDate: '2025-08-27',
-      },
-    },
-    transferAttempt: { shipmentId: 'shipment-1', date: '2025-09-18', hcgTests: {}, ultrasounds: {} },
-  },
-};
-
-// A pre-artProgram case: no artProgram at all, and embryoOwnershipStatement still stored the old
-// way (spec §14 backward compatibility).
+// A pre-artProgram case: no artProgram at all.
 const caseWithoutArtProgram = {
   id: 'case-old',
-  relations: { clinicId: clinic.id },
-  documents: {
-    embryoOwnershipStatement: {
-      ivfDate: '2021-08-17',
-      shipmentPeriod: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' },
-    },
-  },
+  relations: { ukrainianClinicId: clinic.id },
 };
 
-// The transfer attempt's own hCG/ultrasound references point at ids that don't exist (spec
-// §13/§15) - the case has no shipment at all, which is an ordinary "not set" state, not a broken
-// reference (batch 26 §5 removed the shipmentId a document could dangle on in the first place).
-const caseWithBrokenReferences = {
-  id: 'case-broken',
-  relations: { clinicId: clinic.id },
-  artProgram: {
-    transferAttempt: { date: '2025-09-18', hcgTests: {}, ultrasounds: {} },
-  },
-  documents: {
-    geneticAffinityCertificate: { hcgTestId: 'hcg-999', ultrasoundId: 'ultrasound-999' },
-    racssClinicLetter: { ultrasoundId: 'ultrasound-999' },
-  },
+// A transfer attempt exists but never got a hCG test/ultrasound entered yet - the ordinary "not
+// set" state (spec §1.5), never a broken reference (there's no id left to dangle in v5).
+const caseWithTransferButNoTests = {
+  id: 'case-no-tests',
+  relations: { ukrainianClinicId: clinic.id },
+  artProgram: { transferAttempt: { date: '2025-09-18' } },
+  documents: { geneticAffinityCertificate: {}, racssClinicLetter: {} },
 };
 
 const buildCatalog = (...cases) => normalizeDocumentsCatalog(
@@ -184,55 +155,65 @@ const buildCatalog = (...cases) => normalizeDocumentsCatalog(
 
 // --- Resolvers -------------------------------------------------------------------------------
 
-describe('spec: null-safe artProgram resolvers (resolveShipment/resolveTransferAttempt/resolveHcgTest/resolveUltrasound)', () => {
-  it('resolves the case\'s one shipment straight off relations, and its one transfer attempt (no id needed for either, batch 24 §2/batch 26 §5)', () => {
+describe('spec §1.3/§1.4: null-safe artProgram resolvers (resolveShipment/resolveTransferAttempt/resolveHcgTest/resolveUltrasound)', () => {
+  it('resolves the case\'s one shipment/transfer attempt straight off artProgram (singleton, no id needed for either)', () => {
     const { artProgram } = caseWithDateRangePeriod;
-    expect(resolveShipment(caseWithDateRangePeriod)).toBe(caseWithDateRangePeriod.relations.shipment);
+    expect(resolveShipment(caseWithDateRangePeriod)).toBe(artProgram.embryoShipment);
     expect(resolveTransferAttempt(caseWithDateRangePeriod)).toBe(artProgram.transferAttempt);
   });
 
-  it('falls back to the pre-batch-26 shipmentId-addressed shape, read-only, when relations.shipment is unset', () => {
-    const legacyShipment = caseWithLegacyShipmentShape.artProgram.embryoShipments['shipment-1'];
-    expect(resolveShipment(caseWithLegacyShipmentShape)).toBe(legacyShipment);
-  });
-
-  it('resolves an existing hCG test/ultrasound from within the transfer attempt', () => {
+  it('resolves the transfer attempt\'s own nested singleton hcgTest/ultrasound - no id, no map', () => {
     const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
-    expect(resolveHcgTest(transfer, 'hcg-1')).toBe(transfer.hcgTests['hcg-1']);
-    expect(resolveUltrasound(transfer, 'ultrasound-1')).toBe(transfer.ultrasounds['ultrasound-1']);
+    expect(resolveHcgTest(transfer)).toBe(transfer.hcgTest);
+    expect(resolveUltrasound(transfer)).toBe(transfer.ultrasound);
   });
 
-  it('never throws and returns null for a case with no shipment/artProgram at all, or a missing case', () => {
+  it('never throws and returns null for a case with no shipment/artProgram/transfer at all, or a missing case', () => {
     expect(resolveShipment(null)).toBeNull();
     expect(resolveShipment(caseWithoutArtProgram)).toBeNull();
-    expect(resolveShipment(caseWithBrokenReferences)).toBeNull();
     expect(resolveTransferAttempt(caseWithoutArtProgram)).toBeNull();
     expect(resolveTransferAttempt(null)).toBeNull();
-    expect(resolveHcgTest(null, 'hcg-1')).toBeNull();
-    expect(resolveHcgTest({ hcgTests: {} }, 'hcg-1')).toBeNull();
-    expect(resolveUltrasound(null, 'ultrasound-1')).toBeNull();
+    expect(resolveHcgTest(null)).toBeNull();
+    expect(resolveHcgTest({})).toBeNull();
+    expect(resolveUltrasound(null)).toBeNull();
+    expect(resolveUltrasound(resolveTransferAttempt(caseWithTransferButNoTests))).toBeNull();
   });
 
-  it('a second hCG test never overwrites or shadows the first (independent lookup by id within the one transfer attempt)', () => {
-    const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
-    expect(resolveHcgTest(transfer, 'hcg-1').positive).toBe(true);
-    expect(resolveHcgTest(transfer, 'hcg-2').positive).toBe(false);
-  });
-
-  it('enrichShipment attaches sourceClinic (partnerClinics) and destinationClinic (clinics), null-safe', () => {
+  it('enrichShipment attaches sourceClinic (the case\'s own partnerClinic) and destinationClinic (the case\'s own clinic), null-safe', () => {
     const shipment = resolveShipment(caseWithDateRangePeriod);
-    const enriched = enrichShipment(shipment, parties);
-    // enrichShipment layers a declined-name fallback onto the party record (spec batch 2026-07-25),
-    // so this is no longer the exact same object reference as the fixture - just the same party.
+    const enriched = enrichShipment(shipment, resolvedClinics);
     expect(enriched.sourceClinic.id).toBe(partnerClinic.id);
     expect(enriched.destinationClinic.id).toBe(clinic.id);
-    expect(enrichShipment(null, parties)).toBeNull();
+    expect(enrichShipment(null, resolvedClinics)).toBeNull();
+  });
+});
+
+// --- Genetic-material scalar source (spec §1.7/§3.4) -----------------------------------------
+
+describe('spec §1.7/§3.4: oocyteSource/spermSource are scalar strings, resolveGeneticSourceLabel never contains a lookup table', () => {
+  it('reserves exactly "wife"/"husband"; anything else non-empty is a donor code', () => {
+    expect(GENETIC_SOURCE_ROLE_VALUES).toEqual(['wife', 'husband']);
+    expect(isGeneticSourceDonorCode('wife')).toBe(false);
+    expect(isGeneticSourceDonorCode('husband')).toBe(false);
+    expect(isGeneticSourceDonorCode('ED-123')).toBe(true);
+    expect(isGeneticSourceDonorCode('')).toBe(false);
+    expect(isGeneticSourceDonorCode(undefined)).toBe(false);
+  });
+
+  it('resolveGeneticSourceLabel resolves "wife"/"husband" to the already-resolved party name, and any other code to itself', () => {
+    const wife = { name: { uk: { nominative: 'Кацура Юкако' }, en: 'Katsura Yukako' } };
+    const husband = { name: { uk: { nominative: 'Кацура Кеіго' }, en: 'Katsura Keigo' } };
+    expect(resolveGeneticSourceLabel('wife', { wife, husband })).toBe(wife.name);
+    expect(resolveGeneticSourceLabel('husband', { wife, husband })).toBe(husband.name);
+    expect(resolveGeneticSourceLabel('ED-123', { wife, husband })).toEqual({ uk: 'ED-123', en: 'ED-123' });
+    expect(resolveGeneticSourceLabel('', { wife, husband })).toBeNull();
+    expect(resolveGeneticSourceLabel(undefined, {})).toBeNull();
   });
 });
 
 // --- Formatters --------------------------------------------------------------------------------
 
-describe('spec §6: ART formatters', () => {
+describe('spec §3.5: ART formatters', () => {
   it('formatDateNumericUk formats an ISO date as DD.MM.YYYY, and blank/invalid input as \'\'', () => {
     expect(formatDateNumericUk('2025-09-18')).toBe('18.09.2025');
     expect(formatDateNumericUk('')).toBe('');
@@ -292,37 +273,37 @@ describe('spec §6: ART formatters', () => {
 
 // --- Template-ready enrichers ------------------------------------------------------------------
 
-describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enrichHcgTestForTemplate/enrichUltrasoundForTemplate', () => {
+describe('spec §3.2/§3.5: enrichShipmentForTemplate/enrichTransferForTemplate/enrichHcgTestForTemplate/enrichUltrasoundForTemplate', () => {
   it('enrichShipmentForTemplate adds formatted date/period fields on top of the party-enriched shipment', () => {
-    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod), parties);
+    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod), resolvedClinics);
     const enriched = enrichShipmentForTemplate(shipment);
     expect(enriched.ivfDateFormatted).toEqual({ uk: '17.08.2021', en: '17 August 2021' });
     expect(enriched.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
     expect(enriched.receivedDateFormatted.uk).toBe('27.08.2025');
-    // enrichShipment layers a declined-name fallback onto the party record (spec batch 2026-07-25),
-    // so this is no longer the exact same object reference as `partnerClinic` - just the same party.
     expect(enriched.sourceClinic.id).toBe(partnerClinic.id);
     expect(enrichShipmentForTemplate(null)).toBeNull();
   });
 
-  it('enrichTransferForTemplate adds dateFormatted/embryoCountText/embryoStageLabel and nests the enriched shipment', () => {
+  it('enrichTransferForTemplate adds dateFormatted/embryoCountText/embryoStageLabel, nests the enriched shipment, and its own hcgTest/ultrasound', () => {
     const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
-    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod), parties);
+    const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod), resolvedClinics);
     const enriched = enrichTransferForTemplate(transfer, shipment);
     expect(enriched.dateFormatted.uk).toBe('18.09.2025');
     expect(enriched.embryoCountText.uk).toBe('один ембріон');
     expect(enriched.embryoStageLabel.uk.genitive).toBe('бластоцисти');
     expect(enriched.shipment.sourceClinic.id).toBe(partnerClinic.id);
+    expect(enriched.hcgTest.dateFormatted.uk).toBe('30.09.2025');
+    expect(enriched.ultrasound.dateFormatted.uk).toBe('17.10.2025');
     expect(enrichTransferForTemplate(null, shipment)).toBeNull();
   });
 
   it('enrichHcgTestForTemplate/enrichUltrasoundForTemplate add their own formatted fields, null-safe', () => {
     const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
-    const hcgTest = enrichHcgTestForTemplate(resolveHcgTest(transfer, 'hcg-1'));
+    const hcgTest = enrichHcgTestForTemplate(resolveHcgTest(transfer));
     expect(hcgTest.dateFormatted.uk).toBe('30.09.2025');
     expect(enrichHcgTestForTemplate(null)).toBeNull();
 
-    const ultrasound = enrichUltrasoundForTemplate(resolveUltrasound(transfer, 'ultrasound-1'));
+    const ultrasound = enrichUltrasoundForTemplate(resolveUltrasound(transfer));
     expect(ultrasound.dateFormatted.uk).toBe('17.10.2025');
     expect(ultrasound.gestationalAgeText.uk).toBe('6–7 тижнів');
     expect(ultrasound.pregnancyTypeText.uk).toBe('одноплідна');
@@ -332,42 +313,30 @@ describe('spec §3/§6: enrichShipmentForTemplate/enrichTransferForTemplate/enri
 
 // --- Document contexts -------------------------------------------------------------------------
 
-describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityCertificate/racssClinicLetter/medicalServicesAgreement)', () => {
+describe('spec §1.8/§4: document contexts (embryoOwnershipStatement/geneticAffinityCertificate/racssClinicLetter/medicalServicesAgreement)', () => {
   it('embryoOwnershipStatement resolves the case\'s one shipment automatically, no shipmentId of its own needed (startDate/endDate case)', () => {
-    const context = buildEmbryoOwnershipStatementContext(caseWithDateRangePeriod, parties, undefined);
+    const context = buildEmbryoOwnershipStatementContext(caseWithDateRangePeriod, resolvedClinics, undefined);
     expect(context.shipment.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
     expect(context.shipment.sourceClinic.id).toBe(partnerClinic.id);
     expect(context.shipment.destinationClinic.id).toBe(clinic.id);
   });
 
   it('embryoOwnershipStatement resolves the case\'s one shipment automatically (migrated text case)', () => {
-    const context = buildEmbryoOwnershipStatementContext(caseWithTextPeriod, parties, undefined);
+    const context = buildEmbryoOwnershipStatementContext(caseWithTextPeriod, resolvedClinics, undefined);
     expect(context.shipment.plannedPeriodFormatted.uk).toBe('квітні – травні 2026 року');
     expect(context.shipment.plannedPeriodFormatted.en).toBe('April-May 2026');
   });
 
-  it('spec §14: falls back to legacy ivfDate/shipmentPeriod fields when the case has no shipment at all, never throwing', () => {
-    const context = buildEmbryoOwnershipStatementContext(caseWithoutArtProgram, parties, caseWithoutArtProgram.documents.embryoOwnershipStatement);
-    expect(context.shipment.ivfDateFormatted.uk).toBe('17.08.2021');
-    expect(context.shipment.plannedPeriodFormatted.uk).toBe('квітні – травні 2026 року');
-    expect(context.shipment.sourceClinic).toBeNull();
-  });
-
-  it('a case with neither a shipment nor legacy fields resolves shipment to null, never throwing', () => {
-    const context = buildEmbryoOwnershipStatementContext({ id: 'bare-case' }, parties, undefined);
+  it('a case with no shipment at all resolves shipment to null, never throwing', () => {
+    const context = buildEmbryoOwnershipStatementContext(caseWithoutArtProgram, resolvedClinics, undefined);
     expect(context.shipment).toBeNull();
+    expect(buildEmbryoOwnershipStatementContext({ id: 'bare-case' }, {}, undefined).shipment).toBeNull();
   });
 
-  it('falls back to the pre-batch-26 shipmentId-addressed shape, read-only, when relations.shipment is unset', () => {
-    const context = buildEmbryoOwnershipStatementContext(caseWithLegacyShipmentShape, parties, undefined);
-    expect(context.shipment.sourceClinic.id).toBe(partnerClinic.id);
-    expect(context.shipment.receivedDateFormatted.uk).toBe('27.08.2025');
-  });
-
-  it('geneticAffinityCertificate resolves transferAttempt/hcgTest/ultrasound by id and computes the print-only fallback fields', () => {
+  it('geneticAffinityCertificate resolves transferAttempt/hcgTest/ultrasound automatically (singleton, no id needed) and computes the print-only fallback fields', () => {
     const context = buildGeneticAffinityCertificateContext(
       caseWithDateRangePeriod,
-      parties,
+      resolvedClinics,
       caseWithDateRangePeriod.documents.geneticAffinityCertificate,
     );
     expect(context.transferAttempt.embryoCountText.uk).toBe('один ембріон');
@@ -378,26 +347,26 @@ describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityC
     expect(context.outgoingNumberOrBlank).toBe('42/1');
   });
 
-  it('batch 26 §6: geneticAffinityCertificate exposes oocyteSourceIsWife, shared/cross-referenced by any other document conditioning a block on it', () => {
-    const isWife = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, {});
+  it('geneticAffinityCertificate exposes oocyteSourceIsWife off the scalar artProgram.oocyteSource, shared/cross-referenced by any other document conditioning a block on it', () => {
+    const isWife = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {});
     expect(isWife.oocyteSourceIsWife).toBe(true);
 
-    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'donor' } } });
-    const isDonor = buildGeneticAffinityCertificateContext(donorCase, parties, {});
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { oocyteSource: 'ED-123' } });
+    const isDonor = buildGeneticAffinityCertificateContext(donorCase, resolvedClinics, {});
     expect(isDonor.oocyteSourceIsWife).toBe(false);
 
-    // No geneticMaterial data at all (old/incomplete case) degrades to false, never throwing.
-    expect(buildGeneticAffinityCertificateContext(caseWithoutArtProgram, parties, {}).oocyteSourceIsWife).toBe(false);
+    // No artProgram data at all (old/incomplete case) degrades to false, never throwing.
+    expect(buildGeneticAffinityCertificateContext(caseWithoutArtProgram, resolvedClinics, {}).oocyteSourceIsWife).toBe(false);
   });
 
   it('geneticAffinityCertificate falls back to print-only blanks (never persisted) when issueDate/outgoingNumber are unset', () => {
-    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, {});
+    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {});
     expect(context.issueDateOrBlank.uk).toBe('__.__.____');
     expect(context.outgoingNumberOrBlank).toBe('______');
   });
 
-  it('racssClinicLetter resolves its own transferAttempt/ultrasound independently of geneticAffinityCertificate', () => {
-    const context = buildRacssClinicLetterContext(caseWithDateRangePeriod, parties, caseWithDateRangePeriod.documents.racssClinicLetter);
+  it('racssClinicLetter resolves its own transferAttempt/ultrasound independently, with no requisites of its own (spec §1.3 sample: "racssClinicLetter": {})', () => {
+    const context = buildRacssClinicLetterContext(caseWithDateRangePeriod, resolvedClinics, caseWithDateRangePeriod.documents.racssClinicLetter);
     expect(context.transferAttempt.shipment.receivedDateFormatted.uk).toBe('27.08.2025');
     expect(context.ultrasound.dateFormatted.uk).toBe('17.10.2025');
   });
@@ -411,7 +380,7 @@ describe('spec §4: document contexts (embryoOwnershipStatement/geneticAffinityC
 
 // --- couple.marriage enrichment -----------------------------------------------------------------
 
-describe('spec §10: couple.marriage dateFormatted/certificateDateFormatted, old fields kept', () => {
+describe('spec: couple.marriage dateFormatted/certificateDateFormatted, old fields kept', () => {
   it('adds dateFormatted/certificateDateFormatted on top of the new date/certificateType/certificateIssuedBy shape', () => {
     const couple = {
       marriage: {
@@ -443,47 +412,6 @@ describe('spec §10: couple.marriage dateFormatted/certificateDateFormatted, old
   });
 });
 
-// --- validateArtProgramReferences (spec §13/§15) -------------------------------------------------
-
-describe('spec §13/§15: validateArtProgramReferences reports specific, actionable messages', () => {
-  it('reports one message per broken reference, never a generic "field missing"', () => {
-    const catalog = buildCatalog(caseWithBrokenReferences);
-    const issues = validateArtProgramReferences(catalog, 'case-broken');
-    expect(issues).toContain('Не знайдено аналіз ХГЧ hcg-999.');
-    expect(issues).toContain('Не знайдено УЗД ultrasound-999.');
-  });
-
-  it('a fully-valid case reports no issues', () => {
-    const catalog = buildCatalog(caseWithDateRangePeriod);
-    expect(validateArtProgramReferences(catalog, 'case-daterange')).toEqual([]);
-  });
-
-  it('a missing case id resolves to no issues rather than throwing', () => {
-    const catalog = buildCatalog(caseWithDateRangePeriod);
-    expect(() => validateArtProgramReferences(catalog, 'does-not-exist')).not.toThrow();
-    expect(validateArtProgramReferences(catalog, 'does-not-exist')).toEqual([]);
-  });
-});
-
-// --- Dropdown option labels (spec §9) -------------------------------------------------------------
-
-describe('spec §9: human-readable dropdown labels, never a raw id', () => {
-  it('formats an hcgTest/ultrasound as the exact spec example shapes', () => {
-    const transfer = resolveTransferAttempt(caseWithDateRangePeriod);
-
-    const hcgTest = resolveHcgTest(transfer, 'hcg-1');
-    expect(formatHcgTestOptionLabel(hcgTest)).toBe('ХГЧ 30.09.2025 — позитивний');
-
-    const ultrasound = resolveUltrasound(transfer, 'ultrasound-1');
-    expect(formatUltrasoundOptionLabel(ultrasound)).toBe('УЗД 17.10.2025 — 1 плід, 6–7 тижнів');
-  });
-
-  it('every label helper is null-safe', () => {
-    expect(formatHcgTestOptionLabel(null)).toBe('');
-    expect(formatUltrasoundOptionLabel(null)).toBe('');
-  });
-});
-
 // --- resolveCaseContext / fillPlaceholders integration ---------------------------------------
 
 describe('integration: resolveCaseContext wires every ART document context in, null-safe throughout', () => {
@@ -498,7 +426,18 @@ describe('integration: resolveCaseContext wires every ART document context in, n
     expect(fillPlaceholders('{{geneticAffinityCertificate.ultrasound.gestationalAgeText.uk}}', context, 'uk')).toBe('6–7 тижнів');
     expect(fillPlaceholders('{{racssClinicLetter.transferAttempt.shipment.receivedDateFormatted.uk}}', context, 'uk')).toBe('27.08.2025');
     expect(fillPlaceholders('{{medicalServicesAgreement.dateFormatted.uk}}', context, 'uk')).toBe('12.09.2025');
-    expect(fillPlaceholders('{{case.artProgram.medicalIndication.diagnosis.uk}}', context, 'uk')).toBe('Тестовий діагноз');
+    expect(fillPlaceholders('{{case.artProgram.medicalIndications.uk}}', context, 'uk')).toBe('Тестовий діагноз');
+  });
+
+  it('spec §5.1: exposes the same singleton shipment/transfer/hcgTest/ultrasound as top-level canonical context aliases, alongside the document-scoped ones', () => {
+    const catalog = buildCatalog(caseWithDateRangePeriod);
+    const context = resolveCaseContext(catalog, 'case-daterange');
+    expect(fillPlaceholders('{{artProgram.medicalIndications.uk}}', context, 'uk')).toBe('Тестовий діагноз');
+    expect(fillPlaceholders('{{artProgram.oocyteSourceLabel.uk}}', context, 'uk')).toBe('Кацура Юкако');
+    expect(fillPlaceholders('{{embryoShipment.receivedDateFormatted.uk}}', context, 'uk')).toBe('27.08.2025');
+    expect(fillPlaceholders('{{transferAttempt.embryoCountText.uk}}', context, 'uk')).toBe('один ембріон');
+    expect(fillPlaceholders('{{hcgTest.dateFormatted.uk}}', context, 'uk')).toBe('30.09.2025');
+    expect(fillPlaceholders('{{ultrasound.pregnancyTypeText.uk}}', context, 'uk')).toBe('одноплідна');
   });
 
   it('a template using every geneticAffinityCertificate/racssClinicLetter placeholder resolves with zero unresolved variables (spec: "не містить необроблених {{...}}")', () => {
@@ -529,7 +468,7 @@ describe('integration: resolveCaseContext wires every ART document context in, n
     expect(validateDocumentTemplate(template, context)).toEqual([]);
   });
 
-  it('spec §8/§9: editing the shared transfer attempt/ultrasound once is reflected simultaneously in geneticAffinityCertificate and racssClinicLetter', () => {
+  it('editing the shared transfer attempt once is reflected simultaneously in geneticAffinityCertificate and racssClinicLetter', () => {
     const catalog = buildCatalog(caseWithDateRangePeriod);
     const edited = deepMergeRecords(catalog.cases.find(item => item.id === 'case-daterange'), {
       artProgram: { transferAttempt: { date: '2026-03-03' } },
@@ -551,42 +490,32 @@ describe('integration: resolveCaseContext wires every ART document context in, n
     expect(fillPlaceholders('{{geneticAffinityCertificate.transferAttempt.dateFormatted.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
   });
 
-  it('a case with dangling reference ids resolves without throwing, and validateArtProgramReferences names the exact missing event', () => {
-    const catalog = buildCatalog(caseWithBrokenReferences);
-    const context = resolveCaseContext(catalog, 'case-broken');
-    expect(() => fillPlaceholders('{{embryoOwnershipStatement.shipment.sourceClinic.name.uk}}', context, 'uk')).not.toThrow();
-    expect(context.embryoOwnershipStatement.shipment).toBeNull();
-    expect(validateArtProgramReferences(catalog, 'case-broken').length).toBeGreaterThan(0);
-  });
-
-  it('hCG/ultrasound are selected strictly by id, not object order - picking hcg-2 resolves it, not hcg-1', () => {
-    const catalog = buildCatalog(caseWithDateRangePeriod);
-    const context = resolveCaseContext(catalog, 'case-daterange', undefined);
-    // hcg-2 (negative) is a second test on the same transfer attempt as hcg-1 (positive) - a
-    // document referencing it must never accidentally resolve hcg-1 instead.
-    const caseRecord = catalog.cases.find(item => item.id === 'case-daterange');
-    const built = buildGeneticAffinityCertificateContext(caseRecord, catalog.parties, { hcgTestId: 'hcg-2' });
-    expect(built.hcgTest.positive).toBe(false);
-    expect(built.hcgTest.dateFormatted.uk).toBe('15.11.2025');
-    expect(context).toBeTruthy(); // context built successfully above too
+  it('a transfer attempt with no hCG test/ultrasound entered yet resolves both to null without throwing (the ordinary "not set" state, not a broken reference)', () => {
+    const catalog = buildCatalog(caseWithTransferButNoTests);
+    const context = resolveCaseContext(catalog, 'case-no-tests');
+    expect(context.geneticAffinityCertificate.hcgTest).toBeNull();
+    expect(context.racssClinicLetter.ultrasound).toBeNull();
+    expect(() => fillPlaceholders('{{geneticAffinityCertificate.hcgTest.dateFormatted.uk}}', context, 'uk')).not.toThrow();
   });
 });
 
-// --- Export / stripDerivedFields (spec §11/§12) -------------------------------------------------
+// --- Export / stripDerivedFields (spec §1.9) -------------------------------------------------
 
-describe('spec §11/§12: ART-derived fields are never written back to Firebase', () => {
+describe('spec §1.9: ART-derived fields are never written back to Firebase', () => {
   it('DERIVED_CONTEXT_FIELD_KEYS lists every runtime-only ART field named in the spec', () => {
-    ['plannedPeriodFormatted', 'ivfDateFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
-      'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank']
+    ['plannedPeriodFormatted', 'ivfDateFormatted', 'sentDateFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
+      'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank',
+      'oocyteSourceLabel', 'spermSourceLabel']
       .forEach(key => expect(DERIVED_CONTEXT_FIELD_KEYS).toContain(key));
   });
 
-  it('stripDerivedFields removes every derived key from a resolved geneticAffinityCertificate/embryoOwnershipStatement context', () => {
+  it('stripDerivedFields removes every derived key from a resolved geneticAffinityCertificate/embryoOwnershipStatement/artProgram context', () => {
     const catalog = buildCatalog(caseWithDateRangePeriod);
     const context = resolveCaseContext(catalog, 'case-daterange');
     const stripped = stripDerivedFields({
       embryoOwnershipStatement: context.embryoOwnershipStatement,
       geneticAffinityCertificate: context.geneticAffinityCertificate,
+      artProgram: context.artProgram,
       couple: context.couple,
     });
     const serialized = JSON.stringify(stripped);
@@ -602,10 +531,10 @@ describe('spec §11/§12: ART-derived fields are never written back to Firebase'
   });
 });
 
-// --- Import/export round trip stays additive (spec §12) ------------------------------------------
+// --- Import/export round trip stays additive ------------------------------------------------
 
-describe('spec §12: import/merge keeps hcgTests/ultrasounds as maps, transferAttempt/relations.shipment as one object each', () => {
-  it('parseDocumentsTechnicalInput + mergeDocumentsCatalog merges the one transferAttempt in place, without disturbing relations.shipment', () => {
+describe('spec: import/merge keeps embryoShipment/transferAttempt as one object each', () => {
+  it('parseDocumentsTechnicalInput + mergeDocumentsCatalog merges the one transferAttempt in place, without disturbing embryoShipment', () => {
     const currentCatalog = buildCatalog(caseWithDateRangePeriod);
     const pasted = parseDocumentsTechnicalInput(JSON.stringify({
       cases: { 'case-daterange': { id: 'case-daterange', artProgram: { transferAttempt: { date: '2026-04-04' } } } },
@@ -615,21 +544,19 @@ describe('spec §12: import/merge keeps hcgTests/ultrasounds as maps, transferAt
     // The edit landed...
     expect(mergedCase.artProgram.transferAttempt.date).toBe('2026-04-04');
     // ...without wiping embryoCount, or the case's one shipment, which the incoming payload never
-    // mentioned (batch 26 §5: relations.shipment, not a shipmentId-addressed map any more).
+    // mentioned.
     expect(mergedCase.artProgram.transferAttempt.embryoCount).toBe(1);
-    expect(mergedCase.relations.shipment.sourceClinicId).toBe(partnerClinic.id);
+    expect(mergedCase.artProgram.embryoShipment.receivedDate).toBe('2025-08-27');
   });
 
-  it('a deep merge of one hcgTest field never replaces its sibling hcgTests/ultrasounds on the transfer attempt', () => {
+  it('a deep merge of the hcgTest singleton never disturbs its sibling ultrasound singleton', () => {
     const currentCatalog = buildCatalog(caseWithDateRangePeriod);
     const currentCase = currentCatalog.cases.find(item => item.id === 'case-daterange');
     const merged = deepMergeRecords(currentCase, {
-      artProgram: { transferAttempt: { hcgTests: { 'hcg-1': { positive: false } } } },
+      artProgram: { transferAttempt: { hcgTest: { date: '2025-11-15' } } },
     });
-    expect(merged.artProgram.transferAttempt.hcgTests['hcg-1'].positive).toBe(false);
-    expect(merged.artProgram.transferAttempt.hcgTests['hcg-1'].date).toBe('2025-09-30');
-    expect(merged.artProgram.transferAttempt.ultrasounds['ultrasound-1'].fetusCount).toBe(1);
-    expect(merged.artProgram.transferAttempt.hcgTests['hcg-2'].positive).toBe(false);
+    expect(merged.artProgram.transferAttempt.hcgTest.date).toBe('2025-11-15');
+    expect(merged.artProgram.transferAttempt.ultrasound.fetusCount).toBe(1);
   });
 });
 
@@ -651,9 +578,9 @@ describe('spec §10: passport.type/countryCode are optional and never transliter
   });
 });
 
-// --- Conditional block rendering (batch 26 §6) -----------------------------------------------
+// --- Conditional block rendering -----------------------------------------------
 
-describe('spec (batch 26 §6): evaluateBlockCondition - a block prints only when its condition path resolves truthy', () => {
+describe('spec: evaluateBlockCondition - a block prints only when its condition path resolves truthy', () => {
   it('no condition at all always renders (backward compatible)', () => {
     expect(evaluateBlockCondition(undefined, {})).toBe(true);
     expect(evaluateBlockCondition('', { anything: false })).toBe(true);
@@ -671,7 +598,7 @@ describe('spec (batch 26 §6): evaluateBlockCondition - a block prints only when
   });
 });
 
-describe('spec (batch 26 §6): buildGeneratedDocument drops a conditionally-hidden paragraph entirely, never as a blank/unresolved value', () => {
+describe('spec: buildGeneratedDocument drops a conditionally-hidden paragraph entirely, never as a blank/unresolved value', () => {
   const buildTemplate = () => ({
     id: 'birth-registration-surrogate-consent',
     title: { uk: '' },
@@ -687,17 +614,296 @@ describe('spec (batch 26 §6): buildGeneratedDocument drops a conditionally-hidd
   });
 
   it('prints the conditional paragraph when the wife is the oocyte donor', () => {
-    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, parties, {});
+    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {});
     const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
     expect(generated.paragraphs.map(p => p.type)).toEqual(['text', 'text', 'text']);
     expect(generated.paragraphs[1].uk).toContain('Кацура Юкако');
   });
 
   it('fully omits the paragraph (never a blank/unresolved value) when any other oocyte source is set, keeping every other paragraph\'s position stable', () => {
-    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'donor' } } });
-    const context = buildGeneticAffinityCertificateContext(donorCase, parties, {});
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { oocyteSource: 'ED-123' } });
+    const context = buildGeneticAffinityCertificateContext(donorCase, resolvedClinics, {});
     const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
     expect(generated.paragraphs.map(p => p.type)).toEqual(['text', 'condition-hidden', 'text']);
     expect(generated.paragraphs[2].uk).toBe('Просимо зареєструвати дитину.');
+  });
+});
+
+// --- v5 migration (spec §2.2/§4) ---------------------------------------------------------------
+
+describe('spec §2.2: schema-version validation', () => {
+  it('isDocumentsSchemaV5 is true only for a settings record carrying the current version', () => {
+    expect(isDocumentsSchemaV5({ schemaVersion: 5 })).toBe(true);
+    expect(isDocumentsSchemaV5({ schemaVersion: 4 })).toBe(false);
+    expect(isDocumentsSchemaV5({})).toBe(false);
+    expect(isDocumentsSchemaV5(null)).toBe(false);
+  });
+
+  it('normalizeDocumentsSettings always stamps the current schema version going forward', () => {
+    expect(normalizeDocumentsSettings({}).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(normalizeDocumentsSettings(null).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(normalizeDocumentsSettings({ schemaVersion: 4 }).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  });
+});
+
+describe('spec §4: migrateCaseToV5 - one idempotent migration boundary, never guesses ambiguous/missing data', () => {
+  it('is a no-op (report.changed: false) on an already-v5 case, and never mutates the source object', () => {
+    const before = JSON.stringify(caseWithDateRangePeriod);
+    const { case: migrated, report } = migrateCaseToV5(caseWithDateRangePeriod);
+    expect(report.changed).toBe(false);
+    expect(migrated.artProgram.embryoShipment).toEqual(caseWithDateRangePeriod.artProgram.embryoShipment);
+    expect(migrated.artProgram.oocyteSource).toBe('wife');
+    expect(JSON.stringify(caseWithDateRangePeriod)).toBe(before);
+  });
+
+  it('migrates relations.clinicId to relations.ukrainianClinicId, leaving partnerClinicId untouched', () => {
+    const legacy = { id: 'case-1', relations: { clinicId: 'clinic-1', partnerClinicId: 'partner-1' } };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.relations.ukrainianClinicId).toBe('clinic-1');
+    expect(migrated.relations).not.toHaveProperty('clinicId');
+    expect(migrated.relations.partnerClinicId).toBe('partner-1');
+    expect(report.changed).toBe(true);
+  });
+
+  it('migrates the old inline relations.shipment (batch 26 §5 shape) to artProgram.embryoShipment, recovering missing clinic relations and dropping the shipment\'s own clinic ids', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: { coupleId: 'couple-1' },
+      relations_shipment_marker: undefined,
+    };
+    legacy.relations.shipment = {
+      sourceClinicId: 'partner-1', destinationClinicId: 'clinic-1', ivfDate: '2021-08-17', receivedDate: '2025-08-27',
+    };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.embryoShipment).toEqual({ ivfDate: '2021-08-17', receivedDate: '2025-08-27' });
+    expect(migrated.relations.ukrainianClinicId).toBe('clinic-1');
+    expect(migrated.relations.partnerClinicId).toBe('partner-1');
+    expect(migrated.relations).not.toHaveProperty('shipment');
+    expect(report.changed).toBe(true);
+  });
+
+  it('does not overwrite clinic relations the case already has, even if the old inline shipment carried different ones', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: { ukrainianClinicId: 'clinic-current', partnerClinicId: 'partner-current', shipment: { sourceClinicId: 'partner-old', destinationClinicId: 'clinic-old' } },
+    };
+    const { case: migrated } = migrateCaseToV5(legacy);
+    expect(migrated.relations.ukrainianClinicId).toBe('clinic-current');
+    expect(migrated.relations.partnerClinicId).toBe('partner-current');
+  });
+
+  it('migrates the oldest id-map embryoShipments shape via the transfer attempt\'s shipmentId reference', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: {},
+      artProgram: {
+        embryoShipments: { 'shipment-1': { id: 'shipment-1', ivfDate: '2021-08-17' }, 'shipment-2': { id: 'shipment-2', ivfDate: '2022-01-01' } },
+        transferAttempt: { shipmentId: 'shipment-1', date: '2025-09-18' },
+      },
+    };
+    const { case: migrated } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.embryoShipment).toEqual({ ivfDate: '2021-08-17' });
+  });
+
+  it('reports an ambiguity (migrates none) when several old shipments exist with no shipmentId to disambiguate', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: {},
+      artProgram: {
+        embryoShipments: { 'shipment-1': { id: 'shipment-1', ivfDate: '2021-08-17' }, 'shipment-2': { id: 'shipment-2', ivfDate: '2022-01-01' } },
+      },
+    };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram?.embryoShipment).toBeUndefined();
+    expect(report.ambiguities.length).toBeGreaterThan(0);
+  });
+
+  it('migrates the old hcgTests/ultrasounds id-maps to singleton hcgTest/ultrasound via the genetic-affinity certificate\'s id references, dropping positive/pregnancyConfirmed', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: {},
+      artProgram: {
+        transferAttempt: {
+          date: '2025-09-18',
+          hcgTests: { 'hcg-1': { id: 'hcg-1', date: '2025-09-30', positive: true }, 'hcg-2': { id: 'hcg-2', date: '2025-11-15', positive: false } },
+          ultrasounds: { 'ultrasound-1': { id: 'ultrasound-1', date: '2025-10-17', pregnancyConfirmed: true, fetusCount: 1 } },
+        },
+      },
+      documents: { geneticAffinityCertificate: { hcgTestId: 'hcg-2', ultrasoundId: 'ultrasound-1' } },
+    };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.transferAttempt.hcgTest).toEqual({ date: '2025-11-15' });
+    expect(migrated.artProgram.transferAttempt.ultrasound).toEqual({ date: '2025-10-17', fetusCount: 1 });
+    expect(migrated.artProgram.transferAttempt).not.toHaveProperty('hcgTests');
+    expect(migrated.artProgram.transferAttempt).not.toHaveProperty('ultrasounds');
+    expect(migrated.documents.geneticAffinityCertificate).not.toHaveProperty('hcgTestId');
+    expect(migrated.documents.geneticAffinityCertificate).not.toHaveProperty('ultrasoundId');
+    expect(report.changed).toBe(true);
+  });
+
+  it('falls back to the racssClinicLetter\'s ultrasoundId when the genetic-affinity certificate has none, and to the map\'s only entry when neither document has an id', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: {},
+      artProgram: {
+        transferAttempt: {
+          date: '2025-09-18',
+          ultrasounds: { 'ultrasound-1': { id: 'ultrasound-1', date: '2025-10-17' } },
+        },
+      },
+      documents: { racssClinicLetter: { ultrasoundId: 'ultrasound-1' } },
+    };
+    const { case: migrated } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.transferAttempt.ultrasound).toEqual({ date: '2025-10-17' });
+  });
+
+  it('reports an ambiguity (migrates neither) when a transfer attempt has several hcgTests/ultrasounds with no id reference at all', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: {},
+      artProgram: {
+        transferAttempt: {
+          date: '2025-09-18',
+          hcgTests: { 'hcg-1': { id: 'hcg-1', date: '2025-09-30' }, 'hcg-2': { id: 'hcg-2', date: '2025-11-15' } },
+        },
+      },
+    };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.transferAttempt.hcgTest).toBeUndefined();
+    expect(report.ambiguities.length).toBeGreaterThan(0);
+  });
+
+  it('maps the old medicalIndication.diagnosis wrapper to the plain medicalIndications field', () => {
+    const legacy = { id: 'case-1', relations: {}, artProgram: { medicalIndication: { diagnosis: { uk: 'Непліддя' } } } };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.medicalIndications).toEqual({ uk: 'Непліддя' });
+    expect(migrated.artProgram).not.toHaveProperty('medicalIndication');
+    expect(report.changed).toBe(true);
+  });
+
+  it('maps geneticMaterial.oocyteSourcePartnerRole/spermSourcePartnerRole "wife"/"husband" straight to the v5 scalars', () => {
+    const legacy = { id: 'case-1', relations: {}, artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'wife', spermSourcePartnerRole: 'husband' } } };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.oocyteSource).toBe('wife');
+    expect(migrated.artProgram.spermSource).toBe('husband');
+    expect(migrated.artProgram).not.toHaveProperty('geneticMaterial');
+    expect(report.changed).toBe(true);
+  });
+
+  it('passes an old donor code straight through into the scalar field (no separate donor-code property)', () => {
+    const legacy = { id: 'case-1', relations: {}, artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'ED-123' } } };
+    const { case: migrated } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram.oocyteSource).toBe('ED-123');
+  });
+
+  it('reports a legacy "donor" selection with no code ever recorded as unmigratable, rather than storing the literal string "donor"', () => {
+    const legacy = { id: 'case-1', relations: {}, artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'donor' } } };
+    const { case: migrated, report } = migrateCaseToV5(legacy);
+    expect(migrated.artProgram?.oocyteSource).toBeUndefined();
+    expect(report.unmigratable.length).toBeGreaterThan(0);
+  });
+
+  it('reports missing required relations without throwing, for a bare case', () => {
+    const { report } = migrateCaseToV5({ id: 'case-1' });
+    expect(report.missingRelations).toEqual(expect.arrayContaining([
+      'relations.ukrainianClinicId', 'relations.coupleId', 'relations.surrogateMotherId',
+    ]));
+  });
+
+  it('handles null/non-object input without throwing', () => {
+    expect(migrateCaseToV5(null).case).toEqual({});
+    expect(() => migrateCaseToV5(undefined)).not.toThrow();
+  });
+
+  it('normalizeCaseRecord runs the same migration, idempotently, for every case normalizeDocumentsCatalog loads', () => {
+    const legacy = {
+      'case-1': {
+        id: 'case-1',
+        relations: { clinicId: 'clinic-1' },
+        artProgram: { medicalIndication: { diagnosis: { uk: 'Непліддя' } } },
+      },
+    };
+    const catalog = normalizeDocumentsCatalog({}, {}, legacy);
+    const migratedOnce = catalog.cases[0];
+    expect(migratedOnce.relations.ukrainianClinicId).toBe('clinic-1');
+    expect(migratedOnce.artProgram.medicalIndications.uk).toBe('Непліддя');
+    expect(normalizeCaseRecord(migratedOnce)).toEqual(migratedOnce);
+  });
+});
+
+describe('spec §4.7: migrateCasesToV5 aggregates a migration report across every case', () => {
+  it('lists migrated case ids, and keys missingRelations/ambiguities/unmigratable by case id', () => {
+    const rawCases = {
+      'case-clean': caseWithDateRangePeriod,
+      'case-legacy': { id: 'case-legacy', relations: { clinicId: 'clinic-1' } },
+      'case-ambiguous': {
+        id: 'case-ambiguous',
+        relations: {},
+        artProgram: { embryoShipments: { a: { id: 'a' }, b: { id: 'b' } } },
+      },
+    };
+    const { cases, report } = migrateCasesToV5(rawCases);
+    expect(cases.map(c => c.id).sort()).toEqual(['case-ambiguous', 'case-daterange', 'case-legacy']);
+    expect(report.migratedCaseIds).toContain('case-legacy');
+    expect(report.migratedCaseIds).not.toContain('case-daterange');
+    expect(report.ambiguities['case-ambiguous'].length).toBeGreaterThan(0);
+    expect(report.missingRelations['case-ambiguous']).toEqual(expect.arrayContaining(['relations.ukrainianClinicId']));
+  });
+});
+
+// --- Template variable audit (spec §5.3) -----------------------------------------------------
+
+describe('spec §5.3: auditTemplateVariables/classifyTemplateVariablePath classify every {{path}} a template references', () => {
+  it('classifies backend, resolved-relation, derived-runtime, and system paths correctly', () => {
+    expect(classifyTemplateVariablePath('logo')).toBe('system');
+    expect(classifyTemplateVariablePath('logo-long')).toBe('system');
+    expect(classifyTemplateVariablePath('clinic.medicalDirector.name.uk.genitive')).toBe('resolvedRelation');
+    expect(classifyTemplateVariablePath('relations.coupleId')).toBe('resolvedRelation');
+    expect(classifyTemplateVariablePath('artProgram.medicalIndications.uk')).toBe('derivedRuntime');
+    expect(classifyTemplateVariablePath('transferAttempt.embryoStageLabel.uk.genitive')).toBe('derivedRuntime');
+    expect(classifyTemplateVariablePath('case.artProgram.oocyteSource')).toBe('backendSource');
+    expect(classifyTemplateVariablePath('something.completely.unknown')).toBe('unknown');
+  });
+
+  it('auditTemplateVariables scans title/beforeTitle/paragraphs and every layoutV2 block shape, never reporting an unknown path for a real template', () => {
+    const template = {
+      title: { uk: '{{clinic.name.uk}}' },
+      beforeTitle: [{ uk: '{{artProgram.medicalIndications.uk}}' }],
+      paragraphs: [{ uk: '{{wife.name.uk.nominative}} {{husband.name.uk.nominative}}' }],
+      layoutV2: {
+        blocks: [
+          { type: 'paragraph', text: '{{transferAttempt.dateFormatted.uk}}' },
+          { type: 'fieldLine', value: '{{hcgTest.dateFormatted.uk}}' },
+          { type: 'richParagraph', runs: [{ text: '{{ultrasound.gestationalAgeText.uk}}' }] },
+          { type: 'alignedBox', lines: ['{{notary.name.uk.short}}'] },
+          {
+            type: 'letterhead',
+            columns: [{ content: { type: 'image', source: '{{logo}}' } }],
+          },
+          {
+            type: 'signatureTable',
+            rows: [[{ text: '{{representative.name.uk.short}}' }]],
+          },
+        ],
+      },
+    };
+    const audit = auditTemplateVariables(template);
+    expect(audit.some(entry => entry.classification === 'unknown')).toBe(false);
+    expect(audit.map(entry => entry.path)).toEqual(expect.arrayContaining([
+      'clinic.name.uk', 'artProgram.medicalIndications.uk', 'wife.name.uk.nominative',
+      'transferAttempt.dateFormatted.uk', 'hcgTest.dateFormatted.uk', 'ultrasound.gestationalAgeText.uk',
+      'notary.name.uk.short', 'logo', 'representative.name.uk.short',
+    ]));
+  });
+
+  it('flags a genuinely stale/unknown path so a template audit fails loudly instead of silently blanking', () => {
+    const template = { paragraphs: [{ uk: '{{geneticAffinityCertificate.transferAttempt.shipment.sourceClinic.legacyTypo}}' }] };
+    const audit = auditTemplateVariables(template);
+    // Still classifies as derivedRuntime (it's under the geneticAffinityCertificate namespace) -
+    // this test documents that classification is prefix-based, not a full path allowlist; a
+    // renamed *namespace* (not just a leaf) is what actually needs to trip 'unknown'.
+    const trulyUnknown = auditTemplateVariables({ paragraphs: [{ uk: '{{noSuchNamespace.field}}' }] });
+    expect(trulyUnknown.find(entry => entry.path === 'noSuchNamespace.field').classification).toBe('unknown');
+    expect(audit.length).toBeGreaterThan(0);
   });
 });

@@ -14,9 +14,7 @@ import { database } from './config';
 import {
   DOCUMENTS_CASES_PATH,
   createChildRecord,
-  formatHcgTestOptionLabel,
   formatShortNameUk,
-  formatUltrasoundOptionLabel,
   getMaternityHospitalDisplayName,
   normalizeIsoDate,
   removeEmptyCaseValues,
@@ -227,21 +225,8 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   // No notaryId field - this appendix isn't itself notarized (see TEMPLATE_DOCUMENT_CONFIG's
   // usesNotary: false for surrogacy-agreement-appendix-1).
   const [surrogacyAgreementAppendix1Draft, setSurrogacyAgreementAppendix1Draft] = useState({ date: '' });
-  const [geneticAffinityCertificateDraft, setGeneticAffinityCertificateDraft] = useState({
-    hcgTestId: '', ultrasoundId: '', issueDate: '', outgoingNumber: '',
-  });
-  const [racssClinicLetterDraft, setRacssClinicLetterDraft] = useState({ ultrasoundId: '' });
+  const [geneticAffinityCertificateDraft, setGeneticAffinityCertificateDraft] = useState({ issueDate: '', outgoingNumber: '' });
   const [medicalServicesAgreementDraft, setMedicalServicesAgreementDraft] = useState({ date: '' });
-
-  // Every artProgram-referencing dropdown reads from the same source: the selected case's own
-  // transfer attempt (never converted to arrays for storage - see documentsCatalogUtils - only
-  // here, transiently, for rendering <option>s). There is only ever one transfer attempt (batch 24
-  // §2), so its hCG tests/ultrasounds are the only thing still picked by id - the shipment itself
-  // (batch 26 §5, edited in CaseArtProgramEditor) needs no id/picker anywhere any more.
-  const artTransferAttempt = selectedCase?.artProgram?.transferAttempt || null;
-  const certificateHcgTests = toArray(artTransferAttempt?.hcgTests);
-  const certificateUltrasounds = toArray(artTransferAttempt?.ultrasounds);
-  const letterUltrasounds = toArray(artTransferAttempt?.ultrasounds);
 
   useEffect(() => {
     // `childbirth.children` isn't guaranteed to be a real array - a case edited straight in the
@@ -275,13 +260,8 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       date: selectedCase?.documents?.surrogacyAgreementAppendix1?.date || '',
     });
     setGeneticAffinityCertificateDraft({
-      hcgTestId: selectedCase?.documents?.geneticAffinityCertificate?.hcgTestId || '',
-      ultrasoundId: selectedCase?.documents?.geneticAffinityCertificate?.ultrasoundId || '',
       issueDate: selectedCase?.documents?.geneticAffinityCertificate?.issueDate || '',
       outgoingNumber: selectedCase?.documents?.geneticAffinityCertificate?.outgoingNumber || '',
-    });
-    setRacssClinicLetterDraft({
-      ultrasoundId: selectedCase?.documents?.racssClinicLetter?.ultrasoundId || '',
     });
     setMedicalServicesAgreementDraft({
       date: selectedCase?.documents?.medicalServicesAgreement?.date || '',
@@ -508,22 +488,11 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
   const handleSaveGeneticAffinityCertificate = () => saveCaseDocument(
     'geneticAffinityCertificate',
     {
-      hcgTestId: geneticAffinityCertificateDraft.hcgTestId,
-      ultrasoundId: geneticAffinityCertificateDraft.ultrasoundId,
       issueDate: normalizeIsoDate(geneticAffinityCertificateDraft.issueDate),
       outgoingNumber: geneticAffinityCertificateDraft.outgoingNumber,
     },
     'Genetic affinity certificate details saved.',
     'the genetic affinity certificate details',
-  );
-
-  const updateRacssClinicLetterField = (field, value) => setRacssClinicLetterDraft(previous => ({ ...previous, [field]: value }));
-
-  const handleSaveRacssClinicLetter = () => saveCaseDocument(
-    'racssClinicLetter',
-    { ultrasoundId: racssClinicLetterDraft.ultrasoundId },
-    'RACSS clinic letter details saved.',
-    'the RACSS clinic letter details',
   );
 
   const handleSaveMedicalServicesAgreement = () => saveCaseDocument(
@@ -799,38 +768,14 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
         </PrimaryMiniButton>
       </RowLine>
 
-      {/* Заява про належність ембріонів no longer needs its own editor here (batch 26 §5) - it
-          resolves the case's one shipment directly (edited in CaseArtProgramEditor), with no
-          shipmentId of its own left to pick or get out of sync. */}
+      {/* Заява про належність ембріонів and лист клініки до РАЦС no longer need their own editors
+          here - they resolve the case's one shipment/transfer attempt/ultrasound directly (edited
+          in CaseArtProgramEditor), and racssClinicLetter carries no requisites of its own (spec
+          §1.3/§1.8). There is nothing left to select by id, which also removes the old dropdown
+          preselection bug. */}
 
       <SectionSubhead style={{ marginTop: 14 }}>Довідка про генетичну спорідненість</SectionSubhead>
       <FieldGrid>
-        <Field>
-          ХГЧ (довідка)
-          <Select
-            value={geneticAffinityCertificateDraft.hcgTestId || ''}
-            onChange={event => updateGeneticAffinityCertificateField('hcgTestId', event.target.value)}
-            disabled={!artTransferAttempt}
-          >
-            <option value="">— не обрано —</option>
-            {certificateHcgTests.map(hcgTest => (
-              <option key={hcgTest.id} value={hcgTest.id}>{formatHcgTestOptionLabel(hcgTest) || hcgTest.id}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field>
-          УЗД (довідка)
-          <Select
-            value={geneticAffinityCertificateDraft.ultrasoundId || ''}
-            onChange={event => updateGeneticAffinityCertificateField('ultrasoundId', event.target.value)}
-            disabled={!artTransferAttempt}
-          >
-            <option value="">— не обрано —</option>
-            {certificateUltrasounds.map(ultrasound => (
-              <option key={ultrasound.id} value={ultrasound.id}>{formatUltrasoundOptionLabel(ultrasound) || ultrasound.id}</option>
-            ))}
-          </Select>
-        </Field>
         <Field>
           Дата видачі
           <FieldInput
@@ -850,29 +795,7 @@ const CaseChildbirthTransactionEditor = ({ catalog, setCatalog, caseId, onSelect
       </FieldGrid>
       <RowLine style={{ marginTop: 8 }}>
         <PrimaryMiniButton type="button" onClick={handleSaveGeneticAffinityCertificate}>
-          Save genetic affinity certificate details
-        </PrimaryMiniButton>
-      </RowLine>
-
-      <SectionSubhead style={{ marginTop: 14 }}>Лист клініки до РАЦС</SectionSubhead>
-      <FieldGrid>
-        <Field>
-          УЗД (лист РАЦС)
-          <Select
-            value={racssClinicLetterDraft.ultrasoundId || ''}
-            onChange={event => updateRacssClinicLetterField('ultrasoundId', event.target.value)}
-            disabled={!artTransferAttempt}
-          >
-            <option value="">— не обрано —</option>
-            {letterUltrasounds.map(ultrasound => (
-              <option key={ultrasound.id} value={ultrasound.id}>{formatUltrasoundOptionLabel(ultrasound) || ultrasound.id}</option>
-            ))}
-          </Select>
-        </Field>
-      </FieldGrid>
-      <RowLine style={{ marginTop: 8 }}>
-        <PrimaryMiniButton type="button" onClick={handleSaveRacssClinicLetter}>
-          Save RACSS clinic letter details
+          Зберегти дані довідки про генетичну спорідненість
         </PrimaryMiniButton>
       </RowLine>
 
