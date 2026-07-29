@@ -83,7 +83,6 @@ import {
   toggleRawInlineMarker,
   upsertRecentCaseId,
   upsertRecentId,
-  validateArtProgramReferences,
   validateBirthRegistrationCase,
   validateCaseRecord,
   validateDocumentTemplate,
@@ -1804,7 +1803,7 @@ const DocumentsPage = ({ isAdmin }) => {
           return;
         }
 
-        const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
+        const clinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
         if (!clinicId) {
           toast.error('Select a case with a clinic before uploading the logo.');
           return;
@@ -1872,7 +1871,7 @@ const DocumentsPage = ({ isAdmin }) => {
   };
 
   const handleAssignLogoLayout = async (fileName, layoutTag) => {
-    const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
+    const clinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
     if (!clinicId) return;
     const previousVariants = clinicLogos;
     const nextVariants = applyLogoLayoutAssignment(previousVariants, fileName, layoutTag);
@@ -1888,7 +1887,7 @@ const DocumentsPage = ({ isAdmin }) => {
 
   const handleRemoveLogoVariant = async fileName => {
     if (typeof window !== 'undefined' && !window.confirm('Remove this clinic logo variant from the backend?')) return;
-    const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
+    const clinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
     if (!clinicId) return;
     // A variant loaded via the legacy Storage-folder fallback still physically lives there.
     const isLegacyVariant = Boolean(clinicLogos.find(variant => variant.fileName === fileName)?.legacyFolder);
@@ -2027,18 +2026,12 @@ const DocumentsPage = ({ isAdmin }) => {
   const referencesBirthDomain = referencesPathDomain([
     'child', 'children', 'medicalConclusion', 'birthRegistration', 'case.childbirth', 'case.documents.birthRegistrationConsent',
   ]);
-  // Same idea, scoped to the ART-program-referencing documents (spec §13/§15): a shipment/transfer/
-  // hCG/ultrasound id that no longer resolves gets its own specific message here instead of
-  // drowning in the generic unresolved-{{placeholder}} list below.
-  const referencesArtDomain = referencesPathDomain([
-    'embryoOwnershipStatement', 'geneticAffinityCertificate', 'racssClinicLetter', 'case.artProgram',
-  ]);
   // Which relation each base checklist issue actually gates on - an issue with no listed domain
   // (case.id) is always relevant; everything else only matters once a checked document references
   // that data at all.
   const CHECKLIST_ISSUE_DOMAINS = {
     'case.relations.coupleId': ['wife', 'husband', 'couple'],
-    'case.relations.clinicId': ['clinic'],
+    'case.relations.ukrainianClinicId': ['clinic'],
     'case.relations.surrogateMotherId': ['surrogateMother'],
     'case.childbirth.children': ['child', 'children', 'medicalConclusion', 'birthRegistration', 'case.childbirth', 'case.documents.birthRegistrationConsent'],
   };
@@ -2054,7 +2047,6 @@ const DocumentsPage = ({ isAdmin }) => {
     ? [...new Set([
       ...validateCaseRecord(selectedCase).filter(isChecklistIssueRelevant),
       ...(referencesBirthDomain ? validateBirthRegistrationCase(catalog, selectedCaseId) : []),
-      ...(referencesArtDomain ? validateArtProgramReferences(catalog, selectedCaseId) : []),
     ])]
     : [];
   // A logo only ever appears where a template declares one - via the dedicated `logo` field, or
@@ -2110,7 +2102,7 @@ const DocumentsPage = ({ isAdmin }) => {
   // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
   // source of truth here, so logos uploaded through the app or Firebase Console are discovered
   // without relying on a Realtime Database filename mirror.
-  const logoClinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
+  const logoClinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
   const clinicLogoStorageKey = `${logoClinicId}:${clinicLogoRefreshKey}`;
 
   // Fetch every stored logo variant of the selected clinic from Storage; the dimensions are what

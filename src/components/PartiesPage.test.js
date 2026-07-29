@@ -49,7 +49,7 @@ const buildParties = () => ({
 const buildCases = () => ({
   'case-1': {
     id: 'case-1',
-    relations: { coupleId: 'couple-1', clinicId: '', surrogateMotherId: '', representativeIds: [] },
+    relations: { coupleId: 'couple-1', ukrainianClinicId: '', surrogateMotherId: '', representativeIds: [] },
     childbirth: { maternityHospitalId: '', children: [] },
   },
 });
@@ -167,7 +167,7 @@ describe('spec: Parties page', () => {
     // "+ Add shipment" first.
     fireEvent.click(await screen.findByRole('button', { name: 'Клініка Мрія' }));
 
-    await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/cases/case-1/relations/clinicId', 'clinic-1'));
+    await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/cases/case-1/relations/ukrainianClinicId', 'clinic-1'));
     await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/partiesSettings/recentIds/clinics', ['clinic-1']));
   });
 

@@ -128,7 +128,7 @@ const layoutV2Template = () => ({
       {
         type: 'richParagraph',
         style: 'body',
-        runs: [{ text: 'Діагноз: ' }, { text: '{{case.artProgram.medicalIndication.diagnosis.uk}}' }],
+        runs: [{ text: 'Діагноз: ' }, { text: '{{case.artProgram.medicalIndications.uk}}' }],
       },
       { type: 'spacer', heightMm: 5 },
       {
@@ -158,7 +158,7 @@ const context = {
   wife: { name: { uk: { nominative: 'Кікава Харука' } } },
   surrogateMother: { name: { uk: { nominative: 'Молвінських Юлія Володимирівна' } } },
   clinic: { edrpou: '35085030', medicalDirector: { name: { uk: { nominative: 'Пилип Юрій Юрійович' } } } },
-  case: { artProgram: { medicalIndication: { diagnosis: { uk: 'Безпліддя' } } } },
+  case: { artProgram: { medicalIndications: { uk: 'Безпліддя' } } },
 };
 
 describe('layoutV2 normalization (buildGeneratedDocument)', () => {

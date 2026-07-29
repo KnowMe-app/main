@@ -1037,9 +1037,9 @@ const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen
                     <RelationSlot
                       label="Clinic"
                       records={orderedClinics}
-                      valueId={relations.clinicId}
+                      valueId={relations.ukrainianClinicId}
                       displayName={partyDisplayName}
-                      onPick={id => { updateCaseField(caseRecord.id, 'relations.clinicId', id); recordPartyUsage('clinics', id); }}
+                      onPick={id => { updateCaseField(caseRecord.id, 'relations.ukrainianClinicId', id); recordPartyUsage('clinics', id); }}
                     />
                     <RelationSlot
                       label="Partner clinic"

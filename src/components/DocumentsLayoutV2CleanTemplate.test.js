@@ -169,7 +169,7 @@ const CLEAN_TEMPLATE_JSON = {
         type: 'paragraph',
       },
       {
-        marginBottomMm: 3, style: 'body', text: 'Після обстеження встановлено діагноз: {{case.artProgram.medicalIndication.diagnosis.uk}}', type: 'paragraph',
+        marginBottomMm: 3, style: 'body', text: 'Після обстеження встановлено діагноз: {{case.artProgram.medicalIndications.uk}}', type: 'paragraph',
       },
       {
         runs: [
@@ -332,7 +332,7 @@ const fullContext = () => ({
   },
   case: {
     artProgram: {
-      medicalIndication: { diagnosis: { uk: 'Непліддя І. Матковий фактор.' } },
+      medicalIndications: { uk: 'Непліддя І. Матковий фактор.' },
       medicalTeam: { physician: { name: { uk: { nominative: 'Тестовий Лікар Лікарович' } } } },
     },
   },
