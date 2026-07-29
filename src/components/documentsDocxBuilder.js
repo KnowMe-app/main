@@ -537,6 +537,22 @@ export const buildDocumentsDocx = async ({
     }));
   };
 
+  // A plain paragraph/richParagraph block typed as just {{logo}}/{{logo-long}} (spec: same
+  // convention the legacy renderer already applies to a leading paragraph) - reuses the same
+  // centered, non-floating logoParagraph the legacy renderer draws its own {{logo}} paragraph
+  // with, sized from the page's configured logo width, so an admin can place the logo anywhere by
+  // just typing the token into an ordinary paragraph instead of only through the dedicated
+  // letterhead/image block. Renders nothing when no logo variant is uploaded yet.
+  const layoutV2LogoParagraph = (block, clinicLogos) => {
+    const variant = getClinicLogo(clinicLogos, block.logoToken);
+    if (!variant?.dataUrl) return [];
+    const decoded = decodeLogoDataUrl(variant.dataUrl);
+    if (!decoded) return [];
+    const ratio = variant.width && variant.height ? variant.height / variant.width : 0.25;
+    const widthPx = Math.round(formatting.logoWidthMm * MM_TO_PX);
+    return [logoParagraph(decoded, widthPx, ratio)];
+  };
+
   const layoutV2Paragraph = block => new Paragraph({
     alignment: layoutV2Alignment(block.style?.align),
     spacing: {
@@ -642,6 +658,7 @@ export const buildDocumentsDocx = async ({
   };
 
   const layoutV2BlockChildren = (block, contentWidthTwips, clinicLogos) => {
+    if (block.logoToken) return layoutV2LogoParagraph(block, clinicLogos);
     switch (block.type) {
       case 'letterhead': return [layoutV2Letterhead(block, clinicLogos)];
       case 'alignedBox': return layoutV2AlignedBox(block, contentWidthTwips);

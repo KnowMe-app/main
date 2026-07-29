@@ -258,8 +258,6 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
     fireEvent.click(await screen.findByTitle('Clinic logo - show/hide and offset (mm)'));
 
     const logoCheckbox = await screen.findByRole('checkbox', { name: 'Show logo' });
-    // eslint-disable-next-line testing-library/no-node-access
-    const logoBlock = logoCheckbox.closest('.paragraph-editor-block');
     fireEvent.click(logoCheckbox);
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
@@ -276,10 +274,10 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
       }),
     ));
 
-    const xField = within(logoBlock).getByLabelText('Horizontal offset (mm, + = right)');
+    const xField = screen.getByLabelText('Horizontal offset (mm, + = right)');
     fireEvent.change(xField, { target: { value: '3' } });
     fireEvent.blur(xField);
-    const yField = within(logoBlock).getByLabelText('Vertical offset (mm, + = down)');
+    const yField = screen.getByLabelText('Vertical offset (mm, + = down)');
     fireEvent.change(yField, { target: { value: '-2' } });
     fireEvent.blur(yField);
 

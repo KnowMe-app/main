@@ -76,7 +76,7 @@ const triggerParagraphSave = async () => {
   // eslint-disable-next-line testing-library/no-node-access
   const block = field.closest('.paragraph-editor-block');
   fireEvent.click(within(block).getByTitle(PARAGRAPH_FORMAT_TITLE));
-  const indentField = within(block).getByLabelText('First line indent (cm)');
+  const indentField = screen.getByLabelText('First line indent (cm)');
   fireEvent.change(indentField, { target: { value: '2' } });
   fireEvent.blur(indentField);
 };
@@ -120,7 +120,7 @@ describe('spec (batch 26 §3): a rejected save names its actual cause instead of
     // eslint-disable-next-line testing-library/no-node-access
     const block = field.closest('.paragraph-editor-block');
     fireEvent.click(within(block).getByTitle(PARAGRAPH_FORMAT_TITLE));
-    const indentField = within(block).getByLabelText('First line indent (cm)');
+    const indentField = screen.getByLabelText('First line indent (cm)');
     fireEvent.change(indentField, { target: { value: '2' } });
     fireEvent.blur(indentField);
 

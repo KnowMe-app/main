@@ -5,8 +5,9 @@
 // parties + cases, paragraph templates, and a settings record (favourite formatting values +
 // recently used cases). Clinic logo files live directly in Firebase Storage by clinic id.
 import React, {
-  useCallback, useEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
@@ -714,17 +715,67 @@ const CheckLine = styled.label`
 // the per-paragraph overrides, and the before-title block offset - every slider is gone (§1.4).
 // Values apply live as typed; the popover closes on outside click or Esc, no OK/Apply buttons.
 
-const PopoverAnchor = styled.span`
-  position: relative;
-  display: inline-flex;
-`;
+// A popover anchored inside a long scrolling document (spec: "test near the top, middle, and
+// bottom of a long template") used to be `position: absolute` inside a `position: relative`
+// inline anchor - correct only for a trigger with enough room to its bottom-right, which a block
+// near the top of the page (the logo/letterhead settings button included) never has, so the card
+// rendered partly or fully off-screen instead of clipping/scrolling into view. Rendered through a
+// portal to document.body instead, positioned in viewport (not document) coordinates from the
+// trigger's own bounding rect, flipped above the trigger when there's no room below and shifted
+// horizontally to stay clear of both viewport edges - the same fix applies to every popover using
+// it, not just the logo one.
+const VIEWPORT_POPOVER_PADDING = 12;
+
+const useFloatingPopoverPosition = (open, anchorRef, cardRef) => {
+  const [position, setPosition] = useState(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return undefined;
+    }
+    const recalculate = () => {
+      const anchor = anchorRef.current;
+      const card = cardRef.current;
+      if (!anchor || !card) return;
+      const anchorRect = anchor.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      let top = anchorRect.bottom + 6;
+      if (top + cardRect.height > viewportHeight - VIEWPORT_POPOVER_PADDING) {
+        const above = anchorRect.top - 6 - cardRect.height;
+        top = above >= VIEWPORT_POPOVER_PADDING ? above : Math.max(VIEWPORT_POPOVER_PADDING, viewportHeight - VIEWPORT_POPOVER_PADDING - cardRect.height);
+      }
+
+      // Right-aligned to the trigger by default (matches the old anchor's `right: 0`), shifted
+      // left/right only as far as needed to clear the viewport edge on either side.
+      let left = anchorRect.right - cardRect.width;
+      if (left < VIEWPORT_POPOVER_PADDING) left = VIEWPORT_POPOVER_PADDING;
+      if (left + cardRect.width > viewportWidth - VIEWPORT_POPOVER_PADDING) left = viewportWidth - VIEWPORT_POPOVER_PADDING - cardRect.width;
+
+      setPosition({ top, left });
+    };
+    recalculate();
+    window.addEventListener('resize', recalculate);
+    // `true` (capture) so this also fires for scrolling inside any nested scroll container, not
+    // just the window itself.
+    window.addEventListener('scroll', recalculate, true);
+    return () => {
+      window.removeEventListener('resize', recalculate);
+      window.removeEventListener('scroll', recalculate, true);
+    };
+  }, [open, anchorRef, cardRef]);
+  return position;
+};
 
 const PopoverCard = styled.div`
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
+  position: fixed;
+  z-index: 1000;
   min-width: 180px;
+  max-width: calc(100vw - ${VIEWPORT_POPOVER_PADDING * 2}px);
+  max-height: calc(100vh - ${VIEWPORT_POPOVER_PADDING * 2}px);
+  overflow-y: auto;
   background: var(--km-card);
   border: 1px solid var(--km-border);
   border-radius: 8px;
@@ -786,17 +837,25 @@ const PlainTextField = ({ label, initialValue, placeholder, onApply, onFieldBlur
   );
 };
 
-// One trigger button + its popover, sharing a boundary node so an outside-click close never
-// races the trigger's own toggle click.
+// One trigger button + its popover (rendered through a portal, see useFloatingPopoverPosition
+// above) - anchorRef/cardRef together form the outside-click boundary now that they're no longer
+// DOM siblings.
 const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields, children }) => {
   const anchorRef = useRef(null);
+  const cardRef = useRef(null);
+  const position = useFloatingPopoverPosition(open, anchorRef, cardRef);
   useEffect(() => {
     if (!open) return undefined;
     const handlePointerDown = event => {
-      if (anchorRef.current && !anchorRef.current.contains(event.target)) onClose();
+      if (anchorRef.current?.contains(event.target)) return;
+      if (cardRef.current?.contains(event.target)) return;
+      onClose();
     };
     const handleKeyDown = event => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        onClose();
+        anchorRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('touchstart', handlePointerDown);
@@ -807,29 +866,30 @@ const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields, chi
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [open, onClose]);
+  const popoverContent = (
+    <PopoverCard ref={cardRef} style={position ? { top: position.top, left: position.left } : { top: -9999, left: -9999, visibility: 'hidden' }}>
+      {children || fields.map(field => {
+        const FieldComponent = field.type === 'text' ? PlainTextField : PlainNumberField;
+        return (
+          <FieldComponent
+            key={field.key}
+            label={field.label}
+            initialValue={field.value}
+            placeholder={field.placeholder}
+            onApply={field.onApply}
+            onFieldBlur={field.onFieldBlur}
+          />
+        );
+      })}
+    </PopoverCard>
+  );
   return (
-    <PopoverAnchor ref={anchorRef}>
-      <SmallButton type="button" onClick={onToggle} title={buttonTitle}>
+    <>
+      <SmallButton ref={anchorRef} type="button" onClick={onToggle} title={buttonTitle}>
         <FaSlidersH />
       </SmallButton>
-      {open ? (
-        <PopoverCard>
-          {children || fields.map(field => {
-            const FieldComponent = field.type === 'text' ? PlainTextField : PlainNumberField;
-            return (
-              <FieldComponent
-                key={field.key}
-                label={field.label}
-                initialValue={field.value}
-                placeholder={field.placeholder}
-                onApply={field.onApply}
-                onFieldBlur={field.onFieldBlur}
-              />
-            );
-          })}
-        </PopoverCard>
-      ) : null}
-    </PopoverAnchor>
+      {open && typeof document !== 'undefined' ? createPortal(popoverContent, document.body) : null}
+    </>
   );
 };
 
@@ -840,13 +900,20 @@ const DocLayoutSettingsPopoverButton = ({
   open, onToggle, onClose, columnOptions, activeColumns, onSetColumns, hasLayoutV2, layoutV2Active, onToggleLayoutV2,
 }) => {
   const anchorRef = useRef(null);
+  const cardRef = useRef(null);
+  const position = useFloatingPopoverPosition(open, anchorRef, cardRef);
   useEffect(() => {
     if (!open) return undefined;
     const handlePointerDown = event => {
-      if (anchorRef.current && !anchorRef.current.contains(event.target)) onClose();
+      if (anchorRef.current?.contains(event.target)) return;
+      if (cardRef.current?.contains(event.target)) return;
+      onClose();
     };
     const handleKeyDown = event => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        onClose();
+        anchorRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('touchstart', handlePointerDown);
@@ -857,38 +924,39 @@ const DocLayoutSettingsPopoverButton = ({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [open, onClose]);
+  const popoverContent = (
+    <PopoverCard ref={cardRef} style={position ? { top: position.top, left: position.left } : { top: -9999, left: -9999, visibility: 'hidden' }}>
+      <Field>
+        Columns
+        <ToggleGroup>
+          {columnOptions.map(columnsOption => (
+            <ToggleOption
+              key={columnsOption}
+              type="button"
+              $active={activeColumns === columnsOption}
+              onClick={() => onSetColumns(columnsOption)}
+              title={`Render this document with ${columnsOption} column${columnsOption > 1 ? 's' : ''}, regardless of the page's selector above. Tap again to clear the override.`}
+            >
+              {columnsOption} col
+            </ToggleOption>
+          ))}
+        </ToggleGroup>
+      </Field>
+      {hasLayoutV2 ? (
+        <CheckLine>
+          <input type="checkbox" checked={layoutV2Active} onChange={onToggleLayoutV2} />
+          <FaMagic /> Exact layout {layoutV2Active ? 'on' : 'off'}
+        </CheckLine>
+      ) : null}
+    </PopoverCard>
+  );
   return (
-    <PopoverAnchor ref={anchorRef}>
-      <SmallButton type="button" onClick={onToggle} title="Document layout settings - column count, renderer">
+    <>
+      <SmallButton ref={anchorRef} type="button" onClick={onToggle} title="Document layout settings - column count, renderer">
         <FaCog />
       </SmallButton>
-      {open ? (
-        <PopoverCard>
-          <Field>
-            Columns
-            <ToggleGroup>
-              {columnOptions.map(columnsOption => (
-                <ToggleOption
-                  key={columnsOption}
-                  type="button"
-                  $active={activeColumns === columnsOption}
-                  onClick={() => onSetColumns(columnsOption)}
-                  title={`Render this document with ${columnsOption} column${columnsOption > 1 ? 's' : ''}, regardless of the page's selector above. Tap again to clear the override.`}
-                >
-                  {columnsOption} col
-                </ToggleOption>
-              ))}
-            </ToggleGroup>
-          </Field>
-          {hasLayoutV2 ? (
-            <CheckLine>
-              <input type="checkbox" checked={layoutV2Active} onChange={onToggleLayoutV2} />
-              <FaMagic /> Exact layout {layoutV2Active ? 'on' : 'off'}
-            </CheckLine>
-          ) : null}
-        </PopoverCard>
-      ) : null}
-    </PopoverAnchor>
+      {open && typeof document !== 'undefined' ? createPortal(popoverContent, document.body) : null}
+    </>
   );
 };
 
