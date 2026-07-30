@@ -13,8 +13,7 @@ import designTokens from '../data/designTokens.json';
 import { auth, database } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
-import CaseArtProgramEditor from './CaseArtProgramEditor';
-import CaseChildbirthTransactionEditor from './CaseChildbirthTransactionEditor';
+import CaseEditor from './CaseEditor';
 import {
   DOCUMENTS_CASES_PATH,
   DOCUMENTS_PARTIES_PATH,
@@ -23,6 +22,7 @@ import {
   buildCaseLabel,
   buildVariablePickerGroups,
   CLINIC_KINDS,
+  coupleDisplayName,
   createEmptyCase,
   createEmptyClinic,
   createEmptyPartnerClinic,
@@ -34,17 +34,18 @@ import {
   createEmptySurrogateMother,
   emptyDocumentsCatalog,
   findPartyReferences,
-  getMaternityHospitalDisplayName,
   getValueByPath,
   isPlainObject,
+  maternityDisplayName,
   makeCaseId,
   mergeDocumentsCatalog,
   normalizeDocumentsCatalog,
-  orderRecordsByRecentIds,
   parseDocumentsTechnicalInput,
+  partyDisplayName,
   resolveCaseContext,
   resolveMergedRecordsForPersistence,
   toArray,
+  upsertRecentCaseId,
   upsertRecentId,
 } from './documentsCatalogUtils';
 
@@ -63,6 +64,7 @@ const Page = styled.main`
   --km-accent-light: rgba(162, 121, 63, 0.12);
   --km-danger: #B3523F;
   --km-danger-border: rgba(179, 82, 63, 0.35);
+  --km-danger-bg: rgba(179, 82, 63, 0.1);
   --km-font: 'Inter', sans-serif;
   --km-font-display: 'Fraunces', serif;
 
@@ -339,31 +341,6 @@ const FieldInput = styled.input`
   }
 `;
 
-const PickerList = styled.div`
-  margin-top: 6px;
-  max-height: 190px;
-  overflow-y: auto;
-  display: grid;
-  gap: 4px;
-`;
-
-const PickerButton = styled.button`
-  border: 1px solid ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-border)')};
-  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'var(--km-card)')};
-  color: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-text)')};
-  border-radius: 8px;
-  padding: 6px 9px;
-  font-size: 12px;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--km-accent);
-    color: var(--km-accent);
-  }
-`;
-
 const TechnicalTextarea = styled.textarea`
   width: 100%;
   min-height: 120px;
@@ -388,21 +365,6 @@ const setValueAtPath = (obj, path, value) => {
   if (!rest.length) return { ...obj, [key]: value };
   const child = isPlainObject(obj?.[key]) ? obj[key] : {};
   return { ...obj, [key]: setValueAtPath(child, rest.join('.'), value) };
-};
-
-// Firebase RTDB removes a node when it's written as `null`; this is the local-state twin of that
-// (spec §4: clearing partnerClinicId must delete the key, never leave a `''` sitting in
-// `relations` - an empty string is a value, and would still resolve as a "clinic selected" ID).
-const deleteValueAtPath = (obj, path) => {
-  const [key, ...rest] = String(path).split('.');
-  if (!isPlainObject(obj)) return obj;
-  if (!rest.length) {
-    const next = { ...obj };
-    delete next[key];
-    return next;
-  }
-  if (!isPlainObject(obj[key])) return obj;
-  return { ...obj, [key]: deleteValueAtPath(obj[key], rest.join('.')) };
 };
 
 // Resyncs from the backend value on every change, unless the field currently has focus (so an
@@ -466,26 +428,6 @@ const RecordFieldsGrid = ({ record, fieldDefs, onFieldChange }) => (
     ))}
   </FieldGrid>
 );
-
-// --- Display names (collapsed-row summary text) ----------------------------------------------
-
-const nameFormOf = value => {
-  if (isPlainObject(value)) {
-    if (typeof value.uk === 'string' && value.uk) return value.uk;
-    if (isPlainObject(value.uk)) return value.uk.nominative || value.uk.short || '';
-    if (typeof value.en === 'string' && value.en) return value.en;
-    if (isPlainObject(value.en)) return value.en.full || value.en.short || '';
-    return '';
-  }
-  return value || '';
-};
-
-const partyDisplayName = record => nameFormOf(record?.name) || record?.id;
-const maternityDisplayName = record => getMaternityHospitalDisplayName(record) || record?.id;
-const coupleDisplayName = record => {
-  const names = toArray(record?.partners).map(partner => nameFormOf(partner?.name)).filter(Boolean);
-  return names.length ? names.join(' & ') : record?.id;
-};
 
 // --- Field definitions per party type ----------------------------------------------------------
 
@@ -857,246 +799,6 @@ const CouplesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOp
   );
 };
 
-// --- Cases group (the assembly layer) -----------------------------------------------------------
-
-// A relation slot (Couple / Clinic / Surrogate mother): shows the currently linked party, tap to
-// pick from the existing records of that type, most-recently-used first - same "pick from saved
-// variants" interaction as the Invoice Builder's Beneficiary/Payer picker, generalized here to
-// every relation a case can hold.
-const RelationSlot = ({ label, records, valueId, displayName, onPick }) => {
-  const [open, setOpen] = useState(false);
-  const current = records.find(record => String(record.id) === String(valueId));
-  return (
-    <div style={{ marginTop: 6 }}>
-      <CompactSection onClick={() => setOpen(previous => !previous)} role="button" aria-expanded={open} aria-label={`${label} slot`}>
-        <CompactInfo>
-          <CompactLabel>{label}</CompactLabel>
-          <CompactValue>{current ? displayName(current) : '— not set —'}</CompactValue>
-        </CompactInfo>
-        <CompactChevron>{open ? 'Hide ›' : 'Pick ›'}</CompactChevron>
-      </CompactSection>
-      {open ? (
-        <PickerList>
-          <PickerButton type="button" onClick={() => { onPick(''); setOpen(false); }}>— None —</PickerButton>
-          {records.map(record => (
-            <PickerButton
-              key={record.id}
-              type="button"
-              $active={String(record.id) === String(valueId)}
-              onClick={() => { onPick(record.id); setOpen(false); }}
-            >
-              {displayName(record) || record.id}
-            </PickerButton>
-          ))}
-        </PickerList>
-      ) : null}
-    </div>
-  );
-};
-
-// Representatives is the one multi-value relation (relations.representativeIds[]) - same MRU
-// picker shell as RelationSlot, but each row toggles membership instead of replacing a single id.
-const RepresentativesSlot = ({ records, valueIds, onToggle }) => {
-  const [open, setOpen] = useState(false);
-  const selected = toArray(valueIds).map(String);
-  const selectedRecords = records.filter(record => selected.includes(String(record.id)));
-  return (
-    <div style={{ marginTop: 6 }}>
-      <CompactSection onClick={() => setOpen(previous => !previous)} role="button" aria-expanded={open}>
-        <CompactInfo>
-          <CompactLabel>Representatives</CompactLabel>
-          <CompactValue>{selectedRecords.length ? selectedRecords.map(partyDisplayName).join(', ') : '— none —'}</CompactValue>
-        </CompactInfo>
-        <CompactChevron>{open ? 'Hide ›' : 'Pick ›'}</CompactChevron>
-      </CompactSection>
-      {open ? (
-        <PickerList>
-          {records.map(record => {
-            const isSelected = selected.includes(String(record.id));
-            return (
-              <PickerButton key={record.id} type="button" $active={isSelected} onClick={() => onToggle(record.id, !isSelected)}>
-                {isSelected ? '✓ ' : ''}{partyDisplayName(record) || record.id}
-              </PickerButton>
-            );
-          })}
-        </PickerList>
-      ) : null}
-    </div>
-  );
-};
-
-const CasesGroup = ({ catalog, setCatalog, expandedKeys, toggleRecord, groupOpen, onToggleGroup, recentIds, recordPartyUsage, onSelectCase }) => {
-  const cases = catalog.cases;
-  const orderedCouples = orderRecordsByRecentIds(catalog.parties.couples, recentIds.couples);
-  const orderedClinics = orderRecordsByRecentIds(catalog.parties.clinics, recentIds.clinics);
-  const orderedPartnerClinics = orderRecordsByRecentIds(catalog.parties.partnerClinics, recentIds.partnerClinics);
-  const orderedSurrogateMothers = orderRecordsByRecentIds(catalog.parties.surrogateMothers, recentIds.surrogateMothers);
-  const orderedRepresentatives = orderRecordsByRecentIds(catalog.parties.representatives, recentIds.representatives);
-
-  const handleAddCase = async () => {
-    const caseId = makeCaseId();
-    const record = createEmptyCase({ caseId });
-    try {
-      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${caseId}`), record);
-      setCatalog(previous => ({ ...previous, cases: [...previous.cases, record] }));
-      toggleRecord('cases', caseId, true);
-      onSelectCase(caseId);
-      toast.success('Case created.');
-    } catch (addError) {
-      console.error('Unable to create case', addError);
-      toast.error('Could not create the case.');
-    }
-  };
-
-  const updateCaseField = async (caseId, path, value) => {
-    const dbPath = `${DOCUMENTS_CASES_PATH}/${caseId}/${path.split('.').join('/')}`;
-    try {
-      await set(ref(database, dbPath), value);
-      setCatalog(previous => ({
-        ...previous,
-        cases: previous.cases.map(item => (String(item.id) === String(caseId) ? setValueAtPath(item, path, value) : item)),
-      }));
-    } catch (updateError) {
-      console.error('Unable to save case field', updateError);
-      toast.error('Could not save.');
-    }
-  };
-
-  // Same dbPath convention as updateCaseField, but writes `null` so Firebase actually removes the
-  // node - used when a relation slot is cleared back to "— None —" (spec §4: partnerClinicId must
-  // never be persisted as an empty string).
-  const removeCaseField = async (caseId, path) => {
-    const dbPath = `${DOCUMENTS_CASES_PATH}/${caseId}/${path.split('.').join('/')}`;
-    try {
-      await set(ref(database, dbPath), null);
-      setCatalog(previous => ({
-        ...previous,
-        cases: previous.cases.map(item => (String(item.id) === String(caseId) ? deleteValueAtPath(item, path) : item)),
-      }));
-    } catch (updateError) {
-      console.error('Unable to clear case field', updateError);
-      toast.error('Could not save.');
-    }
-  };
-
-  const handleToggleRepresentative = (caseRecord, repId, include) => {
-    const current = toArray(caseRecord.relations?.representativeIds).map(String);
-    const next = include ? [...current, String(repId)] : current.filter(id => id !== String(repId));
-    updateCaseField(caseRecord.id, 'relations.representativeIds', next);
-    if (include) recordPartyUsage('representatives', repId);
-  };
-
-  const handleDeleteCase = async caseRecord => {
-    const label = buildCaseLabel(catalog, caseRecord) || caseRecord.id;
-    if (typeof window !== 'undefined' && !window.confirm(`Delete case "${label}"? Party records stay in the catalog.`)) return;
-    try {
-      await set(ref(database, `${DOCUMENTS_CASES_PATH}/${caseRecord.id}`), null);
-      setCatalog(previous => ({
-        ...previous,
-        cases: previous.cases.filter(item => String(item.id) !== String(caseRecord.id)),
-      }));
-      toast.success('Case deleted.');
-    } catch (deleteError) {
-      console.error('Unable to delete case', deleteError);
-      toast.error('Could not delete the case.');
-    }
-  };
-
-  return (
-    <Panel>
-      <CompactSection onClick={onToggleGroup} role="button" aria-expanded={groupOpen}>
-        <CompactInfo>
-          <CompactLabel>Cases</CompactLabel>
-          <CompactValue>{cases.length} record{cases.length === 1 ? '' : 's'}</CompactValue>
-        </CompactInfo>
-        <CompactChevron>{groupOpen ? 'Hide ›' : 'Show ›'}</CompactChevron>
-      </CompactSection>
-      {groupOpen ? (
-        <>
-          {cases.map(caseRecord => {
-            const expanded = Boolean(expandedKeys[`cases:${caseRecord.id}`]);
-            const relations = caseRecord.relations || {};
-            return (
-              <RecordBlock key={caseRecord.id}>
-                <CompactSection
-                  onClick={() => { toggleRecord('cases', caseRecord.id); onSelectCase(caseRecord.id); }}
-                  role="button"
-                  aria-expanded={expanded}
-                >
-                  <CompactInfo>
-                    <CompactValue>{buildCaseLabel(catalog, caseRecord) || caseRecord.id}</CompactValue>
-                  </CompactInfo>
-                  <CompactChevron>{expanded ? 'Hide ›' : 'Edit ›'}</CompactChevron>
-                </CompactSection>
-                {expanded ? (
-                  <RecordBody>
-                    <SectionSubhead>Relations</SectionSubhead>
-                    <RelationSlot
-                      label="Couple"
-                      records={orderedCouples}
-                      valueId={relations.coupleId}
-                      displayName={coupleDisplayName}
-                      onPick={id => { updateCaseField(caseRecord.id, 'relations.coupleId', id); recordPartyUsage('couples', id); }}
-                    />
-                    <RelationSlot
-                      label="Clinic"
-                      records={orderedClinics}
-                      valueId={relations.ukrainianClinicId}
-                      displayName={partyDisplayName}
-                      onPick={id => { updateCaseField(caseRecord.id, 'relations.ukrainianClinicId', id); recordPartyUsage('clinics', id); }}
-                    />
-                    <RelationSlot
-                      label="Partner clinic"
-                      records={orderedPartnerClinics}
-                      valueId={relations.partnerClinicId}
-                      displayName={partyDisplayName}
-                      onPick={id => {
-                        if (id) {
-                          updateCaseField(caseRecord.id, 'relations.partnerClinicId', id);
-                          recordPartyUsage('partnerClinics', id);
-                        } else {
-                          removeCaseField(caseRecord.id, 'relations.partnerClinicId');
-                        }
-                      }}
-                    />
-                    <RelationSlot
-                      label="Surrogate mother"
-                      records={orderedSurrogateMothers}
-                      valueId={relations.surrogateMotherId}
-                      displayName={partyDisplayName}
-                      onPick={id => { updateCaseField(caseRecord.id, 'relations.surrogateMotherId', id); recordPartyUsage('surrogateMothers', id); }}
-                    />
-                    <RepresentativesSlot
-                      records={orderedRepresentatives}
-                      valueIds={relations.representativeIds}
-                      onToggle={(repId, include) => handleToggleRepresentative(caseRecord, repId, include)}
-                    />
-
-                    <CaseArtProgramEditor catalog={catalog} setCatalog={setCatalog} caseId={caseRecord.id} />
-
-                    <CaseChildbirthTransactionEditor catalog={catalog} setCatalog={setCatalog} caseId={caseRecord.id} />
-
-                    <RowLine style={{ marginTop: 8 }}>
-                      <DangerButton type="button" onClick={() => handleDeleteCase(caseRecord)}>
-                        <FaTrash /> Delete case
-                      </DangerButton>
-                    </RowLine>
-                  </RecordBody>
-                ) : null}
-              </RecordBlock>
-            );
-          })}
-          <RowLine style={{ marginTop: 10 }}>
-            <SmallButton type="button" onClick={handleAddCase}>
-              <FaPlus /> New case
-            </SmallButton>
-          </RowLine>
-        </>
-      ) : null}
-    </Panel>
-  );
-};
-
 // --- Technical input (paste-and-parse), same additive multi-location merge Documents Builder
 // already uses - the manual editors above and this JSON path both write to the same tree. -------
 
@@ -1256,7 +958,7 @@ const CaseReadView = ({ catalog, selectedCaseId, onSelectCase, onCreateCase }) =
 // --- Page ---------------------------------------------------------------------------------------
 
 const EMPTY_RECENT_IDS = {
-  couples: [], clinics: [], partnerClinics: [], surrogateMothers: [], representatives: [], notaries: [],
+  couples: [], clinics: [], partnerClinics: [], surrogateMothers: [], representatives: [], notaries: [], maternityHospitals: [],
 };
 
 // Same view/edit pattern as the Budget page (spec batch 21 §10): read mode is the default, an
@@ -1279,17 +981,23 @@ const PartiesPage = ({ isAdmin }) => {
   // The read view's "last-selected case" (spec §10) - loaded from the backend below, and never
   // reset by switching modes, so it survives read <-> edit exactly like the selected case itself.
   const [selectedCaseId, setSelectedCaseId] = useState('');
+  // Most-recently-selected-first ordering for the case switcher strip (batch 28 §1) - persisted the
+  // same way Documents Builder already persists recentCaseIds, independent from the read view's
+  // single "last-selected case" above (this is an ordered list of every recently-touched case, not
+  // just the one to default back into).
+  const [recentCaseIds, setRecentCaseIds] = useState([]);
 
   const loadPartiesData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [partiesSnapshot, casesSnapshot, templatesSnapshot, settingsSnapshot, lastCaseSnapshot] = await Promise.all([
+      const [partiesSnapshot, casesSnapshot, templatesSnapshot, settingsSnapshot, lastCaseSnapshot, recentCasesSnapshot] = await Promise.all([
         get(ref(database, DOCUMENTS_PARTIES_PATH)),
         get(ref(database, DOCUMENTS_CASES_PATH)),
         get(ref(database, DOCUMENTS_TEMPLATES_PATH)),
         get(ref(database, `${PARTIES_SETTINGS_PATH}/recentIds`)),
         get(ref(database, `${PARTIES_SETTINGS_PATH}/lastCaseId`)),
+        get(ref(database, `${PARTIES_SETTINGS_PATH}/recentCaseIds`)),
       ]);
       const nextCatalog = normalizeDocumentsCatalog(
         partiesSnapshot.exists() ? partiesSnapshot.val() : null,
@@ -1311,7 +1019,9 @@ const PartiesPage = ({ isAdmin }) => {
         surrogateMothers: toArray(rawRecentIds?.surrogateMothers),
         representatives: toArray(rawRecentIds?.representatives),
         notaries: toArray(rawRecentIds?.notaries),
+        maternityHospitals: toArray(rawRecentIds?.maternityHospitals),
       });
+      setRecentCaseIds(toArray(recentCasesSnapshot.exists() ? recentCasesSnapshot.val() : null));
     } catch (loadError) {
       console.error('Unable to load parties data', loadError);
       setError('Parties data is not available right now.');
@@ -1345,8 +1055,9 @@ const PartiesPage = ({ isAdmin }) => {
     });
   };
 
-  // The read view's case selection (spec §10) - both picking a case in Read mode and expanding one
-  // in Edit mode's Cases group call this, so either surface always reflects the other.
+  // The read view's case selection (spec §10) - both picking a case in Read mode and picking one
+  // from the case-switcher strip in Edit mode call this, so either surface always reflects the
+  // other.
   const persistSelectedCase = id => {
     setSelectedCaseId(id);
     set(ref(database, `${PARTIES_SETTINGS_PATH}/lastCaseId`), id || null).catch(usageError => {
@@ -1354,13 +1065,18 @@ const PartiesPage = ({ isAdmin }) => {
     });
   };
 
-  // Read <-> edit never loses the selected case (spec §10) - selectedCaseId lives above both modes
-  // and neither mode switch touches it, so the same case is still there whichever way you toggle.
-  const enterEditModeOnCase = caseId => {
-    setIsEditMode(true);
-    if (typeof window !== 'undefined') window.localStorage.setItem(PARTIES_EDIT_MODE_STORAGE_KEY, '1');
-    setOpenGroups(previous => ({ ...previous, cases: true }));
-    toggleRecord('cases', caseId, true);
+  // Most-recently-selected-first tracking for the case switcher strip (batch 28 §1) - bumped
+  // whenever a case is deliberately picked (switcher pill, or just-created), never on the page's own
+  // initial load, so re-opening the page doesn't reshuffle the strip on its own.
+  const bumpRecentCase = id => {
+    if (!id) return;
+    setRecentCaseIds(previous => {
+      const next = upsertRecentCaseId(previous, id);
+      set(ref(database, `${PARTIES_SETTINGS_PATH}/recentCaseIds`), next).catch(usageError => {
+        console.error('Unable to save recent case usage', usageError);
+      });
+      return next;
+    });
   };
 
   const handleToggleEditMode = () => {
@@ -1369,17 +1085,20 @@ const PartiesPage = ({ isAdmin }) => {
     if (typeof window !== 'undefined') window.localStorage.setItem(PARTIES_EDIT_MODE_STORAGE_KEY, next ? '1' : '0');
   };
 
-  // "Create new case" sits above the read-mode case data (spec §10) - creates the record, selects
-  // it, and jumps into Edit mode with it already expanded so the admin can assign its parties right
-  // away via the full directory, per Batch 19's collapsible-groups design.
-  const handleCreateCaseFromReadView = async () => {
+  // "Create new case" sits above the read-mode case data (spec §10) and doubles as the case
+  // switcher strip's "+ New case" pill (batch 28 §1) - creates the record, selects it, bumps it to
+  // the front of the switcher, and jumps into Edit mode so the admin can assign its parties right
+  // away.
+  const handleCreateCase = async () => {
     const caseId = makeCaseId();
     const record = createEmptyCase({ caseId });
     try {
       await set(ref(database, `${DOCUMENTS_CASES_PATH}/${caseId}`), record);
       setCatalog(previous => ({ ...previous, cases: [...previous.cases, record] }));
       persistSelectedCase(caseId);
-      enterEditModeOnCase(caseId);
+      bumpRecentCase(caseId);
+      setIsEditMode(true);
+      if (typeof window !== 'undefined') window.localStorage.setItem(PARTIES_EDIT_MODE_STORAGE_KEY, '1');
       toast.success('Case created.');
     } catch (addError) {
       console.error('Unable to create case', addError);
@@ -1424,10 +1143,21 @@ const PartiesPage = ({ isAdmin }) => {
             catalog={catalog}
             selectedCaseId={selectedCaseId}
             onSelectCase={persistSelectedCase}
-            onCreateCase={handleCreateCaseFromReadView}
+            onCreateCase={handleCreateCase}
           />
         ) : (
           <>
+            <CaseEditor
+              catalog={catalog}
+              setCatalog={setCatalog}
+              selectedCaseId={selectedCaseId}
+              onSelectCase={persistSelectedCase}
+              onCreateCase={handleCreateCase}
+              recentCaseIds={recentCaseIds}
+              bumpRecentCase={bumpRecentCase}
+              partyRecentIds={recentIds}
+              recordPartyUsage={recordPartyUsage}
+            />
             <CouplesGroup
               catalog={catalog}
               setCatalog={setCatalog}
@@ -1519,17 +1249,6 @@ const PartiesPage = ({ isAdmin }) => {
               toggleRecord={toggleRecord}
               groupOpen={Boolean(openGroups.notaries)}
               onToggleGroup={() => toggleGroup('notaries')}
-            />
-            <CasesGroup
-              catalog={catalog}
-              setCatalog={setCatalog}
-              expandedKeys={expandedKeys}
-              toggleRecord={toggleRecord}
-              groupOpen={Boolean(openGroups.cases)}
-              onToggleGroup={() => toggleGroup('cases')}
-              recentIds={recentIds}
-              recordPartyUsage={recordPartyUsage}
-              onSelectCase={persistSelectedCase}
             />
             <TechnicalSection catalog={catalog} setCatalog={setCatalog} />
           </>

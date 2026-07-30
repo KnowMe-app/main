@@ -728,6 +728,27 @@ export const getMaternityHospitalDisplayName = maternityHospital => {
   return '';
 };
 
+// Collapsed-row/card display text for a party record - shared between PartiesPage's own directory
+// rows and any other surface that needs the same "what do we call this record" logic (batch 28's
+// case-editor relation cards, in particular), so the two never drift apart.
+export const nameFormOf = value => {
+  if (isPlainObject(value)) {
+    if (typeof value.uk === 'string' && value.uk) return value.uk;
+    if (isPlainObject(value.uk)) return value.uk.nominative || value.uk.short || '';
+    if (typeof value.en === 'string' && value.en) return value.en;
+    if (isPlainObject(value.en)) return value.en.full || value.en.short || '';
+    return '';
+  }
+  return value || '';
+};
+
+export const partyDisplayName = record => nameFormOf(record?.name) || record?.id;
+export const maternityDisplayName = record => getMaternityHospitalDisplayName(record) || record?.id;
+export const coupleDisplayName = record => {
+  const names = toArray(record?.partners).map(partner => nameFormOf(partner?.name)).filter(Boolean);
+  return names.length ? names.join(' & ') : record?.id;
+};
+
 // --- Party record shapes (Parties page, batch 19 §1) --------------------------------------------
 // Canonical "blank record" for each party collection - the shape a freshly-added record starts
 // from, matching exactly what resolveCaseContext/fillPlaceholders already expect to find (spec

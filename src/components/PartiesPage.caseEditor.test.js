@@ -1,10 +1,8 @@
-// Real-DOM regression test for the Childbirth/Transaction case editor ("Дані для заяви в РАЦС",
-// Batch 18 §6): mounts the actual PartiesPage component (Firebase mocked out) and drives the
-// maternity hospital/child/transaction fields through real form controls, to catch wiring bugs
-// the pure-logic tests in documentsCatalogUtils.test.js can't see. This editor used to also be
-// mounted a second time on the Documents Builder page - a plain duplicate of what's here, since
-// both hosts rendered the exact same component - so it now lives solely on Parties (spec: "це
-// повтор зі сторінки Parties, прибери з documents").
+// Real-DOM regression test for the case editor's РАЦС tab (childbirth/child data, batch 18 §6,
+// re-skinned onto the tabbed case editor in batch 28): mounts the actual PartiesPage component
+// (Firebase mocked out) and drives the maternity-hospital bottom-sheet picker and child fields
+// through real form controls, to catch wiring bugs the pure-logic tests in
+// documentsCatalogUtils.test.js can't see.
 //
 // NOTE: this project's Jest config sets `resetMocks: true`, so mock bodies must be (re-)installed
 // in beforeEach rather than only in the jest.mock(...) factory.
@@ -45,7 +43,7 @@ const buildParties = () => ({
     'hospital-1': { id: 'hospital-1', name: { uk: 'Пологовий будинок №1', en: '' } },
   },
   notaries: {
-    'notary-1': { id: 'notary-1', name: { uk: { nominative: 'Нотаріус Іванова Іванівна', short: 'Іванова І.І.' } } },
+    'notary-1': { id: 'notary-1', name: { uk: { nominative: 'Іванова Ганна Іванівна' } } },
   },
 });
 
@@ -67,8 +65,9 @@ const buildCases = () => ({
 const openCaseOne = async () => {
   render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
   fireEvent.click(await screen.findByTitle('Edit parties'));
-  fireEvent.click(await screen.findByText('Cases'));
-  fireEvent.click(await screen.findByText(/Testova Mariia/));
+  await screen.findByText('Огляд');
+  fireEvent.click(screen.getByRole('button', { name: 'РАЦС' }));
+  await screen.findByText('Пологи та дитина');
 };
 
 beforeEach(() => {
@@ -87,91 +86,92 @@ beforeEach(() => {
   window.localStorage.clear(); // read/edit mode persists across reloads (spec §10) - not across tests
 });
 
-describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', () => {
-  it('renders the maternity hospital select and the single child, without a child selector', async () => {
+describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, batch 28)', () => {
+  it('renders the maternity-hospital picker field and the single child', async () => {
     await openCaseOne();
 
-    const hospitalSelect = await screen.findByLabelText('Пологовий будинок');
-    expect(hospitalSelect).toHaveValue('hospital-1');
-    // name is a bilingual { uk, en } record - rendering it as an <option> label must resolve to
-    // the uk string, not the object itself (which crashes React: "Objects are not valid as a
-    // React child"). There is no separate `shortName` field (spec: never stored).
-    expect(screen.getByText('Пологовий будинок №1')).toBeInTheDocument();
+    const hospitalField = await screen.findByLabelText('Пологовий будинок');
+    expect(hospitalField).toHaveTextContent('Пологовий будинок №1');
     expect(screen.getByText('Дитина 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Стать')).toHaveValue('female');
-    expect(screen.queryByLabelText('Дитина для документа')).not.toBeInTheDocument();
   });
 
-  it('"Add child" adds a second child card and reveals the child selector', async () => {
+  it('picking a different maternity hospital via the bottom sheet updates the field', async () => {
+    const parties = buildParties();
+    parties.maternityHospitals['hospital-2'] = { id: 'hospital-2', name: { uk: 'Пологовий будинок №2', en: '' } };
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => parties };
+      if (path === 'documentsBuilder/cases') return { exists: () => true, val: () => buildCases() };
+      return { exists: () => false, val: () => null };
+    });
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
-    fireEvent.click(screen.getByRole('button', { name: /add child/i }));
+    fireEvent.click(screen.getByLabelText('Пологовий будинок'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Пологовий будинок №2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Застосувати' }));
 
-    expect(screen.getAllByText('Дитина 2').length).toBeGreaterThan(0);
-    expect(await screen.findByLabelText('Дитина для документа')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Пологовий будинок')).toHaveTextContent('Пологовий будинок №2');
   });
 
-  it('removing a child drops its card and the selector again if only one remains', async () => {
+  it('"Додати дитину" adds a second child card', async () => {
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
-    fireEvent.click(screen.getByRole('button', { name: /add child/i }));
+    fireEvent.click(screen.getByRole('button', { name: /додати дитину/i }));
+
+    expect(screen.getAllByText('Дитина 2').length).toBeGreaterThan(0);
+  });
+
+  it('removing a child drops its card', async () => {
+    await openCaseOne();
+    await screen.findByLabelText('Пологовий будинок');
+
+    fireEvent.click(screen.getByRole('button', { name: /додати дитину/i }));
     expect(screen.getAllByText('Дитина 2').length).toBeGreaterThan(0);
 
-    const removeButtons = screen.getAllByTitle('Remove this child');
+    const removeButtons = screen.getAllByTitle('Видалити дитину');
     fireEvent.click(removeButtons[removeButtons.length - 1]);
 
     expect(screen.queryByText('Дитина 2')).not.toBeInTheDocument();
-    expect(screen.queryAllByText('Дитина 2')).toHaveLength(0);
-    expect(screen.queryByLabelText('Дитина для документа')).not.toBeInTheDocument();
   });
 
-  it('"Save childbirth details" persists the edited hospital/child fields to case.childbirth', async () => {
+  it('"Зберегти все" persists the edited hospital/child fields to case.childbirth in a single batched update', async () => {
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
     fireEvent.change(screen.getByLabelText('№ медичного висновку'), { target: { value: 'MC-99' } });
-    fireEvent.click(screen.getByRole('button', { name: /save childbirth details/i }));
+    expect(await screen.findByRole('button', { name: 'Зберегти все' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти все' }));
 
-    await waitFor(() => expect(set).toHaveBeenCalledWith(
-      'documentsBuilder/cases/case-1/childbirth',
-      expect.objectContaining({
+    await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
+      'case-1/childbirth': expect.objectContaining({
         maternityHospitalId: 'hospital-1',
         children: [expect.objectContaining({ id: 'child-1', medicalConclusion: expect.objectContaining({ number: 'MC-99' }) })],
       }),
-    ));
+    })));
+    // A save that never touched the ART Program tab must not fabricate artProgram data (the
+    // genetic-source mode selector always displays a default role even when untouched).
+    expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({ 'case-1/artProgram': null }));
   });
 
-  it('"Save surrogacy agreement" persists the agreement number/date directly to case.documents.surrogacyAgreement', async () => {
+  it('editing the surrogacy agreement and picking a notary persists them alongside the childbirth data in the same save', async () => {
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
     fireEvent.change(screen.getByLabelText('Номер (укр)'), { target: { value: 'Д-1' } });
     fireEvent.change(screen.getByLabelText('Дата договору'), { target: { value: '2026-05-01' } });
-    fireEvent.click(screen.getByRole('button', { name: /save surrogacy agreement/i }));
+    fireEvent.click(screen.getByLabelText('Нотаріус'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Іванова Г.І.' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Застосувати' }));
 
-    await waitFor(() => expect(set).toHaveBeenCalledWith(
-      'documentsBuilder/cases/case-1/documents/surrogacyAgreement',
-      { number: { uk: 'Д-1' }, date: '2026-05-01' },
-    ));
-  });
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти все' }));
 
-  it('"Save birth registration details" persists the statement date/notary directly to case.documents.birthRegistrationConsent, with no registry number field', async () => {
-    await openCaseOne();
-    await screen.findByLabelText('Пологовий будинок');
-
-    expect(screen.queryByLabelText('Номер реєстру')).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText('Дата заяви'), { target: { value: '2026-05-18' } });
-    fireEvent.change(screen.getByLabelText('Нотаріус'), { target: { value: 'notary-1' } });
-    fireEvent.click(screen.getByRole('button', { name: /save birth registration details/i }));
-
-    await waitFor(() => expect(set).toHaveBeenCalledWith(
-      'documentsBuilder/cases/case-1/documents/birthRegistrationConsent',
-      { statementDate: '2026-05-18', notaryId: 'notary-1' },
-    ));
-    expect(update).not.toHaveBeenCalled();
+    await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
+      'case-1/documents': expect.objectContaining({
+        surrogacyAgreement: { number: { uk: 'Д-1' }, date: '2026-05-01', notaryId: 'notary-1' },
+      }),
+    })));
   });
 
   // Regression: Firebase RTDB silently turns a JS array into a `{"1": {...}}`-shaped plain object
@@ -196,7 +196,7 @@ describe('spec: Childbirth/Transaction case editor (Batch 18 §6), on Parties', 
 
     await openCaseOne();
 
-    expect(await screen.findByLabelText('Пологовий будинок')).toHaveValue('hospital-1');
+    expect(await screen.findByLabelText('Пологовий будинок')).toHaveTextContent('Пологовий будинок №1');
     expect(screen.getByText('Дитина 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Стать')).toHaveValue('female');
   });

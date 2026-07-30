@@ -1,9 +1,12 @@
 // Smoke test for the Parties page: mounts the real component (Firebase mocked out) and drives the
-// collapse/expand -> edit -> collapse interaction, the reference-checked delete confirmation, and
-// a case's relation-slot picker, to catch wiring bugs a pure-logic test can't see.
+// collapse/expand -> edit -> collapse interaction on the party directory, the reference-checked
+// delete confirmation, and the case editor's relation-card bottom-sheet picker (batch 28), to catch
+// wiring bugs a pure-logic test can't see.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render, screen, within, fireEvent, waitFor,
+} from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('firebase/database', () => ({
@@ -21,7 +24,7 @@ jest.mock('./config', () => ({
 jest.mock('utils/accessLevel', () => ({ isInvoiceBuilderUid: () => true }));
 
 // eslint-disable-next-line import/first
-import { ref, get, set } from 'firebase/database';
+import { ref, get, set, update } from 'firebase/database';
 // eslint-disable-next-line import/first
 import PartiesPage from './PartiesPage';
 
@@ -61,9 +64,11 @@ beforeEach(() => {
     if (path === 'documentsBuilder/cases') return { exists: () => true, val: () => buildCases() };
     if (path === 'documentsBuilder/templates') return { exists: () => false, val: () => null };
     if (path === 'documentsBuilder/partiesSettings/recentIds') return { exists: () => false, val: () => null };
+    if (path === 'documentsBuilder/partiesSettings/recentCaseIds') return { exists: () => false, val: () => null };
     return { exists: () => false, val: () => null };
   });
   set.mockResolvedValue(undefined);
+  update.mockResolvedValue(undefined);
   window.confirm = jest.fn(() => true);
   window.localStorage.clear(); // read/edit mode persists across reloads (spec §10) - not across tests
 });
@@ -79,10 +84,15 @@ describe('spec: Parties page', () => {
     expect(screen.getByText('Clinics')).toBeInTheDocument();
     expect(screen.getByText('Maternity hospitals')).toBeInTheDocument();
     expect(screen.getByText('Notaries')).toBeInTheDocument();
-    expect(screen.getByText('Cases')).toBeInTheDocument();
 
-    // Couples has 1 record, but its own row is not rendered until the group is expanded.
-    expect(screen.queryByText('Тестова Марія & Тестовий Петро')).not.toBeInTheDocument();
+    // The case editor (batch 28) replaces the old flat "Cases" group with a tabbed case editor.
+    expect(screen.getByText('Огляд')).toBeInTheDocument();
+    expect(screen.getByText('Програма ДРТ')).toBeInTheDocument();
+    expect(screen.getByText('РАЦС')).toBeInTheDocument();
+
+    // Couples has 1 record, but its own row/fields in the directory are not rendered until that
+    // group (not the case editor's own relation card, which shows the same couple) is expanded.
+    expect(screen.queryByLabelText('Name (uk, nominative)')).not.toBeInTheDocument();
   });
 
   it('expanding a group reveals its records; expanding a record reveals its fields', async () => {
@@ -132,7 +142,9 @@ describe('spec: Parties page', () => {
     fireEvent.click(await screen.findByTitle('Edit parties'));
     await screen.findByText('Couples');
     fireEvent.click(screen.getByText('Couples'));
-    fireEvent.click(await screen.findByText('Тестова Марія & Тестовий Петро'));
+    // Disambiguated by role: the case editor's own relation card (batch 28) also shows the same
+    // couple name, but only the directory's collapsed row is a button.
+    fireEvent.click(await screen.findByRole('button', { name: /Тестова Марія & Тестовий Петро/ }));
 
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));
 
@@ -154,31 +166,32 @@ describe('spec: Parties page', () => {
     expect(set).not.toHaveBeenCalledWith('documentsBuilder/parties/clinics/clinic-1', null);
   });
 
-  it('a case relation slot picks from the existing records and persists the pick, most-recently-used tracked', async () => {
+  it('a relation card picks from the existing records via the shared bottom sheet, tracks most-recently-used, and the single Save commits it', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit parties'));
-    await screen.findByText('Cases');
-    fireEvent.click(screen.getByText('Cases'));
-    fireEvent.click(await screen.findByText('Testova Mariia & Testovyi Petro'));
+    await screen.findByText('Огляд');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Clinic slot' }));
-    // Disambiguated by role: the case's ART-program shipment editor (batch 26 §5) also always
-    // renders a "Клініка-отримувач" <option> of the same name now that it's no longer gated behind
-    // "+ Add shipment" first.
+    fireEvent.click(within(screen.getByRole('group', { name: 'Клініка' })).getByRole('button', { name: 'Змінити' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Клініка Мрія' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Застосувати' }));
 
-    await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/cases/case-1/relations/ukrainianClinicId', 'clinic-1'));
     await waitFor(() => expect(set).toHaveBeenCalledWith('documentsBuilder/partiesSettings/recentIds/clinics', ['clinic-1']));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти все' }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
+      'case-1/relations': expect.objectContaining({ ukrainianClinicId: 'clinic-1' }),
+    })));
   });
 
-  it('renders the shared Childbirth/Transaction editor inside an expanded case', async () => {
+  it('renders the РАЦС tab with the childbirth section inside the selected case', async () => {
     render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit parties'));
-    await screen.findByText('Cases');
-    fireEvent.click(screen.getByText('Cases'));
-    fireEvent.click(await screen.findByText('Testova Mariia & Testovyi Petro'));
+    await screen.findByText('Огляд');
 
-    expect(await screen.findByText('Дані для заяви в РАЦС')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'РАЦС' }));
+
+    expect(await screen.findByText('Пологи та дитина')).toBeInTheDocument();
   });
 });
 
@@ -207,7 +220,7 @@ describe('spec: Parties page read/edit modes (batch 21 §10, Budget page pattern
     expect(screen.getByText('Surrogate mothers')).toBeInTheDocument();
     expect(screen.getByText('Representatives')).toBeInTheDocument();
     expect(screen.getByText('Clinics')).toBeInTheDocument();
-    expect(screen.getByText('Cases')).toBeInTheDocument();
+    expect(screen.getByText('Огляд')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /create new case/i })).not.toBeInTheDocument();
   });
 
@@ -217,7 +230,7 @@ describe('spec: Parties page read/edit modes (batch 21 §10, Budget page pattern
     expect(screen.getByText('Тестова Марія')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTitle('Edit parties'));
-    await screen.findByText('Cases');
+    await screen.findByText('Огляд');
     fireEvent.click(screen.getByTitle('Switch to read mode'));
 
     await screen.findByRole('button', { name: /create new case/i });
