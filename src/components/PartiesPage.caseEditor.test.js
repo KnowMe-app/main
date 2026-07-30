@@ -121,6 +121,7 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     fireEvent.click(screen.getByRole('button', { name: /додати дитину/i }));
 
     expect(screen.getAllByText('Дитина 2').length).toBeGreaterThan(0);
+    expect(screen.getByText('7/12')).toBeInTheDocument();
   });
 
   it('removing a child drops its card', async () => {
@@ -156,6 +157,15 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
   });
 
   it('editing the surrogacy agreement and picking a notary persists them alongside the childbirth data in the same save', async () => {
+    const cases = buildCases();
+    cases['case-1'].documents = {
+      embryoOwnershipStatement: { statementDate: '2026-04-30', notaryId: 'legacy-notary' },
+    };
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => buildParties() };
+      if (path === 'documentsBuilder/cases') return { exists: () => true, val: () => cases };
+      return { exists: () => false, val: () => null };
+    });
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
@@ -170,6 +180,7 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
       'case-1/documents': expect.objectContaining({
         surrogacyAgreement: { number: { uk: 'Д-1' }, date: '2026-05-01', notaryId: 'notary-1' },
+        embryoOwnershipStatement: { statementDate: '2026-04-30', notaryId: 'legacy-notary' },
       }),
     })));
   });
