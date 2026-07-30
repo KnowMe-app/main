@@ -63,6 +63,9 @@ const Dropdown = styled.div`
   padding: 4px;
   z-index: 1000;
 
+  @media (max-width: 560px) {
+    ${({ $mobileAnchor }) => ($mobileAnchor === 'left' ? 'left: 0; right: auto;' : 'left: auto; right: 0;')}
+  }
 `;
 
 const MenuItem = styled.button`
@@ -86,9 +89,19 @@ const MenuItem = styled.button`
 
 const PageNavMenu = () => {
   const [open, setOpen] = useState(false);
+  const [mobileAnchor, setMobileAnchor] = useState('right');
   const wrapRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const toggleMenu = () => {
+    if (!open && typeof window !== 'undefined' && wrapRef.current) {
+      const trigger = wrapRef.current.getBoundingClientRect();
+      // Anchor toward whichever side has room for the 150px menu. This keeps both the Budget
+      // page's left-aligned mobile trigger and the shared right-aligned headers in the viewport.
+      setMobileAnchor(trigger.left + 150 <= window.innerWidth - 12 ? 'left' : 'right');
+    }
+    setOpen(previous => !previous);
+  };
 
   useEffect(() => {
     if (!open) return undefined;
@@ -108,11 +121,11 @@ const PageNavMenu = () => {
 
   return (
     <Wrap ref={wrapRef}>
-      <DotsButton type="button" aria-label="Switch page" title="Switch page" onClick={() => setOpen(prev => !prev)}>
+      <DotsButton type="button" aria-label="Switch page" title="Switch page" onClick={toggleMenu}>
         ⋮
       </DotsButton>
       {open ? (
-        <Dropdown>
+        <Dropdown $mobileAnchor={mobileAnchor}>
           {NAV_LINKS.map(link => (
             <MenuItem
               key={link.path}

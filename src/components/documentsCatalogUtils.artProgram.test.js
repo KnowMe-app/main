@@ -893,6 +893,7 @@ describe('spec §5.3: auditTemplateVariables/classifyTemplateVariablePath classi
     expect(classifyTemplateVariablePath('logo')).toBe('system');
     expect(classifyTemplateVariablePath('logo-long')).toBe('system');
     expect(classifyTemplateVariablePath('clinic.medicalDirector.name.uk.genitive')).toBe('resolvedRelation');
+    expect(classifyTemplateVariablePath('partnerClinic.name.en')).toBe('resolvedRelation');
     expect(classifyTemplateVariablePath('relations.coupleId')).toBe('resolvedRelation');
     expect(classifyTemplateVariablePath('artProgram.medicalIndications.uk')).toBe('derivedRuntime');
     expect(classifyTemplateVariablePath('transferAttempt.embryoStageLabel.uk.genitive')).toBe('derivedRuntime');

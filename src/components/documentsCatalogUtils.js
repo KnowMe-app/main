@@ -288,6 +288,24 @@ export const deepMergeRecords = (base, incoming) => {
   return incoming;
 };
 
+// One atomic RTDB multi-location update permanently folds v5 source-clinic records into the v6
+// collection. Keeping this patch builder beside the catalog merge logic lets every page that reads
+// the shared parties tree reuse exactly the same migration, and the null entries ensure a deleted
+// clinic cannot reappear from its old path on the next load.
+export const buildLegacyPartnerClinicsMigrationPatch = rawParties => {
+  if (!isPlainObject(rawParties?.partnerClinics)) return {};
+  const currentClinics = isPlainObject(rawParties.clinics) ? rawParties.clinics : {};
+  const patch = {};
+  Object.entries(rawParties.partnerClinics).forEach(([legacyKey, legacyRecord]) => {
+    if (!isPlainObject(legacyRecord)) return;
+    const id = String(legacyRecord.id || legacyKey);
+    const currentRecord = isPlainObject(currentClinics[id]) ? currentClinics[id] : {};
+    patch[`clinics/${id}`] = stripUndefinedDeep(deepMergeRecords({ ...legacyRecord, id }, currentRecord));
+    patch[`partnerClinics/${legacyKey}`] = null;
+  });
+  return patch;
+};
+
 const mergeCollection = (existing, incoming, idPrefix, summary) => {
   const merged = [...existing];
   const indexById = new Map(merged.map((record, index) => [String(record.id), index]));
@@ -1986,7 +2004,7 @@ export const getTemplateReferencedPaths = template => {
 const SYSTEM_VARIABLE_PATHS = ['logo', 'logo-long'];
 // Every resolveCaseContext top-level key that resolves a relation record from `catalog.parties.*`
 // straight off `case.relations` - as opposed to a resolved/derived context alias below.
-const RESOLVED_RELATION_PATH_PREFIXES = ['relations.', 'couple.', 'wife.', 'husband.', 'clinic.', 'sourceClinic.', 'surrogateMother.', 'representative.', 'representatives.', 'notary.', 'maternityHospital.'];
+const RESOLVED_RELATION_PATH_PREFIXES = ['relations.', 'couple.', 'wife.', 'husband.', 'clinic.', 'sourceClinic.', 'partnerClinic.', 'surrogateMother.', 'representative.', 'representatives.', 'notary.', 'maternityHospital.'];
 // Runtime-only aliases: the canonical ART-program singleton paths (spec §5.1), and every
 // document-scoped context object resolveCaseContext builds fresh on each render - none of these
 // are ever themselves stored in Firebase, even though some of their leaves pass through

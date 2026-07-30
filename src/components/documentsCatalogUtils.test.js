@@ -14,6 +14,7 @@ import {
   buildChildContext,
   buildDocumentsFileName,
   buildGeneratedDocument,
+  buildLegacyPartnerClinicsMigrationPatch,
   catalogPartiesToBackend,
   clinicLogoEntriesToBackend,
   consolidateTemplateStyles,
@@ -295,6 +296,18 @@ describe('parseDocumentsTechnicalInput', () => {
       },
     }));
     expect(parsed.clinicLogos['clinic-1']).toEqual([{ file: 'a.jpg', layout: '1col' }]);
+  });
+});
+
+describe('legacy partner-clinic storage migration', () => {
+  it('moves legacy records to clinics and removes their old storage nodes atomically', () => {
+    expect(buildLegacyPartnerClinicsMigrationPatch({
+      partnerClinics: { legacyKey: { id: 'clinic-2', name: { en: 'Legacy name' }, country: { en: 'Japan' } } },
+      clinics: { 'clinic-2': { id: 'clinic-2', name: { en: 'Current name' } } },
+    })).toEqual({
+      'clinics/clinic-2': { id: 'clinic-2', name: { en: 'Current name' }, country: { en: 'Japan' } },
+      'partnerClinics/legacyKey': null,
+    });
   });
 });
 
