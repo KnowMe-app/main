@@ -230,6 +230,19 @@ const SectionSubhead = styled.h3`
   }
 `;
 
+// Batch 29 §4: the Overview tab's one always-expanded section (relations) - same look as
+// CollapsibleSection's Section/SectionHead, but never clickable/collapsible, since it's the tab's
+// whole purpose now rather than one accordion item among several.
+const PrimarySection = styled(Section)`
+  border-color: var(--km-accent);
+`;
+
+const PrimarySectionHead = styled(SectionHead)`
+  cursor: default;
+  background: var(--km-accent-light);
+  border-color: var(--km-accent);
+`;
+
 const CollapsibleSection = ({ id, title, meta, completion, open, onToggle, children }) => {
   const badge = completion ? (
     <Badge $complete={completion.filled >= completion.total}>{completion.filled}/{completion.total}</Badge>
@@ -467,39 +480,6 @@ const PrimaryButton = styled.button`
   }
 `;
 
-// --- Next-milestone reminder card (spec §6) --------------------------------------------------------
-
-const MilestoneCard = styled.div`
-  margin-top: 10px;
-  border: 1px solid var(--km-danger-border);
-  background: var(--km-danger-bg, rgba(179, 82, 63, 0.08));
-  border-radius: 10px;
-  padding: 12px 14px;
-`;
-
-const MilestoneAllDone = styled.div`
-  margin-top: 10px;
-  border: 1px solid var(--km-border);
-  background: var(--km-bg);
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-size: 12.5px;
-  color: var(--km-muted);
-`;
-
-const MilestoneTitle = styled.div`
-  font-size: 12.5px;
-  font-weight: 800;
-  color: var(--km-danger);
-`;
-
-const MilestoneMessage = styled.div`
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--km-text);
-  line-height: 1.4;
-`;
-
 // --- Bottom-sheet picker modal (spec §5) - reused for every "pick from list" interaction on the
 // page: relation cards' Змінити action, and every notary/maternity-hospital field. -----------------
 
@@ -673,17 +653,17 @@ const buildDraftFromCase = caseRecord => {
   const relations = caseRecord?.relations || {};
   const childbirth = caseRecord?.childbirth || {};
   const artProgram = caseRecord?.artProgram || {};
+  const geneticMaterial = artProgram.geneticMaterial || {};
   const shipment = artProgram.embryoShipment || {};
   const transferAttempt = artProgram.transferAttempt || {};
   const documents = caseRecord?.documents || {};
-  const oocyteSourceMode = geneticSourceModeFor(artProgram.oocyteSource);
-  const spermSourceMode = geneticSourceModeFor(artProgram.spermSource);
+  const oocyteSourceMode = geneticSourceModeFor(geneticMaterial.oocyte);
+  const spermSourceMode = geneticSourceModeFor(geneticMaterial.sperm);
 
   return {
     relations: {
       coupleId: relations.coupleId || '',
-      ukrainianClinicId: relations.ukrainianClinicId || '',
-      partnerClinicId: relations.partnerClinicId || '',
+      clinicId: relations.clinicId || '',
       surrogateMotherId: relations.surrogateMotherId || '',
       representativeIds: toArray(relations.representativeIds).map(String),
     },
@@ -699,16 +679,16 @@ const buildDraftFromCase = caseRecord => {
     },
     artProgram: {
       medicalIndicationsUk: artProgram.medicalIndications?.uk || '',
-      oocyteSource: artProgram.oocyteSource || '',
+      oocyteSource: geneticMaterial.oocyte || '',
       oocyteSourceMode,
-      spermSource: artProgram.spermSource || '',
+      spermSource: geneticMaterial.sperm || '',
       spermSourceMode,
       physicianNameUk: artProgram.medicalTeam?.physician?.name?.uk?.nominative || '',
+      ivfDate: artProgram.ivf?.date || '',
       embryoShipment: {
-        ivfDate: shipment.ivfDate || '',
-        plannedPeriod: { startDate: shipment.plannedPeriod?.startDate || '', endDate: shipment.plannedPeriod?.endDate || '' },
-        sentDate: shipment.sentDate || '',
+        plannedPeriod: { start: shipment.plannedPeriod?.start || '', end: shipment.plannedPeriod?.end || '' },
         receivedDate: shipment.receivedDate || '',
+        sourceClinicId: shipment.sourceClinicId || '',
       },
       transferAttempt: {
         date: transferAttempt.date || '',
@@ -749,14 +729,14 @@ const buildDraftFromCase = caseRecord => {
   };
 };
 
-// --- Per-section required-field configs (spec §2/§7): the single source of truth for both the
-// completion badges and the next-milestone card below, so the two can never disagree. -------------
+// --- Per-section required-field configs (spec §2/§7): the single source of truth for every
+// section's completion badge. -----------------------------------------------------------------
 
 const SECTION_DEFS = [
   {
-    key: 'relations', tab: 'overview', title: 'Учасники та зв’язки', meta: 'Пара, клініки, сурогатна мати, представники',
+    key: 'relations', tab: 'overview', title: 'Учасники та зв’язки', meta: 'Пара, клініка, сурогатна мати, представники',
     completion: draft => {
-      const core = ['coupleId', 'ukrainianClinicId', 'surrogateMotherId'].filter(path => isFilled(getValueByPath(draft.relations, path))).length;
+      const core = ['coupleId', 'clinicId', 'surrogateMotherId'].filter(path => isFilled(getValueByPath(draft.relations, path))).length;
       const rep = draft.relations.representativeIds.length > 0 ? 1 : 0;
       return { filled: core + rep, total: 4 };
     },
@@ -773,7 +753,7 @@ const SECTION_DEFS = [
     key: 'embryoShipment', tab: 'program', title: 'Транспортування ембріонів', meta: 'Ключові дати логістики',
     completion: draft => {
       const s = draft.artProgram.embryoShipment;
-      const values = [s.ivfDate, s.plannedPeriod.startDate, s.plannedPeriod.endDate, s.sentDate, s.receivedDate];
+      const values = [draft.artProgram.ivfDate, s.plannedPeriod.start, s.plannedPeriod.end, s.receivedDate, s.sourceClinicId];
       return { filled: values.filter(isFilled).length, total: values.length };
     },
   },
@@ -833,42 +813,6 @@ const SECTION_DEFS = [
 
 const sectionCompletion = (key, draft) => SECTION_DEFS.find(section => section.key === key)?.completion(draft) || { filled: 0, total: 0 };
 
-// --- Next-milestone reminder logic (spec §6): a real, if small, feature - compares today's date
-// against the embryo-shipment timeline, then falls back to the first section (in a fixed, logical
-// order) that isn't fully filled yet. --------------------------------------------------------------
-
-const todayIso = () => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const buildNextMilestone = draft => {
-  const shipment = draft.artProgram.embryoShipment;
-  if (shipment.plannedPeriod.endDate && todayIso() > shipment.plannedPeriod.endDate && !isFilled(shipment.sentDate)) {
-    return {
-      meta: 'Транспортування ембріонів',
-      message: 'Запланований період минув, але дата відправлення не вказана. Заповніть її, щоб справа не виглядала незавершеною.',
-      tab: 'program',
-      sectionKey: 'embryoShipment',
-    };
-  }
-  for (const section of SECTION_DEFS) {
-    const { filled, total } = section.completion(draft);
-    if (filled < total) {
-      return {
-        meta: section.title,
-        message: `У розділі «${section.title}» заповнено ${filled} із ${total} обов'язкових полів.`,
-        tab: section.tab,
-        sectionKey: section.key,
-      };
-    }
-  }
-  return null;
-};
-
 // --- Component ----------------------------------------------------------------------------------
 
 const CaseEditor = ({
@@ -880,12 +824,10 @@ const CaseEditor = ({
 
   const [activeTab, setActiveTab] = useState('overview');
   // Actionable/working sections start open, purely reference-y ones start collapsed (same idea the
-  // reviewed mockup used) - documentsRollup/ratsStatements/otherDocuments/racssClinicLetter are the
-  // ones an admin visits far less often than the working set below.
+  // reviewed mockup used) - ratsStatements/otherDocuments/racssClinicLetter are the ones an admin
+  // visits far less often than the working set below. Overview's own relations section is no
+  // longer part of this - it's always expanded now (batch 29 §4), never collapsible.
   const [openSections, setOpenSections] = useState({
-    relations: true,
-    milestone: true,
-    documentsRollup: false,
     medicalData: true,
     embryoShipment: true,
     transferAttempt: true,
@@ -911,10 +853,6 @@ const CaseEditor = ({
   }, [selectedCaseId]);
 
   const toggleSection = key => setOpenSections(previous => ({ ...previous, [key]: !previous[key] }));
-  const jumpTo = (tab, sectionKey) => {
-    setActiveTab(tab);
-    if (sectionKey) setOpenSections(previous => ({ ...previous, [sectionKey]: true }));
-  };
 
   const handleSelectCase = id => {
     if (dirty && typeof window !== 'undefined' && !window.confirm('Є незбережені зміни. Перейти до іншої справи без збереження?')) return;
@@ -1008,7 +946,6 @@ const CaseEditor = ({
   const DISPLAY_NAME_BY_COLLECTION = {
     couples: coupleDisplayName,
     clinics: partyDisplayName,
-    partnerClinics: partyDisplayName,
     surrogateMothers: partyDisplayName,
     representatives: partyDisplayName,
     maternityHospitals: maternityDisplayName,
@@ -1056,22 +993,23 @@ const CaseEditor = ({
       const artProgramPayload = {
         medicalIndications: { uk: draft.artProgram.medicalIndicationsUk },
         medicalTeam: { physician: { name: { uk: { nominative: draft.artProgram.physicianNameUk } } } },
+        ivf: { date: normalizeIsoDate(draft.artProgram.ivfDate) },
         embryoShipment: {
-          ivfDate: normalizeIsoDate(shipmentDraft.ivfDate),
-          plannedPeriod: { startDate: normalizeIsoDate(shipmentDraft.plannedPeriod.startDate), endDate: normalizeIsoDate(shipmentDraft.plannedPeriod.endDate) },
-          sentDate: normalizeIsoDate(shipmentDraft.sentDate),
+          plannedPeriod: { start: normalizeIsoDate(shipmentDraft.plannedPeriod.start), end: normalizeIsoDate(shipmentDraft.plannedPeriod.end) },
           receivedDate: normalizeIsoDate(shipmentDraft.receivedDate),
+          sourceClinicId: shipmentDraft.sourceClinicId,
         },
         transferAttempt: { date: normalizeIsoDate(transferDraft.date), embryoCount: parseNumberOrBlank(transferDraft.embryoCount), embryoStage: transferDraft.embryoStage, hcgTest, ultrasound },
       };
       // The genetic-source mode selector never offers a blank option (it always displays
       // Дружина/Чоловік or Донор) - saving it unconditionally would fabricate
-      // oocyteSource/spermSource on every single-save, even for a case whose ART Program tab was
-      // never touched. Only include it once there's other real ART-program content, the case
+      // geneticMaterial.oocyte/sperm on every single-save, even for a case whose ART Program tab
+      // was never touched. Only include it once there's other real ART-program content, the case
       // already had one, or the admin actively chose the donor option.
       const hasOtherArtProgramContent = Object.keys(removeEmptyCaseValues({
         medicalIndications: artProgramPayload.medicalIndications,
         medicalTeam: artProgramPayload.medicalTeam,
+        ivf: artProgramPayload.ivf,
         embryoShipment: artProgramPayload.embryoShipment,
         transferAttempt: artProgramPayload.transferAttempt,
       })).length > 0;
@@ -1080,8 +1018,7 @@ const CaseEditor = ({
         || isFilled(draft.artProgram.oocyteSourceMode)
         || isFilled(draft.artProgram.spermSourceMode);
       if (shouldIncludeGeneticSource) {
-        artProgramPayload.oocyteSource = draft.artProgram.oocyteSource;
-        artProgramPayload.spermSource = draft.artProgram.spermSource;
+        artProgramPayload.geneticMaterial = { oocyte: draft.artProgram.oocyteSource, sperm: draft.artProgram.spermSource };
       }
       const cleanedArtProgram = removeEmptyCaseValues(artProgramPayload);
       const nextArtProgram = Object.keys(cleanedArtProgram).length ? cleanedArtProgram : null;
@@ -1159,7 +1096,6 @@ const CaseEditor = ({
     );
   }
 
-  const milestone = selectedCase ? buildNextMilestone(draft) : null;
   const documentsRollup = ['surrogacyAgreement', 'ratsStatements', 'otherDocuments']
     .map(key => sectionCompletion(key, draft))
     .reduce((acc, item) => ({ filled: acc.filled + item.filled, total: acc.total + item.total }), { filled: 0, total: 0 });
@@ -1201,14 +1137,23 @@ const CaseEditor = ({
 
           {activeTab === 'overview' ? (
             <div>
-              <CollapsibleSection
-                id="relations"
-                title="Учасники та зв'язки"
-                meta="Пара, клініки, сурогатна мати, представники"
-                completion={sectionCompletion('relations', draft)}
-                open={Boolean(openSections.relations)}
-                onToggle={() => toggleSection('relations')}
-              >
+              {/* Batch 29 §3/§4: the milestone reminder and the documents/RACS rollup cards were
+                  dropped for being low-value - relations is now the tab's whole purpose, so it's
+                  shown directly (no header row a click could hide, no collapse state to track). */}
+              <PrimarySection>
+                <PrimarySectionHead>
+                  <SectionHeadInfo>
+                    <SectionTitle>Учасники та зв'язки</SectionTitle>
+                    <SectionMeta>Пара, клініки, сурогатна мати, представники</SectionMeta>
+                  </SectionHeadInfo>
+                  <HeadRight>
+                    {(() => {
+                      const completion = sectionCompletion('relations', draft);
+                      return <Badge $complete={completion.filled >= completion.total}>{completion.filled}/{completion.total}</Badge>;
+                    })()}
+                  </HeadRight>
+                </PrimarySectionHead>
+                <SectionBody>
                 <RelationGrid>
                   <RelationCard role="group" aria-label="Пара">
                     <RelationCardLabel>Пара</RelationCardLabel>
@@ -1227,26 +1172,12 @@ const CaseEditor = ({
                   <RelationCard role="group" aria-label="Клініка">
                     <RelationCardLabel>Клініка</RelationCardLabel>
                     <RelationCardValue>{(() => {
-                      const clinic = catalog.parties.clinics.find(item => String(item.id) === String(draft.relations.ukrainianClinicId));
+                      const clinic = catalog.parties.clinics.find(item => String(item.id) === String(draft.relations.clinicId));
                       return clinic ? partyDisplayName(clinic) : '— не обрано —';
                     })()}
                     </RelationCardValue>
                     <RelationCardButton type="button" onClick={() => openPicker({
-                      title: 'Оберіть клініку', collection: 'clinics', valueId: draft.relations.ukrainianClinicId, onApply: id => updateRelations('ukrainianClinicId', id),
-                    })}
-                    >
-                      Змінити
-                    </RelationCardButton>
-                  </RelationCard>
-                  <RelationCard role="group" aria-label="Партнерська клініка">
-                    <RelationCardLabel>Партнерська клініка</RelationCardLabel>
-                    <RelationCardValue>{(() => {
-                      const partnerClinic = catalog.parties.partnerClinics.find(item => String(item.id) === String(draft.relations.partnerClinicId));
-                      return partnerClinic ? partyDisplayName(partnerClinic) : '— не обрано —';
-                    })()}
-                    </RelationCardValue>
-                    <RelationCardButton type="button" onClick={() => openPicker({
-                      title: 'Оберіть партнерську клініку', collection: 'partnerClinics', valueId: draft.relations.partnerClinicId, onApply: id => updateRelations('partnerClinicId', id),
+                      title: 'Оберіть клініку', collection: 'clinics', valueId: draft.relations.clinicId, onApply: id => updateRelations('clinicId', id),
                     })}
                     >
                       Змінити
@@ -1281,40 +1212,8 @@ const CaseEditor = ({
                     </RelationCardButton>
                   </RelationCard>
                 </RelationGrid>
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                id="milestone"
-                title="Найближчий етап"
-                meta={milestone ? milestone.meta : 'Усе актуальне'}
-                open={Boolean(openSections.milestone)}
-                onToggle={() => toggleSection('milestone')}
-              >
-                {milestone ? (
-                  <MilestoneCard>
-                    <MilestoneTitle>Потрібна увага</MilestoneTitle>
-                    <MilestoneMessage>{milestone.message}</MilestoneMessage>
-                    <RowLine style={{ marginTop: 10 }}>
-                      <MiniButton type="button" onClick={() => jumpTo(milestone.tab, milestone.sectionKey)}>Доповнити дані</MiniButton>
-                    </RowLine>
-                  </MilestoneCard>
-                ) : (
-                  <MilestoneAllDone>Усі найближчі кроки виконано.</MilestoneAllDone>
-                )}
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                id="documentsRollup"
-                title="Документи та реєстрація"
-                meta="Договори, заяви, довідки"
-                completion={documentsRollup}
-                open={Boolean(openSections.documentsRollup)}
-                onToggle={() => toggleSection('documentsRollup')}
-              >
-                <RowLine>
-                  <MiniButton type="button" onClick={() => jumpTo('racs')}>Перейти до РАЦС</MiniButton>
-                </RowLine>
-              </CollapsibleSection>
+                </SectionBody>
+              </PrimarySection>
             </div>
           ) : null}
 
@@ -1385,23 +1284,36 @@ const CaseEditor = ({
                 <FieldGrid>
                   <Field>
                     Дата ЗІВ
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.ivfDate} onChange={event => updateShipmentField('ivfDate', event.target.value)} />
+                    <FieldInput type="date" value={draft.artProgram.ivfDate} onChange={event => updateArtField('ivfDate', event.target.value)} />
                   </Field>
                   <Field>
                     Запланований період — початок
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.startDate} onChange={event => updateShipmentPeriodField('startDate', event.target.value)} />
+                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.start} onChange={event => updateShipmentPeriodField('start', event.target.value)} />
                   </Field>
                   <Field>
                     Запланований період — кінець
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.endDate} onChange={event => updateShipmentPeriodField('endDate', event.target.value)} />
-                  </Field>
-                  <Field>
-                    Дата відправлення
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.sentDate} onChange={event => updateShipmentField('sentDate', event.target.value)} />
+                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.end} onChange={event => updateShipmentPeriodField('end', event.target.value)} />
                   </Field>
                   <Field>
                     Дата фактичного отримання
                     <FieldInput type="date" value={draft.artProgram.embryoShipment.receivedDate} onChange={event => updateShipmentField('receivedDate', event.target.value)} />
+                  </Field>
+                  <Field>
+                    Клініка-відправник
+                    <PickerFieldButton
+                      type="button"
+                      onClick={() => openPicker({
+                        title: 'Оберіть клініку-відправника', collection: 'clinics', valueId: draft.artProgram.embryoShipment.sourceClinicId, onApply: id => updateShipmentField('sourceClinicId', id),
+                      })}
+                    >
+                      <PickerFieldValue $empty={!draft.artProgram.embryoShipment.sourceClinicId}>
+                        {(() => {
+                          const sourceClinic = catalog.parties.clinics.find(item => String(item.id) === String(draft.artProgram.embryoShipment.sourceClinicId));
+                          return sourceClinic ? partyDisplayName(sourceClinic) : '— не обрано —';
+                        })()}
+                      </PickerFieldValue>
+                      <span>›</span>
+                    </PickerFieldButton>
                   </Field>
                 </FieldGrid>
               </CollapsibleSection>

@@ -1,8 +1,9 @@
-// Unit + integration tests for the ART program (case.artProgram) support: v5 resolvers/formatters,
-// the singleton embryoShipment/transferAttempt/hcgTest/ultrasound model, the scalar oocyteSource/
-// spermSource genetic-material fields, the v5 migration boundary (migrateCaseToV5/migrateCasesToV5),
-// and the four document contexts that reference artProgram (embryoOwnershipStatement,
-// geneticAffinityCertificate, racssClinicLetter, medicalServicesAgreement).
+// Unit + integration tests for the ART program (case.artProgram) support: v6 resolvers/formatters,
+// the singleton embryoShipment/transferAttempt/hcgTest/ultrasound/ivf model, the flat
+// geneticMaterial.oocyte/sperm genetic-material fields, the v6 migration boundary
+// (migrateCaseToV6/migrateCasesToV6), and the four document contexts that reference artProgram
+// (embryoOwnershipStatement, geneticAffinityCertificate, racssClinicLetter,
+// medicalServicesAgreement).
 //
 // All fixtures below are fictional - tests must never carry real client data (same rule as
 // documentsCatalogUtils.test.js).
@@ -21,6 +22,7 @@ import {
   deepMergeRecords,
   enrichCoupleMarriage,
   enrichHcgTestForTemplate,
+  enrichIvfForTemplate,
   enrichShipment,
   enrichShipmentForTemplate,
   enrichTransferForTemplate,
@@ -33,18 +35,17 @@ import {
   formatGestationalAgeText,
   formatPregnancyTypeTextUk,
   formatShipmentPeriod,
-  isDocumentsSchemaV5,
+  isDocumentsSchemaV6,
   isGeneticSourceDonorCode,
   mergeDocumentsCatalog,
-  migrateCaseToV5,
-  migrateCasesToV5,
+  migrateCaseToV6,
+  migrateCasesToV6,
   normalizeCaseRecord,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
   parseDocumentsTechnicalInput,
   resolveCaseContext,
   resolveEmbryoStageLabel,
-  resolveGeneticSourceLabel,
   resolveHcgTest,
   resolveShipment,
   resolveTransferAttempt,
@@ -55,8 +56,10 @@ import {
 
 // --- Fixtures ------------------------------------------------------------------------------
 
-const partnerClinic = {
-  id: 'partner-clinic-fixture',
+// The clinic embryos ship from - v6 (spec §1): lives in the same unified `parties.clinics`
+// collection as every other clinic, never a separate `partnerClinics` one.
+const sourceClinic = {
+  id: 'source-clinic-fixture',
   name: { uk: 'Клініка Тестова', en: 'Test Clinic' },
   country: { uk: 'Японія', en: 'Japan' },
   address: { uk: 'Адреса', en: 'Address' },
@@ -77,32 +80,32 @@ const couple = {
 };
 
 const rawParties = {
-  clinics: { [clinic.id]: clinic },
-  partnerClinics: { [partnerClinic.id]: partnerClinic },
+  clinics: { [clinic.id]: clinic, [sourceClinic.id]: sourceClinic },
   couples: { [couple.id]: couple },
 };
 
-// enrichShipment (and everything built on it) reads the case's own resolved clinic/partnerClinic
-// (spec v5 §1.2/§1.4: a shipment carries no clinic ids of its own) - the same `{ clinic, partnerClinic }`
-// pair resolveCaseContext always resolves from the case's relations and passes in.
+// enrichShipment (and everything built on it) reads the case's own resolved clinic/sourceClinic
+// (spec v6 §3/§4: the shipment carries its own sourceClinicId, resolved from the unified
+// parties.clinics - the destination clinic is always the case's own relations.clinicId) - the
+// same `{ clinic, sourceClinic }` pair resolveCaseContext always resolves and passes in.
 const parties = normalizeDocumentsCatalog(rawParties, {}, {}).parties;
-const resolvedClinics = { clinic, partnerClinic };
+const resolvedClinics = { clinic, sourceClinic };
 
-// A case using the v5 shape throughout (spec §1.3): the one embryo shipment lives at
-// `artProgram.embryoShipment` (no id, no clinic ids of its own - those are the case's own
-// relations), the one transfer attempt at `artProgram.transferAttempt`, its hCG test/ultrasound
+// A case using the v6 shape throughout (spec §1-§7): the one embryo shipment lives at
+// `artProgram.embryoShipment` (no id, but its own sourceClinicId), the standalone `artProgram.ivf`
+// singleton, the one transfer attempt at `artProgram.transferAttempt`, its hCG test/ultrasound
 // nested directly as singletons (no id, no map, existence alone means positive/confirmed).
 const caseWithDateRangePeriod = {
   id: 'case-daterange',
-  relations: { coupleId: couple.id, ukrainianClinicId: clinic.id, partnerClinicId: partnerClinic.id },
+  relations: { coupleId: couple.id, clinicId: clinic.id },
   artProgram: {
     medicalIndications: { uk: 'Тестовий діагноз' },
-    oocyteSource: 'wife',
-    spermSource: 'husband',
+    geneticMaterial: { oocyte: 'wife', sperm: 'husband' },
     medicalTeam: { physician: { name: { uk: { nominative: 'Тестова Лікарка Лікарівна' } } } },
+    ivf: { date: '2021-08-17' },
     embryoShipment: {
-      ivfDate: '2021-08-17',
-      plannedPeriod: { startDate: '2026-01-01', endDate: '2026-02-01' },
+      sourceClinicId: sourceClinic.id,
+      plannedPeriod: { start: '2026-01-01', end: '2026-02-01' },
       receivedDate: '2025-08-27',
     },
     transferAttempt: {
@@ -123,10 +126,11 @@ const caseWithDateRangePeriod = {
 // A case that only ever carries the migrated freeform text period (spec: "Katsura" scenario).
 const caseWithTextPeriod = {
   id: 'case-textperiod',
-  relations: { ukrainianClinicId: clinic.id, partnerClinicId: partnerClinic.id },
+  relations: { clinicId: clinic.id },
   artProgram: {
+    ivf: { date: '2021-08-17' },
     embryoShipment: {
-      ivfDate: '2021-08-17',
+      sourceClinicId: sourceClinic.id,
       plannedPeriod: { text: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' } },
     },
   },
@@ -135,14 +139,14 @@ const caseWithTextPeriod = {
 // A pre-artProgram case: no artProgram at all.
 const caseWithoutArtProgram = {
   id: 'case-old',
-  relations: { ukrainianClinicId: clinic.id },
+  relations: { clinicId: clinic.id },
 };
 
 // A transfer attempt exists but never got a hCG test/ultrasound entered yet - the ordinary "not
-// set" state (spec §1.5), never a broken reference (there's no id left to dangle in v5).
+// set" state (spec §1.5), never a broken reference (there's no id left to dangle in v6).
 const caseWithTransferButNoTests = {
   id: 'case-no-tests',
-  relations: { ukrainianClinicId: clinic.id },
+  relations: { clinicId: clinic.id },
   artProgram: { transferAttempt: { date: '2025-09-18' } },
   documents: { geneticAffinityCertificate: {}, racssClinicLetter: {} },
 };
@@ -179,18 +183,18 @@ describe('spec §1.3/§1.4: null-safe artProgram resolvers (resolveShipment/reso
     expect(resolveUltrasound(resolveTransferAttempt(caseWithTransferButNoTests))).toBeNull();
   });
 
-  it('enrichShipment attaches sourceClinic (the case\'s own partnerClinic) and destinationClinic (the case\'s own clinic), null-safe', () => {
+  it('enrichShipment attaches sourceClinic (the shipment\'s own sourceClinicId) and destinationClinic (the case\'s own clinic), null-safe', () => {
     const shipment = resolveShipment(caseWithDateRangePeriod);
     const enriched = enrichShipment(shipment, resolvedClinics);
-    expect(enriched.sourceClinic.id).toBe(partnerClinic.id);
+    expect(enriched.sourceClinic.id).toBe(sourceClinic.id);
     expect(enriched.destinationClinic.id).toBe(clinic.id);
     expect(enrichShipment(null, resolvedClinics)).toBeNull();
   });
 });
 
-// --- Genetic-material scalar source (spec §1.7/§3.4) -----------------------------------------
+// --- Genetic-material scalar source (spec §1.7/§6) -----------------------------------------
 
-describe('spec §1.7/§3.4: oocyteSource/spermSource are scalar strings, resolveGeneticSourceLabel never contains a lookup table', () => {
+describe('spec §1.7/§6: geneticMaterial.oocyte/sperm are plain scalar strings, never auto-resolved to a label', () => {
   it('reserves exactly "wife"/"husband"; anything else non-empty is a donor code', () => {
     expect(GENETIC_SOURCE_ROLE_VALUES).toEqual(['wife', 'husband']);
     expect(isGeneticSourceDonorCode('wife')).toBe(false);
@@ -198,16 +202,6 @@ describe('spec §1.7/§3.4: oocyteSource/spermSource are scalar strings, resolve
     expect(isGeneticSourceDonorCode('ED-123')).toBe(true);
     expect(isGeneticSourceDonorCode('')).toBe(false);
     expect(isGeneticSourceDonorCode(undefined)).toBe(false);
-  });
-
-  it('resolveGeneticSourceLabel resolves "wife"/"husband" to the already-resolved party name, and any other code to itself', () => {
-    const wife = { name: { uk: { nominative: 'Кацура Юкако' }, en: 'Katsura Yukako' } };
-    const husband = { name: { uk: { nominative: 'Кацура Кеіго' }, en: 'Katsura Keigo' } };
-    expect(resolveGeneticSourceLabel('wife', { wife, husband })).toBe(wife.name);
-    expect(resolveGeneticSourceLabel('husband', { wife, husband })).toBe(husband.name);
-    expect(resolveGeneticSourceLabel('ED-123', { wife, husband })).toEqual({ uk: 'ED-123', en: 'ED-123' });
-    expect(resolveGeneticSourceLabel('', { wife, husband })).toBeNull();
-    expect(resolveGeneticSourceLabel(undefined, {})).toBeNull();
   });
 });
 
@@ -226,8 +220,8 @@ describe('spec §3.5: ART formatters', () => {
     expect(formatDateRange('2026-01-01', '2026-02-01', 'en')).toBe('01 January 2026 - 01 February 2026');
   });
 
-  it('formatShipmentPeriod prefers startDate/endDate when present, falls back to the migrated text', () => {
-    expect(formatShipmentPeriod({ startDate: '2026-01-01', endDate: '2026-02-01' }, 'uk')).toBe('01.01.2026 – 01.02.2026');
+  it('formatShipmentPeriod prefers start/end when present, falls back to the migrated text', () => {
+    expect(formatShipmentPeriod({ start: '2026-01-01', end: '2026-02-01' }, 'uk')).toBe('01.01.2026 – 01.02.2026');
     expect(formatShipmentPeriod({ text: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' } }, 'uk')).toBe('квітні – травні 2026 року');
     expect(formatShipmentPeriod({ text: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' } }, 'en')).toBe('April-May 2026');
     expect(formatShipmentPeriod(null, 'uk')).toBe('');
@@ -273,15 +267,19 @@ describe('spec §3.5: ART formatters', () => {
 
 // --- Template-ready enrichers ------------------------------------------------------------------
 
-describe('spec §3.2/§3.5: enrichShipmentForTemplate/enrichTransferForTemplate/enrichHcgTestForTemplate/enrichUltrasoundForTemplate', () => {
+describe('spec §3.2/§3.5: enrichShipmentForTemplate/enrichTransferForTemplate/enrichHcgTestForTemplate/enrichUltrasoundForTemplate/enrichIvfForTemplate', () => {
   it('enrichShipmentForTemplate adds formatted date/period fields on top of the party-enriched shipment', () => {
     const shipment = enrichShipment(resolveShipment(caseWithDateRangePeriod), resolvedClinics);
     const enriched = enrichShipmentForTemplate(shipment);
-    expect(enriched.ivfDateFormatted).toEqual({ uk: '17.08.2021', en: '17 August 2021' });
     expect(enriched.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
     expect(enriched.receivedDateFormatted.uk).toBe('27.08.2025');
-    expect(enriched.sourceClinic.id).toBe(partnerClinic.id);
+    expect(enriched.sourceClinic.id).toBe(sourceClinic.id);
     expect(enrichShipmentForTemplate(null)).toBeNull();
+  });
+
+  it('enrichIvfForTemplate adds dateFormatted independently of the shipment (spec §5/§7)', () => {
+    expect(enrichIvfForTemplate({ date: '2021-08-17' }).dateFormatted).toEqual({ uk: '17.08.2021', en: '17 August 2021' });
+    expect(enrichIvfForTemplate(null)).toBeNull();
   });
 
   it('enrichTransferForTemplate adds dateFormatted/embryoCountText/embryoStageLabel, nests the enriched shipment, and its own hcgTest/ultrasound', () => {
@@ -291,7 +289,7 @@ describe('spec §3.2/§3.5: enrichShipmentForTemplate/enrichTransferForTemplate/
     expect(enriched.dateFormatted.uk).toBe('18.09.2025');
     expect(enriched.embryoCountText.uk).toBe('один ембріон');
     expect(enriched.embryoStageLabel.uk.genitive).toBe('бластоцисти');
-    expect(enriched.shipment.sourceClinic.id).toBe(partnerClinic.id);
+    expect(enriched.shipment.sourceClinic.id).toBe(sourceClinic.id);
     expect(enriched.hcgTest.dateFormatted.uk).toBe('30.09.2025');
     expect(enriched.ultrasound.dateFormatted.uk).toBe('17.10.2025');
     expect(enrichTransferForTemplate(null, shipment)).toBeNull();
@@ -314,10 +312,10 @@ describe('spec §3.2/§3.5: enrichShipmentForTemplate/enrichTransferForTemplate/
 // --- Document contexts -------------------------------------------------------------------------
 
 describe('spec §1.8/§4: document contexts (embryoOwnershipStatement/geneticAffinityCertificate/racssClinicLetter/medicalServicesAgreement)', () => {
-  it('embryoOwnershipStatement resolves the case\'s one shipment automatically, no shipmentId of its own needed (startDate/endDate case)', () => {
+  it('embryoOwnershipStatement resolves the case\'s one shipment automatically, no shipmentId of its own needed (start/end period case)', () => {
     const context = buildEmbryoOwnershipStatementContext(caseWithDateRangePeriod, resolvedClinics, undefined);
     expect(context.shipment.plannedPeriodFormatted.uk).toBe('01.01.2026 – 01.02.2026');
-    expect(context.shipment.sourceClinic.id).toBe(partnerClinic.id);
+    expect(context.shipment.sourceClinic.id).toBe(sourceClinic.id);
     expect(context.shipment.destinationClinic.id).toBe(clinic.id);
   });
 
@@ -340,18 +338,18 @@ describe('spec §1.8/§4: document contexts (embryoOwnershipStatement/geneticAff
       caseWithDateRangePeriod.documents.geneticAffinityCertificate,
     );
     expect(context.transferAttempt.embryoCountText.uk).toBe('один ембріон');
-    expect(context.transferAttempt.shipment.sourceClinic.id).toBe(partnerClinic.id);
+    expect(context.transferAttempt.shipment.sourceClinic.id).toBe(sourceClinic.id);
     expect(context.hcgTest.dateFormatted.uk).toBe('30.09.2025');
     expect(context.ultrasound.gestationalAgeText.uk).toBe('6–7 тижнів');
     expect(context.issueDateOrBlank.uk).toBe('20.10.2025');
     expect(context.outgoingNumberOrBlank).toBe('42/1');
   });
 
-  it('geneticAffinityCertificate exposes oocyteSourceIsWife off the scalar artProgram.oocyteSource, shared/cross-referenced by any other document conditioning a block on it', () => {
+  it('geneticAffinityCertificate exposes oocyteSourceIsWife off the scalar artProgram.geneticMaterial.oocyte, shared/cross-referenced by any other document conditioning a block on it', () => {
     const isWife = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {});
     expect(isWife.oocyteSourceIsWife).toBe(true);
 
-    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { oocyteSource: 'ED-123' } });
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyte: 'ED-123' } } });
     const isDonor = buildGeneticAffinityCertificateContext(donorCase, resolvedClinics, {});
     expect(isDonor.oocyteSourceIsWife).toBe(false);
 
@@ -429,11 +427,12 @@ describe('integration: resolveCaseContext wires every ART document context in, n
     expect(fillPlaceholders('{{case.artProgram.medicalIndications.uk}}', context, 'uk')).toBe('Тестовий діагноз');
   });
 
-  it('spec §5.1: exposes the same singleton shipment/transfer/hcgTest/ultrasound as top-level canonical context aliases, alongside the document-scoped ones', () => {
+  it('spec §5.1: exposes the same singleton shipment/transfer/hcgTest/ultrasound/ivf as top-level canonical context aliases, alongside the document-scoped ones', () => {
     const catalog = buildCatalog(caseWithDateRangePeriod);
     const context = resolveCaseContext(catalog, 'case-daterange');
     expect(fillPlaceholders('{{artProgram.medicalIndications.uk}}', context, 'uk')).toBe('Тестовий діагноз');
-    expect(fillPlaceholders('{{artProgram.oocyteSourceLabel.uk}}', context, 'uk')).toBe('Кацура Юкако');
+    expect(fillPlaceholders('{{artProgram.geneticMaterial.oocyte}}', context, 'uk')).toBe('wife');
+    expect(fillPlaceholders('{{ivf.dateFormatted.uk}}', context, 'uk')).toBe('17.08.2021');
     expect(fillPlaceholders('{{embryoShipment.receivedDateFormatted.uk}}', context, 'uk')).toBe('27.08.2025');
     expect(fillPlaceholders('{{transferAttempt.embryoCountText.uk}}', context, 'uk')).toBe('один ембріон');
     expect(fillPlaceholders('{{hcgTest.dateFormatted.uk}}', context, 'uk')).toBe('30.09.2025');
@@ -503,9 +502,8 @@ describe('integration: resolveCaseContext wires every ART document context in, n
 
 describe('spec §1.9: ART-derived fields are never written back to Firebase', () => {
   it('DERIVED_CONTEXT_FIELD_KEYS lists every runtime-only ART field named in the spec', () => {
-    ['plannedPeriodFormatted', 'ivfDateFormatted', 'sentDateFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
-      'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank',
-      'oocyteSourceLabel', 'spermSourceLabel']
+    ['plannedPeriodFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
+      'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank']
       .forEach(key => expect(DERIVED_CONTEXT_FIELD_KEYS).toContain(key));
   });
 
@@ -621,7 +619,7 @@ describe('spec: buildGeneratedDocument drops a conditionally-hidden paragraph en
   });
 
   it('fully omits the paragraph (never a blank/unresolved value) when any other oocyte source is set, keeping every other paragraph\'s position stable', () => {
-    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { oocyteSource: 'ED-123' } });
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyte: 'ED-123' } } });
     const context = buildGeneticAffinityCertificateContext(donorCase, resolvedClinics, {});
     const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
     expect(generated.paragraphs.map(p => p.type)).toEqual(['text', 'condition-hidden', 'text']);
@@ -632,77 +630,109 @@ describe('spec: buildGeneratedDocument drops a conditionally-hidden paragraph en
 // --- v5 migration (spec §2.2/§4) ---------------------------------------------------------------
 
 describe('spec §2.2: schema-version validation', () => {
-  it('isDocumentsSchemaV5 is true only for a settings record carrying the current version', () => {
-    expect(isDocumentsSchemaV5({ schemaVersion: 5 })).toBe(true);
-    expect(isDocumentsSchemaV5({ schemaVersion: 4 })).toBe(false);
-    expect(isDocumentsSchemaV5({})).toBe(false);
-    expect(isDocumentsSchemaV5(null)).toBe(false);
+  it('isDocumentsSchemaV6 is true only for a settings record carrying the current version', () => {
+    expect(isDocumentsSchemaV6({ schemaVersion: 6 })).toBe(true);
+    expect(isDocumentsSchemaV6({ schemaVersion: 5 })).toBe(false);
+    expect(isDocumentsSchemaV6({})).toBe(false);
+    expect(isDocumentsSchemaV6(null)).toBe(false);
   });
 
   it('normalizeDocumentsSettings always stamps the current schema version going forward', () => {
     expect(normalizeDocumentsSettings({}).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(normalizeDocumentsSettings(null).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(normalizeDocumentsSettings({ schemaVersion: 4 }).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(normalizeDocumentsSettings({ schemaVersion: 5 }).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
   });
 });
 
-describe('spec §4: migrateCaseToV5 - one idempotent migration boundary, never guesses ambiguous/missing data', () => {
-  it('is a no-op (report.changed: false) on an already-v5 case, and never mutates the source object', () => {
+describe('spec §4/§9: migrateCaseToV6 - one idempotent migration boundary, never guesses ambiguous/missing data', () => {
+  it('is a no-op (report.changed: false) on an already-v6 case, and never mutates the source object', () => {
     const before = JSON.stringify(caseWithDateRangePeriod);
-    const { case: migrated, report } = migrateCaseToV5(caseWithDateRangePeriod);
+    const { case: migrated, report } = migrateCaseToV6(caseWithDateRangePeriod);
     expect(report.changed).toBe(false);
     expect(migrated.artProgram.embryoShipment).toEqual(caseWithDateRangePeriod.artProgram.embryoShipment);
-    expect(migrated.artProgram.oocyteSource).toBe('wife');
+    expect(migrated.artProgram.geneticMaterial.oocyte).toBe('wife');
     expect(JSON.stringify(caseWithDateRangePeriod)).toBe(before);
   });
 
-  it('migrates relations.clinicId to relations.ukrainianClinicId, leaving partnerClinicId untouched', () => {
-    const legacy = { id: 'case-1', relations: { clinicId: 'clinic-1', partnerClinicId: 'partner-1' } };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
-    expect(migrated.relations.ukrainianClinicId).toBe('clinic-1');
-    expect(migrated.relations).not.toHaveProperty('clinicId');
-    expect(migrated.relations.partnerClinicId).toBe('partner-1');
+  it('leaves the ancient pre-v5 relations.clinicId untouched - it already means what v6 wants again', () => {
+    const legacy = { id: 'case-1', relations: { clinicId: 'clinic-1' } };
+    const { case: migrated, report } = migrateCaseToV6(legacy);
+    expect(migrated.relations.clinicId).toBe('clinic-1');
+    expect(report.changed).toBe(false);
+  });
+
+  it('migrates the v5 relations.ukrainianClinicId to relations.clinicId, and drops the retired relations.partnerClinicId (spec §9)', () => {
+    const legacy = { id: 'case-1', relations: { ukrainianClinicId: 'clinic-1', partnerClinicId: 'partner-1' } };
+    const { case: migrated, report } = migrateCaseToV6(legacy);
+    expect(migrated.relations.clinicId).toBe('clinic-1');
+    expect(migrated.relations).not.toHaveProperty('ukrainianClinicId');
+    expect(migrated.relations).not.toHaveProperty('partnerClinicId');
     expect(report.changed).toBe(true);
   });
 
-  it('migrates the old inline relations.shipment (batch 26 §5 shape) to artProgram.embryoShipment, recovering missing clinic relations and dropping the shipment\'s own clinic ids', () => {
+  it('migrates the old inline relations.shipment (batch 26 §5 shape) to artProgram.embryoShipment, recovering the destination clinic relation and keeping the shipment\'s own source clinic id in place', () => {
     const legacy = {
       id: 'case-1',
       relations: { coupleId: 'couple-1' },
-      relations_shipment_marker: undefined,
     };
     legacy.relations.shipment = {
       sourceClinicId: 'partner-1', destinationClinicId: 'clinic-1', ivfDate: '2021-08-17', receivedDate: '2025-08-27',
     };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
-    expect(migrated.artProgram.embryoShipment).toEqual({ ivfDate: '2021-08-17', receivedDate: '2025-08-27' });
-    expect(migrated.relations.ukrainianClinicId).toBe('clinic-1');
-    expect(migrated.relations.partnerClinicId).toBe('partner-1');
+    const { case: migrated, report } = migrateCaseToV6(legacy);
+    expect(migrated.artProgram.embryoShipment).toEqual({ sourceClinicId: 'partner-1', receivedDate: '2025-08-27' });
+    expect(migrated.artProgram.ivf).toEqual({ date: '2021-08-17' });
+    expect(migrated.relations.clinicId).toBe('clinic-1');
     expect(migrated.relations).not.toHaveProperty('shipment');
     expect(report.changed).toBe(true);
   });
 
-  it('does not overwrite clinic relations the case already has, even if the old inline shipment carried different ones', () => {
+  it('does not overwrite the case\'s own clinicId, even if the old inline shipment carried a different destinationClinicId', () => {
     const legacy = {
       id: 'case-1',
-      relations: { ukrainianClinicId: 'clinic-current', partnerClinicId: 'partner-current', shipment: { sourceClinicId: 'partner-old', destinationClinicId: 'clinic-old' } },
+      relations: { clinicId: 'clinic-current', shipment: { sourceClinicId: 'partner-old', destinationClinicId: 'clinic-old' } },
     };
-    const { case: migrated } = migrateCaseToV5(legacy);
-    expect(migrated.relations.ukrainianClinicId).toBe('clinic-current');
-    expect(migrated.relations.partnerClinicId).toBe('partner-current');
+    const { case: migrated } = migrateCaseToV6(legacy);
+    expect(migrated.relations.clinicId).toBe('clinic-current');
+    expect(migrated.artProgram.embryoShipment.sourceClinicId).toBe('partner-old');
   });
 
-  it('migrates the oldest id-map embryoShipments shape via the transfer attempt\'s shipmentId reference', () => {
+  it('recovers a v5 case\'s relations.partnerClinicId onto the shipment\'s own sourceClinicId, when the shipment has none of its own', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: { clinicId: 'clinic-1', partnerClinicId: 'partner-1' },
+      artProgram: { embryoShipment: { receivedDate: '2025-08-27' } },
+    };
+    const { case: migrated, report } = migrateCaseToV6(legacy);
+    expect(migrated.artProgram.embryoShipment.sourceClinicId).toBe('partner-1');
+    expect(migrated.relations).not.toHaveProperty('partnerClinicId');
+    expect(report.changed).toBe(true);
+  });
+
+  it('migrates the oldest id-map embryoShipments shape via the transfer attempt\'s shipmentId reference, splitting ivfDate out to artProgram.ivf', () => {
     const legacy = {
       id: 'case-1',
       relations: {},
       artProgram: {
-        embryoShipments: { 'shipment-1': { id: 'shipment-1', ivfDate: '2021-08-17' }, 'shipment-2': { id: 'shipment-2', ivfDate: '2022-01-01' } },
+        embryoShipments: { 'shipment-1': { id: 'shipment-1', ivfDate: '2021-08-17', receivedDate: '2025-08-27' }, 'shipment-2': { id: 'shipment-2', ivfDate: '2022-01-01' } },
         transferAttempt: { shipmentId: 'shipment-1', date: '2025-09-18' },
       },
     };
-    const { case: migrated } = migrateCaseToV5(legacy);
-    expect(migrated.artProgram.embryoShipment).toEqual({ ivfDate: '2021-08-17' });
+    const { case: migrated } = migrateCaseToV6(legacy);
+    expect(migrated.artProgram.embryoShipment).toEqual({ receivedDate: '2025-08-27' });
+    expect(migrated.artProgram.ivf).toEqual({ date: '2021-08-17' });
+  });
+
+  it('drops an old shipment whose only content was ivfDate - never persists an empty embryoShipment: {}', () => {
+    const legacy = {
+      id: 'case-1',
+      relations: {},
+      artProgram: {
+        embryoShipments: { 'shipment-1': { id: 'shipment-1', ivfDate: '2021-08-17' } },
+      },
+    };
+    const { case: migrated } = migrateCaseToV6(legacy);
+    expect(migrated.artProgram.embryoShipment).toBeUndefined();
+    expect(migrated.artProgram.ivf).toEqual({ date: '2021-08-17' });
   });
 
   it('reports an ambiguity (migrates none) when several old shipments exist with no shipmentId to disambiguate', () => {
@@ -713,7 +743,7 @@ describe('spec §4: migrateCaseToV5 - one idempotent migration boundary, never g
         embryoShipments: { 'shipment-1': { id: 'shipment-1', ivfDate: '2021-08-17' }, 'shipment-2': { id: 'shipment-2', ivfDate: '2022-01-01' } },
       },
     };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
+    const { case: migrated, report } = migrateCaseToV6(legacy);
     expect(migrated.artProgram?.embryoShipment).toBeUndefined();
     expect(report.ambiguities.length).toBeGreaterThan(0);
   });
@@ -731,7 +761,7 @@ describe('spec §4: migrateCaseToV5 - one idempotent migration boundary, never g
       },
       documents: { geneticAffinityCertificate: { hcgTestId: 'hcg-2', ultrasoundId: 'ultrasound-1' } },
     };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
+    const { case: migrated, report } = migrateCaseToV6(legacy);
     expect(migrated.artProgram.transferAttempt.hcgTest).toEqual({ date: '2025-11-15' });
     expect(migrated.artProgram.transferAttempt.ultrasound).toEqual({ date: '2025-10-17', fetusCount: 1 });
     expect(migrated.artProgram.transferAttempt).not.toHaveProperty('hcgTests');
@@ -753,7 +783,7 @@ describe('spec §4: migrateCaseToV5 - one idempotent migration boundary, never g
       },
       documents: { racssClinicLetter: { ultrasoundId: 'ultrasound-1' } },
     };
-    const { case: migrated } = migrateCaseToV5(legacy);
+    const { case: migrated } = migrateCaseToV6(legacy);
     expect(migrated.artProgram.transferAttempt.ultrasound).toEqual({ date: '2025-10-17' });
   });
 
@@ -768,86 +798,91 @@ describe('spec §4: migrateCaseToV5 - one idempotent migration boundary, never g
         },
       },
     };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
+    const { case: migrated, report } = migrateCaseToV6(legacy);
     expect(migrated.artProgram.transferAttempt.hcgTest).toBeUndefined();
     expect(report.ambiguities.length).toBeGreaterThan(0);
   });
 
   it('maps the old medicalIndication.diagnosis wrapper to the plain medicalIndications field', () => {
     const legacy = { id: 'case-1', relations: {}, artProgram: { medicalIndication: { diagnosis: { uk: 'Непліддя' } } } };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
+    const { case: migrated, report } = migrateCaseToV6(legacy);
     expect(migrated.artProgram.medicalIndications).toEqual({ uk: 'Непліддя' });
     expect(migrated.artProgram).not.toHaveProperty('medicalIndication');
     expect(report.changed).toBe(true);
   });
 
-  it('maps geneticMaterial.oocyteSourcePartnerRole/spermSourcePartnerRole "wife"/"husband" straight to the v5 scalars', () => {
-    const legacy = { id: 'case-1', relations: {}, artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'wife', spermSourcePartnerRole: 'husband' } } };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
-    expect(migrated.artProgram.oocyteSource).toBe('wife');
-    expect(migrated.artProgram.spermSource).toBe('husband');
-    expect(migrated.artProgram).not.toHaveProperty('geneticMaterial');
-    expect(report.changed).toBe(true);
+  it('maps the ancient geneticMaterial.oocyteSourcePartnerRole/spermSourcePartnerRole and the v5 scalar oocyteSource/spermSource straight to the flat v6 geneticMaterial.oocyte/sperm', () => {
+    const ancient = { id: 'case-1', relations: {}, artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'wife', spermSourcePartnerRole: 'husband' } } };
+    const { case: migratedAncient, report: ancientReport } = migrateCaseToV6(ancient);
+    expect(migratedAncient.artProgram.geneticMaterial).toEqual({ oocyte: 'wife', sperm: 'husband' });
+    expect(ancientReport.changed).toBe(true);
+
+    const v5Shaped = { id: 'case-2', relations: {}, artProgram: { oocyteSource: 'wife', spermSource: 'husband' } };
+    const { case: migratedV5, report: v5Report } = migrateCaseToV6(v5Shaped);
+    expect(migratedV5.artProgram.geneticMaterial).toEqual({ oocyte: 'wife', sperm: 'husband' });
+    expect(migratedV5.artProgram).not.toHaveProperty('oocyteSource');
+    expect(migratedV5.artProgram).not.toHaveProperty('spermSource');
+    expect(v5Report.changed).toBe(true);
   });
 
-  it('passes an old donor code straight through into the scalar field (no separate donor-code property)', () => {
+  it('passes an old donor code straight through into the flat scalar field (no separate donor-code property)', () => {
     const legacy = { id: 'case-1', relations: {}, artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'ED-123' } } };
-    const { case: migrated } = migrateCaseToV5(legacy);
-    expect(migrated.artProgram.oocyteSource).toBe('ED-123');
+    const { case: migrated } = migrateCaseToV6(legacy);
+    expect(migrated.artProgram.geneticMaterial.oocyte).toBe('ED-123');
   });
 
   it('reports a legacy "donor" selection with no code ever recorded as unmigratable, rather than storing the literal string "donor"', () => {
     const legacy = { id: 'case-1', relations: {}, artProgram: { geneticMaterial: { oocyteSourcePartnerRole: 'donor' } } };
-    const { case: migrated, report } = migrateCaseToV5(legacy);
-    expect(migrated.artProgram?.oocyteSource).toBeUndefined();
+    const { case: migrated, report } = migrateCaseToV6(legacy);
+    expect(migrated.artProgram?.geneticMaterial?.oocyte).toBeUndefined();
     expect(report.unmigratable.length).toBeGreaterThan(0);
   });
 
   it('reports missing required relations without throwing, for a bare case', () => {
-    const { report } = migrateCaseToV5({ id: 'case-1' });
+    const { report } = migrateCaseToV6({ id: 'case-1' });
     expect(report.missingRelations).toEqual(expect.arrayContaining([
-      'relations.ukrainianClinicId', 'relations.coupleId', 'relations.surrogateMotherId',
+      'relations.clinicId', 'relations.coupleId', 'relations.surrogateMotherId',
     ]));
   });
 
   it('handles null/non-object input without throwing', () => {
-    expect(migrateCaseToV5(null).case).toEqual({});
-    expect(() => migrateCaseToV5(undefined)).not.toThrow();
+    expect(migrateCaseToV6(null).case).toEqual({});
+    expect(() => migrateCaseToV6(undefined)).not.toThrow();
   });
 
   it('normalizeCaseRecord runs the same migration, idempotently, for every case normalizeDocumentsCatalog loads', () => {
     const legacy = {
       'case-1': {
         id: 'case-1',
-        relations: { clinicId: 'clinic-1' },
+        relations: { ukrainianClinicId: 'clinic-1' },
         artProgram: { medicalIndication: { diagnosis: { uk: 'Непліддя' } } },
       },
     };
     const catalog = normalizeDocumentsCatalog({}, {}, legacy);
     const migratedOnce = catalog.cases[0];
-    expect(migratedOnce.relations.ukrainianClinicId).toBe('clinic-1');
+    expect(migratedOnce.relations.clinicId).toBe('clinic-1');
     expect(migratedOnce.artProgram.medicalIndications.uk).toBe('Непліддя');
     expect(normalizeCaseRecord(migratedOnce)).toEqual(migratedOnce);
   });
 });
 
-describe('spec §4.7: migrateCasesToV5 aggregates a migration report across every case', () => {
+describe('spec §4.7: migrateCasesToV6 aggregates a migration report across every case', () => {
   it('lists migrated case ids, and keys missingRelations/ambiguities/unmigratable by case id', () => {
     const rawCases = {
       'case-clean': caseWithDateRangePeriod,
-      'case-legacy': { id: 'case-legacy', relations: { clinicId: 'clinic-1' } },
+      'case-legacy': { id: 'case-legacy', relations: { ukrainianClinicId: 'clinic-1' } },
       'case-ambiguous': {
         id: 'case-ambiguous',
         relations: {},
         artProgram: { embryoShipments: { a: { id: 'a' }, b: { id: 'b' } } },
       },
     };
-    const { cases, report } = migrateCasesToV5(rawCases);
+    const { cases, report } = migrateCasesToV6(rawCases);
     expect(cases.map(c => c.id).sort()).toEqual(['case-ambiguous', 'case-daterange', 'case-legacy']);
     expect(report.migratedCaseIds).toContain('case-legacy');
     expect(report.migratedCaseIds).not.toContain('case-daterange');
     expect(report.ambiguities['case-ambiguous'].length).toBeGreaterThan(0);
-    expect(report.missingRelations['case-ambiguous']).toEqual(expect.arrayContaining(['relations.ukrainianClinicId']));
+    expect(report.missingRelations['case-ambiguous']).toEqual(expect.arrayContaining(['relations.clinicId']));
   });
 });
 
@@ -861,7 +896,7 @@ describe('spec §5.3: auditTemplateVariables/classifyTemplateVariablePath classi
     expect(classifyTemplateVariablePath('relations.coupleId')).toBe('resolvedRelation');
     expect(classifyTemplateVariablePath('artProgram.medicalIndications.uk')).toBe('derivedRuntime');
     expect(classifyTemplateVariablePath('transferAttempt.embryoStageLabel.uk.genitive')).toBe('derivedRuntime');
-    expect(classifyTemplateVariablePath('case.artProgram.oocyteSource')).toBe('backendSource');
+    expect(classifyTemplateVariablePath('case.artProgram.geneticMaterial.oocyte')).toBe('backendSource');
     expect(classifyTemplateVariablePath('something.completely.unknown')).toBe('unknown');
   });
 

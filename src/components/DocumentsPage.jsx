@@ -18,6 +18,7 @@ import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFo
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import PageNavMenu from './PageNavMenu';
+import { Header, HeaderActions } from './AdminPageHeader';
 import VariablePickerModal from './DocumentsVariablePickerModal';
 import DocumentsPdfPreview from './DocumentsPdfPreview';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -108,6 +109,14 @@ const LOGO_LAYOUT_OPTIONS = [
   { tag: '2col', label: '{{logo-long}}', title: 'Use this variant for the {{logo-long}} token - one shared full-width logo' },
 ];
 
+// Which token a letterhead block's own image column draws (batch 29 §2) - distinct from
+// LOGO_LAYOUT_OPTIONS above, which assigns an uploaded logo *file* to a layout tag, not which
+// token a specific document's block uses.
+const LOGO_VARIANT_TOKENS = [
+  { token: 'logo', label: '{{logo}}' },
+  { token: 'logo-long', label: '{{logo-long}}' },
+];
+
 // Mobile admins can't easily reach the browser devtools console, so every Storage failure below
 // is folded into the on-screen message with the real Firebase/network error code - "see the
 // browser console" alone leaves them stuck with no way to report what actually went wrong.
@@ -143,19 +152,6 @@ const Shell = styled.div`
   margin: 0 auto;
 `;
 
-const Header = styled.header`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-
-  @media (max-width: 560px) {
-    flex-direction: column;
-    align-items: stretch;
-  }
-`;
-
 const Eyebrow = styled.div`
   color: var(--km-accent);
   font-size: 10.5px;
@@ -171,19 +167,6 @@ const Title = styled.h1`
   font-size: clamp(20px, 4vw, 27px);
   line-height: 1.05;
   letter-spacing: -0.02em;
-`;
-
-const HeaderActions = styled.div`
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-
-  @media (max-width: 560px) {
-    width: 100%;
-    justify-content: flex-start;
-  }
 `;
 
 const MiniButton = styled.button`
@@ -1716,6 +1699,14 @@ const DocumentsPage = ({ isAdmin }) => {
     docId, blockIndex, columnIndex, content => ({ ...content, hidden: !content.hidden }),
   );
 
+  // Which clinic-logo token this column draws (batch 29 §2: the settings popover only exposed
+  // show/hide + offsets, with no way to switch {{logo}} <-> {{logo-long}} short of pasting raw
+  // JSON) - source stays the token itself (never a resolved data URL), same convention as
+  // normalizeLayoutV2Content/LOGO_TOKEN_PATTERN.
+  const setLayoutV2LogoVariant = (docId, blockIndex, columnIndex, token) => applyLayoutV2ImageContentChange(
+    docId, blockIndex, columnIndex, content => ({ ...content, source: `{{${token}}}` }),
+  );
+
   const setLayoutV2LogoOffset = (docId, blockIndex, columnIndex, axisKey, raw) => {
     const parsed = parsePlainNumber(raw);
     if (parsed === undefined) return;
@@ -1871,7 +1862,7 @@ const DocumentsPage = ({ isAdmin }) => {
           return;
         }
 
-        const clinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
+        const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
         if (!clinicId) {
           toast.error('Select a case with a clinic before uploading the logo.');
           return;
@@ -1939,7 +1930,7 @@ const DocumentsPage = ({ isAdmin }) => {
   };
 
   const handleAssignLogoLayout = async (fileName, layoutTag) => {
-    const clinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
+    const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
     if (!clinicId) return;
     const previousVariants = clinicLogos;
     const nextVariants = applyLogoLayoutAssignment(previousVariants, fileName, layoutTag);
@@ -1955,7 +1946,7 @@ const DocumentsPage = ({ isAdmin }) => {
 
   const handleRemoveLogoVariant = async fileName => {
     if (typeof window !== 'undefined' && !window.confirm('Remove this clinic logo variant from the backend?')) return;
-    const clinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
+    const clinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
     if (!clinicId) return;
     // A variant loaded via the legacy Storage-folder fallback still physically lives there.
     const isLegacyVariant = Boolean(clinicLogos.find(variant => variant.fileName === fileName)?.legacyFolder);
@@ -2099,7 +2090,7 @@ const DocumentsPage = ({ isAdmin }) => {
   // that data at all.
   const CHECKLIST_ISSUE_DOMAINS = {
     'case.relations.coupleId': ['wife', 'husband', 'couple'],
-    'case.relations.ukrainianClinicId': ['clinic'],
+    'case.relations.clinicId': ['clinic'],
     'case.relations.surrogateMotherId': ['surrogateMother'],
     'case.childbirth.children': ['child', 'children', 'medicalConclusion', 'birthRegistration', 'case.childbirth', 'case.documents.birthRegistrationConsent'],
   };
@@ -2145,14 +2136,14 @@ const DocumentsPage = ({ isAdmin }) => {
   const unresolvedVariables = [...new Set(selectedTemplateContexts.flatMap(({ template, context }) => (
     context ? validateDocumentTemplate(template, context) : []
   )))].sort();
-  // A case with no partnerClinicId set (old cases, or one just cleared - spec §3) resolves
-  // caseContext.partnerClinic to null, so every {{partnerClinic.*}} token in a selected template
-  // shows up in unresolvedVariables like any other missing field - technically correct (never a
-  // leaked {{token}}, never a crash) but "partnerClinic.name.uk, partnerClinic.address.uk, ..." is
-  // not a useful message on its own. Surface the actual cause instead, once, and drop the
+  // A case with no shipment sourceClinicId set (old cases, or one just cleared - spec §3/§4)
+  // resolves caseContext.sourceClinic to null, so every {{sourceClinic.*}} token in a selected
+  // template shows up in unresolvedVariables like any other missing field - technically correct
+  // (never a leaked {{token}}, never a crash) but "sourceClinic.name.uk, sourceClinic.address.uk,
+  // ..." is not a useful message on its own. Surface the actual cause instead, once, and drop the
   // redundant per-field paths from the generic list.
-  const missingPartnerClinic = Boolean(caseContext) && !caseContext.partnerClinic
-    && unresolvedVariables.some(path => path.startsWith('partnerClinic.'));
+  const missingSourceClinic = Boolean(caseContext) && !caseContext.sourceClinic
+    && unresolvedVariables.some(path => path.startsWith('sourceClinic.'));
   // Same idea for the notary (spec §8): a document that references {{notary...}} but whose own
   // notaryId isn't set (or points at a deleted notary) never crashes - it just surfaces one clear
   // message instead of a wall of unresolved notary.* paths.
@@ -2161,7 +2152,7 @@ const DocumentsPage = ({ isAdmin }) => {
     && getTemplateReferencedPaths(template).some(path => path === 'notary' || path.startsWith('notary.'))
   ));
   const visibleUnresolvedVariables = unresolvedVariables.filter(path => {
-    if (missingPartnerClinic && path.startsWith('partnerClinic.')) return false;
+    if (missingSourceClinic && path.startsWith('sourceClinic.')) return false;
     if (missingNotary && (path === 'notary' || path.startsWith('notary.'))) return false;
     return true;
   });
@@ -2170,7 +2161,7 @@ const DocumentsPage = ({ isAdmin }) => {
   // The selected case's clinicId maps directly to the Storage logo folder. Storage is the
   // source of truth here, so logos uploaded through the app or Firebase Console are discovered
   // without relying on a Realtime Database filename mirror.
-  const logoClinicId = selectedCase?.relations?.ukrainianClinicId ? String(selectedCase.relations.ukrainianClinicId) : '';
+  const logoClinicId = selectedCase?.relations?.clinicId ? String(selectedCase.relations.clinicId) : '';
   const clinicLogoStorageKey = `${logoClinicId}:${clinicLogoRefreshKey}`;
 
   // Fetch every stored logo variant of the selected clinic from Storage; the dimensions are what
@@ -2293,8 +2284,8 @@ const DocumentsPage = ({ isAdmin }) => {
   const confirmUnresolvedVariables = () => {
     if (typeof window === 'undefined') return true;
     const sections = [];
-    if (missingPartnerClinic) {
-      sections.push('Для цього документа не вибрана клініка-партнер.');
+    if (missingSourceClinic) {
+      sections.push('Для цього документа не вибрана клініка-відправник.');
     }
     if (missingNotary) {
       sections.push('Для цього документа не вибрано нотаріуса.');
@@ -2512,9 +2503,9 @@ const DocumentsPage = ({ isAdmin }) => {
                   />
                 </DocLogoPreviewRow>
               ) : null}
-              {missingPartnerClinic ? (
+              {missingSourceClinic ? (
                 <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
-                  Для цього документа не вибрана клініка-партнер.
+                  Для цього документа не вибрана клініка-відправник.
                 </DocSubtitle>
               ) : null}
               {missingNotary ? (
@@ -3279,6 +3270,22 @@ const DocumentsPage = ({ isAdmin }) => {
                                               />
                                               Show logo
                                             </CheckLine>
+                                            <Field>
+                                              Variant
+                                              <ToggleGroup>
+                                                {LOGO_VARIANT_TOKENS.map(({ token, label }) => (
+                                                  <ToggleOption
+                                                    key={token}
+                                                    type="button"
+                                                    $active={String(content.source || '').trim() === `{{${token}}}`}
+                                                    onClick={() => setLayoutV2LogoVariant(template.id, blockIndex, columnIndex, token)}
+                                                    title={`Use the ${label} token for this logo`}
+                                                  >
+                                                    {label}
+                                                  </ToggleOption>
+                                                ))}
+                                              </ToggleGroup>
+                                            </Field>
                                             <PlainNumberField
                                               label="Horizontal offset (mm, + = right)"
                                               initialValue={content.offsetXMm !== undefined ? String(content.offsetXMm) : ''}

@@ -432,6 +432,15 @@ const TopButtons = styled.div`
   justify-content: flex-start;
   align-items: center;
   gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--km-card);
+  padding: 6px 0;
+
+  @media (max-width: 768px) {
+    background: ${uiTokens.colors.pageBg};
+  }
 `;
 
 const EditActionButton = styled.button`

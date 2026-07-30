@@ -52,7 +52,7 @@ const buildParties = () => ({
 const buildCases = () => ({
   'case-1': {
     id: 'case-1',
-    relations: { coupleId: 'couple-1', ukrainianClinicId: '', surrogateMotherId: '', representativeIds: [] },
+    relations: { coupleId: 'couple-1', clinicId: '', surrogateMotherId: '', representativeIds: [] },
     childbirth: { maternityHospitalId: '', children: [] },
   },
 });
@@ -180,7 +180,7 @@ describe('spec: Parties page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Зберегти все' }));
 
     await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
-      'case-1/relations': expect.objectContaining({ ukrainianClinicId: 'clinic-1' }),
+      'case-1/relations': expect.objectContaining({ clinicId: 'clinic-1' }),
     })));
   });
 
