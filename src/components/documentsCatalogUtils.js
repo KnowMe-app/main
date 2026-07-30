@@ -175,6 +175,16 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates, rawCases) =>
   PARTY_COLLECTIONS.forEach(collection => {
     catalog.parties[collection] = toRecordsWithIdFromKey(rawParties?.[collection]).filter(record => isPlainObject(record));
   });
+  // v5 stored shipment-origin clinics in a separate `partnerClinics` collection. Cases are
+  // migrated to sourceClinicId on read, so bring those records into the unified v6 collection at
+  // the same boundary. Current `clinics` records are applied last and therefore win on conflicts,
+  // while any useful legacy-only fields are retained by the normal additive merge semantics.
+  catalog.parties.clinics = mergeCollection(
+    toRecordsWithIdFromKey(rawParties?.partnerClinics).filter(record => isPlainObject(record)),
+    catalog.parties.clinics,
+    'clinic',
+    { added: 0, updated: 0 },
+  );
   catalog.cases = toRecordsWithIdFromKey(rawCases).filter(record => isPlainObject(record)).map(normalizeCaseRecord);
   // Same read-time migration idea as normalizeCaseRecord, for templates: per-paragraph styles
   // are consolidated under each paragraph's single `style` key right at ingestion, so nothing
@@ -232,6 +242,12 @@ export const parseDocumentsTechnicalInput = rawText => {
   PARTY_COLLECTIONS.forEach(collection => {
     incoming.parties[collection] = toRecordsWithIdFromKey(dataSource[collection]).filter(record => isPlainObject(record));
   });
+  incoming.parties.clinics = mergeCollection(
+    toRecordsWithIdFromKey(dataSource.partnerClinics).filter(record => isPlainObject(record)),
+    incoming.parties.clinics,
+    'clinic',
+    { added: 0, updated: 0 },
+  );
   incoming.cases = toRecordsWithIdFromKey(casesSource).filter(record => isPlainObject(record)).map(normalizeCaseRecord);
   // Pasted templates get the same style consolidation as normalizeDocumentsCatalog - a paragraph
   // row copied out of the backend (either shape) merges in with its full style intact.
@@ -1694,6 +1710,9 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
       : null),
     clinic,
     sourceClinic,
+    // Stored v5 templates used {{partnerClinic.*}}. Keep that name as a read-only compatibility
+    // alias while all new UI and templates use the v6 {{sourceClinic.*}} terminology.
+    partnerClinic: sourceClinic,
     representative: representatives[0] || null,
     representatives,
     childbirth,

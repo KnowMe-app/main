@@ -1300,8 +1300,10 @@ const DocumentsPage = ({ isAdmin }) => {
   const formatPopoverKey = (docId, scope) => `${docId}#${scope || 'doc'}`;
   const toggleFormatPopover = (docId, scope) => {
     const key = formatPopoverKey(docId, scope);
-    // Switching straight from one popover to another still flushes the first one's edits.
-    if (openFormatKey && openFormatKey !== key) persistTemplate(openFormatKey.split('#')[0]);
+    // Switching straight from one popover to another, or toggling the current one closed, flushes
+    // its edits. The latter matters for controls such as the logo variant picker which have no
+    // field blur of their own.
+    if (openFormatKey) persistTemplate(openFormatKey.split('#')[0]);
     setOpenFormatKey(openFormatKey === key ? '' : key);
   };
   const closeFormatPopover = docId => {

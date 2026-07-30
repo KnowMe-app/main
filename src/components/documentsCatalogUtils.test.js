@@ -197,6 +197,15 @@ describe('parseDocumentsTechnicalInput', () => {
     expect(parsed.parties.clinics[0].id).toBe('clinic-2');
   });
 
+  it('folds v5 partner clinics into the unified clinics collection when parsing technical input', () => {
+    const parsed = parseDocumentsTechnicalInput(JSON.stringify({
+      partnerClinics: { 'clinic-legacy': { name: { en: 'Legacy source clinic' } } },
+      clinics: { 'clinic-current': { name: { en: 'Current clinic' } } },
+    }));
+
+    expect(parsed.parties.clinics.map(clinic => clinic.id)).toEqual(['clinic-legacy', 'clinic-current']);
+  });
+
   it('rejects invalid or empty input', () => {
     expect(() => parseDocumentsTechnicalInput('')).toThrow(/Paste/);
     expect(() => parseDocumentsTechnicalInput('not json')).toThrow(/Invalid JSON/);
@@ -843,6 +852,21 @@ const clinicWithSourceCatalog = ({ withSourceClinic = true, ivfDate = '2021-08-1
 );
 
 describe('spec v6 §3/§4: the source clinic is resolved from the same unified clinics collection, independent of the destination clinic', () => {
+  it('ingests a v5 partner-clinic record so the migrated sourceClinicId remains resolvable', () => {
+    const catalog = normalizeDocumentsCatalog(
+      {
+        clinics: { 'clinic-1': { name: { en: 'Destination clinic' } } },
+        partnerClinics: { 'partner-1': { name: { en: 'Legacy source clinic' }, country: { en: 'Japan' } } },
+      },
+      {},
+      { 'case-1': { relations: { clinicId: 'clinic-1', partnerClinicId: 'partner-1' }, artProgram: { embryoShipment: {} } } },
+    );
+    const context = resolveCaseContext(catalog, 'case-1');
+
+    expect(catalog.parties.clinics.map(clinic => clinic.id)).toContain('partner-1');
+    expect(context.sourceClinic.name.en).toBe('Legacy source clinic');
+  });
+
   it('resolves context.sourceClinic from parties.clinics via embryoShipment.sourceClinicId, independent of context.clinic', () => {
     const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
     expect(context.clinic.id).toBe('clinic-1');
@@ -850,6 +874,13 @@ describe('spec v6 §3/§4: the source clinic is resolved from the same unified c
     expect(fillPlaceholders('{{sourceClinic.name.uk}}', context, 'uk')).toBe('Клініка Оті Юме у м. Нагоя');
     expect(fillPlaceholders('{{sourceClinic.name.en}}', context, 'en')).toBe('Ochi Yume Clinic Nagoya');
     expect(fillPlaceholders('{{sourceClinic.address.uk}}', context, 'uk')).toContain('Нагоя');
+  });
+
+  it('keeps partnerClinic as a compatibility alias for stored v5 templates', () => {
+    const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
+
+    expect(context.partnerClinic).toBe(context.sourceClinic);
+    expect(fillPlaceholders('{{partnerClinic.name.en}}', context, 'en')).toBe('Ochi Yume Clinic Nagoya');
   });
 
   it('resolves context.sourceClinic to null (not undefined, not a throw) when the shipment has no sourceClinicId (old cases)', () => {

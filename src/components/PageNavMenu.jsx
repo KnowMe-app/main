@@ -63,10 +63,6 @@ const Dropdown = styled.div`
   padding: 4px;
   z-index: 1000;
 
-  @media (max-width: 560px) {
-    left: 0;
-    right: auto;
-  }
 `;
 
 const MenuItem = styled.button`
