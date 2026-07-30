@@ -658,7 +658,11 @@ const SaveStateLabel = styled.strong`
 
 const GENETIC_SOURCE_MODE_ROLE = 'role';
 const GENETIC_SOURCE_MODE_DONOR = 'donor';
-const geneticSourceModeFor = value => (isGeneticSourceDonorCode(value) ? GENETIC_SOURCE_MODE_DONOR : GENETIC_SOURCE_MODE_ROLE);
+const GENETIC_SOURCE_MODE_UNSET = '';
+const geneticSourceModeFor = value => {
+  if (!isFilled(value)) return GENETIC_SOURCE_MODE_UNSET;
+  return isGeneticSourceDonorCode(value) ? GENETIC_SOURCE_MODE_DONOR : GENETIC_SOURCE_MODE_ROLE;
+};
 
 const notaryOptionLabel = notary => {
   const nominative = notary?.name?.uk?.nominative || '';
@@ -903,7 +907,6 @@ const CaseEditor = ({
     setDirty(false);
     setActiveTab('overview');
     setSavedAtLabel('');
-    draftRevision.current = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCaseId]);
 
@@ -964,7 +967,7 @@ const CaseEditor = ({
       artProgram: {
         ...previous.artProgram,
         [modeField]: mode,
-        [field]: mode === GENETIC_SOURCE_MODE_DONOR ? '' : (field === 'oocyteSource' ? 'wife' : 'husband'),
+        [field]: mode === GENETIC_SOURCE_MODE_ROLE ? (field === 'oocyteSource' ? 'wife' : 'husband') : '',
       },
     }));
     markDirty();
@@ -1074,8 +1077,8 @@ const CaseEditor = ({
       })).length > 0;
       const shouldIncludeGeneticSource = hasOtherArtProgramContent
         || Boolean(selectedCase.artProgram)
-        || draft.artProgram.oocyteSourceMode === GENETIC_SOURCE_MODE_DONOR
-        || draft.artProgram.spermSourceMode === GENETIC_SOURCE_MODE_DONOR;
+        || isFilled(draft.artProgram.oocyteSourceMode)
+        || isFilled(draft.artProgram.spermSourceMode);
       if (shouldIncludeGeneticSource) {
         artProgramPayload.oocyteSource = draft.artProgram.oocyteSource;
         artProgramPayload.spermSource = draft.artProgram.spermSource;
@@ -1338,6 +1341,7 @@ const CaseEditor = ({
                         value={draft.artProgram.oocyteSourceMode}
                         onChange={event => updateGeneticSourceMode('oocyteSource', 'oocyteSourceMode', event.target.value)}
                       >
+                        <option value={GENETIC_SOURCE_MODE_UNSET}>Оберіть джерело</option>
                         <option value={GENETIC_SOURCE_MODE_ROLE}>Дружина</option>
                         <option value={GENETIC_SOURCE_MODE_DONOR}>Донор</option>
                       </Select>
@@ -1354,6 +1358,7 @@ const CaseEditor = ({
                         value={draft.artProgram.spermSourceMode}
                         onChange={event => updateGeneticSourceMode('spermSource', 'spermSourceMode', event.target.value)}
                       >
+                        <option value={GENETIC_SOURCE_MODE_UNSET}>Оберіть джерело</option>
                         <option value={GENETIC_SOURCE_MODE_ROLE}>Чоловік</option>
                         <option value={GENETIC_SOURCE_MODE_DONOR}>Донор</option>
                       </Select>
