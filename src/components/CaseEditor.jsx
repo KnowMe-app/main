@@ -653,17 +653,17 @@ const buildDraftFromCase = caseRecord => {
   const relations = caseRecord?.relations || {};
   const childbirth = caseRecord?.childbirth || {};
   const artProgram = caseRecord?.artProgram || {};
+  const geneticMaterial = artProgram.geneticMaterial || {};
   const shipment = artProgram.embryoShipment || {};
   const transferAttempt = artProgram.transferAttempt || {};
   const documents = caseRecord?.documents || {};
-  const oocyteSourceMode = geneticSourceModeFor(artProgram.oocyteSource);
-  const spermSourceMode = geneticSourceModeFor(artProgram.spermSource);
+  const oocyteSourceMode = geneticSourceModeFor(geneticMaterial.oocyte);
+  const spermSourceMode = geneticSourceModeFor(geneticMaterial.sperm);
 
   return {
     relations: {
       coupleId: relations.coupleId || '',
-      ukrainianClinicId: relations.ukrainianClinicId || '',
-      partnerClinicId: relations.partnerClinicId || '',
+      clinicId: relations.clinicId || '',
       surrogateMotherId: relations.surrogateMotherId || '',
       representativeIds: toArray(relations.representativeIds).map(String),
     },
@@ -679,16 +679,16 @@ const buildDraftFromCase = caseRecord => {
     },
     artProgram: {
       medicalIndicationsUk: artProgram.medicalIndications?.uk || '',
-      oocyteSource: artProgram.oocyteSource || '',
+      oocyteSource: geneticMaterial.oocyte || '',
       oocyteSourceMode,
-      spermSource: artProgram.spermSource || '',
+      spermSource: geneticMaterial.sperm || '',
       spermSourceMode,
       physicianNameUk: artProgram.medicalTeam?.physician?.name?.uk?.nominative || '',
+      ivfDate: artProgram.ivf?.date || '',
       embryoShipment: {
-        ivfDate: shipment.ivfDate || '',
-        plannedPeriod: { startDate: shipment.plannedPeriod?.startDate || '', endDate: shipment.plannedPeriod?.endDate || '' },
-        sentDate: shipment.sentDate || '',
+        plannedPeriod: { start: shipment.plannedPeriod?.start || '', end: shipment.plannedPeriod?.end || '' },
         receivedDate: shipment.receivedDate || '',
+        sourceClinicId: shipment.sourceClinicId || '',
       },
       transferAttempt: {
         date: transferAttempt.date || '',
@@ -734,9 +734,9 @@ const buildDraftFromCase = caseRecord => {
 
 const SECTION_DEFS = [
   {
-    key: 'relations', tab: 'overview', title: 'Учасники та зв’язки', meta: 'Пара, клініки, сурогатна мати, представники',
+    key: 'relations', tab: 'overview', title: 'Учасники та зв’язки', meta: 'Пара, клініка, сурогатна мати, представники',
     completion: draft => {
-      const core = ['coupleId', 'ukrainianClinicId', 'surrogateMotherId'].filter(path => isFilled(getValueByPath(draft.relations, path))).length;
+      const core = ['coupleId', 'clinicId', 'surrogateMotherId'].filter(path => isFilled(getValueByPath(draft.relations, path))).length;
       const rep = draft.relations.representativeIds.length > 0 ? 1 : 0;
       return { filled: core + rep, total: 4 };
     },
@@ -753,7 +753,7 @@ const SECTION_DEFS = [
     key: 'embryoShipment', tab: 'program', title: 'Транспортування ембріонів', meta: 'Ключові дати логістики',
     completion: draft => {
       const s = draft.artProgram.embryoShipment;
-      const values = [s.ivfDate, s.plannedPeriod.startDate, s.plannedPeriod.endDate, s.sentDate, s.receivedDate];
+      const values = [draft.artProgram.ivfDate, s.plannedPeriod.start, s.plannedPeriod.end, s.receivedDate, s.sourceClinicId];
       return { filled: values.filter(isFilled).length, total: values.length };
     },
   },
@@ -946,7 +946,6 @@ const CaseEditor = ({
   const DISPLAY_NAME_BY_COLLECTION = {
     couples: coupleDisplayName,
     clinics: partyDisplayName,
-    partnerClinics: partyDisplayName,
     surrogateMothers: partyDisplayName,
     representatives: partyDisplayName,
     maternityHospitals: maternityDisplayName,
@@ -994,22 +993,23 @@ const CaseEditor = ({
       const artProgramPayload = {
         medicalIndications: { uk: draft.artProgram.medicalIndicationsUk },
         medicalTeam: { physician: { name: { uk: { nominative: draft.artProgram.physicianNameUk } } } },
+        ivf: { date: normalizeIsoDate(draft.artProgram.ivfDate) },
         embryoShipment: {
-          ivfDate: normalizeIsoDate(shipmentDraft.ivfDate),
-          plannedPeriod: { startDate: normalizeIsoDate(shipmentDraft.plannedPeriod.startDate), endDate: normalizeIsoDate(shipmentDraft.plannedPeriod.endDate) },
-          sentDate: normalizeIsoDate(shipmentDraft.sentDate),
+          plannedPeriod: { start: normalizeIsoDate(shipmentDraft.plannedPeriod.start), end: normalizeIsoDate(shipmentDraft.plannedPeriod.end) },
           receivedDate: normalizeIsoDate(shipmentDraft.receivedDate),
+          sourceClinicId: shipmentDraft.sourceClinicId,
         },
         transferAttempt: { date: normalizeIsoDate(transferDraft.date), embryoCount: parseNumberOrBlank(transferDraft.embryoCount), embryoStage: transferDraft.embryoStage, hcgTest, ultrasound },
       };
       // The genetic-source mode selector never offers a blank option (it always displays
       // Дружина/Чоловік or Донор) - saving it unconditionally would fabricate
-      // oocyteSource/spermSource on every single-save, even for a case whose ART Program tab was
-      // never touched. Only include it once there's other real ART-program content, the case
+      // geneticMaterial.oocyte/sperm on every single-save, even for a case whose ART Program tab
+      // was never touched. Only include it once there's other real ART-program content, the case
       // already had one, or the admin actively chose the donor option.
       const hasOtherArtProgramContent = Object.keys(removeEmptyCaseValues({
         medicalIndications: artProgramPayload.medicalIndications,
         medicalTeam: artProgramPayload.medicalTeam,
+        ivf: artProgramPayload.ivf,
         embryoShipment: artProgramPayload.embryoShipment,
         transferAttempt: artProgramPayload.transferAttempt,
       })).length > 0;
@@ -1018,8 +1018,7 @@ const CaseEditor = ({
         || isFilled(draft.artProgram.oocyteSourceMode)
         || isFilled(draft.artProgram.spermSourceMode);
       if (shouldIncludeGeneticSource) {
-        artProgramPayload.oocyteSource = draft.artProgram.oocyteSource;
-        artProgramPayload.spermSource = draft.artProgram.spermSource;
+        artProgramPayload.geneticMaterial = { oocyte: draft.artProgram.oocyteSource, sperm: draft.artProgram.spermSource };
       }
       const cleanedArtProgram = removeEmptyCaseValues(artProgramPayload);
       const nextArtProgram = Object.keys(cleanedArtProgram).length ? cleanedArtProgram : null;
@@ -1173,26 +1172,12 @@ const CaseEditor = ({
                   <RelationCard role="group" aria-label="Клініка">
                     <RelationCardLabel>Клініка</RelationCardLabel>
                     <RelationCardValue>{(() => {
-                      const clinic = catalog.parties.clinics.find(item => String(item.id) === String(draft.relations.ukrainianClinicId));
+                      const clinic = catalog.parties.clinics.find(item => String(item.id) === String(draft.relations.clinicId));
                       return clinic ? partyDisplayName(clinic) : '— не обрано —';
                     })()}
                     </RelationCardValue>
                     <RelationCardButton type="button" onClick={() => openPicker({
-                      title: 'Оберіть клініку', collection: 'clinics', valueId: draft.relations.ukrainianClinicId, onApply: id => updateRelations('ukrainianClinicId', id),
-                    })}
-                    >
-                      Змінити
-                    </RelationCardButton>
-                  </RelationCard>
-                  <RelationCard role="group" aria-label="Партнерська клініка">
-                    <RelationCardLabel>Партнерська клініка</RelationCardLabel>
-                    <RelationCardValue>{(() => {
-                      const partnerClinic = catalog.parties.partnerClinics.find(item => String(item.id) === String(draft.relations.partnerClinicId));
-                      return partnerClinic ? partyDisplayName(partnerClinic) : '— не обрано —';
-                    })()}
-                    </RelationCardValue>
-                    <RelationCardButton type="button" onClick={() => openPicker({
-                      title: 'Оберіть партнерську клініку', collection: 'partnerClinics', valueId: draft.relations.partnerClinicId, onApply: id => updateRelations('partnerClinicId', id),
+                      title: 'Оберіть клініку', collection: 'clinics', valueId: draft.relations.clinicId, onApply: id => updateRelations('clinicId', id),
                     })}
                     >
                       Змінити
@@ -1299,23 +1284,36 @@ const CaseEditor = ({
                 <FieldGrid>
                   <Field>
                     Дата ЗІВ
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.ivfDate} onChange={event => updateShipmentField('ivfDate', event.target.value)} />
+                    <FieldInput type="date" value={draft.artProgram.ivfDate} onChange={event => updateArtField('ivfDate', event.target.value)} />
                   </Field>
                   <Field>
                     Запланований період — початок
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.startDate} onChange={event => updateShipmentPeriodField('startDate', event.target.value)} />
+                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.start} onChange={event => updateShipmentPeriodField('start', event.target.value)} />
                   </Field>
                   <Field>
                     Запланований період — кінець
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.endDate} onChange={event => updateShipmentPeriodField('endDate', event.target.value)} />
-                  </Field>
-                  <Field>
-                    Дата відправлення
-                    <FieldInput type="date" value={draft.artProgram.embryoShipment.sentDate} onChange={event => updateShipmentField('sentDate', event.target.value)} />
+                    <FieldInput type="date" value={draft.artProgram.embryoShipment.plannedPeriod.end} onChange={event => updateShipmentPeriodField('end', event.target.value)} />
                   </Field>
                   <Field>
                     Дата фактичного отримання
                     <FieldInput type="date" value={draft.artProgram.embryoShipment.receivedDate} onChange={event => updateShipmentField('receivedDate', event.target.value)} />
+                  </Field>
+                  <Field>
+                    Клініка-відправник
+                    <PickerFieldButton
+                      type="button"
+                      onClick={() => openPicker({
+                        title: 'Оберіть клініку-відправника', collection: 'clinics', valueId: draft.artProgram.embryoShipment.sourceClinicId, onApply: id => updateShipmentField('sourceClinicId', id),
+                      })}
+                    >
+                      <PickerFieldValue $empty={!draft.artProgram.embryoShipment.sourceClinicId}>
+                        {(() => {
+                          const sourceClinic = catalog.parties.clinics.find(item => String(item.id) === String(draft.artProgram.embryoShipment.sourceClinicId));
+                          return sourceClinic ? partyDisplayName(sourceClinic) : '— не обрано —';
+                        })()}
+                      </PickerFieldValue>
+                      <span>›</span>
+                    </PickerFieldButton>
                   </Field>
                 </FieldGrid>
               </CollapsibleSection>

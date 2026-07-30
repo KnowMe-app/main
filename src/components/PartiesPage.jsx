@@ -26,7 +26,6 @@ import {
   coupleDisplayName,
   createEmptyCase,
   createEmptyClinic,
-  createEmptyPartnerClinic,
   createEmptyCouple,
   createEmptyMaternityHospital,
   createEmptyNotary,
@@ -471,6 +470,14 @@ const CLINIC_FIELDS = [
   { label: 'Name (uk, genitive)', path: 'name.uk.genitive' },
   { label: 'Name (uk, accusative "у ...")', path: 'name.uk.accusative' },
   { label: 'Name (en)', path: 'name.en' },
+  // v6 (spec §1): every clinic - Ukrainian or foreign - lives in this one collection now, so a
+  // foreign clinic (e.g. an embryo shipment's own source clinic) needs its country here too - blank
+  // and unused by a Ukrainian clinic, same as legalName/edrpou/bank/license/medicalDirector below
+  // are blank and unused by a foreign one.
+  { label: 'Country code', path: 'country.code' },
+  { label: 'Country (uk, nominative)', path: 'country.uk.nominative' },
+  { label: 'Country (uk, genitive "з ...")', path: 'country.uk.genitive' },
+  { label: 'Country (en)', path: 'country.en' },
   { label: 'Legal name (uk, nominative)', path: 'legalName.uk.nominative' },
   { label: 'Legal name (en)', path: 'legalName.en' },
   { label: 'Medical center name (uk, nominative)', path: 'medicalCenterName.uk.nominative' },
@@ -499,24 +506,6 @@ const CLINIC_FIELDS = [
   { label: 'Director authority type (en)', path: 'medicalDirector.authority.type.en' },
   { label: 'Director authority number', path: 'medicalDirector.authority.number' },
   { label: 'Director authority date', path: 'medicalDirector.authority.date', type: 'date' },
-];
-
-// A partner clinic is deliberately a simplified party type (spec §5): just the two bilingual
-// fields a static document needs to name and address it by - never the Ukrainian clinic's
-// EDRPOU/license/director/bank/logo fields, which don't apply to a clinic that never signs
-// anything itself.
-const PARTNER_CLINIC_FIELDS = [
-  // Every template reads these grammatical forms straight off name.uk/country.uk (e.g.
-  // {{partnerClinic.name.uk.genitive}}, {{partnerClinic.country.uk.genitive}} "з клініки «Оті Юме»,
-  // Японії") - genitive is optional, blank until an admin fills it in.
-  { label: 'Name (uk, nominative)', path: 'name.uk.nominative' },
-  { label: 'Name (uk, genitive "з ...")', path: 'name.uk.genitive' },
-  { label: 'Name (en)', path: 'name.en' },
-  { label: 'Country (uk, nominative)', path: 'country.uk.nominative' },
-  { label: 'Country (uk, genitive "з ...")', path: 'country.uk.genitive' },
-  { label: 'Country (en)', path: 'country.en' },
-  { label: 'Address (uk)', path: 'address.uk' },
-  { label: 'Address (en)', path: 'address.en' },
 ];
 
 // `shortName` is never stored (spec §6) - the maternity hospital's display name is always its
@@ -934,7 +923,7 @@ const CaseReadView = ({ catalog, selectedCaseId, onSelectCase, onCreateCase }) =
 // --- Page ---------------------------------------------------------------------------------------
 
 const EMPTY_RECENT_IDS = {
-  couples: [], clinics: [], partnerClinics: [], surrogateMothers: [], representatives: [], notaries: [], maternityHospitals: [],
+  couples: [], clinics: [], surrogateMothers: [], representatives: [], notaries: [], maternityHospitals: [],
 };
 
 // Same view/edit pattern as the Budget page (spec batch 21 §10): read mode is the default, an
@@ -991,7 +980,6 @@ const PartiesPage = ({ isAdmin }) => {
       setRecentIds({
         couples: toArray(rawRecentIds?.couples),
         clinics: toArray(rawRecentIds?.clinics),
-        partnerClinics: toArray(rawRecentIds?.partnerClinics),
         surrogateMothers: toArray(rawRecentIds?.surrogateMothers),
         representatives: toArray(rawRecentIds?.representatives),
         notaries: toArray(rawRecentIds?.notaries),
@@ -1183,20 +1171,6 @@ const PartiesPage = ({ isAdmin }) => {
               toggleRecord={toggleRecord}
               groupOpen={Boolean(openGroups.clinics)}
               onToggleGroup={() => toggleGroup('clinics')}
-            />
-            <SimplePartyGroup
-              title="Partner clinics"
-              collection="partnerClinics"
-              records={catalog.parties.partnerClinics}
-              fieldDefs={PARTNER_CLINIC_FIELDS}
-              displayName={partyDisplayName}
-              createEmpty={createEmptyPartnerClinic}
-              catalog={catalog}
-              setCatalog={setCatalog}
-              expandedKeys={expandedKeys}
-              toggleRecord={toggleRecord}
-              groupOpen={Boolean(openGroups.partnerClinics)}
-              onToggleGroup={() => toggleGroup('partnerClinics')}
             />
             <SimplePartyGroup
               title="Maternity hospitals"

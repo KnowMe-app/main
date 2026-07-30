@@ -24,7 +24,6 @@ import {
   createEmptyMaternityHospital,
   createEmptyNotary,
   createEmptyPartner,
-  createEmptyPartnerClinic,
   createEmptyRepresentative,
   createEmptySurrogateMother,
   deepMergeRecords,
@@ -369,20 +368,20 @@ describe('mergeDocumentsCatalog', () => {
     expect(templatePatchRecord.title.en).toBe('No id');
   });
 
-  // Spec (batch 2026-07-24) §11: importing `{"cases":{"case-1":{"relations":{"partnerClinicId":...}}}}`
-  // must never wipe clinicId/coupleId/surrogateMotherId/representativeIds already on that case -
-  // the merge into `relations` (and `documents`) has to be a deep, additive, field-by-field merge,
-  // exactly like every other nested case branch.
-  it('adding partnerClinicId via Parse & merge never wipes the case\'s existing relations (spec §11)', () => {
+  // Spec (batch 2026-07-24) §11: importing `{"cases":{"case-1":{"relations":{"clinicId":...}}}}`
+  // must never wipe coupleId/surrogateMotherId/representativeIds already on that case - the merge
+  // into `relations` (and `documents`) has to be a deep, additive, field-by-field merge, exactly
+  // like every other nested case branch.
+  it('adding clinicId via Parse & merge never wipes the case\'s existing relations (spec §11)', () => {
     const current = { ...emptyDocumentsCatalog() };
     current.cases = [{
       id: 'case-1',
       relations: {
-        clinicId: 'clinic-1', coupleId: 'couple-2', surrogateMotherId: 'surrogate-mother-2', representativeIds: ['representative-1'],
+        coupleId: 'couple-2', surrogateMotherId: 'surrogate-mother-2', representativeIds: ['representative-1'],
       },
     }];
     const incoming = parseDocumentsTechnicalInput(JSON.stringify({
-      cases: { 'case-1': { relations: { partnerClinicId: 'partner-clinic-1' } } },
+      cases: { 'case-1': { relations: { clinicId: 'clinic-1' } } },
     }));
     const { catalog } = mergeDocumentsCatalog(current, incoming);
     const mergedCase = catalog.cases[0];
@@ -391,24 +390,28 @@ describe('mergeDocumentsCatalog', () => {
       coupleId: 'couple-2',
       surrogateMotherId: 'surrogate-mother-2',
       representativeIds: ['representative-1'],
-      partnerClinicId: 'partner-clinic-1',
     });
   });
 
-  it('merges parties.partnerClinics, cases.*.documents.embryoOwnershipStatement and templates.embryo-ownership-statement additively (spec §11)', () => {
+  // v6 (spec §1): the shipment's source clinic lives in the same unified `parties.clinics`
+  // collection as every other clinic - never a separate `partnerClinics` one.
+  it('merges parties.clinics, cases.*.documents.embryoOwnershipStatement and templates.embryo-ownership-statement additively (spec §11)', () => {
     const current = sampleCatalog();
     const incoming = parseDocumentsTechnicalInput(JSON.stringify({
       parties: {
-        partnerClinics: {
-          'partner-clinic-1': {
-            id: 'partner-clinic-1',
+        clinics: {
+          'clinic-2': {
+            id: 'clinic-2',
             name: { uk: 'Клініка Оті Юме у м. Нагоя', en: 'Ochi Yume Clinic Nagoya' },
             address: { uk: 'Нагоя', en: 'Nagoya' },
           },
         },
       },
       cases: {
-        'case-1': { relations: { partnerClinicId: 'partner-clinic-1' }, documents: { embryoOwnershipStatement: { ivfDate: '2021-08-17' } } },
+        'case-1': {
+          artProgram: { embryoShipment: { sourceClinicId: 'clinic-2' } },
+          documents: { embryoOwnershipStatement: { ivfDate: '2021-08-17' } },
+        },
       },
       templates: {
         'embryo-ownership-statement': { id: 'embryo-ownership-statement', title: { uk: 'Щодо приналежності ембріонів', en: 'Regarding ownership of embryos' } },
@@ -416,14 +419,13 @@ describe('mergeDocumentsCatalog', () => {
     }));
     const { catalog } = mergeDocumentsCatalog(current, incoming);
 
-    expect(catalog.parties.partnerClinics.map(record => record.id)).toEqual(['partner-clinic-1']);
+    expect(catalog.parties.clinics.map(record => record.id).sort()).toEqual(['clinic-1', 'clinic-2']);
     // Every party collection that wasn't touched by this import stays exactly as it was.
-    expect(catalog.parties.clinics.map(record => record.id)).toEqual(['clinic-1']);
     expect(catalog.parties.couples.map(record => record.id)).toEqual(['couple-1']);
 
     const mergedCase = catalog.cases.find(record => record.id === 'case-1');
     expect(mergedCase.relations.coupleId).toBe('couple-1');
-    expect(mergedCase.relations.partnerClinicId).toBe('partner-clinic-1');
+    expect(mergedCase.artProgram.embryoShipment.sourceClinicId).toBe('clinic-2');
     expect(mergedCase.documents.embryoOwnershipStatement.ivfDate).toBe('2021-08-17');
 
     expect(catalog.documents.some(record => record.id === 'embryo-ownership-statement')).toBe(true);
@@ -787,23 +789,24 @@ describe('spec: universal placeholder resolver', () => {
   });
 });
 
-// --- spec (batch 2026-07-24): partner clinic + embryo ownership statement document -------------
-// The Ukrainian clinic (parties.clinics, case.relations.clinicId) runs the surrogacy program; the
-// partner clinic (parties.partnerClinics, case.relations.partnerClinicId) is a distinct, foreign,
-// deliberately simplified party - the clinic embryos ship from. Both must resolve independently on
-// the same case, and a case without a partnerClinicId must degrade gracefully, never crash.
-const partnerClinicCatalog = ({ withPartnerClinic = true, ivfDate = '2021-08-17' } = {}) => normalizeDocumentsCatalog(
+// --- spec v6 §1/§3/§4: source clinic + embryo ownership statement document ---------------------
+// The destination clinic (parties.clinics, case.relations.clinicId) runs the surrogacy program;
+// the source clinic (parties.clinics, case.artProgram.embryoShipment.sourceClinicId - the same
+// unified collection, never a separate `partnerClinics` one) is the clinic embryos ship from.
+// Both must resolve independently on the same case, and a case whose shipment has no
+// sourceClinicId must degrade gracefully, never crash.
+const clinicWithSourceCatalog = ({ withSourceClinic = true, ivfDate = '2021-08-17' } = {}) => normalizeDocumentsCatalog(
   {
+    // v6 (spec §1): the shipment's source clinic lives in the same unified `clinics` collection
+    // as the destination clinic - never a separate `partnerClinics` one.
     clinics: {
       'clinic-1': {
         id: 'clinic-1',
         medicalCenterName: { uk: 'МЦ «Надія»', en: 'MC "Nadiya"' },
         legalName: { uk: 'ТОВ «Надія»', en: 'Nadiya LLC' },
       },
-    },
-    partnerClinics: {
-      'partner-clinic-1': {
-        id: 'partner-clinic-1',
+      'clinic-2': {
+        id: 'clinic-2',
         name: { uk: 'Клініка Оті Юме у м. Нагоя', en: 'Ochi Yume Clinic Nagoya' },
         address: {
           uk: 'Хісая Парксайд Будівля 8F, 3-19-12 Маруноуті, округ Нака, місто Нагоя, префектура Айті',
@@ -826,9 +829,9 @@ const partnerClinicCatalog = ({ withPartnerClinic = true, ivfDate = '2021-08-17'
       id: 'case-1',
       relations: {
         clinicId: 'clinic-1',
-        ...(withPartnerClinic ? { partnerClinicId: 'partner-clinic-1' } : {}),
         representativeIds: ['representative-1'],
       },
+      artProgram: withSourceClinic ? { embryoShipment: { sourceClinicId: 'clinic-2' } } : undefined,
       documents: {
         embryoOwnershipStatement: {
           shipmentPeriod: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' },
@@ -839,33 +842,33 @@ const partnerClinicCatalog = ({ withPartnerClinic = true, ivfDate = '2021-08-17'
   },
 );
 
-describe('spec: partner clinic is a distinct party type from the Ukrainian clinic', () => {
-  it('resolves context.partnerClinic from parties.partnerClinics via relations.partnerClinicId, independent of context.clinic', () => {
-    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+describe('spec v6 §3/§4: the source clinic is resolved from the same unified clinics collection, independent of the destination clinic', () => {
+  it('resolves context.sourceClinic from parties.clinics via embryoShipment.sourceClinicId, independent of context.clinic', () => {
+    const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
     expect(context.clinic.id).toBe('clinic-1');
-    expect(context.partnerClinic.id).toBe('partner-clinic-1');
-    expect(fillPlaceholders('{{partnerClinic.name.uk}}', context, 'uk')).toBe('Клініка Оті Юме у м. Нагоя');
-    expect(fillPlaceholders('{{partnerClinic.name.en}}', context, 'en')).toBe('Ochi Yume Clinic Nagoya');
-    expect(fillPlaceholders('{{partnerClinic.address.uk}}', context, 'uk')).toContain('Нагоя');
+    expect(context.sourceClinic.id).toBe('clinic-2');
+    expect(fillPlaceholders('{{sourceClinic.name.uk}}', context, 'uk')).toBe('Клініка Оті Юме у м. Нагоя');
+    expect(fillPlaceholders('{{sourceClinic.name.en}}', context, 'en')).toBe('Ochi Yume Clinic Nagoya');
+    expect(fillPlaceholders('{{sourceClinic.address.uk}}', context, 'uk')).toContain('Нагоя');
   });
 
-  it('resolves context.partnerClinic to null (not undefined, not a throw) when the case has no partnerClinicId (old cases)', () => {
-    const context = resolveCaseContext(partnerClinicCatalog({ withPartnerClinic: false }), 'case-1');
-    expect(context.partnerClinic).toBeNull();
-    expect(() => fillPlaceholders('{{partnerClinic.name.uk}}', context, 'uk')).not.toThrow();
-    expect(fillPlaceholders('{{partnerClinic.name.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
+  it('resolves context.sourceClinic to null (not undefined, not a throw) when the shipment has no sourceClinicId (old cases)', () => {
+    const context = resolveCaseContext(clinicWithSourceCatalog({ withSourceClinic: false }), 'case-1');
+    expect(context.sourceClinic).toBeNull();
+    expect(() => fillPlaceholders('{{sourceClinic.name.uk}}', context, 'uk')).not.toThrow();
+    expect(fillPlaceholders('{{sourceClinic.name.uk}}', context, 'uk')).toBe(MISSING_VALUE_PLACEHOLDER);
   });
 
-  it('flags {{partnerClinic.*}} as unresolved only when no partner clinic is selected, never when one is', () => {
-    const template = { title: { uk: '', en: '' }, paragraphs: [{ uk: '{{partnerClinic.name.uk}}', en: '{{partnerClinic.name.en}}' }] };
-    const withClinic = resolveCaseContext(partnerClinicCatalog({ withPartnerClinic: true }), 'case-1');
-    const withoutClinic = resolveCaseContext(partnerClinicCatalog({ withPartnerClinic: false }), 'case-1');
+  it('flags {{sourceClinic.*}} as unresolved only when no source clinic is selected, never when one is', () => {
+    const template = { title: { uk: '', en: '' }, paragraphs: [{ uk: '{{sourceClinic.name.uk}}', en: '{{sourceClinic.name.en}}' }] };
+    const withClinic = resolveCaseContext(clinicWithSourceCatalog({ withSourceClinic: true }), 'case-1');
+    const withoutClinic = resolveCaseContext(clinicWithSourceCatalog({ withSourceClinic: false }), 'case-1');
     expect(validateDocumentTemplate(template, withClinic)).toEqual([]);
-    expect(validateDocumentTemplate(template, withoutClinic)).toEqual(['partnerClinic.name.en', 'partnerClinic.name.uk']);
+    expect(validateDocumentTemplate(template, withoutClinic)).toEqual(['sourceClinic.name.en', 'sourceClinic.name.uk']);
   });
 
-  it('deleting/never-setting partnerClinicId never disturbs clinicId/coupleId/etc on the same case (null-safe, additive)', () => {
-    const catalog = partnerClinicCatalog({ withPartnerClinic: false });
+  it('deleting/never-setting the shipment\'s sourceClinicId never disturbs clinicId/coupleId/etc on the same case (null-safe, additive)', () => {
+    const catalog = clinicWithSourceCatalog({ withSourceClinic: false });
     const context = resolveCaseContext(catalog, 'case-1');
     expect(context.clinic.id).toBe('clinic-1');
     expect(context.representatives).toHaveLength(1);
@@ -874,18 +877,18 @@ describe('spec: partner clinic is a distinct party type from the Ukrainian clini
 
 describe('spec: case.documents.embryoOwnershipStatement resolves through the existing `case` root', () => {
   it('resolves shipmentPeriod.uk/en directly, no derived context field needed', () => {
-    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
     expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.shipmentPeriod.uk}}', context, 'uk')).toBe('квітні – травні 2026 року');
     expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.shipmentPeriod.en}}', context, 'en')).toBe('April-May 2026');
   });
 
   it('formats an ISO-stored ivfDate as DD.MM.YYYY, same as every other document date', () => {
-    const context = resolveCaseContext(partnerClinicCatalog({ ivfDate: '2021-08-17' }), 'case-1');
+    const context = resolveCaseContext(clinicWithSourceCatalog({ ivfDate: '2021-08-17' }), 'case-1');
     expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.ivfDate}}', context, 'uk')).toBe('17.08.2021');
   });
 
   it('still renders a legacy DD.MM.YYYY-stored ivfDate correctly (read-time compatibility, spec §6)', () => {
-    const context = resolveCaseContext(partnerClinicCatalog({ ivfDate: '17.08.2021' }), 'case-1');
+    const context = resolveCaseContext(clinicWithSourceCatalog({ ivfDate: '17.08.2021' }), 'case-1');
     expect(fillPlaceholders('{{case.documents.embryoOwnershipStatement.ivfDate}}', context, 'uk')).toBe('17.08.2021');
   });
 
@@ -899,14 +902,14 @@ describe('spec: case.documents.embryoOwnershipStatement resolves through the exi
 
 describe('spec: clinic name for the new document is medicalCenterName, not clinic.name', () => {
   it('resolves clinic.medicalCenterName.uk/en for a clinic record that never set clinic.name', () => {
-    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
     expect(context.clinic.name).toBeUndefined();
     expect(fillPlaceholders('{{clinic.medicalCenterName.uk}}', context, 'uk')).toBe('МЦ «Надія»');
     expect(fillPlaceholders('{{clinic.medicalCenterName.en}}', context, 'en')).toBe('MC "Nadiya"');
   });
 
   it('flags {{clinic.name.uk}} as unresolved when the real clinic record never populated `name` (spec §12)', () => {
-    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
     const template = { title: { uk: '', en: '' }, paragraphs: [{ uk: '{{clinic.name.uk}}', en: '' }] };
     expect(validateDocumentTemplate(template, context)).toEqual(['clinic.name.uk']);
   });
@@ -914,7 +917,7 @@ describe('spec: clinic name for the new document is medicalCenterName, not clini
 
 describe('spec: representative passport/power-of-attorney fields + centralized passport-number formatting (§10)', () => {
   it('resolves the extended representative.passport.issuedBy/issueDate and powerOfAttorney.apostilleDate fields', () => {
-    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
     expect(fillPlaceholders('{{representative.passport.issuedBy.uk}}', context, 'uk')).toBe('ДМС України');
     expect(fillPlaceholders('{{representative.passport.issuedBy.en}}', context, 'en')).toBe('SMS of Ukraine');
     expect(fillPlaceholders('{{representative.passport.issueDate}}', context, 'uk')).toBe('06.05.2019');
@@ -929,7 +932,7 @@ describe('spec: representative passport/power-of-attorney fields + centralized p
   });
 
   it('fillPlaceholders formats representative.passport.number through the centralized formatter automatically', () => {
-    const context = resolveCaseContext(partnerClinicCatalog(), 'case-1');
+    const context = resolveCaseContext(clinicWithSourceCatalog(), 'case-1');
     expect(fillPlaceholders('{{representative.passport.number}}', context, 'uk')).toBe('ME 680736');
   });
 });
@@ -955,10 +958,10 @@ const EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE = {
     },
     {
       uk: 'У результаті проведення програми запліднення in vitro (ЗІВ) від {{case.documents.embryoOwnershipStatement.ivfDate}} '
-        + 'у клініці {{partnerClinic.name.uk}} (адреса: {{partnerClinic.address.uk}}), нами як генетичними батьками отримано '
+        + 'у клініці {{sourceClinic.name.uk}} (адреса: {{sourceClinic.address.uk}}), нами як генетичними батьками отримано '
         + 'ембріони, що належать виключно нам.',
       en: 'As a result of the in vitro fertilization (IVF) program dated {{case.documents.embryoOwnershipStatement.ivfDate}} '
-        + 'at {{partnerClinic.name.en}} (address: {{partnerClinic.address.en}}), embryos were obtained that belong '
+        + 'at {{sourceClinic.name.en}} (address: {{sourceClinic.address.en}}), embryos were obtained that belong '
         + 'exclusively to us as the genetic parents.',
     },
     {
@@ -1019,10 +1022,10 @@ const katsuraStyleCatalog = () => normalizeDocumentsCatalog(
         medicalCenterName: { uk: 'МЦ «Надія»', en: 'MC "Nadiya"' },
         legalName: { uk: 'ТОВ «Надія»', en: 'Nadiya LLC' },
       },
-    },
-    partnerClinics: {
-      'partner-clinic-1': {
-        id: 'partner-clinic-1',
+      // v6 (spec §1): the source clinic lives in this same unified collection, never a separate
+      // `partnerClinics` one.
+      'clinic-2': {
+        id: 'clinic-2',
         name: { uk: 'Клініка Оті Юме у м. Нагоя', en: 'Ochi Yume Clinic Nagoya' },
         address: {
           uk: 'Хісая Парксайд Будівля 8F, 3-19-12 Маруноуті, округ Нака, місто Нагоя, префектура Айті',
@@ -1037,11 +1040,11 @@ const katsuraStyleCatalog = () => normalizeDocumentsCatalog(
       id: 'case-mrry82h1-bws4eb',
       relations: {
         clinicId: 'clinic-1',
-        partnerClinicId: 'partner-clinic-1',
         coupleId: 'couple-2',
         surrogateMotherId: 'surrogate-mother-2',
         representativeIds: ['representative-1'],
       },
+      artProgram: { embryoShipment: { sourceClinicId: 'clinic-2' } },
       documents: {
         embryoOwnershipStatement: {
           shipmentPeriod: { uk: 'квітні – травні 2026 року', en: 'April-May 2026' },
@@ -1090,7 +1093,7 @@ describe('spec: embryo-ownership-statement template (batch 2026-07-24 §7-13)', 
     expect(shipmentParagraph.en).toContain('MC "Nadiya"');
   });
 
-  it('resolves the Japanese partner clinic name/address independently of the Ukrainian clinic (spec §4)', () => {
+  it('resolves the Japanese source clinic name/address independently of the destination clinic (spec §4)', () => {
     const catalog = katsuraStyleCatalog();
     const context = resolveCaseContext(catalog, 'case-mrry82h1-bws4eb');
     const generated = buildGeneratedDocument(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context);
@@ -1100,23 +1103,26 @@ describe('spec: embryo-ownership-statement template (batch 2026-07-24 §7-13)', 
     expect(ivfParagraph.en).toContain('Ochi Yume Clinic Nagoya');
   });
 
-  it('degrades to a clear warning, never a leaked {{partnerClinic...}} token, when the case has no partner clinic selected (spec §3, §14 checklist #10)', () => {
+  it('degrades to a clear warning, never a leaked {{sourceClinic...}} token, when the case has no source clinic selected (spec §3, §14 checklist #10)', () => {
     const catalog = katsuraStyleCatalog();
-    const caseWithoutPartnerClinic = {
+    const caseWithoutSourceClinic = {
       ...catalog.cases[0],
-      relations: { ...catalog.cases[0].relations, partnerClinicId: undefined },
+      artProgram: {
+        ...catalog.cases[0].artProgram,
+        embryoShipment: { ...catalog.cases[0].artProgram.embryoShipment },
+      },
     };
-    delete caseWithoutPartnerClinic.relations.partnerClinicId;
-    const catalogWithoutPartnerClinic = { ...catalog, cases: [caseWithoutPartnerClinic] };
-    const context = resolveCaseContext(catalogWithoutPartnerClinic, 'case-mrry82h1-bws4eb');
-    expect(context.partnerClinic).toBeNull();
+    delete caseWithoutSourceClinic.artProgram.embryoShipment.sourceClinicId;
+    const catalogWithoutSourceClinic = { ...catalog, cases: [caseWithoutSourceClinic] };
+    const context = resolveCaseContext(catalogWithoutSourceClinic, 'case-mrry82h1-bws4eb');
+    expect(context.sourceClinic).toBeNull();
     const generated = buildGeneratedDocument(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context);
     generated.paragraphs.forEach(paragraph => {
       expect(paragraph.uk).not.toMatch(/\{\{|}}/);
       expect(paragraph.en).not.toMatch(/\{\{|}}/);
     });
     expect(validateDocumentTemplate(EMBRYO_OWNERSHIP_STATEMENT_TEMPLATE, context)).toEqual(
-      expect.arrayContaining(['partnerClinic.address.uk', 'partnerClinic.name.uk']),
+      expect.arrayContaining(['sourceClinic.address.uk', 'sourceClinic.name.uk']),
     );
   });
 });
@@ -2578,7 +2584,7 @@ describe('spec: normalized clinic + maternityHospital structure (batch 17)', () 
 
   it('an unknown clinicId resolves clinic to null without crashing (§10, §12 #8)', () => {
     const catalog = clinicAndHospitalCatalog();
-    catalog.cases[0].relations.ukrainianClinicId = 'no-such-clinic';
+    catalog.cases[0].relations.clinicId = 'no-such-clinic';
     const context = resolveCaseContext(catalog, 'case-1');
     expect(context.clinic).toBeNull();
     expect(() => fillPlaceholders('{{clinic.name.uk}}', context, 'uk')).not.toThrow();
@@ -2835,11 +2841,11 @@ describe('spec: normalized case structure', () => {
 
   it('validateCaseRecord reports the base checklist without throwing on a bare/empty case', () => {
     expect(validateCaseRecord({})).toEqual(expect.arrayContaining([
-      'case.id', 'case.relations.coupleId', 'case.relations.ukrainianClinicId',
+      'case.id', 'case.relations.coupleId', 'case.relations.clinicId',
       'case.relations.surrogateMotherId', 'case.childbirth.children',
     ]));
     expect(validateCaseRecord(createEmptyCase({ caseId: 'case-9' }))).toEqual(expect.arrayContaining([
-      'case.relations.coupleId', 'case.relations.ukrainianClinicId', 'case.relations.surrogateMotherId', 'case.childbirth.children',
+      'case.relations.coupleId', 'case.relations.clinicId', 'case.relations.surrogateMotherId', 'case.childbirth.children',
     ]));
     expect(validateCaseRecord(twoCasesCatalog().cases[0])).toEqual([]);
   });
@@ -2930,23 +2936,16 @@ describe('spec: Parties page record shapes', () => {
     // Needed by the surrogacy-agreement template ({{representative.birthDate}},
     // {{representative.address.uk}}) - previously missing from the blank record shape.
     expect(createEmptyRepresentative()).toEqual(expect.objectContaining({ birthDate: '', address: { uk: '', en: '' } }));
-    expect(createEmptyClinic().id).toMatch(/^clinic-/);
     expect(createEmptyMaternityHospital().id).toMatch(/^maternity-hospital-/);
     expect(createEmptyNotary().id).toMatch(/^notary-/);
 
-    // A partner clinic is a deliberately simplified party type (spec §5) - just name/address (plus
-    // the genitive name form and shipment-origin country, spec batch 2026-07-25), no EDRPOU/
-    // license/director/bank/logo the Ukrainian clinic record carries. name.uk/country.uk carry
-    // their grammatical forms directly (spec v5: the same {nominative, genitive, ...} shape every
-    // party's name uses), not a separate nameGenitive field.
-    const partnerClinic = createEmptyPartnerClinic();
-    expect(partnerClinic.id).toMatch(/^partner-clinic-/);
-    expect(partnerClinic).toEqual({
-      id: partnerClinic.id,
-      name: { uk: { nominative: '', genitive: '' }, en: '' },
-      country: { uk: { nominative: '', genitive: '' }, en: '' },
-      address: { uk: '', en: '' },
-    });
+    // v6 (spec §1): every clinic - Ukrainian or foreign - is the same record shape in the same
+    // unified `clinics` collection, so the blank record carries `country` too (blank/optional,
+    // filled in only for a foreign clinic) alongside the Ukrainian-only legalName/edrpou/license/
+    // bank/medicalDirector fields - never a second, simplified "partner clinic" record shape.
+    const clinic = createEmptyClinic();
+    expect(clinic.id).toMatch(/^clinic-/);
+    expect(clinic.country).toEqual({ code: '', uk: { nominative: '', genitive: '' }, en: '' });
 
     // Two calls never collide, same guarantee makeRecordId already gives createChildRecord.
     expect(createEmptyCouple().id).not.toBe(couple.id);
@@ -3287,13 +3286,13 @@ const noClinicCaseCatalog = (overrides = {}) => normalizeDocumentsCatalog(
 );
 
 describe('spec §2/§3: null-safe context for a case with no clinic/maternity-hospital relations at all', () => {
-  it('never throws, and resolves clinic/maternityHospital/partnerClinic to null', () => {
+  it('never throws, and resolves clinic/maternityHospital/sourceClinic to null', () => {
     const catalog = noClinicCaseCatalog();
     expect(() => resolveCaseContext(catalog, 'case-no-clinic')).not.toThrow();
     const context = resolveCaseContext(catalog, 'case-no-clinic');
     expect(context.clinic).toBeNull();
     expect(context.maternityHospital).toBeNull();
-    expect(context.partnerClinic).toBeNull();
+    expect(context.sourceClinic).toBeNull();
     expect(context.wife.name.uk.nominative).toBe('Приклад Марія Іванівна');
   });
 

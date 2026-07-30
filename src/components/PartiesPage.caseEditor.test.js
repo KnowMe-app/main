@@ -110,7 +110,7 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     fireEvent.click(screen.getByRole('button', { name: 'Зберегти все' }));
 
     await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
-      'case-1/artProgram': expect.objectContaining({ oocyteSource: 'wife', spermSource: 'husband' }),
+      'case-1/artProgram': expect.objectContaining({ geneticMaterial: { oocyte: 'wife', sperm: 'husband' } }),
     })));
   });
 

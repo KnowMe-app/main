@@ -26,12 +26,12 @@ export const clinicLogoStorageFilePath = (clinicId, fileName) => `${clinicLogoSt
 export const legacyClinicLogoStorageFolder = clinicId => `${DOCUMENTS_PARTIES_PATH}/cases/clinics/${clinicId}/logo`;
 export const legacyClinicLogoStorageFilePath = (clinicId, fileName) => `${legacyClinicLogoStorageFolder(clinicId)}/${fileName}`;
 
-export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'partnerClinics', 'maternityHospitals', 'notaries'];
+export const PARTY_COLLECTIONS = ['couples', 'surrogateMothers', 'representatives', 'clinics', 'maternityHospitals', 'notaries'];
 
 // mergeCollection derives an id prefix for un-identified incoming records by stripping a trailing
 // 's' off the collection name; 'notaries' isn't a simple plural ('notarys' would be wrong), so it
 // needs the explicit override.
-const COLLECTION_ID_PREFIXES = { notaries: 'notary', partnerClinics: 'partner-clinic' };
+const COLLECTION_ID_PREFIXES = { notaries: 'notary' };
 
 export const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -160,7 +160,7 @@ export const clinicLogoEntriesToBackend = variants => (variants || [])
 export const emptyDocumentsCatalog = () => ({
   cases: [],
   parties: {
-    couples: [], surrogateMothers: [], representatives: [], clinics: [], partnerClinics: [], maternityHospitals: [], notaries: [],
+    couples: [], surrogateMothers: [], representatives: [], clinics: [], maternityHospitals: [], notaries: [],
   },
   documents: [],
   clinicLogos: {},
@@ -359,9 +359,8 @@ export const DERIVED_CONTEXT_FIELD_KEYS = [
   'short', 'shortName', 'dateWords', 'dateFormatted', 'statementDateWords', 'statementDateFormatted', 'dateDisplay', 'numberEn', 'wordsAfterArticle',
   // ART program document contexts (spec §4/§6/§12) - computed fresh from case.artProgram on every
   // resolveCaseContext call, never written back to Firebase.
-  'plannedPeriodFormatted', 'ivfDateFormatted', 'sentDateFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
+  'plannedPeriodFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
   'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank',
-  'oocyteSourceLabel', 'spermSourceLabel',
 ];
 
 // Recursively strips every DERIVED_CONTEXT_FIELD_KEYS key out of a value before it's serialized
@@ -829,6 +828,12 @@ export const createEmptyClinic = () => ({
   // nameLocative-style field) - genitive/accusative are optional, blank until an admin fills them
   // in, never required by a template that only ever reads `.nominative`.
   name: { uk: { nominative: '', genitive: '', accusative: '' }, en: '' },
+  // v6 (spec §1): every clinic - Ukrainian or foreign - lives in this one collection now, so
+  // `country` (blank/optional, like every other field here) is part of the shared shape rather
+  // than a separate simplified partner-clinic record. A foreign clinic (e.g. the shipment's own
+  // sourceClinic) typically only ever fills in name/country/address - never required to also carry
+  // legalName/edrpou/bank/license/medicalDirector below.
+  country: { code: '', uk: { nominative: '', genitive: '' }, en: '' },
   legalName: { uk: { nominative: '' }, en: '' },
   medicalCenterName: { uk: { nominative: '' }, en: '' },
   address: { uk: '', en: '' },
@@ -847,21 +852,6 @@ export const createEmptyClinic = () => ({
     name: { uk: { nominative: '', genitive: '' }, en: { full: '' } },
     authority: { type: { uk: '', en: '' }, number: '', date: '' },
   },
-});
-
-// A partner clinic is the foreign clinic embryos ship from - a distinct, deliberately simplified
-// party type from the Ukrainian `clinics` collection (which performs the surrogacy program itself
-// and carries a full legal/banking profile): no EDRPOU, license, director, bank details, or logo,
-// just the name and address a static document needs to reference it by.
-export const createEmptyPartnerClinic = () => ({
-  id: makeRecordId('partner-clinic'),
-  // `name.uk`/`country.uk` carry their grammatical forms directly as siblings of `nominative`
-  // ({{partnerClinic.name.uk.genitive}}, {{partnerClinic.country.uk.genitive}} - real templates
-  // read these paths straight off the partner clinic) - genitive is optional, blank until an admin
-  // fills it in, never required by a template that only ever reads `.nominative`/plain `.en`.
-  name: { uk: { nominative: '', genitive: '' }, en: '' },
-  country: { uk: { nominative: '', genitive: '' }, en: '' },
-  address: { uk: '', en: '' },
 });
 
 // `shortName` is never stored (spec §6) - use getMaternityHospitalDisplayName wherever the UI
@@ -917,13 +907,14 @@ export const createChildRecord = () => ({
   medicalConclusion: { number: '', date: '' },
 });
 
-// --- v5 migration (spec §2.2/§4) ---------------------------------------------------------------
+// --- v6 migration (spec §1-§9: unified `parties.clinics`, single relations.clinicId/
+// embryoShipment.sourceClinicId, artProgram.ivf.date, flat geneticMaterial.oocyte/sperm) ---------
 // The one migration boundary: every legacy shape this app has ever stored a case under is read
 // here, exactly once per load, and nowhere else - resolveShipment/resolveTransferAttempt/etc. only
-// ever read the canonical v5 paths. Pure and idempotent: migrating an already-v5 case changes
+// ever read the canonical v6 paths. Pure and idempotent: migrating an already-v6 case changes
 // nothing (verified by tests), so running it again on the same data is always safe.
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 const omitKeys = (value, keys) => {
   if (!isPlainObject(value)) return value;
@@ -932,9 +923,9 @@ const omitKeys = (value, keys) => {
   return next;
 };
 
-// Fields that only ever belonged in a runtime template context, or a tri-state boolean the v5
+// Fields that only ever belonged in a runtime template context, or a tri-state boolean the v5+
 // model replaces with "the object exists" (spec §1.5/§1.9) - stripped from whatever storage shape
-// migrateCaseToV5 finds them in, never manufactured if absent.
+// migrateCaseToV6 finds them in, never manufactured if absent.
 const LEGACY_STORED_FIELD_KEYS = ['positive', 'pregnancyConfirmed', 'confirmedPregnancy', 'short', 'shortName', 'initials', 'dateWords', 'dateFormatted'];
 
 const stripLegacyStoredFields = value => omitKeys(value, LEGACY_STORED_FIELD_KEYS);
@@ -947,18 +938,60 @@ export const emptyMigrationReport = () => ({
   unmigratable: [],
 });
 
+// A shipment's plannedPeriod carries either the v6 start/end pair or the old startDate/endDate
+// pair (never both) - the migrated text-only shape (spec §6 fallback) passes through unchanged.
+const migratePlannedPeriod = period => {
+  if (!isPlainObject(period)) return { period: undefined, changed: false };
+  if (period.start !== undefined || period.end !== undefined) {
+    return { period: omitKeys(period, ['startDate', 'endDate']), changed: false };
+  }
+  if (period.startDate !== undefined || period.endDate !== undefined) {
+    return { period: { ...omitKeys(period, ['startDate', 'endDate']), start: period.startDate, end: period.endDate }, changed: true };
+  }
+  return { period, changed: false };
+};
+
+// A shipment's own clinic-of-origin (spec §3/§4): v6 keeps `sourceClinicId` directly on the
+// shipment (never resolved from a `relations.partnerClinicId`/separate `parties.partnerClinics`
+// collection any more) - `ivfDate` (spec §5) and `sentDate` (spec §7, dropped entirely) never
+// belong here either. `legacySourceClinicId` is the case's own now-retired
+// `relations.partnerClinicId`, read once by the caller and passed in only as a fallback for a
+// shipment that doesn't already carry its own sourceClinicId.
+const migrateShipmentToV6 = (shipment, legacySourceClinicId, report) => {
+  const next = stripLegacyStoredFields(omitKeys(shipment, ['id', 'destinationClinicId', 'ivfDate', 'sentDate', 'plannedPeriod']));
+  if (shipment.destinationClinicId !== undefined || shipment.sentDate !== undefined) report.changed = true;
+
+  const { period, changed: periodChanged } = migratePlannedPeriod(shipment.plannedPeriod);
+  if (period !== undefined) next.plannedPeriod = period;
+  if (periodChanged) report.changed = true;
+
+  if (!next.sourceClinicId && legacySourceClinicId) {
+    next.sourceClinicId = legacySourceClinicId;
+    report.changed = true;
+  }
+
+  return next;
+};
+
 // Picks the case's one embryo shipment out of every shape this codebase has ever stored it under -
 // the current one (case.artProgram.embryoShipment), the previous one (case.relations.shipment,
 // batch 26 §5), or the oldest id-map shape (case.artProgram.embryoShipments, addressed by a
 // shipmentId on the transfer attempt or on embryoOwnershipStatement) - and recovers the case's
-// clinic relations from an old inline shipment's own sourceClinicId/destinationClinicId when the
-// case doesn't already have them (spec §4.1). Never merges two different shipments: several
-// candidates with no way to prefer one is reported as an ambiguity, not guessed.
+// clinic relations from an old inline shipment's own destinationClinicId, or the case's own
+// (now-retired) relations.partnerClinicId, when the shipment doesn't already carry its own
+// sourceClinicId (spec §4.1). Never merges two different shipments: several candidates with no
+// way to prefer one is reported as an ambiguity, not guessed.
 const migrateEmbryoShipment = (rawCase, report) => {
   const artProgram = isPlainObject(rawCase.artProgram) ? rawCase.artProgram : {};
+  const legacySourceClinicId = rawCase.relations?.partnerClinicId;
 
   if (isPlainObject(artProgram.embryoShipment)) {
-    return { shipment: stripLegacyStoredFields(omitKeys(artProgram.embryoShipment, ['id', 'sourceClinicId', 'destinationClinicId'])), relationsPatch: {} };
+    const shipment = artProgram.embryoShipment;
+    return {
+      shipment: migrateShipmentToV6(shipment, legacySourceClinicId, report),
+      ivfDate: shipment.ivfDate,
+      relationsPatch: {},
+    };
   }
 
   const inline = isPlainObject(rawCase.relations?.shipment) ? rawCase.relations.shipment : null;
@@ -974,21 +1007,22 @@ const migrateEmbryoShipment = (rawCase, report) => {
     else if (entries.length === 1) [, candidate] = entries[0];
     else if (entries.length > 1) {
       report.ambiguities.push('artProgram.embryoShipments: multiple shipments with no shipmentId reference to disambiguate - none migrated, needs manual repair.');
-      return { shipment: null, relationsPatch: {} };
+      return { shipment: null, ivfDate: undefined, relationsPatch: {} };
     }
   }
-  if (!candidate) return { shipment: null, relationsPatch: {} };
+  if (!candidate) return { shipment: null, ivfDate: undefined, relationsPatch: {} };
 
   const relationsPatch = {};
-  if (candidate.destinationClinicId && !rawCase.relations?.ukrainianClinicId && !rawCase.relations?.clinicId) {
-    relationsPatch.ukrainianClinicId = candidate.destinationClinicId;
-  }
-  if (candidate.sourceClinicId && !rawCase.relations?.partnerClinicId) {
-    relationsPatch.partnerClinicId = candidate.sourceClinicId;
+  if (candidate.destinationClinicId && !rawCase.relations?.clinicId && !rawCase.relations?.ukrainianClinicId) {
+    relationsPatch.clinicId = candidate.destinationClinicId;
   }
 
   report.changed = true;
-  return { shipment: stripLegacyStoredFields(omitKeys(candidate, ['id', 'sourceClinicId', 'destinationClinicId'])), relationsPatch };
+  return {
+    shipment: migrateShipmentToV6(candidate, candidate.sourceClinicId || legacySourceClinicId, report),
+    ivfDate: candidate.ivfDate,
+    relationsPatch,
+  };
 };
 
 // Migrates the transfer attempt's hCG tests/ultrasounds from the old id-keyed map shape to the v5
@@ -1032,11 +1066,14 @@ const migrateTransferAttempt = (rawCase, report) => {
   return migrated;
 };
 
-// Migrates diagnosis/genetic-material-source fields (spec §4.4): the old `medicalIndication.
-// diagnosis` wrapper and the old `geneticMaterial.oocyteSourcePartnerRole`/`spermSourcePartnerRole`
-// fields, mapped straight to the v5 scalars. A legacy 'donor' selection with no code ever recorded
-// anywhere (the old UI never had a donor-code input) can't be safely turned into the scalar donor
-// code the v5 field is supposed to hold - reported as unmigratable instead of guessed/invented.
+// Migrates diagnosis/genetic-material-source fields (spec §4.4/§6): the old `medicalIndication.
+// diagnosis` wrapper, and every genetic-material-source shape this app has stored - the ancient
+// `geneticMaterial.oocyteSourcePartnerRole`/`spermSourcePartnerRole`, and the v5 scalar
+// `artProgram.oocyteSource`/`spermSource` - both mapped straight to the flat v6
+// `geneticMaterial.oocyte`/`geneticMaterial.sperm` scalars (never a nested `{ source }` wrapper).
+// A legacy 'donor' selection with no code ever recorded anywhere (the old UI never had a
+// donor-code input) can't be safely turned into the scalar donor code the field is supposed to
+// hold - reported as unmigratable instead of guessed/invented.
 const migrateMedicalData = (rawCase, report) => {
   const artProgram = isPlainObject(rawCase.artProgram) ? rawCase.artProgram : {};
   const result = {};
@@ -1048,9 +1085,13 @@ const migrateMedicalData = (rawCase, report) => {
     report.changed = true;
   }
 
-  const geneticMaterial = isPlainObject(artProgram.geneticMaterial) ? artProgram.geneticMaterial : null;
-  const migrateSource = (already, legacyRole, label) => {
+  const legacyGeneticMaterial = isPlainObject(artProgram.geneticMaterial) ? artProgram.geneticMaterial : null;
+  const migrateSource = (already, legacyValue, legacyRole, label) => {
     if (already !== undefined) return already;
+    if (legacyValue !== undefined) {
+      report.changed = true;
+      return legacyValue;
+    }
     if (!legacyRole) return undefined;
     if (legacyRole === 'donor') {
       report.unmigratable.push(`artProgram.geneticMaterial.${label}: was set to a donor with no donor code recorded - re-enter the donor code directly.`);
@@ -1059,45 +1100,64 @@ const migrateMedicalData = (rawCase, report) => {
     report.changed = true;
     return legacyRole;
   };
-  const oocyteSource = migrateSource(artProgram.oocyteSource, geneticMaterial?.oocyteSourcePartnerRole, 'oocyteSourcePartnerRole');
-  const spermSource = migrateSource(artProgram.spermSource, geneticMaterial?.spermSourcePartnerRole, 'spermSourcePartnerRole');
-  if (oocyteSource !== undefined) result.oocyteSource = oocyteSource;
-  if (spermSource !== undefined) result.spermSource = spermSource;
+  const oocyte = migrateSource(legacyGeneticMaterial?.oocyte, artProgram.oocyteSource, legacyGeneticMaterial?.oocyteSourcePartnerRole, 'oocyteSourcePartnerRole');
+  const sperm = migrateSource(legacyGeneticMaterial?.sperm, artProgram.spermSource, legacyGeneticMaterial?.spermSourcePartnerRole, 'spermSourcePartnerRole');
+  if (oocyte !== undefined || sperm !== undefined) {
+    result.geneticMaterial = {};
+    if (oocyte !== undefined) result.geneticMaterial.oocyte = oocyte;
+    if (sperm !== undefined) result.geneticMaterial.sperm = sperm;
+  }
 
   if (isPlainObject(artProgram.medicalTeam)) result.medicalTeam = artProgram.medicalTeam;
 
   return result;
 };
 
-// One case record, migrated to the v5 shape (spec §1/§4) - idempotent (re-running on an
-// already-v5 case returns `report.changed: false` and the same data), never guesses missing/
-// ambiguous data (reports it instead, spec §4.7).
-export const migrateCaseToV5 = rawCase => {
+// One case record, migrated to the v6 shape (spec §1-§9) - idempotent (re-running on an
+// already-v6 case returns `report.changed: false` and the same data), never guesses missing/
+// ambiguous data (reports it instead, spec §4.7). The ancient pre-v5 `relations.clinicId` already
+// meant exactly what v6's `relations.clinicId` means again (v5 was the one detour that renamed it
+// to `ukrainianClinicId` to make room for a separate `partnerClinicId`) - so it's left untouched
+// here, and only the v5 name gets renamed back.
+export const migrateCaseToV6 = rawCase => {
   const report = emptyMigrationReport();
   if (!isPlainObject(rawCase)) return { case: {}, report };
 
   const relations = isPlainObject(rawCase.relations) ? { ...rawCase.relations } : {};
-  if (relations.clinicId && !relations.ukrainianClinicId) {
-    relations.ukrainianClinicId = relations.clinicId;
+  if (relations.ukrainianClinicId && !relations.clinicId) {
+    relations.clinicId = relations.ukrainianClinicId;
     report.changed = true;
   }
-  delete relations.clinicId;
+  if (relations.ukrainianClinicId !== undefined) { delete relations.ukrainianClinicId; report.changed = true; }
+  if (relations.partnerClinicId !== undefined) { delete relations.partnerClinicId; report.changed = true; }
   delete relations.shipment;
 
-  const { shipment, relationsPatch } = migrateEmbryoShipment(rawCase, report);
+  const { shipment, ivfDate, relationsPatch } = migrateEmbryoShipment(rawCase, report);
   Object.entries(relationsPatch).forEach(([key, value]) => { relations[key] = value; });
 
-  if (!relations.ukrainianClinicId) report.missingRelations.push('relations.ukrainianClinicId');
+  if (!relations.clinicId) report.missingRelations.push('relations.clinicId');
   if (!relations.coupleId) report.missingRelations.push('relations.coupleId');
   if (!relations.surrogateMotherId) report.missingRelations.push('relations.surrogateMotherId');
 
   const medical = migrateMedicalData(rawCase, report);
   const transferAttempt = migrateTransferAttempt(rawCase, report);
 
+  const rawArtProgram = isPlainObject(rawCase.artProgram) ? rawCase.artProgram : {};
+  let ivf;
+  if (isPlainObject(rawArtProgram.ivf) && rawArtProgram.ivf.date !== undefined) {
+    ivf = rawArtProgram.ivf;
+  } else if (ivfDate !== undefined) {
+    ivf = { date: ivfDate };
+    report.changed = true;
+  }
+
   const artProgram = {
     ...medical,
     ...(transferAttempt ? { transferAttempt } : {}),
-    ...(shipment ? { embryoShipment: shipment } : {}),
+    // A shipment whose only stored content was ivfDate (now split out to artProgram.ivf above)
+    // migrates to an empty object - never persisted as `embryoShipment: {}`.
+    ...(shipment && Object.keys(shipment).length ? { embryoShipment: shipment } : {}),
+    ...(ivf ? { ivf } : {}),
   };
 
   const documents = isPlainObject(rawCase.documents) ? { ...rawCase.documents } : {};
@@ -1116,18 +1176,18 @@ export const migrateCaseToV5 = rawCase => {
   return { case: migratedCase, report };
 };
 
-// Runs migrateCaseToV5 across every case in a raw `cases` snapshot and aggregates the per-case
+// Runs migrateCaseToV6 across every case in a raw `cases` snapshot and aggregates the per-case
 // reports into the one migration report spec §4.7 wants - migratedCaseIds (any case that actually
 // changed shape), and missingRelations/ambiguities/unmigratable keyed by case id so nothing is lost
 // even when several cases have issues.
-export const migrateCasesToV5 = rawCases => {
+export const migrateCasesToV6 = rawCases => {
   const records = toRecordsWithIdFromKey(rawCases).filter(isPlainObject);
   const cases = [];
   const report = {
     migratedCaseIds: [], missingRelations: {}, ambiguities: {}, unmigratable: {},
   };
   records.forEach(rawCase => {
-    const { case: migratedCase, report: caseReport } = migrateCaseToV5(rawCase);
+    const { case: migratedCase, report: caseReport } = migrateCaseToV6(rawCase);
     cases.push(migratedCase);
     const caseId = migratedCase.id ?? rawCase.id;
     if (caseReport.changed) report.migratedCaseIds.push(caseId);
@@ -1142,15 +1202,15 @@ export const migrateCasesToV5 = rawCases => {
 // storage is 4 sibling RTDB paths (parties/cases/templates/settings), not one combined root object,
 // so the marker lives on `documentsBuilder/settings.schemaVersion` - the one path every load already
 // reads (see normalizeDocumentsSettings, which always stamps the current version going forward).
-// `cases` migrate unconditionally and idempotently regardless of this marker (migrateCaseToV5 above
-// is cheap and safe to re-run) - this validator is for a caller that wants to tell a pre-v5 record
+// `cases` migrate unconditionally and idempotently regardless of this marker (migrateCaseToV6 above
+// is cheap and safe to re-run) - this validator is for a caller that wants to tell a pre-v6 record
 // apart from one already on the current schema (e.g. to warn an admin migration hasn't run yet).
-export const isDocumentsSchemaV5 = rawSettings => isPlainObject(rawSettings) && rawSettings.schemaVersion === CURRENT_SCHEMA_VERSION;
+export const isDocumentsSchemaV6 = rawSettings => isPlainObject(rawSettings) && rawSettings.schemaVersion === CURRENT_SCHEMA_VERSION;
 
 // Every case record passes through the migration boundary above exactly once, here - nothing
 // downstream (resolveShipment, resolveCaseContext, the case editors) ever branches on a legacy
-// shape again. Re-normalizing an already-v5 case changes nothing (migrateCaseToV5 is idempotent).
-export const normalizeCaseRecord = rawCase => (isPlainObject(rawCase) ? migrateCaseToV5(rawCase).case : {});
+// shape again. Re-normalizing an already-v6 case changes nothing (migrateCaseToV6 is idempotent).
+export const normalizeCaseRecord = rawCase => (isPlainObject(rawCase) ? migrateCaseToV6(rawCase).case : {});
 
 // Strips undefined/null/''-valued fields (and now-empty objects) out of a case form draft before
 // it's written to Firebase, so saving a case that has no documents data yet never creates empty
@@ -1239,21 +1299,23 @@ export const TEMPLATE_DOCUMENT_CONFIG = {
 const DEFAULT_NOTARY_TEMPLATE_CONFIG = { documentKey: 'birthRegistrationConsent', usesNotary: true };
 
 // --- ART program (case.artProgram) - resolvers, formatters, document contexts ----------------
-// v5 (spec §1.3/§1.4): the medical facts of a case's fertility program live once at
-// `case.artProgram` - `medicalIndications`, scalar `oocyteSource`/`spermSource`, the one embryo
-// shipment (`artProgram.embryoShipment`), and the one relevant transfer attempt
-// (`artProgram.transferAttempt`, itself carrying at most one nested `hcgTest`/`ultrasound`). None of
-// these carry an id, live in an array, or are keyed by id in a map - a case has at most one of each,
-// full stop. Every document that references one of these events (embryoOwnershipStatement,
-// geneticAffinityCertificate, racssClinicLetter) resolves the case's singleton directly - there is
-// nothing left to select by id, so editing an event once (e.g. the transfer date) is instantly
-// reflected in every document that references it, since none of them ever copy the fact.
+// v6 (spec §1-§7): the medical facts of a case's fertility program live once at `case.artProgram`
+// - `medicalIndications`, flat `geneticMaterial.oocyte`/`geneticMaterial.sperm`, the standalone
+// `ivf.date`, the one embryo shipment (`artProgram.embryoShipment`, carrying its own
+// `sourceClinicId`), and the one relevant transfer attempt (`artProgram.transferAttempt`, itself
+// carrying at most one nested `hcgTest`/`ultrasound`). None of these carry an id, live in an
+// array, or are keyed by id in a map - a case has at most one of each, full stop. Every document
+// that references one of these events (embryoOwnershipStatement, geneticAffinityCertificate,
+// racssClinicLetter) resolves the case's singleton directly - there is nothing left to select by
+// id, so editing an event once (e.g. the transfer date) is instantly reflected in every document
+// that references it, since none of them ever copy the fact.
 //
 // Legacy shapes (relations.shipment, artProgram.embryoShipments/hcgTests/ultrasounds id-maps,
-// artProgram.geneticMaterial.*PartnerRole, artProgram.medicalIndication.diagnosis, and any
-// hcgTestId/ultrasoundId/shipmentId document pointer) are read exactly once, at the single migration
-// boundary (migrateCaseToV5, called from normalizeCaseRecord on every load) - nothing below this
-// point ever branches on an old shape again.
+// artProgram.geneticMaterial.*PartnerRole, artProgram.medicalIndication.diagnosis, the v5 scalar
+// oocyteSource/spermSource, relations.ukrainianClinicId/partnerClinicId, and any
+// hcgTestId/ultrasoundId/shipmentId document pointer) are read exactly once, at the single
+// migration boundary (migrateCaseToV6, called from normalizeCaseRecord on every load) - nothing
+// below this point ever branches on an old shape again.
 
 export const resolveShipment = caseData => caseData?.artProgram?.embryoShipment ?? null;
 
@@ -1265,21 +1327,12 @@ export const resolveHcgTest = transferAttempt => transferAttempt?.hcgTest ?? nul
 
 export const resolveUltrasound = transferAttempt => transferAttempt?.ultrasound ?? null;
 
-// Reserved genetic-material scalar values (spec §1.7) - anything else non-empty is a donor code,
-// displayed as itself.
+// Reserved genetic-material scalar values (spec §1.7/§6) - anything else non-empty is a donor
+// code, displayed as itself. `geneticMaterial.oocyte`/`geneticMaterial.sperm` are read as plain
+// raw values (spec §6) - never auto-resolved to a name/label here; the genetic-affinity
+// certificate leaves those fields blank for manual entry.
 export const GENETIC_SOURCE_ROLE_VALUES = ['wife', 'husband'];
 export const isGeneticSourceDonorCode = value => Boolean(value) && !GENETIC_SOURCE_ROLE_VALUES.includes(value);
-
-// spec §3.4: resolves a scalar oocyteSource/spermSource straight to a template-ready label - the
-// wife/husband's own resolved (and already short-name-enriched) name for the two reserved role
-// values, or the donor code string itself for anything else. Never a lookup table with real people;
-// the two names it can return are exactly the ones already resolved elsewhere in the same context.
-export const resolveGeneticSourceLabel = (source, { wife, husband } = {}) => {
-  if (!source) return null;
-  if (source === 'wife') return wife?.name ?? null;
-  if (source === 'husband') return husband?.name ?? null;
-  return { uk: source, en: source };
-};
 
 // A name's declined grammatical form (genitive "з клініки «Оті Юме»", accusative "у клініку
 // «Вікторія»") lives directly on `name.uk` as a sibling of `nominative` (spec: the same
@@ -1298,18 +1351,19 @@ const withDeclinedNameFallback = (record, grammaticalCase) => {
   };
 };
 
-// v5: a shipment carries no clinic ids of its own any more (spec §1.2/§1.4) - the foreign source
-// clinic and Ukrainian destination clinic are the case's own relations
-// (relations.partnerClinicId/ukrainianClinicId), already resolved once in resolveCaseContext and
-// passed in here - never mutates the stored shipment, just layers the resolved party records on top.
-// The real templates read `{{partnerClinic.name.uk.genitive}}`/`{{clinic.name.uk.accusative}}`
-// directly (never through this shipment-nested alias) - `sourceClinic`/`destinationClinic` are kept
-// as a convenience alias for any template that does reference them through the shipment.
-export const enrichShipment = (shipment, { partnerClinic, clinic } = {}) => {
+// v6 (spec §3/§4): a shipment carries its own sourceClinicId (resolved to `sourceClinic`,
+// looked up straight off the unified `parties.clinics` - never a separate `partnerClinics`
+// collection); the destination clinic is always the case's own `clinic` (relations.clinicId), the
+// same one every other document already resolves - never mutates the stored shipment, just layers
+// the resolved party records on top. The real templates read `{{sourceClinic.name.uk.genitive}}`/
+// `{{clinic.name.uk.accusative}}` directly (never through this shipment-nested alias) -
+// `sourceClinic`/`destinationClinic` are kept as a convenience alias for any template that does
+// reference them through the shipment.
+export const enrichShipment = (shipment, { sourceClinic, clinic } = {}) => {
   if (!shipment) return null;
   return {
     ...shipment,
-    sourceClinic: withDeclinedNameFallback(partnerClinic, 'genitive'),
+    sourceClinic: withDeclinedNameFallback(sourceClinic, 'genitive'),
     destinationClinic: withDeclinedNameFallback(clinic, 'accusative'),
   };
 };
@@ -1325,18 +1379,17 @@ export const formatDateNumericUk = value => (isIsoDate(value) ? formatDocumentDa
 
 // A date range, spelled out long-form in English and numeric in Ukrainian - "01.01.2026 – 01.02.2026"
 // / "01 January 2026 - 01 February 2026". Used only when a shipment's plannedPeriod carries real
-// startDate/endDate values (the new shape) rather than a migrated freeform text (see
-// formatShipmentPeriod).
-export const formatDateRange = (startDate, endDate, locale) => {
-  if (locale === 'en') return `${formatDateLongEn(startDate)} - ${formatDateLongEn(endDate)}`;
-  return `${formatDateNumericUk(startDate)} – ${formatDateNumericUk(endDate)}`;
+// start/end values rather than a migrated freeform text (see formatShipmentPeriod).
+export const formatDateRange = (start, end, locale) => {
+  if (locale === 'en') return `${formatDateLongEn(start)} - ${formatDateLongEn(end)}`;
+  return `${formatDateNumericUk(start)} – ${formatDateNumericUk(end)}`;
 };
 
-// Supports both plannedPeriod shapes (spec §6): the new startDate/endDate pair, or a migrated
-// freeform text kept verbatim per locale - never both computed and stored, this only ever reads
-// whichever shape is actually present.
+// Supports both plannedPeriod shapes (spec §6/§7): the v6 start/end pair, or a migrated freeform
+// text kept verbatim per locale - never both computed and stored, this only ever reads whichever
+// shape is actually present.
 export const formatShipmentPeriod = (period, locale = 'uk') => {
-  if (period?.startDate && period?.endDate) return formatDateRange(period.startDate, period.endDate, locale);
+  if (period?.start && period?.end) return formatDateRange(period.start, period.end, locale);
   return period?.text?.[locale] ?? '';
 };
 
@@ -1401,15 +1454,24 @@ export const formatPregnancyTypeTextUk = fetusCount => PREGNANCY_TYPE_LABELS_UK[
 
 // Layers the formatted-for-template fields onto an already party-enriched shipment (see
 // enrichShipment) - a separate step so a caller that only needs the formatted dates (no clinic
-// enrichment) can call this alone.
+// enrichment) can call this alone. `ivfDate`/`sentDate` no longer belong to the shipment at all
+// (spec §5/§7) - see enrichIvfForTemplate for the former, the latter is dropped entirely.
 export const enrichShipmentForTemplate = shipment => {
   if (!shipment) return null;
   return {
     ...shipment,
-    ivfDateFormatted: { uk: formatDateNumericUk(shipment.ivfDate), en: formatDateLongEn(shipment.ivfDate) },
     plannedPeriodFormatted: { uk: formatShipmentPeriod(shipment.plannedPeriod, 'uk'), en: formatShipmentPeriod(shipment.plannedPeriod, 'en') },
-    sentDateFormatted: { uk: formatDateNumericUk(shipment.sentDate), en: formatDateLongEn(shipment.sentDate) },
     receivedDateFormatted: { uk: formatDateNumericUk(shipment.receivedDate), en: formatDateLongEn(shipment.receivedDate) },
+  };
+};
+
+// case.artProgram.ivf (spec §5/§7) - a standalone singleton, distinct from the shipment, so
+// {{ivf.dateFormatted.uk}}/{{ivf.dateFormatted.en}} resolve independently of it.
+export const enrichIvfForTemplate = ivf => {
+  if (!ivf) return null;
+  return {
+    ...ivf,
+    dateFormatted: { uk: formatDateNumericUk(ivf.date), en: formatDateLongEn(ivf.date) },
   };
 };
 
@@ -1448,8 +1510,8 @@ export const enrichUltrasoundForTemplate = ultrasound => {
 
 // case.documents.embryoOwnershipStatement - spec §1.8/§4. There is only ever the case's one
 // shipment (resolveShipment) - no shipmentId of its own to pick. `clinics` is
-// `{ partnerClinic, clinic }`, the same pair resolveCaseContext already resolves from the case's own
-// relations.
+// `{ sourceClinic, clinic }`, the same pair resolveCaseContext already resolves from the case's own
+// relations/shipment.
 export const buildEmbryoOwnershipStatementContext = (caseData, clinics, ownershipData) => {
   const data = isPlainObject(ownershipData) ? ownershipData : {};
   const resolvedShipment = enrichShipmentForTemplate(enrichShipment(resolveShipment(caseData), clinics));
@@ -1476,8 +1538,9 @@ export const buildGeneticAffinityCertificateContext = (caseData, clinics, certif
     // Shared/cross-referenced by any other document conditioning a block on whether the wife
     // herself was the oocyte donor (e.g. the RATS/birth-registration statement's "та генетичною
     // матір'ю ..." clause) - the "У лікувальній програмі ДРТ використано яйцеклітини..." field this
-    // certificate itself prints from the case's scalar case.artProgram.oocyteSource (spec §1.7).
-    oocyteSourceIsWife: caseData?.artProgram?.oocyteSource === 'wife',
+    // certificate itself prints from the case's scalar case.artProgram.geneticMaterial.oocyte
+    // (spec §1.7/§6).
+    oocyteSourceIsWife: caseData?.artProgram?.geneticMaterial?.oocyte === 'wife',
   };
 };
 
@@ -1578,26 +1641,27 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
   const notaryId = notaryDocumentKey ? (documentContextsByStorageKey[notaryDocumentKey]?.notaryId ?? null) : null;
   const notary = enrichPersonName(notaryId ? findById(catalog.parties.notaries, notaryId) : null);
 
-  // The Ukrainian clinic (parties.clinics, relations.ukrainianClinicId) runs the surrogacy program
-  // and signs the documents; the partner clinic (parties.partnerClinics, relations.partnerClinicId)
-  // is the separate foreign clinic embryos ship from - never the same collection, never a second
-  // "main" clinic (spec §1.2). Both are null-safe: an old case with no partnerClinicId/
-  // ukrainianClinicId simply resolves to null rather than throwing, so a template referencing it
-  // degrades to a visible warning instead of a crash (see getUnresolvedVariablePaths/
-  // fillPlaceholders) - e.g. a case with no clinic relation at all (case-kikawa in the reference
-  // data has no maternity-hospital relation).
-  const partnerClinic = relations.partnerClinicId
-    ? findById(catalog.parties.partnerClinics, relations.partnerClinicId)
-    : null;
-  const rawClinic = relations.ukrainianClinicId ? findById(catalog.parties.clinics, relations.ukrainianClinicId) : null;
-  const clinic = rawClinic ? {
+  // The case's own clinic (parties.clinics, relations.clinicId) both runs the surrogacy program in
+  // Ukraine and receives the embryos - it signs the documents and is the destination every shipment
+  // resolves against; the shipment's own sourceClinicId (spec §3/§4) resolves the separate foreign
+  // clinic embryos ship from, from that same unified `parties.clinics` collection - never a second
+  // "main" clinic, never a distinct `partnerClinics` collection any more (spec §1). Both are
+  // null-safe: a case with no clinicId/sourceClinicId simply resolves to null rather than throwing,
+  // so a template referencing it degrades to a visible warning instead of a crash (see
+  // getUnresolvedVariablePaths/fillPlaceholders) - e.g. a case with no clinic relation at all
+  // (case-kikawa in the reference data has no maternity-hospital relation).
+  const enrichClinic = rawClinic => (rawClinic ? {
     ...rawClinic,
     medicalDirector: rawClinic.medicalDirector ? {
       ...rawClinic.medicalDirector,
       name: enrichNameWithDerivedFields(rawClinic.medicalDirector.name),
     } : rawClinic.medicalDirector,
-  } : null;
-  const resolvedClinics = { partnerClinic, clinic };
+  } : null);
+  const clinic = enrichClinic(relations.clinicId ? findById(catalog.parties.clinics, relations.clinicId) : null);
+  const rawArtProgram = isPlainObject(caseRecord.artProgram) ? caseRecord.artProgram : {};
+  const rawShipment = resolveShipment(caseRecord);
+  const sourceClinic = enrichClinic(rawShipment?.sourceClinicId ? findById(catalog.parties.clinics, rawShipment.sourceClinicId) : null);
+  const resolvedClinics = { sourceClinic, clinic };
 
   const wife = enrichPersonName(rawWife);
   const husband = enrichPersonName(rawHusband);
@@ -1612,17 +1676,12 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
   const medicalServicesAgreement = buildMedicalServicesAgreementContext(documents.medicalServicesAgreement);
 
   // Canonical top-level ART-program aliases (spec §5.1): the same singleton shipment/transfer
-  // attempt/hCG test/ultrasound every document-scoped context above already resolves, exposed
+  // attempt/hCG test/ultrasound/ivf every document-scoped context above already resolves, exposed
   // directly so a template can reference {{embryoShipment...}}/{{transferAttempt...}}/{{hcgTest...}}/
-  // {{ultrasound...}} without going through a specific document's namespace.
-  const rawArtProgram = isPlainObject(caseRecord.artProgram) ? caseRecord.artProgram : {};
+  // {{ultrasound...}}/{{ivf...}} without going through a specific document's namespace.
   const transferAttemptRaw = resolveTransferAttempt(caseRecord);
-  const shipmentForContext = enrichShipment(resolveShipment(caseRecord), resolvedClinics);
-  const artProgram = {
-    ...rawArtProgram,
-    oocyteSourceLabel: resolveGeneticSourceLabel(rawArtProgram.oocyteSource, { wife, husband }),
-    spermSourceLabel: resolveGeneticSourceLabel(rawArtProgram.spermSource, { wife, husband }),
-  };
+  const shipmentForContext = enrichShipment(rawShipment, resolvedClinics);
+  const artProgram = rawArtProgram;
 
   return {
     case: caseRecord,
@@ -1634,7 +1693,7 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
       ? findById(catalog.parties.surrogateMothers, relations.surrogateMotherId)
       : null),
     clinic,
-    partnerClinic,
+    sourceClinic,
     representative: representatives[0] || null,
     representatives,
     childbirth,
@@ -1650,6 +1709,7 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
     transferAttempt: enrichTransferForTemplate(transferAttemptRaw, shipmentForContext),
     hcgTest: enrichHcgTestForTemplate(resolveHcgTest(transferAttemptRaw)),
     ultrasound: enrichUltrasoundForTemplate(resolveUltrasound(transferAttemptRaw)),
+    ivf: enrichIvfForTemplate(rawArtProgram.ivf),
     surrogacyAgreement,
     birthRegistration,
     maritalStatusDeclaration,
@@ -1750,7 +1810,7 @@ export const fillPlaceholders = (text, context, lang = 'uk') => String(text || '
 // document entirely - e.g. "та генетичною матір'ю ... Кацура Юкако," in the RATS/birth-
 // registration statement must only print when the wife herself was the oocyte donor
 // (geneticAffinityCertificate.oocyteSourceIsWife, shared/cross-referenced off the same
-// case.artProgram.oocyteSource scalar every genetic-affinity-certificate resolves from - see
+// case.artProgram.geneticMaterial.oocyte scalar every genetic-affinity-certificate resolves from - see
 // buildGeneticAffinityCertificateContext), never shown with a blank/unresolved
 // value for any other oocyte source. No `condition` at all (the vast majority of blocks) always
 // renders, so this is fully backward compatible.
@@ -1907,13 +1967,13 @@ export const getTemplateReferencedPaths = template => {
 const SYSTEM_VARIABLE_PATHS = ['logo', 'logo-long'];
 // Every resolveCaseContext top-level key that resolves a relation record from `catalog.parties.*`
 // straight off `case.relations` - as opposed to a resolved/derived context alias below.
-const RESOLVED_RELATION_PATH_PREFIXES = ['relations.', 'couple.', 'wife.', 'husband.', 'clinic.', 'partnerClinic.', 'surrogateMother.', 'representative.', 'representatives.', 'notary.', 'maternityHospital.'];
+const RESOLVED_RELATION_PATH_PREFIXES = ['relations.', 'couple.', 'wife.', 'husband.', 'clinic.', 'sourceClinic.', 'surrogateMother.', 'representative.', 'representatives.', 'notary.', 'maternityHospital.'];
 // Runtime-only aliases: the canonical ART-program singleton paths (spec §5.1), and every
 // document-scoped context object resolveCaseContext builds fresh on each render - none of these
 // are ever themselves stored in Firebase, even though some of their leaves pass through
 // unmodified stored requisites (e.g. `geneticAffinityCertificate.outgoingNumber`).
 const DERIVED_RUNTIME_PATH_PREFIXES = [
-  'artProgram.', 'embryoShipment.', 'transferAttempt.', 'hcgTest.', 'ultrasound.',
+  'artProgram.', 'embryoShipment.', 'transferAttempt.', 'hcgTest.', 'ultrasound.', 'ivf.',
   'surrogacyAgreement.', 'birthRegistration.', 'maritalStatusDeclaration.', 'legalServicesDisclaimer.', 'surrogacyAgreementAppendix1.',
   'embryoOwnershipStatement.', 'geneticAffinityCertificate.', 'racssClinicLetter.', 'medicalServicesAgreement.',
 ];
@@ -1952,7 +2012,7 @@ export const validateCaseRecord = rawCaseRecord => {
 
   requirePresent(caseRecord.id, 'case.id');
   requirePresent(caseRecord.relations?.coupleId, 'case.relations.coupleId');
-  requirePresent(caseRecord.relations?.ukrainianClinicId, 'case.relations.ukrainianClinicId');
+  requirePresent(caseRecord.relations?.clinicId, 'case.relations.clinicId');
   requirePresent(caseRecord.relations?.surrogateMotherId, 'case.relations.surrogateMotherId');
   if (!toArray(caseRecord.childbirth?.children).length) issues.push('case.childbirth.children');
 
@@ -2990,8 +3050,11 @@ export const findPartyReferences = (catalog, collection, id) => {
     const relations = caseRecord.relations || {};
     switch (collection) {
       case 'couples': return String(relations.coupleId) === targetId;
-      case 'clinics': return String(relations.ukrainianClinicId) === targetId;
-      case 'partnerClinics': return String(relations.partnerClinicId) === targetId;
+      // A clinic can be referenced two ways now (spec §1/§4): as the case's own destination clinic
+      // (relations.clinicId), or as a shipment's source clinic (artProgram.embryoShipment.
+      // sourceClinicId) - either one counts as a reference.
+      case 'clinics': return String(relations.clinicId) === targetId
+        || String(caseRecord.artProgram?.embryoShipment?.sourceClinicId) === targetId;
       case 'surrogateMothers': return String(relations.surrogateMotherId) === targetId;
       case 'representatives': return toArray(relations.representativeIds).some(repId => String(repId) === targetId);
       case 'maternityHospitals': return String(caseRecord.childbirth?.maternityHospitalId) === targetId;
@@ -3043,16 +3106,18 @@ export const VARIABLE_PICKER_GROUPS = [
   { label: 'Довірена особа', roots: ['representative'] },
   { label: 'Клініка — іноземна', roots: ['clinic'], predicate: context => context?.clinic?.kind === 'foreign' },
   { label: 'Клініка — українська', roots: ['clinic'], predicate: context => context?.clinic?.kind !== 'foreign' },
-  // Distinct from the `clinic` groups above: the partner clinic (parties.partnerClinics) is never
-  // the case's own `clinic` record under a different kind - it's the separate foreign clinic
-  // embryos ship from (spec: embryo-ownership-statement document). Shown whenever one is selected
-  // on the case; a case without a partnerClinicId simply doesn't offer this group.
-  { label: 'Клініка-партнер', roots: ['partnerClinic'], predicate: context => Boolean(context?.partnerClinic) },
+  // Distinct from the `clinic` groups above: the source clinic (spec §3/§4, resolved from the
+  // shipment's own sourceClinicId - still looked up in the same unified `parties.clinics`, never a
+  // separate collection) is never the case's own `clinic` record under a different kind - it's the
+  // separate clinic embryos ship from (spec: embryo-ownership-statement document). Shown whenever
+  // one is selected on the case; a case without a shipment sourceClinicId simply doesn't offer
+  // this group.
+  { label: 'Клініка-відправник', roots: ['sourceClinic'], predicate: context => Boolean(context?.sourceClinic) },
   // The canonical top-level ART-program singleton aliases (spec §5.1) - shown only once the case
   // actually carries artProgram data, same idea as the document-scoped groups below.
   {
     label: 'Програма ДРТ',
-    roots: ['artProgram', 'embryoShipment', 'transferAttempt', 'hcgTest', 'ultrasound'],
+    roots: ['artProgram', 'embryoShipment', 'transferAttempt', 'hcgTest', 'ultrasound', 'ivf'],
     predicate: context => Boolean(context?.case?.artProgram),
   },
   // ART program document contexts (spec §7) - each root is a top-level key resolveCaseContext
@@ -3718,9 +3783,9 @@ export const diffDocFormattingOverrides = (referenceFormatting, workingFormattin
 export const normalizeDocumentsSettings = raw => {
   const source = isPlainObject(raw) ? raw : {};
   return {
-    // Every case/party record is already migrated to v5 shape by the time this runs (see
-    // migrateCaseToV5/normalizeCaseRecord) - stamping the current version here means the next
-    // settings save persists `schemaVersion: 5` even if the stored record predates this marker.
+    // Every case/party record is already migrated to v6 shape by the time this runs (see
+    // migrateCaseToV6/normalizeCaseRecord) - stamping the current version here means the next
+    // settings save persists `schemaVersion: 6` even if the stored record predates this marker.
     schemaVersion: CURRENT_SCHEMA_VERSION,
     formatting: normalizeDocFormatting(source.formatting),
     clinicLogo: null,

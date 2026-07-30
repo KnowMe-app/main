@@ -110,7 +110,7 @@ describe('spec: completeness checklist is scoped to the checked documents', () =
     await checkDocumentByTitle('Договір');
 
     const warning = await screen.findByText(/Незаповнені обов'язкові поля/);
-    expect(warning.textContent).toContain('case.relations.ukrainianClinicId');
+    expect(warning.textContent).toContain('case.relations.clinicId');
     expect(warning.textContent).not.toContain('case.childbirth.children');
     expect(warning.textContent).not.toContain('case.relations.surrogateMotherId');
   });
