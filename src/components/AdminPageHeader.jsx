@@ -1,5 +1,5 @@
-// Shared page-header chrome for the UKRCOM admin pages (Documents / Invoice Builder / Parties /
-// Style Editor). Mirrors my-profile's sticky top bar (MyProfile.jsx's StickyHeader + Topbar) so
+// Shared page-header chrome for the UKRCOM admin pages (Documents / Invoice Builder / Parties).
+// Mirrors my-profile's sticky top bar (MyProfile.jsx's StickyHeader + Topbar) so
 // the "⋮" page-switcher (PageNavMenu, always the first item in HeaderActions) stays pinned in the
 // same top-right corner on every page and at every viewport width, instead of each page carrying
 // its own copy of this CSS that can drift out of sync (batch 29 §1).

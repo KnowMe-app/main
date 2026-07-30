@@ -1,6 +1,6 @@
 // Batch 26 §10/§11: PageNavMenu (the shared "⋮" page switcher) must list every existing top-level
-// screen - not just the five UKRCOM admin pages it originally covered - so an admin on any one of
-// them can reach addNewProfile/matching/my-profile/flow without typing a URL.
+// screen - not just the UKRCOM admin pages it originally covered - so an admin on any one of them
+// can reach addNewProfile/matching/my-profile/flow without typing a URL.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -12,7 +12,7 @@ describe('spec (batch 26 §10): PageNavMenu lists every top-level screen', () =>
     render(<MemoryRouter><PageNavMenu /></MemoryRouter>);
     fireEvent.click(screen.getByTitle('Switch page'));
 
-    ['Add profile', 'Matching', 'My profile', 'Flow', 'Budget', 'Invoice', 'Documents', 'Parties', 'Style Editor']
+    ['Add profile', 'Matching', 'My profile', 'Flow', 'Budget', 'Invoice', 'Documents', 'Parties']
       .forEach(label => expect(screen.getByText(label)).toBeInTheDocument());
   });
 

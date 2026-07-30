@@ -41,9 +41,12 @@ const TopControls = styled.div`
   min-width: 0;
 `;
 
+// Batch 29 §1: was four bootstrap-ish solid fills (green/blue/red/purple, one hardcoded hex per
+// action) with no relation to the rest of the app - now the same bordered/card-background/accent-
+// on-hover treatment My Profile's own "⋮" (DotsButton) uses, driven entirely by --km-* tokens.
 const TopActionBtn = styled.button`
-  border: 1px solid #d7d7d7;
-  border-radius: 6px;
+  border: 1px solid var(--km-border);
+  border-radius: 10px;
   width: 34px;
   height: 34px;
   font-size: 16px;
@@ -52,13 +55,15 @@ const TopActionBtn = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: ${({ $bg }) => $bg || '#6c757d'};
-  border-color: ${({ $bg }) => $bg || '#6c757d'};
+  color: var(--km-muted);
+  background: var(--km-card);
   cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 
   &:hover {
-    filter: brightness(0.92);
+    background: var(--km-accent-light);
+    border-color: var(--km-accent);
+    color: var(--km-accent);
   }
 `;
 
@@ -69,7 +74,15 @@ const CopyBtn = styled(TopActionBtn)`
   }
 `;
 
-const DangerBtn = styled(TopActionBtn)``;
+const DangerBtn = styled(TopActionBtn)`
+  color: var(--km-danger);
+
+  &:hover {
+    background: var(--km-danger-bg);
+    border-color: var(--km-danger-border);
+    color: var(--km-danger);
+  }
+`;
 
 const MenuBtn = styled(TopActionBtn)``;
 
@@ -1757,7 +1770,6 @@ export const FlowManager = ({ ownerId }) => {
           onClick={() => setIsExchangeModalOpen(true)}
           aria-label="Обрати курс Flow"
           title={`Курс Flow: ${getFlowExchangeRateModeLabel(exchangeRateMode)}`}
-          $bg="#198754"
         >
           $
         </TopActionBtn>
@@ -1766,17 +1778,15 @@ export const FlowManager = ({ ownerId }) => {
           onClick={handleCopyToClipboard}
           aria-label="Копіювати Flow у буфер обміну"
           title="Копіювати Flow у буфер обміну"
-          $bg="#2f7bff"
         >
           <ClipboardIcon />
         </CopyBtn>
-        <DangerBtn type="button" onClick={openClearConfirm} $bg="#dc3545">del</DangerBtn>
+        <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
         <MenuBtn
           type="button"
           aria-label="Відкрити меню профілю"
           title="Відкрити меню профілю"
           onClick={() => setShowInfoModal('dotsMenu')}
-          $bg="#6f42c1"
         >
           ⋮
         </MenuBtn>

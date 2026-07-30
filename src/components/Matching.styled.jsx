@@ -350,24 +350,31 @@ export const TopActionGroup = styled.div`
   gap: 6px;
   flex: 0 0 auto;
   padding: 4px;
-  border: 1px solid var(--matching-section-border, rgba(255, 255, 255, 0.14));
+  border: 1px solid var(--matching-section-border);
   border-radius: 999px;
-  background: var(--matching-section-bg, rgba(255, 255, 255, 0.82));
-  box-shadow: var(--matching-section-shadow, 0 8px 18px rgba(22, 22, 22, 0.08));
+  background: var(--matching-section-bg);
+  box-shadow: var(--matching-section-shadow);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 `;
 
+// Batch 29 §1: --matching-accent/--matching-action-bg/etc. are always set by matchingThemeVars
+// (the Container these buttons render inside always carries them), so the hardcoded hex this used
+// to fall back to (#E8791A - matching's own light-mode accent, itself already the same value as
+// --km-accent) was dead code kept "just in case"; dropped here rather than left drifting from the
+// real token. The active-state tint/focus ring used to hardcode that same orange as a raw rgba()
+// with no variable at all - color-mix keeps them tied to --matching-accent (and so to the app's
+// bronze accent) at every theme mode, light or dark, instead of only the light one.
 export const ActionButton = styled.button`
   position: relative;
   width: ${({ $wide }) => ($wide ? 'auto' : '35px')};
   min-width: ${({ $wide }) => ($wide ? '44px' : '35px')};
   height: 35px;
   padding: ${({ $wide }) => ($wide ? '3px 10px' : '3px')};
-  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #E8791A)' : 'transparent')};
-  background: ${({ $active }) => ($active ? 'rgba(232, 121, 26, 0.14)' : 'var(--matching-action-bg, ' + color.accent5 + ')')};
-  color: ${({ $active }) => ($active ? 'var(--matching-accent, #E8791A)' : 'var(--matching-action-color, white)')};
-  box-shadow: var(--matching-action-shadow, none);
+  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)' : 'var(--matching-action-bg)')};
+  color: ${({ $active }) => ($active ? 'var(--matching-accent)' : 'var(--matching-action-color)')};
+  box-shadow: var(--matching-action-shadow);
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1), border-color 240ms cubic-bezier(0.4, 0, 0.2, 1), color 240ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50px;
   cursor: pointer;
@@ -381,7 +388,7 @@ export const ActionButton = styled.button`
 
   &:hover:not(:disabled) {
     transform: translateY(-1px) scale(1.03);
-    border-color: var(--matching-accent, #E8791A);
+    border-color: var(--matching-accent);
   }
 
   &:active:not(:disabled) {
@@ -389,7 +396,7 @@ export const ActionButton = styled.button`
   }
 
   &:focus-visible {
-    outline: 3px solid rgba(232, 121, 26, 0.42);
+    outline: 3px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
     outline-offset: 2px;
   }
 
@@ -408,9 +415,9 @@ export const ActionBadge = styled.span`
   min-width: 17px;
   height: 17px;
   padding: 0 4px;
-  border: 2px solid var(--matching-panel-bg, #fff);
+  border: 2px solid var(--matching-panel-bg);
   border-radius: 999px;
-  background: var(--matching-accent, #E8791A);
+  background: var(--matching-accent);
   color: #fff;
   display: inline-flex;
   align-items: center;
