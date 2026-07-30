@@ -10,7 +10,7 @@
 // CaseArtProgramEditor/CaseChildbirthTransactionEditor components: every field those used to own a
 // separate Save button for now lives in one unified per-case draft, committed by the single sticky
 // "Зберегти все" bar (spec §4) - a real behavior change, not just a visual one.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { ref, set, update } from 'firebase/database';
@@ -658,7 +658,11 @@ const SaveStateLabel = styled.strong`
 
 const GENETIC_SOURCE_MODE_ROLE = 'role';
 const GENETIC_SOURCE_MODE_DONOR = 'donor';
-const geneticSourceModeFor = value => (isGeneticSourceDonorCode(value) ? GENETIC_SOURCE_MODE_DONOR : GENETIC_SOURCE_MODE_ROLE);
+const GENETIC_SOURCE_MODE_UNSET = '';
+const geneticSourceModeFor = value => {
+  if (!isFilled(value)) return GENETIC_SOURCE_MODE_UNSET;
+  return isGeneticSourceDonorCode(value) ? GENETIC_SOURCE_MODE_DONOR : GENETIC_SOURCE_MODE_ROLE;
+};
 
 const notaryOptionLabel = notary => {
   const nominative = notary?.name?.uk?.nominative || '';
@@ -695,9 +699,9 @@ const buildDraftFromCase = caseRecord => {
     },
     artProgram: {
       medicalIndicationsUk: artProgram.medicalIndications?.uk || '',
-      oocyteSource: oocyteSourceMode === GENETIC_SOURCE_MODE_DONOR ? artProgram.oocyteSource : 'wife',
+      oocyteSource: artProgram.oocyteSource || '',
       oocyteSourceMode,
-      spermSource: spermSourceMode === GENETIC_SOURCE_MODE_DONOR ? artProgram.spermSource : 'husband',
+      spermSource: artProgram.spermSource || '',
       spermSourceMode,
       physicianNameUk: artProgram.medicalTeam?.physician?.name?.uk?.nominative || '',
       embryoShipment: {
@@ -786,16 +790,14 @@ const SECTION_DEFS = [
     key: 'childbirth', tab: 'racs', title: 'Пологи та дитина', meta: 'Дані для реєстрації народження',
     completion: draft => {
       const c = draft.childbirth;
-      const child = c.children[0] || {};
-      const values = [
-        c.maternityHospitalId,
-        c.children.length ? 'x' : '',
+      const values = [c.maternityHospitalId, c.children.length ? 'x' : ''];
+      c.children.forEach(child => values.push(
         child.sex,
         child.birthDate,
         child.birthPlace?.uk,
         child.medicalConclusion?.number,
         child.medicalConclusion?.date,
-      ];
+      ));
       return { filled: values.filter(isFilled).length, total: values.length };
     },
   },
@@ -835,7 +837,13 @@ const sectionCompletion = (key, draft) => SECTION_DEFS.find(section => section.k
 // against the embryo-shipment timeline, then falls back to the first section (in a fixed, logical
 // order) that isn't fully filled yet. --------------------------------------------------------------
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const buildNextMilestone = draft => {
   const shipment = draft.artProgram.embryoShipment;
@@ -892,6 +900,7 @@ const CaseEditor = ({
   const [saving, setSaving] = useState(false);
   const [savedAtLabel, setSavedAtLabel] = useState('');
   const [picker, setPicker] = useState(null);
+  const draftRevision = useRef(0);
 
   useEffect(() => {
     setDraft(buildDraftFromCase(selectedCase));
@@ -913,7 +922,15 @@ const CaseEditor = ({
     bumpRecentCase(id);
   };
 
-  const markDirty = () => setDirty(true);
+  const handleCreateCase = () => {
+    if (dirty && typeof window !== 'undefined' && !window.confirm('Є незбережені зміни. Створити нову справу без збереження?')) return;
+    onCreateCase();
+  };
+
+  const markDirty = () => {
+    draftRevision.current += 1;
+    setDirty(true);
+  };
 
   const updateRelations = (field, value) => { setDraft(previous => ({ ...previous, relations: { ...previous.relations, [field]: value } })); markDirty(); };
   const updateChildbirth = (field, value) => { setDraft(previous => ({ ...previous, childbirth: { ...previous.childbirth, [field]: value } })); markDirty(); };
@@ -950,7 +967,7 @@ const CaseEditor = ({
       artProgram: {
         ...previous.artProgram,
         [modeField]: mode,
-        [field]: mode === GENETIC_SOURCE_MODE_DONOR ? '' : (field === 'oocyteSource' ? 'wife' : 'husband'),
+        [field]: mode === GENETIC_SOURCE_MODE_ROLE ? (field === 'oocyteSource' ? 'wife' : 'husband') : '',
       },
     }));
     markDirty();
@@ -1019,6 +1036,7 @@ const CaseEditor = ({
 
   const handleSaveAll = async () => {
     if (!selectedCase) return;
+    const submittedRevision = draftRevision.current;
     setSaving(true);
     try {
       const cleanedRelations = removeEmptyCaseValues({ ...draft.relations });
@@ -1059,8 +1077,8 @@ const CaseEditor = ({
       })).length > 0;
       const shouldIncludeGeneticSource = hasOtherArtProgramContent
         || Boolean(selectedCase.artProgram)
-        || draft.artProgram.oocyteSourceMode === GENETIC_SOURCE_MODE_DONOR
-        || draft.artProgram.spermSourceMode === GENETIC_SOURCE_MODE_DONOR;
+        || isFilled(draft.artProgram.oocyteSourceMode)
+        || isFilled(draft.artProgram.spermSourceMode);
       if (shouldIncludeGeneticSource) {
         artProgramPayload.oocyteSource = draft.artProgram.oocyteSource;
         artProgramPayload.spermSource = draft.artProgram.spermSource;
@@ -1081,13 +1099,18 @@ const CaseEditor = ({
         medicalServicesAgreement: { date: normalizeIsoDate(draft.documents.medicalServicesAgreement.date) },
       };
       const cleanedDocuments = removeEmptyCaseValues(documentsPayload);
-      const nextDocuments = Object.keys(cleanedDocuments).length ? cleanedDocuments : null;
+      const nextDocuments = { ...(selectedCase.documents || {}) };
+      Object.keys(documentsPayload).forEach(key => {
+        if (cleanedDocuments[key]) nextDocuments[key] = cleanedDocuments[key];
+        else delete nextDocuments[key];
+      });
+      const persistedDocuments = Object.keys(nextDocuments).length ? nextDocuments : null;
 
       const patch = {
         [`${selectedCase.id}/relations`]: cleanedRelations,
         [`${selectedCase.id}/childbirth`]: cleanedChildbirth,
         [`${selectedCase.id}/artProgram`]: nextArtProgram,
-        [`${selectedCase.id}/documents`]: nextDocuments,
+        [`${selectedCase.id}/documents`]: persistedDocuments,
       };
       await update(ref(database, DOCUMENTS_CASES_PATH), patch);
 
@@ -1097,11 +1120,11 @@ const CaseEditor = ({
           if (String(item.id) !== String(selectedCase.id)) return item;
           const next = { ...item, relations: cleanedRelations, childbirth: cleanedChildbirth };
           if (nextArtProgram) next.artProgram = nextArtProgram; else delete next.artProgram;
-          if (nextDocuments) next.documents = nextDocuments; else delete next.documents;
+          if (persistedDocuments) next.documents = persistedDocuments; else delete next.documents;
           return next;
         }),
       }));
-      setDirty(false);
+      if (draftRevision.current === submittedRevision) setDirty(false);
       setSavedAtLabel(new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }));
       toast.success('Усі зміни збережено.');
     } catch (saveError) {
@@ -1157,7 +1180,7 @@ const CaseEditor = ({
             {buildCaseLabel(catalog, caseRecord) || caseRecord.id}
           </CasePill>
         ))}
-        <NewCasePill type="button" onClick={onCreateCase}>+ Нова справа</NewCasePill>
+        <NewCasePill type="button" onClick={handleCreateCase}>+ Нова справа</NewCasePill>
       </SwitcherRow>
 
       {selectedCase ? (
@@ -1318,6 +1341,7 @@ const CaseEditor = ({
                         value={draft.artProgram.oocyteSourceMode}
                         onChange={event => updateGeneticSourceMode('oocyteSource', 'oocyteSourceMode', event.target.value)}
                       >
+                        <option value={GENETIC_SOURCE_MODE_UNSET}>Оберіть джерело</option>
                         <option value={GENETIC_SOURCE_MODE_ROLE}>Дружина</option>
                         <option value={GENETIC_SOURCE_MODE_DONOR}>Донор</option>
                       </Select>
@@ -1334,6 +1358,7 @@ const CaseEditor = ({
                         value={draft.artProgram.spermSourceMode}
                         onChange={event => updateGeneticSourceMode('spermSource', 'spermSourceMode', event.target.value)}
                       >
+                        <option value={GENETIC_SOURCE_MODE_UNSET}>Оберіть джерело</option>
                         <option value={GENETIC_SOURCE_MODE_ROLE}>Чоловік</option>
                         <option value={GENETIC_SOURCE_MODE_DONOR}>Донор</option>
                       </Select>

@@ -96,6 +96,24 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     expect(screen.getByLabelText('Стать')).toHaveValue('female');
   });
 
+  it('requires missing genetic sources to be explicitly selected', async () => {
+    await openCaseOne();
+    fireEvent.click(screen.getByRole('button', { name: 'Програма ДРТ' }));
+
+    const oocyteSource = screen.getByLabelText('Джерело яйцеклітин');
+    const spermSource = screen.getByLabelText('Джерело сперматозоїдів');
+    expect(oocyteSource).toHaveValue('');
+    expect(spermSource).toHaveValue('');
+
+    fireEvent.change(oocyteSource, { target: { value: 'role' } });
+    fireEvent.change(spermSource, { target: { value: 'role' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти все' }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
+      'case-1/artProgram': expect.objectContaining({ oocyteSource: 'wife', spermSource: 'husband' }),
+    })));
+  });
+
   it('picking a different maternity hospital via the bottom sheet updates the field', async () => {
     const parties = buildParties();
     parties.maternityHospitals['hospital-2'] = { id: 'hospital-2', name: { uk: 'Пологовий будинок №2', en: '' } };
@@ -121,6 +139,7 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     fireEvent.click(screen.getByRole('button', { name: /додати дитину/i }));
 
     expect(screen.getAllByText('Дитина 2').length).toBeGreaterThan(0);
+    expect(screen.getByText('7/12')).toBeInTheDocument();
   });
 
   it('removing a child drops its card', async () => {
@@ -156,6 +175,15 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
   });
 
   it('editing the surrogacy agreement and picking a notary persists them alongside the childbirth data in the same save', async () => {
+    const cases = buildCases();
+    cases['case-1'].documents = {
+      embryoOwnershipStatement: { statementDate: '2026-04-30', notaryId: 'legacy-notary' },
+    };
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => buildParties() };
+      if (path === 'documentsBuilder/cases') return { exists: () => true, val: () => cases };
+      return { exists: () => false, val: () => null };
+    });
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
@@ -170,6 +198,7 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
       'case-1/documents': expect.objectContaining({
         surrogacyAgreement: { number: { uk: 'Д-1' }, date: '2026-05-01', notaryId: 'notary-1' },
+        embryoOwnershipStatement: { statementDate: '2026-04-30', notaryId: 'legacy-notary' },
       }),
     })));
   });
