@@ -21,6 +21,7 @@ import {
   DOCUMENTS_TEMPLATES_PATH,
   PARTY_COLLECTIONS,
   buildCaseLabel,
+  buildLegacyPartnerClinicsMigrationPatch,
   buildVariablePickerGroups,
   CLINIC_KINDS,
   coupleDisplayName,
@@ -964,8 +965,13 @@ const PartiesPage = ({ isAdmin }) => {
         get(ref(database, `${PARTIES_SETTINGS_PATH}/lastCaseId`)),
         get(ref(database, `${PARTIES_SETTINGS_PATH}/recentCaseIds`)),
       ]);
+      const rawParties = partiesSnapshot.exists() ? partiesSnapshot.val() : null;
+      const legacyClinicsPatch = buildLegacyPartnerClinicsMigrationPatch(rawParties);
+      if (Object.keys(legacyClinicsPatch).length) {
+        await update(ref(database, DOCUMENTS_PARTIES_PATH), legacyClinicsPatch);
+      }
       const nextCatalog = normalizeDocumentsCatalog(
-        partiesSnapshot.exists() ? partiesSnapshot.val() : null,
+        rawParties,
         templatesSnapshot.exists() ? templatesSnapshot.val() : null,
         casesSnapshot.exists() ? casesSnapshot.val() : null,
       );

@@ -32,6 +32,7 @@ import {
   DOCUMENTS_TEMPLATES_PATH,
   LAYOUT_V2_STYLE_KEYS,
   buildCaseLabel,
+  buildLegacyPartnerClinicsMigrationPatch,
   buildGeneratedDocument,
   emptyDocumentsCatalog,
   normalizeDocumentsCatalog,
@@ -560,8 +561,13 @@ const DocumentStyleEditorPage = ({ isAdmin }) => {
         get(ref(database, DOCUMENTS_TEMPLATES_PATH)),
         get(ref(database, DOCUMENTS_SETTINGS_PATH)),
       ]);
+      const rawParties = partiesSnapshot.exists() ? partiesSnapshot.val() : null;
+      const legacyClinicsPatch = buildLegacyPartnerClinicsMigrationPatch(rawParties);
+      if (Object.keys(legacyClinicsPatch).length) {
+        await update(ref(database, DOCUMENTS_PARTIES_PATH), legacyClinicsPatch);
+      }
       const nextCatalog = normalizeDocumentsCatalog(
-        partiesSnapshot.exists() ? partiesSnapshot.val() : null,
+        rawParties,
         templatesSnapshot.exists() ? templatesSnapshot.val() : null,
         casesSnapshot.exists() ? casesSnapshot.val() : null,
       );

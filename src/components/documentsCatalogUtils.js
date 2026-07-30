@@ -175,6 +175,16 @@ export const normalizeDocumentsCatalog = (rawParties, rawTemplates, rawCases) =>
   PARTY_COLLECTIONS.forEach(collection => {
     catalog.parties[collection] = toRecordsWithIdFromKey(rawParties?.[collection]).filter(record => isPlainObject(record));
   });
+  // v5 stored shipment-origin clinics in a separate `partnerClinics` collection. Cases are
+  // migrated to sourceClinicId on read, so bring those records into the unified v6 collection at
+  // the same boundary. Current `clinics` records are applied last and therefore win on conflicts,
+  // while any useful legacy-only fields are retained by the normal additive merge semantics.
+  catalog.parties.clinics = mergeCollection(
+    toRecordsWithIdFromKey(rawParties?.partnerClinics).filter(record => isPlainObject(record)),
+    catalog.parties.clinics,
+    'clinic',
+    { added: 0, updated: 0 },
+  );
   catalog.cases = toRecordsWithIdFromKey(rawCases).filter(record => isPlainObject(record)).map(normalizeCaseRecord);
   // Same read-time migration idea as normalizeCaseRecord, for templates: per-paragraph styles
   // are consolidated under each paragraph's single `style` key right at ingestion, so nothing
@@ -232,6 +242,12 @@ export const parseDocumentsTechnicalInput = rawText => {
   PARTY_COLLECTIONS.forEach(collection => {
     incoming.parties[collection] = toRecordsWithIdFromKey(dataSource[collection]).filter(record => isPlainObject(record));
   });
+  incoming.parties.clinics = mergeCollection(
+    toRecordsWithIdFromKey(dataSource.partnerClinics).filter(record => isPlainObject(record)),
+    incoming.parties.clinics,
+    'clinic',
+    { added: 0, updated: 0 },
+  );
   incoming.cases = toRecordsWithIdFromKey(casesSource).filter(record => isPlainObject(record)).map(normalizeCaseRecord);
   // Pasted templates get the same style consolidation as normalizeDocumentsCatalog - a paragraph
   // row copied out of the backend (either shape) merges in with its full style intact.
@@ -270,6 +286,24 @@ export const deepMergeRecords = (base, incoming) => {
     return base;
   }
   return incoming;
+};
+
+// One atomic RTDB multi-location update permanently folds v5 source-clinic records into the v6
+// collection. Keeping this patch builder beside the catalog merge logic lets every page that reads
+// the shared parties tree reuse exactly the same migration, and the null entries ensure a deleted
+// clinic cannot reappear from its old path on the next load.
+export const buildLegacyPartnerClinicsMigrationPatch = rawParties => {
+  if (!isPlainObject(rawParties?.partnerClinics)) return {};
+  const currentClinics = isPlainObject(rawParties.clinics) ? rawParties.clinics : {};
+  const patch = {};
+  Object.entries(rawParties.partnerClinics).forEach(([legacyKey, legacyRecord]) => {
+    if (!isPlainObject(legacyRecord)) return;
+    const id = String(legacyRecord.id || legacyKey);
+    const currentRecord = isPlainObject(currentClinics[id]) ? currentClinics[id] : {};
+    patch[`clinics/${id}`] = stripUndefinedDeep(deepMergeRecords({ ...legacyRecord, id }, currentRecord));
+    patch[`partnerClinics/${legacyKey}`] = null;
+  });
+  return patch;
 };
 
 const mergeCollection = (existing, incoming, idPrefix, summary) => {
@@ -1694,6 +1728,9 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
       : null),
     clinic,
     sourceClinic,
+    // Stored v5 templates used {{partnerClinic.*}}. Keep that name as a read-only compatibility
+    // alias while all new UI and templates use the v6 {{sourceClinic.*}} terminology.
+    partnerClinic: sourceClinic,
     representative: representatives[0] || null,
     representatives,
     childbirth,
@@ -1967,7 +2004,7 @@ export const getTemplateReferencedPaths = template => {
 const SYSTEM_VARIABLE_PATHS = ['logo', 'logo-long'];
 // Every resolveCaseContext top-level key that resolves a relation record from `catalog.parties.*`
 // straight off `case.relations` - as opposed to a resolved/derived context alias below.
-const RESOLVED_RELATION_PATH_PREFIXES = ['relations.', 'couple.', 'wife.', 'husband.', 'clinic.', 'sourceClinic.', 'surrogateMother.', 'representative.', 'representatives.', 'notary.', 'maternityHospital.'];
+const RESOLVED_RELATION_PATH_PREFIXES = ['relations.', 'couple.', 'wife.', 'husband.', 'clinic.', 'sourceClinic.', 'partnerClinic.', 'surrogateMother.', 'representative.', 'representatives.', 'notary.', 'maternityHospital.'];
 // Runtime-only aliases: the canonical ART-program singleton paths (spec §5.1), and every
 // document-scoped context object resolveCaseContext builds fresh on each render - none of these
 // are ever themselves stored in Firebase, even though some of their leaves pass through

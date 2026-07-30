@@ -34,6 +34,7 @@ import {
   applyResolvedTextEdit,
   beforeTitleScope,
   buildCaseLabel,
+  buildLegacyPartnerClinicsMigrationPatch,
   buildDocumentsFileName,
   buildGeneratedDocument,
   clinicLogoDbPath,
@@ -1120,8 +1121,13 @@ const DocumentsPage = ({ isAdmin }) => {
         get(ref(database, DOCUMENTS_TEMPLATES_PATH)),
         get(ref(database, DOCUMENTS_SETTINGS_PATH)),
       ]);
+      const rawParties = partiesSnapshot.exists() ? partiesSnapshot.val() : null;
+      const legacyClinicsPatch = buildLegacyPartnerClinicsMigrationPatch(rawParties);
+      if (Object.keys(legacyClinicsPatch).length) {
+        await update(ref(database, DOCUMENTS_PARTIES_PATH), legacyClinicsPatch);
+      }
       const nextCatalog = normalizeDocumentsCatalog(
-        partiesSnapshot.exists() ? partiesSnapshot.val() : null,
+        rawParties,
         templatesSnapshot.exists() ? templatesSnapshot.val() : null,
         casesSnapshot.exists() ? casesSnapshot.val() : null,
       );
@@ -1300,8 +1306,10 @@ const DocumentsPage = ({ isAdmin }) => {
   const formatPopoverKey = (docId, scope) => `${docId}#${scope || 'doc'}`;
   const toggleFormatPopover = (docId, scope) => {
     const key = formatPopoverKey(docId, scope);
-    // Switching straight from one popover to another still flushes the first one's edits.
-    if (openFormatKey && openFormatKey !== key) persistTemplate(openFormatKey.split('#')[0]);
+    // Switching straight from one popover to another, or toggling the current one closed, flushes
+    // its edits. The latter matters for controls such as the logo variant picker which have no
+    // field blur of their own.
+    if (openFormatKey) persistTemplate(openFormatKey.split('#')[0]);
     setOpenFormatKey(openFormatKey === key ? '' : key);
   };
   const closeFormatPopover = docId => {
