@@ -18,6 +18,7 @@ import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFo
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import PageNavMenu from './PageNavMenu';
+import { Header, HeaderActions } from './AdminPageHeader';
 import VariablePickerModal from './DocumentsVariablePickerModal';
 import DocumentsPdfPreview from './DocumentsPdfPreview';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -108,6 +109,14 @@ const LOGO_LAYOUT_OPTIONS = [
   { tag: '2col', label: '{{logo-long}}', title: 'Use this variant for the {{logo-long}} token - one shared full-width logo' },
 ];
 
+// Which token a letterhead block's own image column draws (batch 29 §2) - distinct from
+// LOGO_LAYOUT_OPTIONS above, which assigns an uploaded logo *file* to a layout tag, not which
+// token a specific document's block uses.
+const LOGO_VARIANT_TOKENS = [
+  { token: 'logo', label: '{{logo}}' },
+  { token: 'logo-long', label: '{{logo-long}}' },
+];
+
 // Mobile admins can't easily reach the browser devtools console, so every Storage failure below
 // is folded into the on-screen message with the real Firebase/network error code - "see the
 // browser console" alone leaves them stuck with no way to report what actually went wrong.
@@ -143,19 +152,6 @@ const Shell = styled.div`
   margin: 0 auto;
 `;
 
-const Header = styled.header`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-
-  @media (max-width: 560px) {
-    flex-direction: column;
-    align-items: stretch;
-  }
-`;
-
 const Eyebrow = styled.div`
   color: var(--km-accent);
   font-size: 10.5px;
@@ -171,19 +167,6 @@ const Title = styled.h1`
   font-size: clamp(20px, 4vw, 27px);
   line-height: 1.05;
   letter-spacing: -0.02em;
-`;
-
-const HeaderActions = styled.div`
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-
-  @media (max-width: 560px) {
-    width: 100%;
-    justify-content: flex-start;
-  }
 `;
 
 const MiniButton = styled.button`
@@ -1714,6 +1697,14 @@ const DocumentsPage = ({ isAdmin }) => {
 
   const handleToggleLayoutV2LogoHidden = (docId, blockIndex, columnIndex) => applyLayoutV2ImageContentChange(
     docId, blockIndex, columnIndex, content => ({ ...content, hidden: !content.hidden }),
+  );
+
+  // Which clinic-logo token this column draws (batch 29 §2: the settings popover only exposed
+  // show/hide + offsets, with no way to switch {{logo}} <-> {{logo-long}} short of pasting raw
+  // JSON) - source stays the token itself (never a resolved data URL), same convention as
+  // normalizeLayoutV2Content/LOGO_TOKEN_PATTERN.
+  const setLayoutV2LogoVariant = (docId, blockIndex, columnIndex, token) => applyLayoutV2ImageContentChange(
+    docId, blockIndex, columnIndex, content => ({ ...content, source: `{{${token}}}` }),
   );
 
   const setLayoutV2LogoOffset = (docId, blockIndex, columnIndex, axisKey, raw) => {
@@ -3279,6 +3270,22 @@ const DocumentsPage = ({ isAdmin }) => {
                                               />
                                               Show logo
                                             </CheckLine>
+                                            <Field>
+                                              Variant
+                                              <ToggleGroup>
+                                                {LOGO_VARIANT_TOKENS.map(({ token, label }) => (
+                                                  <ToggleOption
+                                                    key={token}
+                                                    type="button"
+                                                    $active={String(content.source || '').trim() === `{{${token}}}`}
+                                                    onClick={() => setLayoutV2LogoVariant(template.id, blockIndex, columnIndex, token)}
+                                                    title={`Use the ${label} token for this logo`}
+                                                  >
+                                                    {label}
+                                                  </ToggleOption>
+                                                ))}
+                                              </ToggleGroup>
+                                            </Field>
                                             <PlainNumberField
                                               label="Horizontal offset (mm, + = right)"
                                               initialValue={content.offsetXMm !== undefined ? String(content.offsetXMm) : ''}

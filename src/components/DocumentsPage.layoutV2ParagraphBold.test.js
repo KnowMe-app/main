@@ -296,6 +296,57 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
     ));
   });
 
+  it('switches the letterhead logo between the {{logo}} and {{logo-long}} tokens from the same settings popover', async () => {
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => ({}) };
+      if (path === 'documentsBuilder/cases') return { exists: () => false, val: () => null };
+      if (path === 'documentsBuilder/templates') {
+        return {
+          exists: () => true,
+          val: () => ({
+            'doc-1': {
+              id: 'doc-1',
+              catalogName: 'Genetic affinity certificate',
+              rendererVersion: 2,
+              languages: ['uk'],
+              layoutV2: {
+                blocks: [{
+                  type: 'letterhead',
+                  columnGapMm: 5,
+                  columns: [
+                    { widthMm: 64.4, content: { type: 'image', source: '{{logo}}', widthMm: 64.4, heightMm: 17 } },
+                    { widthMm: 110.6, content: { type: 'stack', lines: ['contact'] } },
+                  ],
+                }],
+              },
+            },
+          }),
+        };
+      }
+      return { exists: () => false, val: () => null };
+    });
+
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+    fireEvent.click(await screen.findByTitle('Clinic logo - show/hide and offset (mm)'));
+
+    fireEvent.click(await screen.findByTitle('Use the {{logo-long}} token for this logo'));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [expect.objectContaining({
+            columns: [
+              expect.objectContaining({ widthMm: 64.4, content: expect.objectContaining({ source: '{{logo-long}}' }) }),
+              expect.objectContaining({ widthMm: 110.6 }),
+            ],
+          })],
+        }),
+      }),
+    ));
+  });
+
   it('does not show the layoutV2 paragraph section for a legacy (non-layoutV2) template', async () => {
     get.mockImplementation(async path => {
       if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => ({}) };

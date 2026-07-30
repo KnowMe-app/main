@@ -24,6 +24,7 @@ import { formatEuroSmart, getItemDisplayAmount, getSortedPackages, isFromPricedI
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
+import { Header, HeaderActions } from './AdminPageHeader';
 import {
   addCatalogChildToPackage,
   addCustomChildToPackage,
@@ -156,19 +157,6 @@ const Shell = styled.div`
   margin: 0 auto;
 `;
 
-const Header = styled.header`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-
-  @media (max-width: 560px) {
-    flex-direction: column;
-    align-items: stretch;
-  }
-`;
-
 const Eyebrow = styled.div`
   color: var(--km-accent);
   font-size: 10.5px;
@@ -186,18 +174,6 @@ const Title = styled.h1`
   letter-spacing: -0.02em;
 `;
 
-const HeaderActions = styled.div`
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-
-  @media (max-width: 560px) {
-    width: 100%;
-    justify-content: flex-start;
-  }
-`;
 
 const MiniButton = styled.button`
   border: 1px solid var(--km-border);
