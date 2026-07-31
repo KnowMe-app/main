@@ -113,7 +113,8 @@ import {
   sanitizeTechnicalPayload,
 } from './formFields';
 import { PAGE_SIZE, database } from './config';
-import { get as firebaseGet, ref } from 'firebase/database';
+import { get as firebaseGet, ref, update } from 'firebase/database';
+import { parseNewUsersJson } from 'utils/newUsersJsonImport';
 import {
   getBackendDownloadToastsEnabled,
   setBackendDownloadToastsEnabled,
@@ -1253,11 +1254,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchBarResetVersion, setSearchBarResetVersion] = useState(0);
   const searchListIsolationRef = useRef(Boolean((search || '').trim()));
   const [isExcelImporting, setIsExcelImporting] = useState(false);
+  const [isJsonImporting, setIsJsonImporting] = useState(false);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const [extendedMode, setExtendedMode] = useState(() => (
     typeof localStorage !== 'undefined' && localStorage.getItem(PROFILE_FORM_EXTENDED_MODE_KEY) === 'true'
   ));
   const excelImportInputRef = useRef(null);
+  const jsonImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
   const [showLocalIndexModal, setShowLocalIndexModal] = useState(false);
   const [pendingLocalIndexTypes, setPendingLocalIndexTypes] = useState([]);
@@ -1698,6 +1701,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     },
     [downloadJsonFile],
   );
+
+  const handleNewUsersJsonUpload = useCallback(async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setIsJsonImporting(true);
+    try {
+      const cards = parseNewUsersJson(await file.text());
+
+      // update() adds these keyed cards to newUsers instead of replacing the
+      // collection, so cards that are not present in the file remain intact.
+      await update(ref(database, 'newUsers'), cards);
+      toast.success(`Завантажено карток: ${Object.keys(cards).length}`);
+    } catch (error) {
+      console.error('[AddNewProfile] JSON import failed', error);
+      toast.error(error?.message || 'Помилка при завантаженні JSON');
+    } finally {
+      setIsJsonImporting(false);
+    }
+  }, []);
   const isMountedRef = useRef(true);
   const scheduleShortcutPresenceRef = useRef({ userId: null, hasSchedule: null });
   const hasStimulationScheduleKey = state.userId
@@ -7134,6 +7158,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 onChange={handleExcelProfilesUpload}
               />
               <input
+                ref={jsonImportInputRef}
+                type="file"
+                accept="application/json,.json"
+                style={{ display: 'none' }}
+                onChange={handleNewUsersJsonUpload}
+              />
+              <input
                 ref={localExportUsersFileInputRef}
                 type="file"
                 accept="application/json,.json"
@@ -7154,6 +7185,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 {...createLongPressHandlers('Імпортує Excel і конвертує в JSON формати')}
               >
                 {isExcelImporting ? '...' : 'XLSX'}
+              </Button>
+              <Button
+                onClick={() => jsonImportInputRef.current?.click()}
+                disabled={isJsonImporting}
+                title="Додати картки з JSON у newUsers"
+                {...createLongPressHandlers('Завантажує картки з JSON та доповнює колекцію newUsers')}
+              >
+                {isJsonImporting ? '...' : 'JSON'}
               </Button>
 
               {/* <ExcelToJson/> */}
