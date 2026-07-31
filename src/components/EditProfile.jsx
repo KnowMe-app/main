@@ -531,7 +531,12 @@ const EditProfile = () => {
       const previousComment = lastSyncedSnapshotRef.current?.myComment ?? '';
       const nextComment = updatedState.myComment ?? '';
       if (nextComment !== previousComment) {
-        await saveMyCardComment(updatedState.userId, nextComment, editorUserId);
+        try {
+          await saveMyCardComment(updatedState.userId, nextComment, editorUserId);
+        } catch (error) {
+          const details = error?.message || String(error);
+          toast.error(`Не вдалося зберегти коментар: ${details}`);
+        }
       }
     }
 

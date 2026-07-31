@@ -1071,8 +1071,23 @@ export const fetchCycleUsersData = async (
 };
 
 export const COMMENTS_ROOT_PATH = 'multiData/comments';
+const LEGACY_COMMENTS_ROOT_PATH = 'comments';
 const getCommentPath = (ownerId, cardId) =>
   [COMMENTS_ROOT_PATH, ownerId, cardId].filter(Boolean).join('/');
+const getLegacyCommentPath = (ownerId, cardId) =>
+  [LEGACY_COMMENTS_ROOT_PATH, ownerId, cardId].filter(Boolean).join('/');
+
+// Comments created before the storage-root change must remain visible. Copy a
+// legacy value forward on first read, and only remove the old record after the
+// new copy has been written successfully.
+const migrateLegacyComment = async (ownerId, cardId, value) => {
+  try {
+    await set(ref2(database, getCommentPath(ownerId, cardId)), value);
+    await remove(ref2(database, getLegacyCommentPath(ownerId, cardId)));
+  } catch (error) {
+    console.error('Error migrating legacy comment:', error);
+  }
+};
 
 // Особистий коментар адміна до картки — multiData/comments/{ownerId}/{cardId} = { text, updatedAt }.
 // Рівно один запис на пару ownerId+cardId: повторне збереження оновлює його
@@ -1126,7 +1141,10 @@ export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
     if (!ownerId || !cardId) {
       throw new Error('ownerId і cardId обовʼязкові');
     }
-    await remove(ref2(database, getCommentPath(ownerId, cardId)));
+    await Promise.all([
+      remove(ref2(database, getCommentPath(ownerId, cardId))),
+      remove(ref2(database, getLegacyCommentPath(ownerId, cardId))),
+    ]);
     return true;
   } catch (error) {
     console.error('Error deleting comment by owner:', error);
@@ -1137,7 +1155,11 @@ export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
 export const fetchUserComment = async (ownerId, cardId) => {
   try {
     if (!ownerId || !cardId) return null;
-    const snap = await get(ref2(database, getCommentPath(ownerId, cardId)));
+    let snap = await get(ref2(database, getCommentPath(ownerId, cardId)));
+    if (!snap.exists()) {
+      snap = await get(ref2(database, getLegacyCommentPath(ownerId, cardId)));
+      if (snap.exists()) await migrateLegacyComment(ownerId, cardId, snap.val());
+    }
     if (!snap.exists()) return null;
     const value = snap.val();
     return {
@@ -1170,18 +1192,27 @@ export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
     incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);
     if (!ownerId || !Array.isArray(cardIds) || !cardIds.length) return {};
-    const snap = await get(ref2(database, getCommentPath(ownerId)));
-    if (!snap.exists()) return {};
-    const ownerComments = snap.val() || {};
+    const [currentSnap, legacySnap] = await Promise.all([
+      get(ref2(database, getCommentPath(ownerId))),
+      get(ref2(database, getLegacyCommentPath(ownerId))),
+    ]);
+    const currentComments = currentSnap.exists() ? currentSnap.val() || {} : {};
+    const legacyComments = legacySnap.exists() ? legacySnap.val() || {} : {};
+    const ownerComments = { ...legacyComments, ...currentComments };
     const result = {};
+    const migrations = [];
     cardIds.forEach(cardId => {
       const value = ownerComments[cardId];
       if (!value || typeof value !== 'object') return;
+      if (!currentComments[cardId] && legacyComments[cardId]) {
+        migrations.push(migrateLegacyComment(ownerId, cardId, legacyComments[cardId]));
+      }
       result[cardId] = {
         text: typeof value.text === 'string' ? value.text : '',
         lastAction: typeof value.updatedAt === 'number' ? value.updatedAt : 0,
       };
     });
+    await Promise.all(migrations);
     return result;
   } catch (error) {
     console.error('Error fetching comments:', error);
@@ -1192,15 +1223,28 @@ export const fetchUserComments = async (ownerId, cardIds = []) => {
 export const fetchAllCommentsByCardId = async cardId => {
   try {
     if (!cardId) return [];
-    const snap = await get(ref2(database, COMMENTS_ROOT_PATH));
-    if (!snap.exists()) return [];
+    const [currentSnap, legacySnap] = await Promise.all([
+      get(ref2(database, COMMENTS_ROOT_PATH)),
+      get(ref2(database, LEGACY_COMMENTS_ROOT_PATH)),
+    ]);
+    const currentComments = currentSnap.exists() ? currentSnap.val() || {} : {};
+    const legacyComments = legacySnap.exists() ? legacySnap.val() || {} : {};
 
     const result = [];
+    const migrations = [];
 
-    Object.entries(snap.val() || {}).forEach(([ownerId, ownerComments]) => {
+    const ownerIds = new Set([...Object.keys(legacyComments), ...Object.keys(currentComments)]);
+    ownerIds.forEach(ownerId => {
+      const ownerComments = {
+        ...(legacyComments[ownerId] || {}),
+        ...(currentComments[ownerId] || {}),
+      };
       if (!ownerComments || typeof ownerComments !== 'object') return;
       const value = ownerComments[cardId];
       if (!value || typeof value !== 'object') return;
+      if (!currentComments[ownerId]?.[cardId] && legacyComments[ownerId]?.[cardId]) {
+        migrations.push(migrateLegacyComment(ownerId, cardId, legacyComments[ownerId][cardId]));
+      }
       const text = String(value.text || '').trim();
       if (!text) return;
       result.push({
@@ -1209,6 +1253,8 @@ export const fetchAllCommentsByCardId = async cardId => {
         lastAction: typeof value.updatedAt === 'number' ? value.updatedAt : 0,
       });
     });
+
+    await Promise.all(migrations);
 
     return result;
   } catch (error) {

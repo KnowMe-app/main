@@ -66,7 +66,10 @@ describe('FieldComment', () => {
   });
 
   it('saves the current draft before opening the comment backend URL', async () => {
-    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    let finishSave;
+    saveMyCardComment.mockImplementation(() => new Promise(resolve => { finishSave = resolve; }));
+    const backendWindow = { close: jest.fn(), location: { href: '' }, opener: window };
+    const openSpy = jest.spyOn(window, 'open').mockReturnValue(backendWindow);
     render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
 
     const arrow = await screen.findByLabelText('Відкрити запис коментаря у Firebase');
@@ -74,9 +77,14 @@ describe('FieldComment', () => {
     fireEvent.change(textarea, { target: { value: 'unsaved draft' } });
     fireEvent.click(arrow);
 
-    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    // The blank tab is reserved during the click's user activation, before the
+    // asynchronous Firebase save has completed.
+    expect(openSpy).toHaveBeenCalledWith('', '_blank');
+    expect(backendWindow.location.href).toBe('');
+    finishSave({ lastAction: 123 });
+    await waitFor(() => expect(backendWindow.location.href).not.toBe(''));
     expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'unsaved draft', 'admin-1');
-    const [url] = openSpy.mock.calls[0];
+    const url = backendWindow.location.href;
     expect(url).toContain('admin-1');
     expect(url).toContain('user-1');
     expect(url).toContain('multiData');
@@ -87,7 +95,8 @@ describe('FieldComment', () => {
   it('shows a toast and does not open the backend URL when saving fails', async () => {
     const error = new Error('PERMISSION_DENIED');
     saveMyCardComment.mockRejectedValue(error);
-    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    const backendWindow = { close: jest.fn(), location: { href: '' }, opener: window };
+    const openSpy = jest.spyOn(window, 'open').mockReturnValue(backendWindow);
     render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
 
     fireEvent.click(await screen.findByLabelText('Відкрити запис коментаря у Firebase'));
@@ -97,7 +106,9 @@ describe('FieldComment', () => {
         'Не вдалося зберегти коментар: PERMISSION_DENIED'
       );
     });
-    expect(openSpy).not.toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledWith('', '_blank');
+    expect(backendWindow.close).toHaveBeenCalledTimes(1);
+    expect(backendWindow.location.href).toBe('');
     openSpy.mockRestore();
   });
 });

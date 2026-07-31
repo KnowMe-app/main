@@ -112,9 +112,14 @@ export const FieldComment = ({ userData, extendedMode = false }) => {
           onMouseDown={event => event.preventDefault()}
           onClick={async event => {
             event.stopPropagation();
+            const backendWindow = window.open('', '_blank');
+            if (backendWindow) backendWindow.opener = null;
             const saved = await persist(textareaRef.current?.value ?? '');
-            if (!saved) return;
-            window.open(buildCommentBackendUrl(ownerId, cardId), '_blank', 'noopener,noreferrer');
+            if (!saved) {
+              backendWindow?.close();
+              return;
+            }
+            if (backendWindow) backendWindow.location.href = buildCommentBackendUrl(ownerId, cardId);
           }}
           style={{
             position: 'absolute',

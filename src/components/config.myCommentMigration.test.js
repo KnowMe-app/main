@@ -42,4 +42,11 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
     expect(fnBody).not.toContain('orderByChild');
     expect(fnBody).not.toContain('equalTo');
   });
+
+  it('falls back to the legacy comments root and migrates legacy values on read', () => {
+    expect(source).toContain("const LEGACY_COMMENTS_ROOT_PATH = 'comments';");
+    expect(source).toContain('getLegacyCommentPath(ownerId, cardId)');
+    expect(source).toContain('migrateLegacyComment(ownerId, cardId, snap.val())');
+    expect(source).toContain('const ownerComments = { ...legacyComments, ...currentComments };');
+  });
 });
