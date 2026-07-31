@@ -143,6 +143,7 @@ import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllNewUsersFilterSetIndexes } from 'utils/newUsersFilterSetsIndex';
 import { mergeUserCollectionData } from 'utils/mergeUserCollections';
+import { buildFullCardKeyMap } from 'utils/cardKeyMap';
 import {
   LAST_ACTION2_FILTER,
   LAST_ACTION2_FILTER_STORAGE_KEY,
@@ -5946,40 +5947,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [pendingLocalNewUsersData, pendingLocalUsersData, pendingLocalIndexTypes, runLocalSearchIndexesWithCollections]);
 
   const buildFullKeySetFromCollections = useCallback(() => {
-    if (!pendingLocalUsersData || !pendingLocalNewUsersData) {
-      toast.error('Спочатку оберіть обидва локальні файли: users.json і newUsers.json');
+    if (!pendingLocalUsersData && !pendingLocalNewUsersData) {
+      toast.error('Спочатку оберіть хоча б один файл: users.json або newUsers.json');
       return;
     }
 
-    const keySet = new Set();
-    const addKeysDeep = (value, parentKey = '') => {
-      if (Array.isArray(value)) {
-        if (parentKey) keySet.add(parentKey);
-        value.forEach(item => addKeysDeep(item, parentKey ? `${parentKey}[]` : '[]'));
-        return;
-      }
-
-      if (value && typeof value === 'object') {
-        Object.entries(value).forEach(([key, nestedValue]) => {
-          const path = parentKey ? `${parentKey}.${key}` : key;
-          keySet.add(path);
-          addKeysDeep(nestedValue, path);
-        });
-      }
-    };
-
-    [pendingLocalUsersData, pendingLocalNewUsersData].forEach(collection => {
-      Object.values(collection || {}).forEach(card => addKeysDeep(card));
-    });
-
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const keys = Array.from(keySet).sort((a, b) => a.localeCompare(b, 'uk'));
+    const keyMap = buildFullCardKeyMap({
+      users: pendingLocalUsersData,
+      newUsers: pendingLocalNewUsersData,
+    });
     downloadJsonFile(`full-card-keys-${stamp}.json`, {
       createdAt: new Date().toISOString(),
-      totalKeys: keys.length,
-      keys,
+      ...keyMap,
     });
-    toast.success(`Згенеровано файл з повним набором ключів (${keys.length})`);
+    toast.success(`Знайдено ${keyMap.totalKeys} ключів у ${keyMap.totalCards} картках`);
   }, [downloadJsonFile, pendingLocalNewUsersData, pendingLocalUsersData]);
 
   const longPressTimerRef = useRef(null);
@@ -7441,7 +7423,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 4) Побудувати і скачати JSON індекси searchId/searchKey
               </button>
               <button type="button" onClick={buildFullKeySetFromCollections}>
-                5) Сформувати JSON з повним набором ключів карток
+                5) Перебрати всі картки й знайти повну карту ключів
               </button>
               <button type="button" onClick={() => setShowLocalIndexModal(false)}>
                 Скасувати
