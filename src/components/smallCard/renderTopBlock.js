@@ -1299,7 +1299,8 @@ export const TopBlock = ({
   overlayFieldAdditions = {},
   onSubmitHistorySnapshot = null,
   stimulationScheduleToggle = null,
-  // Batch 26 §8: shows FieldComment's backend-navigation arrow (comments/{ownerId}/{cardId}) when
+  // Batch 26 §8: shows FieldComment's backend-navigation arrow
+  // (multiData/comments/{ownerId}/{cardId}) when
   // on - off by default so a caller that hasn't wired up the toggle (no regression) keeps today's
   // arrow-free look; AddNewProfile.jsx passes its own persisted toggle state.
   extendedMode = false

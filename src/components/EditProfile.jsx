@@ -755,7 +755,7 @@ const EditProfile = () => {
   }, [state, userId]);
 
   // myComment no longer lives on the card itself — it's a per-admin note
-  // in comments/{ownerId}/{cardId} (setUserComment/fetchUserComment). Once the card is
+  // in multiData/comments/{ownerId}/{cardId} (setUserComment/fetchUserComment). Once the card is
   // loaded, overlay the current admin's own comment onto state.myComment so
   // the existing ProfileForm textarea keeps working exactly as before, and
   // mirror it into lastSyncedSnapshotRef so remoteUpdate's change-detection

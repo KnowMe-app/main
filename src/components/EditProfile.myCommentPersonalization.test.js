@@ -9,7 +9,7 @@ describe('EditProfile treats myComment as the current admin\'s personal note', (
     expect(source).toContain('saveMyCardComment,');
   });
 
-  it('seeds state.myComment from the current admin\'s own comments/{ownerId}/{cardId} entry on load', () => {
+  it('seeds state.myComment from the current admin\'s own multiData/comments/{ownerId}/{cardId} entry on load', () => {
     const seedEffectBody = source.slice(
       source.indexOf("if (!userId || !currentUid || !isAdmin || !dataSource) return;"),
       source.indexOf('}, [userId, currentUid, isAdmin, dataSource]);')
