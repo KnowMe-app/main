@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { FaArrowRight } from 'react-icons/fa';
 import { useAutoResize } from '../../hooks/useAutoResize';
-import { COMMENTS_ROOT_PATH, auth, fetchUserComment, saveMyCardComment } from '../config';
+import {
+  COMMENTS_ROOT_PATH,
+  auth,
+  fetchUserComment,
+  migrateMyCardComment,
+  saveMyCardComment,
+} from '../config';
 import toast from 'react-hot-toast';
 
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
@@ -31,36 +37,53 @@ const buildCommentBackendUrl = (ownerId, cardId) => {
 
 // Персональний коментар поточного адміна до картки — зберігається в
 // multiData/comments/{ownerId}/{cardId}, а не прямо в самій картці (users/newUsers).
-export const FieldComment = ({ userData, extendedMode = false }) => {
+export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMigrated }) => {
   const textareaRef = useRef(null);
   const [text, setText] = useState('');
   const autoResize = useAutoResize(textareaRef, text);
   const ownerId = auth.currentUser?.uid;
   const cardId = userData.userId;
+  const legacyComment = String(userData.myComment || '').trim();
+  const initialTextRef = useRef('');
+  const hasLegacyCommentRef = useRef(Boolean(legacyComment));
 
   useEffect(() => {
     let cancelled = false;
-    setText('');
+    setText(legacyComment);
+    initialTextRef.current = legacyComment;
+    hasLegacyCommentRef.current = Boolean(legacyComment);
     if (!ownerId || !cardId) return undefined;
 
     fetchUserComment(ownerId, cardId).then(existing => {
       if (cancelled) return;
-      setText(existing?.text || '');
+      const ownComment = String(existing?.text || '').trim();
+      const combined = [legacyComment, ownComment].filter(Boolean).join('\n\n');
+      setText(combined);
+      initialTextRef.current = combined;
     });
 
     return () => {
       cancelled = true;
     };
-  }, [ownerId, cardId]);
+  }, [ownerId, cardId, legacyComment]);
 
-  const persist = async value => {
+  const persist = async (value, force = false) => {
     if (!ownerId || !cardId) {
       toast.error('Не вдалося зберегти коментар: користувач або картка не визначені');
       return false;
     }
 
+    if (!force && value === initialTextRef.current) return true;
+
     try {
-      await saveMyCardComment(cardId, value, ownerId);
+      if (hasLegacyCommentRef.current) {
+        await migrateMyCardComment(cardId, value, ownerId);
+        hasLegacyCommentRef.current = false;
+        onLegacyCommentMigrated?.();
+      } else {
+        await saveMyCardComment(cardId, value, ownerId);
+      }
+      initialTextRef.current = value;
       return true;
     } catch (error) {
       const details = error?.message || String(error);
@@ -112,7 +135,7 @@ export const FieldComment = ({ userData, extendedMode = false }) => {
           onMouseDown={event => event.preventDefault()}
           onClick={async event => {
             event.stopPropagation();
-            const saved = await persist(textareaRef.current?.value ?? '');
+            const saved = await persist(textareaRef.current?.value ?? '', true);
             if (!saved) return;
             window.open(buildCommentBackendUrl(ownerId, cardId), '_blank', 'noopener,noreferrer');
           }}
