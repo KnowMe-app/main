@@ -1088,7 +1088,10 @@ export const setUserComment = async (cardId, text, ownerId) => {
     return { lastAction: updatedAt };
   } catch (error) {
     console.error('Error setting comment:', error);
-    return null;
+    // A comment is saved outside the card payload, so callers cannot infer a
+    // failed write from the regular profile save. Keep the Firebase error
+    // intact (notably `PERMISSION_DENIED`) so the comment field can surface it.
+    throw error;
   }
 };
 
@@ -1150,7 +1153,10 @@ export const saveMyCardComment = async (cardId, text, ownerId) => {
   const trimmed = (text || '').trim();
   if (!trimmed) {
     const commentsOwnerId = ownerId || auth.currentUser?.uid;
-    await deleteCommentByOwner({ ownerId: commentsOwnerId, cardId });
+    const deleted = await deleteCommentByOwner({ ownerId: commentsOwnerId, cardId });
+    if (!deleted) {
+      throw new Error('Не вдалося видалити коментар');
+    }
     return null;
   }
   return setUserComment(cardId, text, ownerId);

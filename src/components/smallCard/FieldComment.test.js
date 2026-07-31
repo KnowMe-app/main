@@ -1,6 +1,10 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
+jest.mock('react-hot-toast', () => ({
+  error: jest.fn(),
+}));
+
 jest.mock('../config', () => ({
   auth: { currentUser: { uid: 'admin-1' } },
   fetchUserComment: jest.fn(),
@@ -8,6 +12,7 @@ jest.mock('../config', () => ({
 }));
 
 const { fetchUserComment, saveMyCardComment } = require('../config');
+const toast = require('react-hot-toast');
 const { FieldComment } = require('./FieldComment');
 
 describe('FieldComment', () => {
@@ -15,6 +20,8 @@ describe('FieldComment', () => {
     fetchUserComment.mockReset();
     saveMyCardComment.mockReset();
     fetchUserComment.mockResolvedValue(null);
+    saveMyCardComment.mockResolvedValue({ lastAction: 123 });
+    toast.error.mockReset();
   });
 
   it("loads the current admin's own comment for this card, not a card field", async () => {
@@ -57,18 +64,38 @@ describe('FieldComment', () => {
     expect(await screen.findByLabelText('Відкрити запис коментаря у Firebase')).toBeTruthy();
   });
 
-  it('the backend-navigation arrow opens the comment\'s own comments/{ownerId}/{cardId} console URL', async () => {
+  it('saves the current draft before opening the comment backend URL', async () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
     render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
 
     const arrow = await screen.findByLabelText('Відкрити запис коментаря у Firebase');
+    const textarea = screen.getByPlaceholderText('Додайте свій коментар');
+    fireEvent.change(textarea, { target: { value: 'unsaved draft' } });
     fireEvent.click(arrow);
 
-    expect(openSpy).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'unsaved draft', 'admin-1');
     const [url] = openSpy.mock.calls[0];
     expect(url).toContain('admin-1');
     expect(url).toContain('user-1');
     expect(url).toContain('comments');
+    openSpy.mockRestore();
+  });
+
+  it('shows a toast and does not open the backend URL when saving fails', async () => {
+    const error = new Error('PERMISSION_DENIED');
+    saveMyCardComment.mockRejectedValue(error);
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
+
+    fireEvent.click(await screen.findByLabelText('Відкрити запис коментаря у Firebase'));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        'Не вдалося зберегти коментар: PERMISSION_DENIED'
+      );
+    });
+    expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
   });
 });
