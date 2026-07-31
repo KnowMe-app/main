@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FaArrowRight } from 'react-icons/fa';
 import { useAutoResize } from '../../hooks/useAutoResize';
-import { auth, fetchUserComment, saveMyCardComment } from '../config';
+import { COMMENTS_ROOT_PATH, auth, fetchUserComment, saveMyCardComment } from '../config';
 import toast from 'react-hot-toast';
 
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
@@ -18,19 +18,19 @@ const getFirebaseRealtimeDatabaseName = () => {
 };
 
 // Same backend-navigation shortcut ProfileForm's other fields already have (batch 26 §8) - jumps
-// straight to this comment's own comments/{ownerId}/{cardId} record in the Firebase console.
+// straight to this comment's own multiData/comments/{ownerId}/{cardId} record in Firebase.
 const buildCommentBackendUrl = (ownerId, cardId) => {
   if (!ownerId || !cardId) return '';
   const projectId = getFirebaseConsoleProjectId();
   const databaseName = getFirebaseRealtimeDatabaseName();
-  const encodedPath = ['comments', ownerId, cardId]
+  const encodedPath = [...COMMENTS_ROOT_PATH.split('/'), ownerId, cardId]
     .map(segment => `~2F${encodeURIComponent(segment)}`)
     .join('');
   return `https://console.firebase.google.com/u/0/project/${projectId}/database/${databaseName}/data/${encodedPath}`;
 };
 
 // Персональний коментар поточного адміна до картки — зберігається в
-// comments/{ownerId}/{cardId}, а не прямо в самій картці (users/newUsers).
+// multiData/comments/{ownerId}/{cardId}, а не прямо в самій картці (users/newUsers).
 export const FieldComment = ({ userData, extendedMode = false }) => {
   const textareaRef = useRef(null);
   const [text, setText] = useState('');

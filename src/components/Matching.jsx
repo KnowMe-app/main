@@ -82,6 +82,7 @@ import {
   searchUsersOnly,
   fetchUserComments,
   saveMyCardComment,
+  COMMENTS_ROOT_PATH,
   fetchUsersByIds,
   database,
   auth,
@@ -2033,7 +2034,7 @@ const Matching = () => {
               paths: accessOwnerIds.map(sharedOwnerId => ({
                 favorites: `multiData/favorites/${sharedOwnerId}`,
                 dislikes: `multiData/dislikes/${sharedOwnerId}`,
-                comments: `comments/${sharedOwnerId}`,
+                comments: `${COMMENTS_ROOT_PATH}/${sharedOwnerId}`,
               })),
             });
             setMultiDataOwnerIds(resolvedOwnerIds);

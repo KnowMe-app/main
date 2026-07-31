@@ -6,6 +6,7 @@ jest.mock('react-hot-toast', () => ({
 }));
 
 jest.mock('../config', () => ({
+  COMMENTS_ROOT_PATH: 'multiData/comments',
   auth: { currentUser: { uid: 'admin-1' } },
   fetchUserComment: jest.fn(),
   saveMyCardComment: jest.fn(),
@@ -78,6 +79,7 @@ describe('FieldComment', () => {
     const [url] = openSpy.mock.calls[0];
     expect(url).toContain('admin-1');
     expect(url).toContain('user-1');
+    expect(url).toContain('multiData');
     expect(url).toContain('comments');
     openSpy.mockRestore();
   });
