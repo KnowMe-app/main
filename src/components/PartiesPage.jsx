@@ -869,16 +869,40 @@ const TechnicalSection = ({ catalog, setCatalog }) => {
   );
 };
 
+// The resolved case-context object deliberately aliases the same clinic/shipment/ivf data under
+// several placeholder-path prefixes at once (documentsCatalogUtils' "Програма ДРТ" variable-picker
+// group comment explains why: {{sourceClinic...}} and {{embryoShipment.sourceClinic...}} are two
+// different placeholder strings a template author might type, both resolving to the same clinic).
+// That's exactly right for the Documents Builder's own "insert variable" picker, which needs every
+// insertable path - but it makes this read-only case summary print the same clinic/shipment/ivf
+// data two or three times over. Trimmed here, in the read view's own copy of the leaf list only -
+// VARIABLE_PICKER_GROUPS/buildVariablePickerGroups itself (and the real variable picker that still
+// needs every alias) are untouched.
+const READ_VIEW_REDUNDANT_PATH_PREFIXES = [
+  'artProgram.embryoShipment.',
+  'artProgram.transferAttempt.',
+  'artProgram.ivf.',
+  'artProgram.hcgTest.',
+  'artProgram.ultrasound.',
+  'embryoShipment.sourceClinic.',
+  'embryoShipment.destinationClinic.',
+];
+const dedupeReadViewGroups = groups => groups.map(group => ({
+  ...group,
+  items: group.items.filter(item => !READ_VIEW_REDUNDANT_PATH_PREFIXES.some(prefix => item.path.startsWith(prefix))),
+}));
+
 // Default read-mode view (spec batch 21 §10): the last-selected case's data only, grouped by role
-// exactly like the Documents Builder's variable picker (buildVariablePickerGroups reused as-is, so
-// the two stay in sync automatically as new party types/groups are added). "Create new case" sits
-// above the case data per spec; picking a different case (or creating one) updates the persisted
-// last-selected case, so switching into Edit mode and back never loses it.
+// exactly like the Documents Builder's variable picker (buildVariablePickerGroups reused as the
+// base, so the two stay in sync automatically as new party types/groups are added - see
+// dedupeReadViewGroups above for the one place this view trims that shared list). "Create new
+// case" sits above the case data per spec; picking a different case (or creating one) updates the
+// persisted last-selected case, so switching into Edit mode and back never loses it.
 const CaseReadView = ({ catalog, selectedCaseId, onSelectCase, onCreateCase }) => {
   const cases = catalog.cases;
   const selectedCase = cases.find(item => String(item.id) === String(selectedCaseId));
   const context = selectedCase ? resolveCaseContext(catalog, selectedCase.id) : null;
-  const groups = context ? buildVariablePickerGroups(context) : [];
+  const groups = context ? dedupeReadViewGroups(buildVariablePickerGroups(context)) : [];
 
   return (
     <Panel>

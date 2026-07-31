@@ -26,6 +26,7 @@ import {
 } from './budgetCatalogUtils';
 import { setPdfAgencyConfig } from './pdfTheme';
 import PageNavMenu from './PageNavMenu';
+import { Header, HeaderActions } from './AdminPageHeader';
 
 const INCLUDED_PREVIEW_LIMIT = 6;
 const POPULAR_PACKAGE_ID = '3';
@@ -94,18 +95,6 @@ const Shell = styled.div`
   margin: 0 auto;
 `;
 
-const Header = styled.header`
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 22px;
-
-  @media (max-width: 640px) {
-    flex-direction: column;
-  }
-`;
-
 const Eyebrow = styled.div`
   color: var(--km-accent);
   font-size: 12px;
@@ -120,19 +109,6 @@ const Title = styled.h1`
   font-size: clamp(30px, 7vw, 54px);
   line-height: 0.98;
   letter-spacing: -0.055em;
-`;
-
-const HeaderActions = styled.div`
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-
-  @media (max-width: 640px) {
-    width: 100%;
-    justify-content: flex-start;
-  }
 `;
 
 const SoftButton = styled.button`

@@ -14,7 +14,6 @@ import BudgetPage from './BudgetPage';
 import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
-import DocumentStyleEditorPage from './DocumentStyleEditorPage';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
 import { resolveAccess } from 'utils/accessLevel';
@@ -109,7 +108,6 @@ export const App = () => {
       {canAccessInvoices && <Route path="/invoices" element={<InvoiceBuilderPage isAdmin={canAccessInvoices} />} />}
       {canAccessInvoices && <Route path="/documents" element={<DocumentsPage isAdmin={canAccessInvoices} />} />}
       {canAccessInvoices && <Route path="/parties" element={<PartiesPage isAdmin={canAccessInvoices} />} />}
-      {canAccessInvoices && <Route path="/document-styles" element={<DocumentStyleEditorPage isAdmin={canAccessInvoices} />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );

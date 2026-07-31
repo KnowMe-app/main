@@ -2062,7 +2062,9 @@ const DocumentsPage = ({ isAdmin }) => {
   // §2/§3) and never reads the legacy per-document format override at all - offering it in this
   // picker would let "Save for this document" overwrite that clean base style with the unrelated
   // DEFAULT_DOC_FORMATTING shape (fontSize/marginTopCm/...) the legacy renderer expects there.
-  // Style Editor is where a layoutV2 document's own format/styles are edited instead.
+  // A layoutV2 document's own format/styles are edited on the template itself, not through this
+  // per-document override picker (batch 29 §2: the standalone Style Editor page this used to point
+  // to was removed, styleSheet/page stay editable only via the template JSON).
   const formatOverrideEligibleDocuments = orderedDocuments.filter(template => !isLayoutV2Template(template));
   // The row list only (never the Format section's "Format for: ..." dropdown, which always has to
   // offer every document regardless of what's currently filtered on screen).

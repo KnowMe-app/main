@@ -1,13 +1,14 @@
-// Shared "⋮" page switcher for the UKRCOM admin pages (Documents / Invoice / Budget / Parties /
-// Style Editor), per the Documents-page spec §8. Rendered inside each page's header actions, as
-// the first action button (batch 26 §11 - standardized placement, every page); relies on the
-// page-scoped --km-* palette variables every one of those pages defines.
+// Shared "⋮" page switcher for the UKRCOM admin pages (Documents / Invoice / Budget / Parties),
+// per the Documents-page spec §8. Rendered inside each page's header actions, as the first action
+// button (batch 26 §11 - standardized placement, every page); relies on the page-scoped --km-*
+// palette variables every one of those pages defines.
 //
-// Batch 26 §10: lists every existing top-level screen, not just the five UKRCOM admin pages, so
+// Batch 26 §10: lists every existing top-level screen, not just the four UKRCOM admin pages, so
 // this menu offers the same set of destinations everywhere it appears - addNewProfile/matching/
 // my-profile/flow used to be reachable only from ProfileDotsMenu (the profile pages' own "⋮"),
-// leaving an admin on Documents/Invoice/Budget/Parties/Style Editor with no way back to them
-// short of typing a URL.
+// leaving an admin on Documents/Invoice/Budget/Parties with no way back to them short of typing a
+// URL. (batch 29 §2: the Style Editor destination that used to sit at the end of this list was
+// removed along with the page itself.)
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
@@ -21,7 +22,6 @@ const NAV_LINKS = [
   { path: '/invoices', label: 'Invoice' },
   { path: '/documents', label: 'Documents' },
   { path: '/parties', label: 'Parties' },
-  { path: '/document-styles', label: 'Style Editor' },
 ];
 
 const Wrap = styled.div`

@@ -139,7 +139,10 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     fireEvent.click(screen.getByRole('button', { name: /додати дитину/i }));
 
     expect(screen.getAllByText('Дитина 2').length).toBeGreaterThan(0);
-    expect(screen.getByText('7/12')).toBeInTheDocument();
+    // Childbirth no longer has its own badge (batch 29 §6 folded it into the "РАЦС" group
+    // alongside birthRegistrationConsent/geneticAffinityCertificate) - 7/12 (childbirth alone)
+    // becomes 7/16 once those two blank documents' 4 empty fields are added to the same counter.
+    expect(screen.getByText('7/16')).toBeInTheDocument();
   });
 
   it('removing a child drops its card', async () => {
@@ -188,8 +191,12 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     await screen.findByLabelText('Пологовий будинок');
 
     fireEvent.change(screen.getByLabelText('Номер (укр)'), { target: { value: 'Д-1' } });
-    fireEvent.change(screen.getByLabelText('Дата договору'), { target: { value: '2026-05-01' } });
-    fireEvent.click(screen.getByLabelText('Нотаріус'));
+    // "Дата договору" also labels medicalServicesAgreement's own date field now that both sit in
+    // the same always-open "Підготовка" group (batch 29 §6) - surrogacyAgreement's copy is first.
+    fireEvent.change(screen.getAllByLabelText('Дата договору')[0], { target: { value: '2026-05-01' } });
+    // Same reasoning as above - maritalStatusDeclaration/legalServicesDisclaimer also have their
+    // own "Нотаріус" picker field in the same open group; surrogacyAgreement's is first.
+    fireEvent.click(screen.getAllByLabelText('Нотаріус')[0]);
     fireEvent.click(await screen.findByRole('button', { name: 'Іванова Г.І.' }));
     fireEvent.click(screen.getByRole('button', { name: 'Застосувати' }));
 
