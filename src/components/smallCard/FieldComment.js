@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FaArrowRight } from 'react-icons/fa';
 import { useAutoResize } from '../../hooks/useAutoResize';
 import { auth, fetchUserComment, saveMyCardComment } from '../config';
+import toast from 'react-hot-toast';
 
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
 const getFirebaseConsoleProjectId = () => process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
@@ -52,9 +53,20 @@ export const FieldComment = ({ userData, extendedMode = false }) => {
     };
   }, [ownerId, cardId]);
 
-  const persist = value => {
-    if (!ownerId || !cardId) return;
-    saveMyCardComment(cardId, value, ownerId);
+  const persist = async value => {
+    if (!ownerId || !cardId) {
+      toast.error('Не вдалося зберегти коментар: користувач або картка не визначені');
+      return false;
+    }
+
+    try {
+      await saveMyCardComment(cardId, value, ownerId);
+      return true;
+    } catch (error) {
+      const details = error?.message || String(error);
+      toast.error(`Не вдалося зберегти коментар: ${details}`);
+      return false;
+    }
   };
 
   const showBackendShortcut = extendedMode && Boolean(ownerId && cardId);
@@ -79,7 +91,7 @@ export const FieldComment = ({ userData, extendedMode = false }) => {
           autoResize(e.target);
         }}
         onBlur={() => {
-          persist(textareaRef.current?.value ?? '');
+          void persist(textareaRef.current?.value ?? '');
         }}
         style={{
           // marginLeft: '10px',
@@ -98,8 +110,10 @@ export const FieldComment = ({ userData, extendedMode = false }) => {
           aria-label="Відкрити запис коментаря у Firebase"
           title="Відкрити запис коментаря у Firebase"
           onMouseDown={event => event.preventDefault()}
-          onClick={event => {
+          onClick={async event => {
             event.stopPropagation();
+            const saved = await persist(textareaRef.current?.value ?? '');
+            if (!saved) return;
             window.open(buildCommentBackendUrl(ownerId, cardId), '_blank', 'noopener,noreferrer');
           }}
           style={{
@@ -122,10 +136,10 @@ export const FieldComment = ({ userData, extendedMode = false }) => {
         <button
           type="button"
           aria-label="Очистити коментар"
-          onClick={event => {
+          onClick={async event => {
             event.stopPropagation();
             setText('');
-            persist('');
+            await persist('');
           }}
           style={{
             position: 'absolute',
