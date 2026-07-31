@@ -28,5 +28,7 @@ describe('EditProfile treats myComment as the current admin\'s personal note', (
     );
     expect(remoteUpdateBody).toContain('if (nextComment !== previousComment)');
     expect(remoteUpdateBody).toContain('await saveMyCardComment(updatedState.userId, nextComment, editorUserId);');
+    expect(remoteUpdateBody).toContain('commentSaveFailed = true;');
+    expect(remoteUpdateBody).toContain("myComment: lastSyncedSnapshotRef.current?.myComment ?? ''");
   });
 });

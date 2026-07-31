@@ -510,6 +510,7 @@ const EditProfile = () => {
   async function remoteUpdate({ updatedState, overwrite, delCondition, deletedKeys = [] }) {
     const editorUserId = auth.currentUser?.uid;
     const canWriteMain = isAdminUid(editorUserId);
+    let commentSaveFailed = false;
 
     if (!canWriteMain) {
       const canonical =
@@ -531,7 +532,15 @@ const EditProfile = () => {
       const previousComment = lastSyncedSnapshotRef.current?.myComment ?? '';
       const nextComment = updatedState.myComment ?? '';
       if (nextComment !== previousComment) {
-        await saveMyCardComment(updatedState.userId, nextComment, editorUserId);
+        try {
+          await saveMyCardComment(updatedState.userId, nextComment, editorUserId);
+        } catch (error) {
+          // Keep the previous baseline so the same draft is retried on the
+          // next profile sync instead of being marked as successfully saved.
+          commentSaveFailed = true;
+          const details = error?.message || String(error);
+          toast.error(`Не вдалося зберегти коментар: ${details}`);
+        }
       }
     }
 
@@ -635,7 +644,10 @@ const EditProfile = () => {
       }
     }
 
-    return prepareSyncedSnapshot(updatedState, deletedKeys);
+    const syncedState = commentSaveFailed
+      ? { ...updatedState, myComment: lastSyncedSnapshotRef.current?.myComment ?? '' }
+      : updatedState;
+    return prepareSyncedSnapshot(syncedState, deletedKeys);
   }
 
 

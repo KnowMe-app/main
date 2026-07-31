@@ -5865,8 +5865,13 @@ const Matching = () => {
                       onCommentBlur={async () => {
                         if (auth.currentUser) {
                           const text = comments[user.userId] || '';
-                          const res = await saveMyCardComment(user.userId, text, ownerId);
-                          setLocalComment(ownerId, user.userId, text, res?.lastAction);
+                          try {
+                            const res = await saveMyCardComment(user.userId, text, ownerId);
+                            setLocalComment(ownerId, user.userId, text, res?.lastAction);
+                          } catch (error) {
+                            const details = error?.message || String(error);
+                            toast.error(`Не вдалося зберегти коментар: ${details}`);
+                          }
                         }
                       }}
                       onAdminEdit={() => {
