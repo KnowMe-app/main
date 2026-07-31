@@ -1166,6 +1166,34 @@ export const saveMyCardComment = async (cardId, text, ownerId) => {
   return setUserComment(cardId, text, ownerId);
 };
 
+// Atomically moves an edited legacy card comment to the current admin's
+// personal multiData record. Removing both possible card locations is safe:
+// a card has a single canonical source, while old imports can leave a stale
+// duplicate behind in the other collection.
+export const migrateMyCardComment = async (cardId, text, ownerId) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+  if (!cardId) throw new Error('cardId обовʼязковий');
+
+  const commentsOwnerId = ownerId || user.uid;
+  const trimmed = String(text || '').trim();
+  const updates = {
+    [`users/${cardId}/myComment`]: null,
+    [`newUsers/${cardId}/myComment`]: null,
+  };
+
+  if (trimmed) {
+    const updatedAt = Date.now();
+    updates[getCommentPath(commentsOwnerId, cardId)] = { text, updatedAt };
+    await update(ref2(database), updates);
+    return { lastAction: updatedAt };
+  }
+
+  updates[getCommentPath(commentsOwnerId, cardId)] = null;
+  await update(ref2(database), updates);
+  return null;
+};
+
 export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
     incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);

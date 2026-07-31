@@ -2134,7 +2134,24 @@ export const TopBlock = ({
       </div>
       <div style={commentsSectionStyle}>
         {fieldWriter({ userData: cardData, setUsers, setState, submitOptions, updateContext })}
-        <FieldComment userData={cardData} extendedMode={extendedMode} />
+        <FieldComment
+          userData={cardData}
+          extendedMode={extendedMode}
+          onLegacyCommentMigrated={() => {
+            const removeLegacyComment = user => {
+              if (!user) return user;
+              const nextUser = { ...user };
+              delete nextUser.myComment;
+              return nextUser;
+            };
+            if (typeof setUsers === 'function') {
+              setUsers(prev => updateUserInState(prev, cardData.userId, removeLegacyComment));
+            }
+            if (typeof setState === 'function' && !isFromListOfUsers) {
+              setState(prev => removeLegacyComment(prev));
+            }
+          }}
+        />
         {otherAdminsComments.map(comment => (
           <div key={comment.commentId || `${comment.authorId}-${comment.text}`} style={multiCommentRowStyle}>
             <button
