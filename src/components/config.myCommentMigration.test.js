@@ -42,4 +42,23 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
     expect(fnBody).not.toContain('orderByChild');
     expect(fnBody).not.toContain('equalTo');
   });
+
+  it('uses a read-only legacy fallback without risking concurrent comment overwrites', () => {
+    const singleReadBody = source.slice(
+      source.indexOf('export const fetchUserComment '),
+      source.indexOf('export const saveMyCardComment')
+    );
+    const bulkReadBody = source.slice(
+      source.indexOf('export const fetchUserComments'),
+      source.indexOf('const buildFlowRef')
+    );
+
+    expect(source).toContain("export const LEGACY_COMMENTS_ROOT_PATH = 'comments';");
+    expect(singleReadBody).toContain('getLegacyCommentPath(ownerId, cardId)');
+    expect(singleReadBody).not.toContain('[getCommentPath(ownerId, cardId)]: value');
+    expect(bulkReadBody).toContain('getLegacyCommentPath(ownerId)');
+    expect(bulkReadBody).toContain('LEGACY_COMMENTS_ROOT_PATH');
+    expect(bulkReadBody).not.toContain('await update(ref2(database), migrations)');
+    expect(bulkReadBody).not.toContain('Promise.all([');
+  });
 });

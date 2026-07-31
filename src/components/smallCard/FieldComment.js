@@ -135,9 +135,16 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
           onMouseDown={event => event.preventDefault()}
           onClick={async event => {
             event.stopPropagation();
+            // Reserve the tab while this trusted click still has transient
+            // user activation; Firebase writes may outlive the popup window.
+            const backendWindow = window.open('about:blank', '_blank');
+            if (backendWindow) backendWindow.opener = null;
             const saved = await persist(textareaRef.current?.value ?? '', true);
-            if (!saved) return;
-            window.open(buildCommentBackendUrl(ownerId, cardId), '_blank', 'noopener,noreferrer');
+            if (!saved) {
+              backendWindow?.close();
+              return;
+            }
+            if (backendWindow) backendWindow.location.href = buildCommentBackendUrl(ownerId, cardId);
           }}
           style={{
             position: 'absolute',

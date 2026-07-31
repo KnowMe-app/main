@@ -89,7 +89,8 @@ describe('FieldComment', () => {
   });
 
   it('saves the current draft before opening the comment backend URL', async () => {
-    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    const backendWindow = { location: { href: '' }, close: jest.fn(), opener: window };
+    const openSpy = jest.spyOn(window, 'open').mockReturnValue(backendWindow);
     render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
 
     const arrow = await screen.findByLabelText('Відкрити запис коментаря у Firebase');
@@ -98,19 +99,23 @@ describe('FieldComment', () => {
     fireEvent.click(arrow);
 
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
+    expect(openSpy).toHaveBeenCalledWith('about:blank', '_blank');
     expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'unsaved draft', 'admin-1');
-    const [url] = openSpy.mock.calls[0];
+    const url = backendWindow.location.href;
     expect(url).toContain('admin-1');
     expect(url).toContain('user-1');
     expect(url).toContain('multiData');
     expect(url).toContain('comments');
+    expect(backendWindow.opener).toBeNull();
+    expect(backendWindow.close).not.toHaveBeenCalled();
     openSpy.mockRestore();
   });
 
   it('shows a toast and does not open the backend URL when saving fails', async () => {
     const error = new Error('PERMISSION_DENIED');
     saveMyCardComment.mockRejectedValue(error);
-    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    const backendWindow = { location: { href: '' }, close: jest.fn(), opener: window };
+    const openSpy = jest.spyOn(window, 'open').mockReturnValue(backendWindow);
     render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
 
     fireEvent.click(await screen.findByLabelText('Відкрити запис коментаря у Firebase'));
@@ -120,7 +125,9 @@ describe('FieldComment', () => {
         'Не вдалося зберегти коментар: PERMISSION_DENIED'
       );
     });
-    expect(openSpy).not.toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledWith('about:blank', '_blank');
+    expect(backendWindow.location.href).toBe('');
+    expect(backendWindow.close).toHaveBeenCalledTimes(1);
     openSpy.mockRestore();
   });
 });

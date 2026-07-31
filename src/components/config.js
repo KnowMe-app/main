@@ -1071,8 +1071,15 @@ export const fetchCycleUsersData = async (
 };
 
 export const COMMENTS_ROOT_PATH = 'multiData/comments';
+export const LEGACY_COMMENTS_ROOT_PATH = 'comments';
 const getCommentPath = (ownerId, cardId) =>
   [COMMENTS_ROOT_PATH, ownerId, cardId].filter(Boolean).join('/');
+const getLegacyCommentPath = (ownerId, cardId) =>
+  [LEGACY_COMMENTS_ROOT_PATH, ownerId, cardId].filter(Boolean).join('/');
+const normalizeComment = value => ({
+  text: typeof value?.text === 'string' ? value.text : '',
+  lastAction: typeof value?.updatedAt === 'number' ? value.updatedAt : 0,
+});
 
 // Особистий коментар адміна до картки — multiData/comments/{ownerId}/{cardId} = { text, updatedAt }.
 // Рівно один запис на пару ownerId+cardId: повторне збереження оновлює його
@@ -1088,7 +1095,10 @@ export const setUserComment = async (cardId, text, ownerId) => {
     }
     const commentsOwnerId = ownerId || user.uid;
     const updatedAt = Date.now();
-    await set(ref2(database, getCommentPath(commentsOwnerId, cardId)), { text, updatedAt });
+    await update(ref2(database), {
+      [getCommentPath(commentsOwnerId, cardId)]: { text, updatedAt },
+      [getLegacyCommentPath(commentsOwnerId, cardId)]: null,
+    });
     return { lastAction: updatedAt };
   } catch (error) {
     console.error('Error setting comment:', error);
@@ -1109,7 +1119,10 @@ export const updateCommentByOwner = async ({ ownerId, cardId, text }) => {
       throw new Error('ownerId, cardId і text обовʼязкові');
     }
     const updatedAt = Date.now();
-    await set(ref2(database, getCommentPath(ownerId, cardId)), { text, updatedAt });
+    await update(ref2(database), {
+      [getCommentPath(ownerId, cardId)]: { text, updatedAt },
+      [getLegacyCommentPath(ownerId, cardId)]: null,
+    });
     return { lastAction: updatedAt, ownerId };
   } catch (error) {
     console.error('Error updating comment by owner:', error);
@@ -1126,7 +1139,10 @@ export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
     if (!ownerId || !cardId) {
       throw new Error('ownerId і cardId обовʼязкові');
     }
-    await remove(ref2(database, getCommentPath(ownerId, cardId)));
+    await update(ref2(database), {
+      [getCommentPath(ownerId, cardId)]: null,
+      [getLegacyCommentPath(ownerId, cardId)]: null,
+    });
     return true;
   } catch (error) {
     console.error('Error deleting comment by owner:', error);
@@ -1138,12 +1154,20 @@ export const fetchUserComment = async (ownerId, cardId) => {
   try {
     if (!ownerId || !cardId) return null;
     const snap = await get(ref2(database, getCommentPath(ownerId, cardId)));
-    if (!snap.exists()) return null;
-    const value = snap.val();
-    return {
-      text: typeof value?.text === 'string' ? value.text : '',
-      lastAction: typeof value?.updatedAt === 'number' ? value.updatedAt : 0,
-    };
+    if (snap.exists()) return normalizeComment(snap.val());
+
+    // Keep this as a read-only compatibility fallback. A client-side copy can
+    // overwrite a save (or resurrect a deletion) made after the legacy read.
+    // Normal writes atomically move the entry and clear its legacy copy.
+    let legacySnap;
+    try {
+      legacySnap = await get(ref2(database, getLegacyCommentPath(ownerId, cardId)));
+    } catch (error) {
+      console.error('Error fetching legacy comment:', error);
+      return null;
+    }
+    if (!legacySnap.exists()) return null;
+    return normalizeComment(legacySnap.val());
   } catch (error) {
     console.error('Error fetching comment:', error);
     return null;
@@ -1180,6 +1204,7 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
   const updates = {
     [`users/${cardId}/myComment`]: null,
     [`newUsers/${cardId}/myComment`]: null,
+    [getLegacyCommentPath(commentsOwnerId, cardId)]: null,
   };
 
   if (trimmed) {
@@ -1199,16 +1224,20 @@ export const fetchUserComments = async (ownerId, cardIds = []) => {
     incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);
     if (!ownerId || !Array.isArray(cardIds) || !cardIds.length) return {};
     const snap = await get(ref2(database, getCommentPath(ownerId)));
-    if (!snap.exists()) return {};
+    let legacyComments = {};
+    try {
+      const legacySnap = await get(ref2(database, getLegacyCommentPath(ownerId)));
+      legacyComments = legacySnap.val() || {};
+    } catch (error) {
+      // Legacy compatibility must never hide successfully loaded current data.
+      console.error('Error fetching legacy comments:', error);
+    }
     const ownerComments = snap.val() || {};
     const result = {};
     cardIds.forEach(cardId => {
-      const value = ownerComments[cardId];
+      const value = ownerComments[cardId] || legacyComments[cardId];
       if (!value || typeof value !== 'object') return;
-      result[cardId] = {
-        text: typeof value.text === 'string' ? value.text : '',
-        lastAction: typeof value.updatedAt === 'number' ? value.updatedAt : 0,
-      };
+      result[cardId] = normalizeComment(value);
     });
     return result;
   } catch (error) {
@@ -1221,13 +1250,24 @@ export const fetchAllCommentsByCardId = async cardId => {
   try {
     if (!cardId) return [];
     const snap = await get(ref2(database, COMMENTS_ROOT_PATH));
-    if (!snap.exists()) return [];
+    let legacyCommentsByOwner = {};
+    try {
+      const legacySnap = await get(ref2(database, LEGACY_COMMENTS_ROOT_PATH));
+      legacyCommentsByOwner = legacySnap.val() || {};
+    } catch (error) {
+      // Shared current comments remain usable when the optional fallback fails.
+      console.error('Error fetching all legacy comments by cardId:', error);
+    }
 
     const result = [];
+    const commentsByOwner = snap.val() || {};
+    const ownerIds = new Set([
+      ...Object.keys(commentsByOwner),
+      ...Object.keys(legacyCommentsByOwner),
+    ]);
 
-    Object.entries(snap.val() || {}).forEach(([ownerId, ownerComments]) => {
-      if (!ownerComments || typeof ownerComments !== 'object') return;
-      const value = ownerComments[cardId];
+    ownerIds.forEach(ownerId => {
+      const value = commentsByOwner[ownerId]?.[cardId] || legacyCommentsByOwner[ownerId]?.[cardId];
       if (!value || typeof value !== 'object') return;
       const text = String(value.text || '').trim();
       if (!text) return;
