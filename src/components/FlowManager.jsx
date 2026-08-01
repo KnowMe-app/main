@@ -41,12 +41,10 @@ const TopControls = styled.div`
   min-width: 0;
 `;
 
-// The "⋮" menu never shares a row with the page's other action buttons - it always gets its own
-// right-aligned row above them, in normal document flow (no sticky/fixed positioning), matching
-// every other "⋮" menu in the app.
-const MenuRow = styled.div`
-  display: flex;
-  justify-content: flex-end;
+// The "⋮" menu stays on this same row as the other action buttons, but a wider left margin sets
+// it apart from that button cluster instead of sharing its tight 8px gap.
+const MenuBtnWrap = styled.div`
+  margin-left: 14px;
 `;
 
 // Batch 29 §1: was four bootstrap-ish solid fills (green/blue/red/purple, one hardcoded hex per
@@ -1771,16 +1769,6 @@ export const FlowManager = ({ ownerId }) => {
 
   return (
     <Wrap>
-      <MenuRow>
-        <MenuBtn
-          type="button"
-          aria-label="Відкрити меню профілю"
-          title="Відкрити меню профілю"
-          onClick={() => setShowInfoModal('dotsMenu')}
-        >
-          ⋮
-        </MenuBtn>
-      </MenuRow>
       <TopControls>
         <TopActionBtn
           type="button"
@@ -1800,6 +1788,16 @@ export const FlowManager = ({ ownerId }) => {
           <ClipboardIcon />
         </CopyBtn>
         <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
+        <MenuBtnWrap>
+          <MenuBtn
+            type="button"
+            aria-label="Відкрити меню профілю"
+            title="Відкрити меню профілю"
+            onClick={() => setShowInfoModal('dotsMenu')}
+          >
+            ⋮
+          </MenuBtn>
+        </MenuBtnWrap>
       </TopControls>
 
       <Row>

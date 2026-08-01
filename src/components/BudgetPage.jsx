@@ -26,7 +26,7 @@ import {
 } from './budgetCatalogUtils';
 import { setPdfAgencyConfig } from './pdfTheme';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions, PageMenuBar } from './AdminPageHeader';
+import { Header, HeaderActions, HeaderRight } from './AdminPageHeader';
 
 const INCLUDED_PREVIEW_LIMIT = 6;
 const POPULAR_PACKAGE_ID = '3';
@@ -2038,14 +2038,12 @@ const BudgetPage = ({ isAdmin = false }) => {
   return (
     <Page>
       <Shell>
-        <PageMenuBar>
-          <PageNavMenu />
-        </PageMenuBar>
         <Header>
           <div>
             <Eyebrow>{(catalog.technical?.agency?.name || UKRCOM_MARKER).toUpperCase()}</Eyebrow>
             <Title>Program Budget</Title>
           </div>
+          <HeaderRight>
           <HeaderActions>
             <MiniButton
               type="button"
@@ -2091,6 +2089,8 @@ const BudgetPage = ({ isAdmin = false }) => {
               </>
             ) : null}
           </HeaderActions>
+          <PageNavMenu />
+          </HeaderRight>
         </Header>
 
         {loading ? <StateCard>Loading budget catalog…</StateCard> : null}

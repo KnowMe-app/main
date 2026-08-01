@@ -13,7 +13,7 @@ import designTokens from '../data/designTokens.json';
 import { auth, database } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions, PageMenuBar } from './AdminPageHeader';
+import { Header, HeaderActions, HeaderRight } from './AdminPageHeader';
 import CaseEditor from './CaseEditor';
 import {
   DOCUMENTS_CASES_PATH,
@@ -1113,19 +1113,19 @@ const PartiesPage = ({ isAdmin }) => {
   return (
     <Page>
       <Shell>
-        <PageMenuBar>
-          <PageNavMenu />
-        </PageMenuBar>
         <Header>
           <div>
             <Eyebrow>Admin only</Eyebrow>
             <Title>Parties</Title>
           </div>
+          <HeaderRight>
           <HeaderActions>
             <MiniButton type="button" onClick={handleToggleEditMode} aria-pressed={isEditMode} title={isEditMode ? 'Switch to read mode' : 'Edit parties'}>
               <FaPen /> {isEditMode ? 'Read' : 'Edit'}
             </MiniButton>
           </HeaderActions>
+          <PageNavMenu />
+          </HeaderRight>
         </Header>
 
         {loading ? (
