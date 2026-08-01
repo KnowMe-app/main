@@ -40,6 +40,7 @@ import {
   fetchUsersBySearchKeyBloodPaged,
   fetchUsersByIds,
   lazyLoadProfilePhotos,
+  migrateAllLegacyCardComments,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import {
@@ -6130,6 +6131,34 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  const handleMigrateAllLegacyCardComments = async () => {
+    if (!isAdmin) return;
+    if (
+      !window.confirm(
+        'Це перенесе всі старі коментарі з users/newUsers у multiData/comments під ваш акаунт ' +
+          'і видалить їх з карток. Дію неможливо скасувати вручну. Продовжити?',
+      )
+    ) {
+      return;
+    }
+
+    const toastId = 'migrate-legacy-card-comments-progress';
+    toast.loading('Міграція коментарів...', { id: toastId });
+    try {
+      const report = await migrateAllLegacyCardComments(auth.currentUser?.uid, {
+        onProgress: percent => toast.loading(`Міграція коментарів... ${percent}%`, { id: toastId }),
+      });
+      toast.success(
+        `Мігровано карток: ${report.migratedCards}` +
+          (report.errors.length ? `, помилок: ${report.errors.length}` : ''),
+        { id: toastId },
+      );
+    } catch (error) {
+      console.error('[AddNewProfile] Comment migration failed', error);
+      toast.error(`Помилка міграції коментарів: ${error?.message || 'невідома помилка'}`, { id: toastId });
+    }
+  };
+
   useEffect(() => {
     if (!searchIdAndSearchKeyOnlyMode) {
       setShowSearchKeyIndexPanel(false);
@@ -7132,6 +7161,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     Індекси
                   </Button>
                 </>
+              )}
+              {isAdmin && (
+                <Button
+                  onClick={handleMigrateAllLegacyCardComments}
+                  title="Перенести всі старі коментарі карток у multiData/comments"
+                >
+                  Мігрувати коментарі
+                </Button>
               )}
               {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
               <Button
