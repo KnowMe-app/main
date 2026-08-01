@@ -499,6 +499,10 @@ const hasExplicitEmptySearchKeyList = (searchOptions = {}, optionKey) =>
   Array.isArray(searchOptions?.[optionKey]) && searchOptions[optionKey].length === 0;
 
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
+  if (hasExplicitEmptySearchKeyList(searchOptions, 'searchIdPrefixes')) {
+    return { primaryPrefixes: [], fallbackPrefixes: [], shouldRetryWithFallbackPrefixes: false };
+  }
+
   const configuredPrefixes = resolveSelectedSearchKeys(
     searchOptions,
     'searchIdPrefixes',

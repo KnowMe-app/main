@@ -28,16 +28,18 @@ export const isSearchIdIndexedField = field => SEARCH_ID_INDEXED_FIELDS.has(fiel
 
 export const getSearchIdPrefixes = searchIdPrefixes => {
   const fallback = getSearchIdIndexedFields();
-  if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
+  if (!Array.isArray(searchIdPrefixes)) {
     return fallback;
+  }
+  if (searchIdPrefixes.length === 0) {
+    return [];
   }
 
   const normalizedPrefixes = searchIdPrefixes
     .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
     .filter(Boolean);
 
-  const allowedPrefixes = fallback.filter(prefix => normalizedPrefixes.includes(prefix));
-  return allowedPrefixes.length > 0 ? allowedPrefixes : fallback;
+  return fallback.filter(prefix => normalizedPrefixes.includes(prefix));
 };
 
 const SOCIAL_SEARCH_KEYS = new Set([

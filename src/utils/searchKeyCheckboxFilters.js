@@ -1,6 +1,3 @@
-import { getSearchIdIndexedFields } from './searchKeyUtils';
-const SEARCH_ID_CHECKBOX_KEYS = getSearchIdIndexedFields();
-
 const EQUAL_TO_INDEX_KEYS = [
   'instagram',
   'ameblo',
@@ -28,22 +25,6 @@ const EQUAL_TO_INDEX_KEYS = [
   'lastCycle',
   'lastLogin',
 ];
-
-export const getSearchIdPrefixes = searchIdPrefixes => {
-  if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
-    return SEARCH_ID_CHECKBOX_KEYS;
-  }
-
-  const normalizedPrefixes = searchIdPrefixes
-    .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
-    .filter(Boolean);
-
-  const allowedPrefixes = SEARCH_ID_CHECKBOX_KEYS.filter(prefix =>
-    normalizedPrefixes.includes(prefix)
-  );
-
-  return allowedPrefixes.length > 0 ? allowedPrefixes : SEARCH_ID_CHECKBOX_KEYS;
-};
 
 export const resolveEqualToSearchKeys = equalToKeys => {
   if (!Array.isArray(equalToKeys)) {
