@@ -28,10 +28,12 @@ describe('bulk migration of every leftover users/newUsers myComment into multiDa
     expect(fnBody).toContain('legacyComment?.text');
   });
 
-  it('clears myComment on both card collections with compare-and-set transactions', () => {
+  it('clears both sources in the same root transaction as the destination write', () => {
     expect(fnBody).toMatch(/`users\/\$\{cardId\}\/myComment`/);
     expect(fnBody).toMatch(/`newUsers\/\$\{cardId\}\/myComment`/);
-    expect(fnBody).toContain('runTransaction(ref2(database, source.path)');
+    expect(fnBody).toContain('runTransaction(ref2(database), rootValue');
+    expect(fnBody).toContain('sources.some(source => !valuesMatch');
+    expect(fnBody).toContain('sources.forEach(source => setValueAtPath');
   });
 
   it('merges conflicting/legacy/pre-existing comment text instead of dropping one side', () => {
@@ -43,7 +45,7 @@ describe('bulk migration of every leftover users/newUsers myComment into multiDa
     expect(fnBody).toMatch(/for \(let i = 0; i < ids\.length; i \+= BATCH_SIZE\)/);
     const writeLoopBody = fnBody.slice(fnBody.indexOf('const BATCH_SIZE = 100;'));
     expect(writeLoopBody).toContain('for (const cardId of chunk)');
-    expect(writeLoopBody).toContain('await runTransaction(ref2(database, destinationPath)');
+    expect(writeLoopBody).toContain('await runTransaction(ref2(database), rootValue');
   });
 
   it('collects per-chunk errors instead of letting one failing chunk abort the whole run', () => {
@@ -51,10 +53,11 @@ describe('bulk migration of every leftover users/newUsers myComment into multiDa
     expect(fnBody).toContain('report.errors.push(');
   });
 
-  it('counts a card only after destination and source transactions commit', () => {
+  it('reports the successful card IDs only after the atomic migration commits', () => {
     expect(fnBody.indexOf('report.migratedCards += 1;')).toBeGreaterThan(
-      fnBody.indexOf("sourceResults.some(result => !result.committed)"),
+      fnBody.indexOf("if (!migrationResult.committed)"),
     );
+    expect(fnBody).toContain('report.migratedCardIds.push(cardId)');
   });
 
   it('reports progress so the UI can show percent complete', () => {

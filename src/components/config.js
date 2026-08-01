@@ -1247,6 +1247,7 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
     scannedUsers: Object.keys(usersData).length,
     scannedNewUsers: Object.keys(newUsersData).length,
     migratedCards: 0,
+    migratedCardIds: [],
     fromBothCollections: 0,
     mergedWithExisting: 0,
     errors: [],
@@ -1262,7 +1263,19 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
 
   const valuesMatch = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const mergeCommentText = (...values) =>
-    [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))].join('\n\n');
+    [...new Set(values.flatMap(value => String(value || '').split(/\n\n+/).map(part => part.trim()).filter(Boolean)))].join('\n\n');
+  const getValueAtPath = (root, path) =>
+    path.split('/').reduce((value, key) => value?.[key], root);
+  const setValueAtPath = (root, path, value) => {
+    const keys = path.split('/');
+    const leaf = keys.pop();
+    const parent = keys.reduce((current, key) => {
+      current[key] = current[key] && typeof current[key] === 'object' ? current[key] : {};
+      return current[key];
+    }, root);
+    if (value === null) delete parent[leaf];
+    else parent[leaf] = value;
+  };
 
   const BATCH_SIZE = 100;
   const ids = Array.from(cardIds);
@@ -1294,27 +1307,30 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
       );
 
       try {
-        // eslint-disable-next-line no-await-in-loop
-        const destinationResult = await runTransaction(ref2(database, destinationPath), value => {
-          if (!valuesMatch(value, expectedDestination)) return undefined;
-          return { text: finalText, updatedAt: Date.now() };
-        });
-        if (!destinationResult.committed) throw new Error('Коментар було змінено під час міграції');
-
         const sources = [
           { path: `users/${cardId}/myComment`, expected: usersData[cardId]?.myComment },
           { path: `newUsers/${cardId}/myComment`, expected: newUsersData[cardId]?.myComment },
         ].filter(source => String(source.expected || '').trim());
+
+        // The destination and both legacy sources live under different RTDB
+        // branches, so transact at their common root. This validates every
+        // snapshot and applies the write/cleanup as one atomic operation.
         // eslint-disable-next-line no-await-in-loop
-        const sourceResults = await Promise.all(sources.map(source =>
-          runTransaction(ref2(database, source.path), value =>
-            valuesMatch(value, source.expected) ? null : undefined,
-          )
-        ));
-        if (sourceResults.some(result => !result.committed)) {
-          throw new Error('Картку було змінено під час міграції');
-        }
+        const migrationResult = await runTransaction(ref2(database), rootValue => {
+          const nextRoot = rootValue && typeof rootValue === 'object' ? rootValue : {};
+          if (!valuesMatch(getValueAtPath(nextRoot, destinationPath), expectedDestination)) {
+            return undefined;
+          }
+          if (sources.some(source => !valuesMatch(getValueAtPath(nextRoot, source.path), source.expected))) {
+            return undefined;
+          }
+          setValueAtPath(nextRoot, destinationPath, { text: finalText, updatedAt: Date.now() });
+          sources.forEach(source => setValueAtPath(nextRoot, source.path, null));
+          return nextRoot;
+        });
+        if (!migrationResult.committed) throw new Error('Картку або коментар було змінено під час міграції');
         report.migratedCards += 1;
+        report.migratedCardIds.push(cardId);
       } catch (error) {
         report.errors.push({ cardId, message: error?.message || String(error) });
       }

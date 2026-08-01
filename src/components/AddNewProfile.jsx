@@ -136,6 +136,7 @@ import {
   getCacheKey,
 } from 'utils/cache';
 import { updateCard, saveCard } from 'utils/cardsStorage';
+import { clearCachedComments } from 'utils/commentsStorage';
 import {
   formatDateAndFormula,
   formatDateToDisplay,
@@ -6120,11 +6121,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       });
       if (report.migratedCards) {
         clearAllCardsCache();
+        clearCachedComments(auth.currentUser?.uid, report.migratedCardIds);
+        const migratedCardIds = new Set(report.migratedCardIds);
         setUsers(currentUsers =>
           Object.fromEntries(
             Object.entries(currentUsers).map(([cardId, card]) => {
               const cardWithoutLegacyComment = { ...(card || {}) };
-              delete cardWithoutLegacyComment.myComment;
+              if (migratedCardIds.has(cardId)) delete cardWithoutLegacyComment.myComment;
               return [cardId, cardWithoutLegacyComment];
             }),
           ),
