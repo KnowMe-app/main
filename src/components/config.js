@@ -2740,9 +2740,10 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     }
 
     // Broad date search intentionally checks several date fields. Do not run it for
-    // explicit EqualTo/searchKey requests: selected checkboxes must limit backend
-    // queries to only those selected keys.
-    const shouldRunBroadDateSearch = searchKey !== 'searchId' && !forceSearchKeyBucket && !forceEqualToAllCards;
+    // explicit EqualTo/searchKey/partialUserId requests: selected checkboxes must limit
+    // backend queries to only those selected keys.
+    const shouldRunBroadDateSearch =
+      searchKey !== 'searchId' && !forceSearchKeyBucket && !forceEqualToAllCards && !forcePartialUserIdSearch;
     const isDateSearch = shouldRunBroadDateSearch
       ? await searchByDate(searchValue, uniqueUserIds, users)
       : false;
