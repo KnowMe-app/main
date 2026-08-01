@@ -1,16 +1,11 @@
 // Shared page-header chrome for the UKRCOM admin pages (Documents / Invoice Builder / Parties /
-// Budget). `PageMenuBar` holds the "⋮" page-switcher (PageNavMenu) on its own row, right-aligned,
-// in normal document flow - it must never be sticky/fixed, and it must never share a row with the
-// page's other action buttons (Reload, PDF export, Edit/Read toggle, etc.), so it always lands in
-// the same top-right spot as every other "⋮" menu in the app (see styles/knowme.js's KmTopbar /
-// KmPageMenuBar, the same pattern My Profile and the User Agreement page use).
+// Budget). The "⋮" page-switcher (PageNavMenu) stays on the same row as the title and the page's
+// other action buttons - never its own row, and never sticky/fixed - but it sits inside
+// `HeaderRight` as its own flex item (with a wider gap than HeaderActions' own buttons use), so it
+// reads as separate from that button group while staying vertically centered with everything else
+// on the row. See styles/knowme.js's KmTopbar, the same pattern My Profile and the User Agreement
+// page use.
 import styled from 'styled-components';
-
-export const PageMenuBar = styled.div`
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 10px;
-`;
 
 export const Header = styled.header`
   display: flex;
@@ -25,15 +20,23 @@ export const Header = styled.header`
   }
 `;
 
-export const HeaderActions = styled.div`
+export const HeaderRight = styled.div`
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
   align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
   justify-content: flex-end;
 
   @media (max-width: 560px) {
     width: 100%;
     justify-content: flex-end;
   }
+`;
+
+export const HeaderActions = styled.div`
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 `;

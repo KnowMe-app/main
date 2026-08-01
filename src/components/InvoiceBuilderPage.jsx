@@ -24,7 +24,7 @@ import { formatEuroSmart, getItemDisplayAmount, getSortedPackages, isFromPricedI
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions, PageMenuBar } from './AdminPageHeader';
+import { Header, HeaderActions, HeaderRight } from './AdminPageHeader';
 import {
   addCatalogChildToPackage,
   addCustomChildToPackage,
@@ -3609,14 +3609,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   return (
     <Page>
       <Shell>
-        <PageMenuBar>
-          <PageNavMenu />
-        </PageMenuBar>
         <Header>
           <div>
             <Eyebrow>Admin only</Eyebrow>
             <Title>Invoice Builder</Title>
           </div>
+          <HeaderRight>
           <HeaderActions>
             <input
               ref={fileInputRef}
@@ -3641,6 +3639,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
               </>
             ) : null}
           </HeaderActions>
+          <PageNavMenu />
+          </HeaderRight>
         </Header>
 
         {loading ? <StateCard>Loading invoice data…</StateCard> : null}

@@ -63,7 +63,7 @@ import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, Mo
 
 import { color, coloredCard, uiTokens } from './styles';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { KmIconButton, KmPageMenuBar } from './styles/knowme';
+import { KmIconButton } from './styles/knowme';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
 import {
@@ -403,9 +403,12 @@ export const ExitButton = styled(SubmitButton)`
   }
 `;
 
+// The "⋮" menu stays on this same row as the other action buttons (never its own row), but as
+// its own flex item pushed to the far right by justify-content: space-between - so it reads as
+// separate from the button group on the left instead of sharing its cluster.
 const TopButtons = styled.div`
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
   gap: 10px;
   background: var(--km-card);
@@ -414,6 +417,14 @@ const TopButtons = styled.div`
   @media (max-width: 768px) {
     background: ${uiTokens.colors.pageBg};
   }
+`;
+
+const TopButtonsGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
 `;
 
 const EditActionButton = styled.button`
@@ -6635,20 +6646,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     <Container>
       <InnerContainer>
         {isLoggedIn && (
-          <KmPageMenuBar>
-            <KmIconButton
-              type="button"
-              aria-label="Відкрити меню профілю"
-              onClick={() => {
-                setShowInfoModal('dotsMenu');
-              }}
-            >
-              ⋮
-            </KmIconButton>
-          </KmPageMenuBar>
-        )}
-        {isLoggedIn && (
           <TopButtons>
+            <TopButtonsGroup>
             {state.userId && (
               <>
                 <EditActionButton
@@ -6731,6 +6730,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               📦
               <DownloadSizeToastStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</DownloadSizeToastStatus>
             </DownloadSizeToastToggleButton>
+            </TopButtonsGroup>
+            <KmIconButton
+              type="button"
+              aria-label="Відкрити меню профілю"
+              onClick={() => {
+                setShowInfoModal('dotsMenu');
+              }}
+            >
+              ⋮
+            </KmIconButton>
           </TopButtons>
         )}
 
