@@ -2125,7 +2125,8 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 };
 
 export const searchUsersOnly = async (searchedValue, options = {}) => {
-  const { searchIdPrefixes, allowTelegramPrefixMatches = false } = options;
+  const { searchIdPrefixes, allowTelegramPrefixMatches = false, enabledSearchKeys } = options;
+  const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
@@ -2162,8 +2163,13 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       return users;
     }
 
-    await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
-    await searchUserByPartialUserId(searchValue, users);
+    // Широкий fallback (до ~32 запитів по всіх 16 полях × users/newUsers) дорого коштує
+    // по трафіку, тому виконується лише коли користувач сам явно увімкнув чекбокс
+    // "широкий пошук" (enabledSearchKeys.broadTextSearch), а не автоматично щоразу.
+    if (isBroadTextSearchEnabled) {
+      await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
+      await searchUserByPartialUserId(searchValue, users);
+    }
 
     if (Object.keys(users).length === 1) {
       const id = Object.keys(users)[0];
@@ -2701,7 +2707,9 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     searchKeyFields,
     forcePartialUserIdSearch = false,
     allowTelegramPrefixMatches = false,
+    enabledSearchKeys,
   } = options;
+  const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch);
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
@@ -2760,7 +2768,11 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
           searchIdOptions,
         );
 
-        if (!shouldSkipBroadFallback) {
+        // searchByPrefixes ганяє до 16 полів × 2 регістри × users/newUsers, searchByIndexOn —
+        // ще додатково. Це дорого по трафіку, тому виконується лише коли користувач сам
+        // явно увімкнув чекбокс "широкий пошук" (enabledSearchKeys.broadTextSearch),
+        // а не автоматично для кожного пошуку картки.
+        if (!shouldSkipBroadFallback && isBroadTextSearchEnabled) {
           await searchByPrefixes(searchValue, uniqueUserIds, users);
           await searchByIndexOn({
             searchValue,
