@@ -1298,7 +1298,6 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
       const destinationPath = currentComment || !legacyComment
         ? getCommentPath(commentsOwnerId, cardId)
         : getLegacyCommentPath(commentsOwnerId, cardId);
-      const expectedDestination = currentComment || legacyComment;
       const finalText = mergeCommentText(
         usersText,
         newUsersText,
@@ -1311,14 +1310,19 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
           { path: `users/${cardId}/myComment`, expected: usersData[cardId]?.myComment },
           { path: `newUsers/${cardId}/myComment`, expected: newUsersData[cardId]?.myComment },
         ].filter(source => String(source.expected || '').trim());
+        const comments = [
+          { path: getCommentPath(commentsOwnerId, cardId), expected: currentComment },
+          { path: getLegacyCommentPath(commentsOwnerId, cardId), expected: legacyComment },
+        ];
 
-        // The destination and both legacy sources live under different RTDB
-        // branches, so transact at their common root. This validates every
-        // snapshot and applies the write/cleanup as one atomic operation.
+        // Both comment roots and both legacy sources live under different RTDB
+        // branches, so transact at their common root. Validate both comment
+        // locations even though only one is the destination: a concurrent edit
+        // to the fallback would otherwise be shadowed by the migrated record.
         // eslint-disable-next-line no-await-in-loop
         const migrationResult = await runTransaction(ref2(database), rootValue => {
           const nextRoot = rootValue && typeof rootValue === 'object' ? rootValue : {};
-          if (!valuesMatch(getValueAtPath(nextRoot, destinationPath), expectedDestination)) {
+          if (comments.some(comment => !valuesMatch(getValueAtPath(nextRoot, comment.path), comment.expected))) {
             return undefined;
           }
           if (sources.some(source => !valuesMatch(getValueAtPath(nextRoot, source.path), source.expected))) {

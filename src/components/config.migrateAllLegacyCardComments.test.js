@@ -28,10 +28,13 @@ describe('bulk migration of every leftover users/newUsers myComment into multiDa
     expect(fnBody).toContain('legacyComment?.text');
   });
 
-  it('clears both sources in the same root transaction as the destination write', () => {
+  it('validates both comment roots and clears both sources in the same root transaction', () => {
     expect(fnBody).toMatch(/`users\/\$\{cardId\}\/myComment`/);
     expect(fnBody).toMatch(/`newUsers\/\$\{cardId\}\/myComment`/);
     expect(fnBody).toContain('runTransaction(ref2(database), rootValue');
+    expect(fnBody).toContain('{ path: getCommentPath(commentsOwnerId, cardId), expected: currentComment }');
+    expect(fnBody).toContain('{ path: getLegacyCommentPath(commentsOwnerId, cardId), expected: legacyComment }');
+    expect(fnBody).toContain('comments.some(comment => !valuesMatch');
     expect(fnBody).toContain('sources.some(source => !valuesMatch');
     expect(fnBody).toContain('sources.forEach(source => setValueAtPath');
   });
