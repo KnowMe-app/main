@@ -2,6 +2,7 @@ import {
   buildSearchIdRecordKey,
   normalizeSearchIdInput,
   buildSearchIdCandidateKeys,
+  getSearchIdPrefixes,
 } from './searchKeyUtils';
 
 const youtubeChannelId = 'UC4LwxzuzRqwSpa1A64eziDQ';
@@ -37,5 +38,21 @@ describe('searchKeyUtils exact searchId behavior', () => {
       includeVariants: false,
       includePrefixMatches: false,
     })).toEqual(['telegram_ук см alia 09.10.2025']);
+  });
+});
+
+describe('getSearchIdPrefixes', () => {
+  it('keeps searchId prefix search scoped to explicitly selected keys', () => {
+    expect(getSearchIdPrefixes(['telegram'])).toEqual(['telegram']);
+    expect(getSearchIdPrefixes(['telegram', 'phone'])).toEqual(['phone', 'telegram']);
+  });
+
+  it('does not fall back to every searchId prefix for an explicit empty selection', () => {
+    expect(getSearchIdPrefixes([])).toEqual([]);
+    expect(getSearchIdPrefixes(['unknownKey'])).toEqual([]);
+  });
+
+  it('keeps the legacy all-prefixes fallback only when no explicit key list is provided', () => {
+    expect(getSearchIdPrefixes()).toEqual(expect.arrayContaining(['phone', 'telegram', 'instagram']));
   });
 });

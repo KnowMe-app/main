@@ -472,6 +472,64 @@ describe('SearchBar cache-first search', () => {
     document.body.removeChild(container);
   });
 
+  it('does not fan out to every searchId prefix when searchIdPrefixes is explicitly empty', async () => {
+    const searchFunc = jest.fn().mockResolvedValue({});
+    const setUsers = jest.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.render(React.createElement(SearchBar, {
+        searchFunc,
+        search: 'УК СМ Марія Бекер 02.06.2026',
+        setSearch: jest.fn(),
+        setUsers,
+        setState: jest.fn(),
+        setUserNotFound: jest.fn(),
+        enabledSearchKeys: {
+          telegram: true,
+          searchId: true,
+          partialUserId: false,
+          searchKey: false,
+          equalToAllCards: true,
+        },
+        searchOptions: {
+          enabledSearchKeys: {
+            telegram: true,
+            searchId: true,
+            partialUserId: false,
+            searchKey: false,
+            equalToAllCards: true,
+          },
+          equalToKeys: ['telegram'],
+          searchIdPrefixes: [],
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    expect(searchFunc).toHaveBeenCalledWith(
+      { telegram: 'УК СМ Марія Бекер 02.06.2026' },
+      expect.objectContaining({
+        forceEqualToAllCards: true,
+        equalToKeys: ['telegram'],
+      }),
+    );
+    expect(searchFunc).not.toHaveBeenCalledWith(
+      expect.objectContaining({ searchId: expect.anything() }),
+      expect.anything(),
+    );
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
   it('renders UK-trigger telegram prefix matches as a list even when one match is returned', async () => {
     const searchFunc = jest.fn().mockResolvedValue({
       userId: 'oksana',
