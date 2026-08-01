@@ -1312,6 +1312,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
         { key: 'searchKey', label: 'searchKey bucket/date' },
         { key: 'partialUserId', label: 'userId (частковий збіг)' },
+        { key: 'broadTextSearch', label: 'широкий пошук (contains, усі поля users/newUsers)' },
       ],
     },
     {
@@ -1352,15 +1353,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'equalToAllCards',
     'searchKey',
     'partialUserId',
+    'broadTextSearch',
     ...SEARCH_KEY_OPTIONS.map(option => option.key),
   ];
   const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'ameblo', 'facebook', 'email', 'vk', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other'];
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
-      // equalTo-пошук має вмикатись тільки явним чекбоксом користувача.
-      // Раніше через дефолт `true` для всіх ключів цей режим запускався неочікувано.
-      acc[option.key] = option.key !== 'equalToAllCards' && option.key !== 'searchKey';
+      // equalTo-пошук і широкий (contains по всіх полях) пошук мають вмикатись тільки
+      // явним чекбоксом користувача. Раніше через дефолт `true` для всіх ключів
+      // ці режими запускались неочікувано і ганяли зайві запити до Firebase.
+      acc[option.key] = option.key !== 'equalToAllCards' && option.key !== 'searchKey' && option.key !== 'broadTextSearch';
       return acc;
     },
     {},
