@@ -18,7 +18,7 @@ import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFo
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions } from './AdminPageHeader';
+import { Header, HeaderActions, PageMenuBar } from './AdminPageHeader';
 import VariablePickerModal from './DocumentsVariablePickerModal';
 import DocumentsPdfPreview from './DocumentsPdfPreview';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -2400,13 +2400,15 @@ const DocumentsPage = ({ isAdmin }) => {
   return (
     <Page>
       <Shell>
+        <PageMenuBar>
+          <PageNavMenu />
+        </PageMenuBar>
         <Header>
           <div>
             <Eyebrow>Admin only</Eyebrow>
             <Title>Documents</Title>
           </div>
           <HeaderActions>
-            <PageNavMenu />
             <MiniButton type="button" onClick={loadDocumentsData} disabled={loading} title="Reload from the backend">
               <FaSyncAlt /> Reload
             </MiniButton>

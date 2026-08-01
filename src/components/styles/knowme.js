@@ -13,9 +13,6 @@ export const KmPage = styled.div`
 `;
 
 export const KmTopbar = styled.div`
-  position: sticky;
-  top: 0;
-  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -24,6 +21,20 @@ export const KmTopbar = styled.div`
   background: var(--km-card);
   border-bottom: 1px solid var(--km-border);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+`;
+
+// Shared "⋮" page-menu row: right-aligned, normal document flow (never sticky/fixed - it must
+// scroll away with the rest of the content, not pin itself to the viewport), same top/right
+// spacing as KmTopbar so every page's menu trigger lands in the same spot.
+export const KmPageMenuBar = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 14px 20px 0;
+
+  @media (max-width: 560px) {
+    padding: 14px 14px 0;
+  }
 `;
 
 const BrandWrap = styled.div`

@@ -41,6 +41,14 @@ const TopControls = styled.div`
   min-width: 0;
 `;
 
+// The "⋮" menu never shares a row with the page's other action buttons - it always gets its own
+// right-aligned row above them, in normal document flow (no sticky/fixed positioning), matching
+// every other "⋮" menu in the app.
+const MenuRow = styled.div`
+  display: flex;
+  justify-content: flex-end;
+`;
+
 // Batch 29 §1: was four bootstrap-ish solid fills (green/blue/red/purple, one hardcoded hex per
 // action) with no relation to the rest of the app - now the same bordered/card-background/accent-
 // on-hover treatment My Profile's own "⋮" (DotsButton) uses, driven entirely by --km-* tokens.
@@ -1763,6 +1771,16 @@ export const FlowManager = ({ ownerId }) => {
 
   return (
     <Wrap>
+      <MenuRow>
+        <MenuBtn
+          type="button"
+          aria-label="Відкрити меню профілю"
+          title="Відкрити меню профілю"
+          onClick={() => setShowInfoModal('dotsMenu')}
+        >
+          ⋮
+        </MenuBtn>
+      </MenuRow>
       <TopControls>
         <TopActionBtn
           type="button"
@@ -1782,14 +1800,6 @@ export const FlowManager = ({ ownerId }) => {
           <ClipboardIcon />
         </CopyBtn>
         <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
-        <MenuBtn
-          type="button"
-          aria-label="Відкрити меню профілю"
-          title="Відкрити меню профілю"
-          onClick={() => setShowInfoModal('dotsMenu')}
-        >
-          ⋮
-        </MenuBtn>
       </TopControls>
 
       <Row>

@@ -5754,55 +5754,59 @@ const Matching = () => {
                   <FaHeart />
                 </ActionButton>
               </TopActionGroup>
-              <TopActionGroup aria-label="Адміністративні дії matching">
-                {showBackendTrafficToggle && (
+              {(showBackendTrafficToggle || isIndexedDebugTestUser) && (
+                <TopActionGroup aria-label="Адміністративні дії matching">
+                  {showBackendTrafficToggle && (
+                    <BackendTrafficToggleButton
+                    type="button"
+                    $active={downloadSizeToastsEnabled}
+                    aria-pressed={downloadSizeToastsEnabled}
+                    title={
+                      downloadSizeToastsEnabled
+                        ? 'Вимкнути тости щодо розміру завантаження з бекенду'
+                        : 'Увімкнути тости щодо розміру завантаження з бекенду'
+                    }
+                    aria-label={
+                      downloadSizeToastsEnabled
+                        ? 'Вимкнути тости щодо розміру завантаження з бекенду'
+                        : 'Увімкнути тости щодо розміру завантаження з бекенду'
+                    }
+                    onClick={handleDownloadSizeToastsToggle}
+                  >
+                    📦
+                    <BackendTrafficToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</BackendTrafficToggleStatus>
+                  </BackendTrafficToggleButton>
+                )}
+                {isIndexedDebugTestUser && (
                   <BackendTrafficToggleButton
-                  type="button"
-                  $active={downloadSizeToastsEnabled}
-                  aria-pressed={downloadSizeToastsEnabled}
-                  title={
-                    downloadSizeToastsEnabled
-                      ? 'Вимкнути тости щодо розміру завантаження з бекенду'
-                      : 'Увімкнути тости щодо розміру завантаження з бекенду'
-                  }
-                  aria-label={
-                    downloadSizeToastsEnabled
-                      ? 'Вимкнути тости щодо розміру завантаження з бекенду'
-                      : 'Увімкнути тости щодо розміру завантаження з бекенду'
-                  }
-                  onClick={handleDownloadSizeToastsToggle}
-                >
-                  📦
-                  <BackendTrafficToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</BackendTrafficToggleStatus>
-                </BackendTrafficToggleButton>
+                    type="button"
+                    $active={debugShowAllIndexedCards}
+                    aria-pressed={debugShowAllIndexedCards}
+                    title="Show filtered cards"
+                    aria-label="Show filtered cards"
+                    onClick={() => {
+                      const next = !debugShowAllIndexedCards;
+                      setDebugShowAllIndexedCards(next);
+                      localStorage.setItem(MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY, next ? 'true' : 'false');
+                      console.info('[Matching][debugShowAllIndexedCardsChanged]', { enabled: next });
+                    }}
+                  >
+                    🪲
+                    <BackendTrafficToggleStatus>{debugShowAllIndexedCards ? 'ALL' : 'NORMAL'}</BackendTrafficToggleStatus>
+                  </BackendTrafficToggleButton>
+                )}
+                </TopActionGroup>
               )}
-              {isIndexedDebugTestUser && (
-                <BackendTrafficToggleButton
-                  type="button"
-                  $active={debugShowAllIndexedCards}
-                  aria-pressed={debugShowAllIndexedCards}
-                  title="Show filtered cards"
-                  aria-label="Show filtered cards"
-                  onClick={() => {
-                    const next = !debugShowAllIndexedCards;
-                    setDebugShowAllIndexedCards(next);
-                    localStorage.setItem(MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY, next ? 'true' : 'false');
-                    console.info('[Matching][debugShowAllIndexedCardsChanged]', { enabled: next });
-                  }}
-                >
-                  🪲
-                  <BackendTrafficToggleStatus>{debugShowAllIndexedCards ? 'ALL' : 'NORMAL'}</BackendTrafficToggleStatus>
-                </BackendTrafficToggleButton>
-              )}
-                <ActionButton
-                  type="button"
-                  aria-label="Відкрити меню профілю"
-                  title="Відкрити меню профілю"
-                  onClick={() => setShowInfoModal('dotsMenu')}
-                >
-                  <FaEllipsisV />
-                </ActionButton>
-              </TopActionGroup>
+              {/* The "⋮" menu never shares a button group with the page's other action buttons -
+                  it sits on its own, right after them, not inside a TopActionGroup pill. */}
+              <ActionButton
+                type="button"
+                aria-label="Відкрити меню профілю"
+                title="Відкрити меню профілю"
+                onClick={() => setShowInfoModal('dotsMenu')}
+              >
+                <FaEllipsisV />
+              </ActionButton>
             </TopActions>
           </HeaderContainer>
           {!ownerId && (

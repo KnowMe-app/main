@@ -29,23 +29,33 @@ const Wrap = styled.div`
   display: inline-flex;
 `;
 
+// Matches the shared KmIconButton look (styles/knowme.js) so this trigger is visually identical
+// to every other "⋮" menu button in the app - same size, border, radius, and hover/focus states.
 const DotsButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   border: 1px solid var(--km-border, #d9d2c2);
   background: var(--km-card, #fff);
-  color: var(--km-text, #2b2620);
-  border-radius: 6px;
-  min-height: 30px;
-  min-width: 30px;
-  padding: 4px 8px;
-  font-size: 16px;
+  color: var(--km-muted, #7a7266);
+  font-size: 18px;
   line-height: 1;
-  font-weight: 700;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 
   &:hover {
+    background: var(--km-accent-light, rgba(162, 121, 63, 0.12));
     border-color: var(--km-accent, #a2793f);
     color: var(--km-accent, #a2793f);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--km-accent, #a2793f);
+    box-shadow: 0 0 0 3px var(--km-accent-ring, rgba(162, 121, 63, 0.2));
   }
 `;
 
