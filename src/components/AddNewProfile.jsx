@@ -6148,6 +6148,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const report = await migrateAllLegacyCardComments(auth.currentUser?.uid, {
         onProgress: percent => toast.loading(`Міграція коментарів... ${percent}%`, { id: toastId }),
       });
+      if (report.migratedCards) {
+        clearAllCardsCache();
+        setUsers(currentUsers =>
+          Object.fromEntries(
+            Object.entries(currentUsers).map(([cardId, card]) => {
+              const cardWithoutLegacyComment = { ...(card || {}) };
+              delete cardWithoutLegacyComment.myComment;
+              return [cardId, cardWithoutLegacyComment];
+            }),
+          ),
+        );
+      }
       toast.success(
         `Мігровано карток: ${report.migratedCards}` +
           (report.errors.length ? `, помилок: ${report.errors.length}` : ''),
