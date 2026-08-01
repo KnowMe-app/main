@@ -2129,6 +2129,9 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
+  // Звужуємо до одного вже розпізнаного поля замість усіх увімкнених чекбоксів - див.
+  // fetchNewUsersCollectionInRTDB вище, той самий фікс "350 KB на кожен пошук".
+  const effectiveSearchIdPrefixes = SEARCH_ID_INDEXED_FIELDS.has(searchKey) ? [searchKey] : searchIdPrefixes;
   const searchIdOptions = shouldSkipBroadFallback
     ? {
       includeVariants: false,
@@ -2146,14 +2149,18 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       }
     }
 
-    await searchBySearchIdUsers(
-      modifiedSearchValue,
-      searchValue,
-      uniqueUserIds,
-      users,
-      searchIdPrefixes,
-      searchIdOptions,
-    );
+    // userId не входить у SEARCH_ID_INDEXED_FIELDS - пропускаємо марний пошук по індексу,
+    // прямий lookup вище вже все зробив.
+    if (searchKey !== 'userId') {
+      await searchBySearchIdUsers(
+        modifiedSearchValue,
+        searchValue,
+        uniqueUserIds,
+        users,
+        effectiveSearchIdPrefixes,
+        searchIdOptions,
+      );
+    }
 
     if (shouldSkipBroadFallback) {
       if (Object.keys(users).length === 1) {
@@ -2713,6 +2720,10 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
+  // Пошуковий запит уже класифікований в одне конкретне поле (searchKey) ще в SearchBar.jsx.
+  // Немає сенсу перевіряти й інші увімкнені чекбокси (до 16 полів) - це саме те, що роздувало
+  // трафік до ~350 KB на кожен пошук. Звужуємо до одного поля, коли воно розпізнане.
+  const effectiveSearchIdPrefixes = SEARCH_ID_INDEXED_FIELDS.has(searchKey) ? [searchKey] : searchIdPrefixes;
   const searchIdOptions = shouldSkipBroadFallback
     ? {
       includeVariants: false,
@@ -2759,14 +2770,18 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
         const selectedEqualToKeys = resolveEqualToSearchKeys(equalToKeys);
         await executeSearchByEqualToFields(selectedEqualToKeys, searchValue, uniqueUserIds, users);
       } else {
-        await executeSearchBySearchIdIndex(
-          modifiedSearchValue,
-          searchValue,
-          uniqueUserIds,
-          users,
-          searchIdPrefixes,
-          searchIdOptions,
-        );
+        // userId не входить у SEARCH_ID_INDEXED_FIELDS - жоден із цих запитів не міг би
+        // нічого знайти для userId, тому пропускаємо: прямий lookup вище вже все зробив.
+        if (searchKey !== 'userId') {
+          await executeSearchBySearchIdIndex(
+            modifiedSearchValue,
+            searchValue,
+            uniqueUserIds,
+            users,
+            effectiveSearchIdPrefixes,
+            searchIdOptions,
+          );
+        }
 
         // searchByPrefixes ганяє до 16 полів × 2 регістри × users/newUsers, searchByIndexOn —
         // ще додатково. Це дорого по трафіку, тому виконується лише коли користувач сам
