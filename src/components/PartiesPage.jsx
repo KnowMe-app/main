@@ -13,7 +13,7 @@ import designTokens from '../data/designTokens.json';
 import { auth, database } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions } from './AdminPageHeader';
+import { Header, HeaderActions, PageMenuBar } from './AdminPageHeader';
 import CaseEditor from './CaseEditor';
 import {
   DOCUMENTS_CASES_PATH,
@@ -1113,15 +1113,15 @@ const PartiesPage = ({ isAdmin }) => {
   return (
     <Page>
       <Shell>
+        <PageMenuBar>
+          <PageNavMenu />
+        </PageMenuBar>
         <Header>
           <div>
             <Eyebrow>Admin only</Eyebrow>
             <Title>Parties</Title>
           </div>
           <HeaderActions>
-            {/* Batch 26 §11: PageNavMenu first, matching every other UKRCOM admin page's header -
-                this was the one page with it last, after the Edit/Read toggle. */}
-            <PageNavMenu />
             <MiniButton type="button" onClick={handleToggleEditMode} aria-pressed={isEditMode} title={isEditMode ? 'Switch to read mode' : 'Edit parties'}>
               <FaPen /> {isEditMode ? 'Read' : 'Edit'}
             </MiniButton>

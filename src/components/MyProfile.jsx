@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
@@ -50,7 +50,6 @@ const Page = styled.div`
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  --sticky-header-offset: 112px;
 `;
 const Topbar = styled.div`
   background: var(--card);
@@ -59,16 +58,16 @@ const Topbar = styled.div`
   display: flex;
   justify-content: space-between;
 `;
-const StickyHeader = styled.div`
-  position: sticky;
-  top: 0;
-  z-index: 30;
+// Header block (brand, "⋮" menu, progress bar, tabs) lives in normal document flow - it must
+// scroll away with the rest of the page, never pin itself to the viewport top.
+const HeaderPanel = styled.div`
   background: var(--card);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 `;
-const FALLBACK_STICKY_HEADER_OFFSET = 112;
 const CONTENT_SECTION_TOP_GAP = 18;
-const STICKY_HEADER_EXTRA_GAP = CONTENT_SECTION_TOP_GAP;
+// How far above a section's top edge scrollToSection() stops, and how far past a section's top
+// edge the scroll-spy considers it "active" - since the header no longer overlays content when
+// scrolled, this is just a small breathing-room gap, not a header-height offset.
+const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
 const ProgressWrap = styled.div`padding: 16px 20px 0;`;
@@ -85,7 +84,7 @@ const Card = styled.div`
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
-  scroll-margin-top: var(--sticky-header-offset);
+  scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
 const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
@@ -165,7 +164,7 @@ const PhotoSection = styled.div`
   border: 1.5px dashed var(--border);
   box-shadow: var(--shadow);
   min-width: 0;
-  scroll-margin-top: var(--sticky-header-offset);
+  scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
@@ -350,8 +349,6 @@ export const MyProfile = () => {
   const [hasAgreed, setHasAgreed] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authHintStep, setAuthHintStep] = useState('');
-  const [stickyHeaderOffset, setStickyHeaderOffset] = useState(FALLBACK_STICKY_HEADER_OFFSET);
-  const stickyHeaderRef = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const tabRefs = useRef({});
@@ -410,31 +407,6 @@ export const MyProfile = () => {
       window.removeEventListener('pageshow', restoreLocalDraft);
     };
   }, [restoreLocalDraft]);
-
-  useLayoutEffect(() => {
-    const updateStickyHeaderOffset = () => {
-      const headerHeight = stickyHeaderRef.current?.getBoundingClientRect().height || FALLBACK_STICKY_HEADER_OFFSET;
-      const nextOffset = Math.ceil(headerHeight + STICKY_HEADER_EXTRA_GAP);
-      setStickyHeaderOffset(prevOffset => (prevOffset === nextOffset ? prevOffset : nextOffset));
-    };
-
-    updateStickyHeaderOffset();
-
-    const resizeObserver = typeof ResizeObserver !== 'undefined' && stickyHeaderRef.current
-      ? new ResizeObserver(updateStickyHeaderOffset)
-      : null;
-
-    if (resizeObserver && stickyHeaderRef.current) {
-      resizeObserver.observe(stickyHeaderRef.current);
-    }
-
-    window.addEventListener('resize', updateStickyHeaderOffset);
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener('resize', updateStickyHeaderOffset);
-    };
-  }, []);
-
 
   useEffect(() => {
     if (userId || state.userId) return;
@@ -659,14 +631,14 @@ export const MyProfile = () => {
 
   const getSectionTargetTop = useCallback((sectionEl) => {
     const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
-    return Math.max(0, Math.round(sectionTop - stickyHeaderOffset));
-  }, [stickyHeaderOffset]);
+    return Math.max(0, Math.round(sectionTop - SECTION_SCROLL_GAP));
+  }, []);
 
   const getActiveSectionKeyByScroll = useCallback(() => {
     const entries = getSectionEntries();
     if (entries.length === 0) return '';
 
-    const activationLine = window.scrollY + stickyHeaderOffset + SCROLL_ACTIVE_SECTION_GAP;
+    const activationLine = window.scrollY + SECTION_SCROLL_GAP + SCROLL_ACTIVE_SECTION_GAP;
     let activeKey = entries[0].key;
 
     entries.forEach(({ key, node }) => {
@@ -677,7 +649,7 @@ export const MyProfile = () => {
     });
 
     return activeKey;
-  }, [getSectionEntries, stickyHeaderOffset]);
+  }, [getSectionEntries]);
 
   const finishProgrammaticScroll = useCallback(() => {
     isManualScrollRef.current = false;
@@ -1095,8 +1067,8 @@ export const MyProfile = () => {
     </Field>;
   };
 
-  return <Page style={{ '--sticky-header-offset': `${stickyHeaderOffset}px` }}>
-    <StickyHeader ref={stickyHeaderRef}>
+  return <Page>
+    <HeaderPanel>
       <Topbar>
         <KnowMeBrand />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1134,7 +1106,7 @@ export const MyProfile = () => {
           </Tab>;
         })}
       </Tabs>
-    </StickyHeader>
+    </HeaderPanel>
 
     {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
       <Header>

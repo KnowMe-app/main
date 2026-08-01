@@ -1,9 +1,16 @@
-// Shared page-header chrome for the UKRCOM admin pages (Documents / Invoice Builder / Parties).
-// Mirrors my-profile's sticky top bar (MyProfile.jsx's StickyHeader + Topbar) so
-// the "⋮" page-switcher (PageNavMenu, always the first item in HeaderActions) stays pinned in the
-// same top-right corner on every page and at every viewport width, instead of each page carrying
-// its own copy of this CSS that can drift out of sync (batch 29 §1).
+// Shared page-header chrome for the UKRCOM admin pages (Documents / Invoice Builder / Parties /
+// Budget). `PageMenuBar` holds the "⋮" page-switcher (PageNavMenu) on its own row, right-aligned,
+// in normal document flow - it must never be sticky/fixed, and it must never share a row with the
+// page's other action buttons (Reload, PDF export, Edit/Read toggle, etc.), so it always lands in
+// the same top-right spot as every other "⋮" menu in the app (see styles/knowme.js's KmTopbar /
+// KmPageMenuBar, the same pattern My Profile and the User Agreement page use).
 import styled from 'styled-components';
+
+export const PageMenuBar = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+`;
 
 export const Header = styled.header`
   display: flex;
@@ -11,12 +18,6 @@ export const Header = styled.header`
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: var(--km-bg);
-  padding-top: 12px;
-  margin-top: -12px;
 
   @media (max-width: 560px) {
     flex-direction: column;

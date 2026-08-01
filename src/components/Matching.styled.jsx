@@ -452,8 +452,7 @@ export const BackendTrafficToggleStatus = styled.span`
 `;
 
 export const HeaderContainer = styled.div`
-  position: sticky;
-  top: 0;
+  position: static;
   z-index: 12;
   display: flex;
   justify-content: flex-end;

@@ -63,6 +63,7 @@ import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, Mo
 
 import { color, coloredCard, uiTokens } from './styles';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { KmIconButton, KmPageMenuBar } from './styles/knowme';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
 import {
@@ -361,34 +362,6 @@ const InnerContainer = styled.div`
   }
 `;
 
-const DotsButton = styled.button`
-  margin: 0;
-  width: 40px;
-  height: 40px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  font-size: 22px;
-  line-height: 1;
-  color: var(--km-accent);
-  cursor: pointer;
-  padding: 0;
-  margin-left: auto;
-  align-items: center;
-  justify-content: center;
-  display: flex;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
-
-  &:hover {
-    background-color: var(--km-accent-light);
-    border-color: var(--km-accent-mid);
-    color: var(--km-accent);
-  }
-`;
-
 
 export const SubmitButton = styled.button`
   padding: 11px 14px;
@@ -435,9 +408,6 @@ const TopButtons = styled.div`
   justify-content: flex-start;
   align-items: center;
   gap: 10px;
-  position: sticky;
-  top: 0;
-  z-index: 20;
   background: var(--km-card);
   padding: 6px 0;
 
@@ -6665,17 +6635,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     <Container>
       <InnerContainer>
         {isLoggedIn && (
-          <TopButtons>
-            {/* Batch 26 §11: the "⋮" menu first, matching every other UKRCOM admin page's header
-                (PageNavMenu is always the first action button there). */}
-            <DotsButton
+          <KmPageMenuBar>
+            <KmIconButton
+              type="button"
               aria-label="Відкрити меню профілю"
               onClick={() => {
                 setShowInfoModal('dotsMenu');
               }}
             >
               ⋮
-            </DotsButton>
+            </KmIconButton>
+          </KmPageMenuBar>
+        )}
+        {isLoggedIn && (
+          <TopButtons>
             {state.userId && (
               <>
                 <EditActionButton

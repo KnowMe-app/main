@@ -24,7 +24,7 @@ import { formatEuroSmart, getItemDisplayAmount, getSortedPackages, isFromPricedI
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions } from './AdminPageHeader';
+import { Header, HeaderActions, PageMenuBar } from './AdminPageHeader';
 import {
   addCatalogChildToPackage,
   addCustomChildToPackage,
@@ -3609,13 +3609,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   return (
     <Page>
       <Shell>
+        <PageMenuBar>
+          <PageNavMenu />
+        </PageMenuBar>
         <Header>
           <div>
             <Eyebrow>Admin only</Eyebrow>
             <Title>Invoice Builder</Title>
           </div>
           <HeaderActions>
-            <PageNavMenu />
             <input
               ref={fileInputRef}
               type="file"
