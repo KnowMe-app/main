@@ -2162,8 +2162,14 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       return users;
     }
 
-    await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
-    await searchUserByPartialUserId(searchValue, users);
+    // Індексований пошук вище (searchBySearchIdUsers/userId) вже покриває переважну
+    // більшість запитів. Широкий fallback (до ~32 запитів по всіх 16 полях × users/newUsers)
+    // потрібен лише коли індекс нічого не знайшов — інакше він щоразу тягне зайвий трафік
+    // навіть для вже знайденої картки.
+    if (Object.keys(users).length === 0) {
+      await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
+      await searchUserByPartialUserId(searchValue, users);
+    }
 
     if (Object.keys(users).length === 1) {
       const id = Object.keys(users)[0];
@@ -2760,7 +2766,10 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
           searchIdOptions,
         );
 
-        if (!shouldSkipBroadFallback) {
+        // Так само як у searchUsersOnly: широкий fallback (searchByPrefixes ганяє до
+        // 16 полів × 2 регістри × users/newUsers, searchByIndexOn — ще додатково) потрібен
+        // лише коли швидкий індексований пошук вище нічого не знайшов.
+        if (!shouldSkipBroadFallback && Object.keys(users).length === 0) {
           await searchByPrefixes(searchValue, uniqueUserIds, users);
           await searchByIndexOn({
             searchValue,
