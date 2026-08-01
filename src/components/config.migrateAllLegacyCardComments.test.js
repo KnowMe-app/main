@@ -28,36 +28,42 @@ describe('bulk migration of every leftover users/newUsers myComment into multiDa
     expect(fnBody).toContain('legacyComment?.text');
   });
 
-  it('clears both sources in the same root transaction as the destination write', () => {
-    expect(fnBody).toMatch(/`users\/\$\{cardId\}\/myComment`/);
-    expect(fnBody).toMatch(/`newUsers\/\$\{cardId\}\/myComment`/);
-    expect(fnBody).toContain('runTransaction(ref2(database), rootValue');
-    expect(fnBody).toContain('sources.some(source => !valuesMatch');
-    expect(fnBody).toContain('sources.forEach(source => setValueAtPath');
+  it('never transacts on the database root: a root-anchored runTransaction needs .write on "/", which no real ruleset grants', () => {
+    expect(fnBody).not.toContain('runTransaction(');
+    expect(fnBody).not.toContain('valuesMatch');
+    expect(fnBody).not.toContain('getValueAtPath');
+    expect(fnBody).not.toContain('setValueAtPath');
+  });
+
+  it('clears both sources and writes the destination in one plain multi-path update()', () => {
+    expect(fnBody).toMatch(/`users\/\$\{cardId\}\/myComment`\]\s*=\s*null;/);
+    expect(fnBody).toMatch(/`newUsers\/\$\{cardId\}\/myComment`\]\s*=\s*null;/);
+    expect(fnBody).toContain('updates[destinationPath] = { text: finalText, updatedAt: Date.now() };');
+    expect(fnBody).toContain('await update(ref2(database), updates);');
   });
 
   it('merges conflicting/legacy/pre-existing comment text instead of dropping one side', () => {
     expect(fnBody).toContain(".join('\\n\\n')");
   });
 
-  it('chunks work and runs cards serially rather than starting unbounded transactions', () => {
+  it('chunks writes into bounded update() calls instead of one unbounded request', () => {
     expect(fnBody).toContain('const BATCH_SIZE = 100;');
     expect(fnBody).toMatch(/for \(let i = 0; i < ids\.length; i \+= BATCH_SIZE\)/);
     const writeLoopBody = fnBody.slice(fnBody.indexOf('const BATCH_SIZE = 100;'));
-    expect(writeLoopBody).toContain('for (const cardId of chunk)');
-    expect(writeLoopBody).toContain('await runTransaction(ref2(database), rootValue');
+    expect(writeLoopBody).not.toContain('Promise.all(');
+    expect(writeLoopBody).toContain('await update(ref2(database), updates);');
   });
 
   it('collects per-chunk errors instead of letting one failing chunk abort the whole run', () => {
-    expect(fnBody).toMatch(/catch \(error\) \{\s*report\.errors\.push/);
+    expect(fnBody).toMatch(/catch \(error\) \{\s*chunkCardIds\.forEach/);
     expect(fnBody).toContain('report.errors.push(');
   });
 
-  it('reports the successful card IDs only after the atomic migration commits', () => {
-    expect(fnBody.indexOf('report.migratedCards += 1;')).toBeGreaterThan(
-      fnBody.indexOf("if (!migrationResult.committed)"),
+  it('reports migrated card IDs only after the chunk update() call succeeds', () => {
+    expect(fnBody.indexOf('report.migratedCards += chunkCardIds.length;')).toBeGreaterThan(
+      fnBody.indexOf('await update(ref2(database), updates);'),
     );
-    expect(fnBody).toContain('report.migratedCardIds.push(cardId)');
+    expect(fnBody).toContain('report.migratedCardIds.push(...chunkCardIds);');
   });
 
   it('reports progress so the UI can show percent complete', () => {

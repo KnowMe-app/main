@@ -20,7 +20,6 @@ import {
   endAt,
   endBefore,
   equalTo,
-  runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
@@ -1224,8 +1223,15 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
 // multiData/comments/{ownerId}/{cardId}, під акаунт адміна, що запускає міграцію.
 // Якщо той самий cardId має різний myComment в users і newUsers, або в одному з
 // comments-root вже є коментар цього ownerId — тексти об'єднуються через '\n\n'.
-// Кожен запис змінюється транзакцією з перевіркою прочитаного значення: редагування,
-// яке сталося під час міграції, не буде перезаписане або очищене за старим snapshot.
+// НАВМИСНО не використовує runTransaction(ref2(database), ...) (транзакцію на
+// корені всієї RTDB): такий виклик вимагає `.write`-права на сам корінь `/` і
+// завантажує/блокує все дерево бази для кожного виклику — жоден реальний
+// security-ruleset такого доступу не дає, тож кожен виклик впаде з відмовою
+// доступу. Замість цього пишемо звичайним мультишляховим update() — атомарним
+// лише по перерахованих у ньому абсолютних шляхах (як і в migrateMyCardComment/
+// setUserComment вище), без потреби в правах на корінь. Атомарність — на рівні
+// чанку з 100 карток, а не окремої картки: прийнятний компроміс для одноразової
+// адмінської операції над внутрішнім полем коментаря.
 export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {}) => {
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
@@ -1261,28 +1267,18 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
   const existingComments = existingSnap.val() || {};
   const legacyExistingComments = legacyExistingSnap.val() || {};
 
-  const valuesMatch = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
   const mergeCommentText = (...values) =>
     [...new Set(values.flatMap(value => String(value || '').split(/\n\n+/).map(part => part.trim()).filter(Boolean)))].join('\n\n');
-  const getValueAtPath = (root, path) =>
-    path.split('/').reduce((value, key) => value?.[key], root);
-  const setValueAtPath = (root, path, value) => {
-    const keys = path.split('/');
-    const leaf = keys.pop();
-    const parent = keys.reduce((current, key) => {
-      current[key] = current[key] && typeof current[key] === 'object' ? current[key] : {};
-      return current[key];
-    }, root);
-    if (value === null) delete parent[leaf];
-    else parent[leaf] = value;
-  };
 
   const BATCH_SIZE = 100;
   const ids = Array.from(cardIds);
 
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
     const chunk = ids.slice(i, i + BATCH_SIZE);
-    for (const cardId of chunk) {
+    const updates = {};
+    const chunkCardIds = [];
+
+    chunk.forEach(cardId => {
       const usersText = String(usersData[cardId]?.myComment || '').trim();
       const newUsersText = String(newUsersData[cardId]?.myComment || '').trim();
       if (usersText && newUsersText && usersText !== newUsersText) {
@@ -1293,12 +1289,12 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
       const legacyComment = legacyExistingComments[cardId] ?? null;
       if (currentComment?.text || legacyComment?.text) report.mergedWithExisting += 1;
 
-      // When only the fallback record exists, extend it in place. Creating a
-      // current-root record would shadow a fallback edit made concurrently.
+      // Якщо запис уже є лише в легасі-корені — дописуємо туди ж, а не
+      // створюємо новий запис у поточному корені, який "затінить" паралельну
+      // легасі-правку.
       const destinationPath = currentComment || !legacyComment
         ? getCommentPath(commentsOwnerId, cardId)
         : getLegacyCommentPath(commentsOwnerId, cardId);
-      const expectedDestination = currentComment || legacyComment;
       const finalText = mergeCommentText(
         usersText,
         newUsersText,
@@ -1306,34 +1302,19 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
         currentComment?.text,
       );
 
-      try {
-        const sources = [
-          { path: `users/${cardId}/myComment`, expected: usersData[cardId]?.myComment },
-          { path: `newUsers/${cardId}/myComment`, expected: newUsersData[cardId]?.myComment },
-        ].filter(source => String(source.expected || '').trim());
+      if (usersData[cardId]?.myComment !== undefined) updates[`users/${cardId}/myComment`] = null;
+      if (newUsersData[cardId]?.myComment !== undefined) updates[`newUsers/${cardId}/myComment`] = null;
+      updates[destinationPath] = { text: finalText, updatedAt: Date.now() };
+      chunkCardIds.push(cardId);
+    });
 
-        // The destination and both legacy sources live under different RTDB
-        // branches, so transact at their common root. This validates every
-        // snapshot and applies the write/cleanup as one atomic operation.
-        // eslint-disable-next-line no-await-in-loop
-        const migrationResult = await runTransaction(ref2(database), rootValue => {
-          const nextRoot = rootValue && typeof rootValue === 'object' ? rootValue : {};
-          if (!valuesMatch(getValueAtPath(nextRoot, destinationPath), expectedDestination)) {
-            return undefined;
-          }
-          if (sources.some(source => !valuesMatch(getValueAtPath(nextRoot, source.path), source.expected))) {
-            return undefined;
-          }
-          setValueAtPath(nextRoot, destinationPath, { text: finalText, updatedAt: Date.now() });
-          sources.forEach(source => setValueAtPath(nextRoot, source.path, null));
-          return nextRoot;
-        });
-        if (!migrationResult.committed) throw new Error('Картку або коментар було змінено під час міграції');
-        report.migratedCards += 1;
-        report.migratedCardIds.push(cardId);
-      } catch (error) {
-        report.errors.push({ cardId, message: error?.message || String(error) });
-      }
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database), updates);
+      report.migratedCards += chunkCardIds.length;
+      report.migratedCardIds.push(...chunkCardIds);
+    } catch (error) {
+      chunkCardIds.forEach(cardId => report.errors.push({ cardId, message: error?.message || String(error) }));
     }
     onProgress?.(Math.round(((i + chunk.length) / ids.length) * 100));
   }
