@@ -987,7 +987,7 @@ describe('InvoiceBuilderPage', () => {
 
       const heading = Array.from(container.querySelectorAll('h2')).find(h => h.textContent === 'Expected expenses');
       const panel = heading.closest('section');
-      const uploadButton = Array.from(panel.querySelectorAll('button')).find(btn => btn.textContent.includes('Upload JSON'));
+      const uploadButton = Array.from(panel.querySelectorAll('button')).find(btn => btn.textContent.includes('Upload'));
       const fileInput = panel.querySelector('input[type="file"]');
       expect(uploadButton).toBeTruthy();
       expect(fileInput).toBeTruthy();

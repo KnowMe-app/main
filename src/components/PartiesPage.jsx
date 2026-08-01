@@ -13,7 +13,7 @@ import designTokens from '../data/designTokens.json';
 import { auth, database } from './config';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions, HeaderRight } from './AdminPageHeader';
+import { Header, HeaderActions, HeaderActionsRow } from './AdminPageHeader';
 import CaseEditor from './CaseEditor';
 import {
   DOCUMENTS_CASES_PATH,
@@ -928,17 +928,18 @@ const CaseReadView = ({ catalog, selectedCaseId, onSelectCase, onCreateCase }) =
       ) : (
         <StateCard style={{ marginTop: 10 }}>No cases yet - create one above to see its data here.</StateCard>
       )}
-      {selectedCase ? groups.map(group => (
+      {/* A group with nothing resolved for this case (e.g. no genetic-affinity-certificate data
+          yet) used to still render as an empty "No data" block - dropped entirely instead, same as
+          any other case where there's simply nothing to show. */}
+      {selectedCase ? groups.filter(group => group.items.length).map(group => (
         <ReadGroupBlock key={group.label}>
           <SectionSubhead>{group.label}</SectionSubhead>
-          {group.items.length
-            ? group.items.map(item => (
-              <ReadRow key={item.path}>
-                <ReadRowLabel>{item.path}</ReadRowLabel>
-                <ReadRowValue>{item.value}</ReadRowValue>
-              </ReadRow>
-            ))
-            : <CompactValue>No data</CompactValue>}
+          {group.items.map(item => (
+            <ReadRow key={item.path}>
+              <ReadRowLabel>{item.path}</ReadRowLabel>
+              <ReadRowValue>{item.value}</ReadRowValue>
+            </ReadRow>
+          ))}
         </ReadGroupBlock>
       )) : null}
     </Panel>
@@ -1118,15 +1119,15 @@ const PartiesPage = ({ isAdmin }) => {
             <Eyebrow>Admin only</Eyebrow>
             <Title>Parties</Title>
           </div>
-          <HeaderRight>
+          <PageNavMenu />
+        </Header>
+        <HeaderActionsRow>
           <HeaderActions>
             <MiniButton type="button" onClick={handleToggleEditMode} aria-pressed={isEditMode} title={isEditMode ? 'Switch to read mode' : 'Edit parties'}>
               <FaPen /> {isEditMode ? 'Read' : 'Edit'}
             </MiniButton>
           </HeaderActions>
-          <PageNavMenu />
-          </HeaderRight>
-        </Header>
+        </HeaderActionsRow>
 
         {loading ? (
           <StateCard>Loading…</StateCard>

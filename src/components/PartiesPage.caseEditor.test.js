@@ -190,9 +190,13 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     await openCaseOne();
     await screen.findByLabelText('Пологовий будинок');
 
+    // "Підготовка" now lives on its own tab, right after "Огляд" - see the racsPreparation move.
+    fireEvent.click(screen.getByRole('button', { name: 'Підготовка' }));
+    await screen.findByLabelText('Номер (укр)');
+
     fireEvent.change(screen.getByLabelText('Номер (укр)'), { target: { value: 'Д-1' } });
     // "Дата договору" also labels medicalServicesAgreement's own date field now that both sit in
-    // the same always-open "Підготовка" group (batch 29 §6) - surrogacyAgreement's copy is first.
+    // the same always-open "Підготовка" group - surrogacyAgreement's copy is first.
     fireEvent.change(screen.getAllByLabelText('Дата договору')[0], { target: { value: '2026-05-01' } });
     // Same reasoning as above - maritalStatusDeclaration/legalServicesDisclaimer also have their
     // own "Нотаріус" picker field in the same open group; surrogacyAgreement's is first.

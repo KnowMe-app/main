@@ -22,6 +22,7 @@ import {
   coupleDisplayName,
   createChildRecord,
   formatDocumentDate,
+  formatPassportNumber,
   formatShortNameUk,
   getMaternityHospitalDisplayName,
   getValueByPath,
@@ -39,14 +40,17 @@ const describeSaveError = error => `${error?.code || error?.name || 'error'}: ${
 const isFilled = value => !(value === undefined || value === null || String(value).trim() === '');
 const parseNumberOrBlank = value => (value === '' || value === undefined || value === null ? undefined : Number(value));
 
-// Batch 29 §4: several representatives can share the same full name but carry different powers of
-// attorney - this is the one line that tells them apart, in the picker and on the overview card
-// alike. Blank when neither date is filled (never an empty "Довіреність від" label).
-const representativeProxyLabel = record => {
-  const poa = record?.powerOfAttorney || {};
+// The power of attorney (signing date + apostille date) is now a static fact of the *case*
+// (relations.representativePowerOfAttorney, edited alongside the representative picker below) -
+// the same representative can act under a different POA on another case, and one POA can cover
+// several representatives at once, so a representative record no longer needs its own copy per
+// person/date pairing. Several representatives can still share the exact same full name though, so
+// this is the one line that tells them apart, in the picker and on the overview card alike - a
+// passport number and/or birth date, whichever is filled. Blank when neither is set.
+const representativeIdentityLabel = record => {
   const parts = [];
-  if (isFilled(poa.date)) parts.push(`Довіреність від ${formatDocumentDate(poa.date)}`);
-  if (isFilled(poa.apostilleDate)) parts.push(`Апостиль ${formatDocumentDate(poa.apostilleDate)}`);
+  if (isFilled(record?.passport?.number)) parts.push(`Паспорт ${formatPassportNumber(record.passport.number)}`);
+  if (isFilled(record?.birthDate)) parts.push(`${formatDocumentDate(record.birthDate)} р.н.`);
   return parts.join(' · ');
 };
 
@@ -718,6 +722,12 @@ const buildDraftFromCase = caseRecord => {
       clinicId: relations.clinicId || '',
       surrogateMotherId: relations.surrogateMotherId || '',
       representativeIds: toArray(relations.representativeIds).map(String),
+      // Static per-case power of attorney (signing date + apostille date) - see
+      // representativeIdentityLabel above for why this moved off the representative record.
+      representativePowerOfAttorney: {
+        date: relations.representativePowerOfAttorney?.date || '',
+        apostilleDate: relations.representativePowerOfAttorney?.apostilleDate || '',
+      },
     },
     childbirth: {
       maternityHospitalId: childbirth.maternityHospitalId || '',
@@ -838,7 +848,7 @@ const SECTION_DEFS = [
   // entry, each tagged with the "Підготовка"/"РАЦС" group it renders under, so the two group-level
   // collapsibles below can sum their own members' completion independently.
   {
-    key: 'surrogacyAgreement', tab: 'racs', group: 'preparation', title: 'Договір сурогатного материнства', meta: 'Номер, дата, нотаріус',
+    key: 'surrogacyAgreement', tab: 'preparation', title: 'Договір сурогатного материнства', meta: 'Номер, дата, нотаріус',
     completion: draft => {
       const d = draft.documents.surrogacyAgreement;
       const values = [d.number.uk, d.number.en, d.date, d.notaryId];
@@ -846,21 +856,21 @@ const SECTION_DEFS = [
     },
   },
   {
-    key: 'surrogacyAgreementAppendix1', tab: 'racs', group: 'preparation', title: 'Додаток №1 до договору', meta: 'Дата додатка',
+    key: 'surrogacyAgreementAppendix1', tab: 'preparation', title: 'Додаток №1 до договору', meta: 'Дата додатка',
     completion: draft => {
       const values = [draft.documents.surrogacyAgreementAppendix1.date];
       return { filled: values.filter(isFilled).length, total: values.length };
     },
   },
   {
-    key: 'medicalServicesAgreement', tab: 'racs', group: 'preparation', title: 'Договір про медичні послуги', meta: 'Дата договору',
+    key: 'medicalServicesAgreement', tab: 'preparation', title: 'Договір про медичні послуги', meta: 'Дата договору',
     completion: draft => {
       const values = [draft.documents.medicalServicesAgreement.date];
       return { filled: values.filter(isFilled).length, total: values.length };
     },
   },
   {
-    key: 'maritalStatusDeclaration', tab: 'racs', group: 'preparation', title: 'Заява СМ про відсутність шлюбу', meta: 'Дата заяви, нотаріус',
+    key: 'maritalStatusDeclaration', tab: 'preparation', title: 'Заява СМ про відсутність шлюбу', meta: 'Дата заяви, нотаріус',
     completion: draft => {
       const d = draft.documents.maritalStatusDeclaration;
       const values = [d.statementDate, d.notaryId];
@@ -868,7 +878,7 @@ const SECTION_DEFS = [
     },
   },
   {
-    key: 'legalServicesDisclaimer', tab: 'racs', group: 'preparation', title: 'Заява про ненадання юридичних послуг клінікою', meta: 'Дата заяви, нотаріус',
+    key: 'legalServicesDisclaimer', tab: 'preparation', title: 'Заява про ненадання юридичних послуг клінікою', meta: 'Дата заяви, нотаріус',
     completion: draft => {
       const d = draft.documents.legalServicesDisclaimer;
       const values = [d.statementDate, d.notaryId];
@@ -960,6 +970,13 @@ const CaseEditor = ({
   };
 
   const updateRelations = (field, value) => { setDraft(previous => ({ ...previous, relations: { ...previous.relations, [field]: value } })); markDirty(); };
+  const updateRepresentativePoa = (field, value) => {
+    setDraft(previous => ({
+      ...previous,
+      relations: { ...previous.relations, representativePowerOfAttorney: { ...previous.relations.representativePowerOfAttorney, [field]: value } },
+    }));
+    markDirty();
+  };
   const updateChildbirth = (field, value) => { setDraft(previous => ({ ...previous, childbirth: { ...previous.childbirth, [field]: value } })); markDirty(); };
   const updateChild = (childId, field, value) => {
     setDraft(previous => ({
@@ -1040,10 +1057,10 @@ const CaseEditor = ({
     maternityHospitals: maternityDisplayName,
     notaries: notaryOptionLabel,
   };
-  // Batch 29 §4: only representatives get a sublabel - several can share the exact same full name,
-  // distinguished only by which power of attorney they carry.
+  // Only representatives get a sublabel - several can share the exact same full name, distinguished
+  // by passport/birth date now that the power of attorney itself is case-level, not per-record.
   const SUB_LABEL_BY_COLLECTION = {
-    representatives: representativeProxyLabel,
+    representatives: representativeIdentityLabel,
   };
 
   const openPicker = ({ title, collection, valueId, multi = false, onApply }) => {
@@ -1223,6 +1240,7 @@ const CaseEditor = ({
             </HeaderChips>
             <Tabs role="tablist">
               <TabButton type="button" $active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Огляд</TabButton>
+              <TabButton type="button" $active={activeTab === 'preparation'} onClick={() => setActiveTab('preparation')}>Підготовка</TabButton>
               <TabButton type="button" $active={activeTab === 'program'} onClick={() => setActiveTab('program')}>Програма ДРТ</TabButton>
               <TabButton type="button" $active={activeTab === 'racs'} onClick={() => setActiveTab('racs')}>РАЦС</TabButton>
             </Tabs>
@@ -1298,7 +1316,7 @@ const CaseEditor = ({
                       return (
                         <RepresentativeList>
                           {selected.map(record => {
-                            const sub = representativeProxyLabel(record);
+                            const sub = representativeIdentityLabel(record);
                             return (
                               <div key={record.id}>
                                 <RepresentativeName>{partyDisplayName(record)}</RepresentativeName>
@@ -1315,10 +1333,133 @@ const CaseEditor = ({
                     >
                       Змінити
                     </RelationCardButton>
+                    {/* The power of attorney itself (signing + apostille date) is static per case -
+                        one POA can cover every representative selected above, and the same
+                        representative can carry a different POA on another case, so these two
+                        dates live here rather than on the representative record. */}
+                    <FieldGrid style={{ marginTop: 10 }}>
+                      <Field>
+                        Дата довіреності
+                        <FieldInput
+                          type="date"
+                          value={draft.relations.representativePowerOfAttorney.date}
+                          onChange={event => updateRepresentativePoa('date', event.target.value)}
+                        />
+                      </Field>
+                      <Field>
+                        Дата апостилю
+                        <FieldInput
+                          type="date"
+                          value={draft.relations.representativePowerOfAttorney.apostilleDate}
+                          onChange={event => updateRepresentativePoa('apostilleDate', event.target.value)}
+                        />
+                      </Field>
+                    </FieldGrid>
                   </RelationCard>
                 </RelationGrid>
                 </SectionBody>
               </PrimarySection>
+            </div>
+          ) : null}
+
+          {activeTab === 'preparation' ? (
+            <div>
+              {/* Moved off the "РАЦС" tab (was one of its two stage-level collapsibles) - the
+                  registration itself. Same collapsible-with-counter chrome as Медичні дані/
+                  Транспортування ембріонів on the Програма ДРТ tab, just its own tab now; every
+                  field keeps its existing draft path, only the tab it renders under moved. */}
+              <CollapsibleSection
+                id="racsPreparation"
+                title="Підготовка"
+                meta="Договір сурогатного материнства, додаток №1, договір про мед. послуги, заяви СМ і клініки"
+                completion={groupCompletion(RACS_PREPARATION_KEYS, draft)}
+                open={Boolean(openSections.racsPreparation)}
+                onToggle={() => toggleSection('racsPreparation')}
+              >
+                <DocRow>
+                  <SectionSubhead style={{ margin: '0 0 6px' }}>Договір сурогатного материнства</SectionSubhead>
+                  <FieldGrid>
+                    <Field>
+                      Номер (укр)
+                      <FieldInput type="text" value={draft.documents.surrogacyAgreement.number.uk} onChange={event => updateDocumentNumberField('surrogacyAgreement', 'uk', event.target.value)} />
+                    </Field>
+                    <Field>
+                      Номер (eng)
+                      <FieldInput type="text" value={draft.documents.surrogacyAgreement.number.en} onChange={event => updateDocumentNumberField('surrogacyAgreement', 'en', event.target.value)} />
+                    </Field>
+                    <Field>
+                      Дата договору
+                      <FieldInput type="date" value={draft.documents.surrogacyAgreement.date} onChange={event => updateDocumentField('surrogacyAgreement', 'date', event.target.value)} />
+                    </Field>
+                    <Field>
+                      Нотаріус
+                      <PickerFieldButton
+                        type="button"
+                        onClick={() => openPicker({
+                          title: 'Оберіть нотаріуса', collection: 'notaries', valueId: draft.documents.surrogacyAgreement.notaryId, onApply: id => updateDocumentField('surrogacyAgreement', 'notaryId', id),
+                        })}
+                      >
+                        <PickerFieldValue $empty={!draft.documents.surrogacyAgreement.notaryId}>
+                          {(() => {
+                            const notary = catalog.parties.notaries.find(item => String(item.id) === String(draft.documents.surrogacyAgreement.notaryId));
+                            return notary ? notaryOptionLabel(notary) : '— не обрано —';
+                          })()}
+                        </PickerFieldValue>
+                        <span>›</span>
+                      </PickerFieldButton>
+                    </Field>
+                  </FieldGrid>
+                </DocRow>
+                <DocRow>
+                  <SectionSubhead style={{ margin: '0 0 6px' }}>Додаток №1 до договору</SectionSubhead>
+                  <FieldGrid>
+                    <Field>
+                      Дата додатка
+                      <FieldInput type="date" value={draft.documents.surrogacyAgreementAppendix1.date} onChange={event => updateDocumentField('surrogacyAgreementAppendix1', 'date', event.target.value)} />
+                    </Field>
+                  </FieldGrid>
+                </DocRow>
+                <DocRow>
+                  <SectionSubhead style={{ margin: '0 0 6px' }}>Договір про медичні послуги</SectionSubhead>
+                  <FieldGrid>
+                    <Field>
+                      Дата договору
+                      <FieldInput type="date" value={draft.documents.medicalServicesAgreement.date} onChange={event => updateDocumentField('medicalServicesAgreement', 'date', event.target.value)} />
+                    </Field>
+                  </FieldGrid>
+                </DocRow>
+                {[
+                  { key: 'maritalStatusDeclaration', label: 'Заява СМ про відсутність шлюбу' },
+                  { key: 'legalServicesDisclaimer', label: 'Заява про ненадання юридичних послуг клінікою' },
+                ].map(({ key, label }) => (
+                  <DocRow key={key}>
+                    <SectionSubhead style={{ margin: '0 0 6px' }}>{label}</SectionSubhead>
+                    <FieldGrid>
+                      <Field>
+                        Дата заяви
+                        <FieldInput type="date" value={draft.documents[key].statementDate} onChange={event => updateDocumentField(key, 'statementDate', event.target.value)} />
+                      </Field>
+                      <Field>
+                        Нотаріус
+                        <PickerFieldButton
+                          type="button"
+                          onClick={() => openPicker({
+                            title: 'Оберіть нотаріуса', collection: 'notaries', valueId: draft.documents[key].notaryId, onApply: id => updateDocumentField(key, 'notaryId', id),
+                          })}
+                        >
+                          <PickerFieldValue $empty={!draft.documents[key].notaryId}>
+                            {(() => {
+                              const notary = catalog.parties.notaries.find(item => String(item.id) === String(draft.documents[key].notaryId));
+                              return notary ? notaryOptionLabel(notary) : '— не обрано —';
+                            })()}
+                          </PickerFieldValue>
+                          <span>›</span>
+                        </PickerFieldButton>
+                      </Field>
+                    </FieldGrid>
+                  </DocRow>
+                ))}
+              </CollapsibleSection>
             </div>
           ) : null}
 
@@ -1480,109 +1621,12 @@ const CaseEditor = ({
 
           {activeTab === 'racs' ? (
             <div>
-              {/* Batch 29 §6: the racs tab's four flat sections (Пологи та дитина / Договір
-                  сурогатного материнства / Заяви до РАЦС / Інші документи) are regrouped into two
-                  stage-level collapsibles - "Підготовка" (everything signed/prepared before the
-                  registration itself) and "РАЦС" (the registration act and its own two
-                  attachments). Same collapsible-with-counter chrome as Медичні дані/
-                  Транспортування ембріонів on the Програма ДРТ tab, just one level up; every field
-                  keeps its existing draft path, only the section that renders it moved. §5: the
-                  purely-informational "Лист клініки до РАЦС" block (no fields of its own, no
-                  action - just a note that it's auto-generated) is dropped; the document itself
-                  still generates the same way it always did, from Documents Builder. */}
-              <CollapsibleSection
-                id="racsPreparation"
-                title="Підготовка"
-                meta="Договір сурогатного материнства, додаток №1, договір про мед. послуги, заяви СМ і клініки"
-                completion={groupCompletion(RACS_PREPARATION_KEYS, draft)}
-                open={Boolean(openSections.racsPreparation)}
-                onToggle={() => toggleSection('racsPreparation')}
-              >
-                <DocRow>
-                  <SectionSubhead style={{ margin: '0 0 6px' }}>Договір сурогатного материнства</SectionSubhead>
-                  <FieldGrid>
-                    <Field>
-                      Номер (укр)
-                      <FieldInput type="text" value={draft.documents.surrogacyAgreement.number.uk} onChange={event => updateDocumentNumberField('surrogacyAgreement', 'uk', event.target.value)} />
-                    </Field>
-                    <Field>
-                      Номер (eng)
-                      <FieldInput type="text" value={draft.documents.surrogacyAgreement.number.en} onChange={event => updateDocumentNumberField('surrogacyAgreement', 'en', event.target.value)} />
-                    </Field>
-                    <Field>
-                      Дата договору
-                      <FieldInput type="date" value={draft.documents.surrogacyAgreement.date} onChange={event => updateDocumentField('surrogacyAgreement', 'date', event.target.value)} />
-                    </Field>
-                    <Field>
-                      Нотаріус
-                      <PickerFieldButton
-                        type="button"
-                        onClick={() => openPicker({
-                          title: 'Оберіть нотаріуса', collection: 'notaries', valueId: draft.documents.surrogacyAgreement.notaryId, onApply: id => updateDocumentField('surrogacyAgreement', 'notaryId', id),
-                        })}
-                      >
-                        <PickerFieldValue $empty={!draft.documents.surrogacyAgreement.notaryId}>
-                          {(() => {
-                            const notary = catalog.parties.notaries.find(item => String(item.id) === String(draft.documents.surrogacyAgreement.notaryId));
-                            return notary ? notaryOptionLabel(notary) : '— не обрано —';
-                          })()}
-                        </PickerFieldValue>
-                        <span>›</span>
-                      </PickerFieldButton>
-                    </Field>
-                  </FieldGrid>
-                </DocRow>
-                <DocRow>
-                  <SectionSubhead style={{ margin: '0 0 6px' }}>Додаток №1 до договору</SectionSubhead>
-                  <FieldGrid>
-                    <Field>
-                      Дата додатка
-                      <FieldInput type="date" value={draft.documents.surrogacyAgreementAppendix1.date} onChange={event => updateDocumentField('surrogacyAgreementAppendix1', 'date', event.target.value)} />
-                    </Field>
-                  </FieldGrid>
-                </DocRow>
-                <DocRow>
-                  <SectionSubhead style={{ margin: '0 0 6px' }}>Договір про медичні послуги</SectionSubhead>
-                  <FieldGrid>
-                    <Field>
-                      Дата договору
-                      <FieldInput type="date" value={draft.documents.medicalServicesAgreement.date} onChange={event => updateDocumentField('medicalServicesAgreement', 'date', event.target.value)} />
-                    </Field>
-                  </FieldGrid>
-                </DocRow>
-                {[
-                  { key: 'maritalStatusDeclaration', label: 'Заява СМ про відсутність шлюбу' },
-                  { key: 'legalServicesDisclaimer', label: 'Заява про ненадання юридичних послуг клінікою' },
-                ].map(({ key, label }) => (
-                  <DocRow key={key}>
-                    <SectionSubhead style={{ margin: '0 0 6px' }}>{label}</SectionSubhead>
-                    <FieldGrid>
-                      <Field>
-                        Дата заяви
-                        <FieldInput type="date" value={draft.documents[key].statementDate} onChange={event => updateDocumentField(key, 'statementDate', event.target.value)} />
-                      </Field>
-                      <Field>
-                        Нотаріус
-                        <PickerFieldButton
-                          type="button"
-                          onClick={() => openPicker({
-                            title: 'Оберіть нотаріуса', collection: 'notaries', valueId: draft.documents[key].notaryId, onApply: id => updateDocumentField(key, 'notaryId', id),
-                          })}
-                        >
-                          <PickerFieldValue $empty={!draft.documents[key].notaryId}>
-                            {(() => {
-                              const notary = catalog.parties.notaries.find(item => String(item.id) === String(draft.documents[key].notaryId));
-                              return notary ? notaryOptionLabel(notary) : '— не обрано —';
-                            })()}
-                          </PickerFieldValue>
-                          <span>›</span>
-                        </PickerFieldButton>
-                      </Field>
-                    </FieldGrid>
-                  </DocRow>
-                ))}
-              </CollapsibleSection>
-
+              {/* §5: the purely-informational "Лист клініки до РАЦС" block (no fields of its own,
+                  no action - just a note that it's auto-generated) is dropped; the document itself
+                  still generates the same way it always did, from Documents Builder. "Підготовка"
+                  (the other half of what used to live on this tab) now renders on its own tab right
+                  after "Огляд" - see activeTab === 'preparation' below - since everything here signs
+                  off *after* it, not alongside it. */}
               <CollapsibleSection
                 id="racsRegistration"
                 title="РАЦС"

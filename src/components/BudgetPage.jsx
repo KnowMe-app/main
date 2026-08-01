@@ -26,7 +26,7 @@ import {
 } from './budgetCatalogUtils';
 import { setPdfAgencyConfig } from './pdfTheme';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions, HeaderRight } from './AdminPageHeader';
+import { Header, HeaderActions, HeaderActionsRow } from './AdminPageHeader';
 
 const INCLUDED_PREVIEW_LIMIT = 6;
 const POPULAR_PACKAGE_ID = '3';
@@ -2043,7 +2043,9 @@ const BudgetPage = ({ isAdmin = false }) => {
             <Eyebrow>{(catalog.technical?.agency?.name || UKRCOM_MARKER).toUpperCase()}</Eyebrow>
             <Title>Program Budget</Title>
           </div>
-          <HeaderRight>
+          <PageNavMenu />
+        </Header>
+        <HeaderActionsRow>
           <HeaderActions>
             <MiniButton
               type="button"
@@ -2051,7 +2053,7 @@ const BudgetPage = ({ isAdmin = false }) => {
               disabled={loading || Boolean(error) || isExporting}
               title="Download the client budget as a PDF"
             >
-              <FaFilePdf /> {isExporting ? 'Preparing…' : 'Export PDF'}
+              <FaFilePdf /> {isExporting ? 'Preparing…' : 'PDF'}
             </MiniButton>
             {isBudgetAdmin ? (
               <MiniButton
@@ -2083,15 +2085,13 @@ const BudgetPage = ({ isAdmin = false }) => {
                 </MiniButton>
                 {/* Temporary migration button. Remove after the budget catalog has been uploaded to the backend. */}
                 <MiniDangerButton type="button" onClick={handleUploadClick}>
-                  <FaUpload /> Upload JSON
+                  <FaUpload /> Upload
                 </MiniDangerButton>
                 <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={handleBudgetFileChange} />
               </>
             ) : null}
           </HeaderActions>
-          <PageNavMenu />
-          </HeaderRight>
-        </Header>
+        </HeaderActionsRow>
 
         {loading ? <StateCard>Loading budget catalog…</StateCard> : null}
         {!loading && error ? <StateCard>{error}</StateCard> : null}

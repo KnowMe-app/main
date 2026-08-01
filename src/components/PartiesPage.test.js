@@ -207,7 +207,9 @@ describe('spec: Parties page read/edit modes (batch 21 §10, Budget page pattern
     // No last-selected case was ever persisted, so it falls back to the only case in the catalog.
     expect(screen.getByText('Тестова Марія')).toBeInTheDocument();
     expect(screen.getByText('Дружина')).toBeInTheDocument();
-    expect(screen.getByText('Сурогатна мати')).toBeInTheDocument();
+    // This case never set a surrogateMotherId - a group with nothing resolved for it is dropped
+    // entirely rather than rendering as an empty "No data" block.
+    expect(screen.queryByText('Сурогатна мати')).not.toBeInTheDocument();
   });
 
   it('unlocks the full party directory (all records, all groups) only once switched into Edit mode', async () => {

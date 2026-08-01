@@ -1634,10 +1634,25 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
   const partners = toArray(couple?.partners);
   const rawWife = partners.find(partner => partner?.role === 'wife') || partners[0] || null;
   const rawHusband = partners.find(partner => partner?.role === 'husband') || partners[1] || null;
+  // The power of attorney (signing date + apostille date) is a static fact of *this case*, not of
+  // the representative person - the same representative can act under a different POA in another
+  // case, and one POA can cover several representatives at once, so a separate record per
+  // date/person pairing is no longer needed. relations.representativePowerOfAttorney is
+  // authoritative when set; a representative record's own (legacy) powerOfAttorney is only a
+  // fallback for cases that pre-date this split.
+  const casePowerOfAttorney = isPlainObject(relations.representativePowerOfAttorney) ? relations.representativePowerOfAttorney : {};
   const representatives = toArray(relations.representativeIds)
     .map(id => findById(catalog.parties.representatives, id))
     .filter(Boolean)
-    .map(enrichPersonName);
+    .map(record => enrichPersonName({
+      ...record,
+      powerOfAttorney: {
+        ...record.powerOfAttorney,
+        date: casePowerOfAttorney.date || record.powerOfAttorney?.date || '',
+        apostille: casePowerOfAttorney.apostille || record.powerOfAttorney?.apostille || '',
+        apostilleDate: casePowerOfAttorney.apostilleDate || record.powerOfAttorney?.apostilleDate || '',
+      },
+    }));
 
   const childbirth = isPlainObject(caseRecord.childbirth) ? caseRecord.childbirth : {};
   const rawChildren = toArray(childbirth.children);

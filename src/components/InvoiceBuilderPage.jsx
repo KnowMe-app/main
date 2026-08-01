@@ -24,7 +24,7 @@ import { formatEuroSmart, getItemDisplayAmount, getSortedPackages, isFromPricedI
 import { useAutoResize } from '../hooks/useAutoResize';
 import { isInvoiceBuilderUid } from 'utils/accessLevel';
 import PageNavMenu from './PageNavMenu';
-import { Header, HeaderActions, HeaderRight } from './AdminPageHeader';
+import { Header, HeaderActions, HeaderActionsRow } from './AdminPageHeader';
 import {
   addCatalogChildToPackage,
   addCustomChildToPackage,
@@ -3614,7 +3614,9 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             <Eyebrow>Admin only</Eyebrow>
             <Title>Invoice Builder</Title>
           </div>
-          <HeaderRight>
+          <PageNavMenu />
+        </Header>
+        <HeaderActionsRow>
           <HeaderActions>
             <input
               ref={fileInputRef}
@@ -3626,7 +3628,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
             {activeTab === 'invoice' ? (
               <>
                 <MiniButton type="button" onClick={handleUploadClick} title="Upload an invoice JSON to the backend (an expectedExpenses array of groups is picked up too)">
-                  <FaUpload /> Upload JSON
+                  <FaUpload /> Upload
                 </MiniButton>
                 <PrimaryMiniButton
                   type="button"
@@ -3634,14 +3636,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                   disabled={isGenerateDisabled}
                   title="Generate and download the invoice PDF"
                 >
-                  <FaFilePdf /> {isGenerating ? 'Generating…' : 'Generate PDF'}
+                  <FaFilePdf /> {isGenerating ? 'Generating…' : 'PDF'}
                 </PrimaryMiniButton>
               </>
             ) : null}
           </HeaderActions>
-          <PageNavMenu />
-          </HeaderRight>
-        </Header>
+        </HeaderActionsRow>
 
         {loading ? <StateCard>Loading invoice data…</StateCard> : null}
         {!loading && error ? <StateCard>{error}</StateCard> : null}
@@ -4346,7 +4346,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                     onClick={handleExpectedExpensesUploadClick}
                     title="Upload an expected-expenses JSON: { packageSnapshot, milestones } or an array of groups lined up with the package's schedule"
                   >
-                    <FaUpload /> Upload JSON
+                    <FaUpload /> Upload
                   </SmallButton>
                   {expectedExpenses ? (
                     <>
@@ -4363,7 +4363,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                           ? 'Waiting for the package price formula to resolve…'
                           : 'Generate the full payment-schedule forecast PDF'}
                       >
-                        <FaFilePdf /> {isGeneratingExpectedExpenses ? 'Generating…' : 'Generate PDF'}
+                        <FaFilePdf /> {isGeneratingExpectedExpenses ? 'Generating…' : 'PDF'}
                       </PrimaryMiniButton>
                       <DangerButton type="button" onClick={deleteExpectedExpensesPlan}><FaTrash /> Delete plan</DangerButton>
                     </>
