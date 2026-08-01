@@ -21,12 +21,14 @@ export const HeaderRight = styled.div`
   display: flex;
   align-items: center;
   gap: 14px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
   justify-content: flex-end;
 `;
 
 export const HeaderActions = styled.div`
   display: flex;
+  min-width: 0;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
