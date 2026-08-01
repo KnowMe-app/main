@@ -1219,6 +1219,90 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
   return null;
 };
 
+// Масово переносить залишкові myComment з УСІХ карток users/newUsers у
+// multiData/comments/{ownerId}/{cardId}, під акаунт адміна, що запускає міграцію.
+// НЕ чіпає LEGACY_COMMENTS_ROOT_PATH ('comments/{ownerId}/{cardId}'): ця структура
+// фактично не використовується, а update() з кількома шляхами атомарний — permission
+// denied на нерелевантному legacy-шляху зірвав би весь чанк, включно з головними
+// записами. Якщо той самий cardId має різний myComment в users і newUsers, або в
+// multiData вже є коментар цього ownerId — тексти об'єднуються через '\n\n', а не
+// перезаписуються, щоб жоден коментар не загубився.
+export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {}) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+  const commentsOwnerId = ownerId || user.uid;
+
+  const [usersSnap, newUsersSnap] = await Promise.all([
+    get(ref2(database, 'users')),
+    get(ref2(database, 'newUsers')),
+  ]);
+  const usersData = usersSnap.val() || {};
+  const newUsersData = newUsersSnap.val() || {};
+
+  const cardIds = new Set([
+    ...Object.keys(usersData).filter(id => String(usersData[id]?.myComment || '').trim()),
+    ...Object.keys(newUsersData).filter(id => String(newUsersData[id]?.myComment || '').trim()),
+  ]);
+
+  const report = {
+    scannedUsers: Object.keys(usersData).length,
+    scannedNewUsers: Object.keys(newUsersData).length,
+    migratedCards: 0,
+    fromBothCollections: 0,
+    mergedWithExisting: 0,
+    errors: [],
+  };
+  if (!cardIds.size) return report;
+
+  const existingSnap = await get(ref2(database, getCommentPath(commentsOwnerId)));
+  const existingComments = existingSnap.val() || {};
+
+  const BATCH_SIZE = 100;
+  const ids = Array.from(cardIds);
+
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const chunk = ids.slice(i, i + BATCH_SIZE);
+    const updates = {};
+
+    chunk.forEach(cardId => {
+      const usersText = String(usersData[cardId]?.myComment || '').trim();
+      const newUsersText = String(newUsersData[cardId]?.myComment || '').trim();
+      const legacyParts = [...new Set([usersText, newUsersText].filter(Boolean))];
+      if (usersText && newUsersText && usersText !== newUsersText) {
+        report.fromBothCollections += 1;
+      }
+
+      const existingText = String(existingComments[cardId]?.text || '').trim();
+      const finalParts = existingText
+        ? [...legacyParts, existingText].filter((value, index, arr) => arr.indexOf(value) === index)
+        : legacyParts;
+      if (existingText) report.mergedWithExisting += 1;
+
+      const finalText = finalParts.join('\n\n');
+
+      // Примітка: LEGACY_COMMENTS_ROOT_PATH тут свідомо не обнуляється (див. коментар над функцією).
+      updates[`users/${cardId}/myComment`] = null;
+      updates[`newUsers/${cardId}/myComment`] = null;
+      updates[getCommentPath(commentsOwnerId, cardId)] = { text: finalText, updatedAt: Date.now() };
+      report.migratedCards += 1;
+    });
+
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database), updates);
+      // Кожен чанк — один атомарний update(): або весь застосувався (і myComment
+      // очищено, і коментар вже в multiData), або жоден запис із чанку не пройшов.
+      // Тому переривання процесу ніколи не губить коментар — лише лишає
+      // немігровану частину карток на наступний запуск.
+    } catch (error) {
+      chunk.forEach(cardId => report.errors.push({ cardId, message: error?.message || String(error) }));
+    }
+    onProgress?.(Math.round(((i + chunk.length) / ids.length) * 100));
+  }
+
+  return report;
+};
+
 export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
     incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);
