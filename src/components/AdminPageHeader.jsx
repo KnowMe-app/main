@@ -7,17 +7,14 @@
 // page use.
 import styled from 'styled-components';
 
+// Always a single row, at every viewport width - never stacks the title above the actions/menu
+// on narrow screens, matching KmTopbar (My Profile / User Agreement never stack either).
 export const Header = styled.header`
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
-
-  @media (max-width: 560px) {
-    flex-direction: column;
-    align-items: stretch;
-  }
 `;
 
 export const HeaderRight = styled.div`
@@ -26,11 +23,6 @@ export const HeaderRight = styled.div`
   gap: 14px;
   flex-wrap: wrap;
   justify-content: flex-end;
-
-  @media (max-width: 560px) {
-    width: 100%;
-    justify-content: flex-end;
-  }
 `;
 
 export const HeaderActions = styled.div`
