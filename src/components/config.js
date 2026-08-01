@@ -20,6 +20,7 @@ import {
   endAt,
   endBefore,
   equalTo,
+  runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
@@ -1221,12 +1222,10 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
 
 // Масово переносить залишкові myComment з УСІХ карток users/newUsers у
 // multiData/comments/{ownerId}/{cardId}, під акаунт адміна, що запускає міграцію.
-// НЕ чіпає LEGACY_COMMENTS_ROOT_PATH ('comments/{ownerId}/{cardId}'): ця структура
-// фактично не використовується, а update() з кількома шляхами атомарний — permission
-// denied на нерелевантному legacy-шляху зірвав би весь чанк, включно з головними
-// записами. Якщо той самий cardId має різний myComment в users і newUsers, або в
-// multiData вже є коментар цього ownerId — тексти об'єднуються через '\n\n', а не
-// перезаписуються, щоб жоден коментар не загубився.
+// Якщо той самий cardId має різний myComment в users і newUsers, або в одному з
+// comments-root вже є коментар цього ownerId — тексти об'єднуються через '\n\n'.
+// Кожен запис змінюється транзакцією з перевіркою прочитаного значення: редагування,
+// яке сталося під час міграції, не буде перезаписане або очищене за старим snapshot.
 export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {}) => {
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
@@ -1254,48 +1253,71 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
   };
   if (!cardIds.size) return report;
 
-  const existingSnap = await get(ref2(database, getCommentPath(commentsOwnerId)));
+  const [existingSnap, legacyExistingSnap] = await Promise.all([
+    get(ref2(database, getCommentPath(commentsOwnerId))),
+    get(ref2(database, getLegacyCommentPath(commentsOwnerId))),
+  ]);
   const existingComments = existingSnap.val() || {};
+  const legacyExistingComments = legacyExistingSnap.val() || {};
+
+  const valuesMatch = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+  const mergeCommentText = (...values) =>
+    [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))].join('\n\n');
 
   const BATCH_SIZE = 100;
   const ids = Array.from(cardIds);
 
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
     const chunk = ids.slice(i, i + BATCH_SIZE);
-    const updates = {};
-
-    chunk.forEach(cardId => {
+    for (const cardId of chunk) {
       const usersText = String(usersData[cardId]?.myComment || '').trim();
       const newUsersText = String(newUsersData[cardId]?.myComment || '').trim();
-      const legacyParts = [...new Set([usersText, newUsersText].filter(Boolean))];
       if (usersText && newUsersText && usersText !== newUsersText) {
         report.fromBothCollections += 1;
       }
 
-      const existingText = String(existingComments[cardId]?.text || '').trim();
-      const finalParts = existingText
-        ? [...legacyParts, existingText].filter((value, index, arr) => arr.indexOf(value) === index)
-        : legacyParts;
-      if (existingText) report.mergedWithExisting += 1;
+      const currentComment = existingComments[cardId] ?? null;
+      const legacyComment = legacyExistingComments[cardId] ?? null;
+      if (currentComment?.text || legacyComment?.text) report.mergedWithExisting += 1;
 
-      const finalText = finalParts.join('\n\n');
+      // When only the fallback record exists, extend it in place. Creating a
+      // current-root record would shadow a fallback edit made concurrently.
+      const destinationPath = currentComment || !legacyComment
+        ? getCommentPath(commentsOwnerId, cardId)
+        : getLegacyCommentPath(commentsOwnerId, cardId);
+      const expectedDestination = currentComment || legacyComment;
+      const finalText = mergeCommentText(
+        usersText,
+        newUsersText,
+        legacyComment?.text,
+        currentComment?.text,
+      );
 
-      // Примітка: LEGACY_COMMENTS_ROOT_PATH тут свідомо не обнуляється (див. коментар над функцією).
-      updates[`users/${cardId}/myComment`] = null;
-      updates[`newUsers/${cardId}/myComment`] = null;
-      updates[getCommentPath(commentsOwnerId, cardId)] = { text: finalText, updatedAt: Date.now() };
-      report.migratedCards += 1;
-    });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const destinationResult = await runTransaction(ref2(database, destinationPath), value => {
+          if (!valuesMatch(value, expectedDestination)) return undefined;
+          return { text: finalText, updatedAt: Date.now() };
+        });
+        if (!destinationResult.committed) throw new Error('Коментар було змінено під час міграції');
 
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref2(database), updates);
-      // Кожен чанк — один атомарний update(): або весь застосувався (і myComment
-      // очищено, і коментар вже в multiData), або жоден запис із чанку не пройшов.
-      // Тому переривання процесу ніколи не губить коментар — лише лишає
-      // немігровану частину карток на наступний запуск.
-    } catch (error) {
-      chunk.forEach(cardId => report.errors.push({ cardId, message: error?.message || String(error) }));
+        const sources = [
+          { path: `users/${cardId}/myComment`, expected: usersData[cardId]?.myComment },
+          { path: `newUsers/${cardId}/myComment`, expected: newUsersData[cardId]?.myComment },
+        ].filter(source => String(source.expected || '').trim());
+        // eslint-disable-next-line no-await-in-loop
+        const sourceResults = await Promise.all(sources.map(source =>
+          runTransaction(ref2(database, source.path), value =>
+            valuesMatch(value, source.expected) ? null : undefined,
+          )
+        ));
+        if (sourceResults.some(result => !result.committed)) {
+          throw new Error('Картку було змінено під час міграції');
+        }
+        report.migratedCards += 1;
+      } catch (error) {
+        report.errors.push({ cardId, message: error?.message || String(error) });
+      }
     }
     onProgress?.(Math.round(((i + chunk.length) / ids.length) * 100));
   }
