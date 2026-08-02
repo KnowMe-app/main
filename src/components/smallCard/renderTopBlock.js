@@ -57,6 +57,7 @@ import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
+import { buildUserRtdbLink } from 'utils/firebaseUserConsoleLink';
 import { auth } from '../config';
 import toast from 'react-hot-toast';
 
@@ -619,9 +620,6 @@ const hasAgentOrIPRole = data =>
 
 const hasRoleWithoutCycle = data =>
   data.userRole === 'pp' || data.role === 'pp' || hasAgentOrIPRole(data);
-
-const buildRtdbLink = userId =>
-  `https://console.firebase.google.com/u/0/project/webringitapp/database/webringitapp-default-rtdb/data/~2FnewUsers~2F${encodeURIComponent(userId || '')}`;
 
 const resolveUserPhotoCollection = data => {
   if (data?.__sourceCollection === 'users' || data?.__sourceCollection === 'newUsers') {
@@ -2042,7 +2040,7 @@ export const TopBlock = ({
               {cardData.lastAction && cardData.userId && <span>·</span>}
               {cardData.userId && (
                 <a
-                  href={buildRtdbLink(cardData.userId)}
+                  href={buildUserRtdbLink(cardData.userId)}
                   target="_blank"
                   rel="noreferrer"
                   title="Відкрити профіль в Firebase RTDB"
