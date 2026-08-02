@@ -72,3 +72,8 @@ export const mergeUserCollectionData = (primaryData = {}, secondaryData = {}) =>
   });
   return merged;
 };
+
+// userId є "довгим" (Firebase-Auth UID), якщо довший за 20 символів — саме цю межу
+// вже використовує запис даних (updateDataInRealtimeDB/updateDataInNewUsersRTDB) для
+// маршрутизації по колекціях, тож читання має дотримуватись тієї самої межі.
+export const isLongFormatUserId = userId => String(userId || '').length > 20;
