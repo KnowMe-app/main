@@ -58,13 +58,18 @@ describe('every long-userId card save migrates the whole stale newUsers record i
     expect(migrateFnBody).toContain('transientUserDataKeys.includes(field)');
   });
 
-  it('deletes the whole newUsers/{userId} node once userId is all that would be left', () => {
+  it('deletes the whole newUsers/{userId} node once only userId/transient keys would be left, however many of them there are', () => {
     expect(migrateFnBody).toContain(
       "const leftoverKeys = Object.keys(newUsersData).filter("
     );
     expect(migrateFnBody).toContain(
-      "const onlyUserIdWouldRemain = leftoverKeys.length === 1 && leftoverKeys[0] === 'userId';"
+      "const onlyUserIdWouldRemain = leftoverKeys.length === Object.keys(newUsersData).length;"
     );
+    // Must NOT regress to comparing against a literal ['userId'] array: a card
+    // can have userId *and* a transient key like myComment side by side, and
+    // both are still fully ignorable (never migrated or nulled by the forEach
+    // above), so the whole-node delete must fire for that combination too.
+    expect(migrateFnBody).not.toContain("leftoverKeys.length === 1 && leftoverKeys[0] === 'userId'");
     expect(migrateFnBody).toContain("await update(ref2(database), { [`newUsers/${userId}`]: null });");
 
     const wholeNodeDeleteIndex = migrateFnBody.indexOf('onlyUserIdWouldRemain');

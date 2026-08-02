@@ -2923,14 +2923,20 @@ const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
       updates[`newUsers/${userId}/${field}`] = null;
     });
 
-    // userId (і будь-які клієнтські технічні ключі) ніколи не потрапляють у
-    // updates вище, тож саме вони й лишаться в newUsers після застосування
-    // цих правок. Якщо це буде єдине, що лишилось — картка вже повністю
-    // мігрована, і сам вузол newUsers/{userId} більше не потрібен.
+    // userId (і будь-які клієнтські технічні ключі, зокрема вже мігроване
+    // myComment) ніколи не потрапляють у updates вище — forEach їх свідомо
+    // пропускає, тож самі по собі вони НІКОЛИ не будуть ані перенесені, ані
+    // обнулені. Якщо саме з таких ключів (і тільки з них) і складається весь
+    // вузол — тобто leftoverKeys покриває всі ключі newUsersData без
+    // залишку — картка вже повністю мігрована й у ній не лишилось жодних
+    // значущих даних, тож сам вузол newUsers/{userId} більше не потрібен.
+    // Порівнювати з literal ['userId'] тут не можна: картка нерідко має ще й
+    // 'myComment' (чи інший транзитний ключ) поруч з userId, і тоді
+    // leftoverKeys.length буде 2+, а не 1 — але вузол все одно порожній по суті.
     const leftoverKeys = Object.keys(newUsersData).filter(
       field => field === 'userId' || transientUserDataKeys.includes(field)
     );
-    const onlyUserIdWouldRemain = leftoverKeys.length === 1 && leftoverKeys[0] === 'userId';
+    const onlyUserIdWouldRemain = leftoverKeys.length === Object.keys(newUsersData).length;
 
     if (onlyUserIdWouldRemain) {
       await update(ref2(database), { [`newUsers/${userId}`]: null });
