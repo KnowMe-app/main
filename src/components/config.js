@@ -46,7 +46,7 @@ import {
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { searchByIndexOn } from './searchByIndexOn';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
-import { mergeUserCollectionData } from '../utils/mergeUserCollections';
+import { isLongFormatUserId, mergeUserCollectionData } from '../utils/mergeUserCollections';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1916,7 +1916,10 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
       const cached = getCard(id);
       if (cached && source && cached.__sourceCollection === source) {
         result[id] = cached;
-      } else if (cached && !source && cached.__sourceCollection === 'newUsers') {
+      } else if (
+        cached && !source
+        && (cached.__sourceCollection === 'newUsers' || cached.__sourceCollection === 'users')
+      ) {
         result[id] = cached;
       } else {
         missingIds.push(id);
@@ -1924,7 +1927,35 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
     });
 
     const snaps = await Promise.all(
-      missingIds.map(id => {
+      missingIds.map(async id => {
+        if (!source && isLongFormatUserId(id)) {
+          const usersSnapshot = await get(ref2(database, `users/${id}`));
+          if (usersSnapshot.exists()) {
+            const data = {
+              userId: id,
+              ...mergeUserCollectionData(usersSnapshot.val(), {}),
+              photos: [],
+              __photosHydrated: false,
+              __sourceCollection: 'users',
+            };
+            return [id, updateCard(id, data)];
+          }
+
+          // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не
+          // встигнути виконатись для цього конкретного запису — перевіряємо
+          // newUsers про всяк випадок.
+          const newUsersSnapshot = await get(ref2(database, `newUsers/${id}`));
+          if (!newUsersSnapshot.exists()) return null;
+          const fallbackData = {
+            userId: id,
+            ...mergeUserCollectionData({}, newUsersSnapshot.val()),
+            photos: [],
+            __photosHydrated: false,
+            __sourceCollection: 'newUsers',
+          };
+          return [id, updateCard(id, fallbackData)];
+        }
+
         const readSources = source ? [source] : ['users', 'newUsers'];
         return Promise.all(
           readSources.map(sourceName => get(ref2(database, `${sourceName}/${id}`)).then(snapshot => [sourceName, snapshot]))
@@ -1971,6 +2002,15 @@ export const lazyLoadProfilePhotos = async (userId, collectionSource = null) => 
 
 const addUserFromUsers = async (userId, users) => {
   const userSnap = await get(ref2(database, `users/${userId}`));
+
+  if (isLongFormatUserId(userId) && userSnap.exists()) {
+    users[userId] = {
+      userId,
+      ...mergeUserCollectionData(userSnap.val(), {}),
+    };
+    return;
+  }
+
   const newUserSnap = await get(ref2(database, `newUsers/${userId}`));
 
   const userData = userSnap.exists() ? userSnap.val() : {};
@@ -2256,6 +2296,28 @@ export const searchUserByPartialUserId = async (userId, users) => {
 };
 
 const addUserToResults = async (userId, users) => {
+  if (isLongFormatUserId(userId)) {
+    const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
+    if (userSnapshotInUsers.exists()) {
+      users[userId] = {
+        userId,
+        ...mergeUserCollectionData(userSnapshotInUsers.val(), {}),
+      };
+      return;
+    }
+
+    // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не встигнути
+    // виконатись для цього конкретного запису — перевіряємо newUsers про всяк випадок.
+    const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
+    if (userSnapshotInNewUsers.exists()) {
+      users[userId] = {
+        userId,
+        ...mergeUserCollectionData({}, userSnapshotInNewUsers.val()),
+      };
+    }
+    return;
+  }
+
   const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
   const userFromNewUsers = userSnapshotInNewUsers.exists() ? userSnapshotInNewUsers.val() : {};
 
@@ -2886,13 +2948,17 @@ const sanitizeUploadedInfoPhones = uploadedInfo => {
   };
 };
 
-// Для карток з довгим userId дані мають остаточно жити лише в "users". Будь-яке
-// збереження такої картки є тригером для повної міграції: усе, що ще лишилось
-// у "newUsers" для цього userId, або переноситься в "users" (якщо там цього
-// поля ще нема — щоб нічого не втратити), або просто видаляється з newUsers
-// (якщо в users воно вже є, чи щойно було свідомо видалене цим самим збереженням).
-// Це не обмежується полями поточного payload — прибираємо весь застарілий
-// дублікат картки з newUsers поступово, за кожним редагуванням.
+// Для карток з довгим userId дані мають остаточно жити лише в "users". Ця функція
+// переносить/прибирає будь-який застарілий "хвіст" такої картки з "newUsers":
+// усе, що ще лишилось у "newUsers" для цього userId, або переноситься в "users"
+// (якщо там цього поля ще нема — щоб нічого не втратити), або просто видаляється
+// з newUsers (якщо в users воно вже є, чи щойно було свідомо видалене).
+// Раніше викликалась автоматично при кожному збереженні картки з довгим userId
+// (updateDataInRealtimeDB) — після одноразової міграції даних інваріант "довгі
+// userId живуть лише в users" уже виконується, тож той автотригер прибрано (він
+// був гарантованим no-op). Функція лишається як спільна логіка для
+// migrateAllLongUserIdCardsFromNewUsers — ручного адмінського інструменту, яким
+// можна перевірити/дочистити інваріант за потреби.
 const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
   const fieldValues = writtenFields || {};
 
@@ -2948,15 +3014,15 @@ const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
   }
 };
 
-// Одноразова адмінська операція-аналог migrateAllLegacyCardComments вище, але
-// для самих карток: наздоганяє всі картки з довгим userId (реальний Firebase
-// Auth акаунт), які досі мають "хвіст" у newUsers, але довго не редагувались —
-// а тому жодного разу не пройшли через лінивий per-save sweep
-// (migrateLongUserIdCardFromNewUsers, застосовується автоматично лише під час
-// збереження картки в updateDataInRealtimeDB). Переносить (не перезаписуючи
-// вже підтверджені в users значення) кожне поле, що лишилось тільки в
-// newUsers, і прибирає застарілий дублікат картки з newUsers — так само, як і
-// при звичайному редагуванні. В кінці перевіряє, що жодної картки з довгим
+// Одноразова/повторно-запускна адмінська операція-аналог migrateAllLegacyCardComments
+// вище, але для самих карток: наздоганяє всі картки з довгим userId (реальний
+// Firebase Auth акаунт), які досі мають "хвіст" у newUsers — це ручний спосіб
+// перевірити/дочистити інваріант "довгі userId живуть лише в users" (більше не
+// підтримується автоматичним per-save тригером, лише цим інструментом).
+// Переносить (не перезаписуючи вже підтверджені в users значення) кожне поле,
+// що лишилось тільки в newUsers, і прибирає застарілий дублікат картки з
+// newUsers — так само, як і при звичайному редагуванні. В кінці перевіряє, що
+// жодної картки з довгим
 // userId не лишилось у newUsers ("сміття"), і повертає їх список в errors,
 // якщо щось не вдалося перенести.
 export const migrateAllLongUserIdCardsFromNewUsers = async ({ onProgress } = {}) => {
@@ -3011,10 +3077,6 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
       await update(userRefRTDB, cleanedUploadedInfo);
     } else {
       await set(userRefRTDB, cleanedUploadedInfo);
-    }
-
-    if (String(userId || '').length > 20) {
-      await migrateLongUserIdCardFromNewUsers(userId, cleanedUploadedInfo);
     }
   } catch (error) {
     console.error(
@@ -3322,18 +3384,33 @@ export const getAllUserPhotos = async (userId, collectionSource = null, { includ
   if (!userId) return [];
 
   const storageUrls = includeStorage ? await getUserStorageAvatarPhotos(userId) : [];
-  const sourceCollections = getPhotoSourceCollections(collectionSource);
-  const snapshots = await Promise.allSettled(
-    sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)))
-  );
-  const databaseUrls = snapshots.flatMap((result, index) => {
-    if (result.status === 'rejected') {
-      console.error(`Error loading user photos from ${sourceCollections[index]}:`, result.reason);
-      return [];
+
+  let databaseUrls;
+  if (!collectionSource && isLongFormatUserId(userId)) {
+    const usersSnapshot = await get(ref2(database, `users/${userId}`));
+    if (usersSnapshot.exists()) {
+      databaseUrls = normalizePhotoValues(usersSnapshot.val()?.photos);
+    } else {
+      // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не
+      // встигнути виконатись для цього конкретного запису.
+      const newUsersSnapshot = await get(ref2(database, `newUsers/${userId}`));
+      databaseUrls = newUsersSnapshot.exists() ? normalizePhotoValues(newUsersSnapshot.val()?.photos) : [];
     }
-    const snapshot = result.value;
-    return snapshot.exists() ? normalizePhotoValues(snapshot.val()?.photos) : [];
-  });
+  } else {
+    const sourceCollections = getPhotoSourceCollections(collectionSource);
+    const snapshots = await Promise.allSettled(
+      sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)))
+    );
+    databaseUrls = snapshots.flatMap((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`Error loading user photos from ${sourceCollections[index]}:`, result.reason);
+        return [];
+      }
+      const snapshot = result.value;
+      return snapshot.exists() ? normalizePhotoValues(snapshot.val()?.photos) : [];
+    });
+  }
+
   const urls = [...storageUrls, ...databaseUrls]
     .map(convertDriveLinkToImage)
     .filter(Boolean);
@@ -7042,6 +7119,22 @@ export const fetchUserById = async userId => {
   const userRefInUsers = ref2(db, `users/${userId}`);
 
   try {
+    if (isLongFormatUserId(userId)) {
+      const usersOnlySnapshot = await get(userRefInUsers);
+      if (usersOnlySnapshot.exists()) {
+        const photos = await getAllUserPhotos(userId, 'users');
+        return {
+          userId,
+          ...usersOnlySnapshot.val(),
+          photos,
+          __sourceCollection: 'users',
+        };
+      }
+      // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не
+      // встигнути виконатись для цього конкретного запису — перевіряємо
+      // newUsers про всяк випадок, як і раніше для коротких id нижче.
+    }
+
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {

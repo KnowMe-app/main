@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-describe('every long-userId card save migrates the whole stale newUsers record into users', () => {
+describe('migrateLongUserIdCardFromNewUsers sweeps a stale newUsers record into users', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
   const updateDataInRealtimeDBBody = source.slice(
@@ -11,15 +11,16 @@ describe('every long-userId card save migrates the whole stale newUsers record i
 
   const migrateFnBody = source.slice(
     source.indexOf('const migrateLongUserIdCardFromNewUsers'),
-    source.indexOf('export const updateDataInRealtimeDB')
+    source.indexOf('export const migrateAllLongUserIdCardsFromNewUsers')
   );
 
-  it('only migrates newUsers for long-userId cards, after the users write has succeeded', () => {
-    expect(updateDataInRealtimeDBBody).toContain('await update(userRefRTDB, cleanedUploadedInfo)');
-    const writeIndex = updateDataInRealtimeDBBody.indexOf('await update(userRefRTDB, cleanedUploadedInfo)');
-    const migrateCallIndex = updateDataInRealtimeDBBody.indexOf('await migrateLongUserIdCardFromNewUsers(');
-    expect(migrateCallIndex).toBeGreaterThan(writeIndex);
-    expect(updateDataInRealtimeDBBody).toContain("String(userId || '').length > 20");
+  it('is no longer triggered automatically from updateDataInRealtimeDB (removed as a now-permanent no-op after the users-only migration)', () => {
+    expect(updateDataInRealtimeDBBody).not.toContain('migrateLongUserIdCardFromNewUsers(');
+    expect(updateDataInRealtimeDBBody).not.toContain("String(userId || '').length > 20");
+  });
+
+  it('is still exported for reuse by the manual bulk admin sweep (migrateAllLongUserIdCardsFromNewUsers)', () => {
+    expect(source).toContain('await migrateLongUserIdCardFromNewUsers(userId, {});');
   });
 
   it('sweeps every field still present in newUsers, not just the fields from this save', () => {
