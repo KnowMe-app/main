@@ -27,4 +27,10 @@ describe('smallCard comment UI fixes', () => {
     expect(source).toContain('{otherAdminsComments.map(comment => (');
     expect(source).not.toContain('{multiDataComments.map(comment => (');
   });
+
+  it('loads shared comments only for the current card and reuses the cached viewer profile', () => {
+    expect(source).toContain('getCard(viewerId) || await fetchUserById(viewerId)');
+    expect(source).toContain('fetchAllCommentsByCardId(cardData.userId, ownerIds)');
+    expect(source).not.toContain('fetchAllCommentsByCardId(cardData.userId);');
+  });
 });

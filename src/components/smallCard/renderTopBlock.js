@@ -56,6 +56,7 @@ import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
+import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
 import { auth } from '../config';
 import toast from 'react-hot-toast';
 
@@ -1364,7 +1365,10 @@ export const TopBlock = ({
     }
     let isMounted = true;
     const loadAllComments = async () => {
-      const allByCard = await fetchAllCommentsByCardId(cardData.userId);
+      const viewerId = auth.currentUser?.uid;
+      const viewerProfile = viewerId ? (getCard(viewerId) || await fetchUserById(viewerId)) : null;
+      const ownerIds = resolveMatchingMultiDataOwnerIds({ viewerId, profile: viewerProfile });
+      const allByCard = await fetchAllCommentsByCardId(cardData.userId, ownerIds);
       if (!isMounted) return;
       setBackendMultiComments(allByCard);
     };

@@ -22,6 +22,18 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
     expect(fnBody).not.toContain('push(');
     expect(fnBody).not.toContain('orderByChild');
     expect(fnBody).not.toContain('authorId');
+    expect(fnBody).not.toContain('getLegacyCommentPath');
+  });
+
+  it('never includes the legacy comments root in normal create, edit, or delete writes', () => {
+    const fnBody = source.slice(
+      source.indexOf('export const setUserComment'),
+      source.indexOf('export const fetchUserComment')
+    );
+    expect(fnBody).not.toContain('getLegacyCommentPath');
+    expect(fnBody).toContain('set(ref2(database, getCommentPath(commentsOwnerId, cardId))');
+    expect(fnBody).toContain('set(ref2(database, getCommentPath(ownerId, cardId))');
+    expect(fnBody).toContain('remove(ref2(database, getCommentPath(ownerId, cardId)))');
   });
 
   it('exposes a saveMyCardComment helper that writes via setUserComment and deletes when text is empty', () => {
@@ -43,7 +55,27 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
     expect(fnBody).not.toContain('equalTo');
   });
 
-  it('uses a read-only legacy fallback without risking concurrent comment overwrites', () => {
+  it('reads bulk comments by exact card paths instead of downloading an owner comment root', () => {
+    const fnBody = source.slice(
+      source.indexOf('export const fetchUserComments'),
+      source.indexOf('export const fetchAllCommentsByCardId')
+    );
+    expect(fnBody).toContain('fetchUserComment(ownerId, cardId)');
+    expect(fnBody).not.toContain('get(ref2(database, getCommentPath(ownerId)))');
+    expect(fnBody).not.toContain('get(ref2(database, getLegacyCommentPath(ownerId)))');
+  });
+
+  it('reads card comments only from explicitly allowed owner/card paths', () => {
+    const fnBody = source.slice(
+      source.indexOf('export const fetchAllCommentsByCardId'),
+      source.indexOf('const buildFlowRef')
+    );
+    expect(fnBody).toContain('fetchUserComment(ownerId, cardId)');
+    expect(fnBody).not.toContain('get(ref2(database, COMMENTS_ROOT_PATH))');
+    expect(fnBody).not.toContain('get(ref2(database, LEGACY_COMMENTS_ROOT_PATH))');
+  });
+
+  it('does not reference the nonexistent root comments/{ownerId}/{cardId} path', () => {
     const singleReadBody = source.slice(
       source.indexOf('export const fetchUserComment '),
       source.indexOf('export const saveMyCardComment')
@@ -53,12 +85,12 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
       source.indexOf('const buildFlowRef')
     );
 
-    expect(source).toContain("export const LEGACY_COMMENTS_ROOT_PATH = 'comments';");
-    expect(singleReadBody).toContain('getLegacyCommentPath(ownerId, cardId)');
-    expect(singleReadBody).not.toContain('[getCommentPath(ownerId, cardId)]: value');
-    expect(bulkReadBody).toContain('getLegacyCommentPath(ownerId)');
-    expect(bulkReadBody).toContain('LEGACY_COMMENTS_ROOT_PATH');
+    expect(source).not.toContain("LEGACY_COMMENTS_ROOT_PATH");
+    expect(source).not.toContain('getLegacyCommentPath');
+    expect(singleReadBody).toContain('getCommentPath(ownerId, cardId)');
+    expect(bulkReadBody).toContain('fetchUserComment(ownerId, cardId)');
+    expect(bulkReadBody).not.toContain('getLegacyCommentPath(ownerId)');
+    expect(bulkReadBody).not.toContain('get(ref2(database, COMMENTS_ROOT_PATH))');
     expect(bulkReadBody).not.toContain('await update(ref2(database), migrations)');
-    expect(bulkReadBody).not.toContain('Promise.all([');
   });
 });
