@@ -1817,13 +1817,27 @@ const DocumentsPage = ({ isAdmin }) => {
   // so no dedicated setter is needed here for it - only the label below is still a plain field.
 
   // The label sits to the left of the underlined value (e.g. "дружина", "та чоловік") - present on
-  // some fieldLine blocks, absent on others (the surrogate mother's own line has none, see the
-  // fixture template). Only ever a plain string in every reference template (never `labelRuns`,
-  // the richer alternative), so a plain field covers it the same way.
+  // some fieldLine blocks, absent on others (the surrogate mother's own line has none). A block can
+  // instead carry `labelRuns` (bold-in-part label, e.g. "**та**/або сперматозоїди") - editing that
+  // one plain-text as done here drops the bold run and switches it over to the plain `label` shape,
+  // which is an acceptable trade for turning what used to be a completely blank, invisible block
+  // (label/value both unreadable) into a visible, editable one.
   const setLayoutV2FieldLineLabel = (docId, blockIndex, value) => applyLayoutV2BlocksChange(
     docId,
-    blocks => blocks.map((item, index) => (index === blockIndex ? { ...item, label: value } : item)),
+    blocks => blocks.map((item, index) => {
+      if (index !== blockIndex) return item;
+      const { labelRuns: ignoredLabelRuns, ...rest } = item;
+      return { ...rest, label: value };
+    }),
   );
+
+  // The label's own display text, whichever shape the block stores it in - see
+  // setLayoutV2FieldLineLabel above for why editing it always collapses to the plain `label` shape.
+  const layoutV2FieldLineLabelText = block => {
+    if (block.label !== undefined) return block.label;
+    if (block.labelRuns) return block.labelRuns.map(run => run.text).join('');
+    return undefined;
+  };
 
   const setLayoutV2LogoOffset = (docId, blockIndex, columnIndex, axisKey, raw) => {
     const parsed = parsePlainNumber(raw);
@@ -3539,14 +3553,17 @@ const DocumentsPage = ({ isAdmin }) => {
                                     </ParagraphControlsRow>
                                     {/* The label sits to the left of the underlined value (e.g.
                                         "дружина") - present on some fieldLine blocks, absent on
-                                        others (the surrogate mother's own line has none at all).
-                                        Always a plain {{}}-only string in every reference template
-                                        (never labelRuns), so a plain field covers it - the toolbar
-                                        above and the field below are both about the value. */}
-                                    {block.label !== undefined ? (
+                                        others (the surrogate mother's own line has none at all). A
+                                        block can store it as plain `label` or as bold-in-part
+                                        `labelRuns` (e.g. bold "та" followed by "/або сперматозоїди") -
+                                        layoutV2FieldLineLabelText reads whichever shape is there so
+                                        this field is never silently blank/unreachable for a
+                                        labelRuns block; editing it always collapses to plain
+                                        `label` (see setLayoutV2FieldLineLabel). */}
+                                    {layoutV2FieldLineLabelText(block) !== undefined ? (
                                       <FieldInput
                                         type="text"
-                                        value={block.label || ''}
+                                        value={layoutV2FieldLineLabelText(block) || ''}
                                         placeholder="Label before the underlined value, e.g. «дружина»"
                                         onChange={event => setLayoutV2FieldLineLabel(template.id, blockIndex, event.target.value)}
                                         onBlur={() => persistTemplate(template.id)}

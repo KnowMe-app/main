@@ -246,3 +246,71 @@ describe('spec: a layoutV2 fieldLine block gets the full standard paragraph tool
     expect(persistedTemplate.layoutV2.blocks[0].styleOverrides).toBeUndefined();
   });
 });
+
+// A fieldLine block can carry a bold-in-part `labelRuns` (e.g. bold "та" + "/або сперматозоїди")
+// instead of a plain `label` string - before this fix, that meant `block.label !== undefined` was
+// false, so the label field never rendered at all, and with an unset/blank `value` too the whole
+// row looked like a totally empty, unreachable block in the builder (exactly what a user reported
+// seeing between the "яйцеклітини" fieldLine and "Перенесення ембріона...").
+describe('spec: a fieldLine with labelRuns (not plain label) is still visible/editable, never a blank block', () => {
+  beforeEach(() => {
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') return { exists: () => true, val: () => ({}) };
+      if (path === 'documentsBuilder/cases') return { exists: () => false, val: () => null };
+      if (path === 'documentsBuilder/templates') {
+        return {
+          exists: () => true,
+          val: () => ({
+            'doc-1': {
+              id: 'doc-1',
+              catalogName: 'Genetic affinity certificate',
+              rendererVersion: 2,
+              languages: ['uk'],
+              layoutV2: {
+                contentWidthMm: 180,
+                blocks: [{
+                  type: 'fieldLine',
+                  style: 'body',
+                  labelRuns: [
+                    { text: 'та', style: 'inlineEmphasis' },
+                    { text: '/або сперматозоїди' },
+                  ],
+                  value: '',
+                  caption: '(прізвище, ініціали / код донора)',
+                }],
+              },
+            },
+          }),
+        };
+      }
+      return { exists: () => false, val: () => null };
+    });
+  });
+
+  it('shows the labelRuns text (plain, concatenated) as the label field\'s value instead of leaving it blank', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    expect(await screen.findByDisplayValue('та/або сперматозоїди')).toBeInTheDocument();
+  });
+
+  it('editing that label persists as plain `label`, dropping `labelRuns`', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const labelField = await screen.findByDisplayValue('та/або сперматозоїди');
+    fireEvent.change(labelField, { target: { value: 'сперматозоїди' } });
+    fireEvent.blur(labelField);
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [expect.objectContaining({ type: 'fieldLine', label: 'сперматозоїди' })],
+        }),
+      }),
+    ));
+    const [, persistedTemplate] = set.mock.calls.find(call => call[0] === 'documentsBuilder/templates/doc-1');
+    expect(persistedTemplate.layoutV2.blocks[0].labelRuns).toBeUndefined();
+  });
+});
