@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, ref, set, update } from 'firebase/database';
-import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaCog, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaMagic, FaPlus, FaSearch, FaSlidersH, FaSyncAlt, FaTrash, FaUpload } from 'react-icons/fa';
+import { FaAlignCenter, FaAlignJustify, FaAlignLeft, FaAlignRight, FaBold, FaChevronDown, FaChevronUp, FaCode, FaCog, FaFilePdf, FaFileWord, FaHeart, FaItalic, FaLink, FaMagic, FaPlus, FaSearch, FaSlidersH, FaSyncAlt, FaTrash, FaUnlink, FaUpload } from 'react-icons/fa';
 import { saveAs } from 'file-saver';
 import designTokens from '../data/designTokens.json';
 import { auth, database, deleteStorageFile, getStorageFileDataUrl, listStorageFolderFileNames, uploadFileToStorageFolder } from './config';
@@ -1483,6 +1483,19 @@ const DocumentsPage = ({ isAdmin }) => {
     );
   };
 
+  // A paragraph tagged `joinWithPrevious` prints as a straight continuation of whatever paragraph
+  // precedes it - no line break, no first-line indent, no forced capital first letter
+  // (buildGeneratedDocument/groupJoinedParagraphs, documentsCatalogUtils) - instead of always
+  // starting a new indented paragraph. Lets a paragraph whose only reason to be its own array entry
+  // is a `condition` (a mid-sentence clause, e.g. "та генетичною матір'ю ...") still read as one
+  // continuous sentence whether or not that clause itself is shown.
+  const handleToggleParagraphJoinPrevious = (docId, atIndex) => applyParagraphStructureChange(
+    docId,
+    paragraphs => paragraphs.map((paragraph, index) => (
+      index === atIndex ? { ...paragraph, joinWithPrevious: !paragraph.joinWithPrevious } : paragraph
+    )),
+  );
+
   // beforeTitle blocks have no per-case override to reindex (see getTemplateScopeText) - insert/
   // remove is a direct template write, persisted immediately like the paragraph structure edits
   // above, just without applyParagraphStructureChange's override-shifting.
@@ -1756,6 +1769,27 @@ const DocumentsPage = ({ isAdmin }) => {
   // nothing for a blank/unmatched source).
   const setLayoutV2LogoSource = (docId, blockIndex, columnIndex, value) => applyLayoutV2ImageContentChange(
     docId, blockIndex, columnIndex, content => ({ ...content, source: value }),
+  );
+
+  // A fieldLine block (label + underlined value + caption, e.g. "дружина ___ КАЦУРА ЮКАКО, ...
+  // р.н.,") had no editor at all - the Blocks loop below only ever recognized
+  // letterhead/paragraph/richParagraph, so a fieldLine's `value` (its only templated content, e.g.
+  // the surrogate mother's own name/birth-date line) silently never showed up here even though it
+  // prints in the real document. Plain direct-value editing (no rich-run toolbar, no mode cycle) is
+  // enough - every fieldLine value in the reference templates is a flat {{}}-only string, the same
+  // shape the Logo field already edits this way (handleLogoFieldChange).
+  const setLayoutV2FieldLineValue = (docId, blockIndex, value) => applyLayoutV2BlocksChange(
+    docId,
+    blocks => blocks.map((item, index) => (index === blockIndex ? { ...item, value } : item)),
+  );
+
+  // The label sits to the left of the underlined value (e.g. "дружина", "та чоловік") - present on
+  // some fieldLine blocks, absent on others (the surrogate mother's own line has none, see the
+  // fixture template). Only ever a plain string in every reference template (never `labelRuns`,
+  // the richer alternative), so a plain field covers it the same way.
+  const setLayoutV2FieldLineLabel = (docId, blockIndex, value) => applyLayoutV2BlocksChange(
+    docId,
+    blocks => blocks.map((item, index) => (index === blockIndex ? { ...item, label: value } : item)),
   );
 
   const setLayoutV2LogoOffset = (docId, blockIndex, columnIndex, axisKey, raw) => {
@@ -3143,6 +3177,16 @@ const DocumentsPage = ({ isAdmin }) => {
                                     align={getEffectiveParagraphAlign(paragraph)}
                                     onCycle={() => handleCycleAlign(template.id, scope)}
                                   />
+                                  <SmallButton
+                                    type="button"
+                                    disabled={index === 0}
+                                    onClick={() => handleToggleParagraphJoinPrevious(template.id, index)}
+                                    title={paragraph?.joinWithPrevious
+                                      ? 'Continues the previous paragraph, no line break/indent. Tap to split into its own paragraph again.'
+                                      : 'Continue the previous paragraph instead of starting a new one (no line break/indent) - for a conditional clause mid-sentence.'}
+                                  >
+                                    {paragraph?.joinWithPrevious ? <FaLink /> : <FaUnlink />}
+                                  </SmallButton>
                                   <FormatPopoverButton
                                     open={openFormatKey === formatPopoverKey(template.id, scope)}
                                     onToggle={() => toggleFormatPopover(template.id, scope)}
@@ -3351,6 +3395,80 @@ const DocumentsPage = ({ isAdmin }) => {
                                     </ParagraphEditorBlock>
                                   );
                                 });
+                              }
+                              if (block?.type === 'fieldLine') {
+                                const scope = layoutV2Scope(blockIndex);
+                                return (
+                                  // eslint-disable-next-line react/no-array-index-key
+                                  <ParagraphEditorBlock key={`${template.id}-lv2-fieldline-${blockIndex}`}>
+                                    <ParagraphControlsRow>
+                                      <SmallButton
+                                        type="button"
+                                        onClick={() => handleInsertLayoutV2Paragraph(template.id, blockIndex)}
+                                        title="Insert a new paragraph above this one"
+                                      >
+                                        <FaPlus />
+                                      </SmallButton>
+                                      <RowLine style={{ gap: 6 }}>
+                                        <FormatPopoverButton
+                                          open={openFormatKey === formatPopoverKey(template.id, scope)}
+                                          onToggle={() => toggleFormatPopover(template.id, scope)}
+                                          onClose={() => closeFormatPopover(template.id)}
+                                          buttonTitle="Field line formatting - font size (pt) and condition; empty = inherit/always shown"
+                                          fields={[
+                                            {
+                                              key: 'fontSizePt',
+                                              label: 'Font size (pt)',
+                                              value: block.styleOverrides?.fontSizePt !== undefined ? String(block.styleOverrides.fontSizePt) : '',
+                                              placeholder: '',
+                                              onApply: raw => setLayoutV2StyleOverrideField(template.id, blockIndex, 'fontSizePt', raw),
+                                              onFieldBlur: () => persistTemplate(template.id),
+                                            },
+                                            {
+                                              key: 'condition',
+                                              type: 'text',
+                                              label: 'Condition (context path, ! to negate; empty = always shown)',
+                                              value: block.condition || '',
+                                              placeholder: 'e.g. geneticAffinityCertificate.oocyteSourceIsWife',
+                                              onApply: raw => setLayoutV2BlockCondition(template.id, blockIndex, raw),
+                                              onFieldBlur: () => persistTemplate(template.id),
+                                            },
+                                          ]}
+                                        />
+                                        <DangerButton
+                                          type="button"
+                                          onClick={() => handleRemoveLayoutV2Block(template.id, blockIndex)}
+                                          title="Remove this field line"
+                                        >
+                                          <FaTrash />
+                                        </DangerButton>
+                                      </RowLine>
+                                    </ParagraphControlsRow>
+                                    {/* Same freely-editable plain fields the Logo field already is -
+                                        a fieldLine's label (when the block carries one - some, like
+                                        the surrogate mother's own line, have none at all) and its
+                                        underlined value, both plain {{}}-only strings in every
+                                        reference template, no rich-run toolbar needed. */}
+                                    {block.label !== undefined ? (
+                                      <FieldInput
+                                        type="text"
+                                        value={block.label || ''}
+                                        placeholder="Label before the underlined value, e.g. «дружина»"
+                                        onChange={event => setLayoutV2FieldLineLabel(template.id, blockIndex, event.target.value)}
+                                        onBlur={() => persistTemplate(template.id)}
+                                        style={{ width: '100%', marginBottom: 6 }}
+                                      />
+                                    ) : null}
+                                    <FieldInput
+                                      type="text"
+                                      value={block.value || ''}
+                                      placeholder="Underlined field value - {{}} placeholders"
+                                      onChange={event => setLayoutV2FieldLineValue(template.id, blockIndex, event.target.value)}
+                                      onBlur={() => persistTemplate(template.id)}
+                                      style={{ width: '100%' }}
+                                    />
+                                  </ParagraphEditorBlock>
+                                );
                               }
                               if (block?.type !== 'paragraph' && block?.type !== 'richParagraph') return null;
                               const scope = layoutV2Scope(blockIndex);
