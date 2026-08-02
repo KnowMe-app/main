@@ -14,13 +14,15 @@ describe('fetchUserById fallback freshness', () => {
     expect(body).toContain("newUsersResult.status === 'fulfilled'");
   });
 
-  it('only makes a long-id newUsers record authoritative when marked as a full fallback', () => {
-    expect(body).toContain('isLongFormatUserId(userId) && isFullProfileFallbackData(newUsersData)');
+  it('makes short-id and valid long-id newUsers records authoritative', () => {
+    expect(body).toContain('isLegacyFullProfileFallbackData(newUsersData)');
+    expect(body).toContain('!isLongFormatUserId(userId) || longIdFallback');
     expect(body).toContain("const sourceCollection = useFallback ? 'newUsers' : 'users';");
   });
 
-  it('hydrates photos from the same collection selected as authoritative', () => {
-    expect(body).toContain('getAllUserPhotos(userId, sourceCollection)');
+  it('falls back across collections when the authoritative payload has no photos', () => {
+    expect(body).toContain('normalizePhotoValues(primaryData.photos).length > 0');
+    expect(body).toContain('getAllUserPhotos(userId, photoSource)');
     expect(body).toContain('__sourceCollection: sourceCollection');
   });
 });

@@ -8,15 +8,17 @@ describe('fetchUsersByIds long-format user fallback handling', () => {
     source.indexOf('export const lazyLoadProfilePhotos'),
   );
 
-  it('settles both long-id reads and only selects a marked full-profile fallback', () => {
+  it('settles both long-id reads and accepts marked or recognizable legacy fallbacks', () => {
     expect(body).toContain('if (!source && isLongFormatUserId(id))');
     expect(body).toContain('const [usersResult, newUsersResult] = await Promise.allSettled([');
-    expect(body).toContain('const useFallback = !hasUser || isFullProfileFallbackData(newUsersData);');
+    expect(body).toContain('isFullProfileFallbackData(newUsersData)');
+    expect(body).toContain('isLegacyFullProfileFallbackData(newUsersData)');
+    expect(body).toContain('if (!hasUser && !hasUsableFallback) return null;');
     expect(body).toContain("__sourceCollection: useFallback ? 'newUsers' : 'users'");
   });
 
-  it('retains a cached card while a best-effort refresh is attempted', () => {
-    expect(body).toContain('if (cached) result[id] = cached;');
+  it('retains an unscoped cached card while keeping mismatched scoped reads clean', () => {
+    expect(body).toContain('if (cached && !source) result[id] = cached;');
     expect(body).toContain('return null;');
   });
 

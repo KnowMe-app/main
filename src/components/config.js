@@ -47,7 +47,10 @@ import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { searchByIndexOn } from './searchByIndexOn';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { isLongFormatUserId, mergeUserCollectionData } from '../utils/mergeUserCollections';
-import { isFullProfileFallbackData } from '../utils/userProfileFallback';
+import {
+  isFullProfileFallbackData,
+  isLegacyFullProfileFallbackData,
+} from '../utils/userProfileFallback';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1926,7 +1929,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
       ) {
         result[id] = cached;
       } else {
-        if (cached) result[id] = cached;
+        if (cached && !source) result[id] = cached;
         missingIds.push(id);
       }
     });
@@ -1943,11 +1946,18 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
             const newUsersSnapshot = newUsersResult.status === 'fulfilled' ? newUsersResult.value : null;
             const hasUser = usersSnapshot?.exists() || false;
             const hasNewUser = newUsersSnapshot?.exists() || false;
+            const usersReadSucceeded = usersResult.status === 'fulfilled';
             if (!hasUser && !hasNewUser) return null;
 
             const usersData = hasUser ? usersSnapshot.val() : {};
             const newUsersData = hasNewUser ? newUsersSnapshot.val() : {};
-            const useFallback = !hasUser || isFullProfileFallbackData(newUsersData);
+            const hasUsableFallback = hasNewUser && (
+              isFullProfileFallbackData(newUsersData)
+              || isLegacyFullProfileFallbackData(newUsersData)
+              || (usersReadSucceeded && !hasUser)
+            );
+            if (!hasUser && !hasUsableFallback) return null;
+            const useFallback = hasUsableFallback;
             const data = {
               userId: id,
               ...mergeUserCollectionData(
@@ -1976,15 +1986,16 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
           const hasUser = Object.prototype.hasOwnProperty.call(dataBySource, 'users');
           const hasNewUser = Object.prototype.hasOwnProperty.call(dataBySource, 'newUsers');
           if (!hasUser && !hasNewUser) return null;
+          const useNewUsers = hasNewUser && (!source || source === 'newUsers');
           const data = {
             userId: id,
             ...mergeUserCollectionData(
-              hasUser ? dataBySource.users : {},
-              hasNewUser ? dataBySource.newUsers : {}
+              useNewUsers ? dataBySource.newUsers : dataBySource.users,
+              useNewUsers ? dataBySource.users : dataBySource.newUsers
             ),
             photos: [],
             __photosHydrated: false,
-            __sourceCollection: hasNewUser ? 'newUsers' : 'users',
+            __sourceCollection: useNewUsers ? 'newUsers' : 'users',
           };
           return [id, updateCard(id, data)];
         } catch (error) {
@@ -2956,6 +2967,14 @@ const sanitizeUploadedInfoPhones = uploadedInfo => {
   };
 };
 
+const normalizeIndexedValues = value => Array.isArray(value)
+  ? value.filter(Boolean)
+  : value && typeof value === 'object'
+    ? Object.values(value).filter(Boolean)
+    : typeof value === 'string'
+      ? [value].filter(Boolean)
+      : [];
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
@@ -2987,14 +3006,16 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     if (!skipIndexing) {
       // Перебір ключів та їх обробка
       for (const key of keysToCheck) {
+        const currentValues = normalizeIndexedValues(currentUserData?.[key]);
         const shouldRemoveKey = uploadedInfo[key] === ''
           || uploadedInfo[key] === null
           || (condition !== 'update' && uploadedInfo[key] === undefined);
 
         if (shouldRemoveKey) {
           console.log(`${key} має пусте або null значення. Видаляємо.`);
-          if (currentUserData[key] !== undefined && currentUserData[key] !== null) {
-            await updateSearchId(key, currentUserData[key], userId, 'remove');
+          for (const value of currentValues) {
+            const cleanedValue = key === 'phone' ? normalizePhoneForStorage(value) : value;
+            await updateSearchId(key, String(cleanedValue).toLowerCase(), userId, 'remove');
           }
           uploadedInfo[key] = null;
           continue;
@@ -3004,22 +3025,8 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
           // console.log(`${key} uploadedInfo[key] :>> `, uploadedInfo[key]);
 
           // Формуємо currentValues
-          const currentValues = Array.isArray(currentUserData?.[key])
-            ? currentUserData[key].filter(Boolean)
-            : typeof currentUserData?.[key] === 'object'
-              ? Object.values(currentUserData[key]).filter(Boolean)
-              : typeof currentUserData?.[key] === 'string'
-                ? [currentUserData[key]].filter(Boolean)
-                : [];
-
           // Формуємо newValues
-          const newValues = Array.isArray(uploadedInfo[key])
-            ? uploadedInfo[key].filter(Boolean)
-            : typeof uploadedInfo[key] === 'object'
-              ? Object.values(uploadedInfo[key]).filter(Boolean)
-              : typeof uploadedInfo[key] === 'string'
-                ? [uploadedInfo[key]].filter(Boolean)
-                : [];
+          const newValues = normalizeIndexedValues(uploadedInfo[key]);
 
           // console.log(`${key} currentValues :>> `, currentValues);
           // console.log(`${key} newValues :>> `, newValues);
@@ -7031,14 +7038,26 @@ export const fetchUserById = async userId => {
     const newUserSnapshot = newUsersResult.status === 'fulfilled' ? newUsersResult.value : null;
     const hasUser = userSnapshot?.exists() || false;
     const hasNewUser = newUserSnapshot?.exists() || false;
+    const usersReadSucceeded = usersResult.status === 'fulfilled';
 
     if (hasUser || hasNewUser) {
       const usersData = hasUser ? userSnapshot.val() : {};
       const newUsersData = hasNewUser ? newUserSnapshot.val() : {};
-      const useFallback = !hasUser
-        || (isLongFormatUserId(userId) && isFullProfileFallbackData(newUsersData));
+      const longIdFallback = isLongFormatUserId(userId) && hasNewUser && (
+        isFullProfileFallbackData(newUsersData)
+        || isLegacyFullProfileFallbackData(newUsersData)
+        || (usersReadSucceeded && !hasUser)
+      );
+      if (!hasUser && isLongFormatUserId(userId) && !longIdFallback) return null;
+      const useFallback = hasNewUser && (
+        !isLongFormatUserId(userId) || longIdFallback
+      );
       const sourceCollection = useFallback ? 'newUsers' : 'users';
-      const photos = await getAllUserPhotos(userId, sourceCollection);
+      const primaryData = useFallback ? newUsersData : usersData;
+      const photoSource = normalizePhotoValues(primaryData.photos).length > 0
+        ? sourceCollection
+        : null;
+      const photos = await getAllUserPhotos(userId, photoSource);
 
       if (hasUser && hasNewUser) {
         const mergedUserData = mergeUserCollectionData(
