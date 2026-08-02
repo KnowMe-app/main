@@ -2945,6 +2945,59 @@ const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
   }
 };
 
+// Одноразова адмінська операція-аналог migrateAllLegacyCardComments вище, але
+// для самих карток: наздоганяє всі картки з довгим userId (реальний Firebase
+// Auth акаунт), які досі мають "хвіст" у newUsers, але довго не редагувались —
+// а тому жодного разу не пройшли через лінивий per-save sweep
+// (migrateLongUserIdCardFromNewUsers, застосовується автоматично лише під час
+// збереження картки в updateDataInRealtimeDB). Переносить (не перезаписуючи
+// вже підтверджені в users значення) кожне поле, що лишилось тільки в
+// newUsers, і прибирає застарілий дублікат картки з newUsers — так само, як і
+// при звичайному редагуванні. В кінці перевіряє, що жодної картки з довгим
+// userId не лишилось у newUsers ("сміття"), і повертає їх список в errors,
+// якщо щось не вдалося перенести.
+export const migrateAllLongUserIdCardsFromNewUsers = async ({ onProgress } = {}) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+
+  const newUsersSnap = await get(ref2(database, 'newUsers'));
+  const newUsersData = newUsersSnap.val() || {};
+  const longUserIds = Object.keys(newUsersData).filter(id => String(id || '').length > 20);
+
+  const report = {
+    scannedNewUsers: Object.keys(newUsersData).length,
+    longUserIdCandidates: longUserIds.length,
+    migratedCards: 0,
+    migratedCardIds: [],
+    errors: [],
+  };
+  if (!longUserIds.length) return report;
+
+  for (let i = 0; i < longUserIds.length; i += 1) {
+    const userId = longUserIds[i];
+    // eslint-disable-next-line no-await-in-loop
+    await migrateLongUserIdCardFromNewUsers(userId, {});
+    report.migratedCards += 1;
+    report.migratedCardIds.push(userId);
+    onProgress?.(Math.round(((i + 1) / longUserIds.length) * 100));
+  }
+
+  // migrateLongUserIdCardFromNewUsers навмисно ковтає власні помилки (щоб
+  // цей sweep ніколи не валив збереження картки під час звичайного
+  // редагування), тож перевіряємо результат окремим фінальним читанням: якщо
+  // після проходу картка з довгим userId досі лежить у newUsers — щось не
+  // перенеслось, і про це має дізнатись адмін, а не мовчки лишити сміття.
+  const verifySnap = await get(ref2(database, 'newUsers'));
+  const verifyData = verifySnap.val() || {};
+  Object.keys(verifyData)
+    .filter(id => String(id || '').length > 20)
+    .forEach(cardId => {
+      report.errors.push({ cardId, message: 'Картка досі лишається в newUsers після міграції' });
+    });
+
+  return report;
+};
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
