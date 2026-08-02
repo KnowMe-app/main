@@ -2040,7 +2040,7 @@ export const TopBlock = ({
               {cardData.lastAction && cardData.userId && <span>·</span>}
               {cardData.userId && (
                 <a
-                  href={buildUserRtdbLink(cardData.userId)}
+                  href={buildUserRtdbLink(cardData.userId, cardData.__sourceCollection)}
                   target="_blank"
                   rel="noreferrer"
                   title="Відкрити профіль в Firebase RTDB"
