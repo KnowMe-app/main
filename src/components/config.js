@@ -47,6 +47,7 @@ import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { searchByIndexOn } from './searchByIndexOn';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { isLongFormatUserId, mergeUserCollectionData } from '../utils/mergeUserCollections';
+import { isFullProfileFallbackData } from '../utils/userProfileFallback';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1925,44 +1926,45 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
       ) {
         result[id] = cached;
       } else {
+        if (cached) result[id] = cached;
         missingIds.push(id);
       }
     });
 
     const snaps = await Promise.all(
       missingIds.map(async id => {
-        if (!source && isLongFormatUserId(id)) {
-          const usersSnapshot = await get(ref2(database, `users/${id}`));
-          if (usersSnapshot.exists()) {
+        try {
+          if (!source && isLongFormatUserId(id)) {
+            const [usersResult, newUsersResult] = await Promise.allSettled([
+              get(ref2(database, `users/${id}`)),
+              get(ref2(database, `newUsers/${id}`)),
+            ]);
+            const usersSnapshot = usersResult.status === 'fulfilled' ? usersResult.value : null;
+            const newUsersSnapshot = newUsersResult.status === 'fulfilled' ? newUsersResult.value : null;
+            const hasUser = usersSnapshot?.exists() || false;
+            const hasNewUser = newUsersSnapshot?.exists() || false;
+            if (!hasUser && !hasNewUser) return null;
+
+            const usersData = hasUser ? usersSnapshot.val() : {};
+            const newUsersData = hasNewUser ? newUsersSnapshot.val() : {};
+            const useFallback = !hasUser || isFullProfileFallbackData(newUsersData);
             const data = {
               userId: id,
-              ...mergeUserCollectionData(usersSnapshot.val(), {}),
+              ...mergeUserCollectionData(
+                useFallback ? newUsersData : usersData,
+                useFallback ? usersData : newUsersData
+              ),
               photos: [],
               __photosHydrated: false,
-              __sourceCollection: 'users',
+              __sourceCollection: useFallback ? 'newUsers' : 'users',
             };
             return [id, updateCard(id, data)];
           }
 
-          // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не
-          // встигнути виконатись для цього конкретного запису — перевіряємо
-          // newUsers про всяк випадок.
-          const newUsersSnapshot = await get(ref2(database, `newUsers/${id}`));
-          if (!newUsersSnapshot.exists()) return null;
-          const fallbackData = {
-            userId: id,
-            ...mergeUserCollectionData({}, newUsersSnapshot.val()),
-            photos: [],
-            __photosHydrated: false,
-            __sourceCollection: 'newUsers',
-          };
-          return [id, updateCard(id, fallbackData)];
-        }
-
-        const readSources = source ? [source] : ['users', 'newUsers'];
-        return Promise.all(
-          readSources.map(sourceName => get(ref2(database, `${sourceName}/${id}`)).then(snapshot => [sourceName, snapshot]))
-        ).then(entries => {
+          const readSources = source ? [source] : ['users', 'newUsers'];
+          const entries = await Promise.all(
+            readSources.map(sourceName => get(ref2(database, `${sourceName}/${id}`)).then(snapshot => [sourceName, snapshot]))
+          );
           const dataBySource = Object.fromEntries(
             entries
               .filter(([, snapshot]) => snapshot.exists())
@@ -1985,7 +1987,10 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
             __sourceCollection: hasNewUser ? 'newUsers' : 'users',
           };
           return [id, updateCard(id, data)];
-        });
+        } catch (error) {
+          console.error(`Error fetching user ${id}:`, error);
+          return null;
+        }
       })
     );
     snaps.forEach(entry => {
@@ -2982,7 +2987,9 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     if (!skipIndexing) {
       // Перебір ключів та їх обробка
       for (const key of keysToCheck) {
-        const shouldRemoveKey = uploadedInfo[key] === '' || uploadedInfo[key] === null;
+        const shouldRemoveKey = uploadedInfo[key] === ''
+          || uploadedInfo[key] === null
+          || (condition !== 'update' && uploadedInfo[key] === undefined);
 
         if (shouldRemoveKey) {
           console.log(`${key} має пусте або null значення. Видаляємо.`);
@@ -7016,43 +7023,40 @@ export const fetchUserById = async userId => {
   const userRefInUsers = ref2(db, `users/${userId}`);
 
   try {
-    // Пошук у newUsers
-    const newUserSnapshot = await get(userRefInNewUsers);
-    if (newUserSnapshot.exists()) {
-      const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
-      const photos = await getAllUserPhotos(
-        userId,
-        userSnapshotInUsers.exists() ? null : 'newUsers'
-      );
-      if (userSnapshotInUsers.exists()) {
-        const mergedUserData = isLongFormatUserId(userId)
-          ? mergeUserCollectionData(newUserSnapshot.val(), userSnapshotInUsers.val())
-          : mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val());
+    const [usersResult, newUsersResult] = await Promise.allSettled([
+      get(userRefInUsers),
+      get(userRefInNewUsers),
+    ]);
+    const userSnapshot = usersResult.status === 'fulfilled' ? usersResult.value : null;
+    const newUserSnapshot = newUsersResult.status === 'fulfilled' ? newUsersResult.value : null;
+    const hasUser = userSnapshot?.exists() || false;
+    const hasNewUser = newUserSnapshot?.exists() || false;
+
+    if (hasUser || hasNewUser) {
+      const usersData = hasUser ? userSnapshot.val() : {};
+      const newUsersData = hasNewUser ? newUserSnapshot.val() : {};
+      const useFallback = !hasUser
+        || (isLongFormatUserId(userId) && isFullProfileFallbackData(newUsersData));
+      const sourceCollection = useFallback ? 'newUsers' : 'users';
+      const photos = await getAllUserPhotos(userId, sourceCollection);
+
+      if (hasUser && hasNewUser) {
+        const mergedUserData = mergeUserCollectionData(
+          useFallback ? newUsersData : usersData,
+          useFallback ? usersData : newUsersData
+        );
         return {
           userId,
           ...mergedUserData,
           photos,
-          __sourceCollection: 'newUsers',
+          __sourceCollection: sourceCollection,
         };
       }
       return {
         userId,
-        ...newUserSnapshot.val(),
+        ...(useFallback ? newUsersData : usersData),
         photos,
-        __sourceCollection: 'newUsers',
-      };
-    }
-
-    // Пошук у users, якщо не знайдено в newUsers
-    const userSnapshot = await get(userRefInUsers);
-    if (userSnapshot.exists()) {
-      const photos = await getAllUserPhotos(userId, 'users');
-      console.log('Знайдено користувача у users: ', userSnapshot.val());
-      return {
-        userId,
-        ...userSnapshot.val(),
-        photos,
-        __sourceCollection: 'users',
+        __sourceCollection: sourceCollection,
       };
     }
 

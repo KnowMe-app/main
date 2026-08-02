@@ -1,57 +1,26 @@
 import fs from 'fs';
 import path from 'path';
 
-describe('fetchUsersByIds skips newUsers for long-format userIds and trusts fresh users-cache', () => {
+describe('fetchUsersByIds long-format user fallback handling', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
-
-  const fetchUsersByIdsBody = source.slice(
+  const body = source.slice(
     source.indexOf('export const fetchUsersByIds'),
     source.indexOf('export const lazyLoadProfilePhotos'),
   );
 
-  it('checks isLongFormatUserId before falling back to the shared readSources fan-out', () => {
-    const longIdBranchIndex = fetchUsersByIdsBody.indexOf('if (!source && isLongFormatUserId(id))');
-    const readSourcesIndex = fetchUsersByIdsBody.indexOf(
-      "const readSources = source ? [source] : ['users', 'newUsers'];",
-    );
-
-    expect(longIdBranchIndex).toBeGreaterThanOrEqual(0);
-    expect(readSourcesIndex).toBeGreaterThan(longIdBranchIndex);
+  it('settles both long-id reads and only selects a marked full-profile fallback', () => {
+    expect(body).toContain('if (!source && isLongFormatUserId(id))');
+    expect(body).toContain('const [usersResult, newUsersResult] = await Promise.allSettled([');
+    expect(body).toContain('const useFallback = !hasUser || isFullProfileFallbackData(newUsersData);');
+    expect(body).toContain("__sourceCollection: useFallback ? 'newUsers' : 'users'");
   });
 
-  it('reads only users on the long-id success path, before any newUsers read', () => {
-    const longIdBranchBody = fetchUsersByIdsBody.slice(
-      fetchUsersByIdsBody.indexOf('if (!source && isLongFormatUserId(id))'),
-      fetchUsersByIdsBody.indexOf(
-        "const readSources = source ? [source] : ['users', 'newUsers'];",
-      ),
-    );
-    const usersReadIndex = longIdBranchBody.indexOf('get(ref2(database, `users/${id}`))');
-    const newUsersReadIndex = longIdBranchBody.indexOf('get(ref2(database, `newUsers/${id}`))');
-
-    expect(usersReadIndex).toBeGreaterThanOrEqual(0);
-    expect(newUsersReadIndex).toBeGreaterThan(usersReadIndex);
+  it('retains a cached card while a best-effort refresh is attempted', () => {
+    expect(body).toContain('if (cached) result[id] = cached;');
+    expect(body).toContain('return null;');
   });
 
-  it('still fans out to both collections in parallel for short-format ids (unchanged)', () => {
-    expect(fetchUsersByIdsBody).toContain(
-      "const readSources = source ? [source] : ['users', 'newUsers'];",
-    );
-  });
-
-  it('does not apply the long-id skip when an explicit collectionSource was passed', () => {
-    const longIdBranchBody = fetchUsersByIdsBody.slice(
-      fetchUsersByIdsBody.indexOf('if (!source && isLongFormatUserId(id))'),
-      fetchUsersByIdsBody.indexOf(
-        "const readSources = source ? [source] : ['users', 'newUsers'];",
-      ),
-    );
-    expect(longIdBranchBody.startsWith('if (!source && isLongFormatUserId(id))')).toBe(true);
-  });
-
-  it('trusts a users-sourced cache hit only for long-format ids', () => {
-    expect(fetchUsersByIdsBody).toContain(
-      "|| (isLongFormatUserId(id) && cached.__sourceCollection === 'users')",
-    );
+  it('still fans out to both collections for short-format ids', () => {
+    expect(body).toContain("const readSources = source ? [source] : ['users', 'newUsers'];");
   });
 });

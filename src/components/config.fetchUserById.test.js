@@ -1,29 +1,26 @@
 import fs from 'fs';
 import path from 'path';
 
-describe('fetchUserById preserves newUsers fallbacks for every userId format', () => {
+describe('fetchUserById fallback freshness', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
-
-  const fetchUserByIdBody = source.slice(
+  const body = source.slice(
     source.indexOf('export const fetchUserById'),
     source.indexOf('export const removeKeyFromFirebase'),
   );
 
-  it('does not return a users record before probing the fallback collection', () => {
-    const fallbackReadIndex = fetchUserByIdBody.indexOf('const newUserSnapshot = await get(userRefInNewUsers);');
-    const usersOnlyReturnIndex = fetchUserByIdBody.indexOf("__sourceCollection: 'users'");
-
-    expect(fetchUserByIdBody).not.toContain('if (isLongFormatUserId(userId))');
-    expect(fallbackReadIndex).toBeGreaterThanOrEqual(0);
-    expect(usersOnlyReturnIndex).toBeGreaterThan(fallbackReadIndex);
+  it('settles both collection reads so either readable record can be returned', () => {
+    expect(body).toContain('const [usersResult, newUsersResult] = await Promise.allSettled([');
+    expect(body).toContain("usersResult.status === 'fulfilled'");
+    expect(body).toContain("newUsersResult.status === 'fulfilled'");
   });
 
-  it('merges users/newUsers per field when both records exist', () => {
-    expect(fetchUserByIdBody).toContain(
-      '? mergeUserCollectionData(newUserSnapshot.val(), userSnapshotInUsers.val())',
-    );
-    expect(fetchUserByIdBody).toContain(
-      ': mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val())',
-    );
+  it('only makes a long-id newUsers record authoritative when marked as a full fallback', () => {
+    expect(body).toContain('isLongFormatUserId(userId) && isFullProfileFallbackData(newUsersData)');
+    expect(body).toContain("const sourceCollection = useFallback ? 'newUsers' : 'users';");
+  });
+
+  it('hydrates photos from the same collection selected as authoritative', () => {
+    expect(body).toContain('getAllUserPhotos(userId, sourceCollection)');
+    expect(body).toContain('__sourceCollection: sourceCollection');
   });
 });

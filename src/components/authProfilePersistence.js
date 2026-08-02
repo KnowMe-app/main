@@ -3,6 +3,7 @@ import {
   updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
 } from './config';
+import { markFullProfileFallback } from '../utils/userProfileFallback';
 
 export const MY_PROFILE_DRAFT_STORAGE_KEY = 'myProfileDraft';
 export const MY_PROFILE_ROUTE = '/my-profile';
@@ -39,8 +40,10 @@ export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCon
 
   await updateDataInNewUsersRTDB(
     userId,
-    shouldWriteFullProfileToNewUsers ? uploadedInfo : { lastLogin2: uploadedInfo.lastLogin2 },
-    'update'
+    shouldWriteFullProfileToNewUsers
+      ? markFullProfileFallback(uploadedInfo)
+      : { lastLogin2: uploadedInfo.lastLogin2 },
+    shouldWriteFullProfileToNewUsers ? 'update' : 'set'
   );
 };
 
