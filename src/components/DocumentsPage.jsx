@@ -49,6 +49,7 @@ import {
   getClinicLogo,
   getEffectiveDocLayout,
   getEffectiveLayoutV2BlockAlign,
+  getEffectiveLayoutV2FieldLineValueAlign,
   getEffectiveParagraphAlign,
   getEffectiveTitleAlign,
   getLayoutLang,
@@ -1691,6 +1692,20 @@ const DocumentsPage = ({ isAdmin }) => {
     )));
   };
 
+  // A fieldLine's own `style`/`styleOverrides` govern its label (handleCycleLayoutV2Align above),
+  // never its value - the value has an entirely separate `valueStyle`/`valueStyleOverrides` pair
+  // (see getEffectiveLayoutV2FieldLineValueAlign), so its Align button needs its own cycle function
+  // writing to that pair instead.
+  const handleCycleLayoutV2FieldLineValueAlign = (docId, blockIndex) => {
+    const template = catalog.documents.find(item => String(item.id) === String(docId));
+    const block = template?.layoutV2?.blocks?.[blockIndex];
+    if (!block) return;
+    const nextAlign = nextParagraphAlign(getEffectiveLayoutV2FieldLineValueAlign(template, block));
+    applyLayoutV2BlocksChange(docId, blocks => blocks.map((item, index) => (
+      index === blockIndex ? { ...item, valueStyleOverrides: { ...item.valueStyleOverrides, align: nextAlign } } : item
+    )));
+  };
+
   const setLayoutV2StyleOverrideField = (docId, blockIndex, styleKey, raw) => {
     const parsed = parsePlainNumber(raw);
     if (parsed === undefined) return;
@@ -1704,6 +1719,27 @@ const DocumentsPage = ({ isAdmin }) => {
           if (parsed === null) delete nextOverrides[styleKey];
           else nextOverrides[styleKey] = parsed;
           return { ...item, styleOverrides: nextOverrides };
+        }),
+      },
+    }));
+  };
+
+  // Same idea as setLayoutV2StyleOverrideField, but for a fieldLine's own value style (font size)
+  // instead of the label's - the visible/underlined text is the value, so that's what the settings
+  // popover's font-size field should actually be sizing.
+  const setLayoutV2FieldLineValueStyleOverrideField = (docId, blockIndex, styleKey, raw) => {
+    const parsed = parsePlainNumber(raw);
+    if (parsed === undefined) return;
+    updateTemplate(docId, template => ({
+      ...template,
+      layoutV2: {
+        ...template.layoutV2,
+        blocks: (template.layoutV2?.blocks || []).map((item, index) => {
+          if (index !== blockIndex) return item;
+          const nextOverrides = { ...item.valueStyleOverrides };
+          if (parsed === null) delete nextOverrides[styleKey];
+          else nextOverrides[styleKey] = parsed;
+          return { ...item, valueStyleOverrides: nextOverrides };
         }),
       },
     }));
@@ -1775,13 +1811,10 @@ const DocumentsPage = ({ isAdmin }) => {
   // р.н.,") had no editor at all - the Blocks loop below only ever recognized
   // letterhead/paragraph/richParagraph, so a fieldLine's `value` (its only templated content, e.g.
   // the surrogate mother's own name/birth-date line) silently never showed up here even though it
-  // prints in the real document. Plain direct-value editing (no rich-run toolbar, no mode cycle) is
-  // enough - every fieldLine value in the reference templates is a flat {{}}-only string, the same
-  // shape the Logo field already edits this way (handleLogoFieldChange).
-  const setLayoutV2FieldLineValue = (docId, blockIndex, value) => applyLayoutV2BlocksChange(
-    docId,
-    blocks => blocks.map((item, index) => (index === blockIndex ? { ...item, value } : item)),
-  );
+  // prints in the real document. Its value now shares the exact same T/B/I/insert-variable/align
+  // toolbar every other paragraph has (getTemplateScopeText/withTemplateScopeText already
+  // understand a fieldLine's value/valueRuns, see layoutV2ParagraphRuns in documentsCatalogUtils),
+  // so no dedicated setter is needed here for it - only the label below is still a plain field.
 
   // The label sits to the left of the underlined value (e.g. "дружина", "та чоловік") - present on
   // some fieldLine blocks, absent on others (the surrogate mother's own line has none, see the
@@ -3397,7 +3430,31 @@ const DocumentsPage = ({ isAdmin }) => {
                                 });
                               }
                               if (block?.type === 'fieldLine') {
+                                // The exact same toolbar/mode-cycle system every other paragraph
+                                // uses (T/B/I/insert-variable/align/format/delete), just pointed at
+                                // this block's `value` instead of `text` - layoutV2ParagraphRuns/
+                                // FromMarkup and the Bold/Italic toggles (documentsCatalogUtils)
+                                // already understand a fieldLine's value/valueRuns the same way
+                                // they understand a paragraph's text/runs, so this reuses the whole
+                                // existing editor rather than a second, plainer one. Only Align and
+                                // the popover's font size differ - they read/write the value's own
+                                // valueStyle(Overrides), never the label's style(Overrides).
                                 const scope = layoutV2Scope(blockIndex);
+                                const mode = getParagraphMode(template.id, scope);
+                                const isTemplateMode = mode === 'template';
+                                const isInputMode = mode === 'input';
+                                const isTextMode = mode === 'text';
+                                const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
+                                const resolvedValue = langKey => fillPlaceholders(rawValue(langKey), getContextForTemplate(template.id), langKey);
+                                const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(resolvedValue(langKey)));
+                                const onChange = langKey => event => {
+                                  const nextRaw = isTemplateMode
+                                    ? event.target.value
+                                    : applyResolvedTextEdit(rawValue(langKey), getContextForTemplate(template.id), langKey, event.target.value);
+                                  handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
+                                };
+                                const onBlur = () => persistTemplate(template.id);
+                                const fieldKind = isTemplateMode ? 'template' : 'input-plain';
                                 return (
                                   // eslint-disable-next-line react/no-array-index-key
                                   <ParagraphEditorBlock key={`${template.id}-lv2-fieldline-${blockIndex}`}>
@@ -3410,6 +3467,42 @@ const DocumentsPage = ({ isAdmin }) => {
                                         <FaPlus />
                                       </SmallButton>
                                       <RowLine style={{ gap: 6 }}>
+                                        <SmallButton
+                                          type="button"
+                                          onClick={() => setParagraphModeFor(template.id, scope, nextParagraphMode(mode))}
+                                          title={PARAGRAPH_MODE_TITLE[mode]}
+                                        >
+                                          {PARAGRAPH_MODE_ICON[mode]}
+                                        </SmallButton>
+                                        <SmallButton
+                                          type="button"
+                                          disabled={isInputMode}
+                                          {...formatButtonProps('bold')}
+                                          title="Bold the selected text"
+                                        >
+                                          <FaBold />
+                                        </SmallButton>
+                                        <SmallButton
+                                          type="button"
+                                          disabled={isInputMode}
+                                          {...formatButtonProps('italic')}
+                                          title="Italicize the selected text"
+                                        >
+                                          <FaItalic />
+                                        </SmallButton>
+                                        <SmallButton
+                                          type="button"
+                                          disabled={!isTemplateMode}
+                                          onMouseDown={preventSelectionLoss}
+                                          onClick={openVariablePicker}
+                                          title="Insert a variable"
+                                        >
+                                          <FaCode />
+                                        </SmallButton>
+                                        <AlignCycleButton
+                                          align={getEffectiveLayoutV2FieldLineValueAlign(template, block)}
+                                          onCycle={() => handleCycleLayoutV2FieldLineValueAlign(template.id, blockIndex)}
+                                        />
                                         <FormatPopoverButton
                                           open={openFormatKey === formatPopoverKey(template.id, scope)}
                                           onToggle={() => toggleFormatPopover(template.id, scope)}
@@ -3419,9 +3512,9 @@ const DocumentsPage = ({ isAdmin }) => {
                                             {
                                               key: 'fontSizePt',
                                               label: 'Font size (pt)',
-                                              value: block.styleOverrides?.fontSizePt !== undefined ? String(block.styleOverrides.fontSizePt) : '',
+                                              value: block.valueStyleOverrides?.fontSizePt !== undefined ? String(block.valueStyleOverrides.fontSizePt) : '',
                                               placeholder: '',
-                                              onApply: raw => setLayoutV2StyleOverrideField(template.id, blockIndex, 'fontSizePt', raw),
+                                              onApply: raw => setLayoutV2FieldLineValueStyleOverrideField(template.id, blockIndex, 'fontSizePt', raw),
                                               onFieldBlur: () => persistTemplate(template.id),
                                             },
                                             {
@@ -3444,11 +3537,12 @@ const DocumentsPage = ({ isAdmin }) => {
                                         </DangerButton>
                                       </RowLine>
                                     </ParagraphControlsRow>
-                                    {/* Same freely-editable plain fields the Logo field already is -
-                                        a fieldLine's label (when the block carries one - some, like
-                                        the surrogate mother's own line, have none at all) and its
-                                        underlined value, both plain {{}}-only strings in every
-                                        reference template, no rich-run toolbar needed. */}
+                                    {/* The label sits to the left of the underlined value (e.g.
+                                        "дружина") - present on some fieldLine blocks, absent on
+                                        others (the surrogate mother's own line has none at all).
+                                        Always a plain {{}}-only string in every reference template
+                                        (never labelRuns), so a plain field covers it - the toolbar
+                                        above and the field below are both about the value. */}
                                     {block.label !== undefined ? (
                                       <FieldInput
                                         type="text"
@@ -3459,14 +3553,37 @@ const DocumentsPage = ({ isAdmin }) => {
                                         style={{ width: '100%', marginBottom: 6 }}
                                       />
                                     ) : null}
-                                    <FieldInput
-                                      type="text"
-                                      value={block.value || ''}
-                                      placeholder="Underlined field value - {{}} placeholders"
-                                      onChange={event => setLayoutV2FieldLineValue(template.id, blockIndex, event.target.value)}
-                                      onBlur={() => persistTemplate(template.id)}
-                                      style={{ width: '100%' }}
-                                    />
+                                    <ParagraphFieldColumn>
+                                      {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
+                                        <TextModeDisplay
+                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                          onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                          onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                          onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind) : undefined}
+                                          title={isInputMode ? 'Click to edit the wording' : undefined}
+                                        >
+                                          <FormattedRunsPreview text={resolvedValue(layoutV2Lang)} />
+                                        </TextModeDisplay>
+                                      ) : isInputMode ? (
+                                        <RichResolvedTextField
+                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                          initialText={resolvedValue(layoutV2Lang)}
+                                          placeholder="Field value"
+                                          onPlainTextChange={nextPlain => onChange(layoutV2Lang)({ target: { value: nextPlain } })}
+                                          onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                          onBlur={onBlur}
+                                        />
+                                      ) : (
+                                        <AutoInlineTextarea
+                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                          value={displayValue(layoutV2Lang)}
+                                          placeholder="Field value"
+                                          onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                          onChange={onChange(layoutV2Lang)}
+                                          onBlur={onBlur}
+                                        />
+                                      )}
+                                    </ParagraphFieldColumn>
                                   </ParagraphEditorBlock>
                                 );
                               }
