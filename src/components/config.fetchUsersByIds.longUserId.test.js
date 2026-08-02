@@ -49,9 +49,9 @@ describe('fetchUsersByIds skips newUsers for long-format userIds and trusts fres
     expect(longIdBranchBody.startsWith('if (!source && isLongFormatUserId(id))')).toBe(true);
   });
 
-  it('trusts a fresh users-sourced cache hit the same way it already trusts newUsers', () => {
+  it('trusts a users-sourced cache hit only for long-format ids', () => {
     expect(fetchUsersByIdsBody).toContain(
-      "(cached.__sourceCollection === 'newUsers' || cached.__sourceCollection === 'users')",
+      "|| (isLongFormatUserId(id) && cached.__sourceCollection === 'users')",
     );
   });
 });

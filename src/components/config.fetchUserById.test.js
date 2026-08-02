@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-describe('fetchUserById skips newUsers for long-format userIds', () => {
+describe('fetchUserById preserves newUsers fallbacks for every userId format', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
   const fetchUserByIdBody = source.slice(
@@ -9,30 +9,21 @@ describe('fetchUserById skips newUsers for long-format userIds', () => {
     source.indexOf('export const removeKeyFromFirebase'),
   );
 
-  it('checks isLongFormatUserId before the unconditional newUsers probe', () => {
-    const longIdBranchIndex = fetchUserByIdBody.indexOf('if (isLongFormatUserId(userId))');
-    const usersReadIndex = fetchUserByIdBody.indexOf('get(userRefInUsers)');
-    const unconditionalNewUsersReadIndex = fetchUserByIdBody.indexOf(
-      'const newUserSnapshot = await get(userRefInNewUsers);',
-    );
+  it('does not return a users record before probing the fallback collection', () => {
+    const fallbackReadIndex = fetchUserByIdBody.indexOf('const newUserSnapshot = await get(userRefInNewUsers);');
+    const usersOnlyReturnIndex = fetchUserByIdBody.indexOf("__sourceCollection: 'users'");
 
-    expect(longIdBranchIndex).toBeGreaterThanOrEqual(0);
-    expect(usersReadIndex).toBeGreaterThan(longIdBranchIndex);
-    expect(usersReadIndex).toBeLessThan(unconditionalNewUsersReadIndex);
+    expect(fetchUserByIdBody).not.toContain('if (isLongFormatUserId(userId))');
+    expect(fallbackReadIndex).toBeGreaterThanOrEqual(0);
+    expect(usersOnlyReturnIndex).toBeGreaterThan(fallbackReadIndex);
   });
 
-  it('returns a users-sourced record with photos when the long-id branch hits', () => {
-    const longIdBranchBody = fetchUserByIdBody.slice(
-      fetchUserByIdBody.indexOf('if (isLongFormatUserId(userId))'),
-      fetchUserByIdBody.indexOf('const newUserSnapshot = await get(userRefInNewUsers);'),
-    );
-    expect(longIdBranchBody).toContain("getAllUserPhotos(userId, 'users')");
-    expect(longIdBranchBody).toContain("__sourceCollection: 'users'");
-  });
-
-  it('still merges users/newUsers per field for the short-id path (unchanged)', () => {
+  it('merges users/newUsers per field when both records exist', () => {
     expect(fetchUserByIdBody).toContain(
-      'mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val())',
+      '? mergeUserCollectionData(newUserSnapshot.val(), userSnapshotInUsers.val())',
+    );
+    expect(fetchUserByIdBody).toContain(
+      ': mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val())',
     );
   });
 });
