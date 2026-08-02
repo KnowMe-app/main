@@ -358,6 +358,29 @@ describe('spec §1.8/§4: document contexts (embryoOwnershipStatement/geneticAff
     expect(buildGeneticAffinityCertificateContext(caseWithoutArtProgram, resolvedClinics, {}).oocyteSourceIsWife).toBe(false);
   });
 
+  it('geneticAffinityCertificate resolves oocyteSourceDisplay/spermSourceDisplay to the spouse\'s own name when they were the source, the raw donor code otherwise', () => {
+    const wife = { name: { uk: { nominative: 'Кацура Юкако' }, en: 'Katsura Yukako' } };
+    const husband = { name: { uk: { nominative: 'Кацура Кеіго' }, en: 'Katsura Keigo' } };
+
+    // caseWithDateRangePeriod: geneticMaterial: { oocyte: 'wife', sperm: 'husband' } - both spouses
+    // provided their own material, so both fields resolve to the spouses' own names.
+    const spousesContext = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {}, { wife, husband });
+    expect(spousesContext.oocyteSourceDisplay).toEqual({ uk: 'Кацура Юкако', en: 'Katsura Yukako' });
+    expect(spousesContext.spermSourceDisplay).toEqual({ uk: 'Кацура Кеіго', en: 'Katsura Keigo' });
+
+    // A donor code (anything other than 'wife'/'husband', spec §1.7/§6/GENETIC_SOURCE_ROLE_VALUES)
+    // is displayed as itself, never resolved to a spouse's name.
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyte: 'ED-123', sperm: 'SD-456' } } });
+    const donorContext = buildGeneticAffinityCertificateContext(donorCase, resolvedClinics, {}, { wife, husband });
+    expect(donorContext.oocyteSourceDisplay).toEqual({ uk: 'ED-123', en: 'ED-123' });
+    expect(donorContext.spermSourceDisplay).toEqual({ uk: 'SD-456', en: 'SD-456' });
+
+    // No source recorded at all, or no wife/husband passed in (an older call site that doesn't
+    // know about this yet) - blank, never a throw or a leaked "undefined".
+    expect(buildGeneticAffinityCertificateContext(caseWithoutArtProgram, resolvedClinics, {}, { wife, husband }).oocyteSourceDisplay).toEqual({ uk: '', en: '' });
+    expect(buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {}).oocyteSourceDisplay).toEqual({ uk: '', en: '' });
+  });
+
   it('geneticAffinityCertificate falls back to print-only blanks (never persisted) when issueDate/outgoingNumber are unset', () => {
     const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {});
     expect(context.issueDateOrBlank.uk).toBe('__.__.____');
@@ -426,6 +449,19 @@ describe('integration: resolveCaseContext wires every ART document context in, n
     expect(fillPlaceholders('{{racssClinicLetter.transferAttempt.shipment.receivedDateFormatted.uk}}', context, 'uk')).toBe('27.08.2025');
     expect(fillPlaceholders('{{medicalServicesAgreement.dateFormatted.uk}}', context, 'uk')).toBe('12.09.2025');
     expect(fillPlaceholders('{{case.artProgram.medicalIndications.uk}}', context, 'uk')).toBe('Тестовий діагноз');
+  });
+
+  it('wires oocyteSourceDisplay/spermSourceDisplay through resolveCaseContext using the case\'s own couple, no per-case typing needed', () => {
+    const catalog = buildCatalog(caseWithDateRangePeriod);
+    const context = resolveCaseContext(catalog, 'case-daterange');
+    // caseWithDateRangePeriod: geneticMaterial: { oocyte: 'wife', sperm: 'husband' }, couple-fixture
+    // partners are Кацура Юкако (wife) / Кацура Кеіго (husband).
+    expect(fillPlaceholders('{{geneticAffinityCertificate.oocyteSourceDisplay.uk}}', context, 'uk')).toBe('Кацура Юкако');
+    expect(fillPlaceholders('{{geneticAffinityCertificate.spermSourceDisplay.uk}}', context, 'uk')).toBe('Кацура Кеіго');
+
+    const donorCatalog = buildCatalog(deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyte: 'ED-123' } } }));
+    const donorContext = resolveCaseContext(donorCatalog, 'case-daterange');
+    expect(fillPlaceholders('{{geneticAffinityCertificate.oocyteSourceDisplay.uk}}', donorContext, 'uk')).toBe('ED-123');
   });
 
   it('spec §5.1: exposes the same singleton shipment/transfer/hcgTest/ultrasound/ivf as top-level canonical context aliases, alongside the document-scoped ones', () => {
@@ -504,7 +540,8 @@ describe('integration: resolveCaseContext wires every ART document context in, n
 describe('spec §1.9: ART-derived fields are never written back to Firebase', () => {
   it('DERIVED_CONTEXT_FIELD_KEYS lists every runtime-only ART field named in the spec', () => {
     ['plannedPeriodFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
-      'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank']
+      'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank',
+      'oocyteSourceDisplay', 'spermSourceDisplay']
       .forEach(key => expect(DERIVED_CONTEXT_FIELD_KEYS).toContain(key));
   });
 

@@ -395,6 +395,7 @@ export const DERIVED_CONTEXT_FIELD_KEYS = [
   // resolveCaseContext call, never written back to Firebase.
   'plannedPeriodFormatted', 'receivedDateFormatted', 'certificateDateFormatted',
   'embryoCountText', 'embryoStageLabel', 'gestationalAgeText', 'pregnancyTypeText', 'issueDateOrBlank', 'outgoingNumberOrBlank',
+  'oocyteSourceDisplay', 'spermSourceDisplay',
 ];
 
 // Recursively strips every DERIVED_CONTEXT_FIELD_KEYS key out of a value before it's serialized
@@ -1556,10 +1557,23 @@ export const buildEmbryoOwnershipStatementContext = (caseData, clinics, ownershi
 // attempt referencing the case's one shipment - none of them need an id of their own, and neither
 // does the transfer attempt's hCG test/ultrasound (spec §1.5: existence alone means positive/
 // confirmed) - nothing left to select by id.
-export const buildGeneticAffinityCertificateContext = (caseData, clinics, certificateData) => {
+// Which name/code actually belongs on a "У лікувальній програмі ДРТ використано яйцеклітини/
+// сперматозоїди ..." line - case.artProgram.geneticMaterial.oocyte (or .sperm) already records
+// exactly who provided the material ('wife'/'husband', or any other non-empty value is a donor
+// code, spec §1.7/§6/GENETIC_SOURCE_ROLE_VALUES), so the certificate can resolve this itself
+// instead of leaving it for the admin to type in and keep in sync by hand.
+const geneticSourceDisplayName = (sourceValue, role, ownerPerson) => {
+  if (sourceValue === role) return ownerPerson ? { uk: ownerPerson.name?.uk?.nominative || '', en: ownerPerson.name?.en || '' } : { uk: '', en: '' };
+  if (isGeneticSourceDonorCode(sourceValue)) return { uk: sourceValue, en: sourceValue };
+  return { uk: '', en: '' };
+};
+
+export const buildGeneticAffinityCertificateContext = (caseData, clinics, certificateData, relatedPersons = {}) => {
   const data = isPlainObject(certificateData) ? certificateData : {};
   const transferAttempt = resolveTransferAttempt(caseData);
   const shipment = enrichShipment(resolveShipment(caseData), clinics);
+  const oocyteSource = caseData?.artProgram?.geneticMaterial?.oocyte;
+  const spermSource = caseData?.artProgram?.geneticMaterial?.sperm;
   return {
     ...data,
     transferAttempt: enrichTransferForTemplate(transferAttempt, shipment),
@@ -1574,7 +1588,13 @@ export const buildGeneticAffinityCertificateContext = (caseData, clinics, certif
     // матір'ю ..." clause) - the "У лікувальній програмі ДРТ використано яйцеклітини..." field this
     // certificate itself prints from the case's scalar case.artProgram.geneticMaterial.oocyte
     // (spec §1.7/§6).
-    oocyteSourceIsWife: caseData?.artProgram?.geneticMaterial?.oocyte === 'wife',
+    oocyteSourceIsWife: oocyteSource === 'wife',
+    // The certificate's own fieldLine values for "яйцеклітини"/"сперматозоїди": the spouse's own
+    // name when they were the source, the raw donor code otherwise - {{geneticAffinityCertificate.
+    // oocyteSourceDisplay.uk}}/{{...spermSourceDisplay.uk}} in the template, no manual per-case
+    // typing needed.
+    oocyteSourceDisplay: geneticSourceDisplayName(oocyteSource, 'wife', relatedPersons.wife),
+    spermSourceDisplay: geneticSourceDisplayName(spermSource, 'husband', relatedPersons.husband),
   };
 };
 
@@ -1720,7 +1740,7 @@ export const resolveCaseContext = (catalog, caseId, { childId, templateId } = {}
   // editing an event once (e.g. the transfer date) is reflected in every document that references
   // it.
   const embryoOwnershipStatement = buildEmbryoOwnershipStatementContext(caseRecord, resolvedClinics, documents.embryoOwnershipStatement);
-  const geneticAffinityCertificate = buildGeneticAffinityCertificateContext(caseRecord, resolvedClinics, documents.geneticAffinityCertificate);
+  const geneticAffinityCertificate = buildGeneticAffinityCertificateContext(caseRecord, resolvedClinics, documents.geneticAffinityCertificate, { wife, husband });
   const racssClinicLetter = buildRacssClinicLetterContext(caseRecord, resolvedClinics, documents.racssClinicLetter);
   const medicalServicesAgreement = buildMedicalServicesAgreementContext(documents.medicalServicesAgreement);
 
