@@ -196,6 +196,7 @@ import {
   isShortMatchingUserId,
   isValidMatchingUserId,
 } from 'utils/matchingDataProvider';
+import { isLongFormatUserId } from 'utils/mergeUserCollections';
 
 
 const MATCHING_SEARCH_ID_PREFIXES = ['phone'];
@@ -503,6 +504,10 @@ const NEW_USERS_USER_ID_PREFIXES = ['-O', 'AA', 'AB', 'VK', 'ID'];
 const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];
 const isLikelyNewUsersUserId = id => {
   const value = String(id || '').trim();
+  // A definitively long-format id (Firebase-Auth UID) can never live in newUsers
+  // (per the collection-routing invariant) even if it coincidentally starts with
+  // one of the short-id prefixes below — treat that as authoritative first.
+  if (isLongFormatUserId(value)) return false;
   return Boolean(value) && (
     isShortId(value) ||
     NEW_USERS_USER_ID_PREFIXES.some(prefix => value.startsWith(prefix))
