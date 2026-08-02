@@ -506,6 +506,18 @@ const ParagraphControlsRow = styled.div`
   margin-bottom: 4px;
 `;
 
+// A fieldLine's label and value toolbars share the same five icons (mode/Bold/Italic/insert-var/
+// align), stacked directly on top of each other - this tiny tag is the only thing telling them
+// apart at a glance, so it's never ambiguous which row a button acts on.
+const FieldSlotTag = styled.span`
+  color: var(--km-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-right: 2px;
+`;
+
 // Encloses one editable row's controls (Bold/Italic/Insert-variable, Insert/Remove for paragraphs)
 // together with its own text, in one visible border - so which row a button acts on is never
 // ambiguous, regardless of whether the two-column ParagraphPair below would otherwise draw its own
@@ -3488,6 +3500,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         <FaPlus />
                                       </SmallButton>
                                       <RowLine style={{ gap: 6 }}>
+                                        {hasLabel ? <FieldSlotTag>Value</FieldSlotTag> : null}
                                         <SmallButton
                                           type="button"
                                           onClick={() => setParagraphModeFor(template.id, scope, nextParagraphMode(mode))}
@@ -3572,6 +3585,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                       <>
                                         <ParagraphControlsRow>
                                           <RowLine style={{ gap: 6 }}>
+                                            <FieldSlotTag>Label</FieldSlotTag>
                                             <SmallButton
                                               type="button"
                                               onClick={() => setParagraphModeFor(template.id, labelScope, nextParagraphMode(labelMode))}
