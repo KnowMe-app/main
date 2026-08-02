@@ -7,13 +7,16 @@ import { handleSubmitAll } from './actions';
 let latestCompareRequest = 0;
 const pendingCardSaves = new Map();
 
-const queueCardSave = user => {
-  const userId = user?.userId;
+const queueCardSave = (userId, getUser) => {
   if (!userId) return;
   const previousSave = pendingCardSaves.get(userId) || Promise.resolve();
   const nextSave = previousSave
     .catch(() => undefined)
-    .then(() => handleSubmitAll(user, 'overwrite'))
+    .then(() => {
+      const latestUser = getUser();
+      if (!latestUser) return undefined;
+      return handleSubmitAll(latestUser, 'overwrite');
+    })
     .finally(() => {
       if (pendingCardSaves.get(userId) === nextSave) pendingCardSaves.delete(userId);
     });
@@ -106,12 +109,13 @@ export const btnCompare = (
     updatedUsers[targetUserId] = updatedTargetUser;
     if (usersRef) usersRef.current = updatedUsers;
     setUsers(updatedUsers);
-    queueCardSave(updatedTargetUser);
+    queueCardSave(targetUserId, () => (usersRef?.current || users)[targetUserId]);
   };
 
   const handleCompareClick = async e => {
     e.stopPropagation();
     const requestId = ++latestCompareRequest;
+    setCompare(null);
     setShowInfoModal('compareCards');
     const entries = Object.entries(users);
     const currentUserRaw = entries[index]?.[1] || {};
