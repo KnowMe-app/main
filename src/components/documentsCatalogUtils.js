@@ -2648,6 +2648,10 @@ const normalizeLayoutV2Block = (block, template, context, lang) => {
         labelWidthMm: block.labelWidthMm || 0,
         labelStyle: resolveLayoutV2Style(template, block.style, block.styleOverrides),
         value: resolveLayoutV2Text(block.value, context, lang) || '',
+        // valueRuns (batch 2026-08 §: fieldLine gets the full paragraph toolbar) is the value's own
+        // bold/italic-carrying sibling, same plain-vs-runs pattern labelRuns/text-vs-runs already
+        // are - resolved the same way a richParagraph's runs are.
+        valueRuns: block.valueRuns ? resolveLayoutV2Runs(block.valueRuns, template, context, lang) : undefined,
         valueStyle: resolveLayoutV2Style(template, block.valueStyle, block.valueStyleOverrides),
         // Both formats supported (spec §4/§16): an old inline `line` object wins if present, a new
         // template names its border via `lineStyle` into the shared `lineStyles` map instead.
@@ -2812,9 +2816,22 @@ export const findUnresolvedPlaceholders = layoutV2Doc => {
 // Bold is the 'inlineEmphasis' named style; italic (added alongside the full toolbar for layoutV2
 // paragraphs) is a plain `styleOverrides.fontStyle` instead of a named style, so it works on any
 // template regardless of whether its styleSheet defines one.
-export const layoutV2ParagraphRuns = block => (block?.type === 'richParagraph'
-  ? (block.runs || []).map(run => ({ text: String(run?.text || ''), style: run?.style, styleOverrides: run?.styleOverrides }))
-  : [{ text: String(block?.text || ''), style: undefined, styleOverrides: undefined }]);
+// A fieldLine block's own templated content is its `value` (label/caption are separate, plain
+// fields - see the editor) - `valueRuns` is its bold/italic-carrying sibling, the exact same
+// plain-vs-runs pattern `text`/`runs` already is for an ordinary paragraph, so the whole toolbar
+// below (mode cycle, Bold, Italic, Insert-variable) works on a fieldLine's value identically to
+// any other paragraph's text, instead of only exposing a bare text input for it.
+export const layoutV2ParagraphRuns = block => {
+  if (block?.type === 'richParagraph') {
+    return (block.runs || []).map(run => ({ text: String(run?.text || ''), style: run?.style, styleOverrides: run?.styleOverrides }));
+  }
+  if (block?.type === 'fieldLine') {
+    return block.valueRuns
+      ? block.valueRuns.map(run => ({ text: String(run?.text || ''), style: run?.style, styleOverrides: run?.styleOverrides }))
+      : [{ text: String(block?.value || ''), style: undefined, styleOverrides: undefined }];
+  }
+  return [{ text: String(block?.text || ''), style: undefined, styleOverrides: undefined }];
+};
 
 export const layoutV2ParagraphPlainText = block => layoutV2ParagraphRuns(block).map(run => run.text).join('');
 
@@ -2870,6 +2887,29 @@ const mergeAdjacentLayoutV2Runs = runs => runs.reduce((merged, run) => {
 
 const isLayoutV2RunPlain = run => !run.style && !run.styleOverrides?.fontStyle;
 
+// Collapses a merged run list back into the block's own field shape: paragraph.text/
+// richParagraph.runs for an ordinary paragraph block, fieldLine.value/valueRuns for a fieldLine's
+// own value - collapsed to the plain single-field shape whenever nothing in the result actually
+// carries bold/italic, so an untouched/fully-unformatted block never permanently upgrades to the
+// richer shape. Shared by the Bold/Italic toggles and layoutV2ParagraphFromMarkup below, so all
+// three ways of editing a block's text agree on the same collapse rule.
+const finalizeLayoutV2ParagraphRuns = (block, mergedRuns) => {
+  if (block?.type === 'fieldLine') {
+    const plainText = mergedRuns.map(run => run.text).join('');
+    if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
+      const { valueRuns: ignoredValueRuns, ...plainBlock } = block;
+      return { ...plainBlock, value: plainText };
+    }
+    return { ...block, value: plainText, valueRuns: mergedRuns };
+  }
+  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
+    const { runs: ignoredRuns, ...plainBlock } = block;
+    return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
+  }
+  const { text: ignoredText, ...richBlock } = block;
+  return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
+};
+
 // MS Word toggle behavior (batch 17), same rule as toggleInlineFormat: if every run inside
 // [plainStart, plainEnd) is already 'inlineEmphasis', the whole selection loses it; otherwise the
 // whole selection gains it. Always returns a `richParagraph` (a plain `paragraph` block has no
@@ -2884,16 +2924,10 @@ export const toggleLayoutV2ParagraphBold = (block, plainStart, plainEnd) => {
   const selected = split.filter(within);
   const allBold = selected.length > 0 && selected.every(run => run.style === 'inlineEmphasis');
   const next = split.map(run => (within(run) ? { ...run, style: allBold ? undefined : 'inlineEmphasis' } : run));
-  const mergedRuns = mergeAdjacentLayoutV2Runs(next);
   // Firebase's `set()` rejects a value tree containing a bare `undefined` outright (batch 26 §3) -
   // dropping the now-unused key via destructuring, rather than assigning it `undefined`, keeps
-  // this block always directly writable.
-  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
-    const { runs: ignoredRuns, ...plainBlock } = block;
-    return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
-  }
-  const { text: ignoredText, ...richBlock } = block;
-  return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
+  // this block always directly writable (handled inside finalizeLayoutV2ParagraphRuns).
+  return finalizeLayoutV2ParagraphRuns(block, mergeAdjacentLayoutV2Runs(next));
 };
 
 // Same MS Word toggle rule as Bold, just flipping styleOverrides.fontStyle instead of the
@@ -2908,13 +2942,7 @@ export const toggleLayoutV2ParagraphItalic = (block, plainStart, plainEnd) => {
   const next = split.map(run => (within(run)
     ? { ...run, styleOverrides: allItalic ? undefined : { ...run.styleOverrides, fontStyle: 'italic' } }
     : run));
-  const mergedRuns = mergeAdjacentLayoutV2Runs(next);
-  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
-    const { runs: ignoredRuns, ...plainBlock } = block;
-    return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
-  }
-  const { text: ignoredText, ...richBlock } = block;
-  return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
+  return finalizeLayoutV2ParagraphRuns(block, mergeAdjacentLayoutV2Runs(next));
 };
 
 // --- layoutV2 paragraph full toolbar parity (mode cycle, Italic, Insert-variable) ---------------
@@ -2976,13 +3004,7 @@ export const layoutV2ParagraphFromMarkup = (existingBlock, markup) => {
     }
     nextOffset += parsedRun.text.length;
   });
-  const mergedRuns = mergeAdjacentLayoutV2Runs(runs);
-  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
-    const { runs: ignoredRuns, ...plainBlock } = existingBlock;
-    return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
-  }
-  const { text: ignoredText, ...richBlock } = existingBlock;
-  return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
+  return finalizeLayoutV2ParagraphRuns(existingBlock, mergeAdjacentLayoutV2Runs(runs));
 };
 
 // The scope key a layoutV2 paragraph/richParagraph block edits under (mirrors beforeTitleScope/
@@ -2994,6 +3016,12 @@ export const layoutV2Scope = index => `lv2:${index}`;
 // alignment override belongs on the block's own `styleOverrides` instead, never on the shared
 // named style every other block using it would also pick up.
 export const getEffectiveLayoutV2BlockAlign = (template, block) => resolveLayoutV2Style(template, block?.style, block?.styleOverrides).align || 'left';
+
+// A fieldLine's own `style`/`styleOverrides` govern its *label* (see normalizeLayoutV2Block) - its
+// value has an entirely separate `valueStyle`/`valueStyleOverrides` pair, so the Align button on a
+// fieldLine's value row (the toolbar it now shares with every other paragraph) must read/write
+// that pair instead, never the label's.
+export const getEffectiveLayoutV2FieldLineValueAlign = (template, block) => resolveLayoutV2Style(template, block?.valueStyle, block?.valueStyleOverrides).align || 'left';
 
 // One generated document, ready for the PDF/DOCX renderers: bilingual title + paragraph pairs
 // with every placeholder already substituted from the case context. Logo/logo-long paragraphs are

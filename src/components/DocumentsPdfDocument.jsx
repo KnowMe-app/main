@@ -661,7 +661,12 @@ const LayoutV2FieldLine = ({ block }) => {
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end' }}>
           {block.line?.fillBeforeValue ? <View style={[{ flex: 1, minWidth: 4 * MM_TO_PT }, lineStyle]} /> : null}
           <Text style={[layoutV2TextStyle(block.valueStyle), lineStyle, { paddingHorizontal: 1 * MM_TO_PT }]}>
-            {block.value}
+            {block.valueRuns
+              ? block.valueRuns.map((run, index) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <Text key={index} style={layoutV2TextStyle(run.style)}>{run.text}</Text>
+              ))
+              : block.value}
           </Text>
           {block.line?.fillAfterValue ? <View style={[{ flex: 1, minWidth: 4 * MM_TO_PT }, lineStyle]} /> : null}
         </View>

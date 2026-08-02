@@ -594,7 +594,9 @@ export const buildDocumentsDocx = async ({
     const valueParagraph = new Paragraph({
       alignment: layoutV2Alignment(block.valueStyle?.align),
       spacing: { after: 0, line: lineTwipsFor(block.valueStyle), lineRule: 'auto' },
-      children: [layoutV2TextRun(block.value || '', block.valueStyle)],
+      children: block.valueRuns
+        ? block.valueRuns.map(run => layoutV2TextRun(run.text, run.style))
+        : [layoutV2TextRun(block.value || '', block.valueStyle)],
     });
     const rows = [new TableRow({
       children: [

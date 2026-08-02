@@ -3,7 +3,8 @@
 // recognized letterhead/paragraph/richParagraph, so a fieldLine's `value` (its only templated
 // content) silently never showed up in the builder even though it printed in the real PDF/DOCX (a
 // case in point: the surrogate mother's own name/birth-date line on the genetic affinity
-// certificate). This locks in the plain value/label editor added for it.
+// certificate). Its value now shares the exact same T/B/I/insert-variable/align toolbar every
+// other paragraph has - this locks that in, plus the still-plain label field alongside it.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -37,6 +38,8 @@ import { listStorageFolderFileNames } from './config';
 // eslint-disable-next-line import/first
 import DocumentsPage from './DocumentsPage';
 
+const TEXT_MODE_TITLE = "Text mode - select text and press Bold/Italic; wording isn't editable here. Tap to switch to Template mode.";
+
 beforeEach(() => {
   ref.mockImplementation((_db, path) => path);
   get.mockImplementation(async path => {
@@ -64,7 +67,7 @@ beforeEach(() => {
                 {
                   type: 'fieldLine',
                   style: 'body',
-                  value: '{{surrogateMother.name.uk.nominative}}, {{surrogateMother.birthDate}} р.н.,',
+                  value: 'Кацура Юкако, донор ооцитів',
                   caption: '(прізвище, ім’я, по батькові, рік народження)',
                 },
               ],
@@ -79,28 +82,54 @@ beforeEach(() => {
   listStorageFolderFileNames.mockResolvedValue([]);
 });
 
-describe('spec: a layoutV2 fieldLine block gets a plain label/value editor', () => {
-  it('shows the current label and value, and has no label field at all for a fieldLine with none', async () => {
+// Every fieldLine row (and every other paragraph row) defaults to Text mode, which shows resolved
+// (case-substituted) wording rather than the raw {{}} markup - switching to Template mode is what
+// exposes the same editable-markup textarea a legacy paragraph's Template mode already shows.
+const fieldLineBlocks = async () => {
+  const modeButtons = await screen.findAllByTitle(TEXT_MODE_TITLE);
+  // eslint-disable-next-line testing-library/no-node-access
+  return modeButtons.map(button => button.closest('.paragraph-editor-block'));
+};
+
+describe('spec: a layoutV2 fieldLine block gets the full standard paragraph toolbar', () => {
+  it('has the same T/B/I/insert-variable/align/settings/delete buttons a paragraph block has, for both fieldLine rows', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    expect(await screen.findByDisplayValue('дружина')).toBeInTheDocument();
-    const values = await screen.findAllByDisplayValue(/р\.н\.,$/);
-    expect(values).toHaveLength(2);
-    expect(values[0]).toHaveValue('{{wife.name.uk.nominative}}, {{wife.birthDate}} р.н.,');
-    expect(values[1]).toHaveValue('{{surrogateMother.name.uk.nominative}}, {{surrogateMother.birthDate}} р.н.,');
+    const [wifeBlock, surrogateBlock] = await fieldLineBlocks();
+    [wifeBlock, surrogateBlock].forEach(block => {
+      expect(within(block).getByTitle(TEXT_MODE_TITLE)).toBeInTheDocument();
+      expect(within(block).getByTitle('Bold the selected text')).toBeInTheDocument();
+      expect(within(block).getByTitle('Italicize the selected text')).toBeInTheDocument();
+      expect(within(block).getByTitle('Insert a variable')).toBeInTheDocument();
+      expect(within(block).getByLabelText(/Вирівнювання/)).toBeInTheDocument();
+      expect(within(block).getByTitle('Field line formatting - font size (pt) and condition; empty = inherit/always shown')).toBeInTheDocument();
+      expect(within(block).getByTitle('Remove this field line')).toBeInTheDocument();
+    });
 
     // Only one label field exists (the surrogate mother's fieldLine carries no `label` key at all).
-    expect(screen.getAllByPlaceholderText(/Label before the underlined value/)).toHaveLength(1);
+    expect(within(wifeBlock).getByDisplayValue('дружина')).toBeInTheDocument();
+    expect(within(surrogateBlock).queryByPlaceholderText(/Label before the underlined value/)).not.toBeInTheDocument();
   });
 
-  it('editing the value persists straight to layoutV2.blocks[index].value on blur', async () => {
+  it('switching to Template mode shows the raw {{}} markup for the value, editable like any other paragraph', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const surrogateValueField = await screen.findByDisplayValue('{{surrogateMother.name.uk.nominative}}, {{surrogateMother.birthDate}} р.н.,');
-    fireEvent.change(surrogateValueField, { target: { value: '{{surrogateMother.name.uk.nominative}}' } });
-    fireEvent.blur(surrogateValueField);
+    const [wifeBlock] = await fieldLineBlocks();
+    fireEvent.click(within(wifeBlock).getByTitle(TEXT_MODE_TITLE));
+    expect(within(wifeBlock).getByPlaceholderText('Field value')).toHaveValue('{{wife.name.uk.nominative}}, {{wife.birthDate}} р.н.,');
+  });
+
+  it('editing the value in Template mode persists straight to layoutV2.blocks[index].value on blur', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [, surrogateBlock] = await fieldLineBlocks();
+    fireEvent.click(within(surrogateBlock).getByTitle(TEXT_MODE_TITLE));
+    const valueField = within(surrogateBlock).getByPlaceholderText('Field value');
+    fireEvent.change(valueField, { target: { value: '{{surrogateMother.name.uk.nominative}}' } });
+    fireEvent.blur(valueField);
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
@@ -108,7 +137,40 @@ describe('spec: a layoutV2 fieldLine block gets a plain label/value editor', () 
         layoutV2: expect.objectContaining({
           blocks: [
             expect.objectContaining({ label: 'дружина' }),
-            expect.objectContaining({ value: '{{surrogateMother.name.uk.nominative}}' }),
+            expect.objectContaining({ type: 'fieldLine', value: '{{surrogateMother.name.uk.nominative}}' }),
+          ],
+        }),
+      }),
+    ));
+  });
+
+  it('Bold on a selected fragment of the value produces valueRuns, still tagged fieldLine, never converted to a paragraph', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [, surrogateBlock] = await fieldLineBlocks();
+    fireEvent.click(within(surrogateBlock).getByTitle(TEXT_MODE_TITLE));
+    const valueField = within(surrogateBlock).getByPlaceholderText('Field value');
+    fireEvent.focus(valueField);
+    // "Кацура Юкако, донор ооцитів" - bold just "Кацура Юкако" (the first 12 characters).
+    valueField.setSelectionRange(0, 12);
+
+    fireEvent.click(within(surrogateBlock).getByTitle('Bold the selected text'));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [
+            expect.anything(),
+            expect.objectContaining({
+              type: 'fieldLine',
+              value: 'Кацура Юкако, донор ооцитів',
+              valueRuns: [
+                { text: 'Кацура Юкако', style: 'inlineEmphasis' },
+                { text: ', донор ооцитів', style: undefined },
+              ],
+            }),
           ],
         }),
       }),
@@ -136,7 +198,7 @@ describe('spec: a layoutV2 fieldLine block gets a plain label/value editor', () 
     ));
   });
 
-  it('the field-line settings popover exposes a condition field, same as a paragraph block', async () => {
+  it('the field-line settings popover exposes font size (for the value) and condition, same shape as a paragraph block', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
@@ -160,5 +222,27 @@ describe('spec: a layoutV2 fieldLine block gets a plain label/value editor', () 
         }),
       }),
     ));
+  });
+
+  it('cycling Align on the value writes valueStyleOverrides.align, never the label\'s styleOverrides', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [wifeBlock] = await fieldLineBlocks();
+    fireEvent.click(within(wifeBlock).getByLabelText(/Вирівнювання/));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({ valueStyleOverrides: expect.objectContaining({ align: expect.any(String) }) }),
+            expect.anything(),
+          ],
+        }),
+      }),
+    ));
+    const [, persistedTemplate] = set.mock.calls.find(call => call[0] === 'documentsBuilder/templates/doc-1');
+    expect(persistedTemplate.layoutV2.blocks[0].styleOverrides).toBeUndefined();
   });
 });
