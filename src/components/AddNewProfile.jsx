@@ -41,7 +41,6 @@ import {
   fetchUsersByIds,
   lazyLoadProfilePhotos,
   migrateAllLegacyCardComments,
-  migrateAllLongUserIdCardsFromNewUsers,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import {
@@ -6161,41 +6160,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const handleMigrateAllLongUserIdCardsFromNewUsers = async () => {
-    if (!isAdmin) return;
-    if (
-      !window.confirm(
-        'Це перенесе всі картки з довгим userId (реальні акаунти) з newUsers у users, ' +
-          'доповнивши дані там, де їх ще бракує, і повністю прибере ці картки з newUsers. ' +
-          'Дію неможливо скасувати вручну. Продовжити?',
-      )
-    ) {
-      return;
-    }
-
-    const toastId = 'migrate-long-userid-cards-progress';
-    toast.loading('Міграція карток...', { id: toastId });
-    try {
-      const report = await migrateAllLongUserIdCardsFromNewUsers({
-        onProgress: percent => toast.loading(`Міграція карток... ${percent}%`, { id: toastId }),
-      });
-      if (report.migratedCards) {
-        clearAllCardsCache();
-      }
-      toast.success(
-        `Мігровано карток: ${report.migratedCards}` +
-          (report.errors.length ? `, не вдалося перенести: ${report.errors.length}` : ''),
-        { id: toastId },
-      );
-      if (report.errors.length) {
-        console.error('[AddNewProfile] Cards left in newUsers after migration', report.errors);
-      }
-    } catch (error) {
-      console.error('[AddNewProfile] Long-userId card migration failed', error);
-      toast.error(`Помилка міграції карток: ${error?.message || 'невідома помилка'}`, { id: toastId });
-    }
-  };
-
   useEffect(() => {
     if (!searchIdAndSearchKeyOnlyMode) {
       setShowSearchKeyIndexPanel(false);
@@ -7206,14 +7170,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   title="Перенести всі старі коментарі карток у multiData/comments"
                 >
                   Мігрувати коментарі
-                </Button>
-              )}
-              {isAdmin && (
-                <Button
-                  onClick={handleMigrateAllLongUserIdCardsFromNewUsers}
-                  title="Перенести всі картки з довгим userId з newUsers у users"
-                >
-                  Мігрувати картки
                 </Button>
               )}
               {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
