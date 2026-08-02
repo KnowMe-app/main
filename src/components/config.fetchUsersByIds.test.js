@@ -55,7 +55,8 @@ describe('newUsers/users merge behaviour', () => {
 
     expect(fetchUsersByIdsBody).toContain("const readSources = source ? [source] : ['users', 'newUsers'];");
     expect(fetchUsersByIdsBody).toContain('mergeUserCollectionData(');
-    expect(fetchUsersByIdsBody).toContain("__sourceCollection: hasNewUser ? 'newUsers' : 'users'");
+    expect(fetchUsersByIdsBody).toContain("const useNewUsers = hasNewUser && (!source || source === 'newUsers');");
+    expect(fetchUsersByIdsBody).toContain("__sourceCollection: useNewUsers ? 'newUsers' : 'users'");
   });
 
   it('addUserFromUsers merges users/newUsers per field in search results', () => {
