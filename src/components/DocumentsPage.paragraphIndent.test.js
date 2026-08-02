@@ -183,7 +183,7 @@ describe('spec: document-level formatting popover in the header row (§1.2)', ()
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
     await screen.findByText('Абзац з відступом.');
 
-    fireEvent.click(screen.getByTitle('Document formatting - font size (pt) and first-line indent (cm) inherited by all paragraphs'));
+    fireEvent.click(screen.getByTitle('Document settings - language, columns, renderer, font size, first line indent'));
     const sizeField = screen.getByLabelText('Font size (pt)');
     expect(sizeField).toHaveValue('');
     expect(sizeField).toHaveAttribute('placeholder', '12'); // the shared reference default
