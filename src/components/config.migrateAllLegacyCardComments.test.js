@@ -22,10 +22,12 @@ describe('bulk migration of every leftover users/newUsers myComment into multiDa
     expect(fnBody).not.toContain('equalTo');
   });
 
-  it('merges the supported legacy comments fallback before choosing a destination', () => {
-    expect(fnBody).toContain('getLegacyCommentPath(commentsOwnerId)');
-    expect(fnBody).toContain('legacyExistingComments');
-    expect(fnBody).toContain('legacyComment?.text');
+  it('merges an existing multiData comment into the multiData destination', () => {
+    expect(fnBody).toContain('fetchUserComment(commentsOwnerId, cardId)');
+    expect(fnBody).toContain('existingComments');
+    expect(fnBody).toContain('currentComment?.text');
+    expect(fnBody).not.toContain('legacyExistingComments');
+    expect(fnBody).not.toContain('get(ref2(database, getCommentPath(commentsOwnerId)))');
   });
 
   it('never transacts on the database root: a root-anchored runTransaction needs .write on "/", which no real ruleset grants', () => {
@@ -35,11 +37,14 @@ describe('bulk migration of every leftover users/newUsers myComment into multiDa
     expect(fnBody).not.toContain('setValueAtPath');
   });
 
-  it('clears both sources and writes the destination in one plain multi-path update()', () => {
-    expect(fnBody).toMatch(/`users\/\$\{cardId\}\/myComment`\]\s*=\s*null;/);
-    expect(fnBody).toMatch(/`newUsers\/\$\{cardId\}\/myComment`\]\s*=\s*null;/);
-    expect(fnBody).toContain('updates[destinationPath] = { text: finalText, updatedAt: Date.now() };');
+  it('writes the destination before attempting best-effort source cleanup', () => {
+    expect(fnBody).toMatch(/cleanup\[`users\/\$\{cardId\}\/myComment`\]\s*=\s*null;/);
+    expect(fnBody).toMatch(/cleanup\[`newUsers\/\$\{cardId\}\/myComment`\]\s*=\s*null;/);
+    expect(fnBody).toContain('updates[getCommentPath(commentsOwnerId, cardId)] = { text: finalText, updatedAt: Date.now() };');
     expect(fnBody).toContain('await update(ref2(database), updates);');
+    expect(fnBody.indexOf('const cleanup = {};')).toBeGreaterThan(
+      fnBody.indexOf('await update(ref2(database), updates);'),
+    );
   });
 
   it('merges conflicting/legacy/pre-existing comment text instead of dropping one side', () => {
