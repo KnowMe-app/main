@@ -71,6 +71,27 @@ describe('backendDownloadToast admin traffic tracker', () => {
     expect(toast.success).toHaveBeenCalled();
   });
 
+  it('names the heaviest request in a grouped toast so a big payload is not a mystery', () => {
+    const { tracker, toast } = loadTracker();
+    window.__getBackendDownloadToastUid = () => ADMIN_UID;
+
+    tracker.recordAdminBackendTraffic(
+      { exists: () => true, val: () => ({ id: 1 }) },
+      { operation: 'get', source: 'config', path: 'newUsers/TG0009' },
+    );
+    tracker.recordAdminBackendTraffic(
+      { exists: () => true, val: () => ({ bio: 'x'.repeat(5000) }) },
+      { operation: 'get', source: 'config', path: 'users/TG0009' },
+    );
+    jest.advanceTimersByTime(1000);
+
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    const [message] = toast.success.mock.calls[0];
+    expect(message).toContain('2 tracked');
+    expect(message).toContain('users/TG0009');
+    expect(message).toContain('%');
+  });
+
   it('collects stats while silent mode suppresses toast output', () => {
     const { tracker, toast } = loadTracker();
     window.__getBackendDownloadToastUid = () => ADMIN_UID;

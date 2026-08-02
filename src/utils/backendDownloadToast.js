@@ -447,15 +447,31 @@ const shouldEstimateAndToast = (runtime, request) => {
 
 const isSilentMode = () => !getBackendDownloadToastsEnabled();
 
+const HEAVY_CONTRIBUTOR_SHARE = 0.6;
+
+const describeHeaviestContributor = batch => {
+  const heaviest = batch.maxRequest;
+  if (!heaviest || heaviest.bytes <= 0) return '';
+
+  const share = batch.bytes > 0 ? heaviest.bytes / batch.bytes : 0;
+  const shareLabel = share >= HEAVY_CONTRIBUTOR_SHARE
+    ? ` (${Math.round(share * 100)}% пакету)`
+    : '';
+  return ` · найважчий: ${heaviest.operation} ${heaviest.path} — ${formatBytes(heaviest.bytes)}${shareLabel}`;
+};
+
 const scheduleToast = request => {
   if (isSilentMode()) return;
   const runtime = getRuntime();
-  runtime.pendingToast = runtime.pendingToast || { bytes: 0, requests: 0, sources: new Set(), operations: new Set(), lastRequest: null, maxSeverity: 'normal' };
+  runtime.pendingToast = runtime.pendingToast || { bytes: 0, requests: 0, sources: new Set(), operations: new Set(), lastRequest: null, maxRequest: null, maxSeverity: 'normal' };
   runtime.pendingToast.bytes += request.bytes;
   runtime.pendingToast.requests += 1;
   if (request.source) runtime.pendingToast.sources.add(request.source);
   runtime.pendingToast.operations.add(request.operation);
   runtime.pendingToast.lastRequest = request;
+  if (!runtime.pendingToast.maxRequest || request.bytes > runtime.pendingToast.maxRequest.bytes) {
+    runtime.pendingToast.maxRequest = request;
+  }
   const severity = getSeverity(request.bytes);
   if (severity === 'critical' || (severity === 'warning' && runtime.pendingToast.maxSeverity === 'normal')) {
     runtime.pendingToast.maxSeverity = severity;
@@ -475,7 +491,7 @@ const scheduleToast = request => {
       .join(' ');
     const message = isSingleRequest
       ? makeMessage(batch.lastRequest)
-      : `Backend traffic${groupedContext ? ` ${groupedContext}` : ''}: ${formatBytes(batch.bytes)} (${batch.requests} tracked / sampled requests)`;
+      : `Backend traffic${groupedContext ? ` ${groupedContext}` : ''}: ${formatBytes(batch.bytes)} (${batch.requests} tracked / sampled requests)${describeHeaviestContributor(batch)}`;
     const toastFn = batch.maxSeverity === 'critical' ? toast.error : batch.maxSeverity === 'warning' ? toast : toast.success;
     toastFn(message, { duration: TOAST_DURATION_MS, icon: batch.maxSeverity === 'normal' ? '📦' : '⚠️' });
   }, TOAST_GROUP_DELAY_MS);
