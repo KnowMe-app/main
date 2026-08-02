@@ -2908,7 +2908,21 @@ const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
 
     const updates = {};
     Object.keys(newUsersData).forEach(field => {
-      if (!field || field === 'userId' || transientUserDataKeys.includes(field)) return;
+      if (!field) return;
+
+      // A non-empty legacy comment is still the only source of truth until the
+      // independently run comment migration copies it to multiData/comments.
+      // Keep it visible to that migration instead of treating it as disposable
+      // client metadata.
+      if (field === 'myComment' && String(newUsersData[field] || '').trim()) return;
+
+      if (field === 'userId' || transientUserDataKeys.includes(field)) {
+        // Delete only children present in the snapshot. Deleting the parent
+        // node would also erase profile fields concurrently written after the
+        // reads above (for example by persistUserWithFallback).
+        updates[`newUsers/${userId}/${field}`] = null;
+        return;
+      }
 
       const confirmedInUsers = Object.prototype.hasOwnProperty.call(usersData, field);
       const explicitlyDeletedNow = Object.prototype.hasOwnProperty.call(fieldValues, field)
@@ -2923,20 +2937,9 @@ const migrateLongUserIdCardFromNewUsers = async (userId, writtenFields) => {
       updates[`newUsers/${userId}/${field}`] = null;
     });
 
-    // userId (і будь-які клієнтські технічні ключі) ніколи не потрапляють у
-    // updates вище, тож саме вони й лишаться в newUsers після застосування
-    // цих правок. Якщо це буде єдине, що лишилось — картка вже повністю
-    // мігрована, і сам вузол newUsers/{userId} більше не потрібен.
-    const leftoverKeys = Object.keys(newUsersData).filter(
-      field => field === 'userId' || transientUserDataKeys.includes(field)
-    );
-    const onlyUserIdWouldRemain = leftoverKeys.length === 1 && leftoverKeys[0] === 'userId';
-
-    if (onlyUserIdWouldRemain) {
-      await update(ref2(database), { [`newUsers/${userId}`]: null });
-      return;
-    }
-
+    // The same atomic update removes every observed child after meaningful
+    // fields have been copied. RTDB removes the parent automatically when no
+    // children remain, while an unmigrated comment or a concurrent write stays.
     if (Object.keys(updates).length > 0) {
       await update(ref2(database), updates);
     }
