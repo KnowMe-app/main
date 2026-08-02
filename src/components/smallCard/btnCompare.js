@@ -1,5 +1,7 @@
 import React from 'react';
+import toast from 'react-hot-toast';
 import { handleSubmitAll } from './actions';
+import { auth, fetchUserComment, saveMyCardComment } from '../config';
 
 const compareIcon = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -85,19 +87,33 @@ export const btnCompare = (
   
   
 
-  window.handleClick = (key, nextVal, currentVal, userIdCur, userIdNext) => {
+  window.handleClick = async (key, nextVal, currentVal, userIdCur, userIdNext) => {
     if (key === 'myComment') {
-      nextVal = decodeURIComponent(nextVal);
-      currentVal = decodeURIComponent(currentVal);
+      // Коментар більше не поле картки — живе окремо в
+      // multiData/comments/{ownerId}/{cardId} (config.js: setUserComment/
+      // fetchUserComment), тому копіюємо його туди напряму, а не через
+      // updatedTargetUser + handleSubmitAll, як інші поля картки.
+      const decodedNext = decodeURIComponent(nextVal);
+      const decodedCurrent = decodeURIComponent(currentVal);
+      const targetUserId = decodedCurrent ? userIdNext : userIdCur;
+      const commentOwnerId = auth.currentUser?.uid;
+      if (!commentOwnerId || !targetUserId) return;
+      try {
+        await saveMyCardComment(targetUserId, decodedCurrent || decodedNext, commentOwnerId);
+        toast.success('Коментар скопійовано в іншу картку');
+      } catch (error) {
+        toast.error(`Не вдалося скопіювати коментар: ${error?.message || 'невідома помилка'}`);
+      }
+      return;
     }
     const targetUserId = currentVal ? userIdNext : userIdCur;
     console.log('Target User ID:', targetUserId);
-  
+
     if (users[targetUserId]) {
       const updatedUsers = { ...users };
       const updatedTargetUser = { ...updatedUsers[targetUserId] };
-  
-      if (key === 'getInTouch' || key === 'lastCycle' || key === 'myComment') {
+
+      if (key === 'getInTouch' || key === 'lastCycle') {
         updatedTargetUser[key] = currentVal || nextVal;
       } else {
         const mergedValue = mergeValues(key, currentVal, nextVal);
@@ -128,11 +144,22 @@ export const btnCompare = (
   
   
 
-const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompare) => {
+const handleCompareClick = async (e, index, users, delKeys, setShowInfoModal, setCompare) => {
   e.stopPropagation();
   const entries = Object.entries(users);
-  const currentUser = entries[index][1] || {};
-  const nextUser = entries[index + 1]?.[1] || {};
+  const currentUserRaw = entries[index][1] || {};
+  const nextUserRaw = entries[index + 1]?.[1] || {};
+
+  // myComment більше не поле картки (config.js: transientUserDataKeys), а живе в
+  // multiData/comments/{ownerId}/{cardId} — довантажуємо його тут окремо, щоб
+  // порівняння й копіювання коментарів між картками й далі працювало.
+  const ownerId = auth.currentUser?.uid;
+  const [currentCommentResult, nextCommentResult] = await Promise.all([
+    ownerId && currentUserRaw.userId ? fetchUserComment(ownerId, currentUserRaw.userId) : Promise.resolve(null),
+    ownerId && nextUserRaw.userId ? fetchUserComment(ownerId, nextUserRaw.userId) : Promise.resolve(null),
+  ]);
+  const currentUser = { ...currentUserRaw, myComment: currentCommentResult?.text || '' };
+  const nextUser = { ...nextUserRaw, myComment: nextCommentResult?.text || '' };
 
   const filteredKeys = new Set([
     ...Object.keys(currentUser).filter(key => !delKeys.includes(key) && key !== 'duplicate'),
