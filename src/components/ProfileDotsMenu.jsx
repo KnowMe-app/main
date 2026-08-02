@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
 import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { useAppSettings } from 'hooks/useAppSettings';
+import {
+  ModalActionRow,
+  ModalDangerButton,
+  ModalGhostButton,
+  ModalText,
+  ModalTitle,
+} from './InfoModal';
 
 const MenuShell = styled.nav`
   width: 100%;
@@ -128,6 +135,24 @@ const VerifyWrap = styled.div`
   margin-top: 8px;
 `;
 
+const LogoutConfirmation = styled.div`
+  padding: 10px 6px 6px;
+  text-align: center;
+`;
+
+const LogoutIcon = styled.div`
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  background: var(--km-danger-bg);
+  color: var(--km-danger);
+  font-size: 20px;
+`;
+
 const SettingRow = styled.div`
   display: grid;
   grid-template-columns: 34px 1fr auto;
@@ -195,6 +220,9 @@ export const ProfileDotsMenu = ({
 }) => {
   const location = useLocation();
   const { themeMode, setThemeMode, language, setLanguage } = useAppSettings();
+  const [isLogoutConfirmationOpen, setIsLogoutConfirmationOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const cancelLogoutRef = useRef(null);
   const resolvedAccess = normalizeAccess(access);
   const canSeePrivilegedNav = isAdmin || resolvedAccess.canAccessAdd || resolvedAccess.canAccessMatching;
 
@@ -208,6 +236,59 @@ export const ProfileDotsMenu = ({
     onSelect?.();
     action?.();
   };
+
+  useEffect(() => {
+    if (!isLogoutConfirmationOpen) return undefined;
+
+    cancelLogoutRef.current?.focus();
+    const handleKeyDown = event => {
+      if (event.key === 'Escape' && !isLoggingOut) {
+        setIsLogoutConfirmationOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isLogoutConfirmationOpen, isLoggingOut]);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await onExit?.();
+      onSelect?.();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  if (isLogoutConfirmationOpen) {
+    return (
+      <LogoutConfirmation
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="logout-confirmation-title"
+        aria-describedby="logout-confirmation-description"
+      >
+        <LogoutIcon aria-hidden="true"><FaSignOutAlt /></LogoutIcon>
+        <ModalTitle id="logout-confirmation-title">Вийти з акаунта?</ModalTitle>
+        <ModalText id="logout-confirmation-description">
+          Ви точно хочете завершити поточну сесію?
+        </ModalText>
+        <ModalActionRow>
+          <ModalGhostButton
+            ref={cancelLogoutRef}
+            type="button"
+            disabled={isLoggingOut}
+            onClick={() => setIsLogoutConfirmationOpen(false)}
+          >
+            Ні, залишитися
+          </ModalGhostButton>
+          <ModalDangerButton type="button" disabled={isLoggingOut} onClick={handleLogout}>
+            {isLoggingOut ? 'Виходимо…' : 'Так, вийти'}
+          </ModalDangerButton>
+        </ModalActionRow>
+      </LogoutConfirmation>
+    );
+  }
 
   const navItems = [
     { path: '/my-profile', label: 'Мій профіль', icon: <FaRegUser /> },
@@ -342,7 +423,7 @@ export const ProfileDotsMenu = ({
             </VerifyWrap>
           )}
           {isSessionActive && onExit && (
-            <MenuItem type="button" role="menuitem" $danger onClick={() => handleAction(onExit)}>
+            <MenuItem type="button" role="menuitem" $danger onClick={() => setIsLogoutConfirmationOpen(true)}>
               <ItemIcon $danger><FaSignOutAlt /></ItemIcon>
               <span>
                 <ItemLabel>Вийти</ItemLabel>
