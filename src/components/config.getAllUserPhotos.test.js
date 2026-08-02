@@ -25,6 +25,17 @@ describe('getAllUserPhotos skips newUsers for long-format userIds on the cold-lo
     expect(newUsersReadIndex).toBeGreaterThan(usersReadIndex);
   });
 
+  it('keeps long-id database reads best-effort when either collection rejects', () => {
+    const longIdBranchBody = getAllUserPhotosBody.slice(
+      getAllUserPhotosBody.indexOf('if (!collectionSource && isLongFormatUserId(userId))'),
+      getAllUserPhotosBody.indexOf('const sourceCollections = getPhotoSourceCollections(collectionSource);'),
+    );
+
+    expect(longIdBranchBody.match(/Promise\.allSettled/g)).toHaveLength(2);
+    expect(longIdBranchBody).toContain("console.error('Error loading user photos from users:'");
+    expect(longIdBranchBody).toContain("console.error('Error loading user photos from newUsers:'");
+  });
+
   it('leaves the explicit-collectionSource path (getPhotoSourceCollections) untouched', () => {
     expect(getAllUserPhotosBody).toContain(
       'const sourceCollections = getPhotoSourceCollections(collectionSource);',

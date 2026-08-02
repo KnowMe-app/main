@@ -67,7 +67,7 @@ describe('newUsers/users merge behaviour', () => {
     expect(addUserFromUsersBody).toContain('mergeUserCollectionData(userData, newUserData)');
   });
 
-  it('fetchUserById merges users/newUsers per field so stale newUsers data cannot shadow fresh users data', () => {
+  it('fetchUserById merges both collections and prioritizes long-id fallback writes', () => {
     const fetchUserByIdBody = source.slice(
       source.indexOf('export const fetchUserById'),
       source.indexOf('export const removeKeyFromFirebase')
@@ -75,6 +75,9 @@ describe('newUsers/users merge behaviour', () => {
 
     expect(fetchUserByIdBody).toContain(
       'mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val())'
+    );
+    expect(fetchUserByIdBody).toContain(
+      'mergeUserCollectionData(newUserSnapshot.val(), userSnapshotInUsers.val())'
     );
   });
 

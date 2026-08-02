@@ -1918,7 +1918,10 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
         result[id] = cached;
       } else if (
         cached && !source
-        && (cached.__sourceCollection === 'newUsers' || cached.__sourceCollection === 'users')
+        && (
+          cached.__sourceCollection === 'newUsers'
+          || (isLongFormatUserId(id) && cached.__sourceCollection === 'users')
+        )
       ) {
         result[id] = cached;
       } else {
@@ -3268,14 +3271,27 @@ export const getAllUserPhotos = async (userId, collectionSource = null, { includ
 
   let databaseUrls;
   if (!collectionSource && isLongFormatUserId(userId)) {
-    const usersSnapshot = await get(ref2(database, `users/${userId}`));
-    if (usersSnapshot.exists()) {
-      databaseUrls = normalizePhotoValues(usersSnapshot.val()?.photos);
+    const [usersResult] = await Promise.allSettled([
+      get(ref2(database, `users/${userId}`)),
+    ]);
+    if (usersResult.status === 'rejected') {
+      console.error('Error loading user photos from users:', usersResult.reason);
+      databaseUrls = [];
+    } else if (usersResult.value.exists()) {
+      databaseUrls = normalizePhotoValues(usersResult.value.val()?.photos);
     } else {
       // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не
       // встигнути виконатись для цього конкретного запису.
-      const newUsersSnapshot = await get(ref2(database, `newUsers/${userId}`));
-      databaseUrls = newUsersSnapshot.exists() ? normalizePhotoValues(newUsersSnapshot.val()?.photos) : [];
+      const [newUsersResult] = await Promise.allSettled([
+        get(ref2(database, `newUsers/${userId}`)),
+      ]);
+      if (newUsersResult.status === 'rejected') {
+        console.error('Error loading user photos from newUsers:', newUsersResult.reason);
+        databaseUrls = [];
+      } else {
+        const newUsersSnapshot = newUsersResult.value;
+        databaseUrls = newUsersSnapshot.exists() ? normalizePhotoValues(newUsersSnapshot.val()?.photos) : [];
+      }
     }
   } else {
     const sourceCollections = getPhotoSourceCollections(collectionSource);
@@ -7000,22 +7016,6 @@ export const fetchUserById = async userId => {
   const userRefInUsers = ref2(db, `users/${userId}`);
 
   try {
-    if (isLongFormatUserId(userId)) {
-      const usersOnlySnapshot = await get(userRefInUsers);
-      if (usersOnlySnapshot.exists()) {
-        const photos = await getAllUserPhotos(userId, 'users');
-        return {
-          userId,
-          ...usersOnlySnapshot.val(),
-          photos,
-          __sourceCollection: 'users',
-        };
-      }
-      // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не
-      // встигнути виконатись для цього конкретного запису — перевіряємо
-      // newUsers про всяк випадок, як і раніше для коротких id нижче.
-    }
-
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {
@@ -7025,9 +7025,12 @@ export const fetchUserById = async userId => {
         userSnapshotInUsers.exists() ? null : 'newUsers'
       );
       if (userSnapshotInUsers.exists()) {
+        const mergedUserData = isLongFormatUserId(userId)
+          ? mergeUserCollectionData(newUserSnapshot.val(), userSnapshotInUsers.val())
+          : mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val());
         return {
           userId,
-          ...mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val()),
+          ...mergedUserData,
           photos,
           __sourceCollection: 'newUsers',
         };
