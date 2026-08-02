@@ -9,8 +9,13 @@ import {
   saveMyCardComment,
 } from '../config';
 import toast from 'react-hot-toast';
+import { COMMENTS_UPDATED_EVENT } from '../../utils/commentsStorage';
 
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
+const combineComments = (legacyValue, storedValue) => [legacyValue, storedValue]
+  .map(value => String(value || '').trim())
+  .filter(Boolean)
+  .join('\n\n');
 const getFirebaseConsoleProjectId = () => process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
 const getFirebaseRealtimeDatabaseName = () => {
   const fallbackProjectId = getFirebaseConsoleProjectId();
@@ -56,8 +61,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
 
     fetchUserComment(ownerId, cardId).then(existing => {
       if (cancelled) return;
-      const ownComment = String(existing?.text || '').trim();
-      const combined = [legacyComment, ownComment].filter(Boolean).join('\n\n');
+      const combined = combineComments(legacyComment, existing?.text);
       setText(combined);
       initialTextRef.current = combined;
     });
@@ -65,6 +69,17 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     return () => {
       cancelled = true;
     };
+  }, [ownerId, cardId, legacyComment]);
+
+  useEffect(() => {
+    const syncCopiedComment = event => {
+      if (event.detail?.ownerId !== ownerId || event.detail?.cardId !== cardId) return;
+      const combined = combineComments(legacyComment, event.detail.text);
+      setText(combined);
+      initialTextRef.current = combined;
+    };
+    window.addEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
+    return () => window.removeEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
   }, [ownerId, cardId, legacyComment]);
 
   const persist = async (value, force = false) => {

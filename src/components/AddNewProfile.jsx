@@ -3664,7 +3664,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       <>
         <p>Порівняти</p>
         {/* <p>{compare}</p> */}
-        <div dangerouslySetInnerHTML={{ __html: compare }} />
+        {typeof compare === 'string'
+          ? <div dangerouslySetInnerHTML={{ __html: compare }} />
+          : compare}
       </>
     );
   };

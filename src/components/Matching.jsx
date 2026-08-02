@@ -149,6 +149,7 @@ import {
   loadComments,
   saveComments,
   setLocalComment,
+  COMMENTS_UPDATED_EVENT,
   pruneComments,
   shouldUseServerComment,
 } from '../utils/commentsStorage';
@@ -1379,6 +1380,17 @@ const Matching = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
+  useEffect(() => {
+    const syncCopiedComment = event => {
+      if (event.detail?.ownerId !== ownerId || !event.detail?.cardId) return;
+      setComments(previous => ({
+        ...previous,
+        [event.detail.cardId]: String(event.detail.text || ''),
+      }));
+    };
+    window.addEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
+    return () => window.removeEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
+  }, [ownerId]);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
