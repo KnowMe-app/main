@@ -103,9 +103,14 @@ import {
   layoutV2ParagraphPlainText,
   layoutV2ParagraphMarkup,
   layoutV2ParagraphFromMarkup,
+  layoutV2FieldLineLabelRuns,
+  layoutV2LabelMarkup,
+  layoutV2LabelFromMarkup,
+  layoutV2LabelScope,
   mapResolvedSelectionToRaw,
   layoutV2Scope,
   getEffectiveLayoutV2BlockAlign,
+  getEffectiveLayoutV2FieldLineValueAlign,
   toggleLayoutV2ParagraphBold,
   toggleLayoutV2ParagraphItalic,
   upsertRecentCaseId,
@@ -1883,6 +1888,122 @@ describe('spec: layoutV2 paragraph full toolbar parity (Italic, markup round-tri
     const existing = { type: 'richParagraph', style: 'body', runs: [{ text: 'x', style: 'inlineEmphasis' }] };
     const next = layoutV2ParagraphFromMarkup(existing, 'Hello world');
     expect(next).toEqual({ type: 'paragraph', style: 'body', text: 'Hello world', runs: undefined });
+  });
+
+  // A fieldLine block's own templated content is its `value` (label/caption are a separate, second
+  // field slot - see the label tests below) - layoutV2ParagraphRuns/FromMarkup treat value/valueRuns
+  // exactly the same way they treat an ordinary paragraph's text/runs, except `type` always stays
+  // 'fieldLine' (never flips to 'paragraph'/'richParagraph' the way an ordinary block's does).
+  describe('a fieldLine block\'s value (layoutV2ParagraphRuns/Markup/FromMarkup)', () => {
+    it('reads a plain fieldLine value as one unstyled run, falls back to valueRuns when present', () => {
+      expect(layoutV2ParagraphRuns({ type: 'fieldLine', value: 'Hello' })).toEqual([{ text: 'Hello', style: undefined, styleOverrides: undefined }]);
+      const withRuns = { type: 'fieldLine', value: 'Helloworld', valueRuns: [{ text: 'Hello', style: undefined }, { text: 'world', style: 'inlineEmphasis' }] };
+      expect(layoutV2ParagraphRuns(withRuns)).toEqual([
+        { text: 'Hello', style: undefined, styleOverrides: undefined },
+        { text: 'world', style: 'inlineEmphasis', styleOverrides: undefined },
+      ]);
+    });
+
+    it('round-trips bold through the same **markup** every other paragraph uses, `type` staying \'fieldLine\' throughout', () => {
+      const block = {
+        type: 'fieldLine',
+        label: 'дружина',
+        value: 'Hello world',
+        valueRuns: [{ text: 'Hello ', style: undefined }, { text: 'world', style: 'inlineEmphasis' }],
+      };
+      const markup = layoutV2ParagraphMarkup(block);
+      expect(markup).toBe('Hello **world**');
+      const roundTripped = layoutV2ParagraphFromMarkup(block, markup);
+      expect(roundTripped.type).toBe('fieldLine');
+      expect(roundTripped.label).toBe('дружина'); // untouched - the label is a fully independent slot
+      expect(roundTripped.value).toBe('Hello world');
+      expect(roundTripped.valueRuns).toEqual(block.valueRuns);
+    });
+
+    it('collapses back to a plain value (valueRuns dropped) once the edit removes all formatting', () => {
+      const existing = { type: 'fieldLine', value: 'Helloworld', valueRuns: [{ text: 'Hello', style: 'inlineEmphasis' }, { text: 'world', style: undefined }] };
+      const next = layoutV2ParagraphFromMarkup(existing, 'Hello world');
+      expect(next).toEqual({ type: 'fieldLine', value: 'Hello world' });
+      expect('valueRuns' in next).toBe(false);
+    });
+  });
+
+  // The label is a second, entirely independent field slot from the value - its own runs/markup
+  // functions, addressed via its own lv2-label:<index> scope (layoutV2LabelScope), so a fieldLine's
+  // label gets the exact same working Bold/Italic toolbar the value does instead of a bare,
+  // unformattable text input (the bug this fixes: selecting text in the label and pressing Bold
+  // always failed with "Select some text first", since the toolbar only ever tracked the value's
+  // selection - see DocumentsPage.fieldLine.test.js for the UI-level reproduction).
+  describe('a fieldLine block\'s label (layoutV2FieldLineLabelRuns/layoutV2LabelMarkup/FromMarkup)', () => {
+    it('reads a plain label as one unstyled run, falls back to labelRuns when present, independent of the value', () => {
+      const block = { type: 'fieldLine', label: 'дружина', value: 'Hello world' };
+      expect(layoutV2FieldLineLabelRuns(block)).toEqual([{ text: 'дружина', style: undefined, styleOverrides: undefined }]);
+
+      const withLabelRuns = {
+        type: 'fieldLine',
+        labelRuns: [{ text: 'та', style: 'inlineEmphasis' }, { text: '/або сперматозоїди', style: undefined }],
+        value: '',
+      };
+      expect(layoutV2FieldLineLabelRuns(withLabelRuns)).toEqual([
+        { text: 'та', style: 'inlineEmphasis', styleOverrides: undefined },
+        { text: '/або сперматозоїди', style: undefined, styleOverrides: undefined },
+      ]);
+    });
+
+    it('layoutV2LabelMarkup/layoutV2LabelFromMarkup round-trip bold through the same **markup** the value uses, `type` staying \'fieldLine\'', () => {
+      const block = {
+        type: 'fieldLine',
+        labelRuns: [{ text: 'та', style: 'inlineEmphasis' }, { text: '/або сперматозоїди', style: undefined }],
+        value: '{{husband.name.uk.nominative}}',
+      };
+      const markup = layoutV2LabelMarkup(block);
+      expect(markup).toBe('**та**/або сперматозоїди');
+      const roundTripped = layoutV2LabelFromMarkup(block, markup);
+      expect(roundTripped.type).toBe('fieldLine');
+      expect(roundTripped.value).toBe('{{husband.name.uk.nominative}}'); // untouched - independent of the label
+      expect(roundTripped.labelRuns).toEqual(block.labelRuns);
+    });
+
+    it('collapses labelRuns to a plain label once the edit removes all formatting, never touching the value', () => {
+      const existing = {
+        type: 'fieldLine',
+        labelRuns: [{ text: 'та', style: 'inlineEmphasis' }, { text: '/або сперматозоїди', style: undefined }],
+        value: 'Кацура Наоя',
+      };
+      const next = layoutV2LabelFromMarkup(existing, 'та/або сперматозоїди');
+      expect(next).toEqual({ type: 'fieldLine', label: 'та/або сперматозоїди', value: 'Кацура Наоя' });
+      expect('labelRuns' in next).toBe(false);
+    });
+
+    it('layoutV2LabelScope never collides with layoutV2Scope, and both round-trip through getTemplateScopeText/withTemplateScopeText', () => {
+      expect(layoutV2LabelScope(2)).toBe('lv2-label:2');
+      expect(layoutV2Scope(2)).toBe('lv2:2');
+
+      const template = {
+        layoutV2: {
+          blocks: [{ type: 'paragraph', text: 'irrelevant' }, { type: 'fieldLine', label: 'дружина', value: '{{wife.name.uk.nominative}}' }],
+        },
+      };
+      expect(getTemplateScopeText(template, layoutV2Scope(1), 'uk')).toBe('{{wife.name.uk.nominative}}');
+      expect(getTemplateScopeText(template, layoutV2LabelScope(1), 'uk')).toBe('дружина');
+
+      const nextTemplate = withTemplateScopeText(template, layoutV2LabelScope(1), 'uk', '**та**/або чоловік');
+      expect(nextTemplate.layoutV2.blocks[1]).toEqual({
+        type: 'fieldLine',
+        label: 'та/або чоловік',
+        labelRuns: [{ text: 'та', style: 'inlineEmphasis' }, { text: '/або чоловік', style: undefined }],
+        value: '{{wife.name.uk.nominative}}', // untouched by the label-scoped write
+      });
+      // The other block, and the value slot on the same block, are both untouched.
+      expect(nextTemplate.layoutV2.blocks[0]).toEqual(template.layoutV2.blocks[0]);
+    });
+  });
+
+  it('getEffectiveLayoutV2FieldLineValueAlign reads valueStyle/valueStyleOverrides, independent of getEffectiveLayoutV2BlockAlign\'s style/styleOverrides', () => {
+    const template = { styleSheet: {} };
+    const block = { styleOverrides: { align: 'right' }, valueStyleOverrides: { align: 'center' } };
+    expect(getEffectiveLayoutV2BlockAlign(template, block)).toBe('right');
+    expect(getEffectiveLayoutV2FieldLineValueAlign(template, block)).toBe('center');
   });
 
   it('maps Text-mode offsets after a resolved placeholder back to unresolved offsets', () => {

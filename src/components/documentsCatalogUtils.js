@@ -2436,6 +2436,10 @@ export const paragraphScope = index => `p:${index}`;
 // `languages[0]`), so there is only ever one markup string to read/write, whichever langKey the
 // caller happens to pass.
 const layoutV2ScopeMatch = scope => /^lv2:(\d+)$/.exec(scope);
+// `lv2-label:<index>` (layoutV2LabelScope) - a fieldLine block's label, entirely independent of
+// its `lv2:<index>` value slot above. Matched separately from layoutV2ScopeMatch (never confused
+// with it - the "-label" segment makes the two patterns mutually exclusive).
+const layoutV2LabelScopeMatch = scope => /^lv2-label:(\d+)$/.exec(scope);
 
 export const getTemplateScopeText = (template, scope, langKey) => {
   if (scope === TITLE_SCOPE) return template?.title?.[langKey] || '';
@@ -2443,6 +2447,8 @@ export const getTemplateScopeText = (template, scope, langKey) => {
   if (beforeTitleMatch) return template?.beforeTitle?.[Number(beforeTitleMatch[1])]?.[langKey] || '';
   const paragraphMatch = /^p:(\d+)$/.exec(scope);
   if (paragraphMatch) return template?.paragraphs?.[Number(paragraphMatch[1])]?.[langKey] || '';
+  const layoutV2LabelMatch = layoutV2LabelScopeMatch(scope);
+  if (layoutV2LabelMatch) return layoutV2LabelMarkup(template?.layoutV2?.blocks?.[Number(layoutV2LabelMatch[1])]);
   const layoutV2Match = layoutV2ScopeMatch(scope);
   if (layoutV2Match) return layoutV2ParagraphMarkup(template?.layoutV2?.blocks?.[Number(layoutV2Match[1])]);
   return '';
@@ -2466,6 +2472,18 @@ export const withTemplateScopeText = (template, scope, langKey, value) => {
     return {
       ...template,
       paragraphs: (template.paragraphs || []).map((paragraph, i) => (i === index ? { ...paragraph, [langKey]: value } : paragraph)),
+    };
+  }
+  const layoutV2LabelMatch = layoutV2LabelScopeMatch(scope);
+  if (layoutV2LabelMatch) {
+    const index = Number(layoutV2LabelMatch[1]);
+    const blocks = template?.layoutV2?.blocks || [];
+    return {
+      ...template,
+      layoutV2: {
+        ...template.layoutV2,
+        blocks: blocks.map((block, i) => (i === index ? layoutV2LabelFromMarkup(block, value) : block)),
+      },
     };
   }
   const layoutV2Match = layoutV2ScopeMatch(scope);
@@ -2841,17 +2859,24 @@ export const findUnresolvedPlaceholders = layoutV2Doc => {
 // plain-vs-runs pattern `text`/`runs` already is for an ordinary paragraph, so the whole toolbar
 // below (mode cycle, Bold, Italic, Insert-variable) works on a fieldLine's value identically to
 // any other paragraph's text, instead of only exposing a bare text input for it.
-export const layoutV2ParagraphRuns = block => {
-  if (block?.type === 'richParagraph') {
-    return (block.runs || []).map(run => ({ text: String(run?.text || ''), style: run?.style, styleOverrides: run?.styleOverrides }));
-  }
-  if (block?.type === 'fieldLine') {
-    return block.valueRuns
-      ? block.valueRuns.map(run => ({ text: String(run?.text || ''), style: run?.style, styleOverrides: run?.styleOverrides }))
-      : [{ text: String(block?.value || ''), style: undefined, styleOverrides: undefined }];
-  }
-  return [{ text: String(block?.text || ''), style: undefined, styleOverrides: undefined }];
+// A generic "field slot" reader: any block field that can independently be either a plain string
+// or its own bold/italic-carrying `<key>Runs` sibling (text/runs, value/valueRuns, label/
+// labelRuns, ...) - factored out because a fieldLine block carries *two* such slots at once
+// (value and label), each fully independent of the other, unlike an ordinary paragraph's one.
+const layoutV2FieldSlotRuns = (block, textKey, runsKey) => {
+  const runs = block?.[runsKey];
+  if (runs) return runs.map(run => ({ text: String(run?.text || ''), style: run?.style, styleOverrides: run?.styleOverrides }));
+  return [{ text: String(block?.[textKey] || ''), style: undefined, styleOverrides: undefined }];
 };
+
+export const layoutV2ParagraphRuns = block => (block?.type === 'fieldLine'
+  ? layoutV2FieldSlotRuns(block, 'value', 'valueRuns')
+  : layoutV2FieldSlotRuns(block, 'text', 'runs'));
+
+// A fieldLine's label (e.g. "дружина", or bold-in-part "**та**/або сперматозоїди") is a second,
+// entirely independent field slot from its value - its own T/B/I/insert-variable/align toolbar row
+// (lv2-label:<index> scope, layoutV2LabelScope below) needs the same runs access the value's does.
+export const layoutV2FieldLineLabelRuns = block => layoutV2FieldSlotRuns(block, 'label', 'labelRuns');
 
 export const layoutV2ParagraphPlainText = block => layoutV2ParagraphRuns(block).map(run => run.text).join('');
 
@@ -2907,21 +2932,26 @@ const mergeAdjacentLayoutV2Runs = runs => runs.reduce((merged, run) => {
 
 const isLayoutV2RunPlain = run => !run.style && !run.styleOverrides?.fontStyle;
 
-// Collapses a merged run list back into the block's own field shape: paragraph.text/
-// richParagraph.runs for an ordinary paragraph block, fieldLine.value/valueRuns for a fieldLine's
-// own value - collapsed to the plain single-field shape whenever nothing in the result actually
-// carries bold/italic, so an untouched/fully-unformatted block never permanently upgrades to the
-// richer shape. Shared by the Bold/Italic toggles and layoutV2ParagraphFromMarkup below, so all
-// three ways of editing a block's text agree on the same collapse rule.
-const finalizeLayoutV2ParagraphRuns = (block, mergedRuns) => {
-  if (block?.type === 'fieldLine') {
-    const plainText = mergedRuns.map(run => run.text).join('');
-    if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
-      const { valueRuns: ignoredValueRuns, ...plainBlock } = block;
-      return { ...plainBlock, value: plainText };
-    }
-    return { ...block, value: plainText, valueRuns: mergedRuns };
+// Collapses a merged run list back into a generic field slot's own text/runs pair - the plain
+// single-field shape whenever nothing in the result actually carries bold/italic, so an untouched/
+// unformatted slot never permanently upgrades to the richer shape. Shared by every slot's Bold/
+// Italic toggle and its FromMarkup below, so all three ways of editing a slot's text agree on the
+// same collapse rule.
+const finalizeLayoutV2FieldSlotRuns = (block, textKey, runsKey, mergedRuns) => {
+  const plainText = mergedRuns.map(run => run.text).join('');
+  if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
+    const next = { ...block, [textKey]: plainText };
+    delete next[runsKey];
+    return next;
   }
+  return { ...block, [textKey]: plainText, [runsKey]: mergedRuns };
+};
+
+// Same collapse rule as above, but for an ordinary paragraph/richParagraph block, which additionally
+// switches its own `type` between the two shapes (a fieldLine's slots never do - `type` always stays
+// 'fieldLine' regardless of whether its value/label carry runs).
+const finalizeLayoutV2ParagraphRuns = (block, mergedRuns) => {
+  if (block?.type === 'fieldLine') return finalizeLayoutV2FieldSlotRuns(block, 'value', 'valueRuns', mergedRuns);
   if (mergedRuns.length <= 1 && mergedRuns.every(isLayoutV2RunPlain)) {
     const { runs: ignoredRuns, ...plainBlock } = block;
     return { ...plainBlock, type: 'paragraph', text: mergedRuns[0]?.text || '' };
@@ -2929,6 +2959,8 @@ const finalizeLayoutV2ParagraphRuns = (block, mergedRuns) => {
   const { text: ignoredText, ...richBlock } = block;
   return { ...richBlock, type: 'richParagraph', runs: mergedRuns };
 };
+
+const finalizeLayoutV2FieldLineLabelRuns = (block, mergedRuns) => finalizeLayoutV2FieldSlotRuns(block, 'label', 'labelRuns', mergedRuns);
 
 // MS Word toggle behavior (batch 17), same rule as toggleInlineFormat: if every run inside
 // [plainStart, plainEnd) is already 'inlineEmphasis', the whole selection loses it; otherwise the
@@ -2969,17 +3001,14 @@ export const toggleLayoutV2ParagraphItalic = (block, plainStart, plainEnd) => {
 // The legacy paragraph/beforeTitle/title editor's whole toolbar (Template/Input/Text mode cycle,
 // Bold/Italic, Insert-variable) is built on one shared **bold**/*italic* markup string per row
 // (parseFormattedRuns/serializeFormattedRuns) addressed via getTemplateScopeText/
-// withTemplateScopeText. Converting a layoutV2 paragraph/richParagraph block to and from that same
-// markup shape lets a `lv2:<index>` scope (see layoutV2Scope) reuse that entire existing editor
-// unchanged, instead of duplicating a second toolbar/mode system just for layoutV2 blocks.
-export const layoutV2ParagraphMarkup = block => serializeFormattedRuns(layoutV2ParagraphRuns(block).map(run => ({
-  text: run.text,
-  bold: run.style === 'inlineEmphasis',
-  italic: run.styleOverrides?.fontStyle === 'italic',
-})));
-
-export const layoutV2ParagraphFromMarkup = (existingBlock, markup) => {
-  const previousRuns = layoutV2ParagraphRuns(existingBlock);
+// withTemplateScopeText. Converting a layoutV2 block's field slot to and from that same markup
+// shape lets a `lv2:<index>`/`lv2-label:<index>` scope (layoutV2Scope/layoutV2LabelScope) reuse
+// that entire existing editor unchanged, instead of duplicating a second toolbar/mode system just
+// for layoutV2 blocks. Generic over which slot (getRuns/finalize) so a fieldLine's value and label
+// - two fully independent bold/italic-carrying fields on the same block - each get their own
+// working toolbar without duplicating this diff algorithm twice.
+const layoutV2MarkupFromSlot = (existingBlock, markup, getRuns, finalize) => {
+  const previousRuns = getRuns(existingBlock);
   const previousText = previousRuns.map(run => run.text).join('');
   const parsedRuns = parseFormattedRuns(markup);
   const nextText = parsedRuns.map(run => run.text).join('');
@@ -3024,12 +3053,36 @@ export const layoutV2ParagraphFromMarkup = (existingBlock, markup) => {
     }
     nextOffset += parsedRun.text.length;
   });
-  return finalizeLayoutV2ParagraphRuns(existingBlock, mergeAdjacentLayoutV2Runs(runs));
+  return finalize(existingBlock, mergeAdjacentLayoutV2Runs(runs));
 };
+
+const layoutV2RunsToMarkup = runs => serializeFormattedRuns(runs.map(run => ({
+  text: run.text,
+  bold: run.style === 'inlineEmphasis',
+  italic: run.styleOverrides?.fontStyle === 'italic',
+})));
+
+export const layoutV2ParagraphMarkup = block => layoutV2RunsToMarkup(layoutV2ParagraphRuns(block));
+
+export const layoutV2ParagraphFromMarkup = (existingBlock, markup) => layoutV2MarkupFromSlot(
+  existingBlock, markup, layoutV2ParagraphRuns, finalizeLayoutV2ParagraphRuns,
+);
+
+// A fieldLine's label - its own independent T/B/I/insert-variable/align toolbar row, the fix for a
+// block whose label was previously either a plain-only field (no bold/italic at all) or, worse,
+// fully invisible (labelRuns with no plain `label` at all - see layoutV2FieldLineLabelRuns).
+export const layoutV2LabelMarkup = block => layoutV2RunsToMarkup(layoutV2FieldLineLabelRuns(block));
+
+export const layoutV2LabelFromMarkup = (existingBlock, markup) => layoutV2MarkupFromSlot(
+  existingBlock, markup, layoutV2FieldLineLabelRuns, finalizeLayoutV2FieldLineLabelRuns,
+);
 
 // The scope key a layoutV2 paragraph/richParagraph block edits under (mirrors beforeTitleScope/
 // paragraphScope) - resolved by getTemplateScopeText/withTemplateScopeText below.
 export const layoutV2Scope = index => `lv2:${index}`;
+
+// A fieldLine block's label - its own, independent scope from layoutV2Scope's value slot above.
+export const layoutV2LabelScope = index => `lv2-label:${index}`;
 
 // The effective alignment a layoutV2 block renders with - unlike a legacy paragraph's own `style`
 // object, a layoutV2 block's `style` names a *shared* template style (resolveLayoutV2Style), so an
