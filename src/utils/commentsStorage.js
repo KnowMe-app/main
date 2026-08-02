@@ -1,6 +1,7 @@
 import { MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
 
 const COMMENTS_KEY = 'commentsCache';
+export const COMMENTS_UPDATED_EVENT = 'comments:updated';
 export const COMMENTS_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 
 const now = () => Date.now();
@@ -97,6 +98,11 @@ export const setLocalComment = (...args) => {
   comments[ownerId] = comments[ownerId] || {};
   comments[ownerId][cardId] = { text: String(text || ''), lastAction, cachedAt: now(), empty: !String(text || '').trim() };
   saveComments(comments);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(COMMENTS_UPDATED_EVENT, {
+      detail: { ownerId, cardId, text: String(text || '') },
+    }));
+  }
 };
 
 export const shouldUseServerComment = (server, local) => {

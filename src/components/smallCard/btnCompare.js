@@ -1,5 +1,10 @@
 import React from 'react';
+import toast from 'react-hot-toast';
+import { auth, fetchUserComment, saveMyCardComment } from '../config';
+import { setLocalComment } from '../../utils/commentsStorage';
 import { handleSubmitAll } from './actions';
+
+let latestCompareRequest = 0;
 
 const compareIcon = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -7,6 +12,30 @@ const compareIcon = (
     <path d="M17 17H6M17 17l-3-3M17 17l-3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+const combineComments = (legacyValue, storedValue) => [legacyValue, storedValue]
+  .map(value => String(value || '').trim())
+  .filter(Boolean)
+  .join('\n\n');
+
+const formatValue = val => {
+  if (Array.isArray(val)) return new Set(val.map(String));
+  if (val !== undefined && val !== null && val !== '') return new Set([String(val)]);
+  return new Set();
+};
+
+const mergeValues = (currentVal, nextVal) => {
+  const toArray = value => {
+    if (typeof value === 'string' && value.includes(',')) {
+      return value.split(',').map(item => item.trim());
+    }
+    return value !== undefined && value !== null && value !== '' ? [String(value).trim()] : [];
+  };
+
+  if (!currentVal) return '';
+  if (!nextVal) return currentVal;
+  return [...new Set([...toArray(currentVal), ...toArray(nextVal)])].join(', ');
+};
 
 export const btnCompare = (
   index,
@@ -18,218 +47,116 @@ export const btnCompare = (
   content = compareIcon,
 ) => {
   const delKeys = [
-    'photos',
-    'areTermsConfirmed',
-    'attitude',
-    'breastSize',
-    'chin',
-    'bodyType',
-    'lastAction',
-    'clothingSize',
-    'education',
-    'experience',
-    'eyeColor',
-    'faceShape',
-    'glasses',
-    'hairColor',
-    'hairStructure',
-    'language',
-    'lastLogin',
-    'lipsShape',
-    'noseShape',
-    'profession',
-    'publish',
-    'race',
-    'registrationDate',
-    'reward',
-    'shoeSize',
-    'street',
-    'whiteList',
-    'blackList',
-    'photos',
+    'photos', 'areTermsConfirmed', 'attitude', 'breastSize', 'chin', 'bodyType',
+    'lastAction', 'clothingSize', 'education', 'experience', 'eyeColor', 'faceShape',
+    'glasses', 'hairColor', 'hairStructure', 'language', 'lastLogin', 'lipsShape',
+    'noseShape', 'profession', 'publish', 'race', 'registrationDate', 'reward',
+    'shoeSize', 'street', 'whiteList', 'blackList',
   ];
 
-  const mergeValues = (key, currentVal, nextVal) => {
-    // Функція для перевірки, чи значення є масивом, завдяки комам
-    const isArray = (value) => typeof value === 'string' && value.includes(',');
-  
-    // Перетворення значення на масив
-    const toArray = (value) =>
-      isArray(value)
-        ? value.split(',').map((item) => item.trim())
-        : value !== undefined && value !== null && value !== ''
-        ? [String(value).trim()]
-        : [];
-  
-    // Якщо `currentVal` порожнє, повертаємо пустий рядок
-    if (!currentVal) return '';
-  
-    // Якщо `nextVal` порожнє, повертаємо `currentVal`
-    if (!nextVal) return currentVal;
-  
-    // Перетворюємо значення на масиви
-    const currentArray = toArray(currentVal);
-    const nextArray = toArray(nextVal);
-  
-    // **Виправлення:** Нові значення кидаємо на початок, але не змінюємо порядок інших
-    const seen = new Set();
-    const uniqueValues = [...currentArray, ...nextArray].filter((val) => {
-      if (seen.has(val)) return false;
-      seen.add(val);
-      return true;
-    });
-  
-    // Повертаємо результат як рядок, об'єднаний комами
-    return uniqueValues.join(', ');
-  };
-  
-  
+  const copyValue = async (key, sourceValue, targetUserId) => {
+    if (!targetUserId) return;
 
-  window.handleClick = (key, nextVal, currentVal, userIdCur, userIdNext) => {
     if (key === 'myComment') {
-      nextVal = decodeURIComponent(nextVal);
-      currentVal = decodeURIComponent(currentVal);
+      const commentOwnerId = auth.currentUser?.uid;
+      if (!commentOwnerId) return;
+      try {
+        const result = await saveMyCardComment(targetUserId, sourceValue, commentOwnerId);
+        setLocalComment(commentOwnerId, targetUserId, sourceValue, result?.lastAction);
+        toast.success('Коментар скопійовано в іншу картку');
+      } catch (error) {
+        const details = error?.message || String(error);
+        toast.error(`Не вдалося скопіювати коментар: ${details}`);
+      }
+      return;
     }
-    const targetUserId = currentVal ? userIdNext : userIdCur;
-    console.log('Target User ID:', targetUserId);
-  
-    if (users[targetUserId]) {
-      const updatedUsers = { ...users };
-      const updatedTargetUser = { ...updatedUsers[targetUserId] };
-  
-      if (key === 'getInTouch' || key === 'lastCycle' || key === 'myComment') {
-        updatedTargetUser[key] = currentVal || nextVal;
-      } else {
-        const mergedValue = mergeValues(key, currentVal, nextVal);
-  
-        if (mergedValue.includes(',')) {
-          // Зберігаємо правильний порядок масиву
-          updatedTargetUser[key] = mergedValue.split(',').map((item) => item.trim());
-        } else {
-          updatedTargetUser[key] = mergedValue;
-        }
-      }
-  
-      // Видаляємо `duplicate` перед збереженням
-      if (updatedTargetUser?.hasOwnProperty('duplicate')) {
-        delete updatedTargetUser.duplicate;
-      }
-  
-      updatedUsers[targetUserId] = updatedTargetUser;
-      setUsers(updatedUsers);
-      handleSubmitAll(updatedTargetUser, 'overwrite');
-  
-      console.log('Updated user data:', updatedTargetUser);
-    } else {
+
+    if (!users[targetUserId]) {
       console.error(`User with ID ${targetUserId} not found`);
+      return;
     }
-  };
-  
-  
-  
 
-const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompare) => {
-  e.stopPropagation();
-  const entries = Object.entries(users);
-  const currentUser = entries[index][1] || {};
-  const nextUser = entries[index + 1]?.[1] || {};
-
-  const filteredKeys = new Set([
-    ...Object.keys(currentUser).filter(key => !delKeys.includes(key) && key !== 'duplicate'),
-    ...Object.keys(nextUser).filter(key => !delKeys.includes(key) && key !== 'duplicate'),
-]);
-
-  let rows = '';
-
-  const formatValue = (val) => {
-    if (Array.isArray(val)) return new Set(val.map(String)); // Масив → множина унікальних строк
-    if (val !== undefined && val !== null && val !== '') return new Set([String(val)]); // Рядок або число → множина
-    return new Set(); // Якщо значення немає
+    const updatedUsers = { ...users };
+    const updatedTargetUser = { ...updatedUsers[targetUserId] };
+    if (key === 'getInTouch' || key === 'lastCycle') {
+      updatedTargetUser[key] = sourceValue;
+    } else {
+      const mergedValue = mergeValues(sourceValue, updatedTargetUser[key]);
+      updatedTargetUser[key] = mergedValue.includes(',')
+        ? mergedValue.split(',').map(item => item.trim())
+        : mergedValue;
+    }
+    delete updatedTargetUser.duplicate;
+    updatedUsers[targetUserId] = updatedTargetUser;
+    setUsers(updatedUsers);
+    handleSubmitAll(updatedTargetUser, 'overwrite');
   };
 
-  for (const key of filteredKeys) {
-    const currentSet = formatValue(currentUser[key]);
-    const nextSet = formatValue(nextUser[key]);
+  const handleCompareClick = async e => {
+    e.stopPropagation();
+    const requestId = ++latestCompareRequest;
+    const entries = Object.entries(users);
+    const currentUserRaw = entries[index]?.[1] || {};
+    const nextUserRaw = entries[index + 1]?.[1] || {};
+    const ownerId = auth.currentUser?.uid;
+    const [currentCommentResult, nextCommentResult] = await Promise.all([
+      ownerId && currentUserRaw.userId ? fetchUserComment(ownerId, currentUserRaw.userId) : null,
+      ownerId && nextUserRaw.userId ? fetchUserComment(ownerId, nextUserRaw.userId) : null,
+    ]);
+    if (requestId !== latestCompareRequest) return;
 
-    // Якщо поле пусте в обох користувачів – його не відображаємо
-    if (currentSet.size === 0 && nextSet.size === 0) {
-      continue;
-    }
+    const currentUser = {
+      ...currentUserRaw,
+      myComment: combineComments(currentUserRaw.myComment, currentCommentResult?.text),
+    };
+    const nextUser = {
+      ...nextUserRaw,
+      myComment: combineComments(nextUserRaw.myComment, nextCommentResult?.text),
+    };
+    const filteredKeys = new Set([
+      ...Object.keys(currentUser).filter(key => !delKeys.includes(key) && key !== 'duplicate'),
+      ...Object.keys(nextUser).filter(key => !delKeys.includes(key) && key !== 'duplicate'),
+    ]);
 
-    // Якщо значення абсолютно однакові – його не відображаємо
-    if ([...currentSet].every(val => nextSet.has(val)) && [...nextSet].every(val => currentSet.has(val))) {
-      continue;
-    }
+    const rows = [...filteredKeys].map(key => {
+      const currentSet = formatValue(currentUser[key]);
+      const nextSet = formatValue(nextUser[key]);
+      if (!currentSet.size && !nextSet.size) return null;
+      if ([...currentSet].every(value => nextSet.has(value)) && [...nextSet].every(value => currentSet.has(value))) return null;
 
-    // Унікальні значення для відображення
-    const uniqueCurrent = [...currentSet].filter(val => !nextSet.has(val));
-    const uniqueNext = [...nextSet].filter(val => !currentSet.has(val));
-
-    // Навіть якщо унікальні значення приховуються, все одно треба зберігати їх
-    const storedCurrent = new Set([...currentSet, ...nextSet]); // Унікальний набір без дублікатів
-    const storedNext = new Set([...nextSet, ...currentSet]);
-
-    const isUserId = key === 'userId';
-
-    const rawCurrent = [...storedCurrent].join(', ');
-    const rawNext = [...storedNext].join(', ');
-    const encodedCurrent = key === 'myComment' ? encodeURIComponent(rawCurrent) : rawCurrent;
-    const encodedNext = key === 'myComment' ? encodeURIComponent(rawNext) : rawNext;
-
-    rows += `
-      <tr>
-        <td style="width:20%; white-space: normal; word-break: break-word; cursor: pointer;">
-          ${key}
-        </td>
-        <td
-          style="width:40%; white-space: normal; word-break: break-word; cursor: ${isUserId ? 'default' : 'pointer'};"
-          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${encodedNext}', '${encodedCurrent}', '${currentUser.userId}', '${nextUser?.userId}')"`}
-        >
-          ${uniqueCurrent.join(', ') || ''}
-        </td>
-        <td
-          style="width:40%; white-space: normal; word-break: break-word; cursor: ${isUserId ? 'default' : 'pointer'};"
-          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${encodedCurrent}', '${encodedNext}', '${nextUser.userId}', '${currentUser?.userId}')"`}
-        >
-          ${uniqueNext.join(', ') || ''}
-        </td>
-      </tr>`;
-  }
-
-  const message = `
-  <div style="font-size:10px; font-family: Arial, sans-serif;">
-    <table border="1" cellspacing="0" cellpadding="5" style="border-collapse: collapse; width: 100%;">
-      <thead>
-        <tr>
-          <th style="width:20%;">Key</th>
-          <th style="width:40%;">Current User</th>
-          <th style="width:40%;">Next User</th>
+      const uniqueCurrent = [...currentSet].filter(value => !nextSet.has(value));
+      const uniqueNext = [...nextSet].filter(value => !currentSet.has(value));
+      const isUserId = key === 'userId';
+      const cellStyle = { width: '40%', whiteSpace: 'normal', wordBreak: 'break-word' };
+      return (
+        <tr key={key}>
+          <td style={{ width: '20%', whiteSpace: 'normal', wordBreak: 'break-word' }}>{key}</td>
+          <td
+            style={{ ...cellStyle, cursor: isUserId ? 'default' : 'pointer' }}
+            onClick={isUserId ? undefined : () => copyValue(key, currentUser[key], nextUser.userId)}
+          >
+            {uniqueCurrent.join(', ')}
+          </td>
+          <td
+            style={{ ...cellStyle, cursor: isUserId ? 'default' : 'pointer' }}
+            onClick={isUserId ? undefined : () => copyValue(key, nextUser[key], currentUser.userId)}
+          >
+            {uniqueNext.join(', ')}
+          </td>
         </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
+      );
+    }).filter(Boolean);
 
-  setShowInfoModal('compareCards');
-  setCompare(message);
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    setShowInfoModal('compareCards');
+    setCompare(
+      <div style={{ fontSize: '10px', fontFamily: 'Arial, sans-serif' }}>
+        <table border="1" cellSpacing="0" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>
+          <thead><tr><th style={{ width: '20%' }}>Key</th><th style={{ width: '40%' }}>Current User</th><th style={{ width: '40%' }}>Next User</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+      </div>,
+    );
+  };
 
   return (
     <button
@@ -237,29 +164,18 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
       style={{ ...styles.removeButton, ...style }}
       aria-label="Порівняти"
       title="Порівняти"
-      onClick={(e) => handleCompareClick(e, index, users, delKeys, setShowInfoModal, setCompare)}
+      onClick={handleCompareClick}
     >
       {content}
     </button>
   );
 };
 
-// Стилі
 const styles = {
   removeButton: {
-    width: '30px',
-    height: '30px',
-    minHeight: '30px',
-    padding: 0,
-    backgroundColor: 'purple',
-    color: 'white',
-    border: 'none',
-    borderRadius: '9px',
-    cursor: 'pointer',
-    position: 'static',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: '0 3px 8px rgba(17, 24, 39, 0.25)',
+    width: '30px', height: '30px', minHeight: '30px', padding: 0,
+    backgroundColor: 'purple', color: 'white', border: 'none', borderRadius: '9px',
+    cursor: 'pointer', position: 'static', display: 'inline-flex', alignItems: 'center',
+    justifyContent: 'center', boxShadow: '0 3px 8px rgba(17, 24, 39, 0.25)',
   },
 };
