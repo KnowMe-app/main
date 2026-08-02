@@ -67,18 +67,15 @@ describe('newUsers/users merge behaviour', () => {
     expect(addUserFromUsersBody).toContain('mergeUserCollectionData(userData, newUserData)');
   });
 
-  it('fetchUserById merges both collections and prioritizes long-id fallback writes', () => {
+  it('fetchUserById merges both collections according to the selected fresh source', () => {
     const fetchUserByIdBody = source.slice(
       source.indexOf('export const fetchUserById'),
       source.indexOf('export const removeKeyFromFirebase')
     );
 
-    expect(fetchUserByIdBody).toContain(
-      'mergeUserCollectionData(userSnapshotInUsers.val(), newUserSnapshot.val())'
-    );
-    expect(fetchUserByIdBody).toContain(
-      'mergeUserCollectionData(newUserSnapshot.val(), userSnapshotInUsers.val())'
-    );
+    expect(fetchUserByIdBody).toContain('const mergedUserData = mergeUserCollectionData(');
+    expect(fetchUserByIdBody).toContain('useFallback ? newUsersData : usersData');
+    expect(fetchUserByIdBody).toContain('useFallback ? usersData : newUsersData');
   });
 
   it('bulk merged RTDB exports merge users/newUsers per field', () => {
@@ -105,8 +102,8 @@ describe('newUsers/users merge behaviour', () => {
   });
 
   it('marks fetchUserById records with their backing collection', () => {
-    expect(source).toContain("__sourceCollection: 'newUsers'");
-    expect(source).toContain("__sourceCollection: 'users'");
+    expect(source).toContain("const sourceCollection = useFallback ? 'newUsers' : 'users';");
+    expect(source).toContain('__sourceCollection: sourceCollection');
   });
 
   it('strips client-only source markers before database writes', () => {
