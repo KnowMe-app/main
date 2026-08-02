@@ -63,6 +63,7 @@ import {
   isLayoutV2Template,
   isOfficialFormStyle,
   isSingleLanguageTwoColumnLayout,
+  layoutV2LabelScope,
   layoutV2Scope,
   mapResolvedSelectionToRaw,
   legacyClinicLogoStorageFilePath,
@@ -1816,28 +1817,14 @@ const DocumentsPage = ({ isAdmin }) => {
   // understand a fieldLine's value/valueRuns, see layoutV2ParagraphRuns in documentsCatalogUtils),
   // so no dedicated setter is needed here for it - only the label below is still a plain field.
 
-  // The label sits to the left of the underlined value (e.g. "дружина", "та чоловік") - present on
-  // some fieldLine blocks, absent on others (the surrogate mother's own line has none). A block can
-  // instead carry `labelRuns` (bold-in-part label, e.g. "**та**/або сперматозоїди") - editing that
-  // one plain-text as done here drops the bold run and switches it over to the plain `label` shape,
-  // which is an acceptable trade for turning what used to be a completely blank, invisible block
-  // (label/value both unreadable) into a visible, editable one.
-  const setLayoutV2FieldLineLabel = (docId, blockIndex, value) => applyLayoutV2BlocksChange(
-    docId,
-    blocks => blocks.map((item, index) => {
-      if (index !== blockIndex) return item;
-      const { labelRuns: ignoredLabelRuns, ...rest } = item;
-      return { ...rest, label: value };
-    }),
-  );
-
-  // The label's own display text, whichever shape the block stores it in - see
-  // setLayoutV2FieldLineLabel above for why editing it always collapses to the plain `label` shape.
-  const layoutV2FieldLineLabelText = block => {
-    if (block.label !== undefined) return block.label;
-    if (block.labelRuns) return block.labelRuns.map(run => run.text).join('');
-    return undefined;
-  };
+  // The label sits to the left of the underlined value (e.g. "дружина", "та чоловік", bold-in-part
+  // "**та**/або сперматозоїди") - present on some fieldLine blocks, absent on others (the surrogate
+  // mother's own line has none at all). Whether a block has one is a plain existence check;
+  // *editing* it goes through the same generic getTemplateScopeText/handleTemplateScopeChange
+  // machinery the value row uses, addressed via its own layoutV2LabelScope - see
+  // layoutV2LabelMarkup/layoutV2LabelFromMarkup (documentsCatalogUtils) for why that gives it the
+  // exact same T/B/I/insert-variable toolbar instead of only a bare, unformattable text input.
+  const hasLayoutV2FieldLineLabel = block => block.label !== undefined || block.labelRuns !== undefined;
 
   const setLayoutV2LogoOffset = (docId, blockIndex, columnIndex, axisKey, raw) => {
     const parsed = parsePlainNumber(raw);
@@ -3469,6 +3456,26 @@ const DocumentsPage = ({ isAdmin }) => {
                                 };
                                 const onBlur = () => persistTemplate(template.id);
                                 const fieldKind = isTemplateMode ? 'template' : 'input-plain';
+                                // The label is a second, fully independent field slot on the same
+                                // block (layoutV2LabelScope) - its own mode/toolbar state, never
+                                // shared with the value's above.
+                                const hasLabel = hasLayoutV2FieldLineLabel(block);
+                                const labelScope = layoutV2LabelScope(blockIndex);
+                                const labelMode = getParagraphMode(template.id, labelScope);
+                                const isLabelTemplateMode = labelMode === 'template';
+                                const isLabelInputMode = labelMode === 'input';
+                                const isLabelTextMode = labelMode === 'text';
+                                const rawLabelValue = langKey => getTemplateScopeText(template, labelScope, langKey);
+                                const resolvedLabelValue = langKey => fillPlaceholders(rawLabelValue(langKey), getContextForTemplate(template.id), langKey);
+                                const displayLabelValue = langKey => (isLabelTemplateMode ? rawLabelValue(langKey) : plainTextOf(resolvedLabelValue(langKey)));
+                                const onLabelChange = langKey => event => {
+                                  const nextRaw = isLabelTemplateMode
+                                    ? event.target.value
+                                    : applyResolvedTextEdit(rawLabelValue(langKey), getContextForTemplate(template.id), langKey, event.target.value);
+                                  handleTemplateScopeChange(template.id, labelScope, langKey, nextRaw);
+                                };
+                                const onLabelBlur = () => persistTemplate(template.id);
+                                const labelFieldKind = isLabelTemplateMode ? 'template' : 'input-plain';
                                 return (
                                   // eslint-disable-next-line react/no-array-index-key
                                   <ParagraphEditorBlock key={`${template.id}-lv2-fieldline-${blockIndex}`}>
@@ -3552,23 +3559,89 @@ const DocumentsPage = ({ isAdmin }) => {
                                       </RowLine>
                                     </ParagraphControlsRow>
                                     {/* The label sits to the left of the underlined value (e.g.
-                                        "дружина") - present on some fieldLine blocks, absent on
-                                        others (the surrogate mother's own line has none at all). A
-                                        block can store it as plain `label` or as bold-in-part
-                                        `labelRuns` (e.g. bold "та" followed by "/або сперматозоїди") -
-                                        layoutV2FieldLineLabelText reads whichever shape is there so
-                                        this field is never silently blank/unreachable for a
-                                        labelRuns block; editing it always collapses to plain
-                                        `label` (see setLayoutV2FieldLineLabel). */}
-                                    {layoutV2FieldLineLabelText(block) !== undefined ? (
-                                      <FieldInput
-                                        type="text"
-                                        value={layoutV2FieldLineLabelText(block) || ''}
-                                        placeholder="Label before the underlined value, e.g. «дружина»"
-                                        onChange={event => setLayoutV2FieldLineLabel(template.id, blockIndex, event.target.value)}
-                                        onBlur={() => persistTemplate(template.id)}
-                                        style={{ width: '100%', marginBottom: 6 }}
-                                      />
+                                        "дружина", or bold "та" followed by "/або сперматозоїди") -
+                                        present on some fieldLine blocks, absent on others (the
+                                        surrogate mother's own line has none at all). Its own full
+                                        T/B/I/insert-variable/align toolbar, exactly like the value's
+                                        below - layoutV2LabelMarkup/FromMarkup (documentsCatalogUtils)
+                                        give it the same working Bold/Italic a bare text input never
+                                        could (the bug this fixes: bolding text here previously always
+                                        failed with "Select some text first", since the toolbar only
+                                        ever tracked the value field's selection, never this one's). */}
+                                    {hasLabel ? (
+                                      <>
+                                        <ParagraphControlsRow>
+                                          <RowLine style={{ gap: 6 }}>
+                                            <SmallButton
+                                              type="button"
+                                              onClick={() => setParagraphModeFor(template.id, labelScope, nextParagraphMode(labelMode))}
+                                              title={PARAGRAPH_MODE_TITLE[labelMode]}
+                                            >
+                                              {PARAGRAPH_MODE_ICON[labelMode]}
+                                            </SmallButton>
+                                            <SmallButton
+                                              type="button"
+                                              disabled={isLabelInputMode}
+                                              {...formatButtonProps('bold')}
+                                              title="Bold the selected text"
+                                            >
+                                              <FaBold />
+                                            </SmallButton>
+                                            <SmallButton
+                                              type="button"
+                                              disabled={isLabelInputMode}
+                                              {...formatButtonProps('italic')}
+                                              title="Italicize the selected text"
+                                            >
+                                              <FaItalic />
+                                            </SmallButton>
+                                            <SmallButton
+                                              type="button"
+                                              disabled={!isLabelTemplateMode}
+                                              onMouseDown={preventSelectionLoss}
+                                              onClick={openVariablePicker}
+                                              title="Insert a variable"
+                                            >
+                                              <FaCode />
+                                            </SmallButton>
+                                            <AlignCycleButton
+                                              align={getEffectiveLayoutV2BlockAlign(template, block)}
+                                              onCycle={() => handleCycleLayoutV2Align(template.id, blockIndex)}
+                                            />
+                                          </RowLine>
+                                        </ParagraphControlsRow>
+                                        <ParagraphFieldColumn style={{ marginBottom: 6 }}>
+                                          {isLabelTextMode || (isLabelInputMode && activeFieldKey !== fieldKey(template.id, labelScope, layoutV2Lang)) ? (
+                                            <TextModeDisplay
+                                              ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
+                                              onMouseUp={isLabelTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
+                                              onTouchEnd={isLabelTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
+                                              onMouseDown={isLabelInputMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, labelFieldKind) : undefined}
+                                              title={isLabelInputMode ? 'Click to edit the wording' : undefined}
+                                            >
+                                              <FormattedRunsPreview text={resolvedLabelValue(layoutV2Lang)} />
+                                            </TextModeDisplay>
+                                          ) : isLabelInputMode ? (
+                                            <RichResolvedTextField
+                                              ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
+                                              initialText={resolvedLabelValue(layoutV2Lang)}
+                                              placeholder="Label before the underlined value, e.g. «дружина»"
+                                              onPlainTextChange={nextPlain => onLabelChange(layoutV2Lang)({ target: { value: nextPlain } })}
+                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, labelFieldKind)}
+                                              onBlur={onLabelBlur}
+                                            />
+                                          ) : (
+                                            <AutoInlineTextarea
+                                              ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
+                                              value={displayLabelValue(layoutV2Lang)}
+                                              placeholder="Label before the underlined value, e.g. «дружина»"
+                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, labelFieldKind)}
+                                              onChange={onLabelChange(layoutV2Lang)}
+                                              onBlur={onLabelBlur}
+                                            />
+                                          )}
+                                        </ParagraphFieldColumn>
+                                      </>
                                     ) : null}
                                     <ParagraphFieldColumn>
                                       {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
