@@ -3062,17 +3062,52 @@ export const buildGeneratedDocument = (template, context) => {
       // renderers. An absent key means "inherit the document's own formatting" (fontSize /
       // firstLineIndentCm / default alignment).
       const style = getParagraphStyle(paragraph);
+      // joinWithPrevious (groupJoinedParagraphs below) - a paragraph that continues the previous
+      // one mid-sentence must never get the usual forced capital first letter (it isn't starting a
+      // new sentence), only the paragraph that actually opens the group should.
+      const resolveText = langKey => {
+        const filled = fillPlaceholders(localizedText(paragraph, langKey), context, langKey);
+        return paragraph.joinWithPrevious ? filled : capitalizeFirstLetter(filled);
+      };
       return {
         type,
         bold: style.bold,
         align: style.align,
         indentCm: style.indentCm,
         fontSize: style.fontSize,
-        uk: capitalizeFirstLetter(fillPlaceholders(localizedText(paragraph, 'uk'), context, 'uk')),
-        en: capitalizeFirstLetter(fillPlaceholders(localizedText(paragraph, 'en'), context, 'en')),
+        joinWithPrevious: Boolean(paragraph.joinWithPrevious),
+        uk: resolveText('uk'),
+        en: resolveText('en'),
       };
     }),
   };
+};
+
+// A generated document's `paragraphs` array keeps one entry per *template* paragraph (never
+// merged, never dropped - see the comment above) so the editor can still show/edit each block on
+// its own. Rendering is different: a paragraph tagged `joinWithPrevious` (the paragraph-row toolbar
+// toggle) is meant to print as a straight continuation of whatever paragraph immediately precedes
+// it - no line break, no first-line indent of its own - most commonly a conditional clause
+// (evaluateBlockCondition) sitting mid-sentence, which must read as one continuous paragraph
+// whether or not the clause itself is shown. This is the renderer-only step that actually merges
+// those runs together, called once by each renderer (DocumentsPdfDocument.jsx,
+// documentsDocxBuilder.js) in place of their old plain condition-hidden/logo-consumed filter.
+// condition-hidden/logo-consumed entries are dropped here (they never had anything to print) but
+// never break the chain - a paragraph after one still joins whatever visible paragraph precedes it,
+// exactly as if the hidden one had never been in the array at all.
+export const groupJoinedParagraphs = paragraphs => {
+  const groups = [];
+  toArray(paragraphs).forEach(paragraph => {
+    if (paragraph?.type === 'condition-hidden' || paragraph?.type === 'logo-consumed') return;
+    const previousGroup = groups[groups.length - 1];
+    if (paragraph?.joinWithPrevious && previousGroup?.type === 'text' && paragraph?.type === 'text') {
+      previousGroup.uk = `${previousGroup.uk || ''}${paragraph.uk || ''}`;
+      previousGroup.en = `${previousGroup.en || ''}${paragraph.en || ''}`;
+      return;
+    }
+    groups.push({ ...paragraph });
+  });
+  return groups;
 };
 
 // --- Case selector --------------------------------------------------------------------------

@@ -21,6 +21,7 @@ import {
   getClinicLogo,
   getEffectiveDocLayout,
   getLayoutLang,
+  groupJoinedParagraphs,
   isBilingualLayout,
   isOfficialFormStyle,
   isParagraphBold,
@@ -369,29 +370,22 @@ const DocumentBlock = ({ doc, layout, cellStyles, titleGap, logoWidth, longLogoW
       {showBodyLogo ? <LogoBlock type={doc.logo} {...logoBlockProps} /> : null}
       <BeforeTitleBlocks doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} blankFields={blankFields} />
       <DocumentTitleBlock doc={doc} isBilingual={isBilingual} lang={lang} cellStyles={cellStyles} titleGap={titleGap} blankFields={blankFields} />
-      {doc.paragraphs.map((paragraph, index) => {
-        // Already drawn as doc.logo above - a legacy leading logo paragraph must not also render
-        // a second time in its old body position. A conditionally-hidden paragraph (batch 26 §6)
-        // is the same kind of no-op-for-the-renderer tag, kept in the array (not spliced out) so
-        // every other paragraph's index stays stable for the editor.
-        if (paragraph.type === 'logo-consumed' || paragraph.type === 'condition-hidden') return null;
-        return (
-          <View key={`p-${index}`} wrap>
-            {paragraph.type && paragraph.type !== 'text' ? (
-              <LogoBlock type={paragraph.type} {...logoBlockProps} />
-            ) : (
-              <TextParagraph
-                paragraph={paragraph}
-                isBilingual={isBilingual}
-                lang={lang}
-                cellStyles={cellStyles}
-                allowPageBreaks={doc.allowPageBreaks}
-                blankFields={blankFields}
-              />
-            )}
-          </View>
-        );
-      })}
+      {groupJoinedParagraphs(doc.paragraphs).map((paragraph, index) => (
+        <View key={`p-${index}`} wrap>
+          {paragraph.type && paragraph.type !== 'text' ? (
+            <LogoBlock type={paragraph.type} {...logoBlockProps} />
+          ) : (
+            <TextParagraph
+              paragraph={paragraph}
+              isBilingual={isBilingual}
+              lang={lang}
+              cellStyles={cellStyles}
+              allowPageBreaks={doc.allowPageBreaks}
+              blankFields={blankFields}
+            />
+          )}
+        </View>
+      ))}
     </View>
   );
 };
@@ -872,7 +866,7 @@ const DocumentsPdfDocument = ({
     const blankFields = isOfficialFormStyle(doc);
     const headerLogoReserve = resolveHeaderLogoReserve(doc, effectiveClinicLogos, logoWidth);
     const pageStyleForDoc = headerLogoReserve ? { ...pageStyle, paddingTop: marginTop + headerLogoReserve } : pageStyle;
-    const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed' && paragraph.type !== 'condition-hidden');
+    const bodyParagraphs = groupJoinedParagraphs(doc.paragraphs);
     const pageContentHeightPt = A4_HEIGHT_PT - marginTop - headerLogoReserve - marginBottom;
     const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
     const capacity = estimateColumnPageCapacity({

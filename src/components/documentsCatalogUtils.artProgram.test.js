@@ -35,6 +35,7 @@ import {
   formatGestationalAgeText,
   formatPregnancyTypeTextUk,
   formatShipmentPeriod,
+  groupJoinedParagraphs,
   isDocumentsSchemaV6,
   isGeneticSourceDonorCode,
   mergeDocumentsCatalog,
@@ -624,6 +625,66 @@ describe('spec: buildGeneratedDocument drops a conditionally-hidden paragraph en
     const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
     expect(generated.paragraphs.map(p => p.type)).toEqual(['text', 'condition-hidden', 'text']);
     expect(generated.paragraphs[2].uk).toBe('Просимо зареєструвати дитину.');
+  });
+});
+
+describe('spec: joinWithPrevious keeps a conditional clause reading as one continuous sentence', () => {
+  // A middle clause conditioned on oocyteSourceIsWife (same idea as the describe block above),
+  // but this time both the clause and the paragraph after it are tagged joinWithPrevious - the
+  // author's intent is one flowing sentence across all three template paragraphs, shown or not.
+  const buildTemplate = () => ({
+    id: 'birth-registration-surrogate-consent',
+    title: { uk: '' },
+    paragraphs: [
+      { uk: 'з генетичним батьком – Кацура Наоя,', en: 'with the genetic father Katsura Naoya,' },
+      {
+        uk: " та генетичною матір'ю – Кацура Юкако,",
+        en: ' and the genetic mother Katsura Yukako,',
+        condition: 'geneticAffinityCertificate.oocyteSourceIsWife',
+        joinWithPrevious: true,
+      },
+      {
+        uk: ' були записані батьками.', en: ' were registered as the parents.', joinWithPrevious: true,
+      },
+    ],
+  });
+
+  it('buildGeneratedDocument never force-capitalizes a joinWithPrevious paragraph (it is not a new sentence)', () => {
+    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {});
+    const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
+    expect(generated.paragraphs[0].uk).toBe('З генетичним батьком – Кацура Наоя,');
+    expect(generated.paragraphs[1].uk).toBe(" та генетичною матір'ю – Кацура Юкако,");
+    expect(generated.paragraphs[2].uk).toBe(' були записані батьками.');
+  });
+
+  it('groupJoinedParagraphs merges the whole chain into one paragraph when the clause is shown', () => {
+    const context = buildGeneticAffinityCertificateContext(caseWithDateRangePeriod, resolvedClinics, {});
+    const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
+    const grouped = groupJoinedParagraphs(generated.paragraphs);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].uk).toBe("З генетичним батьком – Кацура Наоя, та генетичною матір'ю – Кацура Юкако, були записані батьками.");
+  });
+
+  it('groupJoinedParagraphs still joins across a hidden clause - the chain never breaks just because its middle link is invisible', () => {
+    const donorCase = deepMergeRecords(caseWithDateRangePeriod, { artProgram: { geneticMaterial: { oocyte: 'ED-123' } } });
+    const context = buildGeneticAffinityCertificateContext(donorCase, resolvedClinics, {});
+    const generated = buildGeneratedDocument(buildTemplate(), { geneticAffinityCertificate: context });
+    expect(generated.paragraphs.map(p => p.type)).toEqual(['text', 'condition-hidden', 'text']);
+    const grouped = groupJoinedParagraphs(generated.paragraphs);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].uk).toBe('З генетичним батьком – Кацура Наоя, були записані батьками.');
+  });
+
+  it('a paragraph immediately after a hidden non-joining paragraph is unaffected (no accidental merge)', () => {
+    const paragraphs = [
+      { type: 'text', uk: 'Перше речення.', en: 'First sentence.' },
+      { type: 'condition-hidden', uk: 'приховано', en: 'hidden' },
+      { type: 'text', uk: 'Друге речення.', en: 'Second sentence.' },
+    ];
+    expect(groupJoinedParagraphs(paragraphs)).toEqual([
+      { type: 'text', uk: 'Перше речення.', en: 'First sentence.' },
+      { type: 'text', uk: 'Друге речення.', en: 'Second sentence.' },
+    ]);
   });
 });
 

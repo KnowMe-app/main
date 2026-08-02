@@ -13,6 +13,7 @@ import {
   getClinicLogo,
   getEffectiveDocLayout,
   getLayoutLang,
+  groupJoinedParagraphs,
   isBilingualLayout,
   isOfficialFormStyle,
   isParagraphBold,
@@ -378,9 +379,12 @@ export const buildDocumentsDocx = async ({
     }
 
     // A conditionally-hidden paragraph (batch 26 §6) is the same kind of no-op-for-the-renderer tag
-    // an already-consumed logo paragraph is - excluded here, kept (not spliced out) in
+    // an already-consumed logo paragraph is - dropped here, kept (not spliced out) in
     // doc.paragraphs itself so every other paragraph's index stays stable for the editor.
-    const bodyParagraphs = doc.paragraphs.filter(paragraph => paragraph.type !== 'logo-consumed' && paragraph.type !== 'condition-hidden');
+    // groupJoinedParagraphs also merges a `joinWithPrevious` paragraph into whichever visible
+    // paragraph precedes it, so a conditional mid-sentence clause prints as one continuous
+    // paragraph instead of its own indented block.
+    const bodyParagraphs = groupJoinedParagraphs(doc.paragraphs);
 
     if (isSingleLanguageFlow) {
       // One shared table for the whole body (not one per paragraph, unlike the bilingual/1-column
