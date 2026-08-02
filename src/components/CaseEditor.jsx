@@ -253,13 +253,6 @@ const PrimarySection = styled(Section)`
   border-color: var(--km-accent);
 `;
 
-const PrimarySectionHead = styled(SectionHead)`
-  cursor: default;
-  background: var(--km-accent-light);
-  border-color: var(--km-accent);
-  justify-content: flex-end;
-`;
-
 const CollapsibleSection = ({ id, title, meta, completion, open, onToggle, children }) => {
   const badge = completion ? (
     <Badge $complete={completion.filled >= completion.total}>{completion.filled}/{completion.total}</Badge>
@@ -705,7 +698,7 @@ const notaryOptionLabel = notary => {
   return formatShortNameUk(nominative) || nominative || notary?.id || '';
 };
 
-const buildDraftFromCase = caseRecord => {
+const buildDraftFromCase = (caseRecord, catalog) => {
   const relations = caseRecord?.relations || {};
   const childbirth = caseRecord?.childbirth || {};
   const artProgram = caseRecord?.artProgram || {};
@@ -715,18 +708,24 @@ const buildDraftFromCase = caseRecord => {
   const documents = caseRecord?.documents || {};
   const oocyteSourceMode = geneticSourceModeFor(geneticMaterial.oocyte);
   const spermSourceMode = geneticSourceModeFor(geneticMaterial.sperm);
+  const representativeIds = toArray(relations.representativeIds).map(String);
+  // resolveCaseContext (documentsCatalogUtils) falls back to a representative record's own
+  // (legacy) powerOfAttorney when the case-level one isn't set, so documents/read views can show
+  // data the edit form was leaving blank. Mirror that fallback here so the fields aren't empty
+  // the first time a case with only legacy data is opened for editing.
+  const fallbackRepresentative = catalog?.parties?.representatives?.find(item => representativeIds.includes(String(item.id)));
 
   return {
     relations: {
       coupleId: relations.coupleId || '',
       clinicId: relations.clinicId || '',
       surrogateMotherId: relations.surrogateMotherId || '',
-      representativeIds: toArray(relations.representativeIds).map(String),
+      representativeIds,
       // Static per-case power of attorney (signing date + apostille date) - see
       // representativeIdentityLabel above for why this moved off the representative record.
       representativePowerOfAttorney: {
-        date: relations.representativePowerOfAttorney?.date || '',
-        apostilleDate: relations.representativePowerOfAttorney?.apostilleDate || '',
+        date: relations.representativePowerOfAttorney?.date || fallbackRepresentative?.powerOfAttorney?.date || '',
+        apostilleDate: relations.representativePowerOfAttorney?.apostilleDate || fallbackRepresentative?.powerOfAttorney?.apostilleDate || '',
       },
     },
     childbirth: {
@@ -936,7 +935,7 @@ const CaseEditor = ({
     racsPreparation: true,
     racsRegistration: true,
   });
-  const [draft, setDraft] = useState(() => buildDraftFromCase(selectedCase));
+  const [draft, setDraft] = useState(() => buildDraftFromCase(selectedCase, catalog));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAtLabel, setSavedAtLabel] = useState('');
@@ -944,7 +943,7 @@ const CaseEditor = ({
   const draftRevision = useRef(0);
 
   useEffect(() => {
-    setDraft(buildDraftFromCase(selectedCase));
+    setDraft(buildDraftFromCase(selectedCase, catalog));
     setDirty(false);
     setActiveTab('overview');
     setSavedAtLabel('');
@@ -1254,16 +1253,10 @@ const CaseEditor = ({
               <PrimarySection>
                 {/* Batch 29 §3: the "Учасники та зв'язки" title + "Пара, клініки, сурогатна мати,
                     представники" caption were dropped - the cards below are self-explanatory via
-                    their own ПАРА/КЛІНІКА/СУРОГАТНА МАТИ/ПРЕДСТАВНИКИ labels, so this row is now
-                    just the completion badge. */}
-                <PrimarySectionHead>
-                  <HeadRight>
-                    {(() => {
-                      const completion = sectionCompletion('relations', draft);
-                      return <Badge $complete={completion.filled >= completion.total}>{completion.filled}/{completion.total}</Badge>;
-                    })()}
-                  </HeadRight>
-                </PrimarySectionHead>
+                    their own ПАРА/КЛІНІКА/СУРОГАТНА МАТИ/ПРЕДСТАВНИКИ labels. The header row that
+                    held only the completion badge was dropped too - an otherwise-empty bordered
+                    strip above the cards wasn't earning its place (the badge already duplicates
+                    the page-level "N із M полів" counters above the tabs). */}
                 <SectionBody>
                 <RelationGrid>
                   <RelationCard role="group" aria-label="Пара">

@@ -406,12 +406,12 @@ describe('spec: layoutV2 paragraph blocks get the full paragraph toolbar', () =>
 
     // eslint-disable-next-line testing-library/no-node-access
     const settledRowHead = (await screen.findByDisplayValue('Settled layoutV2-only doc')).closest('div');
-    fireEvent.click(within(settledRowHead).getByTitle(/Document layout settings/));
+    fireEvent.click(within(settledRowHead).getByTitle(/Document settings/));
     expect(screen.queryByText(/Exact layout/)).not.toBeInTheDocument();
 
     // eslint-disable-next-line testing-library/no-node-access
     const stuckRowHead = (await screen.findByDisplayValue('Stuck on rendererVersion 1')).closest('div');
-    fireEvent.click(within(stuckRowHead).getByTitle(/Document layout settings/));
+    fireEvent.click(within(stuckRowHead).getByTitle(/Document settings/));
     expect(await screen.findByText(/Exact layout/)).toBeInTheDocument();
   });
 

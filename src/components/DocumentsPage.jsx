@@ -47,6 +47,7 @@ import {
   emptyDocumentsCatalog,
   fillPlaceholders,
   getClinicLogo,
+  getEffectiveDocLayout,
   getEffectiveLayoutV2BlockAlign,
   getEffectiveParagraphAlign,
   getEffectiveTitleAlign,
@@ -60,6 +61,7 @@ import {
   isBilingualLayout,
   isLayoutV2Template,
   isOfficialFormStyle,
+  isSingleLanguageTwoColumnLayout,
   layoutV2Scope,
   mapResolvedSelectionToRaw,
   legacyClinicLogoStorageFilePath,
@@ -320,6 +322,7 @@ const Select = styled.select`
 
 const ToggleGroup = styled.div`
   display: inline-flex;
+  flex-wrap: wrap;
   border: 1px solid var(--km-border);
   border-radius: 6px;
   overflow: hidden;
@@ -877,11 +880,16 @@ const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields, chi
   );
 };
 
-// Batch 23 §3: one settings button next to Delete replaces the always-visible "1 col / 2 col"
-// buttons (and, for a layoutV2-capable document, its renderer switch) with a small popover -
-// same open/close-on-outside-click/Esc boundary as FormatPopoverButton above.
+// One settings button next to Delete holds every per-document visual control: language(s) +
+// column count (previously a page-wide selector above the whole list - a document that pinned its
+// own languages silently ignored that selector with no visible indication or UI to change it, see
+// DOCUMENT_LAYOUTS/getEffectiveDocLayout), the layoutV2 renderer switch, and the document-level
+// font size / first-line indent (previously a second button, the sliders icon, right next to this
+// one). One gear, one popover, one trash button alongside it - same open/close-on-outside-click/Esc
+// boundary as FormatPopoverButton above.
 const DocLayoutSettingsPopoverButton = ({
-  open, onToggle, onClose, columnOptions, activeColumns, onSetColumns, hasLayoutV2, layoutV2Active, onToggleLayoutV2,
+  open, onToggle, onClose, activeLayout, onSetLayout, hasLayoutV2, layoutV2Active, onToggleLayoutV2,
+  fontSizeValue, fontSizePlaceholder, onSetFontSize, indentValue, indentPlaceholder, onSetIndent, onFieldBlur,
 }) => {
   const anchorRef = useRef(null);
   const cardRef = useRef(null);
@@ -911,17 +919,17 @@ const DocLayoutSettingsPopoverButton = ({
   const popoverContent = (
     <PopoverCard ref={cardRef} style={position ? { top: position.top, left: position.left } : { top: -9999, left: -9999, visibility: 'hidden' }}>
       <Field>
-        Columns
+        Language + columns
         <ToggleGroup>
-          {columnOptions.map(columnsOption => (
+          {DOCUMENT_LAYOUTS.map(option => (
             <ToggleOption
-              key={columnsOption}
+              key={option.id}
               type="button"
-              $active={activeColumns === columnsOption}
-              onClick={() => onSetColumns(columnsOption)}
-              title={`Render this document with ${columnsOption} column${columnsOption > 1 ? 's' : ''}, regardless of the page's selector above. Tap again to clear the override.`}
+              $active={activeLayout === option.id}
+              onClick={() => onSetLayout(option.id)}
+              title={`Render this document as ${option.label}, regardless of any other document's setting.`}
             >
-              {columnsOption} col
+              {option.label}
             </ToggleOption>
           ))}
         </ToggleGroup>
@@ -932,11 +940,25 @@ const DocLayoutSettingsPopoverButton = ({
           <FaMagic /> Exact layout {layoutV2Active ? 'on' : 'off'}
         </CheckLine>
       ) : null}
+      <PlainNumberField
+        label="Font size (pt)"
+        initialValue={fontSizeValue}
+        placeholder={fontSizePlaceholder}
+        onApply={onSetFontSize}
+        onFieldBlur={onFieldBlur}
+      />
+      <PlainNumberField
+        label="First line indent (cm)"
+        initialValue={indentValue}
+        placeholder={indentPlaceholder}
+        onApply={onSetIndent}
+        onFieldBlur={onFieldBlur}
+      />
     </PopoverCard>
   );
   return (
     <>
-      <SmallButton ref={anchorRef} type="button" onClick={onToggle} title="Document layout settings - column count, renderer">
+      <SmallButton ref={anchorRef} type="button" onClick={onToggle} title="Document settings - language, columns, renderer, font size, first line indent">
         <FaCog />
       </SmallButton>
       {open && typeof document !== 'undefined' ? createPortal(popoverContent, document.body) : null}
@@ -1045,7 +1067,10 @@ const DocumentsPage = ({ isAdmin }) => {
   // typing what's on screen always finds it. Never touches which documents are selected/generated -
   // purely a display filter.
   const [docSearchQuery, setDocSearchQuery] = useState('');
-  const [layout, setLayout] = useState('two-column');
+  // No longer a page-wide selector (moved into each document's own gear, see
+  // DocLayoutSettingsPopoverButton/handleSetDocLayout) - this is only the fallback layout for a
+  // document that hasn't pinned its own languages/columns yet (getEffectiveDocLayout).
+  const layout = 'two-column';
   const [expandedDocId, setExpandedDocId] = useState('');
   // Per-row mode, one cycling button instead of separate toggles: 'template' shows the raw
   // {{placeholder}} markup and edits the shared template directly; 'text' is a read-only preview
@@ -1317,11 +1342,18 @@ const DocumentsPage = ({ isAdmin }) => {
     persistTemplate(docId);
   };
 
-  // Batch 23 §3: the per-document layout toggles (column count, layoutV2 on/off) live in one
-  // settings popover next to Delete instead of always-visible buttons on the row.
+  // The per-document settings popover (language(s), column count, layoutV2 on/off, font size,
+  // first-line indent) next to Delete - persists on switch/close the same way the paragraph-level
+  // FormatPopoverButton popovers above do, since it now also edits font size/indent fields.
   const [openLayoutSettingsDocId, setOpenLayoutSettingsDocId] = useState('');
-  const toggleLayoutSettingsPopover = docId => setOpenLayoutSettingsDocId(previous => (previous === docId ? '' : docId));
-  const closeLayoutSettingsPopover = () => setOpenLayoutSettingsDocId('');
+  const toggleLayoutSettingsPopover = docId => {
+    if (openLayoutSettingsDocId) persistTemplate(openLayoutSettingsDocId);
+    setOpenLayoutSettingsDocId(openLayoutSettingsDocId === docId ? '' : docId);
+  };
+  const closeLayoutSettingsPopover = () => {
+    if (openLayoutSettingsDocId) persistTemplate(openLayoutSettingsDocId);
+    setOpenLayoutSettingsDocId('');
+  };
 
   // '' clears the value (null), a parseable number applies, anything mid-typing/unparseable is
   // ignored until it becomes a number ("1." and "0,7" both already parse).
@@ -1715,6 +1747,17 @@ const DocumentsPage = ({ isAdmin }) => {
     docId, blockIndex, columnIndex, content => ({ ...content, source: `{{${token}}}` }),
   );
 
+  // A layoutV2 document's logo used to be editable only through the Variant buttons + Show-logo
+  // checkbox above, with no way to type or clear the raw token directly - unlike a legacy
+  // document's own Logo field (handleLogoFieldChange), which is a plain text input the admin can
+  // type {{logo}}/{{logo-long}} into or clear entirely. This mirrors that: typing here sets
+  // `source` verbatim (any text, not just the two known tokens), and clearing it removes the logo
+  // the same way an empty source already does (normalizeLayoutV2Content/LayoutV2Content render
+  // nothing for a blank/unmatched source).
+  const setLayoutV2LogoSource = (docId, blockIndex, columnIndex, value) => applyLayoutV2ImageContentChange(
+    docId, blockIndex, columnIndex, content => ({ ...content, source: value }),
+  );
+
   const setLayoutV2LogoOffset = (docId, blockIndex, columnIndex, axisKey, raw) => {
     const parsed = parsePlainNumber(raw);
     if (parsed === undefined) return;
@@ -1772,22 +1815,26 @@ const DocumentsPage = ({ isAdmin }) => {
     await commitTemplateScopeText(docId, scope, langKey, nextRaw);
   };
 
-  // A template can pin its own languages/columns (batch 16 §15/§16, getEffectiveDocLayout) so it
-  // always renders that way regardless of the page's UA/EN/UA+EN toggle - by design for documents
-  // that must always ship bilingual (e.g. a notarized declaration meant for a foreign clinic), or
-  // that flow a single language across 2 newspaper-style columns. Column count is edited directly
-  // on the document row (next to its delete button, same spot as the document formatting popover)
-  // instead of only being settable via the technical JSON paste - clicking the already-active
-  // column count clears the override so the document goes back to following whatever `languages`
-  // implies (or the page-wide selector, if `languages` isn't pinned either).
-  const DOC_COLUMN_OPTIONS = [1, 2];
-
-  const handleSetDocColumns = async (docId, columns) => {
+  // Every document now carries its own explicit language(s) + column count (languages/columns,
+  // getEffectiveDocLayout) instead of deferring to a page-wide selector - a document that used to
+  // pin itself bilingual regardless of that selector (e.g. a notarized declaration meant for a
+  // foreign clinic) is no longer a silent, JSON-only override: the same five choices the old
+  // page-wide toggle offered (DOCUMENT_LAYOUTS) are set per document from its own gear. A document
+  // nobody has touched yet still falls back to the `layout` constant below (the old page-wide
+  // default), which is why it, too, is one of the five DOCUMENT_LAYOUTS ids.
+  const handleSetDocLayout = async (docId, layoutId) => {
     const template = catalog.documents.find(item => String(item.id) === String(docId));
     if (!template) return;
     const nextTemplate = { ...template };
-    if (template.columns === columns) delete nextTemplate.columns;
-    else nextTemplate.columns = columns;
+    if (layoutId === 'two-column') {
+      nextTemplate.languages = ['uk', 'en'];
+      delete nextTemplate.columns;
+    } else {
+      const lang = getLayoutLang(layoutId);
+      nextTemplate.languages = [lang];
+      if (isSingleLanguageTwoColumnLayout(layoutId)) nextTemplate.columns = 2;
+      else delete nextTemplate.columns;
+    }
     await writeTemplateToFirebase(docId, nextTemplate, 'Could not update the document.');
   };
 
@@ -2429,20 +2476,6 @@ const DocumentsPage = ({ isAdmin }) => {
             <Section>
               <SectionHead>
                 <SectionTitle>Case</SectionTitle>
-                <RowLine>
-                  <ToggleGroup>
-                    {DOCUMENT_LAYOUTS.map(option => (
-                      <ToggleOption
-                        key={option.id}
-                        type="button"
-                        $active={layout === option.id}
-                        onClick={() => setLayout(option.id)}
-                      >
-                        {option.label}
-                      </ToggleOption>
-                    ))}
-                  </ToggleGroup>
-                </RowLine>
               </SectionHead>
               <RowLine style={{ marginTop: 8 }}>
                 <Select
@@ -2537,11 +2570,15 @@ const DocumentsPage = ({ isAdmin }) => {
               ) : null}
               {visibleDocuments.map(template => {
                 const isExpanded = expandedDocId === String(template.id);
-                // The builder view mirrors the selected layout mode (spec §1/§4): both languages as
+                // The builder view mirrors this document's own effective layout (its pinned
+                // languages/columns if it has one, else the shared fallback) - both languages as
                 // grouped pairs in bilingual mode, a single language otherwise (1 or 2 columns).
-                const isBilingual = isBilingualLayout(layout);
-                const showUk = isBilingual || getLayoutLang(layout) === 'uk';
-                const showEn = isBilingual || getLayoutLang(layout) === 'en';
+                // Using the document's own effective layout here (not just the shared fallback)
+                // keeps the editor honest with what actually gets exported for it.
+                const effectiveLayout = getEffectiveDocLayout(template, layout);
+                const isBilingual = isBilingualLayout(effectiveLayout);
+                const showUk = isBilingual || getLayoutLang(effectiveLayout) === 'uk';
+                const showEn = isBilingual || getLayoutLang(effectiveLayout) === 'en';
                 const isSingle = !(showUk && showEn);
                 // A document authored straight from a clean layoutV2 template (e.g.
                 // genetic-affinity-certificate) never has any legacy content - the Logo/Before
@@ -2631,53 +2668,34 @@ const DocumentsPage = ({ isAdmin }) => {
                         style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                         title="The document's entry name in the Documents list - never printed inside the document itself (edit the printed title below, in the Title row)"
                       />
-                      {/* Column count + renderer switch in one settings popover (batch 23 §3)
-                          instead of always-visible buttons - column count overrides the page-wide
-                          selector above once set (see handleSetDocColumns); tap the active option
-                          again to clear it. The renderer switch itself only ever shows when it's a
-                          real choice: either this document actually has legacy content to compare
-                          against, or its layoutV2 blocks exist but aren't currently active (an
-                          imported template, or one left on rendererVersion 1 by an earlier
-                          version) - shown so it can be recovered. A document that's already
-                          settled on layoutV2 with no legacy content at all (e.g.
-                          genetic-affinity-certificate) has no real "renderer" to switch to/from,
-                          so the control stays hidden for it instead of offering a fake choice. */}
+                      {/* One settings popover for everything visual about this document: language(s)
+                          + column count (this document's own languages/columns, no longer a
+                          page-wide selector - see handleSetDocLayout), the renderer switch, and the
+                          document-level font size / first-line indent that used to live in a second
+                          button (the sliders icon) right next to this one. The renderer switch only
+                          ever shows when it's a real choice: either this document actually has
+                          legacy content to compare against, or its layoutV2 blocks exist but aren't
+                          currently active (an imported template, or one left on rendererVersion 1 by
+                          an earlier version) - shown so it can be recovered. A document that's
+                          already settled on layoutV2 with no legacy content at all (e.g.
+                          genetic-affinity-certificate) has no real "renderer" to switch to/from, so
+                          the control stays hidden for it instead of offering a fake choice. */}
                       <DocLayoutSettingsPopoverButton
                         open={openLayoutSettingsDocId === String(template.id)}
                         onToggle={() => toggleLayoutSettingsPopover(String(template.id))}
                         onClose={closeLayoutSettingsPopover}
-                        columnOptions={DOC_COLUMN_OPTIONS}
-                        activeColumns={template.columns}
-                        onSetColumns={columnsOption => handleSetDocColumns(template.id, columnsOption)}
+                        activeLayout={effectiveLayout}
+                        onSetLayout={layoutId => handleSetDocLayout(template.id, layoutId)}
                         hasLayoutV2={Boolean(template.layoutV2?.blocks) && (hasLegacyDocContent || !isLayoutV2Template(template))}
                         layoutV2Active={isLayoutV2Template(template)}
                         onToggleLayoutV2={() => handleToggleLayoutV2(template.id)}
-                      />
-                      {/* §1.2: the document-level formatting defaults every non-overridden
-                          paragraph inherits - edited here, next to the delete button. */}
-                      <FormatPopoverButton
-                        open={openFormatKey === formatPopoverKey(template.id, '')}
-                        onToggle={() => toggleFormatPopover(template.id, '')}
-                        onClose={() => closeFormatPopover(template.id)}
-                        buttonTitle="Document formatting - font size (pt) and first-line indent (cm) inherited by all paragraphs"
-                        fields={[
-                          {
-                            key: 'fontSize',
-                            label: 'Font size (pt)',
-                            value: template.format?.fontSize !== undefined ? String(template.format.fontSize) : '',
-                            placeholder: String(formatting.fontSize),
-                            onApply: raw => setDocFormatField(template.id, 'fontSize', raw),
-                            onFieldBlur: () => persistTemplate(template.id),
-                          },
-                          {
-                            key: 'firstLineIndentCm',
-                            label: 'First line indent (cm)',
-                            value: template.format?.firstLineIndentCm !== undefined ? String(template.format.firstLineIndentCm) : '',
-                            placeholder: formatting.firstLineIndentCm.toFixed(1),
-                            onApply: raw => setDocFormatField(template.id, 'firstLineIndentCm', raw),
-                            onFieldBlur: () => persistTemplate(template.id),
-                          },
-                        ]}
+                        fontSizeValue={template.format?.fontSize !== undefined ? String(template.format.fontSize) : ''}
+                        fontSizePlaceholder={String(formatting.fontSize)}
+                        onSetFontSize={raw => setDocFormatField(template.id, 'fontSize', raw)}
+                        indentValue={template.format?.firstLineIndentCm !== undefined ? String(template.format.firstLineIndentCm) : ''}
+                        indentPlaceholder={formatting.firstLineIndentCm.toFixed(1)}
+                        onSetIndent={raw => setDocFormatField(template.id, 'firstLineIndentCm', raw)}
+                        onFieldBlur={() => persistTemplate(template.id)}
                       />
                       <DangerButton type="button" onClick={() => handleDeleteTemplate(template)} title="Delete document">
                         <FaTrash />
@@ -3317,9 +3335,19 @@ const DocumentsPage = ({ isAdmin }) => {
                                           </FormatPopoverButton>
                                         </RowLine>
                                       </ParagraphControlsRow>
-                                      <ParagraphFieldColumn>
-                                        <TextModeDisplay>Clinic logo</TextModeDisplay>
-                                      </ParagraphFieldColumn>
+                                      {/* Same freely-editable plain field a legacy document's Logo
+                                          (before title) field already is (handleLogoFieldChange) -
+                                          type {{logo}}/{{logo-long}} directly, or clear it to
+                                          remove the logo entirely, instead of only toggling it via
+                                          the Show-logo checkbox/Variant buttons above. */}
+                                      <FieldInput
+                                        type="text"
+                                        value={content.source || ''}
+                                        placeholder="{{logo}} or {{logo-long}} - empty for no logo"
+                                        onChange={event => setLayoutV2LogoSource(template.id, blockIndex, columnIndex, event.target.value)}
+                                        onBlur={() => persistTemplate(template.id)}
+                                        style={{ width: '100%' }}
+                                      />
                                     </ParagraphEditorBlock>
                                   );
                                 });
