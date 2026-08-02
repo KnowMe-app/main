@@ -1,6 +1,6 @@
 import { get as firebaseGet, ref as ref2, remove, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
-import { mergeUserCollectionData } from 'utils/mergeUserCollections';
+import { isLongFormatUserId, mergeUserCollectionData } from 'utils/mergeUserCollections';
 
 import { database } from 'components/config';
 
@@ -69,6 +69,22 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
 };
 
 export const getCanonicalCard = async cardUserId => {
+  if (isLongFormatUserId(cardUserId)) {
+    const usersSnapshot = await get(ref2(database, `users/${cardUserId}`));
+    if (usersSnapshot.exists()) {
+      return {
+        userId: cardUserId,
+        ...mergeUserCollectionData(usersSnapshot.val(), {}),
+      };
+    }
+
+    const newUsersSnapshot = await get(ref2(database, `newUsers/${cardUserId}`));
+    return {
+      userId: cardUserId,
+      ...mergeUserCollectionData({}, newUsersSnapshot.exists() ? newUsersSnapshot.val() : {}),
+    };
+  }
+
   const [newUsersSnapshot, usersSnapshot] = await Promise.all([
     get(ref2(database, `newUsers/${cardUserId}`)),
     get(ref2(database, `users/${cardUserId}`)),

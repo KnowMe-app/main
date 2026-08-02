@@ -13,12 +13,15 @@ jest.mock('components/config', () => ({
 }));
 
 const {
+  getCanonicalCard,
   getOverlayForUserCard,
   getOverlaysForCard,
   patchOverlayField,
   removeOverlayForUserCard,
   saveOverlayForUserCard,
 } = require('../multiAccountEdits');
+
+const LONG_USER_ID = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
 
 describe('multiAccountEdits storage structure', () => {
   beforeEach(() => {
@@ -156,5 +159,57 @@ describe('multiAccountEdits storage structure', () => {
       expect.objectContaining({ path: 'multiData/edits/card-1/editor-1' }),
     );
     expect(set).not.toHaveBeenCalled();
+  });
+});
+
+describe('getCanonicalCard', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    ref.mockImplementation((db, path) => ({ db, path }));
+  });
+
+  it('reads only users for a long-format userId when found there, never touching newUsers', async () => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === `users/${LONG_USER_ID}`) {
+        return { exists: () => true, val: () => ({ name: 'Canonical' }) };
+      }
+      throw new Error(`unexpected read: ${path}`);
+    });
+
+    const card = await getCanonicalCard(LONG_USER_ID);
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: `users/${LONG_USER_ID}` }));
+    expect(card).toEqual({ userId: LONG_USER_ID, name: 'Canonical' });
+  });
+
+  it('falls back to newUsers for a long-format userId only when users has no record', async () => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === `users/${LONG_USER_ID}`) return { exists: () => false, val: () => null };
+      if (path === `newUsers/${LONG_USER_ID}`) {
+        return { exists: () => true, val: () => ({ name: 'Fallback' }) };
+      }
+      throw new Error(`unexpected read: ${path}`);
+    });
+
+    const card = await getCanonicalCard(LONG_USER_ID);
+
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(card).toEqual({ userId: LONG_USER_ID, name: 'Fallback' });
+  });
+
+  it('still checks both collections in parallel for a short-format userId', async () => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === 'users/TG0016') return { exists: () => true, val: () => ({ name: 'Users' }) };
+      if (path === 'newUsers/TG0016') return { exists: () => true, val: () => ({ extra: 'NewUsers' }) };
+      throw new Error(`unexpected read: ${path}`);
+    });
+
+    const card = await getCanonicalCard('TG0016');
+
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/TG0016' }));
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'newUsers/TG0016' }));
+    expect(card).toEqual({ userId: 'TG0016', name: 'Users', extra: 'NewUsers' });
   });
 });
