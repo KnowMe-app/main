@@ -149,6 +149,8 @@ const UsersList = ({
   isDateInRange,
   onOpenMoreActions,
 }) => {
+  const usersRef = React.useRef(users);
+  usersRef.current = users;
   const entries = Object.entries(users);
 
   const handleCreate = async item => {
@@ -226,6 +228,7 @@ const UsersList = ({
                     setUsers,
                     setShowInfoModal,
                     setCompare,
+                    usersRef,
                     { ...cardActionButtonStyle, backgroundColor: 'purple' },
                   )}
                   {btnMore(

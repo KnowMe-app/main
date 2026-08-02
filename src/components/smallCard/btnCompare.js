@@ -5,6 +5,20 @@ import { setLocalComment } from '../../utils/commentsStorage';
 import { handleSubmitAll } from './actions';
 
 let latestCompareRequest = 0;
+const pendingCardSaves = new Map();
+
+const queueCardSave = user => {
+  const userId = user?.userId;
+  if (!userId) return;
+  const previousSave = pendingCardSaves.get(userId) || Promise.resolve();
+  const nextSave = previousSave
+    .catch(() => undefined)
+    .then(() => handleSubmitAll(user, 'overwrite'))
+    .finally(() => {
+      if (pendingCardSaves.get(userId) === nextSave) pendingCardSaves.delete(userId);
+    });
+  pendingCardSaves.set(userId, nextSave);
+};
 
 const compareIcon = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -43,6 +57,7 @@ export const btnCompare = (
   setUsers,
   setShowInfoModal,
   setCompare,
+  usersRef,
   style = {},
   content = compareIcon,
 ) => {
@@ -71,12 +86,13 @@ export const btnCompare = (
       return;
     }
 
-    if (!users[targetUserId]) {
+    const latestUsers = usersRef?.current || users;
+    if (!latestUsers[targetUserId]) {
       console.error(`User with ID ${targetUserId} not found`);
       return;
     }
 
-    const updatedUsers = { ...users };
+    const updatedUsers = { ...latestUsers };
     const updatedTargetUser = { ...updatedUsers[targetUserId] };
     if (key === 'getInTouch' || key === 'lastCycle') {
       updatedTargetUser[key] = sourceValue;
@@ -88,13 +104,15 @@ export const btnCompare = (
     }
     delete updatedTargetUser.duplicate;
     updatedUsers[targetUserId] = updatedTargetUser;
+    if (usersRef) usersRef.current = updatedUsers;
     setUsers(updatedUsers);
-    handleSubmitAll(updatedTargetUser, 'overwrite');
+    queueCardSave(updatedTargetUser);
   };
 
   const handleCompareClick = async e => {
     e.stopPropagation();
     const requestId = ++latestCompareRequest;
+    setShowInfoModal('compareCards');
     const entries = Object.entries(users);
     const currentUserRaw = entries[index]?.[1] || {};
     const nextUserRaw = entries[index + 1]?.[1] || {};
@@ -127,19 +145,21 @@ export const btnCompare = (
       const uniqueCurrent = [...currentSet].filter(value => !nextSet.has(value));
       const uniqueNext = [...nextSet].filter(value => !currentSet.has(value));
       const isUserId = key === 'userId';
+      const canCopyCurrent = !isUserId && currentSet.size > 0;
+      const canCopyNext = !isUserId && nextSet.size > 0;
       const cellStyle = { width: '40%', whiteSpace: 'normal', wordBreak: 'break-word' };
       return (
         <tr key={key}>
           <td style={{ width: '20%', whiteSpace: 'normal', wordBreak: 'break-word' }}>{key}</td>
           <td
-            style={{ ...cellStyle, cursor: isUserId ? 'default' : 'pointer' }}
-            onClick={isUserId ? undefined : () => copyValue(key, currentUser[key], nextUser.userId)}
+            style={{ ...cellStyle, cursor: canCopyCurrent ? 'pointer' : 'default' }}
+            onClick={canCopyCurrent ? () => copyValue(key, currentUser[key], nextUser.userId) : undefined}
           >
             {uniqueCurrent.join(', ')}
           </td>
           <td
-            style={{ ...cellStyle, cursor: isUserId ? 'default' : 'pointer' }}
-            onClick={isUserId ? undefined : () => copyValue(key, nextUser[key], currentUser.userId)}
+            style={{ ...cellStyle, cursor: canCopyNext ? 'pointer' : 'default' }}
+            onClick={canCopyNext ? () => copyValue(key, nextUser[key], currentUser.userId) : undefined}
           >
             {uniqueNext.join(', ')}
           </td>
@@ -147,7 +167,6 @@ export const btnCompare = (
       );
     }).filter(Boolean);
 
-    setShowInfoModal('compareCards');
     setCompare(
       <div style={{ fontSize: '10px', fontFamily: 'Arial, sans-serif' }}>
         <table border="1" cellSpacing="0" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>

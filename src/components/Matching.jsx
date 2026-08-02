@@ -1381,6 +1381,9 @@ const Matching = () => {
   const defaultListKey = `default:${collectionSource}`;
   const [filterResetToken, setFilterResetToken] = useState(0);
   const [comments, setComments] = useState({});
+  const commentsRef = useRef(comments);
+  commentsRef.current = comments;
+  const dispatchedCommentSaveRef = useRef(null);
   const [sharedComments, setSharedComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -1388,9 +1391,16 @@ const Matching = () => {
   useEffect(() => {
     const syncCopiedComment = event => {
       if (event.detail?.ownerId !== ownerId || !event.detail?.cardId) return;
+      const eventText = String(event.detail.text || '');
+      const dispatchedSave = dispatchedCommentSaveRef.current;
+      if (
+        dispatchedSave?.cardId === event.detail.cardId
+        && dispatchedSave.text === eventText
+        && commentsRef.current[event.detail.cardId] !== eventText
+      ) return;
       setComments(previous => ({
         ...previous,
-        [event.detail.cardId]: String(event.detail.text || ''),
+        [event.detail.cardId]: eventText,
       }));
     };
     window.addEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
@@ -5881,6 +5891,7 @@ const Matching = () => {
                       commentValue={comments[user.userId] || ''}
                       sharedCommentTexts={sharedComments[user.userId] || []}
                       onCommentChange={val => {
+                        commentsRef.current = { ...commentsRef.current, [user.userId]: val };
                         setComments(prev => ({ ...prev, [user.userId]: val }));
                       }}
                       onCommentBlur={async () => {
@@ -5888,8 +5899,11 @@ const Matching = () => {
                           const text = comments[user.userId] || '';
                           try {
                             const res = await saveMyCardComment(user.userId, text, ownerId);
+                            dispatchedCommentSaveRef.current = { cardId: user.userId, text };
                             setLocalComment(ownerId, user.userId, text, res?.lastAction);
+                            dispatchedCommentSaveRef.current = null;
                           } catch (error) {
+                            dispatchedCommentSaveRef.current = null;
                             const details = error?.message || String(error);
                             toast.error(`Не вдалося зберегти коментар: ${details}`);
                           }
