@@ -110,6 +110,8 @@ describe('spec: a layoutV2 fieldLine shares one toolbar across its label and its
     // The label's own alignment and the value's own alignment stay two distinct controls (they
     // write two different style overrides) - the only pair that isn't merged into one.
     expect(within(wifeBlock).getAllByLabelText(/Вирівнювання/)).toHaveLength(2);
+    expect(within(wifeBlock).getByText('Label')).toBeVisible();
+    expect(within(wifeBlock).getByText('Value')).toBeVisible();
     expect(within(wifeBlock).getByTitle('Field line formatting - font size (pt) and condition; empty = inherit/always shown')).toBeInTheDocument();
     expect(within(wifeBlock).getByTitle('Remove this field line')).toBeInTheDocument();
 
@@ -131,23 +133,28 @@ describe('spec: a layoutV2 fieldLine shares one toolbar across its label and its
     openFieldLineTemplateMode(wifeBlock);
     expect(within(contentRow).getByPlaceholderText('Label before the underlined value, e.g. «дружина»')).toBeInTheDocument();
     expect(within(contentRow).getByPlaceholderText('Field value')).toBeInTheDocument();
+    // The short label consumes only its intrinsic width; the value takes the remaining room.
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(contentRow.firstChild).toHaveStyle({ flex: '0 1 auto', maxWidth: '45%' });
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(contentRow.lastChild).toHaveStyle({ flex: '1 1 0' });
   });
 
-  it('the "+" button inserts a new paragraph after this whole line, never a slot between the label and its value', async () => {
+  it('the "+" button inserts a new paragraph before the whole line, never between its label and value', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [wifeBlock] = await fieldLineBlocks();
-    expect(within(wifeBlock).getByTitle('Insert a new paragraph after this one')).toBeInTheDocument();
-    fireEvent.click(within(wifeBlock).getByTitle('Insert a new paragraph after this one'));
+    expect(within(wifeBlock).getByTitle('Insert a new paragraph above this one')).toBeInTheDocument();
+    fireEvent.click(within(wifeBlock).getByTitle('Insert a new paragraph above this one'));
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
       expect.objectContaining({
         layoutV2: expect.objectContaining({
           blocks: [
-            expect.objectContaining({ label: 'дружина' }),
             expect.objectContaining({ type: 'paragraph', text: '' }),
+            expect.objectContaining({ label: 'дружина' }),
             expect.objectContaining({ type: 'fieldLine', value: 'Кацура Юкако, донор ооцитів' }),
           ],
         }),
