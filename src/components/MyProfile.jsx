@@ -940,6 +940,20 @@ export const MyProfile = () => {
     }
   };
 
+  const hideProfile = async () => {
+    const nextState = { ...stateRef.current, publish: false };
+    stateRef.current = nextState;
+    setState(nextState);
+
+    try {
+      await saveState(nextState, { directFields: ['publish'] });
+      toast.success('Анкету приховано');
+    } catch (error) {
+      console.error('hide profile error', error);
+      toast.error('Не вдалося приховати анкету. Спробуйте ще раз');
+    }
+  };
+
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
@@ -1248,7 +1262,9 @@ export const MyProfile = () => {
     )}
 
     <SubmitWrap>
-      <SubmitBtn type="button" onClick={publishProfile}>Опублікувати анкету</SubmitBtn>
+      <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
+        {state.publish ? 'Приховати анкету' : 'Опублікувати анкету'}
+      </SubmitBtn>
       <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.</p>
     </SubmitWrap>
   </Page>;
