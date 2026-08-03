@@ -1,13 +1,14 @@
 // Real-DOM regression test: a layoutV2 `fieldLine` block (label + underlined value + caption, e.g.
-// "дружина ___ КАЦУРА ЮКАКО, ... р.н.,") used to have no editor at all - the Blocks loop only ever
-// recognized letterhead/paragraph/richParagraph, so a fieldLine's `value` (its only templated
-// content) silently never showed up in the builder even though it printed in the real PDF/DOCX (a
-// case in point: the surrogate mother's own name/birth-date line on the genetic affinity
-// certificate). Both its value AND its label (a fully independent field slot, e.g. bold-in-part
-// "**та**/або сперматозоїди") now share the exact same T/B/I/insert-variable/align toolbar every
-// other paragraph has - this locks that in. The label toolbar in particular fixes a real bug: it
-// used to be a bare, unformattable text input, so selecting text in it and pressing Bold always
-// failed with "Select some text first" (the toolbar only ever tracked the value field's selection).
+// "дружина ___ КАЦУРА ЮКАКО, ... р.н.,") shares ONE T/B/I/insert-variable toolbar and mode toggle
+// across both its label and its value (previously two fully independent toolbars, stacked on top of
+// each other, one per field) - a reported source of confusion: the "У лікувальній програмі ДРТ
+// використано яйцеклітини" label and its {{oocyteSourceDisplay}} value looked like two disconnected
+// blocks with two different sets of controls, even though they render as one line in the actual
+// certificate. Bold/Italic/insert-variable already acted on whichever field held the browser
+// selection (activeFieldRef) regardless of which copy of the button was pressed, so merging them
+// into one shared button changes nothing about what they can do - only Align keeps two buttons,
+// since a label's alignment and its value's alignment really do resolve to two different style
+// overrides (styleOverrides.align vs valueStyleOverrides.align).
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -86,53 +87,82 @@ beforeEach(() => {
 });
 
 // Each fieldLine row always has exactly one "Remove this field line" button, whether or not it
-// carries a label - a stable per-block anchor, unlike the mode-cycle buttons (one or two per
-// block depending on whether a label is present).
+// carries a label - a stable per-block anchor.
 const fieldLineBlocks = async () => {
   const removeButtons = await screen.findAllByTitle('Remove this field line');
   // eslint-disable-next-line testing-library/no-node-access
   return removeButtons.map(button => button.closest('.paragraph-editor-block'));
 };
 
-// The value's own toolbar/field always renders before the label's (see the JSX order in
-// DocumentsPage) - so among a block's Text-mode buttons, the first is always the value's, the last
-// (when a label exists at all) is the label's.
-const openValueTemplateMode = block => fireEvent.click(within(block).getAllByTitle(TEXT_MODE_TITLE)[0]);
-const openLabelTemplateMode = block => {
-  const buttons = within(block).getAllByTitle(TEXT_MODE_TITLE);
-  fireEvent.click(buttons[buttons.length - 1]);
-};
+// One shared mode toggle now drives both the label and the value at once.
+const openFieldLineTemplateMode = block => fireEvent.click(within(block).getByTitle(TEXT_MODE_TITLE));
 
-describe('spec: a layoutV2 fieldLine value gets the full standard paragraph toolbar', () => {
-  it('has the same T/B/I/insert-variable/align/settings/delete buttons a paragraph block has', async () => {
+describe('spec: a layoutV2 fieldLine shares one toolbar across its label and its value', () => {
+  it('has exactly one T/B/I/insert-variable button whether or not the block carries a label', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [wifeBlock, surrogateBlock] = await fieldLineBlocks();
-    // wifeBlock has a label too, so its own toolbar's controls are duplicated (value + label) -
-    // surrogateBlock has none, so its value's toolbar is the only one.
-    expect(within(wifeBlock).getAllByTitle(TEXT_MODE_TITLE)).toHaveLength(2);
-    expect(within(wifeBlock).getAllByTitle('Bold the selected text')).toHaveLength(2);
-    expect(within(wifeBlock).getAllByTitle('Italicize the selected text')).toHaveLength(2);
-    expect(within(wifeBlock).getAllByTitle('Insert a variable')).toHaveLength(2);
+    expect(within(wifeBlock).getByTitle(TEXT_MODE_TITLE)).toBeInTheDocument();
+    expect(within(wifeBlock).getByTitle('Bold the selected text')).toBeInTheDocument();
+    expect(within(wifeBlock).getByTitle('Italicize the selected text')).toBeInTheDocument();
+    expect(within(wifeBlock).getByTitle('Insert a variable')).toBeInTheDocument();
+    // The label's own alignment and the value's own alignment stay two distinct controls (they
+    // write two different style overrides) - the only pair that isn't merged into one.
     expect(within(wifeBlock).getAllByLabelText(/Вирівнювання/)).toHaveLength(2);
-    // Only the value gets a settings popover (font size + condition) and a delete button - one
-    // each, never duplicated for the label.
     expect(within(wifeBlock).getByTitle('Field line formatting - font size (pt) and condition; empty = inherit/always shown')).toBeInTheDocument();
     expect(within(wifeBlock).getByTitle('Remove this field line')).toBeInTheDocument();
 
-    expect(within(surrogateBlock).getAllByTitle(TEXT_MODE_TITLE)).toHaveLength(1);
-    expect(within(surrogateBlock).getAllByTitle('Bold the selected text')).toHaveLength(1);
+    expect(within(surrogateBlock).getByTitle(TEXT_MODE_TITLE)).toBeInTheDocument();
+    expect(within(surrogateBlock).getByTitle('Bold the selected text')).toBeInTheDocument();
+    // No label on this block, so only the value's Align button shows up.
+    expect(within(surrogateBlock).getAllByLabelText(/Вирівнювання/)).toHaveLength(1);
     expect(within(surrogateBlock).queryByPlaceholderText(/Label before the underlined value/)).not.toBeInTheDocument();
   });
 
-  it('switching to Template mode shows the raw {{}} markup for the value, editable like any other paragraph', async () => {
+  it('the label and value fields render side by side inside one shared row, not stacked as separate blocks', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [wifeBlock] = await fieldLineBlocks();
-    openValueTemplateMode(wifeBlock);
+    // eslint-disable-next-line testing-library/no-node-access
+    const contentRow = wifeBlock.querySelector('.field-line-content-row');
+    expect(contentRow).toBeInTheDocument();
+    openFieldLineTemplateMode(wifeBlock);
+    expect(within(contentRow).getByPlaceholderText('Label before the underlined value, e.g. «дружина»')).toBeInTheDocument();
+    expect(within(contentRow).getByPlaceholderText('Field value')).toBeInTheDocument();
+  });
+
+  it('the "+" button inserts a new paragraph after this whole line, never a slot between the label and its value', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [wifeBlock] = await fieldLineBlocks();
+    expect(within(wifeBlock).getByTitle('Insert a new paragraph after this one')).toBeInTheDocument();
+    fireEvent.click(within(wifeBlock).getByTitle('Insert a new paragraph after this one'));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({ label: 'дружина' }),
+            expect.objectContaining({ type: 'paragraph', text: '' }),
+            expect.objectContaining({ type: 'fieldLine', value: 'Кацура Юкако, донор ооцитів' }),
+          ],
+        }),
+      }),
+    ));
+  });
+
+  it('switching the shared mode to Template shows the raw {{}} markup for both the value and the label', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [wifeBlock] = await fieldLineBlocks();
+    openFieldLineTemplateMode(wifeBlock);
     expect(within(wifeBlock).getByPlaceholderText('Field value')).toHaveValue('{{wife.name.uk.nominative}}, {{wife.birthDate}} р.н.,');
+    expect(within(wifeBlock).getByPlaceholderText('Label before the underlined value, e.g. «дружина»')).toHaveValue('дружина');
   });
 
   it('editing the value in Template mode persists straight to layoutV2.blocks[index].value on blur', async () => {
@@ -140,7 +170,7 @@ describe('spec: a layoutV2 fieldLine value gets the full standard paragraph tool
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [, surrogateBlock] = await fieldLineBlocks();
-    openValueTemplateMode(surrogateBlock);
+    openFieldLineTemplateMode(surrogateBlock);
     const valueField = within(surrogateBlock).getByPlaceholderText('Field value');
     fireEvent.change(valueField, { target: { value: '{{surrogateMother.name.uk.nominative}}' } });
     fireEvent.blur(valueField);
@@ -158,12 +188,35 @@ describe('spec: a layoutV2 fieldLine value gets the full standard paragraph tool
     ));
   });
 
-  it('Bold on a selected fragment of the value produces valueRuns, still tagged fieldLine, never converted to a paragraph', async () => {
+  it('editing the label in Template mode persists straight to layoutV2.blocks[index].label on blur', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [wifeBlock] = await fieldLineBlocks();
+    openFieldLineTemplateMode(wifeBlock);
+    const labelField = within(wifeBlock).getByPlaceholderText('Label before the underlined value, e.g. «дружина»');
+    fireEvent.change(labelField, { target: { value: 'та дружина' } });
+    fireEvent.blur(labelField);
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({ label: 'та дружина' }),
+            expect.anything(),
+          ],
+        }),
+      }),
+    ));
+  });
+
+  it('Bold on a selected fragment of the value produces valueRuns via the one shared Bold button, still tagged fieldLine', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [, surrogateBlock] = await fieldLineBlocks();
-    openValueTemplateMode(surrogateBlock);
+    openFieldLineTemplateMode(surrogateBlock);
     const valueField = within(surrogateBlock).getByPlaceholderText('Field value');
     fireEvent.focus(valueField);
     // "Кацура Юкако, донор ооцитів" - bold just "Кацура Юкако" (the first 12 characters).
@@ -185,6 +238,39 @@ describe('spec: a layoutV2 fieldLine value gets the full standard paragraph tool
                 { text: ', донор ооцитів', style: undefined },
               ],
             }),
+          ],
+        }),
+      }),
+    ));
+  });
+
+  it('Bold on a selected fragment of the label actually works via the same shared Bold button (the reported bug: it always failed with "Select some text first")', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [wifeBlock] = await fieldLineBlocks();
+    openFieldLineTemplateMode(wifeBlock);
+    const labelField = within(wifeBlock).getByPlaceholderText('Label before the underlined value, e.g. «дружина»');
+    fireEvent.focus(labelField);
+    // "дружина" - bold just "друж" (the first 4 characters).
+    labelField.setSelectionRange(0, 4);
+
+    fireEvent.click(within(wifeBlock).getByTitle('Bold the selected text'));
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({
+              type: 'fieldLine',
+              label: 'дружина',
+              labelRuns: [
+                { text: 'друж', style: 'inlineEmphasis' },
+                { text: 'ина', style: undefined },
+              ],
+            }),
+            expect.anything(),
           ],
         }),
       }),
@@ -215,13 +301,36 @@ describe('spec: a layoutV2 fieldLine value gets the full standard paragraph tool
     ));
   });
 
-  it('cycling the value\'s Align writes valueStyleOverrides.align, never the label\'s styleOverrides', async () => {
+  it('cycling the label\'s Align (the first of the two buttons) writes styleOverrides.align, never valueStyleOverrides', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [wifeBlock] = await fieldLineBlocks();
-    // The value's Align button is the first of the two (value's toolbar renders before the label's).
-    fireEvent.click(within(wifeBlock).getAllByLabelText(/Вирівнювання/)[0]);
+    const alignButtons = within(wifeBlock).getAllByLabelText(/Вирівнювання/);
+    fireEvent.click(alignButtons[0]);
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        layoutV2: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({ styleOverrides: expect.objectContaining({ align: expect.any(String) }) }),
+            expect.anything(),
+          ],
+        }),
+      }),
+    ));
+    const [, persistedTemplate] = set.mock.calls.find(call => call[0] === 'documentsBuilder/templates/doc-1');
+    expect(persistedTemplate.layoutV2.blocks[0].valueStyleOverrides).toBeUndefined();
+  });
+
+  it('cycling the value\'s Align (the second of the two buttons) writes valueStyleOverrides.align, never styleOverrides', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [wifeBlock] = await fieldLineBlocks();
+    const alignButtons = within(wifeBlock).getAllByLabelText(/Вирівнювання/);
+    fireEvent.click(alignButtons[alignButtons.length - 1]);
 
     await waitFor(() => expect(set).toHaveBeenCalledWith(
       'documentsBuilder/templates/doc-1',
@@ -239,107 +348,10 @@ describe('spec: a layoutV2 fieldLine value gets the full standard paragraph tool
   });
 });
 
-describe('spec: a fieldLine label gets its own independent T/B/I/insert-variable/align toolbar', () => {
-  it('switching to Template mode shows the raw label markup, independent of the value', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
-    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-
-    const [wifeBlock] = await fieldLineBlocks();
-    openLabelTemplateMode(wifeBlock);
-    expect(within(wifeBlock).getByPlaceholderText('Label before the underlined value, e.g. «дружина»')).toHaveValue('дружина');
-    // The value field is untouched, still whatever mode it defaulted to (Text) - not switched
-    // along with the label.
-    expect(within(wifeBlock).queryByPlaceholderText('Field value')).not.toBeInTheDocument();
-  });
-
-  it('editing the label in Template mode persists straight to layoutV2.blocks[index].label on blur', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
-    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-
-    const [wifeBlock] = await fieldLineBlocks();
-    openLabelTemplateMode(wifeBlock);
-    const labelField = within(wifeBlock).getByPlaceholderText('Label before the underlined value, e.g. «дружина»');
-    fireEvent.change(labelField, { target: { value: 'та дружина' } });
-    fireEvent.blur(labelField);
-
-    await waitFor(() => expect(set).toHaveBeenCalledWith(
-      'documentsBuilder/templates/doc-1',
-      expect.objectContaining({
-        layoutV2: expect.objectContaining({
-          blocks: [
-            expect.objectContaining({ label: 'та дружина' }),
-            expect.anything(),
-          ],
-        }),
-      }),
-    ));
-  });
-
-  it('Bold on a selected fragment of the label actually works (the reported bug: it always failed with "Select some text first")', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
-    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-
-    const [wifeBlock] = await fieldLineBlocks();
-    openLabelTemplateMode(wifeBlock);
-    const labelField = within(wifeBlock).getByPlaceholderText('Label before the underlined value, e.g. «дружина»');
-    fireEvent.focus(labelField);
-    // "дружина" - bold just "друж" (the first 4 characters).
-    labelField.setSelectionRange(0, 4);
-
-    // The label's own Bold button is the last of the two (value's toolbar renders first).
-    const boldButtons = within(wifeBlock).getAllByTitle('Bold the selected text');
-    fireEvent.click(boldButtons[boldButtons.length - 1]);
-
-    await waitFor(() => expect(set).toHaveBeenCalledWith(
-      'documentsBuilder/templates/doc-1',
-      expect.objectContaining({
-        layoutV2: expect.objectContaining({
-          blocks: [
-            expect.objectContaining({
-              type: 'fieldLine',
-              label: 'дружина',
-              labelRuns: [
-                { text: 'друж', style: 'inlineEmphasis' },
-                { text: 'ина', style: undefined },
-              ],
-            }),
-            expect.anything(),
-          ],
-        }),
-      }),
-    ));
-  });
-
-  it('cycling the label\'s Align writes styleOverrides.align (the same pair an ordinary paragraph uses), never valueStyleOverrides', async () => {
-    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
-    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
-
-    const [wifeBlock] = await fieldLineBlocks();
-    // The label's Align button is the second of the two.
-    const alignButtons = within(wifeBlock).getAllByLabelText(/Вирівнювання/);
-    fireEvent.click(alignButtons[alignButtons.length - 1]);
-
-    await waitFor(() => expect(set).toHaveBeenCalledWith(
-      'documentsBuilder/templates/doc-1',
-      expect.objectContaining({
-        layoutV2: expect.objectContaining({
-          blocks: [
-            expect.objectContaining({ styleOverrides: expect.objectContaining({ align: expect.any(String) }) }),
-            expect.anything(),
-          ],
-        }),
-      }),
-    ));
-    const [, persistedTemplate] = set.mock.calls.find(call => call[0] === 'documentsBuilder/templates/doc-1');
-    expect(persistedTemplate.layoutV2.blocks[0].valueStyleOverrides).toBeUndefined();
-  });
-});
-
 // A fieldLine block can carry a bold-in-part `labelRuns` (e.g. bold "та" + "/або сперматозоїди")
-// instead of a plain `label` string - before this fix, that meant `block.label !== undefined` was
-// false, so the label field never rendered at all, and with an unset/blank `value` too the whole
-// row looked like a totally empty, unreachable block in the builder (exactly what a user reported
-// seeing between the "яйцеклітини" fieldLine and "Перенесення ембріона...").
+// instead of a plain `label` string - before an earlier fix, that meant `block.label !== undefined`
+// was false, so the label field never rendered at all, and with an unset/blank `value` too the whole
+// row looked like a totally empty, unreachable block in the builder.
 describe('spec: a fieldLine with labelRuns (not plain label) is still visible/editable, never a blank block', () => {
   beforeEach(() => {
     get.mockImplementation(async path => {
@@ -380,7 +392,7 @@ describe('spec: a fieldLine with labelRuns (not plain label) is still visible/ed
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [block] = await fieldLineBlocks();
-    openLabelTemplateMode(block);
+    openFieldLineTemplateMode(block);
     expect(within(block).getByPlaceholderText('Label before the underlined value, e.g. «дружина»')).toHaveValue('**та**/або сперматозоїди');
   });
 
@@ -389,7 +401,7 @@ describe('spec: a fieldLine with labelRuns (not plain label) is still visible/ed
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
     const [block] = await fieldLineBlocks();
-    openLabelTemplateMode(block);
+    openFieldLineTemplateMode(block);
     const labelField = within(block).getByPlaceholderText('Label before the underlined value, e.g. «дружина»');
     fireEvent.change(labelField, { target: { value: 'сперматозоїди' } });
     fireEvent.blur(labelField);

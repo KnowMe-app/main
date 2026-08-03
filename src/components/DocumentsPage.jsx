@@ -506,18 +506,6 @@ const ParagraphControlsRow = styled.div`
   margin-bottom: 4px;
 `;
 
-// A fieldLine's label and value toolbars share the same five icons (mode/Bold/Italic/insert-var/
-// align), stacked directly on top of each other - this tiny tag is the only thing telling them
-// apart at a glance, so it's never ambiguous which row a button acts on.
-const FieldSlotTag = styled.span`
-  color: var(--km-muted);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  white-space: nowrap;
-  margin-right: 2px;
-`;
-
 // Encloses one editable row's controls (Bold/Italic/Insert-variable, Insert/Remove for paragraphs)
 // together with its own text, in one visible border - so which row a button acts on is never
 // ambiguous, regardless of whether the two-column ParagraphPair below would otherwise draw its own
@@ -540,6 +528,17 @@ const ParagraphFieldColumn = styled.div`
   display: flex;
   flex-direction: column;
   gap: 2px;
+`;
+
+// A fieldLine's label and its value now sit side by side on one visual line (e.g. "У лікувальній
+// програмі ДРТ використано яйцеклітини" immediately followed by the underlined value) instead of
+// stacked on separate rows with a gap between them, which used to read as two disconnected
+// paragraphs. Wraps on narrow screens rather than overflowing.
+const FieldLineContentRow = styled.div.attrs({ className: 'field-line-content-row' })`
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 `;
 
 // Text mode's live display (spec batch 21 §2/§9): renders the resolved text with bold/italic
@@ -986,14 +985,18 @@ const ALIGN_ICONS = {
   left: FaAlignLeft, center: FaAlignCenter, right: FaAlignRight, justify: FaAlignJustify,
 };
 
-const AlignCycleButton = ({ align, onCycle }) => {
+// `label` optionally distinguishes two Align buttons sitting in the same toolbar (a fieldLine's
+// label vs its value each keep their own alignment) - omitted everywhere else, unchanged from
+// before.
+const AlignCycleButton = ({ align, onCycle, label }) => {
   const Icon = ALIGN_ICONS[align] || FaAlignLeft;
+  const suffix = label ? ` (${label})` : '';
   return (
     <SmallButton
       type="button"
       onClick={onCycle}
-      aria-label={`Вирівнювання: ${align}`}
-      title={`Alignment: ${align}. Tap to cycle Left → Center → Right → Justify.`}
+      aria-label={`Вирівнювання${suffix}: ${align}`}
+      title={`Alignment${suffix}: ${align}. Tap to cycle Left → Center → Right → Justify.`}
     >
       <Icon />
     </SmallButton>
@@ -3443,20 +3446,34 @@ const DocumentsPage = ({ isAdmin }) => {
                                 });
                               }
                               if (block?.type === 'fieldLine') {
-                                // The exact same toolbar/mode-cycle system every other paragraph
-                                // uses (T/B/I/insert-variable/align/format/delete), just pointed at
-                                // this block's `value` instead of `text` - layoutV2ParagraphRuns/
-                                // FromMarkup and the Bold/Italic toggles (documentsCatalogUtils)
-                                // already understand a fieldLine's value/valueRuns the same way
-                                // they understand a paragraph's text/runs, so this reuses the whole
-                                // existing editor rather than a second, plainer one. Only Align and
-                                // the popover's font size differ - they read/write the value's own
-                                // valueStyle(Overrides), never the label's style(Overrides).
+                                // The label and value used to each carry their own independent
+                                // T/B/I/insert-variable/align toolbar, stacked as two separate rows
+                                // above two separate stacked fields - correct, but it read as two
+                                // disconnected paragraphs with two different sets of controls
+                                // (reported: "У лікувальній програмі ДРТ використано яйцеклітини" and
+                                // its {{oocyteSourceDisplay}} value looked like unrelated blocks).
+                                // Bold/Italic/insert-variable already act on whichever field currently
+                                // holds the selection (activeFieldRef, see formatButtonProps/
+                                // openVariablePicker above) regardless of which copy of the button was
+                                // pressed, so duplicating them per field never bought any extra
+                                // capability - only one shared mode/Bold/Italic/insert-variable now
+                                // drives both fields at once. Align stays two buttons (label vs value
+                                // genuinely resolve to different style overrides,
+                                // styleOverrides.align vs valueStyleOverrides.align - see
+                                // handleCycleLayoutV2Align/handleCycleLayoutV2FieldLineValueAlign),
+                                // just placed in the one shared row instead of two.
                                 const scope = layoutV2Scope(blockIndex);
+                                const hasLabel = hasLayoutV2FieldLineLabel(block);
+                                const labelScope = layoutV2LabelScope(blockIndex);
                                 const mode = getParagraphMode(template.id, scope);
                                 const isTemplateMode = mode === 'template';
                                 const isInputMode = mode === 'input';
                                 const isTextMode = mode === 'text';
+                                const setSharedMode = nextMode => {
+                                  setParagraphModeFor(template.id, scope, nextMode);
+                                  if (hasLabel) setParagraphModeFor(template.id, labelScope, nextMode);
+                                };
+                                const fieldKind = isTemplateMode ? 'template' : 'input-plain';
                                 const rawValue = langKey => getTemplateScopeText(template, scope, langKey);
                                 const resolvedValue = langKey => fillPlaceholders(rawValue(langKey), getContextForTemplate(template.id), langKey);
                                 const displayValue = langKey => (isTemplateMode ? rawValue(langKey) : plainTextOf(resolvedValue(langKey)));
@@ -3467,43 +3484,34 @@ const DocumentsPage = ({ isAdmin }) => {
                                   handleTemplateScopeChange(template.id, scope, langKey, nextRaw);
                                 };
                                 const onBlur = () => persistTemplate(template.id);
-                                const fieldKind = isTemplateMode ? 'template' : 'input-plain';
-                                // The label is a second, fully independent field slot on the same
-                                // block (layoutV2LabelScope) - its own mode/toolbar state, never
-                                // shared with the value's above.
-                                const hasLabel = hasLayoutV2FieldLineLabel(block);
-                                const labelScope = layoutV2LabelScope(blockIndex);
-                                const labelMode = getParagraphMode(template.id, labelScope);
-                                const isLabelTemplateMode = labelMode === 'template';
-                                const isLabelInputMode = labelMode === 'input';
-                                const isLabelTextMode = labelMode === 'text';
                                 const rawLabelValue = langKey => getTemplateScopeText(template, labelScope, langKey);
                                 const resolvedLabelValue = langKey => fillPlaceholders(rawLabelValue(langKey), getContextForTemplate(template.id), langKey);
-                                const displayLabelValue = langKey => (isLabelTemplateMode ? rawLabelValue(langKey) : plainTextOf(resolvedLabelValue(langKey)));
+                                const displayLabelValue = langKey => (isTemplateMode ? rawLabelValue(langKey) : plainTextOf(resolvedLabelValue(langKey)));
                                 const onLabelChange = langKey => event => {
-                                  const nextRaw = isLabelTemplateMode
+                                  const nextRaw = isTemplateMode
                                     ? event.target.value
                                     : applyResolvedTextEdit(rawLabelValue(langKey), getContextForTemplate(template.id), langKey, event.target.value);
                                   handleTemplateScopeChange(template.id, labelScope, langKey, nextRaw);
                                 };
                                 const onLabelBlur = () => persistTemplate(template.id);
-                                const labelFieldKind = isLabelTemplateMode ? 'template' : 'input-plain';
                                 return (
                                   // eslint-disable-next-line react/no-array-index-key
                                   <ParagraphEditorBlock key={`${template.id}-lv2-fieldline-${blockIndex}`}>
                                     <ParagraphControlsRow>
+                                      {/* Adds the next paragraph below this whole label+value line -
+                                          never a separate insertion point between the label and its
+                                          own value, since together they're one line, not two. */}
                                       <SmallButton
                                         type="button"
-                                        onClick={() => handleInsertLayoutV2Paragraph(template.id, blockIndex)}
-                                        title="Insert a new paragraph above this one"
+                                        onClick={() => handleInsertLayoutV2Paragraph(template.id, blockIndex + 1)}
+                                        title="Insert a new paragraph after this one"
                                       >
                                         <FaPlus />
                                       </SmallButton>
                                       <RowLine style={{ gap: 6 }}>
-                                        {hasLabel ? <FieldSlotTag>Value</FieldSlotTag> : null}
                                         <SmallButton
                                           type="button"
-                                          onClick={() => setParagraphModeFor(template.id, scope, nextParagraphMode(mode))}
+                                          onClick={() => setSharedMode(nextParagraphMode(mode))}
                                           title={PARAGRAPH_MODE_TITLE[mode]}
                                         >
                                           {PARAGRAPH_MODE_ICON[mode]}
@@ -3533,9 +3541,17 @@ const DocumentsPage = ({ isAdmin }) => {
                                         >
                                           <FaCode />
                                         </SmallButton>
+                                        {hasLabel ? (
+                                          <AlignCycleButton
+                                            align={getEffectiveLayoutV2BlockAlign(template, block)}
+                                            onCycle={() => handleCycleLayoutV2Align(template.id, blockIndex)}
+                                            label="label"
+                                          />
+                                        ) : null}
                                         <AlignCycleButton
                                           align={getEffectiveLayoutV2FieldLineValueAlign(template, block)}
                                           onCycle={() => handleCycleLayoutV2FieldLineValueAlign(template.id, blockIndex)}
+                                          label={hasLabel ? 'value' : undefined}
                                         />
                                         <FormatPopoverButton
                                           open={openFormatKey === formatPopoverKey(template.id, scope)}
@@ -3571,77 +3587,30 @@ const DocumentsPage = ({ isAdmin }) => {
                                         </DangerButton>
                                       </RowLine>
                                     </ParagraphControlsRow>
-                                    {/* The label sits to the left of the underlined value (e.g.
-                                        "дружина", or bold "та" followed by "/або сперматозоїди") -
-                                        present on some fieldLine blocks, absent on others (the
-                                        surrogate mother's own line has none at all). Its own full
-                                        T/B/I/insert-variable/align toolbar, exactly like the value's
-                                        below - layoutV2LabelMarkup/FromMarkup (documentsCatalogUtils)
-                                        give it the same working Bold/Italic a bare text input never
-                                        could (the bug this fixes: bolding text here previously always
-                                        failed with "Select some text first", since the toolbar only
-                                        ever tracked the value field's selection, never this one's). */}
-                                    {hasLabel ? (
-                                      <>
-                                        <ParagraphControlsRow>
-                                          <RowLine style={{ gap: 6 }}>
-                                            <FieldSlotTag>Label</FieldSlotTag>
-                                            <SmallButton
-                                              type="button"
-                                              onClick={() => setParagraphModeFor(template.id, labelScope, nextParagraphMode(labelMode))}
-                                              title={PARAGRAPH_MODE_TITLE[labelMode]}
-                                            >
-                                              {PARAGRAPH_MODE_ICON[labelMode]}
-                                            </SmallButton>
-                                            <SmallButton
-                                              type="button"
-                                              disabled={isLabelInputMode}
-                                              {...formatButtonProps('bold')}
-                                              title="Bold the selected text"
-                                            >
-                                              <FaBold />
-                                            </SmallButton>
-                                            <SmallButton
-                                              type="button"
-                                              disabled={isLabelInputMode}
-                                              {...formatButtonProps('italic')}
-                                              title="Italicize the selected text"
-                                            >
-                                              <FaItalic />
-                                            </SmallButton>
-                                            <SmallButton
-                                              type="button"
-                                              disabled={!isLabelTemplateMode}
-                                              onMouseDown={preventSelectionLoss}
-                                              onClick={openVariablePicker}
-                                              title="Insert a variable"
-                                            >
-                                              <FaCode />
-                                            </SmallButton>
-                                            <AlignCycleButton
-                                              align={getEffectiveLayoutV2BlockAlign(template, block)}
-                                              onCycle={() => handleCycleLayoutV2Align(template.id, blockIndex)}
-                                            />
-                                          </RowLine>
-                                        </ParagraphControlsRow>
-                                        <ParagraphFieldColumn style={{ marginBottom: 6 }}>
-                                          {isLabelTextMode || (isLabelInputMode && activeFieldKey !== fieldKey(template.id, labelScope, layoutV2Lang)) ? (
+                                    {/* The label sits to the left of the underlined value on the same
+                                        line (e.g. "дружина", or bold "та" followed by "/або
+                                        сперматозоїди") - present on some fieldLine blocks, absent on
+                                        others (the surrogate mother's own line has none at all). */}
+                                    <FieldLineContentRow>
+                                      {hasLabel ? (
+                                        <ParagraphFieldColumn style={{ flex: '1 1 45%', minWidth: 110 }}>
+                                          {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, labelScope, layoutV2Lang)) ? (
                                             <TextModeDisplay
                                               ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
-                                              onMouseUp={isLabelTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
-                                              onTouchEnd={isLabelTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
-                                              onMouseDown={isLabelInputMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, labelFieldKind) : undefined}
-                                              title={isLabelInputMode ? 'Click to edit the wording' : undefined}
+                                              onMouseUp={isTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
+                                              onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
+                                              onMouseDown={isInputMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind) : undefined}
+                                              title={isInputMode ? 'Click to edit the wording' : undefined}
                                             >
                                               <FormattedRunsPreview text={resolvedLabelValue(layoutV2Lang)} />
                                             </TextModeDisplay>
-                                          ) : isLabelInputMode ? (
+                                          ) : isInputMode ? (
                                             <RichResolvedTextField
                                               ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
                                               initialText={resolvedLabelValue(layoutV2Lang)}
                                               placeholder="Label before the underlined value, e.g. «дружина»"
                                               onPlainTextChange={nextPlain => onLabelChange(layoutV2Lang)({ target: { value: nextPlain } })}
-                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, labelFieldKind)}
+                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind)}
                                               onBlur={onLabelBlur}
                                             />
                                           ) : (
@@ -3649,45 +3618,45 @@ const DocumentsPage = ({ isAdmin }) => {
                                               ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
                                               value={displayLabelValue(layoutV2Lang)}
                                               placeholder="Label before the underlined value, e.g. «дружина»"
-                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, labelFieldKind)}
+                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind)}
                                               onChange={onLabelChange(layoutV2Lang)}
                                               onBlur={onLabelBlur}
                                             />
                                           )}
                                         </ParagraphFieldColumn>
-                                      </>
-                                    ) : null}
-                                    <ParagraphFieldColumn>
-                                      {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
-                                        <TextModeDisplay
-                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
-                                          onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
-                                          onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
-                                          onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind) : undefined}
-                                          title={isInputMode ? 'Click to edit the wording' : undefined}
-                                        >
-                                          <FormattedRunsPreview text={resolvedValue(layoutV2Lang)} />
-                                        </TextModeDisplay>
-                                      ) : isInputMode ? (
-                                        <RichResolvedTextField
-                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
-                                          initialText={resolvedValue(layoutV2Lang)}
-                                          placeholder="Field value"
-                                          onPlainTextChange={nextPlain => onChange(layoutV2Lang)({ target: { value: nextPlain } })}
-                                          onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
-                                          onBlur={onBlur}
-                                        />
-                                      ) : (
-                                        <AutoInlineTextarea
-                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
-                                          value={displayValue(layoutV2Lang)}
-                                          placeholder="Field value"
-                                          onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
-                                          onChange={onChange(layoutV2Lang)}
-                                          onBlur={onBlur}
-                                        />
-                                      )}
-                                    </ParagraphFieldColumn>
+                                      ) : null}
+                                      <ParagraphFieldColumn style={{ flex: '1 1 45%', minWidth: 110 }}>
+                                        {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
+                                          <TextModeDisplay
+                                            ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                            onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                            onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                            onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind) : undefined}
+                                            title={isInputMode ? 'Click to edit the wording' : undefined}
+                                          >
+                                            <FormattedRunsPreview text={resolvedValue(layoutV2Lang)} />
+                                          </TextModeDisplay>
+                                        ) : isInputMode ? (
+                                          <RichResolvedTextField
+                                            ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                            initialText={resolvedValue(layoutV2Lang)}
+                                            placeholder="Field value"
+                                            onPlainTextChange={nextPlain => onChange(layoutV2Lang)({ target: { value: nextPlain } })}
+                                            onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                            onBlur={onBlur}
+                                          />
+                                        ) : (
+                                          <AutoInlineTextarea
+                                            ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                            value={displayValue(layoutV2Lang)}
+                                            placeholder="Field value"
+                                            onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                            onChange={onChange(layoutV2Lang)}
+                                            onBlur={onBlur}
+                                          />
+                                        )}
+                                      </ParagraphFieldColumn>
+                                    </FieldLineContentRow>
                                   </ParagraphEditorBlock>
                                 );
                               }
