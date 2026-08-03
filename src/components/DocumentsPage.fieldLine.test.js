@@ -122,7 +122,7 @@ describe('spec: a layoutV2 fieldLine shares one toolbar across its label and its
     expect(within(surrogateBlock).queryByPlaceholderText(/Label before the underlined value/)).not.toBeInTheDocument();
   });
 
-  it('the label and value fields render side by side inside one shared row, not stacked as separate blocks', async () => {
+  it('the label and value fields render inside one shared row, not stacked as separate blocks', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
@@ -133,11 +133,19 @@ describe('spec: a layoutV2 fieldLine shares one toolbar across its label and its
     openFieldLineTemplateMode(wifeBlock);
     expect(within(contentRow).getByPlaceholderText('Label before the underlined value, e.g. «дружина»')).toBeInTheDocument();
     expect(within(contentRow).getByPlaceholderText('Field value')).toBeInTheDocument();
-    // The short label consumes only its intrinsic width; the value takes the remaining room.
+  });
+
+  it('in the default Text mode, the label and value render `display: inline` so the value flows onto the label\'s last wrapped line instead of sitting in a separate column', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+
+    const [wifeBlock] = await fieldLineBlocks();
     // eslint-disable-next-line testing-library/no-node-access
-    expect(contentRow.firstChild).toHaveStyle({ flex: '0 1 auto', maxWidth: '45%' });
+    const contentRow = wifeBlock.querySelector('.field-line-content-row');
     // eslint-disable-next-line testing-library/no-node-access
-    expect(contentRow.lastChild).toHaveStyle({ flex: '1 1 0' });
+    const inlineFields = contentRow.querySelectorAll('[style*="display: inline"]');
+    // The label and the value are the only two flowing fields on this row.
+    expect(inlineFields).toHaveLength(2);
   });
 
   it('the "+" button inserts a new paragraph before the whole line, never between its label and value', async () => {

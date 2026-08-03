@@ -530,15 +530,16 @@ const ParagraphFieldColumn = styled.div`
   gap: 2px;
 `;
 
-// A fieldLine's label and its value now sit side by side on one visual line (e.g. "У лікувальній
-// програмі ДРТ використано яйцеклітини" immediately followed by the underlined value) instead of
-// stacked on separate rows with a gap between them, which used to read as two disconnected
-// paragraphs. Wraps on narrow screens rather than overflowing.
+// A fieldLine's label and its value now read as one flowing paragraph (e.g. "У лікувальній
+// програмі ДРТ використано яйцеклітини" immediately followed by the value, wrapping together) -
+// a fixed-width flex split used to make a long label wrap inside its own narrow column while the
+// short value sat beside it in a second column, looking like a two-column table instead of text.
+// Plain block flow instead of flex: the Text/Input-mode fields render `display: inline` (see their
+// `style` overrides below) so the value tucks onto the label's last wrapped line exactly like
+// normal inline text; only Template mode (a real `<textarea>`, which can never reflow like text)
+// falls back to one full-width box per field, stacked.
 const FieldLineContentRow = styled.div.attrs({ className: 'field-line-content-row' })`
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
+  line-height: 1.4;
 `;
 
 // Text mode's live display (spec batch 21 §2/§9): renders the resolved text with bold/italic
@@ -600,7 +601,7 @@ const FormattedRunsPreview = ({ text }) => (
 // onChange; Input mode still never reformats via typing here, see handleApplyInlineFormat's
 // input-plain hard-stop).
 const RichResolvedTextField = React.forwardRef(({
-  initialText, placeholder, onPlainTextChange, onFocus, onBlur,
+  initialText, placeholder, onPlainTextChange, onFocus, onBlur, style,
 }, forwardedRef) => {
   const localRef = useRef(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -617,6 +618,7 @@ const RichResolvedTextField = React.forwardRef(({
         if (typeof forwardedRef === 'function') forwardedRef(node);
         else if (forwardedRef) forwardedRef.current = node;
       }}
+      style={style}
       contentEditable
       suppressContentEditableWarning
       data-placeholder={placeholder}
@@ -3593,69 +3595,72 @@ const DocumentsPage = ({ isAdmin }) => {
                                         others (the surrogate mother's own line has none at all). */}
                                     <FieldLineContentRow>
                                       {hasLabel ? (
-                                        <ParagraphFieldColumn style={{ flex: '0 1 auto', minWidth: 0, maxWidth: '45%' }}>
-                                          {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, labelScope, layoutV2Lang)) ? (
-                                            <TextModeDisplay
-                                              ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
-                                              onMouseUp={isTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
-                                              onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
-                                              onMouseDown={isInputMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind) : undefined}
-                                              title={isInputMode ? 'Click to edit the wording' : undefined}
-                                            >
-                                              <FormattedRunsPreview text={resolvedLabelValue(layoutV2Lang)} />
-                                            </TextModeDisplay>
-                                          ) : isInputMode ? (
-                                            <RichResolvedTextField
-                                              ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
-                                              initialText={resolvedLabelValue(layoutV2Lang)}
-                                              placeholder="Label before the underlined value, e.g. «дружина»"
-                                              onPlainTextChange={nextPlain => onLabelChange(layoutV2Lang)({ target: { value: nextPlain } })}
-                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind)}
-                                              onBlur={onLabelBlur}
-                                            />
-                                          ) : (
-                                            <AutoInlineTextarea
-                                              ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
-                                              value={displayLabelValue(layoutV2Lang)}
-                                              placeholder="Label before the underlined value, e.g. «дружина»"
-                                              onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind)}
-                                              onChange={onLabelChange(layoutV2Lang)}
-                                              onBlur={onLabelBlur}
-                                            />
-                                          )}
-                                        </ParagraphFieldColumn>
-                                      ) : null}
-                                      <ParagraphFieldColumn style={{ flex: '1 1 0', minWidth: 110 }}>
-                                        {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
+                                        isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, labelScope, layoutV2Lang)) ? (
                                           <TextModeDisplay
-                                            ref={registerFieldNode(template.id, scope, layoutV2Lang)}
-                                            onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
-                                            onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
-                                            onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind) : undefined}
+                                            ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
+                                            style={{ display: 'inline', width: 'auto' }}
+                                            onMouseUp={isTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
+                                            onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, 'text-display') : undefined}
+                                            onMouseDown={isInputMode ? handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind) : undefined}
                                             title={isInputMode ? 'Click to edit the wording' : undefined}
                                           >
-                                            <FormattedRunsPreview text={resolvedValue(layoutV2Lang)} />
+                                            <FormattedRunsPreview text={resolvedLabelValue(layoutV2Lang)} />
                                           </TextModeDisplay>
                                         ) : isInputMode ? (
                                           <RichResolvedTextField
-                                            ref={registerFieldNode(template.id, scope, layoutV2Lang)}
-                                            initialText={resolvedValue(layoutV2Lang)}
-                                            placeholder="Field value"
-                                            onPlainTextChange={nextPlain => onChange(layoutV2Lang)({ target: { value: nextPlain } })}
-                                            onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
-                                            onBlur={onBlur}
+                                            ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
+                                            style={{ display: 'inline', width: 'auto' }}
+                                            initialText={resolvedLabelValue(layoutV2Lang)}
+                                            placeholder="Label before the underlined value, e.g. «дружина»"
+                                            onPlainTextChange={nextPlain => onLabelChange(layoutV2Lang)({ target: { value: nextPlain } })}
+                                            onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind)}
+                                            onBlur={onLabelBlur}
                                           />
                                         ) : (
                                           <AutoInlineTextarea
-                                            ref={registerFieldNode(template.id, scope, layoutV2Lang)}
-                                            value={displayValue(layoutV2Lang)}
-                                            placeholder="Field value"
-                                            onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
-                                            onChange={onChange(layoutV2Lang)}
-                                            onBlur={onBlur}
+                                            ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
+                                            value={displayLabelValue(layoutV2Lang)}
+                                            placeholder="Label before the underlined value, e.g. «дружина»"
+                                            onFocus={handleRichFieldFocus(template.id, labelScope, layoutV2Lang, fieldKind)}
+                                            onChange={onLabelChange(layoutV2Lang)}
+                                            onBlur={onLabelBlur}
                                           />
-                                        )}
-                                      </ParagraphFieldColumn>
+                                        )
+                                      ) : null}
+                                      {/* A thin space keeps the value from butting straight up against
+                                          the label's last word once they're flowing inline together. */}
+                                      {hasLabel && (isTextMode || isInputMode) ? ' ' : null}
+                                      {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
+                                        <TextModeDisplay
+                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                          style={{ display: 'inline', width: 'auto' }}
+                                          onMouseUp={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                          onTouchEnd={isTextMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, 'text-display') : undefined}
+                                          onMouseDown={isInputMode ? handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind) : undefined}
+                                          title={isInputMode ? 'Click to edit the wording' : undefined}
+                                        >
+                                          <FormattedRunsPreview text={resolvedValue(layoutV2Lang)} />
+                                        </TextModeDisplay>
+                                      ) : isInputMode ? (
+                                        <RichResolvedTextField
+                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                          style={{ display: 'inline', width: 'auto' }}
+                                          initialText={resolvedValue(layoutV2Lang)}
+                                          placeholder="Field value"
+                                          onPlainTextChange={nextPlain => onChange(layoutV2Lang)({ target: { value: nextPlain } })}
+                                          onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                          onBlur={onBlur}
+                                        />
+                                      ) : (
+                                        <AutoInlineTextarea
+                                          ref={registerFieldNode(template.id, scope, layoutV2Lang)}
+                                          value={displayValue(layoutV2Lang)}
+                                          placeholder="Field value"
+                                          onFocus={handleRichFieldFocus(template.id, scope, layoutV2Lang, fieldKind)}
+                                          onChange={onChange(layoutV2Lang)}
+                                          onBlur={onBlur}
+                                        />
+                                      )}
                                     </FieldLineContentRow>
                                   </ParagraphEditorBlock>
                                 );
