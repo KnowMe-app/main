@@ -204,8 +204,8 @@ const StatusBadge = styled.button`
   font-weight: 600;
   padding: 5px 12px;
   border-radius: 99px;
-  background: #FEE9E9;
-  color: #D44;
+  background: ${({ $published }) => ($published ? '#EBF8EF' : '#FEE9E9')};
+  color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')};
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
 `;
 const HighlightableLabel = styled(Label)`
@@ -1086,8 +1086,15 @@ export const MyProfile = () => {
       <Topbar>
         <KnowMeBrand />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <StatusBadge type="button" $clickable={!isProfileAccessConfirmed} onClick={handleAuthBadgeClick}>
-            ● {isProfileAccessConfirmed ? 'Прихована' : 'Логін не відбувся'}
+          <StatusBadge
+            type="button"
+            $clickable={!isProfileAccessConfirmed}
+            $published={state.publish === true}
+            onClick={handleAuthBadgeClick}
+          >
+            ● {isProfileAccessConfirmed
+              ? (state.publish === true ? 'Опублікована' : 'Прихована')
+              : 'Логін не відбувся'}
           </StatusBadge>
           <DotsButton type='button' aria-label='Відкрити меню профілю' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
         </div>

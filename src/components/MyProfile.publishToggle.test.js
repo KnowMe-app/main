@@ -18,4 +18,13 @@ describe('my-profile publication toggle', () => {
     expect(source).toContain('onClick={state.publish ? hideProfile : publishProfile}');
     expect(source).toContain("{state.publish ? 'Приховати анкету' : 'Опублікувати анкету'}");
   });
+
+  it('uses the current publish state for the profile status marker', () => {
+    expect(source).toContain('$published={state.publish === true}');
+    expect(source).toContain("state.publish === true ? 'Опублікована' : 'Прихована'");
+  });
+
+  it('keeps the failed login status for profiles without confirmed access', () => {
+    expect(source).toContain(": 'Логін не відбувся'");
+  });
 });
