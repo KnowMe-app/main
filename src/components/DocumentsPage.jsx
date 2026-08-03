@@ -999,6 +999,7 @@ const AlignCycleButton = ({ align, onCycle, label }) => {
       title={`Alignment${suffix}: ${align}. Tap to cycle Left → Center → Right → Justify.`}
     >
       <Icon />
+      {label ? <span>{label}</span> : null}
     </SmallButton>
   );
 };
@@ -3498,13 +3499,12 @@ const DocumentsPage = ({ isAdmin }) => {
                                   // eslint-disable-next-line react/no-array-index-key
                                   <ParagraphEditorBlock key={`${template.id}-lv2-fieldline-${blockIndex}`}>
                                     <ParagraphControlsRow>
-                                      {/* Adds the next paragraph below this whole label+value line -
-                                          never a separate insertion point between the label and its
-                                          own value, since together they're one line, not two. */}
+                                      {/* Insert before the whole field line. The label and value are
+                                          fields inside the same block, so this cannot split them. */}
                                       <SmallButton
                                         type="button"
-                                        onClick={() => handleInsertLayoutV2Paragraph(template.id, blockIndex + 1)}
-                                        title="Insert a new paragraph after this one"
+                                        onClick={() => handleInsertLayoutV2Paragraph(template.id, blockIndex)}
+                                        title="Insert a new paragraph above this one"
                                       >
                                         <FaPlus />
                                       </SmallButton>
@@ -3545,13 +3545,13 @@ const DocumentsPage = ({ isAdmin }) => {
                                           <AlignCycleButton
                                             align={getEffectiveLayoutV2BlockAlign(template, block)}
                                             onCycle={() => handleCycleLayoutV2Align(template.id, blockIndex)}
-                                            label="label"
+                                            label="Label"
                                           />
                                         ) : null}
                                         <AlignCycleButton
                                           align={getEffectiveLayoutV2FieldLineValueAlign(template, block)}
                                           onCycle={() => handleCycleLayoutV2FieldLineValueAlign(template.id, blockIndex)}
-                                          label={hasLabel ? 'value' : undefined}
+                                          label={hasLabel ? 'Value' : undefined}
                                         />
                                         <FormatPopoverButton
                                           open={openFormatKey === formatPopoverKey(template.id, scope)}
@@ -3593,7 +3593,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                         others (the surrogate mother's own line has none at all). */}
                                     <FieldLineContentRow>
                                       {hasLabel ? (
-                                        <ParagraphFieldColumn style={{ flex: '1 1 45%', minWidth: 110 }}>
+                                        <ParagraphFieldColumn style={{ flex: '0 1 auto', minWidth: 0, maxWidth: '45%' }}>
                                           {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, labelScope, layoutV2Lang)) ? (
                                             <TextModeDisplay
                                               ref={registerFieldNode(template.id, labelScope, layoutV2Lang)}
@@ -3625,7 +3625,7 @@ const DocumentsPage = ({ isAdmin }) => {
                                           )}
                                         </ParagraphFieldColumn>
                                       ) : null}
-                                      <ParagraphFieldColumn style={{ flex: '1 1 45%', minWidth: 110 }}>
+                                      <ParagraphFieldColumn style={{ flex: '1 1 0', minWidth: 110 }}>
                                         {isTextMode || (isInputMode && activeFieldKey !== fieldKey(template.id, scope, layoutV2Lang)) ? (
                                           <TextModeDisplay
                                             ref={registerFieldNode(template.id, scope, layoutV2Lang)}
