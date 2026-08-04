@@ -75,10 +75,26 @@ export const buildYoutubeUrl = value => {
   return `https://www.youtube.com/@${normalizedValue}`;
 };
 
+// Some records store a phone number in the telegram field instead of a
+// username (copy/paste mistakes at intake). Detect that shape and build a
+// phone-based deep link instead of a garbage https://t.me/+380... username.
+const isPhoneLikeValue = value => {
+  const digits = compactPhone(value).replace(/^\+/, '');
+  return /^\d{7,15}$/.test(digits);
+};
+
+const buildTelegramUrl = value => {
+  const rawValue = String(value ?? '').trim();
+  if (!rawValue) return '';
+  if (hasProtocol(rawValue)) return rawValue;
+  if (isPhoneLikeValue(rawValue)) return `https://t.me/+${compactPhone(rawValue).replace(/^\+/, '')}`;
+  return `https://t.me/${stripAt(rawValue)}`;
+};
+
 export const CONTACT_LINK_BUILDERS = {
   phone: value => `tel:${compactPhone(value)}`,
   email: value => `mailto:${String(value || '').trim()}`,
-  telegram: value => `https://t.me/${stripAt(value)}`,
+  telegram: buildTelegramUrl,
   whatsapp: value => `https://wa.me/${digitsOnlyPhone(value) || stripAt(value)}`,
   viber: value => `viber://chat?number=%2B${digitsOnlyPhone(value)}`,
   facebook: value => buildPlatformUrl(value, 'facebook.com'),

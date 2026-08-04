@@ -16,26 +16,14 @@ export const HiddenHeaderTitle = styled.div`
   letter-spacing: -0.015em;
   color: var(--matching-header-text);
   white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 1 0 auto;
+  overflow: visible;
 
   span {
     color: var(--matching-muted-text);
     font-weight: 600;
     margin-left: 2px;
   }
-`;
-
-export const EditHint = styled.p`
-  font-size: 11.5px;
-  color: var(--matching-accent);
-  background: color-mix(in srgb, var(--matching-accent) 12%, transparent);
-  padding: 7px 14px;
-  line-height: 1.4;
-  margin: 0 0 8px;
-  border-radius: 10px;
 `;
 
 export const List = styled.div`
@@ -46,11 +34,12 @@ export const List = styled.div`
 `;
 
 export const Card = styled.div`
+  position: relative;
   background: var(--matching-card-bg);
   border: 1px solid var(--matching-card-border);
   border-radius: 20px;
   padding: 11px;
-  cursor: ${({ $editMode }) => ($editMode ? 'default' : 'pointer')};
+  cursor: pointer;
   transition: opacity 200ms ease, transform 200ms ease;
 `;
 
@@ -134,16 +123,14 @@ export const Fact = styled.i`
     font-weight: 650;
   }
 
-  &::before {
-    content: '·';
+  &::after {
+    content: '\00A0·';
     color: var(--matching-muted-text);
-    margin: 0 5px;
     opacity: 0.6;
   }
 
-  &:first-child::before {
+  &:last-child::after {
     content: '';
-    margin: 0;
   }
 `;
 
@@ -153,6 +140,11 @@ export const Ctrl = styled.div`
   justify-content: flex-start;
   gap: 6px;
   flex: 0 0 auto;
+`;
+
+export const TopButtonsRow = styled.div`
+  display: flex;
+  gap: 6px;
 `;
 
 const ctrlButtonBase = css`
@@ -180,6 +172,13 @@ export const ReturnButton = styled.button`
   }
 `;
 
+export const EditButton = styled.button`
+  ${ctrlButtonBase}
+  border: 1px solid var(--matching-card-border);
+  background: var(--matching-card-bg);
+  color: var(--matching-muted-text);
+`;
+
 export const ChevronButton = styled.button`
   ${ctrlButtonBase}
   border: 1px solid var(--matching-card-border);
@@ -203,10 +202,9 @@ export const Note = styled.p`
   color: var(--matching-header-text);
   background: var(--matching-section-bg);
   border-radius: 14px;
-  padding: 7px 10px;
+  padding: 8px 10px;
   margin: 9px 0 0;
   line-height: 1.5;
-  max-height: none;
 
   ${({ $clip }) => $clip && css`
     display: -webkit-box;
@@ -214,13 +212,54 @@ export const Note = styled.p`
     -webkit-box-orient: vertical;
     overflow: hidden;
   `}
+
+  ${({ $hidden }) => $hidden && css`
+    position: absolute;
+    top: 0;
+    left: 11px;
+    right: 11px;
+    margin: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -1;
+  `}
+`;
+
+// The client comment textarea is styled to read as plain text - no border,
+// no control chrome - so it's indistinguishable from the read-only bio block
+// next to it until the user taps into it.
+export const CommentInput = styled.textarea`
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  font: inherit;
+  font-size: 12.3px;
+  color: var(--matching-header-text);
+  padding: 8px 10px;
+  margin: 9px 0 0;
+  line-height: 1.5;
+  border-radius: 14px;
+
+  &::placeholder {
+    color: var(--matching-muted-text);
+    opacity: 0.7;
+  }
+
+  &:focus {
+    outline: 0;
+    background: var(--matching-section-bg);
+  }
 `;
 
 export const SelfDescription = styled.p`
   font-size: 12.3px;
   font-style: italic;
   color: var(--matching-muted-text);
-  padding: 0;
+  padding: 0 10px;
   margin: 9px 0 0;
   line-height: 1.5;
   max-height: none;
@@ -262,9 +301,7 @@ export const GridRow = styled.p`
   font-size: 12.3px;
   line-height: 1.75;
   color: var(--matching-muted-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 
   b {
     color: var(--matching-header-text);
@@ -340,62 +377,6 @@ export const ContactRow = styled.a`
     display: inline-block;
     min-width: 64px;
   }
-`;
-
-export const EditableInput = styled.input`
-  border: 0;
-  background: transparent;
-  font: inherit;
-  color: inherit;
-  letter-spacing: inherit;
-  padding: 0 1px;
-  min-width: 14px;
-  border-bottom: 1px dashed ${({ $pending }) => ($pending
-    ? 'var(--matching-accent)'
-    : 'color-mix(in srgb, var(--matching-muted-text) 55%, transparent)')};
-
-  &:focus {
-    outline: 0;
-    border-bottom-color: var(--matching-accent);
-    background: color-mix(in srgb, var(--matching-accent) 12%, transparent);
-  }
-`;
-
-export const PendingBadge = styled.span`
-  display: inline-block;
-  margin-left: 3px;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--matching-accent);
-  vertical-align: super;
-  cursor: help;
-`;
-
-export const EditableTextarea = styled.textarea`
-  border: 1px dashed ${({ $pending }) => ($pending
-    ? 'var(--matching-accent)'
-    : 'color-mix(in srgb, var(--matching-muted-text) 55%, transparent)')};
-  background: transparent;
-  font: inherit;
-  color: inherit;
-  width: 100%;
-  min-height: 44px;
-  resize: vertical;
-  border-radius: 10px;
-  padding: 6px 8px;
-
-  &:focus {
-    outline: 0;
-    border-color: var(--matching-accent);
-    background: color-mix(in srgb, var(--matching-accent) 12%, transparent);
-  }
-`;
-
-export const FieldError = styled.span`
-  display: block;
-  font-size: 10.5px;
-  color: var(--km-danger, #d64545);
-  margin-top: 2px;
 `;
 
 export const SkeletonRow = styled.div`

@@ -1,6 +1,5 @@
 import React, {
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -8,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import toast from 'react-hot-toast';
-import { FaChevronDown, FaMapMarkerAlt, FaUndo } from 'react-icons/fa';
+import { FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaUndo } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -24,26 +23,42 @@ import { getContactEntries } from './contactMethods';
 import {
   addContactViewUser,
   addDislikeUser,
-  auth,
   fetchUserComments,
   lazyLoadProfilePhotos,
   removeDislikeUser,
-  updateDataInFiresoreDB,
-  updateDataInNewUsersRTDB,
-  updateDataInRealtimeDB,
+  saveMyCardComment,
 } from './config';
 import { setDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
-import { loadComments, saveComments } from 'utils/commentsStorage';
+import { loadComments, saveComments, setLocalComment } from 'utils/commentsStorage';
 import { removeCardFromList } from 'utils/cardsStorage';
-import { getOverlayForUserCard, patchOverlayField } from 'utils/multiAccountEdits';
 import * as S from './MatchingHiddenList.styled';
 
 const PAGE_SIZE = 20;
 const NOTE_TOAST_UNDO_MS = 5000;
 
 const CSECTION_KEYS = ['cSection', 'csection', 'c_section', 'cesareanSection'];
-const BIO_KEYS = ['moreInfo_main', 'comment', 'description', 'about', 'bio'];
 const UA_COUNTRY_VALUES = new Set(['україна', 'ukraine', 'ua']);
+
+// The hidden list's card-expand state is local component state, so it's lost
+// whenever the pencil button navigates to the admin-only /edit/:userId route
+// and back (a separate route, remounting this component). Persist it across
+// that round trip in sessionStorage, same lifetime as the scroll position.
+const EXPANDED_IDS_KEY = 'matchingHiddenExpandedIds';
+const loadPersistedExpandedIds = () => {
+  try {
+    const raw = sessionStorage.getItem(EXPANDED_IDS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
+const persistExpandedIds = ids => {
+  try {
+    sessionStorage.setItem(EXPANDED_IDS_KEY, JSON.stringify([...ids]));
+  } catch {
+    // ignore write errors
+  }
+};
 
 const CONTACT_LABELS = {
   phone: 'Телефон',
@@ -108,29 +123,54 @@ const getInitials = name => {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 };
 
-const buildOverrideKey = (userId, field) => `${userId}::${field}`;
-
 const resolveCSectionKey = user => CSECTION_KEYS.find(key => normalizeDisplayValue(user?.[key])) || 'csection';
-const resolveBioKey = user => BIO_KEYS.find(key => normalizeDisplayValue(user?.[key])) || 'moreInfo_main';
 
-const formatShortYear = value => {
-  const match = String(value || '').trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!match) return normalizeDisplayValue(value);
-  return `${match[1]}.${match[2]}.${match[3].slice(2)}`;
+const pad2 = value => String(value).padStart(2, '0');
+
+// Delivery dates come in from different sources in different shapes - ISO
+// (from newer records), dotted dd.mm.yyyy/dd.mm.yy, or slashed dd/mm/yyyy.
+// Parse whichever one matches and always render dd.mm.yy.
+const parseDeliveryDate = raw => {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  let match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return { d: match[3], mo: match[2], y: match[1] };
+  match = value.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+  if (match) return { d: pad2(match[1]), mo: pad2(match[2]), y: match[3] };
+  match = value.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2})$/);
+  if (match) return { d: pad2(match[1]), mo: pad2(match[2]), y: `20${match[3]}` };
+  return null;
 };
 
-const isValidDeliveryDate = value => /^\d{2}\.\d{2}\.\d{4}$/.test(String(value || '').trim());
+const formatDeliveryDate = raw => {
+  const parsed = parseDeliveryDate(raw);
+  return parsed ? `${parsed.d}.${parsed.mo}.${parsed.y.slice(2)}` : '';
+};
+
+const CSECTION_ZERO_VALUES = new Set(['не було', 'немає', 'no', '-', '0']);
+const formatCSectionValue = raw => {
+  const trimmed = String(raw || '').trim();
+  return CSECTION_ZERO_VALUES.has(trimmed.toLowerCase()) ? '0' : trimmed;
+};
+
+const OTHER_VALUES = new Set(['other', 'інше', 'иное']);
+const isOtherValue = value => OTHER_VALUES.has(String(value || '').trim().toLowerCase());
 
 const abbreviateRegion = region => {
   const normalized = normalizeRegion(region);
   return normalized ? normalized.replace(/\s+область$/i, ' обл.') : '';
 };
 
+const stripCityPrefix = value => String(value || '').trim().replace(/^(м\.?\s+|місто\s+)/i, '').trim();
+
 const getLocationLine = user => {
   const country = normalizeCountry(normalizeDisplayValue(user?.country));
   const city = normalizeDisplayValue(user?.city);
   const isForeign = Boolean(country) && !UA_COUNTRY_VALUES.has(country.toLowerCase());
-  const secondary = isForeign ? country : abbreviateRegion(normalizeDisplayValue(user?.region));
+  const secondaryRaw = isForeign ? country : abbreviateRegion(normalizeDisplayValue(user?.region));
+  const isDuplicateOfCity = Boolean(city) && Boolean(secondaryRaw)
+    && stripCityPrefix(secondaryRaw).toLowerCase() === stripCityPrefix(city).toLowerCase();
+  const secondary = isDuplicateOfCity ? '' : secondaryRaw;
   return [city, secondary].filter(Boolean).join(', ');
 };
 
@@ -148,6 +188,8 @@ const formatPhoneDisplay = raw => {
 
 const getContactLabel = key => CONTACT_LABELS[key] || (key.charAt(0).toUpperCase() + key.slice(1));
 
+const GRID_WIDE_VALUE_LENGTH = 22;
+
 const buildGridRows = user => {
   const rows = [];
   GRID_FIELD_DEFS.forEach(def => {
@@ -155,122 +197,25 @@ const buildGridRows = user => {
       const [keyA, keyB] = def.combined;
       const valA = normalizeDisplayValue(user?.[keyA]);
       const valB = normalizeDisplayValue(user?.[keyB]);
-      if (!valA && !valB) return;
-      rows.push({
-        label: def.label,
-        parts: valA && valB
-          ? [{ field: keyA, value: valA }, { field: keyB, value: valB }]
-          : [{ field: valA ? keyA : keyB, value: valA || valB }],
-      });
+      const parts = [];
+      if (valA && !isOtherValue(valA)) parts.push({ field: keyA, value: valA });
+      if (valB && !isOtherValue(valB)) parts.push({ field: keyB, value: valB });
+      if (!parts.length) return;
+      rows.push({ label: def.label, parts });
       return;
     }
     const value = normalizeDisplayValue(user?.[def.key]);
-    if (!value) return;
+    if (!value || isOtherValue(value)) return;
     rows.push({ label: def.label, parts: [{ field: def.key, value }] });
+  });
+  rows.forEach(row => {
+    const valueLength = row.parts.map(part => part.value).join(', ').length;
+    if (valueLength > GRID_WIDE_VALUE_LENGTH) row.wide = true;
   });
   if (rows.length % 2 === 1) {
     rows[rows.length - 1] = { ...rows[rows.length - 1], wide: true };
   }
   return rows;
-};
-
-// Admin edits write straight to the canonical users/newUsers record. Non-admin
-// ("editor") edits must never touch the live record directly - they are staged
-// as a per-editor overlay (multiData/edits/{cardUserId}/{editorUserId}) that an
-// admin later accepts or rejects, same as EditProfile.jsx's remoteUpdate().
-const saveProfileFieldDirect = async (user, field, value) => {
-  const payload = { [field]: value };
-  if (user?.__sourceCollection === 'newUsers') {
-    await updateDataInNewUsersRTDB(user.userId, payload, 'update');
-  } else {
-    await updateDataInRealtimeDB(user.userId, payload, 'update');
-    await updateDataInFiresoreDB(user.userId, payload, 'update');
-  }
-};
-
-const saveProfileFieldOverlay = async (user, field, value, editorUserId) => {
-  await patchOverlayField({
-    editorUserId,
-    cardUserId: user.userId,
-    fieldName: field,
-    change: { from: normalizeDisplayValue(user?.[field]) ?? '', to: value },
-  });
-};
-
-const EditContext = React.createContext({
-  editMode: false,
-  isAdmin: false,
-  onSave: () => {},
-  savingFields: {},
-  fieldErrors: {},
-  pendingFields: {},
-});
-
-const InlineField = ({ user, field, value, displayValue, placeholder, multiline, validate, validationError }) => {
-  const { editMode, isAdmin, onSave, savingFields, fieldErrors, pendingFields } = useContext(EditContext);
-  const [draft, setDraft] = useState(value || '');
-  const [localError, setLocalError] = useState('');
-
-  useEffect(() => {
-    setDraft(value || '');
-    setLocalError('');
-  }, [value]);
-
-  if (!editMode) return <>{displayValue ?? value}</>;
-
-  const key = buildOverrideKey(user.userId, field);
-  const saving = Boolean(savingFields[key]);
-  const remoteError = fieldErrors[key];
-  const error = localError || remoteError;
-  const pending = !isAdmin && Boolean(pendingFields[key]);
-
-  const commit = () => {
-    const trimmed = draft.trim();
-    if (trimmed === (value || '')) return;
-    if (validate && trimmed && !validate(trimmed)) {
-      setLocalError(validationError || 'Невірний формат');
-      return;
-    }
-    setLocalError('');
-    onSave(user, field, trimmed);
-  };
-
-  if (multiline) {
-    return (
-      <span>
-        <S.EditableTextarea
-          $pending={pending}
-          value={draft}
-          placeholder={placeholder}
-          disabled={saving}
-          onClick={e => e.stopPropagation()}
-          onTouchStart={e => e.stopPropagation()}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commit}
-        />
-        {pending && !error && <S.PendingBadge title="Очікує підтвердження адміністратора">на розгляді</S.PendingBadge>}
-        {error && <S.FieldError>{error}</S.FieldError>}
-      </span>
-    );
-  }
-
-  return (
-    <span>
-      <S.EditableInput
-        $pending={pending}
-        value={draft}
-        size={Math.max(2, (draft || placeholder || '').length)}
-        placeholder={placeholder}
-        disabled={saving}
-        onClick={e => e.stopPropagation()}
-        onTouchStart={e => e.stopPropagation()}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-      />
-      {pending && !error && <S.PendingBadge title="Очікує підтвердження адміністратора">•</S.PendingBadge>}
-      {error && <S.FieldError>{error}</S.FieldError>}
-    </span>
-  );
 };
 
 const renderFacts = user => {
@@ -281,11 +226,7 @@ const renderFacts = user => {
   if (height || weight) {
     nodes.push(
       <S.Fact key="hw">
-        <b>
-          {height && <InlineField user={user} field="height" value={height} placeholder="зріст" />}
-          {height && weight && '/'}
-          {weight && <InlineField user={user} field="weight" value={weight} placeholder="вага" />}
-        </b>
+        <b>{height}{height && weight && '/'}{weight}</b>
       </S.Fact>
     );
   }
@@ -294,19 +235,14 @@ const renderFacts = user => {
   if (bmi) {
     nodes.push(
       <S.Fact key="bmi">
-        BMI <b><InlineField user={user} field="bmi" value={bmi} /></b>
+        BMI <b>{bmi}</b>
       </S.Fact>
     );
   }
 
-  const maritalRaw = normalizeDisplayValue(user?.maritalStatus);
-  const maritalDisplay = maritalStatusLabel(maritalRaw);
+  const maritalDisplay = maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus));
   if (maritalDisplay) {
-    nodes.push(
-      <S.Fact key="marital">
-        <InlineField user={user} field="maritalStatus" value={maritalRaw} displayValue={maritalDisplay} />
-      </S.Fact>
-    );
+    nodes.push(<S.Fact key="marital">{maritalDisplay}</S.Fact>);
   }
 
   const cSectionKey = resolveCSectionKey(user);
@@ -314,86 +250,185 @@ const renderFacts = user => {
   if (cSectionValue) {
     nodes.push(
       <S.Fact key="cs">
-        КС <b><InlineField user={user} field={cSectionKey} value={cSectionValue} /></b>
+        КС <b>{formatCSectionValue(cSectionValue)}</b>
       </S.Fact>
     );
   }
 
-  const bloodRaw = normalizeDisplayValue(user?.blood);
   const bloodDisplay = getBloodGroupDisplay(user);
   if (bloodDisplay) {
-    nodes.push(
-      <S.Fact key="blood">
-        <InlineField user={user} field="blood" value={bloodRaw} displayValue={bloodDisplay} />
-      </S.Fact>
-    );
+    nodes.push(<S.Fact key="blood">{bloodDisplay}</S.Fact>);
   }
 
   const ownKids = normalizeDisplayValue(user?.ownKids);
   if (ownKids) {
-    const lastDelivery = normalizeDisplayValue(user?.lastDelivery);
-    nodes.push(
-      <S.Fact key="births">
-        пологів <b><InlineField user={user} field="ownKids" value={ownKids} /></b>
-        {lastDelivery && (
-          <>
-            , останні{' '}
-            <b>
-              <InlineField
-                user={user}
-                field="lastDelivery"
-                value={lastDelivery}
-                displayValue={formatShortYear(lastDelivery)}
-                placeholder="дд.мм.рррр"
-                validate={isValidDeliveryDate}
-                validationError="Формат дд.мм.рррр"
-              />
-            </b>
-          </>
-        )}
-      </S.Fact>
-    );
+    const isZeroBirths = /^0+$/.test(ownKids.trim());
+    if (isZeroBirths) {
+      nodes.push(<S.Fact key="births">без пологів</S.Fact>);
+    } else {
+      const formattedDate = formatDeliveryDate(normalizeDisplayValue(user?.lastDelivery));
+      nodes.push(
+        <S.Fact key="births">
+          пологів <b>{ownKids}</b>
+          {formattedDate && <>, останні <b>{formattedDate}</b></>}
+        </S.Fact>
+      );
+    }
   }
 
   return nodes;
 };
 
-// variant "comment" renders the client's own multiData/comments note (why the
-// card was hidden) in a plain-font block with a background; variant "bio"
-// renders the candidate's self-written description in italics without one.
-// Only "bio" is editable here - the comment is edited on the full profile
-// card's dedicated Comment box, not inline in this list.
-const NoteBlock = ({ user, text, variant = 'bio', editable = false }) => {
-  const { editMode } = useContext(EditContext);
+// Renders the candidate's self-written description (the "about me" field) as
+// read-only, clamped text. Editing it now happens on the full ProfileForm,
+// reached via the card's pencil button.
+const NoteBlock = ({ text }) => {
   const ref = useRef(null);
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
-  const showEditor = editable && editMode;
 
   useLayoutEffect(() => {
-    if (showEditor || expanded) {
+    if (expanded) {
       setOverflowing(false);
       return;
     }
     const el = ref.current;
     if (!el) return;
     setOverflowing(el.scrollHeight - el.clientHeight > 1);
-  }, [text, showEditor, expanded]);
+  }, [text, expanded]);
 
   if (!text) return null;
 
-  const Wrapper = variant === 'comment' ? S.Note : S.SelfDescription;
+  return (
+    <>
+      <S.SelfDescription ref={ref} $clip={!expanded}>{text}</S.SelfDescription>
+      {overflowing && !expanded && (
+        <S.NoteMore onClick={e => { e.stopPropagation(); setExpanded(true); }}>…</S.NoteMore>
+      )}
+    </>
+  );
+};
+
+const COMMENT_SAVE_DEBOUNCE_MS = 800;
+
+// Best-effort caret placement: the plain-text paragraph renders `text` as a
+// single text node with the same font/width as the textarea it turns into,
+// so a caret range resolved against the click point maps directly onto an
+// offset within that same string.
+const getCaretOffsetFromClick = e => {
+  const { clientX, clientY } = e;
+  if (document.caretRangeFromPoint) {
+    const range = document.caretRangeFromPoint(clientX, clientY);
+    return range ? range.startOffset : null;
+  }
+  if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(clientX, clientY);
+    return pos ? pos.offset : null;
+  }
+  return null;
+};
+
+const autoResizeTextarea = el => {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+};
+
+// The client's own note about why a card was hidden. Batch 32: always
+// editable, no page-wide edit mode. A short comment renders straight as an
+// auto-height textarea; a long (clamped) one renders as plain clipped text
+// first so it doesn't fight the card's tap-to-expand, and the first tap both
+// expands it and turns it into a textarea with the caret at the tap point.
+const CommentBlock = ({ text, onSave }) => {
+  const measureRef = useRef(null);
+  const textareaRef = useRef(null);
+  const saveTimerRef = useRef(null);
+  const lastSavedRef = useRef(text || '');
+  const pendingCaretRef = useRef(null);
+  const [draft, setDraft] = useState(text || '');
+  const [measureText, setMeasureText] = useState(text || '');
+  const [mode, setMode] = useState('input');
+
+  useEffect(() => {
+    lastSavedRef.current = text || '';
+    setDraft(text || '');
+    setMeasureText(text || '');
+  }, [text]);
+
+  useLayoutEffect(() => {
+    const el = measureRef.current;
+    if (!el) { setMode('input'); return; }
+    setMode(el.scrollHeight - el.clientHeight > 1 ? 'clamped' : 'input');
+  }, [measureText]);
+
+  useLayoutEffect(() => {
+    if (mode === 'input') autoResizeTextarea(textareaRef.current);
+  }, [mode, draft]);
+
+  useLayoutEffect(() => {
+    if (mode !== 'input' || pendingCaretRef.current == null) return;
+    const ta = textareaRef.current;
+    if (ta) {
+      ta.focus();
+      const pos = Math.min(pendingCaretRef.current, ta.value.length);
+      ta.setSelectionRange(pos, pos);
+    }
+    pendingCaretRef.current = null;
+  }, [mode]);
+
+  useEffect(() => () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+  }, []);
+
+  const commit = useCallback(value => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (value === lastSavedRef.current) return;
+    lastSavedRef.current = value;
+    onSave(value);
+  }, [onSave]);
+
+  const scheduleSave = value => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => commit(value), COMMENT_SAVE_DEBOUNCE_MS);
+  };
+
+  if (mode === 'clamped') {
+    return (
+      <S.Note
+        ref={measureRef}
+        $clip
+        onClick={e => {
+          e.stopPropagation();
+          pendingCaretRef.current = getCaretOffsetFromClick(e) ?? draft.length;
+          setMode('input');
+        }}
+      >
+        {text}
+      </S.Note>
+    );
+  }
 
   return (
     <>
-      <Wrapper ref={ref} $clip={!showEditor && !expanded}>
-        {showEditor
-          ? <InlineField user={user} field={resolveBioKey(user)} value={text} multiline />
-          : text}
-      </Wrapper>
-      {!showEditor && overflowing && !expanded && (
-        <S.NoteMore onClick={e => { e.stopPropagation(); setExpanded(true); }}>…</S.NoteMore>
-      )}
+      <S.CommentInput
+        ref={textareaRef}
+        rows={1}
+        value={draft}
+        placeholder="Додати коментар"
+        onClick={e => e.stopPropagation()}
+        onTouchStart={e => e.stopPropagation()}
+        onChange={e => {
+          const { value } = e.target;
+          setDraft(value);
+          autoResizeTextarea(e.target);
+          scheduleSave(value);
+        }}
+        onBlur={e => {
+          commit(e.target.value);
+          setMeasureText(e.target.value);
+        }}
+      />
+      <S.Note ref={measureRef} $clip $hidden aria-hidden="true">{measureText}</S.Note>
     </>
   );
 };
@@ -441,19 +476,21 @@ const ContactsSection = ({ user, onOpened }) => {
   );
 };
 
+// A card counts as "unfilled" once its marital status is the only fact it
+// has to show - a bare "заміжня"/"не заміжня" isn't informative enough on
+// its own to justify a full-size card.
+const isWeakOnlyFact = facts => facts.length === 1 && facts[0].key === 'marital';
+
 const HiddenProfileCard = ({
   user,
-  editMode,
   isAdmin,
   expanded,
   onToggleExpand,
   onReturn,
-  onFieldSave,
-  savingFields,
-  fieldErrors,
-  pendingFields,
+  onEditProfile,
   onContactsOpened,
   clientComment,
+  onCommentSave,
 }) => {
   const name = getProfileName(user);
   const age = getProfileAge(user);
@@ -469,60 +506,45 @@ const HiddenProfileCard = ({
   );
   const totalCount = gridRows.length + contactEntries.length;
 
-  const editContextValue = useMemo(() => ({
-    editMode,
-    isAdmin,
-    onSave: onFieldSave,
-    savingFields,
-    fieldErrors,
-    pendingFields,
-  }), [editMode, isAdmin, onFieldSave, savingFields, fieldErrors, pendingFields]);
-
-  const cityValue = normalizeDisplayValue(user?.city);
-  const regionValue = normalizeDisplayValue(user?.region);
-  const hasLocation = Boolean(location || (editMode && (cityValue || regionValue)));
-  const isUnfilled = facts.length === 0 && !hasLocation;
+  const hasLocation = Boolean(location);
+  const isUnfilled = !hasLocation && (facts.length === 0 || isWeakOnlyFact(facts));
 
   return (
-    <EditContext.Provider value={editContextValue}>
-      <S.Card
-        $editMode={editMode}
-        onClick={() => { if (!editMode) onToggleExpand(user.userId); }}
-      >
-        <S.Top>
-          <S.Photo
-            style={photo
-              ? { backgroundImage: `url(${photo})` }
-              : { backgroundImage: getGradientFor(user.userId) }}
-          >
-            {!photo && getInitials(name)}
-          </S.Photo>
-          <S.Body>
-            <S.Name>
-              <InlineField user={user} field="name" value={normalizeDisplayValue(user?.name)} />
-              {age && <>, {age}</>}
-            </S.Name>
-            {hasLocation && (
-              <S.Location>
-                <FaMapMarkerAlt aria-hidden="true" />
-                <span>
-                  {editMode ? (
-                    <>
-                      <InlineField user={user} field="city" value={cityValue} />
-                      {(cityValue || regionValue) && ', '}
-                      <InlineField user={user} field="region" value={regionValue} />
-                    </>
-                  ) : location}
-                </span>
-              </S.Location>
-            )}
-            {facts.length > 0 ? (
-              <S.FactsRow>{facts}</S.FactsRow>
-            ) : isUnfilled && (
-              <S.EmptyNote>Анкета не заповнена</S.EmptyNote>
-            )}
-          </S.Body>
-          <S.Ctrl>
+    <S.Card onClick={() => onToggleExpand(user.userId)}>
+      <S.Top>
+        <S.Photo
+          style={photo
+            ? { backgroundImage: `url(${photo})` }
+            : { backgroundImage: getGradientFor(user.userId) }}
+        >
+          {!photo && getInitials(name)}
+        </S.Photo>
+        <S.Body>
+          <S.Name>
+            {name}
+            {age && <>, {age}</>}
+          </S.Name>
+          {hasLocation && (
+            <S.Location>
+              <FaMapMarkerAlt aria-hidden="true" />
+              <span>{location}</span>
+            </S.Location>
+          )}
+          {!isUnfilled && facts.length > 0 ? (
+            <S.FactsRow>
+              {facts.map((node, idx) => (
+                <React.Fragment key={node.key}>
+                  {idx > 0 && ' '}
+                  {node}
+                </React.Fragment>
+              ))}
+            </S.FactsRow>
+          ) : isUnfilled && (
+            <S.EmptyNote>Анкета не заповнена</S.EmptyNote>
+          )}
+        </S.Body>
+        <S.Ctrl>
+          <S.TopButtonsRow>
             <S.ReturnButton
               type="button"
               title="Повернути в загальний список"
@@ -531,45 +553,48 @@ const HiddenProfileCard = ({
             >
               <FaUndo size={13} />
             </S.ReturnButton>
-            <S.ChevronButton
-              type="button"
-              $open={expanded}
-              aria-label="Показати всі дані"
-              title="Показати всі дані"
-              onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
-            >
-              <b>{totalCount}</b>
-              <FaChevronDown size={11} />
-            </S.ChevronButton>
-          </S.Ctrl>
-        </S.Top>
-
-        <NoteBlock user={user} text={clientComment} variant="comment" />
-
-        {expanded && (
-          <S.More onClick={e => e.stopPropagation()}>
-            {gridRows.length > 0 && (
-              <S.Grid>
-                {gridRows.map(row => (
-                  <S.GridRow key={row.label} $wide={row.wide}>
-                    {row.label}: <b>
-                      {row.parts.map((part, idx) => (
-                        <React.Fragment key={part.field}>
-                          {idx > 0 && ', '}
-                          <InlineField user={user} field={part.field} value={part.value} />
-                        </React.Fragment>
-                      ))}
-                    </b>
-                  </S.GridRow>
-                ))}
-              </S.Grid>
+            {isAdmin && (
+              <S.EditButton
+                type="button"
+                title="Редагувати анкету"
+                aria-label="Редагувати анкету"
+                onClick={e => { e.stopPropagation(); onEditProfile(user); }}
+              >
+                <FaPencilAlt size={12} />
+              </S.EditButton>
             )}
-            <NoteBlock user={user} text={bio} variant="bio" editable />
-            <ContactsSection user={user} onOpened={onContactsOpened} />
-          </S.More>
-        )}
-      </S.Card>
-    </EditContext.Provider>
+          </S.TopButtonsRow>
+          <S.ChevronButton
+            type="button"
+            $open={expanded}
+            aria-label="Показати всі дані"
+            title="Показати всі дані"
+            onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+          >
+            <b>{totalCount}</b>
+            <FaChevronDown size={11} />
+          </S.ChevronButton>
+        </S.Ctrl>
+      </S.Top>
+
+      <CommentBlock text={clientComment} onSave={value => onCommentSave(user, value)} />
+
+      {expanded && (
+        <S.More onClick={e => e.stopPropagation()}>
+          {gridRows.length > 0 && (
+            <S.Grid>
+              {gridRows.map(row => (
+                <S.GridRow key={row.label} $wide={row.wide}>
+                  {row.label}: <b>{row.parts.map(part => part.value).join(', ')}</b>
+                </S.GridRow>
+              ))}
+            </S.Grid>
+          )}
+          <NoteBlock text={bio} />
+          <ContactsSection user={user} onOpened={onContactsOpened} />
+        </S.More>
+      )}
+    </S.Card>
   );
 };
 
@@ -599,15 +624,11 @@ const MatchingHiddenList = ({
   setDislikeUsers,
   ownDislikeUsers,
   setOwnDislikeUsers,
-  editMode,
   isAdmin,
   onGoToFeed,
+  onEditProfile,
 }) => {
-  const [expandedIds, setExpandedIds] = useState(() => new Set());
-  const [fieldOverrides, setFieldOverrides] = useState({});
-  const [savingFields, setSavingFields] = useState({});
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [pendingFields, setPendingFields] = useState({});
+  const [expandedIds, setExpandedIds] = useState(() => loadPersistedExpandedIds());
   const [photosByUserId, setPhotosByUserId] = useState({});
   const [commentsByUserId, setCommentsByUserId] = useState({});
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -615,48 +636,9 @@ const MatchingHiddenList = ({
 
   const photoRequestedRef = useRef(new Set());
   const commentRequestedRef = useRef(new Set());
-  const overlayHydratedRef = useRef(new Set());
   const contactViewKeysRef = useRef(new Set());
   const loadMoreRef = useRef(loadMore);
   useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
-
-  // Non-admin editors never write straight to users/newUsers - their edits are
-  // staged per-editor and only applied once an admin accepts them elsewhere
-  // (EditProfile.jsx). When they open edit mode here, hydrate any of their own
-  // still-pending overlay values so they don't lose track of an earlier draft.
-  useEffect(() => {
-    if (!editMode || isAdmin) return;
-    const editorUserId = auth.currentUser?.uid;
-    if (!editorUserId) return;
-    const candidates = users.filter(user => (
-      user?.userId && !overlayHydratedRef.current.has(user.userId)
-    ));
-    if (!candidates.length) return;
-    candidates.forEach(user => {
-      overlayHydratedRef.current.add(user.userId);
-      getOverlayForUserCard({ editorUserId, cardUserId: user.userId })
-        .then(overlay => {
-          const fields = overlay?.fields;
-          if (!fields || !Object.keys(fields).length) return;
-          const overrideValues = {};
-          const pendingKeys = {};
-          Object.entries(fields).forEach(([fieldName, change]) => {
-            if (!change || typeof change !== 'object' || !('to' in change)) return;
-            overrideValues[fieldName] = change.to ?? '';
-            pendingKeys[buildOverrideKey(user.userId, fieldName)] = true;
-          });
-          if (!Object.keys(overrideValues).length) return;
-          setFieldOverrides(prev => ({
-            ...prev,
-            [user.userId]: { ...(prev[user.userId] || {}), ...overrideValues },
-          }));
-          setPendingFields(prev => ({ ...prev, ...pendingKeys }));
-        })
-        .catch(error => {
-          console.error('[MatchingHiddenList] Failed to load pending overlay', error);
-        });
-    });
-  }, [editMode, isAdmin, users]);
 
   useEffect(() => {
     const pending = users.filter(user => (
@@ -723,62 +705,32 @@ const MatchingHiddenList = ({
   const rows = useMemo(() => users
     .filter(user => user?.userId)
     .map(user => {
-      const overrides = fieldOverrides[user.userId];
       const photoOverride = photosByUserId[user.userId];
-      if (!overrides && !photoOverride) return user;
-      return {
-        ...user,
-        ...(overrides || {}),
-        photos: (photoOverride && photoOverride.length) ? photoOverride : user.photos,
-      };
+      if (!photoOverride || !photoOverride.length) return user;
+      return { ...user, photos: photoOverride };
     })
     .sort((a, b) => (Number(dislikeUsers[b.userId]) || 0) - (Number(dislikeUsers[a.userId]) || 0)),
-  [users, fieldOverrides, photosByUserId, dislikeUsers]);
+  [users, photosByUserId, dislikeUsers]);
 
-  const handleFieldSave = useCallback(async (user, field, value) => {
-    const userId = user.userId;
-    const key = buildOverrideKey(userId, field);
-    setFieldOverrides(prev => ({ ...prev, [userId]: { ...(prev[userId] || {}), [field]: value } }));
-    setFieldErrors(prev => {
-      if (!(key in prev)) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-    setSavingFields(prev => ({ ...prev, [key]: true }));
+  const handleCommentSave = useCallback(async (user, text) => {
+    const userId = user?.userId;
+    if (!userId || !ownerId) return;
+    setCommentsByUserId(prev => ({ ...prev, [userId]: text }));
     try {
-      if (isAdmin) {
-        await saveProfileFieldDirect(user, field, value);
-        setPendingFields(prev => {
-          if (!(key in prev)) return prev;
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
-      } else {
-        const editorUserId = auth.currentUser?.uid;
-        if (!editorUserId) throw new Error('Not signed in');
-        await saveProfileFieldOverlay(user, field, value, editorUserId);
-        setPendingFields(prev => ({ ...prev, [key]: true }));
-      }
+      const res = await saveMyCardComment(userId, text, ownerId);
+      setLocalComment(ownerId, userId, text, res?.lastAction);
     } catch (error) {
-      console.error('[MatchingHiddenList] Failed to save field', field, error);
-      setFieldErrors(prev => ({ ...prev, [key]: 'Не вдалося зберегти' }));
-    } finally {
-      setSavingFields(prev => {
-        if (!(key in prev)) return prev;
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
+      console.error('[MatchingHiddenList] Failed to save comment', error);
+      toast.error('Не вдалося зберегти коментар');
     }
-  }, [isAdmin]);
+  }, [ownerId]);
 
   const handleToggleExpand = useCallback(userId => {
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(userId)) next.delete(userId);
       else next.add(userId);
+      persistExpandedIds(next);
       return next;
     });
   }, []);
@@ -887,14 +839,6 @@ const MatchingHiddenList = ({
 
   return (
     <S.Wrap>
-      {editMode && (
-        <S.EditHint>
-          {isAdmin
-            ? 'Режим редагування: торкніться будь-якого значення, щоб змінити його.'
-            : 'Режим редагування: зміни зберігаються як пропозиція та підуть на розгляд адміністратору.'}
-        </S.EditHint>
-      )}
-
       {showEmptyState ? (
         <S.EmptyState>
           <S.EmptyStateTitle>Тут поки порожньо</S.EmptyStateTitle>
@@ -909,17 +853,14 @@ const MatchingHiddenList = ({
             <HiddenProfileCard
               key={user.userId}
               user={user}
-              editMode={editMode}
               isAdmin={isAdmin}
               expanded={expandedIds.has(user.userId)}
               onToggleExpand={handleToggleExpand}
               onReturn={handleReturn}
-              onFieldSave={handleFieldSave}
-              savingFields={savingFields}
-              fieldErrors={fieldErrors}
-              pendingFields={pendingFields}
+              onEditProfile={onEditProfile}
               onContactsOpened={handleContactsOpened}
               clientComment={commentsByUserId[user.userId] || ''}
+              onCommentSave={handleCommentSave}
             />
           ))}
 
