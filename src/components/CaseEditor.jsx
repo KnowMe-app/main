@@ -111,12 +111,6 @@ const CaseHeaderTitle = styled.h2`
   letter-spacing: -0.01em;
 `;
 
-const CaseHeaderSubtitle = styled.div`
-  margin-top: 3px;
-  font-size: 12px;
-  color: var(--km-muted);
-`;
-
 const HeaderChips = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -225,12 +219,14 @@ const Chevron = styled.span`
   color: var(--km-accent);
 `;
 
+// D1 (batch 33): no border of its own - the outer Section already draws the card's one border,
+// so this only needs a background shift + padding to read as a distinct inner area, otherwise the
+// two borders stack into a doubled outline around the same block.
 const SectionBody = styled.div`
   margin-top: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--km-border);
   border-radius: 8px;
-  background: var(--km-card);
+  background: var(--km-bg);
 `;
 
 const SectionSubhead = styled.h3`
@@ -1232,7 +1228,6 @@ const CaseEditor = ({
         <>
           <CaseHeaderBlock>
             <CaseHeaderTitle>{buildCaseLabel(catalog, selectedCase) || selectedCase.id}</CaseHeaderTitle>
-            <CaseHeaderSubtitle>Вся інформація згрупована за етапами - заповнені блоки можна згорнути, а незавершені видно одразу.</CaseHeaderSubtitle>
             <HeaderChips>
               <HeaderChip $complete={fieldsRollup.filled >= fieldsRollup.total}>{fieldsRollup.filled} із {fieldsRollup.total} полів</HeaderChip>
               <HeaderChip $complete={documentsRollup.filled >= documentsRollup.total}>{documentsRollup.filled} із {documentsRollup.total} полів документів</HeaderChip>
@@ -1305,49 +1300,61 @@ const CaseEditor = ({
                     <RelationCardLabel>Представники</RelationCardLabel>
                     {(() => {
                       const selected = catalog.parties.representatives.filter(item => draft.relations.representativeIds.includes(String(item.id)));
-                      if (!selected.length) return <RelationCardValue>— немає —</RelationCardValue>;
                       return (
-                        <RepresentativeList>
-                          {selected.map(record => {
-                            const sub = representativeIdentityLabel(record);
-                            return (
-                              <div key={record.id}>
-                                <RepresentativeName>{partyDisplayName(record)}</RepresentativeName>
-                                {sub ? <RepresentativeSub>{sub}</RepresentativeSub> : null}
-                              </div>
-                            );
+                        <>
+                          {selected.length ? (
+                            <RepresentativeList>
+                              {selected.map(record => {
+                                const sub = representativeIdentityLabel(record);
+                                return (
+                                  <div key={record.id}>
+                                    <RepresentativeName>{partyDisplayName(record)}</RepresentativeName>
+                                    {sub ? <RepresentativeSub>{sub}</RepresentativeSub> : null}
+                                  </div>
+                                );
+                              })}
+                            </RepresentativeList>
+                          ) : (
+                            <RelationCardValue>— немає —</RelationCardValue>
+                          )}
+                          <RelationCardButton type="button" onClick={() => openPicker({
+                            title: 'Оберіть представників', collection: 'representatives', valueId: draft.relations.representativeIds, multi: true, onApply: ids => updateRelations('representativeIds', ids),
                           })}
-                        </RepresentativeList>
+                          >
+                            Змінити
+                          </RelationCardButton>
+                          {/* Batch 33 (B3): the POA sub-block only exists once a person is chosen -
+                              first "хто", then "на підставі чого". The power of attorney itself
+                              (signing + apostille date) is static per case - one POA can cover
+                              every representative selected above, and the same representative can
+                              carry a different POA on another case, so these two dates live here
+                              rather than on the representative record. */}
+                          {selected.length ? (
+                            <>
+                              <RelationCardLabel style={{ marginTop: 10 }}>Довіреність</RelationCardLabel>
+                              <FieldGrid style={{ marginTop: 4 }}>
+                                <Field>
+                                  Дата довіреності
+                                  <FieldInput
+                                    type="date"
+                                    value={draft.relations.representativePowerOfAttorney.date}
+                                    onChange={event => updateRepresentativePoa('date', event.target.value)}
+                                  />
+                                </Field>
+                                <Field>
+                                  Дата апостилю
+                                  <FieldInput
+                                    type="date"
+                                    value={draft.relations.representativePowerOfAttorney.apostilleDate}
+                                    onChange={event => updateRepresentativePoa('apostilleDate', event.target.value)}
+                                  />
+                                </Field>
+                              </FieldGrid>
+                            </>
+                          ) : null}
+                        </>
                       );
                     })()}
-                    <RelationCardButton type="button" onClick={() => openPicker({
-                      title: 'Оберіть представників', collection: 'representatives', valueId: draft.relations.representativeIds, multi: true, onApply: ids => updateRelations('representativeIds', ids),
-                    })}
-                    >
-                      Змінити
-                    </RelationCardButton>
-                    {/* The power of attorney itself (signing + apostille date) is static per case -
-                        one POA can cover every representative selected above, and the same
-                        representative can carry a different POA on another case, so these two
-                        dates live here rather than on the representative record. */}
-                    <FieldGrid style={{ marginTop: 10 }}>
-                      <Field>
-                        Дата довіреності
-                        <FieldInput
-                          type="date"
-                          value={draft.relations.representativePowerOfAttorney.date}
-                          onChange={event => updateRepresentativePoa('date', event.target.value)}
-                        />
-                      </Field>
-                      <Field>
-                        Дата апостилю
-                        <FieldInput
-                          type="date"
-                          value={draft.relations.representativePowerOfAttorney.apostilleDate}
-                          onChange={event => updateRepresentativePoa('apostilleDate', event.target.value)}
-                        />
-                      </Field>
-                    </FieldGrid>
                   </RelationCard>
                 </RelationGrid>
                 </SectionBody>

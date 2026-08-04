@@ -829,6 +829,14 @@ export const createEmptySurrogateMother = () => ({
   address: { uk: '', en: '' },
 });
 
+// Batch 33: a representative is a person, full stop - power of attorney (date + apostille date)
+// is a fact of the *case* that engages them (relations.representativePowerOfAttorney on the case,
+// edited in CaseEditor), never stored here. Without that split, a new POA meant a whole new
+// duplicate person record (same name, different dates), which is exactly what filled the picker
+// with lookalike entries. resolveCaseContext/buildDraftFromCase still read a legacy
+// `record.powerOfAttorney` off pre-migration records as a fallback - see the migration script
+// (scripts/migrateRepresentativePowerOfAttorney.js) that moves that data onto cases and dedupes
+// the person records.
 export const createEmptyRepresentative = () => ({
   id: makeRecordId('representative'),
   name: { uk: { nominative: '', genitive: '' }, en: '' },
@@ -839,12 +847,6 @@ export const createEmptyRepresentative = () => ({
   address: { uk: '', en: '' },
   passport: {
     number: '', issuedBy: { uk: '', en: '' }, issueDate: '',
-  },
-  // `apostille` (legacy, freeform) is kept for whatever already reads it; `apostilleDate` is the
-  // discrete date a signature block needs (spec batch 2026-07-24 §10) - a separate field, not a
-  // rename, so no existing template silently loses its value.
-  powerOfAttorney: {
-    date: '', apostille: '', apostilleDate: '',
   },
 });
 
