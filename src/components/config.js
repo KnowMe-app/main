@@ -662,11 +662,12 @@ export const removeFavoriteUser = async (userId, ownerId) => {
   }
 };
 
-export const addDislikeUser = async (userId, ownerId) => {
+export const addDislikeUser = async (userId, ownerId, dislikedAt) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await set(ref2(database, `multiData/dislikes/${ownerId || owner.uid}/${userId}`), true);
+    const timestamp = typeof dislikedAt === 'number' ? dislikedAt : Date.now();
+    await set(ref2(database, `multiData/dislikes/${ownerId || owner.uid}/${userId}`), timestamp);
   } catch (error) {
     console.error('Error adding dislike user:', error);
   }
