@@ -116,7 +116,7 @@ import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
 import { HiddenHeaderTitle as MatchingHiddenListHeaderTitle } from './MatchingHiddenList.styled';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaPencilAlt } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -1364,7 +1364,6 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
-  const [hiddenListEditMode, setHiddenListEditMode] = useState(false);
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
   const matchingSearchKeyRef = useRef(null);
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
@@ -5756,19 +5755,6 @@ const Matching = () => {
                   {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
                 </ActionButton>
               </TopActionGroup>
-              {viewMode === 'dislikes' && (
-                <TopActionGroup aria-label="Редагування прихованих анкет">
-                  <ActionButton
-                    type="button"
-                    onClick={() => setHiddenListEditMode(v => !v)}
-                    $active={hiddenListEditMode}
-                    aria-label={hiddenListEditMode ? 'Вимкнути редагування' : 'Редагувати приховані анкети'}
-                    title={hiddenListEditMode ? 'Вимкнути редагування' : 'Редагувати приховані анкети'}
-                  >
-                    <FaPencilAlt />
-                  </ActionButton>
-                </TopActionGroup>
-              )}
               <TopActionGroup aria-label="Навігація matching">
                 <ActionButton
                   type="button"
@@ -5877,9 +5863,12 @@ const Matching = () => {
               setDislikeUsers={setDislikeUsers}
               ownDislikeUsers={ownDislikeUsers}
               setOwnDislikeUsers={setOwnDislikeUsers}
-              editMode={hiddenListEditMode}
               isAdmin={isAdmin}
               onGoToFeed={handleDefaultModeClick}
+              onEditProfile={user => {
+                saveScrollPosition();
+                navigate(`/edit/${user.userId}`, { state: user });
+              }}
             />
           ) : (
           <Grid>
