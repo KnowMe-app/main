@@ -29,6 +29,73 @@ export const normalizeDisplayValue = value => {
 
 export const shouldRenderField = value => Boolean(normalizeDisplayValue(value));
 
+const YES_TOKENS = new Set(['yes', 'true']);
+const NO_TOKENS = new Set(['no', 'false']);
+
+const yesNoLabel = (rawValue, yesText, noText) => {
+  const normalized = normalizeDisplayValue(rawValue).toLowerCase();
+  if (!normalized) return '';
+  if (YES_TOKENS.has(normalized)) return yesText;
+  if (NO_TOKENS.has(normalized)) return noText;
+  return normalizeDisplayValue(rawValue);
+};
+
+export const maritalStatusLabel = value => yesNoLabel(value, 'заміжня', 'не заміжня');
+export const glassesLabel = value => yesNoLabel(value, 'так', 'ні');
+const ownKidsBooleanLabel = value => yesNoLabel(value, 'є', 'немає');
+
+// blood is stored as one combined field ("3+", "2", "+", "AB-", roman numerals,
+// Ukrainian "І" instead of Latin "I", verbose Rh words, etc). Parse it into an
+// ABO letter and a Rh sign so the two missing-half cases (bare sign, bare
+// group) can be rendered with context instead of as a lone character.
+const CYRILLIC_I_RE = /[Іі]/g;
+const toLatinRoman = value => value.replace(CYRILLIC_I_RE, ch => (ch === 'І' ? 'I' : 'i'));
+
+const ABO_LETTER_BY_TOKEN = {
+  '1': 'O', i: 'O', o: 'O',
+  '2': 'A', ii: 'A', a: 'A',
+  '3': 'B', iii: 'B', b: 'B',
+  '4': 'AB', iv: 'AB', ab: 'AB',
+};
+const ABO_TOKEN_RE = /^(iv|iii|ii|ab|i|a|b|o|[1-4])/i;
+const RH_POSITIVE_RE = /^(rh)?\s*(\+|pos(itive)?)$/i;
+const RH_NEGATIVE_RE = /^(rh)?\s*(-|neg(ative)?)$/i;
+
+export const parseBloodValue = rawValue => {
+  const trimmed = toLatinRoman(String(rawValue ?? '').trim());
+  if (!trimmed) return { abo: '', rh: '' };
+
+  let rest = trimmed;
+  let abo = '';
+  const aboMatch = rest.match(ABO_TOKEN_RE);
+  if (aboMatch) {
+    abo = ABO_LETTER_BY_TOKEN[aboMatch[1].toLowerCase()] || '';
+    rest = rest.slice(aboMatch[0].length).trim();
+  }
+
+  let rh = '';
+  const rhCandidate = rest.replace(/−/g, '-').trim();
+  if (rhCandidate) {
+    if (RH_POSITIVE_RE.test(rhCandidate)) rh = '+';
+    else if (RH_NEGATIVE_RE.test(rhCandidate)) rh = '-';
+  }
+
+  return { abo, rh };
+};
+
+export const formatBloodGroup = (abo, rh) => {
+  const sign = rh === '+' ? '+' : rh === '-' ? '−' : '';
+  if (abo && sign) return `${abo}${sign}`;
+  if (abo) return abo;
+  if (sign) return `Rh${sign}`;
+  return null;
+};
+
+export const getBloodGroupDisplay = user => {
+  const { abo, rh } = parseBloodValue(normalizeDisplayValue(user?.blood));
+  return formatBloodGroup(abo, rh);
+};
+
 export const getProfileRole = user => {
   const role = normalizeDisplayValue(user?.role || user?.userRole).toLowerCase();
   if (['ed', 'egg donor', 'egg_donor'].includes(role)) return 'ed';
@@ -115,13 +182,24 @@ export const getProfilePhotos = user => {
   return [...new Set(rawPhotos.map(normalizeDisplayValue).filter(Boolean).map(convertDriveLinkToImage))];
 };
 
-const field = (key, label, valueGetter, sourceKeys) => ({
+// `resolved: true` marks getters that already return final human-readable text
+// (e.g. "немає"), which must not be re-run through normalizeDisplayValue's
+// EMPTY_VALUES sentinel stripping - that set exists to drop raw DB placeholders
+// like "-"/"n/a", but it also happens to contain the word "немає" itself, which
+// would otherwise wrongly delete an intentionally rendered "немає" answer.
+const field = (key, label, valueGetter, sourceKeys, { resolved = false } = {}) => ({
   key,
   label,
   valueGetter,
   sourceKeys: sourceKeys || [key],
+  resolved,
 });
-const valueFor = (user, item) => normalizeDisplayValue(item.valueGetter ? item.valueGetter(user) : user?.[item.key]);
+const valueFor = (user, item) => {
+  if (!item.valueGetter) return normalizeDisplayValue(user?.[item.key]);
+  const result = item.valueGetter(user);
+  if (item.resolved) return typeof result === 'string' ? result.trim() : normalizeDisplayValue(result);
+  return normalizeDisplayValue(result);
+};
 const isExcluded = (item, excludeKeys = []) => {
   const excluded = new Set(excludeKeys || []);
   return [item.key, ...(item.sourceKeys || [])].some(key => excluded.has(key));
@@ -130,7 +208,7 @@ const toDisplayFields = (items, user, excludeKeys = []) =>
   items
     .filter(item => !isExcluded(item, excludeKeys))
     .map(item => ({ ...item, value: valueFor(user, item) }))
-    .filter(item => shouldRenderField(item.value));
+    .filter(item => (item.resolved ? Boolean(item.value) : shouldRenderField(item.value)));
 
 export const bmiValue = user => {
   const explicit = normalizeDisplayValue(user?.bmi);
@@ -150,7 +228,9 @@ const ownKidsValue = user => {
   return raw;
 };
 
-
+const ownKidsDisplayValue = user => ownKidsBooleanLabel(ownKidsValue(user));
+const maritalStatusDisplayValue = user => maritalStatusLabel(user?.maritalStatus);
+const glassesDisplayValue = user => glassesLabel(user?.glasses);
 
 const donorExperienceValue = user => {
   const exp = normalizeDisplayValue(user?.experience || user?.donationExperience || user?.previousDonation);
@@ -164,13 +244,13 @@ const heroFields = {
     field('height', 'Height'),
     field('weight', 'Weight'),
     field('bmi', 'BMI', bmiValue, ['bmi']),
-    field('blood', 'Blood/Rh'),
+    field('blood', 'Blood/Rh', getBloodGroupDisplay, ['blood'], { resolved: true }),
     field('experience', 'Exp', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
   ],
   ip: [
     field('country', 'Country'),
     field('city', 'City'),
-    field('maritalStatus', 'Family'),
+    field('maritalStatus', 'Family', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
     field('programInterest', 'Program'),
     field('lookingFor', 'Looking for'),
   ],
@@ -196,12 +276,11 @@ const heroFields = {
 const quickFacts = {
   ed: [
     ...heroFields.ed,
-    field('rh', 'RH'),
   ],
   ip: [
     field('country', 'Country'),
     field('city', 'City'),
-    field('maritalStatus', 'Family status'),
+    field('maritalStatus', 'Family status', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
     field('programInterest', 'Program interest'),
     field('budget', 'Budget'),
   ],
@@ -229,14 +308,14 @@ const quickFacts = {
 const sectionConfig = {
   ed: [
     { title: 'Main information', fields: [
-      field('education', 'Education'), field('profession', 'Profession'), field('maritalStatus', 'Marital status'),
-      field('ownKids', 'Own kids', ownKidsValue), field('clothingSize', 'Clothing'), field('shoeSize', 'Shoe'),
+      field('education', 'Education'), field('profession', 'Profession'), field('maritalStatus', 'Marital status', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
+      field('ownKids', 'Own kids', ownKidsDisplayValue, ['ownKids'], { resolved: true }), field('clothingSize', 'Clothing'), field('shoeSize', 'Shoe'),
     ] },
     { title: 'Appearance', variant: 'chips', fields: [
       field('eyeColor', 'Eyes'), field('hairColor', 'Hair color'), field('hairStructure', 'Hair structure'),
       field('faceShape', 'Face shape'), field('noseShape', 'Nose'), field('lipsShape', 'Lips'),
       field('chin', 'Chin'), field('bodyType', 'Body type'), field('breastSize', 'Breast size'),
-      field('race', 'Race'), field('glasses', 'Glasses'),
+      field('race', 'Race'), field('glasses', 'Glasses', glassesDisplayValue, ['glasses'], { resolved: true }),
     ] },
     { title: 'Donation experience', fields: [
       field('experience', 'Previous donation'), field('donationCount', 'Donation count'), field('donationsCount', 'Donations'),
@@ -245,7 +324,7 @@ const sectionConfig = {
   ],
   ip: [
     { title: 'Main information', fields: [
-      field('country', 'Country'), field('city', 'City'), field('region', 'Region'), field('maritalStatus', 'Family status'),
+      field('country', 'Country'), field('city', 'City'), field('region', 'Region'), field('maritalStatus', 'Family status', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
       field('programInterest', 'Program interest'), field('lookingFor', 'Looking for'), field('budget', 'Budget'),
     ] },
   ],

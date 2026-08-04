@@ -16,6 +16,8 @@ import {
   getProfilePhotos,
   bmiValue as computeBmiValue,
   normalizeDisplayValue,
+  maritalStatusLabel,
+  getBloodGroupDisplay,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { getContactEntries } from './contactMethods';
@@ -23,6 +25,7 @@ import {
   addContactViewUser,
   addDislikeUser,
   auth,
+  fetchUserComments,
   lazyLoadProfilePhotos,
   removeDislikeUser,
   updateDataInFiresoreDB,
@@ -30,6 +33,7 @@ import {
   updateDataInRealtimeDB,
 } from './config';
 import { setDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
+import { loadComments, saveComments } from 'utils/commentsStorage';
 import { removeCardFromList } from 'utils/cardsStorage';
 import { getOverlayForUserCard, patchOverlayField } from 'utils/multiAccountEdits';
 import * as S from './MatchingHiddenList.styled';
@@ -295,10 +299,13 @@ const renderFacts = user => {
     );
   }
 
-  const marital = normalizeDisplayValue(user?.maritalStatus);
-  if (marital) {
+  const maritalRaw = normalizeDisplayValue(user?.maritalStatus);
+  const maritalDisplay = maritalStatusLabel(maritalRaw);
+  if (maritalDisplay) {
     nodes.push(
-      <S.Fact key="marital"><InlineField user={user} field="maritalStatus" value={marital} /></S.Fact>
+      <S.Fact key="marital">
+        <InlineField user={user} field="maritalStatus" value={maritalRaw} displayValue={maritalDisplay} />
+      </S.Fact>
     );
   }
 
@@ -312,9 +319,14 @@ const renderFacts = user => {
     );
   }
 
-  const blood = normalizeDisplayValue(user?.blood);
-  if (blood) {
-    nodes.push(<S.Fact key="blood"><InlineField user={user} field="blood" value={blood} /></S.Fact>);
+  const bloodRaw = normalizeDisplayValue(user?.blood);
+  const bloodDisplay = getBloodGroupDisplay(user);
+  if (bloodDisplay) {
+    nodes.push(
+      <S.Fact key="blood">
+        <InlineField user={user} field="blood" value={bloodRaw} displayValue={bloodDisplay} />
+      </S.Fact>
+    );
   }
 
   const ownKids = normalizeDisplayValue(user?.ownKids);
@@ -346,32 +358,40 @@ const renderFacts = user => {
   return nodes;
 };
 
-const NoteBlock = ({ user, text }) => {
+// variant "comment" renders the client's own multiData/comments note (why the
+// card was hidden) in a plain-font block with a background; variant "bio"
+// renders the candidate's self-written description in italics without one.
+// Only "bio" is editable here - the comment is edited on the full profile
+// card's dedicated Comment box, not inline in this list.
+const NoteBlock = ({ user, text, variant = 'bio', editable = false }) => {
   const { editMode } = useContext(EditContext);
   const ref = useRef(null);
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
+  const showEditor = editable && editMode;
 
   useLayoutEffect(() => {
-    if (editMode || expanded) {
+    if (showEditor || expanded) {
       setOverflowing(false);
       return;
     }
     const el = ref.current;
     if (!el) return;
     setOverflowing(el.scrollHeight - el.clientHeight > 1);
-  }, [text, editMode, expanded]);
+  }, [text, showEditor, expanded]);
 
   if (!text) return null;
 
+  const Wrapper = variant === 'comment' ? S.Note : S.SelfDescription;
+
   return (
     <>
-      <S.Note ref={ref} $clip={!editMode && !expanded}>
-        {editMode
+      <Wrapper ref={ref} $clip={!showEditor && !expanded}>
+        {showEditor
           ? <InlineField user={user} field={resolveBioKey(user)} value={text} multiline />
           : text}
-      </S.Note>
-      {!editMode && overflowing && !expanded && (
+      </Wrapper>
+      {!showEditor && overflowing && !expanded && (
         <S.NoteMore onClick={e => { e.stopPropagation(); setExpanded(true); }}>…</S.NoteMore>
       )}
     </>
@@ -433,6 +453,7 @@ const HiddenProfileCard = ({
   fieldErrors,
   pendingFields,
   onContactsOpened,
+  clientComment,
 }) => {
   const name = getProfileName(user);
   const age = getProfileAge(user);
@@ -440,6 +461,7 @@ const HiddenProfileCard = ({
   const photos = getProfilePhotos(user);
   const photo = photos[0];
   const bio = getProfileBio(user);
+  const facts = useMemo(() => renderFacts(user), [user]);
   const gridRows = useMemo(() => buildGridRows(user), [user]);
   const contactEntries = useMemo(
     () => getContactEntries(user).filter(entry => entry.key !== 'vk'),
@@ -458,6 +480,8 @@ const HiddenProfileCard = ({
 
   const cityValue = normalizeDisplayValue(user?.city);
   const regionValue = normalizeDisplayValue(user?.region);
+  const hasLocation = Boolean(location || (editMode && (cityValue || regionValue)));
+  const isUnfilled = facts.length === 0 && !hasLocation;
 
   return (
     <EditContext.Provider value={editContextValue}>
@@ -478,7 +502,7 @@ const HiddenProfileCard = ({
               <InlineField user={user} field="name" value={normalizeDisplayValue(user?.name)} />
               {age && <>, {age}</>}
             </S.Name>
-            {(location || (editMode && (cityValue || regionValue))) && (
+            {hasLocation && (
               <S.Location>
                 <FaMapMarkerAlt aria-hidden="true" />
                 <span>
@@ -492,7 +516,11 @@ const HiddenProfileCard = ({
                 </span>
               </S.Location>
             )}
-            <S.FactsRow>{renderFacts(user)}</S.FactsRow>
+            {facts.length > 0 ? (
+              <S.FactsRow>{facts}</S.FactsRow>
+            ) : isUnfilled && (
+              <S.EmptyNote>Анкета не заповнена</S.EmptyNote>
+            )}
           </S.Body>
           <S.Ctrl>
             <S.ReturnButton
@@ -516,7 +544,7 @@ const HiddenProfileCard = ({
           </S.Ctrl>
         </S.Top>
 
-        <NoteBlock user={user} text={bio} />
+        <NoteBlock user={user} text={clientComment} variant="comment" />
 
         {expanded && (
           <S.More onClick={e => e.stopPropagation()}>
@@ -536,6 +564,7 @@ const HiddenProfileCard = ({
                 ))}
               </S.Grid>
             )}
+            <NoteBlock user={user} text={bio} variant="bio" editable />
             <ContactsSection user={user} onOpened={onContactsOpened} />
           </S.More>
         )}
@@ -580,10 +609,12 @@ const MatchingHiddenList = ({
   const [fieldErrors, setFieldErrors] = useState({});
   const [pendingFields, setPendingFields] = useState({});
   const [photosByUserId, setPhotosByUserId] = useState({});
+  const [commentsByUserId, setCommentsByUserId] = useState({});
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   const photoRequestedRef = useRef(new Set());
+  const commentRequestedRef = useRef(new Set());
   const overlayHydratedRef = useRef(new Set());
   const contactViewKeysRef = useRef(new Set());
   const loadMoreRef = useRef(loadMore);
@@ -646,6 +677,48 @@ const MatchingHiddenList = ({
         });
     });
   }, [users, photosByUserId]);
+
+  // The client's personal note about why a card was hidden lives in
+  // multiData/comments/{ownerId}/{cardId} (see config.js's fetchUserComments/
+  // saveMyCardComment), not on the profile record itself - same store the
+  // full profile card's "Comment" box reads from in Matching.jsx.
+  useEffect(() => {
+    if (!ownerId) return;
+    const pendingIds = users
+      .map(user => user?.userId)
+      .filter(Boolean)
+      .filter(userId => !(userId in commentsByUserId) && !commentRequestedRef.current.has(userId));
+    if (!pendingIds.length) return;
+
+    const cachedForOwner = loadComments()[ownerId] || {};
+    const fromCache = {};
+    const toFetch = [];
+    pendingIds.forEach(userId => {
+      commentRequestedRef.current.add(userId);
+      if (cachedForOwner[userId]) fromCache[userId] = cachedForOwner[userId].text || '';
+      else toFetch.push(userId);
+    });
+    if (Object.keys(fromCache).length) {
+      setCommentsByUserId(prev => ({ ...prev, ...fromCache }));
+    }
+    if (!toFetch.length) return;
+
+    fetchUserComments(ownerId, toFetch)
+      .then(result => {
+        const textByUserId = {};
+        toFetch.forEach(userId => { textByUserId[userId] = result[userId]?.text || ''; });
+        setCommentsByUserId(prev => ({ ...prev, ...textByUserId }));
+        const allComments = loadComments();
+        allComments[ownerId] = { ...(allComments[ownerId] || {}), ...result };
+        saveComments(allComments);
+      })
+      .catch(error => {
+        console.error('[MatchingHiddenList] Failed to load comments', error);
+        const fallback = {};
+        toFetch.forEach(userId => { fallback[userId] = ''; });
+        setCommentsByUserId(prev => ({ ...prev, ...fallback }));
+      });
+  }, [users, ownerId, commentsByUserId]);
 
   const rows = useMemo(() => users
     .filter(user => user?.userId)
@@ -846,6 +919,7 @@ const MatchingHiddenList = ({
               fieldErrors={fieldErrors}
               pendingFields={pendingFields}
               onContactsOpened={handleContactsOpened}
+              clientComment={commentsByUserId[user.userId] || ''}
             />
           ))}
 
