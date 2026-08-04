@@ -324,6 +324,7 @@ export const newUsersRequiredFieldNames = [
 ];
 
 export const newUsersSanitizedFieldNames = [
+  '_reactionType',
   '__sourceCollection',
   '__photosHydrated',
   '__profileSnapshotVersion',
