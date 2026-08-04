@@ -2091,7 +2091,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       formatDateAndFormula(updatedState.lastDelivery)
     );
 
-    const syncedState = { ...updatedState };
+    // Cards opened from the Like/Dislike list contain local display metadata.
+    // Strip it before the state enters any save path (including user edit overlays).
+    const syncedState = sanitizeTechnicalPayload(updatedState);
 
     if (formattedLastDelivery) {
       syncedState.lastDelivery = formattedLastDelivery;
