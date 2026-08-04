@@ -1,3 +1,6 @@
+# Migration backups (may contain PII - passport numbers, names)
+scripts/migration-backups
+
 # Logs
 logs
 *.log

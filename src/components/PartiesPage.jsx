@@ -457,9 +457,6 @@ const REPRESENTATIVE_FIELDS = [
   { label: 'Passport issue date', path: 'passport.issueDate', type: 'date' },
   { label: 'Address (uk)', path: 'address.uk' },
   { label: 'Address (en)', path: 'address.en' },
-  { label: 'Power of attorney date', path: 'powerOfAttorney.date', type: 'date' },
-  { label: 'Power of attorney apostille', path: 'powerOfAttorney.apostille' },
-  { label: 'Power of attorney apostille date', path: 'powerOfAttorney.apostilleDate', type: 'date' },
 ];
 
 const CLINIC_FIELDS = [
