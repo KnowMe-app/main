@@ -5741,7 +5741,7 @@ const Matching = () => {
             <TopActions>
               {viewMode === 'dislikes' && (
                 <MatchingHiddenListHeaderTitle>
-                  Приховані <span>· {Object.keys(dislikeUsers || {}).length}</span>
+                  Приховані
                 </MatchingHiddenListHeaderTitle>
               )}
               <TopActionGroup aria-label="Фільтри matching">
@@ -5779,6 +5779,9 @@ const Matching = () => {
                   title={viewMode === 'dislikes' ? 'Повернутись до загального списку' : 'Показати дизлайки'}
                 >
                   <FaTimes />
+                  {Object.keys(dislikeUsers || {}).length > 0 && (
+                    <ActionBadge>{Object.keys(dislikeUsers || {}).length}</ActionBadge>
+                  )}
                 </ActionButton>
                 <ActionButton
                   type="button"

@@ -118,6 +118,13 @@ export const FactsRow = styled.div`
   line-height: 1.5;
 `;
 
+export const EmptyNote = styled.div`
+  font-size: 12px;
+  color: var(--matching-muted-text);
+  margin-top: 5px;
+  line-height: 1.5;
+`;
+
 export const Fact = styled.i`
   font-style: normal;
   white-space: nowrap;
@@ -127,14 +134,14 @@ export const Fact = styled.i`
     font-weight: 650;
   }
 
-  &::after {
+  &::before {
     content: '·';
     color: var(--matching-muted-text);
     margin: 0 5px;
     opacity: 0.6;
   }
 
-  &:last-child::after {
+  &:first-child::before {
     content: '';
     margin: 0;
   }
@@ -193,12 +200,30 @@ export const ChevronButton = styled.button`
 
 export const Note = styled.p`
   font-size: 12.3px;
-  color: var(--matching-muted-text);
+  color: var(--matching-header-text);
   background: var(--matching-section-bg);
   border-radius: 14px;
   padding: 7px 10px;
   margin: 9px 0 0;
   line-height: 1.5;
+  max-height: none;
+
+  ${({ $clip }) => $clip && css`
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  `}
+`;
+
+export const SelfDescription = styled.p`
+  font-size: 12.3px;
+  font-style: italic;
+  color: var(--matching-muted-text);
+  padding: 0;
+  margin: 9px 0 0;
+  line-height: 1.5;
+  max-height: none;
 
   ${({ $clip }) => $clip && css`
     display: -webkit-box;
@@ -257,18 +282,20 @@ export const ContactsBlock = styled.div`
 `;
 
 export const ContactsHeader = styled.button`
+  font: inherit;
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 11px;
+  height: 34px;
+  padding: 8px 11px;
+  box-sizing: border-box;
   font-size: 12.3px;
   font-weight: 600;
   color: var(--matching-muted-text);
   background: var(--matching-card-bg);
   border: 0;
   cursor: pointer;
-  font: inherit;
   text-align: left;
 `;
 
@@ -280,7 +307,7 @@ export const ContactsStatus = styled.span`
 `;
 
 export const ContactsBody = styled.div`
-  padding: 2px 11px 6px;
+  padding: 0 11px;
   background: var(--matching-card-bg);
   border-top: 1px solid var(--matching-section-bg);
 `;
@@ -288,12 +315,13 @@ export const ContactsBody = styled.div`
 export const ContactRow = styled.a`
   display: flex;
   align-items: center;
-  min-height: 32px;
+  height: 34px;
+  box-sizing: border-box;
   font-size: 12.5px;
   color: var(--matching-accent);
   font-weight: 500;
   text-decoration: none;
-  padding: 7px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--matching-section-bg);
 
   &:last-child {
