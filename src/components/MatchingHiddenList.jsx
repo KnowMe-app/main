@@ -22,6 +22,7 @@ import { getContactEntries } from './contactMethods';
 import {
   addContactViewUser,
   addDislikeUser,
+  auth,
   lazyLoadProfilePhotos,
   removeDislikeUser,
   updateDataInFiresoreDB,
@@ -30,6 +31,7 @@ import {
 } from './config';
 import { setDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
 import { removeCardFromList } from 'utils/cardsStorage';
+import { getOverlayForUserCard, patchOverlayField } from 'utils/multiAccountEdits';
 import * as S from './MatchingHiddenList.styled';
 
 const PAGE_SIZE = 20;
@@ -168,7 +170,11 @@ const buildGridRows = user => {
   return rows;
 };
 
-const saveProfileField = async (user, field, value) => {
+// Admin edits write straight to the canonical users/newUsers record. Non-admin
+// ("editor") edits must never touch the live record directly - they are staged
+// as a per-editor overlay (multiData/edits/{cardUserId}/{editorUserId}) that an
+// admin later accepts or rejects, same as EditProfile.jsx's remoteUpdate().
+const saveProfileFieldDirect = async (user, field, value) => {
   const payload = { [field]: value };
   if (user?.__sourceCollection === 'newUsers') {
     await updateDataInNewUsersRTDB(user.userId, payload, 'update');
@@ -178,15 +184,26 @@ const saveProfileField = async (user, field, value) => {
   }
 };
 
+const saveProfileFieldOverlay = async (user, field, value, editorUserId) => {
+  await patchOverlayField({
+    editorUserId,
+    cardUserId: user.userId,
+    fieldName: field,
+    change: { from: normalizeDisplayValue(user?.[field]) ?? '', to: value },
+  });
+};
+
 const EditContext = React.createContext({
   editMode: false,
+  isAdmin: false,
   onSave: () => {},
   savingFields: {},
   fieldErrors: {},
+  pendingFields: {},
 });
 
 const InlineField = ({ user, field, value, displayValue, placeholder, multiline, validate, validationError }) => {
-  const { editMode, onSave, savingFields, fieldErrors } = useContext(EditContext);
+  const { editMode, isAdmin, onSave, savingFields, fieldErrors, pendingFields } = useContext(EditContext);
   const [draft, setDraft] = useState(value || '');
   const [localError, setLocalError] = useState('');
 
@@ -201,6 +218,7 @@ const InlineField = ({ user, field, value, displayValue, placeholder, multiline,
   const saving = Boolean(savingFields[key]);
   const remoteError = fieldErrors[key];
   const error = localError || remoteError;
+  const pending = !isAdmin && Boolean(pendingFields[key]);
 
   const commit = () => {
     const trimmed = draft.trim();
@@ -217,6 +235,7 @@ const InlineField = ({ user, field, value, displayValue, placeholder, multiline,
     return (
       <span>
         <S.EditableTextarea
+          $pending={pending}
           value={draft}
           placeholder={placeholder}
           disabled={saving}
@@ -225,6 +244,7 @@ const InlineField = ({ user, field, value, displayValue, placeholder, multiline,
           onChange={e => setDraft(e.target.value)}
           onBlur={commit}
         />
+        {pending && !error && <S.PendingBadge title="Очікує підтвердження адміністратора">на розгляді</S.PendingBadge>}
         {error && <S.FieldError>{error}</S.FieldError>}
       </span>
     );
@@ -233,6 +253,7 @@ const InlineField = ({ user, field, value, displayValue, placeholder, multiline,
   return (
     <span>
       <S.EditableInput
+        $pending={pending}
         value={draft}
         size={Math.max(2, (draft || placeholder || '').length)}
         placeholder={placeholder}
@@ -242,6 +263,7 @@ const InlineField = ({ user, field, value, displayValue, placeholder, multiline,
         onChange={e => setDraft(e.target.value)}
         onBlur={commit}
       />
+      {pending && !error && <S.PendingBadge title="Очікує підтвердження адміністратора">•</S.PendingBadge>}
       {error && <S.FieldError>{error}</S.FieldError>}
     </span>
   );
@@ -402,12 +424,14 @@ const ContactsSection = ({ user, onOpened }) => {
 const HiddenProfileCard = ({
   user,
   editMode,
+  isAdmin,
   expanded,
   onToggleExpand,
   onReturn,
   onFieldSave,
   savingFields,
   fieldErrors,
+  pendingFields,
   onContactsOpened,
 }) => {
   const name = getProfileName(user);
@@ -425,10 +449,12 @@ const HiddenProfileCard = ({
 
   const editContextValue = useMemo(() => ({
     editMode,
+    isAdmin,
     onSave: onFieldSave,
     savingFields,
     fieldErrors,
-  }), [editMode, onFieldSave, savingFields, fieldErrors]);
+    pendingFields,
+  }), [editMode, isAdmin, onFieldSave, savingFields, fieldErrors, pendingFields]);
 
   const cityValue = normalizeDisplayValue(user?.city);
   const regionValue = normalizeDisplayValue(user?.region);
@@ -545,20 +571,61 @@ const MatchingHiddenList = ({
   ownDislikeUsers,
   setOwnDislikeUsers,
   editMode,
+  isAdmin,
   onGoToFeed,
 }) => {
   const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [fieldOverrides, setFieldOverrides] = useState({});
   const [savingFields, setSavingFields] = useState({});
   const [fieldErrors, setFieldErrors] = useState({});
+  const [pendingFields, setPendingFields] = useState({});
   const [photosByUserId, setPhotosByUserId] = useState({});
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   const photoRequestedRef = useRef(new Set());
+  const overlayHydratedRef = useRef(new Set());
   const contactViewKeysRef = useRef(new Set());
   const loadMoreRef = useRef(loadMore);
   useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
+
+  // Non-admin editors never write straight to users/newUsers - their edits are
+  // staged per-editor and only applied once an admin accepts them elsewhere
+  // (EditProfile.jsx). When they open edit mode here, hydrate any of their own
+  // still-pending overlay values so they don't lose track of an earlier draft.
+  useEffect(() => {
+    if (!editMode || isAdmin) return;
+    const editorUserId = auth.currentUser?.uid;
+    if (!editorUserId) return;
+    const candidates = users.filter(user => (
+      user?.userId && !overlayHydratedRef.current.has(user.userId)
+    ));
+    if (!candidates.length) return;
+    candidates.forEach(user => {
+      overlayHydratedRef.current.add(user.userId);
+      getOverlayForUserCard({ editorUserId, cardUserId: user.userId })
+        .then(overlay => {
+          const fields = overlay?.fields;
+          if (!fields || !Object.keys(fields).length) return;
+          const overrideValues = {};
+          const pendingKeys = {};
+          Object.entries(fields).forEach(([fieldName, change]) => {
+            if (!change || typeof change !== 'object' || !('to' in change)) return;
+            overrideValues[fieldName] = change.to ?? '';
+            pendingKeys[buildOverrideKey(user.userId, fieldName)] = true;
+          });
+          if (!Object.keys(overrideValues).length) return;
+          setFieldOverrides(prev => ({
+            ...prev,
+            [user.userId]: { ...(prev[user.userId] || {}), ...overrideValues },
+          }));
+          setPendingFields(prev => ({ ...prev, ...pendingKeys }));
+        })
+        .catch(error => {
+          console.error('[MatchingHiddenList] Failed to load pending overlay', error);
+        });
+    });
+  }, [editMode, isAdmin, users]);
 
   useEffect(() => {
     const pending = users.filter(user => (
@@ -607,7 +674,20 @@ const MatchingHiddenList = ({
     });
     setSavingFields(prev => ({ ...prev, [key]: true }));
     try {
-      await saveProfileField(user, field, value);
+      if (isAdmin) {
+        await saveProfileFieldDirect(user, field, value);
+        setPendingFields(prev => {
+          if (!(key in prev)) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      } else {
+        const editorUserId = auth.currentUser?.uid;
+        if (!editorUserId) throw new Error('Not signed in');
+        await saveProfileFieldOverlay(user, field, value, editorUserId);
+        setPendingFields(prev => ({ ...prev, [key]: true }));
+      }
     } catch (error) {
       console.error('[MatchingHiddenList] Failed to save field', field, error);
       setFieldErrors(prev => ({ ...prev, [key]: 'Не вдалося зберегти' }));
@@ -619,7 +699,7 @@ const MatchingHiddenList = ({
         return next;
       });
     }
-  }, []);
+  }, [isAdmin]);
 
   const handleToggleExpand = useCallback(userId => {
     setExpandedIds(prev => {
@@ -735,7 +815,11 @@ const MatchingHiddenList = ({
   return (
     <S.Wrap>
       {editMode && (
-        <S.EditHint>Режим редагування: торкніться будь-якого значення, щоб змінити його.</S.EditHint>
+        <S.EditHint>
+          {isAdmin
+            ? 'Режим редагування: торкніться будь-якого значення, щоб змінити його.'
+            : 'Режим редагування: зміни зберігаються як пропозиція та підуть на розгляд адміністратору.'}
+        </S.EditHint>
       )}
 
       {showEmptyState ? (
@@ -753,12 +837,14 @@ const MatchingHiddenList = ({
               key={user.userId}
               user={user}
               editMode={editMode}
+              isAdmin={isAdmin}
               expanded={expandedIds.has(user.userId)}
               onToggleExpand={handleToggleExpand}
               onReturn={handleReturn}
               onFieldSave={handleFieldSave}
               savingFields={savingFields}
               fieldErrors={fieldErrors}
+              pendingFields={pendingFields}
               onContactsOpened={handleContactsOpened}
             />
           ))}

@@ -5875,6 +5875,7 @@ const Matching = () => {
               ownDislikeUsers={ownDislikeUsers}
               setOwnDislikeUsers={setOwnDislikeUsers}
               editMode={hiddenListEditMode}
+              isAdmin={isAdmin}
               onGoToFeed={handleDefaultModeClick}
             />
           ) : (

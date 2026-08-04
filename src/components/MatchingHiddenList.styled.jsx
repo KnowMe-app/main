@@ -322,7 +322,9 @@ export const EditableInput = styled.input`
   letter-spacing: inherit;
   padding: 0 1px;
   min-width: 14px;
-  border-bottom: 1px dashed color-mix(in srgb, var(--matching-muted-text) 55%, transparent);
+  border-bottom: 1px dashed ${({ $pending }) => ($pending
+    ? 'var(--matching-accent)'
+    : 'color-mix(in srgb, var(--matching-muted-text) 55%, transparent)')};
 
   &:focus {
     outline: 0;
@@ -331,8 +333,20 @@ export const EditableInput = styled.input`
   }
 `;
 
+export const PendingBadge = styled.span`
+  display: inline-block;
+  margin-left: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--matching-accent);
+  vertical-align: super;
+  cursor: help;
+`;
+
 export const EditableTextarea = styled.textarea`
-  border: 1px dashed color-mix(in srgb, var(--matching-muted-text) 55%, transparent);
+  border: 1px dashed ${({ $pending }) => ($pending
+    ? 'var(--matching-accent)'
+    : 'color-mix(in srgb, var(--matching-muted-text) 55%, transparent)')};
   background: transparent;
   font: inherit;
   color: inherit;
