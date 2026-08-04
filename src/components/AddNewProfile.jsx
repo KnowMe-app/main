@@ -2015,7 +2015,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // submission order, regardless of how fast each call's own fetch/merge
   // happens to resolve - the actual fix for the deletion-order race.
   const enqueueProfileSync = params => {
-    const { syncedState, saveRequestId, localSaveVersion, removeKeys, deletedKeys } = params;
+    const {
+      syncedState,
+      localCardState = syncedState,
+      saveRequestId,
+      localSaveVersion,
+      removeKeys,
+      deletedKeys,
+    } = params;
 
     const runSync = async () => {
       try {
@@ -2048,7 +2055,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         deletedKeys.forEach(key => pendingDeletedKeysRef.current.delete(key));
 
-        const savedCachedCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
+        const savedCachedCard = updateCachedUser(localCardState, { removeKeys }) || localCardState;
         cacheFetchedUsers({ [syncedState.userId]: savedCachedCard }, cacheLoad2Users, filters);
         liveFieldsRef.current = savedCachedCard;
         setState(savedCachedCard, {
@@ -2094,11 +2101,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // Cards opened from the Like/Dislike list contain local display metadata.
     // Strip it before the state enters any save path (including user edit overlays).
     const syncedState = sanitizeTechnicalPayload(updatedState);
+    const localCardState = { ...syncedState };
+
+    // The singular `photo` field is legacy backend data, but TopBlock still
+    // displays it. Keep it local so optimistic and save-confirmed state do not
+    // blank legacy-only profiles after the backend payload is sanitized.
+    if (hasOwn(updatedState, 'photo')) {
+      localCardState.photo = updatedState.photo;
+    }
 
     if (formattedLastDelivery) {
       syncedState.lastDelivery = formattedLastDelivery;
+      localCardState.lastDelivery = formattedLastDelivery;
     } else {
       delete syncedState.lastDelivery;
+      delete localCardState.lastDelivery;
     }
 
     registerHistorySnapshot(syncedState);
@@ -2111,7 +2128,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         overwrite,
         delCondition,
         deletedKeys: [],
-        optimisticCard: syncedState,
+        optimisticCard: localCardState,
+        localCardState,
         removeKeys: [],
         hasNewState,
         formattedLastDelivery,
@@ -2128,7 +2146,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     removeKeys.forEach(key => pendingDeletedKeysRef.current.add(key));
     const deletedKeys = normalizeDeletedKeys(pendingDeletedKeysRef.current, removeKeys);
 
-    const optimisticCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
+    const optimisticCard = updateCachedUser(localCardState, { removeKeys }) || localCardState;
     const localSaveVersion = profileSnapshotVersionRef.current + 1;
     liveFieldsRef.current = optimisticCard;
     setState(optimisticCard, {
@@ -2156,6 +2174,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       delCondition,
       deletedKeys,
       optimisticCard,
+      localCardState,
       removeKeys,
       saveRequestId,
       localSaveVersion,
