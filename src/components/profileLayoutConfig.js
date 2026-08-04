@@ -132,7 +132,7 @@ const toDisplayFields = (items, user, excludeKeys = []) =>
     .map(item => ({ ...item, value: valueFor(user, item) }))
     .filter(item => shouldRenderField(item.value));
 
-const bmiValue = user => {
+export const bmiValue = user => {
   const explicit = normalizeDisplayValue(user?.bmi);
   if (explicit) return explicit;
   const weight = Number(normalizeDisplayValue(user?.weight));
