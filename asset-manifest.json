@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/main/static/css/main.6513275a.css",
-    "main.js": "/main/static/js/main.22e64cfa.js",
+    "main.js": "/main/static/js/main.50b0a9b9.js",
     "static/js/748.6a559319.chunk.js": "/main/static/js/748.6a559319.chunk.js",
     "static/js/862.9e68ba1e.chunk.js": "/main/static/js/862.9e68ba1e.chunk.js",
     "static/js/668.a1b7aab1.chunk.js": "/main/static/js/668.a1b7aab1.chunk.js",
@@ -11,12 +11,12 @@
     "static/js/471.c13ff48e.chunk.js": "/main/static/js/471.c13ff48e.chunk.js",
     "static/js/401.29d6be70.chunk.js": "/main/static/js/401.29d6be70.chunk.js",
     "static/js/931.45a2e14e.chunk.js": "/main/static/js/931.45a2e14e.chunk.js",
-    "static/js/549.42c92efc.chunk.js": "/main/static/js/549.42c92efc.chunk.js",
+    "static/js/549.63c3f8e7.chunk.js": "/main/static/js/549.63c3f8e7.chunk.js",
     "index.html": "/main/index.html",
     "static/media/baby.svg": "/main/static/media/baby.181a58d8ed40c6b633ddc91588854b3a.svg",
     "static/media/clipboard.svg": "/main/static/media/clipboard.f0e746ddd6f621177e34fed32194e532.svg",
     "main.6513275a.css.map": "/main/static/css/main.6513275a.css.map",
-    "main.22e64cfa.js.map": "/main/static/js/main.22e64cfa.js.map",
+    "main.50b0a9b9.js.map": "/main/static/js/main.50b0a9b9.js.map",
     "748.6a559319.chunk.js.map": "/main/static/js/748.6a559319.chunk.js.map",
     "862.9e68ba1e.chunk.js.map": "/main/static/js/862.9e68ba1e.chunk.js.map",
     "668.a1b7aab1.chunk.js.map": "/main/static/js/668.a1b7aab1.chunk.js.map",
@@ -26,10 +26,10 @@
     "471.c13ff48e.chunk.js.map": "/main/static/js/471.c13ff48e.chunk.js.map",
     "401.29d6be70.chunk.js.map": "/main/static/js/401.29d6be70.chunk.js.map",
     "931.45a2e14e.chunk.js.map": "/main/static/js/931.45a2e14e.chunk.js.map",
-    "549.42c92efc.chunk.js.map": "/main/static/js/549.42c92efc.chunk.js.map"
+    "549.63c3f8e7.chunk.js.map": "/main/static/js/549.63c3f8e7.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.6513275a.css",
-    "static/js/main.22e64cfa.js"
+    "static/js/main.50b0a9b9.js"
   ]
 }
