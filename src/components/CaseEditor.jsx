@@ -111,70 +111,87 @@ const CaseHeaderTitle = styled.h2`
   letter-spacing: -0.01em;
 `;
 
-const HeaderChips = styled.div`
+// A single thin progress bar + caption (mockup's ".prog") replaces the old pair of "X із Y"
+// pill chips - one glance at the fill level reads faster than two separately-worded badges, and
+// it stops competing visually with the section-level completion badges below.
+const ProgressRow = styled.div`
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-`;
-
-const HeaderChip = styled.span`
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: var(--km-bg);
-  border: 1px solid var(--km-border);
-  font-size: 11px;
-  font-weight: 700;
-  color: ${({ $complete }) => ($complete ? 'var(--km-accent)' : 'var(--km-muted)')};
+  gap: 10px;
+  margin-top: 11px;
 `;
 
-// --- Tabs (same pill-segmented-control idiom as Invoice Builder's Invoice/Expected-expenses toggle) -
+const ProgressTrack = styled.div`
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--km-border);
+  overflow: hidden;
+`;
+
+const ProgressFill = styled.div`
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  width: ${({ $pct }) => $pct}%;
+`;
+
+const ProgressCaption = styled.span`
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--km-muted);
+  font-variant-numeric: tabular-nums;
+`;
+
+// --- Tabs (underline idiom, mockup's ".tabs" - a segmented pill control this heavy competed with
+// the Fraunces case title sitting right above it; an underline reads as navigation and weighs
+// nothing) --------------------------------------------------------------------------------------
 
 const Tabs = styled.div`
-  display: inline-flex;
-  gap: 3px;
-  padding: 3px;
-  margin-top: 12px;
-  border-radius: 8px;
-  background: var(--km-bg);
-  border: 1px solid var(--km-border);
+  display: flex;
+  gap: 20px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--km-border);
 `;
 
 const TabButton = styled.button`
   border: none;
-  border-radius: 6px;
-  padding: 7px 14px;
-  font-size: 12px;
-  font-weight: 800;
+  border-bottom: 2px solid ${({ $active }) => ($active ? 'var(--km-accent)' : 'transparent')};
+  margin-bottom: -1px;
+  background: transparent;
+  padding: 0 0 9px;
+  font-size: 12.5px;
+  font-weight: ${({ $active }) => ($active ? 800 : 600)};
   cursor: pointer;
-  color: ${({ $active }) => ($active ? '#fff' : 'var(--km-muted)')};
-  background: ${({ $active }) => ($active ? 'linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%)' : 'transparent')};
+  color: ${({ $active }) => ($active ? 'var(--km-text)' : 'var(--km-muted)')};
 `;
 
 // --- Collapsible section with a completion badge (spec §2) - same Panel/CompactSection idiom as
 // the rest of Parties (Batch 19), plus the badge the mockup adds. ---------------------------------
 
+// Flattened card (batch 34): the previous version nested a bordered+tinted SectionHead and a
+// second tinted SectionBody inside this same-toned Section, three near-identical beige layers
+// that made it hard to see where one section ended and the next began. Now there's exactly one
+// card surface; the header and body sit directly on it, separated by a single hairline.
 const Section = styled.section`
-  margin-top: 10px;
+  margin-top: 9px;
   border: 1px solid var(--km-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--km-card);
-  padding: 12px 14px;
+  overflow: hidden;
 `;
 
 const SectionHead = styled.div`
-  border: 1px solid var(--km-border);
-  border-radius: 8px;
-  background: var(--km-bg);
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
   cursor: pointer;
+
+  &:hover {
+    background: var(--km-line-soft);
+  }
 `;
 
 const SectionHeadInfo = styled.div`
@@ -182,9 +199,33 @@ const SectionHeadInfo = styled.div`
   min-width: 0;
 `;
 
+const SectionTitleRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+`;
+
+// The dot mirrors the mockup's "crapка + число" idiom: bronze once every field in the section is
+// filled, grey while the section simply hasn't been touched yet (nothing missing, nothing to
+// flag), and only turns to the danger color once it's partially filled - i.e. someone started it
+// and left it incomplete, the one state actually worth a visual warning.
+const Dot = styled.span`
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: ${({ $state }) => ({
+    complete: 'var(--km-accent)',
+    missing: 'var(--km-danger)',
+    empty: 'var(--km-border)',
+  }[$state] || 'var(--km-border)')};
+`;
+
 const SectionTitle = styled.div`
   font-size: 12.5px;
   font-weight: 800;
+  min-width: 0;
 `;
 
 const SectionMeta = styled.div`
@@ -204,13 +245,15 @@ const HeadRight = styled.div`
 `;
 
 const Badge = styled.span`
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
   white-space: nowrap;
-  background: ${({ $complete }) => ($complete ? 'var(--km-accent-light)' : 'var(--km-danger-bg, rgba(179, 82, 63, 0.12))')};
-  color: ${({ $complete }) => ($complete ? 'var(--km-accent)' : 'var(--km-danger)')};
+  font-variant-numeric: tabular-nums;
+  color: ${({ $state }) => ({
+    complete: 'var(--km-accent)',
+    missing: 'var(--km-danger)',
+    empty: 'var(--km-muted)',
+  }[$state] || 'var(--km-muted)')};
 `;
 
 const Chevron = styled.span`
@@ -219,14 +262,9 @@ const Chevron = styled.span`
   color: var(--km-accent);
 `;
 
-// D1 (batch 33): no border of its own - the outer Section already draws the card's one border,
-// so this only needs a background shift + padding to read as a distinct inner area, otherwise the
-// two borders stack into a doubled outline around the same block.
 const SectionBody = styled.div`
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--km-bg);
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--km-line-soft);
 `;
 
 const SectionSubhead = styled.h3`
@@ -243,18 +281,21 @@ const SectionSubhead = styled.h3`
 `;
 
 const CollapsibleSection = ({ id, title, meta, completion, open, onToggle, children }) => {
-  const badge = completion ? (
-    <Badge $complete={completion.filled >= completion.total}>{completion.filled}/{completion.total}</Badge>
-  ) : null;
+  // 'empty' (nothing entered yet) reads as neutral, not a problem - only 'missing' (started, still
+  // incomplete) gets the danger color; see the Dot styled-component above for the full rationale.
+  const state = completion ? (completion.filled >= completion.total ? 'complete' : completion.filled === 0 ? 'empty' : 'missing') : null;
   return (
     <Section>
       <SectionHead onClick={onToggle} role="button" aria-expanded={open} id={`section-${id}`}>
         <SectionHeadInfo>
-          <SectionTitle>{title}</SectionTitle>
+          <SectionTitleRow>
+            {completion ? <Dot $state={state} /> : null}
+            <SectionTitle>{title}</SectionTitle>
+          </SectionTitleRow>
           {meta ? <SectionMeta>{meta}</SectionMeta> : null}
         </SectionHeadInfo>
         <HeadRight>
-          {badge}
+          {completion ? <Badge $state={state}>{completion.filled}/{completion.total}</Badge> : null}
           <Chevron>{open ? 'Hide ›' : 'Show ›'}</Chevron>
         </HeadRight>
       </SectionHead>
@@ -355,7 +396,10 @@ const Field = styled.label`
   color: var(--km-muted);
 `;
 
-const FieldInput = styled.input`
+// Defaults every field's placeholder to "не заповнено" (mockup's empty-field convention) unless a
+// call site already passes its own (e.g. "Код донора") - one attrs() here instead of touching
+// every one of the ~40 FieldInput usages across the tabs.
+const FieldInput = styled.input.attrs(({ placeholder }) => ({ placeholder: placeholder ?? 'не заповнено' }))`
   border: 1px solid transparent;
   background: transparent;
   color: var(--km-text);
@@ -364,6 +408,7 @@ const FieldInput = styled.input`
   padding: 3px 8px;
   font-size: 12px;
   font-family: var(--km-font);
+  font-variant-numeric: tabular-nums;
 
   &:hover {
     border-color: var(--km-border);
@@ -373,6 +418,11 @@ const FieldInput = styled.input`
     outline: none;
     border-color: var(--km-accent);
     background: var(--km-card);
+  }
+
+  &::placeholder {
+    color: #C6BEB1;
+    font-weight: 400;
   }
 `;
 
@@ -493,11 +543,18 @@ const PrimaryButton = styled.button`
   padding: 8px 16px;
   font-size: 12.5px;
   font-weight: 800;
-  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
-  opacity: ${({ disabled }) => (disabled ? 0.6 : 1)};
+  cursor: pointer;
 
   &:hover:not(:disabled) {
     filter: brightness(1.05);
+  }
+
+  /* Mockup's "clean" save state: a disabled Save shouldn't still look pressable - flat grey beats
+     a dimmed bronze gradient, which reads as "the same clickable button, just fainter". */
+  &:disabled {
+    cursor: default;
+    background: var(--km-border);
+    color: var(--km-muted, #A79D8E);
   }
 `;
 
@@ -1206,6 +1263,10 @@ const CaseEditor = ({
   const fieldsRollup = SECTION_DEFS
     .map(section => section.completion(draft))
     .reduce((acc, item) => ({ filled: acc.filled + item.filled, total: acc.total + item.total }), { filled: 0, total: 0 });
+  // fieldsRollup already includes every document field (SECTION_DEFS covers both) - documentsRollup
+  // is the same data narrowed to just the document sections, so the overall progress bar is driven
+  // off fieldsRollup alone; the caption underneath spells out the document-only subset.
+  const progressPct = fieldsRollup.total ? Math.round((fieldsRollup.filled / fieldsRollup.total) * 100) : 0;
 
   return (
     <div style={{ marginTop: 6 }}>
@@ -1227,10 +1288,10 @@ const CaseEditor = ({
         <>
           <CaseHeaderBlock>
             <CaseHeaderTitle>{buildCaseLabel(catalog, selectedCase) || selectedCase.id}</CaseHeaderTitle>
-            <HeaderChips>
-              <HeaderChip $complete={fieldsRollup.filled >= fieldsRollup.total}>{fieldsRollup.filled} із {fieldsRollup.total} полів</HeaderChip>
-              <HeaderChip $complete={documentsRollup.filled >= documentsRollup.total}>{documentsRollup.filled} із {documentsRollup.total} полів документів</HeaderChip>
-            </HeaderChips>
+            <ProgressRow>
+              <ProgressTrack><ProgressFill $pct={progressPct} /></ProgressTrack>
+              <ProgressCaption>{fieldsRollup.filled}/{fieldsRollup.total} полів · {documentsRollup.filled}/{documentsRollup.total} документів</ProgressCaption>
+            </ProgressRow>
             <Tabs role="tablist">
               <TabButton type="button" $active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Огляд</TabButton>
               <TabButton type="button" $active={activeTab === 'preparation'} onClick={() => setActiveTab('preparation')}>Підготовка</TabButton>
