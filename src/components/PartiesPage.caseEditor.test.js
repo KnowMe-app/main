@@ -139,10 +139,11 @@ describe('spec: case editor РАЦС tab - childbirth/child data (batch 18 §6, 
     fireEvent.click(screen.getByRole('button', { name: /додати дитину/i }));
 
     expect(screen.getAllByText('Дитина 2').length).toBeGreaterThan(0);
-    // Childbirth no longer has its own badge (batch 29 §6 folded it into the "РАЦС" group
-    // alongside birthRegistrationConsent/geneticAffinityCertificate) - 7/12 (childbirth alone)
-    // becomes 7/16 once those two blank documents' 4 empty fields are added to the same counter.
-    expect(screen.getByText('7/16')).toBeInTheDocument();
+    // "Пологи та дитина" is its own flat CollapsibleSection again (no more group-level "РАЦС"
+    // wrapper summing it together with birthRegistrationConsent/geneticAffinityCertificate,
+    // matching how Програма ДРТ's sections were never grouped either) - 7 of its own 12 fields
+    // filled: hospital + child 1's 5 fields all set, child 2 (just added) still blank.
+    expect(screen.getByText('7/12')).toBeInTheDocument();
   });
 
   it('removing a child drops its card', async () => {
