@@ -60,6 +60,7 @@ const Page = styled.main`
   --km-text: ${designTokens.color.docInk};
   --km-muted: ${designTokens.color.inkSoft};
   --km-border: ${designTokens.color.docLine};
+  --km-line-soft: ${designTokens.color.docLineSoft};
   --km-accent: ${designTokens.color.bronze};
   --km-accent-mid: #C6A671;
   --km-accent-light: rgba(162, 121, 63, 0.12);
@@ -190,6 +191,7 @@ const ReadRowValue = styled.span`
   color: var(--km-text);
   font-weight: 600;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 `;
 
 // --- Group panel + collapsed summary row (Beneficiary/Payer pattern from Invoice Builder) -------
