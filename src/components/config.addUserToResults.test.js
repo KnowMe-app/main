@@ -3,6 +3,7 @@ import path from 'path';
 
 describe('addUserToResults / addUserFromUsers skip newUsers for long-format userIds', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
+  const userIdTemplate = `${String.fromCharCode(36)}{userId}`;
 
   const addUserToResultsBody = source.slice(
     source.indexOf('const addUserToResults'),
@@ -23,9 +24,9 @@ describe('addUserToResults / addUserFromUsers skip newUsers for long-format user
     // the unconditional short-id fallback (newUsers-then-users) must come after it,
     // i.e. only reachable once the long-id branch has already returned.
     const longIdBranchIndex = addUserToResultsBody.indexOf('if (isLongFormatUserId(userId))');
-    const usersReadIndex = addUserToResultsBody.indexOf('get(ref2(database, `users/${userId}`))');
+    const usersReadIndex = addUserToResultsBody.indexOf(`get(ref2(database, \`users/${userIdTemplate}\`))`);
     const unconditionalNewUsersReadIndex = addUserToResultsBody.indexOf(
-      'const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));',
+      `const userSnapshotInNewUsers = await get(ref2(database, \`newUsers/${userIdTemplate}\`));`,
     );
     expect(longIdBranchIndex).toBeGreaterThanOrEqual(0);
     expect(usersReadIndex).toBeGreaterThan(longIdBranchIndex);
