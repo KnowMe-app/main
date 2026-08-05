@@ -80,7 +80,6 @@ import {
   parseFormattedRuns,
   pickLogoVariantForLayout,
   plainTextOf,
-  removeEmptyCaseValues,
   resolveCaseContext,
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,

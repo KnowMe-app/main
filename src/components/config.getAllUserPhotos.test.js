@@ -3,6 +3,7 @@ import path from 'path';
 
 describe('getAllUserPhotos skips newUsers for long-format userIds on the cold-lookup path', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
+  const userIdTemplate = `${String.fromCharCode(36)}{userId}`;
 
   const getAllUserPhotosBody = source.slice(
     source.indexOf('export const getAllUserPhotos'),
@@ -18,8 +19,8 @@ describe('getAllUserPhotos skips newUsers for long-format userIds on the cold-lo
       getAllUserPhotosBody.indexOf('if (!collectionSource && isLongFormatUserId(userId))'),
       getAllUserPhotosBody.indexOf('const sourceCollections = getPhotoSourceCollections(collectionSource);'),
     );
-    const usersReadIndex = longIdBranchBody.indexOf('get(ref2(database, `users/${userId}`))');
-    const newUsersReadIndex = longIdBranchBody.indexOf('get(ref2(database, `newUsers/${userId}`))');
+    const usersReadIndex = longIdBranchBody.indexOf(`get(ref2(database, \`users/${userIdTemplate}\`))`);
+    const newUsersReadIndex = longIdBranchBody.indexOf(`get(ref2(database, \`newUsers/${userIdTemplate}\`))`);
 
     expect(usersReadIndex).toBeGreaterThanOrEqual(0);
     expect(newUsersReadIndex).toBeGreaterThan(usersReadIndex);

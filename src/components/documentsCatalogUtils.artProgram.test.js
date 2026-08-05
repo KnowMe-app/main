@@ -89,7 +89,6 @@ const rawParties = {
 // (spec v6 §3/§4: the shipment carries its own sourceClinicId, resolved from the unified
 // parties.clinics - the destination clinic is always the case's own relations.clinicId) - the
 // same `{ clinic, sourceClinic }` pair resolveCaseContext always resolves and passes in.
-const parties = normalizeDocumentsCatalog(rawParties, {}, {}).parties;
 const resolvedClinics = { clinic, sourceClinic };
 
 // A case using the v6 shape throughout (spec §1-§7): the one embryo shipment lives at

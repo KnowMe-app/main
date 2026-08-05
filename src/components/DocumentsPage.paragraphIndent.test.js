@@ -101,7 +101,7 @@ describe('spec: per-paragraph formatting popover (no sliders anywhere, §1.4)', 
     expect(indentField).toHaveValue('1');
 
     fireEvent.click(within(indentedBlock).getByTitle(PARAGRAPH_FORMAT_TITLE)); // close the first popover
-    const plainBlock = await openParagraphPopover('Абзац без відступу.');
+    await openParagraphPopover('Абзац без відступу.');
     const inheritedField = screen.getByLabelText('First line indent (cm)');
     expect(inheritedField).toHaveValue('');
     expect(inheritedField).toHaveAttribute('placeholder', '1.5'); // notarial standard §3.1 default
@@ -111,7 +111,7 @@ describe('spec: per-paragraph formatting popover (no sliders anywhere, §1.4)', 
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const plainBlock = await openParagraphPopover('Абзац без відступу.');
+    await openParagraphPopover('Абзац без відступу.');
     const indentField = screen.getByLabelText('First line indent (cm)');
     fireEvent.change(indentField, { target: { value: '2.5' } });
     fireEvent.blur(indentField);
@@ -135,7 +135,7 @@ describe('spec: per-paragraph formatting popover (no sliders anywhere, §1.4)', 
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const indentedBlock = await openParagraphPopover('Абзац з відступом.');
+    await openParagraphPopover('Абзац з відступом.');
     const indentField = screen.getByLabelText('First line indent (cm)');
     fireEvent.change(indentField, { target: { value: '' } });
     fireEvent.blur(indentField);
@@ -158,7 +158,7 @@ describe('spec: per-paragraph formatting popover (no sliders anywhere, §1.4)', 
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
 
-    const indentedBlock = await openParagraphPopover('Абзац з відступом.');
+    await openParagraphPopover('Абзац з відступом.');
     const sizeField = screen.getByLabelText('Font size (pt)');
     expect(sizeField).toHaveValue('');
     expect(sizeField).toHaveAttribute('placeholder', '12');

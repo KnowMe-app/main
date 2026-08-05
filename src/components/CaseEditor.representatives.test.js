@@ -4,7 +4,7 @@
 // once a representative has actually been chosen.
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('firebase/database', () => ({
@@ -75,7 +75,7 @@ describe('spec: case editor Огляд tab - Представники relation c
     expect(screen.queryByText('Дата довіреності')).not.toBeInTheDocument();
     expect(screen.queryByText('Дата апостилю')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Змінити' }).find(button => button.closest('[aria-label="Представники"]')));
+    fireEvent.click(within(screen.getByLabelText('Представники')).getByRole('button', { name: 'Змінити' }));
     fireEvent.click(await screen.findByRole('button', { name: /Коваль Олександр Володимирович/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Застосувати' }));
 
