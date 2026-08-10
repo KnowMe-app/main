@@ -5,14 +5,40 @@ import {
   SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdRecordKey,
 } from './searchKeyUtils';
+import { isAdminUid } from './accessLevel';
+import { MULTI_DATA_ACCESS_FIELD } from './multiDataAccess';
 
-export const PROFILE_MUTATIONS_ROOT = 'profileMutations';
-export const PROFILE_MUTATION_HISTORY_ROOT = 'profileMutationHistory';
-export const PROFILE_IDENTITY_CLAIMS_ROOT = 'profileIdentityClaims';
+// Draft/in-review data for user-submitted cards lives under the shared
+// multiData/ namespace (same place as multiData/edits, multiData/comments)
+// instead of its own top-level root, so it rides on whatever RTDB rules
+// already govern that namespace rather than needing a brand-new root wired
+// up separately. Dedicated rules for this data can be revisited later.
+export const PROFILE_MUTATIONS_ROOT = 'multiData/profileMutations';
+export const PROFILE_MUTATION_HISTORY_ROOT = 'multiData/profileMutationHistory';
+export const PROFILE_IDENTITY_CLAIMS_ROOT = 'multiData/profileIdentityClaims';
+export const PROFILE_MUTATIONS_BY_CREATOR_ROOT = 'multiData/profileMutationsByCreator';
 
 const cleanObject = value => Object.entries(value || {}).reduce((result, [key, item]) => {
   if (key.startsWith('__') || item === undefined) return result;
   result[key] = item;
+  return result;
+}, {});
+
+// Non-admin creators only ever reach saveCreateProfileMutation through
+// ProfileForm, which already hides these fields from them - this enforces
+// the same rule again where the draft is actually written, so a forged
+// client call can't smuggle elevated access into a card that later gets
+// merged verbatim into newUsers on accept.
+const PRIVILEGED_PROFILE_FIELDS = new Set([
+  'accessLevel',
+  'canCreateProfiles',
+  'additionalAccessRules',
+  MULTI_DATA_ACCESS_FIELD,
+]);
+
+const stripPrivilegedFields = data => Object.entries(data || {}).reduce((result, [key, value]) => {
+  if (PRIVILEGED_PROFILE_FIELDS.has(key)) return result;
+  result[key] = value;
   return result;
 }, {});
 
@@ -100,11 +126,12 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
 
 export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expectedRevision }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
+  const sanitizedData = isAdminUid(creatorUid) ? (data || {}) : stripPrivilegedFields(data);
   // Write-through discovery is harmless if the later claim fails (load filters
   // missing records), while writing it first prevents a committed draft from
   // becoming undiscoverable because of a separate index failure.
-  await update(ref(database, `profileMutationsByCreator/${creatorUid}`), { [cardId]: true });
-  const identityKeys = await claimProfileIdentities({ cardId, data });
+  await update(ref(database, `${PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${creatorUid}`), { [cardId]: true });
+  const identityKeys = await claimProfileIdentities({ cardId, data: sanitizedData });
   let conflict = '';
   let previousIdentityKeys = [];
   const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => {
@@ -125,7 +152,7 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
     const mutation = {
       cardId,
       operation: 'create',
-      data: { ...cleanObject(data), userId: cardId },
+      data: { ...cleanObject(sanitizedData), userId: cardId },
       createdBy: creatorUid,
       createdAt: current?.createdAt || now,
       updatedAt: now,
@@ -155,7 +182,7 @@ export const loadProfileMutation = async cardId => {
 
 export const loadOwnProfileMutations = async creatorUid => {
   if (!creatorUid) return [];
-  const idsSnapshot = await get(ref(database, `profileMutationsByCreator/${creatorUid}`));
+  const idsSnapshot = await get(ref(database, `${PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${creatorUid}`));
   const ids = idsSnapshot.exists() ? Object.keys(idsSnapshot.val() || {}) : [];
   const mutations = await Promise.all(ids.map(loadProfileMutation));
   return mutations.filter(item => item && item.createdBy === creatorUid && item.status !== 'accepted');
@@ -225,7 +252,7 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
     [`users/${mutation.createdBy}/createdProfileCardIds/${cardId}`]: true,
     [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
     [`${PROFILE_MUTATIONS_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
-    [`profileMutationsByCreator/${mutation.createdBy}/${cardId}`]: null,
+    [`${PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${mutation.createdBy}/${cardId}`]: null,
   });
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;
