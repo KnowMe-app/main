@@ -8,6 +8,7 @@ import { auth, fetchUserById, searchUsersOnly } from './config';
 import { ProfileForm } from './ProfileForm';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { resolveAccess } from 'utils/accessLevel';
+import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import {
   acceptCreateProfileMutation,
   getEffectiveProfile,
@@ -40,6 +41,7 @@ const Status = styled.span`display:inline-block; padding:4px 9px; border-radius:
 const SearchSection = styled.section`padding:16px; margin-bottom:18px; border:1px solid var(--km-border); border-radius:16px; background:var(--km-card);`;
 const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--km-border);`;
 const PROFILE_SEARCH_PREFILL_FIELDS = new Set(['name', 'surname', 'phone', 'email', 'telegram', 'instagram', 'facebook', 'tiktok']);
+const PROFILE_SEARCH_KEYS = ['userId', ...getSearchIdIndexedFields()];
 
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
@@ -219,6 +221,13 @@ export const ProfileCreationWorkspace = () => {
       {!access.isAdmin && <SearchSection aria-label="Пошук профілю перед створенням">
         <h2>Знайти або додати картку</h2>
         <Meta>Спочатку перевірте, чи профіль уже існує. Використовується той самий пошук, що й у Matching.</Meta>
+        <Meta>
+          Пошук карток виконується за ключами: {PROFILE_SEARCH_KEYS.map((key, index) => (
+            <React.Fragment key={key}>
+              {index > 0 ? ', ' : ''}<code>{key}</code>
+            </React.Fragment>
+          ))}.
+        </Meta>
         <SearchBar
           searchFunc={searchUsersOnly}
           search={search}
