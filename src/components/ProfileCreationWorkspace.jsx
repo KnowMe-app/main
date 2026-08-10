@@ -11,6 +11,7 @@ import { pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
+import { buildOverlayFromDraft, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import {
   acceptCreateProfileMutation,
   getEffectiveProfile,
@@ -82,10 +83,18 @@ const GhostButton = styled(Button)`
 const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:20px; background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
 const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere;`;
+const STATUS_VARIANT_BACKGROUND = {
+  private: 'color-mix(in srgb, var(--km-muted) 16%, var(--km-card))',
+  overlay: 'color-mix(in srgb, var(--km-accent-mid) 22%, var(--km-card))',
+};
+const STATUS_VARIANT_COLOR = {
+  private: 'var(--km-muted)',
+  overlay: 'var(--km-accent-mid)',
+};
 const Status = styled.span`
   display:inline-block; padding:4px 9px; border-radius:999px; font-size:12px; font-weight:800;
-  background: ${({ $variant }) => ($variant === 'private' ? 'color-mix(in srgb, var(--km-muted) 16%, var(--km-card))' : 'var(--km-accent-light)')};
-  color: ${({ $variant }) => ($variant === 'private' ? 'var(--km-muted)' : 'var(--km-accent)')};
+  background: ${({ $variant }) => STATUS_VARIANT_BACKGROUND[$variant] || 'var(--km-accent-light)'};
+  color: ${({ $variant }) => STATUS_VARIANT_COLOR[$variant] || 'var(--km-accent)'};
 `;
 const HeaderMeta = styled(Meta)`grid-column:1 / -1; margin:0; max-width:650px; font-size:16px;`;
 const SearchSection = styled.section`
@@ -140,6 +149,7 @@ export const ProfileCreationWorkspace = () => {
   const [mutations, setMutations] = useState([]);
   const [draft, setDraft] = useState(null);
   const [activeMutation, setActiveMutation] = useState(null);
+  const [overlayTarget, setOverlayTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -189,6 +199,7 @@ export const ProfileCreationWorkspace = () => {
   const startNew = () => {
     const cardId = reserveProfileCardId();
     setActiveMutation({ cardId, revision: 0, status: 'pendingReview', createdBy: uid });
+    setOverlayTarget(null);
     const detected = detectSearchParams(search);
     const initialSearchData = PROFILE_SEARCH_PREFILL_FIELDS.has(detected?.key) && detected?.value
       ? { [detected.key]: detected.value }
@@ -217,6 +228,7 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const openMutation = mutation => {
+    setOverlayTarget(null);
     setActiveMutation(mutation);
     setDraft(getEffectiveProfile({ mutation }));
     setSearchParams({ cardId: mutation.cardId });
@@ -225,12 +237,39 @@ export const ProfileCreationWorkspace = () => {
   const closeEditor = () => {
     setDraft(null);
     setActiveMutation(null);
+    setOverlayTarget(null);
     setSearchParams({});
+  };
+
+  const startExistingProfileOverlay = profile => {
+    if (!profile?.userId) return;
+
+    // Deliberately start with an empty form instead of copying the search result.
+    // Every value entered here is private data owned by the current editor and is
+    // persisted as an overlay, never as a replacement for the canonical card.
+    setActiveMutation(null);
+    setOverlayTarget({ userId: profile.userId });
+    setDraft({ userId: profile.userId, myComment: '' });
+    setSearchParams({ cardId: profile.userId, overlay: '1' });
   };
 
   const save = async () => {
     setSaving(true);
     try {
+      if (overlayTarget) {
+        const overlayFields = buildOverlayFromDraft(
+          { userId: overlayTarget.userId },
+          draft,
+        );
+        await saveOverlayForUserCard({
+          editorUserId: uid,
+          cardUserId: overlayTarget.userId,
+          fields: overlayFields,
+        });
+        toast.success('Власні дані та коментар збережено');
+        closeEditor();
+        return;
+      }
       const saved = await saveCreateProfileMutation({
         cardId: activeMutation.cardId,
         creatorUid: activeMutation.createdBy || uid,
@@ -307,13 +346,15 @@ export const ProfileCreationWorkspace = () => {
       <HeaderMeta>Картки зберігаються приватно до рішення адміністратора.</HeaderMeta>
     </Header>
     {draft ? <Card>
-      <Status $variant={activeMutation.status === 'private' ? 'private' : 'pending'}>
-        {activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+      <Status $variant={overlayTarget ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
+        {overlayTarget ? 'Власні дані' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
       </Status>
-      {access.isAdmin
-        ? <TechnicalMeta>cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}</TechnicalMeta>
-        : <Meta>Чернетка{activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}</Meta>}
-      {!access.isAdmin && <>
+      {overlayTarget
+        ? <Meta>Дані буде збережено як ваш оверлей для {overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.</Meta>
+        : access.isAdmin
+          ? <TechnicalMeta>cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}</TechnicalMeta>
+          : <Meta>Чернетка{activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}</Meta>}
+      {!access.isAdmin && !overlayTarget && <>
         <ProgressRow>
           <span>Заповнено анкету</span>
           <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
@@ -325,8 +366,8 @@ export const ProfileCreationWorkspace = () => {
       </fieldset>
       <Actions>
         <SaveButton disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</SaveButton>
-        {access.isAdmin && activeMutation.revision > 0 && <AcceptButton disabled={saving} onClick={accept}>Прийняти</AcceptButton>}
-        {access.isAdmin && activeMutation.revision > 0 && <RejectButton disabled={saving} onClick={reject}>Відхилити</RejectButton>}
+        {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <AcceptButton disabled={saving} onClick={accept}>Прийняти</AcceptButton>}
+        {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <RejectButton disabled={saving} onClick={reject}>Відхилити</RejectButton>}
         <GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>
       </Actions>
     </Card> : <>
@@ -381,7 +422,10 @@ export const ProfileCreationWorkspace = () => {
         />
         {searchResults.map(profile => <SearchResult key={profile.userId}>
           <span><strong>{[profile.name, profile.surname].filter(Boolean).join(' ') || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
-          <Status>Вже існує</Status>
+          <span>
+            <Status>Вже існує</Status>
+            <Button onClick={() => startExistingProfileOverlay(profile)}>Додати власні дані</Button>
+          </span>
         </SearchResult>)}
         {searchExecuted && searchNotFound && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
         {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
