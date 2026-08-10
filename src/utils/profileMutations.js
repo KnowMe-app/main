@@ -18,6 +18,17 @@ export const PROFILE_MUTATION_HISTORY_ROOT = 'multiData/profileMutationHistory';
 export const PROFILE_IDENTITY_CLAIMS_ROOT = 'multiData/profileIdentityClaims';
 export const PROFILE_MUTATIONS_BY_CREATOR_ROOT = 'multiData/profileMutationsByCreator';
 
+// Drafts saved before this migration still live under these top-level roots.
+// Nothing here ever writes brand-new records to them again, but existing
+// records are read from - and, while being edited/accepted/rejected in
+// place, written back to - whichever root actually holds them, so no
+// pre-migration draft silently disappears or loses its duplicate-identity
+// protection. reserveProfileCardId() only ever mints keys under the new
+// root, so a cardId with no record in either root resolves to the new one.
+const LEGACY_PROFILE_MUTATIONS_ROOT = 'profileMutations';
+const LEGACY_PROFILE_IDENTITY_CLAIMS_ROOT = 'profileIdentityClaims';
+const LEGACY_PROFILE_MUTATIONS_BY_CREATOR_ROOT = 'profileMutationsByCreator';
+
 const cleanObject = value => Object.entries(value || {}).reduce((result, [key, item]) => {
   if (key.startsWith('__') || item === undefined) return result;
   result[key] = item;
@@ -94,6 +105,16 @@ const claimProfileIdentities = async ({ cardId, data }) => {
     return (Array.isArray(value) ? value : [value]).filter(Boolean).some(id => id !== cardId);
   });
   if (canonicalConflict) throw new Error('DUPLICATE_PROFILE');
+
+  // Drafts saved before the multiData/ migration still hold their identity
+  // claims under the legacy root - check it too so a brand-new submission
+  // can't grab an email/phone/etc. a not-yet-migrated legacy draft already owns.
+  const legacyClaimsSnapshot = await get(ref(database, LEGACY_PROFILE_IDENTITY_CLAIMS_ROOT));
+  const legacyClaims = legacyClaimsSnapshot.val() || {};
+  if (keys.some(key => legacyClaims[key] && legacyClaims[key] !== cardId)) {
+    throw new Error('DUPLICATE_PROFILE');
+  }
+
   let duplicate = false;
   const result = await runTransaction(ref(database, PROFILE_IDENTITY_CLAIMS_ROOT), current => {
     const claims = current || {};
@@ -107,14 +128,23 @@ const claimProfileIdentities = async ({ cardId, data }) => {
   return keys;
 };
 
-const releaseProfileIdentities = (cardId, keys) => runTransaction(
-  ref(database, PROFILE_IDENTITY_CLAIMS_ROOT),
+const releaseIdentitiesFromRoot = (root, cardId, keys) => runTransaction(
+  ref(database, root),
   current => (keys || []).reduce((next, key) => {
     if (next[key] === cardId) delete next[key];
     return next;
   }, { ...(current || {}) }),
   { applyLocally: false },
 );
+
+// Releases from both roots unconditionally (a no-op on whichever root never
+// held the key) rather than tracking which root each key was claimed under -
+// simpler, and correct either way since a legacy draft's claims live in the
+// legacy root while every claim taken going forward lives in the new one.
+const releaseProfileIdentities = (cardId, keys) => Promise.all([
+  releaseIdentitiesFromRoot(PROFILE_IDENTITY_CLAIMS_ROOT, cardId, keys),
+  releaseIdentitiesFromRoot(LEGACY_PROFILE_IDENTITY_CLAIMS_ROOT, cardId, keys),
+]);
 
 const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
   getSearchIdKeys(profile)
@@ -124,17 +154,39 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
     })),
 );
 
-export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expectedRevision }) => {
+// A cardId with no record in either root (i.e. a freshly reserved one)
+// resolves to the new root, so every genuinely new draft lands in multiData/
+// straight away. An existing record - legacy or already-migrated - is read
+// from and, by every caller below, subsequently written back to the same
+// root it was found in, so it keeps working right where it already lives.
+const resolveMutationRootForCardId = async cardId => {
+  const newSnapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
+  if (newSnapshot.exists()) {
+    return { root: PROFILE_MUTATIONS_ROOT, byCreatorRoot: PROFILE_MUTATIONS_BY_CREATOR_ROOT, snapshot: newSnapshot };
+  }
+  const legacySnapshot = await get(ref(database, `${LEGACY_PROFILE_MUTATIONS_ROOT}/${cardId}`));
+  if (legacySnapshot.exists()) {
+    return { root: LEGACY_PROFILE_MUTATIONS_ROOT, byCreatorRoot: LEGACY_PROFILE_MUTATIONS_BY_CREATOR_ROOT, snapshot: legacySnapshot };
+  }
+  return { root: PROFILE_MUTATIONS_ROOT, byCreatorRoot: PROFILE_MUTATIONS_BY_CREATOR_ROOT, snapshot: newSnapshot };
+};
+
+export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, data, expectedRevision }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
-  const sanitizedData = isAdminUid(creatorUid) ? (data || {}) : stripPrivilegedFields(data);
+  // The acting editor (who may be an admin fixing up someone else's draft
+  // before accepting it) determines whether privileged fields survive, not
+  // the draft's original owner - a non-admin creatorUid must never let an
+  // admin's own technical-field edits get silently stripped.
+  const sanitizedData = isAdminUid(actorUid || creatorUid) ? (data || {}) : stripPrivilegedFields(data);
+  const { root: mutationRoot, byCreatorRoot } = await resolveMutationRootForCardId(cardId);
   // Write-through discovery is harmless if the later claim fails (load filters
   // missing records), while writing it first prevents a committed draft from
   // becoming undiscoverable because of a separate index failure.
-  await update(ref(database, `${PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${creatorUid}`), { [cardId]: true });
+  await update(ref(database, `${byCreatorRoot}/${creatorUid}`), { [cardId]: true });
   const identityKeys = await claimProfileIdentities({ cardId, data: sanitizedData });
   let conflict = '';
   let previousIdentityKeys = [];
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => {
+  const result = await runTransaction(ref(database, `${mutationRoot}/${cardId}`), current => {
     previousIdentityKeys = current?.identityKeys || [];
     if (current && current.createdBy !== creatorUid) {
       conflict = 'Profile mutation belongs to another user';
@@ -176,15 +228,21 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
 };
 
 export const loadProfileMutation = async cardId => {
-  const snapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
+  const { snapshot } = await resolveMutationRootForCardId(cardId);
   return snapshot.exists() ? snapshot.val() : null;
 };
 
 export const loadOwnProfileMutations = async creatorUid => {
   if (!creatorUid) return [];
-  const idsSnapshot = await get(ref(database, `${PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${creatorUid}`));
-  const ids = idsSnapshot.exists() ? Object.keys(idsSnapshot.val() || {}) : [];
-  const mutations = await Promise.all(ids.map(loadProfileMutation));
+  const [idsSnapshot, legacyIdsSnapshot] = await Promise.all([
+    get(ref(database, `${PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${creatorUid}`)),
+    get(ref(database, `${LEGACY_PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${creatorUid}`)),
+  ]);
+  const ids = new Set([
+    ...(idsSnapshot.exists() ? Object.keys(idsSnapshot.val() || {}) : []),
+    ...(legacyIdsSnapshot.exists() ? Object.keys(legacyIdsSnapshot.val() || {}) : []),
+  ]);
+  const mutations = await Promise.all([...ids].map(loadProfileMutation));
   return mutations.filter(item => item && item.createdBy === creatorUid && item.status !== 'accepted');
 };
 
@@ -200,9 +258,18 @@ export const loadGrantedCreatedProfiles = async creatorUid => {
 };
 
 export const loadAllCreateProfileMutations = async () => {
-  const snapshot = await get(ref(database, PROFILE_MUTATIONS_ROOT));
-  if (!snapshot.exists()) return [];
-  return Object.values(snapshot.val() || {}).filter(item => (
+  const [snapshot, legacySnapshot] = await Promise.all([
+    get(ref(database, PROFILE_MUTATIONS_ROOT)),
+    get(ref(database, LEGACY_PROFILE_MUTATIONS_ROOT)),
+  ]);
+  const byCardId = new Map();
+  Object.values(legacySnapshot.exists() ? legacySnapshot.val() || {} : {}).forEach(item => {
+    if (item?.cardId) byCardId.set(item.cardId, item);
+  });
+  Object.values(snapshot.exists() ? snapshot.val() || {} : {}).forEach(item => {
+    if (item?.cardId) byCardId.set(item.cardId, item);
+  });
+  return [...byCardId.values()].filter(item => (
     item?.operation === 'create' && item.status !== 'accepted' && item.status !== 'accepting'
   ));
 };
@@ -211,13 +278,13 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
   const acceptedAt = Date.now();
   let conflict = 'Profile mutation not found';
   let acceptedProfile = null;
-  const mutationSnapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
+  const { root: mutationRoot, byCreatorRoot, snapshot: mutationSnapshot } = await resolveMutationRootForCardId(cardId);
   const pendingMutation = mutationSnapshot.val();
   if (!pendingMutation || pendingMutation.operation !== 'create') throw new Error(conflict);
   const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
   const identityKeys = await claimProfileIdentities({ cardId, data: candidateProfile });
   const previousIdentityKeys = pendingMutation.identityKeys || [];
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), mutation => {
+  const result = await runTransaction(ref(database, `${mutationRoot}/${cardId}`), mutation => {
     if (!mutation || mutation.operation !== 'create') return undefined;
     if (mutation.status !== 'pendingReview' && mutation.status !== 'private' && mutation.status !== 'publishing') return undefined;
     if (Number(mutation.revision) !== Number(expectedRevision)) {
@@ -240,7 +307,7 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
       syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
     ]);
   } catch (error) {
-    await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => (
+    await runTransaction(ref(database, `${mutationRoot}/${cardId}`), current => (
       current?.status === 'publishing' && current?.acceptedAt === acceptedAt
         ? { ...current, status: pendingMutation.status, acceptedAt: null }
         : current
@@ -251,8 +318,8 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
     [`newUsers/${cardId}`]: acceptedProfile,
     [`users/${mutation.createdBy}/createdProfileCardIds/${cardId}`]: true,
     [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
-    [`${PROFILE_MUTATIONS_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
-    [`${PROFILE_MUTATIONS_BY_CREATOR_ROOT}/${mutation.createdBy}/${cardId}`]: null,
+    [`${mutationRoot}/${cardId}`]: { ...mutation, status: 'accepted' },
+    [`${byCreatorRoot}/${mutation.createdBy}/${cardId}`]: null,
   });
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;
@@ -260,7 +327,8 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
 
 export const rejectCreateProfileMutation = async ({ cardId, expectedRevision }) => {
   let conflict = 'Profile mutation not found';
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), mutation => {
+  const { root: mutationRoot } = await resolveMutationRootForCardId(cardId);
+  const result = await runTransaction(ref(database, `${mutationRoot}/${cardId}`), mutation => {
     if (!mutation) return undefined;
     if (mutation.status !== 'pendingReview') return undefined;
     if (Number(mutation.revision) !== Number(expectedRevision)) {

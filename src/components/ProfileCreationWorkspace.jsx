@@ -40,6 +40,7 @@ const Title = styled.h1`
   margin:0; font-size:clamp(28px, 7vw, 32px); line-height:1.12; font-weight:750; letter-spacing:-.025em;
 `;
 const Button = styled.button`
+  box-sizing: border-box;
   min-height:48px; border: 1px solid var(--km-border); border-radius: 16px; padding: 10px 17px;
   background: ${({ $primary }) => ($primary ? 'var(--km-accent)' : 'var(--km-card)')};
   color: ${({ $primary }) => ($primary ? '#fff' : 'var(--km-text)')}; cursor:pointer; font:700 15px/1 var(--km-font);
@@ -109,7 +110,7 @@ const SearchSection = styled.section`
   ${Actions} ${Button}:disabled { box-shadow:none; }
   @media (max-width:600px) { padding:22px 20px; ${Actions} ${Button} { width:100%; } }
 `;
-const TechnicalMeta = styled(Meta)`font-size:12px; opacity:.82; code { color:var(--km-text); }`;
+const TechnicalMeta = styled(Meta)`font-size:12px; code { color:var(--km-text); }`;
 const DisclosureToggle = styled.button`
   display:inline-flex; align-items:center; gap:6px; margin:10px 0 2px; padding:0; border:none; background:transparent;
   color:var(--km-muted); font:700 12px/1 var(--km-font); cursor:pointer;
@@ -273,6 +274,7 @@ export const ProfileCreationWorkspace = () => {
       const saved = await saveCreateProfileMutation({
         cardId: activeMutation.cardId,
         creatorUid: activeMutation.createdBy || uid,
+        actorUid: uid,
         data: draft,
         expectedRevision: activeMutation.revision,
       });
@@ -439,11 +441,14 @@ export const ProfileCreationWorkspace = () => {
           </Button>
         </Actions>
       </SearchSection>}
-      <SectionHeader><span>Ваші картки</span><Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count></SectionHeader>
+      <SectionHeader>
+        <span>{access.isAdmin ? 'Черга на перевірку' : 'Ваші картки'}</span>
+        <Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count>
+      </SectionHeader>
       {mutations.length === 0 && <EmptyState>
         <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
         <EmptyTitle>Нових профілів поки немає.</EmptyTitle>
-        <Meta>Створені вами картки з’являться тут.</Meta>
+        <Meta>{access.isAdmin ? 'Нові картки від користувачів з’являться тут.' : 'Створені вами картки з’являться тут.'}</Meta>
       </EmptyState>}
       {mutations.map(mutation => <ProfileCard key={mutation.cardId}>
         <div>
