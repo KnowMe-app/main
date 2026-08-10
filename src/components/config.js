@@ -2189,7 +2189,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
     return {};
   } catch (error) {
     console.error('Error searching users only:', error);
-    return null;
+    throw error;
   }
 };
 

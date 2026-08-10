@@ -1088,6 +1088,8 @@ const SearchBar = ({
   setSearch: externalSetSearch,
   onClear,
   onSearchExecuted,
+  onSearchError,
+  onSearchSuccess,
   wrapperStyle = {},
   leftIcon = SearchIcon,
   storageKey = 'searchQuery',
@@ -1875,7 +1877,7 @@ const SearchBar = ({
     return false;
   };
 
-  const writeData = async (query = search, options = {}) => {
+  const executeSearch = async (query = search, options = {}) => {
     const {
       requestId: inheritedRequestId = null,
       suppressHistory = false,
@@ -2122,6 +2124,20 @@ const SearchBar = ({
       } else {
         applyUsers(res, requestId);
       }
+    }
+  };
+
+  const writeData = async (query = search, options = {}) => {
+    const requestId = options.requestId ?? ++activeSearchRequestRef.current;
+    try {
+      await executeSearch(query, { ...options, requestId });
+      if (activeSearchRequestRef.current === requestId) onSearchSuccess && onSearchSuccess();
+    } catch (error) {
+      if (activeSearchRequestRef.current !== requestId) return;
+      applyUserNotFound(false, requestId);
+      applyState({}, requestId);
+      applyUsers({}, requestId);
+      onSearchError && onSearchError(error);
     }
   };
 

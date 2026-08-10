@@ -54,6 +54,7 @@ export const ProfileCreationWorkspace = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchExecuted, setSearchExecuted] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
@@ -120,6 +121,7 @@ export const ProfileCreationWorkspace = () => {
     setSearchResults([]);
     setSearchExecuted(false);
     setSearchNotFound(false);
+    setSearchError(false);
   };
 
   const openMutation = mutation => {
@@ -223,16 +225,26 @@ export const ProfileCreationWorkspace = () => {
             setSearchNotFound(Boolean(value));
             if (value) setSearchResults([]);
           }}
-          onSearchExecuted={() => setSearchExecuted(true)}
+          onSearchExecuted={() => {
+            setSearchExecuted(true);
+            setSearchError(false);
+          }}
+          onSearchSuccess={() => setSearchError(false)}
+          onSearchError={() => {
+            setSearchError(true);
+            setSearchNotFound(false);
+          }}
           onClear={() => {
             setSearchResults([]);
             setSearchNotFound(false);
             setSearchExecuted(false);
+            setSearchError(false);
           }}
           storageKey="profileCreationSearchQuery"
           wrapperStyle={{ width: '100%' }}
           leftIcon="🔍"
         />
+        {searchError && <Meta>Пошук тимчасово недоступний. Спробуйте ще раз.</Meta>}
         {searchResults.map(profile => <SearchResult key={profile.userId}>
           <span><strong>{[profile.name, profile.surname].filter(Boolean).join(' ') || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
           <Status>Вже існує</Status>

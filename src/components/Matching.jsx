@@ -3816,6 +3816,11 @@ const Matching = () => {
     }
   }, [buildMatchingSearchStatusText]);
 
+  const handleMatchingSearchError = React.useCallback(() => {
+    matchingSearchKeyRef.current = null;
+    setMatchingSearchStatus('Пошук тимчасово недоступний');
+  }, []);
+
   const searchUsers = async (params, options = {}) => {
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
@@ -5707,6 +5712,7 @@ const Matching = () => {
                 setUsers={handleMatchingSearchResultStatus}
                 setState={handleMatchingSearchStateStatus}
                 setUserNotFound={handleMatchingSearchNotFound}
+                onSearchError={handleMatchingSearchError}
                 wrapperStyle={{ width: '100%', marginBottom: 0 }}
                 leftIcon="🔍"
                 storageKey={SEARCH_KEY}
