@@ -1,6 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import {
+  clearStoredAccessRights,
+  persistCanCreateProfiles,
+  readStoredCanCreateProfiles,
+  resolveAccess,
+} from 'utils/accessLevel';
 
 jest.mock('./VerifyEmail', () => ({ VerifyEmail: () => null }));
 
@@ -16,11 +22,41 @@ const renderMenu = props => render(
 );
 
 describe('ProfileDotsMenu logout confirmation', () => {
-  it('shows profile creation only with the dedicated permission', () => {
-    const { rerender } = renderMenu({ access: { canAccessMatching: true } });
+  beforeEach(() => localStorage.clear());
+
+  it.each([
+    ['false', { canCreateProfiles: false }],
+    ['відсутнє поле', {}],
+  ])('does not show profile creation when the profile permission is %s', (_case, profile) => {
+    renderMenu({ access: resolveAccess({ uid: 'user-id', canCreateProfiles: profile.canCreateProfiles === true }) });
+
     expect(screen.queryByRole('menuitem', { name: /Додати профіль/ })).toBeNull();
-    rerender(<MemoryRouter><ProfileDotsMenu navigate={jest.fn()} access={{ canCreateProfiles: true }} /></MemoryRouter>);
-    expect(screen.getByRole('menuitem', { name: /Додати профіль/ })).not.toBeNull();
+  });
+
+  it('shows profile creation from the persisted page access source and navigates to its route', () => {
+    const navigate = jest.fn();
+    persistCanCreateProfiles(true);
+    const pageAccess = resolveAccess({
+      uid: 'user-id',
+      canCreateProfiles: readStoredCanCreateProfiles(),
+    });
+    renderMenu({ access: pageAccess, navigate });
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /Додати профіль/ }));
+
+    expect(navigate).toHaveBeenCalledWith('/matching/create-profile');
+  });
+
+  it('does not retain profile creation access after logout clears stored rights', () => {
+    persistCanCreateProfiles(true);
+    clearStoredAccessRights();
+    const pageAccess = resolveAccess({
+      uid: 'user-id',
+      canCreateProfiles: readStoredCanCreateProfiles(),
+    });
+    renderMenu({ access: pageAccess });
+
+    expect(screen.queryByRole('menuitem', { name: /Додати профіль/ })).toBeNull();
   });
   it('does not end the session until logout is confirmed', async () => {
     const onExit = jest.fn().mockResolvedValue(undefined);

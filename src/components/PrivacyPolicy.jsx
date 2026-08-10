@@ -6,7 +6,7 @@ import { useAppSettings } from 'hooks/useAppSettings';
 import { KmPage, KmTopbar, KmIconButton, KnowMeBrand } from './styles/knowme';
 import InfoModal from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { resolveAccess } from 'utils/accessLevel';
+import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 
 const ContentWrap = styled.main`
   width: min(100%, 760px);
@@ -92,6 +92,7 @@ export const PrivacyPolicy = () => {
     uid: localStorage.getItem('ownerId') || '',
     accessLevel: localStorage.getItem('accessLevel') || '',
     userRole: localStorage.getItem('userRole') || '',
+    canCreateProfiles: readStoredCanCreateProfiles(),
   });
 
   const dotsMenu = () => (

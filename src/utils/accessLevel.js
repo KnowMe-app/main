@@ -45,6 +45,25 @@ export const canAccessAddByLevel = accessLevel => {
   return hasAdd;
 };
 
+export const CAN_CREATE_PROFILES_STORAGE_KEY = 'canCreateProfiles';
+
+export const readStoredCanCreateProfiles = () => (
+  typeof localStorage !== 'undefined'
+  && localStorage.getItem(CAN_CREATE_PROFILES_STORAGE_KEY) === 'true'
+);
+
+export const persistCanCreateProfiles = canCreateProfiles => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(CAN_CREATE_PROFILES_STORAGE_KEY, String(canCreateProfiles === true));
+  }
+};
+
+export const clearStoredAccessRights = () => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(CAN_CREATE_PROFILES_STORAGE_KEY);
+  }
+};
+
 export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfiles = false } = {}) => {
   const isAdmin = isAdminUid(uid);
   const canAccessMatching = isAdmin || canAccessMatchingByLevel(accessLevel) || canAccessMatchingByRole({ role, userRole });

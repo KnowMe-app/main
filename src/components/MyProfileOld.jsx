@@ -489,7 +489,11 @@ export const MyProfileOld = ({ isLoggedIn, setIsLoggedIn }) => {
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const currentUid = auth.currentUser?.uid;
-  const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const access = resolveAccess({
+    uid: currentUid,
+    accessLevel: state.accessLevel || localStorage.getItem('accessLevel'),
+    canCreateProfiles: state.canCreateProfiles === true,
+  });
   const isAdmin = access.isAdmin;
   const moreInfoRef = useRef(null);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);

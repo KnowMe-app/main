@@ -56,7 +56,7 @@ import {
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { resolveAccess } from 'utils/accessLevel';
+import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { normalizePhoneState } from './inputValidations';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, ModalGhostButton } from './InfoModal';
@@ -1199,6 +1199,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const initialAccess = resolveAccess({
     uid: auth.currentUser?.uid,
     accessLevel: localStorage.getItem('accessLevel'),
+    canCreateProfiles: readStoredCanCreateProfiles(),
   });
 
   const [userNotFound, setUserNotFound] = useState(false);
@@ -1572,7 +1573,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
-  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const access = resolveAccess({
+    uid: auth.currentUser?.uid,
+    accessLevel: state.accessLevel || localStorage.getItem('accessLevel'),
+    canCreateProfiles: readStoredCanCreateProfiles(),
+  });
   const isAdmin = access.isAdmin;
   const canAccessAdd = access.canAccessAdd;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);

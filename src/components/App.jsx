@@ -17,7 +17,7 @@ import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
-import { resolveAccess } from 'utils/accessLevel';
+import { clearStoredAccessRights, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 
 export const App = () => {
@@ -82,11 +82,13 @@ export const App = () => {
         setCanCreateProfiles(access.canCreateProfiles);
         localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
+        persistCanCreateProfiles(canCreateProfilesForUser);
         setIsAccessResolved(true);
       } else {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
         localStorage.removeItem('userRole');
+        clearStoredAccessRights();
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessMatching(false);
