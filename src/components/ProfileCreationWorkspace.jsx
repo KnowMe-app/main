@@ -4,8 +4,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 
-import { auth, fetchUserById } from './config';
+import { auth, fetchUserById, searchUsersOnly } from './config';
 import { ProfileForm } from './ProfileForm';
+import SearchBar, { detectSearchParams } from './SearchBar';
 import { resolveAccess } from 'utils/accessLevel';
 import {
   acceptCreateProfileMutation,
@@ -36,6 +37,9 @@ const Card = styled.section`padding:18px; margin:12px 0; border:1px solid var(--
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
 const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:13px;`;
 const Status = styled.span`display:inline-block; padding:4px 9px; border-radius:999px; background:var(--km-accent-light); color:var(--km-accent); font-size:12px; font-weight:800;`;
+const SearchSection = styled.section`padding:16px; margin-bottom:18px; border:1px solid var(--km-border); border-radius:16px; background:var(--km-card);`;
+const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--km-border);`;
+const PROFILE_SEARCH_PREFILL_FIELDS = new Set(['name', 'surname', 'phone', 'email', 'telegram', 'instagram', 'facebook', 'tiktok']);
 
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
@@ -46,6 +50,10 @@ export const ProfileCreationWorkspace = () => {
   const [draft, setDraft] = useState(null);
   const [activeMutation, setActiveMutation] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchExecuted, setSearchExecuted] = useState(false);
+  const [searchNotFound, setSearchNotFound] = useState(false);
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
@@ -88,8 +96,30 @@ export const ProfileCreationWorkspace = () => {
   const startNew = () => {
     const cardId = reserveProfileCardId();
     setActiveMutation({ cardId, revision: 0, status: 'pendingReview', createdBy: uid });
-    setDraft({ userId: cardId });
+    const detected = detectSearchParams(search);
+    const initialSearchData = PROFILE_SEARCH_PREFILL_FIELDS.has(detected?.key) && detected?.value
+      ? { [detected.key]: detected.value }
+      : {};
+    setDraft({ userId: cardId, ...initialSearchData });
     setSearchParams({ cardId });
+  };
+
+  const applySearchUsers = value => {
+    const cards = Array.isArray(value)
+      ? value
+      : Object.values(value && typeof value === 'object' ? value : {});
+    setSearchResults(cards.filter(card => card?.userId));
+  };
+
+  const applySearchState = value => {
+    if (value?.userId) setSearchResults([value]);
+  };
+
+  const updateSearch = value => {
+    setSearch(previous => typeof value === 'function' ? value(previous) : value);
+    setSearchResults([]);
+    setSearchExecuted(false);
+    setSearchNotFound(false);
   };
 
   const openMutation = mutation => {
@@ -180,7 +210,44 @@ export const ProfileCreationWorkspace = () => {
         <Button disabled={saving} onClick={closeEditor}>Закрити</Button>
       </Actions>
     </Card> : <>
-      <Actions>{!access.isAdmin && <Button $primary onClick={startNew}>+ Додати профіль</Button>}</Actions>
+      {!access.isAdmin && <SearchSection aria-label="Пошук профілю перед створенням">
+        <h2>Знайти або додати картку</h2>
+        <Meta>Спочатку перевірте, чи профіль уже існує. Використовується той самий пошук, що й у Matching.</Meta>
+        <SearchBar
+          searchFunc={searchUsersOnly}
+          search={search}
+          setSearch={updateSearch}
+          setUsers={applySearchUsers}
+          setState={applySearchState}
+          setUserNotFound={value => {
+            setSearchNotFound(Boolean(value));
+            if (value) setSearchResults([]);
+          }}
+          onSearchExecuted={() => setSearchExecuted(true)}
+          onClear={() => {
+            setSearchResults([]);
+            setSearchNotFound(false);
+            setSearchExecuted(false);
+          }}
+          storageKey="profileCreationSearchQuery"
+          wrapperStyle={{ width: '100%' }}
+          leftIcon="🔍"
+        />
+        {searchResults.map(profile => <SearchResult key={profile.userId}>
+          <span><strong>{[profile.name, profile.surname].filter(Boolean).join(' ') || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
+          <Status>Вже існує</Status>
+        </SearchResult>)}
+        {searchExecuted && searchNotFound && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+        <Actions>
+          <Button
+            $primary
+            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchResults.length > 0}
+            onClick={startNew}
+          >
+            + Додати профіль
+          </Button>
+        </Actions>
+      </SearchSection>}
       {mutations.length === 0 && <Card>Нових профілів поки немає.</Card>}
       {mutations.map(mutation => <Card key={mutation.cardId}>
         <Status>{mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
