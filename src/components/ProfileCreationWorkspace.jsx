@@ -220,11 +220,7 @@ export const ProfileCreationWorkspace = () => {
         <h2>Знайти або додати картку</h2>
         <Meta>Спочатку перевірте, чи профіль уже існує. Використовується той самий пошук, що й у Matching.</Meta>
         <SearchBar
-          searchFunc={async (...args) => {
-            const result = await searchUsersOnly(...args);
-            setSearchFailed(result === null);
-            return result === null ? {} : result;
-          }}
+          searchFunc={searchUsersOnly}
           search={search}
           setSearch={updateSearch}
           setUsers={applySearchUsers}
@@ -233,7 +229,14 @@ export const ProfileCreationWorkspace = () => {
             setSearchNotFound(Boolean(value));
             if (value) setSearchResults([]);
           }}
-          onSearchExecuted={() => setSearchExecuted(true)}
+          onSearchExecuted={() => {
+            setSearchExecuted(true);
+            setSearchFailed(false);
+          }}
+          onSearchError={() => {
+            setSearchFailed(true);
+            setSearchNotFound(false);
+          }}
           onClear={() => {
             setSearchResults([]);
             setSearchNotFound(false);
