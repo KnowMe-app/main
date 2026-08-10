@@ -16,4 +16,10 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
     expect(source).toContain('const detected = detectSearchParams(search)');
     expect(source).toContain('setDraft({ userId: cardId, ...initialSearchData })');
   });
+
+  it('shows which indexed keys are used to find existing cards', () => {
+    expect(source).toContain("import { getSearchIdIndexedFields } from 'utils/searchKeyUtils'");
+    expect(source).toContain("const PROFILE_SEARCH_KEYS = ['userId', ...getSearchIdIndexedFields()]");
+    expect(source).toContain('Пошук карток виконується за ключами:');
+  });
 });
