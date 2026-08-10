@@ -16,6 +16,12 @@ const renderMenu = props => render(
 );
 
 describe('ProfileDotsMenu logout confirmation', () => {
+  it('shows profile creation only with the dedicated permission', () => {
+    const { rerender } = renderMenu({ access: { canAccessMatching: true } });
+    expect(screen.queryByRole('menuitem', { name: /Додати профіль/ })).toBeNull();
+    rerender(<MemoryRouter><ProfileDotsMenu navigate={jest.fn()} access={{ canCreateProfiles: true }} /></MemoryRouter>);
+    expect(screen.getByRole('menuitem', { name: /Додати профіль/ })).not.toBeNull();
+  });
   it('does not end the session until logout is confirmed', async () => {
     const onExit = jest.fn().mockResolvedValue(undefined);
     const onSelect = jest.fn();

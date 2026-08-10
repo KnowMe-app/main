@@ -14,6 +14,7 @@ import BudgetPage from './BudgetPage';
 import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
+import ProfileCreationWorkspace from './ProfileCreationWorkspace';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
 import { resolveAccess } from 'utils/accessLevel';
@@ -26,6 +27,7 @@ export const App = () => {
   const [canAccessAdd, setCanAccessAdd] = useState(false);
   const [canAccessMatching, setCanAccessMatching] = useState(false);
   const [canAccessInvoices, setCanAccessInvoices] = useState(false);
+  const [canCreateProfiles, setCanCreateProfiles] = useState(false);
   const [isAccessResolved, setIsAccessResolved] = useState(false);
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
@@ -48,11 +50,12 @@ export const App = () => {
     const isRootRoute = location.pathname === '/';
     const isUnauthorizedAddRoute = location.pathname === '/add' && !canAccessAdd;
     const isUnauthorizedMatchingRoute = location.pathname === '/matching' && !canAccessMatching;
+    const isUnauthorizedCreateRoute = location.pathname === '/matching/create-profile' && !canCreateProfiles;
 
-    if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedMatchingRoute) {
+    if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedMatchingRoute || isUnauthorizedCreateRoute) {
       navigate('/my-profile');
     }
-  }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd, canAccessMatching]);
+  }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd, canAccessMatching, canCreateProfiles]);
 
   // Special page for admin
   useEffect(() => {
@@ -61,19 +64,22 @@ export const App = () => {
         localStorage.setItem('ownerId', user.uid);
         let accessLevel = '';
         let userRole = '';
+        let canCreateProfilesForUser = false;
         try {
           const profile = await fetchUserById(user.uid);
           accessLevel = profile?.accessLevel || '';
           userRole = profile?.userRole || profile?.role || '';
+          canCreateProfilesForUser = profile?.canCreateProfiles === true;
         } catch (error) {
           console.error('Failed to load access profile for routes', error);
         }
 
-        const access = resolveAccess({ uid: user.uid, accessLevel, userRole });
+        const access = resolveAccess({ uid: user.uid, accessLevel, userRole, canCreateProfiles: canCreateProfilesForUser });
         setIsAdmin(access.isAdmin);
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessMatching(access.canAccessMatching);
         setCanAccessInvoices(access.canAccessInvoices);
+        setCanCreateProfiles(access.canCreateProfiles);
         localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
         setIsAccessResolved(true);
@@ -85,6 +91,7 @@ export const App = () => {
         setCanAccessAdd(false);
         setCanAccessMatching(false);
         setCanAccessInvoices(false);
+        setCanCreateProfiles(false);
         setIsAccessResolved(true);
       }
     });
@@ -101,6 +108,7 @@ export const App = () => {
       {isAdmin && <Route path="/my-profile-old" element={<MyProfileOld isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
       {canAccessAdd && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
       {canAccessMatching && <Route path="/matching" element={<Matching />} />}
+      {canCreateProfiles && <Route path="/matching/create-profile" element={<ProfileCreationWorkspace />} />}
       {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
       {isAdmin && <Route path="/medications/:userId" element={<MedicationsPage />} />}
       {isAdmin && <Route path="/flow" element={<FlowManager ownerId={auth.currentUser?.uid} />} />}

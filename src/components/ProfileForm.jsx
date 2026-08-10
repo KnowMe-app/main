@@ -98,6 +98,12 @@ export const getFieldsToRender = state => {
 };
 
 const PROFILE_FORM_FIELDS_TO_HIDE = new Set(['getInTouch']);
+const PROFILE_FORM_TECHNICAL_FIELDS = new Set([
+  'accessLevel',
+  'canCreateProfiles',
+  'additionalAccessRules',
+  MULTI_DATA_ACCESS_FIELD,
+]);
 
 const PROFILE_FORM_LABELS = {
   lastLogin: 'Останній логін',
@@ -1952,9 +1958,6 @@ export const ProfileForm = ({
     'ownKids',
     'lastDelivery',
     'role',
-    'accessLevel',
-    ADDITIONAL_ACCESS_FIELD,
-    MULTI_DATA_ACCESS_FIELD,
   ];
 
   const accessLevelOptions = [
@@ -1974,6 +1977,17 @@ export const ProfileForm = ({
 
     if (canManageAccessLevel && !next.some(field => field.name === 'accessLevel')) {
       next = [...next, { name: 'accessLevel', placeholder: 'рівень доступу', ukrainian: 'рівень доступу', ukrainianHint: 'рівень доступу' }];
+    }
+
+    if (canManageAccessLevel && !next.some(field => field.name === 'canCreateProfiles')) {
+      next = [
+        ...next,
+        {
+          name: 'canCreateProfiles',
+          placeholder: 'дозвіл на створення карток',
+          ukrainianHint: 'дозволити користувачу створювати нові картки',
+        },
+      ];
     }
 
     if (canManageAccessLevel && !next.some(field => field.name === ADDITIONAL_ACCESS_FIELD)) {
@@ -2472,7 +2486,10 @@ ${entries.join('\n')}`;
     ...priorityOrder
       .map(key => normalizedFieldsToRender.find(field => field.name === key))
       .filter(Boolean),
-    ...normalizedFieldsToRender.filter(field => !priorityOrder.includes(field.name)),
+    ...normalizedFieldsToRender.filter(
+      field => !priorityOrder.includes(field.name) && !PROFILE_FORM_TECHNICAL_FIELDS.has(field.name)
+    ),
+    ...normalizedFieldsToRender.filter(field => PROFILE_FORM_TECHNICAL_FIELDS.has(field.name)),
   ];
 
   const roleTokens = Array.isArray(state?.role || state?.userRole)
@@ -2696,7 +2713,7 @@ ${entries.join('\n')}`;
                   autoResizePpTechnicalInput(e.target);
                 }}
                 onBlur={handlePpTechnicalInputSubmit}
-                placeholder="Технічний інпут для PP"
+                placeholder="Вставте контакт або технічні дані — парсер розподілить їх по полях"
               />
             </InputFieldContainer>
           </InputDiv>
@@ -2704,7 +2721,7 @@ ${entries.join('\n')}`;
       </PickerContainer>
       {sortedFieldsToRender
         .filter(field => !['myComment', 'writer'].includes(field.name))
-        .filter(field => (isAdmin ? true : field.name !== ADDITIONAL_ACCESS_FIELD))
+        .filter(field => (isAdmin ? true : !PROFILE_FORM_TECHNICAL_FIELDS.has(field.name)))
         .filter(field => {
           if (!shouldHideFieldsForClPp) return true;
           return !HIDDEN_FOR_CL_PP_FIELDS.has(field.name);
@@ -2722,6 +2739,12 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
+            {isAdmin && PROFILE_FORM_TECHNICAL_FIELDS.has(field.name) &&
+              !sortedFieldsToRender.slice(0, index).some(item => PROFILE_FORM_TECHNICAL_FIELDS.has(item.name)) && (
+                <TechnicalFieldsSection>
+                  <TechnicalFieldsTitle>Технічні налаштування</TechnicalFieldsTitle>
+                </TechnicalFieldsSection>
+              )}
             <PickerContainer
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
@@ -2878,6 +2901,21 @@ ${entries.join('\n')}`;
                           {option.label}
                         </option>
                       ))}
+                    </AccessLevelSelect>
+                  ) : field.name === 'canCreateProfiles' ? (
+                    <AccessLevelSelect
+                      name={field.name}
+                      aria-label="Дозволити створення карток"
+                      value={state[field.name] === true ? 'true' : 'false'}
+                      onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                      onChange={e => {
+                        const value = e.target.value === 'true';
+                        setState(prevState => ({ ...prevState, [field.name]: value }));
+                      }}
+                      onBlur={() => handleBlur(field.name)}
+                    >
+                      <option value="false">Створення карток заборонено</option>
+                      <option value="true">Дозволити створення карток</option>
                     </AccessLevelSelect>
                   ) : field.name === ADDITIONAL_ACCESS_FIELD ? (
                     <>
@@ -3469,6 +3507,22 @@ const FormCard = styled.div`
     padding: 12px;
     border-radius: ${uiTokens.radius.lg};
   }
+`;
+
+const TechnicalFieldsSection = styled.section`
+  width: 100%;
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--km-border);
+`;
+
+const TechnicalFieldsTitle = styled.h3`
+  margin: 0 0 12px;
+  color: var(--km-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 `;
 
 
