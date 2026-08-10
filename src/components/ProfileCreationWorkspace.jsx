@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -288,37 +288,88 @@ export const ProfileCreationWorkspace = () => {
     setSearchParams({ cardId: profile.userId, overlay: '1' });
   };
 
-  const save = async () => {
-    setSaving(true);
-    try {
+  // Kept in sync via effects below so the async save path always reads the
+  // latest values instead of a stale closure captured at render time.
+  const draftRef = useRef(draft);
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+  const activeMutationRef = useRef(activeMutation);
+  useEffect(() => { activeMutationRef.current = activeMutation; }, [activeMutation]);
+  // Chains saves so two rapid blurs (or a blur racing the Save button) apply
+  // in order against the revision the previous one actually committed,
+  // instead of two saves reading the same stale revision and one of them
+  // failing with a false REVISION_CONFLICT.
+  const saveQueueRef = useRef(Promise.resolve());
+
+  // A bare "Не вдалося зберегти" hides exactly the information needed to
+  // tell "rules not deployed yet for this path" apart from "network hiccup"
+  // apart from an actual conflict - surface the raw error too.
+  const reportSaveError = (error, fallbackMessage) => {
+    console.error('[ProfileCreationWorkspace] save failed', error);
+    const detail = error?.code || error?.message || '';
+    toast.error(
+      <div>
+        <div style={{ fontWeight: 700 }}>{fallbackMessage}</div>
+        {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{detail}</div> : null}
+      </div>,
+      { duration: 8000 },
+    );
+  };
+
+  const describeSaveError = error => (error?.message === 'REVISION_CONFLICT'
+    ? 'Профіль уже змінено. Оновіть сторінку.'
+    : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль');
+
+  const persistDraft = useCallback(nextDraft => {
+    const run = async () => {
       if (overlayTarget) {
-        const overlayFields = buildOverlayFromDraft(
-          { userId: overlayTarget.userId },
-          draft,
-        );
+        const overlayFields = buildOverlayFromDraft({ userId: overlayTarget.userId }, nextDraft);
         await saveOverlayForUserCard({
           editorUserId: uid,
           cardUserId: overlayTarget.userId,
           fields: overlayFields,
         });
-        toast.success('Власні дані та коментар збережено');
-        closeEditor();
-        return;
+        return null;
       }
+      const current = activeMutationRef.current;
       const saved = await saveCreateProfileMutation({
-        cardId: activeMutation.cardId,
-        creatorUid: activeMutation.createdBy || uid,
+        cardId: current.cardId,
+        creatorUid: current.createdBy || uid,
         actorUid: uid,
-        data: draft,
-        expectedRevision: activeMutation.revision,
+        data: nextDraft,
+        expectedRevision: current.revision,
       });
-      toast.success('Профіль збережено й надіслано на перевірку');
+      activeMutationRef.current = saved;
       setActiveMutation(saved);
-      await refresh(uid, access);
+      return saved;
+    };
+
+    const queued = saveQueueRef.current.catch(() => {}).then(run);
+    saveQueueRef.current = queued.catch(() => {});
+    return queued;
+  }, [overlayTarget, uid]);
+
+  // Fires on every field blur/chip click - the primary save path now, so a
+  // draft is never lost by someone filling the form and never pressing the
+  // button below.
+  const commitFieldValue = (fieldName, value) => {
+    const nextDraft = { ...(draftRef.current || {}), [fieldName]: value };
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await persistDraft(draftRef.current);
+      toast.success(overlayTarget ? 'Власні дані та коментар збережено' : 'Профіль збережено й надіслано на перевірку');
+      if (overlayTarget) {
+        closeEditor();
+      } else {
+        await refresh(uid, access);
+      }
     } catch (error) {
-      toast.error(error?.message === 'REVISION_CONFLICT'
-        ? 'Профіль уже змінено. Оновіть сторінку.'
-        : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль');
+      reportSaveError(error, describeSaveError(error));
     } finally {
       setSaving(false);
     }
@@ -332,7 +383,7 @@ export const ProfileCreationWorkspace = () => {
       closeEditor();
       await refresh(uid, access);
     } catch (error) {
-      toast.error(error?.message === 'REVISION_CONFLICT' ? 'Автор уже оновив профіль. Перевірте нову версію.' : 'Не вдалося прийняти профіль');
+      reportSaveError(error, error?.message === 'REVISION_CONFLICT' ? 'Автор уже оновив профіль. Перевірте нову версію.' : 'Не вдалося прийняти профіль');
     } finally { setSaving(false); }
   };
 
@@ -343,6 +394,8 @@ export const ProfileCreationWorkspace = () => {
       toast.success('Профіль залишено приватним');
       closeEditor();
       await refresh(uid, access);
+    } catch (error) {
+      reportSaveError(error, 'Не вдалося відхилити профіль');
     } finally { setSaving(false); }
   };
 
@@ -367,7 +420,7 @@ export const ProfileCreationWorkspace = () => {
               key={`${fieldName}-${optionValue}`}
               type="button"
               $selected={selected}
-              onClick={() => updateDraftField(fieldName, selected ? '' : optionValue)}
+              onClick={() => commitFieldValue(fieldName, selected ? '' : optionValue)}
             >
               {getOptionLabel(option)}
             </FieldChip>;
@@ -378,12 +431,14 @@ export const ProfileCreationWorkspace = () => {
           value={value}
           placeholder={getFieldPlaceholder(field)}
           onChange={e => updateDraftField(fieldName, e.target.value)}
+          onBlur={e => commitFieldValue(fieldName, e.target.value)}
         />
       ) : (
         <FieldInput
           value={value}
           placeholder={getFieldPlaceholder(field)}
           onChange={e => updateDraftField(fieldName, e.target.value)}
+          onBlur={e => commitFieldValue(fieldName, e.target.value)}
         />
       )}
     </FieldRow>;
@@ -429,14 +484,13 @@ export const ProfileCreationWorkspace = () => {
           value={draft?.myComment || ''}
           placeholder="Що варто знати адміністратору про цей профіль"
           onChange={e => updateDraftField('myComment', e.target.value)}
+          onBlur={e => commitFieldValue('myComment', e.target.value)}
         />
       </CommentCard>}
       {CREATE_FORM_SECTIONS.map(section => (
         <FormSectionCard key={section.key}>
           <FormSectionTitle>{section.title}</FormSectionTitle>
-          <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
-            {section.fields.map(renderCreateField)}
-          </fieldset>
+          {section.fields.map(renderCreateField)}
         </FormSectionCard>
       ))}
       <Card>
