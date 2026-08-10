@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
+import { FiArrowRight, FiFolder, FiPlus, FiSearch } from 'react-icons/fi';
 
 import { auth, fetchUserById, searchUsersOnly } from './config';
 import { ProfileForm } from './ProfileForm';
@@ -21,25 +22,68 @@ import {
 
 const Page = styled.main`
   min-height: 100vh;
-  padding: 24px 12px 64px;
+  padding: 32px 20px max(80px, env(safe-area-inset-bottom));
   background: var(--km-bg);
   color: var(--km-text);
+  font-family: var(--km-font);
+  box-sizing: border-box;
 `;
 const Shell = styled.div`max-width: 920px; margin: 0 auto;`;
-const Header = styled.header`display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px;`;
-const Title = styled.h1`margin:0; font-size:24px;`;
-const Button = styled.button`
-  border: 1px solid var(--km-border); border-radius: 12px; padding: 10px 16px;
-  background: ${({ $primary }) => ($primary ? 'var(--km-accent)' : 'var(--km-card)')};
-  color: ${({ $primary }) => ($primary ? '#fff' : 'var(--km-text)')}; cursor:pointer; font-weight:700;
-  &:disabled { opacity:.55; cursor:not-allowed; }
+const Header = styled.header`
+  display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px 20px; align-items:start; margin-bottom:28px;
+  @media (max-width: 380px) { grid-template-columns:1fr; }
 `;
-const Card = styled.section`padding:18px; margin:12px 0; border:1px solid var(--km-border); border-radius:16px; background:var(--km-card);`;
+const HeaderCopy = styled.div`min-width:0;`;
+const Title = styled.h1`
+  margin:0; font-size:clamp(28px, 7vw, 32px); line-height:1.12; font-weight:750; letter-spacing:-.025em;
+`;
+const Button = styled.button`
+  min-height:48px; border: 1px solid var(--km-border); border-radius: 16px; padding: 10px 17px;
+  background: ${({ $primary }) => ($primary ? 'var(--km-accent)' : 'var(--km-card)')};
+  color: ${({ $primary }) => ($primary ? '#fff' : 'var(--km-text)')}; cursor:pointer; font:700 15px/1 var(--km-font);
+  display:inline-flex; align-items:center; justify-content:center; gap:9px;
+  transition:transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  &:hover:not(:disabled) { border-color:var(--km-accent); }
+  &:focus-visible { outline:3px solid var(--km-accent-ring); outline-offset:2px; border-color:var(--km-accent); }
+  &:active:not(:disabled) { transform:translateY(1px); }
+  &:disabled { background:color-mix(in srgb, var(--km-muted) 16%, var(--km-card)); color:var(--km-muted); box-shadow:none; cursor:not-allowed; }
+  @media (prefers-reduced-motion: reduce) { transition:none; }
+`;
+const MatchingButton = styled(Button)`
+  grid-column:2; grid-row:1; white-space:nowrap; background:color-mix(in srgb, var(--km-card) 88%, var(--km-muted));
+  svg { color:var(--km-accent); }
+  @media (max-width:380px) { grid-column:1; grid-row:auto; justify-self:start; margin-top:8px; }
+`;
+const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:20px; background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
-const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:13px;`;
+const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere;`;
 const Status = styled.span`display:inline-block; padding:4px 9px; border-radius:999px; background:var(--km-accent-light); color:var(--km-accent); font-size:12px; font-weight:800;`;
-const SearchSection = styled.section`padding:16px; margin-bottom:18px; border:1px solid var(--km-border); border-radius:16px; background:var(--km-card);`;
-const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--km-border);`;
+const HeaderMeta = styled(Meta)`grid-column:1 / -1; margin:0; max-width:650px; font-size:16px;`;
+const SearchSection = styled.section`
+  padding:24px; margin-bottom:30px; border:1px solid var(--km-border); border-radius:24px; background:var(--km-card);
+  box-shadow:var(--km-shadow), inset 0 1px 0 rgba(255,255,255,.04);
+  h2 { margin:0; font-size:clamp(23px, 6vw, 26px); line-height:1.2; letter-spacing:-.015em; }
+  > ${Meta}:first-of-type { max-width:650px; margin-top:8px; font-size:16px; }
+  > div[style] { min-height:58px !important; margin:20px 0 12px !important; padding:10px 16px !important; border-radius:17px !important; background:color-mix(in srgb, var(--km-bg) 62%, var(--km-card)) !important; }
+  > div[style]:hover { border-color:color-mix(in srgb, var(--km-accent) 45%, var(--km-border)); }
+  textarea { font-size:16px; line-height:1.4; }
+  ${Actions} ${Button} { min-height:56px; min-width:220px; box-shadow:0 8px 20px var(--km-accent-ring); }
+  ${Actions} ${Button}:disabled { box-shadow:none; }
+  @media (max-width:600px) { padding:22px 20px; ${Actions} ${Button} { width:100%; } }
+`;
+const TechnicalMeta = styled(Meta)`font-size:12px; opacity:.82; code { color:var(--km-text); }`;
+const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-top:1px solid var(--km-border); min-width:0; > span:first-child { min-width:0; overflow-wrap:anywhere; }`;
+const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
+const Count = styled.span`min-width:28px; height:28px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; border-radius:999px; background:color-mix(in srgb, var(--km-muted) 14%, var(--km-card)); color:var(--km-text); letter-spacing:0;`;
+const EmptyState = styled(Card)`min-height:170px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:7px; margin:0;`;
+const EmptyIcon = styled.span`width:44px; height:44px; display:grid; place-items:center; margin-bottom:5px; border-radius:14px; background:var(--km-accent-light); color:var(--km-accent); font-size:21px;`;
+const EmptyTitle = styled.p`font-size:19px; line-height:1.3; font-weight:650;`;
+const ProfileCard = styled(Card)`
+  margin:0 0 14px; padding:18px 20px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px 18px; align-items:center;
+  h2 { margin:5px 0 0; font-size:19px; line-height:1.25; overflow-wrap:anywhere; }
+  ${Button} { grid-column:2; grid-row:1 / span 2; }
+  @media (max-width:520px) { grid-template-columns:1fr; ${Button} { grid-column:1; grid-row:auto; width:100%; } }
+`;
 const PROFILE_SEARCH_PREFILL_FIELDS = new Set(['name', 'surname', 'phone', 'email', 'telegram', 'instagram', 'facebook', 'tiktok']);
 const PROFILE_SEARCH_KEYS = ['userId', ...getSearchIdIndexedFields()];
 
@@ -204,7 +248,11 @@ export const ProfileCreationWorkspace = () => {
   if (!access) return <Page><Shell>Завантаження…</Shell></Page>;
 
   return <Page><Shell>
-    <Header><div><Title>{heading}</Title><Meta>Картки зберігаються приватно до рішення адміністратора.</Meta></div><Button onClick={() => navigate('/matching')}>Matching</Button></Header>
+    <Header>
+      <HeaderCopy><Title>{heading}</Title></HeaderCopy>
+      <MatchingButton onClick={() => navigate('/matching')}>Matching <FiArrowRight aria-hidden="true" /></MatchingButton>
+      <HeaderMeta>Картки зберігаються приватно до рішення адміністратора.</HeaderMeta>
+    </Header>
     {draft ? <Card>
       <Status>{activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
       <Meta>cardId: {activeMutation.cardId} · revision: {activeMutation.revision || 0}</Meta>
@@ -221,13 +269,13 @@ export const ProfileCreationWorkspace = () => {
       {!access.isAdmin && <SearchSection aria-label="Пошук профілю перед створенням">
         <h2>Знайти або додати картку</h2>
         <Meta>Спочатку перевірте, чи профіль уже існує. Використовується той самий пошук, що й у Matching.</Meta>
-        <Meta>
+        <TechnicalMeta>
           Пошук карток виконується за ключами: {PROFILE_SEARCH_KEYS.map((key, index) => (
             <React.Fragment key={key}>
               {index > 0 ? ', ' : ''}<code>{key}</code>
             </React.Fragment>
           ))}.
-        </Meta>
+        </TechnicalMeta>
         <SearchBar
           searchFunc={searchUsersOnly}
           search={search}
@@ -254,7 +302,9 @@ export const ProfileCreationWorkspace = () => {
           }}
           storageKey="profileCreationSearchQuery"
           wrapperStyle={{ width: '100%' }}
-          leftIcon="🔍"
+          leftIcon={<FiSearch size={21} aria-hidden="true" />}
+          placeholder="Пошук профілю"
+          inputAriaLabel="Пошук профілю"
         />
         {searchResults.map(profile => <SearchResult key={profile.userId}>
           <span><strong>{[profile.name, profile.surname].filter(Boolean).join(' ') || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
@@ -268,17 +318,25 @@ export const ProfileCreationWorkspace = () => {
             disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0}
             onClick={startNew}
           >
-            + Додати профіль
+            <FiPlus size={20} aria-hidden="true" /> Додати профіль
           </Button>
         </Actions>
       </SearchSection>}
-      {mutations.length === 0 && <Card>Нових профілів поки немає.</Card>}
-      {mutations.map(mutation => <Card key={mutation.cardId}>
-        <Status>{mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
-        <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
-        <Meta>Автор: {mutation.createdBy}</Meta><Meta>Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'} · revision {mutation.revision}</Meta>
+      <SectionHeader><span>Ваші картки</span><Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count></SectionHeader>
+      {mutations.length === 0 && <EmptyState>
+        <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
+        <EmptyTitle>Нових профілів поки немає.</EmptyTitle>
+        <Meta>Створені вами картки з’являться тут.</Meta>
+      </EmptyState>}
+      {mutations.map(mutation => <ProfileCard key={mutation.cardId}>
+        <div>
+          <Status>{mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
+          <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
+          <Meta>Автор: {mutation.createdBy}</Meta>
+          <Meta>Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'} · revision {mutation.revision}</Meta>
+        </div>
         <Button onClick={() => openMutation(mutation)}>Відкрити профіль</Button>
-      </Card>)}
+      </ProfileCard>)}
     </>}
   </Shell></Page>;
 };
