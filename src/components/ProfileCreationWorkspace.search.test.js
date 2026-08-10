@@ -7,7 +7,8 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
   it('reuses Matching search primitives and blocks creation until a completed not-found search', () => {
     expect(source).toContain("import { auth, fetchUserById, searchUsersOnly } from './config'");
     expect(source).toContain("import SearchBar, { detectSearchParams } from './SearchBar'");
-    expect(source).toContain('const result = await searchUsersOnly(...args)');
+    expect(source).toContain('searchFunc={searchUsersOnly}');
+    expect(source).toContain('onSearchError={() => {');
     expect(source).toContain('!searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0');
   });
 

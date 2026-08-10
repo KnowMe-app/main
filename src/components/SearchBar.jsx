@@ -1088,6 +1088,7 @@ const SearchBar = ({
   setSearch: externalSetSearch,
   onClear,
   onSearchExecuted,
+  onSearchError,
   wrapperStyle = {},
   leftIcon = SearchIcon,
   storageKey = 'searchQuery',
@@ -1875,7 +1876,7 @@ const SearchBar = ({
     return false;
   };
 
-  const writeData = async (query = search, options = {}) => {
+  const executeWriteData = async (query = search, options = {}) => {
     const {
       requestId: inheritedRequestId = null,
       suppressHistory = false,
@@ -1980,7 +1981,7 @@ const SearchBar = ({
           collector.lastUsers = undefined;
           collector.lastUserNotFound = false;
 
-          await writeData(value, {
+          await executeWriteData(value, {
             requestId,
             suppressHistory: true,
             suppressSearchExecuted: true,
@@ -2122,6 +2123,20 @@ const SearchBar = ({
       } else {
         applyUsers(res, requestId);
       }
+    }
+  };
+
+  const writeData = async (query = search, options = {}) => {
+    const requestId = options.requestId ?? ++activeSearchRequestRef.current;
+    try {
+      return await executeWriteData(query, { ...options, requestId });
+    } catch (error) {
+      if (activeSearchRequestRef.current !== requestId) return undefined;
+      applyUserNotFound(false, requestId);
+      applyState({}, requestId);
+      applyUsers({}, requestId);
+      onSearchError && onSearchError(error);
+      return undefined;
     }
   };
 
