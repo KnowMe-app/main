@@ -45,16 +45,18 @@ export const canAccessAddByLevel = accessLevel => {
   return hasAdd;
 };
 
-export const resolveAccess = ({ uid, accessLevel, role, userRole } = {}) => {
+export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfiles = false } = {}) => {
   const isAdmin = isAdminUid(uid);
   const canAccessMatching = isAdmin || canAccessMatchingByLevel(accessLevel) || canAccessMatchingByRole({ role, userRole });
   const canAccessAdd = isAdmin || canAccessAddByLevel(accessLevel);
   const canAccessInvoices = isInvoiceBuilderUid(uid);
+  const canCreateProfilesResolved = isAdmin || canCreateProfiles === true;
 
   return {
     isAdmin,
     canAccessMatching,
     canAccessAdd,
     canAccessInvoices,
+    canCreateProfiles: canCreateProfilesResolved,
   };
 };

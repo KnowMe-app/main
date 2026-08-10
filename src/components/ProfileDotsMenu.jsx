@@ -203,6 +203,7 @@ const SegmentedOption = styled.button`
 const normalizeAccess = access => ({
   canAccessAdd: Boolean(access?.canAccessAdd),
   canAccessMatching: Boolean(access?.canAccessMatching),
+  canCreateProfiles: Boolean(access?.canCreateProfiles),
 });
 
 export const ProfileDotsMenu = ({
@@ -298,6 +299,9 @@ export const ProfileDotsMenu = ({
       : []),
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessMatching)
       ? [{ path: '/matching', label: 'Matching', description: 'Пошук і порівняння анкет', icon: <FaUsers /> }]
+      : []),
+    ...((isAdmin || resolvedAccess.canCreateProfiles)
+      ? [{ path: '/matching/create-profile', label: isAdmin ? 'Нові профілі' : 'Додати профіль', description: isAdmin ? 'Перевірка нових карток' : 'Створити приватну картку', icon: <MdPersonAddAlt1 /> }]
       : []),
     ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),
