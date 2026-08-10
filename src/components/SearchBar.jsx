@@ -1100,6 +1100,8 @@ const SearchBar = ({
   searchOptions,
   searchHistoryLimit = 5,
   suppressInitialSearchExecution = false,
+  placeholder,
+  inputAriaLabel,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const [internalSearch, setInternalSearch] = useState(
@@ -2147,6 +2149,8 @@ const SearchBar = ({
         <InputField
           ref={textareaRef}
           rows={1}
+          placeholder={placeholder}
+          aria-label={inputAriaLabel}
           value={search || ''}
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => {
