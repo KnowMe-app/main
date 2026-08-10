@@ -2163,7 +2163,10 @@ const SearchBar = ({
         />
         {search && (
           <ClearButton
+            onMouseDown={e => e.preventDefault()}
             onClick={() => {
+              activeSearchRequestRef.current += 1;
+              repeatedSearchCollectorRef.current = null;
               setSearch('');
               applyUserNotFound(false);
               onClear && onClear();

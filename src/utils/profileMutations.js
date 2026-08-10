@@ -1,4 +1,4 @@
-import { get, push, ref, runTransaction } from 'firebase/database';
+import { get, push, ref, runTransaction, update } from 'firebase/database';
 
 import { database, syncUserSearchKeyIndex } from 'components/config';
 import {
@@ -36,23 +36,79 @@ const getSearchIdKeys = (data, { contactsOnly = false } = {}) => Object.entries(
     .filter(Boolean))
   .filter((value, index, values) => values.indexOf(value) === index);
 
-const asIds = value => (Array.isArray(value) ? value : [value]).filter(Boolean);
+const hashKey = value => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
 
-const hasOtherOwner = (value, cardId) => asIds(value).some(id => id !== cardId);
+// RTDB limits a child key to 768 UTF-8 bytes. Claims need only be stable and
+// collision-resistant within their field, so bound pathological form values.
+const getIdentityClaimKey = key => (
+  new TextEncoder().encode(key).length <= 700 ? key : `${key.split('_', 1)[0]}_hash_${hashKey(key)}`
+);
 
 const appendIndexId = (value, cardId) => {
-  const ids = asIds(value);
+  const ids = (Array.isArray(value) ? value : [value]).filter(Boolean);
   if (!ids.includes(cardId)) ids.push(cardId);
   return ids.length === 1 ? ids[0] : ids;
 };
 
+const claimProfileIdentities = async ({ cardId, data }) => {
+  const searchKeys = getSearchIdKeys(data, { contactsOnly: true });
+  const keys = searchKeys.map(getIdentityClaimKey);
+  const indexedValues = await Promise.all(searchKeys
+    .filter(key => new TextEncoder().encode(key).length <= 768)
+    .map(key => get(ref(database, `searchId/${key}`))));
+  const canonicalConflict = indexedValues.some(snapshot => {
+    const value = snapshot.val();
+    return (Array.isArray(value) ? value : [value]).filter(Boolean).some(id => id !== cardId);
+  });
+  if (canonicalConflict) throw new Error('DUPLICATE_PROFILE');
+  let duplicate = false;
+  const result = await runTransaction(ref(database, PROFILE_IDENTITY_CLAIMS_ROOT), current => {
+    const claims = current || {};
+    if (keys.some(key => claims[key] && claims[key] !== cardId)) {
+      duplicate = true;
+      return undefined;
+    }
+    return keys.reduce((next, key) => ({ ...next, [key]: cardId }), { ...claims });
+  }, { applyLocally: false });
+  if (!result.committed) throw new Error(duplicate ? 'DUPLICATE_PROFILE' : 'REVISION_CONFLICT');
+  return keys;
+};
+
+const releaseProfileIdentities = (cardId, keys) => runTransaction(
+  ref(database, PROFILE_IDENTITY_CLAIMS_ROOT),
+  current => (keys || []).reduce((next, key) => {
+    if (next[key] === cardId) delete next[key];
+    return next;
+  }, { ...(current || {}) }),
+  { applyLocally: false },
+);
+
+const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
+  getSearchIdKeys(profile)
+    .filter(key => new TextEncoder().encode(key).length <= 768)
+    .map(key => runTransaction(ref(database, `searchId/${key}`), current => appendIndexId(current, cardId), {
+      applyLocally: false,
+    })),
+);
+
 export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expectedRevision }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
-  const identityKeys = getSearchIdKeys(data, { contactsOnly: true });
+  // Write-through discovery is harmless if the later claim fails (load filters
+  // missing records), while writing it first prevents a committed draft from
+  // becoming undiscoverable because of a separate index failure.
+  await update(ref(database, `profileMutationsByCreator/${creatorUid}`), { [cardId]: true });
+  const identityKeys = await claimProfileIdentities({ cardId, data });
   let conflict = '';
-  const result = await runTransaction(ref(database), currentRoot => {
-    const root = currentRoot || {};
-    const current = root[PROFILE_MUTATIONS_ROOT]?.[cardId];
+  let previousIdentityKeys = [];
+  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => {
+    previousIdentityKeys = current?.identityKeys || [];
     if (current && current.createdBy !== creatorUid) {
       conflict = 'Profile mutation belongs to another user';
       return undefined;
@@ -63,12 +119,6 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
     }
     if (current && expectedRevision != null && Number(current.revision) !== Number(expectedRevision)) {
       conflict = 'REVISION_CONFLICT';
-      return undefined;
-    }
-    const searchId = root.searchId || {};
-    const claims = root[PROFILE_IDENTITY_CLAIMS_ROOT] || {};
-    if (identityKeys.some(key => hasOtherOwner(searchId[key], cardId) || (claims[key] && claims[key] !== cardId))) {
-      conflict = 'DUPLICATE_PROFILE';
       return undefined;
     }
     const now = Date.now();
@@ -83,25 +133,19 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
       status: 'pendingReview',
       identityKeys,
     };
-    const nextClaims = { ...claims };
-    (current?.identityKeys || []).forEach(key => {
-      if (!identityKeys.includes(key) && nextClaims[key] === cardId) delete nextClaims[key];
-    });
-    identityKeys.forEach(key => { nextClaims[key] = cardId; });
-    return {
-      ...root,
-      [PROFILE_MUTATIONS_ROOT]: { ...(root[PROFILE_MUTATIONS_ROOT] || {}), [cardId]: mutation },
-      [PROFILE_IDENTITY_CLAIMS_ROOT]: nextClaims,
-      profileMutationsByCreator: {
-        ...(root.profileMutationsByCreator || {}),
-        [creatorUid]: { ...(root.profileMutationsByCreator?.[creatorUid] || {}), [cardId]: true },
-      },
-    };
+    return mutation;
   }, { applyLocally: false });
   if (!result.committed) {
+    // Only keys absent from the durable draft were acquired by this failed save.
+    const existing = result.snapshot.val();
+    const newlyClaimed = identityKeys.filter(key => !(existing?.identityKeys || []).includes(key));
+    await releaseProfileIdentities(cardId, newlyClaimed);
     throw new Error(conflict || 'REVISION_CONFLICT');
   }
-  return result.snapshot.val()?.[PROFILE_MUTATIONS_ROOT]?.[cardId];
+  const mutation = result.snapshot.val();
+  // Cleanup is idempotent bookkeeping after the revision is already committed.
+  releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
+  return mutation;
 };
 
 export const loadProfileMutation = async cardId => {
@@ -140,61 +184,50 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
   const acceptedAt = Date.now();
   let conflict = 'Profile mutation not found';
   let acceptedProfile = null;
-  const result = await runTransaction(ref(database), currentRoot => {
-    const root = currentRoot || {};
-    const mutation = root[PROFILE_MUTATIONS_ROOT]?.[cardId];
+  const mutationSnapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
+  const pendingMutation = mutationSnapshot.val();
+  if (!pendingMutation || pendingMutation.operation !== 'create') throw new Error(conflict);
+  const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
+  const identityKeys = await claimProfileIdentities({ cardId, data: candidateProfile });
+  const previousIdentityKeys = pendingMutation.identityKeys || [];
+  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), mutation => {
     if (!mutation || mutation.operation !== 'create') return undefined;
-    if (mutation.status !== 'pendingReview' && mutation.status !== 'private') return undefined;
+    if (mutation.status !== 'pendingReview' && mutation.status !== 'private' && mutation.status !== 'publishing') return undefined;
     if (Number(mutation.revision) !== Number(expectedRevision)) {
       conflict = 'REVISION_CONFLICT';
       return undefined;
     }
-    const profile = { ...cleanObject(finalData || mutation.data), userId: cardId };
-    const identityKeys = getSearchIdKeys(profile, { contactsOnly: true });
-    const searchKeys = getSearchIdKeys(profile);
-    const searchId = root.searchId || {};
-    const claims = root[PROFILE_IDENTITY_CLAIMS_ROOT] || {};
-    if (identityKeys.some(key => hasOtherOwner(searchId[key], cardId) || (claims[key] && claims[key] !== cardId))) {
-      conflict = 'DUPLICATE_PROFILE';
-      return undefined;
-    }
-
-    const nextClaims = { ...claims };
-    (mutation.identityKeys || []).forEach(key => {
-      if (!identityKeys.includes(key) && nextClaims[key] === cardId) delete nextClaims[key];
-    });
-    identityKeys.forEach(key => { nextClaims[key] = cardId; });
-    const nextSearchId = { ...searchId };
-    searchKeys.forEach(key => { nextSearchId[key] = appendIndexId(nextSearchId[key], cardId); });
-    const acceptedMutation = { ...mutation, data: profile, identityKeys, status: 'accepted', acceptedAt };
-    const creatorIndex = { ...(root.profileMutationsByCreator?.[mutation.createdBy] || {}) };
-    delete creatorIndex[cardId];
-    acceptedProfile = profile;
-    return {
-      ...root,
-      newUsers: { ...(root.newUsers || {}), [cardId]: profile },
-      users: {
-        ...(root.users || {}),
-        [mutation.createdBy]: {
-          ...(root.users?.[mutation.createdBy] || {}),
-          createdProfileCardIds: {
-            ...(root.users?.[mutation.createdBy]?.createdProfileCardIds || {}),
-            [cardId]: true,
-          },
-        },
-      },
-      [PROFILE_MUTATION_HISTORY_ROOT]: { ...(root[PROFILE_MUTATION_HISTORY_ROOT] || {}), [cardId]: acceptedMutation },
-      [PROFILE_MUTATIONS_ROOT]: { ...(root[PROFILE_MUTATIONS_ROOT] || {}), [cardId]: acceptedMutation },
-      [PROFILE_IDENTITY_CLAIMS_ROOT]: nextClaims,
-      searchId: nextSearchId,
-      profileMutationsByCreator: {
-        ...(root.profileMutationsByCreator || {}),
-        [mutation.createdBy]: creatorIndex,
-      },
-    };
+    acceptedProfile = { ...cleanObject(finalData || mutation.data), userId: cardId };
+    return { ...mutation, data: acceptedProfile, identityKeys, status: 'publishing', acceptedAt };
   }, { applyLocally: false });
-  if (!result.committed) throw new Error(conflict);
-  await syncUserSearchKeyIndex(cardId, {}, acceptedProfile);
+  if (!result.committed) {
+    await releaseProfileIdentities(cardId, identityKeys.filter(key => !previousIdentityKeys.includes(key)));
+    throw new Error(conflict);
+  }
+  const mutation = result.snapshot.val();
+  // Finish all fallible index work before the single publication update. A
+  // publishing record is deliberately retryable after an interrupted attempt.
+  try {
+    await Promise.all([
+      syncProfileSearchIdIndex(cardId, acceptedProfile),
+      syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
+    ]);
+  } catch (error) {
+    await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => (
+      current?.status === 'publishing' && current?.acceptedAt === acceptedAt
+        ? { ...current, status: pendingMutation.status, acceptedAt: null }
+        : current
+    ), { applyLocally: false });
+    throw error;
+  }
+  await update(ref(database), {
+    [`newUsers/${cardId}`]: acceptedProfile,
+    [`users/${mutation.createdBy}/createdProfileCardIds/${cardId}`]: true,
+    [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
+    [`${PROFILE_MUTATIONS_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
+    [`profileMutationsByCreator/${mutation.createdBy}/${cardId}`]: null,
+  });
+  releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;
 };
 
@@ -207,8 +240,10 @@ export const rejectCreateProfileMutation = async ({ cardId, expectedRevision }) 
       conflict = 'REVISION_CONFLICT';
       return undefined;
     }
-    return { ...mutation, status: 'private', updatedAt: Date.now() };
+    return { ...mutation, status: 'private', revision: Number(mutation.revision || 0) + 1, updatedAt: Date.now() };
   }, { applyLocally: false });
   if (!result.committed) throw new Error(conflict);
-  return result.snapshot.val();
+  const mutation = result.snapshot.val();
+  releaseProfileIdentities(cardId, mutation.identityKeys || []).catch(() => {});
+  return mutation;
 };
