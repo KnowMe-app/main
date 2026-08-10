@@ -29,6 +29,7 @@ describe('accessLevel', () => {
       canAccessMatching: true,
       canAccessAdd: true,
       canAccessInvoices: true,
+      canCreateProfiles: true,
     });
   });
 
@@ -38,6 +39,7 @@ describe('accessLevel', () => {
       canAccessMatching: true,
       canAccessAdd: false,
       canAccessInvoices: false,
+      canCreateProfiles: false,
     });
   });
 
@@ -46,5 +48,10 @@ describe('accessLevel', () => {
     expect(access.canAccessInvoices).toBe(true);
     expect(access.isAdmin).toBe(false);
     expect(access.canAccessAdd).toBe(false);
+  });
+
+  it('grants profile creation only through its explicit permission', () => {
+    expect(resolveAccess({ uid: 'viewer', canCreateProfiles: true }).canCreateProfiles).toBe(true);
+    expect(resolveAccess({ uid: 'viewer', accessLevel: 'matching add' }).canCreateProfiles).toBe(false);
   });
 });

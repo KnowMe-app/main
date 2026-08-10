@@ -122,6 +122,7 @@ import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { getEffectiveProfile, loadGrantedCreatedProfiles, loadOwnProfileMutations } from 'utils/profileMutations';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
@@ -1390,6 +1391,7 @@ const Matching = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
+  const [personalCreateProfiles, setPersonalCreateProfiles] = useState([]);
   useEffect(() => {
     const syncCopiedComment = event => {
       if (event.detail?.ownerId !== ownerId || !event.detail?.cardId) return;
@@ -1412,6 +1414,7 @@ const Matching = () => {
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
+  const [currentCanCreateProfiles, setCurrentCanCreateProfiles] = useState(() => localStorage.getItem('canCreateProfiles') === 'true');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
   );
@@ -1427,7 +1430,38 @@ const Matching = () => {
     uid: auth.currentUser?.uid,
     accessLevel: currentAccessLevel,
     userRole: currentUserRole,
+    canCreateProfiles: currentCanCreateProfiles,
   });
+  const isAdmin = access.isAdmin;
+
+  useEffect(() => {
+    let active = true;
+    if (!ownerId || isAdmin) {
+      setPersonalCreateProfiles([]);
+      return () => { active = false; };
+    }
+    Promise.all([loadOwnProfileMutations(ownerId), loadGrantedCreatedProfiles(ownerId)])
+      .then(([items, grantedProfiles]) => {
+        if (!active) return;
+        const pendingProfiles = items.map(mutation => ({
+          ...getEffectiveProfile({ mutation }),
+          publish: true,
+          __sourceCollection: 'newUsers',
+          __matchingAccessAllowed: true,
+          __profileMutationOperation: 'create',
+          __profileMutationStatus: mutation.status,
+        }));
+        const acceptedProfiles = grantedProfiles.map(profile => ({
+          ...profile,
+          publish: profile.publish ?? true,
+          __sourceCollection: 'newUsers',
+          __matchingAccessAllowed: true,
+        }));
+        setPersonalCreateProfiles([...acceptedProfiles, ...pendingProfiles]);
+      })
+      .catch(error => console.error('Failed to load personal create profiles', error));
+    return () => { active = false; };
+  }, [isAdmin, ownerId]);
   const matchingDefaultFilters = useMemo(
     () => getDefaultFilters({ mode: 'matching', nonAdminAllActive: !access.isAdmin }),
     [access.isAdmin],
@@ -1439,7 +1473,6 @@ const Matching = () => {
   const filterDrawerSubtitle = activeFilterGroupCount > 0
     ? `Активно змінено груп: ${activeFilterGroupCount}`
     : 'Всі профілі показані за поточними правилами доступу';
-  const isAdmin = access.isAdmin;
   const isIndexedDebugTestUser = String(auth.currentUser?.uid || ownerId || '').trim() === MATCHING_LOG_MODE_TEST_USER_ID;
   const parsedAdditionalAccessRules = useMemo(
     () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
@@ -2040,6 +2073,7 @@ const Matching = () => {
             const profile = await fetchUserById(user.uid);
             const accessLevel = profile?.accessLevel || '';
             const userRole = profile?.userRole || profile?.role || '';
+            const canCreateProfiles = profile?.canCreateProfiles === true;
             const additionalAccessRules = profile?.additionalAccessRules || '';
             const searchKeySetKeys = await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);
 
@@ -2047,10 +2081,12 @@ const Matching = () => {
 
             setCurrentAccessLevel(accessLevel);
             setCurrentUserRole(userRole);
+            setCurrentCanCreateProfiles(canCreateProfiles);
             setCurrentAdditionalAccessRules(additionalAccessRules);
             setCurrentSearchKeySetKeys(searchKeySetKeys);
             localStorage.setItem('accessLevel', accessLevel);
             localStorage.setItem('userRole', userRole);
+            localStorage.setItem('canCreateProfiles', canCreateProfiles ? 'true' : 'false');
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
             localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
             const rawMultiDataAccessUserIds = profile?.[MULTI_DATA_ACCESS_FIELD];
@@ -4505,7 +4541,7 @@ const Matching = () => {
   }, [collectionSource, loadReactionCards, reloadDefault]);
 
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
-    users,
+    users: [...users, ...personalCreateProfiles],
     additionalNewUsers,
     sharedReactionCandidateUsers,
     isAdmin,
@@ -4526,6 +4562,7 @@ const Matching = () => {
     parsedAdditionalAccessRules,
     sharedReactionCandidateUsers,
     users,
+    personalCreateProfiles,
     viewMode,
     collectionSource,
   ]);
