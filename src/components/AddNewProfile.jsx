@@ -41,6 +41,7 @@ import {
   fetchUsersByIds,
   lazyLoadProfilePhotos,
   migrateAllLegacyCardComments,
+  addMatchingSearchQuery,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import {
@@ -2650,6 +2651,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setLastSearchBarQuery('');
       return;
     }
+    addMatchingSearchQuery(normalized, ownerId);
     searchListIsolationRef.current = true;
     setSearchLoading(true);
     setHasSearched(true);
@@ -2666,6 +2668,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore,
     setSearchBarQueryActive,
     setLastSearchBarQuery,
+    ownerId,
   ]);
 
   const handleFilterChange = useCallback(nextFilters => {
