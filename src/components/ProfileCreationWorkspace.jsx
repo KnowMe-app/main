@@ -10,6 +10,7 @@ import { ProfileForm } from './ProfileForm';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
+import { buildOverlayFromDraft, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import {
   acceptCreateProfileMutation,
   getEffectiveProfile,
@@ -97,6 +98,7 @@ export const ProfileCreationWorkspace = () => {
   const [mutations, setMutations] = useState([]);
   const [draft, setDraft] = useState(null);
   const [activeMutation, setActiveMutation] = useState(null);
+  const [overlayTarget, setOverlayTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -145,6 +147,7 @@ export const ProfileCreationWorkspace = () => {
   const startNew = () => {
     const cardId = reserveProfileCardId();
     setActiveMutation({ cardId, revision: 0, status: 'pendingReview', createdBy: uid });
+    setOverlayTarget(null);
     const detected = detectSearchParams(search);
     const initialSearchData = PROFILE_SEARCH_PREFILL_FIELDS.has(detected?.key) && detected?.value
       ? { [detected.key]: detected.value }
@@ -173,6 +176,7 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const openMutation = mutation => {
+    setOverlayTarget(null);
     setActiveMutation(mutation);
     setDraft(getEffectiveProfile({ mutation }));
     setSearchParams({ cardId: mutation.cardId });
@@ -181,12 +185,39 @@ export const ProfileCreationWorkspace = () => {
   const closeEditor = () => {
     setDraft(null);
     setActiveMutation(null);
+    setOverlayTarget(null);
     setSearchParams({});
+  };
+
+  const startExistingProfileOverlay = profile => {
+    if (!profile?.userId) return;
+
+    // Deliberately start with an empty form instead of copying the search result.
+    // Every value entered here is private data owned by the current editor and is
+    // persisted as an overlay, never as a replacement for the canonical card.
+    setActiveMutation(null);
+    setOverlayTarget({ userId: profile.userId });
+    setDraft({ userId: profile.userId, myComment: '' });
+    setSearchParams({ cardId: profile.userId, overlay: '1' });
   };
 
   const save = async () => {
     setSaving(true);
     try {
+      if (overlayTarget) {
+        const overlayFields = buildOverlayFromDraft(
+          { userId: overlayTarget.userId },
+          draft,
+        );
+        await saveOverlayForUserCard({
+          editorUserId: uid,
+          cardUserId: overlayTarget.userId,
+          fields: overlayFields,
+        });
+        toast.success('Власні дані та коментар збережено');
+        closeEditor();
+        return;
+      }
       const saved = await saveCreateProfileMutation({
         cardId: activeMutation.cardId,
         creatorUid: activeMutation.createdBy || uid,
@@ -256,15 +287,17 @@ export const ProfileCreationWorkspace = () => {
       <HeaderMeta>Картки зберігаються приватно до рішення адміністратора.</HeaderMeta>
     </Header>
     {draft ? <Card>
-      <Status>{activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
-      <Meta>cardId: {activeMutation.cardId} · revision: {activeMutation.revision || 0}</Meta>
+      <Status>{overlayTarget ? 'Власні дані' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
+      <Meta>{overlayTarget
+        ? `Дані буде збережено як ваш оверлей для ${overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.`
+        : `cardId: ${activeMutation.cardId} · revision: ${activeMutation.revision || 0}`}</Meta>
       <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
         <ProfileForm state={draft} setState={setDraft} handleBlur={() => {}} handleSubmit={nextDraft => setDraft(nextDraft)} handleClear={clearField} handleDelKeyValue={deleteFieldValue} isAdmin={access.isAdmin} extendedMode={false} />
       </fieldset>
       <Actions>
         <Button $primary disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</Button>
-        {access.isAdmin && activeMutation.revision > 0 && <Button $primary disabled={saving} onClick={accept}>Accept</Button>}
-        {access.isAdmin && activeMutation.revision > 0 && <Button disabled={saving} onClick={reject}>Reject / Leave private</Button>}
+        {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Button $primary disabled={saving} onClick={accept}>Accept</Button>}
+        {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Button disabled={saving} onClick={reject}>Reject / Leave private</Button>}
         <Button disabled={saving} onClick={closeEditor}>Закрити</Button>
       </Actions>
     </Card> : <>
@@ -311,7 +344,10 @@ export const ProfileCreationWorkspace = () => {
         />
         {searchResults.map(profile => <SearchResult key={profile.userId}>
           <span><strong>{[profile.name, profile.surname].filter(Boolean).join(' ') || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
-          <Status>Вже існує</Status>
+          <span>
+            <Status>Вже існує</Status>
+            <Button onClick={() => startExistingProfileOverlay(profile)}>Додати власні дані</Button>
+          </span>
         </SearchResult>)}
         {searchExecuted && searchNotFound && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
         {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
