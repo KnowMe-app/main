@@ -4541,7 +4541,9 @@ const Matching = () => {
   }, [collectionSource, loadReactionCards, reloadDefault]);
 
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
-    users: [...users, ...personalCreateProfiles],
+    users: collectionSource === 'newUsers' || viewMode === 'favorites' || viewMode === 'dislikes'
+      ? [...users, ...personalCreateProfiles]
+      : users,
     additionalNewUsers,
     sharedReactionCandidateUsers,
     isAdmin,

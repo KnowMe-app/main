@@ -92,6 +92,7 @@ export const PrivacyPolicy = () => {
     uid: localStorage.getItem('ownerId') || '',
     accessLevel: localStorage.getItem('accessLevel') || '',
     userRole: localStorage.getItem('userRole') || '',
+    canCreateProfiles: localStorage.getItem('canCreateProfiles') === 'true',
   });
 
   const dotsMenu = () => (

@@ -338,7 +338,12 @@ export const MyProfile = () => {
   const [state, setState] = useState(() => readMyProfileDraft() || {});
   const navigate = useNavigate();
   const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
-  const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const access = resolveAccess({
+    uid: currentUid,
+    accessLevel: state.accessLevel || localStorage.getItem('accessLevel'),
+    userRole: state.userRole || state.role || localStorage.getItem('userRole'),
+    canCreateProfiles: state.canCreateProfiles === true || localStorage.getItem('canCreateProfiles') === 'true',
+  });
   const isAdmin = access.isAdmin;
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isEmailVerified, setIsEmailVerified] = useState(false);

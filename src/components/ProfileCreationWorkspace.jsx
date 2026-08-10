@@ -39,6 +39,7 @@ const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:13px;`;
 const Status = styled.span`display:inline-block; padding:4px 9px; border-radius:999px; background:var(--km-accent-light); color:var(--km-accent); font-size:12px; font-weight:800;`;
 const SearchSection = styled.section`padding:16px; margin-bottom:18px; border:1px solid var(--km-border); border-radius:16px; background:var(--km-card);`;
 const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--km-border);`;
+const EditorFieldset = styled.fieldset`border:0; margin:0; padding:0; min-width:0;`;
 const PROFILE_SEARCH_PREFILL_FIELDS = new Set(['name', 'surname', 'phone', 'email', 'telegram', 'instagram', 'facebook', 'tiktok']);
 
 export const ProfileCreationWorkspace = () => {
@@ -54,6 +55,7 @@ export const ProfileCreationWorkspace = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchExecuted, setSearchExecuted] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
@@ -87,11 +89,11 @@ export const ProfileCreationWorkspace = () => {
     const requestedCardId = searchParams.get('cardId');
     if (!requestedCardId || !mutations.length) return;
     const mutation = mutations.find(item => item.cardId === requestedCardId);
-    if (mutation) {
+    if (mutation && activeMutation?.cardId !== mutation.cardId) {
       setActiveMutation(mutation);
       setDraft(getEffectiveProfile({ mutation }));
     }
-  }, [mutations, searchParams]);
+  }, [activeMutation?.cardId, mutations, searchParams]);
 
   const startNew = () => {
     const cardId = reserveProfileCardId();
@@ -120,6 +122,7 @@ export const ProfileCreationWorkspace = () => {
     setSearchResults([]);
     setSearchExecuted(false);
     setSearchNotFound(false);
+    setSearchError(false);
   };
 
   const openMutation = mutation => {
@@ -147,7 +150,11 @@ export const ProfileCreationWorkspace = () => {
       setActiveMutation(saved);
       await refresh(uid, access);
     } catch (error) {
-      toast.error(error?.message === 'REVISION_CONFLICT' ? 'Профіль уже змінено. Оновіть сторінку.' : 'Не вдалося зберегти профіль');
+      toast.error(error?.message === 'REVISION_CONFLICT'
+        ? 'Профіль уже змінено. Оновіть сторінку.'
+        : error?.message === 'DUPLICATE_PROFILE'
+          ? 'Профіль із цими контактами вже існує або очікує перевірки.'
+          : 'Не вдалося зберегти профіль');
     } finally {
       setSaving(false);
     }
@@ -202,7 +209,9 @@ export const ProfileCreationWorkspace = () => {
     {draft ? <Card>
       <Status>{activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
       <Meta>cardId: {activeMutation.cardId} · revision: {activeMutation.revision || 0}</Meta>
-      <ProfileForm state={draft} setState={setDraft} handleBlur={() => {}} handleSubmit={nextDraft => setDraft(nextDraft)} handleClear={clearField} handleDelKeyValue={deleteFieldValue} isAdmin={access.isAdmin} extendedMode={false} />
+      <EditorFieldset disabled={saving}>
+        <ProfileForm state={draft} setState={setDraft} handleBlur={() => {}} handleSubmit={nextDraft => setDraft(nextDraft)} handleClear={clearField} handleDelKeyValue={deleteFieldValue} isAdmin={access.isAdmin} extendedMode={false} />
+      </EditorFieldset>
       <Actions>
         <Button $primary disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</Button>
         {access.isAdmin && activeMutation.revision > 0 && <Button $primary disabled={saving} onClick={accept}>Accept</Button>}
@@ -224,10 +233,15 @@ export const ProfileCreationWorkspace = () => {
             if (value) setSearchResults([]);
           }}
           onSearchExecuted={() => setSearchExecuted(true)}
+          onSearchError={() => {
+            setSearchError(true);
+            setSearchNotFound(false);
+          }}
           onClear={() => {
             setSearchResults([]);
             setSearchNotFound(false);
             setSearchExecuted(false);
+            setSearchError(false);
           }}
           storageKey="profileCreationSearchQuery"
           wrapperStyle={{ width: '100%' }}
@@ -238,6 +252,7 @@ export const ProfileCreationWorkspace = () => {
           <Status>Вже існує</Status>
         </SearchResult>)}
         {searchExecuted && searchNotFound && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+        {searchError && <Meta role="alert">Не вдалося виконати пошук. Перевірте з’єднання та спробуйте ще раз.</Meta>}
         <Actions>
           <Button
             $primary

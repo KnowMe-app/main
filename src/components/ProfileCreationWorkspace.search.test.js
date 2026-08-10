@@ -15,4 +15,10 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
     expect(source).toContain('const detected = detectSearchParams(search)');
     expect(source).toContain('setDraft({ userId: cardId, ...initialSearchData })');
   });
+
+  it('keeps outages distinct from misses and disables edits while saving', () => {
+    expect(source).toContain('onSearchError={() =>');
+    expect(source).toContain('setSearchNotFound(false)');
+    expect(source).toContain('<EditorFieldset disabled={saving}>');
+  });
 });

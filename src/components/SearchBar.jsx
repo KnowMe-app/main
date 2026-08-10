@@ -1088,6 +1088,7 @@ const SearchBar = ({
   setSearch: externalSetSearch,
   onClear,
   onSearchExecuted,
+  onSearchError,
   wrapperStyle = {},
   leftIcon = SearchIcon,
   storageKey = 'searchQuery',
@@ -1254,7 +1255,7 @@ const SearchBar = ({
       const { key, value } = detectSearchParams(search);
       loadCachedResult(key, value);
       if (!suppressInitialSearchExecution) {
-        writeData(search);
+        void executeSearch(search);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2125,6 +2126,18 @@ const SearchBar = ({
     }
   };
 
+  const executeSearch = async (query = search) => {
+    try {
+      await writeData(query);
+    } catch (error) {
+      console.error('Search failed:', error);
+      applyUserNotFound(false);
+      applyState({});
+      applyUsers({});
+      onSearchError?.(error);
+    }
+  };
+
   return (
     <InputDiv style={wrapperStyle}>
       {leftIcon && <span style={{ marginRight: '5px' }}>{leftIcon}</span>}
@@ -2137,13 +2150,13 @@ const SearchBar = ({
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              writeData(search);
+              void executeSearch(search);
             }
           }}
           onFocus={() => setShowHistory(true)}
           onBlur={() => {
             setTimeout(() => setShowHistory(false), 100);
-            writeData();
+            void executeSearch();
           }}
         />
         {search && (
@@ -2167,7 +2180,7 @@ const SearchBar = ({
               onClick={() => {
                 if (!item.startsWith('!')) setSearch(item);
                 setShowHistory(false);
-                writeData(item);
+                void executeSearch(item);
               }}
             >
               <span>{item}</span>

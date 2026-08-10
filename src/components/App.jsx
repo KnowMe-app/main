@@ -82,11 +82,13 @@ export const App = () => {
         setCanCreateProfiles(access.canCreateProfiles);
         localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
+        localStorage.setItem('canCreateProfiles', access.canCreateProfiles ? 'true' : 'false');
         setIsAccessResolved(true);
       } else {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
         localStorage.removeItem('userRole');
+        localStorage.removeItem('canCreateProfiles');
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessMatching(false);

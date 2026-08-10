@@ -1199,6 +1199,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const initialAccess = resolveAccess({
     uid: auth.currentUser?.uid,
     accessLevel: localStorage.getItem('accessLevel'),
+    userRole: localStorage.getItem('userRole'),
+    canCreateProfiles: localStorage.getItem('canCreateProfiles') === 'true',
   });
 
   const [userNotFound, setUserNotFound] = useState(false);
@@ -1572,7 +1574,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
-  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const access = resolveAccess({
+    uid: auth.currentUser?.uid,
+    accessLevel: state.accessLevel || localStorage.getItem('accessLevel'),
+    userRole: state.userRole || state.role || localStorage.getItem('userRole'),
+    canCreateProfiles: state.canCreateProfiles === true || localStorage.getItem('canCreateProfiles') === 'true',
+  });
   const isAdmin = access.isAdmin;
   const canAccessAdd = access.canAccessAdd;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
