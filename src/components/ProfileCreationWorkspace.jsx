@@ -54,6 +54,7 @@ export const ProfileCreationWorkspace = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchExecuted, setSearchExecuted] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
@@ -87,11 +88,11 @@ export const ProfileCreationWorkspace = () => {
     const requestedCardId = searchParams.get('cardId');
     if (!requestedCardId || !mutations.length) return;
     const mutation = mutations.find(item => item.cardId === requestedCardId);
-    if (mutation) {
+    if (mutation && activeMutation?.cardId !== mutation.cardId) {
       setActiveMutation(mutation);
       setDraft(getEffectiveProfile({ mutation }));
     }
-  }, [mutations, searchParams]);
+  }, [activeMutation?.cardId, mutations, searchParams]);
 
   const startNew = () => {
     const cardId = reserveProfileCardId();
@@ -120,6 +121,7 @@ export const ProfileCreationWorkspace = () => {
     setSearchResults([]);
     setSearchExecuted(false);
     setSearchNotFound(false);
+    setSearchFailed(false);
   };
 
   const openMutation = mutation => {
@@ -147,7 +149,9 @@ export const ProfileCreationWorkspace = () => {
       setActiveMutation(saved);
       await refresh(uid, access);
     } catch (error) {
-      toast.error(error?.message === 'REVISION_CONFLICT' ? 'Профіль уже змінено. Оновіть сторінку.' : 'Не вдалося зберегти профіль');
+      toast.error(error?.message === 'REVISION_CONFLICT'
+        ? 'Профіль уже змінено. Оновіть сторінку.'
+        : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль');
     } finally {
       setSaving(false);
     }
@@ -202,7 +206,9 @@ export const ProfileCreationWorkspace = () => {
     {draft ? <Card>
       <Status>{activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
       <Meta>cardId: {activeMutation.cardId} · revision: {activeMutation.revision || 0}</Meta>
-      <ProfileForm state={draft} setState={setDraft} handleBlur={() => {}} handleSubmit={nextDraft => setDraft(nextDraft)} handleClear={clearField} handleDelKeyValue={deleteFieldValue} isAdmin={access.isAdmin} extendedMode={false} />
+      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
+        <ProfileForm state={draft} setState={setDraft} handleBlur={() => {}} handleSubmit={nextDraft => setDraft(nextDraft)} handleClear={clearField} handleDelKeyValue={deleteFieldValue} isAdmin={access.isAdmin} extendedMode={false} />
+      </fieldset>
       <Actions>
         <Button $primary disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</Button>
         {access.isAdmin && activeMutation.revision > 0 && <Button $primary disabled={saving} onClick={accept}>Accept</Button>}
@@ -214,7 +220,11 @@ export const ProfileCreationWorkspace = () => {
         <h2>Знайти або додати картку</h2>
         <Meta>Спочатку перевірте, чи профіль уже існує. Використовується той самий пошук, що й у Matching.</Meta>
         <SearchBar
-          searchFunc={searchUsersOnly}
+          searchFunc={async (...args) => {
+            const result = await searchUsersOnly(...args);
+            setSearchFailed(result === null);
+            return result === null ? {} : result;
+          }}
           search={search}
           setSearch={updateSearch}
           setUsers={applySearchUsers}
@@ -228,6 +238,7 @@ export const ProfileCreationWorkspace = () => {
             setSearchResults([]);
             setSearchNotFound(false);
             setSearchExecuted(false);
+            setSearchFailed(false);
           }}
           storageKey="profileCreationSearchQuery"
           wrapperStyle={{ width: '100%' }}
@@ -238,10 +249,11 @@ export const ProfileCreationWorkspace = () => {
           <Status>Вже існує</Status>
         </SearchResult>)}
         {searchExecuted && searchNotFound && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+        {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
         <Actions>
           <Button
             $primary
-            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchResults.length > 0}
+            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0}
             onClick={startNew}
           >
             + Додати профіль
