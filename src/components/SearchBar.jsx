@@ -1088,6 +1088,7 @@ const SearchBar = ({
   setSearch: externalSetSearch,
   onClear,
   onSearchExecuted,
+  onSearchError,
   wrapperStyle = {},
   leftIcon = SearchIcon,
   storageKey = 'searchQuery',
@@ -1254,7 +1255,7 @@ const SearchBar = ({
       const { key, value } = detectSearchParams(search);
       loadCachedResult(key, value);
       if (!suppressInitialSearchExecution) {
-        writeData(search);
+        executeSearch(search);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2125,6 +2126,20 @@ const SearchBar = ({
     }
   };
 
+  const executeSearch = async (query = search, options = {}) => {
+    const requestId = options.requestId ?? activeSearchRequestRef.current + 1;
+    activeSearchRequestRef.current = requestId;
+    try {
+      await writeData(query, { ...options, requestId });
+    } catch (error) {
+      if (activeSearchRequestRef.current !== requestId) return;
+      applyUserNotFound(false, requestId);
+      applyState({}, requestId);
+      applyUsers({}, requestId);
+      onSearchError && onSearchError(error);
+    }
+  };
+
   return (
     <InputDiv style={wrapperStyle}>
       {leftIcon && <span style={{ marginRight: '5px' }}>{leftIcon}</span>}
@@ -2137,13 +2152,13 @@ const SearchBar = ({
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              writeData(search);
+              executeSearch(search);
             }
           }}
           onFocus={() => setShowHistory(true)}
           onBlur={() => {
             setTimeout(() => setShowHistory(false), 100);
-            writeData();
+            executeSearch();
           }}
         />
         {search && (
@@ -2167,7 +2182,7 @@ const SearchBar = ({
               onClick={() => {
                 if (!item.startsWith('!')) setSearch(item);
                 setShowHistory(false);
-                writeData(item);
+                executeSearch(item);
               }}
             >
               <span>{item}</span>

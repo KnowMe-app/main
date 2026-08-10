@@ -54,6 +54,7 @@ export const ProfileCreationWorkspace = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchExecuted, setSearchExecuted] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
@@ -120,6 +121,7 @@ export const ProfileCreationWorkspace = () => {
     setSearchResults([]);
     setSearchExecuted(false);
     setSearchNotFound(false);
+    setSearchError(false);
   };
 
   const openMutation = mutation => {
@@ -223,11 +225,19 @@ export const ProfileCreationWorkspace = () => {
             setSearchNotFound(Boolean(value));
             if (value) setSearchResults([]);
           }}
-          onSearchExecuted={() => setSearchExecuted(true)}
+          onSearchExecuted={() => {
+            setSearchExecuted(true);
+            setSearchError(false);
+          }}
+          onSearchError={() => {
+            setSearchError(true);
+            setSearchNotFound(false);
+          }}
           onClear={() => {
             setSearchResults([]);
             setSearchNotFound(false);
             setSearchExecuted(false);
+            setSearchError(false);
           }}
           storageKey="profileCreationSearchQuery"
           wrapperStyle={{ width: '100%' }}
@@ -238,10 +248,11 @@ export const ProfileCreationWorkspace = () => {
           <Status>Вже існує</Status>
         </SearchResult>)}
         {searchExecuted && searchNotFound && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+        {searchError && <Meta role="alert">Пошук тимчасово недоступний. Спробуйте ще раз.</Meta>}
         <Actions>
           <Button
             $primary
-            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchResults.length > 0}
+            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchResults.length > 0 || searchError}
             onClick={startNew}
           >
             + Додати профіль
