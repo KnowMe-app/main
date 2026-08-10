@@ -327,7 +327,7 @@ export const ProfileCreationWorkspace = () => {
   const accept = async () => {
     setSaving(true);
     try {
-      await acceptCreateProfileMutation({ cardId: activeMutation.cardId, expectedRevision: activeMutation.revision, finalData: draft });
+      await acceptCreateProfileMutation({ cardId: activeMutation.cardId, creatorUid: activeMutation.createdBy, expectedRevision: activeMutation.revision, finalData: draft });
       toast.success('Профіль прийнято');
       closeEditor();
       await refresh(uid, access);
@@ -339,7 +339,7 @@ export const ProfileCreationWorkspace = () => {
   const reject = async () => {
     setSaving(true);
     try {
-      await rejectCreateProfileMutation({ cardId: activeMutation.cardId, expectedRevision: activeMutation.revision });
+      await rejectCreateProfileMutation({ cardId: activeMutation.cardId, creatorUid: activeMutation.createdBy, expectedRevision: activeMutation.revision });
       toast.success('Профіль залишено приватним');
       closeEditor();
       await refresh(uid, access);
