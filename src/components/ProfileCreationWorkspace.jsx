@@ -85,7 +85,9 @@ const ProfileCard = styled(Card)`
   @media (max-width:520px) { grid-template-columns:1fr; ${Button} { grid-column:1; grid-row:auto; width:100%; } }
 `;
 const PROFILE_SEARCH_PREFILL_FIELDS = new Set(['name', 'surname', 'phone', 'email', 'telegram', 'instagram', 'facebook', 'tiktok']);
-const PROFILE_SEARCH_KEYS = ['userId', ...getSearchIdIndexedFields()];
+const PROFILE_SEARCH_ID_PREFIXES = getSearchIdIndexedFields();
+const PROFILE_SEARCH_KEYS = ['userId', ...PROFILE_SEARCH_ID_PREFIXES];
+const PROFILE_SEARCH_OPTIONS = { searchIdPrefixes: PROFILE_SEARCH_ID_PREFIXES };
 
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
@@ -301,6 +303,7 @@ export const ProfileCreationWorkspace = () => {
             setSearchFailed(false);
           }}
           storageKey="profileCreationSearchQuery"
+          searchOptions={PROFILE_SEARCH_OPTIONS}
           wrapperStyle={{ width: '100%' }}
           leftIcon={<FiSearch size={21} aria-hidden="true" />}
           placeholder="Пошук профілю"
