@@ -1,12 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiArrowRight, FiFolder, FiPlus, FiSearch } from 'react-icons/fi';
+import { FiArrowRight, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch } from 'react-icons/fi';
 
 import { auth, fetchUserById, searchUsersOnly } from './config';
-import { ProfileForm } from './ProfileForm';
+import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
@@ -39,6 +39,7 @@ const Title = styled.h1`
   margin:0; font-size:clamp(28px, 7vw, 32px); line-height:1.12; font-weight:750; letter-spacing:-.025em;
 `;
 const Button = styled.button`
+  box-sizing: border-box;
   min-height:48px; border: 1px solid var(--km-border); border-radius: 16px; padding: 10px 17px;
   background: ${({ $primary }) => ($primary ? 'var(--km-accent)' : 'var(--km-card)')};
   color: ${({ $primary }) => ($primary ? '#fff' : 'var(--km-text)')}; cursor:pointer; font:700 15px/1 var(--km-font);
@@ -55,10 +56,46 @@ const MatchingButton = styled(Button)`
   svg { color:var(--km-accent); }
   @media (max-width:380px) { grid-column:1; grid-row:auto; justify-self:start; margin-top:8px; }
 `;
+const SaveButton = styled(Button)`
+  background: linear-gradient(135deg, #E8791A 0%, #F5A24B 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 10px 24px var(--km-accent-ring);
+`;
+const AcceptButton = styled(Button)`
+  background: linear-gradient(135deg, #2E9B55 0%, #57C27D 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(46, 155, 85, .25);
+`;
+const RejectButton = styled(Button)`
+  background: var(--km-danger-bg);
+  border-color: var(--km-danger-border);
+  color: var(--km-danger);
+`;
+const GhostButton = styled(Button)`
+  background: transparent;
+  border-color: transparent;
+  color: var(--km-muted);
+  box-shadow: none;
+  &:hover:not(:disabled) { background: color-mix(in srgb, var(--km-muted) 12%, transparent); border-color: var(--km-border); }
+`;
 const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:20px; background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
 const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere;`;
-const Status = styled.span`display:inline-block; padding:4px 9px; border-radius:999px; background:var(--km-accent-light); color:var(--km-accent); font-size:12px; font-weight:800;`;
+const STATUS_VARIANT_BACKGROUND = {
+  private: 'color-mix(in srgb, var(--km-muted) 16%, var(--km-card))',
+  overlay: 'color-mix(in srgb, var(--km-accent-mid) 22%, var(--km-card))',
+};
+const STATUS_VARIANT_COLOR = {
+  private: 'var(--km-muted)',
+  overlay: 'var(--km-accent-mid)',
+};
+const Status = styled.span`
+  display:inline-block; padding:4px 9px; border-radius:999px; font-size:12px; font-weight:800;
+  background: ${({ $variant }) => STATUS_VARIANT_BACKGROUND[$variant] || 'var(--km-accent-light)'};
+  color: ${({ $variant }) => STATUS_VARIANT_COLOR[$variant] || 'var(--km-accent)'};
+`;
 const HeaderMeta = styled(Meta)`grid-column:1 / -1; margin:0; max-width:650px; font-size:16px;`;
 const SearchSection = styled.section`
   padding:24px; margin-bottom:30px; border:1px solid var(--km-border); border-radius:24px; background:var(--km-card);
@@ -72,7 +109,43 @@ const SearchSection = styled.section`
   ${Actions} ${Button}:disabled { box-shadow:none; }
   @media (max-width:600px) { padding:22px 20px; ${Actions} ${Button} { width:100%; } }
 `;
-const TechnicalMeta = styled(Meta)`font-size:12px; opacity:.82; code { color:var(--km-text); }`;
+const TechnicalMeta = styled(Meta)`font-size:12px; code { color:var(--km-text); }`;
+const DisclosureToggle = styled.button`
+  display:inline-flex; align-items:center; gap:6px; margin:10px 0 2px; padding:0; border:none; background:transparent;
+  color:var(--km-muted); font:700 12px/1 var(--km-font); cursor:pointer;
+  svg:last-child { transition: transform 180ms ease; }
+  &:hover { color:var(--km-accent); }
+  &:focus-visible { outline:2px solid var(--km-accent); outline-offset:3px; border-radius:4px; }
+`;
+const ProgressRow = styled.div`display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px; color:var(--km-muted);`;
+const ProgressTrack = styled.div`height:5px; background:var(--km-border); border-radius:99px; overflow:hidden; margin-bottom:18px;`;
+const ProgressFill = styled.div`
+  height:100%; border-radius:99px; transition:width 250ms ease;
+  background: linear-gradient(90deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  width: ${({ $pct }) => $pct}%;
+`;
+const FormSectionCard = styled(Card)`padding:18px 20px;`;
+const FormSectionTitle = styled.h3`margin:0 0 6px; font-size:15px; font-weight:750; letter-spacing:-.01em;`;
+const FieldRow = styled.div`padding:12px 0; border-bottom:1px solid var(--km-border); &:last-child { border-bottom:none; }`;
+const FieldLabel = styled.div`font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--km-muted); margin-bottom:6px;`;
+const FieldInput = styled.input`
+  width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
+  padding:10px 14px; font:500 15px/1.3 var(--km-font); color:var(--km-text); outline:none;
+  &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
+`;
+const FieldTextArea = styled.textarea`
+  width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
+  padding:10px 14px; font:500 15px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
+  &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
+`;
+const FieldChipRow = styled.div`display:flex; flex-wrap:wrap; gap:6px;`;
+const FieldChip = styled.button`
+  padding:6px 13px; border-radius:99px; font-size:13px; font-weight:600; cursor:pointer;
+  border:1.5px solid ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-border)')};
+  background: ${({ $selected }) => ($selected ? 'var(--km-accent-light)' : 'var(--km-card)')};
+  color: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-muted)')};
+`;
+const CommentCard = styled(Card)`background:color-mix(in srgb, var(--km-accent) 6%, var(--km-card));`;
 const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-top:1px solid var(--km-border); min-width:0; > span:first-child { min-width:0; overflow-wrap:anywhere; }`;
 const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
 const Count = styled.span`min-width:28px; height:28px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; border-radius:999px; background:color-mix(in srgb, var(--km-muted) 14%, var(--km-card)); color:var(--km-text); letter-spacing:0;`;
@@ -90,6 +163,19 @@ const PROFILE_SEARCH_ID_PREFIXES = getSearchIdIndexedFields();
 const PROFILE_SEARCH_KEYS = ['userId', ...PROFILE_SEARCH_ID_PREFIXES];
 const PROFILE_SEARCH_OPTIONS = { searchIdPrefixes: PROFILE_SEARCH_ID_PREFIXES };
 
+// Same field catalogue and grouping as MyProfile.jsx's own questionnaire -
+// pickerFields only, never pickerFieldsExtended's technical additions
+// (userId, role, lastAction, lastLogin2, publish, getInTouch). Those describe
+// system/runtime state a not-yet-accepted (or not-even-loaded, for an
+// overlay) card doesn't have yet, not data a creator or editor submits.
+const CREATE_FORM_SECTIONS = [
+  { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
+  { key: 'contacts', title: '📱 Контакти', fields: ['email', 'phone', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
+  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'ownKids', 'lastDelivery', 'csection', 'experience', 'surrogacyExperience', 'reward'] },
+  { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
+  { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'hobbies', 'education', 'profession', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
+];
+
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -105,6 +191,7 @@ export const ProfileCreationWorkspace = () => {
   const [searchExecuted, setSearchExecuted] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
+  const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
@@ -201,36 +288,88 @@ export const ProfileCreationWorkspace = () => {
     setSearchParams({ cardId: profile.userId, overlay: '1' });
   };
 
-  const save = async () => {
-    setSaving(true);
-    try {
+  // Kept in sync via effects below so the async save path always reads the
+  // latest values instead of a stale closure captured at render time.
+  const draftRef = useRef(draft);
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+  const activeMutationRef = useRef(activeMutation);
+  useEffect(() => { activeMutationRef.current = activeMutation; }, [activeMutation]);
+  // Chains saves so two rapid blurs (or a blur racing the Save button) apply
+  // in order against the revision the previous one actually committed,
+  // instead of two saves reading the same stale revision and one of them
+  // failing with a false REVISION_CONFLICT.
+  const saveQueueRef = useRef(Promise.resolve());
+
+  // A bare "Не вдалося зберегти" hides exactly the information needed to
+  // tell "rules not deployed yet for this path" apart from "network hiccup"
+  // apart from an actual conflict - surface the raw error too.
+  const reportSaveError = (error, fallbackMessage) => {
+    console.error('[ProfileCreationWorkspace] save failed', error);
+    const detail = error?.code || error?.message || '';
+    toast.error(
+      <div>
+        <div style={{ fontWeight: 700 }}>{fallbackMessage}</div>
+        {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{detail}</div> : null}
+      </div>,
+      { duration: 8000 },
+    );
+  };
+
+  const describeSaveError = error => (error?.message === 'REVISION_CONFLICT'
+    ? 'Профіль уже змінено. Оновіть сторінку.'
+    : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль');
+
+  const persistDraft = useCallback(nextDraft => {
+    const run = async () => {
       if (overlayTarget) {
-        const overlayFields = buildOverlayFromDraft(
-          { userId: overlayTarget.userId },
-          draft,
-        );
+        const overlayFields = buildOverlayFromDraft({ userId: overlayTarget.userId }, nextDraft);
         await saveOverlayForUserCard({
           editorUserId: uid,
           cardUserId: overlayTarget.userId,
           fields: overlayFields,
         });
-        toast.success('Власні дані та коментар збережено');
-        closeEditor();
-        return;
+        return null;
       }
+      const current = activeMutationRef.current;
       const saved = await saveCreateProfileMutation({
-        cardId: activeMutation.cardId,
-        creatorUid: activeMutation.createdBy || uid,
-        data: draft,
-        expectedRevision: activeMutation.revision,
+        cardId: current.cardId,
+        creatorUid: current.createdBy || uid,
+        actorUid: uid,
+        data: nextDraft,
+        expectedRevision: current.revision,
       });
-      toast.success('Профіль збережено й надіслано на перевірку');
+      activeMutationRef.current = saved;
       setActiveMutation(saved);
-      await refresh(uid, access);
+      return saved;
+    };
+
+    const queued = saveQueueRef.current.catch(() => {}).then(run);
+    saveQueueRef.current = queued.catch(() => {});
+    return queued;
+  }, [overlayTarget, uid]);
+
+  // Fires on every field blur/chip click - the primary save path now, so a
+  // draft is never lost by someone filling the form and never pressing the
+  // button below.
+  const commitFieldValue = (fieldName, value) => {
+    const nextDraft = { ...(draftRef.current || {}), [fieldName]: value };
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await persistDraft(draftRef.current);
+      toast.success(overlayTarget ? 'Власні дані та коментар збережено' : 'Профіль збережено й надіслано на перевірку');
+      if (overlayTarget) {
+        closeEditor();
+      } else {
+        await refresh(uid, access);
+      }
     } catch (error) {
-      toast.error(error?.message === 'REVISION_CONFLICT'
-        ? 'Профіль уже змінено. Оновіть сторінку.'
-        : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль');
+      reportSaveError(error, describeSaveError(error));
     } finally {
       setSaving(false);
     }
@@ -239,43 +378,78 @@ export const ProfileCreationWorkspace = () => {
   const accept = async () => {
     setSaving(true);
     try {
-      await acceptCreateProfileMutation({ cardId: activeMutation.cardId, expectedRevision: activeMutation.revision, finalData: draft });
+      await acceptCreateProfileMutation({ cardId: activeMutation.cardId, creatorUid: activeMutation.createdBy, expectedRevision: activeMutation.revision, finalData: draft });
       toast.success('Профіль прийнято');
       closeEditor();
       await refresh(uid, access);
     } catch (error) {
-      toast.error(error?.message === 'REVISION_CONFLICT' ? 'Автор уже оновив профіль. Перевірте нову версію.' : 'Не вдалося прийняти профіль');
+      reportSaveError(error, error?.message === 'REVISION_CONFLICT' ? 'Автор уже оновив профіль. Перевірте нову версію.' : 'Не вдалося прийняти профіль');
     } finally { setSaving(false); }
   };
 
   const reject = async () => {
     setSaving(true);
     try {
-      await rejectCreateProfileMutation({ cardId: activeMutation.cardId, expectedRevision: activeMutation.revision });
+      await rejectCreateProfileMutation({ cardId: activeMutation.cardId, creatorUid: activeMutation.createdBy, expectedRevision: activeMutation.revision });
       toast.success('Профіль залишено приватним');
       closeEditor();
       await refresh(uid, access);
+    } catch (error) {
+      reportSaveError(error, 'Не вдалося відхилити профіль');
     } finally { setSaving(false); }
   };
 
-  const clearField = (fieldName, index) => setDraft(previous => {
-    const next = { ...(previous || {}) };
-    if (Number.isInteger(index) && Array.isArray(next[fieldName])) {
-      const values = [...next[fieldName]];
-      values.splice(index, 1);
-      if (values.length) next[fieldName] = values;
-      else delete next[fieldName];
-      return next;
-    }
-    delete next[fieldName];
-    return next;
-  });
+  const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
 
-  const deleteFieldValue = fieldName => setDraft(previous => {
-    const next = { ...(previous || {}) };
-    delete next[fieldName];
-    return next;
-  });
+  const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
+
+  const renderCreateField = fieldName => {
+    const field = fieldsMap.get(fieldName);
+    if (!field) return null;
+    const value = draft?.[fieldName] || '';
+    const isTextArea = fieldName === 'moreInfo_main';
+
+    return <FieldRow key={fieldName}>
+      <FieldLabel>{getFieldLabel(field)}</FieldLabel>
+      {Array.isArray(field.options) && field.options.length > 0 ? (
+        <FieldChipRow>
+          {field.options.map(option => {
+            const optionValue = getOptionValue(option);
+            const selected = String(value) === String(optionValue);
+            return <FieldChip
+              key={`${fieldName}-${optionValue}`}
+              type="button"
+              $selected={selected}
+              onClick={() => commitFieldValue(fieldName, selected ? '' : optionValue)}
+            >
+              {getOptionLabel(option)}
+            </FieldChip>;
+          })}
+        </FieldChipRow>
+      ) : isTextArea ? (
+        <FieldTextArea
+          value={value}
+          placeholder={getFieldPlaceholder(field)}
+          onChange={e => updateDraftField(fieldName, e.target.value)}
+          onBlur={e => commitFieldValue(fieldName, e.target.value)}
+        />
+      ) : (
+        <FieldInput
+          value={value}
+          placeholder={getFieldPlaceholder(field)}
+          onChange={e => updateDraftField(fieldName, e.target.value)}
+          onBlur={e => commitFieldValue(fieldName, e.target.value)}
+        />
+      )}
+    </FieldRow>;
+  };
+
+  const draftFilledPct = useMemo(() => {
+    if (!draft) return 0;
+    const fieldNames = pickerFields.map(field => field.name);
+    const filledCount = fieldNames.filter(name => String(draft[name] || '').trim() !== '').length;
+    return fieldNames.length ? Math.round((filledCount / fieldNames.length) * 100) : 0;
+  }, [draft]);
 
   const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Мої нові профілі', [access]);
   if (!access) return <Page><Shell>Завантаження…</Shell></Page>;
@@ -286,31 +460,66 @@ export const ProfileCreationWorkspace = () => {
       <MatchingButton onClick={() => navigate('/matching')}>Matching <FiArrowRight aria-hidden="true" /></MatchingButton>
       <HeaderMeta>Картки зберігаються приватно до рішення адміністратора.</HeaderMeta>
     </Header>
-    {draft ? <Card>
-      <Status>{overlayTarget ? 'Власні дані' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
-      <Meta>{overlayTarget
-        ? `Дані буде збережено як ваш оверлей для ${overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.`
-        : `cardId: ${activeMutation.cardId} · revision: ${activeMutation.revision || 0}`}</Meta>
-      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
-        <ProfileForm state={draft} setState={setDraft} handleBlur={() => {}} handleSubmit={nextDraft => setDraft(nextDraft)} handleClear={clearField} handleDelKeyValue={deleteFieldValue} isAdmin={access.isAdmin} extendedMode={false} />
-      </fieldset>
-      <Actions>
-        <Button $primary disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</Button>
-        {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Button $primary disabled={saving} onClick={accept}>Accept</Button>}
-        {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Button disabled={saving} onClick={reject}>Reject / Leave private</Button>}
-        <Button disabled={saving} onClick={closeEditor}>Закрити</Button>
-      </Actions>
-    </Card> : <>
+    {draft ? <>
+      <Card>
+        <Status $variant={overlayTarget ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
+          {overlayTarget ? 'Власні дані' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+        </Status>
+        {overlayTarget
+          ? <Meta>Дані буде збережено як ваш оверлей для {overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.</Meta>
+          : access.isAdmin
+            ? <TechnicalMeta>cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}</TechnicalMeta>
+            : <Meta>Чернетка{activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}</Meta>}
+        {!access.isAdmin && !overlayTarget && <>
+          <ProgressRow>
+            <span>Заповнено анкету</span>
+            <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
+          </ProgressRow>
+          <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
+        </>}
+      </Card>
+      {overlayTarget && <CommentCard>
+        <FieldLabel>Ваш коментар</FieldLabel>
+        <FieldTextArea
+          value={draft?.myComment || ''}
+          placeholder="Що варто знати адміністратору про цей профіль"
+          onChange={e => updateDraftField('myComment', e.target.value)}
+          onBlur={e => commitFieldValue('myComment', e.target.value)}
+        />
+      </CommentCard>}
+      {CREATE_FORM_SECTIONS.map(section => (
+        <FormSectionCard key={section.key}>
+          <FormSectionTitle>{section.title}</FormSectionTitle>
+          {section.fields.map(renderCreateField)}
+        </FormSectionCard>
+      ))}
+      <Card>
+        <Actions>
+          <SaveButton disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</SaveButton>
+          {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <AcceptButton disabled={saving} onClick={accept}>Прийняти</AcceptButton>}
+          {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <RejectButton disabled={saving} onClick={reject}>Відхилити</RejectButton>}
+          <GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>
+        </Actions>
+      </Card>
+    </> : <>
       {!access.isAdmin && <SearchSection aria-label="Пошук профілю перед створенням">
         <h2>Знайти або додати картку</h2>
         <Meta>Спочатку перевірте, чи профіль уже існує. Використовується той самий пошук, що й у Matching.</Meta>
-        <TechnicalMeta>
+        <DisclosureToggle
+          type="button"
+          aria-expanded={showSearchKeysDetail}
+          onClick={() => setShowSearchKeysDetail(previous => !previous)}
+        >
+          <FiInfo aria-hidden="true" /> Технічні деталі пошуку
+          <FiChevronDown aria-hidden="true" style={{ transform: showSearchKeysDetail ? 'rotate(180deg)' : 'none' }} />
+        </DisclosureToggle>
+        {showSearchKeysDetail && <TechnicalMeta>
           Пошук карток виконується за ключами: {PROFILE_SEARCH_KEYS.map((key, index) => (
             <React.Fragment key={key}>
               {index > 0 ? ', ' : ''}<code>{key}</code>
             </React.Fragment>
           ))}.
-        </TechnicalMeta>
+        </TechnicalMeta>}
         <SearchBar
           searchFunc={searchUsersOnly}
           search={search}
@@ -361,18 +570,26 @@ export const ProfileCreationWorkspace = () => {
           </Button>
         </Actions>
       </SearchSection>}
-      <SectionHeader><span>Ваші картки</span><Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count></SectionHeader>
+      <SectionHeader>
+        <span>{access.isAdmin ? 'Черга на перевірку' : 'Ваші картки'}</span>
+        <Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count>
+      </SectionHeader>
       {mutations.length === 0 && <EmptyState>
         <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
         <EmptyTitle>Нових профілів поки немає.</EmptyTitle>
-        <Meta>Створені вами картки з’являться тут.</Meta>
+        <Meta>{access.isAdmin ? 'Нові картки від користувачів з’являться тут.' : 'Створені вами картки з’являться тут.'}</Meta>
       </EmptyState>}
       {mutations.map(mutation => <ProfileCard key={mutation.cardId}>
         <div>
-          <Status>{mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}</Status>
+          <Status $variant={mutation.status === 'private' ? 'private' : 'pending'}>
+            {mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+          </Status>
           <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
-          <Meta>Автор: {mutation.createdBy}</Meta>
-          <Meta>Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'} · revision {mutation.revision}</Meta>
+          {access.isAdmin && <Meta>Автор: {mutation.createdBy}</Meta>}
+          <Meta>
+            Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'}
+            {access.isAdmin ? ` · revision ${mutation.revision}` : ''}
+          </Meta>
         </div>
         <Button onClick={() => openMutation(mutation)}>Відкрити профіль</Button>
       </ProfileCard>)}
