@@ -3795,10 +3795,10 @@ const Matching = () => {
 
   const handleMatchingSearchExecuted = React.useCallback(value => {
     const normalizedValue = String(value || '').trim();
-    addMatchingSearchQuery(normalizedValue, ownerId);
+    addMatchingSearchQuery(normalizedValue);
     matchingSearchKeyRef.current = null;
     setMatchingSearchStatus(normalizedValue ? 'Шукаю в searchId...' : '');
-  }, [ownerId]);
+  }, []);
 
   const handleMatchingSearchResultStatus = React.useCallback(result => {
     const resultCount = getMatchingSearchResultCount(result);
