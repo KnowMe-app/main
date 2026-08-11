@@ -18,7 +18,9 @@ const isPlainObject = value => value && typeof value === 'object' && !Array.isAr
 
 const normalizeArray = value => {
   if (Array.isArray(value)) {
-    return value.filter(item => item !== undefined && item !== null && item !== '');
+    // An explicit empty string is a history entry: it means the editor cleared
+    // the current visible value without deleting the older values.
+    return value.filter(item => item !== undefined && item !== null);
   }
   if (value === undefined || value === null || value === '') {
     return [];

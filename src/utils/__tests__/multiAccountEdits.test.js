@@ -13,6 +13,8 @@ jest.mock('components/config', () => ({
 }));
 
 const {
+  applyOverlayToCard,
+  buildOverlayFromDraft,
   getCanonicalCard,
   getOverlayForUserCard,
   getOverlaysForCard,
@@ -20,6 +22,25 @@ const {
   removeOverlayForUserCard,
   saveOverlayForUserCard,
 } = require('../multiAccountEdits');
+
+describe('multiAccountEdits field history', () => {
+  it('appends an entered value instead of replacing the canonical value', () => {
+    const fields = buildOverlayFromDraft({ phone: '111' }, { phone: ['222'] });
+    expect(fields.phone).toEqual({ added: ['222'], removed: ['111'] });
+
+    // The repeatable form includes the canonical history when it edits an
+    // existing value, so the resulting overlay is addition-only.
+    const accumulated = buildOverlayFromDraft({ phone: '111' }, { phone: ['111', '222'] });
+    expect(accumulated.phone).toEqual({ added: ['222'] });
+    expect(applyOverlayToCard({ phone: '111' }, accumulated)).toEqual({ phone: ['111', '222'] });
+  });
+
+  it('keeps an explicit empty history item used to clear a visible value', () => {
+    const fields = buildOverlayFromDraft({ phone: '111' }, { phone: ['111', ''] });
+    expect(fields.phone).toEqual({ added: [''] });
+    expect(applyOverlayToCard({ phone: '111' }, fields)).toEqual({ phone: ['111', ''] });
+  });
+});
 
 const LONG_USER_ID = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
 
