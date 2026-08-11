@@ -6,9 +6,12 @@ import {
   buildSearchIdRecordKey,
 } from './searchKeyUtils';
 
-export const PROFILE_MUTATIONS_ROOT = 'profileMutations';
-export const PROFILE_MUTATION_HISTORY_ROOT = 'profileMutationHistory';
+export const PROFILE_MUTATIONS_ROOT = 'multiData/profileMutations';
 export const PROFILE_IDENTITY_CLAIMS_ROOT = 'profileIdentityClaims';
+
+export const getProfileMutationPath = (creatorUid, cardId) => (
+  `${PROFILE_MUTATIONS_ROOT}/${creatorUid}${cardId ? `/${cardId}` : ''}`
+);
 
 const cleanObject = value => Object.entries(value || {}).reduce((result, [key, item]) => {
   if (key.startsWith('__') || item === undefined) return result;
@@ -100,14 +103,10 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
 
 export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expectedRevision }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
-  // Write-through discovery is harmless if the later claim fails (load filters
-  // missing records), while writing it first prevents a committed draft from
-  // becoming undiscoverable because of a separate index failure.
-  await update(ref(database, `profileMutationsByCreator/${creatorUid}`), { [cardId]: true });
   const identityKeys = await claimProfileIdentities({ cardId, data });
   let conflict = '';
   let previousIdentityKeys = [];
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => {
+  const result = await runTransaction(ref(database, getProfileMutationPath(creatorUid, cardId)), current => {
     previousIdentityKeys = current?.identityKeys || [];
     if (current && current.createdBy !== creatorUid) {
       conflict = 'Profile mutation belongs to another user';
@@ -148,17 +147,19 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
   return mutation;
 };
 
-export const loadProfileMutation = async cardId => {
-  const snapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
+export const loadProfileMutation = async (creatorUid, cardId) => {
+  if (!creatorUid || !cardId) return null;
+  const snapshot = await get(ref(database, getProfileMutationPath(creatorUid, cardId)));
   return snapshot.exists() ? snapshot.val() : null;
 };
 
 export const loadOwnProfileMutations = async creatorUid => {
   if (!creatorUid) return [];
-  const idsSnapshot = await get(ref(database, `profileMutationsByCreator/${creatorUid}`));
-  const ids = idsSnapshot.exists() ? Object.keys(idsSnapshot.val() || {}) : [];
-  const mutations = await Promise.all(ids.map(loadProfileMutation));
-  return mutations.filter(item => item && item.createdBy === creatorUid && item.status !== 'accepted');
+  const snapshot = await get(ref(database, getProfileMutationPath(creatorUid)));
+  if (!snapshot.exists()) return [];
+  return Object.values(snapshot.val() || {}).filter(item => (
+    item && item.createdBy === creatorUid && item.status !== 'accepted'
+  ));
 };
 
 export const loadGrantedCreatedProfiles = async creatorUid => {
@@ -175,22 +176,26 @@ export const loadGrantedCreatedProfiles = async creatorUid => {
 export const loadAllCreateProfileMutations = async () => {
   const snapshot = await get(ref(database, PROFILE_MUTATIONS_ROOT));
   if (!snapshot.exists()) return [];
-  return Object.values(snapshot.val() || {}).filter(item => (
+  return Object.values(snapshot.val() || {}).flatMap(creatorMutations => (
+    Object.values(creatorMutations || {})
+  )).filter(item => (
     item?.operation === 'create' && item.status !== 'accepted' && item.status !== 'accepting'
   ));
 };
 
-export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, finalData }) => {
+export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision, finalData }) => {
+  if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
   const acceptedAt = Date.now();
   let conflict = 'Profile mutation not found';
   let acceptedProfile = null;
-  const mutationSnapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
+  const mutationPath = getProfileMutationPath(creatorUid, cardId);
+  const mutationSnapshot = await get(ref(database, mutationPath));
   const pendingMutation = mutationSnapshot.val();
   if (!pendingMutation || pendingMutation.operation !== 'create') throw new Error(conflict);
   const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
   const identityKeys = await claimProfileIdentities({ cardId, data: candidateProfile });
   const previousIdentityKeys = pendingMutation.identityKeys || [];
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), mutation => {
+  const result = await runTransaction(ref(database, mutationPath), mutation => {
     if (!mutation || mutation.operation !== 'create') return undefined;
     if (mutation.status !== 'pendingReview' && mutation.status !== 'private' && mutation.status !== 'publishing') return undefined;
     if (Number(mutation.revision) !== Number(expectedRevision)) {
@@ -213,7 +218,7 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
       syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
     ]);
   } catch (error) {
-    await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => (
+    await runTransaction(ref(database, mutationPath), current => (
       current?.status === 'publishing' && current?.acceptedAt === acceptedAt
         ? { ...current, status: pendingMutation.status, acceptedAt: null }
         : current
@@ -223,17 +228,16 @@ export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, fi
   await update(ref(database), {
     [`newUsers/${cardId}`]: acceptedProfile,
     [`users/${mutation.createdBy}/createdProfileCardIds/${cardId}`]: true,
-    [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
-    [`${PROFILE_MUTATIONS_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
-    [`profileMutationsByCreator/${mutation.createdBy}/${cardId}`]: null,
+    [mutationPath]: { ...mutation, status: 'accepted' },
   });
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;
 };
 
-export const rejectCreateProfileMutation = async ({ cardId, expectedRevision }) => {
+export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision }) => {
+  if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
   let conflict = 'Profile mutation not found';
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), mutation => {
+  const result = await runTransaction(ref(database, getProfileMutationPath(creatorUid, cardId)), mutation => {
     if (!mutation) return undefined;
     if (mutation.status !== 'pendingReview') return undefined;
     if (Number(mutation.revision) !== Number(expectedRevision)) {
