@@ -304,12 +304,18 @@ export const ProfileCreationWorkspace = () => {
   // tell "rules not deployed yet for this path" apart from "network hiccup"
   // apart from an actual conflict - surface the raw error too.
   const reportSaveError = (error, fallbackMessage) => {
-    console.error('[ProfileCreationWorkspace] save failed', error);
+    console.error('[ProfileCreationWorkspace] save failed', {
+      stage: error?.profileSaveStage || 'unknown',
+      uid: auth.currentUser?.uid,
+      code: error?.code,
+      error,
+    });
     const detail = error?.code || error?.message || '';
+    const stage = error?.profileSaveStage;
     toast.error(
       <div>
         <div style={{ fontWeight: 700 }}>{fallbackMessage}</div>
-        {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{detail}</div> : null}
+        {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{stage ? `${stage}: ` : ''}{detail}</div> : null}
       </div>,
       { duration: 8000 },
     );
@@ -331,13 +337,19 @@ export const ProfileCreationWorkspace = () => {
         return null;
       }
       const current = activeMutationRef.current;
-      const saved = await saveCreateProfileMutation({
-        cardId: current.cardId,
-        creatorUid: current.createdBy || uid,
-        actorUid: uid,
-        data: nextDraft,
-        expectedRevision: current.revision,
-      });
+      let saved;
+      try {
+        saved = await saveCreateProfileMutation({
+          cardId: current.cardId,
+          creatorUid: current.createdBy || uid,
+          actorUid: uid,
+          data: nextDraft,
+          expectedRevision: current.revision,
+        });
+      } catch (error) {
+        if (!error.profileSaveStage) error.profileSaveStage = 'identity-claim-or-mutation';
+        throw error;
+      }
       activeMutationRef.current = saved;
       setActiveMutation(saved);
       return saved;
