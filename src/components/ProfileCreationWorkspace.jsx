@@ -618,17 +618,6 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const toFieldValues = value => Array.isArray(value) ? value : [value ?? ''];
-  const mergeFieldHistory = (fieldName, nextValues) => {
-    const previousValues = toFieldValues(persistedDraftRef.current?.[fieldName]).filter((value, index, values) => (
-      value !== '' || index < values.length - 1
-    ));
-    const values = [...previousValues];
-    nextValues.forEach(value => {
-      if (value === '' || !values.includes(value)) values.push(value);
-    });
-    return values.length ? values : [''];
-  };
-
   const updateDraftFieldItem = (fieldName, index, value) => {
     const values = toFieldValues(draftRef.current?.[fieldName]);
     values[index] = value;
@@ -638,7 +627,9 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const commitDraftFieldItems = (fieldName, values) => {
-    const nextValues = mergeFieldHistory(fieldName, values);
+    // The form is the source of truth for its current rows. Superseded values
+    // belong in the overlay journal, not back in the editor-visible draft.
+    const nextValues = values.length ? [...values] : [''];
     commitFieldValue(fieldName, nextValues);
   };
 
@@ -650,8 +641,10 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const clearDraftFieldItem = (fieldName, index) => {
-    const values = toFieldValues(draftRef.current?.[fieldName]);
-    values[index] = '';
+    const currentValues = toFieldValues(draftRef.current?.[fieldName]);
+    const values = currentValues.length > 1
+      ? currentValues.filter((_, itemIndex) => itemIndex !== index)
+      : [''];
     commitDraftFieldItems(fieldName, values);
   };
 

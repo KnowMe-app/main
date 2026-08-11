@@ -36,10 +36,10 @@ describe('multiAccountEdits field history', () => {
     expect(applyOverlayToCard({ phone: '111' }, accumulated)).toEqual({ phone: ['111', '222'] });
   });
 
-  it('keeps an explicit empty history item used to clear a visible value', () => {
-    const fields = buildOverlayFromDraft({ phone: '111' }, { phone: ['111', ''] });
-    expect(fields.phone).toEqual({ added: [''] });
-    expect(applyOverlayToCard({ phone: '111' }, fields)).toEqual({ phone: ['111', ''] });
+  it('treats the form empty row as a removal rather than historical card data', () => {
+    const fields = buildOverlayFromDraft({ phone: '111' }, { phone: [''] });
+    expect(fields.phone).toEqual({ removed: ['111'] });
+    expect(applyOverlayToCard({ phone: '111' }, fields)).toEqual({});
   });
 });
 
@@ -69,6 +69,30 @@ describe('multiAccountEdits storage structure', () => {
         editorUserId: 'editor-1',
         fields: { name: { from: 'old', to: 'new' } },
       }),
+    );
+  });
+
+  it('appends one removal entry to the admin history when a value is cleared', async () => {
+    get.mockResolvedValueOnce({ exists: () => false });
+
+    await saveOverlayForUserCard({
+      editorUserId: 'editor-1',
+      cardUserId: 'card-1',
+      fields: { phone: { removed: ['111'] } },
+    });
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
+      {
+        'history-entry': expect.objectContaining({
+          action: 'edit',
+          cardUserId: 'card-1',
+          editorUserId: 'editor-1',
+          fieldName: 'phone',
+          change: { removed: ['111'] },
+        }),
+      },
     );
   });
 
