@@ -1,8 +1,19 @@
-import { getEffectiveProfile } from './profileMutations';
+import {
+  PROFILE_MUTATIONS_ROOT,
+  getEffectiveProfile,
+  getProfileMutationPath,
+} from './profileMutations';
 
 jest.mock('components/config', () => ({ database: {} }));
 
 describe('profile mutations', () => {
+  it('stores creator mutations below multiData', () => {
+    expect(PROFILE_MUTATIONS_ROOT).toBe('multiData/profileMutations');
+    expect(getProfileMutationPath('creator-1')).toBe('multiData/profileMutations/creator-1');
+    expect(getProfileMutationPath('creator-1', 'card-1'))
+      .toBe('multiData/profileMutations/creator-1/card-1');
+  });
+
   it('renders a create mutation without a base profile', () => {
     expect(getEffectiveProfile({ mutation: { operation: 'create', cardId: 'card-1', data: { name: 'Anna' } } }))
       .toEqual({ userId: 'card-1', name: 'Anna' });
