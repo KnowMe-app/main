@@ -9,12 +9,19 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
     expect(source).toContain("import SearchBar, { detectSearchParams } from './SearchBar'");
     expect(source).toContain('searchFunc={searchUsersOnly}');
     expect(source).toContain('onSearchError={() => {');
-    expect(source).toContain('!searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0');
+    expect(source).toContain('!searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || Boolean(matchingOwnDraft)');
+  });
+
+  it('offers to reopen a matching own draft instead of creating a duplicate', () => {
+    expect(source).toContain('findMatchingProfileMutation(mutations, detectSearchParams(search))');
+    expect(source).toContain('Цей контакт уже є у вашій картці, що очікує перевірки.');
+    expect(source).toContain('Відкрити чернетку');
   });
 
   it('prefills the new private card from the detected search field', () => {
     expect(source).toContain('const detected = detectSearchParams(search)');
-    expect(source).toContain('setDraft({ userId: cardId, ...initialSearchData })');
+    expect(source).toContain('const nextDraft = { userId: cardId, ...initialSearchData }');
+    expect(source).toContain('setDraft(nextDraft)');
   });
 
   it('shows which indexed keys are used to find existing cards', () => {
