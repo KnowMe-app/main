@@ -683,7 +683,7 @@ export const addContactViewUser = async (userId, ownerId) => {
   }
 };
 
-export const addMatchingSearchQuery = async (searchQuery, ownerId) => {
+export const addMatchingSearchQuery = async searchQuery => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
@@ -691,7 +691,9 @@ export const addMatchingSearchQuery = async (searchQuery, ownerId) => {
     const normalizedQuery = String(searchQuery || '').trim();
     if (!normalizedQuery) return;
 
-    const queryRef = push(ref2(database, `multiData/searchQueries/${ownerId || owner.uid}`));
+    // Search history is personal data. Always write it below the authenticated
+    // user's UID so the path agrees with the RTDB `auth.uid == $ownerId` rule.
+    const queryRef = push(ref2(database, `multiData/searchQueries/${owner.uid}`));
     await set(queryRef, normalizedQuery);
   } catch (error) {
     console.error('Error adding matching search query:', error);

@@ -2651,7 +2651,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setLastSearchBarQuery('');
       return;
     }
-    addMatchingSearchQuery(normalized, ownerId);
+    addMatchingSearchQuery(normalized);
     searchListIsolationRef.current = true;
     setSearchLoading(true);
     setHasSearched(true);
@@ -2668,7 +2668,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore,
     setSearchBarQueryActive,
     setLastSearchBarQuery,
-    ownerId,
   ]);
 
   const handleFilterChange = useCallback(nextFilters => {
