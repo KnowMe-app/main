@@ -24,9 +24,10 @@ const isPlainObject = value => value && typeof value === 'object' && !Array.isAr
 
 const normalizeArray = value => {
   if (Array.isArray(value)) {
-    // An explicit empty string is a history entry: it means the editor cleared
-    // the current visible value without deleting the older values.
-    return value.filter(item => item !== undefined && item !== null);
+    // Empty rows are a form affordance, not card data. A cleared value is
+    // represented by `removed` against the canonical array and preserved in
+    // editsHistory, rather than by adding an empty historical value.
+    return value.filter(item => item !== undefined && item !== null && item !== '');
   }
   if (value === undefined || value === null || value === '') {
     return [];
