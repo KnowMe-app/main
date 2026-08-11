@@ -1,4 +1,4 @@
-import { get as firebaseGet, ref as ref2, remove, set, update } from 'firebase/database';
+import { get as firebaseGet, push, ref as ref2, remove, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import { isLongFormatUserId, mergeUserCollectionData } from 'utils/mergeUserCollections';
 
@@ -12,6 +12,12 @@ const get = (...args) =>
   });
 
 const EDITS_ROOT = 'multiData/edits';
+// Append-only journal of every overlay change ever written for a card. The
+// overlay node itself only ever holds an editor's *current* delta (each save
+// rewrites it), so without this log an earlier edit is unrecoverable the
+// moment its author edits the same field again. Only admins read it - other
+// editors see the stacked result, never who changed what or what came before.
+const EDITS_HISTORY_ROOT = 'multiData/editsHistory';
 const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt', 'cacheVersion']);
 
 const isPlainObject = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -173,7 +179,22 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
     return;
   }
 
+  let previousFields = null;
+  try {
+    const previousSnapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`));
+    previousFields = previousSnapshot?.exists?.() ? previousSnapshot.val() : null;
+  } catch {
+    previousFields = null;
+  }
+
   await set(cardRef, { fields: sanitized, updatedAt: Date.now(), cardUserId: normalizedCardId, editorUserId });
+
+  await appendOverlayHistory({
+    cardUserId: normalizedCardId,
+    editorUserId,
+    action: 'edit',
+    fields: diffOverlayFields(previousFields, sanitized),
+  });
 };
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
@@ -219,10 +240,30 @@ export const getOverlaysForCard = async cardUserId => {
   return result;
 };
 
+// Older overlays were written with `add` where the current shape uses
+// `added`. Normalizing here keeps every reader (stacking, previews, accept)
+// working off one shape instead of each re-implementing the alias.
+export const normalizeOverlayFields = fields => {
+  if (!isPlainObject(fields)) return {};
+
+  return Object.entries(fields).reduce((acc, [fieldName, change]) => {
+    if (!isPlainObject(change)) return acc;
+
+    if ('add' in change && !('added' in change)) {
+      const { add, ...rest } = change;
+      acc[fieldName] = { ...rest, added: add };
+      return acc;
+    }
+
+    acc[fieldName] = change;
+    return acc;
+  }, {});
+};
+
 export const applyOverlayToCard = (canonical, overlayFields = {}) => {
   const merged = { ...(canonical || {}) };
 
-  Object.entries(overlayFields).forEach(([fieldName, change]) => {
+  Object.entries(normalizeOverlayFields(overlayFields)).forEach(([fieldName, change]) => {
     if (!isPlainObject(change)) return;
 
     if ('to' in change) {
@@ -251,6 +292,126 @@ export const applyOverlayToCard = (canonical, overlayFields = {}) => {
   return merged;
 };
 
+// Every editor's overlay is a delta against the card as that editor saw it,
+// so the order they get replayed in decides the visible value of a field two
+// people touched. Oldest first, i.e. the most recent editor's value wins -
+// that is exactly the "останні правки" everybody (admin or not) is shown.
+// updatedAt can be missing on legacy nodes and can tie when two saves land in
+// the same millisecond; editorUserId breaks the tie so every client composes
+// the same card instead of flip-flopping between renders.
+export const sortOverlaysByAppliedOrder = (overlaysByEditor = {}) =>
+  Object.entries(overlaysByEditor || {})
+    .filter(([, overlay]) => isPlainObject(overlay))
+    .map(([editorUserId, overlay]) => ({ ...overlay, editorUserId: overlay.editorUserId || editorUserId }))
+    .sort((a, b) => {
+      const byUpdatedAt = Number(a.updatedAt || 0) - Number(b.updatedAt || 0);
+      if (byUpdatedAt !== 0) return byUpdatedAt;
+      return String(a.editorUserId).localeCompare(String(b.editorUserId));
+    });
+
+// Stacks every editor's overlay onto the canonical card, in save order.
+// `excludeEditorUserId` produces the card as it looks *without* one editor's
+// own delta - that is the baseline their next save has to be diffed against,
+// so their overlay keeps holding only their own changes instead of absorbing
+// everyone else's into it.
+export const applyOverlaysToCard = (canonical, overlaysByEditor = {}, { excludeEditorUserId } = {}) =>
+  sortOverlaysByAppliedOrder(overlaysByEditor)
+    .filter(overlay => !excludeEditorUserId || overlay.editorUserId !== excludeEditorUserId)
+    .reduce((card, overlay) => applyOverlayToCard(card, overlay.fields || {}), { ...(canonical || {}) });
+
+// One call for the two views an editor screen needs at the same time:
+// what to render (everything stacked) and what to diff the next save against
+// (everything stacked except this editor's own overlay).
+export const getStackedCardViews = ({ canonical, overlaysByEditor = {}, editorUserId } = {}) => ({
+  stacked: applyOverlaysToCard(canonical, overlaysByEditor),
+  baseWithoutOwnOverlay: applyOverlaysToCard(canonical, overlaysByEditor, {
+    excludeEditorUserId: editorUserId,
+  }),
+});
+
+// The set of fields any editor currently has a pending change on, so a card
+// can mark them without disclosing who changed them.
+export const getStackedOverlayFieldNames = (overlaysByEditor = {}) => {
+  const fieldNames = new Set();
+  sortOverlaysByAppliedOrder(overlaysByEditor).forEach(overlay => {
+    Object.keys(overlay?.fields || {}).forEach(fieldName => {
+      if (!TECHNICAL_FIELD_NAMES.has(fieldName)) fieldNames.add(fieldName);
+    });
+  });
+  return Array.from(fieldNames);
+};
+
+const buildHistoryEntries = ({ cardUserId, editorUserId, action, fields, at }) =>
+  Object.entries(fields || {}).reduce((acc, [fieldName, change]) => {
+    if (!isPlainObject(change)) return acc;
+    if (TECHNICAL_FIELD_NAMES.has(fieldName)) return acc;
+    acc.push({ cardUserId, editorUserId, action, fieldName, change, at });
+    return acc;
+  }, []);
+
+// Best-effort by design: the journal is an admin-only audit trail, so a
+// failure to append it (rules not deployed yet, offline, ...) must never turn
+// a successful edit into a failed one for the editor who made it.
+export const appendOverlayHistory = async ({ cardUserId, editorUserId, action = 'edit', fields }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return [];
+
+  const at = Date.now();
+  const entries = buildHistoryEntries({
+    cardUserId: normalizedCardId,
+    editorUserId: editorUserId || '',
+    action,
+    fields,
+    at,
+  });
+  if (!entries.length) return [];
+
+  try {
+    const historyRef = ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}`);
+    const updates = entries.reduce((acc, entry) => {
+      const key = push(historyRef).key;
+      if (key) acc[key] = entry;
+      return acc;
+    }, {});
+
+    if (Object.keys(updates).length) {
+      await update(historyRef, updates);
+    }
+  } catch (error) {
+    console.warn('[multiAccountEdits] failed to append overlay history', error);
+  }
+
+  return entries;
+};
+
+// Admin-only. Newest first, because the review UI reads top-down.
+export const getOverlayHistoryForCard = async cardUserId => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return [];
+
+  const snapshot = await get(ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}`));
+  if (!snapshot?.exists?.()) return [];
+
+  return Object.entries(snapshot.val() || {})
+    .filter(([, entry]) => isPlainObject(entry))
+    .map(([entryId, entry]) => ({ entryId, ...entry }))
+    .sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+};
+
+// Only the fields whose stored change actually differs from what is already
+// there - a blur that re-saves an unchanged overlay must not add a journal
+// entry for every field the editor once touched.
+const diffOverlayFields = (previousFields, nextFields) => {
+  const previous = normalizeOverlayFields(previousFields);
+  const next = normalizeOverlayFields(nextFields);
+
+  return Object.entries(next).reduce((acc, [fieldName, change]) => {
+    if (JSON.stringify(previous[fieldName]) === JSON.stringify(change)) return acc;
+    acc[fieldName] = change;
+    return acc;
+  }, {});
+};
+
 export const removeOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!editorUserId || !cardUserId) return;
 
@@ -272,6 +433,12 @@ export const acceptOverlayForUserCard = async ({
   const merged = applyOverlayToCard(canonical, overlay.fields);
 
   await persistCard(merged);
+  await appendOverlayHistory({
+    cardUserId,
+    editorUserId: overlay.editorUserId || editorUserId,
+    action: 'accept',
+    fields: overlay.fields,
+  });
   await removeOverlayForUserCard({ editorUserId, cardUserId });
 
   return { canonical, merged, overlay };
@@ -314,7 +481,7 @@ export const formatOverlayPreview = ({ fieldName, change, canonicalValue }) => {
   };
 };
 
-export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, change }) => {
+export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, change, historyAction }) => {
   if (!editorUserId || !cardUserId || !fieldName) return;
 
   const normalizedCardId = normalizeCardKey(cardUserId);
@@ -324,6 +491,12 @@ export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, c
   if (!change || (!change.to && !change.from && !change.added && !change.removed)) {
     await remove(ref2(database, path));
     await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
+    await appendOverlayHistory({
+      cardUserId: normalizedCardId,
+      editorUserId,
+      action: historyAction || 'discard',
+      fields: { [fieldName]: { discarded: true } },
+    });
     return;
   }
 
@@ -331,4 +504,87 @@ export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, c
     [fieldName]: change,
   });
   await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
+  await appendOverlayHistory({
+    cardUserId: normalizedCardId,
+    editorUserId,
+    action: historyAction || 'edit',
+    fields: { [fieldName]: change },
+  });
+};
+
+// ---------------------------------------------------------------------------
+// Admin review operations. An admin is the only role that can turn a pending
+// overlay into canonical data, and the only one who gets to see the journal
+// these write into.
+// ---------------------------------------------------------------------------
+
+// Accept a single field from a single editor: the rest of that editor's
+// overlay - and every other editor's - stays pending.
+export const acceptOverlayFieldForUserCard = async ({
+  editorUserId,
+  cardUserId,
+  fieldName,
+  persistCard,
+}) => {
+  if (!editorUserId || !cardUserId || !fieldName) return null;
+
+  const overlays = await getOverlaysForCard(cardUserId);
+  const change = normalizeOverlayFields(overlays?.[editorUserId]?.fields)[fieldName];
+  if (!change) return null;
+
+  const canonical = await getCanonicalCard(cardUserId);
+  const merged = applyOverlayToCard(canonical, { [fieldName]: change });
+
+  await persistCard(merged);
+  await patchOverlayField({
+    editorUserId,
+    cardUserId,
+    fieldName,
+    change: null,
+    historyAction: 'accept',
+  });
+
+  return { canonical, merged, change };
+};
+
+// Accept everything pending on the card at once: the stacked result is
+// exactly what every editor already sees, so accepting it changes nothing
+// visually - it just makes those values canonical and clears the queue.
+export const acceptAllOverlaysForCard = async ({ cardUserId, persistCard }) => {
+  const overlays = await getOverlaysForCard(cardUserId);
+  const orderedOverlays = sortOverlaysByAppliedOrder(overlays);
+  if (!orderedOverlays.length) return null;
+
+  const canonical = await getCanonicalCard(cardUserId);
+  const merged = applyOverlaysToCard(canonical, overlays);
+
+  await persistCard(merged);
+  await removeAllOverlaysForCard(cardUserId, { historyAction: 'accept' });
+
+  return { canonical, merged, overlays };
+};
+
+// Clears the whole queue for a card in one write. `historyAction` records
+// why: 'accept' when the values were just written to the card, 'discard'
+// when the admin threw them away.
+export const removeAllOverlaysForCard = async (cardUserId, { historyAction = 'discard' } = {}) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return null;
+
+  const overlays = await getOverlaysForCard(normalizedCardId);
+  const orderedOverlays = sortOverlaysByAppliedOrder(overlays);
+  if (!orderedOverlays.length) return null;
+
+  for (const overlay of orderedOverlays) {
+    await appendOverlayHistory({
+      cardUserId: normalizedCardId,
+      editorUserId: overlay.editorUserId,
+      action: historyAction,
+      fields: overlay.fields,
+    });
+  }
+
+  await remove(ref2(database, `${EDITS_ROOT}/${normalizedCardId}`));
+
+  return { overlays };
 };

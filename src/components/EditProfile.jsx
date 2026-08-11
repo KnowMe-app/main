@@ -32,12 +32,16 @@ import toast from 'react-hot-toast';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import {
+  acceptAllOverlaysForCard,
   acceptOverlayForUserCard,
   applyOverlayToCard,
+  applyOverlaysToCard,
   buildOverlayFromDraft,
   getCanonicalCard,
   getOtherEditorsChangedFields,
+  getOverlayHistoryForCard,
   getOverlaysForCard,
+  removeAllOverlaysForCard,
   saveOverlayForUserCard,
 } from 'utils/multiAccountEdits';
 
@@ -86,6 +90,74 @@ const SkeletonLine = styled.div`
     }
   }
 `;
+
+const OverlayReviewBar = styled.div`
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--km-border);
+  border-radius: var(--km-radius);
+  background: var(--km-card);
+  font-size: 13px;
+`;
+
+const OverlayReviewLabel = styled.span`
+  flex: 1 1 160px;
+  min-width: 0;
+  color: var(--km-muted);
+  font-weight: 700;
+`;
+
+const OverlayReviewButton = styled(KmGhostButton)`
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+`;
+
+const OverlayHistoryList = styled.div`
+  flex: 1 1 100%;
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  color: var(--km-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+`;
+
+const formatOverlayHistoryValue = value => {
+  if (Array.isArray(value)) {
+    const parts = value.map(item => String(item ?? '').trim()).filter(Boolean);
+    return parts.length ? parts.join(', ') : '—';
+  }
+  const text = String(value ?? '').trim();
+  return text || '—';
+};
+
+const describeOverlayHistoryChange = change => {
+  if (!change || typeof change !== 'object') return '';
+  if (change.discarded) return 'правку знято';
+  if ('to' in change || 'from' in change) {
+    return `${formatOverlayHistoryValue(change.from)} → ${formatOverlayHistoryValue(change.to)}`;
+  }
+  return [
+    change.added?.length ? `+ ${formatOverlayHistoryValue(change.added)}` : '',
+    change.removed?.length ? `− ${formatOverlayHistoryValue(change.removed)}` : '',
+  ].filter(Boolean).join(' · ');
+};
+
+const OVERLAY_HISTORY_ACTION_LABELS = {
+  edit: 'правка',
+  accept: 'прийнято',
+  discard: 'видалено',
+};
 
 const TopBlockSkeleton = () => (
   <SkeletonCard>
@@ -299,6 +371,9 @@ const EditProfile = () => {
   const [highlightedFields, setHighlightedFields] = useState([]);
   const [deletedOverlayFields, setDeletedOverlayFields] = useState([]);
   const [focusedField, setFocusedField] = useState('');
+  const [overlayHistory, setOverlayHistory] = useState([]);
+  const [isOverlayHistoryVisible, setIsOverlayHistoryVisible] = useState(false);
+  const [isReviewingOverlays, setIsReviewingOverlays] = useState(false);
   const [isOverlayResolved, setIsOverlayResolved] = useState(isAdminUid(auth.currentUser?.uid));
   const lastSyncedSnapshotRef = useRef(prepareSyncedSnapshot(state || {}));
   const syncedSnapshotVersionRef = useRef(0);
@@ -335,12 +410,13 @@ const EditProfile = () => {
     try {
       canonical = getCanonicalCardFromCache(userId) || (await getCanonicalCard(userId));
 
-      if (isAdmin) {
+      // Non-admins used to be narrowed to their own overlay here, so two
+      // editors of the same card never saw each other's pending edits. They
+      // now read the whole queue as well - not to review it (that stays
+      // admin-only, see the setPendingOverlays({}) branch below), but so the
+      // card can be rendered with every editor's change stacked on top of it.
+      if (isAdmin || currentUid) {
         overlays = await getOverlaysForCard(userId);
-      } else if (currentUid) {
-        const overlaysByEditors = await getOverlaysForCard(userId);
-        const ownOverlay = overlaysByEditors?.[currentUid] || null;
-        overlays = ownOverlay ? { [currentUid]: ownOverlay } : {};
       }
 
       setOverlayReadError('');
@@ -388,9 +464,14 @@ const EditProfile = () => {
     const normalizedOwnFields = ownOverlay?.fields
       ? normalizeEditorOverlayFields(ownOverlay.fields)
       : null;
-    const cardForEditor = normalizedOwnFields
-      ? applyOverlayToCard(canonical, normalizedOwnFields)
-      : canonical;
+    // An admin edits the canonical card itself and reviews the pending
+    // overlays alongside it, so their form must keep showing canonical
+    // values. Everyone else edits the shared draft, which is the canonical
+    // card with every editor's overlay replayed onto it in save order - so
+    // each editor sees the others' latest values, not just their own.
+    const cardForEditor = isAdmin
+      ? (normalizedOwnFields ? applyOverlayToCard(canonical, normalizedOwnFields) : canonical)
+      : applyOverlaysToCard(canonical, overlays);
 
     const normalizedIncomingState = {
       ...cardForEditor,
@@ -516,14 +597,31 @@ const EditProfile = () => {
       const canonical =
         getCanonicalCardFromCache(updatedState.userId) ||
         (await getCanonicalCard(updatedState.userId));
-      const overlayFields = buildOverlayFromDraft(canonical, updatedState);
+
+      // The form the editor just submitted shows the stacked card, so it also
+      // contains the other editors' pending values. Diffing it against bare
+      // canonical would copy those values into *this* editor's overlay and
+      // credit them with somebody else's change. Diff against the card as it
+      // looks with everyone else's overlay already applied instead, so the
+      // overlay we store holds this editor's own delta and nothing more.
+      let baseForOwnOverlay = canonical;
+      try {
+        const overlaysByEditor = await getOverlaysForCard(updatedState.userId);
+        baseForOwnOverlay = applyOverlaysToCard(canonical, overlaysByEditor, {
+          excludeEditorUserId: editorUserId,
+        });
+      } catch (error) {
+        console.warn('[EditProfile] failed to read overlays before save', error);
+      }
+
+      const overlayFields = buildOverlayFromDraft(baseForOwnOverlay, updatedState);
       await saveOverlayForUserCard({
         editorUserId,
         cardUserId: updatedState.userId,
         fields: overlayFields,
       });
       return {
-        ...canonical,
+        ...baseForOwnOverlay,
         ...updatedState,
       };
     }
@@ -1046,6 +1144,57 @@ const EditProfile = () => {
     await updateDataInNewUsersRTDB(mergedCard.userId, sanitizedMergedCard, 'update', true);
   };
 
+  // Bulk review of everything editors have pending on this card. Accepting
+  // writes the stacked result - exactly what the editors already see - into
+  // the card and clears the queue; discarding drops the queue and leaves the
+  // card as it is. Both are admin-only, as is the journal below them.
+  const runOverlayReview = async (action, successMessage, failureMessage) => {
+    if (!isAdmin || !userId) return;
+
+    setIsReviewingOverlays(true);
+    try {
+      await action();
+      const fresh = await fetchUserById(userId);
+      if (fresh) setState(fresh);
+      await refreshOverlays();
+      if (isOverlayHistoryVisible) {
+        setOverlayHistory(await getOverlayHistoryForCard(userId));
+      }
+      toast.success(successMessage);
+    } catch (error) {
+      toast.error(`${failureMessage}: ${error?.code || error?.message || 'unknown'}`);
+    } finally {
+      setIsReviewingOverlays(false);
+    }
+  };
+
+  const handleAcceptAllOverlays = () => runOverlayReview(
+    () => acceptAllOverlaysForCard({ cardUserId: userId, persistCard: persistCanonicalByRules }),
+    'Усі правки прийнято',
+    'Не вдалося прийняти правки',
+  );
+
+  const handleDiscardAllOverlays = () => runOverlayReview(
+    () => removeAllOverlaysForCard(userId),
+    'Усі правки видалено',
+    'Не вдалося видалити правки',
+  );
+
+  const toggleOverlayHistory = async () => {
+    const nextVisible = !isOverlayHistoryVisible;
+    setIsOverlayHistoryVisible(nextVisible);
+    if (!nextVisible) return;
+
+    try {
+      setOverlayHistory(await getOverlayHistoryForCard(userId));
+    } catch (error) {
+      setOverlayHistory([]);
+      toast.error(`Історія правок недоступна: ${error?.code || error?.message || 'unknown'}`);
+    }
+  };
+
+  const pendingOverlayEditorCount = Object.keys(pendingOverlays || {}).length;
+
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
   const scheduleUserData = state;
   const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveCycleStatus);
@@ -1101,6 +1250,44 @@ const EditProfile = () => {
       <BackButton type="button" onClick={() => navigate(-1)}>
         <FaArrowLeft size={12} /> Back
       </BackButton>
+      {isAdmin && (pendingOverlayEditorCount > 0 || isOverlayHistoryVisible) && (
+        <OverlayReviewBar>
+          <OverlayReviewLabel>
+            Правки редакторів: {highlightedFields.length} у {pendingOverlayEditorCount} редакторів
+          </OverlayReviewLabel>
+          <OverlayReviewButton
+            type="button"
+            disabled={isReviewingOverlays || pendingOverlayEditorCount === 0}
+            onClick={handleAcceptAllOverlays}
+          >
+            Прийняти всі
+          </OverlayReviewButton>
+          <OverlayReviewButton
+            type="button"
+            disabled={isReviewingOverlays || pendingOverlayEditorCount === 0}
+            onClick={handleDiscardAllOverlays}
+          >
+            Видалити всі
+          </OverlayReviewButton>
+          <OverlayReviewButton type="button" onClick={toggleOverlayHistory}>
+            {isOverlayHistoryVisible ? 'Сховати історію' : 'Історія правок'}
+          </OverlayReviewButton>
+          {isOverlayHistoryVisible && (
+            <OverlayHistoryList>
+              {overlayHistory.length === 0
+                ? <span>Історія порожня.</span>
+                : overlayHistory.map(entry => (
+                  <span key={entry.entryId}>
+                    {entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}
+                    {' · '}{OVERLAY_HISTORY_ACTION_LABELS[entry.action] || entry.action}
+                    {' · '}{entry.fieldName}: {describeOverlayHistoryChange(entry.change)}
+                    {' · '}{entry.editorUserId}
+                  </span>
+                ))}
+            </OverlayHistoryList>
+          )}
+        </OverlayReviewBar>
+      )}
       {shouldShowEditorSkeleton ? (
         <TopBlockSkeleton />
       ) : (

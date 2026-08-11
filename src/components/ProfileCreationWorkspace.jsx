@@ -3,7 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiArrowRight, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch, FiX } from 'react-icons/fi';
+import { FiArrowRight, FiCheck, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
 import { auth, fetchUserById, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
@@ -11,12 +11,24 @@ import SearchBar, { detectSearchParams } from './SearchBar';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutation } from 'utils/profileCreationSearch';
-import { buildOverlayFromDraft, saveOverlayForUserCard } from 'utils/multiAccountEdits';
+import {
+  applyOverlayToCard,
+  applyOverlaysToCard,
+  buildOverlayFromDraft,
+  getOverlayHistoryForCard,
+  getOverlaysForCard,
+  normalizeOverlayFields,
+  patchOverlayField,
+  removeAllOverlaysForCard,
+  saveOverlayForUserCard,
+  sortOverlaysByAppliedOrder,
+} from 'utils/multiAccountEdits';
 import {
   acceptCreateProfileMutation,
   getEffectiveProfile,
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
+  loadSharedProfileMutations,
   rejectCreateProfileMutation,
   reserveProfileCardId,
   saveCreateProfileMutation,
@@ -156,6 +168,20 @@ const FieldChip = styled.button`
   color: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-muted)')};
 `;
 const CommentCard = styled(Card)`background:color-mix(in srgb, var(--km-accent) 6%, var(--km-card));`;
+const ReviewCard = styled(Card)`background:color-mix(in srgb, var(--km-accent-mid) 8%, var(--km-card));`;
+const ReviewRow = styled.div`
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 12px; align-items:center;
+  padding:10px 0; border-top:1px solid var(--km-border);
+  &:first-of-type { border-top:none; }
+  @media (max-width:520px) { grid-template-columns:1fr; }
+`;
+const ReviewChange = styled.div`font-size:14px; line-height:1.4; overflow-wrap:anywhere;`;
+const ReviewActionsRow = styled.div`display:flex; gap:6px; justify-self:end;`;
+const HistoryRow = styled.div`
+  display:flex; flex-wrap:wrap; gap:4px 10px; padding:7px 0; font-size:12px; color:var(--km-muted);
+  border-top:1px dashed var(--km-border); overflow-wrap:anywhere;
+  &:first-of-type { border-top:none; }
+`;
 const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-top:1px solid var(--km-border); min-width:0; > span:first-child { min-width:0; overflow-wrap:anywhere; }`;
 const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
 const Count = styled.span`min-width:28px; height:28px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; border-radius:999px; background:color-mix(in srgb, var(--km-muted) 14%, var(--km-card)); color:var(--km-text); letter-spacing:0;`;
@@ -186,14 +212,52 @@ const CREATE_FORM_SECTIONS = [
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'hobbies', 'education', 'profession', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
 ];
 
+// A draft opened by somebody who is neither its author nor an admin. Those
+// two write into the draft itself; everyone else contributes through their
+// own overlay.
+const isSharedDraft = (mutation, viewerUid, isAdmin) => Boolean(
+  mutation?.createdBy && viewerUid && mutation.createdBy !== viewerUid && !isAdmin
+);
+
+const formatOverlayValue = value => {
+  if (Array.isArray(value)) {
+    const parts = value.map(item => String(item ?? '').trim()).filter(Boolean);
+    return parts.length ? parts.join(', ') : '—';
+  }
+  const text = String(value ?? '').trim();
+  return text || '—';
+};
+
+const describeOverlayChange = change => {
+  if (!change || typeof change !== 'object') return '';
+  if (change.discarded) return 'правку знято';
+  if ('to' in change || 'from' in change) {
+    return `${formatOverlayValue(change.from)} → ${formatOverlayValue(change.to)}`;
+  }
+  return [
+    change.added?.length ? `+ ${formatOverlayValue(change.added)}` : '',
+    change.removed?.length ? `− ${formatOverlayValue(change.removed)}` : '',
+  ].filter(Boolean).join(' · ');
+};
+
+const OVERLAY_HISTORY_ACTION_LABELS = {
+  edit: 'правка',
+  accept: 'прийнято',
+  discard: 'видалено',
+};
+
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [uid, setUid] = useState('');
   const [access, setAccess] = useState(null);
   const [mutations, setMutations] = useState([]);
+  const [sharedMutations, setSharedMutations] = useState([]);
   const [draft, setDraft] = useState(null);
   const [activeMutation, setActiveMutation] = useState(null);
+  const [draftOverlays, setDraftOverlays] = useState({});
+  const [draftHistory, setDraftHistory] = useState([]);
+  const [showDraftHistory, setShowDraftHistory] = useState(false);
   const [overlayTarget, setOverlayTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -204,13 +268,109 @@ export const ProfileCreationWorkspace = () => {
   const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
   const draftRef = useRef(draft);
   const persistedDraftRef = useRef(draft);
+  // The draft as its author stored it, before anybody's overlay is replayed
+  // onto it. Own/admin saves are written against this, never against the
+  // stacked view, so another editor's pending value is never silently
+  // promoted into the draft itself.
+  const draftBaseRef = useRef(null);
+  // What the editor is currently looking at: draftBase + every overlay, in
+  // save order. A shared-draft save is diffed against this (minus the
+  // editor's own overlay) to work out what *they* changed.
+  const stackedDraftRef = useRef(null);
+  const draftOverlaysRef = useRef({});
+  const accessRef = useRef(null);
+
+  const sortByRecency = items => (
+    [...items].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+  );
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
       ? await loadAllCreateProfileMutations()
       : await loadOwnProfileMutations(userId);
-    setMutations(items.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
+    setMutations(sortByRecency(items));
+
+    if (resolvedAccess.isAdmin) {
+      // loadAllCreateProfileMutations already returns every author's drafts.
+      setSharedMutations([]);
+      return;
+    }
+
+    // Drafts of other users are a widened read that the backend rules still
+    // have to allow; until they do, a denial must leave the user's own
+    // workspace fully usable instead of blanking the page.
+    try {
+      setSharedMutations(sortByRecency(await loadSharedProfileMutations(userId)));
+    } catch (error) {
+      console.warn('[ProfileCreationWorkspace] shared drafts unavailable', error);
+      setSharedMutations([]);
+    }
   }, []);
+
+  const resetDraftOverlayState = useCallback(nextBase => {
+    draftBaseRef.current = nextBase || null;
+    stackedDraftRef.current = nextBase || null;
+    draftOverlaysRef.current = {};
+    setDraftOverlays({});
+    setDraftHistory([]);
+    setShowDraftHistory(false);
+  }, []);
+
+  // Re-reads the pending overlays for the open draft and rebuilds the view
+  // from them: the author's data with every editor's overlay replayed on top
+  // in save order. That stacked card is what every editor sees, so the values
+  // on screen are always the draft's latest state, whoever last touched them.
+  const refreshDraftOverlays = useCallback(async () => {
+    const current = activeMutationRef.current;
+    if (!current?.cardId) return;
+
+    const base = draftBaseRef.current
+      || getEffectiveProfile({ mutation: current })
+      || { userId: current.cardId };
+
+    let overlays = {};
+    try {
+      overlays = await getOverlaysForCard(current.cardId);
+    } catch (error) {
+      console.warn('[ProfileCreationWorkspace] draft overlays unavailable', error);
+    }
+
+    const stacked = applyOverlaysToCard(base, overlays);
+    draftBaseRef.current = base;
+    draftOverlaysRef.current = overlays;
+    stackedDraftRef.current = stacked;
+    draftRef.current = stacked;
+    persistedDraftRef.current = stacked;
+    setDraftOverlays(overlays);
+    setDraft(stacked);
+
+    // The journal of superseded edits is an admin tool. Other editors see
+    // the stacked result only - never who changed a value, nor what it was
+    // before them.
+    if (!accessRef.current?.isAdmin) {
+      setDraftHistory([]);
+      return;
+    }
+
+    try {
+      setDraftHistory(await getOverlayHistoryForCard(current.cardId));
+    } catch (error) {
+      console.warn('[ProfileCreationWorkspace] draft history unavailable', error);
+      setDraftHistory([]);
+    }
+  }, []);
+
+  const openMutation = useCallback(async mutation => {
+    if (!mutation?.cardId) return;
+
+    setOverlayTarget(null);
+    activeMutationRef.current = mutation;
+    setActiveMutation(mutation);
+    setShowDraftHistory(false);
+    draftBaseRef.current = getEffectiveProfile({ mutation }) || { userId: mutation.cardId };
+    setSearchParams({ cardId: mutation.cardId });
+    await refreshDraftOverlays();
+  }, [refreshDraftOverlays, setSearchParams]);
 
   useEffect(() => onAuthStateChanged(auth, async user => {
     if (!user) {
@@ -229,21 +389,19 @@ export const ProfileCreationWorkspace = () => {
       return;
     }
     setUid(user.uid);
+    accessRef.current = resolved;
     setAccess(resolved);
     await refresh(user.uid, resolved);
   }), [navigate, refresh]);
 
   useEffect(() => {
     const requestedCardId = searchParams.get('cardId');
-    if (!requestedCardId || !mutations.length) return;
-    const mutation = mutations.find(item => item.cardId === requestedCardId);
+    if (!requestedCardId) return;
+    const mutation = [...mutations, ...sharedMutations].find(item => item.cardId === requestedCardId);
     if (mutation && activeMutation?.cardId !== mutation.cardId) {
-      setActiveMutation(mutation);
-      const nextDraft = getEffectiveProfile({ mutation });
-      persistedDraftRef.current = nextDraft;
-      setDraft(nextDraft);
+      openMutation(mutation);
     }
-  }, [activeMutation?.cardId, mutations, searchParams]);
+  }, [activeMutation?.cardId, mutations, sharedMutations, searchParams, openMutation]);
 
   const startNew = () => {
     const cardId = reserveProfileCardId();
@@ -255,6 +413,7 @@ export const ProfileCreationWorkspace = () => {
       : {};
     const nextDraft = { userId: cardId, ...initialSearchData };
     persistedDraftRef.current = nextDraft;
+    resetDraftOverlayState(nextDraft);
     setDraft(nextDraft);
     setSearchParams({ cardId });
   };
@@ -282,19 +441,20 @@ export const ProfileCreationWorkspace = () => {
     searchExecuted ? findMatchingProfileMutation(mutations, detectSearchParams(search)) : null
   ), [mutations, search, searchExecuted]);
 
-  const openMutation = mutation => {
-    setOverlayTarget(null);
-    setActiveMutation(mutation);
-    const nextDraft = getEffectiveProfile({ mutation });
-    persistedDraftRef.current = nextDraft;
-    setDraft(nextDraft);
-    setSearchParams({ cardId: mutation.cardId });
-  };
+  // The same contact can already sit in a draft somebody else started. That
+  // draft is editable by this user too, so offer it instead of letting them
+  // create a second card for the same person.
+  const matchingSharedDraft = useMemo(() => (
+    searchExecuted && !matchingOwnDraft
+      ? findMatchingProfileMutation(sharedMutations, detectSearchParams(search))
+      : null
+  ), [matchingOwnDraft, search, searchExecuted, sharedMutations]);
 
   const closeEditor = () => {
     setDraft(null);
     setActiveMutation(null);
     setOverlayTarget(null);
+    resetDraftOverlayState(null);
     setSearchParams({});
   };
 
@@ -308,6 +468,7 @@ export const ProfileCreationWorkspace = () => {
     setOverlayTarget({ userId: profile.userId, canonical: profile });
     const nextDraft = { userId: profile.userId, myComment: '' };
     persistedDraftRef.current = nextDraft;
+    resetDraftOverlayState(null);
     setDraft(nextDraft);
     setSearchParams({ cardId: profile.userId, overlay: '1' });
   };
@@ -380,13 +541,53 @@ export const ProfileCreationWorkspace = () => {
         return null;
       }
       const current = activeMutationRef.current;
+      const base = draftBaseRef.current || getEffectiveProfile({ mutation: current }) || { userId: current.cardId };
+      const overlays = draftOverlaysRef.current || {};
+
+      // Somebody else's draft: nothing this editor types may touch the
+      // author's node. Their whole delta - added values, cleared contacts,
+      // everything - is stored as their own overlay, diffed against the card
+      // as it looks with the *other* editors' overlays already applied, so it
+      // never absorbs (or credits them with) another editor's change.
+      if (isSharedDraft(current, uid, accessRef.current?.isAdmin)) {
+        const baseWithoutOwnOverlay = applyOverlaysToCard(base, overlays, { excludeEditorUserId: uid });
+        await saveOverlayForUserCard({
+          editorUserId: uid,
+          cardUserId: current.cardId,
+          fields: buildOverlayFromDraft(baseWithoutOwnOverlay, nextDraft),
+        });
+
+        let refreshedOverlays = overlays;
+        try {
+          refreshedOverlays = await getOverlaysForCard(current.cardId);
+        } catch (error) {
+          console.warn('[ProfileCreationWorkspace] draft overlays unavailable after save', error);
+        }
+        draftOverlaysRef.current = refreshedOverlays;
+        stackedDraftRef.current = applyOverlaysToCard(base, refreshedOverlays);
+        setDraftOverlays(refreshedOverlays);
+        persistedDraftRef.current = nextDraft;
+        return null;
+      }
+
+      // The author (or an admin) writes into the draft itself. What they see
+      // is the stacked card, so saving it verbatim would quietly promote
+      // every pending overlay into the draft - only an explicit accept may do
+      // that. Persist just the delta this save introduced on top of what was
+      // on screen, applied to the author's own data.
+      const stacked = stackedDraftRef.current || applyOverlaysToCard(base, overlays);
+      const hasPendingOverlays = Object.keys(overlays).length > 0;
+      const nextData = hasPendingOverlays
+        ? applyOverlayToCard(base, buildOverlayFromDraft(stacked, nextDraft))
+        : nextDraft;
+
       let saved;
       try {
         saved = await saveCreateProfileMutation({
           cardId: current.cardId,
           creatorUid: current.createdBy || uid,
           actorUid: uid,
-          data: nextDraft,
+          data: nextData,
           expectedRevision: current.revision,
         });
       } catch (error) {
@@ -394,6 +595,8 @@ export const ProfileCreationWorkspace = () => {
         throw error;
       }
       activeMutationRef.current = saved;
+      draftBaseRef.current = saved?.data || nextData;
+      stackedDraftRef.current = applyOverlaysToCard(draftBaseRef.current, overlays);
       persistedDraftRef.current = nextDraft;
       setActiveMutation(saved);
       return saved;
@@ -452,14 +655,20 @@ export const ProfileCreationWorkspace = () => {
     commitDraftFieldItems(fieldName, values);
   };
 
+  const editingSharedDraft = isSharedDraft(activeMutation, uid, access?.isAdmin);
+
   const save = async () => {
     setSaving(true);
     try {
       await persistDraft(draftRef.current);
-      toast.success(overlayTarget ? 'Власні дані та коментар збережено' : 'Профіль збережено й надіслано на перевірку');
       if (overlayTarget) {
+        toast.success('Власні дані та коментар збережено');
         closeEditor();
+      } else if (editingSharedDraft) {
+        toast.success('Ваші правки збережено. Їх побачить кожен, хто відкриє цю чернетку.');
+        await refresh(uid, access);
       } else {
+        toast.success('Профіль збережено й надіслано на перевірку');
         await refresh(uid, access);
       }
     } catch (error) {
@@ -468,6 +677,80 @@ export const ProfileCreationWorkspace = () => {
       setSaving(false);
     }
   };
+
+  // --- Admin review of the pending overlays on the open draft ----------------
+  // Accepting writes the change into the author's draft data and clears it
+  // from the queue; discarding drops it without touching the draft. Either
+  // way the journal keeps the record.
+  const persistDraftData = async nextData => {
+    const current = activeMutationRef.current;
+    const saved = await saveCreateProfileMutation({
+      cardId: current.cardId,
+      creatorUid: current.createdBy || uid,
+      actorUid: uid,
+      data: nextData,
+      expectedRevision: current.revision,
+    });
+    activeMutationRef.current = saved;
+    draftBaseRef.current = saved?.data || nextData;
+    setActiveMutation(saved);
+    return saved;
+  };
+
+  const runOverlayReviewAction = async (action, successMessage, failureMessage) => {
+    setSaving(true);
+    try {
+      await action();
+      await refreshDraftOverlays();
+      toast.success(successMessage);
+    } catch (error) {
+      reportSaveError(error, failureMessage);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const acceptOverlayChange = (editorUserId, fieldName, change) => runOverlayReviewAction(
+    async () => {
+      await persistDraftData(applyOverlayToCard(draftBaseRef.current || {}, { [fieldName]: change }));
+      await patchOverlayField({
+        editorUserId,
+        cardUserId: activeMutationRef.current.cardId,
+        fieldName,
+        change: null,
+        historyAction: 'accept',
+      });
+    },
+    `Правку прийнято: ${fieldName}`,
+    'Не вдалося прийняти правку',
+  );
+
+  const discardOverlayChange = (editorUserId, fieldName) => runOverlayReviewAction(
+    () => patchOverlayField({
+      editorUserId,
+      cardUserId: activeMutationRef.current.cardId,
+      fieldName,
+      change: null,
+      historyAction: 'discard',
+    }),
+    `Правку видалено: ${fieldName}`,
+    'Не вдалося видалити правку',
+  );
+
+  const acceptAllOverlayChanges = () => runOverlayReviewAction(
+    async () => {
+      await persistDraftData(applyOverlaysToCard(draftBaseRef.current || {}, draftOverlaysRef.current || {}));
+      await removeAllOverlaysForCard(activeMutationRef.current.cardId, { historyAction: 'accept' });
+    },
+    'Усі правки прийнято',
+    'Не вдалося прийняти правки',
+  );
+
+  const discardAllOverlayChanges = () => runOverlayReviewAction(
+    () => removeAllOverlaysForCard(activeMutationRef.current.cardId, { historyAction: 'discard' }),
+    'Усі правки видалено',
+    'Не вдалося видалити правки',
+  );
 
   const accept = async () => {
     setSaving(true);
@@ -494,6 +777,19 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
+
+  // One row per (editor, field) still pending on the open draft, in the order
+  // the overlays are replayed - so the row that decides a field's visible
+  // value is the last one listed for that field.
+  const overlayReviewRows = useMemo(() => sortOverlaysByAppliedOrder(draftOverlays).flatMap(overlay => (
+    Object.entries(normalizeOverlayFields(overlay.fields)).map(([fieldName, change]) => ({
+      key: `${overlay.editorUserId}-${fieldName}`,
+      editorUserId: overlay.editorUserId,
+      updatedAt: overlay.updatedAt,
+      fieldName,
+      change,
+    }))
+  )), [draftOverlays]);
 
   const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
 
@@ -568,14 +864,19 @@ export const ProfileCreationWorkspace = () => {
     </Header>
     {draft ? <>
       <Card>
-        <Status $variant={overlayTarget ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
-          {overlayTarget ? 'Власні дані' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+        <Status $variant={overlayTarget || editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
+          {overlayTarget ? 'Власні дані' : editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
         </Status>
         {overlayTarget
           ? <Meta>Дані буде збережено як ваш оверлей для {overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.</Meta>
           : access.isAdmin
             ? <TechnicalMeta>cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}</TechnicalMeta>
             : <Meta>Чернетка{activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}</Meta>}
+        {editingSharedDraft && <Meta>
+          Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну.
+          Ваші зміни зберігаються окремо, у вашому оверлеї, і стають видимими наступному редактору.
+          Рішення про те, які правки залишити, ухвалює адміністратор.
+        </Meta>}
         {!access.isAdmin && !overlayTarget && <>
           <ProgressRow>
             <span>Заповнено анкету</span>
@@ -584,6 +885,59 @@ export const ProfileCreationWorkspace = () => {
           <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
         </>}
       </Card>
+      {!overlayTarget && access.isAdmin && (overlayReviewRows.length > 0 || draftHistory.length > 0) && <ReviewCard>
+        <SectionHeader>
+          <span>Правки редакторів</span>
+          <Count aria-label={`${overlayReviewRows.length} правок`}>{overlayReviewRows.length}</Count>
+        </SectionHeader>
+        {overlayReviewRows.length === 0
+          ? <Meta>Немає непідтверджених правок — усі зміни вже опрацьовано.</Meta>
+          : overlayReviewRows.map(row => <ReviewRow key={row.key}>
+            <ReviewChange>
+              <FieldLabel>{getFieldLabel(fieldsMap.get(row.fieldName)) || row.fieldName}</FieldLabel>
+              <div>{describeOverlayChange(row.change)}</div>
+              <TechnicalMeta>
+                {row.editorUserId}{row.updatedAt ? ` · ${new Date(row.updatedAt).toLocaleString('uk-UA')}` : ''}
+              </TechnicalMeta>
+            </ReviewChange>
+            <ReviewActionsRow>
+              <FieldActionButton
+                type="button"
+                disabled={saving}
+                title="Прийняти цю правку"
+                aria-label={`Прийняти правку по полю ${row.fieldName}`}
+                onClick={() => acceptOverlayChange(row.editorUserId, row.fieldName, row.change)}
+              ><FiCheck aria-hidden="true" /></FieldActionButton>
+              <FieldActionButton
+                type="button"
+                disabled={saving}
+                title="Видалити цю правку"
+                aria-label={`Видалити правку по полю ${row.fieldName}`}
+                onClick={() => discardOverlayChange(row.editorUserId, row.fieldName)}
+              ><FiX aria-hidden="true" /></FieldActionButton>
+            </ReviewActionsRow>
+          </ReviewRow>)}
+        {overlayReviewRows.length > 0 && <Actions>
+          <AcceptButton disabled={saving} onClick={acceptAllOverlayChanges}>Прийняти всі</AcceptButton>
+          <RejectButton disabled={saving} onClick={discardAllOverlayChanges}>Видалити всі</RejectButton>
+        </Actions>}
+        <DisclosureToggle
+          type="button"
+          aria-expanded={showDraftHistory}
+          onClick={() => setShowDraftHistory(previous => !previous)}
+        >
+          <FiInfo aria-hidden="true" /> Історія правок ({draftHistory.length})
+          <FiChevronDown aria-hidden="true" style={{ transform: showDraftHistory ? 'rotate(180deg)' : 'none' }} />
+        </DisclosureToggle>
+        {showDraftHistory && (draftHistory.length === 0
+          ? <Meta>Історія порожня.</Meta>
+          : draftHistory.map(entry => <HistoryRow key={entry.entryId}>
+            <span>{entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}</span>
+            <span>· {OVERLAY_HISTORY_ACTION_LABELS[entry.action] || entry.action}</span>
+            <span>· {entry.fieldName}: {describeOverlayChange(entry.change)}</span>
+            <span>· {entry.editorUserId}</span>
+          </HistoryRow>))}
+      </ReviewCard>}
       {overlayTarget && <CommentCard>
         <FieldLabel>Ваш коментар</FieldLabel>
         <FieldTextArea
@@ -671,12 +1025,19 @@ export const ProfileCreationWorkspace = () => {
           </span>
           <Button onClick={() => openMutation(matchingOwnDraft)}>Відкрити чернетку</Button>
         </SearchResult> : null}
-        {searchExecuted && searchNotFound && !matchingOwnDraft && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+        {matchingSharedDraft ? <SearchResult>
+          <span>
+            <strong>{[matchingSharedDraft.data?.name, matchingSharedDraft.data?.surname].filter(Boolean).join(' ') || 'Спільна чернетка'}</strong>
+            <Meta>Цей контакт уже є у спільній чернетці. Відкрийте її та додайте свої правки.</Meta>
+          </span>
+          <Button onClick={() => openMutation(matchingSharedDraft)}>Відкрити чернетку</Button>
+        </SearchResult> : null}
+        {searchExecuted && searchNotFound && !matchingOwnDraft && !matchingSharedDraft && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
         {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
         <Actions>
           <Button
             $primary
-            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || Boolean(matchingOwnDraft)}
+            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || Boolean(matchingOwnDraft) || Boolean(matchingSharedDraft)}
             onClick={startNew}
           >
             <FiPlus size={20} aria-hidden="true" /> Додати профіль
@@ -706,6 +1067,22 @@ export const ProfileCreationWorkspace = () => {
         </div>
         <Button onClick={() => openMutation(mutation)}>Відкрити профіль</Button>
       </ProfileCard>)}
+      {sharedMutations.length > 0 && <>
+        <SectionHeader>
+          <span>Спільні чернетки</span>
+          <Count aria-label={`${sharedMutations.length} спільних чернеток`}>{sharedMutations.length}</Count>
+        </SectionHeader>
+        {sharedMutations.map(mutation => <ProfileCard key={mutation.cardId}>
+          <div>
+            <Status $variant="overlay">Спільна чернетка</Status>
+            <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
+            <Meta>
+              Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'}
+            </Meta>
+          </div>
+          <Button onClick={() => openMutation(mutation)}><FiUsers aria-hidden="true" /> Додати свої правки</Button>
+        </ProfileCard>)}
+      </>}
     </>}
   </Shell></Page>;
 };

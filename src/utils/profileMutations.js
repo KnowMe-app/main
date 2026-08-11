@@ -187,6 +187,24 @@ export const loadOwnProfileMutations = async creatorUid => {
   ));
 };
 
+// Drafts somebody else created that this user may open and edit. Only cards
+// still waiting for review are shared: a draft an admin sent back to
+// `private` belongs to its author again, and an accepted one is a normal
+// card. Editing one of these never writes to the author's node - the edits
+// land in the editor's own overlay (multiData/edits/{cardId}/{editorUid}).
+export const loadSharedProfileMutations = async viewerUid => {
+  const snapshot = await get(ref(database, PROFILE_MUTATIONS_ROOT));
+  if (!snapshot.exists()) return [];
+  return Object.values(snapshot.val() || {}).flatMap(creatorMutations => (
+    Object.values(creatorMutations || {})
+  )).filter(item => (
+    item?.operation === 'create'
+    && item.status === 'pendingReview'
+    && item.createdBy
+    && item.createdBy !== viewerUid
+  ));
+};
+
 export const loadGrantedCreatedProfiles = async creatorUid => {
   if (!creatorUid) return [];
   const snapshot = await get(ref(database, `users/${creatorUid}/createdProfileCardIds`));
