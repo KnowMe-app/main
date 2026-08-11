@@ -5,45 +5,14 @@ import {
   SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdRecordKey,
 } from './searchKeyUtils';
-import { isAdminUid } from './accessLevel';
-import { MULTI_DATA_ACCESS_FIELD } from './multiDataAccess';
 
-// One root for creation drafts, nested by creator - multiData/profileMutations/{creatorUid}/{cardId} -
-// the same shape as multiData/edits/{cardUserId}/{editorUserId}. Nesting by
-// creator (rather than a flat multiData/profileMutations/{cardId}) is what
-// lets RTDB rules scope reads to "your own drafts": a flat collection can
-// only be read-scoped per owner by an indexed query, and RTDB queries can't
-// be filtered per-row by security rules - the .read grant for a query is
-// evaluated once at the queried location, so it would have to allow every
-// approved creator to read everyone else's drafts. A direct get() on your
-// own nested path doesn't have that problem.
-export const PROFILE_MUTATIONS_ROOT = 'multiData/profileMutations';
-// Keyed by contact value (email/phone/...), not by creator or card - claiming
-// one atomically ("grab this email iff nobody else has it") needs a node
-// addressed by that value, which a per-creator tree can't provide.
-export const PROFILE_IDENTITY_CLAIMS_ROOT = 'multiData/profileIdentityClaims';
+export const PROFILE_MUTATIONS_ROOT = 'profileMutations';
+export const PROFILE_MUTATION_HISTORY_ROOT = 'profileMutationHistory';
+export const PROFILE_IDENTITY_CLAIMS_ROOT = 'profileIdentityClaims';
 
 const cleanObject = value => Object.entries(value || {}).reduce((result, [key, item]) => {
   if (key.startsWith('__') || item === undefined) return result;
   result[key] = item;
-  return result;
-}, {});
-
-// Non-admin creators only ever reach saveCreateProfileMutation through the
-// create-profile form, which already hides these fields from them - this
-// enforces the same rule again where the draft is actually written, so a
-// forged client call can't smuggle elevated access into a card that later
-// gets merged verbatim into newUsers on accept.
-const PRIVILEGED_PROFILE_FIELDS = new Set([
-  'accessLevel',
-  'canCreateProfiles',
-  'additionalAccessRules',
-  MULTI_DATA_ACCESS_FIELD,
-]);
-
-const stripPrivilegedFields = data => Object.entries(data || {}).reduce((result, [key, value]) => {
-  if (PRIVILEGED_PROFILE_FIELDS.has(key)) return result;
-  result[key] = value;
   return result;
 }, {});
 
@@ -99,7 +68,6 @@ const claimProfileIdentities = async ({ cardId, data }) => {
     return (Array.isArray(value) ? value : [value]).filter(Boolean).some(id => id !== cardId);
   });
   if (canonicalConflict) throw new Error('DUPLICATE_PROFILE');
-
   let duplicate = false;
   const result = await runTransaction(ref(database, PROFILE_IDENTITY_CLAIMS_ROOT), current => {
     const claims = current || {};
@@ -130,18 +98,21 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
     })),
 );
 
-export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, data, expectedRevision }) => {
+export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expectedRevision }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
-  // The acting editor (who may be an admin fixing up someone else's draft
-  // before accepting it) determines whether privileged fields survive, not
-  // the draft's original owner - a non-admin creatorUid must never let an
-  // admin's own technical-field edits get silently stripped.
-  const sanitizedData = isAdminUid(actorUid || creatorUid) ? (data || {}) : stripPrivilegedFields(data);
-  const identityKeys = await claimProfileIdentities({ cardId, data: sanitizedData });
+  // Write-through discovery is harmless if the later claim fails (load filters
+  // missing records), while writing it first prevents a committed draft from
+  // becoming undiscoverable because of a separate index failure.
+  await update(ref(database, `profileMutationsByCreator/${creatorUid}`), { [cardId]: true });
+  const identityKeys = await claimProfileIdentities({ cardId, data });
   let conflict = '';
   let previousIdentityKeys = [];
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${creatorUid}/${cardId}`), current => {
+  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => {
     previousIdentityKeys = current?.identityKeys || [];
+    if (current && current.createdBy !== creatorUid) {
+      conflict = 'Profile mutation belongs to another user';
+      return undefined;
+    }
     if (current && current.status !== 'pendingReview' && current.status !== 'private') {
       conflict = 'REVISION_CONFLICT';
       return undefined;
@@ -154,7 +125,7 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, 
     const mutation = {
       cardId,
       operation: 'create',
-      data: { ...cleanObject(sanitizedData), userId: cardId },
+      data: { ...cleanObject(data), userId: cardId },
       createdBy: creatorUid,
       createdAt: current?.createdAt || now,
       updatedAt: now,
@@ -177,11 +148,17 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, 
   return mutation;
 };
 
+export const loadProfileMutation = async cardId => {
+  const snapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
+  return snapshot.exists() ? snapshot.val() : null;
+};
+
 export const loadOwnProfileMutations = async creatorUid => {
   if (!creatorUid) return [];
-  const snapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${creatorUid}`));
-  if (!snapshot.exists()) return [];
-  return Object.values(snapshot.val() || {}).filter(item => item && item.status !== 'accepted');
+  const idsSnapshot = await get(ref(database, `profileMutationsByCreator/${creatorUid}`));
+  const ids = idsSnapshot.exists() ? Object.keys(idsSnapshot.val() || {}) : [];
+  const mutations = await Promise.all(ids.map(loadProfileMutation));
+  return mutations.filter(item => item && item.createdBy === creatorUid && item.status !== 'accepted');
 };
 
 export const loadGrantedCreatedProfiles = async creatorUid => {
@@ -198,25 +175,22 @@ export const loadGrantedCreatedProfiles = async creatorUid => {
 export const loadAllCreateProfileMutations = async () => {
   const snapshot = await get(ref(database, PROFILE_MUTATIONS_ROOT));
   if (!snapshot.exists()) return [];
-  const byCreator = Object.values(snapshot.val() || {});
-  return byCreator
-    .flatMap(bucket => Object.values(bucket || {}))
-    .filter(item => item?.operation === 'create' && item.status !== 'accepted' && item.status !== 'accepting');
+  return Object.values(snapshot.val() || {}).filter(item => (
+    item?.operation === 'create' && item.status !== 'accepted' && item.status !== 'accepting'
+  ));
 };
 
-export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision, finalData }) => {
-  if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
+export const acceptCreateProfileMutation = async ({ cardId, expectedRevision, finalData }) => {
   const acceptedAt = Date.now();
   let conflict = 'Profile mutation not found';
   let acceptedProfile = null;
-  const mutationRef = ref(database, `${PROFILE_MUTATIONS_ROOT}/${creatorUid}/${cardId}`);
-  const mutationSnapshot = await get(mutationRef);
+  const mutationSnapshot = await get(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`));
   const pendingMutation = mutationSnapshot.val();
   if (!pendingMutation || pendingMutation.operation !== 'create') throw new Error(conflict);
   const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
   const identityKeys = await claimProfileIdentities({ cardId, data: candidateProfile });
   const previousIdentityKeys = pendingMutation.identityKeys || [];
-  const result = await runTransaction(mutationRef, mutation => {
+  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), mutation => {
     if (!mutation || mutation.operation !== 'create') return undefined;
     if (mutation.status !== 'pendingReview' && mutation.status !== 'private' && mutation.status !== 'publishing') return undefined;
     if (Number(mutation.revision) !== Number(expectedRevision)) {
@@ -239,7 +213,7 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
       syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
     ]);
   } catch (error) {
-    await runTransaction(mutationRef, current => (
+    await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), current => (
       current?.status === 'publishing' && current?.acceptedAt === acceptedAt
         ? { ...current, status: pendingMutation.status, acceptedAt: null }
         : current
@@ -248,17 +222,18 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   }
   await update(ref(database), {
     [`newUsers/${cardId}`]: acceptedProfile,
-    [`users/${creatorUid}/createdProfileCardIds/${cardId}`]: true,
-    [`${PROFILE_MUTATIONS_ROOT}/${creatorUid}/${cardId}`]: { ...mutation, status: 'accepted' },
+    [`users/${mutation.createdBy}/createdProfileCardIds/${cardId}`]: true,
+    [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
+    [`${PROFILE_MUTATIONS_ROOT}/${cardId}`]: { ...mutation, status: 'accepted' },
+    [`profileMutationsByCreator/${mutation.createdBy}/${cardId}`]: null,
   });
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;
 };
 
-export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision }) => {
-  if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
+export const rejectCreateProfileMutation = async ({ cardId, expectedRevision }) => {
   let conflict = 'Profile mutation not found';
-  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${creatorUid}/${cardId}`), mutation => {
+  const result = await runTransaction(ref(database, `${PROFILE_MUTATIONS_ROOT}/${cardId}`), mutation => {
     if (!mutation) return undefined;
     if (mutation.status !== 'pendingReview') return undefined;
     if (Number(mutation.revision) !== Number(expectedRevision)) {
