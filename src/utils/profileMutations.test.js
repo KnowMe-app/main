@@ -1,6 +1,8 @@
 import {
   PROFILE_MUTATIONS_ROOT,
+  PROFILE_IDENTITY_CLAIMS_ROOT,
   getEffectiveProfile,
+  getProfileIdentityClaimPath,
   getProfileMutationPath,
 } from './profileMutations';
 
@@ -12,6 +14,12 @@ describe('profile mutations', () => {
     expect(getProfileMutationPath('creator-1')).toBe('multiData/profileMutations/creator-1');
     expect(getProfileMutationPath('creator-1', 'card-1'))
       .toBe('multiData/profileMutations/creator-1/card-1');
+  });
+
+  it('stores identity claims below multiData without a root fallback', () => {
+    expect(PROFILE_IDENTITY_CLAIMS_ROOT).toBe('multiData/profileIdentityClaims');
+    expect(getProfileIdentityClaimPath('email_test@example_com'))
+      .toBe('multiData/profileIdentityClaims/email_test@example_com');
   });
 
   it('renders a create mutation without a base profile', () => {
