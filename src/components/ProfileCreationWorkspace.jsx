@@ -10,6 +10,7 @@ import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pic
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
+import { findMatchingProfileMutation } from 'utils/profileCreationSearch';
 import { buildOverlayFromDraft, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import {
   acceptCreateProfileMutation,
@@ -276,6 +277,10 @@ export const ProfileCreationWorkspace = () => {
     setSearchNotFound(false);
     setSearchFailed(false);
   };
+
+  const matchingOwnDraft = useMemo(() => (
+    searchExecuted ? findMatchingProfileMutation(mutations, detectSearchParams(search)) : null
+  ), [mutations, search, searchExecuted]);
 
   const openMutation = mutation => {
     setOverlayTarget(null);
@@ -659,12 +664,19 @@ export const ProfileCreationWorkspace = () => {
             <Button onClick={() => startExistingProfileOverlay(profile)}>Додати власні дані</Button>
           </span>
         </SearchResult>)}
-        {searchExecuted && searchNotFound && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+        {matchingOwnDraft ? <SearchResult>
+          <span>
+            <strong>{[matchingOwnDraft.data?.name, matchingOwnDraft.data?.surname].filter(Boolean).join(' ') || 'Ваша чернетка'}</strong>
+            <Meta>Цей контакт уже є у вашій картці, що очікує перевірки.</Meta>
+          </span>
+          <Button onClick={() => openMutation(matchingOwnDraft)}>Відкрити чернетку</Button>
+        </SearchResult> : null}
+        {searchExecuted && searchNotFound && !matchingOwnDraft && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
         {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
         <Actions>
           <Button
             $primary
-            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0}
+            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || Boolean(matchingOwnDraft)}
             onClick={startNew}
           >
             <FiPlus size={20} aria-hidden="true" /> Додати профіль
