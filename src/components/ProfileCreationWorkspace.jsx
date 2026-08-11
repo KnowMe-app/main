@@ -3,7 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiArrowRight, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch } from 'react-icons/fi';
+import { FiArrowRight, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch, FiX } from 'react-icons/fi';
 
 import { auth, fetchUserById, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
@@ -133,6 +133,15 @@ const FieldInput = styled.input`
   padding:10px 14px; font:500 15px/1.3 var(--km-font); color:var(--km-text); outline:none;
   &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
+const FieldControls = styled.div`display:grid; gap:8px;`;
+const FieldControl = styled.div`display:flex; align-items:center; gap:8px; min-width:0;`;
+const FieldActionButton = styled.button`
+  width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center; padding:0;
+  border:1px solid var(--km-border); border-radius:12px; background:var(--km-card); color:var(--km-muted); cursor:pointer;
+  &:hover { border-color:var(--km-accent); color:var(--km-accent); background:var(--km-accent-light); }
+  &:focus-visible { outline:3px solid var(--km-accent-ring); outline-offset:2px; }
+`;
+const AddValueButton = styled(FieldActionButton)`margin-top:8px; color:var(--km-accent);`;
 const FieldTextArea = styled.textarea`
   width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
   padding:10px 14px; font:500 15px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
@@ -192,6 +201,8 @@ export const ProfileCreationWorkspace = () => {
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
   const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
+  const draftRef = useRef(draft);
+  const persistedDraftRef = useRef(draft);
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
     const items = resolvedAccess.isAdmin
@@ -227,7 +238,9 @@ export const ProfileCreationWorkspace = () => {
     const mutation = mutations.find(item => item.cardId === requestedCardId);
     if (mutation && activeMutation?.cardId !== mutation.cardId) {
       setActiveMutation(mutation);
-      setDraft(getEffectiveProfile({ mutation }));
+      const nextDraft = getEffectiveProfile({ mutation });
+      persistedDraftRef.current = nextDraft;
+      setDraft(nextDraft);
     }
   }, [activeMutation?.cardId, mutations, searchParams]);
 
@@ -239,7 +252,9 @@ export const ProfileCreationWorkspace = () => {
     const initialSearchData = PROFILE_SEARCH_PREFILL_FIELDS.has(detected?.key) && detected?.value
       ? { [detected.key]: detected.value }
       : {};
-    setDraft({ userId: cardId, ...initialSearchData });
+    const nextDraft = { userId: cardId, ...initialSearchData };
+    persistedDraftRef.current = nextDraft;
+    setDraft(nextDraft);
     setSearchParams({ cardId });
   };
 
@@ -265,7 +280,9 @@ export const ProfileCreationWorkspace = () => {
   const openMutation = mutation => {
     setOverlayTarget(null);
     setActiveMutation(mutation);
-    setDraft(getEffectiveProfile({ mutation }));
+    const nextDraft = getEffectiveProfile({ mutation });
+    persistedDraftRef.current = nextDraft;
+    setDraft(nextDraft);
     setSearchParams({ cardId: mutation.cardId });
   };
 
@@ -283,14 +300,15 @@ export const ProfileCreationWorkspace = () => {
     // Every value entered here is private data owned by the current editor and is
     // persisted as an overlay, never as a replacement for the canonical card.
     setActiveMutation(null);
-    setOverlayTarget({ userId: profile.userId });
-    setDraft({ userId: profile.userId, myComment: '' });
+    setOverlayTarget({ userId: profile.userId, canonical: profile });
+    const nextDraft = { userId: profile.userId, myComment: '' };
+    persistedDraftRef.current = nextDraft;
+    setDraft(nextDraft);
     setSearchParams({ cardId: profile.userId, overlay: '1' });
   };
 
   // Kept in sync via effects below so the async save path always reads the
   // latest values instead of a stale closure captured at render time.
-  const draftRef = useRef(draft);
   useEffect(() => { draftRef.current = draft; }, [draft]);
   const activeMutationRef = useRef(activeMutation);
   useEffect(() => { activeMutationRef.current = activeMutation; }, [activeMutation]);
@@ -328,12 +346,32 @@ export const ProfileCreationWorkspace = () => {
   const persistDraft = useCallback(nextDraft => {
     const run = async () => {
       if (overlayTarget) {
-        const overlayFields = buildOverlayFromDraft({ userId: overlayTarget.userId }, nextDraft);
+        const canonical = overlayTarget.canonical || { userId: overlayTarget.userId };
+        // Compare only fields the editor actually touched. Missing fields in
+        // this deliberately blank form must never become removal operations.
+        const touchedCanonical = Object.keys(nextDraft || {}).reduce((result, fieldName) => {
+          if (Object.prototype.hasOwnProperty.call(canonical, fieldName)) result[fieldName] = canonical[fieldName];
+          return result;
+        }, { userId: overlayTarget.userId });
+        const additiveDraft = Object.entries(nextDraft || {}).reduce((result, [fieldName, value]) => {
+          if (fieldName === 'userId' || !Object.prototype.hasOwnProperty.call(touchedCanonical, fieldName)) {
+            result[fieldName] = value;
+            return result;
+          }
+          const canonicalValues = Array.isArray(touchedCanonical[fieldName])
+            ? touchedCanonical[fieldName]
+            : [touchedCanonical[fieldName]];
+          const enteredValues = Array.isArray(value) ? value : [value];
+          result[fieldName] = [...canonicalValues, ...enteredValues];
+          return result;
+        }, {});
+        const overlayFields = buildOverlayFromDraft(touchedCanonical, additiveDraft);
         await saveOverlayForUserCard({
           editorUserId: uid,
           cardUserId: overlayTarget.userId,
           fields: overlayFields,
         });
+        persistedDraftRef.current = nextDraft;
         return null;
       }
       const current = activeMutationRef.current;
@@ -351,6 +389,7 @@ export const ProfileCreationWorkspace = () => {
         throw error;
       }
       activeMutationRef.current = saved;
+      persistedDraftRef.current = nextDraft;
       setActiveMutation(saved);
       return saved;
     };
@@ -368,6 +407,44 @@ export const ProfileCreationWorkspace = () => {
     draftRef.current = nextDraft;
     setDraft(nextDraft);
     persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
+  };
+
+  const toFieldValues = value => Array.isArray(value) ? value : [value ?? ''];
+  const mergeFieldHistory = (fieldName, nextValues) => {
+    const previousValues = toFieldValues(persistedDraftRef.current?.[fieldName]).filter((value, index, values) => (
+      value !== '' || index < values.length - 1
+    ));
+    const values = [...previousValues];
+    nextValues.forEach(value => {
+      if (value === '' || !values.includes(value)) values.push(value);
+    });
+    return values.length ? values : [''];
+  };
+
+  const updateDraftFieldItem = (fieldName, index, value) => {
+    const values = toFieldValues(draftRef.current?.[fieldName]);
+    values[index] = value;
+    const nextDraft = { ...(draftRef.current || {}), [fieldName]: values };
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+  };
+
+  const commitDraftFieldItems = (fieldName, values) => {
+    const nextValues = mergeFieldHistory(fieldName, values);
+    commitFieldValue(fieldName, nextValues);
+  };
+
+  const appendDraftFieldItem = fieldName => {
+    const values = [...toFieldValues(draftRef.current?.[fieldName]), ''];
+    const nextDraft = { ...(draftRef.current || {}), [fieldName]: values };
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+  };
+
+  const clearDraftFieldItem = (fieldName, index) => {
+    const values = toFieldValues(draftRef.current?.[fieldName]);
+    values[index] = '';
+    commitDraftFieldItems(fieldName, values);
   };
 
   const save = async () => {
@@ -439,19 +516,31 @@ export const ProfileCreationWorkspace = () => {
           })}
         </FieldChipRow>
       ) : isTextArea ? (
-        <FieldTextArea
-          value={value}
-          placeholder={getFieldPlaceholder(field)}
-          onChange={e => updateDraftField(fieldName, e.target.value)}
-          onBlur={e => commitFieldValue(fieldName, e.target.value)}
-        />
+        <FieldControls>
+          {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
+            <FieldTextArea
+              value={item}
+              placeholder={getFieldPlaceholder(field)}
+              onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
+              onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
+            />
+            <FieldActionButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX aria-hidden="true" /></FieldActionButton>
+          </FieldControl>)}
+          <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
+        </FieldControls>
       ) : (
-        <FieldInput
-          value={value}
-          placeholder={getFieldPlaceholder(field)}
-          onChange={e => updateDraftField(fieldName, e.target.value)}
-          onBlur={e => commitFieldValue(fieldName, e.target.value)}
-        />
+        <FieldControls>
+          {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
+            <FieldInput
+              value={item}
+              placeholder={getFieldPlaceholder(field)}
+              onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
+              onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
+            />
+            <FieldActionButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX aria-hidden="true" /></FieldActionButton>
+          </FieldControl>)}
+          <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
+        </FieldControls>
       )}
     </FieldRow>;
   };
@@ -459,7 +548,7 @@ export const ProfileCreationWorkspace = () => {
   const draftFilledPct = useMemo(() => {
     if (!draft) return 0;
     const fieldNames = pickerFields.map(field => field.name);
-    const filledCount = fieldNames.filter(name => String(draft[name] || '').trim() !== '').length;
+    const filledCount = fieldNames.filter(name => toFieldValues(draft[name]).some(value => String(value || '').trim() !== '')).length;
     return fieldNames.length ? Math.round((filledCount / fieldNames.length) * 100) : 0;
   }, [draft]);
 
