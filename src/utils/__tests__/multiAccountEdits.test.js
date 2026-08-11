@@ -1,7 +1,8 @@
-const { get, ref, remove, set, update } = require('firebase/database');
+const { get, push, ref, remove, set, update } = require('firebase/database');
 
 jest.mock('firebase/database', () => ({
   get: jest.fn(),
+  push: jest.fn(() => ({ key: 'history-entry' })),
   ref: jest.fn((db, path) => ({ db, path })),
   remove: jest.fn(),
   set: jest.fn(),
@@ -48,6 +49,7 @@ describe('multiAccountEdits storage structure', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     ref.mockImplementation((db, path) => ({ db, path }));
+    push.mockImplementation(() => ({ key: 'history-entry' }));
   });
 
   it('saves overlay under cardUserId/editorUserId path', async () => {
