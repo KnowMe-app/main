@@ -3,11 +3,13 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiArrowRight, FiCheck, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch, FiUsers, FiX } from 'react-icons/fi';
+import { FiCheck, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
-import { auth, fetchUserById, searchUsersOnly } from './config';
+import { auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
+import PageNavMenu from './PageNavMenu';
+import { TopBlock } from './smallCard/renderTopBlock';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutation } from 'utils/profileCreationSearch';
@@ -45,8 +47,7 @@ const Page = styled.main`
 `;
 const Shell = styled.div`max-width: 920px; margin: 0 auto;`;
 const Header = styled.header`
-  display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px 20px; align-items:start; margin-bottom:28px;
-  @media (max-width: 380px) { grid-template-columns:1fr; }
+  display:grid; grid-template-columns:auto minmax(0, 1fr); gap:8px 12px; align-items:start; margin-bottom:28px;
 `;
 const HeaderCopy = styled.div`min-width:0;`;
 const Title = styled.h1`
@@ -64,11 +65,6 @@ const Button = styled.button`
   &:active:not(:disabled) { transform:translateY(1px); }
   &:disabled { background:color-mix(in srgb, var(--km-muted) 16%, var(--km-card)); color:var(--km-muted); box-shadow:none; cursor:not-allowed; }
   @media (prefers-reduced-motion: reduce) { transition:none; }
-`;
-const MatchingButton = styled(Button)`
-  grid-column:2; grid-row:1; white-space:nowrap; background:color-mix(in srgb, var(--km-card) 88%, var(--km-muted));
-  svg { color:var(--km-accent); }
-  @media (max-width:380px) { grid-column:1; grid-row:auto; justify-self:start; margin-top:8px; }
 `;
 const SaveButton = styled(Button)`
   background: linear-gradient(135deg, #E8791A 0%, #F5A24B 100%);
@@ -110,7 +106,6 @@ const Status = styled.span`
   background: ${({ $variant }) => STATUS_VARIANT_BACKGROUND[$variant] || 'var(--km-accent-light)'};
   color: ${({ $variant }) => STATUS_VARIANT_COLOR[$variant] || 'var(--km-accent)'};
 `;
-const HeaderMeta = styled(Meta)`grid-column:1 / -1; margin:0; max-width:650px; font-size:16px;`;
 const SearchSection = styled.section`
   padding:24px; margin-bottom:30px; border:1px solid var(--km-border); border-radius:24px; background:var(--km-card);
   box-shadow:var(--km-shadow), inset 0 1px 0 rgba(255,255,255,.04);
@@ -179,10 +174,37 @@ const ReviewRow = styled.div`
 const ReviewChange = styled.div`font-size:14px; line-height:1.4; overflow-wrap:anywhere;`;
 const ReviewActionsRow = styled.div`display:flex; gap:6px; justify-self:end;`;
 const HistoryRow = styled.div`
-  display:flex; flex-wrap:wrap; gap:4px 10px; padding:7px 0; font-size:12px; color:var(--km-muted);
+  display:grid; gap:7px; padding:10px 0; font-size:12px; color:var(--km-muted);
   border-top:1px dashed var(--km-border); overflow-wrap:anywhere;
   &:first-of-type { border-top:none; }
 `;
+const HistoryMeta = styled.div`display:flex; flex-wrap:wrap; gap:4px 10px;`;
+const HistoryValue = styled(FieldInput)`
+  border-color:${({ $deleted }) => ($deleted ? '#d94b4b' : '#2e9b55')};
+  background:${({ $deleted }) => ($deleted ? 'rgba(217,75,75,.07)' : 'rgba(46,155,85,.07)')};
+`;
+const HistoryValueRow = styled.div`display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;`;
+const HistoryKind = styled.span`font-weight:700; color:${({ $deleted }) => ($deleted ? '#d94b4b' : '#2e9b55')};`;
+const AuthorLink = styled.button`
+  padding:0; border:0; background:none; color:var(--km-accent); font:inherit; text-decoration:underline; cursor:pointer;
+`;
+const TopBlockCard = styled.div`margin:12px 0; border-radius:20px; overflow:hidden;`;
+
+const EditableHistoryValue = ({ value, deleted, onCommit }) => {
+  const [editedValue, setEditedValue] = useState(value);
+
+  useEffect(() => setEditedValue(value), [value]);
+
+  return <HistoryValue
+    value={editedValue}
+    $deleted={deleted}
+    aria-label={`${deleted ? 'Видалено' : 'Додано'}: ${value}`}
+    onChange={event => setEditedValue(event.target.value)}
+    onBlur={() => {
+      if (editedValue !== value) onCommit(editedValue);
+    }}
+  />;
+};
 const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-top:1px solid var(--km-border); min-width:0; > span:first-child { min-width:0; overflow-wrap:anywhere; }`;
 const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
 const Count = styled.span`min-width:28px; height:28px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; border-radius:999px; background:color-mix(in srgb, var(--km-muted) 14%, var(--km-card)); color:var(--km-text); letter-spacing:0;`;
@@ -247,6 +269,19 @@ const OVERLAY_HISTORY_ACTION_LABELS = {
   discard: 'видалено',
 };
 
+const toHistoryValues = value => (Array.isArray(value) ? value : [value])
+  .map(item => String(item ?? '').trim()).filter(Boolean);
+
+const getHistoryValueRows = change => {
+  if (!change || typeof change !== 'object' || change.discarded) return [];
+  const added = 'to' in change ? toHistoryValues(change.to) : toHistoryValues(change.added ?? change.add);
+  const removed = 'from' in change ? toHistoryValues(change.from) : toHistoryValues(change.removed);
+  return [
+    ...added.map(value => ({ value, deleted: false })),
+    ...removed.filter(value => !added.includes(value)).map(value => ({ value, deleted: true })),
+  ];
+};
+
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -258,6 +293,7 @@ export const ProfileCreationWorkspace = () => {
   const [activeMutation, setActiveMutation] = useState(null);
   const [draftOverlays, setDraftOverlays] = useState({});
   const [draftHistory, setDraftHistory] = useState([]);
+  const [historyAuthors, setHistoryAuthors] = useState({});
   const [showDraftHistory, setShowDraftHistory] = useState(false);
   const [overlayTarget, setOverlayTarget] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -639,6 +675,23 @@ export const ProfileCreationWorkspace = () => {
     commitFieldValue(fieldName, nextValues);
   };
 
+  const commitHistoryValue = (fieldName, originalValue, editedValue) => {
+    const values = [...toFieldValues(draftRef.current?.[fieldName])];
+    const originalIndex = values.findIndex(value => String(value ?? '') === originalValue);
+    const normalizedValue = String(editedValue ?? '').trim();
+
+    if (originalIndex >= 0) {
+      if (normalizedValue) values[originalIndex] = normalizedValue;
+      else values.splice(originalIndex, 1);
+    } else if (normalizedValue) {
+      // A red history value is no longer present in the current draft. Editing
+      // it is an explicit admin restore with the corrected value.
+      values.push(normalizedValue);
+    }
+
+    commitDraftFieldItems(fieldName, values);
+  };
+
   const appendDraftFieldItem = fieldName => {
     const values = [...toFieldValues(draftRef.current?.[fieldName]), ''];
     const nextDraft = { ...(draftRef.current || {}), [fieldName]: values };
@@ -790,6 +843,42 @@ export const ProfileCreationWorkspace = () => {
     }))
   )), [draftOverlays]);
 
+  useEffect(() => {
+    if (!access?.isAdmin || !draftHistory.length) {
+      setHistoryAuthors({});
+      return;
+    }
+    let active = true;
+    const ids = draftHistory.map(entry => entry.editorUserId || entry.actorUserId || entry.createdBy).filter(Boolean);
+    fetchUsersByIds(ids).then(users => {
+      if (active) setHistoryAuthors(users || {});
+    }).catch(error => console.warn('[ProfileCreationWorkspace] history authors unavailable', error));
+    return () => { active = false; };
+  }, [access?.isAdmin, draftHistory]);
+
+  const renderHistoryEntry = entry => {
+    const authorId = entry.editorUserId || entry.actorUserId || entry.createdBy;
+    const author = historyAuthors[authorId] || {};
+    const authorName = [author.name, author.surname].filter(Boolean).join(' ');
+    const values = getHistoryValueRows(entry.change);
+    return <HistoryRow key={entry.entryId}>
+      <HistoryMeta>
+        <span>{entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}</span>
+        <span>· {OVERLAY_HISTORY_ACTION_LABELS[entry.action] || entry.action}</span>
+        <span>· {getFieldLabel(fieldsMap.get(entry.fieldName)) || entry.fieldName}</span>
+      </HistoryMeta>
+      {values.length ? values.map(({ value, deleted }, index) => <HistoryValueRow key={`${deleted}-${value}-${index}`}>
+        <EditableHistoryValue
+          value={value}
+          deleted={deleted}
+          onCommit={editedValue => commitHistoryValue(entry.fieldName, value, editedValue)}
+        />
+        <HistoryKind $deleted={deleted}>{deleted ? 'видалено' : 'додано'}</HistoryKind>
+      </HistoryValueRow>) : <span>{describeOverlayChange(entry.change)}</span>}
+      {authorId && <HistoryMeta><span>Автор: {authorName || 'користувач'}</span><AuthorLink type="button" onClick={() => navigate(`/edit/${authorId}`)}>{authorId}</AuthorLink></HistoryMeta>}
+    </HistoryRow>;
+  };
+
   const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
 
   const renderCreateField = fieldName => {
@@ -857,9 +946,8 @@ export const ProfileCreationWorkspace = () => {
 
   return <Page><Shell>
     <Header>
+      <PageNavMenu />
       <HeaderCopy><Title>{heading}</Title></HeaderCopy>
-      <MatchingButton onClick={() => navigate('/matching')}>Matching <FiArrowRight aria-hidden="true" /></MatchingButton>
-      <HeaderMeta>Картки зберігаються приватно до рішення адміністратора.</HeaderMeta>
     </Header>
     {draft ? <>
       <Card>
@@ -884,6 +972,15 @@ export const ProfileCreationWorkspace = () => {
           <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
         </>}
       </Card>
+      {!overlayTarget && access.isAdmin && <TopBlockCard>
+        <TopBlock
+          userData={draft}
+          setUsers={() => {}}
+          setShowInfoModal={() => {}}
+          setState={setDraft}
+          setUserIdToDelete={() => {}}
+        />
+      </TopBlockCard>}
       {!overlayTarget && access.isAdmin && (overlayReviewRows.length > 0 || draftHistory.length > 0) && <ReviewCard>
         <SectionHeader>
           <span>Правки редакторів</span>
@@ -930,12 +1027,7 @@ export const ProfileCreationWorkspace = () => {
         </DisclosureToggle>
         {showDraftHistory && (draftHistory.length === 0
           ? <Meta>Історія порожня.</Meta>
-          : draftHistory.map(entry => <HistoryRow key={entry.entryId}>
-            <span>{entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}</span>
-            <span>· {OVERLAY_HISTORY_ACTION_LABELS[entry.action] || entry.action}</span>
-            <span>· {entry.fieldName}: {describeOverlayChange(entry.change)}</span>
-            <span>· {entry.editorUserId}</span>
-          </HistoryRow>))}
+          : draftHistory.map(renderHistoryEntry))}
       </ReviewCard>}
       {overlayTarget && <CommentCard>
         <FieldLabel>Ваш коментар</FieldLabel>
