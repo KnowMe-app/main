@@ -1,6 +1,7 @@
 import { get, push, ref, runTransaction, update } from 'firebase/database';
 
 import { database, syncUserSearchKeyIndex } from 'components/config';
+import { buildOverlayFromDraft } from './multiAccountEdits';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdRecordKey,
@@ -8,6 +9,7 @@ import {
 
 export const PROFILE_MUTATIONS_ROOT = 'multiData/profileMutations';
 export const PROFILE_IDENTITY_CLAIMS_ROOT = 'multiData/profileIdentityClaims';
+export const PROFILE_MUTATION_HISTORY_ROOT = 'multiData/profileMutationHistory';
 
 export const getProfileMutationPath = (creatorUid, cardId) => (
   `${PROFILE_MUTATIONS_ROOT}/${creatorUid}${cardId ? `/${cardId}` : ''}`
@@ -17,11 +19,29 @@ export const getProfileIdentityClaimPath = claimKey => (
   `${PROFILE_IDENTITY_CLAIMS_ROOT}/${claimKey}`
 );
 
+export const getProfileMutationHistoryPath = cardId => (
+  `${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`
+);
+
 const cleanObject = value => Object.entries(value || {}).reduce((result, [key, item]) => {
   if (key.startsWith('__') || item === undefined) return result;
   result[key] = item;
   return result;
 }, {});
+
+export const buildProfileRevisionHistory = ({ cardId, actorUid, previousData, nextData, at, revision }) => (
+  Object.entries(buildOverlayFromDraft(previousData || {}, nextData || {}))
+    .map(([fieldName, change]) => ({
+      cardId,
+      actorUid,
+      editorUserId: actorUid,
+      action: 'edit',
+      fieldName,
+      change,
+      at,
+      revision,
+    }))
+);
 
 export const getEffectiveProfile = ({ baseProfile, mutation } = {}) => {
   if (mutation?.status === 'accepted' || mutation?.status === 'archived') return baseProfile || null;
@@ -113,8 +133,8 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
     })),
 );
 
-export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expectedRevision }) => {
-  if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
+export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, data, expectedRevision }) => {
+  if (!cardId || !creatorUid || !actorUid) throw new Error('cardId, creatorUid and actorUid are required');
   let identityKeys;
   let acquiredIdentityKeys;
   try {
@@ -125,6 +145,7 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
   }
   let conflict = '';
   let previousIdentityKeys = [];
+  let revisionHistory = [];
   let result;
   try {
     result = await runTransaction(ref(database, getProfileMutationPath(creatorUid, cardId)), current => {
@@ -142,6 +163,17 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
         return undefined;
       }
       const now = Date.now();
+      const revision = Number(current?.revision || 0) + 1;
+      // Use the same normalization/diff representation as editor overlays so
+      // both audit streams can be rendered by the same admin UI.
+      revisionHistory = buildProfileRevisionHistory({
+        cardId,
+        actorUid,
+        previousData: current?.data,
+        nextData: data,
+        at: now,
+        revision,
+      });
       return {
         cardId,
         operation: 'create',
@@ -149,7 +181,7 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
         createdBy: creatorUid,
         createdAt: current?.createdAt || now,
         updatedAt: now,
-        revision: Number(current?.revision || 0) + 1,
+        revision,
         status: 'pendingReview',
         identityKeys,
       };
@@ -167,9 +199,29 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, data, expe
     throw new Error(conflict || 'REVISION_CONFLICT');
   }
   const mutation = result.snapshot.val();
+  if (revisionHistory.length) {
+    const historyRef = ref(database, getProfileMutationHistoryPath(cardId));
+    const historyUpdates = revisionHistory.reduce((entries, entry) => {
+      const key = push(historyRef).key;
+      if (key) entries[key] = entry;
+      return entries;
+    }, {});
+    if (Object.keys(historyUpdates).length) await update(historyRef, historyUpdates);
+  }
   // Cleanup is idempotent bookkeeping after the revision is already committed.
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return mutation;
+};
+
+// Admin-only reader. Its shape intentionally matches overlay history.
+export const loadProfileMutationHistory = async cardId => {
+  if (!cardId) return [];
+  const snapshot = await get(ref(database, getProfileMutationHistoryPath(cardId)));
+  if (!snapshot.exists()) return [];
+  return Object.entries(snapshot.val() || {})
+    .filter(([, entry]) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map(([entryId, entry]) => ({ entryId: `revision-${entryId}`, ...entry }))
+    .sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
 };
 
 export const loadProfileMutation = async (creatorUid, cardId) => {
