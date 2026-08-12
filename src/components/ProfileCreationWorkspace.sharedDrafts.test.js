@@ -47,6 +47,8 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('{!overlayTarget && access.isAdmin && (overlayReviewRows.length > 0 || draftHistory.length > 0)');
     expect(source).toContain('Правки редакторів');
     expect(source).toContain('Історія правок');
+    expect(source).toContain('loadProfileMutationHistory(current.cardId)');
+    expect(source).toContain('setDraftHistory([...overlayHistory, ...revisionHistory]');
   });
 
   it('gives the admin accept-one, accept-all, delete-one and delete-all', () => {

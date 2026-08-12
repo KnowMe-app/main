@@ -28,6 +28,7 @@ import {
   getEffectiveProfile,
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
+  loadProfileMutationHistory,
   loadSharedProfileMutations,
   rejectCreateProfileMutation,
   reserveProfileCardId,
@@ -353,7 +354,12 @@ export const ProfileCreationWorkspace = () => {
     }
 
     try {
-      setDraftHistory(await getOverlayHistoryForCard(current.cardId));
+      const [overlayHistory, revisionHistory] = await Promise.all([
+        getOverlayHistoryForCard(current.cardId),
+        loadProfileMutationHistory(current.cardId),
+      ]);
+      setDraftHistory([...overlayHistory, ...revisionHistory]
+        .sort((a, b) => Number(b.at || 0) - Number(a.at || 0)));
     } catch (error) {
       console.warn('[ProfileCreationWorkspace] draft history unavailable', error);
       setDraftHistory([]);
