@@ -61,4 +61,23 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('Прийняти всі');
     expect(source).toContain('Видалити всі');
   });
+
+  it('renders a reusable admin summary and interactive change history', () => {
+    expect(source).toContain("import { TopBlock } from './smallCard/renderTopBlock';");
+    expect(source).toContain('{!overlayTarget && access.isAdmin && <TopBlockCard>');
+    expect(source).toContain('<EditableHistoryValue');
+    expect(source).toContain('onCommit={editedValue => commitHistoryValue(entry.fieldName, value, editedValue)}');
+    expect(source).toContain('const commitHistoryValue = (fieldName, originalValue, editedValue) =>');
+    expect(source).not.toContain('<HistoryValue readOnly');
+    expect(source).toContain("deleted ? 'видалено' : 'додано'");
+    expect(source).toContain('fetchUsersByIds(ids)');
+    expect(source).toContain('navigate(`/edit/${authorId}`)');
+  });
+
+  it('uses the shared dots navigation and does not claim drafts are private', () => {
+    expect(source).toContain("import PageNavMenu from './PageNavMenu';");
+    expect(source).toContain('<PageNavMenu />');
+    expect(source).not.toContain('Картки зберігаються приватно до рішення адміністратора.');
+    expect(source).not.toContain('<MatchingButton');
+  });
 });
