@@ -513,6 +513,45 @@ export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, c
   });
 };
 
+const hasOverlayChangeValues = change => Boolean(
+  change && (change.to || change.from || change.added?.length || change.removed?.length)
+);
+
+// Settles one *value* of an editor's field change - accept or discard - and
+// leaves the rest of that field's change pending. Accepting one of three
+// proposed phone numbers must not throw the other two away, so the caller
+// passes what it settled and what remains; the journal records only the
+// settled part, under the action that settled it.
+export const settleOverlayFieldValue = async ({
+  editorUserId,
+  cardUserId,
+  fieldName,
+  settledChange,
+  remainingChange,
+  historyAction = 'discard',
+}) => {
+  if (!editorUserId || !cardUserId || !fieldName) return;
+
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return;
+
+  const fieldsPath = `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`;
+
+  if (hasOverlayChangeValues(remainingChange)) {
+    await update(ref2(database, fieldsPath), { [fieldName]: remainingChange });
+  } else {
+    await remove(ref2(database, `${fieldsPath}/${fieldName}`));
+  }
+
+  await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
+  await appendOverlayHistory({
+    cardUserId: normalizedCardId,
+    editorUserId,
+    action: historyAction,
+    fields: { [fieldName]: settledChange || { discarded: true } },
+  });
+};
+
 // ---------------------------------------------------------------------------
 // Admin review operations. An admin is the only role that can turn a pending
 // overlay into canonical data, and the only one who gets to see the journal

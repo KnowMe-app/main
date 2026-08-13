@@ -25,7 +25,8 @@ describe('ProfileCreationWorkspace shared drafts', () => {
   it('renders the draft as every editor overlay stacked onto the author data', () => {
     expect(source).toContain('const stacked = applyOverlaysToCard(base, overlays);');
     expect(source).toContain('stackedDraftRef.current = stacked;');
-    expect(source).toContain('setDraft(stacked);');
+    expect(source).toContain("const visible = accessRef.current?.isAdmin ? base : stacked;");
+    expect(source).toContain('setDraft(visible);');
   });
 
   it('stores another editor changes as that editor own overlay, never in the author draft', () => {
@@ -44,16 +45,18 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('keeps the per-edit review and the history journal admin-only', () => {
     expect(source).toContain("if (!accessRef.current?.isAdmin) {\n      setDraftHistory([]);");
-    expect(source).toContain('{!overlayTarget && access.isAdmin && (overlayReviewRows.length > 0 || draftHistory.length > 0)');
+    expect(source).toContain('const reviewingAsAdmin = Boolean(access?.isAdmin) && !overlayTarget;');
+    expect(source).toContain('{reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0)');
     expect(source).toContain('Правки редакторів');
     expect(source).toContain('Історія правок');
     expect(source).toContain('loadProfileMutationHistory(current.cardId)');
     expect(source).toContain('setDraftHistory([...overlayHistory, ...revisionHistory]');
   });
 
-  it('gives the admin accept-one, accept-all, delete-one and delete-all', () => {
-    expect(source).toContain('const acceptOverlayChange = (editorUserId, fieldName, change) =>');
-    expect(source).toContain('const discardOverlayChange = (editorUserId, fieldName) =>');
+  it('gives the admin accept, reject, delete per value plus accept-all and delete-all', () => {
+    expect(source).toContain('const acceptFieldEdit = (row, editedValue, label) =>');
+    expect(source).toContain('const rejectFieldEdit = (row, label) =>');
+    expect(source).toContain('const removeFieldEditValue = (row, label) =>');
     expect(source).toContain('const acceptAllOverlayChanges = () =>');
     expect(source).toContain('const discardAllOverlayChanges = () =>');
     expect(source).toContain("historyAction: 'accept',");
@@ -62,16 +65,21 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('Видалити всі');
   });
 
-  it('renders a reusable admin summary and interactive change history', () => {
-    expect(source).toContain("import { TopBlock } from './smallCard/renderTopBlock';");
-    expect(source).toContain('{!overlayTarget && access.isAdmin && <TopBlockCard>');
-    expect(source).toContain('<EditableHistoryValue');
-    expect(source).toContain('onCommit={editedValue => commitHistoryValue(entry.fieldName, value, editedValue)}');
-    expect(source).toContain('const commitHistoryValue = (fieldName, originalValue, editedValue) =>');
-    expect(source).not.toContain('<HistoryValue readOnly');
-    expect(source).toContain("deleted ? 'видалено' : 'додано'");
+  it('accepting a corrected value stores what the admin typed, not what was proposed', () => {
+    expect(source).toContain('const acceptedChange = withEditedValue(settled, row, editedValue);');
+    expect(source).toContain('await persistDraftData(applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }));');
+    expect(source).toContain('remainingChange: remaining,');
+  });
+
+  it('shows every edit inside the questionnaire instead of a separate review list', () => {
+    expect(source).not.toContain("import { TopBlock } from './smallCard/renderTopBlock';");
+    expect(source).toContain('{renderFieldVersions(fieldName, currentValues)}');
+    expect(source).toContain('{renderFieldPendingEdits(fieldName, label)}');
+    expect(source).toContain('const pendingFieldEdits = useMemo(');
+    expect(source).toContain('const fieldVersionHistory = useMemo(');
+    expect(source).toContain('Інші поля з правками');
     expect(source).toContain('fetchUsersByIds(ids)');
-    expect(source).toContain('navigate(`/edit/${authorId}`)');
+    expect(source).toContain('navigate(`/edit/${row.editorUserId}`)');
   });
 
   it('uses the shared dots navigation and does not claim drafts are private', () => {
