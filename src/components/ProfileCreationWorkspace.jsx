@@ -3,13 +3,13 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiCheck, FiChevronDown, FiFolder, FiInfo, FiPlus, FiSearch, FiUsers, FiX } from 'react-icons/fi';
+import { FiCheck, FiChevronDown, FiClock, FiCornerLeftDown, FiFolder, FiInfo, FiPlus, FiSearch, FiTrash2, FiUsers, FiX } from 'react-icons/fi';
 
 import { auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import PageNavMenu from './PageNavMenu';
-import { TopBlock } from './smallCard/renderTopBlock';
+import { fieldContacts } from './smallCard/fieldContacts';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutation } from 'utils/profileCreationSearch';
@@ -19,12 +19,18 @@ import {
   buildOverlayFromDraft,
   getOverlayHistoryForCard,
   getOverlaysForCard,
-  normalizeOverlayFields,
-  patchOverlayField,
   removeAllOverlaysForCard,
   saveOverlayForUserCard,
-  sortOverlaysByAppliedOrder,
+  settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
+import {
+  buildFieldVersionHistory,
+  buildPendingFieldEdits,
+  buildRemovalChange,
+  dropVersionsPresentIn,
+  splitOverlayChangeValue,
+  withEditedValue,
+} from 'utils/draftFieldEdits';
 import {
   acceptCreateProfileMutation,
   getEffectiveProfile,
@@ -135,7 +141,15 @@ const ProgressFill = styled.div`
 `;
 const FormSectionCard = styled(Card)`padding:18px 20px;`;
 const FormSectionTitle = styled.h3`margin:0 0 6px; font-size:15px; font-weight:750; letter-spacing:-.01em;`;
-const FieldRow = styled.div`padding:12px 0; border-bottom:1px solid var(--km-border); &:last-child { border-bottom:none; }`;
+const FieldRow = styled.div`
+  padding:12px 0; border-bottom:1px solid var(--km-border);
+  &:last-child { border-bottom:none; }
+  ${({ $pending }) => ($pending ? `
+    margin:0 -10px; padding-left:10px; padding-right:10px; border-radius:14px;
+    background:color-mix(in srgb, var(--km-accent) 5%, transparent);
+    box-shadow:inset 3px 0 0 var(--km-accent);
+  ` : '')}
+`;
 const FieldLabel = styled.div`font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--km-muted); margin-bottom:6px;`;
 const FieldInput = styled.input`
   width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
@@ -144,11 +158,23 @@ const FieldInput = styled.input`
 `;
 const FieldControls = styled.div`display:grid; gap:8px;`;
 const FieldControl = styled.div`display:flex; align-items:center; gap:8px; min-width:0;`;
+const ACTION_TONES = {
+  accept: { color: '#2e9b55', background: 'rgba(46,155,85,.12)' },
+  reject: { color: 'var(--km-muted)', background: 'color-mix(in srgb, var(--km-muted) 12%, transparent)' },
+  remove: { color: '#d94b4b', background: 'rgba(217,75,75,.12)' },
+  restore: { color: 'var(--km-accent)', background: 'var(--km-accent-light)' },
+};
 const FieldActionButton = styled.button`
   width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center; padding:0;
-  border:1px solid var(--km-border); border-radius:12px; background:var(--km-card); color:var(--km-muted); cursor:pointer;
-  &:hover { border-color:var(--km-accent); color:var(--km-accent); background:var(--km-accent-light); }
+  border:1px solid var(--km-border); border-radius:12px; background:var(--km-card); cursor:pointer;
+  color:${({ $tone }) => (ACTION_TONES[$tone]?.color || 'var(--km-muted)')};
+  &:hover:not(:disabled) {
+    border-color:currentColor;
+    color:${({ $tone }) => (ACTION_TONES[$tone]?.color || 'var(--km-accent)')};
+    background:${({ $tone }) => (ACTION_TONES[$tone]?.background || 'var(--km-accent-light)')};
+  }
   &:focus-visible { outline:3px solid var(--km-accent-ring); outline-offset:2px; }
+  &:disabled { opacity:.45; cursor:not-allowed; }
 `;
 const AddValueButton = styled(FieldActionButton)`margin-top:8px; color:var(--km-accent);`;
 const FieldTextArea = styled.textarea`
@@ -165,45 +191,123 @@ const FieldChip = styled.button`
 `;
 const CommentCard = styled(Card)`background:color-mix(in srgb, var(--km-accent) 6%, var(--km-card));`;
 const ReviewCard = styled(Card)`background:color-mix(in srgb, var(--km-accent-mid) 8%, var(--km-card));`;
-const ReviewRow = styled.div`
-  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 12px; align-items:center;
-  padding:10px 0; border-top:1px solid var(--km-border);
-  &:first-of-type { border-top:none; }
-  @media (max-width:520px) { grid-template-columns:1fr; }
-`;
-const ReviewChange = styled.div`font-size:14px; line-height:1.4; overflow-wrap:anywhere;`;
-const ReviewActionsRow = styled.div`display:flex; gap:6px; justify-self:end;`;
-const HistoryRow = styled.div`
-  display:grid; gap:7px; padding:10px 0; font-size:12px; color:var(--km-muted);
-  border-top:1px dashed var(--km-border); overflow-wrap:anywhere;
-  &:first-of-type { border-top:none; }
-`;
-const HistoryMeta = styled.div`display:flex; flex-wrap:wrap; gap:4px 10px;`;
-const HistoryValue = styled(FieldInput)`
-  border-color:${({ $deleted }) => ($deleted ? '#d94b4b' : '#2e9b55')};
-  background:${({ $deleted }) => ($deleted ? 'rgba(217,75,75,.07)' : 'rgba(46,155,85,.07)')};
-`;
-const HistoryValueRow = styled.div`display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;`;
-const HistoryKind = styled.span`font-weight:700; color:${({ $deleted }) => ($deleted ? '#d94b4b' : '#2e9b55')};`;
 const AuthorLink = styled.button`
   padding:0; border:0; background:none; color:var(--km-accent); font:inherit; text-decoration:underline; cursor:pointer;
 `;
-const TopBlockCard = styled.div`margin:12px 0; border-radius:20px; overflow:hidden;`;
 
-const EditableHistoryValue = ({ value, deleted, onCommit }) => {
-  const [editedValue, setEditedValue] = useState(value);
+// --- Inline change timeline -------------------------------------------------
+// Every proposal and every superseded value is rendered inside the
+// questionnaire, in the row of the field it belongs to, oldest first: past
+// versions, then the value the card holds now, then what editors propose next.
+const EDIT_TONES = {
+  added: { color: '#2e9b55', background: 'rgba(46,155,85,.08)', label: 'нове значення' },
+  replaced: { color: '#2e9b55', background: 'rgba(46,155,85,.08)', label: 'заміна' },
+  removed: { color: '#d94b4b', background: 'rgba(217,75,75,.08)', label: 'пропонують видалити' },
+};
+const toneOf = kind => EDIT_TONES[kind] || EDIT_TONES.added;
+const FieldTimeline = styled.div`display:grid; gap:8px; margin:${({ $before }) => ($before ? '0 0 10px' : '10px 0 0')};`;
+const VersionRow = styled.div`
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 10px; align-items:center;
+  padding:7px 11px; border:1px dashed var(--km-border); border-radius:12px;
+  background:color-mix(in srgb, var(--km-muted) 7%, transparent); overflow-wrap:anywhere;
+`;
+const VersionValue = styled.span`
+  font-size:14px; font-weight:600; color:var(--km-muted);
+  text-decoration:${({ $removed }) => ($removed ? 'line-through' : 'none')};
+`;
+const VersionMeta = styled.div`grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:3px 9px; font-size:11px; color:var(--km-muted);`;
+const EditCard = styled.div`
+  display:grid; gap:7px; padding:10px 11px; border-radius:14px; overflow-wrap:anywhere;
+  border:1.5px solid ${({ $kind }) => toneOf($kind).color};
+  background:${({ $kind }) => toneOf($kind).background};
+`;
+const EditHead = styled.div`display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:11px;`;
+const EditBadge = styled.span`
+  padding:3px 8px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.02em;
+  color:${({ $kind }) => toneOf($kind).color};
+  background:color-mix(in srgb, ${({ $kind }) => toneOf($kind).color} 16%, transparent);
+`;
+const EditWas = styled.span`color:var(--km-muted); font-size:11px; s { opacity:.75; }`;
+const EditControl = styled.div`display:flex; align-items:center; gap:8px; min-width:0;`;
+const EditValueInput = styled(FieldInput)`
+  border-color:${({ $kind }) => toneOf($kind).color};
+  background:var(--km-card);
+  text-decoration:${({ $kind }) => ($kind === 'removed' ? 'line-through' : 'none')};
+  &:read-only { color:var(--km-muted); }
+`;
+const EditActionsRow = styled.div`display:flex; gap:6px; flex:0 0 auto;`;
+const EditMeta = styled.div`display:flex; flex-wrap:wrap; gap:3px 9px; font-size:11px; color:var(--km-muted);`;
+const EditHint = styled.div`font-size:11px; font-weight:700; color:var(--km-accent);`;
+const DraftHeaderCard = styled(Card)`display:grid; gap:10px; margin:0 0 14px;`;
+const DraftBadges = styled.div`display:flex; flex-wrap:wrap; align-items:center; gap:8px;`;
+const DraftName = styled.h2`margin:0; font-size:clamp(20px, 5.5vw, 24px); line-height:1.2; overflow-wrap:anywhere;`;
+const DraftContacts = styled.div`
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; font-size:14px; line-height:1.5;
+  color:var(--km-text); a { color:inherit; }
+`;
 
-  useEffect(() => setEditedValue(value), [value]);
+// The proposed value is editable in place: correcting the format here and
+// pressing ✓ accepts exactly what is in the box, which is the whole point of
+// "редакція означає, що приймаємо саме відредагований формат".
+const PendingFieldEdit = ({ row, label, authorName, disabled, onAccept, onReject, onRemove }) => {
+  const [value, setValue] = useState(row.value);
 
-  return <HistoryValue
-    value={editedValue}
-    $deleted={deleted}
-    aria-label={`${deleted ? 'Видалено' : 'Додано'}: ${value}`}
-    onChange={event => setEditedValue(event.target.value)}
-    onBlur={() => {
-      if (editedValue !== value) onCommit(editedValue);
-    }}
-  />;
+  useEffect(() => setValue(row.value), [row.value]);
+
+  const isRemoval = row.kind === 'removed';
+  const isEdited = !isRemoval && value.trim() !== row.value;
+
+  return <EditCard $kind={row.kind}>
+    <EditHead>
+      <EditBadge $kind={row.kind}>{toneOf(row.kind).label}</EditBadge>
+      {row.previousValue ? <EditWas>замість <s>{row.previousValue}</s></EditWas> : null}
+    </EditHead>
+    <EditControl>
+      <EditValueInput
+        value={value}
+        $kind={row.kind}
+        readOnly={isRemoval}
+        aria-label={`${label}: запропоноване значення`}
+        onChange={event => setValue(event.target.value)}
+        onKeyDown={event => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          onAccept(value);
+        }}
+      />
+      <EditActionsRow>
+        <FieldActionButton
+          type="button"
+          $tone="accept"
+          disabled={disabled}
+          title={isEdited ? 'Прийняти виправлене значення' : 'Прийняти правку'}
+          aria-label={`Прийняти правку: ${label}`}
+          onClick={() => onAccept(value)}
+        ><FiCheck aria-hidden="true" /></FieldActionButton>
+        <FieldActionButton
+          type="button"
+          $tone="reject"
+          disabled={disabled}
+          title="Відхилити правку — залишити як є"
+          aria-label={`Відхилити правку: ${label}`}
+          onClick={onReject}
+        ><FiX aria-hidden="true" /></FieldActionButton>
+        <FieldActionButton
+          type="button"
+          $tone="remove"
+          disabled={disabled}
+          title="Видалити це значення з анкети"
+          aria-label={`Видалити значення з анкети: ${label}`}
+          onClick={onRemove}
+        ><FiTrash2 aria-hidden="true" /></FieldActionButton>
+      </EditActionsRow>
+    </EditControl>
+    <EditMeta>
+      <span>{authorName}</span>
+      {row.updatedAt ? <span>· {new Date(row.updatedAt).toLocaleString('uk-UA')}</span> : null}
+    </EditMeta>
+    {isEdited && <EditHint>Буде збережено виправлене значення: {value.trim() || '—'}</EditHint>}
+  </EditCard>;
 };
 const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-top:1px solid var(--km-border); min-width:0; > span:first-child { min-width:0; overflow-wrap:anywhere; }`;
 const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
@@ -242,44 +346,17 @@ const isSharedDraft = (mutation, viewerUid, isAdmin) => Boolean(
   mutation?.createdBy && viewerUid && mutation.createdBy !== viewerUid && !isAdmin
 );
 
-const formatOverlayValue = value => {
-  if (Array.isArray(value)) {
-    const parts = value.map(item => String(item ?? '').trim()).filter(Boolean);
-    return parts.length ? parts.join(', ') : '—';
-  }
-  const text = String(value ?? '').trim();
-  return text || '—';
-};
-
-const describeOverlayChange = change => {
-  if (!change || typeof change !== 'object') return '';
-  if (change.discarded) return 'правку знято';
-  if ('to' in change || 'from' in change) {
-    return `${formatOverlayValue(change.from)} → ${formatOverlayValue(change.to)}`;
-  }
-  return [
-    change.added?.length ? `+ ${formatOverlayValue(change.added)}` : '',
-    change.removed?.length ? `− ${formatOverlayValue(change.removed)}` : '',
-  ].filter(Boolean).join(' · ');
-};
-
 const OVERLAY_HISTORY_ACTION_LABELS = {
   edit: 'правка',
   accept: 'прийнято',
   discard: 'видалено',
 };
 
-const toHistoryValues = value => (Array.isArray(value) ? value : [value])
-  .map(item => String(item ?? '').trim()).filter(Boolean);
+const FORM_FIELD_NAMES = new Set(CREATE_FORM_SECTIONS.flatMap(section => section.fields));
 
-const getHistoryValueRows = change => {
-  if (!change || typeof change !== 'object' || change.discarded) return [];
-  const added = 'to' in change ? toHistoryValues(change.to) : toHistoryValues(change.added ?? change.add);
-  const removed = 'from' in change ? toHistoryValues(change.from) : toHistoryValues(change.removed);
-  return [
-    ...added.map(value => ({ value, deleted: false })),
-    ...removed.filter(value => !added.includes(value)).map(value => ({ value, deleted: true })),
-  ];
+const describeAuthor = (authorId, authors) => {
+  const author = authors?.[authorId] || {};
+  return [author.name, author.surname].filter(Boolean).join(' ') || (authorId ? 'редактор' : '—');
 };
 
 export const ProfileCreationWorkspace = () => {
@@ -376,10 +453,14 @@ export const ProfileCreationWorkspace = () => {
     draftBaseRef.current = base;
     draftOverlaysRef.current = overlays;
     stackedDraftRef.current = stacked;
-    draftRef.current = stacked;
-    persistedDraftRef.current = stacked;
+    // An admin reviews the author's own data with every pending edit shown
+    // inline, next to the field it changes - so their form holds the base
+    // card. Every other editor keeps working on the stacked card.
+    const visible = accessRef.current?.isAdmin ? base : stacked;
+    draftRef.current = visible;
+    persistedDraftRef.current = visible;
     setDraftOverlays(overlays);
-    setDraft(stacked);
+    setDraft(visible);
 
     // The journal of superseded edits is an admin tool. Other editors see
     // the stacked result only - never who changed a value, nor what it was
@@ -612,14 +693,15 @@ export const ProfileCreationWorkspace = () => {
         return null;
       }
 
-      // The author (or an admin) writes into the draft itself. What they see
-      // is the stacked card, so saving it verbatim would quietly promote
-      // every pending overlay into the draft - only an explicit accept may do
-      // that. Persist just the delta this save introduced on top of what was
-      // on screen, applied to the author's own data.
+      // The author (or an admin) writes into the draft itself. The author sees
+      // the stacked card, so saving it verbatim would quietly promote every
+      // pending overlay into the draft - only an explicit accept may do that.
+      // Persist just the delta this save introduced on top of what was on
+      // screen, applied to the author's own data. An admin's form already
+      // holds that base data, so it is saved as it is.
       const stacked = stackedDraftRef.current || applyOverlaysToCard(base, overlays);
       const hasPendingOverlays = Object.keys(overlays).length > 0;
-      const nextData = hasPendingOverlays
+      const nextData = hasPendingOverlays && !accessRef.current?.isAdmin
         ? applyOverlayToCard(base, buildOverlayFromDraft(stacked, nextDraft))
         : nextDraft;
 
@@ -675,21 +757,15 @@ export const ProfileCreationWorkspace = () => {
     commitFieldValue(fieldName, nextValues);
   };
 
-  const commitHistoryValue = (fieldName, originalValue, editedValue) => {
-    const values = [...toFieldValues(draftRef.current?.[fieldName])];
-    const originalIndex = values.findIndex(value => String(value ?? '') === originalValue);
-    const normalizedValue = String(editedValue ?? '').trim();
-
-    if (originalIndex >= 0) {
-      if (normalizedValue) values[originalIndex] = normalizedValue;
-      else values.splice(originalIndex, 1);
-    } else if (normalizedValue) {
-      // A red history value is no longer present in the current draft. Editing
-      // it is an explicit admin restore with the corrected value.
-      values.push(normalizedValue);
-    }
-
-    commitDraftFieldItems(fieldName, values);
+  // A superseded value from the timeline goes back into the field as an extra
+  // row, next to whatever is there now - restoring must never silently drop
+  // the current value.
+  const restoreFieldVersion = row => {
+    const values = toFieldValues(draftRef.current?.[row.fieldName])
+      .map(value => String(value ?? '').trim())
+      .filter(Boolean);
+    if (values.includes(row.value)) return;
+    commitDraftFieldItems(row.fieldName, [...values, row.value]);
   };
 
   const appendDraftFieldItem = fieldName => {
@@ -731,9 +807,12 @@ export const ProfileCreationWorkspace = () => {
   };
 
   // --- Admin review of the pending overlays on the open draft ----------------
-  // Accepting writes the change into the author's draft data and clears it
-  // from the queue; discarding drops it without touching the draft. Either
-  // way the journal keeps the record.
+  // Three decisions per proposed value, all recorded in the journal:
+  //   прийняти  - the value (or the admin's corrected version of it) is
+  //               written into the draft and leaves the queue;
+  //   відхилити - the proposal leaves the queue, the draft is untouched;
+  //   видалити  - the value must not be on the card at all, so it is stripped
+  //               from the draft too, together with what it replaced.
   const persistDraftData = async nextData => {
     const current = activeMutationRef.current;
     const saved = await saveCreateProfileMutation({
@@ -762,31 +841,57 @@ export const ProfileCreationWorkspace = () => {
     }
   };
 
-  const acceptOverlayChange = (editorUserId, fieldName, change) => runOverlayReviewAction(
+  const settleFieldEdit = (row, { settledChange, remainingChange, historyAction }) => settleOverlayFieldValue({
+    editorUserId: row.editorUserId,
+    cardUserId: activeMutationRef.current.cardId,
+    fieldName: row.fieldName,
+    settledChange,
+    remainingChange,
+    historyAction,
+  });
+
+  const acceptFieldEdit = (row, editedValue, label) => runOverlayReviewAction(
     async () => {
-      await persistDraftData(applyOverlayToCard(draftBaseRef.current || {}, { [fieldName]: change }));
-      await patchOverlayField({
-        editorUserId,
-        cardUserId: activeMutationRef.current.cardId,
-        fieldName,
-        change: null,
+      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
+      const acceptedChange = withEditedValue(settled, row, editedValue);
+      await persistDraftData(applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }));
+      await settleFieldEdit(row, {
+        settledChange: acceptedChange,
+        remainingChange: remaining,
         historyAction: 'accept',
       });
     },
-    `Правку прийнято: ${fieldName}`,
+    `Правку прийнято: ${label}`,
     'Не вдалося прийняти правку',
   );
 
-  const discardOverlayChange = (editorUserId, fieldName) => runOverlayReviewAction(
-    () => patchOverlayField({
-      editorUserId,
-      cardUserId: activeMutationRef.current.cardId,
-      fieldName,
-      change: null,
-      historyAction: 'discard',
-    }),
-    `Правку видалено: ${fieldName}`,
-    'Не вдалося видалити правку',
+  const rejectFieldEdit = (row, label) => runOverlayReviewAction(
+    async () => {
+      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
+      await settleFieldEdit(row, {
+        settledChange: settled,
+        remainingChange: remaining,
+        historyAction: 'discard',
+      });
+    },
+    `Правку відхилено: ${label}`,
+    'Не вдалося відхилити правку',
+  );
+
+  const removeFieldEditValue = (row, label) => runOverlayReviewAction(
+    async () => {
+      const base = draftBaseRef.current || {};
+      const withoutValue = applyOverlayToCard(base, { [row.fieldName]: buildRemovalChange(row) });
+      if (JSON.stringify(withoutValue) !== JSON.stringify(base)) await persistDraftData(withoutValue);
+      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
+      await settleFieldEdit(row, {
+        settledChange: settled,
+        remainingChange: remaining,
+        historyAction: 'discard',
+      });
+    },
+    `Значення видалено: ${label}`,
+    'Не вдалося видалити значення',
   );
 
   const acceptAllOverlayChanges = () => runOverlayReviewAction(
@@ -830,65 +935,112 @@ export const ProfileCreationWorkspace = () => {
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
 
-  // One row per (editor, field) still pending on the open draft, in the order
-  // the overlays are replayed - so the row that decides a field's visible
-  // value is the last one listed for that field.
-  const overlayReviewRows = useMemo(() => sortOverlaysByAppliedOrder(draftOverlays).flatMap(overlay => (
-    Object.entries(normalizeOverlayFields(overlay.fields)).map(([fieldName, change]) => ({
-      key: `${overlay.editorUserId}-${fieldName}`,
-      editorUserId: overlay.editorUserId,
-      updatedAt: overlay.updatedAt,
-      fieldName,
-      change,
-    }))
-  )), [draftOverlays]);
+  // Every pending proposal and every superseded value, keyed by the field it
+  // belongs to, so the questionnaire can render each of them in place instead
+  // of collecting them in a list of their own.
+  const reviewingAsAdmin = Boolean(access?.isAdmin) && !overlayTarget;
+  const pendingFieldEdits = useMemo(() => (
+    reviewingAsAdmin ? buildPendingFieldEdits(draftOverlays) : {}
+  ), [draftOverlays, reviewingAsAdmin]);
+  const fieldVersionHistory = useMemo(() => (
+    reviewingAsAdmin ? buildFieldVersionHistory(draftHistory) : {}
+  ), [draftHistory, reviewingAsAdmin]);
+  const pendingEditsCount = useMemo(() => (
+    Object.values(pendingFieldEdits).reduce((total, rows) => total + rows.length, 0)
+  ), [pendingFieldEdits]);
+  // Edits can touch a field the create questionnaire has no row for. Those get
+  // their own section at the end, so no proposal is invisible to the reviewer.
+  const extraEditedFields = useMemo(() => Array.from(new Set([
+    ...Object.keys(pendingFieldEdits),
+    ...Object.keys(fieldVersionHistory),
+  ])).filter(fieldName => fieldName && fieldName !== 'userId' && !FORM_FIELD_NAMES.has(fieldName)),
+  [fieldVersionHistory, pendingFieldEdits]);
 
   useEffect(() => {
-    if (!access?.isAdmin || !draftHistory.length) {
+    if (!access?.isAdmin) {
+      setHistoryAuthors({});
+      return;
+    }
+    // Everyone whose name the review shows: the draft's author, whoever has a
+    // proposal pending, and whoever appears in the journal.
+    const ids = Array.from(new Set([
+      activeMutation?.createdBy,
+      ...draftHistory.map(entry => entry.editorUserId || entry.actorUserId || entry.createdBy),
+      ...Object.keys(draftOverlays),
+    ].filter(Boolean)));
+    if (!ids.length) {
       setHistoryAuthors({});
       return;
     }
     let active = true;
-    const ids = draftHistory.map(entry => entry.editorUserId || entry.actorUserId || entry.createdBy).filter(Boolean);
     fetchUsersByIds(ids).then(users => {
       if (active) setHistoryAuthors(users || {});
     }).catch(error => console.warn('[ProfileCreationWorkspace] history authors unavailable', error));
     return () => { active = false; };
-  }, [access?.isAdmin, draftHistory]);
-
-  const renderHistoryEntry = entry => {
-    const authorId = entry.editorUserId || entry.actorUserId || entry.createdBy;
-    const author = historyAuthors[authorId] || {};
-    const authorName = [author.name, author.surname].filter(Boolean).join(' ');
-    const values = getHistoryValueRows(entry.change);
-    return <HistoryRow key={entry.entryId}>
-      <HistoryMeta>
-        <span>{entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}</span>
-        <span>· {OVERLAY_HISTORY_ACTION_LABELS[entry.action] || entry.action}</span>
-        <span>· {getFieldLabel(fieldsMap.get(entry.fieldName)) || entry.fieldName}</span>
-      </HistoryMeta>
-      {values.length ? values.map(({ value, deleted }, index) => <HistoryValueRow key={`${deleted}-${value}-${index}`}>
-        <EditableHistoryValue
-          value={value}
-          deleted={deleted}
-          onCommit={editedValue => commitHistoryValue(entry.fieldName, value, editedValue)}
-        />
-        <HistoryKind $deleted={deleted}>{deleted ? 'видалено' : 'додано'}</HistoryKind>
-      </HistoryValueRow>) : <span>{describeOverlayChange(entry.change)}</span>}
-      {authorId && <HistoryMeta><span>Автор: {authorName || 'користувач'}</span><AuthorLink type="button" onClick={() => navigate(`/edit/${authorId}`)}>{authorId}</AuthorLink></HistoryMeta>}
-    </HistoryRow>;
-  };
+  }, [access?.isAdmin, activeMutation?.createdBy, draftHistory, draftOverlays]);
 
   const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
 
-  const renderCreateField = fieldName => {
-    const field = fieldsMap.get(fieldName);
+  // Versions the field no longer shows - neither as its current value nor as a
+  // pending proposal - oldest first, so a name reads Ім'я5 → Ім'я6 → зараз.
+  const renderFieldVersions = (fieldName, currentValues) => {
+    if (!showDraftHistory) return null;
+    const pendingValues = (pendingFieldEdits[fieldName] || []).map(row => row.value);
+    const versions = dropVersionsPresentIn(fieldVersionHistory[fieldName] || [], [...currentValues, ...pendingValues]);
+    if (!versions.length) return null;
+
+    return <FieldTimeline $before>
+      {versions.map(row => <VersionRow key={row.key}>
+        <VersionValue $removed={row.kind === 'removed'}>{row.value}</VersionValue>
+        <FieldActionButton
+          type="button"
+          $tone="restore"
+          disabled={saving}
+          title="Повернути це значення в анкету"
+          aria-label={`Повернути значення в анкету: ${row.value}`}
+          onClick={() => restoreFieldVersion(row)}
+        ><FiCornerLeftDown aria-hidden="true" /></FieldActionButton>
+        <VersionMeta>
+          <span>{row.at ? new Date(row.at).toLocaleString('uk-UA') : '—'}</span>
+          <span>· {OVERLAY_HISTORY_ACTION_LABELS[row.action] || row.action}</span>
+          <span>· {describeAuthor(row.editorUserId, historyAuthors)}</span>
+          {row.editorUserId && <AuthorLink type="button" onClick={() => navigate(`/edit/${row.editorUserId}`)}>{row.editorUserId}</AuthorLink>}
+        </VersionMeta>
+      </VersionRow>)}
+    </FieldTimeline>;
+  };
+
+  const renderFieldPendingEdits = (fieldName, label) => {
+    const rows = pendingFieldEdits[fieldName] || [];
+    if (!rows.length) return null;
+
+    return <FieldTimeline>
+      {rows.map(row => <PendingFieldEdit
+        key={row.key}
+        row={row}
+        label={label}
+        disabled={saving}
+        authorName={describeAuthor(row.editorUserId, historyAuthors)}
+        onAccept={editedValue => acceptFieldEdit(row, editedValue, label)}
+        onReject={() => rejectFieldEdit(row, label)}
+        onRemove={() => removeFieldEditValue(row, label)}
+      />)}
+    </FieldTimeline>;
+  };
+
+  const renderCreateField = (fieldName, { allowUnknown = false } = {}) => {
+    // A field with edits but no entry in the create catalogue still has to be
+    // reviewable, so those fall back to a plain text row named after the field.
+    const field = fieldsMap.get(fieldName) || (allowUnknown ? { name: fieldName } : null);
     if (!field) return null;
     const value = draft?.[fieldName] || '';
     const isTextArea = fieldName === 'moreInfo_main';
+    const label = getFieldLabel(field) || fieldName;
+    const currentValues = toFieldValues(value).map(item => String(item ?? '').trim()).filter(Boolean);
 
-    return <FieldRow key={fieldName}>
-      <FieldLabel>{getFieldLabel(field)}</FieldLabel>
+    return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)}>
+      <FieldLabel>{label}</FieldLabel>
+      {renderFieldVersions(fieldName, currentValues)}
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <FieldChipRow>
           {field.options.map(option => {
@@ -931,6 +1083,7 @@ export const ProfileCreationWorkspace = () => {
           <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
         </FieldControls>
       )}
+      {renderFieldPendingEdits(fieldName, label)}
     </FieldRow>;
   };
 
@@ -941,6 +1094,15 @@ export const ProfileCreationWorkspace = () => {
     return fieldNames.length ? Math.round((filledCount / fieldNames.length) * 100) : 0;
   }, [draft]);
 
+  const draftName = useMemo(() => (
+    [draft?.surname, draft?.name, draft?.fathersname]
+      .flatMap(value => toFieldValues(value))
+      .map(value => String(value ?? '').trim())
+      .filter(Boolean)
+      .join(' ') || 'Новий профіль'
+  ), [draft]);
+  const draftRole = draft?.role || draft?.userRole || '';
+
   const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Мої нові профілі', [access]);
   if (!access) return <Page><Shell>Завантаження…</Shell></Page>;
 
@@ -950,14 +1112,29 @@ export const ProfileCreationWorkspace = () => {
       <HeaderCopy><Title>{heading}</Title></HeaderCopy>
     </Header>
     {draft ? <>
-      <Card>
-        <Status $variant={overlayTarget || editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
-          {overlayTarget ? 'Власні дані' : editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
-        </Status>
+      <DraftHeaderCard>
+        <DraftBadges>
+          <Status $variant={overlayTarget || editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
+            {overlayTarget ? 'Власні дані' : editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+          </Status>
+          {draftRole && <Status $variant="private">{draftRole}</Status>}
+          {reviewingAsAdmin && pendingEditsCount > 0 && <Status $variant="overlay">{pendingEditsCount} непідтверджених правок</Status>}
+        </DraftBadges>
+        {!overlayTarget && <DraftName>{draftName}</DraftName>}
         {overlayTarget
           ? <Meta>Дані буде збережено як ваш оверлей для {overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.</Meta>
           : access.isAdmin
-            ? <TechnicalMeta>cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}</TechnicalMeta>
+            ? <>
+              <TechnicalMeta>
+                cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
+                {activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}
+              </TechnicalMeta>
+              {activeMutation.createdBy && <TechnicalMeta>
+                Автор: {describeAuthor(activeMutation.createdBy, historyAuthors)}{' '}
+                <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>{activeMutation.createdBy}</AuthorLink>
+              </TechnicalMeta>}
+              <DraftContacts>{fieldContacts(draft)}</DraftContacts>
+            </>
             : <Meta>Чернетка{activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}</Meta>}
         {editingSharedDraft && <Meta>
           Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну.
@@ -971,49 +1148,16 @@ export const ProfileCreationWorkspace = () => {
           </ProgressRow>
           <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
         </>}
-      </Card>
-      {!overlayTarget && access.isAdmin && <TopBlockCard>
-        <TopBlock
-          userData={draft}
-          setUsers={() => {}}
-          setShowInfoModal={() => {}}
-          setState={setDraft}
-          setUserIdToDelete={() => {}}
-        />
-      </TopBlockCard>}
-      {!overlayTarget && access.isAdmin && (overlayReviewRows.length > 0 || draftHistory.length > 0) && <ReviewCard>
+      </DraftHeaderCard>
+      {reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0) && <ReviewCard>
         <SectionHeader>
           <span>Правки редакторів</span>
-          <Count aria-label={`${overlayReviewRows.length} правок`}>{overlayReviewRows.length}</Count>
+          <Count aria-label={`${pendingEditsCount} правок`}>{pendingEditsCount}</Count>
         </SectionHeader>
-        {overlayReviewRows.length === 0
-          ? <Meta>Немає непідтверджених правок — усі зміни вже опрацьовано.</Meta>
-          : overlayReviewRows.map(row => <ReviewRow key={row.key}>
-            <ReviewChange>
-              <FieldLabel>{getFieldLabel(fieldsMap.get(row.fieldName)) || row.fieldName}</FieldLabel>
-              <div>{describeOverlayChange(row.change)}</div>
-              <TechnicalMeta>
-                {row.editorUserId}{row.updatedAt ? ` · ${new Date(row.updatedAt).toLocaleString('uk-UA')}` : ''}
-              </TechnicalMeta>
-            </ReviewChange>
-            <ReviewActionsRow>
-              <FieldActionButton
-                type="button"
-                disabled={saving}
-                title="Прийняти цю правку"
-                aria-label={`Прийняти правку по полю ${row.fieldName}`}
-                onClick={() => acceptOverlayChange(row.editorUserId, row.fieldName, row.change)}
-              ><FiCheck aria-hidden="true" /></FieldActionButton>
-              <FieldActionButton
-                type="button"
-                disabled={saving}
-                title="Видалити цю правку"
-                aria-label={`Видалити правку по полю ${row.fieldName}`}
-                onClick={() => discardOverlayChange(row.editorUserId, row.fieldName)}
-              ><FiX aria-hidden="true" /></FieldActionButton>
-            </ReviewActionsRow>
-          </ReviewRow>)}
-        {overlayReviewRows.length > 0 && <Actions>
+        <Meta>{pendingEditsCount === 0
+          ? 'Немає непідтверджених правок — усі зміни вже опрацьовано.'
+          : 'Кожну правку показано в анкеті нижче — біля того поля, якого вона стосується: спочатку старіші версії, потім поточне значення, у кінці — запропоноване. Неприйняті правки не потраплять у профіль і залишаться в черзі.'}</Meta>
+        {pendingEditsCount > 0 && <Actions>
           <AcceptButton disabled={saving} onClick={acceptAllOverlayChanges}>Прийняти всі</AcceptButton>
           <RejectButton disabled={saving} onClick={discardAllOverlayChanges}>Видалити всі</RejectButton>
         </Actions>}
@@ -1022,12 +1166,14 @@ export const ProfileCreationWorkspace = () => {
           aria-expanded={showDraftHistory}
           onClick={() => setShowDraftHistory(previous => !previous)}
         >
-          <FiInfo aria-hidden="true" /> Історія правок ({draftHistory.length})
+          <FiClock aria-hidden="true" /> Історія правок ({draftHistory.length})
           <FiChevronDown aria-hidden="true" style={{ transform: showDraftHistory ? 'rotate(180deg)' : 'none' }} />
         </DisclosureToggle>
-        {showDraftHistory && (draftHistory.length === 0
-          ? <Meta>Історія порожня.</Meta>
-          : draftHistory.map(renderHistoryEntry))}
+        {showDraftHistory && <Meta>
+          {draftHistory.length === 0
+            ? 'Історія порожня.'
+            : 'Попередні версії показано над полями анкети — від найстарішої до найновішої.'}
+        </Meta>}
       </ReviewCard>}
       {overlayTarget && <CommentCard>
         <FieldLabel>Ваш коментар</FieldLabel>
@@ -1041,9 +1187,13 @@ export const ProfileCreationWorkspace = () => {
       {CREATE_FORM_SECTIONS.map(section => (
         <FormSectionCard key={section.key}>
           <FormSectionTitle>{section.title}</FormSectionTitle>
-          {section.fields.map(renderCreateField)}
+          {section.fields.map(fieldName => renderCreateField(fieldName))}
         </FormSectionCard>
       ))}
+      {extraEditedFields.length > 0 && <FormSectionCard>
+        <FormSectionTitle>🗂 Інші поля з правками</FormSectionTitle>
+        {extraEditedFields.map(fieldName => renderCreateField(fieldName, { allowUnknown: true }))}
+      </FormSectionCard>}
       <Card>
         <Actions>
           <SaveButton disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</SaveButton>

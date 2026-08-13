@@ -63,6 +63,7 @@ jest.mock('utils/multiAccountEdits', () => {
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => jest.fn(),
+  useLocation: () => ({ pathname: '/create-profile' }),
   useSearchParams: () => [new URLSearchParams(), jest.fn()],
 }));
 
