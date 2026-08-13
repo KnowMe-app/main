@@ -125,10 +125,10 @@ describe('ProfileCreationWorkspace admin review', () => {
     expect(await screen.findByText('Оля Р.')).toBeInTheDocument();
   });
 
-  it('accepts one proposed value into the draft and settles it in the queue', async () => {
+  it('saves one proposed value into the draft and clears it from the backend', async () => {
     await openDraftAsAdmin();
 
-    fireEvent.click(screen.getByLabelText("Прийняти правку: Ім'я"));
+    fireEvent.click(screen.getByLabelText("Зберегти правку: Ім'я"));
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe("Ім'я7");
@@ -138,43 +138,36 @@ describe('ProfileCreationWorkspace admin review', () => {
       fieldName: 'name',
       historyAction: 'accept',
       settledChange: { from: "Ім'я6", to: "Ім'я7" },
+      purgeHistory: true,
     }));
   });
 
-  it('accepts the corrected value when the admin edits the proposal first', async () => {
+  it('saves the corrected value when the admin edits the proposal first', async () => {
     await openDraftAsAdmin();
 
     fireEvent.change(screen.getByLabelText("Ім'я: запропоноване значення"), { target: { value: "Ім'я8" } });
-    fireEvent.click(screen.getByLabelText("Прийняти правку: Ім'я"));
+    fireEvent.click(screen.getByLabelText("Зберегти правку: Ім'я"));
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe("Ім'я8");
     expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
       settledChange: { from: "Ім'я6", to: "Ім'я8" },
       historyAction: 'accept',
+      purgeHistory: true,
     }));
   });
 
-  it('rejects a proposal without touching the draft data', async () => {
+  it('deletes a proposal, and its memo, without touching the draft data', async () => {
     await openDraftAsAdmin();
 
-    fireEvent.click(screen.getByLabelText("Відхилити правку: Ім'я"));
+    fireEvent.click(screen.getByLabelText("Видалити правку: Ім'я"));
 
     await waitFor(() => expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
       historyAction: 'discard',
       settledChange: { from: "Ім'я6", to: "Ім'я7" },
+      purgeHistory: true,
     })));
     expect(saveCreateProfileMutation).not.toHaveBeenCalled();
-  });
-
-  it('deleting a value strips it from the draft together with what it replaced', async () => {
-    await openDraftAsAdmin();
-
-    fireEvent.click(screen.getByLabelText("Видалити значення з анкети: Ім'я"));
-
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-    expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBeUndefined();
-    expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({ historyAction: 'discard' }));
   });
 
   it('lists superseded versions above the field, oldest first', async () => {

@@ -385,6 +385,53 @@ export const appendOverlayHistory = async ({ cardUserId, editorUserId, action = 
   return entries;
 };
 
+// Every value a change mentions, whatever shape it was stored in. Used to
+// match a settled edit against the journal entries that describe it.
+const changeValueList = change => {
+  if (!isPlainObject(change)) return [];
+
+  const values = [];
+  if ('from' in change || 'to' in change) values.push(change.from, change.to);
+  values.push(...normalizeArray(change.added ?? change.add), ...normalizeArray(change.removed));
+
+  return uniq(values.map(value => String(value ?? '').trim()).filter(Boolean));
+};
+
+// A settled edit must leave nothing behind: once a value has been saved into
+// the card or thrown away, the journal entries that only described that value
+// are deleted too, so the review queue never grows a tail of memos about work
+// that is already done. Entries with no values of their own (`discarded`
+// markers) are always dropped - they are pure bookkeeping.
+export const purgeOverlayHistoryEntries = async ({ cardUserId, editorUserId, fieldName, values = [] }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId || !fieldName) return 0;
+
+  const settledValues = new Set(values.map(value => String(value ?? '').trim()).filter(Boolean));
+
+  try {
+    const historyRef = ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}`);
+    const snapshot = await get(historyRef);
+    if (!snapshot?.exists?.()) return 0;
+
+    const updates = Object.entries(snapshot.val() || {}).reduce((acc, [entryId, entry]) => {
+      if (!isPlainObject(entry) || entry.fieldName !== fieldName) return acc;
+      if (editorUserId && entry.editorUserId && entry.editorUserId !== editorUserId) return acc;
+
+      const entryValues = changeValueList(entry.change);
+      if (settledValues.size && entryValues.length && !entryValues.some(value => settledValues.has(value))) return acc;
+
+      acc[entryId] = null;
+      return acc;
+    }, {});
+
+    if (Object.keys(updates).length) await update(historyRef, updates);
+    return Object.keys(updates).length;
+  } catch (error) {
+    console.warn('[multiAccountEdits] failed to purge overlay history', error);
+    return 0;
+  }
+};
+
 // Admin-only. Newest first, because the review UI reads top-down.
 export const getOverlayHistoryForCard = async cardUserId => {
   const normalizedCardId = normalizeCardKey(cardUserId);
@@ -522,6 +569,11 @@ const hasOverlayChangeValues = change => Boolean(
 // proposed phone numbers must not throw the other two away, so the caller
 // passes what it settled and what remains; the journal records only the
 // settled part, under the action that settled it.
+//
+// `purgeHistory` inverts that last part: instead of writing one more journal
+// entry, the entries about the settled value are deleted. That is what the
+// review UI's save/delete buttons use - a settled edit disappears from the
+// backend completely rather than turning into another line of history.
 export const settleOverlayFieldValue = async ({
   editorUserId,
   cardUserId,
@@ -529,6 +581,7 @@ export const settleOverlayFieldValue = async ({
   settledChange,
   remainingChange,
   historyAction = 'discard',
+  purgeHistory = false,
 }) => {
   if (!editorUserId || !cardUserId || !fieldName) return;
 
@@ -544,6 +597,17 @@ export const settleOverlayFieldValue = async ({
   }
 
   await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
+
+  if (purgeHistory) {
+    await purgeOverlayHistoryEntries({
+      cardUserId: normalizedCardId,
+      editorUserId,
+      fieldName,
+      values: changeValueList(settledChange),
+    });
+    return;
+  }
+
   await appendOverlayHistory({
     cardUserId: normalizedCardId,
     editorUserId,
