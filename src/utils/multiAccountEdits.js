@@ -746,6 +746,19 @@ export const removeAllOverlaysForCard = async (cardUserId, { historyAction = 'di
   if (!orderedOverlays.length) return null;
 
   for (const overlay of orderedOverlays) {
+    if (historyAction === 'accept') {
+      // Accepted values are canonical now. Remove their earlier audit rows
+      // instead of adding another permanent "accept" row to the journal.
+      for (const [fieldName, change] of Object.entries(overlay.fields || {})) {
+        await purgeOverlayHistoryEntries({
+          cardUserId: normalizedCardId,
+          editorUserId: overlay.editorUserId,
+          fieldName,
+          values: changeValueList(change),
+        });
+      }
+      continue;
+    }
     await appendOverlayHistory({
       cardUserId: normalizedCardId,
       editorUserId: overlay.editorUserId,

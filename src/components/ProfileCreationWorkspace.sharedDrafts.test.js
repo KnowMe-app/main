@@ -53,15 +53,13 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('setDraftHistory([...overlayHistory, ...revisionHistory]');
   });
 
-  it('gives the admin save and delete per value plus accept-all and delete-all', () => {
+  it('gives the admin save and delete per value without bulk settlement', () => {
     expect(source).toContain('const saveFieldEdit = (row, editedValue, label) =>');
     expect(source).toContain('const deleteFieldEdit = (row, label) =>');
-    expect(source).toContain('const acceptAllOverlayChanges = () =>');
-    expect(source).toContain('const discardAllOverlayChanges = () =>');
-    expect(source).toContain("historyAction: 'accept',");
-    expect(source).toContain("historyAction: 'discard',");
-    expect(source).toContain('Прийняти всі');
-    expect(source).toContain('Видалити всі');
+    expect(source).not.toContain('const acceptAllOverlayChanges = () =>');
+    expect(source).not.toContain('const discardAllOverlayChanges = () =>');
+    expect(source).not.toContain('Прийняти всі');
+    expect(source).not.toContain('Видалити всі');
   });
 
   it('settles an edit by clearing it from the backend instead of journalling it', () => {
@@ -74,6 +72,13 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('await acceptCreateProfileMutation({');
     expect(source).toContain('Зберегти чернетку');
     expect(source).toContain('<GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>');
+  });
+
+  it('waits for blur autosave and publishes the accepted base at its latest revision', () => {
+    expect(source).toContain('await saveQueueRef.current;');
+    expect(source).toContain('const current = activeMutationRef.current;');
+    expect(source).toContain('expectedRevision: current.revision,');
+    expect(source).toContain('finalData: draftBaseRef.current || current.data,');
   });
 
   it('accepting a corrected value stores what the admin typed, not what was proposed', () => {

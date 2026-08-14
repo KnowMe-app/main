@@ -20,7 +20,6 @@ import {
   getOverlayHistoryForCard,
   getOverlaysForCard,
   purgeOverlayHistoryEntries,
-  removeAllOverlaysForCard,
   saveOverlayForUserCard,
   settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
@@ -80,17 +79,6 @@ const SaveButton = styled(Button)`
   border-color: transparent;
   color: #fff;
   box-shadow: 0 10px 24px var(--km-accent-ring);
-`;
-const AcceptButton = styled(Button)`
-  background: linear-gradient(135deg, #2E9B55 0%, #57C27D 100%);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 10px 24px rgba(46, 155, 85, .25);
-`;
-const RejectButton = styled(Button)`
-  background: var(--km-danger-bg);
-  border-color: var(--km-danger-border);
-  color: var(--km-danger);
 `;
 const GhostButton = styled(Button)`
   background: transparent;
@@ -949,38 +937,27 @@ export const ProfileCreationWorkspace = () => {
     'Не вдалося видалити правку',
   );
 
-  const acceptAllOverlayChanges = () => runOverlayReviewAction(
-    async () => {
-      await persistDraftData(
-        applyOverlaysToCard(draftBaseRef.current || {}, draftOverlaysRef.current || {}),
-        { skipRevisionHistory: true },
-      );
-      await removeAllOverlaysForCard(activeMutationRef.current.cardId, { historyAction: 'accept' });
-    },
-    'Усі правки прийнято',
-    'Не вдалося прийняти правки',
-  );
-
-  const discardAllOverlayChanges = () => runOverlayReviewAction(
-    () => removeAllOverlaysForCard(activeMutationRef.current.cardId, { historyAction: 'discard' }),
-    'Усі правки видалено',
-    'Не вдалося видалити правки',
-  );
-
-  // "Зберегти чернетку" is the one action that turns the draft into a real
-  // card: it writes it to newUsers, runs the standard search indexes over it,
-  // and hands it to everybody who worked on it - the author and every editor
-  // who contributed through an overlay - so it stays in their lists.
+  // "Зберегти чернетку" is the one action that turns the accepted base draft
+  // into a real users card. Pending editor overlays stay pending: publishing
+  // must neither apply nor remove them.
   const saveDraftAsCard = async () => {
     setSaving(true);
     try {
+      // Clicking the button blurs the focused field. That blur queues an
+      // autosave which increments the revision, so publishing must wait for
+      // it and then read the refs updated by that save. Using render-state
+      // here produced a false REVISION_CONFLICT against our own autosave.
+      await saveQueueRef.current;
+      const current = activeMutationRef.current;
       await acceptCreateProfileMutation({
-        cardId: activeMutation.cardId,
-        creatorUid: activeMutation.createdBy,
-        expectedRevision: activeMutation.revision,
-        finalData: draft,
+        cardId: current.cardId,
+        creatorUid: current.createdBy,
+        expectedRevision: current.revision,
+        // The base contains the author's/admin's accepted data only. The
+        // visible stacked draft may also contain unaccepted editor overlays.
+        finalData: draftBaseRef.current || current.data,
       });
-      toast.success('Чернетку збережено як картку — вона в newUsers і проіндексована');
+      toast.success('Чернетку збережено як картку — вона в users і проіндексована');
       closeEditor();
       await refresh(uid, access);
     } catch (error) {
@@ -1214,10 +1191,6 @@ export const ProfileCreationWorkspace = () => {
         <Meta>{pendingEditsCount === 0
           ? 'Немає непідтверджених правок — усі зміни вже опрацьовано.'
           : 'Кожну зміну показано біля її поля: актуальне значення розташоване вгорі, а попередні — нижче, від найновішого до оригінального. Неприйняті зміни не потраплять у профіль і залишаться в черзі.'}</Meta>
-        {pendingEditsCount > 0 && <Actions>
-          <AcceptButton disabled={saving} onClick={acceptAllOverlayChanges}>Прийняти всі</AcceptButton>
-          <RejectButton disabled={saving} onClick={discardAllOverlayChanges}>Видалити всі</RejectButton>
-        </Actions>}
         <DisclosureToggle
           type="button"
           aria-expanded={showDraftHistory}
