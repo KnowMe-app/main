@@ -19,8 +19,8 @@ import {
   buildOverlayFromDraft,
   getOverlayHistoryForCard,
   getOverlaysForCard,
+  purgeOverlayHistoryEntries,
   removeAllOverlaysForCard,
-  removeOverlayHistoryEntry,
   saveOverlayForUserCard,
   settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
@@ -37,7 +37,7 @@ import {
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
   loadProfileMutationHistory,
-  removeProfileMutationHistoryEntry,
+  purgeProfileMutationHistoryValue,
   loadSharedProfileMutations,
   reserveProfileCardId,
   saveCreateProfileMutation,
@@ -783,7 +783,7 @@ export const ProfileCreationWorkspace = () => {
     const nextDraft = { ...(draftRef.current || {}), [fieldName]: value };
     draftRef.current = nextDraft;
     setDraft(nextDraft);
-    persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
+    return persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
   };
 
   const toFieldValues = value => Array.isArray(value) ? value : [value ?? ''];
@@ -799,20 +799,39 @@ export const ProfileCreationWorkspace = () => {
     // The form is the source of truth for its current rows. Superseded values
     // belong in the overlay journal, not back in the editor-visible draft.
     const nextValues = values.length ? [...values] : [''];
-    commitFieldValue(fieldName, nextValues);
+    return commitFieldValue(fieldName, nextValues);
   };
 
   // A superseded value from the timeline goes back into the field as an extra
   // row, next to whatever is there now - restoring must never silently drop
   // the current value.
-  const restoreFieldVersion = (row, editedValue = row.value) => {
+  const purgeFieldVersionEverywhere = async (row, values) => {
+    const cardId = activeMutationRef.current?.cardId;
+    if (!cardId) return;
+    await Promise.all([
+      purgeOverlayHistoryEntries({ cardUserId: cardId, fieldName: row.fieldName, values }),
+      purgeProfileMutationHistoryValue({ cardId, fieldName: row.fieldName, values }),
+    ]);
+    const matchedValues = new Set(values.map(value => String(value ?? '').trim()).filter(Boolean));
+    setDraftHistory(previous => previous.filter(entry => {
+      if (entry.fieldName !== row.fieldName) return true;
+      const entryValues = Object.values(buildFieldVersionHistory([entry]))
+        .flat()
+        .map(version => String(version.value ?? '').trim());
+      return !entryValues.some(value => matchedValues.has(value));
+    }));
+  };
+
+  const restoreFieldVersion = async (row, editedValue = row.value) => {
     const normalizedValue = String(editedValue ?? '').trim();
     if (!normalizedValue) return;
     const values = toFieldValues(draftRef.current?.[row.fieldName])
       .map(value => String(value ?? '').trim())
       .filter(Boolean);
-    if (values.includes(normalizedValue)) return;
-    commitDraftFieldItems(row.fieldName, [...values, normalizedValue]);
+    if (!values.includes(normalizedValue)) {
+      await commitDraftFieldItems(row.fieldName, [...values, normalizedValue]);
+    }
+    await purgeFieldVersionEverywhere(row, [row.value, normalizedValue]);
   };
 
   const deleteFieldVersion = async row => {
@@ -821,16 +840,8 @@ export const ProfileCreationWorkspace = () => {
 
     setSaving(true);
     try {
-      if (row.historySource === 'revision') {
-        await removeProfileMutationHistoryEntry({ cardId: current.cardId, entryId: row.backendEntryId });
-      } else {
-        await removeOverlayHistoryEntry({ cardUserId: current.cardId, entryId: row.backendEntryId });
-      }
-      setDraftHistory(previous => previous.filter(entry => !(
-        (entry.backendEntryId || entry.entryId) === row.backendEntryId
-        && (entry.historySource || 'overlay') === row.historySource
-      )));
-      toast.success('Запис видалено з історії');
+      await purgeFieldVersionEverywhere(row, [row.value]);
+      toast.success('Значення видалено з усієї історії');
     } catch (error) {
       reportSaveError(error, 'Не вдалося видалити запис з історії');
     } finally {

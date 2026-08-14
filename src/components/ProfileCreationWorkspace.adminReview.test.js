@@ -4,12 +4,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
-import { getOverlayHistoryForCard, getOverlaysForCard, removeOverlayHistoryEntry, settleOverlayFieldValue } from 'utils/multiAccountEdits';
+import { getOverlayHistoryForCard, getOverlaysForCard, purgeOverlayHistoryEntries, settleOverlayFieldValue } from 'utils/multiAccountEdits';
 import {
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
   loadProfileMutationHistory,
-  removeProfileMutationHistoryEntry,
+  purgeProfileMutationHistoryValue,
   loadSharedProfileMutations,
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
@@ -63,7 +63,7 @@ jest.mock('utils/profileMutations', () => ({
   loadAllCreateProfileMutations: jest.fn(),
   loadOwnProfileMutations: jest.fn(),
   loadProfileMutationHistory: jest.fn(),
-  removeProfileMutationHistoryEntry: jest.fn(),
+  purgeProfileMutationHistoryValue: jest.fn(),
   loadSharedProfileMutations: jest.fn(),
   rejectCreateProfileMutation: jest.fn(),
   reserveProfileCardId: jest.fn(() => 'new-card'),
@@ -77,7 +77,7 @@ jest.mock('utils/multiAccountEdits', () => {
     getOverlayHistoryForCard: jest.fn(),
     getOverlaysForCard: jest.fn(),
     removeAllOverlaysForCard: jest.fn(),
-    removeOverlayHistoryEntry: jest.fn(),
+    purgeOverlayHistoryEntries: jest.fn(),
     saveOverlayForUserCard: jest.fn(),
     settleOverlayFieldValue: jest.fn(),
   };
@@ -113,8 +113,8 @@ beforeEach(() => {
     'editor-1': { updatedAt: 30, editorUserId: 'editor-1', fields: { name: { from: "Ім'я6", to: "Ім'я7" } } },
   });
   settleOverlayFieldValue.mockResolvedValue(undefined);
-  removeOverlayHistoryEntry.mockResolvedValue(undefined);
-  removeProfileMutationHistoryEntry.mockResolvedValue(undefined);
+  purgeOverlayHistoryEntries.mockResolvedValue(undefined);
+  purgeProfileMutationHistoryValue.mockResolvedValue(undefined);
 });
 
 describe('ProfileCreationWorkspace admin review', () => {
@@ -209,22 +209,30 @@ describe('ProfileCreationWorkspace admin review', () => {
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toEqual(["Ім'я6", "Ім'я8"]);
+    expect(purgeOverlayHistoryEntries).toHaveBeenCalledWith({
+      cardUserId: 'card-1', fieldName: 'name', values: ["Ім'я5", "Ім'я8"],
+    });
+    expect(purgeProfileMutationHistoryValue).toHaveBeenCalledWith({
+      cardId: 'card-1', fieldName: 'name', values: ["Ім'я5", "Ім'я8"],
+    });
   });
 
-  it('deletes one overlay history input from the backend when its cross is clicked', async () => {
+  it('deletes the value from both complete backend histories when its cross is clicked', async () => {
     await openDraftAsAdmin();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
     fireEvent.click(await screen.findByLabelText("Видалити з історії: Ім'я5"));
 
-    await waitFor(() => expect(removeOverlayHistoryEntry).toHaveBeenCalledWith({
-      cardUserId: 'card-1',
-      entryId: 'h1',
+    await waitFor(() => expect(purgeOverlayHistoryEntries).toHaveBeenCalledWith({
+      cardUserId: 'card-1', fieldName: 'name', values: ["Ім'я5"],
     }));
+    expect(purgeProfileMutationHistoryValue).toHaveBeenCalledWith({
+      cardId: 'card-1', fieldName: 'name', values: ["Ім'я5"],
+    });
     expect(screen.queryByLabelText("Ім'я: значення з історії")).not.toBeInTheDocument();
   });
 
-  it('deletes a direct revision from its own backend journal', async () => {
+  it('uses the same whole-history purge for a direct revision', async () => {
     getOverlayHistoryForCard.mockResolvedValue([]);
     loadProfileMutationHistory.mockResolvedValue([{
       entryId: 'revision-r1',
@@ -241,10 +249,9 @@ describe('ProfileCreationWorkspace admin review', () => {
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
     fireEvent.click(await screen.findByLabelText("Видалити з історії: Ім'я5"));
 
-    await waitFor(() => expect(removeProfileMutationHistoryEntry).toHaveBeenCalledWith({
-      cardId: 'card-1',
-      entryId: 'r1',
+    await waitFor(() => expect(purgeProfileMutationHistoryValue).toHaveBeenCalledWith({
+      cardId: 'card-1', fieldName: 'name', values: ["Ім'я5"],
     }));
-    expect(removeOverlayHistoryEntry).not.toHaveBeenCalled();
+    expect(purgeOverlayHistoryEntries).toHaveBeenCalled();
   });
 });
