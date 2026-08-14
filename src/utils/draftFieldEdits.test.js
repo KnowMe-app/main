@@ -34,11 +34,11 @@ describe('buildChangeValueRows', () => {
     ]);
   });
 
-  it('treats every value in an array replacement as replaced', () => {
+  it('treats every value in an array replacement as replaced while retaining its source side', () => {
     expect(buildChangeValueRows({ added: ['380501112233', '380502223344'], removed: ['380503334455'] })).toEqual([
-      { kind: 'replaced', value: '380501112233', previousValue: '' },
-      { kind: 'replaced', value: '380502223344', previousValue: '' },
-      { kind: 'replaced', value: '380503334455', previousValue: '' },
+      { kind: 'replaced', sourceKind: 'added', value: '380501112233', previousValue: '' },
+      { kind: 'replaced', sourceKind: 'added', value: '380502223344', previousValue: '' },
+      { kind: 'replaced', sourceKind: 'removed', value: '380503334455', previousValue: '' },
     ]);
   });
 
@@ -177,6 +177,17 @@ describe('splitOverlayChangeValue', () => {
     expect(splitOverlayChangeValue({ removed: ['old'] }, { kind: 'removed', value: 'old' })).toEqual({
       settled: { removed: ['old'] },
       remaining: null,
+    });
+  });
+
+  it('uses the retained source side for a removed replacement row', () => {
+    const change = { added: ['new'], removed: ['old'] };
+
+    expect(splitOverlayChangeValue(change, {
+      kind: 'replaced', sourceKind: 'removed', value: 'old',
+    })).toEqual({
+      settled: { removed: ['old'] },
+      remaining: { added: ['new'] },
     });
   });
 });

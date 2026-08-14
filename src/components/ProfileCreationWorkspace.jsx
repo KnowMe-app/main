@@ -255,10 +255,11 @@ const DraftContacts = styled.div`
 // відредагований формат".
 const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, onOpenAuthor }) => {
   const [value, setValue] = useState(row.value);
+  const isRemoval = row.sourceKind === 'removed' || row.kind === 'removed';
 
   useEffect(() => setValue(row.value), [row.value]);
 
-  const isEdited = row.kind !== 'removed' && value.trim() !== row.value;
+  const isEdited = !isRemoval && value.trim() !== row.value;
 
   return <EditCard $kind={row.kind}>
     {row.previousValue ? <EditHead>
@@ -269,6 +270,7 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
         <EditValueInput
           value={value}
           $kind={row.kind}
+          readOnly={isRemoval}
           aria-label={`${label}: запропоноване значення`}
           onChange={event => setValue(event.target.value)}
           onKeyDown={event => {
