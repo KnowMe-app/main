@@ -4,11 +4,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
-import { getOverlayHistoryForCard, getOverlaysForCard, settleOverlayFieldValue } from 'utils/multiAccountEdits';
+import { getOverlayHistoryForCard, getOverlaysForCard, removeOverlayHistoryEntry, settleOverlayFieldValue } from 'utils/multiAccountEdits';
 import {
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
   loadProfileMutationHistory,
+  removeProfileMutationHistoryEntry,
   loadSharedProfileMutations,
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
@@ -62,6 +63,7 @@ jest.mock('utils/profileMutations', () => ({
   loadAllCreateProfileMutations: jest.fn(),
   loadOwnProfileMutations: jest.fn(),
   loadProfileMutationHistory: jest.fn(),
+  removeProfileMutationHistoryEntry: jest.fn(),
   loadSharedProfileMutations: jest.fn(),
   rejectCreateProfileMutation: jest.fn(),
   reserveProfileCardId: jest.fn(() => 'new-card'),
@@ -75,6 +77,7 @@ jest.mock('utils/multiAccountEdits', () => {
     getOverlayHistoryForCard: jest.fn(),
     getOverlaysForCard: jest.fn(),
     removeAllOverlaysForCard: jest.fn(),
+    removeOverlayHistoryEntry: jest.fn(),
     saveOverlayForUserCard: jest.fn(),
     settleOverlayFieldValue: jest.fn(),
   };
@@ -110,6 +113,8 @@ beforeEach(() => {
     'editor-1': { updatedAt: 30, editorUserId: 'editor-1', fields: { name: { from: "Ім'я6", to: "Ім'я7" } } },
   });
   settleOverlayFieldValue.mockResolvedValue(undefined);
+  removeOverlayHistoryEntry.mockResolvedValue(undefined);
+  removeProfileMutationHistoryEntry.mockResolvedValue(undefined);
 });
 
 describe('ProfileCreationWorkspace admin review', () => {
@@ -179,6 +184,54 @@ describe('ProfileCreationWorkspace admin review', () => {
     // genuinely superseded Ім'я5 remains as history.
     const restoreButtons = await screen.findAllByLabelText(/Повернути значення в анкету/);
     expect(restoreButtons).toHaveLength(1);
-    expect(screen.getByText("Ім'я5")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ім'я: значення з історії")).toHaveValue("Ім'я5");
+  });
+
+  it('restores the value edited directly in the historical input', async () => {
+    await openDraftAsAdmin();
+    fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
+
+    fireEvent.change(await screen.findByLabelText("Ім'я: значення з історії"), { target: { value: " Ім'я8 " } });
+    fireEvent.click(screen.getByLabelText(/Повернути значення в анкету/));
+
+    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
+    expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toEqual(["Ім'я6", "Ім'я8"]);
+  });
+
+  it('deletes one overlay history input from the backend when its cross is clicked', async () => {
+    await openDraftAsAdmin();
+    fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
+
+    fireEvent.click(await screen.findByLabelText("Видалити з історії: Ім'я5"));
+
+    await waitFor(() => expect(removeOverlayHistoryEntry).toHaveBeenCalledWith({
+      cardUserId: 'card-1',
+      entryId: 'h1',
+    }));
+    expect(screen.queryByLabelText("Ім'я: значення з історії")).not.toBeInTheDocument();
+  });
+
+  it('deletes a direct revision from its own backend journal', async () => {
+    getOverlayHistoryForCard.mockResolvedValue([]);
+    loadProfileMutationHistory.mockResolvedValue([{
+      entryId: 'revision-r1',
+      backendEntryId: 'r1',
+      historySource: 'revision',
+      fieldName: 'name',
+      at: 10,
+      action: 'edit',
+      actorUid: 'author-1',
+      change: { from: '', to: "Ім'я5" },
+    }]);
+
+    await openDraftAsAdmin();
+    fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
+    fireEvent.click(await screen.findByLabelText("Видалити з історії: Ім'я5"));
+
+    await waitFor(() => expect(removeProfileMutationHistoryEntry).toHaveBeenCalledWith({
+      cardId: 'card-1',
+      entryId: 'r1',
+    }));
+    expect(removeOverlayHistoryEntry).not.toHaveBeenCalled();
   });
 });
