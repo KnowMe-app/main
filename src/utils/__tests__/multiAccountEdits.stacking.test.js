@@ -259,6 +259,11 @@ describe('admin review actions', () => {
       phone: ['111', '222'],
     }));
     expect(remove).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/edits/card-1' }));
+    const journalled = update.mock.calls
+      .flatMap(([, updates]) => Object.values(updates || {}))
+      .filter(entry => entry && typeof entry === 'object' && entry.action);
+    expect(journalled).toEqual([]);
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/editsHistory/card-1' }));
   });
 
   it('discards the whole queue without writing anything to the card', async () => {

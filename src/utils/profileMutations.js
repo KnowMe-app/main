@@ -1,7 +1,7 @@
 import { get, push, ref, remove, runTransaction, update } from 'firebase/database';
 
 import { database, syncUserSearchKeyIndex } from 'components/config';
-import { buildOverlayFromDraft, getCardContributorIds } from './multiAccountEdits';
+import { buildOverlayFromDraft, getCardContributorIds, getOverlaysForCard } from './multiAccountEdits';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdRecordKey,
@@ -311,7 +311,7 @@ export const loadGrantedCreatedProfiles = async creatorUid => {
   const snapshot = await get(ref(database, `users/${creatorUid}/createdProfileCardIds`));
   const ids = snapshot.exists() ? Object.keys(snapshot.val() || {}) : [];
   const profiles = await Promise.all(ids.map(async cardId => {
-    const profileSnapshot = await get(ref(database, `newUsers/${cardId}`));
+    const profileSnapshot = await get(ref(database, `users/${cardId}`));
     return profileSnapshot.exists() ? { userId: cardId, ...profileSnapshot.val() } : null;
   }));
   return profiles.filter(Boolean);
@@ -378,24 +378,41 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     ), { applyLocally: false });
     throw error;
   }
-  // The author is not the only one who worked on the card: every editor who
-  // contributed through an overlay keeps it in their own list too, so
-  // publication does not take the card away from the people who filled it in.
-  const contributorIds = await getCardContributorIds(cardId).catch(error => {
-    console.warn('[profileMutations] card contributors unavailable', error);
-    return [];
-  });
+  // Keep the per-editor convenience lists for the author and contributors.
+  // The canonical card itself lives in users, which is readable by every
+  // editor; these grants are no longer the card's access-control boundary.
+  const [contributorIds, pendingOverlays] = await Promise.all([
+    getCardContributorIds(cardId).catch(error => {
+      console.warn('[profileMutations] card contributors unavailable', error);
+      return [];
+    }),
+    getOverlaysForCard(cardId).catch(error => {
+      console.warn('[profileMutations] pending overlays unavailable', error);
+      return {};
+    }),
+  ]);
   const accessGrants = Array.from(new Set([mutation.createdBy, ...contributorIds]))
     .filter(Boolean)
     .reduce((grants, editorUserId) => {
       grants[`users/${editorUserId}/createdProfileCardIds/${cardId}`] = true;
       return grants;
     }, {});
+  // Once the canonical card is public in users, unresolved proposals are a
+  // private admin review queue. Keep their fields intact and mark only the
+  // existing editor nodes; non-admin profile screens ignore this marker.
+  const pendingOverlayVisibility = Object.keys(pendingOverlays).reduce((updates, editorUserId) => {
+    updates[`multiData/edits/${cardId}/${editorUserId}/adminOnly`] = true;
+    return updates;
+  }, {});
 
   await update(ref(database), {
-    [`newUsers/${cardId}`]: acceptedProfile,
+    [`users/${cardId}`]: acceptedProfile,
     ...accessGrants,
+    ...pendingOverlayVisibility,
     [mutationPath]: { ...mutation, status: 'accepted' },
+    // Every revision in this journal is now part of the accepted base card.
+    // Pending editor changes use edits/editsHistory and remain untouched.
+    [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: null,
   });
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;

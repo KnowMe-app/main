@@ -2168,6 +2168,7 @@ export const ProfileForm = ({
 
         Object.entries(rawValue || {}).forEach(([editorUserId, overlay]) => {
           if (editorUserId !== currentEditorId) return;
+          if (overlay?.adminOnly) return;
 
           const allFields = overlay?.fields || {};
 
@@ -2419,6 +2420,7 @@ export const ProfileForm = ({
             if (shouldShowOwnEditorOnly && editorUserId !== currentEditorId) {
               return acc;
             }
+            if (shouldShowOwnEditorOnly && overlay?.adminOnly) return acc;
 
             const allFields = overlay?.fields || {};
 
