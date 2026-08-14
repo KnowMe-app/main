@@ -18,6 +18,12 @@ const EDITS_ROOT = 'multiData/edits';
 // moment its author edits the same field again. Only admins read it - other
 // editors see the stacked result, never who changed what or what came before.
 const EDITS_HISTORY_ROOT = 'multiData/editsHistory';
+// A durable roster of everybody who has ever edited a card. The overlay node
+// is emptied as soon as an edit is settled - and its journal entries are
+// purged with it - so by the time the card is published there is nothing left
+// to tell who worked on it. Those editors must keep access to the card they
+// helped build, so their ids are recorded here once and never removed.
+const EDITS_CONTRIBUTORS_ROOT = 'multiData/editsContributors';
 const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt', 'cacheVersion']);
 
 const isPlainObject = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -190,12 +196,56 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 
   await set(cardRef, { fields: sanitized, updatedAt: Date.now(), cardUserId: normalizedCardId, editorUserId });
 
+  await rememberCardContributor({ cardUserId: normalizedCardId, editorUserId });
+
   await appendOverlayHistory({
     cardUserId: normalizedCardId,
     editorUserId,
     action: 'edit',
     fields: diffOverlayFields(previousFields, sanitized),
   });
+};
+
+// Best-effort by design, like the journal: an editor's save must not fail
+// because the roster could not be written.
+export const rememberCardContributor = async ({ cardUserId, editorUserId }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId || !editorUserId) return false;
+
+  try {
+    await update(ref2(database, `${EDITS_CONTRIBUTORS_ROOT}/${normalizedCardId}`), {
+      [editorUserId]: Date.now(),
+    });
+    return true;
+  } catch (error) {
+    console.warn('[multiAccountEdits] failed to remember card contributor', error);
+    return false;
+  }
+};
+
+// Everybody who should keep access to the card once it is published: the
+// roster above, plus whoever still has an unsettled overlay on it (a card
+// edited before the roster existed has only the latter).
+export const getCardContributorIds = async cardUserId => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return [];
+
+  const contributors = new Set();
+
+  try {
+    const snapshot = await get(ref2(database, `${EDITS_CONTRIBUTORS_ROOT}/${normalizedCardId}`));
+    if (snapshot?.exists?.()) Object.keys(snapshot.val() || {}).forEach(editorUserId => contributors.add(editorUserId));
+  } catch (error) {
+    console.warn('[multiAccountEdits] contributors roster unavailable', error);
+  }
+
+  try {
+    Object.keys(await getOverlaysForCard(normalizedCardId)).forEach(editorUserId => contributors.add(editorUserId));
+  } catch (error) {
+    console.warn('[multiAccountEdits] pending overlays unavailable', error);
+  }
+
+  return Array.from(contributors).filter(Boolean);
 };
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {

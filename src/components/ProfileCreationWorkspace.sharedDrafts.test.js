@@ -68,11 +68,11 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('purgeHistory: true,');
   });
 
-  it('drops the bulk save/accept/reject buttons under the questionnaire', () => {
-    expect(source).not.toContain('const accept = async () =>');
-    expect(source).not.toContain('const reject = async () =>');
-    expect(source).not.toContain('acceptCreateProfileMutation');
+  it('keeps only the publish step under the questionnaire, named after what it does', () => {
     expect(source).not.toContain('rejectCreateProfileMutation');
+    expect(source).toContain('const saveDraftAsCard = async () =>');
+    expect(source).toContain('await acceptCreateProfileMutation({');
+    expect(source).toContain('Зберегти чернетку');
     expect(source).toContain('<GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>');
   });
 

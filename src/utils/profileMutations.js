@@ -1,7 +1,7 @@
 import { get, push, ref, runTransaction, update } from 'firebase/database';
 
 import { database, syncUserSearchKeyIndex } from 'components/config';
-import { buildOverlayFromDraft } from './multiAccountEdits';
+import { buildOverlayFromDraft, getCardContributorIds } from './multiAccountEdits';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdRecordKey,
@@ -329,9 +329,23 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     ), { applyLocally: false });
     throw error;
   }
+  // The author is not the only one who worked on the card: every editor who
+  // contributed through an overlay keeps it in their own list too, so
+  // publication does not take the card away from the people who filled it in.
+  const contributorIds = await getCardContributorIds(cardId).catch(error => {
+    console.warn('[profileMutations] card contributors unavailable', error);
+    return [];
+  });
+  const accessGrants = Array.from(new Set([mutation.createdBy, ...contributorIds]))
+    .filter(Boolean)
+    .reduce((grants, editorUserId) => {
+      grants[`users/${editorUserId}/createdProfileCardIds/${cardId}`] = true;
+      return grants;
+    }, {});
+
   await update(ref(database), {
     [`newUsers/${cardId}`]: acceptedProfile,
-    [`users/${mutation.createdBy}/createdProfileCardIds/${cardId}`]: true,
+    ...accessGrants,
     [mutationPath]: { ...mutation, status: 'accepted' },
   });
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});

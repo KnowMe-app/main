@@ -82,7 +82,6 @@ describe('multiAccountEdits storage structure', () => {
       fields: { phone: { removed: ['111'] } },
     });
 
-    expect(update).toHaveBeenCalledTimes(1);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
       {
@@ -94,6 +93,23 @@ describe('multiAccountEdits storage structure', () => {
           change: { removed: ['111'] },
         }),
       },
+    );
+  });
+
+  // The roster outlives both the overlay and the journal: when the card is
+  // published, it is the only record of who is entitled to keep it.
+  it('records the editor in the card contributor roster on every save', async () => {
+    get.mockResolvedValueOnce({ exists: () => false });
+
+    await saveOverlayForUserCard({
+      editorUserId: 'editor-1',
+      cardUserId: 'card-1',
+      fields: { phone: { added: ['222'] } },
+    });
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/editsContributors/card-1' }),
+      { 'editor-1': expect.any(Number) },
     );
   });
 

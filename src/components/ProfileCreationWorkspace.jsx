@@ -31,6 +31,7 @@ import {
   withEditedValue,
 } from 'utils/draftFieldEdits';
 import {
+  acceptCreateProfileMutation,
   getEffectiveProfile,
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
@@ -71,6 +72,12 @@ const Button = styled.button`
   &:active:not(:disabled) { transform:translateY(1px); }
   &:disabled { background:color-mix(in srgb, var(--km-muted) 16%, var(--km-card)); color:var(--km-muted); box-shadow:none; cursor:not-allowed; }
   @media (prefers-reduced-motion: reduce) { transition:none; }
+`;
+const SaveButton = styled(Button)`
+  background: linear-gradient(135deg, #E8791A 0%, #F5A24B 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 10px 24px var(--km-accent-ring);
 `;
 const AcceptButton = styled(Button)`
   background: linear-gradient(135deg, #2E9B55 0%, #57C27D 100%);
@@ -873,6 +880,29 @@ export const ProfileCreationWorkspace = () => {
     'Не вдалося видалити правки',
   );
 
+  // "Зберегти чернетку" is the one action that turns the draft into a real
+  // card: it writes it to newUsers, runs the standard search indexes over it,
+  // and hands it to everybody who worked on it - the author and every editor
+  // who contributed through an overlay - so it stays in their lists.
+  const saveDraftAsCard = async () => {
+    setSaving(true);
+    try {
+      await acceptCreateProfileMutation({
+        cardId: activeMutation.cardId,
+        creatorUid: activeMutation.createdBy,
+        expectedRevision: activeMutation.revision,
+        finalData: draft,
+      });
+      toast.success('Чернетку збережено як картку — вона в newUsers і проіндексована');
+      closeEditor();
+      await refresh(uid, access);
+    } catch (error) {
+      reportSaveError(error, error?.message === 'REVISION_CONFLICT'
+        ? 'Автор уже оновив чернетку. Перевірте нову версію.'
+        : 'Не вдалося зберегти чернетку як картку');
+    } finally { setSaving(false); }
+  };
+
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
 
   // Every pending proposal and every superseded value, keyed by the field it
@@ -1137,11 +1167,17 @@ export const ProfileCreationWorkspace = () => {
         <FormSectionTitle>🗂 Інші поля з правками</FormSectionTitle>
         {extraEditedFields.map(fieldName => renderCreateField(fieldName, { allowUnknown: true }))}
       </FormSectionCard>}
-      {/* Зберегти / Прийняти / Відхилити are gone: every field already saves
-          itself on blur, so those three said nothing about what actually
-          happened. Closing is the only action left here. */}
+      {/* Every field already saves itself on blur, so the old Зберегти /
+          Прийняти / Відхилити row said nothing about what actually happened.
+          What is left is the one step that is not automatic: turning the
+          finished draft into a card. */}
       <Card>
         <Actions>
+          {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && (
+            <SaveButton disabled={saving} onClick={saveDraftAsCard}>
+              {saving ? 'Збереження…' : 'Зберегти чернетку'}
+            </SaveButton>
+          )}
           <GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>
         </Actions>
       </Card>
