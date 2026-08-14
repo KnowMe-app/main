@@ -72,6 +72,8 @@ describe('ProfileCreationWorkspace shared drafts', () => {
   });
 
   it('shows every edit inside the questionnaire instead of a separate review list', () => {
+    const editorNavigation = ['navigate(`/edit/$', '{row.editorUserId}`)'].join('');
+
     expect(source).not.toContain("import { TopBlock } from './smallCard/renderTopBlock';");
     expect(source).toContain('{renderFieldVersions(fieldName, currentValues)}');
     expect(source).toContain('{renderFieldPendingEdits(fieldName, label)}');
@@ -79,7 +81,7 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('const fieldVersionHistory = useMemo(');
     expect(source).toContain('Інші поля з правками');
     expect(source).toContain('fetchUsersByIds(ids)');
-    expect(source).toContain('navigate(`/edit/${row.editorUserId}`)');
+    expect(source).toContain(editorNavigation);
   });
 
   it('uses the shared dots navigation and does not claim drafts are private', () => {
