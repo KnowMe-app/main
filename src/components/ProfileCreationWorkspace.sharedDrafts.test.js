@@ -78,7 +78,8 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('accepting a corrected value stores what the admin typed, not what was proposed', () => {
     expect(source).toContain('const acceptedChange = withEditedValue(settled, row, editedValue);');
-    expect(source).toContain('await persistDraftData(applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }));');
+    expect(source).toContain('applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }),');
+    expect(source).toContain('{ skipRevisionHistory: true },');
     expect(source).toContain('remainingChange: remaining,');
   });
 
@@ -86,8 +87,7 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     const editorNavigation = ['navigate(`/edit/$', '{row.editorUserId}`)'].join('');
 
     expect(source).not.toContain("import { TopBlock } from './smallCard/renderTopBlock';");
-    expect(source).toContain('{renderFieldVersions(fieldName, currentValues)}');
-    expect(source).toContain('{renderFieldPendingEdits(fieldName, label)}');
+    expect(source).toContain('{renderFieldTimeline(fieldName, currentValues, label)}');
     expect(source).toContain('const pendingFieldEdits = useMemo(');
     expect(source).toContain('const fieldVersionHistory = useMemo(');
     expect(source).toContain('Інші поля з правками');

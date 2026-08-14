@@ -225,7 +225,10 @@ const EDIT_TONES = {
   removed: { color: '#d94b4b', background: 'rgba(217,75,75,.08)' },
 };
 const toneOf = kind => EDIT_TONES[kind] || EDIT_TONES.added;
-const FieldTimeline = styled.div`display:grid; gap:8px; margin:${({ $before }) => ($before ? '0 0 10px' : '10px 0 0')};`;
+const FieldTimeline = styled.div`
+  display:grid; width:100%; min-width:0; gap:8px;
+  margin:${({ $before }) => ($before ? '0 0 10px' : '10px 0 0')};
+`;
 const VersionRow = styled.div`
   display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 10px; align-items:center;
   padding:7px 11px; border:1.5px solid ${({ $kind }) => toneOf($kind).color}; border-radius:12px;
@@ -873,7 +876,7 @@ export const ProfileCreationWorkspace = () => {
   //              to the draft, whether the proposal added, replaced or removed
   //              it, and leaves the queue;
   //   видалити - the proposal is dropped, the draft is untouched.
-  const persistDraftData = async nextData => {
+  const persistDraftData = async (nextData, { skipRevisionHistory = false } = {}) => {
     const current = activeMutationRef.current;
     const saved = await saveCreateProfileMutation({
       cardId: current.cardId,
@@ -881,6 +884,7 @@ export const ProfileCreationWorkspace = () => {
       actorUid: uid,
       data: nextData,
       expectedRevision: current.revision,
+      skipRevisionHistory,
     });
     activeMutationRef.current = saved;
     draftBaseRef.current = saved?.data || nextData;
@@ -918,7 +922,10 @@ export const ProfileCreationWorkspace = () => {
     async () => {
       const { settled, remaining } = splitOverlayChangeValue(row.change, row);
       const acceptedChange = withEditedValue(settled, row, editedValue);
-      await persistDraftData(applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }));
+      await persistDraftData(
+        applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }),
+        { skipRevisionHistory: true },
+      );
       await settleFieldEdit(row, {
         settledChange: acceptedChange,
         remainingChange: remaining,
@@ -944,7 +951,10 @@ export const ProfileCreationWorkspace = () => {
 
   const acceptAllOverlayChanges = () => runOverlayReviewAction(
     async () => {
-      await persistDraftData(applyOverlaysToCard(draftBaseRef.current || {}, draftOverlaysRef.current || {}));
+      await persistDraftData(
+        applyOverlaysToCard(draftBaseRef.current || {}, draftOverlaysRef.current || {}),
+        { skipRevisionHistory: true },
+      );
       await removeAllOverlaysForCard(activeMutationRef.current.cardId, { historyAction: 'accept' });
     },
     'Усі правки прийнято',
@@ -1031,6 +1041,10 @@ export const ProfileCreationWorkspace = () => {
   // One chronological tree per field. The current value remains above it; all
   // changes follow newest first, leaving the original value at the bottom.
   const renderFieldTimeline = (fieldName, currentValues, label) => {
+    // Keep one field-level fallback timeline below all input controls. Besides
+    // keeping the layout vertical, this deliberately avoids dropping array
+    // additions, stacked replacements, and option history that cannot be
+    // matched to exactly one current input branch.
     const pendingValues = (pendingFieldEdits[fieldName] || []).map(row => row.value);
     const versions = showDraftHistory
       ? dropVersionsPresentIn(fieldVersionHistory[fieldName] || [], [...currentValues, ...pendingValues])

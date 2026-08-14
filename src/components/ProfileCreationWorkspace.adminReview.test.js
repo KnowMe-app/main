@@ -35,7 +35,11 @@ jest.mock('./SearchBar', () => ({
 }));
 
 jest.mock('./formFields', () => ({
-  pickerFields: [{ name: 'name', ukrainian: "Ім'я" }, { name: 'phone', ukrainian: 'Телефон' }],
+  pickerFields: [
+    { name: 'name', ukrainian: "Ім'я" },
+    { name: 'phone', ukrainian: 'Телефон' },
+    { name: 'role', ukrainian: 'Роль', options: ['A', 'B'] },
+  ],
   getFieldLabel: field => field.ukrainian || field.name,
   getFieldPlaceholder: () => '',
   getOptionLabel: value => value,
@@ -130,6 +134,32 @@ describe('ProfileCreationWorkspace admin review', () => {
     expect(await screen.findByRole('button', { name: 'Оля Р.' })).toBeInTheDocument();
   });
 
+  it('keeps every unmatched array and stacked proposal individually reviewable', async () => {
+    getOverlaysForCard.mockResolvedValue({
+      'editor-1': {
+        updatedAt: 30,
+        editorUserId: 'editor-1',
+        fields: { phone: { added: ['111', '222'] } },
+      },
+      'editor-2': {
+        updatedAt: 40,
+        editorUserId: 'editor-2',
+        fields: { name: { from: "Ім'я7", to: "Ім'я8" } },
+      },
+    });
+
+    render(<ProfileCreationWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: /Відкрити профіль/ }));
+
+    expect(await screen.findByLabelText('Телефон: запропоноване значення', { selector: 'input[value="111"]' }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText('Телефон: запропоноване значення', { selector: 'input[value="222"]' }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("Ім'я: запропоноване значення")).toHaveValue("Ім'я8");
+    expect(screen.getAllByLabelText(/Зберегти правку/)).toHaveLength(3);
+    expect(screen.getAllByLabelText(/Видалити правку/)).toHaveLength(3);
+  });
+
   it('uses the user id as the clickable author only when a name is unavailable', async () => {
     await openDraftAsAdmin();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
@@ -145,6 +175,7 @@ describe('ProfileCreationWorkspace admin review', () => {
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe("Ім'я7");
+    expect(saveCreateProfileMutation.mock.calls[0][0].skipRevisionHistory).toBe(true);
     expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
       cardUserId: 'card-1',
       editorUserId: 'editor-1',
@@ -153,6 +184,8 @@ describe('ProfileCreationWorkspace admin review', () => {
       settledChange: { from: "Ім'я6", to: "Ім'я7" },
       purgeHistory: true,
     }));
+    expect(screen.getAllByDisplayValue("Ім'я7").some(input => !input.hasAttribute('aria-label'))).toBe(true);
+    expect(screen.queryByText(/створено|видалено/i)).not.toBeInTheDocument();
   });
 
   it('saves the corrected value when the admin edits the proposal first', async () => {
@@ -198,6 +231,19 @@ describe('ProfileCreationWorkspace admin review', () => {
     expect(historicalInput).toHaveValue("Ім'я5");
     expect(currentInput.compareDocumentPosition(pendingInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(pendingInput.compareDocumentPosition(historicalInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows option-field history below the selected option', async () => {
+    loadAllCreateProfileMutations.mockResolvedValue([{ ...draftMutation, data: { ...draftMutation.data, role: 'B' } }]);
+    getOverlayHistoryForCard.mockResolvedValue([
+      { entryId: 'role-a', fieldName: 'role', at: 10, action: 'edit', change: { from: '', to: 'A' } },
+      { entryId: 'role-b', fieldName: 'role', at: 20, action: 'edit', change: { from: 'A', to: 'B' } },
+    ]);
+
+    await openDraftAsAdmin();
+    fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
+
+    expect(await screen.findByLabelText('Роль: значення з історії')).toHaveValue('A');
   });
 
   it('restores the value edited directly in the historical input', async () => {
