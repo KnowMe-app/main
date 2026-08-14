@@ -110,6 +110,58 @@ export const dropVersionsPresentIn = (versionRows = [], values = []) => {
   return versionRows.filter(row => !present.has(row.value));
 };
 
+// Turns the flat backend journal into one branch per value that is currently
+// visible. A replacement belongs below the value it produced; newly added
+// array items consequently start with an empty branch of their own.
+export const buildFieldHistoryBranches = (versionRows = [], currentValues = []) => {
+  const rows = [...versionRows].sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+  const used = new Set();
+  const branches = currentValues.map(rawCurrentValue => {
+    const currentValue = String(rawCurrentValue ?? '').trim();
+    const versions = [];
+    let cursor = currentValue;
+
+    while (cursor) {
+      const targetValue = cursor;
+      const index = rows.findIndex((row, rowIndex) => (
+        !used.has(rowIndex)
+        && row.kind === 'replaced'
+        && row.value === targetValue
+        && row.previousValue
+      ));
+      if (index < 0) break;
+      used.add(index);
+      const transition = rows[index];
+      const baseline = rows.find((row, rowIndex) => (
+        !used.has(rowIndex) && row.value === transition.previousValue && !row.previousValue
+      ));
+      if (baseline) used.add(rows.indexOf(baseline));
+      versions.push({
+        ...transition,
+        key: `${transition.key}-previous`,
+        value: transition.previousValue,
+        previousValue: '',
+        backendEntries: [transition, baseline].filter(Boolean).map(row => ({
+          backendEntryId: row.backendEntryId,
+          historySource: row.historySource,
+        })).filter(row => row.backendEntryId),
+      });
+      cursor = transition.previousValue;
+    }
+
+    return { currentValue, versions };
+  });
+
+  const current = new Set(currentValues.map(value => String(value ?? '').trim()).filter(Boolean));
+  const branchedValues = new Set(branches.flatMap(branch => branch.versions.map(row => row.value)));
+  const archived = rows.filter((row, index) => (
+    !used.has(index)
+    && !current.has(row.value)
+    && !branchedValues.has(row.value)
+  ));
+  return { branches, archived };
+};
+
 // Splits an editor's change into the part being settled now (one value) and
 // the part that stays pending. Accepting one of three added phone numbers must
 // not silently drop the other two.

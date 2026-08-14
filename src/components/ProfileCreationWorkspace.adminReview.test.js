@@ -145,6 +145,7 @@ describe('ProfileCreationWorkspace admin review', () => {
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe("Ім'я7");
+    expect(saveCreateProfileMutation.mock.calls[0][0].recordHistory).toBe(false);
     expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
       cardUserId: 'card-1',
       editorUserId: 'editor-1',
@@ -163,6 +164,7 @@ describe('ProfileCreationWorkspace admin review', () => {
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe("Ім'я8");
+    expect(saveCreateProfileMutation.mock.calls[0][0].recordHistory).toBe(false);
     expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
       settledChange: { from: "Ім'я6", to: "Ім'я8" },
       historyAction: 'accept',
@@ -219,8 +221,9 @@ describe('ProfileCreationWorkspace admin review', () => {
 
     await waitFor(() => expect(removeOverlayHistoryEntry).toHaveBeenCalledWith({
       cardUserId: 'card-1',
-      entryId: 'h1',
+      entryId: 'h2',
     }));
+    expect(removeOverlayHistoryEntry).toHaveBeenCalledWith({ cardUserId: 'card-1', entryId: 'h1' });
     expect(screen.queryByLabelText("Ім'я: значення з історії")).not.toBeInTheDocument();
   });
 

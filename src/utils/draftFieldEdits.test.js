@@ -1,6 +1,7 @@
 import {
   buildChangeValueRows,
   buildFieldVersionHistory,
+  buildFieldHistoryBranches,
   buildPendingFieldEdits,
   buildRemovalChange,
   dropVersionsPresentIn,
@@ -90,6 +91,21 @@ describe('dropVersionsPresentIn', () => {
     const rows = [{ value: "Ім'я5" }, { value: "Ім'я6" }, { value: "Ім'я7" }];
 
     expect(dropVersionsPresentIn(rows, ["Ім'я6", "Ім'я7"])).toEqual([{ value: "Ім'я5" }]);
+  });
+});
+
+describe('buildFieldHistoryBranches', () => {
+  it('keeps an independent history below each current input', () => {
+    const versions = buildFieldVersionHistory([
+      { entryId: 'a', fieldName: 'name', at: 10, change: { from: 'A', to: 'B' } },
+      { entryId: 'b', fieldName: 'name', at: 20, change: { added: ['Second'] } },
+      { entryId: 'c', fieldName: 'name', at: 30, change: { from: 'B', to: 'C' } },
+    ]).name;
+
+    const result = buildFieldHistoryBranches(versions, ['C', 'Second']);
+    expect(result.branches[0].versions.map(row => row.value)).toEqual(['B', 'A']);
+    expect(result.branches[1].versions).toEqual([]);
+    expect(result.archived).toEqual([]);
   });
 });
 

@@ -133,7 +133,7 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
     })),
 );
 
-export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, data, expectedRevision }) => {
+export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, data, expectedRevision, recordHistory = true }) => {
   if (!cardId || !creatorUid || !actorUid) throw new Error('cardId, creatorUid and actorUid are required');
   let identityKeys;
   let acquiredIdentityKeys;
@@ -166,14 +166,17 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, 
       const revision = Number(current?.revision || 0) + 1;
       // Use the same normalization/diff representation as editor overlays so
       // both audit streams can be rendered by the same admin UI.
-      revisionHistory = buildProfileRevisionHistory({
+      // The first snapshot is the draft's baseline, not a change. Admin review
+      // can also promote an already journalled overlay without duplicating it
+      // in this second audit stream.
+      revisionHistory = current?.data && recordHistory ? buildProfileRevisionHistory({
         cardId,
         actorUid,
-        previousData: current?.data,
+        previousData: current.data,
         nextData: data,
         at: now,
         revision,
-      });
+      }) : [];
       return {
         cardId,
         operation: 'create',

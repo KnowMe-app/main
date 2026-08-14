@@ -26,6 +26,7 @@ import {
 } from 'utils/multiAccountEdits';
 import {
   buildFieldVersionHistory,
+  buildFieldHistoryBranches,
   buildPendingFieldEdits,
   dropVersionsPresentIn,
   splitOverlayChangeValue,
@@ -821,14 +822,13 @@ export const ProfileCreationWorkspace = () => {
 
     setSaving(true);
     try {
-      if (row.historySource === 'revision') {
-        await removeProfileMutationHistoryEntry({ cardId: current.cardId, entryId: row.backendEntryId });
-      } else {
-        await removeOverlayHistoryEntry({ cardUserId: current.cardId, entryId: row.backendEntryId });
-      }
+      const backendEntries = row.backendEntries?.length ? row.backendEntries : [row];
+      await Promise.all(backendEntries.map(entry => (entry.historySource === 'revision'
+        ? removeProfileMutationHistoryEntry({ cardId: current.cardId, entryId: entry.backendEntryId })
+        : removeOverlayHistoryEntry({ cardUserId: current.cardId, entryId: entry.backendEntryId }))));
+      const removedIds = new Set(backendEntries.map(entry => entry.backendEntryId));
       setDraftHistory(previous => previous.filter(entry => !(
-        (entry.backendEntryId || entry.entryId) === row.backendEntryId
-        && (entry.historySource || 'overlay') === row.historySource
+        removedIds.has(entry.backendEntryId || entry.entryId)
       )));
       toast.success('Запис видалено з історії');
     } catch (error) {
@@ -862,7 +862,7 @@ export const ProfileCreationWorkspace = () => {
   //              to the draft, whether the proposal added, replaced or removed
   //              it, and leaves the queue;
   //   видалити - the proposal is dropped, the draft is untouched.
-  const persistDraftData = async nextData => {
+  const persistDraftData = async (nextData, { recordHistory = true } = {}) => {
     const current = activeMutationRef.current;
     const saved = await saveCreateProfileMutation({
       cardId: current.cardId,
@@ -870,6 +870,7 @@ export const ProfileCreationWorkspace = () => {
       actorUid: uid,
       data: nextData,
       expectedRevision: current.revision,
+      recordHistory,
     });
     activeMutationRef.current = saved;
     draftBaseRef.current = saved?.data || nextData;
@@ -907,7 +908,10 @@ export const ProfileCreationWorkspace = () => {
     async () => {
       const { settled, remaining } = splitOverlayChangeValue(row.change, row);
       const acceptedChange = withEditedValue(settled, row, editedValue);
-      await persistDraftData(applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }));
+      await persistDraftData(
+        applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }),
+        { recordHistory: false },
+      );
       await settleFieldEdit(row, {
         settledChange: acceptedChange,
         remainingChange: remaining,
@@ -933,7 +937,10 @@ export const ProfileCreationWorkspace = () => {
 
   const acceptAllOverlayChanges = () => runOverlayReviewAction(
     async () => {
-      await persistDraftData(applyOverlaysToCard(draftBaseRef.current || {}, draftOverlaysRef.current || {}));
+      await persistDraftData(
+        applyOverlaysToCard(draftBaseRef.current || {}, draftOverlaysRef.current || {}),
+        { recordHistory: false },
+      );
       await removeAllOverlaysForCard(activeMutationRef.current.cardId, { historyAction: 'accept' });
     },
     'Усі правки прийнято',
@@ -1019,13 +1026,27 @@ export const ProfileCreationWorkspace = () => {
 
   // One chronological tree per field. The current value remains above it; all
   // changes follow newest first, leaving the original value at the bottom.
-  const renderFieldTimeline = (fieldName, currentValues, label) => {
-    const pendingValues = (pendingFieldEdits[fieldName] || []).map(row => row.value);
+  const renderFieldTimeline = (fieldName, currentValues, label, currentValue, includeArchived = true) => {
+    const allPending = pendingFieldEdits[fieldName] || [];
+    const pendingRows = currentValue == null
+      ? allPending
+      : allPending.filter(row => (
+        row.previousValue === currentValue
+        || (currentValues.length === 1 && !row.previousValue)
+      ));
+    const pendingValues = allPending.map(row => row.value);
+    const history = buildFieldHistoryBranches(fieldVersionHistory[fieldName] || [], currentValues);
+    const branch = currentValue == null
+      ? []
+      : history.branches.find(item => item.currentValue === currentValue)?.versions || [];
     const versions = showDraftHistory
-      ? dropVersionsPresentIn(fieldVersionHistory[fieldName] || [], [...currentValues, ...pendingValues])
+      ? dropVersionsPresentIn(
+        [...branch, ...(includeArchived ? history.archived : [])],
+        [...currentValues, ...pendingValues],
+      )
       : [];
     const rows = [
-      ...(pendingFieldEdits[fieldName] || []).map(row => ({ ...row, timelineType: 'pending' })),
+      ...pendingRows.map(row => ({ ...row, timelineType: 'pending' })),
       ...versions.map(row => ({ ...row, timelineType: 'history' })),
     ].sort((a, b) => Number(b.updatedAt || b.at || 0) - Number(a.updatedAt || a.at || 0));
     if (!rows.length) return null;
@@ -1084,7 +1105,7 @@ export const ProfileCreationWorkspace = () => {
         </FieldChipRow>
       ) : isTextArea ? (
         <FieldControls>
-          {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
+          {toFieldValues(value).map((item, index, values) => <FieldControl key={`${fieldName}-${index}`}>
             <InputShell>
               <FieldTextArea
                 value={item}
@@ -1095,11 +1116,12 @@ export const ProfileCreationWorkspace = () => {
               <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
             <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
+            {renderFieldTimeline(fieldName, currentValues, label, String(item ?? '').trim(), index === values.length - 1)}
           </FieldControl>)}
         </FieldControls>
       ) : (
         <FieldControls>
-          {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
+          {toFieldValues(value).map((item, index, values) => <FieldControl key={`${fieldName}-${index}`}>
             <InputShell>
               <FieldInput
                 value={item}
@@ -1110,10 +1132,13 @@ export const ProfileCreationWorkspace = () => {
               <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
             <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
+            {renderFieldTimeline(fieldName, currentValues, label, String(item ?? '').trim(), index === values.length - 1)}
           </FieldControl>)}
         </FieldControls>
       )}
-      {renderFieldTimeline(fieldName, currentValues, label)}
+      {Array.isArray(field.options) && field.options.length > 0
+        ? renderFieldTimeline(fieldName, currentValues, label)
+        : null}
     </FieldRow>;
   };
 
