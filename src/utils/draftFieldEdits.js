@@ -42,9 +42,13 @@ export const buildChangeValueRows = change => {
   const operationKind = added.length && removed.length ? 'replaced' : null;
 
   return [
-    ...added.map(value => ({ kind: operationKind || 'added', value, previousValue: '' })),
+    ...added.map(value => ({
+      kind: operationKind || 'added', sourceKind: 'added', value, previousValue: '',
+    })),
     ...removed.filter(value => !added.includes(value))
-      .map(value => ({ kind: operationKind || 'removed', value, previousValue: '' })),
+      .map(value => ({
+        kind: operationKind || 'removed', sourceKind: 'removed', value, previousValue: '',
+      })),
   ];
 };
 
@@ -148,7 +152,7 @@ export const splitOverlayChangeValue = (change, row) => {
 
   // A combined array operation is presented as a replacement, but settling
   // one row must still preserve whether that value came from its removed side.
-  if (removed.includes(row.value) && !added.includes(row.value)) {
+  if (row.sourceKind === 'removed' || (removed.includes(row.value) && !added.includes(row.value))) {
     return {
       settled: { removed: [row.value] },
       remaining: buildArrayChange(added, removed.filter(value => value !== row.value)),
