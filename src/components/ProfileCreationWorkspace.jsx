@@ -646,9 +646,29 @@ export const ProfileCreationWorkspace = () => {
   // failing with a false REVISION_CONFLICT.
   const saveQueueRef = useRef(Promise.resolve());
 
-  // A bare "Не вдалося зберегти" hides exactly the information needed to
-  // tell "rules not deployed yet for this path" apart from "network hiccup"
-  // apart from an actual conflict - surface the raw error too.
+  const safeSaveStageNames = {
+    'identity-claim': 'перевірка унікальності',
+    'search-id-index': 'індекс ідентифікаторів',
+    'search-key-index': 'пошуковий індекс',
+    'mutation-transition': 'перехід публікації',
+    'publication-update': 'фінальний запис картки',
+    'profile-mutation': 'збереження чернетки',
+    'identity-claim-or-mutation': 'збереження чернетки',
+  };
+
+  const safeSaveErrorCode = error => {
+    const code = String(error?.code || '').toUpperCase();
+    const message = String(error?.message || '').toUpperCase();
+    if (code.includes('PERMISSION_DENIED') || code.includes('PERMISSION-DENIED')
+      || message.includes('PERMISSION_DENIED') || message.includes('PERMISSION DENIED')) {
+      return 'PERMISSION_DENIED';
+    }
+    if (message === 'REVISION_CONFLICT' || message === 'DUPLICATE_PROFILE') return message;
+    return '';
+  };
+
+  // Only render allow-listed diagnostics. Firebase messages can contain full
+  // database paths and submitted contact values, which must stay out of toasts.
   const reportSaveError = (error, fallbackMessage) => {
     console.error('[ProfileCreationWorkspace] save failed', {
       stage: error?.profileSaveStage || 'unknown',
@@ -656,12 +676,12 @@ export const ProfileCreationWorkspace = () => {
       code: error?.code,
       error,
     });
-    const detail = error?.code || error?.message || '';
-    const stage = error?.profileSaveStage;
+    const detail = safeSaveErrorCode(error);
+    const stage = safeSaveStageNames[error?.profileSaveStage] || 'невідомий етап';
     toast.error(
       <div>
         <div style={{ fontWeight: 700 }}>{fallbackMessage}</div>
-        {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{stage ? `${stage}: ` : ''}{detail}</div> : null}
+        {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{stage}: {detail}</div> : null}
       </div>,
       { duration: 8000 },
     );
@@ -945,12 +965,14 @@ export const ProfileCreationWorkspace = () => {
   // must neither apply nor remove them.
   const saveDraftAsCard = async () => {
     setSaving(true);
+    let publishing = false;
     try {
       // Clicking the button blurs the focused field. That blur queues an
       // autosave which increments the revision, so publishing must wait for
       // it and then read the refs updated by that save. Using render-state
       // here produced a false REVISION_CONFLICT against our own autosave.
       await saveQueueRef.current;
+      publishing = true;
       const current = activeMutationRef.current;
       await acceptCreateProfileMutation({
         cardId: current.cardId,
@@ -964,6 +986,9 @@ export const ProfileCreationWorkspace = () => {
       closeEditor();
       await refresh(uid, access);
     } catch (error) {
+      // acceptCreateProfileMutation labels every expected phase. Keep an
+      // allow-listed fallback for an unexpected publication failure too.
+      if (publishing && !error.profileSaveStage) error.profileSaveStage = 'publication-update';
       reportSaveError(error, error?.message === 'REVISION_CONFLICT'
         ? 'Автор уже оновив чернетку. Перевірте нову версію.'
         : 'Не вдалося зберегти чернетку як картку');
