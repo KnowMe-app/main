@@ -8,8 +8,13 @@ describe('EditProfile shows non-admin editors the stacked card', () => {
   const source = fs.readFileSync(path.join(__dirname, 'EditProfile.jsx'), 'utf8');
 
   it('no longer narrows a non-admin to their own overlay', () => {
-    expect(source).toContain('if (isAdmin || currentUid) {\n        overlays = await getOverlaysForCard(userId);');
+    expect(source).toContain('overlays = await getOverlaysForCard(userId, { includeAdminOnly: isAdmin });');
     expect(source).not.toContain('overlays = ownOverlay ? { [currentUid]: ownOverlay } : {};');
+  });
+
+  it('filters published admin-only overlays before stacking for a non-admin', () => {
+    expect(source).toContain('getOverlaysForCard(userId, { includeAdminOnly: isAdmin })');
+    expect(source).toContain('includeAdminOnly: canWriteMain,');
   });
 
   it('renders canonical for an admin and the stacked card for everybody else', () => {

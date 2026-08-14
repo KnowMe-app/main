@@ -37,6 +37,7 @@ import {
   applyOverlayToCard,
   applyOverlaysToCard,
   buildOverlayFromDraft,
+  getCardStorageCollection,
   getCanonicalCard,
   getOtherEditorsChangedFields,
   getOverlayHistoryForCard,
@@ -416,7 +417,7 @@ const EditProfile = () => {
       // admin-only, see the setPendingOverlays({}) branch below), but so the
       // card can be rendered with every editor's change stacked on top of it.
       if (isAdmin || currentUid) {
-        overlays = await getOverlaysForCard(userId);
+        overlays = await getOverlaysForCard(userId, { includeAdminOnly: isAdmin });
       }
 
       setOverlayReadError('');
@@ -606,7 +607,9 @@ const EditProfile = () => {
       // overlay we store holds this editor's own delta and nothing more.
       let baseForOwnOverlay = canonical;
       try {
-        const overlaysByEditor = await getOverlaysForCard(updatedState.userId);
+        const overlaysByEditor = await getOverlaysForCard(updatedState.userId, {
+          includeAdminOnly: canWriteMain,
+        });
         baseForOwnOverlay = applyOverlaysToCard(canonical, overlaysByEditor, {
           excludeEditorUserId: editorUserId,
         });
@@ -659,7 +662,11 @@ const EditProfile = () => {
       : [];
     const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;
 
-    if (updatedState?.userId?.length > 20) {
+    const storageCollection = updatedState?.userId
+      ? await getCardStorageCollection(updatedState.userId)
+      : null;
+
+    if (storageCollection === 'users') {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 
@@ -724,7 +731,7 @@ const EditProfile = () => {
           },
         });
       }
-    } else if (updatedState?.userId) {
+    } else if (storageCollection === 'newUsers') {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 

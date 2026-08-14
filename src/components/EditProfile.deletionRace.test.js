@@ -98,10 +98,10 @@ describe("remoteUpdate sends a minimal null-only payload for pure field deletion
     expect(remoteUpdateBody).toContain('const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;');
   });
 
-  it('long-userId delete-only branch writes only nulls + lastAction, never touching makeUploadedInfo', () => {
+  it('users-storage delete-only branch writes only nulls + lastAction, never touching makeUploadedInfo', () => {
     const longBranch = remoteUpdateBody.slice(
-      remoteUpdateBody.indexOf('if (updatedState?.userId?.length > 20) {'),
-      remoteUpdateBody.indexOf("} else if (updatedState?.userId) {")
+      remoteUpdateBody.indexOf("if (storageCollection === 'users') {"),
+      remoteUpdateBody.indexOf("} else if (storageCollection === 'newUsers') {")
     );
     const deleteBranch = longBranch.slice(
       longBranch.indexOf('if (isDeleteOnlySubmit) {'),
@@ -114,8 +114,8 @@ describe("remoteUpdate sends a minimal null-only payload for pure field deletion
     expect(deleteBranch).toContain('await updateDataInRealtimeDB(updatedState.userId, deletePayload, \'update\');');
   });
 
-  it('short-userId delete-only branch also writes a minimal deletePayload', () => {
-    const shortBranch = remoteUpdateBody.slice(remoteUpdateBody.indexOf('} else if (updatedState?.userId) {'));
+  it('newUsers-storage delete-only branch also writes a minimal deletePayload', () => {
+    const shortBranch = remoteUpdateBody.slice(remoteUpdateBody.indexOf("} else if (storageCollection === 'newUsers') {"));
     const deleteBranch = shortBranch.slice(
       shortBranch.indexOf('if (isDeleteOnlySubmit) {'),
       shortBranch.indexOf('} else {')
