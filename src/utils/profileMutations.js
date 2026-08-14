@@ -234,6 +234,38 @@ export const removeProfileMutationHistoryEntry = async ({ cardId, entryId }) => 
   await remove(ref(database, `${getProfileMutationHistoryPath(cardId)}/${entryId}`));
 };
 
+const profileHistoryChangeValues = change => {
+  if (!change || typeof change !== 'object' || Array.isArray(change)) return [];
+  const values = [];
+  if ('from' in change || 'to' in change) values.push(change.from, change.to);
+  ['added', 'add', 'removed'].forEach(key => {
+    const items = Array.isArray(change[key]) ? change[key] : [change[key]];
+    values.push(...items);
+  });
+  return [...new Set(values.map(value => String(value ?? '').trim()).filter(Boolean))];
+};
+
+// A value can occur in several saved revisions (and in the overlay journal).
+// Timeline save/delete actions remove every matching revision rather than only
+// the particular row that happened to be clicked.
+export const purgeProfileMutationHistoryValue = async ({ cardId, fieldName, values = [] }) => {
+  if (!cardId || !fieldName) return 0;
+  const matchedValues = new Set(values.map(value => String(value ?? '').trim()).filter(Boolean));
+  if (!matchedValues.size) return 0;
+
+  const historyRef = ref(database, getProfileMutationHistoryPath(cardId));
+  const snapshot = await get(historyRef);
+  if (!snapshot.exists()) return 0;
+  const updates = Object.entries(snapshot.val() || {}).reduce((result, [entryId, entry]) => {
+    if (!entry || entry.fieldName !== fieldName) return result;
+    if (!profileHistoryChangeValues(entry.change).some(value => matchedValues.has(value))) return result;
+    result[entryId] = null;
+    return result;
+  }, {});
+  if (Object.keys(updates).length) await update(historyRef, updates);
+  return Object.keys(updates).length;
+};
+
 export const loadProfileMutation = async (creatorUid, cardId) => {
   if (!creatorUid || !cardId) return null;
   const snapshot = await get(ref(database, getProfileMutationPath(creatorUid, cardId)));
