@@ -21,6 +21,7 @@ const {
   getOverlaysForCard,
   patchOverlayField,
   removeOverlayForUserCard,
+  removeOverlayHistoryEntry,
   saveOverlayForUserCard,
   settleOverlayFieldValue,
 } = require('../multiAccountEdits');
@@ -51,6 +52,14 @@ describe('multiAccountEdits storage structure', () => {
     jest.clearAllMocks();
     ref.mockImplementation((db, path) => ({ db, path }));
     push.mockImplementation(() => ({ key: 'history-entry' }));
+  });
+
+  it('removes exactly one overlay history journal entry', async () => {
+    await removeOverlayHistoryEntry({ cardUserId: 'card-1', entryId: 'history-2' });
+
+    expect(remove).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'multiData/editsHistory/card-1/history-2',
+    }));
   });
 
   it('saves overlay under cardUserId/editorUserId path', async () => {

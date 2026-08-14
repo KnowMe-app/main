@@ -20,6 +20,7 @@ import {
   getOverlayHistoryForCard,
   getOverlaysForCard,
   removeAllOverlaysForCard,
+  removeOverlayHistoryEntry,
   saveOverlayForUserCard,
   settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
@@ -36,6 +37,7 @@ import {
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
   loadProfileMutationHistory,
+  removeProfileMutationHistoryEntry,
   loadSharedProfileMutations,
   reserveProfileCardId,
   saveCreateProfileMutation,
@@ -226,12 +228,8 @@ const toneOf = kind => EDIT_TONES[kind] || EDIT_TONES.added;
 const FieldTimeline = styled.div`display:grid; gap:8px; margin:${({ $before }) => ($before ? '0 0 10px' : '10px 0 0')};`;
 const VersionRow = styled.div`
   display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 10px; align-items:center;
-  padding:7px 11px; border:1px dashed var(--km-border); border-radius:12px;
-  background:color-mix(in srgb, var(--km-muted) 7%, transparent); overflow-wrap:anywhere;
-`;
-const VersionValue = styled.span`
-  font-size:14px; font-weight:600; color:var(--km-muted);
-  text-decoration:${({ $removed }) => ($removed ? 'line-through' : 'none')};
+  padding:7px 11px; border:1.5px solid ${({ $kind }) => toneOf($kind).color}; border-radius:12px;
+  background:${({ $kind }) => toneOf($kind).background}; overflow-wrap:anywhere;
 `;
 const VersionMeta = styled.div`grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:3px 9px; font-size:11px; color:var(--km-muted);`;
 const EditCard = styled.div`
@@ -312,6 +310,52 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete }
     </EditMeta>
     {isEdited && <EditHint>Буде збережено виправлене значення: {value.trim() || '—'}</EditHint>}
   </EditCard>;
+};
+
+const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestore, onDelete, onOpenAuthor }) => {
+  const [value, setValue] = useState(row.value);
+
+  useEffect(() => setValue(row.value), [row.value]);
+
+  return <VersionRow $kind={row.kind}>
+    <EditControl>
+      <InputShell>
+        <EditValueInput
+          value={value}
+          $kind={row.kind}
+          aria-label={`${label}: значення з історії`}
+          onChange={event => setValue(event.target.value)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            onRestore(value);
+          }}
+        />
+        <InlineClearButton
+          type="button"
+          disabled={disabled}
+          title="Видалити запис з історії"
+          aria-label={`Видалити з історії: ${row.value}`}
+          onMouseDown={event => event.preventDefault()}
+          onClick={onDelete}
+        ><FiX size={16} aria-hidden="true" /></InlineClearButton>
+      </InputShell>
+      <FieldActionButton
+        type="button"
+        $tone="restore"
+        disabled={disabled || !value.trim()}
+        title="Повернути це значення в анкету"
+        aria-label={`Повернути значення в анкету: ${row.value}`}
+        onClick={() => onRestore(value)}
+      ><FiCornerLeftDown aria-hidden="true" /></FieldActionButton>
+    </EditControl>
+    <VersionMeta>
+      <span>{row.at ? new Date(row.at).toLocaleString('uk-UA') : '—'}</span>
+      <span>· {OVERLAY_HISTORY_ACTION_LABELS[row.action] || row.action}</span>
+      <span>· {authorName}</span>
+      {row.editorUserId && <AuthorLink type="button" onClick={onOpenAuthor}>{row.editorUserId}</AuthorLink>}
+    </VersionMeta>
+  </VersionRow>;
 };
 const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-top:1px solid var(--km-border); min-width:0; > span:first-child { min-width:0; overflow-wrap:anywhere; }`;
 const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
@@ -764,12 +808,37 @@ export const ProfileCreationWorkspace = () => {
   // A superseded value from the timeline goes back into the field as an extra
   // row, next to whatever is there now - restoring must never silently drop
   // the current value.
-  const restoreFieldVersion = row => {
+  const restoreFieldVersion = (row, editedValue = row.value) => {
+    const normalizedValue = String(editedValue ?? '').trim();
+    if (!normalizedValue) return;
     const values = toFieldValues(draftRef.current?.[row.fieldName])
       .map(value => String(value ?? '').trim())
       .filter(Boolean);
-    if (values.includes(row.value)) return;
-    commitDraftFieldItems(row.fieldName, [...values, row.value]);
+    if (values.includes(normalizedValue)) return;
+    commitDraftFieldItems(row.fieldName, [...values, normalizedValue]);
+  };
+
+  const deleteFieldVersion = async row => {
+    const current = activeMutationRef.current;
+    if (!current?.cardId || !row?.backendEntryId) return;
+
+    setSaving(true);
+    try {
+      if (row.historySource === 'revision') {
+        await removeProfileMutationHistoryEntry({ cardId: current.cardId, entryId: row.backendEntryId });
+      } else {
+        await removeOverlayHistoryEntry({ cardUserId: current.cardId, entryId: row.backendEntryId });
+      }
+      setDraftHistory(previous => previous.filter(entry => !(
+        (entry.backendEntryId || entry.entryId) === row.backendEntryId
+        && (entry.historySource || 'overlay') === row.historySource
+      )));
+      toast.success('Запис видалено з історії');
+    } catch (error) {
+      reportSaveError(error, 'Не вдалося видалити запис з історії');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const appendDraftFieldItem = fieldName => {
@@ -960,23 +1029,16 @@ export const ProfileCreationWorkspace = () => {
     if (!versions.length) return null;
 
     return <FieldTimeline $before>
-      {versions.map(row => <VersionRow key={row.key}>
-        <VersionValue $removed={row.kind === 'removed'}>{row.value}</VersionValue>
-        <FieldActionButton
-          type="button"
-          $tone="restore"
-          disabled={saving}
-          title="Повернути це значення в анкету"
-          aria-label={`Повернути значення в анкету: ${row.value}`}
-          onClick={() => restoreFieldVersion(row)}
-        ><FiCornerLeftDown aria-hidden="true" /></FieldActionButton>
-        <VersionMeta>
-          <span>{row.at ? new Date(row.at).toLocaleString('uk-UA') : '—'}</span>
-          <span>· {OVERLAY_HISTORY_ACTION_LABELS[row.action] || row.action}</span>
-          <span>· {describeAuthor(row.editorUserId, historyAuthors)}</span>
-          {row.editorUserId && <AuthorLink type="button" onClick={() => navigate(`/edit/${row.editorUserId}`)}>{row.editorUserId}</AuthorLink>}
-        </VersionMeta>
-      </VersionRow>)}
+      {versions.map(row => <HistoricalFieldEdit
+        key={row.key}
+        row={row}
+        label={getFieldLabel(fieldsMap.get(fieldName) || { name: fieldName }) || fieldName}
+        authorName={describeAuthor(row.editorUserId, historyAuthors)}
+        disabled={saving}
+        onRestore={value => restoreFieldVersion(row, value)}
+        onDelete={() => deleteFieldVersion(row)}
+        onOpenAuthor={() => navigate(`/edit/${row.editorUserId}`)}
+      />)}
     </FieldTimeline>;
   };
 

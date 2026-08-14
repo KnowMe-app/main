@@ -1,4 +1,4 @@
-import { get, push, ref, runTransaction, update } from 'firebase/database';
+import { get, push, ref, remove, runTransaction, update } from 'firebase/database';
 
 import { database, syncUserSearchKeyIndex } from 'components/config';
 import { buildOverlayFromDraft, getCardContributorIds } from './multiAccountEdits';
@@ -220,8 +220,18 @@ export const loadProfileMutationHistory = async cardId => {
   if (!snapshot.exists()) return [];
   return Object.entries(snapshot.val() || {})
     .filter(([, entry]) => entry && typeof entry === 'object' && !Array.isArray(entry))
-    .map(([entryId, entry]) => ({ entryId: `revision-${entryId}`, ...entry }))
+    .map(([entryId, entry]) => ({
+      entryId: `revision-${entryId}`,
+      backendEntryId: entryId,
+      historySource: 'revision',
+      ...entry,
+    }))
     .sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+};
+
+export const removeProfileMutationHistoryEntry = async ({ cardId, entryId }) => {
+  if (!cardId || !entryId) return;
+  await remove(ref(database, `${getProfileMutationHistoryPath(cardId)}/${entryId}`));
 };
 
 export const loadProfileMutation = async (creatorUid, cardId) => {

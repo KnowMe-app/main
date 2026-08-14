@@ -92,6 +92,8 @@ export const buildFieldVersionHistory = (entries = []) => {
           action: entry.action || 'edit',
           revision: entry.revision,
           editorUserId: entry.editorUserId || entry.actorUid || entry.createdBy || '',
+          backendEntryId: entry.backendEntryId || entry.entryId || '',
+          historySource: entry.historySource || 'overlay',
           ...row,
         });
       });

@@ -492,8 +492,24 @@ export const getOverlayHistoryForCard = async cardUserId => {
 
   return Object.entries(snapshot.val() || {})
     .filter(([, entry]) => isPlainObject(entry))
-    .map(([entryId, entry]) => ({ entryId, ...entry }))
+    .map(([entryId, entry]) => ({
+      entryId,
+      backendEntryId: entryId,
+      historySource: 'overlay',
+      ...entry,
+    }))
     .sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+};
+
+// Removes one journal row without touching the editor's current overlay. This
+// is used by the admin's historical timeline, where the proposal has already
+// been superseded and only the durable memo remains.
+export const removeOverlayHistoryEntry = async ({ cardUserId, entryId }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  const normalizedEntryId = normalizeCardKey(entryId);
+  if (!normalizedCardId || !normalizedEntryId) return;
+
+  await remove(ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}/${normalizedEntryId}`));
 };
 
 // Only the fields whose stored change actually differs from what is already
