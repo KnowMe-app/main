@@ -29,6 +29,15 @@ const cleanObject = value => Object.entries(value || {}).reduce((result, [key, i
   return result;
 }, {});
 
+const withProfileSaveStage = async (profileSaveStage, operation) => {
+  try {
+    return await operation();
+  } catch (error) {
+    error.profileSaveStage = profileSaveStage;
+    throw error;
+  }
+};
+
 export const buildProfileRevisionHistory = ({ cardId, actorUid, previousData, nextData, at, revision }) => (
   previousData == null ? [] : Object.entries(buildOverlayFromDraft(previousData, nextData || {}))
     .map(([fieldName, change]) => ({
@@ -333,15 +342,18 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   let conflict = 'Profile mutation not found';
   let acceptedProfile = null;
   const mutationPath = getProfileMutationPath(creatorUid, cardId);
-  const mutationSnapshot = await get(ref(database, mutationPath));
-  const pendingMutation = mutationSnapshot.val();
-  if (!pendingMutation) throw new Error(conflict);
-  if (pendingMutation.operation !== 'create') throw new Error('Profile mutation is not a create mutation');
-  const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
-  const { keys: identityKeys, acquiredKeys: acquiredIdentityKeys } = await claimProfileIdentities({
-    cardId,
-    data: candidateProfile,
+  const pendingMutation = await withProfileSaveStage('mutation-transition', async () => {
+    const mutationSnapshot = await get(ref(database, mutationPath));
+    const currentMutation = mutationSnapshot.val();
+    if (!currentMutation) throw new Error(conflict);
+    if (currentMutation.operation !== 'create') throw new Error('Profile mutation is not a create mutation');
+    return currentMutation;
   });
+  const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
+  const { keys: identityKeys, acquiredKeys: acquiredIdentityKeys } = await withProfileSaveStage(
+    'identity-claim',
+    () => claimProfileIdentities({ cardId, data: candidateProfile }),
+  );
   const previousIdentityKeys = pendingMutation.identityKeys || [];
   let result;
   try {
@@ -372,20 +384,27 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     }, { applyLocally: false });
   } catch (error) {
     await releaseProfileIdentities(cardId, acquiredIdentityKeys).catch(() => {});
+    error.profileSaveStage = 'mutation-transition';
     throw error;
   }
   if (!result.committed || !result.snapshot.val()) {
     await releaseProfileIdentities(cardId, identityKeys.filter(key => !previousIdentityKeys.includes(key)));
-    throw new Error(conflict);
+    const error = new Error(conflict);
+    error.profileSaveStage = 'mutation-transition';
+    throw error;
   }
   const mutation = result.snapshot.val();
   // Finish all fallible index work before the single publication update. A
   // publishing record is deliberately retryable after an interrupted attempt.
   try {
-    await Promise.all([
-      syncProfileSearchIdIndex(cardId, acceptedProfile),
-      syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
-    ]);
+    await withProfileSaveStage(
+      'search-id-index',
+      () => syncProfileSearchIdIndex(cardId, acceptedProfile),
+    );
+    await withProfileSaveStage(
+      'search-key-index',
+      () => syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
+    );
   } catch (error) {
     await runTransaction(ref(database, mutationPath), current => (
       current?.status === 'publishing' && current?.acceptedAt === acceptedAt
@@ -421,7 +440,7 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     return updates;
   }, {});
 
-  await update(ref(database), {
+  await withProfileSaveStage('publication-update', () => update(ref(database), {
     [`users/${cardId}`]: acceptedProfile,
     ...accessGrants,
     ...pendingOverlayVisibility,
@@ -429,7 +448,7 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     // Every revision in this journal is now part of the accepted base card.
     // Pending editor changes use edits/editsHistory and remain untouched.
     [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: null,
-  });
+  }));
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;
 };

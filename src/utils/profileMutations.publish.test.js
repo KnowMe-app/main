@@ -43,11 +43,13 @@ const pendingMutation = {
 describe('acceptCreateProfileMutation', () => {
   let transactionMutation;
 
-  beforeEach(() => {
+  const resetPublicationMocks = () => {
     jest.clearAllMocks();
     ref.mockImplementation((db, path) => ({ db, path }));
     push.mockImplementation(() => ({ key: 'history-entry' }));
-    get.mockResolvedValue(snapshotOf(pendingMutation));
+    get.mockImplementation(async refObject => snapshotOf(
+      refObject.path.startsWith('multiData/profileMutations') ? pendingMutation : null,
+    ));
     transactionMutation = pendingMutation;
     // A transaction may first see an empty local cache. When the updater does
     // not abort, Firebase compares it with the server and retries with the
@@ -65,7 +67,9 @@ describe('acceptCreateProfileMutation', () => {
     getCardContributorIds.mockResolvedValue([]);
     getOverlaysForCard.mockResolvedValue({});
     syncUserSearchKeyIndex.mockResolvedValue(undefined);
-  });
+  };
+
+  beforeEach(resetPublicationMocks);
 
   it('publishes a pending create draft after an initial local cache miss', async () => {
     await expect(acceptCreateProfileMutation({
@@ -178,5 +182,44 @@ describe('acceptCreateProfileMutation', () => {
     const [, publication] = update.mock.calls[0];
     expect(publication['users/author-1/createdProfileCardIds/card-1']).toBe(true);
     expect(publication['users/card-1']).toEqual({ userId: 'card-1', name: 'Anna' });
+  });
+
+  it('labels each failed publication phase without exposing its Firebase path', async () => {
+    const permissionError = () => Object.assign(new Error('PERMISSION_DENIED at /private/contact'), {
+      code: 'PERMISSION_DENIED',
+    });
+    const publish = () => acceptCreateProfileMutation({
+      cardId: 'card-1',
+      creatorUid: 'author-1',
+      expectedRevision: 3,
+      finalData: { ...pendingMutation.data, email: 'private@example.com' },
+    });
+
+    get.mockRejectedValueOnce(permissionError());
+    await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'mutation-transition' });
+
+    resetPublicationMocks();
+    get.mockResolvedValueOnce(snapshotOf(pendingMutation)).mockRejectedValueOnce(permissionError());
+    await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'identity-claim' });
+
+    resetPublicationMocks();
+    runTransaction.mockImplementation(async (refObject, updater) => {
+      if (refObject.path.startsWith('searchId/')) throw permissionError();
+      if (!refObject.path.startsWith('multiData/profileMutations')) {
+        const next = updater(null);
+        return { committed: next !== undefined, snapshot: snapshotOf(next) };
+      }
+      const next = updater(pendingMutation);
+      return { committed: next !== undefined, snapshot: snapshotOf(next) };
+    });
+    await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'search-id-index' });
+
+    resetPublicationMocks();
+    syncUserSearchKeyIndex.mockRejectedValueOnce(permissionError());
+    await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'search-key-index' });
+
+    resetPublicationMocks();
+    update.mockRejectedValueOnce(permissionError());
+    await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'publication-update' });
   });
 });
