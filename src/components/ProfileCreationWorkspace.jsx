@@ -3,7 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiCheck, FiChevronDown, FiClock, FiCornerLeftDown, FiFolder, FiInfo, FiPlus, FiSearch, FiTrash2, FiUsers, FiX } from 'react-icons/fi';
+import { FiChevronDown, FiClock, FiCornerLeftDown, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
 import { auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
@@ -26,7 +26,6 @@ import {
 import {
   buildFieldVersionHistory,
   buildPendingFieldEdits,
-  buildRemovalChange,
   dropVersionsPresentIn,
   splitOverlayChangeValue,
   withEditedValue,
@@ -38,7 +37,6 @@ import {
   loadOwnProfileMutations,
   loadProfileMutationHistory,
   loadSharedProfileMutations,
-  rejectCreateProfileMutation,
   reserveProfileCardId,
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
@@ -52,8 +50,11 @@ const Page = styled.main`
   box-sizing: border-box;
 `;
 const Shell = styled.div`max-width: 920px; margin: 0 auto;`;
+// Same title row as every other page's header (AdminPageHeader / KmTopbar):
+// title on the left, the "⋮" page switcher pinned to the right, one row at any
+// width - never the left-of-title placement this page used to have.
 const Header = styled.header`
-  display:grid; grid-template-columns:auto minmax(0, 1fr); gap:8px 12px; align-items:start; margin-bottom:28px;
+  display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:28px;
 `;
 const HeaderCopy = styled.div`min-width:0;`;
 const Title = styled.h1`
@@ -151,13 +152,26 @@ const FieldRow = styled.div`
   ` : '')}
 `;
 const FieldLabel = styled.div`font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--km-muted); margin-bottom:6px;`;
+// The right-hand padding leaves room for the clear "×" that sits inside the
+// box (see InlineClearButton), the way My Profile's fields do it.
 const FieldInput = styled.input`
   width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
-  padding:10px 14px; font:500 15px/1.3 var(--km-font); color:var(--km-text); outline:none;
+  padding:10px 38px 10px 14px; font:500 15px/1.3 var(--km-font); color:var(--km-text); outline:none;
   &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
 const FieldControls = styled.div`display:grid; gap:8px;`;
 const FieldControl = styled.div`display:flex; align-items:center; gap:8px; min-width:0;`;
+// Wraps a single input so the "×" can be positioned inside it; the framed
+// button next to the wrapper is the "+" that adds another row.
+const InputShell = styled.div`position:relative; display:flex; flex:1 1 auto; min-width:0;`;
+const InlineClearButton = styled.button`
+  position:absolute; top:50%; right:8px; transform:translateY(-50%);
+  width:26px; height:26px; display:grid; place-items:center; padding:0;
+  border:none; border-radius:50%; background:transparent; color:var(--km-muted); cursor:pointer;
+  &:hover:not(:disabled) { color:var(--km-accent); }
+  &:focus-visible { outline:2px solid var(--km-accent); outline-offset:2px; }
+  &:disabled { opacity:.45; cursor:not-allowed; }
+`;
 const ACTION_TONES = {
   accept: { color: '#2e9b55', background: 'rgba(46,155,85,.12)' },
   reject: { color: 'var(--km-muted)', background: 'color-mix(in srgb, var(--km-muted) 12%, transparent)' },
@@ -176,10 +190,10 @@ const FieldActionButton = styled.button`
   &:focus-visible { outline:3px solid var(--km-accent-ring); outline-offset:2px; }
   &:disabled { opacity:.45; cursor:not-allowed; }
 `;
-const AddValueButton = styled(FieldActionButton)`margin-top:8px; color:var(--km-accent);`;
+const AddValueButton = styled(FieldActionButton)`color:var(--km-accent);`;
 const FieldTextArea = styled.textarea`
   width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
-  padding:10px 14px; font:500 15px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
+  padding:10px 38px 10px 14px; font:500 15px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
   &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
 const FieldChipRow = styled.div`display:flex; flex-wrap:wrap; gap:6px;`;
@@ -199,10 +213,14 @@ const AuthorLink = styled.button`
 // Every proposal and every superseded value is rendered inside the
 // questionnaire, in the row of the field it belongs to, oldest first: past
 // versions, then the value the card holds now, then what editors propose next.
+// No word labels ("додано" / "видалено") any more: what a proposal is, is said
+// by its colour, and what to do with it is said by the two icons next to its
+// value - a diskette that saves it into the card and a "×" that deletes the
+// edit together with every trace of it in the backend.
 const EDIT_TONES = {
-  added: { color: '#2e9b55', background: 'rgba(46,155,85,.08)', label: 'нове значення' },
-  replaced: { color: '#2e9b55', background: 'rgba(46,155,85,.08)', label: 'заміна' },
-  removed: { color: '#d94b4b', background: 'rgba(217,75,75,.08)', label: 'пропонують видалити' },
+  added: { color: '#2e9b55', background: 'rgba(46,155,85,.08)' },
+  replaced: { color: '#2e9b55', background: 'rgba(46,155,85,.08)' },
+  removed: { color: '#d94b4b', background: 'rgba(217,75,75,.08)' },
 };
 const toneOf = kind => EDIT_TONES[kind] || EDIT_TONES.added;
 const FieldTimeline = styled.div`display:grid; gap:8px; margin:${({ $before }) => ($before ? '0 0 10px' : '10px 0 0')};`;
@@ -222,20 +240,13 @@ const EditCard = styled.div`
   background:${({ $kind }) => toneOf($kind).background};
 `;
 const EditHead = styled.div`display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:11px;`;
-const EditBadge = styled.span`
-  padding:3px 8px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.02em;
-  color:${({ $kind }) => toneOf($kind).color};
-  background:color-mix(in srgb, ${({ $kind }) => toneOf($kind).color} 16%, transparent);
-`;
 const EditWas = styled.span`color:var(--km-muted); font-size:11px; s { opacity:.75; }`;
 const EditControl = styled.div`display:flex; align-items:center; gap:8px; min-width:0;`;
 const EditValueInput = styled(FieldInput)`
   border-color:${({ $kind }) => toneOf($kind).color};
   background:var(--km-card);
   text-decoration:${({ $kind }) => ($kind === 'removed' ? 'line-through' : 'none')};
-  &:read-only { color:var(--km-muted); }
 `;
-const EditActionsRow = styled.div`display:flex; gap:6px; flex:0 0 auto;`;
 const EditMeta = styled.div`display:flex; flex-wrap:wrap; gap:3px 9px; font-size:11px; color:var(--km-muted);`;
 const EditHint = styled.div`font-size:11px; font-weight:700; color:var(--km-accent);`;
 const DraftHeaderCard = styled(Card)`display:grid; gap:10px; margin:0 0 14px;`;
@@ -246,61 +257,54 @@ const DraftContacts = styled.div`
   color:var(--km-text); a { color:inherit; }
 `;
 
-// The proposed value is editable in place: correcting the format here and
-// pressing ✓ accepts exactly what is in the box, which is the whole point of
-// "редакція означає, що приймаємо саме відредагований формат".
-const PendingFieldEdit = ({ row, label, authorName, disabled, onAccept, onReject, onRemove }) => {
+// Two controls per proposal, both icons, both on the right of its value:
+//   "×" (inside the box)  - delete the edit and every memo about it, whether it
+//                           proposed a new value, a replacement or a removal;
+//   💾 (next to the box)  - save it into the draft.
+// The box itself stays editable, so correcting the format here and saving
+// stores exactly what is in it - "редакція означає, що приймаємо саме
+// відредагований формат".
+const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete }) => {
   const [value, setValue] = useState(row.value);
 
   useEffect(() => setValue(row.value), [row.value]);
 
-  const isRemoval = row.kind === 'removed';
-  const isEdited = !isRemoval && value.trim() !== row.value;
+  const isEdited = row.kind !== 'removed' && value.trim() !== row.value;
 
   return <EditCard $kind={row.kind}>
-    <EditHead>
-      <EditBadge $kind={row.kind}>{toneOf(row.kind).label}</EditBadge>
-      {row.previousValue ? <EditWas>замість <s>{row.previousValue}</s></EditWas> : null}
-    </EditHead>
+    {row.previousValue ? <EditHead>
+      <EditWas>замість <s>{row.previousValue}</s></EditWas>
+    </EditHead> : null}
     <EditControl>
-      <EditValueInput
-        value={value}
-        $kind={row.kind}
-        readOnly={isRemoval}
-        aria-label={`${label}: запропоноване значення`}
-        onChange={event => setValue(event.target.value)}
-        onKeyDown={event => {
-          if (event.key !== 'Enter') return;
-          event.preventDefault();
-          onAccept(value);
-        }}
-      />
-      <EditActionsRow>
-        <FieldActionButton
+      <InputShell>
+        <EditValueInput
+          value={value}
+          $kind={row.kind}
+          aria-label={`${label}: запропоноване значення`}
+          onChange={event => setValue(event.target.value)}
+          onKeyDown={event => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            onSave(value);
+          }}
+        />
+        <InlineClearButton
           type="button"
-          $tone="accept"
           disabled={disabled}
-          title={isEdited ? 'Прийняти виправлене значення' : 'Прийняти правку'}
-          aria-label={`Прийняти правку: ${label}`}
-          onClick={() => onAccept(value)}
-        ><FiCheck aria-hidden="true" /></FieldActionButton>
-        <FieldActionButton
-          type="button"
-          $tone="reject"
-          disabled={disabled}
-          title="Відхилити правку — залишити як є"
-          aria-label={`Відхилити правку: ${label}`}
-          onClick={onReject}
-        ><FiX aria-hidden="true" /></FieldActionButton>
-        <FieldActionButton
-          type="button"
-          $tone="remove"
-          disabled={disabled}
-          title="Видалити це значення з анкети"
-          aria-label={`Видалити значення з анкети: ${label}`}
-          onClick={onRemove}
-        ><FiTrash2 aria-hidden="true" /></FieldActionButton>
-      </EditActionsRow>
+          title="Видалити правку — не залишиться ні в анкеті, ні в історії"
+          aria-label={`Видалити правку: ${label}`}
+          onMouseDown={event => event.preventDefault()}
+          onClick={onDelete}
+        ><FiX size={16} aria-hidden="true" /></InlineClearButton>
+      </InputShell>
+      <FieldActionButton
+        type="button"
+        $tone="accept"
+        disabled={disabled}
+        title={isEdited ? 'Зберегти виправлене значення' : 'Зберегти правку в анкету'}
+        aria-label={`Зберегти правку: ${label}`}
+        onClick={() => onSave(value)}
+      ><FiSave aria-hidden="true" /></FieldActionButton>
     </EditControl>
     <EditMeta>
       <span>{authorName}</span>
@@ -785,34 +789,13 @@ export const ProfileCreationWorkspace = () => {
 
   const editingSharedDraft = isSharedDraft(activeMutation, uid, access?.isAdmin);
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      await persistDraft(draftRef.current);
-      if (overlayTarget) {
-        toast.success('Власні дані та коментар збережено');
-        closeEditor();
-      } else if (editingSharedDraft) {
-        toast.success('Ваші правки збережено. Їх побачить кожен, хто відкриє цю чернетку.');
-        await refresh(uid, access);
-      } else {
-        toast.success('Профіль збережено й надіслано на перевірку');
-        await refresh(uid, access);
-      }
-    } catch (error) {
-      reportSaveError(error, describeSaveError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // --- Admin review of the pending overlays on the open draft ----------------
-  // Three decisions per proposed value, all recorded in the journal:
-  //   прийняти  - the value (or the admin's corrected version of it) is
-  //               written into the draft and leaves the queue;
-  //   відхилити - the proposal leaves the queue, the draft is untouched;
-  //   видалити  - the value must not be on the card at all, so it is stripped
-  //               from the draft too, together with what it replaced.
+  // Two decisions per proposed value, and both clear the backend behind them -
+  // a settled edit leaves neither a pending overlay nor a journal memo:
+  //   зберегти - the value (or the admin's corrected version of it) is applied
+  //              to the draft, whether the proposal added, replaced or removed
+  //              it, and leaves the queue;
+  //   видалити - the proposal is dropped, the draft is untouched.
   const persistDraftData = async nextData => {
     const current = activeMutationRef.current;
     const saved = await saveCreateProfileMutation({
@@ -841,6 +824,9 @@ export const ProfileCreationWorkspace = () => {
     }
   };
 
+  // purgeHistory drops the journal entries about the settled value instead of
+  // adding one more - the whole point of the two buttons is that a processed
+  // edit stops existing in the backend.
   const settleFieldEdit = (row, { settledChange, remainingChange, historyAction }) => settleOverlayFieldValue({
     editorUserId: row.editorUserId,
     cardUserId: activeMutationRef.current.cardId,
@@ -848,9 +834,10 @@ export const ProfileCreationWorkspace = () => {
     settledChange,
     remainingChange,
     historyAction,
+    purgeHistory: true,
   });
 
-  const acceptFieldEdit = (row, editedValue, label) => runOverlayReviewAction(
+  const saveFieldEdit = (row, editedValue, label) => runOverlayReviewAction(
     async () => {
       const { settled, remaining } = splitOverlayChangeValue(row.change, row);
       const acceptedChange = withEditedValue(settled, row, editedValue);
@@ -861,11 +848,11 @@ export const ProfileCreationWorkspace = () => {
         historyAction: 'accept',
       });
     },
-    `Правку прийнято: ${label}`,
-    'Не вдалося прийняти правку',
+    `Правку збережено: ${label}`,
+    'Не вдалося зберегти правку',
   );
 
-  const rejectFieldEdit = (row, label) => runOverlayReviewAction(
+  const deleteFieldEdit = (row, label) => runOverlayReviewAction(
     async () => {
       const { settled, remaining } = splitOverlayChangeValue(row.change, row);
       await settleFieldEdit(row, {
@@ -874,24 +861,8 @@ export const ProfileCreationWorkspace = () => {
         historyAction: 'discard',
       });
     },
-    `Правку відхилено: ${label}`,
-    'Не вдалося відхилити правку',
-  );
-
-  const removeFieldEditValue = (row, label) => runOverlayReviewAction(
-    async () => {
-      const base = draftBaseRef.current || {};
-      const withoutValue = applyOverlayToCard(base, { [row.fieldName]: buildRemovalChange(row) });
-      if (JSON.stringify(withoutValue) !== JSON.stringify(base)) await persistDraftData(withoutValue);
-      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
-      await settleFieldEdit(row, {
-        settledChange: settled,
-        remainingChange: remaining,
-        historyAction: 'discard',
-      });
-    },
-    `Значення видалено: ${label}`,
-    'Не вдалося видалити значення',
+    `Правку видалено: ${label}`,
+    'Не вдалося видалити правку',
   );
 
   const acceptAllOverlayChanges = () => runOverlayReviewAction(
@@ -909,27 +880,26 @@ export const ProfileCreationWorkspace = () => {
     'Не вдалося видалити правки',
   );
 
-  const accept = async () => {
+  // "Зберегти чернетку" is the one action that turns the draft into a real
+  // card: it writes it to newUsers, runs the standard search indexes over it,
+  // and hands it to everybody who worked on it - the author and every editor
+  // who contributed through an overlay - so it stays in their lists.
+  const saveDraftAsCard = async () => {
     setSaving(true);
     try {
-      await acceptCreateProfileMutation({ cardId: activeMutation.cardId, creatorUid: activeMutation.createdBy, expectedRevision: activeMutation.revision, finalData: draft });
-      toast.success('Профіль прийнято');
+      await acceptCreateProfileMutation({
+        cardId: activeMutation.cardId,
+        creatorUid: activeMutation.createdBy,
+        expectedRevision: activeMutation.revision,
+        finalData: draft,
+      });
+      toast.success('Чернетку збережено як картку — вона в newUsers і проіндексована');
       closeEditor();
       await refresh(uid, access);
     } catch (error) {
-      reportSaveError(error, error?.message === 'REVISION_CONFLICT' ? 'Автор уже оновив профіль. Перевірте нову версію.' : 'Не вдалося прийняти профіль');
-    } finally { setSaving(false); }
-  };
-
-  const reject = async () => {
-    setSaving(true);
-    try {
-      await rejectCreateProfileMutation({ cardId: activeMutation.cardId, creatorUid: activeMutation.createdBy, expectedRevision: activeMutation.revision });
-      toast.success('Профіль залишено приватним');
-      closeEditor();
-      await refresh(uid, access);
-    } catch (error) {
-      reportSaveError(error, 'Не вдалося відхилити профіль');
+      reportSaveError(error, error?.message === 'REVISION_CONFLICT'
+        ? 'Автор уже оновив чернетку. Перевірте нову версію.'
+        : 'Не вдалося зберегти чернетку як картку');
     } finally { setSaving(false); }
   };
 
@@ -1021,9 +991,8 @@ export const ProfileCreationWorkspace = () => {
         label={label}
         disabled={saving}
         authorName={describeAuthor(row.editorUserId, historyAuthors)}
-        onAccept={editedValue => acceptFieldEdit(row, editedValue, label)}
-        onReject={() => rejectFieldEdit(row, label)}
-        onRemove={() => removeFieldEditValue(row, label)}
+        onSave={editedValue => saveFieldEdit(row, editedValue, label)}
+        onDelete={() => deleteFieldEdit(row, label)}
       />)}
     </FieldTimeline>;
   };
@@ -1059,28 +1028,32 @@ export const ProfileCreationWorkspace = () => {
       ) : isTextArea ? (
         <FieldControls>
           {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
-            <FieldTextArea
-              value={item}
-              placeholder={getFieldPlaceholder(field)}
-              onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
-              onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
-            />
-            <FieldActionButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX aria-hidden="true" /></FieldActionButton>
+            <InputShell>
+              <FieldTextArea
+                value={item}
+                placeholder={getFieldPlaceholder(field)}
+                onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
+                onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
+              />
+              <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
+            </InputShell>
+            <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
           </FieldControl>)}
-          <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
         </FieldControls>
       ) : (
         <FieldControls>
           {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
-            <FieldInput
-              value={item}
-              placeholder={getFieldPlaceholder(field)}
-              onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
-              onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
-            />
-            <FieldActionButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX aria-hidden="true" /></FieldActionButton>
+            <InputShell>
+              <FieldInput
+                value={item}
+                placeholder={getFieldPlaceholder(field)}
+                onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
+                onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
+              />
+              <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
+            </InputShell>
+            <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
           </FieldControl>)}
-          <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
         </FieldControls>
       )}
       {renderFieldPendingEdits(fieldName, label)}
@@ -1108,8 +1081,8 @@ export const ProfileCreationWorkspace = () => {
 
   return <Page><Shell>
     <Header>
-      <PageNavMenu />
       <HeaderCopy><Title>{heading}</Title></HeaderCopy>
+      <PageNavMenu />
     </Header>
     {draft ? <>
       <DraftHeaderCard>
@@ -1194,11 +1167,17 @@ export const ProfileCreationWorkspace = () => {
         <FormSectionTitle>🗂 Інші поля з правками</FormSectionTitle>
         {extraEditedFields.map(fieldName => renderCreateField(fieldName, { allowUnknown: true }))}
       </FormSectionCard>}
+      {/* Every field already saves itself on blur, so the old Зберегти /
+          Прийняти / Відхилити row said nothing about what actually happened.
+          What is left is the one step that is not automatic: turning the
+          finished draft into a card. */}
       <Card>
         <Actions>
-          <SaveButton disabled={saving} onClick={save}>{saving ? 'Збереження…' : 'Зберегти'}</SaveButton>
-          {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <AcceptButton disabled={saving} onClick={accept}>Прийняти</AcceptButton>}
-          {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <RejectButton disabled={saving} onClick={reject}>Відхилити</RejectButton>}
+          {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && (
+            <SaveButton disabled={saving} onClick={saveDraftAsCard}>
+              {saving ? 'Збереження…' : 'Зберегти чернетку'}
+            </SaveButton>
+          )}
           <GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>
         </Actions>
       </Card>

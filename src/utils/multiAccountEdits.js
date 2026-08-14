@@ -18,6 +18,12 @@ const EDITS_ROOT = 'multiData/edits';
 // moment its author edits the same field again. Only admins read it - other
 // editors see the stacked result, never who changed what or what came before.
 const EDITS_HISTORY_ROOT = 'multiData/editsHistory';
+// A durable roster of everybody who has ever edited a card. The overlay node
+// is emptied as soon as an edit is settled - and its journal entries are
+// purged with it - so by the time the card is published there is nothing left
+// to tell who worked on it. Those editors must keep access to the card they
+// helped build, so their ids are recorded here once and never removed.
+const EDITS_CONTRIBUTORS_ROOT = 'multiData/editsContributors';
 const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt', 'cacheVersion']);
 
 const isPlainObject = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -190,12 +196,56 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 
   await set(cardRef, { fields: sanitized, updatedAt: Date.now(), cardUserId: normalizedCardId, editorUserId });
 
+  await rememberCardContributor({ cardUserId: normalizedCardId, editorUserId });
+
   await appendOverlayHistory({
     cardUserId: normalizedCardId,
     editorUserId,
     action: 'edit',
     fields: diffOverlayFields(previousFields, sanitized),
   });
+};
+
+// Best-effort by design, like the journal: an editor's save must not fail
+// because the roster could not be written.
+export const rememberCardContributor = async ({ cardUserId, editorUserId }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId || !editorUserId) return false;
+
+  try {
+    await update(ref2(database, `${EDITS_CONTRIBUTORS_ROOT}/${normalizedCardId}`), {
+      [editorUserId]: Date.now(),
+    });
+    return true;
+  } catch (error) {
+    console.warn('[multiAccountEdits] failed to remember card contributor', error);
+    return false;
+  }
+};
+
+// Everybody who should keep access to the card once it is published: the
+// roster above, plus whoever still has an unsettled overlay on it (a card
+// edited before the roster existed has only the latter).
+export const getCardContributorIds = async cardUserId => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return [];
+
+  const contributors = new Set();
+
+  try {
+    const snapshot = await get(ref2(database, `${EDITS_CONTRIBUTORS_ROOT}/${normalizedCardId}`));
+    if (snapshot?.exists?.()) Object.keys(snapshot.val() || {}).forEach(editorUserId => contributors.add(editorUserId));
+  } catch (error) {
+    console.warn('[multiAccountEdits] contributors roster unavailable', error);
+  }
+
+  try {
+    Object.keys(await getOverlaysForCard(normalizedCardId)).forEach(editorUserId => contributors.add(editorUserId));
+  } catch (error) {
+    console.warn('[multiAccountEdits] pending overlays unavailable', error);
+  }
+
+  return Array.from(contributors).filter(Boolean);
 };
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
@@ -385,6 +435,53 @@ export const appendOverlayHistory = async ({ cardUserId, editorUserId, action = 
   return entries;
 };
 
+// Every value a change mentions, whatever shape it was stored in. Used to
+// match a settled edit against the journal entries that describe it.
+const changeValueList = change => {
+  if (!isPlainObject(change)) return [];
+
+  const values = [];
+  if ('from' in change || 'to' in change) values.push(change.from, change.to);
+  values.push(...normalizeArray(change.added ?? change.add), ...normalizeArray(change.removed));
+
+  return uniq(values.map(value => String(value ?? '').trim()).filter(Boolean));
+};
+
+// A settled edit must leave nothing behind: once a value has been saved into
+// the card or thrown away, the journal entries that only described that value
+// are deleted too, so the review queue never grows a tail of memos about work
+// that is already done. Entries with no values of their own (`discarded`
+// markers) are always dropped - they are pure bookkeeping.
+export const purgeOverlayHistoryEntries = async ({ cardUserId, editorUserId, fieldName, values = [] }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId || !fieldName) return 0;
+
+  const settledValues = new Set(values.map(value => String(value ?? '').trim()).filter(Boolean));
+
+  try {
+    const historyRef = ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}`);
+    const snapshot = await get(historyRef);
+    if (!snapshot?.exists?.()) return 0;
+
+    const updates = Object.entries(snapshot.val() || {}).reduce((acc, [entryId, entry]) => {
+      if (!isPlainObject(entry) || entry.fieldName !== fieldName) return acc;
+      if (editorUserId && entry.editorUserId && entry.editorUserId !== editorUserId) return acc;
+
+      const entryValues = changeValueList(entry.change);
+      if (settledValues.size && entryValues.length && !entryValues.some(value => settledValues.has(value))) return acc;
+
+      acc[entryId] = null;
+      return acc;
+    }, {});
+
+    if (Object.keys(updates).length) await update(historyRef, updates);
+    return Object.keys(updates).length;
+  } catch (error) {
+    console.warn('[multiAccountEdits] failed to purge overlay history', error);
+    return 0;
+  }
+};
+
 // Admin-only. Newest first, because the review UI reads top-down.
 export const getOverlayHistoryForCard = async cardUserId => {
   const normalizedCardId = normalizeCardKey(cardUserId);
@@ -522,6 +619,11 @@ const hasOverlayChangeValues = change => Boolean(
 // proposed phone numbers must not throw the other two away, so the caller
 // passes what it settled and what remains; the journal records only the
 // settled part, under the action that settled it.
+//
+// `purgeHistory` inverts that last part: instead of writing one more journal
+// entry, the entries about the settled value are deleted. That is what the
+// review UI's save/delete buttons use - a settled edit disappears from the
+// backend completely rather than turning into another line of history.
 export const settleOverlayFieldValue = async ({
   editorUserId,
   cardUserId,
@@ -529,6 +631,7 @@ export const settleOverlayFieldValue = async ({
   settledChange,
   remainingChange,
   historyAction = 'discard',
+  purgeHistory = false,
 }) => {
   if (!editorUserId || !cardUserId || !fieldName) return;
 
@@ -544,6 +647,17 @@ export const settleOverlayFieldValue = async ({
   }
 
   await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
+
+  if (purgeHistory) {
+    await purgeOverlayHistoryEntries({
+      cardUserId: normalizedCardId,
+      editorUserId,
+      fieldName,
+      values: changeValueList(settledChange),
+    });
+    return;
+  }
+
   await appendOverlayHistory({
     cardUserId: normalizedCardId,
     editorUserId,

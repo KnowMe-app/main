@@ -53,16 +53,27 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('setDraftHistory([...overlayHistory, ...revisionHistory]');
   });
 
-  it('gives the admin accept, reject, delete per value plus accept-all and delete-all', () => {
-    expect(source).toContain('const acceptFieldEdit = (row, editedValue, label) =>');
-    expect(source).toContain('const rejectFieldEdit = (row, label) =>');
-    expect(source).toContain('const removeFieldEditValue = (row, label) =>');
+  it('gives the admin save and delete per value plus accept-all and delete-all', () => {
+    expect(source).toContain('const saveFieldEdit = (row, editedValue, label) =>');
+    expect(source).toContain('const deleteFieldEdit = (row, label) =>');
     expect(source).toContain('const acceptAllOverlayChanges = () =>');
     expect(source).toContain('const discardAllOverlayChanges = () =>');
     expect(source).toContain("historyAction: 'accept',");
     expect(source).toContain("historyAction: 'discard',");
     expect(source).toContain('Прийняти всі');
     expect(source).toContain('Видалити всі');
+  });
+
+  it('settles an edit by clearing it from the backend instead of journalling it', () => {
+    expect(source).toContain('purgeHistory: true,');
+  });
+
+  it('keeps only the publish step under the questionnaire, named after what it does', () => {
+    expect(source).not.toContain('rejectCreateProfileMutation');
+    expect(source).toContain('const saveDraftAsCard = async () =>');
+    expect(source).toContain('await acceptCreateProfileMutation({');
+    expect(source).toContain('Зберегти чернетку');
+    expect(source).toContain('<GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>');
   });
 
   it('accepting a corrected value stores what the admin typed, not what was proposed', () => {
@@ -84,7 +95,8 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('uses the shared dots navigation and does not claim drafts are private', () => {
     expect(source).toContain("import PageNavMenu from './PageNavMenu';");
-    expect(source).toContain('<PageNavMenu />');
+    // Title first, "⋮" after it - the same header row every other page uses.
+    expect(source).toContain('<HeaderCopy><Title>{heading}</Title></HeaderCopy>\n      <PageNavMenu />');
     expect(source).not.toContain('Картки зберігаються приватно до рішення адміністратора.');
     expect(source).not.toContain('<MatchingButton');
   });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Document,
@@ -61,6 +61,8 @@ import { buildUserRtdbLink } from 'utils/firebaseUserConsoleLink';
 import { auth } from '../config';
 import toast from 'react-hot-toast';
 
+// The block always draws its own frame now, so it reads as a card wherever it
+// is placed instead of bleeding into the page behind it.
 const topBlockContainerStyle = {
   padding: '8px',
   position: 'relative',
@@ -72,6 +74,38 @@ const topBlockContainerStyle = {
   backgroundPosition: 'center',
   backgroundRepeat: 'no-repeat',
   isolation: 'isolate',
+  border: '1px solid rgba(255, 255, 255, 0.18)',
+  borderRadius: 'var(--km-radius, 14px)',
+};
+
+// Its chips, badges and captions are white-on-colour, built for the gradient
+// card the matching list puts behind it. Dropped onto a plain (or light) page -
+// an admin screen, a review panel - that text used to disappear, so the block
+// paints its own surface whenever nothing behind it does. Radius, border and
+// shadow follow the My Profile card tokens.
+const topBlockOwnSurfaceStyle = {
+  background: 'linear-gradient(135deg, #2f2a3c 0%, #3d3550 55%, #4b4266 100%)',
+  border: '1px solid var(--km-border, rgba(255, 255, 255, 0.18))',
+  boxShadow: 'var(--km-shadow, 0 10px 24px rgba(17, 24, 39, 0.18))',
+  color: '#fff',
+};
+
+// Walks up from the block to the first ancestor that actually paints
+// something: a gradient (the role-coloured card) counts as painted, a solid
+// colour is judged by its luminance, and nothing at all means the block is on
+// bare page background.
+const findPaintedAncestorSurface = element => {
+  let node = element;
+  while (node && node.nodeType === 1) {
+    const style = window.getComputedStyle(node);
+    if (style.backgroundImage && style.backgroundImage !== 'none') return 'colored';
+    const background = style.backgroundColor;
+    if (background && background !== 'transparent' && !/^rgba\(0,\s*0,\s*0,\s*0\)$/.test(background)) {
+      return getContrastColor(background) === '#fff' ? 'colored' : 'light';
+    }
+    node = node.parentElement;
+  }
+  return 'none';
 };
 
 const topBlockAvatarRadius = '10px';
@@ -1310,6 +1344,8 @@ export const TopBlock = ({
   const [commentToDelete, setCommentToDelete] = React.useState(null);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
+  const containerRef = useRef(null);
+  const [needsOwnSurface, setNeedsOwnSurface] = useState(false);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
   const [resolvedPhotosCollection, setResolvedPhotosCollection] = React.useState(null);
   const [selectedPhotosCollection, setSelectedPhotosCollection] = React.useState(null);
@@ -1355,6 +1391,15 @@ export const TopBlock = ({
   const hasHiddenCycleFieldRole = hasRoleWithoutCycle(cardData);
   const userPhotoUrls = getUserProfilePhotoUrls(cardData);
   const userPhotoUrl = userPhotoUrls[0] || '';
+
+  // Measured once the block is in the DOM: only when nothing behind it paints a
+  // colour dark enough for white text does it draw its own surface.
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return;
+    const parent = containerRef.current?.parentElement;
+    if (!parent) return;
+    setNeedsOwnSurface(findPaintedAncestorSurface(parent) !== 'colored');
+  }, []);
 
   React.useEffect(() => {
     if (!cardData?.userId) {
@@ -1997,7 +2042,10 @@ export const TopBlock = ({
   );
 
   return (
-    <div style={topBlockContainerStyle}>
+    <div
+      ref={containerRef}
+      style={needsOwnSurface ? { ...topBlockContainerStyle, ...topBlockOwnSurfaceStyle } : topBlockContainerStyle}
+    >
       <div style={topBlockHeaderLayoutStyle}>
         <button
           type="button"
