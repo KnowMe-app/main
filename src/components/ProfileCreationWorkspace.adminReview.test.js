@@ -175,16 +175,21 @@ describe('ProfileCreationWorkspace admin review', () => {
     expect(saveCreateProfileMutation).not.toHaveBeenCalled();
   });
 
-  it('lists superseded versions above the field, oldest first', async () => {
+  it('puts the current input first and the timeline underneath it', async () => {
     await openDraftAsAdmin();
 
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
     // Ім'я6 is the current value and Ім'я7 the pending proposal, so only the
     // genuinely superseded Ім'я5 remains as history.
-    const restoreButtons = await screen.findAllByLabelText(/Повернути значення в анкету/);
+    const restoreButtons = await screen.findAllByLabelText(/Зберегти редакцію в анкету/);
     expect(restoreButtons).toHaveLength(1);
-    expect(screen.getByLabelText("Ім'я: значення з історії")).toHaveValue("Ім'я5");
+    const currentInput = screen.getByDisplayValue("Ім'я6");
+    const pendingInput = screen.getByLabelText("Ім'я: запропоноване значення");
+    const historicalInput = screen.getByLabelText("Ім'я: значення з історії");
+    expect(historicalInput).toHaveValue("Ім'я5");
+    expect(currentInput.compareDocumentPosition(pendingInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(pendingInput.compareDocumentPosition(historicalInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('restores the value edited directly in the historical input', async () => {
@@ -192,7 +197,7 @@ describe('ProfileCreationWorkspace admin review', () => {
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
     fireEvent.change(await screen.findByLabelText("Ім'я: значення з історії"), { target: { value: " Ім'я8 " } });
-    fireEvent.click(screen.getByLabelText(/Повернути значення в анкету/));
+    fireEvent.click(screen.getByLabelText(/Зберегти редакцію в анкету/));
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toEqual(["Ім'я6", "Ім'я8"]);
