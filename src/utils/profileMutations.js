@@ -335,7 +335,8 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   const mutationPath = getProfileMutationPath(creatorUid, cardId);
   const mutationSnapshot = await get(ref(database, mutationPath));
   const pendingMutation = mutationSnapshot.val();
-  if (!pendingMutation || pendingMutation.operation !== 'create') throw new Error(conflict);
+  if (!pendingMutation) throw new Error(conflict);
+  if (pendingMutation.operation !== 'create') throw new Error('Profile mutation is not a create mutation');
   const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
   const { keys: identityKeys, acquiredKeys: acquiredIdentityKeys } = await claimProfileIdentities({
     cardId,
@@ -345,20 +346,35 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   let result;
   try {
     result = await runTransaction(ref(database, mutationPath), mutation => {
-      if (!mutation || mutation.operation !== 'create') return undefined;
-      if (mutation.status !== 'pendingReview' && mutation.status !== 'private' && mutation.status !== 'publishing') return undefined;
+      // The Web SDK can invoke an updater with null before its local cache has
+      // the value just read from the server. Returning null (rather than
+      // aborting or restoring pendingMutation) lets the transaction compare
+      // that state with the server: an existing value causes a retry, while a
+      // concurrently deleted value remains deleted.
+      if (!mutation) {
+        conflict = 'Profile mutation not found';
+        return null;
+      }
+      if (mutation.operation !== 'create') {
+        conflict = 'Profile mutation is not a create mutation';
+        return undefined;
+      }
+      if (mutation.status !== 'pendingReview' && mutation.status !== 'private' && mutation.status !== 'publishing') {
+        conflict = 'Profile mutation is not publishable';
+        return undefined;
+      }
       if (Number(mutation.revision) !== Number(expectedRevision)) {
         conflict = 'REVISION_CONFLICT';
         return undefined;
       }
-      acceptedProfile = { ...cleanObject(finalData || mutation.data), userId: cardId };
+      acceptedProfile = candidateProfile;
       return { ...mutation, data: acceptedProfile, identityKeys, status: 'publishing', acceptedAt };
     }, { applyLocally: false });
   } catch (error) {
     await releaseProfileIdentities(cardId, acquiredIdentityKeys).catch(() => {});
     throw error;
   }
-  if (!result.committed) {
+  if (!result.committed || !result.snapshot.val()) {
     await releaseProfileIdentities(cardId, identityKeys.filter(key => !previousIdentityKeys.includes(key)));
     throw new Error(conflict);
   }

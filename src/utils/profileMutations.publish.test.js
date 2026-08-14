@@ -41,20 +41,69 @@ const pendingMutation = {
 // real card: it lands in users, goes through the standard search indexes,
 // and stays reachable for everybody who worked on it.
 describe('acceptCreateProfileMutation', () => {
+  let transactionMutation;
+
   beforeEach(() => {
     jest.clearAllMocks();
     ref.mockImplementation((db, path) => ({ db, path }));
     push.mockImplementation(() => ({ key: 'history-entry' }));
     get.mockResolvedValue(snapshotOf(pendingMutation));
-    // The real transaction runs the updater against the stored value; the
-    // publication path depends on what that updater returns.
+    transactionMutation = pendingMutation;
+    // A transaction may first see an empty local cache. When the updater does
+    // not abort, Firebase compares it with the server and retries with the
+    // stored value if that value differs.
     runTransaction.mockImplementation(async (refObject, updater) => {
-      const next = updater(refObject.path.startsWith('multiData/profileMutations') ? pendingMutation : null);
+      if (!refObject.path.startsWith('multiData/profileMutations')) {
+        const next = updater(null);
+        return { committed: next !== undefined, snapshot: snapshotOf(next) };
+      }
+      const localNext = updater(null);
+      if (localNext === undefined) return { committed: false, snapshot: snapshotOf(null) };
+      const next = transactionMutation === null ? localNext : updater(transactionMutation);
       return { committed: next !== undefined, snapshot: snapshotOf(next) };
     });
     getCardContributorIds.mockResolvedValue([]);
     getOverlaysForCard.mockResolvedValue({});
     syncUserSearchKeyIndex.mockResolvedValue(undefined);
+  });
+
+  it('publishes a pending create draft after an initial local cache miss', async () => {
+    await expect(acceptCreateProfileMutation({
+      cardId: 'card-1',
+      creatorUid: 'author-1',
+      expectedRevision: 3,
+    })).resolves.toEqual({ userId: 'card-1', name: 'Anna' });
+
+    expect(update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      'users/card-1': { userId: 'card-1', name: 'Anna' },
+    }));
+  });
+
+  it('does not recreate a draft deleted after the server read', async () => {
+    transactionMutation = null;
+
+    await expect(acceptCreateProfileMutation({
+      cardId: 'card-1',
+      creatorUid: 'author-1',
+      expectedRevision: 3,
+    })).rejects.toThrow('Profile mutation not found');
+
+    expect(update).not.toHaveBeenCalled();
+    const mutationResults = runTransaction.mock.results
+      .filter((result, index) => runTransaction.mock.calls[index][0].path.startsWith('multiData/profileMutations'));
+    expect(mutationResults).toHaveLength(1);
+  });
+
+  it('returns REVISION_CONFLICT when the draft changes after the server read', async () => {
+    transactionMutation = { ...pendingMutation, revision: 4, data: { ...pendingMutation.data, name: 'Olena' } };
+
+    await expect(acceptCreateProfileMutation({
+      cardId: 'card-1',
+      creatorUid: 'author-1',
+      expectedRevision: 3,
+    })).rejects.toThrow('REVISION_CONFLICT');
+
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('writes the card to users, clears accepted revision history, and runs the indexes', async () => {
