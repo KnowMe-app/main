@@ -39,10 +39,12 @@ export const buildChangeValueRows = change => {
 
   const added = uniq(toValues(change.added ?? change.add));
   const removed = uniq(toValues(change.removed));
+  const operationKind = added.length && removed.length ? 'replaced' : null;
 
   return [
-    ...added.map(value => ({ kind: 'added', value, previousValue: '' })),
-    ...removed.filter(value => !added.includes(value)).map(value => ({ kind: 'removed', value, previousValue: '' })),
+    ...added.map(value => ({ kind: operationKind || 'added', value, previousValue: '' })),
+    ...removed.filter(value => !added.includes(value))
+      .map(value => ({ kind: operationKind || 'removed', value, previousValue: '' })),
   ];
 };
 
@@ -97,6 +99,7 @@ export const buildFieldVersionHistory = (entries = []) => {
         const existing = versionsByValue[fieldName].get(normalizedValue);
         if (existing) {
           existing.transitions.push(transition);
+          existing.currentKind = row.kind;
           return;
         }
 
@@ -112,6 +115,7 @@ export const buildFieldVersionHistory = (entries = []) => {
           historySource: entry.historySource || 'overlay',
           transitions: [transition],
           ...row,
+          currentKind: row.kind,
         };
         versionsByValue[fieldName].set(normalizedValue, version);
         result[fieldName].push(version);
@@ -142,7 +146,9 @@ export const splitOverlayChangeValue = (change, row) => {
   const added = uniq(toValues(change.added ?? change.add));
   const removed = uniq(toValues(change.removed));
 
-  if (row.kind === 'removed') {
+  // A combined array operation is presented as a replacement, but settling
+  // one row must still preserve whether that value came from its removed side.
+  if (removed.includes(row.value) && !added.includes(row.value)) {
     return {
       settled: { removed: [row.value] },
       remaining: buildArrayChange(added, removed.filter(value => value !== row.value)),

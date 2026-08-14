@@ -34,11 +34,11 @@ describe('buildChangeValueRows', () => {
     ]);
   });
 
-  it('splits an array change into one row per value', () => {
+  it('treats every value in an array replacement as replaced', () => {
     expect(buildChangeValueRows({ added: ['380501112233', '380502223344'], removed: ['380503334455'] })).toEqual([
-      { kind: 'added', value: '380501112233', previousValue: '' },
-      { kind: 'added', value: '380502223344', previousValue: '' },
-      { kind: 'removed', value: '380503334455', previousValue: '' },
+      { kind: 'replaced', value: '380501112233', previousValue: '' },
+      { kind: 'replaced', value: '380502223344', previousValue: '' },
+      { kind: 'replaced', value: '380503334455', previousValue: '' },
     ]);
   });
 
@@ -93,6 +93,7 @@ describe('buildFieldVersionHistory', () => {
     expect(versions.name).toEqual([
       expect.objectContaining({
         kind: 'added',
+        currentKind: 'removed',
         value: "Ім'я7",
         action: 'edit',
         transitions: [
@@ -115,6 +116,35 @@ describe('buildFieldVersionHistory', () => {
       expect.objectContaining({ backendEntryId: 'ab', previousValue: 'A' }),
       expect.objectContaining({ backendEntryId: 'cb', previousValue: 'C' }),
     ]);
+  });
+
+  it('derives the current tone from the latest transition in a replacement chain', () => {
+    const entries = [
+      { entryId: 'a', fieldName: 'surname', at: 10, change: { added: ['A'] } },
+      { entryId: 'ab', fieldName: 'surname', at: 20, change: { added: ['B'], removed: ['A'] } },
+      { entryId: 'bc', fieldName: 'surname', at: 30, change: { added: ['C'], removed: ['B'] } },
+      { entryId: 'c0', fieldName: 'surname', at: 40, change: { removed: ['C'] } },
+    ];
+
+    const versions = buildFieldVersionHistory(entries).surname;
+    expect(versions.map(({ value, currentKind }) => ({ value, currentKind }))).toEqual([
+      { value: 'A', currentKind: 'replaced' },
+      { value: 'B', currentKind: 'replaced' },
+      { value: 'C', currentKind: 'removed' },
+    ]);
+
+    const readded = buildFieldVersionHistory([
+      ...entries,
+      { entryId: 'ca', fieldName: 'surname', at: 50, change: { added: ['C'] } },
+    ]).surname;
+    expect(readded.find(row => row.value === 'C')).toEqual(expect.objectContaining({
+      kind: 'replaced',
+      currentKind: 'added',
+      transitions: expect.arrayContaining([
+        expect.objectContaining({ kind: 'removed' }),
+        expect.objectContaining({ kind: 'added' }),
+      ]),
+    }));
   });
 });
 
