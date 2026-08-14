@@ -83,6 +83,39 @@ describe('buildFieldVersionHistory', () => {
   it('skips entries without a field', () => {
     expect(buildFieldVersionHistory([{ entryId: 'x', at: 1, change: { to: 'a' } }])).toEqual({});
   });
+
+  it('collapses chronological add/remove operations for the same normalized value', () => {
+    const versions = buildFieldVersionHistory([
+      { entryId: 'a', fieldName: 'name', at: 10, action: 'edit', change: { added: [' Ім\'я7 '] } },
+      { entryId: 'b', fieldName: 'name', at: 20, action: 'accept', change: { removed: ['Ім\'я7'] } },
+    ]);
+
+    expect(versions.name).toEqual([
+      expect.objectContaining({
+        kind: 'added',
+        value: "Ім'я7",
+        action: 'edit',
+        transitions: [
+          expect.objectContaining({ kind: 'added', at: 10 }),
+          expect.objectContaining({ kind: 'removed', at: 20 }),
+        ],
+      }),
+    ]);
+  });
+
+  it('keeps every transition when a value is revisited', () => {
+    const versions = buildFieldVersionHistory([
+      { entryId: 'ab', fieldName: 'name', at: 10, change: { from: 'A', to: 'B' } },
+      { entryId: 'bc', fieldName: 'name', at: 20, change: { from: 'B', to: 'C' } },
+      { entryId: 'cb', fieldName: 'name', at: 30, change: { from: 'C', to: 'B' } },
+    ]);
+
+    expect(versions.name.map(row => row.value)).toEqual(['B', 'C']);
+    expect(versions.name[0].transitions).toEqual([
+      expect.objectContaining({ backendEntryId: 'ab', previousValue: 'A' }),
+      expect.objectContaining({ backendEntryId: 'cb', previousValue: 'C' }),
+    ]);
+  });
 });
 
 describe('dropVersionsPresentIn', () => {

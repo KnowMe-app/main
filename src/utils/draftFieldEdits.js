@@ -70,7 +70,7 @@ export const buildPendingFieldEdits = (overlaysByEditor = {}) => sortOverlaysByA
 // value are dropped: a field that was re-saved unchanged has one version, not
 // one per save.
 export const buildFieldVersionHistory = (entries = []) => {
-  const seen = {};
+  const versionsByValue = {};
 
   return [...entries]
     .sort((a, b) => Number(a.at || 0) - Number(b.at || 0))
@@ -79,13 +79,29 @@ export const buildFieldVersionHistory = (entries = []) => {
       if (!fieldName) return result;
 
       buildChangeValueRows(entry.change).forEach((row, index) => {
-        const signature = `${row.kind}::${row.value}`;
-        if (!seen[fieldName]) seen[fieldName] = new Set();
-        if (seen[fieldName].has(signature)) return;
-        seen[fieldName].add(signature);
+        const normalizedValue = String(row.value ?? '').trim();
+        if (!versionsByValue[fieldName]) versionsByValue[fieldName] = new Map();
+        // Addition/removal are implementation details of applying an overlay.
+        // The timeline is value-based: keep the first chronological occurrence
+        // and do not turn a later operation on that value into another version.
+        // Keep the later transitions on that row, though: revisiting A after
+        // A -> B -> A must not lose the backend entries that complete the chain.
+        if (!normalizedValue) return;
+        const transition = {
+          backendEntryId: entry.backendEntryId || entry.entryId || '',
+          historySource: entry.historySource || 'overlay',
+          previousValue: row.previousValue,
+          kind: row.kind,
+          at: Number(entry.at) || 0,
+        };
+        const existing = versionsByValue[fieldName].get(normalizedValue);
+        if (existing) {
+          existing.transitions.push(transition);
+          return;
+        }
 
         if (!result[fieldName]) result[fieldName] = [];
-        result[fieldName].push({
+        const version = {
           key: `${entry.entryId || `${fieldName}-${entry.at}`}-${index}`,
           fieldName,
           at: Number(entry.at) || 0,
@@ -94,8 +110,11 @@ export const buildFieldVersionHistory = (entries = []) => {
           editorUserId: entry.editorUserId || entry.actorUid || entry.createdBy || '',
           backendEntryId: entry.backendEntryId || entry.entryId || '',
           historySource: entry.historySource || 'overlay',
+          transitions: [transition],
           ...row,
-        });
+        };
+        versionsByValue[fieldName].set(normalizedValue, version);
+        result[fieldName].push(version);
       });
 
       return result;

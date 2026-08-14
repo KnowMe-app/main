@@ -45,20 +45,22 @@ describe('profile mutations', () => {
 
   it('keeps every direct transition with its actor, time and revision', () => {
     const first = buildProfileRevisionHistory({
-      cardId: 'card-1', actorUid: 'author-1', previousData: {}, nextData: { name: 'Ім\'я1' }, at: 10, revision: 1,
+      cardId: 'card-1', actorUid: 'author-1', previousData: { name: 'Ім\'я1' }, nextData: { name: 'Ім\'я2' }, at: 20, revision: 2,
     });
     const second = buildProfileRevisionHistory({
-      cardId: 'card-1', actorUid: 'admin-1', previousData: { name: 'Ім\'я1' }, nextData: { name: 'Ім\'я2' }, at: 20, revision: 2,
-    });
-    const third = buildProfileRevisionHistory({
       cardId: 'card-1', actorUid: 'admin-1', previousData: { name: 'Ім\'я2' }, nextData: { name: 'Ім\'я3' }, at: 30, revision: 3,
     });
 
-    expect([...first, ...second, ...third]).toEqual([
-      expect.objectContaining({ change: { from: '', to: 'Ім\'я1' }, actorUid: 'author-1', at: 10, revision: 1 }),
-      expect.objectContaining({ change: { from: 'Ім\'я1', to: 'Ім\'я2' }, actorUid: 'admin-1', at: 20, revision: 2 }),
+    expect([...first, ...second]).toEqual([
+      expect.objectContaining({ change: { from: 'Ім\'я1', to: 'Ім\'я2' }, actorUid: 'author-1', at: 20, revision: 2 }),
       expect.objectContaining({ change: { from: 'Ім\'я2', to: 'Ім\'я3' }, actorUid: 'admin-1', at: 30, revision: 3 }),
     ]);
+  });
+
+  it('treats the initial profile values as the baseline, not revision history', () => {
+    expect(buildProfileRevisionHistory({
+      cardId: 'card-1', actorUid: 'author-1', previousData: undefined, nextData: { name: 'Ім\'я1' }, at: 10, revision: 1,
+    })).toEqual([]);
   });
 
   it('does not journal unchanged or service fields', () => {

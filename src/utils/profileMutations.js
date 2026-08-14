@@ -30,7 +30,7 @@ const cleanObject = value => Object.entries(value || {}).reduce((result, [key, i
 }, {});
 
 export const buildProfileRevisionHistory = ({ cardId, actorUid, previousData, nextData, at, revision }) => (
-  Object.entries(buildOverlayFromDraft(previousData || {}, nextData || {}))
+  previousData == null ? [] : Object.entries(buildOverlayFromDraft(previousData, nextData || {}))
     .map(([fieldName, change]) => ({
       cardId,
       actorUid,
@@ -133,7 +133,14 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
     })),
 );
 
-export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, data, expectedRevision }) => {
+export const saveCreateProfileMutation = async ({
+  cardId,
+  creatorUid,
+  actorUid,
+  data,
+  expectedRevision,
+  skipRevisionHistory = false,
+}) => {
   if (!cardId || !creatorUid || !actorUid) throw new Error('cardId, creatorUid and actorUid are required');
   let identityKeys;
   let acquiredIdentityKeys;
@@ -166,7 +173,7 @@ export const saveCreateProfileMutation = async ({ cardId, creatorUid, actorUid, 
       const revision = Number(current?.revision || 0) + 1;
       // Use the same normalization/diff representation as editor overlays so
       // both audit streams can be rendered by the same admin UI.
-      revisionHistory = buildProfileRevisionHistory({
+      revisionHistory = skipRevisionHistory ? [] : buildProfileRevisionHistory({
         cardId,
         actorUid,
         previousData: current?.data,
