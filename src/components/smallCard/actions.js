@@ -8,6 +8,7 @@ import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 import { getUserStateShape, markUserPendingRemove, updateUserInState } from "./userStateUpdate";
+import { getCardStorageCollection } from "utils/multiAccountEdits";
 
 export const handleChange = (
   setUsers,
@@ -349,7 +350,7 @@ export const removeField = (
   }
 };
 
-export const handleSubmit = (userData, condition, removeKeys = []) => {
+export const handleSubmit = async (userData, condition, removeKeys = []) => {
   const fieldsForNewUsersOnly = [
     'role',
     'getInTouch',
@@ -388,11 +389,11 @@ export const handleSubmit = (userData, condition, removeKeys = []) => {
   // Оновлюємо поле lastAction поточною датою в мілісекундах
   uploadedInfo.lastAction = Date.now();
 
-  // Для карток з довгим userId дані живуть лише в users — там немає сенсу
-  // фільтрувати поля під newUsers, пишемо все як є. Для коротких userId
-  // (де newUsers лишається єдиним сховищем) лишаємо той самий вибірковий набір.
-  const isLongUserId = String(userData?.userId || '').length > 20;
-  const basePayload = isLongUserId
+  // Картки, опубліковані з чернеток, мають короткий push id, але вже живуть у
+  // users. Тому вибираємо сховище за наявним записом, а не лише за довжиною id.
+  const storageCollection = await getCardStorageCollection(userData?.userId);
+  const writesToUsers = storageCollection === 'users';
+  const basePayload = writesToUsers
     ? { ...uploadedInfo }
     : Object.fromEntries(
         Object.entries(uploadedInfo).filter(([key]) =>
@@ -428,10 +429,10 @@ export const handleSubmit = (userData, condition, removeKeys = []) => {
     { removeKeys: removalTargets },
   );
 
-  if (isLongUserId) {
-    void updateDataInRealtimeDB(userData.userId, payloadForBackend, 'update');
+  if (writesToUsers) {
+    await updateDataInRealtimeDB(userData.userId, payloadForBackend, 'update');
   } else {
-    void updateDataInNewUsersRTDB(userData.userId, payloadForBackend, 'update');
+    await updateDataInNewUsersRTDB(userData.userId, payloadForBackend, 'update');
   }
 };
 
@@ -449,7 +450,8 @@ export const handleSubmitAll = async (userData, overwrite) => {
 
   updateCachedUser({ ...uploadedInfo, userId: userData.userId });
 
-  if (userData?.userId?.length > 20) {
+  const storageCollection = await getCardStorageCollection(userData?.userId);
+  if (storageCollection === 'users') {
     await updateDataInRealtimeDB(userData.userId, uploadedInfo, 'update');
     await updateDataInFiresoreDB(userData.userId, uploadedInfo, 'check');
   } else {

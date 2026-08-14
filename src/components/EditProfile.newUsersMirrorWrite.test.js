@@ -19,18 +19,18 @@ describe('long-userId cards no longer write anything to newUsers', () => {
     expect(mergeUtilSource).not.toContain('NEW_USERS_OWNED_FIELDS');
   });
 
-  it("remoteUpdate's long-userId branch never calls updateDataInNewUsersRTDB", () => {
+  it("remoteUpdate's users-storage branch never calls updateDataInNewUsersRTDB", () => {
     const remoteUpdateBody = editProfileSource.slice(
       editProfileSource.indexOf('async function remoteUpdate'),
       editProfileSource.indexOf('const enqueueProfileSync')
     );
-    const longUserIdBranch = remoteUpdateBody.slice(
-      remoteUpdateBody.indexOf('updatedState?.userId?.length > 20'),
-      remoteUpdateBody.indexOf("} else if (updatedState?.userId)")
+    const usersStorageBranch = remoteUpdateBody.slice(
+      remoteUpdateBody.indexOf("storageCollection === 'users'"),
+      remoteUpdateBody.indexOf("} else if (storageCollection === 'newUsers')")
     );
 
-    expect(longUserIdBranch).not.toContain('updateDataInNewUsersRTDB');
-    expect(longUserIdBranch).toContain('updateDataInRealtimeDB(updatedState.userId, uploadedInfo');
+    expect(usersStorageBranch).not.toContain('updateDataInNewUsersRTDB');
+    expect(usersStorageBranch).toContain('updateDataInRealtimeDB(updatedState.userId, uploadedInfo');
   });
 
   it("persistCanonicalByRules' long-userId branch never calls updateDataInNewUsersRTDB", () => {

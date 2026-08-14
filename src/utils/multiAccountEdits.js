@@ -80,7 +80,20 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
     updatedAt: overlay.updatedAt || null,
     cardUserId: overlay.cardUserId || cardUserId,
     editorUserId: overlay.editorUserId || editorUserId,
+    ...(overlay.adminOnly === true ? { adminOnly: true } : {}),
   };
+};
+
+// Published create-profile cards retain their Firebase push id, so id length
+// alone cannot identify their storage collection. Prefer an existing users
+// record and fall back to the legacy id convention for cards not yet there.
+export const getCardStorageCollection = async cardUserId => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return null;
+  if (isLongFormatUserId(normalizedCardId)) return 'users';
+
+  const usersSnapshot = await get(ref2(database, `users/${normalizedCardId}`));
+  return usersSnapshot.exists() ? 'users' : 'newUsers';
 };
 
 export const getCanonicalCard = async cardUserId => {
@@ -272,7 +285,7 @@ export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   return Object.values(overlaysByEditor)[0] || null;
 };
 
-export const getOverlaysForCard = async cardUserId => {
+export const getOverlaysForCard = async (cardUserId, { includeAdminOnly = true } = {}) => {
   if (!cardUserId) return {};
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return {};
@@ -285,6 +298,7 @@ export const getOverlaysForCard = async cardUserId => {
   Object.entries(overlays).forEach(([editorUserId, overlay]) => {
     const normalized = normalizeEditorNode(overlay, normalizedCardId, editorUserId);
     if (!normalized) return;
+    if (!includeAdminOnly && normalized.adminOnly) return;
     result[editorUserId] = normalized;
   });
 
