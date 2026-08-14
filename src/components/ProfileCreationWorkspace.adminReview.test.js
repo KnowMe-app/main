@@ -127,7 +127,15 @@ describe('ProfileCreationWorkspace admin review', () => {
     expect(screen.getByLabelText("Ім'я: запропоноване значення")).toHaveValue("Ім'я7");
     expect(screen.getByText(/замість/)).toBeInTheDocument();
     // The proposal is attributed to the editor who made it.
-    expect(await screen.findByText('Оля Р.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Оля Р.' })).toBeInTheDocument();
+  });
+
+  it('uses the user id as the clickable author only when a name is unavailable', async () => {
+    await openDraftAsAdmin();
+    fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
+
+    expect((await screen.findAllByRole('button', { name: 'author-1' })).length).toBeGreaterThan(0);
+    expect(screen.queryByText('правка')).not.toBeInTheDocument();
   });
 
   it('saves one proposed value into the draft and clears it from the backend', async () => {
