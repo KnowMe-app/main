@@ -1,3 +1,13 @@
+import {
+  buildChangeValueRows,
+  buildFieldVersionHistory,
+  buildPendingFieldEdits,
+  buildRemovalChange,
+  dropVersionsPresentIn,
+  splitOverlayChangeValue,
+  withEditedValue,
+} from './draftFieldEdits';
+
 // draftFieldEdits reuses the overlay normalization/ordering rules, and that
 // module reaches Firebase at import time - stub it the way the overlay tests do.
 jest.mock('firebase/database', () => ({
@@ -10,16 +20,6 @@ jest.mock('firebase/database', () => ({
 }));
 
 jest.mock('components/config', () => ({ database: { app: 'db' } }));
-
-import {
-  buildChangeValueRows,
-  buildFieldVersionHistory,
-  buildPendingFieldEdits,
-  buildRemovalChange,
-  dropVersionsPresentIn,
-  splitOverlayChangeValue,
-  withEditedValue,
-} from './draftFieldEdits';
 
 describe('buildChangeValueRows', () => {
   it('reads a scalar replacement as one row that remembers what it replaces', () => {
