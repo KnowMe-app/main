@@ -262,7 +262,7 @@ const DraftContacts = styled.div`
 // The box itself stays editable, so correcting the format here and saving
 // stores exactly what is in it - "редакція означає, що приймаємо саме
 // відредагований формат".
-const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete }) => {
+const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, onOpenAuthor }) => {
   const [value, setValue] = useState(row.value);
 
   useEffect(() => setValue(row.value), [row.value]);
@@ -305,7 +305,9 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete }
       ><FiSave aria-hidden="true" /></FieldActionButton>
     </EditControl>
     <EditMeta>
-      <span>{authorName}</span>
+      {row.editorUserId
+        ? <AuthorLink type="button" onClick={onOpenAuthor}>{authorName}</AuthorLink>
+        : <span>{authorName}</span>}
       {row.updatedAt ? <span>· {new Date(row.updatedAt).toLocaleString('uk-UA')}</span> : null}
     </EditMeta>
     {isEdited && <EditHint>Буде збережено виправлене значення: {value.trim() || '—'}</EditHint>}
@@ -351,9 +353,10 @@ const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestore, onDe
     </EditControl>
     <VersionMeta>
       <span>{row.at ? new Date(row.at).toLocaleString('uk-UA') : '—'}</span>
-      <span>· {OVERLAY_HISTORY_ACTION_LABELS[row.action] || row.action}</span>
-      <span>· {authorName}</span>
-      {row.editorUserId && <AuthorLink type="button" onClick={onOpenAuthor}>{row.editorUserId}</AuthorLink>}
+      <span>·</span>
+      {row.editorUserId
+        ? <AuthorLink type="button" onClick={onOpenAuthor}>{authorName}</AuthorLink>
+        : <span>{authorName}</span>}
     </VersionMeta>
   </VersionRow>;
 };
@@ -394,17 +397,11 @@ const isSharedDraft = (mutation, viewerUid, isAdmin) => Boolean(
   mutation?.createdBy && viewerUid && mutation.createdBy !== viewerUid && !isAdmin
 );
 
-const OVERLAY_HISTORY_ACTION_LABELS = {
-  edit: 'правка',
-  accept: 'прийнято',
-  discard: 'видалено',
-};
-
 const FORM_FIELD_NAMES = new Set(CREATE_FORM_SECTIONS.flatMap(section => section.fields));
 
 const describeAuthor = (authorId, authors) => {
   const author = authors?.[authorId] || {};
-  return [author.name, author.surname].filter(Boolean).join(' ') || (authorId ? 'редактор' : '—');
+  return [author.name, author.surname].filter(Boolean).join(' ') || authorId || '—';
 };
 
 export const ProfileCreationWorkspace = () => {
@@ -1020,42 +1017,41 @@ export const ProfileCreationWorkspace = () => {
 
   const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
 
-  // Versions the field no longer shows - neither as its current value nor as a
-  // pending proposal - newest first, leaving the very first revision at the bottom.
-  const renderFieldVersions = (fieldName, currentValues) => {
-    if (!showDraftHistory) return null;
+  // One chronological tree per field. The current value remains above it; all
+  // changes follow newest first, leaving the original value at the bottom.
+  const renderFieldTimeline = (fieldName, currentValues, label) => {
     const pendingValues = (pendingFieldEdits[fieldName] || []).map(row => row.value);
-    const versions = dropVersionsPresentIn(fieldVersionHistory[fieldName] || [], [...currentValues, ...pendingValues]);
-    if (!versions.length) return null;
-
-    return <FieldTimeline>
-      {[...versions].reverse().map(row => <HistoricalFieldEdit
-        key={row.key}
-        row={row}
-        label={getFieldLabel(fieldsMap.get(fieldName) || { name: fieldName }) || fieldName}
-        authorName={describeAuthor(row.editorUserId, historyAuthors)}
-        disabled={saving}
-        onRestore={value => restoreFieldVersion(row, value)}
-        onDelete={() => deleteFieldVersion(row)}
-        onOpenAuthor={() => navigate(`/edit/${row.editorUserId}`)}
-      />)}
-    </FieldTimeline>;
-  };
-
-  const renderFieldPendingEdits = (fieldName, label) => {
-    const rows = pendingFieldEdits[fieldName] || [];
+    const versions = showDraftHistory
+      ? dropVersionsPresentIn(fieldVersionHistory[fieldName] || [], [...currentValues, ...pendingValues])
+      : [];
+    const rows = [
+      ...(pendingFieldEdits[fieldName] || []).map(row => ({ ...row, timelineType: 'pending' })),
+      ...versions.map(row => ({ ...row, timelineType: 'history' })),
+    ].sort((a, b) => Number(b.updatedAt || b.at || 0) - Number(a.updatedAt || a.at || 0));
     if (!rows.length) return null;
 
     return <FieldTimeline>
-      {[...rows].reverse().map(row => <PendingFieldEdit
-        key={row.key}
-        row={row}
-        label={label}
-        disabled={saving}
-        authorName={describeAuthor(row.editorUserId, historyAuthors)}
-        onSave={editedValue => saveFieldEdit(row, editedValue, label)}
-        onDelete={() => deleteFieldEdit(row, label)}
-      />)}
+      {rows.map(row => row.timelineType === 'pending'
+        ? <PendingFieldEdit
+          key={`pending-${row.key}`}
+          row={row}
+          label={label}
+          disabled={saving}
+          authorName={describeAuthor(row.editorUserId, historyAuthors)}
+          onSave={editedValue => saveFieldEdit(row, editedValue, label)}
+          onDelete={() => deleteFieldEdit(row, label)}
+          onOpenAuthor={() => navigate(`/edit/${row.editorUserId}`)}
+        />
+        : <HistoricalFieldEdit
+          key={`history-${row.key}`}
+          row={row}
+          label={label}
+          authorName={describeAuthor(row.editorUserId, historyAuthors)}
+          disabled={saving}
+          onRestore={value => restoreFieldVersion(row, value)}
+          onDelete={() => deleteFieldVersion(row)}
+          onOpenAuthor={() => navigate(`/edit/${row.editorUserId}`)}
+        />)}
     </FieldTimeline>;
   };
 
@@ -1117,8 +1113,7 @@ export const ProfileCreationWorkspace = () => {
           </FieldControl>)}
         </FieldControls>
       )}
-      {renderFieldPendingEdits(fieldName, label)}
-      {renderFieldVersions(fieldName, currentValues)}
+      {renderFieldTimeline(fieldName, currentValues, label)}
     </FieldRow>;
   };
 
@@ -1165,8 +1160,10 @@ export const ProfileCreationWorkspace = () => {
                 {activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}
               </TechnicalMeta>
               {activeMutation.createdBy && <TechnicalMeta>
-                Автор: {describeAuthor(activeMutation.createdBy, historyAuthors)}{' '}
-                <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>{activeMutation.createdBy}</AuthorLink>
+                Автор:{' '}
+                <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>
+                  {describeAuthor(activeMutation.createdBy, historyAuthors)}
+                </AuthorLink>
               </TechnicalMeta>}
               <DraftContacts>{fieldContacts(draft)}</DraftContacts>
             </>
@@ -1191,7 +1188,7 @@ export const ProfileCreationWorkspace = () => {
         </SectionHeader>
         <Meta>{pendingEditsCount === 0
           ? 'Немає непідтверджених правок — усі зміни вже опрацьовано.'
-          : 'Кожну правку показано в анкеті нижче — біля того поля, якого вона стосується: спочатку старіші версії, потім поточне значення, у кінці — запропоноване. Неприйняті правки не потраплять у профіль і залишаться в черзі.'}</Meta>
+          : 'Кожну зміну показано біля її поля: актуальне значення розташоване вгорі, а попередні — нижче, від найновішого до оригінального. Неприйняті зміни не потраплять у профіль і залишаться в черзі.'}</Meta>
         {pendingEditsCount > 0 && <Actions>
           <AcceptButton disabled={saving} onClick={acceptAllOverlayChanges}>Прийняти всі</AcceptButton>
           <RejectButton disabled={saving} onClick={discardAllOverlayChanges}>Видалити всі</RejectButton>
@@ -1207,7 +1204,7 @@ export const ProfileCreationWorkspace = () => {
         {showDraftHistory && <Meta>
           {draftHistory.length === 0
             ? 'Історія порожня.'
-            : 'Попередні версії показано над полями анкети — від найстарішої до найновішої.'}
+            : 'Для кожного поля показано окреме дерево: актуальне значення вгорі, оригінальне — внизу.'}
         </Meta>}
       </ReviewCard>}
       {overlayTarget && <CommentCard>
