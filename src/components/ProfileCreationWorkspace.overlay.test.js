@@ -2,7 +2,8 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
+import { HistoricalFieldEdit, ProfileCreationWorkspace } from './ProfileCreationWorkspace';
+import { buildFieldVersionHistory } from 'utils/draftFieldEdits';
 import { applyOverlayToCard, buildOverlayFromDraft, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
 
@@ -131,5 +132,34 @@ describe('ProfileCreationWorkspace repeatable field behavior', () => {
 
     const fields = buildOverlayFromDraft(sharedDraft.data, { ...sharedDraft.data, phone: ['222'] });
     expect(applyOverlayToCard(sharedDraft.data, fields).phone).toBe('222');
+  });
+});
+
+describe('ProfileCreationWorkspace history tones', () => {
+  it('shows replaced surnames in green and only the latest cleared surname struck through in red', () => {
+    const history = buildFieldVersionHistory([
+      { entryId: 'a', fieldName: 'surname', at: 10, change: { added: ['A'] } },
+      { entryId: 'ab', fieldName: 'surname', at: 20, change: { added: ['B'], removed: ['A'] } },
+      { entryId: 'bc', fieldName: 'surname', at: 30, change: { added: ['C'], removed: ['B'] } },
+      { entryId: 'clear', fieldName: 'surname', at: 40, change: { removed: ['C'] } },
+    ]).surname;
+
+    render(<>{history.map(row => <HistoricalFieldEdit
+      key={row.key}
+      row={row}
+      label="Прізвище"
+      authorName="Редактор"
+      onRestore={jest.fn()}
+      onDelete={jest.fn()}
+      onOpenAuthor={jest.fn()}
+    />)}</>);
+
+    const [a, b, c] = screen.getAllByLabelText('Прізвище: значення з історії');
+    expect(a).toHaveStyle('text-decoration: none');
+    expect(b).toHaveStyle('text-decoration: none');
+    expect(c).toHaveStyle('text-decoration: line-through');
+    expect(screen.getByTestId('history-value-A')).toHaveStyle('border-color: #2e9b55');
+    expect(screen.getByTestId('history-value-B')).toHaveStyle('border-color: #2e9b55');
+    expect(screen.getByTestId('history-value-C')).toHaveStyle('border-color: #d94b4b');
   });
 });

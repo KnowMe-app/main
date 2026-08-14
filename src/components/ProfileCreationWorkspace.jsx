@@ -305,17 +305,18 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
   </EditCard>;
 };
 
-const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestore, onDelete, onOpenAuthor }) => {
+export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestore, onDelete, onOpenAuthor }) => {
   const [value, setValue] = useState(row.value);
+  const currentKind = row.currentKind || row.kind;
 
   useEffect(() => setValue(row.value), [row.value]);
 
-  return <VersionRow $kind={row.kind}>
+  return <VersionRow $kind={currentKind} data-testid={`history-value-${row.value}`}>
     <EditControl>
       <InputShell>
         <EditValueInput
           value={value}
-          $kind={row.kind}
+          $kind={currentKind}
           aria-label={`${label}: значення з історії`}
           onChange={event => setValue(event.target.value)}
           onKeyDown={event => {
