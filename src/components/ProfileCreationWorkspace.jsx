@@ -3,7 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiChevronDown, FiClock, FiCornerLeftDown, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
+import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
 import { auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
@@ -213,8 +213,8 @@ const AuthorLink = styled.button`
 
 // --- Inline change timeline -------------------------------------------------
 // Every proposal and every superseded value is rendered inside the
-// questionnaire, in the row of the field it belongs to, oldest first: past
-// versions, then the value the card holds now, then what editors propose next.
+// questionnaire, in the row of the field it belongs to, newest first: the
+// value the card holds now, then pending proposals and superseded versions.
 // No word labels ("додано" / "видалено") any more: what a proposal is, is said
 // by its colour, and what to do with it is said by the two icons next to its
 // value - a diskette that saves it into the card and a "×" that deletes the
@@ -344,10 +344,10 @@ const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestore, onDe
         type="button"
         $tone="restore"
         disabled={disabled || !value.trim()}
-        title="Повернути це значення в анкету"
-        aria-label={`Повернути значення в анкету: ${row.value}`}
+        title="Зберегти цю редакцію в анкету"
+        aria-label={`Зберегти редакцію в анкету: ${row.value}`}
         onClick={() => onRestore(value)}
-      ><FiCornerLeftDown aria-hidden="true" /></FieldActionButton>
+      ><FiSave aria-hidden="true" /></FieldActionButton>
     </EditControl>
     <VersionMeta>
       <span>{row.at ? new Date(row.at).toLocaleString('uk-UA') : '—'}</span>
@@ -1021,15 +1021,15 @@ export const ProfileCreationWorkspace = () => {
   const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
 
   // Versions the field no longer shows - neither as its current value nor as a
-  // pending proposal - oldest first, so a name reads Ім'я5 → Ім'я6 → зараз.
+  // pending proposal - newest first, leaving the very first revision at the bottom.
   const renderFieldVersions = (fieldName, currentValues) => {
     if (!showDraftHistory) return null;
     const pendingValues = (pendingFieldEdits[fieldName] || []).map(row => row.value);
     const versions = dropVersionsPresentIn(fieldVersionHistory[fieldName] || [], [...currentValues, ...pendingValues]);
     if (!versions.length) return null;
 
-    return <FieldTimeline $before>
-      {versions.map(row => <HistoricalFieldEdit
+    return <FieldTimeline>
+      {[...versions].reverse().map(row => <HistoricalFieldEdit
         key={row.key}
         row={row}
         label={getFieldLabel(fieldsMap.get(fieldName) || { name: fieldName }) || fieldName}
@@ -1047,7 +1047,7 @@ export const ProfileCreationWorkspace = () => {
     if (!rows.length) return null;
 
     return <FieldTimeline>
-      {rows.map(row => <PendingFieldEdit
+      {[...rows].reverse().map(row => <PendingFieldEdit
         key={row.key}
         row={row}
         label={label}
@@ -1071,7 +1071,6 @@ export const ProfileCreationWorkspace = () => {
 
     return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)}>
       <FieldLabel>{label}</FieldLabel>
-      {renderFieldVersions(fieldName, currentValues)}
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <FieldChipRow>
           {field.options.map(option => {
@@ -1119,6 +1118,7 @@ export const ProfileCreationWorkspace = () => {
         </FieldControls>
       )}
       {renderFieldPendingEdits(fieldName, label)}
+      {renderFieldVersions(fieldName, currentValues)}
     </FieldRow>;
   };
 
