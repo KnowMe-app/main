@@ -17,13 +17,12 @@ jest.mock('./multiAccountEdits', () => {
   const actual = jest.requireActual('./multiAccountEdits');
   return {
     ...actual,
-    getCardContributorIds: jest.fn(async () => []),
     getOverlaysForCard: jest.fn(async () => ({})),
   };
 });
 
 const { syncUserSearchKeyIndex } = require('components/config');
-const { getCardContributorIds, getOverlaysForCard } = require('./multiAccountEdits');
+const { getOverlaysForCard } = require('./multiAccountEdits');
 const { acceptCreateProfileMutation } = require('./profileMutations');
 
 const snapshotOf = value => ({ exists: () => Boolean(value), val: () => value });
@@ -39,7 +38,7 @@ const pendingMutation = {
 
 // Publishing a draft ("Зберегти чернетку") is the one step that turns it into a
 // real card: it lands in users, goes through the standard search indexes,
-// and stays reachable for everybody who worked on it.
+// and is subsequently loaded from that canonical collection.
 describe('acceptCreateProfileMutation', () => {
   let transactionMutation;
 
@@ -64,7 +63,6 @@ describe('acceptCreateProfileMutation', () => {
       const next = transactionMutation === null ? localNext : updater(transactionMutation);
       return { committed: next !== undefined, snapshot: snapshotOf(next) };
     });
-    getCardContributorIds.mockResolvedValue([]);
     getOverlaysForCard.mockResolvedValue({});
     syncUserSearchKeyIndex.mockResolvedValue(undefined);
   };
@@ -129,6 +127,7 @@ describe('acceptCreateProfileMutation', () => {
 
     const [, publication] = update.mock.calls.find(([target]) => target.path === undefined || target.path === '') || update.mock.calls[0];
     expect(publication['users/card-1']).toEqual({ userId: 'card-1', name: 'Anna' });
+    expect(Object.keys(publication).some(path => path.includes('createdProfileCardIds'))).toBe(false);
     expect(publication['multiData/profileMutationHistory/card-1']).toBeNull();
     expect(publication['multiData/profileMutations/author-1/card-1'].status).toBe('accepted');
     expect(Object.keys(publication).some(path => path.startsWith('multiData/edits/'))).toBe(false);
@@ -151,37 +150,6 @@ describe('acceptCreateProfileMutation', () => {
     expect(publication['multiData/edits/card-1/editor-1/adminOnly']).toBe(true);
     expect(publication).not.toHaveProperty('multiData/edits/card-1/editor-1/fields');
     expect(publication['users/card-1']).not.toHaveProperty('city');
-  });
-
-  it('keeps the card in reach of its author and of every editor who worked on it', async () => {
-    getCardContributorIds.mockResolvedValue(['editor-1', 'editor-2', 'author-1']);
-
-    await acceptCreateProfileMutation({
-      cardId: 'card-1',
-      creatorUid: 'author-1',
-      expectedRevision: 3,
-      finalData: { userId: 'card-1', name: 'Anna' },
-    });
-
-    const [, publication] = update.mock.calls[0];
-    expect(publication['users/author-1/createdProfileCardIds/card-1']).toBe(true);
-    expect(publication['users/editor-1/createdProfileCardIds/card-1']).toBe(true);
-    expect(publication['users/editor-2/createdProfileCardIds/card-1']).toBe(true);
-  });
-
-  it('publishes even when the contributor roster cannot be read', async () => {
-    getCardContributorIds.mockRejectedValue(new Error('permission denied'));
-
-    await expect(acceptCreateProfileMutation({
-      cardId: 'card-1',
-      creatorUid: 'author-1',
-      expectedRevision: 3,
-      finalData: { userId: 'card-1', name: 'Anna' },
-    })).resolves.toEqual({ userId: 'card-1', name: 'Anna' });
-
-    const [, publication] = update.mock.calls[0];
-    expect(publication['users/author-1/createdProfileCardIds/card-1']).toBe(true);
-    expect(publication['users/card-1']).toEqual({ userId: 'card-1', name: 'Anna' });
   });
 
   it('labels each failed publication phase without exposing its Firebase path', async () => {

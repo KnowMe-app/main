@@ -122,7 +122,7 @@ import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { getEffectiveProfile, loadGrantedCreatedProfiles, loadOwnProfileMutations } from 'utils/profileMutations';
+import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
@@ -1440,8 +1440,8 @@ const Matching = () => {
       setPersonalCreateProfiles([]);
       return () => { active = false; };
     }
-    Promise.all([loadOwnProfileMutations(ownerId), loadGrantedCreatedProfiles(ownerId)])
-      .then(([items, grantedProfiles]) => {
+    loadOwnProfileMutations(ownerId)
+      .then(items => {
         if (!active) return;
         const pendingProfiles = items.map(mutation => ({
           ...getEffectiveProfile({ mutation }),
@@ -1451,13 +1451,7 @@ const Matching = () => {
           __profileMutationOperation: 'create',
           __profileMutationStatus: mutation.status,
         }));
-        const acceptedProfiles = grantedProfiles.map(profile => ({
-          ...profile,
-          publish: profile.publish ?? true,
-          __sourceCollection: 'newUsers',
-          __matchingAccessAllowed: true,
-        }));
-        setPersonalCreateProfiles([...acceptedProfiles, ...pendingProfiles]);
+        setPersonalCreateProfiles(pendingProfiles);
       })
       .catch(error => console.error('Failed to load personal create profiles', error));
     return () => { active = false; };
