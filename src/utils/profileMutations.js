@@ -170,7 +170,10 @@ export const saveCreateProfileMutation = async ({
         conflict = 'Profile mutation belongs to another user';
         return undefined;
       }
-      if (current && current.status !== 'pendingReview' && current.status !== 'private') {
+      // A previous client/version may have failed after the temporary
+      // publishing transition. Treat the next explicit autosave as recovery
+      // instead of permanently trapping the draft in REVISION_CONFLICT.
+      if (current && current.status !== 'pendingReview' && current.status !== 'private' && current.status !== 'publishing') {
         conflict = 'REVISION_CONFLICT';
         return undefined;
       }
@@ -199,6 +202,7 @@ export const saveCreateProfileMutation = async ({
         updatedAt: now,
         revision,
         status: 'pendingReview',
+        ...(current?.status === 'publishing' ? { acceptedAt: null } : {}),
         identityKeys,
       };
     }, { applyLocally: false });
@@ -344,6 +348,11 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     () => claimProfileIdentities({ cardId, data: candidateProfile }),
   );
   const previousIdentityKeys = pendingMutation.identityKeys || [];
+  const restorePendingMutation = () => runTransaction(ref(database, mutationPath), current => (
+    current?.status === 'publishing' && current?.acceptedAt === acceptedAt
+      ? { ...current, status: pendingMutation.status, acceptedAt: null }
+      : current
+  ), { applyLocally: false });
   let result;
   try {
     result = await runTransaction(ref(database, mutationPath), mutation => {
@@ -395,11 +404,7 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
       () => syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
     );
   } catch (error) {
-    await runTransaction(ref(database, mutationPath), current => (
-      current?.status === 'publishing' && current?.acceptedAt === acceptedAt
-        ? { ...current, status: pendingMutation.status, acceptedAt: null }
-        : current
-    ), { applyLocally: false });
+    await restorePendingMutation().catch(() => {});
     throw error;
   }
   const pendingOverlays = await getOverlaysForCard(cardId).catch(error => {
@@ -414,14 +419,30 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     return updates;
   }, {});
 
-  await withProfileSaveStage('publication-update', () => update(ref(database), {
-    [`users/${cardId}`]: acceptedProfile,
-    ...pendingOverlayVisibility,
-    [mutationPath]: { ...mutation, status: 'accepted' },
-    // Every revision in this journal is now part of the accepted base card.
-    // Pending editor changes use edits/editsHistory and remain untouched.
-    [`${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`]: null,
-  }));
+  // Keep the critical atomic publication deliberately small. Optional review
+  // bookkeeping has stricter/legacy rules and must never prevent the flat
+  // users/{cardId} card from being published together with its mutation.
+  try {
+    await withProfileSaveStage('publication-update', () => update(ref(database), {
+      [`users/${cardId}`]: acceptedProfile,
+      [mutationPath]: { ...mutation, status: 'accepted' },
+    }));
+  } catch (error) {
+    error.profileSaveTargets = ['users-card', 'mutation-status'];
+    error.profileSaveRecovered = Boolean((await restorePendingMutation().catch(() => null))?.committed);
+    throw error;
+  }
+
+  // Cleanup is best-effort: legacy overlays and child-only history rules must
+  // not roll back a successfully published canonical card.
+  if (Object.keys(pendingOverlayVisibility).length) {
+    update(ref(database), pendingOverlayVisibility).catch(error => {
+      console.warn('[profileMutations] overlay visibility cleanup unavailable', error);
+    });
+  }
+  remove(ref(database, `${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`)).catch(error => {
+    console.warn('[profileMutations] revision history cleanup unavailable', error);
+  });
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return acceptedProfile;
 };

@@ -1,9 +1,10 @@
-const { get, push, ref, runTransaction, update } = require('firebase/database');
+const { get, push, ref, remove, runTransaction, update } = require('firebase/database');
 
 jest.mock('firebase/database', () => ({
   get: jest.fn(),
   push: jest.fn(() => ({ key: 'history-entry' })),
   ref: jest.fn((db, path) => ({ db, path })),
+  remove: jest.fn(async () => {}),
   runTransaction: jest.fn(),
   update: jest.fn(),
 }));
@@ -65,6 +66,8 @@ describe('acceptCreateProfileMutation', () => {
     });
     getOverlaysForCard.mockResolvedValue({});
     syncUserSearchKeyIndex.mockResolvedValue(undefined);
+    update.mockResolvedValue(undefined);
+    remove.mockResolvedValue(undefined);
   };
 
   beforeEach(resetPublicationMocks);
@@ -128,10 +131,13 @@ describe('acceptCreateProfileMutation', () => {
     const [, publication] = update.mock.calls.find(([target]) => target.path === undefined || target.path === '') || update.mock.calls[0];
     expect(publication['users/card-1']).toEqual({ userId: 'card-1', name: 'Anna' });
     expect(Object.keys(publication).some(path => path.includes('createdProfileCardIds'))).toBe(false);
-    expect(publication['multiData/profileMutationHistory/card-1']).toBeNull();
+    expect(publication).not.toHaveProperty('multiData/profileMutationHistory/card-1');
     expect(publication['multiData/profileMutations/author-1/card-1'].status).toBe('accepted');
     expect(Object.keys(publication).some(path => path.startsWith('multiData/edits/'))).toBe(false);
     expect(Object.keys(publication).some(path => path.startsWith('multiData/editsHistory/'))).toBe(false);
+    expect(remove).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'multiData/profileMutationHistory/card-1',
+    }));
   });
 
   it('keeps unresolved overlay fields and makes them admin-only after publication', async () => {
@@ -146,9 +152,10 @@ describe('acceptCreateProfileMutation', () => {
       finalData: { userId: 'card-1', name: 'Anna' },
     });
 
-    const [, publication] = update.mock.calls[0];
-    expect(publication['multiData/edits/card-1/editor-1/adminOnly']).toBe(true);
-    expect(publication).not.toHaveProperty('multiData/edits/card-1/editor-1/fields');
+    const publications = update.mock.calls.map(([, publication]) => publication);
+    expect(publications[1]['multiData/edits/card-1/editor-1/adminOnly']).toBe(true);
+    expect(publications[1]).not.toHaveProperty('multiData/edits/card-1/editor-1/fields');
+    const publication = publications[0];
     expect(publication['users/card-1']).not.toHaveProperty('city');
   });
 
@@ -188,6 +195,10 @@ describe('acceptCreateProfileMutation', () => {
 
     resetPublicationMocks();
     update.mockRejectedValueOnce(permissionError());
-    await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'publication-update' });
+    await expect(publish()).rejects.toMatchObject({
+      profileSaveStage: 'publication-update',
+      profileSaveTargets: ['users-card', 'mutation-status'],
+      profileSaveRecovered: true,
+    });
   });
 });
