@@ -656,6 +656,11 @@ export const ProfileCreationWorkspace = () => {
     'identity-claim-or-mutation': 'збереження чернетки',
   };
 
+  const safeSaveTargetNames = {
+    'users-card': 'запис users/{cardId}',
+    'mutation-status': 'статус profileMutations',
+  };
+
   const safeSaveErrorCode = error => {
     const code = String(error?.code || '').toUpperCase();
     const message = String(error?.message || '').toUpperCase();
@@ -678,10 +683,21 @@ export const ProfileCreationWorkspace = () => {
     });
     const detail = safeSaveErrorCode(error);
     const stage = safeSaveStageNames[error?.profileSaveStage] || 'невідомий етап';
+    const targets = (error?.profileSaveTargets || [])
+      .map(target => safeSaveTargetNames[target])
+      .filter(Boolean)
+      .join(' + ');
+    const recovery = error?.profileSaveRecovered === true
+      ? 'Чернетку повернено в режим редагування — можна повторити.'
+      : error?.profileSaveRecovered === false
+        ? 'Не вдалося автоматично розблокувати чернетку. Оновіть сторінку.'
+        : '';
     toast.error(
       <div>
         <div style={{ fontWeight: 700 }}>{fallbackMessage}</div>
         {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{stage}: {detail}</div> : null}
+        {targets ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>Перевірте rules для: {targets}.</div> : null}
+        {recovery ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{recovery}</div> : null}
       </div>,
       { duration: 8000 },
     );
