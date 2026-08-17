@@ -63,6 +63,11 @@ describe('Matching redesigned profile regressions', () => {
       name: ['', 'Актуальне ім’я'],
       surname: [null, 'Актуальне прізвище'],
     })).toBe('Актуальне ім’я Актуальне прізвище');
+
+    expect(getProfileName({
+      name: ['Актуальне ім’я', ''],
+      surname: ['Актуальне прізвище', null],
+    })).toBe('Актуальне ім’я Актуальне прізвище');
   });
 
   it('warns when matching data is still unavailable after five seconds', () => {
@@ -72,7 +77,7 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('не вдалося отримати дані протягом 5 секунд');
     expect(matchingSource).toContain('Перевірте мережу, Firebase rules та індекси');
     expect(matchingSource).toContain('}, 5000);');
-    expect(matchingSource).toContain('return () => clearTimeout(slowLoadTimer);');
+    expect(matchingSource).toContain("toast.dismiss('matching-slow-load');");
   });
 
   it('supports desktop next/previous navigation without reaction side effects', () => {

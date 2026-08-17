@@ -51,19 +51,23 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
   const legacyComment = String(userData.myComment || '').trim();
   const initialTextRef = useRef('');
   const hasLegacyCommentRef = useRef(Boolean(legacyComment));
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     setText(legacyComment);
     initialTextRef.current = legacyComment;
     hasLegacyCommentRef.current = Boolean(legacyComment);
+    dirtyRef.current = false;
     if (!ownerId || !cardId) return undefined;
 
     fetchUserComment(ownerId, cardId).then(existing => {
       if (cancelled) return;
       const combined = combineComments(legacyComment, existing?.text);
-      setText(combined);
-      initialTextRef.current = combined;
+      if (!dirtyRef.current) {
+        setText(combined);
+        initialTextRef.current = combined;
+      }
     });
 
     return () => {
@@ -125,6 +129,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
         placeholder="Додайте свій коментар"
         value={text}
         onChange={e => {
+          dirtyRef.current = true;
           setText(e.target.value);
           autoResize(e.target);
         }}
@@ -183,6 +188,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
           aria-label="Очистити коментар"
           onClick={async event => {
             event.stopPropagation();
+            dirtyRef.current = true;
             setText('');
             await persist('');
           }}

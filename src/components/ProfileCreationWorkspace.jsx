@@ -128,6 +128,12 @@ const DisclosureToggle = styled.button`
 `;
 const PersonalDraftMeta = styled.div`display:grid; gap:10px;`;
 const ReactionButtons = styled.div`display:flex; align-items:center; gap:10px; min-height:35px;`;
+const ProgressRow = styled.div`display:flex; justify-content:space-between; gap:12px; color:var(--km-muted); font-size:12px;`;
+const ProgressTrack = styled.div`height:6px; overflow:hidden; border-radius:999px; background:var(--km-border);`;
+const ProgressFill = styled.div`
+  width:${({ $pct }) => Math.max(0, Math.min(100, Number($pct) || 0))}%; height:100%;
+  border-radius:inherit; background:var(--km-accent); transition:width 180ms ease;
+`;
 const FormSectionCard = styled(Card)`padding:18px 20px;`;
 const FormSectionTitle = styled.h3`margin:0 0 6px; font-size:15px; font-weight:750; letter-spacing:-.01em;`;
 const FieldRow = styled.div`
@@ -1023,6 +1029,12 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
+  const draftFilledPct = useMemo(() => {
+    const filledFields = [...FORM_FIELD_NAMES].filter(fieldName => (
+      toFieldValues(draft?.[fieldName]).some(value => String(value ?? '').trim())
+    )).length;
+    return Math.round((filledFields / FORM_FIELD_NAMES.size) * 100);
+  }, [draft]);
 
   // Every pending proposal and every superseded value, keyed by the field it
   // belongs to, so the questionnaire can render each of them in place instead
@@ -1224,12 +1236,21 @@ export const ProfileCreationWorkspace = () => {
           Рішення про те, які правки залишити, ухвалює адміністратор.
         </Meta>}
         {!access.isAdmin && !overlayTarget && <>
-          <PersonalDraftMeta>
-            <FieldComment userData={{ ...draft, userId: draft.userId || activeMutation.cardId }} />
+          <ProgressRow>
+            <span>Заповнено анкету</span>
+            <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
+          </ProgressRow>
+          <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
+          {!editingSharedDraft && activeMutation.revision > 0 && <PersonalDraftMeta>
+            <FieldComment
+              userData={{ ...draft, userId: draft.userId || activeMutation.cardId }}
+              onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
+            />
             <ReactionButtons>
               <BtnFavorite
                 userId={activeMutation.cardId}
-                userData={draft}
+                userData={null}
+                cacheUserData={false}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
                 dislikeUsers={dislikeUsers}
@@ -1238,7 +1259,8 @@ export const ProfileCreationWorkspace = () => {
               />
               <BtnDislike
                 userId={activeMutation.cardId}
-                userData={draft}
+                userData={null}
+                cacheUserData={false}
                 dislikeUsers={dislikeUsers}
                 setDislikeUsers={setDislikeUsers}
                 favoriteUsers={favoriteUsers}
@@ -1246,7 +1268,7 @@ export const ProfileCreationWorkspace = () => {
                 customStyle={{ position: 'static' }}
               />
             </ReactionButtons>
-          </PersonalDraftMeta>
+          </PersonalDraftMeta>}
         </>}
       </DraftHeaderCard>
       {reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0) && <ReviewCard>

@@ -1485,7 +1485,10 @@ const Matching = () => {
   }, [loading]);
 
   useEffect(() => {
-    if (!loading) return undefined;
+    if (!loading || users.length > 0 || personalCreateProfiles.length > 0) {
+      toast.dismiss('matching-slow-load');
+      return undefined;
+    }
 
     const slowLoadTimer = setTimeout(() => {
       const source = collectionSourceRef.current || collectionSource || 'unknown';
@@ -1500,8 +1503,11 @@ const Matching = () => {
       );
     }, 5000);
 
-    return () => clearTimeout(slowLoadTimer);
-  }, [collectionSource, loading, viewMode]);
+    return () => {
+      clearTimeout(slowLoadTimer);
+      toast.dismiss('matching-slow-load');
+    };
+  }, [collectionSource, loading, personalCreateProfiles.length, users.length, viewMode]);
   const loadedIdsRef = useRef(new Set());
   const reactionLoadedIdsRef = useRef({
     favorites: new Set(),
@@ -4598,6 +4604,7 @@ const Matching = () => {
       ...users,
       ...additionalNewUsers,
       ...sharedReactionCandidateUsers,
+      ...personalCreateProfiles,
     ].forEach(user => {
       if (!user?.userId || candidateUsersById.has(user.userId)) return;
       candidateUsersById.set(user.userId, user);
@@ -4618,6 +4625,7 @@ const Matching = () => {
     dislikeUsers,
     favoriteUsers,
     isAdmin,
+    personalCreateProfiles,
     sharedReactionCandidateUsers,
     users,
     viewMode,

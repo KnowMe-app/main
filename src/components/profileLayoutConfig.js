@@ -8,7 +8,11 @@ const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 
 
 const getMatchingCurrentValue = value => {
   if (Array.isArray(value)) {
-    return value.length > 0 ? getMatchingCurrentValue(value[value.length - 1]) : undefined;
+    for (let index = value.length - 1; index >= 0; index -= 1) {
+      const current = getMatchingCurrentValue(value[index]);
+      if (current !== undefined && current !== null && String(current).trim() !== '') return current;
+    }
+    return undefined;
   }
   return getCurrentValue(value);
 };

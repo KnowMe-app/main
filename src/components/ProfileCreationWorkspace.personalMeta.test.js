@@ -60,7 +60,7 @@ jest.mock('utils/profileMutations', () => ({
   getEffectiveProfile: ({ mutation }) => mutation.data,
   loadAllCreateProfileMutations: jest.fn(async () => []),
   loadOwnProfileMutations: jest.fn(async () => [{
-    cardId: 'draft-card', createdBy: 'owner-1', status: 'private', updatedAt: 123,
+    cardId: 'draft-card', createdBy: 'owner-1', status: 'private', revision: 1, updatedAt: 123,
     data: { name: 'Олена' },
   }]),
   loadProfileMutationHistory: jest.fn(async () => []),
@@ -96,7 +96,7 @@ beforeEach(() => {
   fetchDislikeUsers.mockResolvedValue({});
   fetchUserComment.mockResolvedValue(null);
   loadOwnProfileMutations.mockResolvedValue([{
-    cardId: 'draft-card', createdBy: 'owner-1', status: 'private', updatedAt: 123,
+    cardId: 'draft-card', createdBy: 'owner-1', status: 'private', revision: 1, updatedAt: 123,
     data: { name: 'Олена' },
   }]);
   loadSharedProfileMutations.mockResolvedValue([]);
@@ -109,7 +109,7 @@ it('replaces regular-user draft status and progress with personal metadata contr
   expect(screen.getByRole('button', { name: 'В обране' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Дизлайк' })).toBeInTheDocument();
   expect(screen.queryByText(/Чернетка · оновлено/)).not.toBeInTheDocument();
-  expect(screen.queryByText('Заповнено анкету')).not.toBeInTheDocument();
+  expect(screen.getByText('Заповнено анкету')).toBeInTheDocument();
 });
 
 it('saves a personal comment on blur using the draft card id fallback', async () => {
