@@ -82,6 +82,13 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('clearTimeout(slowLoadTimer);');
   });
 
+  it('keeps reacted personal creation drafts available to reaction tabs', () => {
+    const matchingSource = source();
+
+    expect(matchingSource).toContain('...personalCreateProfiles,');
+    expect(matchingSource).toContain('__profileMutationOperation: \'create\'');
+  });
+
   it('supports desktop next/previous navigation without reaction side effects', () => {
     const matchingSource = source();
 

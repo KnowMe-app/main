@@ -1083,6 +1083,14 @@ export const ProfileCreationWorkspace = () => {
 
   const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
 
+  const removeLegacyDraftComment = () => {
+    const nextDraft = { ...(draftRef.current || {}) };
+    delete nextDraft.myComment;
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    void persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
+  };
+
   // One chronological tree per field. The current value remains above it; all
   // changes follow newest first, leaving the original value at the bottom.
   const renderFieldTimeline = (fieldName, currentValues, label) => {
@@ -1252,7 +1260,10 @@ export const ProfileCreationWorkspace = () => {
           {/* A reserved id is not a profile yet. Metadata becomes available only
               after the first questionnaire save has created the mutation. */}
           {!editingSharedDraft && activeMutation.revision > 0 && <PersonalDraftMeta>
-            <FieldComment userData={{ ...draft, userId: draft.userId || activeMutation.cardId }} />
+            <FieldComment
+              userData={{ ...draft, userId: draft.userId || activeMutation.cardId }}
+              onLegacyCommentMigrated={removeLegacyDraftComment}
+            />
             <BtnDislike userId={activeMutation.cardId} userData={null} cacheUserData={false}
               dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers}
               favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} />

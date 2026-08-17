@@ -51,6 +51,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
   const legacyComment = String(userData.myComment || '').trim();
   const initialTextRef = useRef('');
   const dirtyRef = useRef(false);
+  const initialLoadPendingRef = useRef(false);
   const hasLegacyCommentRef = useRef(Boolean(legacyComment));
 
   useEffect(() => {
@@ -61,8 +62,10 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     hasLegacyCommentRef.current = Boolean(legacyComment);
     if (!ownerId || !cardId) return undefined;
 
+    initialLoadPendingRef.current = true;
     fetchUserComment(ownerId, cardId).then(existing => {
       if (cancelled) return;
+      initialLoadPendingRef.current = false;
       const combined = combineComments(legacyComment, existing?.text);
       if (!dirtyRef.current) {
         setText(combined);
@@ -103,7 +106,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
         await saveMyCardComment(cardId, value, ownerId);
       }
       initialTextRef.current = value;
-      dirtyRef.current = false;
+      if (!initialLoadPendingRef.current) dirtyRef.current = false;
       return true;
     } catch (error) {
       const details = error?.message || String(error);
@@ -189,6 +192,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
           aria-label="Очистити коментар"
           onClick={async event => {
             event.stopPropagation();
+            dirtyRef.current = true;
             setText('');
             await persist('');
           }}

@@ -54,6 +54,19 @@ describe('FieldComment', () => {
     expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'typed immediately', 'admin-1');
   });
 
+  it('does not restore a comment cleared while the stored value is loading', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    render(<FieldComment userData={{ userId: 'user-1', myComment: 'legacy' }} />);
+
+    fireEvent.click(screen.getByLabelText('Очистити коментар'));
+    await waitFor(() => expect(migrateMyCardComment).toHaveBeenCalledWith('user-1', '', 'admin-1'));
+    resolveComment({ text: 'older stored value' });
+
+    await waitFor(() => expect(fetchUserComment).toHaveBeenCalled());
+    expect(screen.getByPlaceholderText('Додайте свій коментар').value).toBe('');
+  });
+
   it('migrates an edited legacy comment and notifies the card state', async () => {
     const onMigrated = jest.fn();
     render(

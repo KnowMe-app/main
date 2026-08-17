@@ -4604,6 +4604,7 @@ const Matching = () => {
       ...users,
       ...additionalNewUsers,
       ...sharedReactionCandidateUsers,
+      ...personalCreateProfiles,
     ].forEach(user => {
       if (!user?.userId || candidateUsersById.has(user.userId)) return;
       candidateUsersById.set(user.userId, user);
@@ -4624,6 +4625,7 @@ const Matching = () => {
     dislikeUsers,
     favoriteUsers,
     isAdmin,
+    personalCreateProfiles,
     sharedReactionCandidateUsers,
     users,
     viewMode,
