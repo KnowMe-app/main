@@ -5,11 +5,14 @@ import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
-import { auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
+import { auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import PageNavMenu from './PageNavMenu';
 import { fieldContacts } from './smallCard/fieldContacts';
+import { FieldComment } from './smallCard/FieldComment';
+import { BtnFavorite } from './smallCard/btnFavorite';
+import { BtnDislike } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutation } from 'utils/profileCreationSearch';
@@ -123,13 +126,8 @@ const DisclosureToggle = styled.button`
   &:hover { color:var(--km-accent); }
   &:focus-visible { outline:2px solid var(--km-accent); outline-offset:3px; border-radius:4px; }
 `;
-const ProgressRow = styled.div`display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px; color:var(--km-muted);`;
-const ProgressTrack = styled.div`height:5px; background:var(--km-border); border-radius:99px; overflow:hidden; margin-bottom:18px;`;
-const ProgressFill = styled.div`
-  height:100%; border-radius:99px; transition:width 250ms ease;
-  background: linear-gradient(90deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
-  width: ${({ $pct }) => $pct}%;
-`;
+const PersonalDraftMeta = styled.div`display:grid; gap:10px;`;
+const ReactionButtons = styled.div`display:flex; align-items:center; gap:10px; min-height:35px;`;
 const FormSectionCard = styled(Card)`padding:18px 20px;`;
 const FormSectionTitle = styled.h3`margin:0 0 6px; font-size:15px; font-weight:750; letter-spacing:-.01em;`;
 const FieldRow = styled.div`
@@ -419,6 +417,8 @@ export const ProfileCreationWorkspace = () => {
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
   const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
+  const [favoriteUsers, setFavoriteUsers] = useState({});
+  const [dislikeUsers, setDislikeUsers] = useState({});
   const draftRef = useRef(draft);
   const persistedDraftRef = useRef(draft);
   // The draft as its author stored it, before anybody's overlay is replayed
@@ -555,6 +555,17 @@ export const ProfileCreationWorkspace = () => {
     setAccess(resolved);
     await refresh(user.uid, resolved);
   }), [navigate, refresh]);
+
+  useEffect(() => {
+    if (!uid) return undefined;
+    let cancelled = false;
+    Promise.all([fetchFavoriteUsers(uid), fetchDislikeUsers(uid)]).then(([favorites, dislikes]) => {
+      if (cancelled) return;
+      setFavoriteUsers(favorites || {});
+      setDislikeUsers(dislikes || {});
+    });
+    return () => { cancelled = true; };
+  }, [uid]);
 
   useEffect(() => {
     const requestedCardId = searchParams.get('cardId');
@@ -1163,13 +1174,6 @@ export const ProfileCreationWorkspace = () => {
     </FieldRow>;
   };
 
-  const draftFilledPct = useMemo(() => {
-    if (!draft) return 0;
-    const fieldNames = pickerFields.map(field => field.name);
-    const filledCount = fieldNames.filter(name => toFieldValues(draft[name]).some(value => String(value || '').trim() !== '')).length;
-    return fieldNames.length ? Math.round((filledCount / fieldNames.length) * 100) : 0;
-  }, [draft]);
-
   const draftName = useMemo(() => (
     [draft?.surname, draft?.name, draft?.fathersname]
       .flatMap(value => toFieldValues(value))
@@ -1213,18 +1217,36 @@ export const ProfileCreationWorkspace = () => {
               </TechnicalMeta>}
               <DraftContacts>{fieldContacts(draft)}</DraftContacts>
             </>
-            : <Meta>Чернетка{activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}</Meta>}
+            : null}
         {editingSharedDraft && <Meta>
           Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну.
           Ваші зміни зберігаються окремо, у вашому оверлеї, і стають видимими наступному редактору.
           Рішення про те, які правки залишити, ухвалює адміністратор.
         </Meta>}
         {!access.isAdmin && !overlayTarget && <>
-          <ProgressRow>
-            <span>Заповнено анкету</span>
-            <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
-          </ProgressRow>
-          <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
+          <PersonalDraftMeta>
+            <FieldComment userData={{ ...draft, userId: draft.userId || activeMutation.cardId }} />
+            <ReactionButtons>
+              <BtnFavorite
+                userId={activeMutation.cardId}
+                userData={draft}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
+                customStyle={{ position: 'static' }}
+              />
+              <BtnDislike
+                userId={activeMutation.cardId}
+                userData={draft}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                customStyle={{ position: 'static' }}
+              />
+            </ReactionButtons>
+          </PersonalDraftMeta>
         </>}
       </DraftHeaderCard>
       {reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0) && <ReviewCard>
