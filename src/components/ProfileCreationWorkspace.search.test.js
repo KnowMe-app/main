@@ -5,7 +5,7 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
 
   it('reuses Matching search primitives and blocks creation until a completed not-found search', () => {
-    expect(source).toContain("import { auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config'");
+    expect(source).toContain("import { auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config'");
     expect(source).toContain("import SearchBar, { detectSearchParams } from './SearchBar'");
     expect(source).toContain('searchFunc={searchUsersOnly}');
     expect(source).toContain('onSearchError={() => {');
