@@ -1483,6 +1483,25 @@ const Matching = () => {
   useEffect(() => {
     loadingStateRef.current = loading;
   }, [loading]);
+
+  useEffect(() => {
+    if (!loading) return undefined;
+
+    const slowLoadTimer = setTimeout(() => {
+      const source = collectionSourceRef.current || collectionSource || 'unknown';
+      const mode = viewModeRef.current || viewMode || 'unknown';
+      toast(
+        `Matching: не вдалося отримати дані протягом 5 секунд. Джерело: ${source}; режим: ${mode}. Перевірте мережу, Firebase rules та індекси.`,
+        {
+          id: 'matching-slow-load',
+          icon: '⚠️',
+          duration: 10000,
+        },
+      );
+    }, 5000);
+
+    return () => clearTimeout(slowLoadTimer);
+  }, [collectionSource, loading, viewMode]);
   const loadedIdsRef = useRef(new Set());
   const reactionLoadedIdsRef = useRef({
     favorites: new Set(),
