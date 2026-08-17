@@ -39,6 +39,21 @@ describe('FieldComment', () => {
     });
   });
 
+  it('preserves text entered while the stored comment is loading', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    render(<FieldComment userData={{ userId: 'user-1' }} />);
+
+    const textarea = screen.getByPlaceholderText('Додайте свій коментар');
+    fireEvent.change(textarea, { target: { value: 'typed immediately' } });
+    resolveComment({ text: 'older stored value' });
+
+    await waitFor(() => expect(fetchUserComment).toHaveBeenCalled());
+    expect(textarea.value).toBe('typed immediately');
+    fireEvent.blur(textarea);
+    expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'typed immediately', 'admin-1');
+  });
+
   it('migrates an edited legacy comment and notifies the card state', async () => {
     const onMigrated = jest.fn();
     render(

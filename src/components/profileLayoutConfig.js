@@ -7,10 +7,12 @@ import { CONTACT_FIELDS, getContactValues } from './contactMethods';
 const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 'none', 'немає', 'нет']);
 
 const getMatchingCurrentValue = value => {
-  if (Array.isArray(value)) {
-    return value.length > 0 ? getMatchingCurrentValue(value[value.length - 1]) : undefined;
+  if (!Array.isArray(value)) return getCurrentValue(value);
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    const current = getMatchingCurrentValue(value[index]);
+    if (current !== undefined && current !== null && String(current).trim() !== '') return current;
   }
-  return getCurrentValue(value);
+  return undefined;
 };
 
 export const normalizeDisplayValue = value => {

@@ -130,7 +130,7 @@ describe('profileLayoutConfig', () => {
     expect(getProfileRole({ role: 'sm' })).toBe('other');
   });
 
-  it('uses the latest array value on Matching and hides fields removed with an empty latest value', () => {
+  it('uses the latest meaningful array value and ignores trailing blank editor rows', () => {
     const removedBirthUser = {
       userRole: 'ed',
       birth: ['25.09.1996', ''],
@@ -148,12 +148,21 @@ describe('profileLayoutConfig', () => {
       weight: ['90', '94'],
     };
 
-    expect(getProfileAge(removedBirthUser)).toBe('');
-    expect(getHeroFields(removedBirthUser, 'ed')).toEqual([]);
+    expect(getProfileAge(removedBirthUser)).toBe('29');
+    expect(getHeroFields(removedBirthUser, 'ed').map(field => [field.key, field.value])).toEqual([
+      ['height', '165'],
+      ['weight', '94'],
+      ['bmi', '35'],
+      ['blood', 'B+'],
+      ['experience', '0'],
+    ]);
     expect(getProfileSections(removedBirthUser, 'ed')
       .find(section => section.title === 'Contacts')?.fields
-      .map(field => [field.key, field.value])).toEqual([['website', 'new.example']]);
-    expect(shouldRenderField(['25.09.1996', ''])).toBe(false);
+      .map(field => [field.key, field.value])).toEqual([
+        ['telegram', '@old'],
+        ['website', 'new.example'],
+      ]);
+    expect(shouldRenderField(['25.09.1996', ''])).toBe(true);
     expect(getProfileAge(updatedBirthUser)).toBe('29');
     expect(getHeroFields(updatedBirthUser, 'ed').map(field => [field.key, field.value])).toEqual([
       ['height', '165'],

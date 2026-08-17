@@ -33,6 +33,7 @@ export const BtnFavorite = ({
   title = 'В обране',
   ariaLabel = 'В обране',
   multiDataOwnerId,
+  cacheUserData = true,
 }) => {
   const {
     background: customBackground,
@@ -68,7 +69,7 @@ export const BtnFavorite = ({
         delete updated[userId];
         setFavoriteUsers(updated);
         setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
-        updateCachedUser(userData || { userId }, { removeFavorite: true });
+        if (cacheUserData) updateCachedUser(userData || { userId }, { removeFavorite: true });
         setFavorite(userId, false);
         if (onRemove) onRemove(userId);
       } catch (error) {
@@ -82,7 +83,7 @@ export const BtnFavorite = ({
         const updatedFav = { ...favoriteUsers, [userId]: true };
         setFavoriteUsers(updatedFav);
         setFavoriteIds(updatedFav);
-        updateCachedUser(userData || { userId });
+        if (cacheUserData) updateCachedUser(userData || { userId });
         setFavorite(userId, true);
         if (onRemove) onRemove(userId);
         if (dislikeUsers[userId] || viewerDislikeUsers[userId]) {

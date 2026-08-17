@@ -50,11 +50,13 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
   const cardId = userData.userId;
   const legacyComment = String(userData.myComment || '').trim();
   const initialTextRef = useRef('');
+  const dirtyRef = useRef(false);
   const hasLegacyCommentRef = useRef(Boolean(legacyComment));
 
   useEffect(() => {
     let cancelled = false;
     setText(legacyComment);
+    dirtyRef.current = false;
     initialTextRef.current = legacyComment;
     hasLegacyCommentRef.current = Boolean(legacyComment);
     if (!ownerId || !cardId) return undefined;
@@ -62,8 +64,10 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     fetchUserComment(ownerId, cardId).then(existing => {
       if (cancelled) return;
       const combined = combineComments(legacyComment, existing?.text);
-      setText(combined);
-      initialTextRef.current = combined;
+      if (!dirtyRef.current) {
+        setText(combined);
+        initialTextRef.current = combined;
+      }
     });
 
     return () => {
@@ -99,6 +103,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
         await saveMyCardComment(cardId, value, ownerId);
       }
       initialTextRef.current = value;
+      dirtyRef.current = false;
       return true;
     } catch (error) {
       const details = error?.message || String(error);
@@ -125,6 +130,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
         placeholder="Додайте свій коментар"
         value={text}
         onChange={e => {
+          dirtyRef.current = true;
           setText(e.target.value);
           autoResize(e.target);
         }}
