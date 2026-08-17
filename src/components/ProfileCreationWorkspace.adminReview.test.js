@@ -25,6 +25,8 @@ jest.mock('./config', () => ({
   auth: { currentUser: { uid: 'admin-1' } },
   fetchUserById: jest.fn(async () => ({ canCreateProfiles: true })),
   fetchUsersByIds: jest.fn(async () => ({ 'editor-1': { name: 'Оля', surname: 'Р.' } })),
+  fetchFavoriteUsers: jest.fn(async () => ({})),
+  fetchDislikeUsers: jest.fn(async () => ({})),
   searchUsersOnly: jest.fn(),
 }));
 

@@ -18,6 +18,8 @@ jest.mock('./config', () => ({
   auth: { currentUser: { uid: 'editor-1' } },
   fetchUserById: jest.fn(async () => ({ canCreateProfiles: true })),
   searchUsersOnly: jest.fn(),
+  fetchFavoriteUsers: jest.fn(async () => ({})),
+  fetchDislikeUsers: jest.fn(async () => ({})),
 }));
 
 jest.mock('./SearchBar', () => ({
@@ -25,6 +27,7 @@ jest.mock('./SearchBar', () => ({
   default: () => null,
   detectSearchParams: () => null,
 }));
+jest.mock('./smallCard/FieldComment', () => ({ FieldComment: () => null }));
 
 jest.mock('./formFields', () => ({
   pickerFields: [{ name: 'phone' }],
