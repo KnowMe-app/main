@@ -48,6 +48,40 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}');
   });
 
+  it('renders editor-created Firebase list values without breaking matching', () => {
+    // The creation questionnaire stores every editable row as a list. Firebase
+    // therefore shows even a single name/surname under child key `0`; matching
+    // must treat the last meaningful row as the current approved value.
+    expect(getProfileName({
+      name: ['Ім’я'],
+      surname: ['Прізвище'],
+      phone: ['380505990665'],
+      userId: '-P-0bnlEAZeWloBJKG2-',
+    })).toBe('Ім’я Прізвище');
+
+    expect(getProfileName({
+      name: ['', 'Актуальне ім’я'],
+      surname: [null, 'Актуальне прізвище'],
+    })).toBe('Актуальне ім’я Актуальне прізвище');
+
+    expect(getProfileName({
+      name: ['Актуальне ім’я', ''],
+      surname: ['Актуальне прізвище', null, '   '],
+    })).toBe('Актуальне ім’я Актуальне прізвище');
+  });
+
+  it('warns when matching data is still unavailable after five seconds', () => {
+    const matchingSource = source();
+
+    expect(matchingSource).toContain("id: 'matching-slow-load'");
+    expect(matchingSource).toContain('не вдалося отримати дані протягом 5 секунд');
+    expect(matchingSource).toContain('Перевірте мережу, Firebase rules та індекси');
+    expect(matchingSource).toContain('}, 5000);');
+    expect(matchingSource).toContain('if (!loading || users.length > 0)');
+    expect(matchingSource).toContain("toast.dismiss?.('matching-slow-load');");
+    expect(matchingSource).toContain('clearTimeout(slowLoadTimer);');
+  });
+
   it('supports desktop next/previous navigation without reaction side effects', () => {
     const matchingSource = source();
 

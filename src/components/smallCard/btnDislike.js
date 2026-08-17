@@ -34,6 +34,7 @@ export const BtnDislike = ({
   title = 'Дизлайк',
   ariaLabel = 'Дизлайк',
   multiDataOwnerId,
+  cacheUserData = true,
 }) => {
   const {
     background: customBackground,
@@ -85,7 +86,7 @@ export const BtnDislike = ({
         const updated = { ...dislikeUsers, [userId]: true };
         setDislikeUsers(updated);
         setDislike(userId, true);
-        cacheDislikedUsers({ [userId]: userData });
+        if (cacheUserData) cacheDislikedUsers({ [userId]: userData });
         if (typeof onDislikeAdded === 'function') {
           await onDislikeAdded(userId);
         }

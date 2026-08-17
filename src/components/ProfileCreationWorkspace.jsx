@@ -5,11 +5,14 @@ import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
-import { auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
+import { auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import PageNavMenu from './PageNavMenu';
 import { fieldContacts } from './smallCard/fieldContacts';
+import { FieldComment } from './smallCard/FieldComment';
+import { BtnFavorite } from './smallCard/btnFavorite';
+import { BtnDislike } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutation } from 'utils/profileCreationSearch';
@@ -129,6 +132,12 @@ const ProgressFill = styled.div`
   height:100%; border-radius:99px; transition:width 250ms ease;
   background: linear-gradient(90deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
   width: ${({ $pct }) => $pct}%;
+`;
+const PersonalDraftMeta = styled.div`
+  position:relative; display:grid; gap:12px; margin-top:14px; padding:14px 52px;
+  border-top:1px solid var(--km-border);
+  textarea { min-height:46px !important; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px; color:var(--km-text); }
+  button { position:absolute !important; bottom:18px !important; }
 `;
 const FormSectionCard = styled(Card)`padding:18px 20px;`;
 const FormSectionTitle = styled.h3`margin:0 0 6px; font-size:15px; font-weight:750; letter-spacing:-.01em;`;
@@ -419,6 +428,8 @@ export const ProfileCreationWorkspace = () => {
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
   const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
+  const [favoriteUsers, setFavoriteUsers] = useState({});
+  const [dislikeUsers, setDislikeUsers] = useState({});
   const draftRef = useRef(draft);
   const persistedDraftRef = useRef(draft);
   // The draft as its author stored it, before anybody's overlay is replayed
@@ -555,6 +566,19 @@ export const ProfileCreationWorkspace = () => {
     setAccess(resolved);
     await refresh(user.uid, resolved);
   }), [navigate, refresh]);
+
+  useEffect(() => {
+    if (!uid) return undefined;
+    let cancelled = false;
+    const favoritesRequest = typeof fetchFavoriteUsers === 'function' ? fetchFavoriteUsers(uid) : Promise.resolve({});
+    const dislikesRequest = typeof fetchDislikeUsers === 'function' ? fetchDislikeUsers(uid) : Promise.resolve({});
+    Promise.all([favoritesRequest, dislikesRequest]).then(([favorites, dislikes]) => {
+      if (cancelled) return;
+      setFavoriteUsers(favorites || {});
+      setDislikeUsers(dislikes || {});
+    }).catch(error => console.warn('[ProfileCreationWorkspace] reactions unavailable', error));
+    return () => { cancelled = true; };
+  }, [uid]);
 
   useEffect(() => {
     const requestedCardId = searchParams.get('cardId');
@@ -1225,6 +1249,17 @@ export const ProfileCreationWorkspace = () => {
             <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
           </ProgressRow>
           <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
+          {/* A reserved id is not a profile yet. Metadata becomes available only
+              after the first questionnaire save has created the mutation. */}
+          {!editingSharedDraft && activeMutation.revision > 0 && <PersonalDraftMeta>
+            <FieldComment userData={{ ...draft, userId: draft.userId || activeMutation.cardId }} />
+            <BtnDislike userId={activeMutation.cardId} userData={null} cacheUserData={false}
+              dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers}
+              favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} />
+            <BtnFavorite userId={activeMutation.cardId} userData={null} cacheUserData={false}
+              favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers}
+              dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} />
+          </PersonalDraftMeta>}
         </>}
       </DraftHeaderCard>
       {reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0) && <ReviewCard>
