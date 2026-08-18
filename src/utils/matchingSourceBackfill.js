@@ -47,12 +47,20 @@ export const collectFilteredMatchingSourceCards = async ({
       emitDiagnostic('source-page-read', 'completed', { page: loadedPages, count: sourceRes?.users?.length || 0 });
     } catch (error) {
       emitDiagnostic('source-page-read', 'failed', { page: loadedPages });
+      if (error && !error.requestLabel) error.requestLabel = 'source-page-read';
       throw error;
     }
 
     const sourceUsers = Array.isArray(sourceRes?.users) ? sourceRes.users : [];
     emitDiagnostic('ui-filtering', 'started', { page: loadedPages, count: sourceUsers.length });
-    const filtered = filterSourceUsers(sourceUsers, { exclude, collected, remaining });
+    let filtered;
+    try {
+      filtered = filterSourceUsers(sourceUsers, { exclude, collected, remaining });
+    } catch (error) {
+      emitDiagnostic('ui-filtering', 'failed', { page: loadedPages });
+      if (error && !error.requestLabel) error.requestLabel = 'ui-filtering';
+      throw error;
+    }
     emitDiagnostic('ui-filtering', 'completed', { page: loadedPages, count: filtered.length });
     sourceCardsCount += sourceUsers.length;
     filteredCardsCount += filtered.length;
@@ -70,6 +78,7 @@ export const collectFilteredMatchingSourceCards = async ({
       emitDiagnostic('profile-hydration', 'completed', { page: loadedPages, count: Object.keys(hydratedMap || {}).length });
     } catch (error) {
       emitDiagnostic('profile-hydration', 'failed', { page: loadedPages });
+      if (error && !error.requestLabel) error.requestLabel = 'profile-hydration';
       throw error;
     }
     const validSlice = ids

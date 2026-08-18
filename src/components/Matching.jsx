@@ -201,6 +201,17 @@ import {
   isValidMatchingUserId,
 } from 'utils/matchingDataProvider';
 import { isLongFormatUserId } from 'utils/mergeUserCollections';
+import {
+  normalizeMatchingInitialLoadError,
+  runInitialRequestWithTimeout,
+} from 'utils/matchingLoadError';
+
+export {
+  INITIAL_MATCHING_REQUEST_TIMEOUT_MS,
+  annotateMatchingStageError,
+  normalizeMatchingInitialLoadError,
+  runInitialRequestWithTimeout,
+} from 'utils/matchingLoadError';
 
 
 const MATCHING_SEARCH_ID_PREFIXES = ['phone'];
@@ -238,103 +249,7 @@ const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
-export const INITIAL_MATCHING_REQUEST_TIMEOUT_MS = 10 * 1000;
 const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
-
-const getMatchingErrorCode = error => {
-  const code = String(error?.code || '').trim();
-  return /^[a-z0-9/_-]{1,80}$/i.test(code) ? code : 'matching/unknown';
-};
-const MATCHING_INITIAL_REQUEST_LABELS = new Set([
-  'reaction-snapshots',
-  'index-cache-read',
-  'access-profile',
-  'search-key-sets',
-  'search-index',
-  'profile-hydration',
-  'source-chunk',
-]);
-
-const sanitizeMatchingDiagnosticText = value => String(value || '')
-  .replace(/([?&](?:token|auth|key|email|uid)=)[^&\s]+/gi, '$1[redacted]')
-  .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '[redacted-email]')
-  .slice(0, 500);
-
-export const annotateMatchingStageError = (error, stage) => {
-  const annotated = error instanceof Error ? error : new Error(String(error || `Matching request failed at ${stage}`));
-  if (!annotated.code) {
-    if (annotated.name === 'TypeError') annotated.code = 'matching/type-error';
-    else if (/indexeddb|idb/i.test(`${annotated.name} ${annotated.message}`)) annotated.code = 'matching/indexeddb-error';
-    else if (/network|offline|failed to fetch/i.test(annotated.message || '')) annotated.code = 'matching/network-error';
-    else annotated.code = 'matching/unknown';
-  }
-  if (!annotated.requestLabel) annotated.requestLabel = stage;
-  if (!annotated.stage) annotated.stage = annotated.requestLabel;
-  return annotated;
-};
-
-export const normalizeMatchingInitialLoadError = (error, context = {}) => {
-  const cause = error?.cause && typeof error.cause === 'object' ? error.cause : null;
-  const code = getMatchingErrorCode(error?.code ? error : cause || error);
-  const candidateRequestLabel = String(error?.requestLabel || error?.stage || context.requestLabel || '').trim();
-  const requestLabel = MATCHING_INITIAL_REQUEST_LABELS.has(candidateRequestLabel) ? candidateRequestLabel : 'unknown';
-  const collectionSource = String(context.collectionSource || 'unknown');
-  const viewMode = String(context.viewMode || 'unknown');
-  const ownerId = String(context.ownerId || 'unknown');
-  const normalizedCode = code.toLowerCase();
-  let userMessage = `Не вдалося завантажити ${collectionSource} (${code})`;
-  const originalMessage = sanitizeMatchingDiagnosticText(error?.message || cause?.message || 'Unexpected Matching load error');
-  const name = sanitizeMatchingDiagnosticText(error?.name || cause?.name || 'Error');
-  let message = originalMessage;
-
-  if (code === 'matching/initial-request-timeout') {
-    userMessage = `Таймаут на етапі ${requestLabel}`;
-    message = originalMessage || 'Initial request timed out';
-  } else if (normalizedCode.includes('permission-denied')) {
-    userMessage = `Немає доступу до ${collectionSource} (permission-denied)`;
-    message = originalMessage || 'Permission denied';
-  } else if (normalizedCode.includes('unavailable')) {
-    userMessage = `Сервіс ${collectionSource} тимчасово недоступний (unavailable)`;
-    message = 'Firebase service unavailable';
-  } else if (normalizedCode.includes('failed-precondition') || /index/i.test(error?.message || '')) {
-    userMessage = `Для ${collectionSource} відсутній потрібний індекс (failed-precondition)`;
-    message = 'Required Firebase index is unavailable';
-  } else if (/network|offline|failed to fetch/i.test(`${code} ${error?.message || ''}`)) {
-    userMessage = `Помилка мережі під час завантаження ${collectionSource}`;
-    message = 'Network request failed';
-  }
-
-  return {
-    code,
-    name,
-    message,
-    requestLabel,
-    collectionSource,
-    viewMode,
-    ownerId,
-    online: typeof navigator === 'undefined' ? null : navigator.onLine,
-    timestamp: new Date().toISOString(),
-    userMessage,
-  };
-};
-
-export const runInitialRequestWithTimeout = (request, label, timeoutMs = INITIAL_MATCHING_REQUEST_TIMEOUT_MS) => {
-  let timeoutId;
-  const timeout = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      const error = new Error(`Matching initial request timed out after ${timeoutMs}ms: ${label}`);
-      error.code = 'matching/initial-request-timeout';
-      error.requestLabel = label;
-      reject(error);
-    }, timeoutMs);
-  });
-
-  const stagedRequest = Promise.resolve().then(request).catch(error => {
-    throw annotateMatchingStageError(error, label);
-  });
-  return Promise.race([stagedRequest, timeout])
-    .finally(() => clearTimeout(timeoutId));
-};
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
 const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: '' });
 const MATCHING_REACTION_IDLE_STYLE = { background: 'rgba(247, 147, 30, 0.95)' };
@@ -6240,6 +6155,8 @@ const Matching = () => {
             ) : loadError ? (
               <OwnerStatusMessage role="alert">
                 <div>Не вдалося завантажити профілі.</div>
+                <div>{loadError.userMessage}</div>
+                <div>Етап: {loadError.requestLabel}</div>
                 <details>
                   <summary>Технічні деталі</summary>
                   <div>Етап: {loadError.requestLabel}</div>
