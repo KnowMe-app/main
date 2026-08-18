@@ -17,11 +17,16 @@ const sanitizeMatchingDiagnosticText = value => String(value || '')
   .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '[redacted-email]')
   .slice(0, 500);
 
+// RTDB rejects reads with a bare `Error: Permission denied` (no `code`), while
+// Firestore/other SDKs report `PERMISSION_DENIED` or `permission-denied`.
+const PERMISSION_DENIED_PATTERN = /permission[\s_-]?denied/i;
+
 const getMatchingErrorCode = error => {
-  const code = [error?.code, error?.cause?.code, error?.errorInfo?.code]
+  const messages = [error?.message, error?.cause?.message];
+  const code = [error?.code, error?.cause?.code, error?.errorInfo?.code, error?.cause?.errorInfo?.code]
     .map(value => String(value || '').trim())
     .find(Boolean)
-    || (/PERMISSION_DENIED/i.test(error?.message || '') ? 'permission-denied' : '');
+    || (messages.some(message => PERMISSION_DENIED_PATTERN.test(message || '')) ? 'permission-denied' : '');
   return /^[a-z0-9/_-]{1,80}$/i.test(code) ? code : 'matching/unknown';
 };
 

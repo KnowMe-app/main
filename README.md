@@ -70,6 +70,20 @@ The workflow:
 
 The production URL is configured in `package.json` as `https://KnowMe-app.github.io/main`.
 
+## Realtime Database rules
+
+`database.rules.json` holds the Realtime Database rules. They are not deployed by the
+GitHub Pages workflow — after changing the file, paste it into Firebase Console →
+Realtime Database → Rules (or run `firebase deploy --only database`).
+
+Matching reads the whole `users` / `newUsers` collections, so the collection-level
+`.read` rule must grant access to everyone the client lets onto `/matching`. The client
+gate (`canAccessMatchingByLevel` in `src/utils/accessLevel.js`) accepts any `accessLevel`
+that mentions `matching`, so the rules use `accessLevel.contains('matching')` instead of an
+enumerated list. `src/utils/__tests__/databaseRulesMatchingAccess.test.js` guards that
+agreement — an enumerated list drifts from the ProfileForm options and produces
+`Permission denied` at the `source-page-read` stage for non-admins.
+
 ## Routing
 
 The app is hosted under `/main`, so the router is configured with `basename="/main"` in `src/index.js`.

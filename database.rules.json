@@ -1,0 +1,193 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      ".indexOn": ["instagram", "facebook", "email", "phone", "telegram", "tiktok", "vk", "userId", "name", "surname", "lastLogin2", "getInTouch", "lastAction", "lastCycle", "createdAt", "cycleStatus", "lastLogin"],
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('users').child(auth.uid).child('userRole').isString() && root.child('users').child(auth.uid).child('userRole').val() != '' && root.child('users').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('users').child(auth.uid).child('userRole').exists() && root.child('users').child(auth.uid).child('role').isString() && root.child('users').child(auth.uid).child('role').val() != '' && root.child('users').child(auth.uid).child('role').val() != 'ed') || (root.child('newUsers').child(auth.uid).child('accessLevel').isString() && root.child('newUsers').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('newUsers').child(auth.uid).child('userRole').isString() && root.child('newUsers').child(auth.uid).child('userRole').val() != '' && root.child('newUsers').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('newUsers').child(auth.uid).child('userRole').exists() && root.child('newUsers').child(auth.uid).child('role').isString() && root.child('newUsers').child(auth.uid).child('role').val() != '' && root.child('newUsers').child(auth.uid).child('role').val() != 'ed'))",
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
+      }
+    },
+    "newUsers": {
+      ".indexOn": ["instagram", "facebook", "email", "phone", "telegram", "tiktok", "vk", "other", "userId", "getInTouch", "myComment", "lastAction", "name", "surname", "lastLogin2", "createdAt", "cycleStatus", "ameblo", "lastCycle"],
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('users').child(auth.uid).child('userRole').isString() && root.child('users').child(auth.uid).child('userRole').val() != '' && root.child('users').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('users').child(auth.uid).child('userRole').exists() && root.child('users').child(auth.uid).child('role').isString() && root.child('users').child(auth.uid).child('role').val() != '' && root.child('users').child(auth.uid).child('role').val() != 'ed') || (root.child('newUsers').child(auth.uid).child('accessLevel').isString() && root.child('newUsers').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('newUsers').child(auth.uid).child('userRole').isString() && root.child('newUsers').child(auth.uid).child('userRole').val() != '' && root.child('newUsers').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('newUsers').child(auth.uid).child('userRole').exists() && root.child('newUsers').child(auth.uid).child('role').isString() && root.child('newUsers').child(auth.uid).child('role').val() != '' && root.child('newUsers').child(auth.uid).child('role').val() != 'ed'))",
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write')"
+      }
+    },
+
+    "budget": {
+      ".read": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'",
+      ".write": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'"
+    },
+    "documentsBuilder": {
+      ".read": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'",
+      ".write": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'"
+    },
+    "invoiceBuilder": {
+      ".read": "auth != null && (auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'S0VhDLCYjuTFDNLalRa85u7fPcg2')",
+      ".write": "auth != null && (auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'S0VhDLCYjuTFDNLalRa85u7fPcg2')"
+    },
+
+    "searchId": {
+      "$key": {
+        ".read": "auth != null && (auth.uid == $key || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)",
+        ".write": "auth != null && (auth.uid == $key || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
+      }
+    },
+    "searchKey": {
+      ".read": "auth != null",
+      "$indexName": {
+        "$value": {
+          "$userId": {
+            ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+            ".validate": "newData.val() === true || newData.val() === null"
+          }
+        }
+      },
+      "users": {
+        "$indexName": {
+          "$value": {
+            "$userId": {
+              ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+              ".validate": "newData.val() === true || newData.val() === null"
+            }
+          }
+        }
+      }
+    },
+    "searchKeySets": {
+      ".read": "auth != null",
+      "$keySet": {
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        "$indexName": {
+          "$value": {
+            "$userId": {
+              ".validate": "newData.val() === true || newData.val() === null"
+            }
+          }
+        }
+      }
+    },
+    "usersIndex": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
+      }
+    },
+
+    "multiData": {
+      "favorites": {
+        "$ownerId": {
+          ".read": "auth != null && (auth.uid == $ownerId || root.child('users').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true)",
+          "$userId": { ".write": "auth != null && auth.uid == $ownerId" }
+        }
+      },
+      "profileMutations": {
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)",
+        "$creatorUid": {
+          ".read": "auth != null && auth.uid == $creatorUid",
+          "$cardId": {
+            ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (auth.uid == $creatorUid && root.child('users').child(auth.uid).child('canCreateProfiles').val() == true))",
+            ".validate": "!newData.exists() || (newData.hasChildren(['cardId', 'operation', 'createdBy', 'status', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('createdBy').val() == $creatorUid)",
+            "data": {
+              "$field": {
+                ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !($field == 'accessLevel' || $field == 'canCreateProfiles' || $field == 'additionalAccessRules' || $field == 'multiDataAccessUserIds')"
+              }
+            }
+          }
+        }
+      },
+      "profileIdentityClaims": {
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)",
+        "$claimKey": {
+          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)"
+        }
+      },
+
+      "searchQueries": {
+        "$ownerId": {
+          ".read": "auth != null && (auth.uid == $ownerId || root.child('users').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true)",
+          "$queryId": {
+            ".write": "auth != null && auth.uid == $ownerId",
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
+          }
+        }
+      },
+      "stimulationShortcuts": {
+        "$ownerId": {
+          ".read": "auth != null && auth.uid == $ownerId",
+          "$userId": { ".write": "auth != null && auth.uid == $ownerId" }
+        }
+      },
+      "stimulation": {
+        "$ownerId": {
+          ".read": "auth != null && auth.uid == $ownerId",
+          "$userId": { ".write": "auth != null && auth.uid == $ownerId" }
+        }
+      },
+      "flow": {
+        "$ownerId": {
+          ".read": "auth != null && auth.uid == $ownerId",
+          "$userId": { ".write": "auth != null && auth.uid == $ownerId" }
+        }
+      },
+      "comments": {
+        "$ownerId": {
+          ".read": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true || root.child('newUsers').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true)",
+          "$cardId": {
+            ".write": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+            ".validate": "!newData.exists() || (newData.hasChildren(['text', 'updatedAt']) && newData.child('text').isString() && newData.child('updatedAt').isNumber())"
+          }
+        }
+      },
+      "dislikes": {
+        "$ownerId": {
+          ".read": "auth != null && (auth.uid == $ownerId || root.child('users').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true)",
+          "$userId": { ".write": "auth != null && auth.uid == $ownerId" }
+        }
+      },
+      "contactViews": {
+        "$ownerId": {
+          ".read": "auth != null && (auth.uid == $ownerId || root.child('users').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true)",
+          "$userId": { ".write": "auth != null && auth.uid == $ownerId" }
+        }
+      },
+      "edits": {
+        "$cardUserId": {
+          ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)",
+          "$editorUserId": {
+            ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (auth.uid == $editorUserId && ((root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('users').child(auth.uid).child('accessLevel').val().contains('view&write')) || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)))",
+            ".validate": "!newData.exists() || (newData.hasChildren(['fields', 'updatedAt', 'cardUserId', 'editorUserId']) && newData.child('editorUserId').val() == $editorUserId && newData.child('cardUserId').val() == $cardUserId)",
+            "fields": {
+              "$fieldName": { ".validate": "newData.exists()" }
+            }
+          }
+        }
+      },
+
+      "editsHistory": {
+        "$cardId": {
+          ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+          "$entryId": {
+            ".write": "auth != null && ((!data.exists() && newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (newData.child('editorUserId').val() == auth.uid && ((root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('users').child(auth.uid).child('accessLevel').val().contains('view&write')) || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)))) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
+            ".validate": "newData.hasChildren(['cardUserId', 'editorUserId', 'action', 'fieldName', 'change', 'at']) && newData.child('cardUserId').val() == $cardId && newData.child('editorUserId').isString() && newData.child('editorUserId').val().length > 0 && newData.child('action').isString() && (newData.child('action').val() == 'edit' || newData.child('action').val() == 'accept' || newData.child('action').val() == 'discard') && newData.child('fieldName').isString() && newData.child('fieldName').val().length > 0 && newData.child('change').exists() && newData.child('at').isNumber()"
+          }
+        }
+      },
+      "profileMutationHistory": {
+        "$cardId": {
+          ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+          "$entryId": {
+            ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('editorUserId').val() == auth.uid && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
+            ".validate": "newData.hasChildren(['cardId', 'actorUid', 'editorUserId', 'action', 'fieldName', 'change', 'at', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('actorUid').val() == auth.uid && newData.child('editorUserId').val() == auth.uid && newData.child('action').val() == 'edit' && newData.child('fieldName').isString() && newData.child('fieldName').val().length > 0 && newData.child('change').exists() && newData.child('at').isNumber() && newData.child('revision').isNumber()"
+          }
+        }
+      }
+    }
+  }
+}
