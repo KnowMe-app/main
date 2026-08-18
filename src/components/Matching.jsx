@@ -1484,30 +1484,6 @@ const Matching = () => {
     loadingStateRef.current = loading;
   }, [loading]);
 
-  useEffect(() => {
-    if (!loading || users.length > 0 || personalCreateProfiles.length > 0) {
-      toast.dismiss('matching-slow-load');
-      return undefined;
-    }
-
-    const slowLoadTimer = setTimeout(() => {
-      const source = collectionSourceRef.current || collectionSource || 'unknown';
-      const mode = viewModeRef.current || viewMode || 'unknown';
-      toast(
-        `Matching: не вдалося отримати дані протягом 5 секунд. Джерело: ${source}; режим: ${mode}. Перевірте мережу, Firebase rules та індекси.`,
-        {
-          id: 'matching-slow-load',
-          icon: '⚠️',
-          duration: 10000,
-        },
-      );
-    }, 5000);
-
-    return () => {
-      clearTimeout(slowLoadTimer);
-      toast.dismiss('matching-slow-load');
-    };
-  }, [collectionSource, loading, personalCreateProfiles.length, users.length, viewMode]);
   const loadedIdsRef = useRef(new Set());
   const reactionLoadedIdsRef = useRef({
     favorites: new Set(),
@@ -4630,6 +4606,34 @@ const Matching = () => {
     users,
     viewMode,
   ]);
+
+  const slowLoadVisibleUsers = viewMode === 'favorites' || viewMode === 'dislikes'
+    ? reactionTabUsers
+    : visibleUsers;
+  useEffect(() => {
+    if (!loading || slowLoadVisibleUsers.length > 0) {
+      toast.dismiss('matching-slow-load');
+      return undefined;
+    }
+
+    const slowLoadTimer = setTimeout(() => {
+      const source = collectionSourceRef.current || collectionSource || 'unknown';
+      const mode = viewModeRef.current || viewMode || 'unknown';
+      toast(
+        `Matching: не вдалося отримати дані протягом 5 секунд. Джерело: ${source}; режим: ${mode}. Перевірте мережу, Firebase rules та індекси.`,
+        {
+          id: 'matching-slow-load',
+          icon: '⚠️',
+          duration: 10000,
+        },
+      );
+    }, 5000);
+
+    return () => {
+      clearTimeout(slowLoadTimer);
+      toast.dismiss('matching-slow-load');
+    };
+  }, [collectionSource, loading, slowLoadVisibleUsers.length, viewMode]);
 
   const filteredUsers = (viewMode === 'favorites' || viewMode === 'dislikes')
     ? reactionTabUsers

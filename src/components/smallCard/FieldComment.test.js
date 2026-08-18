@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 jest.mock('react-hot-toast', () => ({
   error: jest.fn(),
@@ -67,6 +67,27 @@ describe('FieldComment', () => {
     fireEvent.blur(textarea);
 
     expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'new note', 'admin-1');
+  });
+
+  it('merges a backend comment that arrives while the user is editing', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    render(<FieldComment userData={{ userId: 'user-1' }} />);
+
+    const textarea = screen.getByPlaceholderText('Додайте свій коментар');
+    fireEvent.change(textarea, { target: { value: 'active edit' } });
+    await act(async () => {
+      resolveComment({ text: 'existing backend note', updatedAt: 123 });
+    });
+
+    expect(textarea.value).toBe('active edit');
+    fireEvent.blur(textarea);
+
+    await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
+      'user-1',
+      'active edit\n\nexisting backend note',
+      'admin-1',
+    ));
   });
 
   it('clearing the comment persists an empty value', async () => {

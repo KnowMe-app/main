@@ -112,6 +112,18 @@ it('replaces regular-user draft status and progress with personal metadata contr
   expect(screen.getByText('Заповнено анкету')).toBeInTheDocument();
 });
 
+it('shows personal metadata for persisted drafts without revision metadata', async () => {
+  loadOwnProfileMutations.mockResolvedValue([{
+    cardId: 'legacy-draft', createdBy: 'owner-1', status: 'private', updatedAt: 123,
+    data: { name: 'Олена' },
+  }]);
+
+  await openOwnDraft();
+
+  expect(screen.getByPlaceholderText('Додайте свій коментар')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'В обране' })).toBeInTheDocument();
+});
+
 it('saves a personal comment on blur using the draft card id fallback', async () => {
   await openOwnDraft();
   const comment = screen.getByPlaceholderText('Додайте свій коментар');
