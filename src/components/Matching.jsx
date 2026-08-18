@@ -241,6 +241,57 @@ const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
 export const INITIAL_MATCHING_REQUEST_TIMEOUT_MS = 10 * 1000;
 const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
 
+const getMatchingErrorCode = error => {
+  const code = String(error?.code || '').trim();
+  return /^[a-z0-9/_-]{1,80}$/i.test(code) ? code : 'matching/unknown';
+};
+const MATCHING_INITIAL_REQUEST_LABELS = new Set([
+  'access-profile',
+  'search-key-sets',
+  'search-index',
+  'profile-hydration',
+  'source-chunk',
+]);
+
+export const normalizeMatchingInitialLoadError = (error, context = {}) => {
+  const code = getMatchingErrorCode(error);
+  const candidateRequestLabel = String(error?.requestLabel || error?.stage || context.requestLabel || '').trim();
+  const requestLabel = MATCHING_INITIAL_REQUEST_LABELS.has(candidateRequestLabel) ? candidateRequestLabel : 'unknown';
+  const collectionSource = String(context.collectionSource || 'unknown');
+  const viewMode = String(context.viewMode || 'unknown');
+  const ownerId = String(context.ownerId || 'unknown');
+  const normalizedCode = code.toLowerCase();
+  let userMessage = `Не вдалося завантажити ${collectionSource} (${code})`;
+  let message = 'Unexpected Matching load error';
+
+  if (code === 'matching/initial-request-timeout') {
+    userMessage = `Таймаут на етапі ${requestLabel}`;
+    message = 'Initial request timed out';
+  } else if (normalizedCode.includes('permission-denied')) {
+    userMessage = `Немає доступу до ${collectionSource} (permission-denied)`;
+    message = 'Permission denied';
+  } else if (normalizedCode.includes('unavailable')) {
+    userMessage = `Сервіс ${collectionSource} тимчасово недоступний (unavailable)`;
+    message = 'Firebase service unavailable';
+  } else if (normalizedCode.includes('failed-precondition') || /index/i.test(error?.message || '')) {
+    userMessage = `Для ${collectionSource} відсутній потрібний індекс (failed-precondition)`;
+    message = 'Required Firebase index is unavailable';
+  } else if (/network|offline|failed to fetch/i.test(`${code} ${error?.message || ''}`)) {
+    userMessage = `Помилка мережі під час завантаження ${collectionSource}`;
+    message = 'Network request failed';
+  }
+
+  return {
+    code,
+    message,
+    requestLabel,
+    collectionSource,
+    viewMode,
+    ownerId,
+    userMessage,
+  };
+};
+
 export const runInitialRequestWithTimeout = (request, label, timeoutMs = INITIAL_MATCHING_REQUEST_TIMEOUT_MS) => {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
@@ -1576,12 +1627,18 @@ const Matching = () => {
     return requestId;
   }, []);
   const reportInitialLoadError = React.useCallback(error => {
-    setLoadError(error instanceof Error ? error : new Error(String(error)));
+    const diagnostic = normalizeMatchingInitialLoadError(error, {
+      collectionSource,
+      viewMode: viewModeRef.current,
+      ownerId: getOwnerId(),
+    });
+    setLoadError(diagnostic);
     toast.dismiss('matching-slow-load');
-    toast.error('Не вдалося завантажити профілі. Перевірте з’єднання та спробуйте ще раз.', {
+    console.error({ event: 'Matching.initialLoadError', ...diagnostic });
+    toast.error(diagnostic.userMessage, {
       id: INITIAL_LOAD_ERROR_TOAST_ID,
     });
-  }, []);
+  }, [collectionSource]);
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
     if (reactionType === 'favorites' || reactionType === 'dislikes') {
       reactionLoadedIdsRef.current[reactionType] = new Set();
@@ -2378,7 +2435,7 @@ const Matching = () => {
             accessUserId: ownerId,
             reason: 'initial-additional-newUsers-load',
           }),
-          'ensureFreshAdditionalMatchingProfile',
+          'access-profile',
         );
         if (!isLatestAdditionalFetch()) {
           logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional profile result', {
@@ -2411,7 +2468,7 @@ const Matching = () => {
           ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
           : await runInitialRequestWithTimeout(
             () => resolveAdditionalSearchKeySetKeysForMatching(null, ownerId),
-            'resolveAdditionalSearchKeySetKeysForMatching',
+            'search-key-sets',
           );
 
         if (!isLatestAdditionalFetch()) {
@@ -2461,12 +2518,15 @@ const Matching = () => {
             ],
             offset: requestOffset,
             limit: INITIAL_LOAD,
-            fetchNewUsersByIds: fetchNewUsersByIdsForMatching,
+            fetchNewUsersByIds: ids => runInitialRequestWithTimeout(
+              () => fetchNewUsersByIdsForMatching(ids),
+              'profile-hydration',
+            ),
             shouldDebugAdditionalMatching,
             debugAdditionalToast,
             logAdditionalMatchingDebug,
             debugMissingNewUsersToast,
-          }), 'fetchAdditionalNewUsersBySearchIndex');
+          }), 'search-index');
 
           if (!isLatestAdditionalFetch()) {
             logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional fetch result', {
@@ -2718,7 +2778,7 @@ const Matching = () => {
             stage: 'indexed-candidates',
           });
         }
-        const indexed = await fetchMatchingIndexedCandidates({
+        const indexed = await runInitialRequestWithTimeout(() => fetchMatchingIndexedCandidates({
           collectionSource: 'users',
           filters: filtersRef.current || {},
           viewMode: viewModeRef.current,
@@ -2726,9 +2786,12 @@ const Matching = () => {
           offset: 0,
           limit: INITIAL_LOAD,
           excludeIds: [...exclude],
-          hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
+          hydrateUsersByIds: ids => runInitialRequestWithTimeout(
+            () => fetchUsersByIds(ids, { collectionSource }),
+            'profile-hydration',
+          ),
           useIndexIdCache: !isBackendOnlyMode,
-        });
+        }), 'search-index');
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         const indexedUsers = (indexed.users || []).filter(user => isAllowedIdForCollection(user.userId, collectionSource));
         if (indexedUsers.length === 0 && !indexed.hasMore) {
@@ -2811,7 +2874,7 @@ const Matching = () => {
           }
           }
         ),
-        'fetchChunk',
+        'source-chunk',
       );
       if (!canApplyInitialLoad()) return;
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
@@ -6119,6 +6182,19 @@ const Matching = () => {
             ) : loadError ? (
               <OwnerStatusMessage role="alert">
                 <div>Не вдалося завантажити профілі.</div>
+                <details>
+                  <summary>Технічні деталі</summary>
+                  <div>Етап: {loadError.requestLabel}</div>
+                  <div>Код: {loadError.code}</div>
+                  <div>Повідомлення: {loadError.message}</div>
+                  <ActionButton
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(JSON.stringify(loadError, null, 2))}
+                    aria-label="Копіювати діагностику"
+                  >
+                    Копіювати діагностику
+                  </ActionButton>
+                </details>
                 <ActionButton type="button" onClick={reloadDefault} aria-label="Повторити завантаження">
                   Спробувати ще раз
                 </ActionButton>

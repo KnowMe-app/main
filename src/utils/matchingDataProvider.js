@@ -1101,6 +1101,19 @@ const buildEmptyAdditionalSearchIndexResult = (reason, offset = 0) => ({
   reason,
 });
 
+const rethrowMatchingStageError = (error, stage) => {
+  if (error && typeof error === 'object') {
+    error.stage = stage;
+    error.requestLabel = stage;
+    throw error;
+  }
+  const stagedError = new Error(String(error || `Matching request failed at ${stage}`));
+  stagedError.code = 'matching/unknown';
+  stagedError.stage = stage;
+  stagedError.requestLabel = stage;
+  throw stagedError;
+};
+
 export const fetchAdditionalNewUsersBySearchIndex = async ({
   rawRules,
   accessUserId,
@@ -1155,14 +1168,26 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
     offset,
     limit,
     excludeIds,
-    hydrateUsersByIds: fetchNewUsersByIds,
-    newUsersIndexReader: args => getIndexedNewUsersIdsByRules({
-      ...args,
-      fetchMissingBuckets: true,
-      requireSearchKeySetKeys: collectionSource === 'newUsers',
-      debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
-      debugToast: (message, data) => debugAdditionalToast(normalizedAccessUserId, message, data),
-    }),
+    hydrateUsersByIds: async ids => {
+      try {
+        return await fetchNewUsersByIds(ids);
+      } catch (error) {
+        return rethrowMatchingStageError(error, 'profile-hydration');
+      }
+    },
+    newUsersIndexReader: async args => {
+      try {
+        return await getIndexedNewUsersIdsByRules({
+          ...args,
+          fetchMissingBuckets: true,
+          requireSearchKeySetKeys: collectionSource === 'newUsers',
+          debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
+          debugToast: (message, data) => debugAdditionalToast(normalizedAccessUserId, message, data),
+        });
+      } catch (error) {
+        return rethrowMatchingStageError(error, 'search-index');
+      }
+    },
   });
 
   const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
