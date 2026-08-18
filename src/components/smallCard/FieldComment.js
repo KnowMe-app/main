@@ -52,8 +52,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
   const initialTextRef = useRef('');
   const hasLegacyCommentRef = useRef(Boolean(legacyComment));
   const dirtyRef = useRef(false);
-  const fetchedWhileEditingRef = useRef('');
-  const initialCommentReadRef = useRef(Promise.resolve(''));
+  const initialCommentReadRef = useRef(Promise.resolve({ storedText: '', combinedText: '' }));
 
   useEffect(() => {
     let cancelled = false;
@@ -61,22 +60,19 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     initialTextRef.current = legacyComment;
     hasLegacyCommentRef.current = Boolean(legacyComment);
     dirtyRef.current = false;
-    fetchedWhileEditingRef.current = '';
-    initialCommentReadRef.current = Promise.resolve('');
+    initialCommentReadRef.current = Promise.resolve({ storedText: '', combinedText: legacyComment });
     if (!ownerId || !cardId) return undefined;
 
     initialCommentReadRef.current = fetchUserComment(ownerId, cardId).then(existing => {
       const storedText = String(existing?.text || '').trim();
+      const combinedText = combineComments(legacyComment, storedText);
       if (!cancelled) {
-        const combined = combineComments(legacyComment, storedText);
         if (!dirtyRef.current) {
-          setText(combined);
-          initialTextRef.current = combined;
-        } else {
-          fetchedWhileEditingRef.current = storedText;
+          setText(combinedText);
+          initialTextRef.current = combinedText;
         }
       }
-      return dirtyRef.current ? storedText : '';
+      return { storedText, combinedText };
     });
 
     return () => {
@@ -95,28 +91,42 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     return () => window.removeEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
   }, [ownerId, cardId, legacyComment]);
 
-  const persist = async (value, force = false) => {
+  const persist = async (value, force = false, mergeInitialComment = true) => {
     if (!ownerId || !cardId) {
       toast.error('Не вдалося зберегти коментар: користувач або картка не визначені');
       return false;
     }
 
     try {
-      const initiallyStoredTextToMerge = await initialCommentReadRef.current;
-      const valueToPersist = combineComments(
-        value,
-        fetchedWhileEditingRef.current || initiallyStoredTextToMerge,
-      );
-      if (!force && valueToPersist === initialTextRef.current) return true;
+      // Snapshot every per-card value before awaiting so a rerender for another
+      // card cannot redirect this pending save through that card's refs.
+      const initialCommentRead = initialCommentReadRef.current;
+      const initialText = initialTextRef.current;
+      const hasLegacyComment = hasLegacyCommentRef.current;
+      const wasDirty = dirtyRef.current;
+      const { storedText, combinedText } = await initialCommentRead;
 
-      if (hasLegacyCommentRef.current) {
+      // Focusing and blurring while the initial read is pending is not an edit.
+      if (!force && !wasDirty) return true;
+
+      const shouldMergeStoredText = mergeInitialComment && initialText !== combinedText;
+      const valueToPersist = shouldMergeStoredText
+        ? combineComments(value, storedText)
+        : value;
+      if (!force && valueToPersist === initialText) return true;
+
+      if (hasLegacyComment) {
         await migrateMyCardComment(cardId, valueToPersist, ownerId);
-        hasLegacyCommentRef.current = false;
+        if (initialCommentReadRef.current === initialCommentRead) {
+          hasLegacyCommentRef.current = false;
+        }
         onLegacyCommentMigrated?.();
       } else {
         await saveMyCardComment(cardId, valueToPersist, ownerId);
       }
-      initialTextRef.current = valueToPersist;
+      if (initialCommentReadRef.current === initialCommentRead) {
+        initialTextRef.current = valueToPersist;
+      }
       return true;
     } catch (error) {
       const details = error?.message || String(error);
@@ -203,9 +213,12 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
           onClick={async event => {
             event.stopPropagation();
             dirtyRef.current = true;
-            fetchedWhileEditingRef.current = '';
             setText('');
-            await persist('');
+            const initialCommentRead = initialCommentReadRef.current;
+            const cleared = await persist('', false, false);
+            if (cleared && initialCommentReadRef.current === initialCommentRead) {
+              dirtyRef.current = false;
+            }
           }}
           style={{
             position: 'absolute',
