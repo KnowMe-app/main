@@ -116,6 +116,120 @@ describe('FieldComment', () => {
     ));
   });
 
+  it('does not erase a backend comment when an unchanged field blurs before the read', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    render(<FieldComment userData={{ userId: 'user-1' }} />);
+
+    fireEvent.blur(screen.getByPlaceholderText('Додайте свій коментар'));
+    await act(async () => {
+      resolveComment({ text: 'existing backend note', updatedAt: 123 });
+    });
+
+    expect(screen.getByPlaceholderText('Додайте свій коментар').value).toBe('existing backend note');
+    expect(saveMyCardComment).not.toHaveBeenCalled();
+  });
+
+  it('does not merge a pending backend read back into an explicit clear', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    render(<FieldComment userData={{ userId: 'user-1', myComment: 'legacy' }} />);
+
+    fireEvent.click(screen.getByLabelText('Очистити коментар'));
+    await act(async () => {
+      resolveComment({ text: 'existing backend note', updatedAt: 123 });
+    });
+
+    await waitFor(() => expect(migrateMyCardComment).toHaveBeenCalledWith(
+      'user-1',
+      '',
+      'admin-1',
+    ));
+
+    migrateMyCardComment.mockClear();
+    fireEvent.blur(screen.getByPlaceholderText('Додайте свій коментар'));
+    await waitFor(() => expect(migrateMyCardComment).not.toHaveBeenCalled());
+    expect(saveMyCardComment).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pending save isolated from the next card's refs", async () => {
+    let resolveFirstComment;
+    fetchUserComment
+      .mockReturnValueOnce(new Promise(resolve => { resolveFirstComment = resolve; }))
+      .mockResolvedValueOnce({ text: 'second card note', updatedAt: 456 });
+    const { rerender } = render(<FieldComment userData={{ userId: 'user-1' }} />);
+
+    const textarea = screen.getByPlaceholderText('Додайте свій коментар');
+    fireEvent.change(textarea, { target: { value: 'first card edit' } });
+    fireEvent.blur(textarea);
+    rerender(<FieldComment userData={{ userId: 'user-2' }} />);
+    await act(async () => {
+      resolveFirstComment({ text: 'first card stored note', updatedAt: 123 });
+    });
+
+    await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
+      'user-1',
+      'first card edit\n\nfirst card stored note',
+      'admin-1',
+    ));
+    expect(saveMyCardComment).not.toHaveBeenCalledWith(
+      'user-1',
+      expect.stringContaining('second card note'),
+      'admin-1',
+    );
+  });
+
+  it('notifies the originating card when its pending migration finishes', async () => {
+    let resolveMigration;
+    migrateMyCardComment.mockReturnValue(new Promise(resolve => { resolveMigration = resolve; }));
+    const onFirstCardMigrated = jest.fn();
+    const { rerender } = render(
+      <FieldComment
+        userData={{ userId: 'user-1', myComment: 'legacy' }}
+        onLegacyCommentMigrated={onFirstCardMigrated}
+      />
+    );
+
+    const textarea = screen.getByPlaceholderText('Додайте свій коментар');
+    fireEvent.change(textarea, { target: { value: 'edited legacy' } });
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(migrateMyCardComment).toHaveBeenCalled());
+    rerender(
+      <FieldComment
+        userData={{ userId: 'user-2' }}
+        onLegacyCommentMigrated={jest.fn()}
+      />
+    );
+    await act(async () => resolveMigration({ lastAction: 123 }));
+
+    expect(onFirstCardMigrated).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves fetched text when editing starts while a forced save awaits the read', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    const backendWindow = { location: { href: '' }, close: jest.fn(), opener: window };
+    const openSpy = jest.spyOn(window, 'open').mockReturnValue(backendWindow);
+    render(<FieldComment userData={{ userId: 'user-1' }} extendedMode />);
+
+    fireEvent.click(screen.getByLabelText('Відкрити запис коментаря у Firebase'));
+    fireEvent.change(screen.getByPlaceholderText('Додайте свій коментар'), {
+      target: { value: 'edit started during read' },
+    });
+    await act(async () => {
+      resolveComment({ text: 'existing backend note', updatedAt: 123 });
+    });
+
+    await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
+      'user-1',
+      'existing backend note',
+      'admin-1',
+    ));
+    expect(screen.getByPlaceholderText('Додайте свій коментар').value)
+      .toBe('edit started during read');
+    openSpy.mockRestore();
+  });
+
   it('clearing the comment persists an empty value', async () => {
     fetchUserComment.mockResolvedValue({ text: 'existing', updatedAt: 123 });
     render(<FieldComment userData={{ userId: 'user-1' }} />);
