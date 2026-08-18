@@ -18,15 +18,18 @@ const sanitizeMatchingDiagnosticText = value => String(value || '')
   .slice(0, 500);
 
 const getMatchingErrorCode = error => {
-  const ownCode = String(error?.code || '').trim();
-  const causeCode = String(error?.cause?.code || '').trim();
-  const code = ownCode || causeCode;
+  const code = [error?.code, error?.cause?.code, error?.errorInfo?.code]
+    .map(value => String(value || '').trim())
+    .find(Boolean)
+    || (/PERMISSION_DENIED/i.test(error?.message || '') ? 'permission-denied' : '');
   return /^[a-z0-9/_-]{1,80}$/i.test(code) ? code : 'matching/unknown';
 };
 
 export const annotateMatchingStageError = (error, stage) => {
-  const annotated = error instanceof Error ? error : new Error(String(error || `Matching request failed at ${stage}`));
-  const inheritedCode = getMatchingErrorCode(annotated);
+  const annotated = error instanceof Error
+    ? error
+    : new Error(String(error?.message || error || `Matching request failed at ${stage}`), { cause: error });
+  const inheritedCode = getMatchingErrorCode(error);
   if (!annotated.code && inheritedCode !== 'matching/unknown') annotated.code = inheritedCode;
   if (!annotated.code) {
     if (annotated.name === 'TypeError') annotated.code = 'matching/type-error';

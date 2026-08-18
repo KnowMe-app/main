@@ -29,6 +29,24 @@ describe('Matching initial loading error diagnostics', () => {
       expectedMessage: 'Немає доступу до users на етапі source-page-read',
     },
     {
+      title: 'RTDB permission errors',
+      error: {
+        name: 'FirebaseError',
+        message: 'PERMISSION_DENIED: Permission denied at /users',
+        errorInfo: { code: 'permission-denied' },
+      },
+      stage: 'source-page-read',
+      expectedCode: 'permission-denied',
+      expectedMessage: 'Немає доступу до users на етапі source-page-read',
+    },
+    {
+      title: 'RTDB permission messages without structured metadata',
+      error: new Error('PERMISSION_DENIED: Permission denied at /users'),
+      stage: 'source-page-read',
+      expectedCode: 'permission-denied',
+      expectedMessage: 'Немає доступу до users на етапі source-page-read',
+    },
+    {
       title: 'missing Firebase indexes',
       error: Object.assign(new Error('Index not defined'), { code: 'failed-precondition' }),
       stage: 'search-index',
@@ -82,6 +100,18 @@ describe('Matching initial loading error diagnostics', () => {
     expect(diagnostic.userMessage).toContain('Немає доступу до users на етапі profile-hydration');
   });
 
+  it('preserves a non-Error Firebase rejection as the annotated error cause', () => {
+    const firebaseError = {
+      message: 'Permission denied',
+      errorInfo: { code: 'permission-denied' },
+    };
+    const annotated = annotateMatchingStageError(firebaseError, 'source-page-read');
+
+    expect(annotated).toBeInstanceOf(Error);
+    expect(annotated.cause).toBe(firebaseError);
+    expect(annotated.code).toBe('permission-denied');
+  });
+
   it('sanitizes sensitive values in technical details', () => {
     const error = new Error('Request failed for test@example.com?token=secret');
     const diagnostic = normalizeMatchingInitialLoadError(
@@ -114,15 +144,18 @@ describe('Matching initial loading error diagnostics', () => {
 
   it('keeps one stable error toast and replaces the skeleton with an actionable error UI', () => {
     const reporter = section('  const reportInitialLoadError', '  const resetReactionPaginationState');
-    const errorUi = section('            ) : loadError ? (', '            ) : (');
+    const errorUi = section('            })() : loadError ? (', '            ) : loading ? (');
 
     expect(reporter).toContain('toast.error(diagnostic.userMessage');
     expect(reporter).toContain('id: INITIAL_LOAD_ERROR_TOAST_ID');
+    expect(reporter).toContain('setLoadError(diagnosticWithTrace);\n    loadingRef.current = false;\n    loadingStateRef.current = false;\n    setLoading(false);');
     expect(errorUi).toContain('role="alert"');
     expect(errorUi).toContain('{loadError.userMessage}');
+    expect(errorUi).toContain('Код: {loadError.code}');
     expect(errorUi).toContain('Етап: {loadError.requestLabel}');
     expect(errorUi).toContain('Спробувати ще раз');
     expect(errorUi).toContain('JSON.stringify(loadError, null, 2)');
+    expect(errorUi).not.toContain('<MatchingSkeleton />');
   });
 
   it('retries through the existing initial loader and guards stale requests', () => {

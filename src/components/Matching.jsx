@@ -1595,6 +1595,9 @@ const Matching = () => {
       trace: initialLoadTraceRef.current,
     };
     setLoadError(diagnosticWithTrace);
+    loadingRef.current = false;
+    loadingStateRef.current = false;
+    setLoading(false);
     toast.dismiss('matching-slow-load');
     console.error({ event: 'Matching.initialLoadError', ...diagnosticWithTrace });
     toast.error(diagnostic.userMessage, {
@@ -6150,9 +6153,7 @@ const Matching = () => {
                   </CardWrapper>
                 </CardContainer>
               );
-            })() : loading ? (
-              <MatchingSkeleton />
-            ) : loadError ? (
+            })() : loadError ? (
               <OwnerStatusMessage role="alert">
                 <div>Не вдалося завантажити профілі.</div>
                 <div>{loadError.userMessage}</div>
@@ -6190,6 +6191,8 @@ const Matching = () => {
                   Спробувати ще раз
                 </ActionButton>
               </OwnerStatusMessage>
+            ) : loading ? (
+              <MatchingSkeleton />
             ) : (
               <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
             )}
