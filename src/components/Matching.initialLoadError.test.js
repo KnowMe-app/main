@@ -47,6 +47,13 @@ describe('Matching initial loading error diagnostics', () => {
       expectedMessage: 'Немає доступу до users на етапі source-page-read',
     },
     {
+      title: 'bare RTDB permission rejections without a code',
+      error: new Error('Permission denied'),
+      stage: 'source-page-read',
+      expectedCode: 'permission-denied',
+      expectedMessage: 'Немає доступу до users на етапі source-page-read',
+    },
+    {
       title: 'missing Firebase indexes',
       error: Object.assign(new Error('Index not defined'), { code: 'failed-precondition' }),
       stage: 'search-index',
