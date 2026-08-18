@@ -238,6 +238,23 @@ const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
+export const INITIAL_MATCHING_REQUEST_TIMEOUT_MS = 10 * 1000;
+const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
+
+export const runInitialRequestWithTimeout = (request, label, timeoutMs = INITIAL_MATCHING_REQUEST_TIMEOUT_MS) => {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(`Matching initial request timed out after ${timeoutMs}ms: ${label}`);
+      error.code = 'matching/initial-request-timeout';
+      error.requestLabel = label;
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([Promise.resolve().then(request), timeout])
+    .finally(() => clearTimeout(timeoutId));
+};
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
 const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: '' });
 const MATCHING_REACTION_IDLE_STYLE = { background: 'rgba(247, 147, 30, 0.95)' };
@@ -1375,6 +1392,8 @@ const Matching = () => {
   const { themeMode } = useAppSettings();
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [initialRequestId, setInitialRequestId] = useState(0);
   const [filters, setFilters] = useState({});
   const filtersRef = useRef(filters);
   const [collectionSource, setCollectionSource] = useState(
@@ -1493,6 +1512,7 @@ const Matching = () => {
   const reactionClassificationRequestsRef = useRef(new Map());
   const reactionAccessRequestsRef = useRef(new Map());
   const loadInitialVersionRef = useRef(0);
+  const initialRequestIdRef = useRef(0);
   const additionalRulesToastRef = useRef('');
   const additionalProfileCacheRef = useRef(null);
   const additionalProfileRequestVersionRef = useRef(0);
@@ -1539,8 +1559,28 @@ const Matching = () => {
     if (resetHasMore) setHasMore(true);
     if (resetLoading) {
       loadingRef.current = false;
+      loadingStateRef.current = false;
       setLoading(false);
     }
+  }, []);
+  const beginInitialRequest = React.useCallback(() => {
+    const requestId = initialRequestIdRef.current + 1;
+    initialRequestIdRef.current = requestId;
+    setInitialRequestId(requestId);
+    setLoadError(null);
+    toast.dismiss('matching-slow-load');
+    toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
+    loadingRef.current = true;
+    loadingStateRef.current = true;
+    setLoading(true);
+    return requestId;
+  }, []);
+  const reportInitialLoadError = React.useCallback(error => {
+    setLoadError(error instanceof Error ? error : new Error(String(error)));
+    toast.dismiss('matching-slow-load');
+    toast.error('Не вдалося завантажити профілі. Перевірте з’єднання та спробуйте ще раз.', {
+      id: INITIAL_LOAD_ERROR_TOAST_ID,
+    });
   }, []);
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
     if (reactionType === 'favorites' || reactionType === 'dislikes') {
@@ -2331,11 +2371,15 @@ const Matching = () => {
         return;
       }
 
+      const initialRequest = beginInitialRequest();
       try {
-        const freshProfileCache = await ensureFreshAdditionalMatchingProfile({
-          accessUserId: ownerId,
-          reason: 'initial-additional-newUsers-load',
-        });
+        const freshProfileCache = await runInitialRequestWithTimeout(
+          () => ensureFreshAdditionalMatchingProfile({
+            accessUserId: ownerId,
+            reason: 'initial-additional-newUsers-load',
+          }),
+          'ensureFreshAdditionalMatchingProfile',
+        );
         if (!isLatestAdditionalFetch()) {
           logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional profile result', {
             fetchVersion,
@@ -2365,7 +2409,10 @@ const Matching = () => {
           ownerId
         )
           ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
-          : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
+          : await runInitialRequestWithTimeout(
+            () => resolveAdditionalSearchKeySetKeysForMatching(null, ownerId),
+            'resolveAdditionalSearchKeySetKeysForMatching',
+          );
 
         if (!isLatestAdditionalFetch()) {
           logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional key resolution', {
@@ -2399,8 +2446,9 @@ const Matching = () => {
           (collected.length === 0 || visibleCount < INITIAL_LOAD)
         ) {
           loadedPages += 1;
+          const requestOffset = nextOffset;
           // eslint-disable-next-line no-await-in-loop
-          const loaded = await fetchAdditionalNewUsersBySearchIndex({
+          const loaded = await runInitialRequestWithTimeout(() => fetchAdditionalNewUsersBySearchIndex({
             parsedRuleGroups: freshParsedAdditionalAccessRules,
             rawRules: freshRawRules,
             accessUserId: ownerId,
@@ -2411,14 +2459,14 @@ const Matching = () => {
               ...Object.keys(favoriteUsersRef.current),
               ...Object.keys(dislikeUsersRef.current),
             ],
-            offset: nextOffset,
+            offset: requestOffset,
             limit: INITIAL_LOAD,
             fetchNewUsersByIds: fetchNewUsersByIdsForMatching,
             shouldDebugAdditionalMatching,
             debugAdditionalToast,
             logAdditionalMatchingDebug,
             debugMissingNewUsersToast,
-          });
+          }), 'fetchAdditionalNewUsersBySearchIndex');
 
           if (!isLatestAdditionalFetch()) {
             logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional fetch result', {
@@ -2483,13 +2531,19 @@ const Matching = () => {
         }
       } catch (error) {
         console.error('Failed to load additional newUsers for matching', error);
+        if (isLatestAdditionalFetch() && initialRequest === initialRequestIdRef.current) {
+          reportInitialLoadError(error);
+        }
         if (isLatestAdditionalFetch() && additionalNewUsersRef.current.length === 0) {
           resetAdditionalMatchingState({ resetHasMore: false });
           setHasMore(false);
         }
       } finally {
-        loadingRef.current = false;
-        setLoading(false);
+        if (isLatestAdditionalFetch() && initialRequest === initialRequestIdRef.current) {
+          loadingRef.current = false;
+          loadingStateRef.current = false;
+          setLoading(false);
+        }
       }
     };
 
@@ -2500,12 +2554,14 @@ const Matching = () => {
     };
   }, [
     collectionSource,
+    beginInitialRequest,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ensureFreshAdditionalMatchingProfile,
     loadCommentsFor,
     ownerId,
     resetAdditionalMatchingState,
+    reportInitialLoadError,
     roleIndexSets,
   ]);
 
@@ -2537,6 +2593,8 @@ const Matching = () => {
 
   const loadInitial = React.useCallback(async () => {
     writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, collectionSource, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
+    // The dedicated additional-newUsers effect owns this initial pipeline.
+    if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) return;
     if (loadingRef.current) {
       console.info('[loadInitial] skip overlapping request', { viewMode: viewModeRef.current });
       return;
@@ -2544,15 +2602,17 @@ const Matching = () => {
     const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
     const loadInitialVersion = loadInitialVersionRef.current + 1;
     loadInitialVersionRef.current = loadInitialVersion;
+    const initialRequest = beginInitialRequest();
     debugReactionFlowLog('loadInitial:start', { viewMode: viewModeRef.current, collectionSource });
-    loadingRef.current = true;
     const startMode = viewModeRef.current;
     const canApplyInitialLoad = () => loadInitialVersion === loadInitialVersionRef.current && viewModeRef.current === startMode;
     const canApplyInitialLoadWithFilters = () => canApplyInitialLoad() && requestFiltersSignature === stableAdditionalSignature(filtersRef.current || {});
-    setLoading(true);
     if (startMode !== 'default') {
-      loadingRef.current = false;
-      setLoading(false);
+      if (initialRequest === initialRequestIdRef.current) {
+        loadingRef.current = false;
+        loadingStateRef.current = false;
+        setLoading(false);
+      }
       return;
     }
     setUsers([]); // clear previous list to avoid caching wrong data
@@ -2736,11 +2796,12 @@ const Matching = () => {
           reason: 'missing',
         });
       }
-      const res = await fetchChunk(
-        INITIAL_LOAD,
-        undefined,
-        exclude,
-        async part => {
+      const res = await runInitialRequestWithTimeout(
+        () => fetchChunk(
+          INITIAL_LOAD,
+          undefined,
+          exclude,
+          async part => {
           if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
           if (unique.length) {
@@ -2748,7 +2809,9 @@ const Matching = () => {
             setUsers(prev => [...prev, ...unique]);
             void loadCommentsFor(unique);
           }
-        }
+          }
+        ),
+        'fetchChunk',
       );
       if (!canApplyInitialLoad()) return;
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
@@ -2801,15 +2864,24 @@ const Matching = () => {
         visibleReturnedCount: Number(res?.users?.length || 0),
         sourceHasMore: Boolean(res?.sourceHasMore),
       });
+    } catch (error) {
+      if (canApplyInitialLoad() && initialRequest === initialRequestIdRef.current) {
+        reportInitialLoadError(error);
+      }
+      console.error('Failed to load initial matching profiles', error);
     } finally {
-      if (loadInitialVersion === loadInitialVersionRef.current) {
+      if (loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current) {
         loadingRef.current = false;
+        loadingStateRef.current = false;
         setLoading(false);
       }
     }
-  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [beginInitialRequest, collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
+    setLoadError(null);
+    toast.dismiss('matching-slow-load');
+    toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
@@ -4607,16 +4679,12 @@ const Matching = () => {
     viewMode,
   ]);
 
-  const slowLoadVisibleUsers = viewMode === 'favorites' || viewMode === 'dislikes'
-    ? reactionTabUsers
-    : visibleUsers;
   useEffect(() => {
-    if (!loading || slowLoadVisibleUsers.length > 0) {
-      toast.dismiss('matching-slow-load');
-      return undefined;
-    }
+    if (!initialRequestId) return undefined;
+    const requestId = initialRequestId;
 
     const slowLoadTimer = setTimeout(() => {
+      if (requestId !== initialRequestIdRef.current || !loadingStateRef.current) return;
       const source = collectionSourceRef.current || collectionSource || 'unknown';
       const mode = viewModeRef.current || viewMode || 'unknown';
       toast(
@@ -4633,7 +4701,13 @@ const Matching = () => {
       clearTimeout(slowLoadTimer);
       toast.dismiss('matching-slow-load');
     };
-  }, [collectionSource, loading, slowLoadVisibleUsers.length, viewMode]);
+    // The deadline belongs to the request id; mutable refs provide diagnostic context.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRequestId]);
+
+  useEffect(() => {
+    if (initialRequestId && !loading) toast.dismiss('matching-slow-load');
+  }, [initialRequestId, loadError, loading]);
 
   const filteredUsers = (viewMode === 'favorites' || viewMode === 'dislikes')
     ? reactionTabUsers
@@ -6042,6 +6116,13 @@ const Matching = () => {
               );
             })() : loading ? (
               <MatchingSkeleton />
+            ) : loadError ? (
+              <OwnerStatusMessage role="alert">
+                <div>Не вдалося завантажити профілі.</div>
+                <ActionButton type="button" onClick={reloadDefault} aria-label="Повторити завантаження">
+                  Спробувати ще раз
+                </ActionButton>
+              </OwnerStatusMessage>
             ) : (
               <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
             )}
