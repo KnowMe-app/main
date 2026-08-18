@@ -22,7 +22,7 @@ describe('Matching initial loading error state', () => {
     const reporter = section('  const reportInitialLoadError', '  const resetReactionPaginationState');
     expect(reporter).toContain('toast.error(diagnostic.userMessage');
     expect(reporter).toContain('id: INITIAL_LOAD_ERROR_TOAST_ID');
-    expect(reporter).toContain("console.error({ event: 'Matching.initialLoadError', ...diagnostic })");
+    expect(reporter).toContain("console.error({ event: 'Matching.initialLoadError', ...diagnosticWithTrace })");
     expect(source).toContain(') : loadError ? (');
     expect(source).toContain('role="alert"');
     expect(source).toContain('Спробувати ще раз');
@@ -36,9 +36,19 @@ describe('Matching initial loading error state', () => {
     expect(normalizer).toContain('Не вдалося завантажити');
     expect(normalizer).toContain("error?.requestLabel || error?.stage || context.requestLabel");
     expect(normalizer).toContain('MATCHING_INITIAL_REQUEST_LABELS.has(candidateRequestLabel)');
-    expect(normalizer).toContain("message = 'Permission denied'");
-    expect(normalizer).toContain("message = 'Unexpected Matching load error'");
+    expect(normalizer).toContain("message = originalMessage || 'Permission denied'");
+    expect(normalizer).toContain('const originalMessage = sanitizeMatchingDiagnosticText');
     expect(source).toContain("}), 'search-index');");
+  });
+
+  it('annotates ordinary request failures with their stage and preserves useful safe details', () => {
+    const annotator = section('export const annotateMatchingStageError', 'export const normalizeMatchingInitialLoadError');
+    const runner = section('export const runInitialRequestWithTimeout', 'const ADDITIONAL_MATCHING_LOG_LIMIT');
+    expect(annotator).toContain("annotated.name === 'TypeError'");
+    expect(annotator).toContain("annotated.code = 'matching/type-error'");
+    expect(annotator).toContain('if (!annotated.requestLabel) annotated.requestLabel = stage');
+    expect(runner).toContain('annotateMatchingStageError(error, label)');
+    expect(source).toContain("'reaction-snapshots'");
   });
 
   it('renders copyable technical details without copying raw errors or sensitive profile data', () => {
@@ -47,6 +57,8 @@ describe('Matching initial loading error state', () => {
     expect(errorUi).toContain('Етап: {loadError.requestLabel}');
     expect(errorUi).toContain('Код: {loadError.code}');
     expect(errorUi).toContain('Повідомлення: {loadError.message}');
+    expect(errorUi).toContain('Trace:');
+    expect(errorUi).toContain("toast.success('Діагностику скопійовано')");
     expect(errorUi).toContain('JSON.stringify(loadError, null, 2)');
     expect(errorUi).not.toContain('token');
     expect(errorUi).not.toContain('profile');

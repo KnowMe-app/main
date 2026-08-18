@@ -9,10 +9,14 @@ export const collectFilteredMatchingSourceCards = async ({
   isSameCursor = (a, b) => a === b,
   getSourceLimit,
   onPart,
-  maxPages = 2,
+  onDiagnosticEvent,
+  maxPages = 10,
   maxSourceCards = 500,
   debugLabel = 'matchingSourceBackfill',
 }) => {
+  const emitDiagnostic = (stage, status, details = {}) => {
+    if (typeof onDiagnosticEvent === 'function') onDiagnosticEvent({ stage, status, ...details });
+  };
   const visibleTarget = Math.max(1, Number(targetVisibleCount) || 1);
   const collected = [];
   let cursor = initialCursor;
@@ -36,27 +40,38 @@ export const collectFilteredMatchingSourceCards = async ({
       ? getSourceLimit({ remaining, exclude, collected, loadedPages })
       : remaining + exclude.size + 1;
     // eslint-disable-next-line no-await-in-loop
-    const sourceRes = await fetchSourcePage({
-      limit: sourceLimit,
-      cursor,
-      remaining,
-      exclude,
-      collected,
-      loadedPages,
-    });
+    emitDiagnostic('source-page-read', 'started', { page: loadedPages });
+    let sourceRes;
+    try {
+      sourceRes = await fetchSourcePage({ limit: sourceLimit, cursor, remaining, exclude, collected, loadedPages });
+      emitDiagnostic('source-page-read', 'completed', { page: loadedPages, count: sourceRes?.users?.length || 0 });
+    } catch (error) {
+      emitDiagnostic('source-page-read', 'failed', { page: loadedPages });
+      throw error;
+    }
 
     const sourceUsers = Array.isArray(sourceRes?.users) ? sourceRes.users : [];
+    emitDiagnostic('ui-filtering', 'started', { page: loadedPages, count: sourceUsers.length });
     const filtered = filterSourceUsers(sourceUsers, { exclude, collected, remaining });
+    emitDiagnostic('ui-filtering', 'completed', { page: loadedPages, count: filtered.length });
     sourceCardsCount += sourceUsers.length;
     filteredCardsCount += filtered.length;
     excludedCount += sourceUsers.length - filtered.length;
 
     const slice = filtered.slice(0, remaining);
     const ids = slice.map(user => user?.userId).filter(Boolean);
-    const hydratedMap = ids.length && hydrateUsersByIds
-      // eslint-disable-next-line no-await-in-loop
-      ? await hydrateUsersByIds(ids)
-      : Object.fromEntries(slice.map(user => [user.userId, user]));
+    emitDiagnostic('profile-hydration', 'started', { page: loadedPages, count: ids.length });
+    let hydratedMap;
+    try {
+      hydratedMap = ids.length && hydrateUsersByIds
+        // eslint-disable-next-line no-await-in-loop
+        ? await hydrateUsersByIds(ids)
+        : Object.fromEntries(slice.map(user => [user.userId, user]));
+      emitDiagnostic('profile-hydration', 'completed', { page: loadedPages, count: Object.keys(hydratedMap || {}).length });
+    } catch (error) {
+      emitDiagnostic('profile-hydration', 'failed', { page: loadedPages });
+      throw error;
+    }
     const validSlice = ids
       .map(id => hydratedMap?.[id])
       .filter(Boolean)
@@ -89,10 +104,8 @@ export const collectFilteredMatchingSourceCards = async ({
       stopReason = 'cursor_not_advanced';
       break;
     }
-    if (!validSlice.length) {
-      stopReason = 'no_visible_cards_added';
-      break;
-    }
+    // A filtered-out page is not terminal while the backend advanced its cursor;
+    // keep scanning so non-admin viewers can reach the next visible card.
   }
 
   if (!stopReason && loadedPages >= maxPages && collected.length < visibleTarget) stopReason = 'max_pages_reached';

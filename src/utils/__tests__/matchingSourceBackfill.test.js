@@ -70,4 +70,40 @@ describe('collectFilteredMatchingSourceCards', () => {
     expect(result.sourceHasMore).toBe(false);
     expect(result.lastKey).toBe('page-2');
   });
+
+  it('reports successful source, filtering, and hydration stages without exposing card data', async () => {
+    const events = [];
+    await collectFilteredMatchingSourceCards({
+      targetVisibleCount: 1,
+      fetchSourcePage: async () => ({ users: [{ userId: 'ag-1', userRole: 'ag' }], lastKey: null, hasMore: false }),
+      filterSourceUsers: agFilter,
+      hydrateUsersByIds,
+      isSameCursor,
+      onDiagnosticEvent: event => events.push(event),
+    });
+
+    expect(events.map(({ stage, status }) => `${stage}:${status}`)).toEqual([
+      'source-page-read:started',
+      'source-page-read:completed',
+      'ui-filtering:started',
+      'ui-filtering:completed',
+      'profile-hydration:started',
+      'profile-hydration:completed',
+    ]);
+    expect(JSON.stringify(events)).not.toContain('ag-1');
+  });
+
+  it('reports the failing hydration stage before preserving the original rejection', async () => {
+    const events = [];
+    const failure = new TypeError('broken hydration');
+    await expect(collectFilteredMatchingSourceCards({
+      targetVisibleCount: 1,
+      fetchSourcePage: async () => ({ users: [{ userId: 'ag-1', userRole: 'ag' }], lastKey: null, hasMore: false }),
+      filterSourceUsers: agFilter,
+      hydrateUsersByIds: async () => { throw failure; },
+      isSameCursor,
+      onDiagnosticEvent: event => events.push(event),
+    })).rejects.toBe(failure);
+    expect(events[events.length - 1]).toMatchObject({ stage: 'profile-hydration', status: 'failed' });
+  });
 });
