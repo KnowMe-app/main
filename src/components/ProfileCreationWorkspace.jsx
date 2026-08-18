@@ -1241,7 +1241,7 @@ export const ProfileCreationWorkspace = () => {
             <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
           </ProgressRow>
           <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
-          {!editingSharedDraft && activeMutation.revision > 0 && <PersonalDraftMeta>
+          {!editingSharedDraft && activeMutation.updatedAt && <PersonalDraftMeta>
             <FieldComment
               userData={{ ...draft, userId: draft.userId || activeMutation.cardId }}
               onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}

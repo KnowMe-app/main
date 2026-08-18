@@ -52,6 +52,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
   const initialTextRef = useRef('');
   const hasLegacyCommentRef = useRef(Boolean(legacyComment));
   const dirtyRef = useRef(false);
+  const fetchedWhileEditingRef = useRef('');
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +60,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     initialTextRef.current = legacyComment;
     hasLegacyCommentRef.current = Boolean(legacyComment);
     dirtyRef.current = false;
+    fetchedWhileEditingRef.current = '';
     if (!ownerId || !cardId) return undefined;
 
     fetchUserComment(ownerId, cardId).then(existing => {
@@ -67,6 +69,8 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
       if (!dirtyRef.current) {
         setText(combined);
         initialTextRef.current = combined;
+      } else {
+        fetchedWhileEditingRef.current = String(existing?.text || '').trim();
       }
     });
 
@@ -92,17 +96,18 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
       return false;
     }
 
-    if (!force && value === initialTextRef.current) return true;
+    const valueToPersist = combineComments(value, fetchedWhileEditingRef.current);
+    if (!force && valueToPersist === initialTextRef.current) return true;
 
     try {
       if (hasLegacyCommentRef.current) {
-        await migrateMyCardComment(cardId, value, ownerId);
+        await migrateMyCardComment(cardId, valueToPersist, ownerId);
         hasLegacyCommentRef.current = false;
         onLegacyCommentMigrated?.();
       } else {
-        await saveMyCardComment(cardId, value, ownerId);
+        await saveMyCardComment(cardId, valueToPersist, ownerId);
       }
-      initialTextRef.current = value;
+      initialTextRef.current = valueToPersist;
       return true;
     } catch (error) {
       const details = error?.message || String(error);
@@ -189,6 +194,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
           onClick={async event => {
             event.stopPropagation();
             dirtyRef.current = true;
+            fetchedWhileEditingRef.current = '';
             setText('');
             await persist('');
           }}
