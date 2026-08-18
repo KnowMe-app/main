@@ -66,7 +66,8 @@ describe('FieldComment', () => {
     fireEvent.change(textarea, { target: { value: 'new note' } });
     fireEvent.blur(textarea);
 
-    expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'new note', 'admin-1');
+    await waitFor(() => expect(saveMyCardComment)
+      .toHaveBeenCalledWith('user-1', 'new note', 'admin-1'));
   });
 
   it('merges a backend comment that arrives while the user is editing', async () => {
@@ -90,6 +91,63 @@ describe('FieldComment', () => {
     ));
   });
 
+  it('does not erase a backend comment when an unchanged field blurs before the initial read', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    render(<FieldComment userData={{ userId: 'user-1' }} />);
+
+    fireEvent.blur(screen.getByPlaceholderText('Додайте свій коментар'));
+    await act(async () => {
+      resolveComment({ text: 'existing backend note', updatedAt: 123 });
+    });
+
+    expect(saveMyCardComment).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText('Додайте свій коментар').value)
+      .toBe('existing backend note');
+  });
+
+  it('does not merge the initial backend value back into an explicit clear', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    render(<FieldComment userData={{ userId: 'user-1', myComment: 'legacy' }} />);
+
+    fireEvent.click(screen.getByLabelText('Очистити коментар'));
+    await act(async () => {
+      resolveComment({ text: 'existing backend note', updatedAt: 123 });
+    });
+
+    await waitFor(() => expect(migrateMyCardComment)
+      .toHaveBeenCalledWith('user-1', '', 'admin-1'));
+  });
+
+  it("keeps an old card's pending save isolated from the next card's refs", async () => {
+    const reads = {};
+    fetchUserComment.mockImplementation((ownerId, cardId) => new Promise(resolve => {
+      reads[cardId] = resolve;
+    }));
+    const { rerender } = render(<FieldComment userData={{ userId: 'user-1' }} />);
+    const textarea = screen.getByPlaceholderText('Додайте свій коментар');
+    fireEvent.change(textarea, { target: { value: 'old card edit' } });
+    fireEvent.blur(textarea);
+
+    rerender(<FieldComment userData={{ userId: 'user-2' }} />);
+    await act(async () => {
+      reads['user-1']({ text: 'old backend note', updatedAt: 123 });
+      reads['user-2']({ text: 'new backend note', updatedAt: 456 });
+    });
+
+    await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
+      'user-1',
+      'old card edit\n\nold backend note',
+      'admin-1',
+    ));
+    expect(saveMyCardComment).not.toHaveBeenCalledWith(
+      'user-1',
+      expect.stringContaining('new backend note'),
+      'admin-1',
+    );
+  });
+
   it('clearing the comment persists an empty value', async () => {
     fetchUserComment.mockResolvedValue({ text: 'existing', updatedAt: 123 });
     render(<FieldComment userData={{ userId: 'user-1' }} />);
@@ -97,7 +155,8 @@ describe('FieldComment', () => {
     const clearButton = await screen.findByLabelText('Очистити коментар');
     fireEvent.click(clearButton);
 
-    expect(saveMyCardComment).toHaveBeenCalledWith('user-1', '', 'admin-1');
+    await waitFor(() => expect(saveMyCardComment)
+      .toHaveBeenCalledWith('user-1', '', 'admin-1'));
   });
 
   it('batch 26 §8: the backend-navigation arrow is hidden by default, shown only in extended mode', async () => {
