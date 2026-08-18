@@ -246,6 +246,8 @@ const getMatchingErrorCode = error => {
   return /^[a-z0-9/_-]{1,80}$/i.test(code) ? code : 'matching/unknown';
 };
 const MATCHING_INITIAL_REQUEST_LABELS = new Set([
+  'reaction-snapshots',
+  'index-cache-read',
   'access-profile',
   'search-key-sets',
   'search-index',
@@ -253,8 +255,27 @@ const MATCHING_INITIAL_REQUEST_LABELS = new Set([
   'source-chunk',
 ]);
 
+const sanitizeMatchingDiagnosticText = value => String(value || '')
+  .replace(/([?&](?:token|auth|key|email|uid)=)[^&\s]+/gi, '$1[redacted]')
+  .replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, '[redacted-email]')
+  .slice(0, 500);
+
+export const annotateMatchingStageError = (error, stage) => {
+  const annotated = error instanceof Error ? error : new Error(String(error || `Matching request failed at ${stage}`));
+  if (!annotated.code) {
+    if (annotated.name === 'TypeError') annotated.code = 'matching/type-error';
+    else if (/indexeddb|idb/i.test(`${annotated.name} ${annotated.message}`)) annotated.code = 'matching/indexeddb-error';
+    else if (/network|offline|failed to fetch/i.test(annotated.message || '')) annotated.code = 'matching/network-error';
+    else annotated.code = 'matching/unknown';
+  }
+  if (!annotated.requestLabel) annotated.requestLabel = stage;
+  if (!annotated.stage) annotated.stage = annotated.requestLabel;
+  return annotated;
+};
+
 export const normalizeMatchingInitialLoadError = (error, context = {}) => {
-  const code = getMatchingErrorCode(error);
+  const cause = error?.cause && typeof error.cause === 'object' ? error.cause : null;
+  const code = getMatchingErrorCode(error?.code ? error : cause || error);
   const candidateRequestLabel = String(error?.requestLabel || error?.stage || context.requestLabel || '').trim();
   const requestLabel = MATCHING_INITIAL_REQUEST_LABELS.has(candidateRequestLabel) ? candidateRequestLabel : 'unknown';
   const collectionSource = String(context.collectionSource || 'unknown');
@@ -262,14 +283,16 @@ export const normalizeMatchingInitialLoadError = (error, context = {}) => {
   const ownerId = String(context.ownerId || 'unknown');
   const normalizedCode = code.toLowerCase();
   let userMessage = `Не вдалося завантажити ${collectionSource} (${code})`;
-  let message = 'Unexpected Matching load error';
+  const originalMessage = sanitizeMatchingDiagnosticText(error?.message || cause?.message || 'Unexpected Matching load error');
+  const name = sanitizeMatchingDiagnosticText(error?.name || cause?.name || 'Error');
+  let message = originalMessage;
 
   if (code === 'matching/initial-request-timeout') {
     userMessage = `Таймаут на етапі ${requestLabel}`;
-    message = 'Initial request timed out';
+    message = originalMessage || 'Initial request timed out';
   } else if (normalizedCode.includes('permission-denied')) {
     userMessage = `Немає доступу до ${collectionSource} (permission-denied)`;
-    message = 'Permission denied';
+    message = originalMessage || 'Permission denied';
   } else if (normalizedCode.includes('unavailable')) {
     userMessage = `Сервіс ${collectionSource} тимчасово недоступний (unavailable)`;
     message = 'Firebase service unavailable';
@@ -283,11 +306,14 @@ export const normalizeMatchingInitialLoadError = (error, context = {}) => {
 
   return {
     code,
+    name,
     message,
     requestLabel,
     collectionSource,
     viewMode,
     ownerId,
+    online: typeof navigator === 'undefined' ? null : navigator.onLine,
+    timestamp: new Date().toISOString(),
     userMessage,
   };
 };
@@ -303,7 +329,10 @@ export const runInitialRequestWithTimeout = (request, label, timeoutMs = INITIAL
     }, timeoutMs);
   });
 
-  return Promise.race([Promise.resolve().then(request), timeout])
+  const stagedRequest = Promise.resolve().then(request).catch(error => {
+    throw annotateMatchingStageError(error, label);
+  });
+  return Promise.race([stagedRequest, timeout])
     .finally(() => clearTimeout(timeoutId));
 };
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
@@ -1444,6 +1473,7 @@ const Matching = () => {
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [initialLoadTrace, setInitialLoadTrace] = useState([]);
   const [initialRequestId, setInitialRequestId] = useState(0);
   const [filters, setFilters] = useState({});
   const filtersRef = useRef(filters);
@@ -1564,6 +1594,7 @@ const Matching = () => {
   const reactionAccessRequestsRef = useRef(new Map());
   const loadInitialVersionRef = useRef(0);
   const initialRequestIdRef = useRef(0);
+  const initialLoadTraceRef = useRef([]);
   const additionalRulesToastRef = useRef('');
   const additionalProfileCacheRef = useRef(null);
   const additionalProfileRequestVersionRef = useRef(0);
@@ -1619,6 +1650,8 @@ const Matching = () => {
     initialRequestIdRef.current = requestId;
     setInitialRequestId(requestId);
     setLoadError(null);
+    initialLoadTraceRef.current = [];
+    setInitialLoadTrace([]);
     toast.dismiss('matching-slow-load');
     toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
     loadingRef.current = true;
@@ -1626,15 +1659,29 @@ const Matching = () => {
     setLoading(true);
     return requestId;
   }, []);
+  const recordInitialLoadDiagnostic = React.useCallback(event => {
+    const requestId = initialRequestIdRef.current;
+    const timestamp = new Date().toISOString();
+    const entry = { requestId, timestamp, ...event };
+    const next = [...initialLoadTraceRef.current, entry].slice(-30);
+    initialLoadTraceRef.current = next;
+    setInitialLoadTrace(next);
+    writeMatchingDebugLog('initialLoad:trace', entry);
+  }, []);
   const reportInitialLoadError = React.useCallback(error => {
     const diagnostic = normalizeMatchingInitialLoadError(error, {
       collectionSource,
       viewMode: viewModeRef.current,
       ownerId: getOwnerId(),
     });
-    setLoadError(diagnostic);
+    const diagnosticWithTrace = {
+      ...diagnostic,
+      requestId: initialRequestIdRef.current,
+      trace: initialLoadTraceRef.current,
+    };
+    setLoadError(diagnosticWithTrace);
     toast.dismiss('matching-slow-load');
-    console.error({ event: 'Matching.initialLoadError', ...diagnostic });
+    console.error({ event: 'Matching.initialLoadError', ...diagnosticWithTrace });
     toast.error(diagnostic.userMessage, {
       id: INITIAL_LOAD_ERROR_TOAST_ID,
     });
@@ -2592,6 +2639,7 @@ const Matching = () => {
       } catch (error) {
         console.error('Failed to load additional newUsers for matching', error);
         if (isLatestAdditionalFetch() && initialRequest === initialRequestIdRef.current) {
+          recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
           reportInitialLoadError(error);
         }
         if (isLatestAdditionalFetch() && additionalNewUsersRef.current.length === 0) {
@@ -2623,6 +2671,7 @@ const Matching = () => {
     resetAdditionalMatchingState,
     reportInitialLoadError,
     roleIndexSets,
+    recordInitialLoadDiagnostic,
   ]);
 
   const fetchChunk = React.useCallback(
@@ -2647,8 +2696,9 @@ const Matching = () => {
       fetchUsersByLastLogin2FromCollection,
       hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
       onPart,
+      onDiagnosticEvent: recordInitialLoadDiagnostic,
     }),
-    [collectionSource, isAdmin, parsedAdditionalAccessRules, roleIndexSets]
+    [collectionSource, isAdmin, parsedAdditionalAccessRules, recordInitialLoadDiagnostic, roleIndexSets]
   );
 
   const loadInitial = React.useCallback(async () => {
@@ -2681,12 +2731,17 @@ const Matching = () => {
       const owners = getMatchingMultiDataOwnerIds();
       let exclude = new Set();
       if (owners.length) {
-        const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
-          ownerIds: owners,
-          fetchFavoriteUsers,
-          fetchDislikeUsers,
-          onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'initial shared reaction snapshot unavailable', warning, warning.error),
-        });
+        recordInitialLoadDiagnostic({ stage: 'reaction-snapshots', status: 'started', count: owners.length });
+        const { favoriteSnapshots, dislikeSnapshots } = await runInitialRequestWithTimeout(
+          () => readReactionSnapshotMaps({
+            ownerIds: owners,
+            fetchFavoriteUsers,
+            fetchDislikeUsers,
+            onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'initial shared reaction snapshot unavailable', warning, warning.error),
+          }),
+          'reaction-snapshots',
+        );
+        recordInitialLoadDiagnostic({ stage: 'reaction-snapshots', status: 'completed', count: owners.length });
         const ownOwnerId = getOwnerId();
         const { favorites: favIds, dislikes: disIds } = resolvePrioritizedReactionMaps({
           ownerIds: owners,
@@ -2778,6 +2833,7 @@ const Matching = () => {
             stage: 'indexed-candidates',
           });
         }
+        recordInitialLoadDiagnostic({ stage: 'search-index', status: 'started' });
         const indexed = await runInitialRequestWithTimeout(() => fetchMatchingIndexedCandidates({
           collectionSource: 'users',
           filters: filtersRef.current || {},
@@ -2792,6 +2848,7 @@ const Matching = () => {
           ),
           useIndexIdCache: !isBackendOnlyMode,
         }), 'search-index');
+        recordInitialLoadDiagnostic({ stage: 'search-index', status: 'completed', count: indexed?.users?.length || 0 });
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         const indexedUsers = (indexed.users || []).filter(user => isAllowedIdForCollection(user.userId, collectionSource));
         if (indexedUsers.length === 0 && !indexed.hasMore) {
@@ -2929,6 +2986,7 @@ const Matching = () => {
       });
     } catch (error) {
       if (canApplyInitialLoad() && initialRequest === initialRequestIdRef.current) {
+        recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
         reportInitialLoadError(error);
       }
       console.error('Failed to load initial matching profiles', error);
@@ -2939,7 +2997,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [beginInitialRequest, collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [beginInitialRequest, collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -6186,10 +6244,26 @@ const Matching = () => {
                   <summary>Технічні деталі</summary>
                   <div>Етап: {loadError.requestLabel}</div>
                   <div>Код: {loadError.code}</div>
+                  <div>Тип: {loadError.name}</div>
                   <div>Повідомлення: {loadError.message}</div>
+                  <div>Спроба: {loadError.requestId}</div>
+                  <div>Джерело: {loadError.collectionSource}</div>
+                  <div>Мережа: {loadError.online === false ? 'offline' : 'online'}</div>
+                  <div>Час: {loadError.timestamp}</div>
+                  <div>
+                    Trace: {(loadError.trace || initialLoadTrace).map(item => `${item.stage} ${item.status === 'completed' ? '✓' : item.status === 'failed' ? '✕' : '…'}`).join(' → ') || 'немає подій'}
+                  </div>
                   <ActionButton
                     type="button"
-                    onClick={() => navigator.clipboard?.writeText(JSON.stringify(loadError, null, 2))}
+                    onClick={async () => {
+                      try {
+                        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+                        await navigator.clipboard.writeText(JSON.stringify(loadError, null, 2));
+                        toast.success('Діагностику скопійовано');
+                      } catch {
+                        toast.error('Не вдалося скопіювати діагностику');
+                      }
+                    }}
                     aria-label="Копіювати діагностику"
                   >
                     Копіювати діагностику

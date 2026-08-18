@@ -1236,6 +1236,7 @@ export const fetchFilteredMatchingSourceChunk = ({
   fetchUsersByLastLogin2FromCollection,
   hydrateUsersByIds,
   onPart,
+  onDiagnosticEvent,
 }) => {
   if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
     return Promise.resolve({
@@ -1289,5 +1290,6 @@ export const fetchFilteredMatchingSourceChunk = ({
       __sourceCollection: collectionSource === 'newUsers' ? 'newUsers' : 'users',
     }),
     onPart,
+    onDiagnosticEvent,
   });
 };
