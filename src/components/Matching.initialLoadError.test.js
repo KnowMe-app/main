@@ -20,11 +20,39 @@ describe('Matching initial loading error state', () => {
 
   it('turns Firebase and timeout rejections into a stable error toast and non-skeleton error UI', () => {
     const reporter = section('  const reportInitialLoadError', '  const resetReactionPaginationState');
-    expect(reporter).toContain("toast.error('Не вдалося завантажити профілі.");
+    expect(reporter).toContain('toast.error(diagnostic.userMessage');
     expect(reporter).toContain('id: INITIAL_LOAD_ERROR_TOAST_ID');
+    expect(reporter).toContain("console.error({ event: 'Matching.initialLoadError', ...diagnostic })");
     expect(source).toContain(') : loadError ? (');
     expect(source).toContain('role="alert"');
     expect(source).toContain('Спробувати ще раз');
+  });
+
+  it('gives permission, search-index timeout, and unknown failures distinct safe messages', () => {
+    const normalizer = section('export const normalizeMatchingInitialLoadError', 'export const runInitialRequestWithTimeout');
+    expect(normalizer).toContain('Немає доступу до');
+    expect(normalizer).toContain('(permission-denied)');
+    expect(normalizer).toContain('Таймаут на етапі');
+    expect(normalizer).toContain('Не вдалося завантажити');
+    expect(normalizer).toContain("error?.requestLabel || error?.stage || context.requestLabel");
+    expect(normalizer).toContain('MATCHING_INITIAL_REQUEST_LABELS.has(candidateRequestLabel)');
+    expect(normalizer).toContain("message = 'Permission denied'");
+    expect(normalizer).toContain("message = 'Unexpected Matching load error'");
+    expect(source).toContain("}), 'search-index');");
+  });
+
+  it('renders copyable technical details without copying raw errors or sensitive profile data', () => {
+    const errorUi = section('            ) : loadError ? (', '            ) : (');
+    expect(errorUi).toContain('Технічні деталі');
+    expect(errorUi).toContain('Етап: {loadError.requestLabel}');
+    expect(errorUi).toContain('Код: {loadError.code}');
+    expect(errorUi).toContain('Повідомлення: {loadError.message}');
+    expect(errorUi).toContain('JSON.stringify(loadError, null, 2)');
+    expect(errorUi).not.toContain('token');
+    expect(errorUi).not.toContain('profile');
+    const reporter = section('  const reportInitialLoadError', '  const resetReactionPaginationState');
+    expect(reporter).not.toContain('JSON.stringify(error)');
+    expect(reporter).not.toContain('toast.error(error');
   });
 
   it('clears the error and launches the existing loader on retry', () => {
