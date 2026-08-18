@@ -66,7 +66,11 @@ describe('FieldComment', () => {
     fireEvent.change(textarea, { target: { value: 'new note' } });
     fireEvent.blur(textarea);
 
-    expect(saveMyCardComment).toHaveBeenCalledWith('user-1', 'new note', 'admin-1');
+    await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
+      'user-1',
+      'new note',
+      'admin-1',
+    ));
   });
 
   it('merges a backend comment that arrives while the user is editing', async () => {
@@ -90,6 +94,28 @@ describe('FieldComment', () => {
     ));
   });
 
+  it('waits for the initial comment read before saving an edit after blur', async () => {
+    let resolveComment;
+    fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
+    const { unmount } = render(<FieldComment userData={{ userId: 'user-1' }} />);
+
+    const textarea = screen.getByPlaceholderText('Додайте свій коментар');
+    fireEvent.change(textarea, { target: { value: 'active edit' } });
+    fireEvent.blur(textarea);
+
+    expect(saveMyCardComment).not.toHaveBeenCalled();
+    unmount();
+    await act(async () => {
+      resolveComment({ text: 'existing backend note', updatedAt: 123 });
+    });
+
+    await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
+      'user-1',
+      'active edit\n\nexisting backend note',
+      'admin-1',
+    ));
+  });
+
   it('clearing the comment persists an empty value', async () => {
     fetchUserComment.mockResolvedValue({ text: 'existing', updatedAt: 123 });
     render(<FieldComment userData={{ userId: 'user-1' }} />);
@@ -97,7 +123,7 @@ describe('FieldComment', () => {
     const clearButton = await screen.findByLabelText('Очистити коментар');
     fireEvent.click(clearButton);
 
-    expect(saveMyCardComment).toHaveBeenCalledWith('user-1', '', 'admin-1');
+    await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith('user-1', '', 'admin-1'));
   });
 
   it('batch 26 §8: the backend-navigation arrow is hidden by default, shown only in extended mode', async () => {

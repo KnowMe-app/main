@@ -53,6 +53,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
   const hasLegacyCommentRef = useRef(Boolean(legacyComment));
   const dirtyRef = useRef(false);
   const fetchedWhileEditingRef = useRef('');
+  const initialCommentReadRef = useRef(Promise.resolve(''));
 
   useEffect(() => {
     let cancelled = false;
@@ -61,17 +62,21 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     hasLegacyCommentRef.current = Boolean(legacyComment);
     dirtyRef.current = false;
     fetchedWhileEditingRef.current = '';
+    initialCommentReadRef.current = Promise.resolve('');
     if (!ownerId || !cardId) return undefined;
 
-    fetchUserComment(ownerId, cardId).then(existing => {
-      if (cancelled) return;
-      const combined = combineComments(legacyComment, existing?.text);
-      if (!dirtyRef.current) {
-        setText(combined);
-        initialTextRef.current = combined;
-      } else {
-        fetchedWhileEditingRef.current = String(existing?.text || '').trim();
+    initialCommentReadRef.current = fetchUserComment(ownerId, cardId).then(existing => {
+      const storedText = String(existing?.text || '').trim();
+      if (!cancelled) {
+        const combined = combineComments(legacyComment, storedText);
+        if (!dirtyRef.current) {
+          setText(combined);
+          initialTextRef.current = combined;
+        } else {
+          fetchedWhileEditingRef.current = storedText;
+        }
       }
+      return dirtyRef.current ? storedText : '';
     });
 
     return () => {
@@ -96,10 +101,14 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
       return false;
     }
 
-    const valueToPersist = combineComments(value, fetchedWhileEditingRef.current);
-    if (!force && valueToPersist === initialTextRef.current) return true;
-
     try {
+      const initiallyStoredTextToMerge = await initialCommentReadRef.current;
+      const valueToPersist = combineComments(
+        value,
+        fetchedWhileEditingRef.current || initiallyStoredTextToMerge,
+      );
+      if (!force && valueToPersist === initialTextRef.current) return true;
+
       if (hasLegacyCommentRef.current) {
         await migrateMyCardComment(cardId, valueToPersist, ownerId);
         hasLegacyCommentRef.current = false;
