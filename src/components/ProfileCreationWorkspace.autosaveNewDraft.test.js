@@ -31,6 +31,7 @@ jest.mock('./config', () => ({
   fetchFavoriteUsers: jest.fn(async () => ({})),
   fetchDislikeUsers: jest.fn(async () => ({})),
   searchUsersOnly: jest.fn(),
+  addMatchingSearchQuery: jest.fn(),
 }));
 jest.mock('./smallCard/FieldComment', () => ({ FieldComment: () => null }));
 

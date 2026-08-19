@@ -5,11 +5,15 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
 
   it('reuses Matching search primitives and blocks creation until a completed not-found search', () => {
-    expect(source).toContain("import { auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config'");
+    expect(source).toContain("import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config'");
     expect(source).toContain("import SearchBar, { detectSearchParams } from './SearchBar'");
     expect(source).toContain('searchFunc={searchUsersOnly}');
     expect(source).toContain('onSearchError={() => {');
     expect(source).toContain('!searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || matchingOwnDrafts.length > 0');
+  });
+
+  it('records every executed search in the shared search history, like Matching and AddNewProfile', () => {
+    expect(source).toContain('addMatchingSearchQuery(value)');
   });
 
   it('offers to reopen every matching own draft instead of creating a duplicate', () => {

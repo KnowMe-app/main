@@ -36,6 +36,7 @@ jest.mock('./config', () => ({
   removeFavoriteUser: jest.fn(async () => undefined),
   addDislikeUser: jest.fn(async () => undefined),
   removeDislikeUser: jest.fn(async () => undefined),
+  addMatchingSearchQuery: jest.fn(),
 }));
 
 // Drafts no longer appear in an always-visible list - they only surface
