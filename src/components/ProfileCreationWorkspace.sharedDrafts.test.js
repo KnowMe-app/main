@@ -15,10 +15,10 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('setSharedMutations([]);');
   });
 
-  it('offers a shared draft from search instead of a duplicate card', () => {
-    expect(source).toContain('findMatchingProfileMutation(sharedMutations, detectSearchParams(search))');
+  it('offers every matching shared draft from search instead of a duplicate card', () => {
+    expect(source).toContain('findMatchingProfileMutations(sharedMutations, detectSearchParams(search))');
     expect(source).toContain('Цей контакт уже є у спільній чернетці. Відкрийте її та додайте свої правки.');
-    expect(source).toContain('Boolean(matchingOwnDraft) || Boolean(matchingSharedDraft)');
+    expect(source).toContain('matchingOwnDrafts.length > 0 || matchingSharedDrafts.length > 0');
     expect(source).toContain('Спільні чернетки');
   });
 

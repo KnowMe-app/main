@@ -9,11 +9,11 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
     expect(source).toContain("import SearchBar, { detectSearchParams } from './SearchBar'");
     expect(source).toContain('searchFunc={searchUsersOnly}');
     expect(source).toContain('onSearchError={() => {');
-    expect(source).toContain('!searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || Boolean(matchingOwnDraft)');
+    expect(source).toContain('!searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || matchingOwnDrafts.length > 0');
   });
 
-  it('offers to reopen a matching own draft instead of creating a duplicate', () => {
-    expect(source).toContain('findMatchingProfileMutation(mutations, detectSearchParams(search))');
+  it('offers to reopen every matching own draft instead of creating a duplicate', () => {
+    expect(source).toContain('findMatchingProfileMutations(mutations, detectSearchParams(search))');
     expect(source).toContain('Цей контакт уже є у вашій картці, що очікує перевірки.');
     expect(source).toContain('Відкрити чернетку');
   });

@@ -38,10 +38,19 @@ jest.mock('./config', () => ({
   removeDislikeUser: jest.fn(async () => undefined),
 }));
 
+// Drafts no longer appear in an always-visible list - they only surface
+// through a search match. This minimal stub stands in for the real
+// SearchBar: clicking it runs a "search" that the mocked detectSearchParams
+// resolves to the fixture's own cardId, so the match renders and the test
+// can open it exactly as a real search would offer it.
 jest.mock('./SearchBar', () => ({
   __esModule: true,
-  default: () => null,
-  detectSearchParams: () => null,
+  default: ({ setSearch, onSearchExecuted }) => (
+    <button type="button" onClick={() => { setSearch('Олена'); onSearchExecuted(); }}>
+      Шукати (тест)
+    </button>
+  ),
+  detectSearchParams: () => ({ key: 'name', value: 'Олена' }),
 }));
 jest.mock('./formFields', () => ({
   pickerFields: [{ name: 'name', ukrainian: "Ім'я" }],
@@ -53,8 +62,13 @@ jest.mock('./formFields', () => ({
 jest.mock('utils/accessLevel', () => ({
   resolveAccess: () => ({ canCreateProfiles: true, isAdmin: false }),
 }));
-jest.mock('utils/profileCreationSearch', () => ({ findMatchingProfileMutation: jest.fn(() => null) }));
-jest.mock('utils/searchKeyUtils', () => ({ getSearchIdIndexedFields: () => [] }));
+// The real matcher and normalizer are used here (not stubbed) so the
+// search-driven flow in openOwnDraft below actually finds the fixture draft
+// by name, the same way it would in the app.
+jest.mock('utils/searchKeyUtils', () => ({
+  ...jest.requireActual('utils/searchKeyUtils'),
+  getSearchIdIndexedFields: () => [],
+}));
 jest.mock('utils/profileMutations', () => ({
   acceptCreateProfileMutation: jest.fn(),
   getEffectiveProfile: ({ mutation }) => mutation.data,
@@ -87,7 +101,8 @@ jest.mock('react-router-dom', () => ({
 
 const openOwnDraft = async () => {
   render(<ProfileCreationWorkspace />);
-  fireEvent.click(await screen.findByRole('button', { name: /Відкрити профіль/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити чернетку' }));
   await screen.findByPlaceholderText('Додайте свій коментар');
 };
 

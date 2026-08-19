@@ -15,7 +15,7 @@ import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
-import { findMatchingProfileMutation } from 'utils/profileCreationSearch';
+import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -109,9 +109,7 @@ const Status = styled.span`
 const SearchSection = styled.section`
   padding:24px; margin-bottom:30px; border:1px solid var(--km-border); border-radius:24px; background:var(--km-card);
   box-shadow:var(--km-shadow), inset 0 1px 0 rgba(255,255,255,.04);
-  h2 { margin:0; font-size:clamp(23px, 6vw, 26px); line-height:1.2; letter-spacing:-.015em; }
-  > ${Meta}:first-of-type { max-width:650px; margin-top:8px; font-size:16px; }
-  > div[style] { min-height:58px !important; margin:20px 0 12px !important; padding:10px 16px !important; border-radius:17px !important; background:color-mix(in srgb, var(--km-bg) 62%, var(--km-card)) !important; }
+  > div[style] { min-height:58px !important; margin:0 0 12px !important; padding:10px 16px !important; border-radius:17px !important; background:color-mix(in srgb, var(--km-bg) 62%, var(--km-card)) !important; }
   > div[style]:hover { border-color:color-mix(in srgb, var(--km-accent) 45%, var(--km-border)); }
   textarea { font-size:16px; line-height:1.4; }
   ${Actions} ${Button} { min-height:56px; min-width:220px; box-shadow:0 8px 20px var(--km-accent-ring); }
@@ -119,6 +117,7 @@ const SearchSection = styled.section`
   @media (max-width:600px) { padding:22px 20px; ${Actions} ${Button} { width:100%; } }
 `;
 const TechnicalMeta = styled(Meta)`font-size:12px; code { color:var(--km-text); }`;
+const SearchHint = styled(Meta)`font-style:italic; font-size:13px; margin:0 0 14px;`;
 const DisclosureToggle = styled.button`
   display:inline-flex; align-items:center; gap:6px; margin:10px 0 2px; padding:0; border:none; background:transparent;
   color:var(--km-muted); font:700 12px/1 var(--km-font); cursor:pointer;
@@ -584,17 +583,26 @@ export const ProfileCreationWorkspace = () => {
 
   const startNew = () => {
     const cardId = reserveProfileCardId();
-    setActiveMutation({ cardId, revision: 0, status: 'pendingReview', createdBy: uid });
+    // reserveProfileCardId only allocates a key locally - nothing is written
+    // to the backend yet. Without an immediate save below, a draft that is
+    // never blurred (the user creates it and navigates away) would vanish
+    // completely: it never reaches profileMutations, so it cannot even show
+    // up in "Ваші картки" or a later search.
+    const mutation = { cardId, revision: 0, status: 'pendingReview', createdBy: uid };
+    activeMutationRef.current = mutation;
+    setActiveMutation(mutation);
     setOverlayTarget(null);
     const detected = detectSearchParams(search);
     const initialSearchData = PROFILE_SEARCH_PREFILL_FIELDS.has(detected?.key) && detected?.value
       ? { [detected.key]: detected.value }
       : {};
     const nextDraft = { userId: cardId, ...initialSearchData };
+    draftRef.current = nextDraft;
     persistedDraftRef.current = nextDraft;
     resetDraftOverlayState(nextDraft);
     setDraft(nextDraft);
     setSearchParams({ cardId });
+    persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
   };
 
   const applySearchUsers = value => {
@@ -616,18 +624,19 @@ export const ProfileCreationWorkspace = () => {
     setSearchFailed(false);
   };
 
-  const matchingOwnDraft = useMemo(() => (
-    searchExecuted ? findMatchingProfileMutation(mutations, detectSearchParams(search)) : null
+  // A search can legitimately match several drafts at once - several people
+  // named "Марія", for instance - so every match is offered, not just the
+  // first one found.
+  const matchingOwnDrafts = useMemo(() => (
+    searchExecuted ? findMatchingProfileMutations(mutations, detectSearchParams(search)) : []
   ), [mutations, search, searchExecuted]);
 
   // The same contact can already sit in a draft somebody else started. That
   // draft is editable by this user too, so offer it instead of letting them
   // create a second card for the same person.
-  const matchingSharedDraft = useMemo(() => (
-    searchExecuted && !matchingOwnDraft
-      ? findMatchingProfileMutation(sharedMutations, detectSearchParams(search))
-      : null
-  ), [matchingOwnDraft, search, searchExecuted, sharedMutations]);
+  const matchingSharedDrafts = useMemo(() => (
+    searchExecuted ? findMatchingProfileMutations(sharedMutations, detectSearchParams(search)) : []
+  ), [search, searchExecuted, sharedMutations]);
 
   const closeEditor = () => {
     setDraft(null);
@@ -1206,7 +1215,7 @@ export const ProfileCreationWorkspace = () => {
   ), [draft]);
   const draftRole = draft?.role || draft?.userRole || '';
 
-  const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Мої нові профілі', [access]);
+  const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Шукаємо профіль', [access]);
   if (!access) return <Page><Shell>Завантаження…</Shell></Page>;
 
   return <Page><Shell>
@@ -1338,24 +1347,7 @@ export const ProfileCreationWorkspace = () => {
         </Actions>
       </Card>
     </> : <>
-      {!access.isAdmin && <SearchSection aria-label="Пошук профілю перед створенням">
-        <h2>Знайти або додати картку</h2>
-        <Meta>Спочатку перевірте, чи профіль уже існує. Використовується той самий пошук, що й у Matching.</Meta>
-        <DisclosureToggle
-          type="button"
-          aria-expanded={showSearchKeysDetail}
-          onClick={() => setShowSearchKeysDetail(previous => !previous)}
-        >
-          <FiInfo aria-hidden="true" /> Технічні деталі пошуку
-          <FiChevronDown aria-hidden="true" style={{ transform: showSearchKeysDetail ? 'rotate(180deg)' : 'none' }} />
-        </DisclosureToggle>
-        {showSearchKeysDetail && <TechnicalMeta>
-          Пошук карток виконується за ключами: {PROFILE_SEARCH_KEYS.map((key, index) => (
-            <React.Fragment key={key}>
-              {index > 0 ? ', ' : ''}<code>{key}</code>
-            </React.Fragment>
-          ))}.
-        </TechnicalMeta>}
+      {!access.isAdmin && <SearchSection aria-label="Пошук профілю">
         <SearchBar
           searchFunc={searchUsersOnly}
           search={search}
@@ -1387,6 +1379,24 @@ export const ProfileCreationWorkspace = () => {
           placeholder="Пошук профілю"
           inputAriaLabel="Пошук профілю"
         />
+        <SearchHint>
+          Шукайте за ім’ям, прізвищем, телефоном, email або посиланням на соцмережі — Telegram, Instagram, Facebook, TikTok, VK та інші.
+        </SearchHint>
+        <DisclosureToggle
+          type="button"
+          aria-expanded={showSearchKeysDetail}
+          onClick={() => setShowSearchKeysDetail(previous => !previous)}
+        >
+          <FiInfo aria-hidden="true" /> Технічні деталі пошуку
+          <FiChevronDown aria-hidden="true" style={{ transform: showSearchKeysDetail ? 'rotate(180deg)' : 'none' }} />
+        </DisclosureToggle>
+        {showSearchKeysDetail && <TechnicalMeta>
+          Пошук карток виконується за ключами: {PROFILE_SEARCH_KEYS.map((key, index) => (
+            <React.Fragment key={key}>
+              {index > 0 ? ', ' : ''}<code>{key}</code>
+            </React.Fragment>
+          ))}. Шукає одразу серед опублікованих карток (searchId) і серед чернеток, які ще не прийняв адміністратор.
+        </TechnicalMeta>}
         {searchResults.map(profile => <SearchResult key={profile.userId}>
           <span><strong>{[profile.name, profile.surname].filter(Boolean).join(' ') || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
           <span>
@@ -1394,70 +1404,71 @@ export const ProfileCreationWorkspace = () => {
             <Button onClick={() => startExistingProfileOverlay(profile)}>Додати власні дані</Button>
           </span>
         </SearchResult>)}
-        {matchingOwnDraft ? <SearchResult>
+        {matchingOwnDrafts.map(mutation => <SearchResult key={mutation.cardId}>
           <span>
-            <strong>{[matchingOwnDraft.data?.name, matchingOwnDraft.data?.surname].filter(Boolean).join(' ') || 'Ваша чернетка'}</strong>
+            <strong>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Ваша чернетка'}</strong>
             <Meta>Цей контакт уже є у вашій картці, що очікує перевірки.</Meta>
           </span>
-          <Button onClick={() => openMutation(matchingOwnDraft)}>Відкрити чернетку</Button>
-        </SearchResult> : null}
-        {matchingSharedDraft ? <SearchResult>
+          <Button onClick={() => openMutation(mutation)}>Відкрити чернетку</Button>
+        </SearchResult>)}
+        {matchingSharedDrafts.map(mutation => <SearchResult key={mutation.cardId}>
           <span>
-            <strong>{[matchingSharedDraft.data?.name, matchingSharedDraft.data?.surname].filter(Boolean).join(' ') || 'Спільна чернетка'}</strong>
+            <strong>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Спільна чернетка'}</strong>
             <Meta>Цей контакт уже є у спільній чернетці. Відкрийте її та додайте свої правки.</Meta>
           </span>
-          <Button onClick={() => openMutation(matchingSharedDraft)}>Відкрити чернетку</Button>
-        </SearchResult> : null}
-        {searchExecuted && searchNotFound && !matchingOwnDraft && !matchingSharedDraft && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+          <Button onClick={() => openMutation(mutation)}>Відкрити чернетку</Button>
+        </SearchResult>)}
+        {searchExecuted && searchNotFound && matchingOwnDrafts.length === 0 && matchingSharedDrafts.length === 0 && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
         {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
         <Actions>
           <Button
             $primary
-            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || Boolean(matchingOwnDraft) || Boolean(matchingSharedDraft)}
+            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || matchingOwnDrafts.length > 0 || matchingSharedDrafts.length > 0}
             onClick={startNew}
           >
             <FiPlus size={20} aria-hidden="true" /> Додати профіль
           </Button>
         </Actions>
       </SearchSection>}
-      <SectionHeader>
-        <span>{access.isAdmin ? 'Черга на перевірку' : 'Ваші картки'}</span>
-        <Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count>
-      </SectionHeader>
-      {mutations.length === 0 && <EmptyState>
-        <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
-        <EmptyTitle>Нових профілів поки немає.</EmptyTitle>
-        <Meta>{access.isAdmin ? 'Нові картки від користувачів з’являться тут.' : 'Створені вами картки з’являться тут.'}</Meta>
-      </EmptyState>}
-      {mutations.map(mutation => <ProfileCard key={mutation.cardId}>
-        <div>
-          <Status $variant={mutation.status === 'private' ? 'private' : 'pending'}>
-            {mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
-          </Status>
-          <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
-          {access.isAdmin && <Meta>Автор: {mutation.createdBy}</Meta>}
-          <Meta>
-            Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'}
-            {access.isAdmin ? ` · revision ${mutation.revision}` : ''}
-          </Meta>
-        </div>
-        <Button onClick={() => openMutation(mutation)}>Відкрити профіль</Button>
-      </ProfileCard>)}
-      {sharedMutations.length > 0 && <>
+      {access.isAdmin && <>
         <SectionHeader>
-          <span>Спільні чернетки</span>
-          <Count aria-label={`${sharedMutations.length} спільних чернеток`}>{sharedMutations.length}</Count>
+          <span>Черга на перевірку</span>
+          <Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count>
         </SectionHeader>
-        {sharedMutations.map(mutation => <ProfileCard key={mutation.cardId}>
+        {mutations.length === 0 && <EmptyState>
+          <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
+          <EmptyTitle>Нових профілів поки немає.</EmptyTitle>
+          <Meta>Нові картки від користувачів з’являться тут.</Meta>
+        </EmptyState>}
+        {mutations.map(mutation => <ProfileCard key={mutation.cardId}>
           <div>
-            <Status $variant="overlay">Спільна чернетка</Status>
+            <Status $variant={mutation.status === 'private' ? 'private' : 'pending'}>
+              {mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+            </Status>
             <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
+            <Meta>Автор: {mutation.createdBy}</Meta>
             <Meta>
-              Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'}
+              Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'} · revision {mutation.revision}
             </Meta>
           </div>
-          <Button onClick={() => openMutation(mutation)}><FiUsers aria-hidden="true" /> Додати свої правки</Button>
+          <Button onClick={() => openMutation(mutation)}>Відкрити профіль</Button>
         </ProfileCard>)}
+        {sharedMutations.length > 0 && <>
+          <SectionHeader>
+            <span>Спільні чернетки</span>
+            <Count aria-label={`${sharedMutations.length} спільних чернеток`}>{sharedMutations.length}</Count>
+          </SectionHeader>
+          {sharedMutations.map(mutation => <ProfileCard key={mutation.cardId}>
+            <div>
+              <Status $variant="overlay">Спільна чернетка</Status>
+              <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
+              <Meta>
+                Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'}
+              </Meta>
+            </div>
+            <Button onClick={() => openMutation(mutation)}><FiUsers aria-hidden="true" /> Додати свої правки</Button>
+          </ProfileCard>)}
+        </>}
       </>}
     </>}
   </Shell></Page>;

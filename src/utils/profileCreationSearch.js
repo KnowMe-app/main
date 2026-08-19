@@ -2,17 +2,20 @@ import { normalizeSearchIdInput } from './searchKeyUtils';
 
 const toValues = value => (Array.isArray(value) ? value : [value]);
 
-export const findMatchingProfileMutation = (mutations, detectedSearch) => {
+// Returns every mutation whose value for the detected field matches -
+// several drafts can legitimately share a name or a phone number, so callers
+// must not assume the first match is the only one.
+export const findMatchingProfileMutations = (mutations, detectedSearch) => {
   const field = detectedSearch?.key;
   const searchedValue = detectedSearch?.value;
-  if (!field || searchedValue == null) return null;
+  if (!field || searchedValue == null) return [];
 
   const normalizedSearch = field === 'userId'
     ? String(searchedValue).trim().toLowerCase()
     : normalizeSearchIdInput(field, searchedValue).toLowerCase();
-  if (!normalizedSearch) return null;
+  if (!normalizedSearch) return [];
 
-  return (mutations || []).find(mutation => {
+  return (mutations || []).filter(mutation => {
     const profile = mutation?.data || {};
     const values = field === 'userId'
       ? [mutation?.cardId, profile.userId]
@@ -23,5 +26,5 @@ export const findMatchingProfileMutation = (mutations, detectedSearch) => {
         : normalizeSearchIdInput(field, value).toLowerCase();
       return normalizedValue === normalizedSearch;
     });
-  }) || null;
+  });
 };
