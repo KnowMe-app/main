@@ -6,7 +6,7 @@ import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
 import { addMatchingSearchQuery, auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
-import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields, roleOptions } from './formFields';
+import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFieldsExtended } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import PageNavMenu from './PageNavMenu';
 import { fieldContacts } from './smallCard/fieldContacts';
@@ -1026,12 +1026,9 @@ export const ProfileCreationWorkspace = () => {
     } finally { setSaving(false); }
   };
 
-  const fieldsMap = useMemo(() => {
-    const map = new Map(pickerFields.map(field => [field.name, field]));
-    map.set('fathersname', { name: 'fathersname', ukrainian: 'По батькові', placeholder: 'по батькові', svg: 'user' });
-    map.set('role', { name: 'role', ukrainian: 'Роль', svg: 'user', width: '100%', options: roleOptions });
-    return map;
-  }, []);
+  const fieldsMap = useMemo(() => (
+    new Map(pickerFieldsExtended.map(field => [field.name, field]))
+  ), []);
   const draftFilledPct = useMemo(() => {
     const filledFields = [...FORM_FIELD_NAMES].filter(fieldName => (
       toFieldValues(draft?.[fieldName]).some(value => String(value ?? '').trim())
