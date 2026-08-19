@@ -171,6 +171,14 @@ export const csectionOptions = [
   { placeholder: '2', ukrainian: '2' },
 ];
 
+export const roleOptions = [
+  { placeholder: 'sm', ukrainian: 'сурогатна мама' },
+  { placeholder: 'ed', ukrainian: 'донор ооцитів' },
+  { placeholder: 'ag', ukrainian: 'агентство' },
+  { placeholder: 'cl', ukrainian: 'клініка' },
+  { placeholder: 'ip', ukrainian: 'біологічні батьки' },
+];
+
 
 
 

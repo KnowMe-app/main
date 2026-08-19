@@ -5,14 +5,11 @@ import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
-import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
-import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
+import { addMatchingSearchQuery, auth, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
+import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields, roleOptions } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import PageNavMenu from './PageNavMenu';
 import { fieldContacts } from './smallCard/fieldContacts';
-import { FieldComment } from './smallCard/FieldComment';
-import { BtnFavorite } from './smallCard/btnFavorite';
-import { BtnDislike } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
@@ -126,7 +123,6 @@ const DisclosureToggle = styled.button`
   &:focus-visible { outline:2px solid var(--km-accent); outline-offset:3px; border-radius:4px; }
 `;
 const PersonalDraftMeta = styled.div`display:grid; gap:10px;`;
-const ReactionButtons = styled.div`display:flex; align-items:center; gap:10px; min-height:35px;`;
 const ProgressRow = styled.div`display:flex; justify-content:space-between; gap:12px; color:var(--km-muted); font-size:12px;`;
 const ProgressTrack = styled.div`height:6px; overflow:hidden; border-radius:999px; background:var(--km-border);`;
 const ProgressFill = styled.div`
@@ -381,10 +377,10 @@ const PROFILE_SEARCH_OPTIONS = { searchIdPrefixes: PROFILE_SEARCH_ID_PREFIXES };
 // (medical, appearance, lifestyle...) belongs to the full profile, filled in
 // later - not to this quick intake form.
 const CREATE_FORM_SECTIONS = [
-  { key: 'personal', title: '👤 ПІБ і дата народження', fields: ['surname', 'name', 'birth'] },
+  { key: 'role', title: '🎭 Роль', fields: ['role'] },
+  { key: 'personal', title: '👤 ПІБ і дата народження', fields: ['surname', 'name', 'fathersname', 'birth'] },
   { key: 'location', title: '📍 Локація', fields: ['country', 'region', 'city'] },
   { key: 'contacts', title: '📱 Контакти', fields: ['phone', 'email', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
-  { key: 'comment', title: '💬 Публічний коментар', fields: ['publicComment'] },
 ];
 
 // A draft opened by somebody who is neither its author nor an admin. Those
@@ -422,8 +418,6 @@ export const ProfileCreationWorkspace = () => {
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
   const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
-  const [favoriteUsers, setFavoriteUsers] = useState({});
-  const [dislikeUsers, setDislikeUsers] = useState({});
   const draftRef = useRef(draft);
   const persistedDraftRef = useRef(draft);
   // The draft as its author stored it, before anybody's overlay is replayed
@@ -560,17 +554,6 @@ export const ProfileCreationWorkspace = () => {
     setAccess(resolved);
     await refresh(user.uid, resolved);
   }), [navigate, refresh]);
-
-  useEffect(() => {
-    if (!uid) return undefined;
-    let cancelled = false;
-    Promise.all([fetchFavoriteUsers(uid), fetchDislikeUsers(uid)]).then(([favorites, dislikes]) => {
-      if (cancelled) return;
-      setFavoriteUsers(favorites || {});
-      setDislikeUsers(dislikes || {});
-    });
-    return () => { cancelled = true; };
-  }, [uid]);
 
   useEffect(() => {
     const requestedCardId = searchParams.get('cardId');
@@ -1043,7 +1026,12 @@ export const ProfileCreationWorkspace = () => {
     } finally { setSaving(false); }
   };
 
-  const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
+  const fieldsMap = useMemo(() => {
+    const map = new Map(pickerFields.map(field => [field.name, field]));
+    map.set('fathersname', { name: 'fathersname', ukrainian: 'По батькові', placeholder: 'по батькові', svg: 'user' });
+    map.set('role', { name: 'role', ukrainian: 'Роль', svg: 'user', width: '100%', options: roleOptions });
+    return map;
+  }, []);
   const draftFilledPct = useMemo(() => {
     const filledFields = [...FORM_FIELD_NAMES].filter(fieldName => (
       toFieldValues(draft?.[fieldName]).some(value => String(value ?? '').trim())
@@ -1151,11 +1139,6 @@ export const ProfileCreationWorkspace = () => {
 
     return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)}>
       <FieldLabel>{label}</FieldLabel>
-      {fieldName === 'publicComment' && (
-        <Meta style={{ margin: '-2px 0 10px', fontSize: 13 }}>
-          Видно всім у картці. Якщо заповнено — анкета зникає із загального списку Matching, але лишається доступною через пошук.
-        </Meta>
-      )}
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <FieldChipRow>
           {field.options.map(option => {
@@ -1226,30 +1209,26 @@ export const ProfileCreationWorkspace = () => {
     {draft ? <>
       <DraftHeaderCard>
         <DraftBadges>
-          <Status $variant={overlayTarget || editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
-            {overlayTarget ? 'Власні дані' : editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
-          </Status>
+          {!overlayTarget && <Status $variant={editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
+            {editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+          </Status>}
           {draftRole && <Status $variant="private">{draftRole}</Status>}
           {reviewingAsAdmin && pendingEditsCount > 0 && <Status $variant="overlay">{pendingEditsCount} непідтверджених правок</Status>}
         </DraftBadges>
         {!overlayTarget && <DraftName>{draftName}</DraftName>}
-        {overlayTarget
-          ? <Meta>Дані буде збережено як ваш оверлей для {overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.</Meta>
-          : access.isAdmin
-            ? <>
-              <TechnicalMeta>
-                cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
-                {activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}
-              </TechnicalMeta>
-              {activeMutation.createdBy && <TechnicalMeta>
-                Автор:{' '}
-                <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>
-                  {describeAuthor(activeMutation.createdBy, historyAuthors)}
-                </AuthorLink>
-              </TechnicalMeta>}
-              <DraftContacts>{fieldContacts(draft)}</DraftContacts>
-            </>
-            : null}
+        {!overlayTarget && access.isAdmin && <>
+          <TechnicalMeta>
+            cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
+            {activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}
+          </TechnicalMeta>
+          {activeMutation.createdBy && <TechnicalMeta>
+            Автор:{' '}
+            <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>
+              {describeAuthor(activeMutation.createdBy, historyAuthors)}
+            </AuthorLink>
+          </TechnicalMeta>}
+          <DraftContacts>{fieldContacts(draft)}</DraftContacts>
+        </>}
         {editingSharedDraft && <Meta>
           Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну.
           Ваші зміни зберігаються окремо, у вашому оверлеї, і стають видимими наступному редактору.
@@ -1262,32 +1241,13 @@ export const ProfileCreationWorkspace = () => {
           </ProgressRow>
           <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
           {!editingSharedDraft && activeMutation.updatedAt && <PersonalDraftMeta>
-            <FieldComment
-              userData={{ ...draft, userId: draft.userId || activeMutation.cardId }}
-              onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
+            <FieldLabel>Публічний коментар</FieldLabel>
+            <FieldTextArea
+              value={draft?.publicComment || ''}
+              placeholder="будьте толерантні"
+              onChange={e => updateDraftField('publicComment', e.target.value)}
+              onBlur={e => commitFieldValue('publicComment', e.target.value)}
             />
-            <ReactionButtons>
-              <BtnFavorite
-                userId={activeMutation.cardId}
-                userData={null}
-                cacheUserData={false}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                customStyle={{ position: 'static' }}
-              />
-              <BtnDislike
-                userId={activeMutation.cardId}
-                userData={null}
-                cacheUserData={false}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                customStyle={{ position: 'static' }}
-              />
-            </ReactionButtons>
           </PersonalDraftMeta>}
         </>}
       </DraftHeaderCard>
