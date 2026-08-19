@@ -36,6 +36,7 @@
     "lint:js": "eslint src/**/*.{js,jsx}",
     "qa:pdf": "NODE_PATH=./src node scripts/pdfQaCheck.js",
     "migrate:representatives": "node scripts/migrateRepresentativePowerOfAttorney.js",
+    "dedupe:searchQueries": "node scripts/dedupeSearchQueries.js",
     "postinstall": "patch-package"
   },
   "eslintConfig": {
