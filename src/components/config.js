@@ -693,7 +693,20 @@ export const addMatchingSearchQuery = async searchQuery => {
 
     // Search history is personal data. Always write it below the authenticated
     // user's UID so the path agrees with the RTDB `auth.uid == $ownerId` rule.
-    const queryRef = push(ref2(database, `multiData/searchQueries/${owner.uid}`));
+    const ownerRef = ref2(database, `multiData/searchQueries/${owner.uid}`);
+
+    // Drop earlier entries with the same text so repeating a search doesn't
+    // pile up duplicates - only the most recent occurrence is kept.
+    const snapshot = await firebaseGet(ownerRef);
+    if (snapshot.exists()) {
+      const duplicateKeys = [];
+      snapshot.forEach(child => {
+        if (child.val() === normalizedQuery) duplicateKeys.push(child.key);
+      });
+      await Promise.all(duplicateKeys.map(key => remove(ref2(database, `multiData/searchQueries/${owner.uid}/${key}`))));
+    }
+
+    const queryRef = push(ownerRef);
     await set(queryRef, normalizedQuery);
   } catch (error) {
     console.error('Error adding matching search query:', error);
