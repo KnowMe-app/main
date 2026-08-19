@@ -1128,9 +1128,11 @@ const SearchBar = ({
 
   const repeatedSearchCollectorRef = useRef(null);
   const lastEmittedSearchLabelRef = useRef(null);
+  const lastNotifiedSearchRef = useRef(null);
 
   useEffect(() => {
     lastEmittedSearchLabelRef.current = null;
+    lastNotifiedSearchRef.current = null;
   }, [search]);
 
   const collectSearchOutput = (output, requestId = null) => {
@@ -1895,7 +1897,10 @@ const SearchBar = ({
     const rawQuery = typeof query === 'string' ? query : '';
     const trimmed = rawQuery.trim();
 
-    if (onSearchExecuted && !suppressSearchExecuted) {
+    if (onSearchExecuted && !suppressSearchExecuted && lastNotifiedSearchRef.current !== trimmed) {
+      // Enter and the blur it triggers both call writeData() with the same
+      // unchanged value - only notify (and record history) once per value.
+      lastNotifiedSearchRef.current = trimmed;
       onSearchExecuted(trimmed);
     }
 
