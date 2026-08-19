@@ -635,6 +635,12 @@ export const ProfileCreationWorkspace = () => {
     setOverlayTarget(null);
     resetDraftOverlayState(null);
     setSearchParams({});
+    // The list cards (name, status, revision, updatedAt) were snapshotted
+    // when the workspace loaded and never touched again - saves made while
+    // the editor was open only updated the open draft's own refs. Without
+    // this, closing the editor leaves the queue showing pre-edit data until
+    // a full page reload re-runs the auth effect.
+    if (uid && accessRef.current) refresh(uid, accessRef.current);
   };
 
   const startExistingProfileOverlay = profile => {
