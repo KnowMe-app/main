@@ -391,4 +391,4 @@ export const getProfileSections = (user, role = getProfileRole(user), { excludeK
 };
 
 export const getProfileBio = user =>
-  normalizeDisplayValue(user?.moreInfo_main || user?.comment || user?.description || user?.about || user?.bio);
+  normalizeDisplayValue(user?.publicComment || user?.moreInfo_main || user?.comment || user?.description || user?.about || user?.bio);

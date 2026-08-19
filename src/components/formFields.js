@@ -254,6 +254,15 @@ export const pickerFields = [
     width: '100%',
     options: surrogacyProgramInterestOptions,
   },
+  {
+    name: 'publicComment',
+    label: 'Публічний коментар',
+    ukrainian: 'Публічний коментар',
+    placeholder: 'Короткий коментар, видимий у картці',
+    ukrainianHint: 'Показується в картці всім. Якщо заповнено — анкета не потрапляє в загальний список Matching, але її можна знайти пошуком',
+    svg: 'no',
+    width: '100%',
+  },
 
 ];
 

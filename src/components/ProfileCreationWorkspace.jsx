@@ -62,11 +62,11 @@ const Header = styled.header`
 `;
 const HeaderCopy = styled.div`min-width:0;`;
 const Title = styled.h1`
-  margin:0; font-size:clamp(28px, 7vw, 32px); line-height:1.12; font-weight:750; letter-spacing:-.025em;
+  margin:0; font-size:clamp(28px, 7vw, 34px); line-height:1.1; font-weight:800; letter-spacing:-.03em;
 `;
 const Button = styled.button`
   box-sizing: border-box;
-  min-height:48px; border: 1px solid var(--km-border); border-radius: 16px; padding: 10px 17px;
+  min-height:50px; border: 1px solid var(--km-border); border-radius: 16px; padding: 12px 19px;
   background: ${({ $primary }) => ($primary ? 'var(--km-accent)' : 'var(--km-card)')};
   color: ${({ $primary }) => ($primary ? '#fff' : 'var(--km-text)')}; cursor:pointer; font:700 15px/1 var(--km-font);
   display:inline-flex; align-items:center; justify-content:center; gap:9px;
@@ -90,7 +90,7 @@ const GhostButton = styled(Button)`
   box-shadow: none;
   &:hover:not(:disabled) { background: color-mix(in srgb, var(--km-muted) 12%, transparent); border-color: var(--km-border); }
 `;
-const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:20px; background:var(--km-card); box-shadow:var(--km-shadow);`;
+const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:22px; background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
 const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere;`;
 const STATUS_VARIANT_BACKGROUND = {
@@ -134,10 +134,10 @@ const ProgressFill = styled.div`
   width:${({ $pct }) => Math.max(0, Math.min(100, Number($pct) || 0))}%; height:100%;
   border-radius:inherit; background:var(--km-accent); transition:width 180ms ease;
 `;
-const FormSectionCard = styled(Card)`padding:18px 20px;`;
-const FormSectionTitle = styled.h3`margin:0 0 6px; font-size:15px; font-weight:750; letter-spacing:-.01em;`;
+const FormSectionCard = styled(Card)`padding:22px 22px 20px; border-radius:24px;`;
+const FormSectionTitle = styled.h3`margin:0 0 14px; font-size:16.5px; font-weight:800; letter-spacing:-.015em;`;
 const FieldRow = styled.div`
-  padding:12px 0; border-bottom:1px solid var(--km-border);
+  padding:13px 0; border-bottom:1px solid var(--km-border);
   &:last-child { border-bottom:none; }
   ${({ $pending }) => ($pending ? `
     margin:0 -10px; padding-left:10px; padding-right:10px; border-radius:14px;
@@ -145,12 +145,13 @@ const FieldRow = styled.div`
     box-shadow:inset 3px 0 0 var(--km-accent);
   ` : '')}
 `;
-const FieldLabel = styled.div`font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--km-muted); margin-bottom:6px;`;
+const FieldLabel = styled.div`font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--km-muted); margin-bottom:8px;`;
 // The right-hand padding leaves room for the clear "×" that sits inside the
 // box (see InlineClearButton), the way My Profile's fields do it.
 const FieldInput = styled.input`
-  width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
-  padding:10px 38px 10px 14px; font:500 15px/1.3 var(--km-font); color:var(--km-text); outline:none;
+  width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:14px;
+  padding:13px 40px 13px 16px; font:600 15.5px/1.3 var(--km-font); color:var(--km-text); outline:none;
+  transition:border-color 150ms ease, box-shadow 150ms ease;
   &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
 const FieldControls = styled.div`display:grid; gap:8px;`;
@@ -186,8 +187,9 @@ const FieldActionButton = styled.button`
 `;
 const AddValueButton = styled(FieldActionButton)`color:var(--km-accent);`;
 const FieldTextArea = styled.textarea`
-  width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
-  padding:10px 38px 10px 14px; font:500 15px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
+  width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:14px;
+  padding:13px 40px 13px 16px; font:600 15.5px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
+  transition:border-color 150ms ease, box-shadow 150ms ease;
   &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
 const FieldChipRow = styled.div`display:flex; flex-wrap:wrap; gap:6px;`;
@@ -375,17 +377,15 @@ const PROFILE_SEARCH_ID_PREFIXES = getSearchIdIndexedFields();
 const PROFILE_SEARCH_KEYS = ['userId', ...PROFILE_SEARCH_ID_PREFIXES];
 const PROFILE_SEARCH_OPTIONS = { searchIdPrefixes: PROFILE_SEARCH_ID_PREFIXES };
 
-// Same field catalogue and grouping as MyProfile.jsx's own questionnaire -
-// pickerFields only, never pickerFieldsExtended's technical additions
-// (userId, role, lastAction, lastLogin2, publish, getInTouch). Those describe
-// system/runtime state a not-yet-accepted (or not-even-loaded, for an
-// overlay) card doesn't have yet, not data a creator or editor submits.
+// Deliberately minimal: just enough to identify who this is and how to reach
+// them, plus one public note. Everything else pickerFields knows about
+// (medical, appearance, lifestyle...) belongs to the full profile, filled in
+// later - not to this quick intake form.
 const CREATE_FORM_SECTIONS = [
-  { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
-  { key: 'contacts', title: '📱 Контакти', fields: ['email', 'phone', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
-  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'ownKids', 'lastDelivery', 'csection', 'experience', 'surrogacyExperience', 'reward'] },
-  { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
-  { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'hobbies', 'education', 'profession', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
+  { key: 'personal', title: '👤 ПІБ і дата народження', fields: ['surname', 'name', 'birth'] },
+  { key: 'location', title: '📍 Локація', fields: ['country', 'region', 'city'] },
+  { key: 'contacts', title: '📱 Контакти', fields: ['phone', 'email', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
+  { key: 'comment', title: '💬 Публічний коментар', fields: ['publicComment'] },
 ];
 
 // A draft opened by somebody who is neither its author nor an admin. Those
@@ -1130,12 +1130,17 @@ export const ProfileCreationWorkspace = () => {
     const field = fieldsMap.get(fieldName) || (allowUnknown ? { name: fieldName } : null);
     if (!field) return null;
     const value = draft?.[fieldName] || '';
-    const isTextArea = fieldName === 'moreInfo_main';
+    const isTextArea = fieldName === 'moreInfo_main' || fieldName === 'publicComment';
     const label = getFieldLabel(field) || fieldName;
     const currentValues = toFieldValues(value).map(item => String(item ?? '').trim()).filter(Boolean);
 
     return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)}>
       <FieldLabel>{label}</FieldLabel>
+      {fieldName === 'publicComment' && (
+        <Meta style={{ margin: '-2px 0 10px', fontSize: 13 }}>
+          Видно всім у картці. Якщо заповнено — анкета зникає із загального списку Matching, але лишається доступною через пошук.
+        </Meta>
+      )}
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <FieldChipRow>
           {field.options.map(option => {
