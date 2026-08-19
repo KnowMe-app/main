@@ -22,10 +22,19 @@ jest.mock('./config', () => ({
   fetchDislikeUsers: jest.fn(async () => ({})),
 }));
 
+// Drafts no longer appear in an always-visible list - they only surface
+// through a search match. This minimal stub stands in for the real
+// SearchBar: clicking it runs a "search" that the mocked detectSearchParams
+// resolves to the fixture's own cardId, so the match renders and the test
+// can open it exactly as a real search would offer it.
 jest.mock('./SearchBar', () => ({
   __esModule: true,
-  default: () => null,
-  detectSearchParams: () => null,
+  default: ({ setSearch, onSearchExecuted }) => (
+    <button type="button" onClick={() => { setSearch('card-1'); onSearchExecuted(); }}>
+      Шукати (тест)
+    </button>
+  ),
+  detectSearchParams: () => ({ key: 'userId', value: 'card-1' }),
 }));
 jest.mock('./smallCard/FieldComment', () => ({ FieldComment: () => null }));
 
@@ -41,7 +50,9 @@ jest.mock('utils/accessLevel', () => ({
   resolveAccess: () => ({ canCreateProfiles: true, isAdmin: false }),
 }));
 
-jest.mock('utils/profileCreationSearch', () => ({ findMatchingProfileMutation: jest.fn(() => null) }));
+// The real matcher is used here (not stubbed) so the search-driven flow in
+// openSharedDraft below actually finds the fixture draft, the same way it
+// would in the app.
 jest.mock('utils/searchKeyUtils', () => ({ getSearchIdIndexedFields: () => [] }));
 
 jest.mock('utils/profileMutations', () => ({
@@ -83,7 +94,8 @@ const openSharedDraft = async () => {
   loadOwnProfileMutations.mockResolvedValue([]);
   loadSharedProfileMutations.mockResolvedValue([sharedDraft]);
   render(<ProfileCreationWorkspace />);
-  fireEvent.click(await screen.findByRole('button', { name: /Додати свої правки/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити чернетку' }));
   await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(2));
 };
 

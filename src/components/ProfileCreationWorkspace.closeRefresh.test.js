@@ -47,7 +47,7 @@ jest.mock('utils/accessLevel', () => ({
   resolveAccess: () => ({ canCreateProfiles: true, isAdmin: true }),
 }));
 
-jest.mock('utils/profileCreationSearch', () => ({ findMatchingProfileMutation: jest.fn(() => null) }));
+jest.mock('utils/profileCreationSearch', () => ({ findMatchingProfileMutations: jest.fn(() => []) }));
 jest.mock('utils/searchKeyUtils', () => ({ getSearchIdIndexedFields: () => [] }));
 
 const originalDraft = {
