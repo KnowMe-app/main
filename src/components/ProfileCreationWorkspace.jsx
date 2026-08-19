@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
-import { auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
+import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import PageNavMenu from './PageNavMenu';
@@ -1358,9 +1358,10 @@ export const ProfileCreationWorkspace = () => {
             setSearchNotFound(Boolean(value));
             if (value) setSearchResults([]);
           }}
-          onSearchExecuted={() => {
+          onSearchExecuted={value => {
             setSearchExecuted(true);
             setSearchFailed(false);
+            addMatchingSearchQuery(value);
           }}
           onSearchError={() => {
             setSearchFailed(true);
