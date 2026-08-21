@@ -231,6 +231,35 @@ describe('what the builders write', () => {
     },
   );
 
+  it('moves an unchanged legacy alias out of the unknown bucket during sync', async () => {
+    const userId = uid('LegacyAlias');
+    mockStore.set(`${INDEX_ROOT}/role/?/${userId}`, true);
+
+    await config.syncUserSearchKeyIndex(
+      userId,
+      { role: 'surrogate mother' },
+      { role: 'surrogate mother' },
+      { rootPath: INDEX_ROOT },
+    );
+
+    expect(mockStore.has(`${INDEX_ROOT}/role/?/${userId}`)).toBe(false);
+    expect(mockStore.get(`${INDEX_ROOT}/role/sm/${userId}`)).toBe(true);
+  });
+
+  it.each([
+    ['egg donor', 'ed'],
+    ['surrogate mother', 'sm'],
+    ['agency', 'ag'],
+    ['intended parents', 'ip'],
+    ['client', 'cl'],
+  ])('keeps the indexed alias %s when filtering its %s bucket', (role, canonicalRole) => {
+    const roleFilter = Object.fromEntries(['ed', 'sm', 'ag', 'ip', 'pp', 'cl', 'other', 'empty']
+      .map(key => [key, key === canonicalRole]));
+    const card = ['card-id', { role }];
+
+    expect(config.filterMain([card], null, { role: roleFilter })).toEqual([card]);
+  });
+
   it('never creates the `no` bucket', () => {
     const index = writtenIndex();
     Object.entries(index).forEach(([indexName, buckets]) => {

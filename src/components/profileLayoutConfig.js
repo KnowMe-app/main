@@ -3,6 +3,7 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { CONTACT_FIELDS, getContactValues } from './contactMethods';
+import { normalizeProfileRole } from '../utils/profileRole';
 
 const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 'none', 'немає', 'нет']);
 
@@ -102,12 +103,8 @@ export const getBloodGroupDisplay = user => {
 
 export const getProfileRole = user => {
   const role = normalizeDisplayValue(user?.role || user?.userRole).toLowerCase();
-  if (['ed', 'egg donor', 'egg_donor'].includes(role)) return 'ed';
-  if (['sm', 'surrogate mother', 'surrogate_mother'].includes(role)) return 'sm';
-  if (['ag', 'agency'].includes(role)) return 'ag';
-  if (['ip', 'intended parents', 'intended_parent'].includes(role)) return 'ip';
-  if (['pp'].includes(role)) return 'pp';
-  if (['cl', 'client'].includes(role)) return 'cl';
+  const normalizedRole = normalizeProfileRole(role);
+  if (normalizedRole) return normalizedRole;
   if (user?.__sourceCollection === 'newUsers' && !role) return 'ed';
   return 'other';
 };
