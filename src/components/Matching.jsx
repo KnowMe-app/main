@@ -70,6 +70,7 @@ import {
   MatchingSearchStatusMessage,
   Chip,
   ChipCount,
+  ChipRemove,
   ChipsRow,
   FeedList,
   FeedNotice,
@@ -127,6 +128,7 @@ import { BtnDislike } from './smallCard/btnDislike';
 import SearchBar, { getSearchCacheKeyForParams } from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
+import { buildMatchingFilterChips } from './SearchFilters';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard, clearMatchingCache } from '../utils/cardIndex';
@@ -1306,6 +1308,8 @@ const LOAD_MORE = 5;
 const FEED_PHOTO_HYDRATION_LIMIT = 60;
 // A stable identity so a row without public comments doesn't re-render on it.
 const EMPTY_PUBLIC_COMMENTS = [];
+// Spec §3: the chips row never scrolls sideways, so it shows at most three.
+const MAX_FILTER_CHIPS = 3;
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
@@ -1529,6 +1533,7 @@ const Matching = () => {
   const collectionSourceRef = useRef(collectionSource);
   const defaultListKey = `default:${collectionSource}`;
   const [filterResetToken, setFilterResetToken] = useState(0);
+  const [filterGroupReset, setFilterGroupReset] = useState({ token: 0, name: '' });
   const [comments, setComments] = useState({});
   const commentsRef = useRef(comments);
   commentsRef.current = comments;
@@ -5999,6 +6004,17 @@ const Matching = () => {
   // counts read straight off the already-loaded cache (§10), never re-queried.
   // The app has three collections; the spec's "✕" and "Приховані" name the same
   // one here, so it renders once.
+  // Spec §3: at most three filter chips, then a "+N" that opens the drawer -
+  // the row never scrolls sideways, so anything past three collapses instead.
+  const filterChips = useMemo(() => buildMatchingFilterChips(filters), [filters]);
+  const visibleFilterChips = filterChips.slice(0, MAX_FILTER_CHIPS);
+  const hiddenFilterChipCount = filterChips.length - visibleFilterChips.length;
+  const emptyFilterGroup = filterChips.find(chip => chip.danger) || null;
+
+  const resetFilterGroup = React.useCallback(filterName => {
+    setFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
+  }, []);
+
   const collectionChips = useMemo(() => [
     {
       key: 'default',
@@ -6147,7 +6163,11 @@ const Matching = () => {
     });
   }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
 
-  const emptyFeedMessage = 'Немає доступних профілів';
+  // An empty group is a different problem from "nothing matched", and saying so
+  // is the difference between the reader fixing it and giving up (spec §3).
+  const emptyFeedMessage = emptyFilterGroup
+    ? `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`
+    : 'Немає доступних профілів';
 
   // The feed pages itself: a sentinel under the last row asks for the next page
   // as it scrolls into view. It routes through the same end-of-deck loader the
@@ -6312,6 +6332,8 @@ const Matching = () => {
             hideCommentLength
             onChange={handleFiltersChange}
             resetToken={filterResetToken}
+            groupResetToken={filterGroupReset.token}
+            groupResetName={filterGroupReset.name}
             nonAdminAllActive={!isAdmin}
           />
         </FilterDrawerBody>
@@ -6412,6 +6434,28 @@ const Matching = () => {
                 <ChipCount>{chip.count}</ChipCount>
               </Chip>
             ))}
+            {visibleFilterChips.map(chip => (
+              <Chip
+                key={chip.filterName}
+                type="button"
+                $active
+                $danger={chip.danger}
+                title={`${chip.text} — повернути групу в дефолт`}
+                onClick={() => resetFilterGroup(chip.filterName)}
+              >
+                <span>{chip.text}</span>
+                <ChipRemove aria-hidden="true">✕</ChipRemove>
+              </Chip>
+            ))}
+            {hiddenFilterChipCount > 0 && (
+              <Chip
+                type="button"
+                title="Показати всі активні фільтри"
+                onClick={() => setShowFilters(true)}
+              >
+                <span>+{hiddenFilterChipCount}</span>
+              </Chip>
+            )}
             <LayoutToggleButton
               type="button"
               onClick={toggleViewLayout}

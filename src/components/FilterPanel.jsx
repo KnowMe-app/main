@@ -126,6 +126,8 @@ const FilterPanel = ({
   mode = 'default',
   storageKey: customKey,
   resetToken,
+  groupResetToken,
+  groupResetName,
   nonAdminAllActive = false,
   allowedFilterNames,
   bloodSearchKeyMode = false,
@@ -169,6 +171,21 @@ const FilterPanel = ({
     prevResetTokenRef.current = resetToken;
     setFilters({ ...defaultFilters });
   }, [defaultFilters, resetToken]);
+
+  // A chip's ✕ returns one group to its default - everything in it switched back
+  // on - rather than clearing the last option that is still selected.
+  const prevGroupResetTokenRef = useRef(groupResetToken);
+  useEffect(() => {
+    if (prevGroupResetTokenRef.current === groupResetToken) return;
+    prevGroupResetTokenRef.current = groupResetToken;
+    if (!groupResetName) return;
+    setFilters(current => {
+      const group = current?.[groupResetName];
+      if (!group) return current;
+      const restored = Object.keys(group).reduce((acc, option) => ({ ...acc, [option]: true }), {});
+      return { ...current, [groupResetName]: restored };
+    });
+  }, [groupResetName, groupResetToken]);
 
   return (
     <SearchFilters

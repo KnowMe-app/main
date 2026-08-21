@@ -17,6 +17,123 @@ const FiltersCard = styled.div`
   margin: 0 0 8px;
 `;
 
+// The matching drawer's filter groups, exported so the chips row can build its
+// labels from the same option labels the drawer shows (spec §3).
+export const MATCHING_FILTER_GROUPS = [
+    {
+      filterName: 'userRole',
+      label: 'Тип профілю',
+      options: [
+        { val: 'ed', label: 'ДО' },
+        { val: 'ag', label: 'Агентства' },
+        { val: 'ip', label: 'Батьки' },
+        { val: 'other', label: '?' },
+      ],
+    },
+    {
+      filterName: 'maritalStatus',
+      label: 'Статус',
+      options: [
+        { val: 'married', label: 'Married' },
+        { val: 'unmarried', label: 'Single' },
+        { val: 'other', label: '?' },
+      ],
+    },
+    {
+      filterName: 'bloodGroup',
+      label: 'Blood group',
+      compact: true,
+      options: [
+        { val: '1', label: '1' },
+        { val: '2', label: '2' },
+        { val: '3', label: '3' },
+        { val: '4', label: '4' },
+        { val: 'other', label: '?' },
+      ],
+    },
+    {
+      filterName: 'rh',
+      label: 'Rh',
+      options: [
+        { val: '+', label: 'Rh+' },
+        { val: '-', label: 'Rh-' },
+        { val: 'other', label: '?' },
+      ],
+    },
+    {
+      filterName: 'age',
+      label: 'Age',
+      compact: true,
+      options: [
+        { val: 'le25', label: '≤25' },
+        { val: '26_30', label: '26-30' },
+        { val: '31_33', label: '31-33' },
+        { val: '34_36', label: '34-36' },
+        { val: '37_plus', label: '37+' },
+        { val: 'other', label: '?' },
+      ],
+    },
+    {
+      filterName: 'bmi',
+      label: 'BMI',
+      compact: true,
+      options: [
+        { val: 'lt18_5', label: '<18.5' },
+        { val: '18_5_24_9', label: '18.5-24.9' },
+        { val: '25_29_9', label: '25-29.9' },
+        { val: '30_plus', label: '30+' },
+        { val: 'other', label: '?' },
+      ],
+    },
+    {
+      filterName: 'country',
+      label: 'Країна',
+      options: [
+        { val: 'ua', label: 'Ukraine' },
+        { val: 'other', label: 'Other country' },
+        { val: 'unknown', label: '?' },
+      ],
+    },
+  ];
+
+// Matching's filters are subtractive: a group starts with everything on and the
+// reader switches off what they don't want. So the chip label is built from what
+// is *off*, not what is on - "крім Агентства" says more in less space than
+// listing the four kinds that are still in.
+//
+// The "?" option (no data on record) is deliberately left out of the "крім"
+// count: dropping unknowns is a different intent from excluding a real value,
+// and a group where only "?" is off reads as "лише заповнені".
+export const buildMatchingFilterChipLabel = (group, values) => {
+  const options = group.options || [];
+  if (!values || typeof values !== 'object') return null;
+
+  const off = options.filter(option => !values[option.val]);
+  if (!off.length) return null;
+
+  const on = options.filter(option => values[option.val]);
+  if (!on.length) return { text: `${group.label}: нічого`, danger: true };
+
+  const offWithoutUnknown = off.filter(option => option.label !== '?');
+  if (!offWithoutUnknown.length) return { text: `${group.label}: лише заповнені`, danger: false };
+
+  if (offWithoutUnknown.length <= 2) {
+    return { text: `${group.label}: крім ${offWithoutUnknown.map(option => option.label).join(', ')}`, danger: false };
+  }
+  if (on.length <= 2) {
+    return { text: `${group.label}: ${on.map(option => option.label).join(', ')}`, danger: false };
+  }
+  return { text: `${group.label}: ${on.length} з ${options.length}`, danger: false };
+};
+
+export const buildMatchingFilterChips = filters => MATCHING_FILTER_GROUPS
+  .map(group => {
+    const label = buildMatchingFilterChipLabel(group, filters?.[group.filterName]);
+    if (!label) return null;
+    return { filterName: group.filterName, groupLabel: group.label, ...label };
+  })
+  .filter(Boolean);
+
 export const SearchFilters = ({
   filters,
   onChange,
@@ -41,82 +158,7 @@ export const SearchFilters = ({
     : REACTION_FILTER_OPTIONS);
 
   if (mode === 'matching') {
-    groups = [
-      {
-        filterName: 'userRole',
-        label: 'Тип профілю',
-        options: [
-          { val: 'ed', label: 'ДО' },
-          { val: 'ag', label: 'Агентства' },
-          { val: 'ip', label: 'Батьки' },
-          { val: 'other', label: '?' },
-        ],
-      },
-      {
-        filterName: 'maritalStatus',
-        label: 'Статус',
-        options: [
-          { val: 'married', label: 'Married' },
-          { val: 'unmarried', label: 'Single' },
-          { val: 'other', label: '?' },
-        ],
-      },
-      {
-        filterName: 'bloodGroup',
-        label: 'Blood group',
-        compact: true,
-        options: [
-          { val: '1', label: '1' },
-          { val: '2', label: '2' },
-          { val: '3', label: '3' },
-          { val: '4', label: '4' },
-          { val: 'other', label: '?' },
-        ],
-      },
-      {
-        filterName: 'rh',
-        label: 'Rh',
-        options: [
-          { val: '+', label: 'Rh+' },
-          { val: '-', label: 'Rh-' },
-          { val: 'other', label: '?' },
-        ],
-      },
-      {
-        filterName: 'age',
-        label: 'Age',
-        compact: true,
-        options: [
-          { val: 'le25', label: '≤25' },
-          { val: '26_30', label: '26-30' },
-          { val: '31_33', label: '31-33' },
-          { val: '34_36', label: '34-36' },
-          { val: '37_plus', label: '37+' },
-          { val: 'other', label: '?' },
-        ],
-      },
-      {
-        filterName: 'bmi',
-        label: 'BMI',
-        compact: true,
-        options: [
-          { val: 'lt18_5', label: '<18.5' },
-          { val: '18_5_24_9', label: '18.5-24.9' },
-          { val: '25_29_9', label: '25-29.9' },
-          { val: '30_plus', label: '30+' },
-          { val: 'other', label: '?' },
-        ],
-      },
-      {
-        filterName: 'country',
-        label: 'Країна',
-        options: [
-          { val: 'ua', label: 'Ukraine' },
-          { val: 'other', label: 'Other country' },
-          { val: 'unknown', label: '?' },
-        ],
-      },
-    ];
+    groups = MATCHING_FILTER_GROUPS;
   } else {
     groups = [
       {
