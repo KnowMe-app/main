@@ -63,20 +63,20 @@ describe('limited profile row', () => {
   it('does not open a card that has nothing more behind it', () => {
     const onOpen = jest.fn();
     const onToggleExpand = jest.fn();
-    const { container } = renderRow(limitedUser, { onOpen, onToggleExpand });
-    fireEvent.click(container.firstChild);
+    renderRow(limitedUser, { onOpen, onToggleExpand });
+    fireEvent.click(screen.getByText(/Олена Ткаченко/));
     expect(onOpen).not.toHaveBeenCalled();
     expect(onToggleExpand).not.toHaveBeenCalled();
   });
 
   it('still renders the full row for a viewer entitled to one', () => {
     const onOpen = jest.fn();
-    const { container } = renderRow(fullUser, { onOpen });
+    renderRow(fullUser, { onOpen });
     expect(screen.getByTitle('Показати всі дані')).toBeInTheDocument();
     expect(screen.getByTitle('Редагувати анкету')).toBeInTheDocument();
     expect(screen.getByTitle('В обране')).toBeInTheDocument();
     expect(screen.getByText('172/59')).toBeInTheDocument();
-    fireEvent.click(container.firstChild);
+    fireEvent.click(screen.getByText(/Олена Ткаченко/));
     expect(onOpen).toHaveBeenCalledWith(fullUser);
   });
 });
