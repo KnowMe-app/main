@@ -11,8 +11,9 @@
  *   - buckets the app has no name for, and names the app expects but never wrote
  *   - how far the two roots overlap, i.e. how much of the index is stored twice
  *
- * The vocabulary is read from src/utils/searchKeyBuckets.js so the report cannot
- * drift away from what the app reads.
+ * After a rebuild it should report no `no` buckets, no numeric `fields` nodes, and
+ * no users-shaped ids under the shared root. Anything else means the reindex did not
+ * finish or ran against the wrong root.
  */
 
 const fs = require('fs');
@@ -36,6 +37,11 @@ const KNOWN_BUCKETS_BY_INDEX = {
 const OPEN_VOCABULARY_INDEXES = new Set(['age', 'lastAction', 'getInTouch', 'reaction', 'fields']);
 
 const BULK_BUCKETS = ['no', '?'];
+
+// A rebuilt index holds none of these: `no` is expressed by absence and `fields`
+// stores four range buckets instead of one node per filled-field count.
+const FIELD_COUNT_RANGE_BUCKETS = ['le5', 'f6_10', 'f11_20', 'f20_plus'];
+const isLegacyFieldCountBucket = bucket => /^\d+$/.test(String(bucket));
 
 const byteSize = value => Buffer.byteLength(JSON.stringify(value));
 const formatKb = bytes => `${(bytes / 1024).toFixed(0)} KB`;
@@ -81,6 +87,11 @@ const describeRoot = (rootName, rootNode) => {
     const bucketNames = entries.map(([bucket]) => bucket);
     const unexpected = known ? bucketNames.filter(bucket => !known.includes(bucket)) : [];
     const unwritten = known ? known.filter(bucket => !bucketNames.includes(bucket)) : [];
+    const stale = [];
+    if (bucketNames.includes('no')) stale.push('`no` bucket (should be absence)');
+    if (indexName === 'fields' && bucketNames.some(isLegacyFieldCountBucket)) {
+      stale.push(`legacy per-count nodes (expected ${FIELD_COUNT_RANGE_BUCKETS.join('/')})`);
+    }
 
     totalBytes += bytes;
     bulkBytes += bulk;
@@ -93,6 +104,7 @@ const describeRoot = (rootName, rootNode) => {
       ids: ids.size,
       unexpected,
       unwritten,
+      stale,
       openVocabulary: OPEN_VOCABULARY_INDEXES.has(indexName),
     });
   });
@@ -118,6 +130,12 @@ const describeRoot = (rootName, rootNode) => {
       `   (${totalBytes ? Math.round((bulkBytes / totalBytes) * 100) : 0}% of the index is "field not filled")`,
   );
   console.log(`profiles covered: ${allIds.size}`);
+
+  rows.forEach(row => {
+    row.stale.forEach(note => {
+      console.log(`  ! ${row.indexName}: not rebuilt yet - ${note}`);
+    });
+  });
 
   rows.forEach(row => {
     if (row.openVocabulary) return;

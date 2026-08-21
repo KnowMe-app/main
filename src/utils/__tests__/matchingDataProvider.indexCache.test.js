@@ -142,31 +142,51 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
   });
 
-  it('scans numeric field-count buckets for selected Fields ranges', async () => {
+  it('reads the field-count ranges it asked for as their own nodes', async () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
     const filters = { fields: { le5: true, f6_10: false, f11_20: false, f20_plus: true } };
 
-    mockFirebaseGet.mockResolvedValueOnce(makeSnapshot({
-      0: { user00000000000000000001: true },
-      5: { user00000000000000000002: true },
-      6: { user00000000000000000003: true },
-      21: { user00000000000000000004: true },
-      le5: { user00000000000000000099: true },
-    }));
+    mockFirebaseGet.mockImplementation(async path => {
+      if (path === 'searchKey/users/fields/le5') return makeSnapshot({ user00000000000000000001: true });
+      if (path === 'searchKey/users/fields/f20_plus') return makeSnapshot({ user00000000000000000004: true });
+      return makeSnapshot(null);
+    });
 
     const result = await fetchMatchingIndexedCandidates({ filters, limit: 10, hydrateUsersByIds });
 
-    expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/f20_plus');
+    // The whole 400 KB node stays off the wire once the index stores ranges.
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields');
+    expect(result.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000004']);
+  });
+
+  it('falls back to scanning the legacy per-count field index while a rebuild is pending', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+    const filters = { fields: { le5: true, f6_10: false, f11_20: false, f20_plus: true } };
+
+    mockFirebaseGet.mockImplementation(async path => (
+      path === 'searchKey/users/fields'
+        ? makeSnapshot({
+          0: { user00000000000000000001: true },
+          5: { user00000000000000000002: true },
+          6: { user00000000000000000003: true },
+          21: { user00000000000000000004: true },
+        })
+        : makeSnapshot(null)
+    ));
+
+    const result = await fetchMatchingIndexedCandidates({ filters, limit: 10, hydrateUsersByIds });
+
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields');
-    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
     expect(result.pageIds).toEqual([
       'user00000000000000000001',
       'user00000000000000000002',
       'user00000000000000000004',
     ]);
   });
-
 
   it('uses backend birth-date ranges for matching users age filters instead of frontend bucket nodes', async () => {
     const { fetchMatchingIndexedCandidates } = loadModule();

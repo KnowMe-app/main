@@ -4,7 +4,6 @@ import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQue
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { getIndexedNewUsersIdsByRules, normalizeSearchKeySetKeys } from './newUsersFilterSetsIndex';
 import {
-  FIELD_COUNT_RANGE_BUCKETS,
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
   collectFieldCountIdsFromIndexNode,
   hasFieldCountRangeBuckets,
@@ -13,6 +12,7 @@ import {
   BLOOD_SEARCH_KEY_BUCKETS,
   CONTACT_SEARCH_KEY_BUCKETS,
   CSECTION_SEARCH_KEY_BUCKETS,
+  FIELD_COUNT_SEARCH_KEY_BUCKETS,
   IMT_BUCKET_FILTER_KEYS,
   IMT_SEARCH_KEY_BUCKETS,
   MARITAL_STATUS_BUCKET_FILTER_KEYS,
@@ -20,6 +20,7 @@ import {
   ROLE_BUCKET_FILTER_KEYS,
   ROLE_SEARCH_KEY_BUCKETS,
   USER_ID_SEARCH_KEY_BUCKETS,
+  canSearchKeyPlanNameCandidates,
   isBucketSelectedByFilterGroup,
   planSearchKeyBucketRead,
   selectSearchKeyBuckets,
@@ -34,7 +35,7 @@ const CSECTION_BUCKETS = CSECTION_SEARCH_KEY_BUCKETS;
 const IMT_BUCKETS = IMT_SEARCH_KEY_BUCKETS;
 const CONTACT_BUCKETS = CONTACT_SEARCH_KEY_BUCKETS;
 const USER_ID_BUCKETS = USER_ID_SEARCH_KEY_BUCKETS;
-const FIELD_COUNT_BUCKETS = FIELD_COUNT_RANGE_BUCKETS;
+const FIELD_COUNT_BUCKETS = FIELD_COUNT_SEARCH_KEY_BUCKETS;
 const AGE_BUCKETS_BY_MATCHING_KEY = {
   le21: ['le21'],
   le25: ['le21', '22_25'],
@@ -101,7 +102,11 @@ const addGroup = (groups, indexName, values, debug = {}) => {
   const normalizedValues = unique(values.map(value => String(value || '').trim()).filter(Boolean));
   if (!indexName || normalizedValues.length === 0) return;
   const { allBuckets, ...groupDebug } = debug;
+  // How the group reaches Firebase: name the selected buckets, subtract the rejected
+  // ones, or query a key range. See planSearchKeyBucketRead — `no` is not stored, so
+  // a selection that keeps the unfilled cards can only be read as a subtraction.
   const readPlan = planSearchKeyBucketRead({
+    indexName,
     allBuckets: allBuckets || normalizedValues,
     selectedBuckets: normalizedValues,
   });
@@ -109,9 +114,6 @@ const addGroup = (groups, indexName, values, debug = {}) => {
     indexName,
     values: normalizedValues,
     allBuckets: (allBuckets || normalizedValues).map(String),
-    // How the group reaches Firebase: pull the selected buckets, or pull the rejected
-    // ones and subtract them. See planSearchKeyBucketRead — a selection that keeps `no`
-    // is answered by exclusion so the bulk bucket never goes over the wire.
     readMode: readPlan.mode,
     readBuckets: readPlan.buckets,
     ...groupDebug,
@@ -320,6 +322,21 @@ const collectIdsFromValue = value => {
 
 const readBucketIds = async ({ rootPath, indexName, values }) => {
   if (indexName === FIELD_COUNT_SEARCH_KEY_INDEX_NAME && hasFieldCountRangeBuckets(values)) {
+    // The rebuilt index stores the four range buckets, so the ranges asked for can be
+    // read one node at a time. A legacy index stores one node per filled-field count
+    // and has to be scanned whole; fall back to that only when no range node exists.
+    const rangeSnapshots = await Promise.all(
+      values.map(value => get(ref(database, `${rootPath}/${indexName}/${value}`))),
+    );
+    if (rangeSnapshots.some(snapshot => snapshot.exists())) {
+      const rangeIds = new Set();
+      rangeSnapshots.forEach(snapshot => {
+        if (!snapshot.exists()) return;
+        collectIdsFromValue(snapshot.val()).forEach(id => rangeIds.add(id));
+      });
+      return rangeIds;
+    }
+
     const snapshot = await get(ref(database, `${rootPath}/${indexName}`));
     return snapshot.exists()
       ? collectFieldCountIdsFromIndexNode(snapshot.val(), values)
@@ -335,31 +352,31 @@ const readBucketIds = async ({ rootPath, indexName, values }) => {
   return ids;
 };
 
-// Can this group produce a candidate list on its own? Age always can - it reads
-// birth-date ranges rather than named buckets - and so can any group that ended up
-// with an 'include' plan. Knowing this up front lets an exclusion-only plan skip
-// its reads entirely.
-const canGroupNameCandidates = group =>
-  group?.indexName === 'age' || (group?.readMode !== 'exclude' && group?.readMode !== 'none');
+// Can this group produce a candidate list on its own? 'include' names buckets and
+// 'range' queries birth dates; 'exclude' and 'defer' can only reject. Knowing this
+// up front lets a plan made purely of rejections skip its reads entirely.
+const canGroupNameCandidates = group => canSearchKeyPlanNameCandidates(group?.readMode || 'include');
 
 // A group read resolves to { mode, ids }: 'include' narrows the candidates down to
 // `ids`, 'exclude' only says which ids to drop. `null` means the group puts no
 // restriction on the index at all.
 const readMatchingUsersFilterIds = async ({ group, filters }) => {
-  if (group?.indexName === 'age') {
+  const readMode = group?.readMode || 'include';
+  if (readMode === 'none' || readMode === 'defer') return null;
+
+  if (readMode === 'range') {
     // searchKey/users/age is stored by backend birth-date keys (d_YYYY-MM-DD),
     // while matching UI/frontend still uses buckets such as le21/22_25/26_30.
     // Reuse the shared date-range reader so wide age filters page through the
     // real backend date index instead of looking for non-existent bucket nodes.
+    if (group?.indexName !== 'age') return null;
     const ageIds = await collectAgeIdsByFilters(filters?.age, [MATCHING_USERS_INDEX_ROOT], {
       includeUnofferedBuckets: true,
     });
     return ageIds instanceof Set ? { mode: 'include', ids: ageIds } : null;
   }
 
-  if (group?.readMode === 'none') return null;
-
-  const buckets = group?.readBuckets?.length ? group.readBuckets : group?.values || [];
+  const buckets = group?.readBuckets || [];
   if (!buckets.length) return null;
 
   const ids = await readBucketIds({
@@ -368,7 +385,7 @@ const readMatchingUsersFilterIds = async ({ group, filters }) => {
     values: buckets,
   });
 
-  return { mode: group?.readMode === 'exclude' ? 'exclude' : 'include', ids };
+  return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids };
 };
 
 const intersectIdSets = sets => {

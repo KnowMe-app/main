@@ -1,24 +1,26 @@
 // Single source of truth for the searchKey index vocabulary.
 //
 // The same bucket names are produced by the index writers in `components/config.js`
-// and consumed by the Matching index reader in `utils/matchingDataProvider.js`.
-// Keeping two private copies of these lists is what made the Matching filters
-// silently drop cards: a bucket the reader did not know about (`+`/`-` for a known
-// Rh without a blood group, `sm`/`pp`/`cl` roles) or a bucket whose checkbox the
-// Matching drawer never renders (`no` — "поле не заповнене") was treated as
-// "not selected" and its cards disappeared from the deck.
+// and consumed by the readers (`utils/matchingDataProvider.js`,
+// `utils/newUsersFilterSetsIndex.js`, the point-membership path in `config.js`).
+// Keeping private copies of these lists is what made the Matching filters silently
+// drop cards: a bucket the reader did not know about (`+`/`-` for a known Rh without
+// a blood group, `sm`/`pp`/`cl` roles) or a bucket whose checkbox the drawer never
+// renders (`no` — "поле не заповнене") was treated as "not selected" and its cards
+// disappeared from the deck.
 //
-// Two rules make the reader agree with the post-filter that runs on hydrated cards:
+// Three rules make writers, readers and the hydrated-card post-filter agree:
 //
-//   1. A bucket whose filter key the group does not offer at all is NOT a reason to
+//   1. `no` is never stored. "Поле не заповнене" is the absence of the id from the
+//      index, not a bucket holding ~90% of the collection.
+//   2. A bucket whose filter key the group does not offer at all is NOT a reason to
 //      exclude a card. It falls back to the group's catch-all option ("?" / other),
 //      exactly like the post-filter categorisers, and is allowed outright when the
 //      group offers no catch-all either.
-//   2. Selections that keep most of the vocabulary are read as an exclusion instead
-//      of a union, so the huge buckets (`no` holds ~90% of the profiles) never go
-//      over the wire.
+//   3. A selection that keeps the unfilled cards is read as an exclusion: pull the
+//      rejected buckets and subtract them, because the kept side is not on record.
 
-export const SEARCH_KEY_NO_BUCKET = 'no';
+export const SEARCH_KEY_EMPTY_BUCKET = 'no';
 export const SEARCH_KEY_UNKNOWN_BUCKET = '?';
 
 export const BLOOD_SEARCH_KEY_BUCKETS = [
@@ -33,12 +35,63 @@ export const CONTACT_SEARCH_KEY_BUCKETS = [
   'tiktok', 'linkedin', 'youtube', 'email', 'twitter', 'line', 'otherLink',
 ];
 export const USER_ID_SEARCH_KEY_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
+export const FIELD_COUNT_SEARCH_KEY_BUCKETS = ['le5', 'f6_10', 'f11_20', 'f20_plus'];
 
 // Bucket -> filter option key, per index. Buckets missing from a map keep their own name.
 export const MARITAL_STATUS_BUCKET_FILTER_KEYS = { '+': 'married', '-': 'unmarried', '?': 'other', no: 'empty' };
 export const ROLE_BUCKET_FILTER_KEYS = { '?': 'other', no: 'empty' };
 export const IMT_BUCKET_FILTER_KEYS = { '?': 'other' };
 export const AGE_BUCKET_FILTER_KEYS = { '?': 'other', no: 'empty' };
+
+/**
+ * What each index guarantees about its buckets.
+ *
+ * `emptyBucket` — the virtual bucket that stands for "поле не заповнене". It is
+ *   never written; membership means the id appears under no bucket of this index.
+ * `coverage`
+ *   'total'   — every profile lands in exactly one bucket (or, when the index has an
+ *               emptyBucket, in none at all), so a read can be inverted safely.
+ *   'partial' — a profile may sit in several buckets or none, and "none" is not a
+ *               selectable option, so a read can never be inverted.
+ * `openVocabulary` — buckets are data, not a fixed list (one node per birth date,
+ *   per day of last action, per centimetre), so they are queried by range rather
+ *   than named one by one.
+ */
+export const SEARCH_KEY_INDEX_SPECS = {
+  blood: { buckets: BLOOD_SEARCH_KEY_BUCKETS, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total' },
+  maritalStatus: { buckets: MARITAL_STATUS_SEARCH_KEY_BUCKETS, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total' },
+  role: { buckets: ROLE_SEARCH_KEY_BUCKETS, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total' },
+  csection: { buckets: CSECTION_SEARCH_KEY_BUCKETS, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total' },
+  imt: { buckets: IMT_SEARCH_KEY_BUCKETS, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total' },
+  contact: { buckets: CONTACT_SEARCH_KEY_BUCKETS, emptyBucket: null, coverage: 'partial' },
+  userId: { buckets: USER_ID_SEARCH_KEY_BUCKETS, emptyBucket: null, coverage: 'total' },
+  fields: { buckets: FIELD_COUNT_SEARCH_KEY_BUCKETS, emptyBucket: null, coverage: 'total' },
+  age: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
+  height: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
+  weight: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
+  lastAction: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
+  getInTouch: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
+  reaction: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
+};
+
+export const getSearchKeyIndexSpec = indexName => SEARCH_KEY_INDEX_SPECS[indexName] || {};
+
+export const getSearchKeyEmptyBucket = indexName => getSearchKeyIndexSpec(indexName).emptyBucket ?? null;
+
+export const isOpenVocabularySearchKeyIndex = indexName =>
+  Boolean(getSearchKeyIndexSpec(indexName).openVocabulary);
+
+/**
+ * Drop the values the index does not store. Writers call this so no `no` leaf is
+ * ever created again; readers call it so a plan never asks for a node that by
+ * design does not exist.
+ */
+export const withoutEmptySearchKeyBucket = (values, indexName) => {
+  const emptyBucket = indexName === undefined ? SEARCH_KEY_EMPTY_BUCKET : getSearchKeyEmptyBucket(indexName);
+  const list = values instanceof Set ? [...values] : (values || []);
+  const kept = list.filter(value => value !== undefined && value !== null && String(value) !== emptyBucket);
+  return values instanceof Set ? new Set(kept) : kept;
+};
 
 // Options a group may use as its catch-all when it does not render a checkbox for
 // the bucket at hand. Ordered: the first one the group actually offers wins.
@@ -56,7 +109,7 @@ export const hasActiveSearchKeyFilterGroup = group =>
  * Is `bucket` inside the selection expressed by a filter group?
  *
  * The group is the UI state ({ ed: true, ag: false, other: true }); the bucket is a
- * node under `searchKey/<root>/<index>/`. Rule 1 above: an option the drawer does not
+ * node under `searchKey/<root>/<index>/`. Rule 2 above: an option the drawer does not
  * render must never remove cards, so it defers to the catch-all and, failing that,
  * counts as selected.
  */
@@ -79,36 +132,80 @@ export const selectSearchKeyBuckets = (group, allBuckets = [], { bucketMap = {},
     .filter(bucket => isBucketSelectedByFilterGroup(group, bucket, { bucketMap, fallbackKeys }));
 };
 
-// Buckets that hold a large share of every collection. Reading one of them costs
-// hundreds of kilobytes, so a selection that merely tolerates them is answered with
-// an exclusion read instead of a union read.
-export const BULK_SEARCH_KEY_BUCKETS = new Set([SEARCH_KEY_NO_BUCKET, SEARCH_KEY_UNKNOWN_BUCKET]);
+const unique = values => [...new Set((values || []).map(String))];
+
+const buildPlan = (mode, buckets, selected, rejected) => ({
+  mode,
+  buckets,
+  selectedBuckets: selected,
+  excludedBuckets: rejected,
+});
 
 /**
  * Decide how to read a group: pull the selected buckets ("include"), or pull the
  * rejected ones and subtract them from the candidates ("exclude").
  *
- * Exclude wins when the selection contains a bulk bucket, or when it simply covers
- * more nodes than the rejection does. An exclude plan cannot produce candidates on
- * its own — the caller needs at least one include plan (or the unindexed deck) to
- * subtract from.
+ * Which one is not a matter of taste. `no` is not stored, so a selection that keeps
+ * the unfilled cards can only be expressed by subtracting what it rejects; and a
+ * selection that rejects them can only be expressed by naming what it keeps —
+ * inverting it would let the unfilled cards back in through the gap in the index.
+ * Inverting is a free optimisation only where every profile is guaranteed a bucket
+ * and none can hold two.
+ *
+ *   'include' — read `buckets`, those ids are the candidates.
+ *   'exclude' — read `buckets`, subtract those ids from candidates found elsewhere.
+ *   'range'   — open vocabulary; the caller queries by key range instead.
+ *   'defer'   — the index cannot express this selection; leave it to the post-filter.
+ *   'none'    — the selection covers everything, the group restricts nothing.
+ *
+ * An 'exclude' or 'defer' plan cannot produce candidates on its own — the caller
+ * needs at least one 'include'/'range' plan (or the unindexed deck) to work from.
  */
-export const planSearchKeyBucketRead = ({ allBuckets = [], selectedBuckets = [] } = {}) => {
-  const all = [...new Set((allBuckets || []).map(String))];
-  const selected = [...new Set((selectedBuckets || []).map(String))].filter(bucket => all.includes(bucket));
-  const excluded = all.filter(bucket => !selected.includes(bucket));
+export const planSearchKeyBucketRead = ({
+  indexName,
+  allBuckets,
+  selectedBuckets = [],
+  emptyBucket,
+  coverage,
+} = {}) => {
+  const spec = getSearchKeyIndexSpec(indexName);
+  const resolvedEmptyBucket = emptyBucket !== undefined ? emptyBucket : (spec.emptyBucket ?? null);
+  const resolvedCoverage = coverage || spec.coverage || 'partial';
 
-  if (!selected.length) return { mode: 'include', buckets: [], selectedBuckets: [], excludedBuckets: excluded };
-  if (!excluded.length) return { mode: 'none', buckets: [], selectedBuckets: selected, excludedBuckets: [] };
+  const all = unique(allBuckets || spec.buckets || []);
+  // An open vocabulary has no list to intersect against - the selection is whatever
+  // the drawer asked for, and the reader turns it into key ranges.
+  const selected = spec.openVocabulary
+    ? unique(selectedBuckets)
+    : unique(selectedBuckets).filter(bucket => all.includes(bucket));
+  const rejected = all.filter(bucket => !selected.includes(bucket));
+  const keepsUnfilled = Boolean(resolvedEmptyBucket) && selected.includes(resolvedEmptyBucket);
 
-  const selectionHoldsBulkBucket = selected.some(bucket => BULK_SEARCH_KEY_BUCKETS.has(bucket));
-  const exclusionHoldsBulkBucket = excluded.some(bucket => BULK_SEARCH_KEY_BUCKETS.has(bucket));
+  if (spec.openVocabulary) {
+    // Nothing to name: the caller queries key ranges. It can still only do so while
+    // the unfilled cards are rejected - they have no key to range over.
+    return keepsUnfilled
+      ? buildPlan('defer', [], selected, rejected)
+      : buildPlan('range', [], selected, rejected);
+  }
 
-  const preferExclude = selectionHoldsBulkBucket
-    ? !exclusionHoldsBulkBucket
-    : !exclusionHoldsBulkBucket && excluded.length < selected.length;
+  if (!selected.length) return buildPlan('include', [], selected, rejected);
+  if (!rejected.length) return buildPlan('none', [], selected, rejected);
 
-  return preferExclude
-    ? { mode: 'exclude', buckets: excluded, selectedBuckets: selected, excludedBuckets: excluded }
-    : { mode: 'include', buckets: selected, selectedBuckets: selected, excludedBuckets: excluded };
+  const readable = buckets => buckets.filter(bucket => bucket !== resolvedEmptyBucket);
+
+  if (resolvedEmptyBucket) {
+    return keepsUnfilled
+      ? buildPlan('exclude', readable(rejected), selected, rejected)
+      : buildPlan('include', readable(selected), selected, rejected);
+  }
+
+  if (resolvedCoverage === 'total' && rejected.length < selected.length) {
+    return buildPlan('exclude', rejected, selected, rejected);
+  }
+
+  return buildPlan('include', selected, selected, rejected);
 };
+
+/** Modes that can name candidates rather than only reject them. */
+export const canSearchKeyPlanNameCandidates = mode => mode === 'include' || mode === 'range';

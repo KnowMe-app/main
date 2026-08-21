@@ -1392,20 +1392,42 @@ export const getIndexedNewUsersIdsByRules = async ({
         if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
         setsMap[entry.setKey][indexName] = fieldsIndexValue;
       } else {
-        const excludedValues = Array.isArray(group?.excludedValues)
-          ? [...new Set(group.excludedValues.filter(Boolean).map(String))]
+        // The group carries the plan built in matchingDataProvider: 'exclude' means the
+        // selection keeps the cards with nothing on record, which the index expresses
+        // by absence, so the only way to read it is to subtract what it rejects.
+        // Access-rule groups carry no plan and are always read forwards.
+        const readMode = group?.readMode || 'include';
+        const planBuckets = Array.isArray(group?.readBuckets)
+          ? [...new Set(group.readBuckets.filter(Boolean).map(String))]
           : [];
-        const useExcludeStrategy = group?.indexStrategy === 'exclude-buckets'
-          && excludedValues.length > 0
-          && filterSets.length > 0;
-        const valuesToRead = useExcludeStrategy ? excludedValues : normalizedValues;
+        const useExcludeStrategy = readMode === 'exclude';
+
+        // Nothing to subtract from, or nothing the index can express: leave the group
+        // to the post-filter rather than read buckets that would invert its meaning.
+        if (
+          readMode === 'none' ||
+          readMode === 'defer' ||
+          (useExcludeStrategy && (planBuckets.length === 0 || filterSets.length === 0))
+        ) {
+          emitDebug('additionalMatching: indexed filter left to the post-filter', {
+            setKey: entry.setKey,
+            indexName,
+            readMode,
+            readBucketsCount: planBuckets.length,
+            baseFilterSetsCount: filterSets.length,
+          });
+          continue;
+        }
+
+        const valuesToRead = group?.readMode && planBuckets.length ? planBuckets : normalizedValues;
 
         emitDebug('additionalMatching: bucket read strategy', {
           setKey: entry.setKey,
           indexName,
           strategy: useExcludeStrategy ? 'exclude-buckets' : 'include-buckets',
+          readMode: group?.readMode || 'include',
           valuesCount: normalizedValues.length,
-          excludedValuesCount: excludedValues.length,
+          readBucketsCount: planBuckets.length,
           baseFilterSetsCount: filterSets.length,
         });
 

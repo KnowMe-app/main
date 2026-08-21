@@ -12,8 +12,22 @@ const normalizeBucketValues = values => {
 export const hasFieldCountRangeBuckets = values =>
   normalizeBucketValues(values).some(value => FIELD_COUNT_RANGE_BUCKETS.includes(String(value || '').trim()));
 
+// The index stores one of the four range buckets. Numeric keys are the legacy shape
+// (one node per filled-field count) and are still recognised so a half-migrated
+// index keeps answering while the rebuild runs.
+export const resolveFieldCountRangeBucket = count => {
+  const parsedCount = Number.parseInt(String(count), 10);
+  if (!Number.isInteger(parsedCount) || parsedCount <= 5) return 'le5';
+  if (parsedCount <= 10) return 'f6_10';
+  if (parsedCount <= 20) return 'f11_20';
+  return 'f20_plus';
+};
+
 export const isFieldCountInRangeBucket = (countKey, rangeBucket) => {
-  const parsedCount = Number.parseInt(String(countKey), 10);
+  const normalizedKey = String(countKey || '').trim();
+  if (FIELD_COUNT_RANGE_BUCKETS.includes(normalizedKey)) return normalizedKey === rangeBucket;
+
+  const parsedCount = Number.parseInt(normalizedKey, 10);
   if (!Number.isInteger(parsedCount) || parsedCount < 0) return false;
 
   switch (rangeBucket) {

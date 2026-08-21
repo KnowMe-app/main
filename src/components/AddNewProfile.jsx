@@ -1882,21 +1882,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (syncedState?.userId) {
       try {
-        const isUsersCollectionId = syncedState.userId.length > 20;
-        const searchKeySyncTasks = [
-          syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
-        ];
-        if (isUsersCollectionId) {
-          searchKeySyncTasks.push(
-            syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState, {
-              rootPath: 'searchKey/users',
-            })
-          );
-        }
-
+        // The index root follows the collection the id belongs to; writing a profile
+        // into both roots is what left users-collection ids scattered across the
+        // shared newUsers index. syncUserSearchKeyIndex resolves it from the id.
         await Promise.all([
           syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
-          ...searchKeySyncTasks,
+          syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
         ]);
       } catch (indexError) {
         const details = indexError?.message || String(indexError);
@@ -6135,6 +6126,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         toast.loading(formatProgressMessage('newUsers', progress, meta), { id: toastId });
       });
 
+      // Goes to searchKey/users - createSelectedSearchKeyIndexesInCollection resolves
+      // the root from the collection, so the users deck no longer lands in the shared root.
       await createSelectedSearchKeyIndexesInCollection('users', selectedIndexTypes, (progress, meta) => {
         toast.loading(formatProgressMessage('users', progress, meta), { id: toastId });
       });

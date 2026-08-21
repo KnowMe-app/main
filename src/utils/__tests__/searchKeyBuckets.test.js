@@ -1,5 +1,6 @@
 import {
   BLOOD_SEARCH_KEY_BUCKETS,
+  CONTACT_SEARCH_KEY_BUCKETS,
   MARITAL_STATUS_BUCKET_FILTER_KEYS,
   MARITAL_STATUS_SEARCH_KEY_BUCKETS,
   ROLE_BUCKET_FILTER_KEYS,
@@ -64,6 +65,7 @@ describe('selectSearchKeyBuckets', () => {
 describe('planSearchKeyBucketRead', () => {
   it('reads the rejected buckets when the selection keeps a bulk bucket', () => {
     const plan = planSearchKeyBucketRead({
+      indexName: 'maritalStatus',
       allBuckets: MARITAL_STATUS_SEARCH_KEY_BUCKETS,
       selectedBuckets: ['+', '?', 'no'],
     });
@@ -74,6 +76,7 @@ describe('planSearchKeyBucketRead', () => {
 
   it('reads the selected buckets when the bulk buckets are rejected', () => {
     const plan = planSearchKeyBucketRead({
+      indexName: 'blood',
       allBuckets: BLOOD_SEARCH_KEY_BUCKETS,
       selectedBuckets: ['1+', '1-', '1'],
     });
@@ -84,6 +87,7 @@ describe('planSearchKeyBucketRead', () => {
 
   it('reports nothing to read when the selection covers the whole vocabulary', () => {
     const plan = planSearchKeyBucketRead({
+      indexName: 'maritalStatus',
       allBuckets: MARITAL_STATUS_SEARCH_KEY_BUCKETS,
       selectedBuckets: MARITAL_STATUS_SEARCH_KEY_BUCKETS,
     });
@@ -92,13 +96,41 @@ describe('planSearchKeyBucketRead', () => {
     expect(plan.buckets).toEqual([]);
   });
 
-  it('prefers the smaller side when neither holds a bulk bucket', () => {
-    const plan = planSearchKeyBucketRead({
+  it('inverts a wide selection only where every card is guaranteed a bucket', () => {
+    const total = planSearchKeyBucketRead({
       allBuckets: ['a', 'b', 'c', 'd'],
       selectedBuckets: ['a', 'b', 'c'],
+      emptyBucket: null,
+      coverage: 'total',
+    });
+
+    expect(total.mode).toBe('exclude');
+    expect(total.buckets).toEqual(['d']);
+
+    // A card can sit in several contact buckets, so subtracting "no vk" would drop
+    // cards that are also on telegram. Such an index is only ever read forwards.
+    const partial = planSearchKeyBucketRead({
+      indexName: 'contact',
+      selectedBuckets: CONTACT_SEARCH_KEY_BUCKETS.filter(bucket => bucket !== 'vk'),
+    });
+
+    expect(partial.mode).toBe('include');
+    expect(partial.buckets).not.toContain('vk');
+  });
+
+  it('never names the unstored `no` bucket in a read', () => {
+    const plan = planSearchKeyBucketRead({
+      indexName: 'role',
+      selectedBuckets: ['ed', 'ag', 'ip', 'sm', 'pp', 'cl', '?', 'no'].filter(bucket => bucket !== 'ag'),
     });
 
     expect(plan.mode).toBe('exclude');
-    expect(plan.buckets).toEqual(['d']);
+    expect(plan.buckets).toEqual(['ag']);
+    expect(plan.buckets).not.toContain('no');
+  });
+
+  it('queries an open vocabulary by range, and gives up when it must keep the unfilled cards', () => {
+    expect(planSearchKeyBucketRead({ indexName: 'age', selectedBuckets: ['le25', '26_30'] }).mode).toBe('range');
+    expect(planSearchKeyBucketRead({ indexName: 'age', selectedBuckets: ['le25', 'no'] }).mode).toBe('defer');
   });
 });
