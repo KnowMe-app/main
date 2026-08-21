@@ -15,8 +15,15 @@ export const hasFieldCountRangeBuckets = values =>
 // Keys the app adds to a hydrated card (`__sourceCollection`, `__fromCardCache`)
 // are not profile data. Excluding them keeps the count the index writes and the
 // count the post-filter derives from a loaded card identical.
+//
+// A `matchingCards` projection carries a dozen fields, not the anketa's real
+// count, so counting its keys would drop every card into `le5`. It brings the
+// count the writer measured on the full record under `__fieldsCount`; when that
+// is present it is the answer, and the key scan never runs.
 export const countProfileFields = profile => {
   if (!profile || typeof profile !== 'object') return 0;
+  const precounted = Number(profile.__fieldsCount);
+  if (Number.isFinite(precounted) && precounted >= 0) return precounted;
   return Object.keys(profile).filter(key => !key.startsWith('__')).length;
 };
 

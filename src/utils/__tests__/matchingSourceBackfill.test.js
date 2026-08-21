@@ -107,3 +107,56 @@ describe('collectFilteredMatchingSourceCards', () => {
     expect(events[events.length - 1]).toMatchObject({ stage: 'profile-hydration', status: 'failed' });
   });
 });
+
+describe('collectFilteredMatchingSourceCards — повторне використання сторінки джерела', () => {
+  const page = users => ({ users, lastKey: null, hasMore: false });
+
+  it('за замовчуванням гідратує все поштучно, як раніше', async () => {
+    const hydrate = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id, name: 'з бекенда' }])));
+
+    const result = await collectFilteredMatchingSourceCards({
+      targetVisibleCount: 2,
+      fetchSourcePage: async () => page([{ userId: 'a', name: 'зі сторінки' }, { userId: 'b', name: 'зі сторінки' }]),
+      hydrateUsersByIds: hydrate,
+      isSameCursor,
+    });
+
+    expect(hydrate).toHaveBeenCalledWith(['a', 'b']);
+    expect(result.users.map(user => user.name)).toEqual(['з бекенда', 'з бекенда']);
+  });
+
+  it('не перечитує записи, які сторінка джерела вже віддала повністю', async () => {
+    const hydrate = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id, name: 'з бекенда' }])));
+
+    const result = await collectFilteredMatchingSourceCards({
+      targetVisibleCount: 2,
+      fetchSourcePage: async () => page([{ userId: 'a', name: 'зі сторінки' }, { userId: 'b', name: 'зі сторінки' }]),
+      hydrateUsersByIds: hydrate,
+      isHydrated: () => true,
+      isSameCursor,
+    });
+
+    expect(hydrate).not.toHaveBeenCalled();
+    expect(result.users.map(user => user.name)).toEqual(['зі сторінки', 'зі сторінки']);
+  });
+
+  it('догідратовує лише неповні записи, зберігаючи порядок сторінки', async () => {
+    const hydrate = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id, name: 'з бекенда' }])));
+
+    const result = await collectFilteredMatchingSourceCards({
+      targetVisibleCount: 3,
+      fetchSourcePage: async () => page([
+        { userId: 'a', name: 'зі сторінки' },
+        { userId: 'b', __limitedProfile: true },
+        { userId: 'c', name: 'зі сторінки' },
+      ]),
+      hydrateUsersByIds: hydrate,
+      isHydrated: user => !user.__limitedProfile,
+      isSameCursor,
+    });
+
+    expect(hydrate).toHaveBeenCalledWith(['b']);
+    expect(result.users.map(user => user.userId)).toEqual(['a', 'b', 'c']);
+    expect(result.users.map(user => user.name)).toEqual(['зі сторінки', 'з бекенда', 'зі сторінки']);
+  });
+});

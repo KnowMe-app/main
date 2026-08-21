@@ -34,6 +34,7 @@ import {
   filterMain,
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
+  createMatchingCardsIndexInCollection,
   createSelectedSearchKeyIndexesInCollection,
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
@@ -6141,6 +6142,54 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  /**
+   * Разова побудова урізаних карток стрічки для обох колекцій.
+   *
+   * Далі вони тримаються актуальними самі — писачі анкет оновлюють проєкцію на
+   * кожному збереженні. Ця кнопка потрібна для анкет, які з моменту появи
+   * проєкції ще жодного разу не зберігали, і як спосіб перебудувати вузол з
+   * нуля, якщо схема змінилась.
+   */
+  const [isMatchingCardsIndexing, setIsMatchingCardsIndexing] = useState(false);
+  const handleBuildMatchingCards = async () => {
+    if (!isAdmin || isMatchingCardsIndexing) return;
+
+    // Лістинг Storage — найдовша частина роботи (один рекурсивний обхід на
+    // анкету без поля `photos`), тож вибір лишається за адміном.
+    const includeStorageAvatars = window.confirm(
+      'Шукати аватари у Storage для анкет без поля photos?\n\n' +
+        'OK — повільніше, але картки в стрічці будуть з фото.\n' +
+        'Скасувати — швидка побудова лише з даних анкет.',
+    );
+
+    const toastId = 'index-matching-cards-progress';
+    setIsMatchingCardsIndexing(true);
+    toast.loading('Побудова карток стрічки...', { id: toastId });
+    try {
+      const report = [];
+      for (const collection of ['users', 'newUsers']) {
+        // eslint-disable-next-line no-await-in-loop
+        const stats = await createMatchingCardsIndexInCollection(
+          collection,
+          (progress, meta) => {
+            toast.loading(
+              `Побудова карток стрічки: ${collection} ${progress}% (${meta?.processed || 0}/${meta?.total || 0})`,
+              { id: toastId },
+            );
+          },
+          { includeStorageAvatars },
+        );
+        report.push(`${collection}: ${stats.written}/${stats.total}`);
+      }
+      toast.success(`Картки стрічки побудовано — ${report.join(', ')}`, { id: toastId });
+    } catch (error) {
+      console.error('[AddNewProfile] matchingCards indexing failed', error);
+      toast.error(`Помилка побудови карток стрічки: ${error?.message || 'невідома помилка'}`, { id: toastId });
+    } finally {
+      setIsMatchingCardsIndexing(false);
+    }
+  };
+
   const handleMigrateAllLegacyCardComments = async () => {
     if (!isAdmin) return;
     if (
@@ -7186,6 +7235,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     Індекси
                   </Button>
                 </>
+              )}
+              {isAdmin && (
+                <Button
+                  onClick={handleBuildMatchingCards}
+                  disabled={isMatchingCardsIndexing}
+                  title="Побудувати урізані картки matchingCards для швидкої стрічки матчингу"
+                  {...createLongPressHandlers('Створює на бекенді урізані копії карток, з яких стрічка матчингу вантажиться одним запитом на сторінку')}
+                >
+                  {isMatchingCardsIndexing ? '...' : 'Картки'}
+                </Button>
               )}
               {isAdmin && (
                 <Button

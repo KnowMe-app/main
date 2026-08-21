@@ -12,6 +12,7 @@ jest.mock('firebase/database', () => ({
 jest.mock('components/config', () => ({
   database: { app: 'db' },
   syncUserSearchKeyIndex: jest.fn(async () => {}),
+  syncMatchingCardIndex: jest.fn(async () => {}),
 }));
 
 jest.mock('./multiAccountEdits', () => {
@@ -22,7 +23,7 @@ jest.mock('./multiAccountEdits', () => {
   };
 });
 
-const { syncUserSearchKeyIndex } = require('components/config');
+const { syncUserSearchKeyIndex, syncMatchingCardIndex } = require('components/config');
 const { getOverlaysForCard } = require('./multiAccountEdits');
 const { acceptCreateProfileMutation } = require('./profileMutations');
 
@@ -121,6 +122,8 @@ describe('acceptCreateProfileMutation', () => {
 
     expect(profile).toEqual({ userId: 'card-1', name: 'Anna' });
     expect(syncUserSearchKeyIndex).toHaveBeenCalledWith('card-1', {}, { userId: 'card-1', name: 'Anna' });
+    // Публікація анкети одразу дає їй урізану картку для стрічки матчингу.
+    expect(syncMatchingCardIndex).toHaveBeenCalledWith('card-1', { userId: 'card-1', name: 'Anna' });
     // searchId index entries are written through a transaction of their own.
     expect(runTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ path: expect.stringMatching(/^searchId\//) }),

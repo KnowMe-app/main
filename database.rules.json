@@ -127,6 +127,13 @@
         }
       }
     },
+    "matchingCards": {
+      ".indexOn": ["lastLogin2"],
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('users').child(auth.uid).child('userRole').isString() && root.child('users').child(auth.uid).child('userRole').val() != '' && root.child('users').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('users').child(auth.uid).child('userRole').exists() && root.child('users').child(auth.uid).child('role').isString() && root.child('users').child(auth.uid).child('role').val() != '' && root.child('users').child(auth.uid).child('role').val() != 'ed') || (root.child('newUsers').child(auth.uid).child('accessLevel').isString() && root.child('newUsers').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('newUsers').child(auth.uid).child('userRole').isString() && root.child('newUsers').child(auth.uid).child('userRole').val() != '' && root.child('newUsers').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('newUsers').child(auth.uid).child('userRole').exists() && root.child('newUsers').child(auth.uid).child('role').isString() && root.child('newUsers').child(auth.uid).child('role').val() != '' && root.child('newUsers').child(auth.uid).child('role').val() != 'ed'))",
+      "$uid": {
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write')"
+      }
+    },
     "searchKeySets": {
       ".read": "auth != null",
       "$keySet": {

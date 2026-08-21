@@ -1444,6 +1444,12 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   };
 };
 
+// Скільки анкет просити в джерела на одну сторінку стрічки. Фільтри відсіюють
+// частину, тож запас потрібен — але фіксований, а не такий, що росте зі скролом.
+const MATCHING_SOURCE_PAGE_OVERFETCH = 3;
+const MATCHING_SOURCE_PAGE_OVERFETCH_FLOOR = 5;
+const MATCHING_SOURCE_PAGE_LIMIT_CAP = 100;
+
 export const fetchFilteredMatchingSourceChunk = ({
   targetVisibleCount,
   initialCursor,
@@ -1458,6 +1464,7 @@ export const fetchFilteredMatchingSourceChunk = ({
   filterMainFn = passthroughFilterMain,
   fetchUsersByLastLogin2,
   fetchUsersByLastLogin2FromCollection,
+  fetchMatchingCardsPage,
   hydrateUsersByIds,
   onPart,
   onDiagnosticEvent,
@@ -1479,14 +1486,46 @@ export const fetchFilteredMatchingSourceChunk = ({
     initialCursor,
     exclude,
     isSameCursor: isSameMatchingCursor,
-    getSourceLimit: ({ remaining }) => remaining + exclude.size + 1,
+    // Запас на відсіяні картки — а не `exclude.size`. Множина виключень росте з
+    // кожною прогорнутою сторінкою (завантажені + обране + приховані), тож
+    // прив'язка до неї означала, що на 40-й картці стрічка просила в бекенда
+    // ~50 повних анкет, щоб показати п'ять. Постійний множник тримає запас
+    // пропорційним тому, що справді потрібно.
+    getSourceLimit: ({ remaining }) => Math.min(
+      MATCHING_SOURCE_PAGE_LIMIT_CAP,
+      remaining * MATCHING_SOURCE_PAGE_OVERFETCH + MATCHING_SOURCE_PAGE_OVERFETCH_FLOOR,
+    ),
+    // Сторінка джерела вже віддає все, що рядок стрічки показує — чи то повна
+    // анкета, чи то проєкція `matchingCards`. Перечитувати її поштучно за id
+    // нема потреби. Урізаний пошуковий хіт — інша річ: за ним стоїть не картка,
+    // а проєкція з пʼяти полів, і його треба догідратувати.
+    isHydrated: user => Boolean(user) && !user.__limitedProfile,
     maxSourceCards: 500,
     debugLabel: `matchingSourceBackfill:${collectionSource}`,
-    fetchSourcePage: ({ limit: sourceLimit, cursor }) => (
-      collectionSource === 'newUsers'
-        ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
-        : fetchUsersByLastLogin2(sourceLimit, cursor)
-    ),
+    fetchSourcePage: async ({ limit: sourceLimit, cursor }) => {
+      const readProfilePage = () => (
+        collectionSource === 'newUsers'
+          ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
+          : fetchUsersByLastLogin2(sourceLimit, cursor)
+      );
+
+      if (typeof fetchMatchingCardsPage !== 'function') return readProfilePage();
+
+      // Основний шлях: одна сторінка стрічки = один запит по вузлу проєкцій,
+      // де картка важить сотні байтів і вже несе аватар. Проєкція може бути ще
+      // не побудована (нова база, індексація не запускалась) — тоді перша ж
+      // сторінка приходить порожньою, і читач мовчки повертається до анкет.
+      try {
+        const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor, collectionSource });
+        if (cardsPage?.users?.length) return cardsPage;
+        if (cursor) return cardsPage;
+        console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму', { collectionSource });
+      } catch (error) {
+        console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
+      }
+
+      return readProfilePage();
+    },
     filterSourceUsers: sourceUsers => {
       if (!isAdmin) {
         return sourceUsers.filter(

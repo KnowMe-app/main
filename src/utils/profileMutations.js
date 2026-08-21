@@ -1,6 +1,6 @@
 import { get, push, ref, remove, runTransaction, update } from 'firebase/database';
 
-import { database, syncUserSearchKeyIndex } from 'components/config';
+import { database, syncUserSearchKeyIndex, syncMatchingCardIndex } from 'components/config';
 import { buildOverlayFromDraft, getOverlaysForCard } from './multiAccountEdits';
 import {
   SEARCH_ID_INDEXED_FIELDS,
@@ -402,6 +402,12 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     await withProfileSaveStage(
       'search-key-index',
       () => syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
+    );
+    // Публікація анкети — це поява картки в стрічці, тож проєкція під стрічку
+    // будується тут же, разом з пошуковими індексами.
+    await withProfileSaveStage(
+      'matching-card-index',
+      () => syncMatchingCardIndex(cardId, acceptedProfile),
     );
   } catch (error) {
     await restorePendingMutation().catch(() => {});
