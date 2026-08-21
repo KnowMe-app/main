@@ -114,6 +114,9 @@ export const SEARCH_KEY_INDEX_SPECS = {
   reaction: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
 };
 
+/** Усі імена індексів під коренем `searchKey` — джерело правди одне, ось воно. */
+export const SEARCH_KEY_INDEX_NAMES = Object.keys(SEARCH_KEY_INDEX_SPECS);
+
 export const getSearchKeyIndexSpec = indexName => SEARCH_KEY_INDEX_SPECS[indexName] || {};
 
 export const getSearchKeyEmptyBucket = indexName => getSearchKeyIndexSpec(indexName).emptyBucket ?? null;

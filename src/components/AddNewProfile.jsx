@@ -6059,9 +6059,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (selectedIndexJobs.searchKeySetReindex) {
         const toastId = 'index-searchkey-set-reindex-progress';
         toast.loading('Перебудова searchKeySet наборів фільтрів...', { id: toastId });
-        const stats = await rebuildAllNewUsersFilterSetIndexes();
+        const stats = await rebuildAllNewUsersFilterSetIndexes({
+          onProgress: (stage, payload) => {
+            if (stage === 'searchKey') {
+              toast.loading(`Читаємо searchKey ${payload?.percent || 0}%${payload?.indexName ? ` (${payload.indexName})` : ''}...`, { id: toastId });
+              return;
+            }
+            if (stage === 'owners') {
+              toast.loading('Шукаємо власників правил доступу...', { id: toastId });
+              return;
+            }
+            toast.loading(
+              `Перебудова наборів ${payload?.percent || 0}% (${payload?.processed || 0}/${payload?.total || 0})`,
+              { id: toastId },
+            );
+          },
+        });
+        const failed = stats.errors?.length ? `, помилок: ${stats.errors.length}` : '';
         toast.success(
-          `searchKeySet оновлено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів.`,
+          `searchKeySet оновлено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів${failed}.`,
           { id: toastId },
         );
       }

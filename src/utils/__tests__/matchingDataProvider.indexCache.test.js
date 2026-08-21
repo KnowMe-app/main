@@ -1,10 +1,17 @@
 const mockFirebaseGet = jest.fn();
 const mockFirebaseRef = jest.fn((database, path) => path);
 const mockCollectAgeIdsByFilters = jest.fn();
+const mockFirebaseLimitToFirst = jest.fn(count => count);
 
+// Читання бакета обмежене (`limitToFirst`), тож мок має розуміти і побудову
+// запиту. Запит тут — це той самий шлях: `get` розрізняє виклики за ним, а межу
+// перевіряють окремі тести через `mockFirebaseLimitToFirst`.
 jest.mock('firebase/database', () => ({
   get: (...args) => mockFirebaseGet(...args),
   ref: (...args) => mockFirebaseRef(...args),
+  query: (target) => target,
+  orderByKey: () => 'orderByKey',
+  limitToFirst: (...args) => mockFirebaseLimitToFirst(...args),
 }));
 
 jest.mock('components/config', () => ({
@@ -345,5 +352,117 @@ describe('fetchMatchingIndexedCandidates card hydration cache', () => {
     expect(result.users.map(user => user.name)).toEqual(['Cached basic', 'Hydrated']);
     expect(result.users[0].__fromCardCache).toBe(true);
     expect(result.users[0].photos).toBeUndefined();
+  });
+});
+
+describe('fetchMatchingIndexedCandidates bounded bucket reads', () => {
+  const makeIds = (count, prefix = 'user') =>
+    Object.fromEntries(Array.from({ length: count }, (unused, index) => [`${prefix}${String(index).padStart(20, '0')}`, true]));
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+    jest.spyOn(Date, 'now').mockReturnValue(3_000_000);
+    mockFirebaseRef.mockImplementation((database, path) => path);
+    mockCollectAgeIdsByFilters.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('просить у бакета на один id більше за межу, щоб дізнатись про переповнення тим самим запитом', async () => {
+    const { fetchMatchingIndexedCandidates, MATCHING_SEARCH_KEY_BUCKET_READ_CAP } = loadModule();
+    mockFirebaseGet.mockResolvedValue(makeSnapshot(makeIds(3)));
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+
+    await fetchMatchingIndexedCandidates({
+      filters: { userRole: { ag: true, ed: false, ip: false, other: false } },
+      limit: 5,
+      hydrateUsersByIds,
+    });
+
+    expect(mockFirebaseLimitToFirst).toHaveBeenCalledWith(MATCHING_SEARCH_KEY_BUCKET_READ_CAP + 1);
+  });
+
+  it('лишає план без переповненої групи, а її роботу — пост-фільтру', async () => {
+    const { fetchMatchingIndexedCandidates, MATCHING_SEARCH_KEY_BUCKET_READ_CAP } = loadModule();
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+
+    // `role/ag` селективний, `maritalStatus/-` лишає пів бази і впирається в межу.
+    mockFirebaseGet.mockImplementation(async path => {
+      if (path === 'searchKey/users/role/ag') {
+        return makeSnapshot({
+          user00000000000000000001: true,
+          user00000000000000000002: true,
+        });
+      }
+      if (path === 'searchKey/users/maritalStatus/-') {
+        return makeSnapshot(makeIds(MATCHING_SEARCH_KEY_BUCKET_READ_CAP + 1, 'wide'));
+      }
+      return makeSnapshot(null);
+    });
+
+    const result = await fetchMatchingIndexedCandidates({
+      filters: {
+        userRole: { ag: true, ed: false, ip: false, other: false },
+        maritalStatus: { unmarried: true, married: false, other: false, empty: false },
+      },
+      limit: 5,
+      hydrateUsersByIds,
+    });
+
+    expect(result.overflowedFilterGroups).toEqual(['maritalStatus']);
+    // Перетин рахується лише з груп у межах, тож широка група не з'їдає кандидатів
+    // селективної — вона просто нічого не додає до плану.
+    expect(result.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002']);
+    expect(result.usedIndex).toBe(true);
+  });
+
+  it('віддає деку звичайній пагінації, коли жодна група не влізла в межу', async () => {
+    const { fetchMatchingIndexedCandidates, MATCHING_SEARCH_KEY_BUCKET_READ_CAP } = loadModule();
+    mockFirebaseGet.mockResolvedValue(makeSnapshot(makeIds(MATCHING_SEARCH_KEY_BUCKET_READ_CAP + 1, 'wide')));
+    const hydrateUsersByIds = jest.fn();
+
+    const result = await fetchMatchingIndexedCandidates({
+      filters: { userRole: { ag: true, ed: false, ip: false, other: false } },
+      limit: 5,
+      hydrateUsersByIds,
+    });
+
+    expect(result.usedIndex).toBe(false);
+    expect(result.users).toEqual([]);
+    // Гідратувати нема кого: індекс не назвав кандидатів.
+    expect(hydrateUsersByIds).not.toHaveBeenCalled();
+  });
+
+  it('кешує прочитаний бакет, тож друга комбінація фільтрів його не перечитує', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+    mockFirebaseGet.mockImplementation(async path => (
+      path === 'searchKey/users/role/ag'
+        ? makeSnapshot({ user00000000000000000001: true, user00000000000000000002: true })
+        : makeSnapshot(null)
+    ));
+
+    await fetchMatchingIndexedCandidates({
+      filters: { userRole: { ag: true, ed: false, ip: false, other: false } },
+      limit: 1,
+      hydrateUsersByIds,
+    });
+    const readsAfterFirst = mockFirebaseGet.mock.calls.filter(([path]) => path === 'searchKey/users/role/ag').length;
+
+    // Інша комбінація — інший ключ списку кандидатів, але той самий бакет.
+    await fetchMatchingIndexedCandidates({
+      filters: { userRole: { ag: true, ed: false, ip: false, other: false } },
+      limit: 1,
+      excludeIds: ['user00000000000000000002'],
+      hydrateUsersByIds,
+    });
+    const readsAfterSecond = mockFirebaseGet.mock.calls.filter(([path]) => path === 'searchKey/users/role/ag').length;
+
+    expect(readsAfterFirst).toBe(1);
+    expect(readsAfterSecond).toBe(1);
   });
 });
