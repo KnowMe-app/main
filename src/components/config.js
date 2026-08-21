@@ -52,6 +52,9 @@ import {
   isFullProfileFallbackData,
   isLegacyFullProfileFallbackData,
 } from '../utils/userProfileFallback';
+import { normalizeRoleSearchKeyIndexValue } from '../utils/profileRole';
+
+export { normalizeRoleSearchKeyIndexValue } from '../utils/profileRole';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -3900,32 +3903,6 @@ const normalizeFieldCountSearchKeyIndexValue = data => {
 
 const getFieldCountIndexSet = data => {
   return new Set([normalizeFieldCountSearchKeyIndexValue(data)]);
-};
-
-export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
-  const normalizeSingleRole = value => {
-    const normalized = String(value || '')
-      .trim()
-      .toLowerCase();
-
-    if (!normalized) return '';
-    if (normalized === 'ed') return 'ed';
-    if (normalized === 'sm') return 'sm';
-    if (normalized === 'ag') return 'ag';
-    if (normalized === 'ip') return 'ip';
-    if (normalized === 'pp') return 'pp';
-    if (normalized === 'cl') return 'cl';
-    return '?';
-  };
-
-  const normalizedRole = normalizeSingleRole(roleValue);
-  if (normalizedRole && normalizedRole !== '?') return normalizedRole;
-
-  const normalizedUserRole = normalizeSingleRole(userRoleValue);
-  if (normalizedUserRole && normalizedUserRole !== '?') return normalizedUserRole;
-
-  if (normalizedRole === '?' || normalizedUserRole === '?') return '?';
-  return 'no';
 };
 
 const getRoleIndexSet = data => {
