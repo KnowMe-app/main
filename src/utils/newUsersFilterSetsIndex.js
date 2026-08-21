@@ -16,6 +16,7 @@ import {
   database,
 } from 'components/config';
 import { encodeKey } from './searchIndexCandidates';
+import { getSearchKeyEmptyBucket } from './searchKeyBuckets';
 import {
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
@@ -238,6 +239,18 @@ const collectSearchKeyUserIdsForBuckets = (searchKeyFile, indexName, values) => 
   return ids;
 };
 
+/**
+ * A searchKeySet is one access rule's slice of the index, and unlike the global
+ * index it DOES carry an explicit `no` bucket.
+ *
+ * The global index drops it because a filter can always express "keep the unfilled
+ * cards" as a subtraction, and `no` there means ~24 000 ids on the wire. A set is
+ * different on both counts: access rules name `no` positively ("role: no" grants
+ * cards with no role), a rule group is often the first thing evaluated so there is
+ * nothing to subtract from, and quietly widening an access rule is the one failure
+ * mode that must never happen. The bucket is also small here - the set only holds
+ * the users that rule already allows - and it is read only when something names it.
+ */
 const buildSearchKeySetFromAllowedUsers = (searchKey, finalAllowedUserIds) => {
   const result = {};
 
@@ -245,9 +258,13 @@ const buildSearchKeySetFromAllowedUsers = (searchKey, finalAllowedUserIds) => {
     return result;
   }
 
+  const indexedUserIdsByField = {};
+
   Object.entries(searchKey).forEach(([fieldName, fieldBuckets]) => {
     if (fieldName === 'imt') return;
     if (!fieldBuckets || typeof fieldBuckets !== 'object' || Array.isArray(fieldBuckets)) return;
+
+    indexedUserIdsByField[fieldName] = new Set();
 
     Object.entries(fieldBuckets).forEach(([bucketName, bucketUsers]) => {
       if (!bucketUsers || typeof bucketUsers !== 'object' || Array.isArray(bucketUsers)) return;
@@ -255,10 +272,27 @@ const buildSearchKeySetFromAllowedUsers = (searchKey, finalAllowedUserIds) => {
       Object.keys(bucketUsers).forEach(userId => {
         if (!finalAllowedUserIds.has(userId)) return;
 
+        indexedUserIdsByField[fieldName].add(userId);
         if (!result[fieldName]) result[fieldName] = {};
         if (!result[fieldName][bucketName]) result[fieldName][bucketName] = {};
         result[fieldName][bucketName][userId] = true;
       });
+    });
+  });
+
+  // Materialise the empty bucket for the indexes where it is a real answer: an
+  // allowed user the global index places in no bucket of this field has nothing on
+  // record for it. Its name is per index - `no` for most, `other` for bmi,
+  // `unknown` for country.
+  Object.entries(indexedUserIdsByField).forEach(([fieldName, indexedUserIds]) => {
+    const emptyBucket = getSearchKeyEmptyBucket(fieldName);
+    if (!emptyBucket) return;
+
+    finalAllowedUserIds.forEach(userId => {
+      if (indexedUserIds.has(userId)) return;
+      if (!result[fieldName]) result[fieldName] = {};
+      if (!result[fieldName][emptyBucket]) result[fieldName][emptyBucket] = {};
+      result[fieldName][emptyBucket][userId] = true;
     });
   });
 
@@ -1292,6 +1326,21 @@ export const getIndexedNewUsersIdsByRules = async ({
     for (const group of bucketGroups) {
       const { indexName, values } = group;
       const normalizedValues = Array.isArray(values) ? values.filter(Boolean) : [];
+      // Groups from the access rule carry no plan and are always read forwards - the
+      // set materialises `no` for them. Groups from the Matching drawer do carry one,
+      // and a plan the index cannot express must widen the deck, never narrow access:
+      // dropping the group leaves the post-filter to reject, which is what a filter is
+      // allowed to do. Zeroing the rule set, which is what a failed read would cause,
+      // is not.
+      const readMode = group?.readMode || 'include';
+      if (readMode === 'none' || readMode === 'defer') {
+        emitDebug('additionalMatching: indexed filter left to the post-filter', {
+          setKey: entry.setKey,
+          indexName,
+          readMode,
+        });
+        continue;
+      }
       const idsForFilter = new Set();
       const ageRange = indexName === 'age' ? getAgeRangeBounds(normalizedValues) : null;
       const ageFilterMap = indexName === 'age'
@@ -1358,7 +1407,7 @@ export const getIndexedNewUsersIdsByRules = async ({
             filters: ageFilterMap,
           });
           // eslint-disable-next-line no-await-in-loop
-          const ageIds = await collectAgeIdsByFilters(ageFilterMap, [rootPath]);
+          const ageIds = await collectAgeIdsByFilters(ageFilterMap, [rootPath], { emptyBucketStored: true });
           if (ageIds instanceof Set) {
             if (ageIds.size > 0) existingBucketsForSet += 1; else emptyBucketsForSet += 1;
             ageIds.forEach(userId => userId && idsForFilter.add(userId));
@@ -1392,20 +1441,35 @@ export const getIndexedNewUsersIdsByRules = async ({
         if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
         setsMap[entry.setKey][indexName] = fieldsIndexValue;
       } else {
-        const excludedValues = Array.isArray(group?.excludedValues)
-          ? [...new Set(group.excludedValues.filter(Boolean).map(String))]
+        // 'exclude' means the selection keeps the cards with nothing on record, so the
+        // only way to read it is to subtract what it rejects from what an earlier
+        // group already found. With nothing to subtract from, leave it to the
+        // post-filter rather than read those buckets forwards and invert its meaning.
+        const planBuckets = Array.isArray(group?.readBuckets)
+          ? [...new Set(group.readBuckets.filter(Boolean).map(String))]
           : [];
-        const useExcludeStrategy = group?.indexStrategy === 'exclude-buckets'
-          && excludedValues.length > 0
-          && filterSets.length > 0;
-        const valuesToRead = useExcludeStrategy ? excludedValues : normalizedValues;
+        const useExcludeStrategy = readMode === 'exclude';
+
+        if (useExcludeStrategy && (planBuckets.length === 0 || filterSets.length === 0)) {
+          emitDebug('additionalMatching: indexed filter left to the post-filter', {
+            setKey: entry.setKey,
+            indexName,
+            readMode,
+            readBucketsCount: planBuckets.length,
+            baseFilterSetsCount: filterSets.length,
+          });
+          continue;
+        }
+
+        const valuesToRead = group?.readMode && planBuckets.length ? planBuckets : normalizedValues;
 
         emitDebug('additionalMatching: bucket read strategy', {
           setKey: entry.setKey,
           indexName,
           strategy: useExcludeStrategy ? 'exclude-buckets' : 'include-buckets',
+          readMode: group?.readMode || 'include',
           valuesCount: normalizedValues.length,
-          excludedValuesCount: excludedValues.length,
+          readBucketsCount: planBuckets.length,
           baseFilterSetsCount: filterSets.length,
         });
 

@@ -4,22 +4,44 @@ import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQue
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { getIndexedNewUsersIdsByRules, normalizeSearchKeySetKeys } from './newUsersFilterSetsIndex';
 import {
-  FIELD_COUNT_RANGE_BUCKETS,
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
   collectFieldCountIdsFromIndexNode,
   hasFieldCountRangeBuckets,
+  isSparseProfile,
 } from './fieldCountBuckets';
+import { getCachedSearchKeyPayload } from './searchKeyCache';
+import {
+  BLOOD_SEARCH_KEY_BUCKETS,
+  BMI_SEARCH_KEY_BUCKETS,
+  CONTACT_SEARCH_KEY_BUCKETS,
+  COUNTRY_SEARCH_KEY_BUCKETS,
+  CSECTION_SEARCH_KEY_BUCKETS,
+  FIELD_COUNT_SEARCH_KEY_BUCKETS,
+  IMT_BUCKET_FILTER_KEYS,
+  IMT_SEARCH_KEY_BUCKETS,
+  MARITAL_STATUS_BUCKET_FILTER_KEYS,
+  MARITAL_STATUS_SEARCH_KEY_BUCKETS,
+  ROLE_BUCKET_FILTER_KEYS,
+  ROLE_SEARCH_KEY_BUCKETS,
+  USER_ID_SEARCH_KEY_BUCKETS,
+  canSearchKeyPlanNameCandidates,
+  isBucketSelectedByFilterGroup,
+  planSearchKeyBucketRead,
+  resolveBmiBucket,
+  resolveCountryBucket,
+  selectSearchKeyBuckets,
+} from './searchKeyBuckets';
 
 export const MATCHING_INDEX_ROOT = 'searchKey';
 export const MATCHING_USERS_INDEX_ROOT = `${MATCHING_INDEX_ROOT}/users`;
 
-const BLOOD_BUCKETS = ['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '?', 'no'];
-const ROLE_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'pp', 'cl', '?', 'no'];
-const CSECTION_BUCKETS = ['cs2plus', 'cs1', 'cs0', 'other', 'no'];
-const IMT_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
-const CONTACT_BUCKETS = ['vk', 'instagram', 'ameblo', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter', 'line', 'otherLink'];
-const USER_ID_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
-const FIELD_COUNT_BUCKETS = FIELD_COUNT_RANGE_BUCKETS;
+const BLOOD_BUCKETS = BLOOD_SEARCH_KEY_BUCKETS;
+const ROLE_BUCKETS = ROLE_SEARCH_KEY_BUCKETS;
+const CSECTION_BUCKETS = CSECTION_SEARCH_KEY_BUCKETS;
+const IMT_BUCKETS = IMT_SEARCH_KEY_BUCKETS;
+const CONTACT_BUCKETS = CONTACT_SEARCH_KEY_BUCKETS;
+const USER_ID_BUCKETS = USER_ID_SEARCH_KEY_BUCKETS;
+const FIELD_COUNT_BUCKETS = FIELD_COUNT_SEARCH_KEY_BUCKETS;
 const AGE_BUCKETS_BY_MATCHING_KEY = {
   le21: ['le21'],
   le25: ['le21', '22_25'],
@@ -73,12 +95,11 @@ const unique = values => [...new Set((values || []).filter(Boolean))];
 
 const normalizeBucketFilterKey = (bucket, bucketMap = {}) => bucketMap[bucket] || bucket;
 
-const buildAllowedBucketsFromFilterGroup = (group, allBuckets = [], bucketMap = {}) => {
-  if (!hasActiveFilterGroup(group)) return [];
-  return (allBuckets || [])
-    .filter(bucket => Boolean(group?.[normalizeBucketFilterKey(bucket, bucketMap)]))
-    .map(String);
-};
+// The drawer only renders a checkbox for some of the buckets an index holds, so a
+// missing option defers to the group's "?" and never removes cards on its own.
+// See utils/searchKeyBuckets.js for why.
+const buildAllowedBucketsFromFilterGroup = (group, allBuckets = [], bucketMap = {}) =>
+  selectSearchKeyBuckets(group, allBuckets, { bucketMap });
 
 const mapSelectedFilterBuckets = (group, bucketMap = {}) =>
   selectedFilterKeys(group).map(key => bucketMap[key] || key);
@@ -86,10 +107,24 @@ const mapSelectedFilterBuckets = (group, bucketMap = {}) =>
 const addGroup = (groups, indexName, values, debug = {}) => {
   const normalizedValues = unique(values.map(value => String(value || '').trim()).filter(Boolean));
   if (!indexName || normalizedValues.length === 0) return;
+  const { allBuckets, ...groupDebug } = debug;
+  // How the group reaches Firebase: name the selected buckets, subtract the rejected
+  // ones, or query a key range. See planSearchKeyBucketRead — `no` is not stored, so
+  // a selection that keeps the unfilled cards can only be read as a subtraction.
+  const readPlan = planSearchKeyBucketRead({
+    indexName,
+    allBuckets: allBuckets || normalizedValues,
+    selectedBuckets: normalizedValues,
+  });
   groups.push({
     indexName,
     values: normalizedValues,
-    ...debug,
+    allBuckets: (allBuckets || normalizedValues).map(String),
+    readMode: readPlan.mode,
+    readBuckets: readPlan.buckets,
+    canInvertRead: Boolean(readPlan.canInvert),
+    includeBuckets: readPlan.includeBuckets,
+    ...groupDebug,
   });
 };
 
@@ -110,7 +145,7 @@ const buildExcludeBucketMeta = ({ group, allBuckets = [], bucketMap = {}, allowe
 
 const buildRoleBuckets = (filters, collectionSource) => {
   const roleFilters = filters?.userRole || filters?.role;
-  const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, { no: 'empty', '?': 'other' });
+  const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, ROLE_BUCKET_FILTER_KEYS);
   if (!buckets.length) return [];
 
   // Matching treats additional newUsers without a role as donor profiles, so keep
@@ -124,11 +159,17 @@ const buildRoleBuckets = (filters, collectionSource) => {
   return unique(buckets);
 };
 
+// Blood is one index but two drawer groups, so a bucket carries a key for each.
+// `1` means the group is on record without an Rh, `+`/`-` the other way round, and
+// `no`/`?` mean nothing usable is on record — the same categories the hydrated-card
+// post-filter derives in toBloodGroupCategory/toRhCategory.
 const getBloodMeta = bucket => {
-  if (bucket === '?' || bucket === 'no') return { bloodGroup: 'other', rh: 'other' };
-  const match = String(bucket).match(/^([1-4])([+-])?$/);
-  if (!match) return { bloodGroup: 'other', rh: 'other' };
-  return { bloodGroup: match[1], rh: match[2] || 'other' };
+  const normalized = String(bucket || '').trim().toLowerCase();
+  if (/^[1-4][+-]$/.test(normalized)) return { bloodGroup: normalized[0], rh: normalized[1] };
+  if (/^[1-4]$/.test(normalized)) return { bloodGroup: normalized, rh: 'empty' };
+  if (normalized === '+' || normalized === '-') return { bloodGroup: 'other', rh: normalized };
+  if (normalized === 'no') return { bloodGroup: 'empty', rh: 'empty' };
+  return { bloodGroup: 'other', rh: 'other' };
 };
 
 const buildBloodBuckets = filters => {
@@ -137,21 +178,17 @@ const buildBloodBuckets = filters => {
   if (!bloodGroupActive && !rhActive) return [];
 
   return BLOOD_BUCKETS.filter(bucket => {
-    if (bucket === 'no') {
-      const bloodNoAllowed = bloodGroupActive ? shouldIncludeNoBucket(filters?.bloodGroup, 'empty') : true;
-      const rhNoAllowed = rhActive ? shouldIncludeNoBucket(filters?.rh, 'empty') : true;
-      return bloodNoAllowed && rhNoAllowed;
-    }
-
     const meta = getBloodMeta(bucket);
-    const bloodAllowed = bloodGroupActive ? Boolean(filters?.bloodGroup?.[meta.bloodGroup]) : true;
-    const rhAllowed = rhActive ? Boolean(filters?.rh?.[meta.rh]) : true;
+    const bloodAllowed = bloodGroupActive
+      ? isBucketSelectedByFilterGroup(filters?.bloodGroup, meta.bloodGroup)
+      : true;
+    const rhAllowed = rhActive ? isBucketSelectedByFilterGroup(filters?.rh, meta.rh) : true;
     return bloodAllowed && rhAllowed;
   });
 };
 
-const MARITAL_STATUS_BUCKETS = ['+', '-', '?', 'no'];
-const MARITAL_STATUS_BUCKET_MAP = { '+': 'married', '-': 'unmarried', '?': 'other', no: 'empty' };
+const MARITAL_STATUS_BUCKETS = MARITAL_STATUS_SEARCH_KEY_BUCKETS;
+const MARITAL_STATUS_BUCKET_MAP = MARITAL_STATUS_BUCKET_FILTER_KEYS;
 const buildMaritalStatusBuckets = filters => buildAllowedBucketsFromFilterGroup(
   filters?.maritalStatus,
   MARITAL_STATUS_BUCKETS,
@@ -177,8 +214,9 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     roleBuckets,
     {
       source: 'searchKey/users',
+      allBuckets: ROLE_BUCKETS,
       ...getFilterGroupDebugState('userRole', roleFilters),
-      ...buildExcludeBucketMeta({ group: roleFilters, allBuckets: ROLE_BUCKETS, bucketMap: { no: 'empty', '?': 'other' }, allowedBuckets: roleBuckets }),
+      ...buildExcludeBucketMeta({ group: roleFilters, allBuckets: ROLE_BUCKETS, bucketMap: ROLE_BUCKET_FILTER_KEYS, allowedBuckets: roleBuckets }),
     }
   );
   const maritalStatusBuckets = buildMaritalStatusBuckets(filters);
@@ -188,6 +226,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     maritalStatusBuckets,
     {
       source: 'searchKey/users',
+      allBuckets: MARITAL_STATUS_BUCKETS,
       ...getFilterGroupDebugState('maritalStatus', filters?.maritalStatus),
       ...buildExcludeBucketMeta({ group: filters?.maritalStatus, allBuckets: MARITAL_STATUS_BUCKETS, bucketMap: MARITAL_STATUS_BUCKET_MAP, allowedBuckets: maritalStatusBuckets }),
     }
@@ -199,6 +238,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     bloodBuckets,
     {
       source: 'searchKey/users',
+      allBuckets: BLOOD_BUCKETS,
       ...getFilterGroupDebugState('bloodGroup+rh', {
         ...(filters?.bloodGroup || {}),
         ...(filters?.rh ? Object.fromEntries(Object.entries(filters.rh).map(([key, value]) => [`rh:${key}`, value])) : {}),
@@ -223,6 +263,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     csectionBuckets,
     {
       source: 'searchKey/users',
+      allBuckets: CSECTION_BUCKETS,
       ...getFilterGroupDebugState('csection', filters?.csection),
       ...buildExcludeBucketMeta({ group: filters?.csection, allBuckets: CSECTION_BUCKETS, allowedBuckets: csectionBuckets }),
     }
@@ -234,6 +275,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     contactBuckets,
     {
       source: 'searchKey/users',
+      allBuckets: CONTACT_BUCKETS,
       ...getFilterGroupDebugState('contact', filters?.contact),
       ...buildExcludeBucketMeta({ group: filters?.contact, allBuckets: CONTACT_BUCKETS, allowedBuckets: contactBuckets }),
     }
@@ -245,6 +287,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     userIdBuckets,
     {
       source: 'searchKey/users',
+      allBuckets: USER_ID_BUCKETS,
       ...getFilterGroupDebugState('userId', filters?.userId),
       ...buildExcludeBucketMeta({ group: filters?.userId, allBuckets: USER_ID_BUCKETS, allowedBuckets: userIdBuckets }),
     }
@@ -256,8 +299,32 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     fieldBuckets,
     {
       source: 'searchKey/users',
+      allBuckets: FIELD_COUNT_BUCKETS,
       ...getFilterGroupDebugState('fields', filters?.fields),
       ...buildExcludeBucketMeta({ group: filters?.fields, allBuckets: FIELD_COUNT_BUCKETS, allowedBuckets: fieldBuckets }),
+    }
+  );
+
+  const bmiBuckets = selectSearchKeyBuckets(filters?.bmi, BMI_SEARCH_KEY_BUCKETS);
+  addGroup(
+    groups,
+    'bmi',
+    bmiBuckets,
+    {
+      source: 'searchKey/users',
+      allBuckets: BMI_SEARCH_KEY_BUCKETS,
+      ...getFilterGroupDebugState('bmi', filters?.bmi),
+    }
+  );
+  const countryBuckets = selectSearchKeyBuckets(filters?.country, COUNTRY_SEARCH_KEY_BUCKETS);
+  addGroup(
+    groups,
+    'country',
+    countryBuckets,
+    {
+      source: 'searchKey/users',
+      allBuckets: COUNTRY_SEARCH_KEY_BUCKETS,
+      ...getFilterGroupDebugState('country', filters?.country),
     }
   );
 
@@ -269,8 +336,9 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
       imtBuckets,
       {
         source: 'searchKey/users',
+        allBuckets: IMT_BUCKETS,
         ...getFilterGroupDebugState('imt', filters?.imt),
-        ...buildExcludeBucketMeta({ group: filters?.imt, allBuckets: IMT_BUCKETS, bucketMap: { other: '?' }, allowedBuckets: imtBuckets }),
+        ...buildExcludeBucketMeta({ group: filters?.imt, allBuckets: IMT_BUCKETS, bucketMap: IMT_BUCKET_FILTER_KEYS, allowedBuckets: imtBuckets }),
       }
     );
   }
@@ -285,6 +353,21 @@ const collectIdsFromValue = value => {
 
 const readBucketIds = async ({ rootPath, indexName, values }) => {
   if (indexName === FIELD_COUNT_SEARCH_KEY_INDEX_NAME && hasFieldCountRangeBuckets(values)) {
+    // The rebuilt index stores the four range buckets, so the ranges asked for can be
+    // read one node at a time. A legacy index stores one node per filled-field count
+    // and has to be scanned whole; fall back to that only when no range node exists.
+    const rangeSnapshots = await Promise.all(
+      values.map(value => get(ref(database, `${rootPath}/${indexName}/${value}`))),
+    );
+    if (rangeSnapshots.some(snapshot => snapshot.exists())) {
+      const rangeIds = new Set();
+      rangeSnapshots.forEach(snapshot => {
+        if (!snapshot.exists()) return;
+        collectIdsFromValue(snapshot.val()).forEach(id => rangeIds.add(id));
+      });
+      return rangeIds;
+    }
+
     const snapshot = await get(ref(database, `${rootPath}/${indexName}`));
     return snapshot.exists()
       ? collectFieldCountIdsFromIndexNode(snapshot.val(), values)
@@ -300,16 +383,94 @@ const readBucketIds = async ({ rootPath, indexName, values }) => {
   return ids;
 };
 
+// Can this group produce a candidate list on its own? 'include' names buckets and
+// 'range' queries birth dates; 'exclude' and 'defer' can only reject. Knowing this
+// up front lets a plan made purely of rejections skip its reads entirely.
+const canGroupNameCandidates = group => canSearchKeyPlanNameCandidates(group?.readMode || 'include');
+
+const invertOneGroupToNameCandidates = groups => {
+  const invertible = groups
+    .filter(group => group?.canInvertRead && group.includeBuckets?.length)
+    .sort((a, b) => a.includeBuckets.length - b.includeBuckets.length)[0];
+  if (!invertible) return groups;
+
+  return groups.map(group => (
+    group === invertible
+      ? { ...group, readMode: 'include', readBuckets: group.includeBuckets }
+      : group
+  ));
+};
+
+// A group read resolves to { mode, ids }: 'include' narrows the candidates down to
+// `ids`, 'exclude' only says which ids to drop. `null` means the group puts no
+// restriction on the index at all.
 const readMatchingUsersFilterIds = async ({ group, filters }) => {
-  if (group?.indexName === 'age') {
+  const readMode = group?.readMode || 'include';
+  if (readMode === 'none' || readMode === 'defer') return null;
+
+  if (readMode === 'range') {
     // searchKey/users/age is stored by backend birth-date keys (d_YYYY-MM-DD),
     // while matching UI/frontend still uses buckets such as le21/22_25/26_30.
     // Reuse the shared date-range reader so wide age filters page through the
     // real backend date index instead of looking for non-existent bucket nodes.
-    return collectAgeIdsByFilters(filters?.age, [MATCHING_USERS_INDEX_ROOT]);
+    if (group?.indexName !== 'age') return null;
+    const ageIds = await collectAgeIdsByFilters(filters?.age, [MATCHING_USERS_INDEX_ROOT], {
+      includeUnofferedBuckets: true,
+    });
+    return ageIds instanceof Set ? { mode: 'include', ids: ageIds } : null;
   }
 
-  return readBucketIds({ rootPath: MATCHING_USERS_INDEX_ROOT, ...group });
+  const buckets = group?.readBuckets || [];
+  if (!buckets.length) return null;
+
+  const ids = await readBucketIds({
+    rootPath: MATCHING_USERS_INDEX_ROOT,
+    indexName: group.indexName,
+    values: buckets,
+  });
+
+  return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids };
+};
+
+// The least-filled bucket of the field-count index. A card with nothing on record
+// is in no other index at all, so this is the one place it can be recognised
+// without hydrating it.
+export const SPARSE_CARD_FIELD_BUCKET = FIELD_COUNT_SEARCH_KEY_BUCKETS[0];
+
+/**
+ * Keep the near-empty cards, but put them at the end.
+ *
+ * They must not drop out of the deck - a reader who has not switched off "?" asked
+ * to see cards with nothing on record, and losing them silently is the failure this
+ * whole index rework is about. They are also not what anyone is scrolling for, so
+ * they sort behind everything that has data, once, over the whole candidate list
+ * rather than per page, so pagination inherits the order.
+ *
+ * One bucket read, cached like every other searchKey read.
+ */
+const orderSparseCardsLast = async (ids, rootPath) => {
+  if (!Array.isArray(ids) || ids.length < 2) return ids;
+
+  const path = `${rootPath}/${FIELD_COUNT_SEARCH_KEY_INDEX_NAME}/${SPARSE_CARD_FIELD_BUCKET}`;
+  let sparseIds = null;
+  try {
+    const payload = await getCachedSearchKeyPayload(path, async () => {
+      const snapshot = await get(ref(database, path));
+      return { exists: snapshot.exists(), value: snapshot.exists() ? snapshot.val() || {} : null };
+    });
+    sparseIds = payload?.exists ? new Set(Object.keys(payload.value || {})) : null;
+  } catch (error) {
+    // Ordering is a nicety; never fail a page over it.
+    console.warn('[Matching][indexedProvider] could not read the sparse-card bucket', { path, error });
+    return ids;
+  }
+
+  if (!sparseIds?.size) return ids;
+
+  const withData = [];
+  const nearlyEmpty = [];
+  ids.forEach(id => (sparseIds.has(id) ? nearlyEmpty : withData).push(id));
+  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : ids;
 };
 
 const intersectIdSets = sets => {
@@ -321,6 +482,28 @@ const intersectIdSets = sets => {
   return [...smallest]
     .filter(id => rest.every(set => set.has(id)))
     .sort((a, b) => a.localeCompare(b));
+};
+
+/**
+ * Fold the per-group reads into one candidate list.
+ *
+ * Exclusions can only be subtracted from something, so a plan made purely of them
+ * returns null: the caller then pages the deck itself and lets the hydrated-card
+ * post-filter do the rejecting, which is what the exclusion would have cost anyway.
+ */
+const combineFilterGroupIds = results => {
+  const includeSets = (results || [])
+    .filter(result => result?.mode === 'include' && result.ids instanceof Set)
+    .map(result => result.ids);
+  const excludeSets = (results || [])
+    .filter(result => result?.mode === 'exclude' && result.ids instanceof Set)
+    .map(result => result.ids);
+
+  const baseIds = intersectIdSets(includeSets);
+  if (!baseIds) return null;
+  if (!excludeSets.length) return baseIds;
+
+  return baseIds.filter(id => !excludeSets.some(set => set.has(id)));
 };
 
 const normalizeSignatureValue = value => {
@@ -557,12 +740,44 @@ export const fetchMatchingIndexedCandidates = async ({
     return { usedIndex: false, userIds: [], users: [], nextOffset: safeOffset, hasMore: true, filterGroups };
   }
 
+  // Every active group is an exclusion (typically because the reader kept the
+  // "?"/unfilled cards), so the index can only reject candidates, never name them.
+  // Hand the deck back to source pagination rather than read the bulk buckets to
+  // reconstruct a list the post-filter would rebuild anyway.
+  const deferToSourcePagination = () => {
+    console.info('[Matching][indexedProvider] no include-mode filter group, deferring to source pagination', {
+      cacheKey,
+      groups: filterGroups.map(group => ({ indexName: group.indexName, readMode: group.readMode })),
+    });
+    return {
+      usedIndex: false,
+      userIds: [],
+      users: [],
+      nextOffset: safeOffset,
+      hasMore: false,
+      filterGroups,
+      reason: 'exclude-only-index-plan',
+    };
+  };
+
+  // Inverting a read is only worth it when something else names the candidates. With
+  // nothing to subtract from, flip the cheapest invertible group back to a forward
+  // read rather than hand the whole deck to source pagination.
+  const plannedGroups = filterGroups.some(canGroupNameCandidates)
+    ? filterGroups
+    : invertOneGroupToNameCandidates(filterGroups);
+
+  if (!plannedGroups.some(canGroupNameCandidates)) return deferToSourcePagination();
+
   const idSets = await Promise.all(
-    filterGroups.map(group => readMatchingUsersFilterIds({ group, filters }))
+    plannedGroups.map(group => readMatchingUsersFilterIds({ group, filters }))
   );
-  const allMatchingIds = intersectIdSets(idSets) || [];
-  const ageDateRangeIdsCount = filterGroups.some(group => group.indexName === 'age')
-    ? (idSets[filterGroups.findIndex(group => group.indexName === 'age')]?.size || 0)
+  const combinedIds = combineFilterGroupIds(idSets);
+  if (!combinedIds) return deferToSourcePagination();
+  const allMatchingIds = await orderSparseCardsLast(combinedIds, MATCHING_USERS_INDEX_ROOT);
+  const ageGroupIndex = filterGroups.findIndex(group => group.indexName === 'age');
+  const ageDateRangeIdsCount = ageGroupIndex >= 0
+    ? (idSets[ageGroupIndex]?.ids?.size || 0)
     : null;
   if (useIndexIdCache) {
     setIndexIdsForQuery(cacheKey, allMatchingIds, {
@@ -589,7 +804,7 @@ export const fetchMatchingIndexedCandidates = async ({
     users,
     nextOffset,
     hasMore,
-    filterGroups,
+    filterGroups: plannedGroups,
     usedAgeDateRangeReader: ageDateRangeIdsCount !== null,
     ageDateRangeIdsCount,
   };
@@ -610,7 +825,7 @@ export const isSameMatchingCursor = (a, b) => {
   return a.date === b.date && a.userId === b.userId;
 };
 
-const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age'];
+const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age', 'bmi', 'country'];
 
 export const isMatchingFilterGroupActive = group =>
   group && typeof group === 'object' && Object.values(group).some(v => !v);
@@ -762,31 +977,10 @@ const toAgeCategory = user => {
   return 'other';
 };
 
-const toBmiCategory = user => {
-  const directNumericBmi = Number(
-    String(user?.bmi ?? user?.imt ?? '')
-      .replace(',', '.')
-      .trim()
-  );
+// Same rule the index writer uses, so the two can never disagree on a boundary.
+const toBmiCategory = user => resolveBmiBucket(user);
 
-  let bmi = Number.isFinite(directNumericBmi) && directNumericBmi > 0
-    ? directNumericBmi
-    : null;
-
-  if (bmi === null) {
-    const height = Number(String(user?.height || '').replace(',', '.').trim());
-    const weight = Number(String(user?.weight || '').replace(',', '.').trim());
-    if (Number.isFinite(height) && Number.isFinite(weight) && height > 0 && weight > 0) {
-      bmi = weight / Math.pow(height / 100, 2);
-    }
-  }
-
-  if (!Number.isFinite(bmi) || bmi <= 0) return 'other';
-  if (bmi < 18.5) return 'lt18_5';
-  if (bmi <= 24.9) return '18_5_24_9';
-  if (bmi <= 29.9) return '25_29_9';
-  return '30_plus';
-};
+const toCountryCategory = user => resolveCountryBucket(user);
 
 export const getMatchingFiltersWithoutSearchKeyGroups = filters => {
   const base = { ...(filters || {}) };
@@ -834,6 +1028,11 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     if (isMatchingFilterGroupActive(activeFilters.bmi)) {
       const category = toBmiCategory(user);
       if (!activeFilters.bmi[category]) return false;
+    }
+
+    if (isMatchingFilterGroupActive(activeFilters.country)) {
+      const category = toCountryCategory(user);
+      if (!activeFilters.country[category]) return false;
     }
 
     return true;
@@ -994,6 +1193,21 @@ const getFilterMainInputsForMatchingView = ({
   };
 };
 
+/**
+ * Cards with almost nothing on record go to the end of whatever list is rendered.
+ *
+ * This is the same promise the indexed provider makes about the candidate ids, kept
+ * here as well so it also holds for the decks the index does not drive: source
+ * pagination, the newUsers deck and the reaction tabs. It is a stable partition, so
+ * the order the deck chose is untouched apart from moving those cards down.
+ */
+const orderSparseUsersLast = users => {
+  const withData = [];
+  const nearlyEmpty = [];
+  users.forEach(user => (isSparseProfile(user) ? nearlyEmpty : withData).push(user));
+  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : users;
+};
+
 export const applyMatchingUiFiltersToUsers = ({
   users,
   filters,
@@ -1016,8 +1230,15 @@ export const applyMatchingUiFiltersToUsers = ({
     viewMode,
   });
 
+  // The five searchKey groups are stripped out of filterMain's settings, so nothing
+  // else applies them: the index is their only enforcement - until it defers, which
+  // it now does whenever a selection keeps the cards with nothing on record. Running
+  // the twin post-filter here makes the deck correct either way. It costs nothing
+  // when the index did narrow: it keeps exactly what the index would have kept.
+  const searchKeyFilteredUsers = applyMatchingSearchKeyFilters(users, filters, roleIndexSets);
+
   const baseUsers = filterMainFn(
-    users.map(u => [u.userId, u]),
+    searchKeyFilteredUsers.map(u => [u.userId, u]),
     null,
     filterMainFilters,
     filterMainFavoriteUsers,
@@ -1039,7 +1260,7 @@ export const applyMatchingUiFiltersToUsers = ({
       isAllowedIdForMatchingCollection(u.userId, collectionSource)
     ));
 
-  return baseUsers;
+  return orderSparseUsersLast(baseUsers);
 };
 
 export const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {

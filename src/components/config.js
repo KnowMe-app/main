@@ -45,6 +45,16 @@ import {
   shouldSkipBroadFallbackForExactSearchId,
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
+import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
+import {
+  AGE_BUCKET_FILTER_KEYS,
+  SEARCH_KEY_EMPTY_BUCKET,
+  resolveBmiBucket,
+  resolveCountryBucket,
+  isBucketSelectedByFilterGroup,
+  planSearchKeyBucketRead,
+  withoutEmptySearchKeyBucket,
+} from '../utils/searchKeyBuckets';
 import { searchByIndexOn } from './searchByIndexOn';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { isLongFormatUserId, mergeUserCollectionData } from '../utils/mergeUserCollections';
@@ -145,6 +155,8 @@ const REACTION_SEARCH_KEY_INDEX = 'reaction';
 const FIELD_COUNT_SEARCH_KEY_INDEX = 'fields';
 const LAST_ACTION_SEARCH_KEY_INDEX = 'lastAction';
 const GET_IN_TOUCH_SEARCH_KEY_INDEX = 'getInTouch';
+const BMI_SEARCH_KEY_INDEX = 'bmi';
+const COUNTRY_SEARCH_KEY_INDEX = 'country';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -161,6 +173,8 @@ const SEARCH_KEY_INDEX_TYPES = {
   fieldCount: FIELD_COUNT_SEARCH_KEY_INDEX,
   lastAction: LAST_ACTION_SEARCH_KEY_INDEX,
   getInTouch: GET_IN_TOUCH_SEARCH_KEY_INDEX,
+  bmi: BMI_SEARCH_KEY_INDEX,
+  country: COUNTRY_SEARCH_KEY_INDEX,
 };
 
 const getSearchIndexCacheStorage = () => {
@@ -3893,13 +3907,24 @@ const getWeightIndexSet = data => {
   return normalizeMetricIndexValues(data.weight);
 };
 
-const normalizeFieldCountSearchKeyIndexValue = data => {
-  if (!data || typeof data !== 'object') return '0';
-  return String(Object.keys(data).length);
-};
+// Stored as one of four range buckets rather than the raw count: a filter then reads
+// the ranges it asked for instead of the whole node, and the index stops producing
+// numeric keys that RTDB hands back as a sparse array.
+const normalizeFieldCountSearchKeyIndexValue = data => resolveProfileFieldCountBucket(data);
 
 const getFieldCountIndexSet = data => {
   return new Set([normalizeFieldCountSearchKeyIndexValue(data)]);
+};
+
+// BMI and country are derived, not stored, so both sides use the shared resolver.
+const getBmiIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([resolveBmiBucket(data)]);
+};
+
+const getCountryIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([resolveCountryBucket(data)]);
 };
 
 export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
@@ -4053,14 +4078,6 @@ const getBloodBucketMeta = bucket => {
 
 const hasExplicitFilterSelection = filterMap =>
   Boolean(filterMap && typeof filterMap === 'object' && Object.values(filterMap).some(value => value === false));
-
-const bucketGroupExcludesNo = group => {
-  if (!group?.allBuckets?.map(String).includes('no')) return false;
-  const buckets = Array.isArray(group?.buckets) ? group.buckets.map(String) : [];
-  return buckets.length > 0 && !buckets.includes('no');
-};
-
-const isNoExcludingSearchKeyPointGroup = group => Boolean(group?.supportsPointCheck && bucketGroupExcludesNo(group));
 
 const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
   const { bloodGroup, rh } = getBloodBucketMeta(bucket);
@@ -4324,11 +4341,34 @@ const collectIdsFromAgeSnapshot = (snapshot, idSet) => {
   });
 };
 
-export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
+// `includeUnofferedBuckets` reconciles the index with the drawer: Matching has no
+// "no" checkbox for age, and its post-filter counts a profile without a birth date
+// as "?", so the `no` bucket has to follow the "?" option instead of being dropped.
+export const collectAgeIdsByFilters = async (
+  ageFilters,
+  rootPaths = [SEARCH_KEY_INDEX_ROOT],
+  { includeUnofferedBuckets = false, emptyBucketStored = false } = {},
+) => {
   const shouldApplyAge = hasExplicitFilterSelection(ageFilters);
   if (!shouldApplyAge) return null;
 
   const selected = key => Boolean(ageFilters?.[key]);
+
+  const specialBucketSelected = bucket => {
+    if (includeUnofferedBuckets) {
+      return isBucketSelectedByFilterGroup(ageFilters, bucket, { bucketMap: AGE_BUCKET_FILTER_KEYS });
+    }
+    return bucket === '?' ? selected('other') || selected('?') : selected('empty') || selected('no');
+  };
+
+  // Profiles without a birth date are not in the searchKey index at all, so a
+  // selection that keeps them cannot be answered by reading buckets. Say so instead
+  // of returning a set that quietly omits them - the caller falls back to its own
+  // filtering. searchKeySets are the exception: they do materialise `no`, because an
+  // access rule naming it has to be answered positively, never widened.
+  const wantsEmptyBucket = specialBucketSelected(SEARCH_KEY_EMPTY_BUCKET);
+  if (wantsEmptyBucket && !emptyBucketStored) return null;
+
   const ageIds = new Set();
   const requests = [];
 
@@ -4359,6 +4399,7 @@ export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY
     { keys: ['31_33'], range: { minAge: 31, maxAge: 33 } },
     { keys: ['34_36'], range: { minAge: 34, maxAge: 36 } },
     { keys: ['37_42'], range: { minAge: 37, maxAge: 42 } },
+    { keys: ['37_plus'], range: { minAge: 37 } },
     { keys: ['43_plus'], range: { minAge: 43 } },
   ];
 
@@ -4393,8 +4434,10 @@ export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY
       addRangeRequest(getBirthDateRangeByAge({ minAge: ageValue, maxAge: ageValue }), rootPath);
     });
 
-    if (selected('other') || selected('?')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
-    if (selected('empty') || selected('no')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/no`)));
+    if (specialBucketSelected('?')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
+    if (wantsEmptyBucket) {
+      requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/${SEARCH_KEY_EMPTY_BUCKET}`)));
+    }
   });
 
   const snapshots = await Promise.all(requests);
@@ -4418,6 +4461,8 @@ const collectImtIdsByFilters = async (imtFilters, rootPaths = [SEARCH_KEY_INDEX_
   if (!shouldApplyImt) return null;
 
   const selected = key => Boolean(imtFilters?.[key]);
+  // Cards with no anthropometry are absent from the index, not in a `no` bucket.
+  if (selected('no') || selected('empty')) return null;
   const imtIds = new Set();
   const requests = [];
 
@@ -4427,7 +4472,6 @@ const collectImtIdsByFilters = async (imtFilters, rootPaths = [SEARCH_KEY_INDEX_
     if (selected('32_35')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/32_35`)));
     if (selected('36_plus')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/36_plus`)));
     if (selected('other')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/?`)));
-    if (selected('no')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/no`)));
   });
 
   const snapshots = await Promise.all(requests);
@@ -4458,6 +4502,7 @@ const collectHeightIdsByFilters = async (heightFilters, rootPaths = [SEARCH_KEY_
     .map(([bucket]) => bucket);
 
   if (selectedBuckets.length === 0) return new Set();
+  if (selectedBuckets.includes('no') || selectedBuckets.includes('empty')) return null;
 
   const selectedSet = new Set(selectedBuckets);
   const heightIds = new Set();
@@ -4525,6 +4570,8 @@ const collectReactionIdsByFilters = async (
 ) => {
   const shouldApplyReaction = hasExplicitFilterSelection(reactionFilters);
   if (!shouldApplyReaction) return null;
+  // `none` means no getInTouch on record, which the index expresses by absence.
+  if (reactionFilters?.none) return null;
 
   const selected = key => Boolean(reactionFilters?.[key]);
   const reactionIds = new Set();
@@ -4560,7 +4607,6 @@ const collectReactionIdsByFilters = async (
       addRangeRequest({ startKey: todayKey, endKey: `${AGE_DATE_PREFIX}9999-12-31` }, rootPath);
     }
     if (selected('question')) addBucketRequest('?', rootPath);
-    if (selected('none')) addBucketRequest('no', rootPath);
   });
 
   const snapshots = await Promise.all(requests);
@@ -4609,9 +4655,31 @@ const collectReactionIdsByFilters = async (
 };
 /* eslint-enable no-unused-vars */
 
+// One root per collection, resolved here so no call site can put a users-collection
+// profile into the shared newUsers root - which is how 1300+ ids ended up indexed
+// twice and the users index ended up covering a quarter of its own collection.
+export const resolveSearchKeyRootForCollection = collection =>
+  (collection === 'users' ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);
+
+// A users-collection key is a Firebase uid; newUsers keys are short editorial ids.
+export const isUsersCollectionUserId = userId => String(userId || '').trim().length >= 20;
+
+export const resolveSearchKeyRootForUserId = userId =>
+  (isUsersCollectionUserId(userId) ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);
+
 const resolveSearchKeyLeafPath = (rootPath, indexName, value, userId) => {
-  const safeRootPath = rootPath || SEARCH_KEY_INDEX_ROOT;
+  const safeRootPath = rootPath || resolveSearchKeyRootForUserId(userId);
   return `${safeRootPath}/${indexName}/${value}/${userId}`;
+};
+
+// A rebuild replaces an index, it does not merge into it: without this the `no`
+// buckets and the legacy numeric `fields` nodes would survive every reindex.
+const resetSearchKeyIndexNodes = async (searchKeyRoot, indexNames = []) => {
+  await Promise.all(
+    [...new Set(indexNames.filter(Boolean))].map(indexName =>
+      remove(ref2(database, `${searchKeyRoot}/${indexName}`)),
+    ),
+  );
 };
 
 const updateSearchKeyLeaf = async (indexName, value, userId, action, options = {}) => {
@@ -4628,31 +4696,34 @@ const updateSearchKeyLeaf = async (indexName, value, userId, action, options = {
   }
 };
 
+// The `no` bucket is not written any more - "поле не заповнене" is the absence of
+// the id from the index. Only the *next* values are stripped, so the prev/next diff
+// below still removes a legacy `no` leaf the first time an old profile is saved.
 export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {}, options = {}) => {
   if (!userId) return;
   const updateLeaf = (indexName, value, action) =>
     updateSearchKeyLeaf(indexName, value, userId, action, options);
 
   const prevValues = getBloodIndexSet(prevData);
-  const nextValues = getBloodIndexSet(nextData);
+  const nextValues = withoutEmptySearchKeyBucket(getBloodIndexSet(nextData), BLOOD_SEARCH_KEY_INDEX);
   const prevMaritalStatusValues = getMaritalStatusIndexSet(prevData);
-  const nextMaritalStatusValues = getMaritalStatusIndexSet(nextData);
+  const nextMaritalStatusValues = withoutEmptySearchKeyBucket(getMaritalStatusIndexSet(nextData), MARITAL_STATUS_SEARCH_KEY_INDEX);
   const prevCsectionValues = getCsectionIndexSet(prevData);
-  const nextCsectionValues = getCsectionIndexSet(nextData);
+  const nextCsectionValues = withoutEmptySearchKeyBucket(getCsectionIndexSet(nextData), CSECTION_SEARCH_KEY_INDEX);
   const prevContactValues = getContactIndexSet(prevData);
   const nextContactValues = getContactIndexSet(nextData);
   const prevRoleValues = getRoleIndexSet(prevData);
-  const nextRoleValues = getRoleIndexSet(nextData);
+  const nextRoleValues = withoutEmptySearchKeyBucket(getRoleIndexSet(nextData), ROLE_SEARCH_KEY_INDEX);
   const prevUserIdValues = getUserIdIndexSet(userId);
   const nextUserIdValues = getUserIdIndexSet(nextData?.userId || userId);
   const prevAgeValues = getAgeIndexSet(prevData);
-  const nextAgeValues = getAgeIndexSet(nextData);
+  const nextAgeValues = withoutEmptySearchKeyBucket(getAgeIndexSet(nextData), AGE_SEARCH_KEY_INDEX);
   const prevImtValues = getImtIndexSet(prevData);
-  const nextImtValues = getImtIndexSet(nextData);
+  const nextImtValues = withoutEmptySearchKeyBucket(getImtIndexSet(nextData), IMT_SEARCH_KEY_INDEX);
   const prevHeightValues = getHeightIndexSet(prevData);
-  const nextHeightValues = getHeightIndexSet(nextData);
+  const nextHeightValues = withoutEmptySearchKeyBucket(getHeightIndexSet(nextData), HEIGHT_SEARCH_KEY_INDEX);
   const prevWeightValues = getWeightIndexSet(prevData);
-  const nextWeightValues = getWeightIndexSet(nextData);
+  const nextWeightValues = withoutEmptySearchKeyBucket(getWeightIndexSet(nextData), WEIGHT_SEARCH_KEY_INDEX);
 
   for (const value of prevValues) {
     if (!nextValues.has(value)) {
@@ -4795,7 +4866,7 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   }
 
   const prevReactionValues = getReactionIndexSet(prevData);
-  const nextReactionValues = getReactionIndexSet(nextData);
+  const nextReactionValues = withoutEmptySearchKeyBucket(getReactionIndexSet(nextData), REACTION_SEARCH_KEY_INDEX);
 
   for (const value of prevReactionValues) {
     if (!nextReactionValues.has(value)) {
@@ -4811,12 +4882,24 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     }
   }
 
-  const prevFieldCountValues = getFieldCountIndexSet(prevData);
+  // `fields` used to be keyed by the raw count; the prev/next diff below only knows
+  // range buckets, so the legacy numeric leaf is named explicitly and removed here.
+  const legacyFieldCountKey = prevData && typeof prevData === 'object'
+    ? String(Object.keys(prevData).length)
+    : null;
+  const prevFieldCountValues = new Set([
+    ...getFieldCountIndexSet(prevData),
+    ...(legacyFieldCountKey ? [legacyFieldCountKey] : []),
+  ]);
   const nextFieldCountValues = getFieldCountIndexSet(nextData);
   const prevLastActionValues = getLastActionIndexSet(prevData);
-  const nextLastActionValues = getLastActionIndexSet(nextData);
+  const nextLastActionValues = withoutEmptySearchKeyBucket(getLastActionIndexSet(nextData), LAST_ACTION_SEARCH_KEY_INDEX);
   const prevGetInTouchValues = getGetInTouchIndexSet(prevData);
-  const nextGetInTouchValues = getGetInTouchIndexSet(nextData);
+  const nextGetInTouchValues = withoutEmptySearchKeyBucket(getGetInTouchIndexSet(nextData), GET_IN_TOUCH_SEARCH_KEY_INDEX);
+  const prevBmiValues = getBmiIndexSet(prevData);
+  const nextBmiValues = withoutEmptySearchKeyBucket(getBmiIndexSet(nextData), BMI_SEARCH_KEY_INDEX);
+  const prevCountryValues = getCountryIndexSet(prevData);
+  const nextCountryValues = withoutEmptySearchKeyBucket(getCountryIndexSet(nextData), COUNTRY_SEARCH_KEY_INDEX);
 
   for (const value of prevFieldCountValues) {
     if (!nextFieldCountValues.has(value)) {
@@ -4859,14 +4942,46 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
       await updateLeaf(GET_IN_TOUCH_SEARCH_KEY_INDEX, value, 'add');
     }
   }
+
+  for (const value of prevBmiValues) {
+    if (!nextBmiValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(BMI_SEARCH_KEY_INDEX, value, 'remove');
+    }
+  }
+
+  for (const value of nextBmiValues) {
+    if (!prevBmiValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(BMI_SEARCH_KEY_INDEX, value, 'add');
+    }
+  }
+
+  for (const value of prevCountryValues) {
+    if (!nextCountryValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(COUNTRY_SEARCH_KEY_INDEX, value, 'remove');
+    }
+  }
+
+  for (const value of nextCountryValues) {
+    if (!prevCountryValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(COUNTRY_SEARCH_KEY_INDEX, value, 'add');
+    }
+  }
 };
 
 export const createSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [BLOOD_SEARCH_KEY_INDEX]);
 
   for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
     const batchIds = userIds.slice(i, i + BATCH_SIZE);
@@ -4875,10 +4990,10 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress, o
     await Promise.all(
       batchIds.map(async userId => {
         const user = usersData[userId] || {};
-        const bloodValues = getBloodIndexSet(user);
+        const bloodValues = withoutEmptySearchKeyBucket(getBloodIndexSet(user), BLOOD_SEARCH_KEY_INDEX);
         await Promise.all(
           [...bloodValues].map(value =>
-            updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add', options)
+            updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add', { ...options, rootPath: searchKeyRoot })
           )
         );
       })
@@ -4909,11 +5024,13 @@ const uploadChunkedSearchKeyIndexUpdates = async (userIds, totalUsers, buildUpda
 export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [MARITAL_STATUS_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -4921,7 +5038,7 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const maritalStatusValues = getMaritalStatusIndexSet(user);
+        const maritalStatusValues = withoutEmptySearchKeyBucket(getMaritalStatusIndexSet(user), MARITAL_STATUS_SEARCH_KEY_INDEX);
         maritalStatusValues.forEach(maritalStatusValue => {
           acc[`${searchKeyRoot}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
         });
@@ -4934,11 +5051,13 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
 export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [CSECTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -4946,7 +5065,7 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const csectionValues = getCsectionIndexSet(user);
+        const csectionValues = withoutEmptySearchKeyBucket(getCsectionIndexSet(user), CSECTION_SEARCH_KEY_INDEX);
         csectionValues.forEach(csectionValue => {
           acc[`${searchKeyRoot}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
         });
@@ -4959,11 +5078,13 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
 export const createContactSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [CONTACT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -4984,11 +5105,13 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
 export const createRoleSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [ROLE_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -4996,7 +5119,7 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const roleValues = getRoleIndexSet(user);
+        const roleValues = withoutEmptySearchKeyBucket(getRoleIndexSet(user), ROLE_SEARCH_KEY_INDEX);
         roleValues.forEach(roleValue => {
           acc[`${searchKeyRoot}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
         });
@@ -5009,11 +5132,13 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
 export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [USER_ID_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5034,11 +5159,13 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
 export const createAgeSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [AGE_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5046,7 +5173,7 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const ageValues = getAgeIndexSet(user);
+        const ageValues = withoutEmptySearchKeyBucket(getAgeIndexSet(user), AGE_SEARCH_KEY_INDEX);
         ageValues.forEach(ageValue => {
           acc[`${searchKeyRoot}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
         });
@@ -5059,11 +5186,13 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
 export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [IMT_SEARCH_KEY_INDEX, HEIGHT_SEARCH_KEY_INDEX, WEIGHT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5071,9 +5200,9 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const imtValues = getImtIndexSet(user);
-        const heightValues = normalizeMetricIndexValues(user.height);
-        const weightValues = normalizeMetricIndexValues(user.weight);
+        const imtValues = withoutEmptySearchKeyBucket(getImtIndexSet(user), IMT_SEARCH_KEY_INDEX);
+        const heightValues = withoutEmptySearchKeyBucket(normalizeMetricIndexValues(user.height), HEIGHT_SEARCH_KEY_INDEX);
+        const weightValues = withoutEmptySearchKeyBucket(normalizeMetricIndexValues(user.weight), WEIGHT_SEARCH_KEY_INDEX);
         imtValues.forEach(imtValue => {
           acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
         });
@@ -5092,11 +5221,13 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
 export const createReactionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [REACTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5104,7 +5235,7 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const reactionValues = getReactionIndexSet(user);
+        const reactionValues = withoutEmptySearchKeyBucket(getReactionIndexSet(user), REACTION_SEARCH_KEY_INDEX);
         reactionValues.forEach(reactionValue => {
           acc[`${searchKeyRoot}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
         });
@@ -5117,11 +5248,13 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
 export const createFieldCountSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [FIELD_COUNT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5138,9 +5271,40 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
 };
 
 
+const createDerivedSearchKeyIndexInCollection = async (collection, indexName, getIndexSet, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  if (!usersData) return;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [indexName]);
+
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        withoutEmptySearchKeyBucket(getIndexSet(user), indexName).forEach(value => {
+          acc[`${searchKeyRoot}/${indexName}/${value}/${userId}`] = true;
+        });
+        return acc;
+      }, {}),
+    onProgress
+  );
+};
+
+export const createBmiSearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
+  createDerivedSearchKeyIndexInCollection(collection, BMI_SEARCH_KEY_INDEX, getBmiIndexSet, onProgress, options);
+
+export const createCountrySearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
+  createDerivedSearchKeyIndexInCollection(collection, COUNTRY_SEARCH_KEY_INDEX, getCountryIndexSet, onProgress, options);
+
 export const createLastActionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
-  if (collection !== 'newUsers' && searchKeyRoot === SEARCH_KEY_INDEX_ROOT) return;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
@@ -5148,9 +5312,7 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  if (searchKeyRoot === SEARCH_KEY_INDEX_ROOT) {
-    await remove(ref2(database, `${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}`));
-  }
+  await resetSearchKeyIndexNodes(searchKeyRoot, [LAST_ACTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5159,6 +5321,7 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         const bucket = normalizeLastActionSearchKeyBucket(user.lastAction);
+        if (bucket === SEARCH_KEY_EMPTY_BUCKET) return acc;
         acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
         return acc;
       }, {}),
@@ -5168,8 +5331,7 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
 
 
 export const createGetInTouchSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
-  if (collection !== 'newUsers' && searchKeyRoot === SEARCH_KEY_INDEX_ROOT) return;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
@@ -5177,9 +5339,7 @@ export const createGetInTouchSearchKeyIndexInCollection = async (collection, onP
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  if (searchKeyRoot === SEARCH_KEY_INDEX_ROOT) {
-    await remove(ref2(database, `${searchKeyRoot}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}`));
-  }
+  await resetSearchKeyIndexNodes(searchKeyRoot, [GET_IN_TOUCH_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5188,6 +5348,7 @@ export const createGetInTouchSearchKeyIndexInCollection = async (collection, onP
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         const bucket = normalizeDateSearchKeyBucket(user.getInTouch);
+        if (bucket === SEARCH_KEY_EMPTY_BUCKET) return acc;
         acc[`${searchKeyRoot}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
         return acc;
       }, {}),
@@ -5219,6 +5380,8 @@ const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.getInTouch]: createGetInTouchSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.bmi]: createBmiSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.country]: createCountrySearchKeyIndexInCollection,
 };
 
 export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress, options = {}) => {
@@ -5390,8 +5553,6 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
 const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
 const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 12;
 const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 25;
-const SEARCH_KEY_BROAD_POINT_CHECK_MIN_BUCKETS = 3;
-const SEARCH_KEY_BROAD_POINT_CHECK_RATIO = 0.65;
 
 const getTodaySearchKeyDateBucket = () => {
   const today = new Date();
@@ -5519,6 +5680,9 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
 };
 
 
+// The getInTouch deck pages both collections at once, so its bulk reads span both
+// roots. Per-card checks must not: they resolve the one root that can hold the id
+// (see resolveSearchKeyRootForUserId) instead of asking both and paying twice.
 const SEARCH_KEY_INDEXED_ROOT_PATHS = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
 
 const collectIdsFromSearchKeyBucketSnapshot = (snapshot, idSet) => {
@@ -5580,6 +5744,18 @@ const getSelectedImtSearchKeyBuckets = imtFilters => {
   return selectedBuckets.map(bucket => (bucket === 'other' ? '?' : bucket));
 };
 
+// A group carries the plan that says how to reach the index for it, so the point
+// check and the bulk read agree on which buckets to touch and what a hit means.
+const withSearchKeyReadPlan = group => {
+  if (!group?.indexName) return group;
+  const plan = planSearchKeyBucketRead({
+    indexName: group.indexName,
+    allBuckets: group.allBuckets || group.buckets,
+    selectedBuckets: group.buckets,
+  });
+  return { ...group, readMode: plan.mode, readBuckets: plan.buckets };
+};
+
 const createPointCheckSearchKeyGroup = ({
   filterSettings,
   filterName,
@@ -5592,14 +5768,14 @@ const createPointCheckSearchKeyGroup = ({
     .filter(bucket => isAllowedByFilters(bucket, filterSettings))
     .map(String);
 
-  return {
+  return withSearchKeyReadPlan({
     key: filterName,
     indexName,
     buckets: selectedBuckets,
     allBuckets: (buckets || []).map(String),
     supportsPointCheck: true,
     readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName, buckets: selectedBuckets, debugLog }),
-  };
+  });
 };
 
 const getWeightFilterBucket = weightValue => {
@@ -5619,6 +5795,7 @@ const collectWeightIdsByFilters = async (weightFilters, rootPaths = SEARCH_KEY_I
     .map(([bucket]) => bucket);
 
   if (selectedBuckets.length === 0) return new Set();
+  if (selectedBuckets.includes('no') || selectedBuckets.includes('empty')) return null;
 
   const selectedSet = new Set(selectedBuckets);
   const weightIds = new Set();
@@ -5647,6 +5824,8 @@ const collectWeightIdsByFilters = async (weightFilters, rootPaths = SEARCH_KEY_I
 const collectLastActionIdsByFilters = async (lastActionFilters, rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS) => {
   const shouldApplyLastAction = hasExplicitFilterSelection(lastActionFilters);
   if (!shouldApplyLastAction) return null;
+  // Cards that never acted are absent from the index, not in a `no` bucket.
+  if (lastActionFilters?.no || lastActionFilters?.empty) return null;
 
   const selected = key => Boolean(lastActionFilters?.[key]);
   const lastActionIds = new Set();
@@ -5689,7 +5868,6 @@ const collectLastActionIdsByFilters = async (lastActionFilters, rootPaths = SEAR
     if (selected('last7days')) addRangeRequest(7, rootPath);
     if (selected('last14days')) addRangeRequest(14, rootPath);
     if (selected('last30days')) addRangeRequest(30, rootPath);
-    if (selected('no')) requests.push(get(ref2(database, `${rootPath}/${LAST_ACTION_SEARCH_KEY_INDEX}/no`)));
     if (selected('?')) requests.push(get(ref2(database, `${rootPath}/${LAST_ACTION_SEARCH_KEY_INDEX}/?`)));
   });
 
@@ -5739,14 +5917,14 @@ export const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favorite
 
   if (hasExplicitFilterSelection(filterSettings?.bloodGroup) || hasExplicitFilterSelection(filterSettings?.rh)) {
     const bloodBuckets = BLOOD_SEARCH_KEY_BUCKETS.filter(bucket => isBucketAllowedByFilters(bucket, filterSettings));
-    groups.push({
+    groups.push(withSearchKeyReadPlan({
       key: 'blood',
       indexName: BLOOD_SEARCH_KEY_INDEX,
       buckets: bloodBuckets,
       allBuckets: BLOOD_SEARCH_KEY_BUCKETS,
       supportsPointCheck: true,
       readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName: BLOOD_SEARCH_KEY_INDEX, buckets: bloodBuckets, debugLog }),
-    });
+    }));
   }
 
   addGroup(createPointCheckSearchKeyGroup({
@@ -5784,14 +5962,14 @@ export const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favorite
   }
 
   if (hasExplicitFilterSelection(filterSettings?.imt)) {
-    groups.push({
+    groups.push(withSearchKeyReadPlan({
       key: 'imt',
       indexName: IMT_SEARCH_KEY_INDEX,
       buckets: getSelectedImtSearchKeyBuckets(filterSettings.imt) || [],
       allBuckets: IMT_SEARCH_KEY_BUCKETS,
       supportsPointCheck: true,
       readIds: () => collectImtIdsByFilters(filterSettings.imt, SEARCH_KEY_INDEXED_ROOT_PATHS),
-    });
+    }));
   }
 
   addGroup(createPointCheckSearchKeyGroup({
@@ -5836,32 +6014,26 @@ export const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favorite
   return groups;
 };
 
-const isBroadSearchKeyPointGroup = group => {
-  const allowedCount = (group?.buckets || []).length;
-  const allCount = (group?.allBuckets || []).length;
-
-  if (!group?.supportsPointCheck || allCount < SEARCH_KEY_BROAD_POINT_CHECK_MIN_BUCKETS) return false;
-  if (allowedCount <= 1 || allowedCount >= allCount) return false;
-  // `no` often contains the bulk of cards. When a filter explicitly excludes it,
-  // keep the group in the indexed/point-check path instead of scanning the broad
-  // source and rejecting `no` records after hydration.
-  if (isNoExcludingSearchKeyPointGroup(group)) return false;
-
-  return allowedCount / allCount >= SEARCH_KEY_BROAD_POINT_CHECK_RATIO;
-};
+// A group used to be pushed out of the point-check path once its selection covered
+// most of the vocabulary, because checking it meant reading the bulk buckets. The
+// read plan removes that cost - a wide selection is answered by checking the few
+// buckets it rejects - so the only group left for the post-filter is one the index
+// genuinely cannot express.
+const isBroadSearchKeyPointGroup = group => group?.readMode === 'defer' || group?.readMode === 'range';
 
 const readSearchKeyPointMembershipBuckets = async ({
   userId,
   group,
   buckets,
-  rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS,
+  rootPaths,
 }) => {
   const normalizedUserId = String(userId || '').trim();
   const normalizedBuckets = [...new Set((buckets || []).map(String).filter(Boolean))];
   if (!normalizedUserId || !group?.indexName || normalizedBuckets.length === 0) return [];
 
+  const resolvedRootPaths = rootPaths || [resolveSearchKeyRootForUserId(normalizedUserId)];
   const checks = [];
-  rootPaths.forEach(rootPath => {
+  resolvedRootPaths.forEach(rootPath => {
     normalizedBuckets.forEach(bucket => {
       checks.push({
         bucket,
@@ -5876,24 +6048,40 @@ const readSearchKeyPointMembershipBuckets = async ({
     .map(check => check.bucket))];
 };
 
+/**
+ * Does this card pass the group?
+ *
+ * Under an 'include' plan the card has to sit in one of the buckets the plan names.
+ * Under 'exclude' it has to sit in none of them: the selection keeps the cards with
+ * nothing on record, and those are exactly the ones no bucket holds. Reading the
+ * probe buckets is the same cost either way - what differs is what a hit means.
+ */
 const hasSearchKeyPointMembership = async ({
   userId,
   group,
-  rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS,
+  rootPaths,
   collectDiagnostics = false,
 }) => {
-  const allowedBuckets = [...new Set((group?.buckets || []).map(String).filter(Boolean))];
+  const readMode = group?.readMode || 'include';
+  if (readMode === 'none') return { passed: true, matchedBuckets: [], userBuckets: [] };
+
+  const probeBuckets = [...new Set((group?.readBuckets || group?.buckets || []).map(String).filter(Boolean))];
+  const passesOnHit = readMode !== 'exclude';
 
   if (collectDiagnostics) {
-    const diagnosticBuckets = [...new Set([...(group?.allBuckets || []), ...allowedBuckets])];
+    const diagnosticBuckets = [...new Set([...(group?.allBuckets || []), ...probeBuckets])];
     const userBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: diagnosticBuckets, rootPaths });
-    const allowedBucketSet = new Set(allowedBuckets);
-    const matchedBuckets = userBuckets.filter(bucket => allowedBucketSet.has(bucket));
-    return { passed: matchedBuckets.length > 0, matchedBuckets, userBuckets };
+    const probeBucketSet = new Set(probeBuckets);
+    const matchedBuckets = userBuckets.filter(bucket => probeBucketSet.has(bucket));
+    return { passed: passesOnHit ? matchedBuckets.length > 0 : matchedBuckets.length === 0, matchedBuckets, userBuckets };
   }
 
-  const matchedBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: allowedBuckets, rootPaths });
-  return { passed: matchedBuckets.length > 0, matchedBuckets, userBuckets: matchedBuckets };
+  const matchedBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: probeBuckets, rootPaths });
+  return {
+    passed: passesOnHit ? matchedBuckets.length > 0 : matchedBuckets.length === 0,
+    matchedBuckets,
+    userBuckets: matchedBuckets,
+  };
 };
 
 const getProfileBloodDebug = profile => {
@@ -5914,7 +6102,7 @@ export const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], d
     .sort((a, b) => {
       if (collectBloodDiagnostics && a?.key === 'blood') return -1;
       if (collectBloodDiagnostics && b?.key === 'blood') return 1;
-      return (a?.buckets || []).length - (b?.buckets || []).length;
+      return (a?.readBuckets || a?.buckets || []).length - (b?.readBuckets || b?.buckets || []).length;
     });
   if (!pointGroups.length || uniqueIds.length === 0) return uniqueIds;
 
@@ -6140,10 +6328,6 @@ export const fetchUsersBySearchKeyPaged = async ({
         broadDeferredPointCheckCount: broadPointCheckGroups.length,
         deferredCount: deferredGroups.length,
         source: 'indexedGetInTouchPointMembership',
-        broadDeferRule: {
-          minBuckets: SEARCH_KEY_BROAD_POINT_CHECK_MIN_BUCKETS,
-          ratio: SEARCH_KEY_BROAD_POINT_CHECK_RATIO,
-        },
         groups: activeSearchKeyGroups.map(group => ({
           key: group.key,
           indexName: group.indexName,
@@ -6151,7 +6335,8 @@ export const fetchUsersBySearchKeyPaged = async ({
           allBucketsCount: (group.allBuckets || []).length,
           bucketsSample: (group.buckets || []).slice(0, 20),
           supportsPointCheck: Boolean(group.supportsPointCheck),
-          noBucketExcluded: bucketGroupExcludesNo(group),
+          readMode: group.readMode || 'include',
+          readBuckets: group.readBuckets || [],
           deferredBecauseBroad: broadPointCheckGroups.includes(group),
         })),
       });
@@ -6754,18 +6939,8 @@ const getContactIndexSet = data => {
   return contactSet;
 };
 
-const getBmiCategory = value => {
-  const weight = parseFloat(value.weight);
-  const height = parseFloat(value.height);
-  if (weight && height) {
-    const bmi = weight / (height / 100) ** 2;
-    if (bmi < 18.5) return 'lt18_5';
-    if (bmi < 25) return '18_5_24_9';
-    if (bmi < 30) return '25_29_9';
-    return '30_plus';
-  }
-  return 'other';
-};
+// Shared with the index writer and the Matching post-filter - see searchKeyBuckets.
+const getBmiCategory = value => resolveBmiBucket(value);
 
 const getImtCategory = value => {
   return normalizeImtSearchKeyIndexValue(value);
@@ -6778,14 +6953,7 @@ const getHeightCategory = value => {
   return getHeightFilterBucket(parsedHeight) || 'other';
 };
 
-const getCountryCategory = value => {
-  const raw = (value.country || '').toString().trim();
-  if (!raw) return 'unknown';
-  const normalized = raw.toLowerCase();
-  const uaVariants = ['ukraine', 'україна', 'украина', 'украин', 'уккраина'];
-  if (uaVariants.includes(normalized)) return 'ua';
-  return 'other';
-};
+const getCountryCategory = value => resolveCountryBucket(value);
 
 const getUserIdCategory = userId => {
   if (!userId) return 'other';
@@ -6799,13 +6967,8 @@ const getUserIdCategory = userId => {
   return 'other';
 };
 
-const getFieldCountCategory = value => {
-  const count = Object.keys(value).length;
-  if (count <= 5) return 'le5';
-  if (count <= 10) return 'f6_10';
-  if (count <= 20) return 'f11_20';
-  return 'f20_plus';
-};
+// Same rule as the index writer, so a `fields` filter agrees with the index it read.
+const getFieldCountCategory = value => resolveProfileFieldCountBucket(value);
 
 const getCommentLengthCategory = comment => {
   if (!comment || typeof comment !== 'string') return 'other';
