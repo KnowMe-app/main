@@ -91,7 +91,12 @@ describe('Matching shared reaction card UI', () => {
     const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
     const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
 
-    expect(matchingSource).toContain('const activeProfile = filteredUsers[activeProfileIndex] || null;');
+    // The deck became a layer over the feed (matching spec §1/§7): the same
+    // `filtered` array still backs it, addressed through `detailIndex`, and the
+    // layer still never resolves a card by id of its own.
+    expect(matchingSource).toContain("const feedSource = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;");
+    expect(matchingSource).toContain('const detailIndex = detailOpen && feedSource.length ? activeProfileIndex : null;');
+    expect(matchingSource).toContain('const activeProfile = detailIndex === null ? null : (feedSource[detailIndex] || null);');
     expect(matchingSource).toContain('data-testid="matching-profile-card"');
     expect(matchingSource).toContain('onNavigate(direction === \'left\' ? 1 : -1);');
     expect(matchingSource).toContain('const identityAndLocationKeys =');

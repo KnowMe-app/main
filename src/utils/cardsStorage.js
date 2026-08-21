@@ -311,6 +311,35 @@ export const searchCachedCards = (term, ids) => {
   return results;
 };
 
+// Substring lookup over the locally cached cards, used by matching's "Схожі"
+// chip. Deliberately local-only: it is a second look at what the device already
+// holds, not another query.
+const SIMILAR_SEARCH_FIELDS = ['name', 'surname', 'nameWife', 'nameHusband', 'city', 'region', 'phone', 'email', 'telegram', 'instagram'];
+
+const cardSearchText = card => SIMILAR_SEARCH_FIELDS
+  .map(field => {
+    const value = card?.[field];
+    if (Array.isArray(value)) return value.join(' ');
+    return value == null ? '' : String(value);
+  })
+  .join(' ')
+  .toLowerCase();
+
+export const findCachedCardsByText = (term, { excludeIds = [], limit = 40 } = {}) => {
+  const search = String(term || '').trim().toLowerCase();
+  if (search.length < 2) return [];
+  const skip = new Set(excludeIds);
+  const cards = loadCards();
+  const matches = [];
+  for (const [id, card] of Object.entries(cards)) {
+    if (skip.has(id) || !card) continue;
+    if (!cardSearchText(card).includes(search)) continue;
+    matches.push(card);
+    if (matches.length >= limit) break;
+  }
+  return matches;
+};
+
 export const saveCard = card => {
   if (!card || !card.userId) return;
   indexSaveCard({ ...card, cachedAt: Date.now() });

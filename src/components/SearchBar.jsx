@@ -1102,6 +1102,7 @@ const SearchBar = ({
   suppressInitialSearchExecution = false,
   placeholder,
   inputAriaLabel,
+  debounceMs = 0,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const [internalSearch, setInternalSearch] = useState(
@@ -1588,7 +1589,14 @@ const SearchBar = ({
 
   const cachedSearch = async (params, extraOptions = {}) => {
     const [key, value] = Object.entries(params)[0] || [];
-    const cachedResult = getFreshCachedSearchResult(key, value, extraOptions);
+    // A limited search returns a projection of a record, not the record. It stays
+    // out of the shared card cache entirely - reading from it could hand back a
+    // full card the viewer isn't entitled to, and writing to it would replace real
+    // cards with the handful of fields the projection carries.
+    const skipCache = Boolean(extraOptions?.limitedFields ?? searchOptions?.limitedFields);
+    const cachedResult = skipCache
+      ? { hit: false, negativeHit: false, cards: [], map: {} }
+      : getFreshCachedSearchResult(key, value, extraOptions);
     if (cachedResult.negativeHit) {
       if (perfDebugEnabledRef.current) {
         console.debug('[SearchPerf][cache-negative-hit]', { params, options: extraOptions });
@@ -1625,7 +1633,7 @@ const SearchBar = ({
     }
 
     if (Object.keys(res).length === 0) {
-      if (key && value) {
+      if (key && value && !skipCache) {
         const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
         setIdsForQuery(cacheKey, [], { isNegativeHit: true });
       }
@@ -1634,7 +1642,7 @@ const SearchBar = ({
 
     const filteredRes = filterSearchResultByParams(res, params, extraOptions);
     if (!filteredRes || Object.keys(filteredRes).length === 0) {
-      if (key && value) {
+      if (key && value && !skipCache) {
         const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
         setIdsForQuery(cacheKey, [], { isNegativeHit: true });
       }
@@ -1646,9 +1654,9 @@ const SearchBar = ({
       : 'userId' in filteredRes
         ? [filteredRes]
         : Object.values(filteredRes);
-    const updatedArr = arr.map(u => updateCard(u.userId, u));
+    const updatedArr = skipCache ? arr : arr.map(u => updateCard(u.userId, u));
 
-    if (key && value) {
+    if (key && value && !skipCache) {
       const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
       setIdsForQuery(cacheKey, updatedArr.map(u => u.userId));
     }
@@ -2146,6 +2154,22 @@ const SearchBar = ({
       return undefined;
     }
   };
+
+  // With debounceMs set, the search runs on its own a beat after typing stops -
+  // the caller doesn't have to press Enter or blur the field for the screen to
+  // switch from the feed to results.
+  const writeDataRef = useRef(writeData);
+  writeDataRef.current = writeData;
+  const lastDebouncedQueryRef = useRef(search);
+  useEffect(() => {
+    if (!debounceMs) return undefined;
+    if (lastDebouncedQueryRef.current === search) return undefined;
+    const timer = setTimeout(() => {
+      lastDebouncedQueryRef.current = search;
+      void writeDataRef.current(search);
+    }, debounceMs);
+    return () => clearTimeout(timer);
+  }, [debounceMs, search]);
 
   return (
     <InputDiv style={wrapperStyle}>

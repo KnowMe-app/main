@@ -25,7 +25,6 @@ export const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(null);
   const [canAccessAdd, setCanAccessAdd] = useState(false);
-  const [canAccessMatching, setCanAccessMatching] = useState(false);
   const [canAccessInvoices, setCanAccessInvoices] = useState(false);
   const [canCreateProfiles, setCanCreateProfiles] = useState(false);
   const [isAccessResolved, setIsAccessResolved] = useState(false);
@@ -49,13 +48,12 @@ export const App = () => {
 
     const isRootRoute = location.pathname === '/';
     const isUnauthorizedAddRoute = location.pathname === '/add' && !canAccessAdd;
-    const isUnauthorizedMatchingRoute = location.pathname === '/matching' && !canAccessMatching;
     const isUnauthorizedCreateRoute = location.pathname === '/matching/create-profile' && !canCreateProfiles;
 
-    if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedMatchingRoute || isUnauthorizedCreateRoute) {
+    if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedCreateRoute) {
       navigate('/my-profile');
     }
-  }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd, canAccessMatching, canCreateProfiles]);
+  }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd, canCreateProfiles]);
 
   // Special page for admin
   useEffect(() => {
@@ -77,7 +75,6 @@ export const App = () => {
         const access = resolveAccess({ uid: user.uid, accessLevel, userRole, canCreateProfiles: canCreateProfilesForUser });
         setIsAdmin(access.isAdmin);
         setCanAccessAdd(access.canAccessAdd);
-        setCanAccessMatching(access.canAccessMatching);
         setCanAccessInvoices(access.canAccessInvoices);
         setCanCreateProfiles(access.canCreateProfiles);
         localStorage.setItem('accessLevel', accessLevel);
@@ -91,7 +88,6 @@ export const App = () => {
         clearStoredAccessRights();
         setIsAdmin(false);
         setCanAccessAdd(false);
-        setCanAccessMatching(false);
         setCanAccessInvoices(false);
         setCanCreateProfiles(false);
         setIsAccessResolved(true);
@@ -109,7 +105,7 @@ export const App = () => {
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
       {isAdmin && <Route path="/my-profile-old" element={<MyProfileOld isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
       {canAccessAdd && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
-      {canAccessMatching && <Route path="/matching" element={<Matching />} />}
+      <Route path="/matching" element={<Matching />} />
       {canCreateProfiles && <Route path="/matching/create-profile" element={<ProfileCreationWorkspace />} />}
       {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
       {isAdmin && <Route path="/medications/:userId" element={<MedicationsPage />} />}

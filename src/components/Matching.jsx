@@ -23,13 +23,11 @@ import {
   FilterDrawerFooter,
   FilterDrawerHeader,
   FilterDrawerHeading,
-  FilterDrawerSection,
   FilterDrawerSubtitle,
   FilterDrawerTitle,
   FilterOverlay,
   FilterResetButton,
   Grid,
-  HeaderContainer,
   InnerContainer,
   OwnerStatusMessage,
   SharedCommentText,
@@ -68,6 +66,30 @@ import {
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
   MatchingSearchStatusMessage,
+  Chip,
+  ChipCount,
+  ChipRemove,
+  ChipsRow,
+  FeedList,
+  FeedNotice,
+  FeedSentinel,
+  FeedWrap,
+  MatchingTopBar,
+  FilterApplyButton,
+  SearchField,
+  GalleryFacts,
+  GalleryGrid,
+  GalleryHeartButton,
+  GalleryHiddenBadge,
+  GalleryName,
+  GalleryPhotoBox,
+  GalleryTile,
+  LayoutToggleButton,
+  DetailBar,
+  DetailCloseButton,
+  DetailInner,
+  DetailLayer,
+  DetailPosition,
 } from './Matching.styled';
 import {
   fetchUsersByLastLogin2,
@@ -82,6 +104,9 @@ import {
   searchUsersOnly,
   fetchUserComments,
   saveMyCardComment,
+  addPublicProfileComment,
+  fetchPublicProfileComments,
+  updatePublicProfileComment,
   COMMENTS_ROOT_PATH,
   fetchUsersByIds,
   database,
@@ -99,11 +124,12 @@ import {
 } from 'utils/backendDownloadToast';
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { BtnFavorite } from './smallCard/btnFavorite';
-import { BtnDislike } from './smallCard/btnDislike';
+import { BtnFavorite, toggleFavoriteUser } from './smallCard/btnFavorite';
+import { BtnDislike, toggleDislikeUser } from './smallCard/btnDislike';
 import SearchBar, { getSearchCacheKeyForParams } from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
+import { buildMatchingFilterChips } from './SearchFilters';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard, clearMatchingCache } from '../utils/cardIndex';
@@ -111,12 +137,18 @@ import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
 } from '../utils/searchKeyCache';
-import { getCardsByList, updateCard } from '../utils/cardsStorage';
+import { findCachedCardsByText, getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
-import { HiddenHeaderTitle as MatchingHiddenListHeaderTitle } from './MatchingHiddenList.styled';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt } from 'react-icons/fa';
+import ProfileRow, {
+  PublicCommentBlock,
+  getGradientFor as getProfileGradientFor,
+  getInitials as getProfileInitials,
+  renderFacts as renderProfileFacts,
+} from './ProfileRow';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
+import { FaRegHeart } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -205,6 +237,10 @@ import {
   normalizeMatchingInitialLoadError,
   runInitialRequestWithTimeout,
 } from 'utils/matchingLoadError';
+
+// Spec §9: diagnostics are admin-only, so they live in their own chunk and are
+// only fetched once the flag is switched on.
+const MatchingDiagnostics = React.lazy(() => import('./MatchingDiagnostics'));
 
 export {
   INITIAL_MATCHING_REQUEST_TIMEOUT_MS,
@@ -1272,6 +1308,22 @@ const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
 const MATCHING_MAX_PAGES_PER_LOAD = 3;
 const LOAD_MORE = 5;
+// How many feed rows get their avatar and comment hydrated up front.
+const FEED_PHOTO_HYDRATION_LIMIT = 60;
+// A stable identity so a row without public comments doesn't re-render on it.
+const EMPTY_PUBLIC_COMMENTS = [];
+// Spec §3: the chips row never scrolls sideways, so it shows at most three.
+const MAX_FILTER_CHIPS = 3;
+// Spec §2: the screen switches state a beat after typing stops, not on Enter.
+const MATCHING_SEARCH_DEBOUNCE_MS = 250;
+const MATCHING_QUERY_PARAM = 'q';
+const readQueryFromUrl = () => {
+  try {
+    return new URLSearchParams(window.location.search).get(MATCHING_QUERY_PARAM) || '';
+  } catch {
+    return '';
+  }
+};
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
@@ -1279,6 +1331,21 @@ const MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS = 2;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
+
+// Spec §4: the list/gallery choice is a persistent per-device preference, kept
+// under its own namespaced key so it survives a reload and never collides with
+// `viewMode` (which selects the *collection* - all / favourites / hidden).
+const MATCHING_VIEW_LAYOUT_KEY = 'km.matching.view';
+const MATCHING_VIEW_LAYOUTS = ['list', 'gallery'];
+const MATCHING_DEFAULT_VIEW_LAYOUT = 'list';
+const getStoredMatchingViewLayout = () => {
+  try {
+    const stored = localStorage.getItem(MATCHING_VIEW_LAYOUT_KEY);
+    return MATCHING_VIEW_LAYOUTS.includes(stored) ? stored : MATCHING_DEFAULT_VIEW_LAYOUT;
+  } catch {
+    return MATCHING_DEFAULT_VIEW_LAYOUT;
+  }
+};
 
 const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit = 9, lastDate) => {
   const usersRef = refDb(database, collection);
@@ -1351,6 +1418,67 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
   }, 0);
 };
 
+// Spec §6: the gallery is the "what do they look like" mode. Every tile is the
+// same 4/5 box - vertical shots get cropped like everything else so the columns
+// stay level - and neither the comment nor the location appears here.
+const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite, diagnosticsSlot }) => {
+  const name = getProfileName(user);
+  const age = getProfileAge(user);
+  const photo = getProfilePhotos(user)[0];
+  const facts = useMemo(() => renderProfileFacts(user), [user]);
+
+  return (
+    <GalleryTile
+      $muted={isHidden}
+      onClick={() => onOpen(user)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onOpen(user);
+      }}
+    >
+      <GalleryPhotoBox style={photo ? undefined : { backgroundImage: getProfileGradientFor(user.userId) }}>
+        {photo
+          ? <img src={photo} alt="" loading="lazy" decoding="async" />
+          : getProfileInitials(name)}
+        {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
+        {!user?.__limitedProfile && (
+        <GalleryHeartButton
+          type="button"
+          $on={isFavorite}
+          aria-label="В обране"
+          aria-pressed={isFavorite}
+          title="В обране"
+          onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+        >
+          {isFavorite ? <FaHeart /> : <FaRegHeart />}
+        </GalleryHeartButton>
+        )}
+      </GalleryPhotoBox>
+      <GalleryName>
+        {name}
+        {age && <>, {age}</>}
+      </GalleryName>
+      <GalleryFacts>
+        {facts.map((node, idx) => (
+          <React.Fragment key={node.key}>
+            {idx > 0 && ' '}
+            {node}
+          </React.Fragment>
+        ))}
+      </GalleryFacts>
+      {diagnosticsSlot}
+    </GalleryTile>
+  );
+}, (prev, next) => (
+  prev.user === next.user
+  && prev.isFavorite === next.isFavorite
+  && prev.isHidden === next.isHidden
+  && prev.diagnosticsSlot === next.diagnosticsSlot
+));
+
 const Matching = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
@@ -1377,9 +1505,56 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
+  const [viewLayout, setViewLayout] = useState(getStoredMatchingViewLayout);
+  const toggleViewLayout = React.useCallback(() => {
+    setViewLayout(current => {
+      const next = current === 'gallery' ? 'list' : 'gallery';
+      try {
+        localStorage.setItem(MATCHING_VIEW_LAYOUT_KEY, next);
+      } catch {
+        // a blocked localStorage only costs the persistence, not the switch
+      }
+      return next;
+    });
+  }, []);
+  // Spec §1-§2: the search input is what switches the screen between the feed and
+  // results, and the query lives in the URL so a reload keeps the context.
+  const [searchQuery, setSearchQuery] = useState(readQueryFromUrl);
+  const [searchTab, setSearchTab] = useState('results');
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const current = url.searchParams.get(MATCHING_QUERY_PARAM) || '';
+      const next = searchQuery.trim();
+      if (current === next) return;
+      if (next) url.searchParams.set(MATCHING_QUERY_PARAM, next);
+      else url.searchParams.delete(MATCHING_QUERY_PARAM);
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch {
+      // A blocked history API only costs the reload-safe context.
+    }
+  }, [searchQuery]);
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
   const matchingSearchKeyRef = useRef(null);
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
+  // Spec §1: the screen has one content area with three states. `detailIndex`
+  // is the third - a layer over the feed rather than a route - and it points
+  // into the very same `filtered` array the list and gallery render from, so
+  // paging through it never issues a request.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [expandedRowIds, setExpandedRowIds] = useState(() => new Set());
+  const feedScrollTopRef = useRef(0);
+  const rowContactViewKeysRef = useRef(new Set());
+  // Spec §8: public records about a profile, readable by everyone signed in.
+  // Kept apart from `comments`, which holds this viewer's own private note.
+  const [publicComments, setPublicComments] = useState({});
+  const publicCommentsRequestedRef = useRef(new Set());
+  const [viewerName, setViewerName] = useState('');
+  // Spec §9: admin-only data diagnostics. Both the flag and the module it pulls
+  // in stay out of an ordinary user's way - the chunk is only fetched once the
+  // flag is on, so the checks never reach a non-admin bundle.
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false);
+  const [diagnosticsModule, setDiagnosticsModule] = useState(null);
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
@@ -1398,12 +1573,18 @@ const Matching = () => {
   const collectionSourceRef = useRef(collectionSource);
   const defaultListKey = `default:${collectionSource}`;
   const [filterResetToken, setFilterResetToken] = useState(0);
+  const [draftFilters, setDraftFilters] = useState({});
+  const draftFiltersRef = useRef(draftFilters);
+  draftFiltersRef.current = draftFilters;
+  const [filterGroupReset, setFilterGroupReset] = useState({ token: 0, name: '' });
   const [comments, setComments] = useState({});
   const commentsRef = useRef(comments);
   commentsRef.current = comments;
   const dispatchedCommentSaveRef = useRef(null);
   const [sharedComments, setSharedComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
+  const showFiltersRef = useRef(showFilters);
+  showFiltersRef.current = showFilters;
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
   const [personalCreateProfiles, setPersonalCreateProfiles] = useState([]);
@@ -1471,10 +1652,37 @@ const Matching = () => {
       .catch(error => console.error('Failed to load personal create profiles', error));
     return () => { active = false; };
   }, [isAdmin, ownerId]);
+  // A public comment is signed with the author's own name, so the viewer's name
+  // is resolved once here rather than at write time.
+  useEffect(() => {
+    if (!ownerId) {
+      setViewerName('');
+      return () => {};
+    }
+    let active = true;
+    fetchUserById(ownerId)
+      .then(profile => {
+        if (!active) return;
+        setViewerName(getProfileName(profile) || auth.currentUser?.displayName || '');
+      })
+      .catch(() => {
+        if (active) setViewerName(auth.currentUser?.displayName || '');
+      });
+    return () => { active = false; };
+  }, [ownerId]);
+
   const matchingDefaultFilters = useMemo(
     () => getDefaultFilters({ mode: 'matching', nonAdminAllActive: !access.isAdmin }),
     [access.isAdmin],
   );
+  // The same condition the security rules use for reading users/newUsers. A viewer
+  // without it can still search; what comes back is the limited projection
+  // (surname, name, age, region, city, public comment), because those are the only
+  // child paths the rules let them read.
+  const hasFullProfileAccess = access.isAdmin || access.canAccessMatching;
+  const hasFullProfileAccessRef = useRef(hasFullProfileAccess);
+  hasFullProfileAccessRef.current = hasFullProfileAccess;
+
   const activeFilterGroupCount = useMemo(
     () => countChangedMatchingFilterGroups(filters, matchingDefaultFilters),
     [filters, matchingDefaultFilters],
@@ -1737,8 +1945,8 @@ const Matching = () => {
     }
   };
 
-  // Kept for the existing search-mode stale-load guards/tests; Matching searchBar now uses status-only handlers.
-  // eslint-disable-next-line no-unused-vars
+  // Spec §1: a non-empty query replaces the feed's contents with the results,
+  // which the same filters then narrow - there is no second filtering branch.
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
     const filtered = arr.filter(u => isValidId(u?.userId));
@@ -2930,11 +3138,34 @@ const Matching = () => {
     setViewMode('default');
     setActiveProfileIndex(0);
     resetReactionPaginationState();
+    // Without matching access there is no feed to load - the collections read the
+    // whole of users/newUsers, which the rules deny. The screen is search-only for
+    // that viewer, so skip the request rather than showing them a denied one.
+    if (!hasFullProfileAccessRef.current) {
+      loadingRef.current = false;
+      setLoading(false);
+      setUsers([]);
+      setAdditionalNewUsers([]);
+      setHasMore(false);
+      return;
+    }
     loadInitial();
   }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
 
+  // Access resolves asynchronously after mount, so a viewer who does have it can
+  // reach reloadDefault before it is known. Load the feed once it lands.
+  const previousFullProfileAccessRef = useRef(hasFullProfileAccess);
+  useEffect(() => {
+    if (previousFullProfileAccessRef.current === hasFullProfileAccess) return;
+    previousFullProfileAccessRef.current = hasFullProfileAccess;
+    if (hasFullProfileAccess && viewModeRef.current !== 'search') reloadDefault();
+  }, [hasFullProfileAccess, reloadDefault]);
 
-  const handleFiltersChange = React.useCallback(nextFilters => {
+
+  // Spec §10: toggling a filter must not cost a reload. The drawer edits a draft
+  // and updates its count locally; only "Показати N" drops the loaded deck and
+  // re-queries, which is the expensive half.
+  const applyFilters = React.useCallback(nextFilters => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
@@ -2960,6 +3191,21 @@ const Matching = () => {
     }
   }, []);
 
+  const handleFiltersChange = React.useCallback(nextFilters => {
+    setDraftFilters(nextFilters);
+    // Only edits made inside the open drawer are a draft. A change from anywhere
+    // else - a chip's ✕, the panel's first notification carrying the stored
+    // filters that the initial load depends on - has no "Показати N" to wait for.
+    if (!showFiltersRef.current || !filtersRef.current || Object.keys(filtersRef.current).length === 0) {
+      applyFilters(nextFilters);
+    }
+  }, [applyFilters]);
+
+  const applyDraftFilters = React.useCallback(() => {
+    applyFilters(draftFiltersRef.current);
+    setShowFilters(false);
+  }, [applyFilters]);
+
   const resetFiltersAndCache = React.useCallback(() => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
     const removedLocalStorageKeys = clearMatchingCache('matching reset filters and cache');
@@ -2983,6 +3229,7 @@ const Matching = () => {
     filtersRef.current = {};
     viewModeRef.current = 'default';
     setFilters({});
+    setDraftFilters({});
     setUsers([]);
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
@@ -3000,7 +3247,7 @@ const Matching = () => {
       logMatchingLocalStorageDebugStats('after reset');
     }
 
-    loadInitial();
+    if (hasFullProfileAccessRef.current) loadInitial();
     toast.success('Фільтри та кеш скинуто');
   }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
 
@@ -3856,33 +4103,26 @@ const Matching = () => {
     }
   }, [resetAdditionalMatchingState, resetReactionPaginationState]);
 
-  const loadFavoriteCards = () => switchMatchingMode('favorites');
+  const loadFavoriteCards = React.useCallback(() => switchMatchingMode('favorites'), [switchMatchingMode]);
 
-  const loadDislikeCards = () => switchMatchingMode('dislikes');
+  const loadDislikeCards = React.useCallback(() => switchMatchingMode('dislikes'), [switchMatchingMode]);
 
-  const handleDislikeModeClick = () => {
-    if (viewMode === 'dislikes') {
-      reloadDefault();
-      return;
-    }
-
+  // Spec §3: the collection chips are a single-choice group, so re-picking the
+  // collection already on screen is a no-op rather than a toggle back to the feed.
+  const handleDislikeModeClick = React.useCallback(() => {
+    if (viewMode === 'dislikes') return;
     loadDislikeCards();
-  };
+  }, [loadDislikeCards, viewMode]);
 
-  const handleDefaultModeClick = () => {
-    if (viewMode !== 'default') {
-      reloadDefault();
-    }
-  };
+  const handleDefaultModeClick = React.useCallback(() => {
+    if (viewMode === 'default') return;
+    reloadDefault();
+  }, [reloadDefault, viewMode]);
 
-  const handleFavoriteModeClick = () => {
-    if (viewMode === 'favorites') {
-      reloadDefault();
-      return;
-    }
-
+  const handleFavoriteModeClick = React.useCallback(() => {
+    if (viewMode === 'favorites') return;
     loadFavoriteCards();
-  };
+  }, [loadFavoriteCards, viewMode]);
 
   const buildMatchingSearchStatusText = React.useCallback((status, searchKey = matchingSearchKeyRef.current) => {
     const keyLabel = formatMatchingSearchKeyLabel(searchKey);
@@ -3922,24 +4162,57 @@ const Matching = () => {
     }
   }, [buildMatchingSearchStatusText]);
 
+  const handleMatchingSearchResults = React.useCallback(result => {
+    handleMatchingSearchResultStatus(result);
+    setSearchTab('results');
+    void applySearchResults(result);
+    // applySearchResults closes over setters and refs only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleMatchingSearchResultStatus]);
+
+  // Spec §1: the feed comes back the moment the query is empty, however it got
+  // there - the ✕, or the last character being deleted.
+  useEffect(() => {
+    if (searchQuery.trim() || viewModeRef.current !== 'search') return;
+    setMatchingSearchStatus('');
+    matchingSearchKeyRef.current = null;
+    setSearchTab('results');
+    reloadDefault();
+  }, [reloadDefault, searchQuery]);
+
+  const handleSearchCleared = React.useCallback(() => {
+    setMatchingSearchStatus('');
+    matchingSearchKeyRef.current = null;
+    setSearchQuery('');
+    setSearchTab('results');
+    reloadDefault();
+  }, [reloadDefault]);
+
   const handleMatchingSearchError = React.useCallback(() => {
     setMatchingSearchStatus('Не вдалося виконати пошук. Спробуйте ще раз.');
   }, []);
 
   const searchUsers = async (params, options = {}) => {
+    // A limited hit is a projection, not a record. It never touches the shared card
+    // cache in either direction: reading from it would hand back a full record the
+    // viewer isn't entitled to, and writing to it would overwrite real cards with
+    // five fields.
+    const isLimited = Boolean(options?.limitedFields);
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
     const cacheKey = key && value
       ? getSearchCacheKeyForParams(key, value, options)
       : getCacheKey('search', term ? normalizeQueryKey(term) : term);
-    const ids = getIdsByQuery(cacheKey).filter(isValidId);
-    if (ids.length > 0) {
-      const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
-      if (cards.length > 0) {
-        if (key === 'name' || key === 'names') {
-          return Object.fromEntries(cards.map(c => [c.userId, c]));
+    if (!isLimited) {
+      const ids = getIdsByQuery(cacheKey).filter(isValidId);
+      if (ids.length > 0) {
+        const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
+        if (cards.length > 0) {
+          if (key === 'name' || key === 'names') {
+            return Object.fromEntries(cards.map(c => [c.userId, c]));
+          }
+          return cards[0];
         }
-        return cards[0];
       }
     }
     const res = await searchUsersOnly(params, options);
@@ -3950,8 +4223,10 @@ const Matching = () => {
           ? [res]
           : Object.values(res);
       const filtered = arr.filter(u => isValidId(u?.userId));
-      filtered.forEach(u => updateCard(u.userId, u));
-      setIdsForQuery(cacheKey, filtered.map(u => u.userId));
+      if (!isLimited) {
+        filtered.forEach(u => updateCard(u.userId, u));
+        setIdsForQuery(cacheKey, filtered.map(u => u.userId));
+      }
       if (Array.isArray(res)) return filtered;
       if (res.userId) return filtered[0] || {};
       return Object.fromEntries(filtered.map(u => [u.userId, u]));
@@ -4748,21 +5023,103 @@ const Matching = () => {
     if (initialRequestId && !loading) toast.dismiss('matching-slow-load');
   }, [initialRequestId, loadError, loading]);
 
-  const filteredUsers = (viewMode === 'favorites' || viewMode === 'dislikes')
-    ? reactionTabUsers
-    : (debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')
-      ? users
-    : applyMatchingUiFiltersToUsers({
-    users: visibleUsers,
-    filters,
-    filterMainFn: filterMain,
-    favoriteUsers,
-    dislikeUsers,
-    excludeReactionUsers: viewMode === 'default',
-    roleIndexSets,
+  // Spec §10: one `filtered` array feeds the list, the gallery and the detail
+  // layer, and it is computed once per input change rather than on every render.
+  const filteredUsers = useMemo(() => {
+    if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
+    if (debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users') return users;
+    return applyMatchingUiFiltersToUsers({
+      users: visibleUsers,
+      filters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: viewMode === 'default',
+      roleIndexSets,
+      collectionSource,
+      viewMode,
+    });
+  }, [
     collectionSource,
+    debugShowAllIndexedCards,
+    dislikeUsers,
+    favoriteUsers,
+    filters,
+    isIndexedDebugTestUser,
+    reactionTabUsers,
+    roleIndexSets,
+    users,
     viewMode,
-  });
+    visibleUsers,
+  ]);
+  // Counted off the already-loaded cache, so every chip tap in the drawer
+  // updates the number instantly and without touching Firebase (spec §10).
+  const draftFilteredCount = useMemo(() => {
+    if (!showFilters) return 0;
+    if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers.length;
+    return applyMatchingUiFiltersToUsers({
+      users: visibleUsers,
+      filters: draftFilters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: viewMode === 'default',
+      roleIndexSets,
+      collectionSource,
+      viewMode,
+    }).length;
+  }, [
+    collectionSource,
+    dislikeUsers,
+    draftFilters,
+    favoriteUsers,
+    reactionTabUsers.length,
+    roleIndexSets,
+    showFilters,
+    viewMode,
+    visibleUsers,
+  ]);
+
+  const isSearching = searchQuery.trim().length > 0;
+
+  // Spec §3's "Схожі": a second pass over what this device already holds, so the
+  // chip's count is honest without another round trip.
+  const similarUsers = useMemo(() => {
+    if (!isSearching) return [];
+    const candidates = findCachedCardsByText(searchQuery, {
+      excludeIds: filteredUsers.map(user => user?.userId).filter(Boolean),
+    });
+    if (!candidates.length) return candidates;
+    // Cached cards go through the same access and filter path as everything else
+    // - "схожі" must not become a way around either (spec §1).
+    return applyMatchingUiFiltersToUsers({
+      users: candidates,
+      filters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: false,
+      roleIndexSets,
+      collectionSource,
+      viewMode,
+    });
+  }, [
+    collectionSource,
+    dislikeUsers,
+    favoriteUsers,
+    filteredUsers,
+    filters,
+    isSearching,
+    roleIndexSets,
+    searchQuery,
+    viewMode,
+  ]);
+
+  // Spec §1: whatever the reader is looking at, the list, the gallery and the
+  // detail layer all index into this one array - so opening row N and paging
+  // from it can never disagree about which card is which.
+  const feedSource = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;
+
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
     const isGroupNeutralOrInactive = value => (
@@ -5197,7 +5554,8 @@ const Matching = () => {
     visibleUsers,
   ]);
 
-  const activeProfile = filteredUsers[activeProfileIndex] || null;
+  const detailIndex = detailOpen && feedSource.length ? activeProfileIndex : null;
+  const activeProfile = detailIndex === null ? null : (feedSource[detailIndex] || null);
 
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;
@@ -5212,8 +5570,13 @@ const Matching = () => {
 
   const activeProfileWithLazyPhotos = withLazyPhotos(activeProfile);
 
+  // Rows carry an avatar, so the feed hydrates photos for everything it renders;
+  // the detail layer only ever needs the current card and the next one.
   useEffect(() => {
-    const candidates = [filteredUsers[activeProfileIndex], filteredUsers[activeProfileIndex + 1]]
+    const pool = detailOpen
+      ? [feedSource[activeProfileIndex], feedSource[activeProfileIndex + 1]]
+      : feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
+    const candidates = pool
       .filter(user => user?.userId && !user.__photosHydrated && !photoCacheByUserId[user.userId]);
     if (!candidates.length) return undefined;
 
@@ -5238,7 +5601,7 @@ const Matching = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeProfileIndex, filteredUsers, photoCacheByUserId]);
+  }, [activeProfileIndex, detailOpen, feedSource, photoCacheByUserId]);
 
   useEffect(() => {
     if (activeProfile?.userId) {
@@ -5247,15 +5610,21 @@ const Matching = () => {
   }, [activeProfile, loadCommentsFor]);
 
   useEffect(() => {
+    if (detailOpen || !feedSource.length) return;
+    void loadCommentsFor(feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
+  }, [detailOpen, feedSource, loadCommentsFor]);
+
+  useEffect(() => {
     setActiveProfileIndex(index => {
-      if (filteredUsers.length === 0) return 0;
-      return Math.min(index, filteredUsers.length - 1);
+      if (feedSource.length === 0) return 0;
+      return Math.min(index, feedSource.length - 1);
     });
-  }, [filteredUsers.length]);
+  }, [feedSource.length]);
 
   useEffect(() => {
     setActiveProfileIndex(0);
   }, [
+    searchTab,
     collectionSource,
     reactionPaginationByType.favorites.ids,
     reactionPaginationByType.dislikes.ids,
@@ -5406,22 +5775,31 @@ const Matching = () => {
     viewMode,
   ]);
 
+  // Spec §7: paging the detail layer walks `filtered[detailIndex ± 1]` and nothing
+  // else - no fetch, no request for the card by id. It stops at both ends with a
+  // short bounce instead of wrapping around. The feed's own sentinel is what
+  // extends the deck, so this path deliberately never triggers a load.
+  const [detailBounce, setDetailBounce] = useState(0);
   const navigateActiveProfile = React.useCallback((step) => {
-    if (filteredUsers.length === 0) {
+    if (feedSource.length === 0) {
       setActiveProfileIndex(0);
       return;
     }
 
-    const nextIndex = Math.max(0, Math.min(filteredUsers.length - 1, activeProfileIndex + step));
-    const isForwardNavigation = step > 0;
-    const reachesDeckEnd = isForwardNavigation && nextIndex >= filteredUsers.length - 1;
+    const nextIndex = Math.max(0, Math.min(feedSource.length - 1, activeProfileIndex + step));
+    if (nextIndex === activeProfileIndex) {
+      setDetailBounce(step > 0 ? 1 : -1);
+      return;
+    }
 
     setActiveProfileIndex(nextIndex);
+  }, [activeProfileIndex, feedSource.length]);
 
-    if (reachesDeckEnd) {
-      triggerEndOfDeckLoad(nextIndex === activeProfileIndex ? 'swipe-at-last-card' : 'swipe-to-last-card');
-    }
-  }, [activeProfileIndex, filteredUsers.length, triggerEndOfDeckLoad]);
+  useEffect(() => {
+    if (!detailBounce) return undefined;
+    const timer = setTimeout(() => setDetailBounce(0), 220);
+    return () => clearTimeout(timer);
+  }, [detailBounce]);
 
   useEffect(() => {
     const handleKeyDown = event => {
@@ -5442,6 +5820,17 @@ const Matching = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigateActiveProfile]);
+
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    const handleEscape = event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setDetailOpen(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [detailOpen]);
 
   useEffect(() => {
     writeMatchingDebugLog('autoLoadEffect:evaluated', {
@@ -5807,6 +6196,373 @@ const Matching = () => {
 
   const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
 
+  // Spec §3: the feed's chips are the collection picker - a single choice, with
+  // counts read straight off the already-loaded cache (§10), never re-queried.
+  // The app has three collections; the spec's "✕" and "Приховані" name the same
+  // one here, so it renders once.
+  const searchChips = useMemo(() => [
+    {
+      key: 'results',
+      label: 'Знайдено',
+      title: 'Результати пошуку',
+      count: filteredUsers.length,
+      onSelect: () => setSearchTab('results'),
+    },
+    {
+      key: 'create',
+      label: 'Створити нову',
+      title: 'Створити картку з цього запиту',
+      onSelect: () => {
+        saveScrollPosition();
+        navigate('/matching/create-profile', { state: { query: searchQuery.trim() } });
+      },
+    },
+    {
+      key: 'similar',
+      label: 'Схожі',
+      title: 'Схожі з локального кешу',
+      count: similarUsers.length,
+      onSelect: () => setSearchTab('similar'),
+    },
+  ], [filteredUsers.length, navigate, searchQuery, similarUsers.length]);
+
+  // Spec §3: at most three filter chips, then a "+N" that opens the drawer -
+  // the row never scrolls sideways, so anything past three collapses instead.
+  const filterChips = useMemo(() => buildMatchingFilterChips(filters), [filters]);
+  const visibleFilterChips = filterChips.slice(0, MAX_FILTER_CHIPS);
+  const hiddenFilterChipCount = filterChips.length - visibleFilterChips.length;
+  const emptyFilterGroup = filterChips.find(chip => chip.danger) || null;
+
+  const resetFilterGroup = React.useCallback(filterName => {
+    setFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
+  }, []);
+
+  const collectionChips = useMemo(() => [
+    {
+      key: 'default',
+      label: 'Усі',
+      title: 'До загального списку',
+      count: viewMode === 'default' ? filteredUsers.length : users.length,
+      onSelect: handleDefaultModeClick,
+    },
+    {
+      key: 'favorites',
+      label: '♥',
+      title: 'Показати обране',
+      count: Object.keys(favoriteUsers || {}).length,
+      onSelect: handleFavoriteModeClick,
+    },
+    {
+      key: 'dislikes',
+      label: 'Приховані',
+      title: 'Показати приховані',
+      count: Object.keys(dislikeUsers || {}).length,
+      onSelect: handleDislikeModeClick,
+    },
+  ], [
+    dislikeUsers,
+    favoriteUsers,
+    filteredUsers.length,
+    handleDefaultModeClick,
+    handleDislikeModeClick,
+    handleFavoriteModeClick,
+    users.length,
+    viewMode,
+  ]);
+
+  // Spec §5: the metrics a filter narrowed on lead the row's metrics line, so the
+  // numbers the reader is scanning for sit in the same place on every row.
+  const priorityMetricKeys = useMemo(() => {
+    const keys = [];
+    const isChanged = groupName => {
+      const current = filters?.[groupName];
+      const defaults = matchingDefaultFilters?.[groupName];
+      if (!current || !defaults) return false;
+      return Object.keys(defaults).some(option => Boolean(current[option]) !== Boolean(defaults[option]));
+    };
+    if (isChanged('bmi')) keys.push('bmi', 'hw');
+    if (isChanged('bloodGroup') || isChanged('rh')) keys.push('blood');
+    if (isChanged('maritalStatus')) keys.push('marital');
+    return keys;
+  }, [filters, matchingDefaultFilters]);
+
+  const openDetailFor = React.useCallback(user => {
+    // A limited projection has no full card behind it - the row already shows
+    // everything the viewer is entitled to.
+    if (user?.__limitedProfile) return;
+    const index = feedSource.findIndex(candidate => candidate?.userId === user?.userId);
+    if (index === -1) return;
+    feedScrollTopRef.current = window.scrollY;
+    setActiveProfileIndex(index);
+    setDetailOpen(true);
+  }, [feedSource]);
+
+  const closeDetail = React.useCallback(() => {
+    setDetailOpen(false);
+  }, []);
+
+  // Opening pushes one history entry; Android's Back (and the browser's) pops
+  // it, which is what actually closes the layer. Closing from the UI goes
+  // through history.back() so the entry never outlives the layer.
+  const detailHistoryStateRef = useRef(false);
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    window.history.pushState({ matchingDetail: true }, '');
+    detailHistoryStateRef.current = true;
+    const handlePopState = () => {
+      detailHistoryStateRef.current = false;
+      setDetailOpen(false);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      // Only pop the entry we pushed. If the card navigated somewhere (the admin
+      // edit route), history has already moved on and a back() here would undo
+      // that navigation instead of closing anything.
+      if (detailHistoryStateRef.current && window.history.state?.matchingDetail) {
+        detailHistoryStateRef.current = false;
+        window.history.back();
+        return;
+      }
+      detailHistoryStateRef.current = false;
+    };
+  }, [detailOpen]);
+
+  // The layer covers the viewport, so the page behind it must not scroll with it.
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [detailOpen]);
+
+  // Spec §7: the feed comes back to the exact row the reader left from. The feed
+  // never unmounted, but locking the body's scroll can still move it, so the
+  // position saved on open is put back once the layer is gone.
+  useLayoutEffect(() => {
+    if (detailOpen) return;
+    const savedTop = feedScrollTopRef.current;
+    if (!savedTop) return;
+    requestAnimationFrame(() => window.scrollTo(0, savedTop));
+  }, [detailOpen]);
+
+  const handleToggleRowExpand = React.useCallback(userId => {
+    setExpandedRowIds(previous => {
+      const next = new Set(previous);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }, []);
+
+  const handleRowContactsOpened = React.useCallback(user => {
+    if (!user?.userId || !ownerId) return;
+    const trackKey = `${ownerId}:${user.userId}`;
+    if (rowContactViewKeysRef.current.has(trackKey)) return;
+    rowContactViewKeysRef.current.add(trackKey);
+    void addContactViewUser(user.userId, ownerId);
+  }, [ownerId]);
+
+  const handleRowEditProfile = React.useCallback(user => {
+    saveScrollPosition();
+    navigate(`/edit/${user.userId}`, { state: user });
+    // saveScrollPosition reads a ref and never changes identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
+  const toggleRowFavorite = React.useCallback(user => {
+    if (!user?.userId) return;
+    void toggleFavoriteUser({
+      userId: user.userId,
+      userData: user,
+      favoriteUsers,
+      setFavoriteUsers,
+      ownFavoriteUsers,
+      setOwnFavoriteUsers,
+      dislikeUsers,
+      setDislikeUsers,
+      ownDislikeUsers,
+      setOwnDislikeUsers,
+      multiDataOwnerId: ownerId,
+    });
+  }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
+
+  const resolveEmptyFeedMessage = () => {
+    // Search-only viewers have no feed to be empty; say what the screen is for.
+    if (!hasFullProfileAccess) return 'Скористайтеся пошуком, щоб знайти анкету';
+    // An empty group is a different problem from "nothing matched", and saying so
+    // is the difference between the reader fixing it and giving up (spec §3).
+    if (emptyFilterGroup) return `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`;
+    return 'Немає доступних профілів';
+  };
+  const emptyFeedMessage = resolveEmptyFeedMessage();
+
+  // The feed pages itself: a sentinel under the last row asks for the next page
+  // as it scrolls into view. It routes through the same end-of-deck loader the
+  // card deck used, so the existing in-flight guards, cooldown and empty-page
+  // backoff still apply - this is only a new trigger, not a second load path.
+  const feedSentinelRef = useRef(null);
+  const endOfDeckLoadRef = useRef(triggerEndOfDeckLoad);
+  useEffect(() => { endOfDeckLoadRef.current = triggerEndOfDeckLoad; }, [triggerEndOfDeckLoad]);
+  useEffect(() => {
+    const node = feedSentinelRef.current;
+    if (!node || detailIndex !== null || !hasMore || loading) return undefined;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      endOfDeckLoadRef.current('feed-sentinel');
+    }, { rootMargin: '400px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [detailIndex, filteredUsers.length, hasMore, loading]);
+
+  // The rows carry their public comments inline, so the feed loads them for the
+  // page it renders and never asks twice for the same profile.
+  useEffect(() => {
+    if (detailOpen || !ownerId) return;
+    const pendingIds = feedSource
+      .slice(0, FEED_PHOTO_HYDRATION_LIMIT)
+      .map(user => user?.userId)
+      .filter(Boolean)
+      .filter(id => !publicCommentsRequestedRef.current.has(id));
+    if (!pendingIds.length) return;
+    pendingIds.forEach(id => publicCommentsRequestedRef.current.add(id));
+    fetchPublicProfileComments(pendingIds)
+      .then(result => setPublicComments(previous => ({ ...previous, ...result })))
+      .catch(error => {
+        pendingIds.forEach(id => publicCommentsRequestedRef.current.delete(id));
+        console.error('[Matching] Failed to load public comments', error);
+      });
+  }, [detailOpen, feedSource, ownerId]);
+
+  const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
+    const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
+    setPublicComments(previous => ({
+      ...previous,
+      [profileId]: [...(previous[profileId] || []), created],
+    }));
+  }, [viewerName]);
+
+  const handleUpdatePublicComment = React.useCallback(async (profileId, commentId, text) => {
+    const updated = await updatePublicProfileComment({ profileId, commentId, text });
+    setPublicComments(previous => {
+      const current = previous[profileId] || [];
+      const next = updated
+        ? current.map(comment => (comment.id === commentId
+          ? { ...comment, text: updated.text, updatedAt: updated.updatedAt }
+          : comment))
+        : current.filter(comment => comment.id !== commentId);
+      return { ...previous, [profileId]: next };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!diagnosticsEnabled || !isAdmin || diagnosticsModule) return;
+    let active = true;
+    import('./MatchingDiagnostics')
+      .then(module => { if (active) setDiagnosticsModule(module); })
+      .catch(error => console.error('[Matching] Failed to load diagnostics', error));
+    return () => { active = false; };
+  }, [diagnosticsEnabled, diagnosticsModule, isAdmin]);
+
+  const showDiagnostics = diagnosticsEnabled && isAdmin && Boolean(diagnosticsModule);
+
+  const diagnosticsPhoneIndex = useMemo(
+    () => (showDiagnostics ? diagnosticsModule.buildPhoneIndex(filteredUsers) : null),
+    [diagnosticsModule, filteredUsers, showDiagnostics],
+  );
+
+  // A row that the UI filters would reject but that still reached the list means
+  // the filtering pipeline let it through - worth flagging as a bug, not as data.
+  const diagnosticsFilterMisses = useMemo(() => {
+    if (!showDiagnostics) return null;
+    const misses = new Set();
+    filteredUsers.forEach(user => {
+      if (!user?.userId) return;
+      const kept = applyMatchingUiFiltersToUsers({
+        users: [user],
+        filters,
+        filterMainFn: filterMain,
+        favoriteUsers,
+        dislikeUsers,
+        excludeReactionUsers: false,
+        roleIndexSets,
+        collectionSource,
+        viewMode,
+      });
+      if (!kept.length) misses.add(user.userId);
+    });
+    return misses;
+  }, [
+    collectionSource,
+    dislikeUsers,
+    favoriteUsers,
+    filteredUsers,
+    filters,
+    roleIndexSets,
+    showDiagnostics,
+    viewMode,
+  ]);
+
+  const renderDiagnosticsFor = React.useCallback(user => {
+    if (!showDiagnostics) return undefined;
+    return (
+      <React.Suspense fallback={null}>
+        <MatchingDiagnostics
+          user={user}
+          phoneIndex={diagnosticsPhoneIndex}
+          failsActiveFilter={Boolean(diagnosticsFilterMisses?.has(user?.userId))}
+        />
+      </React.Suspense>
+    );
+  }, [diagnosticsFilterMisses, diagnosticsPhoneIndex, showDiagnostics]);
+
+  const toggleRowHidden = React.useCallback(user => {
+    if (!user?.userId) return;
+    void toggleDislikeUser({
+      userId: user.userId,
+      userData: user,
+      dislikeUsers,
+      setDislikeUsers,
+      ownDislikeUsers,
+      setOwnDislikeUsers,
+      favoriteUsers,
+      setFavoriteUsers,
+      ownFavoriteUsers,
+      setOwnFavoriteUsers,
+      multiDataOwnerId: ownerId,
+    });
+  }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
+
+  const feedRows = useMemo(
+    () => feedSource.map(user => withLazyPhotos(user)),
+    [feedSource, withLazyPhotos],
+  );
+
+  const matchingMenuActions = [
+    {
+      key: 'viewLayout',
+      label: viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї',
+      description: 'Перемкнути вигляд стрічки',
+      icon: viewLayout === 'gallery' ? <FaListUl /> : <FaThLarge />,
+      onClick: toggleViewLayout,
+    },
+    ...(isAdmin ? [{
+      key: 'diagnostics',
+      label: 'Діагностика',
+      description: 'Показати проблеми в даних анкет',
+      icon: <FaStethoscope />,
+      active: diagnosticsEnabled,
+      onClick: () => setDiagnosticsEnabled(current => !current),
+    }] : []),
+    {
+      key: 'refreshCache',
+      label: 'Оновити кеш',
+      description: 'Скинути фільтри й перезавантажити анкети',
+      icon: <FaSyncAlt />,
+      onClick: resetFiltersAndCache,
+    },
+  ];
+
   const dotsMenu = () => (
     <ProfileDotsMenu
       navigate={navigate}
@@ -5815,6 +6571,8 @@ const Matching = () => {
       onExit={handleExit}
       onSelect={() => setShowInfoModal(false)}
       beforeNavigate={saveScrollPosition}
+      extraActions={matchingMenuActions}
+      extraActionsLabel="Matching"
     />
   );
 
@@ -5844,38 +6602,6 @@ const Matching = () => {
           </FilterDrawerClose>
         </FilterDrawerHeader>
         <FilterDrawerBody>
-          {isAdmin && (
-            <FilterDrawerSection aria-label="Пошук профілів">
-              <SearchBar
-                searchFunc={searchUsers}
-                setUsers={handleMatchingSearchResultStatus}
-                setState={handleMatchingSearchStateStatus}
-                setUserNotFound={handleMatchingSearchNotFound}
-                wrapperStyle={{ width: '100%', marginBottom: 0 }}
-                leftIcon="🔍"
-                storageKey={SEARCH_KEY}
-                onSearchKey={handleMatchingSearchKey}
-                onSearchExecuted={handleMatchingSearchExecuted}
-                onSearchError={handleMatchingSearchError}
-                onClear={() => {
-                  setMatchingSearchStatus('');
-                  matchingSearchKeyRef.current = null;
-                  reloadDefault();
-                }}
-                enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
-                searchOptions={{
-                  searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
-                  enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
-                  cacheScope: { collections: ['users'] },
-                }}
-              />
-              {matchingSearchStatus && (
-                <MatchingSearchStatusMessage aria-live="polite">
-                  {matchingSearchStatus}
-                </MatchingSearchStatusMessage>
-              )}
-            </FilterDrawerSection>
-          )}
           <CollectionSourceWrap>
             <CollectionSourceTitle>Колекція профілів</CollectionSourceTitle>
             <CollectionSourceOptions>
@@ -5907,6 +6633,8 @@ const Matching = () => {
             hideCommentLength
             onChange={handleFiltersChange}
             resetToken={filterResetToken}
+            groupResetToken={filterGroupReset.token}
+            groupResetName={filterGroupReset.name}
             nonAdminAllActive={!isAdmin}
           />
         </FilterDrawerBody>
@@ -5914,17 +6642,43 @@ const Matching = () => {
           <FilterResetButton type="button" onClick={resetFiltersAndCache}>
             Скинути фільтри й оновити кеш
           </FilterResetButton>
+          <FilterApplyButton type="button" onClick={applyDraftFilters}>
+            Показати {draftFilteredCount}
+          </FilterApplyButton>
         </FilterDrawerFooter>
       </FilterContainer>
       <Container $themeMode={themeMode}>
         <InnerContainer>
-          <HeaderContainer>
+          <MatchingTopBar>
+            <SearchField>
+              <FaSearch aria-hidden="true" />
+              <SearchBar
+                searchFunc={searchUsers}
+                search={searchQuery}
+                setSearch={setSearchQuery}
+                debounceMs={MATCHING_SEARCH_DEBOUNCE_MS}
+                setUsers={handleMatchingSearchResults}
+                setState={handleMatchingSearchStateStatus}
+                setUserNotFound={handleMatchingSearchNotFound}
+                wrapperStyle={{ width: '100%', margin: 0, border: 'none', background: 'transparent', padding: 0, boxShadow: 'none' }}
+                leftIcon={null}
+                placeholder="Пошук"
+                inputAriaLabel="Пошук профілів"
+                storageKey={SEARCH_KEY}
+                onSearchKey={handleMatchingSearchKey}
+                onSearchExecuted={handleMatchingSearchExecuted}
+                onSearchError={handleMatchingSearchError}
+                onClear={handleSearchCleared}
+                enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
+                searchOptions={{
+                  searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
+                  enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
+                  cacheScope: { collections: ['users'] },
+                  limitedFields: !hasFullProfileAccess,
+                }}
+              />
+            </SearchField>
             <TopActions>
-              {viewMode === 'dislikes' && (
-                <MatchingHiddenListHeaderTitle>
-                  Приховані
-                </MatchingHiddenListHeaderTitle>
-              )}
               <TopActionGroup aria-label="Фільтри matching">
                 <ActionButton
                   type="button"
@@ -5935,42 +6689,6 @@ const Matching = () => {
                 >
                   <FaFilter />
                   {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
-                </ActionButton>
-              </TopActionGroup>
-              <TopActionGroup aria-label="Навігація matching">
-                <ActionButton
-                  type="button"
-                  onClick={handleDislikeModeClick}
-                  disabled={!ownerId}
-                  $active={viewMode === 'dislikes'}
-                  aria-label={viewMode === 'dislikes' ? 'Повернутись до загального списку' : 'Показати дизлайки'}
-                  title={viewMode === 'dislikes' ? 'Повернутись до загального списку' : 'Показати дизлайки'}
-                >
-                  <FaTimes />
-                  {Object.keys(dislikeUsers || {}).length > 0 && (
-                    <ActionBadge>{Object.keys(dislikeUsers || {}).length}</ActionBadge>
-                  )}
-                </ActionButton>
-                <ActionButton
-                  type="button"
-                  onClick={handleDefaultModeClick}
-                  disabled={!ownerId}
-                  $active={viewMode === 'default'}
-                  $wide
-                  aria-label="До загального списку"
-                  title="До загального списку"
-                >
-                  Всі
-                </ActionButton>
-                <ActionButton
-                  type="button"
-                  onClick={handleFavoriteModeClick}
-                  disabled={!ownerId}
-                  $active={viewMode === 'favorites'}
-                  aria-label={viewMode === 'favorites' ? 'Повернутись до загального списку' : 'Показати обране'}
-                  title={viewMode === 'favorites' ? 'Повернутись до загального списку' : 'Показати обране'}
-                >
-                  <FaHeart />
                 </ActionButton>
               </TopActionGroup>
               {(showBackendTrafficToggle || isIndexedDebugTestUser) && (
@@ -6027,14 +6745,68 @@ const Matching = () => {
                 <FaEllipsisV />
               </ActionButton>
             </TopActions>
-          </HeaderContainer>
+          </MatchingTopBar>
+          {matchingSearchStatus && (
+            <MatchingSearchStatusMessage aria-live="polite">
+              {matchingSearchStatus}
+            </MatchingSearchStatusMessage>
+          )}
+          <ChipsRow role="group" aria-label={isSearching ? 'Результати пошуку' : 'Колекції matching'}>
+            {(isSearching ? searchChips : (hasFullProfileAccess ? collectionChips : [])).map(chip => {
+              const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
+              return (
+                <Chip
+                  key={chip.key}
+                  type="button"
+                  $active={active}
+                  aria-pressed={active}
+                  disabled={!isSearching && !ownerId}
+                  onClick={chip.onSelect}
+                  title={chip.title}
+                >
+                  <span>{chip.label}</span>
+                  {chip.count !== undefined && <ChipCount>{chip.count}</ChipCount>}
+                </Chip>
+              );
+            })}
+            {visibleFilterChips.map(chip => (
+              <Chip
+                key={chip.filterName}
+                type="button"
+                $active
+                $danger={chip.danger}
+                title={`${chip.text} — повернути групу в дефолт`}
+                onClick={() => resetFilterGroup(chip.filterName)}
+              >
+                <span>{chip.text}</span>
+                <ChipRemove aria-hidden="true">✕</ChipRemove>
+              </Chip>
+            ))}
+            {hiddenFilterChipCount > 0 && (
+              <Chip
+                type="button"
+                title="Показати всі активні фільтри"
+                onClick={() => setShowFilters(true)}
+              >
+                <span>+{hiddenFilterChipCount}</span>
+              </Chip>
+            )}
+            <LayoutToggleButton
+              type="button"
+              onClick={toggleViewLayout}
+              aria-label={viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї'}
+              title={viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї'}
+            >
+              {viewLayout === 'gallery' ? <FaListUl /> : <FaThLarge />}
+            </LayoutToggleButton>
+          </ChipsRow>
           {!ownerId && (
             <OwnerStatusMessage>
               {ownerId === '' ? 'Owner not found' : 'Loading owner...'}
             </OwnerStatusMessage>
           )}
 
-          {viewMode === 'dislikes' ? (
+          {viewMode === 'dislikes' && viewLayout === 'list' ? (
             <MatchingHiddenList
               ownerId={ownerId}
               users={filteredUsers}
@@ -6047,12 +6819,103 @@ const Matching = () => {
               setOwnDislikeUsers={setOwnDislikeUsers}
               isAdmin={isAdmin}
               onGoToFeed={handleDefaultModeClick}
-              onEditProfile={user => {
-                saveScrollPosition();
-                navigate(`/edit/${user.userId}`, { state: user });
-              }}
+              onEditProfile={handleRowEditProfile}
+              onOpenProfile={openDetailFor}
             />
           ) : (
+            <FeedWrap>
+              {feedRows.length > 0 && viewLayout === 'gallery' && (
+                <GalleryGrid>
+                  {feedRows.map(user => (
+                    <GalleryCard
+                      key={user.userId}
+                      user={user}
+                      isFavorite={Boolean(favoriteUsers[user.userId])}
+                      isHidden={Boolean(dislikeUsers[user.userId])}
+                      onOpen={openDetailFor}
+                      onToggleFavorite={toggleRowFavorite}
+                      diagnosticsSlot={renderDiagnosticsFor(user)}
+                    />
+                  ))}
+                </GalleryGrid>
+              )}
+              {feedRows.length > 0 && viewLayout === 'list' && (
+                <FeedList>
+                  {feedRows.map(user => (
+                    <ProfileRow
+                      key={user.userId}
+                      user={user}
+                      isAdmin={isAdmin}
+                      expanded={expandedRowIds.has(user.userId)}
+                      onToggleExpand={handleToggleRowExpand}
+                      onOpen={openDetailFor}
+                      onEditProfile={handleRowEditProfile}
+                      onContactsOpened={handleRowContactsOpened}
+                      priorityMetricKeys={priorityMetricKeys}
+                      onSwipeRight={toggleRowFavorite}
+                      onSwipeLeft={toggleRowHidden}
+                      diagnosticsSlot={renderDiagnosticsFor(user)}
+                      commentSlot={(
+                        <PublicCommentBlock
+                          profileId={user.userId}
+                          comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
+                          viewerId={auth.currentUser?.uid || ''}
+                          onCreate={handleCreatePublicComment}
+                          onUpdate={handleUpdatePublicComment}
+                        />
+                      )}
+                      primaryAction={{
+                        icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
+                        title: 'В обране',
+                        accent: true,
+                        active: Boolean(favoriteUsers[user.userId]),
+                        onClick: toggleRowFavorite,
+                      }}
+                    />
+                  ))}
+                </FeedList>
+              )}
+              {loading && feedRows.length === 0 && <MatchingSkeleton />}
+              {!loading && feedRows.length === 0 && !loadError && (
+                <FeedNotice>{emptyFeedMessage}</FeedNotice>
+              )}
+              {loadError && feedRows.length === 0 && (
+                <FeedNotice role="alert">
+                  <div>Не вдалося завантажити профілі.</div>
+                  <div>{loadError.userMessage}</div>
+                  <ActionButton type="button" onClick={reloadDefault} aria-label="Повторити завантаження">
+                    Спробувати ще раз
+                  </ActionButton>
+                </FeedNotice>
+              )}
+              <FeedSentinel ref={feedSentinelRef} />
+            </FeedWrap>
+          )}
+
+          {/* Spec §7: a layer over the feed. The feed keeps its DOM and its
+              scroll position underneath, so closing costs no reload. */}
+          {detailIndex !== null && (
+          <DetailLayer
+            $themeMode={themeMode}
+            $bounce={detailBounce}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Профіль"
+          >
+            <DetailInner>
+              <DetailBar>
+                <DetailCloseButton
+                  type="button"
+                  onClick={closeDetail}
+                  aria-label="Закрити профіль"
+                  title="Закрити профіль"
+                >
+                  <FaChevronLeft />
+                </DetailCloseButton>
+                <DetailPosition aria-live="polite">
+                  {detailIndex + 1} / {feedSource.length}
+                </DetailPosition>
+              </DetailBar>
           <Grid>
             {activeProfileWithLazyPhotos ? (() => {
               const user = activeProfileWithLazyPhotos;
@@ -6197,6 +7060,8 @@ const Matching = () => {
               <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
             )}
           </Grid>
+            </DetailInner>
+          </DetailLayer>
           )}
 
           {showInfoModal && (

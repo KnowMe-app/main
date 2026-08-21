@@ -365,15 +365,18 @@ export const TopActionGroup = styled.div`
 // real token. The active-state tint/focus ring used to hardcode that same orange as a raw rgba()
 // with no variable at all - color-mix keeps them tied to --matching-accent (and so to the app's
 // bronze accent) at every theme mode, light or dark, instead of only the light one.
+// Spec §5 correction 2: the screen spends its one accent colour on "add to
+// favourites". The top bar's controls - filter trigger, its count, the "⋮" -
+// are chrome, so their active state reads as a neutral outline, not as orange.
 export const ActionButton = styled.button`
   position: relative;
   width: ${({ $wide }) => ($wide ? 'auto' : '35px')};
   min-width: ${({ $wide }) => ($wide ? '44px' : '35px')};
   height: 35px;
   padding: ${({ $wide }) => ($wide ? '3px 10px' : '3px')};
-  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent)' : 'transparent')};
-  background: ${({ $active }) => ($active ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)' : 'var(--matching-action-bg)')};
-  color: ${({ $active }) => ($active ? 'var(--matching-accent)' : 'var(--matching-action-color)')};
+  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-header-text)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'color-mix(in srgb, var(--matching-header-text) 8%, transparent)' : 'var(--matching-action-bg)')};
+  color: ${({ $active }) => ($active ? 'var(--matching-header-text)' : 'var(--matching-muted-text)')};
   box-shadow: var(--matching-action-shadow);
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1), border-color 240ms cubic-bezier(0.4, 0, 0.2, 1), color 240ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50px;
@@ -388,7 +391,7 @@ export const ActionButton = styled.button`
 
   &:hover:not(:disabled) {
     transform: translateY(-1px) scale(1.03);
-    border-color: var(--matching-accent);
+    border-color: var(--matching-header-text);
   }
 
   &:active:not(:disabled) {
@@ -417,8 +420,8 @@ export const ActionBadge = styled.span`
   padding: 0 4px;
   border: 2px solid var(--matching-panel-bg);
   border-radius: 999px;
-  background: var(--matching-accent);
-  color: #fff;
+  background: var(--matching-header-text);
+  color: var(--matching-panel-bg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1138,6 +1141,8 @@ export const ModernHeroContent = styled.div`
   text-shadow: none;
 `;
 
+// Spec §5 correction 2: role badges and location pins are information, not the
+// screen's one action, so they carry no accent.
 export const ModernRoleBadge = styled.span`
   position: absolute;
   top: 14px;
@@ -1150,7 +1155,7 @@ export const ModernRoleBadge = styled.span`
   padding: 5px 10px;
   border-radius: 999px;
   color: #FFFFFF;
-  background: var(--matching-accent);
+  background: var(--matching-muted-text);
   box-shadow: 0 8px 18px rgba(232, 121, 26, 0.18);
   font-size: 11px;
   font-weight: 700;
@@ -1179,7 +1184,7 @@ export const ModernHeroLocation = styled.p`
 
   svg {
     flex: 0 0 auto;
-    color: var(--matching-accent);
+    color: currentColor;
   }
 `;
 
@@ -1530,4 +1535,417 @@ export const ModernSwipeHint = styled.div`
   font-size: 11px;
   font-weight: 800;
   backdrop-filter: blur(8px);
+`;
+
+/* ------------------------------------------------------------------ *
+ * Matching top bar / chips row (spec §2-§4)
+ *
+ * One sticky row holds the search field, the filter drawer trigger and the
+ * "⋮" menu. The chips row sits directly under it and never scrolls
+ * horizontally - overflowing filter chips collapse into a "+N" chip that
+ * opens the drawer instead.
+ * ------------------------------------------------------------------ */
+
+export const MatchingTopBar = styled.div`
+  position: sticky;
+  top: 0;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: var(--matching-page-bg);
+
+  @media (max-width: 768px) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+`;
+
+export const SearchField = styled.div`
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 8px 0 10px;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 50px;
+  background: var(--matching-card-bg);
+  color: var(--matching-header-text);
+
+  &:focus-within {
+    border-color: color-mix(in srgb, var(--matching-accent) 55%, transparent);
+  }
+
+  > svg {
+    flex: 0 0 auto;
+    color: var(--matching-muted-text);
+    font-size: 13px;
+  }
+`;
+
+export const SearchInput = styled.input`
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+
+  &::placeholder {
+    color: var(--matching-muted-text);
+    opacity: 0.8;
+  }
+`;
+
+export const SearchClearButton = styled.button`
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--matching-muted-text);
+  cursor: pointer;
+  font-size: 12px;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+export const ChipsRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 12px 8px;
+  overflow: hidden;
+
+  @media (max-width: 768px) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+`;
+
+export const Chip = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid ${({ $danger, $active }) => {
+    if ($danger) return 'color-mix(in srgb, #d64545 55%, transparent)';
+    return $active ? 'var(--matching-chip-text)' : 'var(--matching-chip-border)';
+  }};
+  background: ${({ $active }) => ($active
+    ? 'color-mix(in srgb, var(--matching-chip-text) 10%, transparent)'
+    : 'var(--matching-chip-bg)')};
+  color: ${({ $danger }) => ($danger ? '#d64545' : 'var(--matching-chip-text)')};
+
+  > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+export const ChipCount = styled.b`
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--matching-chip-label);
+`;
+
+export const ChipRemove = styled.span`
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  font-size: 9px;
+  opacity: 0.75;
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
+// Spec §4: a single icon button, never a segmented control. It shows the mode
+// we would switch *into*, so the grid icon means "go to gallery".
+export const LayoutToggleButton = styled.button`
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--matching-chip-border);
+  border-radius: 7px;
+  background: var(--matching-chip-bg);
+  color: var(--matching-muted-text);
+  cursor: pointer;
+  font-size: 13px;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+/* ------------------------------------------------------------------ *
+ * Matching feed (spec §5-§6)
+ * ------------------------------------------------------------------ */
+
+export const FeedWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  padding: 0 10px 10px;
+  box-sizing: border-box;
+`;
+
+export const FeedList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 2px 0 4px;
+`;
+
+// Spec §6: one grid, one tile shape. A vertical photo is cropped to the same
+// 4/5 box as every other so the columns stay level while images stream in.
+export const GalleryGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 12px;
+  padding: 2px 0 4px;
+`;
+
+export const GalleryTile = styled.div`
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+  opacity: ${({ $muted }) => ($muted ? 0.5 : 1)};
+`;
+
+export const GalleryPhotoBox = styled.div`
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--matching-section-bg);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+`;
+
+// The heart sits on top of the photo, so it carries its own scrim - without it
+// the icon disappears on a bright shot.
+export const GalleryHeartButton = styled.button`
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : '#fff')};
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
+export const GalleryHiddenBadge = styled.span`
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--matching-muted-text);
+  background: var(--matching-card-bg);
+  border: 1px solid var(--matching-card-border);
+`;
+
+export const GalleryName = styled.div`
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--matching-header-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+export const GalleryFacts = styled.div`
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--matching-muted-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+export const FeedSentinel = styled.div`
+  height: 1px;
+`;
+
+export const FeedNotice = styled.div`
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--matching-muted-text);
+`;
+
+/* ------------------------------------------------------------------ *
+ * Detail layer (spec §7)
+ *
+ * A layer over the feed, not a route: the feed keeps its DOM and its scroll
+ * position underneath, and history.pushState gives Android's hardware Back
+ * something to pop so it closes the layer instead of leaving the page.
+ * ------------------------------------------------------------------ */
+
+export const DetailLayer = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  ${matchingThemeVars}
+  background: var(--matching-shell-bg);
+  transform: translateX(${({ $bounce }) => {
+    if ($bounce > 0) return '-8px';
+    if ($bounce < 0) return '8px';
+    return '0px';
+  }});
+  transition: transform 180ms cubic-bezier(0.2, 0, 0.2, 1);
+`;
+
+export const DetailInner = styled.div`
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 480px;
+  min-height: 0;
+`;
+
+export const DetailBar = styled.div`
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: var(--matching-shell-bg);
+`;
+
+export const DetailCloseButton = styled.button`
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 50%;
+  background: var(--matching-card-bg);
+  color: var(--matching-muted-text);
+  cursor: pointer;
+  font-size: 15px;
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
+export const DetailPosition = styled.div`
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--matching-muted-text);
+`;
+
+// Spec §10: the drawer's filters are a draft until this is pressed - the count
+// on it is computed locally from the loaded cache, so it tracks every toggle
+// instantly while the expensive re-query happens once, on the press.
+export const FilterApplyButton = styled.button`
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 12px;
+  background: var(--matching-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 2px;
+  }
 `;

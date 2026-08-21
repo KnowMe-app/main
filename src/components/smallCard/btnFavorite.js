@@ -11,6 +11,88 @@ import { setFavorite } from 'utils/favoritesStorage';
 import { setDislike } from 'utils/dislikesStorage';
 import { FaHeart, FaRegHeart } from 'react-icons/fa';
 
+// The favourite write path, shared by the card's round button and the list
+// row's action slot so both go through the same Firebase calls, the same local
+// caches and the same "adding a favourite clears an existing dislike" rule.
+export const toggleFavoriteUser = async ({
+  userId,
+  userData = {},
+  favoriteUsers = {},
+  setFavoriteUsers,
+  ownFavoriteUsers,
+  setOwnFavoriteUsers,
+  onRemove,
+  onDislikeRemoved,
+  dislikeUsers = {},
+  setDislikeUsers,
+  ownDislikeUsers,
+  setOwnDislikeUsers,
+  multiDataOwnerId,
+  cacheUserData = true,
+}) => {
+  if (!auth.currentUser) {
+    alert('Please sign in to manage favorites');
+    return;
+  }
+  const viewerFavoriteUsers = ownFavoriteUsers || favoriteUsers;
+  const updateOwnFavoriteUsers = setOwnFavoriteUsers || setFavoriteUsers;
+  const viewerDislikeUsers = ownDislikeUsers || dislikeUsers;
+  const updateOwnDislikeUsers = setOwnDislikeUsers || setDislikeUsers;
+  const isFavorite = !!viewerFavoriteUsers[userId];
+
+  if (isFavorite) {
+    try {
+      await removeFavoriteUser(userId, multiDataOwnerId);
+      const updatedOwn = { ...viewerFavoriteUsers };
+      delete updatedOwn[userId];
+      if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwn);
+      const updated = { ...favoriteUsers };
+      delete updated[userId];
+      setFavoriteUsers(updated);
+      setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
+      if (cacheUserData) updateCachedUser(userData || { userId }, { removeFavorite: true });
+      setFavorite(userId, false);
+      if (onRemove) onRemove(userId);
+    } catch (error) {
+      console.error('Failed to remove favorite:', error);
+    }
+    return;
+  }
+
+  try {
+    await addFavoriteUser(userId, multiDataOwnerId);
+    const updatedOwnFav = { ...viewerFavoriteUsers, [userId]: true };
+    if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwnFav);
+    const updatedFav = { ...favoriteUsers, [userId]: true };
+    setFavoriteUsers(updatedFav);
+    setFavoriteIds(updatedFav);
+    if (cacheUserData) updateCachedUser(userData || { userId });
+    setFavorite(userId, true);
+    if (onRemove) onRemove(userId);
+    if (dislikeUsers[userId] || viewerDislikeUsers[userId]) {
+      if (viewerDislikeUsers[userId]) {
+        try {
+          await removeDislikeUser(userId, multiDataOwnerId);
+        } catch (err) {
+          console.error('Failed to remove dislike when adding favorite:', err);
+        }
+      }
+      const updatedOwnDislikes = { ...viewerDislikeUsers };
+      delete updatedOwnDislikes[userId];
+      if (updateOwnDislikeUsers) updateOwnDislikeUsers(updatedOwnDislikes);
+      const upd = { ...dislikeUsers };
+      delete upd[userId];
+      if (setDislikeUsers) setDislikeUsers(upd);
+      setDislike(userId, false);
+      if (typeof onDislikeRemoved === 'function') {
+        await onDislikeRemoved(userId);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to add favorite:', error);
+  }
+};
+
 export const BtnFavorite = ({
   userId,
   userData = {},
@@ -44,9 +126,6 @@ export const BtnFavorite = ({
     ...restCustomStyle
   } = customStyle;
   const viewerFavoriteUsers = ownFavoriteUsers || favoriteUsers;
-  const updateOwnFavoriteUsers = setOwnFavoriteUsers || setFavoriteUsers;
-  const viewerDislikeUsers = ownDislikeUsers || dislikeUsers;
-  const updateOwnDislikeUsers = setOwnDislikeUsers || setDislikeUsers;
   const isFavorite = !!viewerFavoriteUsers[userId];
   const isSharedFavorite = !isFavorite && !!favoriteUsers[userId];
   const activeColor = color.reactionLike;
@@ -54,62 +133,22 @@ export const BtnFavorite = ({
   const resolvedInactiveIconColor = inactiveIconColor || '#fff';
   const activeBorderColor = '#fff';
 
-  const toggleFavorite = async () => {
-    if (!auth.currentUser) {
-      alert('Please sign in to manage favorites');
-      return;
-    }
-    if (isFavorite) {
-      try {
-        await removeFavoriteUser(userId, multiDataOwnerId);
-        const updatedOwn = { ...viewerFavoriteUsers };
-        delete updatedOwn[userId];
-        if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwn);
-        const updated = { ...favoriteUsers };
-        delete updated[userId];
-        setFavoriteUsers(updated);
-        setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
-        if (cacheUserData) updateCachedUser(userData || { userId }, { removeFavorite: true });
-        setFavorite(userId, false);
-        if (onRemove) onRemove(userId);
-      } catch (error) {
-        console.error('Failed to remove favorite:', error);
-      }
-    } else {
-      try {
-        await addFavoriteUser(userId, multiDataOwnerId);
-        const updatedOwnFav = { ...viewerFavoriteUsers, [userId]: true };
-        if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwnFav);
-        const updatedFav = { ...favoriteUsers, [userId]: true };
-        setFavoriteUsers(updatedFav);
-        setFavoriteIds(updatedFav);
-        if (cacheUserData) updateCachedUser(userData || { userId });
-        setFavorite(userId, true);
-        if (onRemove) onRemove(userId);
-        if (dislikeUsers[userId] || viewerDislikeUsers[userId]) {
-          if (viewerDislikeUsers[userId]) {
-            try {
-              await removeDislikeUser(userId, multiDataOwnerId);
-            } catch (err) {
-              console.error('Failed to remove dislike when adding favorite:', err);
-            }
-          }
-          const updatedOwnDislikes = { ...viewerDislikeUsers };
-          delete updatedOwnDislikes[userId];
-          if (updateOwnDislikeUsers) updateOwnDislikeUsers(updatedOwnDislikes);
-          const upd = { ...dislikeUsers };
-          delete upd[userId];
-          if (setDislikeUsers) setDislikeUsers(upd);
-          setDislike(userId, false);
-          if (typeof onDislikeRemoved === 'function') {
-            await onDislikeRemoved(userId);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to add favorite:', error);
-      }
-    }
-  };
+  const toggleFavorite = () => toggleFavoriteUser({
+    userId,
+    userData,
+    favoriteUsers,
+    setFavoriteUsers,
+    ownFavoriteUsers,
+    setOwnFavoriteUsers,
+    onRemove,
+    onDislikeRemoved,
+    dislikeUsers,
+    setDislikeUsers,
+    ownDislikeUsers,
+    setOwnDislikeUsers,
+    multiDataOwnerId,
+    cacheUserData,
+  });
 
   return (
     <button

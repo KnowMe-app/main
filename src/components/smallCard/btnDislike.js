@@ -11,6 +11,92 @@ import { setFavorite } from 'utils/favoritesStorage';
 import { removeCardFromList } from 'utils/cardsStorage';
 import { FaThumbsDown } from 'react-icons/fa';
 
+// The dislike write path, shared by the card's round button and the list row's
+// swipe gesture so both go through the same Firebase calls, the same local
+// caches and the same "adding a dislike clears an existing favourite" rule.
+export const toggleDislikeUser = async ({
+  userId,
+  userData = {},
+  dislikeUsers = {},
+  setDislikeUsers,
+  ownDislikeUsers,
+  setOwnDislikeUsers,
+  onDislikeAdded,
+  onDislikeRemoved,
+  onRemove,
+  favoriteUsers = {},
+  setFavoriteUsers,
+  ownFavoriteUsers,
+  setOwnFavoriteUsers,
+  multiDataOwnerId,
+  cacheUserData = true,
+}) => {
+  if (!auth.currentUser) {
+    alert('Please sign in to manage dislikes');
+    return;
+  }
+  const viewerDislikeUsers = ownDislikeUsers || dislikeUsers;
+  const updateOwnDislikeUsers = setOwnDislikeUsers || setDislikeUsers;
+  const viewerFavoriteUsers = ownFavoriteUsers || favoriteUsers;
+  const updateOwnFavoriteUsers = setOwnFavoriteUsers || setFavoriteUsers;
+  const isDisliked = !!viewerDislikeUsers[userId];
+
+  if (isDisliked) {
+    try {
+      await removeDislikeUser(userId, multiDataOwnerId);
+      const updatedOwn = { ...viewerDislikeUsers };
+      delete updatedOwn[userId];
+      if (updateOwnDislikeUsers) updateOwnDislikeUsers(updatedOwn);
+      const updated = { ...dislikeUsers };
+      delete updated[userId];
+      setDislikeUsers(updated);
+      setDislike(userId, false);
+      removeCardFromList(userId, 'dislike');
+      if (typeof onDislikeRemoved === 'function') {
+        await onDislikeRemoved(userId);
+      }
+      if (onRemove) onRemove(userId);
+    } catch (error) {
+      console.error('Failed to remove dislike:', error);
+    }
+    return;
+  }
+
+  try {
+    await addDislikeUser(userId, multiDataOwnerId);
+    const updatedOwn = { ...viewerDislikeUsers, [userId]: true };
+    if (updateOwnDislikeUsers) updateOwnDislikeUsers(updatedOwn);
+    const updated = { ...dislikeUsers, [userId]: true };
+    setDislikeUsers(updated);
+    setDislike(userId, true);
+    if (cacheUserData) cacheDislikedUsers({ [userId]: userData });
+    if (typeof onDislikeAdded === 'function') {
+      await onDislikeAdded(userId);
+    }
+    if (favoriteUsers[userId] || viewerFavoriteUsers[userId]) {
+      if (viewerFavoriteUsers[userId]) {
+        try {
+          await removeFavoriteUser(userId, multiDataOwnerId);
+        } catch (err) {
+          console.error('Failed to remove favorite when adding dislike:', err);
+        }
+      }
+      const updatedOwnFavorites = { ...viewerFavoriteUsers };
+      delete updatedOwnFavorites[userId];
+      if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwnFavorites);
+      const upd = { ...favoriteUsers };
+      delete upd[userId];
+      if (setFavoriteUsers) setFavoriteUsers(upd);
+      setFavorite(userId, false);
+      if (onRemove) onRemove(userId);
+    } else if (onRemove) {
+      onRemove(userId);
+    }
+  } catch (error) {
+    console.error('Failed to add dislike:', error);
+  }
+};
+
 export const BtnDislike = ({
   userId,
   userData = {},
@@ -45,9 +131,6 @@ export const BtnDislike = ({
     ...restCustomStyle
   } = customStyle;
   const viewerDislikeUsers = ownDislikeUsers || dislikeUsers;
-  const updateOwnDislikeUsers = setOwnDislikeUsers || setDislikeUsers;
-  const viewerFavoriteUsers = ownFavoriteUsers || favoriteUsers;
-  const updateOwnFavoriteUsers = setOwnFavoriteUsers || setFavoriteUsers;
   const isDisliked = !!viewerDislikeUsers[userId];
   const isSharedDisliked = !isDisliked && !!dislikeUsers[userId];
   const activeColor = color.reactionDislike;
@@ -55,65 +138,23 @@ export const BtnDislike = ({
   const resolvedInactiveIconColor = inactiveIconColor || '#fff';
   const activeBorderColor = '#fff';
 
-  const toggleDislike = async () => {
-    if (!auth.currentUser) {
-      alert('Please sign in to manage dislikes');
-      return;
-    }
-    if (isDisliked) {
-      try {
-        await removeDislikeUser(userId, multiDataOwnerId);
-        const updatedOwn = { ...viewerDislikeUsers };
-        delete updatedOwn[userId];
-        if (updateOwnDislikeUsers) updateOwnDislikeUsers(updatedOwn);
-        const updated = { ...dislikeUsers };
-        delete updated[userId];
-        setDislikeUsers(updated);
-        setDislike(userId, false);
-        removeCardFromList(userId, 'dislike');
-        if (typeof onDislikeRemoved === 'function') {
-          await onDislikeRemoved(userId);
-        }
-        if (onRemove) onRemove(userId);
-      } catch (error) {
-        console.error('Failed to remove dislike:', error);
-      }
-    } else {
-      try {
-        await addDislikeUser(userId, multiDataOwnerId);
-        const updatedOwn = { ...viewerDislikeUsers, [userId]: true };
-        if (updateOwnDislikeUsers) updateOwnDislikeUsers(updatedOwn);
-        const updated = { ...dislikeUsers, [userId]: true };
-        setDislikeUsers(updated);
-        setDislike(userId, true);
-        if (cacheUserData) cacheDislikedUsers({ [userId]: userData });
-        if (typeof onDislikeAdded === 'function') {
-          await onDislikeAdded(userId);
-        }
-        if (favoriteUsers[userId] || viewerFavoriteUsers[userId]) {
-          if (viewerFavoriteUsers[userId]) {
-            try {
-              await removeFavoriteUser(userId, multiDataOwnerId);
-            } catch (err) {
-              console.error('Failed to remove favorite when adding dislike:', err);
-            }
-          }
-          const updatedOwnFavorites = { ...viewerFavoriteUsers };
-          delete updatedOwnFavorites[userId];
-          if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwnFavorites);
-          const upd = { ...favoriteUsers };
-          delete upd[userId];
-          if (setFavoriteUsers) setFavoriteUsers(upd);
-          setFavorite(userId, false);
-          if (onRemove) onRemove(userId);
-        } else if (onRemove) {
-          onRemove(userId);
-        }
-      } catch (error) {
-        console.error('Failed to add dislike:', error);
-      }
-    }
-  };
+  const toggleDislike = () => toggleDislikeUser({
+    userId,
+    userData,
+    dislikeUsers,
+    setDislikeUsers,
+    ownDislikeUsers,
+    setOwnDislikeUsers,
+    onDislikeAdded,
+    onDislikeRemoved,
+    onRemove,
+    favoriteUsers,
+    setFavoriteUsers,
+    ownFavoriteUsers,
+    setOwnFavoriteUsers,
+    multiDataOwnerId,
+    cacheUserData,
+  });
 
   return (
     <button
