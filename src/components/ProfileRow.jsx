@@ -873,6 +873,9 @@ const ProfileRow = ({
 };
 
 // Spec §10: rows only re-render when their identity or their last write moved.
+// The object identity check carries the photo hydration, which lands as a new
+// user object without touching updatedAt; the caller memoises the row array, so
+// identity is stable across renders that changed nothing about this row.
 export default React.memo(ProfileRow, (prev, next) => (
   prev.user?.userId === next.user?.userId
   && prev.user?.updatedAt === next.user?.updatedAt

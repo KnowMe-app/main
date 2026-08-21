@@ -5047,10 +5047,34 @@ const Matching = () => {
   // chip's count is honest without another round trip.
   const similarUsers = useMemo(() => {
     if (!isSearching) return [];
-    return findCachedCardsByText(searchQuery, {
+    const candidates = findCachedCardsByText(searchQuery, {
       excludeIds: filteredUsers.map(user => user?.userId).filter(Boolean),
     });
-  }, [filteredUsers, isSearching, searchQuery]);
+    if (!candidates.length) return candidates;
+    // Cached cards go through the same access and filter path as everything else
+    // - "схожі" must not become a way around either (spec §1).
+    return applyMatchingUiFiltersToUsers({
+      users: candidates,
+      filters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: false,
+      roleIndexSets,
+      collectionSource,
+      viewMode,
+    });
+  }, [
+    collectionSource,
+    dislikeUsers,
+    favoriteUsers,
+    filteredUsers,
+    filters,
+    isSearching,
+    roleIndexSets,
+    searchQuery,
+    viewMode,
+  ]);
 
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
@@ -6297,22 +6321,6 @@ const Matching = () => {
     void addContactViewUser(user.userId, ownerId);
   }, [ownerId]);
 
-  const handleRowCommentSave = React.useCallback(async (user, text) => {
-    const cardId = user?.userId;
-    if (!cardId || !auth.currentUser) return;
-    commentsRef.current = { ...commentsRef.current, [cardId]: text };
-    setComments(previous => ({ ...previous, [cardId]: text }));
-    try {
-      const res = await saveMyCardComment(cardId, text, ownerId);
-      dispatchedCommentSaveRef.current = { cardId, text };
-      setLocalComment(ownerId, cardId, text, res?.lastAction);
-      dispatchedCommentSaveRef.current = null;
-    } catch (error) {
-      dispatchedCommentSaveRef.current = null;
-      toast.error(`Не вдалося зберегти коментар: ${error?.message || String(error)}`);
-    }
-  }, [ownerId]);
-
   const handleRowEditProfile = React.useCallback(user => {
     saveScrollPosition();
     navigate(`/edit/${user.userId}`, { state: user });
@@ -6798,8 +6806,6 @@ const Matching = () => {
                       onOpen={openDetailFor}
                       onEditProfile={handleRowEditProfile}
                       onContactsOpened={handleRowContactsOpened}
-                      clientComment={comments[user.userId] || ''}
-                      onCommentSave={handleRowCommentSave}
                       priorityMetricKeys={priorityMetricKeys}
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
