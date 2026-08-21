@@ -365,15 +365,18 @@ export const TopActionGroup = styled.div`
 // real token. The active-state tint/focus ring used to hardcode that same orange as a raw rgba()
 // with no variable at all - color-mix keeps them tied to --matching-accent (and so to the app's
 // bronze accent) at every theme mode, light or dark, instead of only the light one.
+// Spec §5 correction 2: the screen spends its one accent colour on "add to
+// favourites". The top bar's controls - filter trigger, its count, the "⋮" -
+// are chrome, so their active state reads as a neutral outline, not as orange.
 export const ActionButton = styled.button`
   position: relative;
   width: ${({ $wide }) => ($wide ? 'auto' : '35px')};
   min-width: ${({ $wide }) => ($wide ? '44px' : '35px')};
   height: 35px;
   padding: ${({ $wide }) => ($wide ? '3px 10px' : '3px')};
-  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent)' : 'transparent')};
-  background: ${({ $active }) => ($active ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)' : 'var(--matching-action-bg)')};
-  color: ${({ $active }) => ($active ? 'var(--matching-accent)' : 'var(--matching-action-color)')};
+  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-header-text)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'color-mix(in srgb, var(--matching-header-text) 8%, transparent)' : 'var(--matching-action-bg)')};
+  color: ${({ $active }) => ($active ? 'var(--matching-header-text)' : 'var(--matching-muted-text)')};
   box-shadow: var(--matching-action-shadow);
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1), border-color 240ms cubic-bezier(0.4, 0, 0.2, 1), color 240ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50px;
@@ -388,7 +391,7 @@ export const ActionButton = styled.button`
 
   &:hover:not(:disabled) {
     transform: translateY(-1px) scale(1.03);
-    border-color: var(--matching-accent);
+    border-color: var(--matching-header-text);
   }
 
   &:active:not(:disabled) {
@@ -417,8 +420,8 @@ export const ActionBadge = styled.span`
   padding: 0 4px;
   border: 2px solid var(--matching-panel-bg);
   border-radius: 999px;
-  background: var(--matching-accent);
-  color: #fff;
+  background: var(--matching-header-text);
+  color: var(--matching-panel-bg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1138,6 +1141,8 @@ export const ModernHeroContent = styled.div`
   text-shadow: none;
 `;
 
+// Spec §5 correction 2: role badges and location pins are information, not the
+// screen's one action, so they carry no accent.
 export const ModernRoleBadge = styled.span`
   position: absolute;
   top: 14px;
@@ -1150,7 +1155,7 @@ export const ModernRoleBadge = styled.span`
   padding: 5px 10px;
   border-radius: 999px;
   color: #FFFFFF;
-  background: var(--matching-accent);
+  background: var(--matching-muted-text);
   box-shadow: 0 8px 18px rgba(232, 121, 26, 0.18);
   font-size: 11px;
   font-weight: 700;
@@ -1179,7 +1184,7 @@ export const ModernHeroLocation = styled.p`
 
   svg {
     flex: 0 0 auto;
-    color: var(--matching-accent);
+    color: currentColor;
   }
 `;
 

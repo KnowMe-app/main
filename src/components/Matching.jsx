@@ -4140,6 +4140,16 @@ const Matching = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleMatchingSearchResultStatus]);
 
+  // Spec §1: the feed comes back the moment the query is empty, however it got
+  // there - the ✕, or the last character being deleted.
+  useEffect(() => {
+    if (searchQuery.trim() || viewModeRef.current !== 'search') return;
+    setMatchingSearchStatus('');
+    matchingSearchKeyRef.current = null;
+    setSearchTab('results');
+    reloadDefault();
+  }, [reloadDefault, searchQuery]);
+
   const handleSearchCleared = React.useCallback(() => {
     setMatchingSearchStatus('');
     matchingSearchKeyRef.current = null;
@@ -6240,14 +6250,29 @@ const Matching = () => {
     window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      if (detailHistoryStateRef.current) {
+      // Only pop the entry we pushed. If the card navigated somewhere (the admin
+      // edit route), history has already moved on and a back() here would undo
+      // that navigation instead of closing anything.
+      if (detailHistoryStateRef.current && window.history.state?.matchingDetail) {
         detailHistoryStateRef.current = false;
         window.history.back();
+        return;
       }
+      detailHistoryStateRef.current = false;
     };
   }, [detailOpen]);
 
-  // Spec §7: the feed comes back to the exact row the reader left from.
+  // The layer covers the viewport, so the page behind it must not scroll with it.
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [detailOpen]);
+
+  // Spec §7: the feed comes back to the exact row the reader left from. The feed
+  // never unmounted, but locking the body's scroll can still move it, so the
+  // position saved on open is put back once the layer is gone.
   useLayoutEffect(() => {
     if (detailOpen) return;
     const savedTop = feedScrollTopRef.current;
@@ -6728,7 +6753,7 @@ const Matching = () => {
             </OwnerStatusMessage>
           )}
 
-          {viewMode === 'dislikes' && viewLayout === 'list' && detailIndex === null ? (
+          {viewMode === 'dislikes' && viewLayout === 'list' ? (
             <MatchingHiddenList
               ownerId={ownerId}
               users={filteredUsers}
@@ -6741,12 +6766,10 @@ const Matching = () => {
               setOwnDislikeUsers={setOwnDislikeUsers}
               isAdmin={isAdmin}
               onGoToFeed={handleDefaultModeClick}
-              onEditProfile={user => {
-                saveScrollPosition();
-                navigate(`/edit/${user.userId}`, { state: user });
-              }}
+              onEditProfile={handleRowEditProfile}
+              onOpenProfile={openDetailFor}
             />
-          ) : detailIndex === null ? (
+          ) : (
             <FeedWrap>
               {feedRows.length > 0 && viewLayout === 'gallery' && (
                 <GalleryGrid>
@@ -6816,7 +6839,11 @@ const Matching = () => {
               )}
               <FeedSentinel ref={feedSentinelRef} />
             </FeedWrap>
-          ) : (
+          )}
+
+          {/* Spec §7: a layer over the feed. The feed keeps its DOM and its
+              scroll position underneath, so closing costs no reload. */}
+          {detailIndex !== null && (
           <DetailLayer
             $themeMode={themeMode}
             $bounce={detailBounce}

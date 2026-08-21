@@ -74,6 +74,7 @@ const MatchingHiddenList = ({
   isAdmin,
   onGoToFeed,
   onEditProfile,
+  onOpenProfile,
 }) => {
   const [expandedIds, setExpandedIds] = useState(() => loadPersistedExpandedIds());
   const [photosByUserId, setPhotosByUserId] = useState({});
@@ -309,6 +310,7 @@ const MatchingHiddenList = ({
               isAdmin={isAdmin}
               expanded={expandedIds.has(user.userId)}
               onToggleExpand={handleToggleExpand}
+              onOpen={onOpenProfile}
               primaryAction={returnAction}
               onEditProfile={onEditProfile}
               onContactsOpened={handleContactsOpened}
