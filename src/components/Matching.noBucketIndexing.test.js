@@ -20,9 +20,10 @@ describe('Matching no-bucket index filtering', () => {
   it('builds role and marital status buckets by inverting disabled no buckets', () => {
     const source = matchingDataProviderSource();
 
-    expect(source).toContain('const buildAllowedBucketsFromFilterGroup = (group, allBuckets = [], bucketMap = {}) => {');
-    expect(source).toContain("const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, { no: 'empty', '?': 'other' });");
+    expect(source).toContain('const buildAllowedBucketsFromFilterGroup = (group, allBuckets = [], bucketMap = {}) =>');
+    expect(source).toContain('selectSearchKeyBuckets(group, allBuckets, { bucketMap })');
+    expect(source).toContain('const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, ROLE_BUCKET_FILTER_KEYS);');
     expect(source).toContain("const buildMaritalStatusBuckets = filters => buildAllowedBucketsFromFilterGroup(");
-    expect(source).toContain("{ '+': 'married', '-': 'unmarried', '?': 'other', no: 'empty' }");
+    expect(source).toContain('MARITAL_STATUS_BUCKET_MAP');
   });
 });

@@ -45,6 +45,7 @@ import {
   shouldSkipBroadFallbackForExactSearchId,
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
+import { AGE_BUCKET_FILTER_KEYS, isBucketSelectedByFilterGroup } from '../utils/searchKeyBuckets';
 import { searchByIndexOn } from './searchByIndexOn';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { isLongFormatUserId, mergeUserCollectionData } from '../utils/mergeUserCollections';
@@ -4324,7 +4325,14 @@ const collectIdsFromAgeSnapshot = (snapshot, idSet) => {
   });
 };
 
-export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
+// `includeUnofferedBuckets` reconciles the index with the drawer: Matching has no
+// "no" checkbox for age, and its post-filter counts a profile without a birth date
+// as "?", so the `no` bucket has to follow the "?" option instead of being dropped.
+export const collectAgeIdsByFilters = async (
+  ageFilters,
+  rootPaths = [SEARCH_KEY_INDEX_ROOT],
+  { includeUnofferedBuckets = false } = {},
+) => {
   const shouldApplyAge = hasExplicitFilterSelection(ageFilters);
   if (!shouldApplyAge) return null;
 
@@ -4359,6 +4367,7 @@ export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY
     { keys: ['31_33'], range: { minAge: 31, maxAge: 33 } },
     { keys: ['34_36'], range: { minAge: 34, maxAge: 36 } },
     { keys: ['37_42'], range: { minAge: 37, maxAge: 42 } },
+    { keys: ['37_plus'], range: { minAge: 37 } },
     { keys: ['43_plus'], range: { minAge: 43 } },
   ];
 
@@ -4372,6 +4381,13 @@ export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY
     acc.push({ minAge: Math.min(a, b), maxAge: Math.max(a, b) });
     return acc;
   }, []);
+
+  const specialBucketSelected = bucket => {
+    if (includeUnofferedBuckets) {
+      return isBucketSelectedByFilterGroup(ageFilters, bucket, { bucketMap: AGE_BUCKET_FILTER_KEYS });
+    }
+    return bucket === '?' ? selected('other') || selected('?') : selected('empty') || selected('no');
+  };
 
   rootPaths.forEach(rootPath => {
     ageRangeFilters.forEach(({ keys, range }) => {
@@ -4393,8 +4409,8 @@ export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY
       addRangeRequest(getBirthDateRangeByAge({ minAge: ageValue, maxAge: ageValue }), rootPath);
     });
 
-    if (selected('other') || selected('?')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
-    if (selected('empty') || selected('no')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/no`)));
+    if (specialBucketSelected('?')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
+    if (specialBucketSelected('no')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/no`)));
   });
 
   const snapshots = await Promise.all(requests);

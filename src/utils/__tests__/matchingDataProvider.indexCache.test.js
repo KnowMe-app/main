@@ -133,7 +133,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
   it('rereads bucket after matching index TTL expires', async () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
-    const filters = { userRole: { ag: true, ed: false } };
+    const filters = { userRole: { ag: true, ed: false, ip: false, other: false } };
 
     await fetchMatchingIndexedCandidates({ filters, limit: 1, hydrateUsersByIds });
     Date.now.mockReturnValue(1_000_000 + (10 * 60 * 1000) + 1);
@@ -190,7 +190,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
 
     const result = await fetchMatchingIndexedCandidates({ filters, limit: 2, hydrateUsersByIds });
 
-    expect(mockCollectAgeIdsByFilters).toHaveBeenCalledWith(filters.age, ['searchKey/users']);
+    expect(mockCollectAgeIdsByFilters).toHaveBeenCalledWith(filters.age, ['searchKey/users'], { includeUnofferedBuckets: true });
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/age/le21');
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/age/22_25');
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/age/26_30');
@@ -200,10 +200,82 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     expect(result.ageDateRangeIdsCount).toBe(3);
   });
 
+  it('keeps unfilled cards in the plan while the drawer "?" option is on', async () => {
+    const { buildMatchingIndexFilterGroups } = loadModule();
+
+    const groups = buildMatchingIndexFilterGroups({
+      // The Matching drawer's real role group: no "no"/"empty" checkbox to tick.
+      filters: { userRole: { ed: true, ag: false, ip: true, other: true } },
+      collectionSource: 'users',
+    });
+    const roleGroup = groups.find(group => group.indexName === 'role');
+
+    expect(roleGroup.values).toContain('no');
+    expect(roleGroup.values).toContain('?');
+    expect(roleGroup.values).not.toContain('ag');
+    // `no` is the bulk bucket, so the read is inverted onto what was switched off.
+    expect(roleGroup.readMode).toBe('exclude');
+    expect(roleGroup.readBuckets).toEqual(['ag']);
+  });
+
+  it('reaches Rh-only blood buckets that carry no group', async () => {
+    const { buildMatchingIndexFilterGroups } = loadModule();
+
+    const groups = buildMatchingIndexFilterGroups({
+      filters: { rh: { '+': true, '-': false, other: false } },
+      collectionSource: 'users',
+    });
+    const bloodGroup = groups.find(group => group.indexName === 'blood');
+
+    expect(bloodGroup.values).toEqual(['1+', '2+', '3+', '4+', '+']);
+    expect(bloodGroup.readMode).toBe('include');
+  });
+
+  it('defers to source pagination instead of reading the bulk buckets', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const hydrateUsersByIds = jest.fn();
+    const filters = { userRole: { ed: true, ag: false, ip: true, other: true } };
+
+    const result = await fetchMatchingIndexedCandidates({ filters, limit: 5, hydrateUsersByIds });
+
+    expect(result.usedIndex).toBe(false);
+    expect(result.reason).toBe('exclude-only-index-plan');
+    expect(result.hasMore).toBe(false);
+    expect(mockFirebaseGet).not.toHaveBeenCalled();
+    expect(hydrateUsersByIds).not.toHaveBeenCalled();
+  });
+
+  it('subtracts an exclusion group from an include group instead of reading `no`', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+    const filters = {
+      // role narrows to one bucket, maritalStatus only rejects the "-" bucket.
+      userRole: { ed: false, ag: true, ip: false, other: false },
+      maritalStatus: { married: true, unmarried: false, other: true },
+    };
+
+    mockFirebaseGet.mockImplementation(async path => (
+      path === 'searchKey/users/maritalStatus/-'
+        ? makeSnapshot({ user00000000000000000002: true })
+        : makeSnapshot({
+          user00000000000000000001: true,
+          user00000000000000000002: true,
+          user00000000000000000003: true,
+        })
+    ));
+
+    const result = await fetchMatchingIndexedCandidates({ filters, limit: 5, hydrateUsersByIds });
+
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/role/ag');
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/maritalStatus/-');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/maritalStatus/no');
+    expect(result.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000003']);
+  });
+
   it('applies excluded reactions without corrupting the base cached id list', async () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
-    const filters = { userRole: { ag: true, ed: false } };
+    const filters = { userRole: { ag: true, ed: false, ip: false, other: false } };
 
     const excluded = await fetchMatchingIndexedCandidates({ filters, limit: 5, excludeIds: ['user00000000000000000001'], hydrateUsersByIds });
     const base = await fetchMatchingIndexedCandidates({ filters, limit: 5, hydrateUsersByIds });
@@ -239,7 +311,7 @@ describe('fetchMatchingIndexedCandidates card hydration cache', () => {
     });
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id, name: 'Hydrated', photos: ['p'], __photosHydrated: true }])));
-    const filters = { userRole: { ag: true, ed: false } };
+    const filters = { userRole: { ag: true, ed: false, ip: false, other: false } };
 
     const result = await fetchMatchingIndexedCandidates({ filters, limit: 2, hydrateUsersByIds });
 
