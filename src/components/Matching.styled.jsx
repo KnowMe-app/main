@@ -1718,3 +1718,207 @@ export const LayoutToggleButton = styled.button`
     outline-offset: 1px;
   }
 `;
+
+/* ------------------------------------------------------------------ *
+ * Matching feed (spec §5-§6)
+ * ------------------------------------------------------------------ */
+
+export const FeedWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  padding: 0 10px 10px;
+  box-sizing: border-box;
+`;
+
+export const FeedList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 2px 0 4px;
+`;
+
+// Spec §6: one grid, one tile shape. A vertical photo is cropped to the same
+// 4/5 box as every other so the columns stay level while images stream in.
+export const GalleryGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 12px;
+  padding: 2px 0 4px;
+`;
+
+export const GalleryTile = styled.div`
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+  opacity: ${({ $muted }) => ($muted ? 0.5 : 1)};
+`;
+
+export const GalleryPhotoBox = styled.div`
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--matching-section-bg);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+`;
+
+// The heart sits on top of the photo, so it carries its own scrim - without it
+// the icon disappears on a bright shot.
+export const GalleryHeartButton = styled.button`
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : '#fff')};
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
+export const GalleryHiddenBadge = styled.span`
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--matching-muted-text);
+  background: var(--matching-card-bg);
+  border: 1px solid var(--matching-card-border);
+`;
+
+export const GalleryName = styled.div`
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--matching-header-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+export const GalleryFacts = styled.div`
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--matching-muted-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+export const FeedSentinel = styled.div`
+  height: 1px;
+`;
+
+export const FeedNotice = styled.div`
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--matching-muted-text);
+`;
+
+/* ------------------------------------------------------------------ *
+ * Detail layer (spec §7)
+ *
+ * A layer over the feed, not a route: the feed keeps its DOM and its scroll
+ * position underneath, and history.pushState gives Android's hardware Back
+ * something to pop so it closes the layer instead of leaving the page.
+ * ------------------------------------------------------------------ */
+
+export const DetailLayer = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  ${matchingThemeVars}
+  background: var(--matching-shell-bg);
+  transform: translateX(${({ $bounce }) => {
+    if ($bounce > 0) return '-8px';
+    if ($bounce < 0) return '8px';
+    return '0px';
+  }});
+  transition: transform 180ms cubic-bezier(0.2, 0, 0.2, 1);
+`;
+
+export const DetailInner = styled.div`
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 480px;
+  min-height: 0;
+`;
+
+export const DetailBar = styled.div`
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: var(--matching-shell-bg);
+`;
+
+export const DetailCloseButton = styled.button`
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 50%;
+  background: var(--matching-card-bg);
+  color: var(--matching-muted-text);
+  cursor: pointer;
+  font-size: 15px;
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
+export const DetailPosition = styled.div`
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--matching-muted-text);
+`;

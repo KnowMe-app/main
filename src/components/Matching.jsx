@@ -71,7 +71,16 @@ import {
   Chip,
   ChipCount,
   ChipsRow,
+  FeedList,
+  FeedNotice,
+  FeedSentinel,
+  FeedWrap,
   LayoutToggleButton,
+  DetailBar,
+  DetailCloseButton,
+  DetailInner,
+  DetailLayer,
+  DetailPosition,
 } from './Matching.styled';
 import {
   fetchUsersByLastLogin2,
@@ -103,7 +112,7 @@ import {
 } from 'utils/backendDownloadToast';
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { BtnFavorite } from './smallCard/btnFavorite';
+import { BtnFavorite, toggleFavoriteUser } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import SearchBar, { getSearchCacheKeyForParams } from './SearchBar';
 import PhotoViewer from './PhotoViewer';
@@ -119,8 +128,10 @@ import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
+import ProfileRow from './ProfileRow';
 import { HiddenHeaderTitle as MatchingHiddenListHeaderTitle } from './MatchingHiddenList.styled';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl } from 'react-icons/fa';
+import { FaRegHeart } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -1276,6 +1287,8 @@ const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
 const MATCHING_MAX_PAGES_PER_LOAD = 3;
 const LOAD_MORE = 5;
+// How many feed rows get their avatar and comment hydrated up front.
+const FEED_PHOTO_HYDRATION_LIMIT = 60;
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
@@ -1411,6 +1424,14 @@ const Matching = () => {
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
   const matchingSearchKeyRef = useRef(null);
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
+  // Spec §1: the screen has one content area with three states. `detailIndex`
+  // is the third - a layer over the feed rather than a route - and it points
+  // into the very same `filtered` array the list and gallery render from, so
+  // paging through it never issues a request.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [expandedRowIds, setExpandedRowIds] = useState(() => new Set());
+  const feedScrollTopRef = useRef(0);
+  const rowContactViewKeysRef = useRef(new Set());
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
@@ -4772,21 +4793,35 @@ const Matching = () => {
     if (initialRequestId && !loading) toast.dismiss('matching-slow-load');
   }, [initialRequestId, loadError, loading]);
 
-  const filteredUsers = (viewMode === 'favorites' || viewMode === 'dislikes')
-    ? reactionTabUsers
-    : (debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')
-      ? users
-    : applyMatchingUiFiltersToUsers({
-    users: visibleUsers,
-    filters,
-    filterMainFn: filterMain,
-    favoriteUsers,
-    dislikeUsers,
-    excludeReactionUsers: viewMode === 'default',
-    roleIndexSets,
+  // Spec §10: one `filtered` array feeds the list, the gallery and the detail
+  // layer, and it is computed once per input change rather than on every render.
+  const filteredUsers = useMemo(() => {
+    if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
+    if (debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users') return users;
+    return applyMatchingUiFiltersToUsers({
+      users: visibleUsers,
+      filters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: viewMode === 'default',
+      roleIndexSets,
+      collectionSource,
+      viewMode,
+    });
+  }, [
     collectionSource,
+    debugShowAllIndexedCards,
+    dislikeUsers,
+    favoriteUsers,
+    filters,
+    isIndexedDebugTestUser,
+    reactionTabUsers,
+    roleIndexSets,
+    users,
     viewMode,
-  });
+    visibleUsers,
+  ]);
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
     const isGroupNeutralOrInactive = value => (
@@ -5221,7 +5256,8 @@ const Matching = () => {
     visibleUsers,
   ]);
 
-  const activeProfile = filteredUsers[activeProfileIndex] || null;
+  const detailIndex = detailOpen && filteredUsers.length ? activeProfileIndex : null;
+  const activeProfile = detailIndex === null ? null : (filteredUsers[detailIndex] || null);
 
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;
@@ -5236,8 +5272,13 @@ const Matching = () => {
 
   const activeProfileWithLazyPhotos = withLazyPhotos(activeProfile);
 
+  // Rows carry an avatar, so the feed hydrates photos for everything it renders;
+  // the detail layer only ever needs the current card and the next one.
   useEffect(() => {
-    const candidates = [filteredUsers[activeProfileIndex], filteredUsers[activeProfileIndex + 1]]
+    const pool = detailOpen
+      ? [filteredUsers[activeProfileIndex], filteredUsers[activeProfileIndex + 1]]
+      : filteredUsers.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
+    const candidates = pool
       .filter(user => user?.userId && !user.__photosHydrated && !photoCacheByUserId[user.userId]);
     if (!candidates.length) return undefined;
 
@@ -5262,13 +5303,18 @@ const Matching = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeProfileIndex, filteredUsers, photoCacheByUserId]);
+  }, [activeProfileIndex, detailOpen, filteredUsers, photoCacheByUserId]);
 
   useEffect(() => {
     if (activeProfile?.userId) {
       void loadCommentsFor([activeProfile], { activeOnly: true });
     }
   }, [activeProfile, loadCommentsFor]);
+
+  useEffect(() => {
+    if (detailOpen || !filteredUsers.length) return;
+    void loadCommentsFor(filteredUsers.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
+  }, [detailOpen, filteredUsers, loadCommentsFor]);
 
   useEffect(() => {
     setActiveProfileIndex(index => {
@@ -5430,6 +5476,11 @@ const Matching = () => {
     viewMode,
   ]);
 
+  // Spec §7: paging the detail layer walks `filtered[detailIndex ± 1]` and nothing
+  // else - no fetch, no request for the card by id. It stops at both ends with a
+  // short bounce instead of wrapping around. The feed's own sentinel is what
+  // extends the deck, so this path deliberately never triggers a load.
+  const [detailBounce, setDetailBounce] = useState(0);
   const navigateActiveProfile = React.useCallback((step) => {
     if (filteredUsers.length === 0) {
       setActiveProfileIndex(0);
@@ -5437,15 +5488,19 @@ const Matching = () => {
     }
 
     const nextIndex = Math.max(0, Math.min(filteredUsers.length - 1, activeProfileIndex + step));
-    const isForwardNavigation = step > 0;
-    const reachesDeckEnd = isForwardNavigation && nextIndex >= filteredUsers.length - 1;
+    if (nextIndex === activeProfileIndex) {
+      setDetailBounce(step > 0 ? 1 : -1);
+      return;
+    }
 
     setActiveProfileIndex(nextIndex);
+  }, [activeProfileIndex, filteredUsers.length]);
 
-    if (reachesDeckEnd) {
-      triggerEndOfDeckLoad(nextIndex === activeProfileIndex ? 'swipe-at-last-card' : 'swipe-to-last-card');
-    }
-  }, [activeProfileIndex, filteredUsers.length, triggerEndOfDeckLoad]);
+  useEffect(() => {
+    if (!detailBounce) return undefined;
+    const timer = setTimeout(() => setDetailBounce(0), 220);
+    return () => clearTimeout(timer);
+  }, [detailBounce]);
 
   useEffect(() => {
     const handleKeyDown = event => {
@@ -5466,6 +5521,17 @@ const Matching = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigateActiveProfile]);
+
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    const handleEscape = event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setDetailOpen(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [detailOpen]);
 
   useEffect(() => {
     writeMatchingDebugLog('autoLoadEffect:evaluated', {
@@ -5868,6 +5934,146 @@ const Matching = () => {
     viewMode,
   ]);
 
+  // Spec §5: the metrics a filter narrowed on lead the row's metrics line, so the
+  // numbers the reader is scanning for sit in the same place on every row.
+  const priorityMetricKeys = useMemo(() => {
+    const keys = [];
+    const isChanged = groupName => {
+      const current = filters?.[groupName];
+      const defaults = matchingDefaultFilters?.[groupName];
+      if (!current || !defaults) return false;
+      return Object.keys(defaults).some(option => Boolean(current[option]) !== Boolean(defaults[option]));
+    };
+    if (isChanged('bmi')) keys.push('bmi', 'hw');
+    if (isChanged('bloodGroup') || isChanged('rh')) keys.push('blood');
+    if (isChanged('maritalStatus')) keys.push('marital');
+    return keys;
+  }, [filters, matchingDefaultFilters]);
+
+  const openDetailFor = React.useCallback(user => {
+    const index = filteredUsers.findIndex(candidate => candidate?.userId === user?.userId);
+    if (index === -1) return;
+    feedScrollTopRef.current = window.scrollY;
+    setActiveProfileIndex(index);
+    setDetailOpen(true);
+  }, [filteredUsers]);
+
+  const closeDetail = React.useCallback(() => {
+    setDetailOpen(false);
+  }, []);
+
+  // Opening pushes one history entry; Android's Back (and the browser's) pops
+  // it, which is what actually closes the layer. Closing from the UI goes
+  // through history.back() so the entry never outlives the layer.
+  const detailHistoryStateRef = useRef(false);
+  useEffect(() => {
+    if (!detailOpen) return undefined;
+    window.history.pushState({ matchingDetail: true }, '');
+    detailHistoryStateRef.current = true;
+    const handlePopState = () => {
+      detailHistoryStateRef.current = false;
+      setDetailOpen(false);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (detailHistoryStateRef.current) {
+        detailHistoryStateRef.current = false;
+        window.history.back();
+      }
+    };
+  }, [detailOpen]);
+
+  // Spec §7: the feed comes back to the exact row the reader left from.
+  useLayoutEffect(() => {
+    if (detailOpen) return;
+    const savedTop = feedScrollTopRef.current;
+    if (!savedTop) return;
+    requestAnimationFrame(() => window.scrollTo(0, savedTop));
+  }, [detailOpen]);
+
+  const handleToggleRowExpand = React.useCallback(userId => {
+    setExpandedRowIds(previous => {
+      const next = new Set(previous);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }, []);
+
+  const handleRowContactsOpened = React.useCallback(user => {
+    if (!user?.userId || !ownerId) return;
+    const trackKey = `${ownerId}:${user.userId}`;
+    if (rowContactViewKeysRef.current.has(trackKey)) return;
+    rowContactViewKeysRef.current.add(trackKey);
+    void addContactViewUser(user.userId, ownerId);
+  }, [ownerId]);
+
+  const handleRowCommentSave = React.useCallback(async (user, text) => {
+    const cardId = user?.userId;
+    if (!cardId || !auth.currentUser) return;
+    commentsRef.current = { ...commentsRef.current, [cardId]: text };
+    setComments(previous => ({ ...previous, [cardId]: text }));
+    try {
+      const res = await saveMyCardComment(cardId, text, ownerId);
+      dispatchedCommentSaveRef.current = { cardId, text };
+      setLocalComment(ownerId, cardId, text, res?.lastAction);
+      dispatchedCommentSaveRef.current = null;
+    } catch (error) {
+      dispatchedCommentSaveRef.current = null;
+      toast.error(`Не вдалося зберегти коментар: ${error?.message || String(error)}`);
+    }
+  }, [ownerId]);
+
+  const handleRowEditProfile = React.useCallback(user => {
+    saveScrollPosition();
+    navigate(`/edit/${user.userId}`, { state: user });
+    // saveScrollPosition reads a ref and never changes identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
+  const toggleRowFavorite = React.useCallback(user => {
+    if (!user?.userId) return;
+    void toggleFavoriteUser({
+      userId: user.userId,
+      userData: user,
+      favoriteUsers,
+      setFavoriteUsers,
+      ownFavoriteUsers,
+      setOwnFavoriteUsers,
+      dislikeUsers,
+      setDislikeUsers,
+      ownDislikeUsers,
+      setOwnDislikeUsers,
+      multiDataOwnerId: ownerId,
+    });
+  }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
+
+  const emptyFeedMessage = 'Немає доступних профілів';
+
+  // The feed pages itself: a sentinel under the last row asks for the next page
+  // as it scrolls into view. It routes through the same end-of-deck loader the
+  // card deck used, so the existing in-flight guards, cooldown and empty-page
+  // backoff still apply - this is only a new trigger, not a second load path.
+  const feedSentinelRef = useRef(null);
+  const endOfDeckLoadRef = useRef(triggerEndOfDeckLoad);
+  useEffect(() => { endOfDeckLoadRef.current = triggerEndOfDeckLoad; }, [triggerEndOfDeckLoad]);
+  useEffect(() => {
+    const node = feedSentinelRef.current;
+    if (!node || detailIndex !== null || !hasMore || loading) return undefined;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      endOfDeckLoadRef.current('feed-sentinel');
+    }, { rootMargin: '400px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [detailIndex, filteredUsers.length, hasMore, loading]);
+
+  const feedRows = useMemo(
+    () => filteredUsers.map(user => withLazyPhotos(user)),
+    [filteredUsers, withLazyPhotos],
+  );
+
   const dotsMenu = () => (
     <ProfileDotsMenu
       navigate={navigate}
@@ -6083,7 +6289,7 @@ const Matching = () => {
             </OwnerStatusMessage>
           )}
 
-          {viewMode === 'dislikes' ? (
+          {viewMode === 'dislikes' && viewLayout === 'list' && detailIndex === null ? (
             <MatchingHiddenList
               ownerId={ownerId}
               users={filteredUsers}
@@ -6101,7 +6307,71 @@ const Matching = () => {
                 navigate(`/edit/${user.userId}`, { state: user });
               }}
             />
+          ) : detailIndex === null ? (
+            <FeedWrap>
+              {feedRows.length > 0 && (
+                <FeedList>
+                  {feedRows.map(user => (
+                    <ProfileRow
+                      key={user.userId}
+                      user={user}
+                      isAdmin={isAdmin}
+                      expanded={expandedRowIds.has(user.userId)}
+                      onToggleExpand={handleToggleRowExpand}
+                      onOpen={openDetailFor}
+                      onEditProfile={handleRowEditProfile}
+                      onContactsOpened={handleRowContactsOpened}
+                      clientComment={comments[user.userId] || ''}
+                      onCommentSave={handleRowCommentSave}
+                      priorityMetricKeys={priorityMetricKeys}
+                      primaryAction={{
+                        icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
+                        title: 'В обране',
+                        accent: true,
+                        active: Boolean(favoriteUsers[user.userId]),
+                        onClick: toggleRowFavorite,
+                      }}
+                    />
+                  ))}
+                </FeedList>
+              )}
+              {loading && feedRows.length === 0 && <MatchingSkeleton />}
+              {!loading && feedRows.length === 0 && !loadError && (
+                <FeedNotice>{emptyFeedMessage}</FeedNotice>
+              )}
+              {loadError && feedRows.length === 0 && (
+                <FeedNotice role="alert">
+                  <div>Не вдалося завантажити профілі.</div>
+                  <div>{loadError.userMessage}</div>
+                  <ActionButton type="button" onClick={reloadDefault} aria-label="Повторити завантаження">
+                    Спробувати ще раз
+                  </ActionButton>
+                </FeedNotice>
+              )}
+              <FeedSentinel ref={feedSentinelRef} />
+            </FeedWrap>
           ) : (
+          <DetailLayer
+            $themeMode={themeMode}
+            $bounce={detailBounce}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Профіль"
+          >
+            <DetailInner>
+              <DetailBar>
+                <DetailCloseButton
+                  type="button"
+                  onClick={closeDetail}
+                  aria-label="Закрити профіль"
+                  title="Закрити профіль"
+                >
+                  <FaChevronLeft />
+                </DetailCloseButton>
+                <DetailPosition aria-live="polite">
+                  {detailIndex + 1} / {filteredUsers.length}
+                </DetailPosition>
+              </DetailBar>
           <Grid>
             {activeProfileWithLazyPhotos ? (() => {
               const user = activeProfileWithLazyPhotos;
@@ -6246,6 +6516,8 @@ const Matching = () => {
               <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
             )}
           </Grid>
+            </DetailInner>
+          </DetailLayer>
           )}
 
           {showInfoModal && (
