@@ -50,7 +50,7 @@ describe('quick public comment', () => {
     const field = openComposer();
     fireEvent.change(field, { target: { value: '   ' } });
     fireEvent.blur(field);
-    await waitFor(() => expect(screen.getByText('Додати коментар')).toBeInTheDocument());
+    expect(await screen.findByText('Додати коментар')).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -60,7 +60,7 @@ describe('quick public comment', () => {
     fireEvent.change(field, { target: { value: 'не зберігати' } });
     fireEvent.keyDown(field, { key: 'Escape' });
     fireEvent.blur(field);
-    await waitFor(() => expect(screen.getByText('Додати коментар')).toBeInTheDocument());
+    expect(await screen.findByText('Додати коментар')).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -95,7 +95,7 @@ describe('quick public comment', () => {
     const field = openComposer();
     fireEvent.change(field, { target: { value: 'не пройшло' } });
     fireEvent.blur(field);
-    await waitFor(() => expect(screen.getByText('Повторити')).toBeInTheDocument());
+    expect(await screen.findByText('Повторити')).toBeInTheDocument();
     expect(screen.getByText('не пройшло')).toBeInTheDocument();
 
     onCreate.mockResolvedValueOnce(undefined);
