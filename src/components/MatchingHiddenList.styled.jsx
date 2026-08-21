@@ -550,3 +550,152 @@ export const ToastUndo = styled.button`
   cursor: pointer;
   white-space: nowrap;
 `;
+
+/* ------------------------------------------------------------------ *
+ * Public profile comment (spec §8)
+ *
+ * The trigger has to read as text, not as a control: no border, no fill, no
+ * button chrome. Only once it is focused does it become a field, and the field
+ * itself stays borderless apart from a hairline rule under it.
+ * ------------------------------------------------------------------ */
+
+export const PublicComments = styled.div`
+  margin-top: 8px;
+`;
+
+export const CommentEntry = styled.div`
+  padding: 4px 10px 4px;
+  border-left: ${({ $failed }) => ($failed
+    ? '1px solid color-mix(in srgb, #d64545 70%, transparent)'
+    : '1px solid transparent')};
+  cursor: ${({ $editable }) => ($editable ? 'text' : 'pointer')};
+`;
+
+export const CommentMeta = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--matching-muted-text);
+
+  b {
+    font-weight: 700;
+  }
+`;
+
+export const CommentText = styled.p`
+  margin: 1px 0 0;
+  font-size: 12.3px;
+  line-height: 1.5;
+  color: var(--matching-header-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  ${({ $clip }) => $clip && css`
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  `}
+`;
+
+export const CommentRetry = styled.button`
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #d64545;
+  cursor: pointer;
+  text-decoration: underline;
+`;
+
+export const CommentsMoreButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--matching-muted-text);
+  cursor: pointer;
+
+  svg {
+    transition: transform 180ms ease;
+    transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
+  }
+`;
+
+export const AddCommentTrigger = styled.div`
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  font-size: 12.3px;
+  line-height: 1.5;
+  color: var(--matching-muted-text);
+  opacity: 0.75;
+  cursor: text;
+`;
+
+export const CommentEditor = styled.div`
+  margin-top: 6px;
+  padding: 0 10px;
+`;
+
+export const CommentEditorHead = styled.div`
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--matching-muted-text);
+`;
+
+// Spec §8: the reader has to see that the record is public and signed by them
+// *before* they start typing, not after. This label is not optional chrome.
+export const CommentVisibilityNote = styled.span`
+  font-size: 11px;
+  color: var(--matching-muted-text);
+  opacity: 0.85;
+  white-space: nowrap;
+`;
+
+export const CommentStatus = styled.span`
+  display: block;
+  margin: 3px 10px 0 0;
+  text-align: right;
+  font-size: 11px;
+  color: var(--matching-muted-text);
+  white-space: nowrap;
+`;
+
+export const PublicCommentInput = styled.textarea`
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 2px;
+  padding: 2px 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--matching-card-border);
+  border-radius: 0;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  font: inherit;
+  font-size: 12.3px;
+  line-height: 1.5;
+  color: var(--matching-header-text);
+
+  &:focus {
+    outline: 0;
+    border-bottom-color: color-mix(in srgb, var(--matching-accent) 45%, transparent);
+  }
+`;

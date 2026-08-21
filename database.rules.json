@@ -20,6 +20,62 @@
       }
     },
 
+    "comments": {
+      ".read": "auth != null",
+      "$profileId": {
+        "$commentId": {
+          ".write": "auth != null && (data.exists() ? data.child('authorId').val() === auth.uid : newData.child('authorId').val() === auth.uid)",
+          ".validate": "!newData.exists() || newData.hasChildren(['text', 'authorId', 'createdAt', 'visibility'])",
+          "text": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 2000"
+          },
+          "authorId": {
+            ".validate": "newData.isString() && newData.val() === auth.uid && (!data.exists() || data.val() === newData.val())"
+          },
+          "authorName": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber() && (!data.exists() || data.val() === newData.val())"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber() || !newData.exists()"
+          },
+          "visibility": {
+            ".validate": "newData.val() === 'public'"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "replies": {
+      ".read": "auth != null",
+      "$commentId": {
+        ".write": "auth != null && (data.exists() ? data.child('authorId').val() === auth.uid : newData.child('authorId').val() === auth.uid)",
+        ".validate": "!newData.exists() || newData.hasChildren(['text', 'authorId', 'createdAt'])",
+        "text": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 2000"
+        },
+        "authorId": {
+          ".validate": "newData.isString() && newData.val() === auth.uid && (!data.exists() || data.val() === newData.val())"
+        },
+        "authorName": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && (!data.exists() || data.val() === newData.val())"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() || !newData.exists()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+
     "budget": {
       ".read": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'",
       ".write": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'"

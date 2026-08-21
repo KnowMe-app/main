@@ -459,6 +459,239 @@ export const CommentBlock = ({ text, onSave }) => {
   );
 };
 
+// ---------------------------------------------------------------------------
+// Public profile comment (spec §8)
+//
+// A record about a third party that every user of the base can read, signed with
+// the author's own name. The affordance is a line of muted text; a click turns it
+// into a borderless auto-growing field. It saves on blur, discards on Esc, and
+// commits + blurs on Ctrl/Cmd+Enter. An empty field writes nothing at all.
+
+const COMMENT_MIN_ROWS = 1;
+const COMMENT_MAX_ROWS = 6;
+const COMMENT_SAVED_STATUS_MS = 3000;
+export const PUBLIC_COMMENT_VISIBILITY_NOTE = 'публічно · від вашого імені';
+
+const autoGrowComment = el => {
+  if (!el) return;
+  const style = window.getComputedStyle(el);
+  const lineHeight = parseFloat(style.lineHeight) || 18;
+  const vertical = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  el.style.height = 'auto';
+  const maxHeight = lineHeight * COMMENT_MAX_ROWS + vertical;
+  const minHeight = lineHeight * COMMENT_MIN_ROWS + vertical;
+  const next = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+  el.style.height = `${next}px`;
+  el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+};
+
+const formatCommentClock = timestamp => {
+  const date = new Date(timestamp || Date.now());
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
+const formatCommentDate = timestamp => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getFullYear()).slice(2)}`;
+};
+
+const CommentComposer = ({ initialText, onCancel, onCommit }) => {
+  const ref = useRef(null);
+  const cancelledRef = useRef(false);
+  const [draft, setDraft] = useState(initialText || '');
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+    autoGrowComment(el);
+  }, []);
+
+  return (
+    <S.CommentEditor onClick={e => e.stopPropagation()}>
+      <S.CommentEditorHead>
+        <span>Коментар</span>
+        <S.CommentVisibilityNote>{PUBLIC_COMMENT_VISIBILITY_NOTE}</S.CommentVisibilityNote>
+      </S.CommentEditorHead>
+      <S.PublicCommentInput
+        ref={ref}
+        rows={COMMENT_MIN_ROWS}
+        value={draft}
+        onTouchStart={e => e.stopPropagation()}
+        onChange={e => {
+          setDraft(e.target.value);
+          autoGrowComment(e.target);
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelledRef.current = true;
+            onCancel();
+            return;
+          }
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            onCommit(e.target.value);
+          }
+        }}
+        onBlur={e => {
+          if (cancelledRef.current) return;
+          onCommit(e.target.value);
+        }}
+      />
+    </S.CommentEditor>
+  );
+};
+
+export const PublicCommentBlock = ({
+  profileId,
+  comments = [],
+  viewerId,
+  onCreate,
+  onUpdate,
+}) => {
+  const [editing, setEditing] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+  // Optimistic rows: rendered straight away, and kept - with their text - if the
+  // write fails, so a failure never costs what was typed.
+  const [pending, setPending] = useState([]);
+
+  useEffect(() => {
+    if (!savedAt) return undefined;
+    const timer = setTimeout(() => setSavedAt(0), COMMENT_SAVED_STATUS_MS);
+    return () => clearTimeout(timer);
+  }, [savedAt]);
+
+  const submit = useCallback(async (draftId, text, commentId) => {
+    const trimmed = String(text || '').trim();
+    setEditing(null);
+    if (!trimmed) {
+      setPending(prev => prev.filter(entry => entry.id !== draftId));
+      return;
+    }
+
+    setPending(prev => {
+      const next = prev.filter(entry => entry.id !== draftId);
+      if (commentId) return next;
+      return [...next, { id: draftId, text: trimmed, authorId: viewerId, createdAt: Date.now(), failed: false }];
+    });
+
+    try {
+      if (commentId) await onUpdate(profileId, commentId, trimmed);
+      else await onCreate(profileId, trimmed);
+      setPending(prev => prev.filter(entry => entry.id !== draftId));
+      setSavedAt(Date.now());
+    } catch {
+      // The text stays on screen with a retry next to it - a failed write must
+      // never cost what was typed.
+      const failedEntry = {
+        id: draftId,
+        text: trimmed,
+        authorId: viewerId,
+        createdAt: Date.now(),
+        failed: true,
+        commentId,
+      };
+      setPending(prev => (prev.some(entry => entry.id === draftId)
+        ? prev.map(entry => (entry.id === draftId ? { ...entry, ...failedEntry } : entry))
+        : [...prev, failedEntry]));
+    }
+  }, [onCreate, onUpdate, profileId, viewerId]);
+
+  const rows = useMemo(() => [...comments, ...pending], [comments, pending]);
+  const visibleRows = expanded ? rows : rows.slice(0, 2);
+
+  return (
+    <S.PublicComments onClick={e => e.stopPropagation()}>
+      {visibleRows.map(comment => {
+        const isOwn = Boolean(viewerId) && comment.authorId === viewerId;
+        const isEditingThis = editing?.commentId === comment.id;
+        if (isEditingThis) {
+          return (
+            <CommentComposer
+              key={comment.id}
+              initialText={comment.text}
+              onCancel={() => setEditing(null)}
+              onCommit={text => submit(editing.draftId, text, comment.id)}
+            />
+          );
+        }
+        return (
+          <S.CommentEntry
+            key={comment.id}
+            $failed={comment.failed}
+            $editable={isOwn}
+            onClick={() => {
+              // Spec §8: someone else's record opens, it never becomes editable.
+              if (isOwn) setEditing({ commentId: comment.id, draftId: comment.id });
+              else setExpanded(true);
+            }}
+          >
+            <S.CommentMeta>
+              <b>{getInitials(comment.authorName) || '—'}</b>
+              <span>{formatCommentDate(comment.createdAt)}</span>
+              {comment.failed && (
+                <S.CommentRetry
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    void submit(comment.id, comment.text, comment.commentId);
+                  }}
+                >
+                  Повторити
+                </S.CommentRetry>
+              )}
+            </S.CommentMeta>
+            <S.CommentText $clip={!expanded}>{comment.text}</S.CommentText>
+          </S.CommentEntry>
+        );
+      })}
+
+      {rows.length > 2 && (
+        <S.CommentsMoreButton
+          type="button"
+          $open={expanded}
+          onClick={() => setExpanded(open => !open)}
+          aria-expanded={expanded}
+        >
+          <b>{rows.length}</b>
+          <FaChevronDown size={10} />
+        </S.CommentsMoreButton>
+      )}
+
+      {editing?.commentId === null ? (
+        <CommentComposer
+          initialText=""
+          onCancel={() => setEditing(null)}
+          onCommit={text => submit(editing.draftId, text, null)}
+        />
+      ) : !editing && (
+        <S.AddCommentTrigger
+          role="button"
+          tabIndex={0}
+          onClick={() => setEditing({ commentId: null, draftId: `draft-${Date.now()}` })}
+          onKeyDown={e => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            setEditing({ commentId: null, draftId: `draft-${Date.now()}` });
+          }}
+        >
+          Додати коментар
+        </S.AddCommentTrigger>
+      )}
+
+      {savedAt > 0 && (
+        <S.CommentStatus aria-live="polite">Збережено {formatCommentClock(savedAt)}</S.CommentStatus>
+      )}
+    </S.PublicComments>
+  );
+};
+
 // A row counts as "unfilled" once its marital status is the only fact it has to
 // show - a bare "заміжня"/"не заміжня" isn't informative enough on its own.
 const isWeakOnlyFact = facts => facts.length === 1 && facts[0].key === 'marital';

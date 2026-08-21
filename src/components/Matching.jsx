@@ -102,6 +102,9 @@ import {
   searchUsersOnly,
   fetchUserComments,
   saveMyCardComment,
+  addPublicProfileComment,
+  fetchPublicProfileComments,
+  updatePublicProfileComment,
   COMMENTS_ROOT_PATH,
   fetchUsersByIds,
   database,
@@ -136,6 +139,7 @@ import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
 import ProfileRow, {
+  PublicCommentBlock,
   getGradientFor as getProfileGradientFor,
   getInitials as getProfileInitials,
   renderFacts as renderProfileFacts,
@@ -1300,6 +1304,8 @@ const MATCHING_MAX_PAGES_PER_LOAD = 3;
 const LOAD_MORE = 5;
 // How many feed rows get their avatar and comment hydrated up front.
 const FEED_PHOTO_HYDRATION_LIMIT = 60;
+// A stable identity so a row without public comments doesn't re-render on it.
+const EMPTY_PUBLIC_COMMENTS = [];
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
@@ -1500,6 +1506,11 @@ const Matching = () => {
   const [expandedRowIds, setExpandedRowIds] = useState(() => new Set());
   const feedScrollTopRef = useRef(0);
   const rowContactViewKeysRef = useRef(new Set());
+  // Spec §8: public records about a profile, readable by everyone signed in.
+  // Kept apart from `comments`, which holds this viewer's own private note.
+  const [publicComments, setPublicComments] = useState({});
+  const publicCommentsRequestedRef = useRef(new Set());
+  const [viewerName, setViewerName] = useState('');
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
@@ -1591,6 +1602,25 @@ const Matching = () => {
       .catch(error => console.error('Failed to load personal create profiles', error));
     return () => { active = false; };
   }, [isAdmin, ownerId]);
+  // A public comment is signed with the author's own name, so the viewer's name
+  // is resolved once here rather than at write time.
+  useEffect(() => {
+    if (!ownerId) {
+      setViewerName('');
+      return () => {};
+    }
+    let active = true;
+    fetchUserById(ownerId)
+      .then(profile => {
+        if (!active) return;
+        setViewerName(getProfileName(profile) || auth.currentUser?.displayName || '');
+      })
+      .catch(() => {
+        if (active) setViewerName(auth.currentUser?.displayName || '');
+      });
+    return () => { active = false; };
+  }, [ownerId]);
+
   const matchingDefaultFilters = useMemo(
     () => getDefaultFilters({ mode: 'matching', nonAdminAllActive: !access.isAdmin }),
     [access.isAdmin],
@@ -6137,6 +6167,46 @@ const Matching = () => {
     return () => observer.disconnect();
   }, [detailIndex, filteredUsers.length, hasMore, loading]);
 
+  // The rows carry their public comments inline, so the feed loads them for the
+  // page it renders and never asks twice for the same profile.
+  useEffect(() => {
+    if (detailOpen || !ownerId) return;
+    const pendingIds = filteredUsers
+      .slice(0, FEED_PHOTO_HYDRATION_LIMIT)
+      .map(user => user?.userId)
+      .filter(Boolean)
+      .filter(id => !publicCommentsRequestedRef.current.has(id));
+    if (!pendingIds.length) return;
+    pendingIds.forEach(id => publicCommentsRequestedRef.current.add(id));
+    fetchPublicProfileComments(pendingIds)
+      .then(result => setPublicComments(previous => ({ ...previous, ...result })))
+      .catch(error => {
+        pendingIds.forEach(id => publicCommentsRequestedRef.current.delete(id));
+        console.error('[Matching] Failed to load public comments', error);
+      });
+  }, [detailOpen, filteredUsers, ownerId]);
+
+  const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
+    const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
+    setPublicComments(previous => ({
+      ...previous,
+      [profileId]: [...(previous[profileId] || []), created],
+    }));
+  }, [viewerName]);
+
+  const handleUpdatePublicComment = React.useCallback(async (profileId, commentId, text) => {
+    const updated = await updatePublicProfileComment({ profileId, commentId, text });
+    setPublicComments(previous => {
+      const current = previous[profileId] || [];
+      const next = updated
+        ? current.map(comment => (comment.id === commentId
+          ? { ...comment, text: updated.text, updatedAt: updated.updatedAt }
+          : comment))
+        : current.filter(comment => comment.id !== commentId);
+      return { ...previous, [profileId]: next };
+    });
+  }, []);
+
   const feedRows = useMemo(
     () => filteredUsers.map(user => withLazyPhotos(user)),
     [filteredUsers, withLazyPhotos],
@@ -6406,6 +6476,15 @@ const Matching = () => {
                       clientComment={comments[user.userId] || ''}
                       onCommentSave={handleRowCommentSave}
                       priorityMetricKeys={priorityMetricKeys}
+                      commentSlot={(
+                        <PublicCommentBlock
+                          profileId={user.userId}
+                          comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
+                          viewerId={auth.currentUser?.uid || ''}
+                          onCreate={handleCreatePublicComment}
+                          onUpdate={handleUpdatePublicComment}
+                        />
+                      )}
                       primaryAction={{
                         icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
                         title: 'В обране',

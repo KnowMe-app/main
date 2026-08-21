@@ -20,6 +20,7 @@ import {
   endAt,
   endBefore,
   equalTo,
+  serverTimestamp,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
@@ -1088,6 +1089,117 @@ export const fetchCycleUsersData = async (
     console.error('Error fetching cycle users data:', error);
     return {};
   }
+};
+
+// ---------------------------------------------------------------------------
+// Public profile comments (matching spec §8)
+//
+// A different thing from multiData/comments, which holds one *private* note per
+// (owner, card). These are public records about a third party, written under the
+// author's own name and readable by every signed-in user of the base, so they
+// live in their own tree, keyed by a push id, and every write carries the
+// author's uid for the security rules to check.
+//
+//   comments/{profileId}/{commentId} = {
+//     text, authorId, authorName, createdAt, updatedAt | null, visibility
+//   }
+//
+// `replies/{commentId}` is reserved for the subject's own answer to a record
+// about them. It is not implemented here - the slot exists so adding it later
+// doesn't reshape what is already stored.
+export const PUBLIC_COMMENTS_ROOT_PATH = 'comments';
+export const PUBLIC_COMMENT_REPLIES_ROOT_PATH = 'replies';
+export const PUBLIC_COMMENT_MAX_LENGTH = 2000;
+
+const normalizePublicComment = (id, value) => ({
+  id,
+  text: typeof value?.text === 'string' ? value.text : '',
+  authorId: typeof value?.authorId === 'string' ? value.authorId : '',
+  authorName: typeof value?.authorName === 'string' ? value.authorName : '',
+  createdAt: typeof value?.createdAt === 'number' ? value.createdAt : 0,
+  updatedAt: typeof value?.updatedAt === 'number' ? value.updatedAt : null,
+  visibility: value?.visibility === 'public' ? 'public' : 'public',
+});
+
+const sortPublicComments = comments =>
+  [...comments].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+export const fetchPublicProfileComments = async (profileIds = []) => {
+  const ids = Array.from(new Set((profileIds || []).filter(Boolean)));
+  if (!ids.length) return {};
+
+  const entries = await Promise.all(ids.map(async profileId => {
+    try {
+      const snap = await firebaseGet(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
+      if (!snap.exists()) return [profileId, []];
+      const value = snap.val() || {};
+      return [profileId, sortPublicComments(
+        Object.entries(value).map(([id, comment]) => normalizePublicComment(id, comment))
+      )];
+    } catch (error) {
+      console.error('Error fetching public comments:', error);
+      return [profileId, []];
+    }
+  }));
+
+  return Object.fromEntries(entries);
+};
+
+export const addPublicProfileComment = async ({ profileId, text, authorName = '' }) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+  if (!profileId) throw new Error('profileId обовʼязковий');
+
+  const trimmed = String(text || '').trim();
+  if (!trimmed) throw new Error('Порожній коментар не зберігається');
+  if (trimmed.length > PUBLIC_COMMENT_MAX_LENGTH) {
+    throw new Error(`Коментар довший за ${PUBLIC_COMMENT_MAX_LENGTH} символів`);
+  }
+
+  const listRef = ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`);
+  const commentRef = push(listRef);
+  await set(commentRef, {
+    text: trimmed,
+    authorId: user.uid,
+    authorName: String(authorName || '').slice(0, 200),
+    createdAt: serverTimestamp(),
+    updatedAt: null,
+    visibility: 'public',
+  });
+
+  return {
+    id: commentRef.key,
+    text: trimmed,
+    authorId: user.uid,
+    authorName: String(authorName || '').slice(0, 200),
+    createdAt: Date.now(),
+    updatedAt: null,
+    visibility: 'public',
+  };
+};
+
+// authorId and createdAt are immutable after creation, so an edit only ever
+// touches the text and the updatedAt stamp - the rules reject anything else.
+export const updatePublicProfileComment = async ({ profileId, commentId, text }) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+  if (!profileId || !commentId) throw new Error('profileId і commentId обовʼязкові');
+
+  const trimmed = String(text || '').trim();
+  if (!trimmed) {
+    await remove(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`));
+    return null;
+  }
+  if (trimmed.length > PUBLIC_COMMENT_MAX_LENGTH) {
+    throw new Error(`Коментар довший за ${PUBLIC_COMMENT_MAX_LENGTH} символів`);
+  }
+
+  await update(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`), {
+    text: trimmed,
+    updatedAt: serverTimestamp(),
+  });
+
+  return { id: commentId, text: trimmed, updatedAt: Date.now() };
 };
 
 export const COMMENTS_ROOT_PATH = 'multiData/comments';
