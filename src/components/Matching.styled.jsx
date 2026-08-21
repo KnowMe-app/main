@@ -1531,3 +1531,190 @@ export const ModernSwipeHint = styled.div`
   font-weight: 800;
   backdrop-filter: blur(8px);
 `;
+
+/* ------------------------------------------------------------------ *
+ * Matching top bar / chips row (spec §2-§4)
+ *
+ * One sticky row holds the search field, the filter drawer trigger and the
+ * "⋮" menu. The chips row sits directly under it and never scrolls
+ * horizontally - overflowing filter chips collapse into a "+N" chip that
+ * opens the drawer instead.
+ * ------------------------------------------------------------------ */
+
+export const MatchingTopBar = styled.div`
+  position: sticky;
+  top: 0;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: var(--matching-page-bg);
+
+  @media (max-width: 768px) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+`;
+
+export const SearchField = styled.div`
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 8px 0 10px;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 50px;
+  background: var(--matching-card-bg);
+  color: var(--matching-header-text);
+
+  &:focus-within {
+    border-color: color-mix(in srgb, var(--matching-accent) 55%, transparent);
+  }
+
+  > svg {
+    flex: 0 0 auto;
+    color: var(--matching-muted-text);
+    font-size: 13px;
+  }
+`;
+
+export const SearchInput = styled.input`
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+
+  &::placeholder {
+    color: var(--matching-muted-text);
+    opacity: 0.8;
+  }
+`;
+
+export const SearchClearButton = styled.button`
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--matching-muted-text);
+  cursor: pointer;
+  font-size: 12px;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+export const ChipsRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 12px 8px;
+  overflow: hidden;
+
+  @media (max-width: 768px) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+`;
+
+export const Chip = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid ${({ $danger, $active }) => {
+    if ($danger) return 'color-mix(in srgb, #d64545 55%, transparent)';
+    return $active ? 'var(--matching-chip-text)' : 'var(--matching-chip-border)';
+  }};
+  background: ${({ $active }) => ($active
+    ? 'color-mix(in srgb, var(--matching-chip-text) 10%, transparent)'
+    : 'var(--matching-chip-bg)')};
+  color: ${({ $danger }) => ($danger ? '#d64545' : 'var(--matching-chip-text)')};
+
+  > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+export const ChipCount = styled.b`
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--matching-chip-label);
+`;
+
+export const ChipRemove = styled.span`
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  font-size: 9px;
+  opacity: 0.75;
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
+// Spec §4: a single icon button, never a segmented control. It shows the mode
+// we would switch *into*, so the grid icon means "go to gallery".
+export const LayoutToggleButton = styled.button`
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--matching-chip-border);
+  border-radius: 7px;
+  background: var(--matching-chip-bg);
+  color: var(--matching-muted-text);
+  cursor: pointer;
+  font-size: 13px;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;

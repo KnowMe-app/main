@@ -68,6 +68,10 @@ import {
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
   MatchingSearchStatusMessage,
+  Chip,
+  ChipCount,
+  ChipsRow,
+  LayoutToggleButton,
 } from './Matching.styled';
 import {
   fetchUsersByLastLogin2,
@@ -116,7 +120,7 @@ import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
 import { HiddenHeaderTitle as MatchingHiddenListHeaderTitle } from './MatchingHiddenList.styled';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -1280,6 +1284,21 @@ const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
 
+// Spec §4: the list/gallery choice is a persistent per-device preference, kept
+// under its own namespaced key so it survives a reload and never collides with
+// `viewMode` (which selects the *collection* - all / favourites / hidden).
+const MATCHING_VIEW_LAYOUT_KEY = 'km.matching.view';
+const MATCHING_VIEW_LAYOUTS = ['list', 'gallery'];
+const MATCHING_DEFAULT_VIEW_LAYOUT = 'list';
+const getStoredMatchingViewLayout = () => {
+  try {
+    const stored = localStorage.getItem(MATCHING_VIEW_LAYOUT_KEY);
+    return MATCHING_VIEW_LAYOUTS.includes(stored) ? stored : MATCHING_DEFAULT_VIEW_LAYOUT;
+  } catch {
+    return MATCHING_DEFAULT_VIEW_LAYOUT;
+  }
+};
+
 const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit = 9, lastDate) => {
   const usersRef = refDb(database, collection);
   const realLimit = limit + 1;
@@ -1377,6 +1396,18 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
+  const [viewLayout, setViewLayout] = useState(getStoredMatchingViewLayout);
+  const toggleViewLayout = React.useCallback(() => {
+    setViewLayout(current => {
+      const next = current === 'gallery' ? 'list' : 'gallery';
+      try {
+        localStorage.setItem(MATCHING_VIEW_LAYOUT_KEY, next);
+      } catch {
+        // a blocked localStorage only costs the persistence, not the switch
+      }
+      return next;
+    });
+  }, []);
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
   const matchingSearchKeyRef = useRef(null);
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
@@ -3856,33 +3887,26 @@ const Matching = () => {
     }
   }, [resetAdditionalMatchingState, resetReactionPaginationState]);
 
-  const loadFavoriteCards = () => switchMatchingMode('favorites');
+  const loadFavoriteCards = React.useCallback(() => switchMatchingMode('favorites'), [switchMatchingMode]);
 
-  const loadDislikeCards = () => switchMatchingMode('dislikes');
+  const loadDislikeCards = React.useCallback(() => switchMatchingMode('dislikes'), [switchMatchingMode]);
 
-  const handleDislikeModeClick = () => {
-    if (viewMode === 'dislikes') {
-      reloadDefault();
-      return;
-    }
-
+  // Spec §3: the collection chips are a single-choice group, so re-picking the
+  // collection already on screen is a no-op rather than a toggle back to the feed.
+  const handleDislikeModeClick = React.useCallback(() => {
+    if (viewMode === 'dislikes') return;
     loadDislikeCards();
-  };
+  }, [loadDislikeCards, viewMode]);
 
-  const handleDefaultModeClick = () => {
-    if (viewMode !== 'default') {
-      reloadDefault();
-    }
-  };
+  const handleDefaultModeClick = React.useCallback(() => {
+    if (viewMode === 'default') return;
+    reloadDefault();
+  }, [reloadDefault, viewMode]);
 
-  const handleFavoriteModeClick = () => {
-    if (viewMode === 'favorites') {
-      reloadDefault();
-      return;
-    }
-
+  const handleFavoriteModeClick = React.useCallback(() => {
+    if (viewMode === 'favorites') return;
     loadFavoriteCards();
-  };
+  }, [loadFavoriteCards, viewMode]);
 
   const buildMatchingSearchStatusText = React.useCallback((status, searchKey = matchingSearchKeyRef.current) => {
     const keyLabel = formatMatchingSearchKeyLabel(searchKey);
@@ -5807,6 +5831,43 @@ const Matching = () => {
 
   const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
 
+  // Spec §3: the feed's chips are the collection picker - a single choice, with
+  // counts read straight off the already-loaded cache (§10), never re-queried.
+  // The app has three collections; the spec's "✕" and "Приховані" name the same
+  // one here, so it renders once.
+  const collectionChips = useMemo(() => [
+    {
+      key: 'default',
+      label: 'Усі',
+      title: 'До загального списку',
+      count: viewMode === 'default' ? filteredUsers.length : users.length,
+      onSelect: handleDefaultModeClick,
+    },
+    {
+      key: 'favorites',
+      label: '♥',
+      title: 'Показати обране',
+      count: Object.keys(favoriteUsers || {}).length,
+      onSelect: handleFavoriteModeClick,
+    },
+    {
+      key: 'dislikes',
+      label: 'Приховані',
+      title: 'Показати приховані',
+      count: Object.keys(dislikeUsers || {}).length,
+      onSelect: handleDislikeModeClick,
+    },
+  ], [
+    dislikeUsers,
+    favoriteUsers,
+    filteredUsers.length,
+    handleDefaultModeClick,
+    handleDislikeModeClick,
+    handleFavoriteModeClick,
+    users.length,
+    viewMode,
+  ]);
+
   const dotsMenu = () => (
     <ProfileDotsMenu
       navigate={navigate}
@@ -5937,42 +5998,6 @@ const Matching = () => {
                   {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
                 </ActionButton>
               </TopActionGroup>
-              <TopActionGroup aria-label="Навігація matching">
-                <ActionButton
-                  type="button"
-                  onClick={handleDislikeModeClick}
-                  disabled={!ownerId}
-                  $active={viewMode === 'dislikes'}
-                  aria-label={viewMode === 'dislikes' ? 'Повернутись до загального списку' : 'Показати дизлайки'}
-                  title={viewMode === 'dislikes' ? 'Повернутись до загального списку' : 'Показати дизлайки'}
-                >
-                  <FaTimes />
-                  {Object.keys(dislikeUsers || {}).length > 0 && (
-                    <ActionBadge>{Object.keys(dislikeUsers || {}).length}</ActionBadge>
-                  )}
-                </ActionButton>
-                <ActionButton
-                  type="button"
-                  onClick={handleDefaultModeClick}
-                  disabled={!ownerId}
-                  $active={viewMode === 'default'}
-                  $wide
-                  aria-label="До загального списку"
-                  title="До загального списку"
-                >
-                  Всі
-                </ActionButton>
-                <ActionButton
-                  type="button"
-                  onClick={handleFavoriteModeClick}
-                  disabled={!ownerId}
-                  $active={viewMode === 'favorites'}
-                  aria-label={viewMode === 'favorites' ? 'Повернутись до загального списку' : 'Показати обране'}
-                  title={viewMode === 'favorites' ? 'Повернутись до загального списку' : 'Показати обране'}
-                >
-                  <FaHeart />
-                </ActionButton>
-              </TopActionGroup>
               {(showBackendTrafficToggle || isIndexedDebugTestUser) && (
                 <TopActionGroup aria-label="Адміністративні дії matching">
                   {showBackendTrafficToggle && (
@@ -6028,6 +6053,30 @@ const Matching = () => {
               </ActionButton>
             </TopActions>
           </HeaderContainer>
+          <ChipsRow role="group" aria-label="Колекції matching">
+            {collectionChips.map(chip => (
+              <Chip
+                key={chip.key}
+                type="button"
+                $active={viewMode === chip.key}
+                aria-pressed={viewMode === chip.key}
+                disabled={!ownerId}
+                onClick={chip.onSelect}
+                title={chip.title}
+              >
+                <span>{chip.label}</span>
+                <ChipCount>{chip.count}</ChipCount>
+              </Chip>
+            ))}
+            <LayoutToggleButton
+              type="button"
+              onClick={toggleViewLayout}
+              aria-label={viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї'}
+              title={viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї'}
+            >
+              {viewLayout === 'gallery' ? <FaListUl /> : <FaThLarge />}
+            </LayoutToggleButton>
+          </ChipsRow>
           {!ownerId && (
             <OwnerStatusMessage>
               {ownerId === '' ? 'Owner not found' : 'Loading owner...'}
