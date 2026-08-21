@@ -23,13 +23,11 @@ import {
   FilterDrawerFooter,
   FilterDrawerHeader,
   FilterDrawerHeading,
-  FilterDrawerSection,
   FilterDrawerSubtitle,
   FilterDrawerTitle,
   FilterOverlay,
   FilterResetButton,
   Grid,
-  HeaderContainer,
   InnerContainer,
   OwnerStatusMessage,
   SharedCommentText,
@@ -76,6 +74,8 @@ import {
   FeedNotice,
   FeedSentinel,
   FeedWrap,
+  MatchingTopBar,
+  SearchField,
   GalleryFacts,
   GalleryGrid,
   GalleryHeartButton,
@@ -136,7 +136,7 @@ import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
 } from '../utils/searchKeyCache';
-import { getCardsByList, updateCard } from '../utils/cardsStorage';
+import { findCachedCardsByText, getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
@@ -146,8 +146,7 @@ import ProfileRow, {
   getInitials as getProfileInitials,
   renderFacts as renderProfileFacts,
 } from './ProfileRow';
-import { HiddenHeaderTitle as MatchingHiddenListHeaderTitle } from './MatchingHiddenList.styled';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
 import { FaRegHeart } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
@@ -1314,6 +1313,16 @@ const FEED_PHOTO_HYDRATION_LIMIT = 60;
 const EMPTY_PUBLIC_COMMENTS = [];
 // Spec §3: the chips row never scrolls sideways, so it shows at most three.
 const MAX_FILTER_CHIPS = 3;
+// Spec §2: the screen switches state a beat after typing stops, not on Enter.
+const MATCHING_SEARCH_DEBOUNCE_MS = 250;
+const MATCHING_QUERY_PARAM = 'q';
+const readQueryFromUrl = () => {
+  try {
+    return new URLSearchParams(window.location.search).get(MATCHING_QUERY_PARAM) || '';
+  } catch {
+    return '';
+  }
+};
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
@@ -1505,6 +1514,23 @@ const Matching = () => {
       return next;
     });
   }, []);
+  // Spec §1-§2: the search input is what switches the screen between the feed and
+  // results, and the query lives in the URL so a reload keeps the context.
+  const [searchQuery, setSearchQuery] = useState(readQueryFromUrl);
+  const [searchTab, setSearchTab] = useState('results');
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const current = url.searchParams.get(MATCHING_QUERY_PARAM) || '';
+      const next = searchQuery.trim();
+      if (current === next) return;
+      if (next) url.searchParams.set(MATCHING_QUERY_PARAM, next);
+      else url.searchParams.delete(MATCHING_QUERY_PARAM);
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch {
+      // A blocked history API only costs the reload-safe context.
+    }
+  }, [searchQuery]);
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
   const matchingSearchKeyRef = useRef(null);
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
@@ -1903,8 +1929,8 @@ const Matching = () => {
     }
   };
 
-  // Kept for the existing search-mode stale-load guards/tests; Matching searchBar now uses status-only handlers.
-  // eslint-disable-next-line no-unused-vars
+  // Spec §1: a non-empty query replaces the feed's contents with the results,
+  // which the same filters then narrow - there is no second filtering branch.
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
     const filtered = arr.filter(u => isValidId(u?.userId));
@@ -4081,6 +4107,22 @@ const Matching = () => {
     }
   }, [buildMatchingSearchStatusText]);
 
+  const handleMatchingSearchResults = React.useCallback(result => {
+    handleMatchingSearchResultStatus(result);
+    setSearchTab('results');
+    void applySearchResults(result);
+    // applySearchResults closes over setters and refs only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleMatchingSearchResultStatus]);
+
+  const handleSearchCleared = React.useCallback(() => {
+    setMatchingSearchStatus('');
+    matchingSearchKeyRef.current = null;
+    setSearchQuery('');
+    setSearchTab('results');
+    reloadDefault();
+  }, [reloadDefault]);
+
   const handleMatchingSearchError = React.useCallback(() => {
     setMatchingSearchStatus('Не вдалося виконати пошук. Спробуйте ще раз.');
   }, []);
@@ -4936,6 +4978,22 @@ const Matching = () => {
     viewMode,
     visibleUsers,
   ]);
+  const isSearching = searchQuery.trim().length > 0;
+
+  // Spec §3's "Схожі": a second pass over what this device already holds, so the
+  // chip's count is honest without another round trip.
+  const similarUsers = useMemo(() => {
+    if (!isSearching) return [];
+    return findCachedCardsByText(searchQuery, {
+      excludeIds: filteredUsers.map(user => user?.userId).filter(Boolean),
+    });
+  }, [filteredUsers, isSearching, searchQuery]);
+
+  // Spec §1: whatever the reader is looking at, the list, the gallery and the
+  // detail layer all index into this one array - so opening row N and paging
+  // from it can never disagree about which card is which.
+  const feedSource = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;
+
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
     const isGroupNeutralOrInactive = value => (
@@ -5370,8 +5428,8 @@ const Matching = () => {
     visibleUsers,
   ]);
 
-  const detailIndex = detailOpen && filteredUsers.length ? activeProfileIndex : null;
-  const activeProfile = detailIndex === null ? null : (filteredUsers[detailIndex] || null);
+  const detailIndex = detailOpen && feedSource.length ? activeProfileIndex : null;
+  const activeProfile = detailIndex === null ? null : (feedSource[detailIndex] || null);
 
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;
@@ -5390,8 +5448,8 @@ const Matching = () => {
   // the detail layer only ever needs the current card and the next one.
   useEffect(() => {
     const pool = detailOpen
-      ? [filteredUsers[activeProfileIndex], filteredUsers[activeProfileIndex + 1]]
-      : filteredUsers.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
+      ? [feedSource[activeProfileIndex], feedSource[activeProfileIndex + 1]]
+      : feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
     const candidates = pool
       .filter(user => user?.userId && !user.__photosHydrated && !photoCacheByUserId[user.userId]);
     if (!candidates.length) return undefined;
@@ -5417,7 +5475,7 @@ const Matching = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeProfileIndex, detailOpen, filteredUsers, photoCacheByUserId]);
+  }, [activeProfileIndex, detailOpen, feedSource, photoCacheByUserId]);
 
   useEffect(() => {
     if (activeProfile?.userId) {
@@ -5426,20 +5484,21 @@ const Matching = () => {
   }, [activeProfile, loadCommentsFor]);
 
   useEffect(() => {
-    if (detailOpen || !filteredUsers.length) return;
-    void loadCommentsFor(filteredUsers.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
-  }, [detailOpen, filteredUsers, loadCommentsFor]);
+    if (detailOpen || !feedSource.length) return;
+    void loadCommentsFor(feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
+  }, [detailOpen, feedSource, loadCommentsFor]);
 
   useEffect(() => {
     setActiveProfileIndex(index => {
-      if (filteredUsers.length === 0) return 0;
-      return Math.min(index, filteredUsers.length - 1);
+      if (feedSource.length === 0) return 0;
+      return Math.min(index, feedSource.length - 1);
     });
-  }, [filteredUsers.length]);
+  }, [feedSource.length]);
 
   useEffect(() => {
     setActiveProfileIndex(0);
   }, [
+    searchTab,
     collectionSource,
     reactionPaginationByType.favorites.ids,
     reactionPaginationByType.dislikes.ids,
@@ -5596,19 +5655,19 @@ const Matching = () => {
   // extends the deck, so this path deliberately never triggers a load.
   const [detailBounce, setDetailBounce] = useState(0);
   const navigateActiveProfile = React.useCallback((step) => {
-    if (filteredUsers.length === 0) {
+    if (feedSource.length === 0) {
       setActiveProfileIndex(0);
       return;
     }
 
-    const nextIndex = Math.max(0, Math.min(filteredUsers.length - 1, activeProfileIndex + step));
+    const nextIndex = Math.max(0, Math.min(feedSource.length - 1, activeProfileIndex + step));
     if (nextIndex === activeProfileIndex) {
       setDetailBounce(step > 0 ? 1 : -1);
       return;
     }
 
     setActiveProfileIndex(nextIndex);
-  }, [activeProfileIndex, filteredUsers.length]);
+  }, [activeProfileIndex, feedSource.length]);
 
   useEffect(() => {
     if (!detailBounce) return undefined;
@@ -6015,6 +6074,32 @@ const Matching = () => {
   // counts read straight off the already-loaded cache (§10), never re-queried.
   // The app has three collections; the spec's "✕" and "Приховані" name the same
   // one here, so it renders once.
+  const searchChips = useMemo(() => [
+    {
+      key: 'results',
+      label: 'Знайдено',
+      title: 'Результати пошуку',
+      count: filteredUsers.length,
+      onSelect: () => setSearchTab('results'),
+    },
+    {
+      key: 'create',
+      label: 'Створити нову',
+      title: 'Створити картку з цього запиту',
+      onSelect: () => {
+        saveScrollPosition();
+        navigate('/matching/create-profile', { state: { query: searchQuery.trim() } });
+      },
+    },
+    {
+      key: 'similar',
+      label: 'Схожі',
+      title: 'Схожі з локального кешу',
+      count: similarUsers.length,
+      onSelect: () => setSearchTab('similar'),
+    },
+  ], [filteredUsers.length, navigate, searchQuery, similarUsers.length]);
+
   // Spec §3: at most three filter chips, then a "+N" that opens the drawer -
   // the row never scrolls sideways, so anything past three collapses instead.
   const filterChips = useMemo(() => buildMatchingFilterChips(filters), [filters]);
@@ -6076,12 +6161,12 @@ const Matching = () => {
   }, [filters, matchingDefaultFilters]);
 
   const openDetailFor = React.useCallback(user => {
-    const index = filteredUsers.findIndex(candidate => candidate?.userId === user?.userId);
+    const index = feedSource.findIndex(candidate => candidate?.userId === user?.userId);
     if (index === -1) return;
     feedScrollTopRef.current = window.scrollY;
     setActiveProfileIndex(index);
     setDetailOpen(true);
-  }, [filteredUsers]);
+  }, [feedSource]);
 
   const closeDetail = React.useCallback(() => {
     setDetailOpen(false);
@@ -6202,7 +6287,7 @@ const Matching = () => {
   // page it renders and never asks twice for the same profile.
   useEffect(() => {
     if (detailOpen || !ownerId) return;
-    const pendingIds = filteredUsers
+    const pendingIds = feedSource
       .slice(0, FEED_PHOTO_HYDRATION_LIMIT)
       .map(user => user?.userId)
       .filter(Boolean)
@@ -6215,7 +6300,7 @@ const Matching = () => {
         pendingIds.forEach(id => publicCommentsRequestedRef.current.delete(id));
         console.error('[Matching] Failed to load public comments', error);
       });
-  }, [detailOpen, filteredUsers, ownerId]);
+  }, [detailOpen, feedSource, ownerId]);
 
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
     const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
@@ -6300,8 +6385,8 @@ const Matching = () => {
   }, [diagnosticsFilterMisses, diagnosticsPhoneIndex, showDiagnostics]);
 
   const feedRows = useMemo(
-    () => filteredUsers.map(user => withLazyPhotos(user)),
-    [filteredUsers, withLazyPhotos],
+    () => feedSource.map(user => withLazyPhotos(user)),
+    [feedSource, withLazyPhotos],
   );
 
   const matchingMenuActions = [
@@ -6368,38 +6453,6 @@ const Matching = () => {
           </FilterDrawerClose>
         </FilterDrawerHeader>
         <FilterDrawerBody>
-          {isAdmin && (
-            <FilterDrawerSection aria-label="Пошук профілів">
-              <SearchBar
-                searchFunc={searchUsers}
-                setUsers={handleMatchingSearchResultStatus}
-                setState={handleMatchingSearchStateStatus}
-                setUserNotFound={handleMatchingSearchNotFound}
-                wrapperStyle={{ width: '100%', marginBottom: 0 }}
-                leftIcon="🔍"
-                storageKey={SEARCH_KEY}
-                onSearchKey={handleMatchingSearchKey}
-                onSearchExecuted={handleMatchingSearchExecuted}
-                onSearchError={handleMatchingSearchError}
-                onClear={() => {
-                  setMatchingSearchStatus('');
-                  matchingSearchKeyRef.current = null;
-                  reloadDefault();
-                }}
-                enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
-                searchOptions={{
-                  searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
-                  enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
-                  cacheScope: { collections: ['users'] },
-                }}
-              />
-              {matchingSearchStatus && (
-                <MatchingSearchStatusMessage aria-live="polite">
-                  {matchingSearchStatus}
-                </MatchingSearchStatusMessage>
-              )}
-            </FilterDrawerSection>
-          )}
           <CollectionSourceWrap>
             <CollectionSourceTitle>Колекція профілів</CollectionSourceTitle>
             <CollectionSourceOptions>
@@ -6444,13 +6497,37 @@ const Matching = () => {
       </FilterContainer>
       <Container $themeMode={themeMode}>
         <InnerContainer>
-          <HeaderContainer>
+          <MatchingTopBar>
+            {isAdmin && (
+              <SearchField>
+                <FaSearch aria-hidden="true" />
+                <SearchBar
+                  searchFunc={searchUsers}
+                  search={searchQuery}
+                  setSearch={setSearchQuery}
+                  debounceMs={MATCHING_SEARCH_DEBOUNCE_MS}
+                  setUsers={handleMatchingSearchResults}
+                  setState={handleMatchingSearchStateStatus}
+                  setUserNotFound={handleMatchingSearchNotFound}
+                  wrapperStyle={{ width: '100%', margin: 0, border: 'none', background: 'transparent', padding: 0, boxShadow: 'none' }}
+                  leftIcon={null}
+                  placeholder="Пошук"
+                  inputAriaLabel="Пошук профілів"
+                  storageKey={SEARCH_KEY}
+                  onSearchKey={handleMatchingSearchKey}
+                  onSearchExecuted={handleMatchingSearchExecuted}
+                  onSearchError={handleMatchingSearchError}
+                  onClear={handleSearchCleared}
+                  enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
+                  searchOptions={{
+                    searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
+                    enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
+                    cacheScope: { collections: ['users'] },
+                  }}
+                />
+              </SearchField>
+            )}
             <TopActions>
-              {viewMode === 'dislikes' && (
-                <MatchingHiddenListHeaderTitle>
-                  Приховані
-                </MatchingHiddenListHeaderTitle>
-              )}
               <TopActionGroup aria-label="Фільтри matching">
                 <ActionButton
                   type="button"
@@ -6517,22 +6594,30 @@ const Matching = () => {
                 <FaEllipsisV />
               </ActionButton>
             </TopActions>
-          </HeaderContainer>
-          <ChipsRow role="group" aria-label="Колекції matching">
-            {collectionChips.map(chip => (
-              <Chip
-                key={chip.key}
-                type="button"
-                $active={viewMode === chip.key}
-                aria-pressed={viewMode === chip.key}
-                disabled={!ownerId}
-                onClick={chip.onSelect}
-                title={chip.title}
-              >
-                <span>{chip.label}</span>
-                <ChipCount>{chip.count}</ChipCount>
-              </Chip>
-            ))}
+          </MatchingTopBar>
+          {matchingSearchStatus && (
+            <MatchingSearchStatusMessage aria-live="polite">
+              {matchingSearchStatus}
+            </MatchingSearchStatusMessage>
+          )}
+          <ChipsRow role="group" aria-label={isSearching ? 'Результати пошуку' : 'Колекції matching'}>
+            {(isSearching ? searchChips : collectionChips).map(chip => {
+              const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
+              return (
+                <Chip
+                  key={chip.key}
+                  type="button"
+                  $active={active}
+                  aria-pressed={active}
+                  disabled={!isSearching && !ownerId}
+                  onClick={chip.onSelect}
+                  title={chip.title}
+                >
+                  <span>{chip.label}</span>
+                  {chip.count !== undefined && <ChipCount>{chip.count}</ChipCount>}
+                </Chip>
+              );
+            })}
             {visibleFilterChips.map(chip => (
               <Chip
                 key={chip.filterName}
@@ -6675,7 +6760,7 @@ const Matching = () => {
                   <FaChevronLeft />
                 </DetailCloseButton>
                 <DetailPosition aria-live="polite">
-                  {detailIndex + 1} / {filteredUsers.length}
+                  {detailIndex + 1} / {feedSource.length}
                 </DetailPosition>
               </DetailBar>
           <Grid>

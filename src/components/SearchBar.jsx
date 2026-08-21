@@ -1102,6 +1102,7 @@ const SearchBar = ({
   suppressInitialSearchExecution = false,
   placeholder,
   inputAriaLabel,
+  debounceMs = 0,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const [internalSearch, setInternalSearch] = useState(
@@ -2146,6 +2147,22 @@ const SearchBar = ({
       return undefined;
     }
   };
+
+  // With debounceMs set, the search runs on its own a beat after typing stops -
+  // the caller doesn't have to press Enter or blur the field for the screen to
+  // switch from the feed to results.
+  const writeDataRef = useRef(writeData);
+  writeDataRef.current = writeData;
+  const lastDebouncedQueryRef = useRef(search);
+  useEffect(() => {
+    if (!debounceMs) return undefined;
+    if (lastDebouncedQueryRef.current === search) return undefined;
+    const timer = setTimeout(() => {
+      lastDebouncedQueryRef.current = search;
+      void writeDataRef.current(search);
+    }, debounceMs);
+    return () => clearTimeout(timer);
+  }, [debounceMs, search]);
 
   return (
     <InputDiv style={wrapperStyle}>
