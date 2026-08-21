@@ -718,6 +718,11 @@ const ProfileRow = ({
   onSwipeRight,
   onSwipeLeft,
 }) => {
+  // A limited profile is the projection a viewer without full access gets back
+  // from a search: surname, name, age, region, city, and the public comment. There
+  // is nothing else to expand into, so the row drops the metrics line, the detail
+  // chevron, the edit button and the swipe actions rather than showing them empty.
+  const isLimited = user?.__limitedProfile === true;
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const location = getLocationLine(user);
@@ -725,18 +730,18 @@ const ProfileRow = ({
   const photo = photos[0];
   const bio = getProfileBio(user);
   const facts = useMemo(
-    () => renderFacts(user, priorityMetricKeys || []),
-    [user, priorityMetricKeys]
+    () => (isLimited ? [] : renderFacts(user, priorityMetricKeys || [])),
+    [isLimited, user, priorityMetricKeys]
   );
-  const gridRows = useMemo(() => buildGridRows(user), [user]);
+  const gridRows = useMemo(() => (isLimited ? [] : buildGridRows(user)), [isLimited, user]);
   const contactEntries = useMemo(
-    () => getContactEntries(user).filter(entry => entry.key !== 'vk'),
-    [user]
+    () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
+    [isLimited, user]
   );
   const totalCount = gridRows.length + contactEntries.length;
 
   const hasLocation = Boolean(location);
-  const isUnfilled = !hasLocation && (facts.length === 0 || isWeakOnlyFact(facts));
+  const isUnfilled = !isLimited && !hasLocation && (facts.length === 0 || isWeakOnlyFact(facts));
 
   const touchStartRef = useRef(null);
   const swipedRef = useRef(false);
@@ -754,7 +759,7 @@ const ProfileRow = ({
     const dy = e.changedTouches[0].clientY - start.y;
     if (Math.abs(dx) < SWIPE_DISTANCE_PX || Math.abs(dx) < Math.abs(dy) * SWIPE_DOMINANCE) return;
     const handler = dx > 0 ? onSwipeRight : onSwipeLeft;
-    if (!handler) return;
+    if (!handler || isLimited) return;
     // The gesture ends in a click event too; swallow that one so a swipe never
     // also opens the card.
     swipedRef.current = true;
@@ -766,6 +771,7 @@ const ProfileRow = ({
       swipedRef.current = false;
       return;
     }
+    if (isLimited) return;
     if (onOpen) onOpen(user);
     else if (onToggleExpand) onToggleExpand(user.userId);
   };
@@ -810,7 +816,7 @@ const ProfileRow = ({
         </S.Body>
         <S.Ctrl>
           <S.TopButtonsRow>
-            {primaryAction && (
+            {primaryAction && !isLimited && (
               <S.RowActionButton
                 type="button"
                 $accent={Boolean(primaryAction.accent)}
@@ -823,7 +829,7 @@ const ProfileRow = ({
                 {primaryAction.icon}
               </S.RowActionButton>
             )}
-            {isAdmin && onEditProfile && (
+            {isAdmin && onEditProfile && !isLimited && (
               <S.EditButton
                 type="button"
                 title="Редагувати анкету"
@@ -834,6 +840,7 @@ const ProfileRow = ({
               </S.EditButton>
             )}
           </S.TopButtonsRow>
+          {!isLimited && (
           <S.ChevronButton
             type="button"
             $open={expanded}
@@ -844,6 +851,7 @@ const ProfileRow = ({
             <b>{totalCount}</b>
             <FaChevronDown size={11} />
           </S.ChevronButton>
+          )}
         </S.Ctrl>
       </S.Top>
 
@@ -853,7 +861,7 @@ const ProfileRow = ({
 
       {diagnosticsSlot}
 
-      {expanded && (
+      {expanded && !isLimited && (
         <S.More onClick={e => e.stopPropagation()}>
           {gridRows.length > 0 && (
             <S.Grid>

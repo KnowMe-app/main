@@ -2147,6 +2147,52 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
 
 export const lazyLoadProfilePhotos = async (userId, collectionSource = null) => getAllUserPhotos(userId, collectionSource);
 
+// The projection a viewer without full matching access gets from a search hit
+// (surname, name, age, region, city - and the public comment, which lives in its
+// own tree and is readable by anyone signed in). The security rules grant read on
+// exactly these child paths of users/$uid and newUsers/$uid, so this list and the
+// rules have to stay in step: asking for anything else is denied, not filtered.
+export const LIMITED_PROFILE_FIELDS = ['name', 'surname', 'birth', 'region', 'city'];
+
+const readLimitedProfileFields = async (collection, userId) => {
+  const entries = await Promise.all(LIMITED_PROFILE_FIELDS.map(async field => {
+    try {
+      const snap = await get(ref2(database, `${collection}/${userId}/${field}`));
+      return snap.exists() ? [field, snap.val()] : null;
+    } catch {
+      // A denied field is simply absent from the projection.
+      return null;
+    }
+  }));
+  const projection = Object.fromEntries(entries.filter(Boolean));
+  return Object.keys(projection).length ? projection : null;
+};
+
+// Reads a search hit through the limited projection. Unlike the full read this
+// never touches the record's node, only the five child paths the rules open, so
+// there is nothing for the caller to strip afterwards.
+export const fetchLimitedProfileById = async userId => {
+  if (!userId) return null;
+  const [fromUsers, fromNewUsers] = await Promise.all([
+    readLimitedProfileFields('users', userId),
+    readLimitedProfileFields('newUsers', userId),
+  ]);
+  if (!fromUsers && !fromNewUsers) return null;
+  return {
+    userId,
+    ...(fromNewUsers || {}),
+    ...(fromUsers || {}),
+    __sourceCollection: fromUsers ? 'users' : 'newUsers',
+    __limitedProfile: true,
+    publish: true,
+  };
+};
+
+const addLimitedUser = async (userId, users) => {
+  const profile = await fetchLimitedProfileById(userId);
+  if (profile) users[userId] = profile;
+};
+
 const addUserFromUsers = async (userId, users) => {
   const userSnap = await get(ref2(database, `users/${userId}`));
 
@@ -2178,6 +2224,7 @@ const searchBySearchIdUsers = async (
   users,
   searchIdPrefixes,
   options = {},
+  { limitedFields = false } = {},
 ) => {
   const searchKeys = buildSearchIdCandidateKeys(
     modifiedSearchValue,
@@ -2191,7 +2238,8 @@ const searchBySearchIdUsers = async (
     userIds.map(async id => {
       if (uniqueUserIds.has(id)) return;
       uniqueUserIds.add(id);
-      await addUserFromUsers(id, users);
+      if (limitedFields) await addLimitedUser(id, users);
+      else await addUserFromUsers(id, users);
     })
   );
 };
@@ -2262,22 +2310,30 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 };
 
 export const searchUsersOnly = async (searchedValue, options = {}) => {
-  const { searchIdPrefixes, allowTelegramPrefixMatches = false, enabledSearchKeys } = options;
-  const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch);
+  const { searchIdPrefixes, allowTelegramPrefixMatches = false, enabledSearchKeys, limitedFields = false } = options;
+  const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
-  const searchIdOptions = shouldSkipBroadFallback
+  const baseSearchIdOptions = shouldSkipBroadFallback
     ? {
       includeVariants: false,
       includePrefixMatches: allowTelegramPrefixMatches,
       includeAdaptedPhoneVariant: true,
     }
     : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
+  // A limited viewer may read a searchId entry by its exact key but not scan the
+  // index, and may not read either collection's root either. Both the prefix scan
+  // and the broad fallback do exactly that, so neither runs for them - the index
+  // stays a lookup, never an enumeration.
+  const searchIdOptions = limitedFields
+    ? { ...baseSearchIdOptions, includePrefixMatches: false }
+    : baseSearchIdOptions;
+  const addHit = limitedFields ? addLimitedUser : addUserFromUsers;
   const users = {};
   const uniqueUserIds = new Set();
   try {
     if (searchKey === 'userId') {
-      await addUserFromUsers(searchValue, users);
+      await addHit(searchValue, users);
       if (users[searchValue]) {
         uniqueUserIds.add(searchValue);
       }
@@ -2290,6 +2346,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       users,
       searchIdPrefixes,
       searchIdOptions,
+      { limitedFields },
     );
 
     if (shouldSkipBroadFallback) {

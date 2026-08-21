@@ -1033,6 +1033,9 @@ export const applyMatchingUiFiltersToUsers = ({
     ))
     .filter(u => (
       isReactionViewMode(viewMode) ||
+      // Search spans both collections by design: which one the drawer's source
+      // selector points at governs the feed, not what a query is allowed to find.
+      viewMode === 'search' ||
       isAllowedIdForMatchingCollection(u.userId, collectionSource)
     ));
 

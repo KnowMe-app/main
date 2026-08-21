@@ -1444,6 +1444,7 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
           ? <img src={photo} alt="" loading="lazy" decoding="async" />
           : getProfileInitials(name)}
         {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
+        {!user?.__limitedProfile && (
         <GalleryHeartButton
           type="button"
           $on={isFavorite}
@@ -1454,6 +1455,7 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
         >
           {isFavorite ? <FaHeart /> : <FaRegHeart />}
         </GalleryHeartButton>
+        )}
       </GalleryPhotoBox>
       <GalleryName>
         {name}
@@ -1673,6 +1675,14 @@ const Matching = () => {
     () => getDefaultFilters({ mode: 'matching', nonAdminAllActive: !access.isAdmin }),
     [access.isAdmin],
   );
+  // The same condition the security rules use for reading users/newUsers. A viewer
+  // without it can still search; what comes back is the limited projection
+  // (surname, name, age, region, city, public comment), because those are the only
+  // child paths the rules let them read.
+  const hasFullProfileAccess = access.isAdmin || access.canAccessMatching;
+  const hasFullProfileAccessRef = useRef(hasFullProfileAccess);
+  hasFullProfileAccessRef.current = hasFullProfileAccess;
+
   const activeFilterGroupCount = useMemo(
     () => countChangedMatchingFilterGroups(filters, matchingDefaultFilters),
     [filters, matchingDefaultFilters],
@@ -3128,8 +3138,28 @@ const Matching = () => {
     setViewMode('default');
     setActiveProfileIndex(0);
     resetReactionPaginationState();
+    // Without matching access there is no feed to load - the collections read the
+    // whole of users/newUsers, which the rules deny. The screen is search-only for
+    // that viewer, so skip the request rather than showing them a denied one.
+    if (!hasFullProfileAccessRef.current) {
+      loadingRef.current = false;
+      setLoading(false);
+      setUsers([]);
+      setAdditionalNewUsers([]);
+      setHasMore(false);
+      return;
+    }
     loadInitial();
   }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
+
+  // Access resolves asynchronously after mount, so a viewer who does have it can
+  // reach reloadDefault before it is known. Load the feed once it lands.
+  const previousFullProfileAccessRef = useRef(hasFullProfileAccess);
+  useEffect(() => {
+    if (previousFullProfileAccessRef.current === hasFullProfileAccess) return;
+    previousFullProfileAccessRef.current = hasFullProfileAccess;
+    if (hasFullProfileAccess && viewModeRef.current !== 'search') reloadDefault();
+  }, [hasFullProfileAccess, reloadDefault]);
 
 
   // Spec §10: toggling a filter must not cost a reload. The drawer edits a draft
@@ -3217,7 +3247,7 @@ const Matching = () => {
       logMatchingLocalStorageDebugStats('after reset');
     }
 
-    loadInitial();
+    if (hasFullProfileAccessRef.current) loadInitial();
     toast.success('Фільтри та кеш скинуто');
   }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
 
@@ -4163,19 +4193,26 @@ const Matching = () => {
   }, []);
 
   const searchUsers = async (params, options = {}) => {
+    // A limited hit is a projection, not a record. It never touches the shared card
+    // cache in either direction: reading from it would hand back a full record the
+    // viewer isn't entitled to, and writing to it would overwrite real cards with
+    // five fields.
+    const isLimited = Boolean(options?.limitedFields);
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
     const cacheKey = key && value
       ? getSearchCacheKeyForParams(key, value, options)
       : getCacheKey('search', term ? normalizeQueryKey(term) : term);
-    const ids = getIdsByQuery(cacheKey).filter(isValidId);
-    if (ids.length > 0) {
-      const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
-      if (cards.length > 0) {
-        if (key === 'name' || key === 'names') {
-          return Object.fromEntries(cards.map(c => [c.userId, c]));
+    if (!isLimited) {
+      const ids = getIdsByQuery(cacheKey).filter(isValidId);
+      if (ids.length > 0) {
+        const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
+        if (cards.length > 0) {
+          if (key === 'name' || key === 'names') {
+            return Object.fromEntries(cards.map(c => [c.userId, c]));
+          }
+          return cards[0];
         }
-        return cards[0];
       }
     }
     const res = await searchUsersOnly(params, options);
@@ -4186,8 +4223,10 @@ const Matching = () => {
           ? [res]
           : Object.values(res);
       const filtered = arr.filter(u => isValidId(u?.userId));
-      filtered.forEach(u => updateCard(u.userId, u));
-      setIdsForQuery(cacheKey, filtered.map(u => u.userId));
+      if (!isLimited) {
+        filtered.forEach(u => updateCard(u.userId, u));
+        setIdsForQuery(cacheKey, filtered.map(u => u.userId));
+      }
       if (Array.isArray(res)) return filtered;
       if (res.userId) return filtered[0] || {};
       return Object.fromEntries(filtered.map(u => [u.userId, u]));
@@ -6248,6 +6287,9 @@ const Matching = () => {
   }, [filters, matchingDefaultFilters]);
 
   const openDetailFor = React.useCallback(user => {
+    // A limited projection has no full card behind it - the row already shows
+    // everything the viewer is entitled to.
+    if (user?.__limitedProfile) return;
     const index = feedSource.findIndex(candidate => candidate?.userId === user?.userId);
     if (index === -1) return;
     feedScrollTopRef.current = window.scrollY;
@@ -6345,11 +6387,15 @@ const Matching = () => {
     });
   }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
 
-  // An empty group is a different problem from "nothing matched", and saying so
-  // is the difference between the reader fixing it and giving up (spec §3).
-  const emptyFeedMessage = emptyFilterGroup
-    ? `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`
-    : 'Немає доступних профілів';
+  const resolveEmptyFeedMessage = () => {
+    // Search-only viewers have no feed to be empty; say what the screen is for.
+    if (!hasFullProfileAccess) return 'Скористайтеся пошуком, щоб знайти анкету';
+    // An empty group is a different problem from "nothing matched", and saying so
+    // is the difference between the reader fixing it and giving up (spec §3).
+    if (emptyFilterGroup) return `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`;
+    return 'Немає доступних профілів';
+  };
+  const emptyFeedMessage = resolveEmptyFeedMessage();
 
   // The feed pages itself: a sentinel under the last row asks for the next page
   // as it scrolls into view. It routes through the same end-of-deck loader the
@@ -6604,35 +6650,34 @@ const Matching = () => {
       <Container $themeMode={themeMode}>
         <InnerContainer>
           <MatchingTopBar>
-            {isAdmin && (
-              <SearchField>
-                <FaSearch aria-hidden="true" />
-                <SearchBar
-                  searchFunc={searchUsers}
-                  search={searchQuery}
-                  setSearch={setSearchQuery}
-                  debounceMs={MATCHING_SEARCH_DEBOUNCE_MS}
-                  setUsers={handleMatchingSearchResults}
-                  setState={handleMatchingSearchStateStatus}
-                  setUserNotFound={handleMatchingSearchNotFound}
-                  wrapperStyle={{ width: '100%', margin: 0, border: 'none', background: 'transparent', padding: 0, boxShadow: 'none' }}
-                  leftIcon={null}
-                  placeholder="Пошук"
-                  inputAriaLabel="Пошук профілів"
-                  storageKey={SEARCH_KEY}
-                  onSearchKey={handleMatchingSearchKey}
-                  onSearchExecuted={handleMatchingSearchExecuted}
-                  onSearchError={handleMatchingSearchError}
-                  onClear={handleSearchCleared}
-                  enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
-                  searchOptions={{
-                    searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
-                    enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
-                    cacheScope: { collections: ['users'] },
-                  }}
-                />
-              </SearchField>
-            )}
+            <SearchField>
+              <FaSearch aria-hidden="true" />
+              <SearchBar
+                searchFunc={searchUsers}
+                search={searchQuery}
+                setSearch={setSearchQuery}
+                debounceMs={MATCHING_SEARCH_DEBOUNCE_MS}
+                setUsers={handleMatchingSearchResults}
+                setState={handleMatchingSearchStateStatus}
+                setUserNotFound={handleMatchingSearchNotFound}
+                wrapperStyle={{ width: '100%', margin: 0, border: 'none', background: 'transparent', padding: 0, boxShadow: 'none' }}
+                leftIcon={null}
+                placeholder="Пошук"
+                inputAriaLabel="Пошук профілів"
+                storageKey={SEARCH_KEY}
+                onSearchKey={handleMatchingSearchKey}
+                onSearchExecuted={handleMatchingSearchExecuted}
+                onSearchError={handleMatchingSearchError}
+                onClear={handleSearchCleared}
+                enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
+                searchOptions={{
+                  searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
+                  enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
+                  cacheScope: { collections: ['users'] },
+                  limitedFields: !hasFullProfileAccess,
+                }}
+              />
+            </SearchField>
             <TopActions>
               <TopActionGroup aria-label="Фільтри matching">
                 <ActionButton
@@ -6707,7 +6752,7 @@ const Matching = () => {
             </MatchingSearchStatusMessage>
           )}
           <ChipsRow role="group" aria-label={isSearching ? 'Результати пошуку' : 'Колекції matching'}>
-            {(isSearching ? searchChips : collectionChips).map(chip => {
+            {(isSearching ? searchChips : (hasFullProfileAccess ? collectionChips : [])).map(chip => {
               const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
               return (
                 <Chip
