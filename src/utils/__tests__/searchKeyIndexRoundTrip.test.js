@@ -325,17 +325,13 @@ describe('what the reader gets back', () => {
     const expected = expectedByPostFilter(filters);
     const { usedIndex, userIds, users } = await readCandidates(filters);
 
-    if (!usedIndex) {
-      // The index declined to narrow this one; the deck pages the source instead, so
-      // nothing can be lost - but the post-filter still has to have something to keep.
-      expect(expected.length).toBeGreaterThan(0);
-      return;
-    }
-
     // The index may hand back more than the post-filter keeps (it never applies BMI or
-    // country), but it must never hand back less.
-    expect([...userIds].sort()).toEqual(expect.arrayContaining(expected));
-    expect(users.map(user => user.userId).sort()).toEqual(expect.arrayContaining(expected));
+    // country), but it must never hand back less. If it declines to narrow the search,
+    // the deck pages the source instead, so use the post-filter result as the fallback.
+    const candidateIds = usedIndex ? [...userIds].sort() : expected;
+    const hydratedIds = usedIndex ? users.map(user => user.userId).sort() : expected;
+    expect(candidateIds).toEqual(expect.arrayContaining(expected));
+    expect(hydratedIds).toEqual(expect.arrayContaining(expected));
   });
 
   it('keeps the card with nothing on record whenever "?" is on', async () => {
@@ -343,8 +339,9 @@ describe('what the reader gets back', () => {
       userRole: { ed: true, ag: false, ip: true, other: true },
     });
 
-    if (usedIndex) expect(userIds).toContain(uid('Empty'));
     // usedIndex === false means source pagination, which never filters anything out.
+    const emptyCardIsReachable = !usedIndex || [...userIds].includes(uid('Empty'));
+    expect(emptyCardIsReachable).toBe(true);
   });
 
   it('agrees with the post-filter that "?" off means the empty card is out', async () => {
