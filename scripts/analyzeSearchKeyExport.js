@@ -30,13 +30,23 @@ const KNOWN_BUCKETS_BY_INDEX = {
     'tiktok', 'linkedin', 'youtube', 'email', 'twitter', 'line', 'otherLink',
   ],
   userId: ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'],
+  bmi: ['lt18_5', '18_5_24_9', '25_29_9', '30_plus', 'other'],
+  country: ['ua', 'other', 'unknown'],
+};
+
+// The bucket each index uses for "nothing on record". A rebuilt index stores none of
+// them - absence of the id is the answer.
+const EMPTY_BUCKET_BY_INDEX = {
+  blood: 'no', maritalStatus: 'no', role: 'no', csection: 'no', imt: 'no',
+  age: 'no', height: 'no', weight: 'no', lastAction: 'no', getInTouch: 'no',
+  reaction: 'no', bmi: 'other', country: 'unknown',
 };
 
 // age/lastAction/getInTouch/reaction store one bucket per day (`d_YYYY-MM-DD`) plus
 // the `no`/`?` pair, and fields stores one bucket per filled-field count.
 const OPEN_VOCABULARY_INDEXES = new Set(['age', 'lastAction', 'getInTouch', 'reaction', 'fields']);
 
-const BULK_BUCKETS = ['no', '?'];
+const BULK_BUCKETS = ['no', '?', 'unknown'];
 
 // A rebuilt index holds none of these: `no` is expressed by absence and `fields`
 // stores four range buckets instead of one node per filled-field count.
@@ -88,7 +98,10 @@ const describeRoot = (rootName, rootNode) => {
     const unexpected = known ? bucketNames.filter(bucket => !known.includes(bucket)) : [];
     const unwritten = known ? known.filter(bucket => !bucketNames.includes(bucket)) : [];
     const stale = [];
-    if (bucketNames.includes('no')) stale.push('`no` bucket (should be absence)');
+    const emptyBucket = EMPTY_BUCKET_BY_INDEX[indexName];
+    if (emptyBucket && bucketNames.includes(emptyBucket)) {
+      stale.push(`\`${emptyBucket}\` bucket (should be absence)`);
+    }
     if (indexName === 'fields' && bucketNames.some(isLegacyFieldCountBucket)) {
       stale.push(`legacy per-count nodes (expected ${FIELD_COUNT_RANGE_BUCKETS.join('/')})`);
     }

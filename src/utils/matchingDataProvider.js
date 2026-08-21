@@ -7,10 +7,14 @@ import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
   collectFieldCountIdsFromIndexNode,
   hasFieldCountRangeBuckets,
+  isSparseProfile,
 } from './fieldCountBuckets';
+import { getCachedSearchKeyPayload } from './searchKeyCache';
 import {
   BLOOD_SEARCH_KEY_BUCKETS,
+  BMI_SEARCH_KEY_BUCKETS,
   CONTACT_SEARCH_KEY_BUCKETS,
+  COUNTRY_SEARCH_KEY_BUCKETS,
   CSECTION_SEARCH_KEY_BUCKETS,
   FIELD_COUNT_SEARCH_KEY_BUCKETS,
   IMT_BUCKET_FILTER_KEYS,
@@ -23,6 +27,8 @@ import {
   canSearchKeyPlanNameCandidates,
   isBucketSelectedByFilterGroup,
   planSearchKeyBucketRead,
+  resolveBmiBucket,
+  resolveCountryBucket,
   selectSearchKeyBuckets,
 } from './searchKeyBuckets';
 
@@ -116,6 +122,8 @@ const addGroup = (groups, indexName, values, debug = {}) => {
     allBuckets: (allBuckets || normalizedValues).map(String),
     readMode: readPlan.mode,
     readBuckets: readPlan.buckets,
+    canInvertRead: Boolean(readPlan.canInvert),
+    includeBuckets: readPlan.includeBuckets,
     ...groupDebug,
   });
 };
@@ -297,6 +305,29 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     }
   );
 
+  const bmiBuckets = selectSearchKeyBuckets(filters?.bmi, BMI_SEARCH_KEY_BUCKETS);
+  addGroup(
+    groups,
+    'bmi',
+    bmiBuckets,
+    {
+      source: 'searchKey/users',
+      allBuckets: BMI_SEARCH_KEY_BUCKETS,
+      ...getFilterGroupDebugState('bmi', filters?.bmi),
+    }
+  );
+  const countryBuckets = selectSearchKeyBuckets(filters?.country, COUNTRY_SEARCH_KEY_BUCKETS);
+  addGroup(
+    groups,
+    'country',
+    countryBuckets,
+    {
+      source: 'searchKey/users',
+      allBuckets: COUNTRY_SEARCH_KEY_BUCKETS,
+      ...getFilterGroupDebugState('country', filters?.country),
+    }
+  );
+
   if (collectionSource !== 'newUsers') {
     const imtBuckets = IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket));
     addGroup(
@@ -357,6 +388,19 @@ const readBucketIds = async ({ rootPath, indexName, values }) => {
 // up front lets a plan made purely of rejections skip its reads entirely.
 const canGroupNameCandidates = group => canSearchKeyPlanNameCandidates(group?.readMode || 'include');
 
+const invertOneGroupToNameCandidates = groups => {
+  const invertible = groups
+    .filter(group => group?.canInvertRead && group.includeBuckets?.length)
+    .sort((a, b) => a.includeBuckets.length - b.includeBuckets.length)[0];
+  if (!invertible) return groups;
+
+  return groups.map(group => (
+    group === invertible
+      ? { ...group, readMode: 'include', readBuckets: group.includeBuckets }
+      : group
+  ));
+};
+
 // A group read resolves to { mode, ids }: 'include' narrows the candidates down to
 // `ids`, 'exclude' only says which ids to drop. `null` means the group puts no
 // restriction on the index at all.
@@ -386,6 +430,47 @@ const readMatchingUsersFilterIds = async ({ group, filters }) => {
   });
 
   return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids };
+};
+
+// The least-filled bucket of the field-count index. A card with nothing on record
+// is in no other index at all, so this is the one place it can be recognised
+// without hydrating it.
+export const SPARSE_CARD_FIELD_BUCKET = FIELD_COUNT_SEARCH_KEY_BUCKETS[0];
+
+/**
+ * Keep the near-empty cards, but put them at the end.
+ *
+ * They must not drop out of the deck - a reader who has not switched off "?" asked
+ * to see cards with nothing on record, and losing them silently is the failure this
+ * whole index rework is about. They are also not what anyone is scrolling for, so
+ * they sort behind everything that has data, once, over the whole candidate list
+ * rather than per page, so pagination inherits the order.
+ *
+ * One bucket read, cached like every other searchKey read.
+ */
+const orderSparseCardsLast = async (ids, rootPath) => {
+  if (!Array.isArray(ids) || ids.length < 2) return ids;
+
+  const path = `${rootPath}/${FIELD_COUNT_SEARCH_KEY_INDEX_NAME}/${SPARSE_CARD_FIELD_BUCKET}`;
+  let sparseIds = null;
+  try {
+    const payload = await getCachedSearchKeyPayload(path, async () => {
+      const snapshot = await get(ref(database, path));
+      return { exists: snapshot.exists(), value: snapshot.exists() ? snapshot.val() || {} : null };
+    });
+    sparseIds = payload?.exists ? new Set(Object.keys(payload.value || {})) : null;
+  } catch (error) {
+    // Ordering is a nicety; never fail a page over it.
+    console.warn('[Matching][indexedProvider] could not read the sparse-card bucket', { path, error });
+    return ids;
+  }
+
+  if (!sparseIds?.size) return ids;
+
+  const withData = [];
+  const nearlyEmpty = [];
+  ids.forEach(id => (sparseIds.has(id) ? nearlyEmpty : withData).push(id));
+  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : ids;
 };
 
 const intersectIdSets = sets => {
@@ -675,14 +760,21 @@ export const fetchMatchingIndexedCandidates = async ({
     };
   };
 
-  if (!filterGroups.some(canGroupNameCandidates)) return deferToSourcePagination();
+  // Inverting a read is only worth it when something else names the candidates. With
+  // nothing to subtract from, flip the cheapest invertible group back to a forward
+  // read rather than hand the whole deck to source pagination.
+  const plannedGroups = filterGroups.some(canGroupNameCandidates)
+    ? filterGroups
+    : invertOneGroupToNameCandidates(filterGroups);
+
+  if (!plannedGroups.some(canGroupNameCandidates)) return deferToSourcePagination();
 
   const idSets = await Promise.all(
-    filterGroups.map(group => readMatchingUsersFilterIds({ group, filters }))
+    plannedGroups.map(group => readMatchingUsersFilterIds({ group, filters }))
   );
   const combinedIds = combineFilterGroupIds(idSets);
   if (!combinedIds) return deferToSourcePagination();
-  const allMatchingIds = combinedIds;
+  const allMatchingIds = await orderSparseCardsLast(combinedIds, MATCHING_USERS_INDEX_ROOT);
   const ageGroupIndex = filterGroups.findIndex(group => group.indexName === 'age');
   const ageDateRangeIdsCount = ageGroupIndex >= 0
     ? (idSets[ageGroupIndex]?.ids?.size || 0)
@@ -712,7 +804,7 @@ export const fetchMatchingIndexedCandidates = async ({
     users,
     nextOffset,
     hasMore,
-    filterGroups,
+    filterGroups: plannedGroups,
     usedAgeDateRangeReader: ageDateRangeIdsCount !== null,
     ageDateRangeIdsCount,
   };
@@ -733,7 +825,7 @@ export const isSameMatchingCursor = (a, b) => {
   return a.date === b.date && a.userId === b.userId;
 };
 
-const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age'];
+const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age', 'bmi', 'country'];
 
 export const isMatchingFilterGroupActive = group =>
   group && typeof group === 'object' && Object.values(group).some(v => !v);
@@ -885,31 +977,10 @@ const toAgeCategory = user => {
   return 'other';
 };
 
-const toBmiCategory = user => {
-  const directNumericBmi = Number(
-    String(user?.bmi ?? user?.imt ?? '')
-      .replace(',', '.')
-      .trim()
-  );
+// Same rule the index writer uses, so the two can never disagree on a boundary.
+const toBmiCategory = user => resolveBmiBucket(user);
 
-  let bmi = Number.isFinite(directNumericBmi) && directNumericBmi > 0
-    ? directNumericBmi
-    : null;
-
-  if (bmi === null) {
-    const height = Number(String(user?.height || '').replace(',', '.').trim());
-    const weight = Number(String(user?.weight || '').replace(',', '.').trim());
-    if (Number.isFinite(height) && Number.isFinite(weight) && height > 0 && weight > 0) {
-      bmi = weight / Math.pow(height / 100, 2);
-    }
-  }
-
-  if (!Number.isFinite(bmi) || bmi <= 0) return 'other';
-  if (bmi < 18.5) return 'lt18_5';
-  if (bmi <= 24.9) return '18_5_24_9';
-  if (bmi <= 29.9) return '25_29_9';
-  return '30_plus';
-};
+const toCountryCategory = user => resolveCountryBucket(user);
 
 export const getMatchingFiltersWithoutSearchKeyGroups = filters => {
   const base = { ...(filters || {}) };
@@ -957,6 +1028,11 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     if (isMatchingFilterGroupActive(activeFilters.bmi)) {
       const category = toBmiCategory(user);
       if (!activeFilters.bmi[category]) return false;
+    }
+
+    if (isMatchingFilterGroupActive(activeFilters.country)) {
+      const category = toCountryCategory(user);
+      if (!activeFilters.country[category]) return false;
     }
 
     return true;
@@ -1117,6 +1193,21 @@ const getFilterMainInputsForMatchingView = ({
   };
 };
 
+/**
+ * Cards with almost nothing on record go to the end of whatever list is rendered.
+ *
+ * This is the same promise the indexed provider makes about the candidate ids, kept
+ * here as well so it also holds for the decks the index does not drive: source
+ * pagination, the newUsers deck and the reaction tabs. It is a stable partition, so
+ * the order the deck chose is untouched apart from moving those cards down.
+ */
+const orderSparseUsersLast = users => {
+  const withData = [];
+  const nearlyEmpty = [];
+  users.forEach(user => (isSparseProfile(user) ? nearlyEmpty : withData).push(user));
+  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : users;
+};
+
 export const applyMatchingUiFiltersToUsers = ({
   users,
   filters,
@@ -1139,8 +1230,15 @@ export const applyMatchingUiFiltersToUsers = ({
     viewMode,
   });
 
+  // The five searchKey groups are stripped out of filterMain's settings, so nothing
+  // else applies them: the index is their only enforcement - until it defers, which
+  // it now does whenever a selection keeps the cards with nothing on record. Running
+  // the twin post-filter here makes the deck correct either way. It costs nothing
+  // when the index did narrow: it keeps exactly what the index would have kept.
+  const searchKeyFilteredUsers = applyMatchingSearchKeyFilters(users, filters, roleIndexSets);
+
   const baseUsers = filterMainFn(
-    users.map(u => [u.userId, u]),
+    searchKeyFilteredUsers.map(u => [u.userId, u]),
     null,
     filterMainFilters,
     filterMainFavoriteUsers,
@@ -1162,7 +1260,7 @@ export const applyMatchingUiFiltersToUsers = ({
       isAllowedIdForMatchingCollection(u.userId, collectionSource)
     ));
 
-  return baseUsers;
+  return orderSparseUsersLast(baseUsers);
 };
 
 export const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {

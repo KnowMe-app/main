@@ -61,6 +61,29 @@ describe('searchKey `no` bucket is neither written nor read', () => {
 
     expect(source).toContain("const useExcludeStrategy = readMode === 'exclude';");
     expect(source).toContain('(useExcludeStrategy && (planBuckets.length === 0 || filterSets.length === 0))');
+    // A drawer filter the index cannot express must widen the deck, never zero an
+    // access rule - so it is dropped, not read.
+    expect(source).toContain("if (readMode === 'none' || readMode === 'defer') {");
+  });
+
+  it('materialises the empty bucket inside searchKeySets, where an access rule names it', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../utils/newUsersFilterSetsIndex.js'), 'utf8');
+
+    expect(source).toContain('const emptyBucket = getSearchKeyEmptyBucket(fieldName);');
+    expect(source).toContain('result[fieldName][emptyBucket][userId] = true;');
+    expect(source).toContain("collectAgeIdsByFilters(ageFilterMap, [rootPath], { emptyBucketStored: true })");
+  });
+
+  it('gives bmi and country a written index instead of leaving them to the post-filter', () => {
+    const source = configSource();
+
+    expect(source).toContain("const BMI_SEARCH_KEY_INDEX = 'bmi';");
+    expect(source).toContain("const COUNTRY_SEARCH_KEY_INDEX = 'country';");
+    expect(source).toContain('export const createBmiSearchKeyIndexInCollection =');
+    expect(source).toContain('export const createCountrySearchKeyIndexInCollection =');
+    // One rule for the derived value, shared with the post-filter.
+    expect(source).toContain('const getBmiCategory = value => resolveBmiBucket(value);');
+    expect(source).toContain('const getCountryCategory = value => resolveCountryBucket(value);');
   });
 
   it('builds role and marital status buckets from the shared vocabulary', () => {

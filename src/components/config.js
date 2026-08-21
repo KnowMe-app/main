@@ -45,10 +45,12 @@ import {
   shouldSkipBroadFallbackForExactSearchId,
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
-import { resolveFieldCountRangeBucket } from '../utils/fieldCountBuckets';
+import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import {
   AGE_BUCKET_FILTER_KEYS,
   SEARCH_KEY_EMPTY_BUCKET,
+  resolveBmiBucket,
+  resolveCountryBucket,
   isBucketSelectedByFilterGroup,
   planSearchKeyBucketRead,
   withoutEmptySearchKeyBucket,
@@ -153,6 +155,8 @@ const REACTION_SEARCH_KEY_INDEX = 'reaction';
 const FIELD_COUNT_SEARCH_KEY_INDEX = 'fields';
 const LAST_ACTION_SEARCH_KEY_INDEX = 'lastAction';
 const GET_IN_TOUCH_SEARCH_KEY_INDEX = 'getInTouch';
+const BMI_SEARCH_KEY_INDEX = 'bmi';
+const COUNTRY_SEARCH_KEY_INDEX = 'country';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -169,6 +173,8 @@ const SEARCH_KEY_INDEX_TYPES = {
   fieldCount: FIELD_COUNT_SEARCH_KEY_INDEX,
   lastAction: LAST_ACTION_SEARCH_KEY_INDEX,
   getInTouch: GET_IN_TOUCH_SEARCH_KEY_INDEX,
+  bmi: BMI_SEARCH_KEY_INDEX,
+  country: COUNTRY_SEARCH_KEY_INDEX,
 };
 
 const getSearchIndexCacheStorage = () => {
@@ -3904,13 +3910,21 @@ const getWeightIndexSet = data => {
 // Stored as one of four range buckets rather than the raw count: a filter then reads
 // the ranges it asked for instead of the whole node, and the index stops producing
 // numeric keys that RTDB hands back as a sparse array.
-const normalizeFieldCountSearchKeyIndexValue = data => {
-  const count = data && typeof data === 'object' ? Object.keys(data).length : 0;
-  return resolveFieldCountRangeBucket(count);
-};
+const normalizeFieldCountSearchKeyIndexValue = data => resolveProfileFieldCountBucket(data);
 
 const getFieldCountIndexSet = data => {
   return new Set([normalizeFieldCountSearchKeyIndexValue(data)]);
+};
+
+// BMI and country are derived, not stored, so both sides use the shared resolver.
+const getBmiIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([resolveBmiBucket(data)]);
+};
+
+const getCountryIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([resolveCountryBucket(data)]);
 };
 
 export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
@@ -4333,7 +4347,7 @@ const collectIdsFromAgeSnapshot = (snapshot, idSet) => {
 export const collectAgeIdsByFilters = async (
   ageFilters,
   rootPaths = [SEARCH_KEY_INDEX_ROOT],
-  { includeUnofferedBuckets = false } = {},
+  { includeUnofferedBuckets = false, emptyBucketStored = false } = {},
 ) => {
   const shouldApplyAge = hasExplicitFilterSelection(ageFilters);
   if (!shouldApplyAge) return null;
@@ -4347,10 +4361,13 @@ export const collectAgeIdsByFilters = async (
     return bucket === '?' ? selected('other') || selected('?') : selected('empty') || selected('no');
   };
 
-  // Profiles without a birth date are not in the index at all, so a selection that
-  // keeps them cannot be answered by reading buckets. Say so instead of returning a
-  // set that quietly omits them - the caller falls back to its own filtering.
-  if (specialBucketSelected(SEARCH_KEY_EMPTY_BUCKET)) return null;
+  // Profiles without a birth date are not in the searchKey index at all, so a
+  // selection that keeps them cannot be answered by reading buckets. Say so instead
+  // of returning a set that quietly omits them - the caller falls back to its own
+  // filtering. searchKeySets are the exception: they do materialise `no`, because an
+  // access rule naming it has to be answered positively, never widened.
+  const wantsEmptyBucket = specialBucketSelected(SEARCH_KEY_EMPTY_BUCKET);
+  if (wantsEmptyBucket && !emptyBucketStored) return null;
 
   const ageIds = new Set();
   const requests = [];
@@ -4418,6 +4435,9 @@ export const collectAgeIdsByFilters = async (
     });
 
     if (specialBucketSelected('?')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
+    if (wantsEmptyBucket) {
+      requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/${SEARCH_KEY_EMPTY_BUCKET}`)));
+    }
   });
 
   const snapshots = await Promise.all(requests);
@@ -4876,6 +4896,10 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextLastActionValues = withoutEmptySearchKeyBucket(getLastActionIndexSet(nextData), LAST_ACTION_SEARCH_KEY_INDEX);
   const prevGetInTouchValues = getGetInTouchIndexSet(prevData);
   const nextGetInTouchValues = withoutEmptySearchKeyBucket(getGetInTouchIndexSet(nextData), GET_IN_TOUCH_SEARCH_KEY_INDEX);
+  const prevBmiValues = getBmiIndexSet(prevData);
+  const nextBmiValues = withoutEmptySearchKeyBucket(getBmiIndexSet(nextData), BMI_SEARCH_KEY_INDEX);
+  const prevCountryValues = getCountryIndexSet(prevData);
+  const nextCountryValues = withoutEmptySearchKeyBucket(getCountryIndexSet(nextData), COUNTRY_SEARCH_KEY_INDEX);
 
   for (const value of prevFieldCountValues) {
     if (!nextFieldCountValues.has(value)) {
@@ -4916,6 +4940,34 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevGetInTouchValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateLeaf(GET_IN_TOUCH_SEARCH_KEY_INDEX, value, 'add');
+    }
+  }
+
+  for (const value of prevBmiValues) {
+    if (!nextBmiValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(BMI_SEARCH_KEY_INDEX, value, 'remove');
+    }
+  }
+
+  for (const value of nextBmiValues) {
+    if (!prevBmiValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(BMI_SEARCH_KEY_INDEX, value, 'add');
+    }
+  }
+
+  for (const value of prevCountryValues) {
+    if (!nextCountryValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(COUNTRY_SEARCH_KEY_INDEX, value, 'remove');
+    }
+  }
+
+  for (const value of nextCountryValues) {
+    if (!prevCountryValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(COUNTRY_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 };
@@ -5219,6 +5271,38 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
 };
 
 
+const createDerivedSearchKeyIndexInCollection = async (collection, indexName, getIndexSet, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  if (!usersData) return;
+  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  await resetSearchKeyIndexNodes(searchKeyRoot, [indexName]);
+
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        withoutEmptySearchKeyBucket(getIndexSet(user), indexName).forEach(value => {
+          acc[`${searchKeyRoot}/${indexName}/${value}/${userId}`] = true;
+        });
+        return acc;
+      }, {}),
+    onProgress
+  );
+};
+
+export const createBmiSearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
+  createDerivedSearchKeyIndexInCollection(collection, BMI_SEARCH_KEY_INDEX, getBmiIndexSet, onProgress, options);
+
+export const createCountrySearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
+  createDerivedSearchKeyIndexInCollection(collection, COUNTRY_SEARCH_KEY_INDEX, getCountryIndexSet, onProgress, options);
+
 export const createLastActionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
@@ -5296,6 +5380,8 @@ const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.getInTouch]: createGetInTouchSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.bmi]: createBmiSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.country]: createCountrySearchKeyIndexInCollection,
 };
 
 export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress, options = {}) => {
@@ -6853,18 +6939,8 @@ const getContactIndexSet = data => {
   return contactSet;
 };
 
-const getBmiCategory = value => {
-  const weight = parseFloat(value.weight);
-  const height = parseFloat(value.height);
-  if (weight && height) {
-    const bmi = weight / (height / 100) ** 2;
-    if (bmi < 18.5) return 'lt18_5';
-    if (bmi < 25) return '18_5_24_9';
-    if (bmi < 30) return '25_29_9';
-    return '30_plus';
-  }
-  return 'other';
-};
+// Shared with the index writer and the Matching post-filter - see searchKeyBuckets.
+const getBmiCategory = value => resolveBmiBucket(value);
 
 const getImtCategory = value => {
   return normalizeImtSearchKeyIndexValue(value);
@@ -6877,14 +6953,7 @@ const getHeightCategory = value => {
   return getHeightFilterBucket(parsedHeight) || 'other';
 };
 
-const getCountryCategory = value => {
-  const raw = (value.country || '').toString().trim();
-  if (!raw) return 'unknown';
-  const normalized = raw.toLowerCase();
-  const uaVariants = ['ukraine', 'україна', 'украина', 'украин', 'уккраина'];
-  if (uaVariants.includes(normalized)) return 'ua';
-  return 'other';
-};
+const getCountryCategory = value => resolveCountryBucket(value);
 
 const getUserIdCategory = userId => {
   if (!userId) return 'other';
@@ -6898,13 +6967,8 @@ const getUserIdCategory = userId => {
   return 'other';
 };
 
-const getFieldCountCategory = value => {
-  const count = Object.keys(value).length;
-  if (count <= 5) return 'le5';
-  if (count <= 10) return 'f6_10';
-  if (count <= 20) return 'f11_20';
-  return 'f20_plus';
-};
+// Same rule as the index writer, so a `fields` filter agrees with the index it read.
+const getFieldCountCategory = value => resolveProfileFieldCountBucket(value);
 
 const getCommentLengthCategory = comment => {
   if (!comment || typeof comment !== 'string') return 'other';

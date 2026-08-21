@@ -80,6 +80,9 @@ const defaultsMatching = {
     other: true,
   },
   country: { ua: true, other: true, unknown: true },
+  // Everything on: cards with nothing on record stay in the deck (last) until the
+  // reader deliberately switches "порожні" off.
+  fields: { le5: true, f6_10: true, f11_20: true, f20_plus: true },
 };
 
 const normalizeFilterGroup = (value, defaults) => {

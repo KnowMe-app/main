@@ -118,6 +118,27 @@ describe('planSearchKeyBucketRead', () => {
     expect(partial.buckets).not.toContain('vk');
   });
 
+  it('marks a free inversion as reversible, and a forced one as not', () => {
+    // fields has no virtual bucket: reading either side is equivalent, so the caller
+    // may flip back when it has nothing to subtract from.
+    const optional = planSearchKeyBucketRead({
+      indexName: 'fields',
+      selectedBuckets: ['f6_10', 'f11_20', 'f20_plus'],
+    });
+    expect(optional.mode).toBe('exclude');
+    expect(optional.canInvert).toBe(true);
+    expect(optional.includeBuckets).toEqual(['f6_10', 'f11_20', 'f20_plus']);
+
+    // role keeps the unfilled cards, which live nowhere: subtracting is the only
+    // reading, and flipping it would drop them.
+    const forced = planSearchKeyBucketRead({
+      indexName: 'role',
+      selectedBuckets: ['ed', 'ip', '?', 'no'],
+    });
+    expect(forced.mode).toBe('exclude');
+    expect(forced.canInvert).toBe(false);
+  });
+
   it('never names the unstored `no` bucket in a read', () => {
     const plan = planSearchKeyBucketRead({
       indexName: 'role',

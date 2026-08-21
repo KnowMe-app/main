@@ -1194,6 +1194,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     { key: 'fieldCount', label: 'fields' },
     { key: 'lastAction', label: 'lastAction' },
     { key: 'getInTouch', label: 'getInTouch' },
+    { key: 'bmi', label: 'bmi' },
+    { key: 'country', label: 'country' },
   ];
 
   const location = useLocation();
@@ -7151,7 +7153,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       storageKey={filterStorageKey}
                       bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
                       reactionFilterOptions={offlineLoadMode ? OFFLINE_REACTION_FILTER_OPTIONS : undefined}
-                      allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch'] : undefined}
+                      allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch', 'bmi', 'country'] : undefined}
                     />
                   </LoadOptionsPopover>
                 )}

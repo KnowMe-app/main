@@ -36,6 +36,41 @@ export const CONTACT_SEARCH_KEY_BUCKETS = [
 ];
 export const USER_ID_SEARCH_KEY_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
 export const FIELD_COUNT_SEARCH_KEY_BUCKETS = ['le5', 'f6_10', 'f11_20', 'f20_plus'];
+export const BMI_SEARCH_KEY_BUCKETS = ['lt18_5', '18_5_24_9', '25_29_9', '30_plus', 'other'];
+export const COUNTRY_SEARCH_KEY_BUCKETS = ['ua', 'other', 'unknown'];
+
+/**
+ * Which bucket a profile belongs to, for the two indexes whose value is derived
+ * rather than stored. Both the writer (components/config.js) and the hydrated-card
+ * post-filter call these, so the index and the filter cannot drift apart on a
+ * rounding boundary or on what counts as "not on record".
+ */
+export const resolveBmiBucket = profile => {
+  const directBmi = Number(String(profile?.bmi ?? profile?.imt ?? '').replace(',', '.').trim());
+  let bmi = Number.isFinite(directBmi) && directBmi > 0 ? directBmi : null;
+
+  if (bmi === null) {
+    const height = Number(String(profile?.height || '').replace(',', '.').trim());
+    const weight = Number(String(profile?.weight || '').replace(',', '.').trim());
+    if (Number.isFinite(height) && Number.isFinite(weight) && height > 0 && weight > 0) {
+      bmi = weight / (height / 100) ** 2;
+    }
+  }
+
+  if (!Number.isFinite(bmi) || bmi <= 0) return 'other';
+  if (bmi < 18.5) return 'lt18_5';
+  if (bmi <= 24.9) return '18_5_24_9';
+  if (bmi <= 29.9) return '25_29_9';
+  return '30_plus';
+};
+
+const UA_COUNTRY_VALUES = ['ukraine', 'україна', 'украина', 'украин', 'уккраина'];
+
+export const resolveCountryBucket = profile => {
+  const raw = String(profile?.country ?? '').trim();
+  if (!raw) return 'unknown';
+  return UA_COUNTRY_VALUES.includes(raw.toLowerCase()) ? 'ua' : 'other';
+};
 
 // Bucket -> filter option key, per index. Buckets missing from a map keep their own name.
 export const MARITAL_STATUS_BUCKET_FILTER_KEYS = { '+': 'married', '-': 'unmarried', '?': 'other', no: 'empty' };
@@ -66,6 +101,11 @@ export const SEARCH_KEY_INDEX_SPECS = {
   contact: { buckets: CONTACT_SEARCH_KEY_BUCKETS, emptyBucket: null, coverage: 'partial' },
   userId: { buckets: USER_ID_SEARCH_KEY_BUCKETS, emptyBucket: null, coverage: 'total' },
   fields: { buckets: FIELD_COUNT_SEARCH_KEY_BUCKETS, emptyBucket: null, coverage: 'total' },
+  // `other` here means the BMI could not be computed at all, and `unknown` means no
+  // country on record - the same "nothing to index" case `no` covers elsewhere, so
+  // they are the empty bucket of their index and are not stored either.
+  bmi: { buckets: BMI_SEARCH_KEY_BUCKETS, emptyBucket: 'other', coverage: 'total' },
+  country: { buckets: COUNTRY_SEARCH_KEY_BUCKETS, emptyBucket: 'unknown', coverage: 'total' },
   age: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
   height: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
   weight: { buckets: null, emptyBucket: SEARCH_KEY_EMPTY_BUCKET, coverage: 'total', openVocabulary: true },
@@ -134,11 +174,16 @@ export const selectSearchKeyBuckets = (group, allBuckets = [], { bucketMap = {},
 
 const unique = values => [...new Set((values || []).map(String))];
 
-const buildPlan = (mode, buckets, selected, rejected) => ({
+const buildPlan = (mode, buckets, selected, rejected, canInvert = false) => ({
   mode,
   buckets,
   selectedBuckets: selected,
   excludedBuckets: rejected,
+  // True only where reading the other side is a free optimisation rather than the
+  // only correct reading: every card has exactly one bucket and none is virtual, so
+  // the caller may flip back to `include` when it has nothing to subtract from.
+  canInvert,
+  includeBuckets: selected,
 });
 
 /**
@@ -201,7 +246,7 @@ export const planSearchKeyBucketRead = ({
   }
 
   if (resolvedCoverage === 'total' && rejected.length < selected.length) {
-    return buildPlan('exclude', rejected, selected, rejected);
+    return buildPlan('exclude', rejected, selected, rejected, true);
   }
 
   return buildPlan('include', selected, selected, rejected);

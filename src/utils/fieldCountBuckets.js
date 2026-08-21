@@ -12,6 +12,21 @@ const normalizeBucketValues = values => {
 export const hasFieldCountRangeBuckets = values =>
   normalizeBucketValues(values).some(value => FIELD_COUNT_RANGE_BUCKETS.includes(String(value || '').trim()));
 
+// Keys the app adds to a hydrated card (`__sourceCollection`, `__fromCardCache`)
+// are not profile data. Excluding them keeps the count the index writes and the
+// count the post-filter derives from a loaded card identical.
+export const countProfileFields = profile => {
+  if (!profile || typeof profile !== 'object') return 0;
+  return Object.keys(profile).filter(key => !key.startsWith('__')).length;
+};
+
+export const resolveProfileFieldCountBucket = profile =>
+  resolveFieldCountRangeBucket(countProfileFields(profile));
+
+/** A card with almost nothing on record: the deck keeps these, but shows them last. */
+export const isSparseProfile = profile =>
+  resolveProfileFieldCountBucket(profile) === FIELD_COUNT_RANGE_BUCKETS[0];
+
 // The index stores one of the four range buckets. Numeric keys are the legacy shape
 // (one node per filled-field count) and are still recognised so a half-migrated
 // index keeps answering while the rebuild runs.

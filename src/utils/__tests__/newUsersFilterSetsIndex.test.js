@@ -109,9 +109,12 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
       }],
     });
 
+    // A set materialises `no`, unlike the global index, so an access rule naming it
+    // is answered positively instead of being widened away.
     expect(mockCollectAgeIdsByFilters).toHaveBeenCalledWith(
       { le21: true, '22_25': true, '26_30': true, '?': true },
       ['searchKeySets/owner-1_1'],
+      { emptyBucketStored: true },
     );
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/age/le21');
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/age/26_30');

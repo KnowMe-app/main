@@ -124,8 +124,11 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const first = await fetchMatchingIndexedCandidates({ filters, limit: 2, hydrateUsersByIds });
     const second = await fetchMatchingIndexedCandidates({ filters, offset: 2, limit: 2, hydrateUsersByIds });
 
-    expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
+    // The bucket, plus the one read that tells the deck which cards are near-empty so
+    // they can be ordered last. The second page comes from the cached id list.
+    expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/role/ag');
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
     expect(first.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002']);
     expect(second.pageIds).toEqual(['user00000000000000000003']);
   });
@@ -139,7 +142,9 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     Date.now.mockReturnValue(1_000_000 + (10 * 60 * 1000) + 1);
     await fetchMatchingIndexedCandidates({ filters, offset: 1, limit: 1, hydrateUsersByIds });
 
-    expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
+    // The bucket is read again once the index-id cache expires; the near-empty
+    // ordering read is cached separately and outlives it.
+    expect(mockFirebaseGet).toHaveBeenCalledTimes(3);
   });
 
   it('reads the field-count ranges it asked for as their own nodes', async () => {
@@ -159,7 +164,8 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/f20_plus');
     // The whole 400 KB node stays off the wire once the index stores ranges.
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields');
-    expect(result.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000004']);
+    // ...001 is in `le5`, so it is kept and sorted behind the card that has data.
+    expect(result.pageIds).toEqual(['user00000000000000000004', 'user00000000000000000001']);
   });
 
   it('falls back to scanning the legacy per-count field index while a rebuild is pending', async () => {
@@ -300,7 +306,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const excluded = await fetchMatchingIndexedCandidates({ filters, limit: 5, excludeIds: ['user00000000000000000001'], hydrateUsersByIds });
     const base = await fetchMatchingIndexedCandidates({ filters, limit: 5, hydrateUsersByIds });
 
-    expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
+    expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
     expect(excluded.pageIds).toEqual(['user00000000000000000002', 'user00000000000000000003']);
     expect(base.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002', 'user00000000000000000003']);
   });

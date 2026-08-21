@@ -94,6 +94,19 @@ export const MATCHING_FILTER_GROUPS = [
         { val: 'unknown', label: '?' },
       ],
     },
+    {
+      // Скільки полів заповнено. Порожні анкети завжди лишаються у видачі й ідуть
+      // останніми; ця група дає їх або показати окремо, або прибрати.
+      filterName: 'fields',
+      label: 'Заповненість',
+      compact: true,
+      options: [
+        { val: 'le5', label: 'порожні' },
+        { val: 'f6_10', label: '6-10' },
+        { val: 'f11_20', label: '11-20' },
+        { val: 'f20_plus', label: '20+' },
+      ],
+    },
   ];
 
 // Matching's filters are subtractive: a group starts with everything on and the
