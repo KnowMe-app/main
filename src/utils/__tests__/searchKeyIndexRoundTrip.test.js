@@ -224,6 +224,13 @@ beforeAll(async () => {
 });
 
 describe('what the builders write', () => {
+  it.each(['sm', 'surrogate mother', 'surrogate_mother'])(
+    'normalizes the surrogate role alias %s into the SM index bucket',
+    role => {
+      expect(config.normalizeRoleSearchKeyIndexValue(role, null)).toBe('sm');
+    },
+  );
+
   it('never creates the `no` bucket', () => {
     const index = writtenIndex();
     Object.entries(index).forEach(([indexName, buckets]) => {
