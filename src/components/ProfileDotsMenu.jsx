@@ -218,6 +218,8 @@ export const ProfileDotsMenu = ({
   onViewProfile,
   onSelect,
   beforeNavigate,
+  extraActions,
+  extraActionsLabel = 'Ще',
 }) => {
   const location = useLocation();
   const { themeMode, setThemeMode, language, setLanguage } = useAppSettings();
@@ -339,6 +341,28 @@ export const ProfileDotsMenu = ({
           );
         })}
       </MenuSection>
+
+      {extraActions?.length ? (
+        <MenuSection>
+          <SectionLabel>{extraActionsLabel}</SectionLabel>
+          {extraActions.map(item => (
+            <MenuItem
+              key={item.key}
+              type="button"
+              role="menuitem"
+              $active={item.active}
+              onClick={() => handleAction(item.onClick)}
+            >
+              <ItemIcon>{item.icon}</ItemIcon>
+              <span>
+                <ItemLabel>{item.label}</ItemLabel>
+                {item.description ? <ItemDescription>{item.description}</ItemDescription> : null}
+              </span>
+              {item.active ? <ActivePill>увімкнено</ActivePill> : null}
+            </MenuItem>
+          ))}
+        </MenuSection>
+      ) : null}
 
       <MenuSection>
         <SectionLabel>Налаштування</SectionLabel>

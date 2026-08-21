@@ -147,7 +147,7 @@ import ProfileRow, {
   renderFacts as renderProfileFacts,
 } from './ProfileRow';
 import { HiddenHeaderTitle as MatchingHiddenListHeaderTitle } from './MatchingHiddenList.styled';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt } from 'react-icons/fa';
 import { FaRegHeart } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
@@ -237,6 +237,10 @@ import {
   normalizeMatchingInitialLoadError,
   runInitialRequestWithTimeout,
 } from 'utils/matchingLoadError';
+
+// Spec §9: diagnostics are admin-only, so they live in their own chunk and are
+// only fetched once the flag is switched on.
+const MatchingDiagnostics = React.lazy(() => import('./MatchingDiagnostics'));
 
 export {
   INITIAL_MATCHING_REQUEST_TIMEOUT_MS,
@@ -1407,7 +1411,7 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 // Spec §6: the gallery is the "what do they look like" mode. Every tile is the
 // same 4/5 box - vertical shots get cropped like everything else so the columns
 // stay level - and neither the comment nor the location appears here.
-const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite }) => {
+const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite, diagnosticsSlot }) => {
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const photo = getProfilePhotos(user)[0];
@@ -1453,12 +1457,14 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
           </React.Fragment>
         ))}
       </GalleryFacts>
+      {diagnosticsSlot}
     </GalleryTile>
   );
 }, (prev, next) => (
   prev.user === next.user
   && prev.isFavorite === next.isFavorite
   && prev.isHidden === next.isHidden
+  && prev.diagnosticsSlot === next.diagnosticsSlot
 ));
 
 const Matching = () => {
@@ -1515,6 +1521,11 @@ const Matching = () => {
   const [publicComments, setPublicComments] = useState({});
   const publicCommentsRequestedRef = useRef(new Set());
   const [viewerName, setViewerName] = useState('');
+  // Spec §9: admin-only data diagnostics. Both the flag and the module it pulls
+  // in stay out of an ordinary user's way - the chunk is only fetched once the
+  // flag is on, so the checks never reach a non-admin bundle.
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false);
+  const [diagnosticsModule, setDiagnosticsModule] = useState(null);
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
@@ -6227,10 +6238,96 @@ const Matching = () => {
     });
   }, []);
 
+  useEffect(() => {
+    if (!diagnosticsEnabled || !isAdmin || diagnosticsModule) return;
+    let active = true;
+    import('./MatchingDiagnostics')
+      .then(module => { if (active) setDiagnosticsModule(module); })
+      .catch(error => console.error('[Matching] Failed to load diagnostics', error));
+    return () => { active = false; };
+  }, [diagnosticsEnabled, diagnosticsModule, isAdmin]);
+
+  const showDiagnostics = diagnosticsEnabled && isAdmin && Boolean(diagnosticsModule);
+
+  const diagnosticsPhoneIndex = useMemo(
+    () => (showDiagnostics ? diagnosticsModule.buildPhoneIndex(filteredUsers) : null),
+    [diagnosticsModule, filteredUsers, showDiagnostics],
+  );
+
+  // A row that the UI filters would reject but that still reached the list means
+  // the filtering pipeline let it through - worth flagging as a bug, not as data.
+  const diagnosticsFilterMisses = useMemo(() => {
+    if (!showDiagnostics) return null;
+    const misses = new Set();
+    filteredUsers.forEach(user => {
+      if (!user?.userId) return;
+      const kept = applyMatchingUiFiltersToUsers({
+        users: [user],
+        filters,
+        filterMainFn: filterMain,
+        favoriteUsers,
+        dislikeUsers,
+        excludeReactionUsers: false,
+        roleIndexSets,
+        collectionSource,
+        viewMode,
+      });
+      if (!kept.length) misses.add(user.userId);
+    });
+    return misses;
+  }, [
+    collectionSource,
+    dislikeUsers,
+    favoriteUsers,
+    filteredUsers,
+    filters,
+    roleIndexSets,
+    showDiagnostics,
+    viewMode,
+  ]);
+
+  const renderDiagnosticsFor = React.useCallback(user => {
+    if (!showDiagnostics) return undefined;
+    return (
+      <React.Suspense fallback={null}>
+        <MatchingDiagnostics
+          user={user}
+          phoneIndex={diagnosticsPhoneIndex}
+          failsActiveFilter={Boolean(diagnosticsFilterMisses?.has(user?.userId))}
+        />
+      </React.Suspense>
+    );
+  }, [diagnosticsFilterMisses, diagnosticsPhoneIndex, showDiagnostics]);
+
   const feedRows = useMemo(
     () => filteredUsers.map(user => withLazyPhotos(user)),
     [filteredUsers, withLazyPhotos],
   );
+
+  const matchingMenuActions = [
+    {
+      key: 'viewLayout',
+      label: viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї',
+      description: 'Перемкнути вигляд стрічки',
+      icon: viewLayout === 'gallery' ? <FaListUl /> : <FaThLarge />,
+      onClick: toggleViewLayout,
+    },
+    ...(isAdmin ? [{
+      key: 'diagnostics',
+      label: 'Діагностика',
+      description: 'Показати проблеми в даних анкет',
+      icon: <FaStethoscope />,
+      active: diagnosticsEnabled,
+      onClick: () => setDiagnosticsEnabled(current => !current),
+    }] : []),
+    {
+      key: 'refreshCache',
+      label: 'Оновити кеш',
+      description: 'Скинути фільтри й перезавантажити анкети',
+      icon: <FaSyncAlt />,
+      onClick: resetFiltersAndCache,
+    },
+  ];
 
   const dotsMenu = () => (
     <ProfileDotsMenu
@@ -6240,6 +6337,8 @@ const Matching = () => {
       onExit={handleExit}
       onSelect={() => setShowInfoModal(false)}
       beforeNavigate={saveScrollPosition}
+      extraActions={matchingMenuActions}
+      extraActionsLabel="Matching"
     />
   );
 
@@ -6501,6 +6600,7 @@ const Matching = () => {
                       isHidden={Boolean(dislikeUsers[user.userId])}
                       onOpen={openDetailFor}
                       onToggleFavorite={toggleRowFavorite}
+                      diagnosticsSlot={renderDiagnosticsFor(user)}
                     />
                   ))}
                 </GalleryGrid>
@@ -6520,6 +6620,7 @@ const Matching = () => {
                       clientComment={comments[user.userId] || ''}
                       onCommentSave={handleRowCommentSave}
                       priorityMetricKeys={priorityMetricKeys}
+                      diagnosticsSlot={renderDiagnosticsFor(user)}
                       commentSlot={(
                         <PublicCommentBlock
                           profileId={user.userId}
