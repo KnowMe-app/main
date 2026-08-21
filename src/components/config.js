@@ -62,6 +62,7 @@ import {
   isFullProfileFallbackData,
   isLegacyFullProfileFallbackData,
 } from '../utils/userProfileFallback';
+import { normalizeProfileRole } from '../utils/profileRole';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -3929,18 +3930,8 @@ const getCountryIndexSet = data => {
 
 export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
   const normalizeSingleRole = value => {
-    const normalized = String(value || '')
-      .trim()
-      .toLowerCase();
-
-    if (!normalized) return '';
-    if (normalized === 'ed') return 'ed';
-    if (['sm', 'surrogate mother', 'surrogate_mother'].includes(normalized)) return 'sm';
-    if (normalized === 'ag') return 'ag';
-    if (normalized === 'ip') return 'ip';
-    if (normalized === 'pp') return 'pp';
-    if (normalized === 'cl') return 'cl';
-    return '?';
+    if (!String(value || '').trim()) return '';
+    return normalizeProfileRole(value) || '?';
   };
 
   const normalizedRole = normalizeSingleRole(roleValue);
@@ -4790,6 +4781,18 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
 
   for (const value of nextRoleValues) {
     if (!prevRoleValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(ROLE_SEARCH_KEY_INDEX, value, 'add');
+    }
+  }
+
+  // Profiles saved before role aliases were introduced may still have a leaf in
+  // the unknown bucket. Reassert recognized next values and clear that legacy
+  // leaf even when normalized prev/next values are identical.
+  const recognizedNextRoleValues = new Set([...nextRoleValues].filter(value => value !== '?'));
+  if (recognizedNextRoleValues.size > 0 && !nextRoleValues.has('?')) {
+    await updateLeaf(ROLE_SEARCH_KEY_INDEX, '?', 'remove');
+    for (const value of recognizedNextRoleValues) {
       // eslint-disable-next-line no-await-in-loop
       await updateLeaf(ROLE_SEARCH_KEY_INDEX, value, 'add');
     }
@@ -6839,9 +6842,10 @@ const categorizeCsection = val => normalizeCsectionIndexValue(val);
 const normalizeSingleFilterValue = value => String(value ?? '').trim().toLowerCase();
 
 const getRoleCategory = value => {
-  const role = normalizeSingleFilterValue(value.role || value.userRole);
-  if (!role) return 'empty';
-  if (['ed', 'sm', 'ag', 'ip', 'pp', 'cl'].includes(role)) return role;
+  const rawRole = value.role || value.userRole;
+  if (!normalizeSingleFilterValue(rawRole)) return 'empty';
+  const role = normalizeProfileRole(rawRole);
+  if (role) return role;
   return 'other';
 };
 
