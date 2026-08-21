@@ -75,6 +75,13 @@ import {
   FeedNotice,
   FeedSentinel,
   FeedWrap,
+  GalleryFacts,
+  GalleryGrid,
+  GalleryHeartButton,
+  GalleryHiddenBadge,
+  GalleryName,
+  GalleryPhotoBox,
+  GalleryTile,
   LayoutToggleButton,
   DetailBar,
   DetailCloseButton,
@@ -128,7 +135,11 @@ import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
-import ProfileRow from './ProfileRow';
+import ProfileRow, {
+  getGradientFor as getProfileGradientFor,
+  getInitials as getProfileInitials,
+  renderFacts as renderProfileFacts,
+} from './ProfileRow';
 import { HiddenHeaderTitle as MatchingHiddenListHeaderTitle } from './MatchingHiddenList.styled';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl } from 'react-icons/fa';
 import { FaRegHeart } from 'react-icons/fa';
@@ -1382,6 +1393,63 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
     return changed ? count + 1 : count;
   }, 0);
 };
+
+// Spec §6: the gallery is the "what do they look like" mode. Every tile is the
+// same 4/5 box - vertical shots get cropped like everything else so the columns
+// stay level - and neither the comment nor the location appears here.
+const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite }) => {
+  const name = getProfileName(user);
+  const age = getProfileAge(user);
+  const photo = getProfilePhotos(user)[0];
+  const facts = useMemo(() => renderProfileFacts(user), [user]);
+
+  return (
+    <GalleryTile
+      $muted={isHidden}
+      onClick={() => onOpen(user)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onOpen(user);
+      }}
+    >
+      <GalleryPhotoBox style={photo ? undefined : { backgroundImage: getProfileGradientFor(user.userId) }}>
+        {photo
+          ? <img src={photo} alt="" loading="lazy" decoding="async" />
+          : getProfileInitials(name)}
+        {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
+        <GalleryHeartButton
+          type="button"
+          $on={isFavorite}
+          aria-label="В обране"
+          aria-pressed={isFavorite}
+          title="В обране"
+          onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+        >
+          {isFavorite ? <FaHeart /> : <FaRegHeart />}
+        </GalleryHeartButton>
+      </GalleryPhotoBox>
+      <GalleryName>
+        {name}
+        {age && <>, {age}</>}
+      </GalleryName>
+      <GalleryFacts>
+        {facts.map((node, idx) => (
+          <React.Fragment key={node.key}>
+            {idx > 0 && ' '}
+            {node}
+          </React.Fragment>
+        ))}
+      </GalleryFacts>
+    </GalleryTile>
+  );
+}, (prev, next) => (
+  prev.user === next.user
+  && prev.isFavorite === next.isFavorite
+  && prev.isHidden === next.isHidden
+));
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -6309,7 +6377,21 @@ const Matching = () => {
             />
           ) : detailIndex === null ? (
             <FeedWrap>
-              {feedRows.length > 0 && (
+              {feedRows.length > 0 && viewLayout === 'gallery' && (
+                <GalleryGrid>
+                  {feedRows.map(user => (
+                    <GalleryCard
+                      key={user.userId}
+                      user={user}
+                      isFavorite={Boolean(favoriteUsers[user.userId])}
+                      isHidden={Boolean(dislikeUsers[user.userId])}
+                      onOpen={openDetailFor}
+                      onToggleFavorite={toggleRowFavorite}
+                    />
+                  ))}
+                </GalleryGrid>
+              )}
+              {feedRows.length > 0 && viewLayout === 'list' && (
                 <FeedList>
                   {feedRows.map(user => (
                     <ProfileRow
