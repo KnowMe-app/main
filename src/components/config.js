@@ -3935,7 +3935,7 @@ export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
 
     if (!normalized) return '';
     if (normalized === 'ed') return 'ed';
-    if (normalized === 'sm') return 'sm';
+    if (['sm', 'surrogate mother', 'surrogate_mother'].includes(normalized)) return 'sm';
     if (normalized === 'ag') return 'ag';
     if (normalized === 'ip') return 'ip';
     if (normalized === 'pp') return 'pp';
