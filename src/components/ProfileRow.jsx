@@ -696,6 +696,11 @@ export const PublicCommentBlock = ({
 // show - a bare "заміжня"/"не заміжня" isn't informative enough on its own.
 const isWeakOnlyFact = facts => facts.length === 1 && facts[0].key === 'marital';
 
+// Spec §7: in the feed the like/hide actions are a row swipe - right adds to
+// favourites, left hides - so the reader can triage without opening anything.
+const SWIPE_DISTANCE_PX = 72;
+const SWIPE_DOMINANCE = 1.35;
+
 const ProfileRow = ({
   user,
   isAdmin,
@@ -710,6 +715,8 @@ const ProfileRow = ({
   priorityMetricKeys,
   commentSlot,
   diagnosticsSlot,
+  onSwipeRight,
+  onSwipeLeft,
 }) => {
   const name = getProfileName(user);
   const age = getProfileAge(user);
@@ -731,13 +738,44 @@ const ProfileRow = ({
   const hasLocation = Boolean(location);
   const isUnfilled = !hasLocation && (facts.length === 0 || isWeakOnlyFact(facts));
 
+  const touchStartRef = useRef(null);
+  const swipedRef = useRef(false);
+
+  const handleTouchStart = e => {
+    if (!e.touches || e.touches.length !== 1) return;
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleTouchEnd = e => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || !e.changedTouches || e.changedTouches.length !== 1) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) < SWIPE_DISTANCE_PX || Math.abs(dx) < Math.abs(dy) * SWIPE_DOMINANCE) return;
+    const handler = dx > 0 ? onSwipeRight : onSwipeLeft;
+    if (!handler) return;
+    // The gesture ends in a click event too; swallow that one so a swipe never
+    // also opens the card.
+    swipedRef.current = true;
+    handler(user);
+  };
+
   const handleRowClick = () => {
+    if (swipedRef.current) {
+      swipedRef.current = false;
+      return;
+    }
     if (onOpen) onOpen(user);
     else if (onToggleExpand) onToggleExpand(user.userId);
   };
 
   return (
-    <S.Card onClick={handleRowClick}>
+    <S.Card
+      onClick={handleRowClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       <S.Top>
         <S.Photo
           style={photo
@@ -846,4 +884,6 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.priorityMetricKeys === next.priorityMetricKeys
   && prev.commentSlot === next.commentSlot
   && prev.diagnosticsSlot === next.diagnosticsSlot
+  && prev.onSwipeRight === next.onSwipeRight
+  && prev.onSwipeLeft === next.onSwipeLeft
 ));

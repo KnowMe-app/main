@@ -1922,3 +1922,25 @@ export const DetailPosition = styled.div`
   font-variant-numeric: tabular-nums;
   color: var(--matching-muted-text);
 `;
+
+// Spec §10: the drawer's filters are a draft until this is pressed - the count
+// on it is computed locally from the loaded cache, so it tracks every toggle
+// instantly while the expensive re-query happens once, on the press.
+export const FilterApplyButton = styled.button`
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 12px;
+  background: var(--matching-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 2px;
+  }
+`;

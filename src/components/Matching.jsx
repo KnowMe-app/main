@@ -75,6 +75,7 @@ import {
   FeedSentinel,
   FeedWrap,
   MatchingTopBar,
+  FilterApplyButton,
   SearchField,
   GalleryFacts,
   GalleryGrid,
@@ -124,7 +125,7 @@ import {
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite, toggleFavoriteUser } from './smallCard/btnFavorite';
-import { BtnDislike } from './smallCard/btnDislike';
+import { BtnDislike, toggleDislikeUser } from './smallCard/btnDislike';
 import SearchBar, { getSearchCacheKeyForParams } from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
@@ -1570,6 +1571,9 @@ const Matching = () => {
   const collectionSourceRef = useRef(collectionSource);
   const defaultListKey = `default:${collectionSource}`;
   const [filterResetToken, setFilterResetToken] = useState(0);
+  const [draftFilters, setDraftFilters] = useState({});
+  const draftFiltersRef = useRef(draftFilters);
+  draftFiltersRef.current = draftFilters;
   const [filterGroupReset, setFilterGroupReset] = useState({ token: 0, name: '' });
   const [comments, setComments] = useState({});
   const commentsRef = useRef(comments);
@@ -1577,6 +1581,8 @@ const Matching = () => {
   const dispatchedCommentSaveRef = useRef(null);
   const [sharedComments, setSharedComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
+  const showFiltersRef = useRef(showFilters);
+  showFiltersRef.current = showFilters;
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
   const [personalCreateProfiles, setPersonalCreateProfiles] = useState([]);
@@ -3126,7 +3132,10 @@ const Matching = () => {
   }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
 
 
-  const handleFiltersChange = React.useCallback(nextFilters => {
+  // Spec §10: toggling a filter must not cost a reload. The drawer edits a draft
+  // and updates its count locally; only "Показати N" drops the loaded deck and
+  // re-queries, which is the expensive half.
+  const applyFilters = React.useCallback(nextFilters => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
@@ -3152,6 +3161,21 @@ const Matching = () => {
     }
   }, []);
 
+  const handleFiltersChange = React.useCallback(nextFilters => {
+    setDraftFilters(nextFilters);
+    // Only edits made inside the open drawer are a draft. A change from anywhere
+    // else - a chip's ✕, the panel's first notification carrying the stored
+    // filters that the initial load depends on - has no "Показати N" to wait for.
+    if (!showFiltersRef.current || !filtersRef.current || Object.keys(filtersRef.current).length === 0) {
+      applyFilters(nextFilters);
+    }
+  }, [applyFilters]);
+
+  const applyDraftFilters = React.useCallback(() => {
+    applyFilters(draftFiltersRef.current);
+    setShowFilters(false);
+  }, [applyFilters]);
+
   const resetFiltersAndCache = React.useCallback(() => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
     const removedLocalStorageKeys = clearMatchingCache('matching reset filters and cache');
@@ -3175,6 +3199,7 @@ const Matching = () => {
     filtersRef.current = {};
     viewModeRef.current = 'default';
     setFilters({});
+    setDraftFilters({});
     setUsers([]);
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
@@ -4978,6 +5003,34 @@ const Matching = () => {
     viewMode,
     visibleUsers,
   ]);
+  // Counted off the already-loaded cache, so every chip tap in the drawer
+  // updates the number instantly and without touching Firebase (spec §10).
+  const draftFilteredCount = useMemo(() => {
+    if (!showFilters) return 0;
+    if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers.length;
+    return applyMatchingUiFiltersToUsers({
+      users: visibleUsers,
+      filters: draftFilters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: viewMode === 'default',
+      roleIndexSets,
+      collectionSource,
+      viewMode,
+    }).length;
+  }, [
+    collectionSource,
+    dislikeUsers,
+    draftFilters,
+    favoriteUsers,
+    reactionTabUsers.length,
+    roleIndexSets,
+    showFilters,
+    viewMode,
+    visibleUsers,
+  ]);
+
   const isSearching = searchQuery.trim().length > 0;
 
   // Spec §3's "Схожі": a second pass over what this device already holds, so the
@@ -6384,6 +6437,23 @@ const Matching = () => {
     );
   }, [diagnosticsFilterMisses, diagnosticsPhoneIndex, showDiagnostics]);
 
+  const toggleRowHidden = React.useCallback(user => {
+    if (!user?.userId) return;
+    void toggleDislikeUser({
+      userId: user.userId,
+      userData: user,
+      dislikeUsers,
+      setDislikeUsers,
+      ownDislikeUsers,
+      setOwnDislikeUsers,
+      favoriteUsers,
+      setFavoriteUsers,
+      ownFavoriteUsers,
+      setOwnFavoriteUsers,
+      multiDataOwnerId: ownerId,
+    });
+  }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
+
   const feedRows = useMemo(
     () => feedSource.map(user => withLazyPhotos(user)),
     [feedSource, withLazyPhotos],
@@ -6493,6 +6563,9 @@ const Matching = () => {
           <FilterResetButton type="button" onClick={resetFiltersAndCache}>
             Скинути фільтри й оновити кеш
           </FilterResetButton>
+          <FilterApplyButton type="button" onClick={applyDraftFilters}>
+            Показати {draftFilteredCount}
+          </FilterApplyButton>
         </FilterDrawerFooter>
       </FilterContainer>
       <Container $themeMode={themeMode}>
@@ -6705,6 +6778,8 @@ const Matching = () => {
                       clientComment={comments[user.userId] || ''}
                       onCommentSave={handleRowCommentSave}
                       priorityMetricKeys={priorityMetricKeys}
+                      onSwipeRight={toggleRowFavorite}
+                      onSwipeLeft={toggleRowHidden}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
                       commentSlot={(
                         <PublicCommentBlock
