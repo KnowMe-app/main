@@ -41,6 +41,7 @@ jest.mock('./formFields', () => ({
   pickerFields: [
     { name: 'name', ukrainian: "Ім'я" },
     { name: 'phone', ukrainian: 'Телефон' },
+    { name: 'publicComment', ukrainian: 'Публічний коментар' },
     { name: 'role', ukrainian: 'Роль', options: ['A', 'B'] },
   ],
   getFieldLabel: field => field.ukrainian || field.name,
@@ -125,6 +126,29 @@ beforeEach(() => {
 });
 
 describe('ProfileCreationWorkspace admin review', () => {
+  it('lets an admin review and correct the public comment before publication', async () => {
+    loadAllCreateProfileMutations.mockResolvedValue([{
+      ...draftMutation,
+      data: { ...draftMutation.data, publicComment: 'Авторський коментар' },
+    }]);
+
+    render(<ProfileCreationWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: /Відкрити профіль/ }));
+
+    const comment = await screen.findByDisplayValue('Авторський коментар');
+    expect(comment).toBeInTheDocument();
+    expect(screen.getByText(/анкета зникає із загального списку Matching/)).toBeInTheDocument();
+
+    fireEvent.change(comment, { target: { value: 'Виправлений коментар' } });
+    fireEvent.blur(comment);
+
+    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ publicComment: ['Виправлений коментар'] }),
+      }),
+    ));
+  });
+
   it('shows the author value in the field and the proposal right under it', async () => {
     await openDraftAsAdmin();
 

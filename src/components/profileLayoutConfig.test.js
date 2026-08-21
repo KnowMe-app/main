@@ -127,7 +127,8 @@ describe('profileLayoutConfig', () => {
     expect(getProfileSections(user).map(section => section.title)).toEqual(expect.arrayContaining(['Agency details']));
     expect(getProfileRole({ role: 'egg_donor' })).toBe('ed');
     expect(getProfileRole({ role: 'intended parents' })).toBe('ip');
-    expect(getProfileRole({ role: 'sm' })).toBe('other');
+    expect(getProfileRole({ role: 'sm' })).toBe('sm');
+    expect(getProfileRole({ role: 'surrogate_mother' })).toBe('sm');
   });
 
   it('uses the latest array value on Matching and hides fields removed with an empty latest value', () => {

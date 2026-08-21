@@ -103,6 +103,7 @@ export const getBloodGroupDisplay = user => {
 export const getProfileRole = user => {
   const role = normalizeDisplayValue(user?.role || user?.userRole).toLowerCase();
   if (['ed', 'egg donor', 'egg_donor'].includes(role)) return 'ed';
+  if (['sm', 'surrogate mother', 'surrogate_mother'].includes(role)) return 'sm';
   if (['ag', 'agency'].includes(role)) return 'ag';
   if (['ip', 'intended parents', 'intended_parent'].includes(role)) return 'ip';
   if (['pp'].includes(role)) return 'pp';
