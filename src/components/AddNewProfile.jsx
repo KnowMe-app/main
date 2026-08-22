@@ -148,6 +148,7 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllNewUsersFilterSetIndexes } from 'utils/newUsersFilterSetsIndex';
+import { buildMatchingCardsPayloadFromCollections } from 'utils/matchingCardIndex';
 import { mergeUserCollectionData } from 'utils/mergeUserCollections';
 import { buildFullCardKeyMap } from 'utils/cardKeyMap';
 import {
@@ -5809,6 +5810,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [downloadJsonFile],
   );
 
+  /**
+   * Відкриває ту саму модалку без вибору типів індексу: вхід із кнопки «Картки»
+   * веде до збірки `matchingCards`, а не до індексів `searchId`/`searchKey`.
+   */
+  const openMatchingCardsModal = useCallback(() => {
+    setPendingLocalUsersData(localExportUsersData);
+    setPendingLocalNewUsersData(localExportNewUsersData);
+    setShowLocalIndexModal(true);
+  }, [localExportNewUsersData, localExportUsersData]);
+
   const openLocalIndexModal = useCallback(indexTypes => {
     setPendingLocalIndexTypes(indexTypes);
     setPendingLocalUsersData(localExportUsersData);
@@ -6167,6 +6178,43 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * нуля, якщо схема змінилась.
    */
   const [isMatchingCardsIndexing, setIsMatchingCardsIndexing] = useState(false);
+
+  /**
+   * Офлайн-збірка вузла `matchingCards` з локальних копій колекцій.
+   *
+   * Швидший шлях і, з телефона, єдиний практичний: побудова на бекенді — це
+   * тисячі дрібних записів по мобільній мережі. Тут не робиться жодного запиту:
+   * файл збирається з уже викачаних `users.json` / `newUsers.json`, а в базу
+   * потрапляє одним ручним імпортом у вузол `matchingCards`.
+   */
+  const handleBuildLocalMatchingCards = useCallback(() => {
+    const usersData = pendingLocalUsersData || localExportUsersData;
+    const newUsersData = pendingLocalNewUsersData || localExportNewUsersData;
+
+    if (!usersData && !newUsersData) {
+      toast.error('Спершу оберіть users.json або newUsers.json');
+      return;
+    }
+
+    const { payload, stats } = buildMatchingCardsPayloadFromCollections({
+      users: usersData || {},
+      newUsers: newUsersData || {},
+    });
+
+    if (!stats.written) {
+      toast.error('У обраних файлах немає карток для побудови');
+      return;
+    }
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    downloadJsonFile(`matchingCards-${stamp}.json`, payload);
+    toast.success(
+      `matchingCards.json зібрано: ${stats.written} карток, з них з фото ${stats.withAvatar}.\n`
+        + 'Імпортуйте файл у вузол matchingCards.',
+      { duration: 8000 },
+    );
+  }, [downloadJsonFile, localExportNewUsersData, localExportUsersData, pendingLocalNewUsersData, pendingLocalUsersData]);
+
   const handleBuildMatchingCards = async () => {
     if (!isAdmin || isMatchingCardsIndexing) return;
 
@@ -6200,7 +6248,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       toast.success(`Картки стрічки побудовано — ${report.join(', ')}`, { id: toastId });
     } catch (error) {
       console.error('[AddNewProfile] matchingCards indexing failed', error);
-      toast.error(`Помилка побудови карток стрічки: ${error?.message || 'невідома помилка'}`, { id: toastId });
+      toast.error(`Помилка побудови карток стрічки: ${error?.message || 'невідома помилка'}`, {
+        id: toastId,
+        // Пояснення про правила довше за рядок — інакше воно зникне недочитаним.
+        duration: error?.code === 'MATCHING_CARDS_PERMISSION_DENIED' ? 15000 : 6000,
+      });
     } finally {
       setIsMatchingCardsIndexing(false);
     }
@@ -7254,10 +7306,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               )}
               {isAdmin && (
                 <Button
-                  onClick={handleBuildMatchingCards}
+                  onClick={openMatchingCardsModal}
                   disabled={isMatchingCardsIndexing}
-                  title="Побудувати урізані картки matchingCards для швидкої стрічки матчингу"
-                  {...createLongPressHandlers('Створює на бекенді урізані копії карток, з яких стрічка матчингу вантажиться одним запитом на сторінку')}
+                  title="Зібрати урізані картки matchingCards для швидкої стрічки матчингу"
+                  {...createLongPressHandlers('Збирає matchingCards.json локально для ручного імпорту — або будує вузол одразу на бекенді')}
                 >
                   {isMatchingCardsIndexing ? '...' : 'Картки'}
                 </Button>
@@ -7583,8 +7635,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       {showLocalIndexModal && (
         <LocalIndexOverlay onClick={() => setShowLocalIndexModal(false)}>
           <LocalIndexModal onClick={event => event.stopPropagation()}>
-            <h3>Локальна індексація searchId / searchKey</h3>
-            <p>1) Викачайте users та newUsers. 2) Оберіть ці файли локально. 3) Створіть JSON індекси.</p>
+            <h3>Локальна індексація</h3>
+            <p>1) Викачайте users та newUsers. 2) Оберіть ці файли локально. 3) Зберіть потрібний JSON і залийте його в базу вручну.</p>
             <LocalIndexActions>
               <button type="button" onClick={handleDownloadCollectionsForLocalIndex}>
                 1) Викачати колекції users + newUsers
@@ -7595,16 +7647,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <button type="button" onClick={handlePickNewUsersFileForLocalIndex}>
                 3) Обрати newUsers.json {pendingLocalNewUsersData ? '✅' : ''}
               </button>
+              <button type="button" onClick={handleBuildLocalMatchingCards}>
+                4) Зібрати matchingCards.json → імпорт у вузол matchingCards
+              </button>
               <button type="button" onClick={handleApplyLocalIndexing}>
-                4) Побудувати і скачати JSON індекси searchId/searchKey
+                5) Побудувати і скачати JSON індекси searchId/searchKey
               </button>
               <button type="button" onClick={buildFullKeySetFromCollections}>
-                5) Перебрати всі картки й знайти повну карту ключів
+                6) Перебрати всі картки й знайти повну карту ключів
               </button>
+              {isAdmin && (
+                <button type="button" onClick={handleBuildMatchingCards} disabled={isMatchingCardsIndexing}>
+                  {isMatchingCardsIndexing ? '...' : 'Або: побудувати matchingCards одразу на бекенді (повільно)'}
+                </button>
+              )}
               <button type="button" onClick={() => setShowLocalIndexModal(false)}>
                 Скасувати
               </button>
             </LocalIndexActions>
+            <p>
+              Офлайн-збірка не ходить у Storage, тож аватар беруть лише анкети з полем
+              <code> photos</code>. Побудова на бекенді може дошукати решту, але це один
+              рекурсивний обхід Storage на анкету.
+            </p>
             <input
               ref={localUsersFileInputRef}
               type="file"

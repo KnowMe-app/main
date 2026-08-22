@@ -180,6 +180,56 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   return projection;
 };
 
+/**
+ * Збирає весь вузол `matchingCards` з локальних копій колекцій.
+ *
+ * Це офлайн-двійник фонової індексації: жодного запиту в базу, ані на читання,
+ * ані на запис. Адмін викачує `users.json` і `newUsers.json`, збирає з них файл
+ * тут, у браузері, і заливає його в базу вручну одним імпортом — замість
+ * тисяч дрібних записів з телефона.
+ *
+ * Аватар береться лише з поля `photos` анкети: лістинг Storage — це мережа, а
+ * тут її немає за визначенням. Скільки карток лишилось без аватара, функція
+ * каже окремо, щоб це не було сюрпризом.
+ *
+ * Форма результату — вміст вузла, а не шлях від кореня: файл імпортується саме
+ * в `matchingCards`, так само як індекси `searchKey` імпортуються у свій вузол.
+ */
+export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) => {
+  const payload = {};
+  const stats = { total: 0, written: 0, skipped: 0, withAvatar: 0, byCollection: {} };
+
+  Object.entries(collectionsMap).forEach(([collectionName, usersMap]) => {
+    const source = collectionName === 'newUsers' ? 'newUsers' : 'users';
+    const collectionStats = { total: 0, written: 0, withAvatar: 0 };
+
+    Object.entries(usersMap || {}).forEach(([userId, userData]) => {
+      if (!userId || !userData || typeof userData !== 'object') return;
+      collectionStats.total += 1;
+      stats.total += 1;
+
+      const projection = buildMatchingCardProjection(userId, { ...userData, __sourceCollection: source });
+      if (!projection) {
+        stats.skipped += 1;
+        return;
+      }
+
+      payload[userId] = projection;
+      collectionStats.written += 1;
+      stats.written += 1;
+      if (projection.avatar) {
+        collectionStats.withAvatar += 1;
+        stats.withAvatar += 1;
+      }
+    });
+
+    stats.byCollection[source] = collectionStats;
+  });
+
+  stats.withoutAvatar = stats.written - stats.withAvatar;
+  return { payload, stats };
+};
+
 export const isCurrentMatchingCardSchema = card =>
   Boolean(card) && typeof card === 'object' && Number(card.v) === MATCHING_CARD_SCHEMA_VERSION;
 

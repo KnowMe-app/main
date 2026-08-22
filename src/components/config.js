@@ -3899,28 +3899,71 @@ const buildBackfillProjection = async (collection, rawProfile, userId, includeSt
  * доводиться лістити Storage. Це саме та робота, яку раніше робив кожен
  * переглядач при кожному завантаженні стрічки; тут вона робиться один раз.
  */
+// PERMISSION_DENIED тут майже завжди означає одне: правила бази ще не викочені,
+// і вузла `matchingCards` для них не існує — тоді діє заборона з кореня. Сира
+// відповідь Firebase цього не каже й не підказує, що робити, тож перекладаємо її
+// в текст, з якого видно і причину, і два виходи.
+const MATCHING_CARDS_FAILURE_STAGES = {
+  read: collection => `читання колекції ${collection}`,
+  cleanup: () => 'прибирання застарілих карток у matchingCards',
+  write: () => 'запис карток у matchingCards',
+  meta: () => 'позначка готовності в matchingCardsMeta',
+};
+
+const describeMatchingCardsFailure = (error, { stage, collection }) => {
+  if (!/permission[_ ]denied/i.test(String(error?.message || error || ''))) return error;
+
+  const where = (MATCHING_CARDS_FAILURE_STAGES[stage] || (() => stage))(collection);
+  const explained = new Error(
+    `Немає доступу: ${where}. Найімовірніше, не викочені правила бази — вузлів `
+      + '`matchingCards` і `matchingCardsMeta` для правил ще не існує, тож діє заборона '
+      + 'з кореня. Виконайте `firebase deploy --only database`. Або зберіть '
+      + 'matchingCards.json локально і залийте його вручну: ручний імпорт іде повз правила.',
+  );
+  explained.cause = error;
+  explained.code = 'MATCHING_CARDS_PERMISSION_DENIED';
+  return explained;
+};
+
+const markMatchingCardsCollectionComplete = async collection => {
+  try {
+    await set(ref2(database, `matchingCardsMeta/${collection}/complete`), true);
+  } catch (error) {
+    throw describeMatchingCardsFailure(error, { stage: 'meta', collection });
+  }
+};
+
 export const createMatchingCardsIndexInCollection = async (collection, onProgress, options = {}) => {
   const includeStorageAvatars = options.includeStorageAvatars !== false;
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  let usersData;
+  try {
+    usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  } catch (error) {
+    throw describeMatchingCardsFailure(error, { stage: 'read', collection });
+  }
   if (!usersData) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
 
   // A rebuild is authoritative for this collection: remove projections whose
   // canonical profile no longer exists, then publish completeness atomically
   // with the final batch so readers never trust a half-built index.
-  const cardsSnapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
-  const stalePayload = {};
-  Object.entries(cardsSnapshot.val() || {}).forEach(([id, card]) => {
-    if ((card?.source || 'users') === collection && !usersData[id]) {
-      stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
-    }
-  });
-  stalePayload[`matchingCardsMeta/${collection}/complete`] = null;
-  await update(ref2(database), stalePayload);
+  try {
+    const cardsSnapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
+    const stalePayload = {};
+    Object.entries(cardsSnapshot.val() || {}).forEach(([id, card]) => {
+      if ((card?.source || 'users') === collection && !usersData[id]) {
+        stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
+      }
+    });
+    stalePayload[`matchingCardsMeta/${collection}/complete`] = null;
+    await update(ref2(database), stalePayload);
+  } catch (error) {
+    throw describeMatchingCardsFailure(error, { stage: 'cleanup', collection });
+  }
 
   const userIds = Object.keys(usersData).filter(Boolean);
   const total = userIds.length;
   if (!total) {
-    await set(ref2(database, `matchingCardsMeta/${collection}/complete`), true);
+    await markMatchingCardsCollectionComplete(collection);
     return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
   }
 
@@ -3946,8 +3989,12 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
     );
 
     if (Object.keys(chunkPayload).length) {
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref2(database), chunkPayload);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await update(ref2(database), chunkPayload);
+      } catch (error) {
+        throw describeMatchingCardsFailure(error, { stage: 'write', collection });
+      }
     }
 
     processed += batchIds.length;
@@ -3956,7 +4003,7 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
     }
   }
 
-  await set(ref2(database, `matchingCardsMeta/${collection}/complete`), true);
+  await markMatchingCardsCollectionComplete(collection);
 
   return { collection, total, written, skipped, withStorageAvatar };
 };
