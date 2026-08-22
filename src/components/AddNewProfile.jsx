@@ -6248,7 +6248,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       toast.success(`Картки стрічки побудовано — ${report.join(', ')}`, { id: toastId });
     } catch (error) {
       console.error('[AddNewProfile] matchingCards indexing failed', error);
-      toast.error(`Помилка побудови карток стрічки: ${error?.message || 'невідома помилка'}`, { id: toastId });
+      toast.error(`Помилка побудови карток стрічки: ${error?.message || 'невідома помилка'}`, {
+        id: toastId,
+        // Пояснення про правила довше за рядок — інакше воно зникне недочитаним.
+        duration: error?.code === 'MATCHING_CARDS_PERMISSION_DENIED' ? 15000 : 6000,
+      });
     } finally {
       setIsMatchingCardsIndexing(false);
     }

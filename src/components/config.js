@@ -3889,9 +3889,32 @@ const buildBackfillProjection = async (collection, rawProfile, userId, includeSt
  * доводиться лістити Storage. Це саме та робота, яку раніше робив кожен
  * переглядач при кожному завантаженні стрічки; тут вона робиться один раз.
  */
+// PERMISSION_DENIED тут майже завжди означає одне: правила бази ще не викочені,
+// і вузла `matchingCards` для них не існує — тоді діє заборона з кореня. Сира
+// відповідь Firebase цього не каже й не підказує, що робити, тож перекладаємо її
+// в текст, з якого видно і причину, і два виходи.
+const describeMatchingCardsFailure = (error, { stage, collection }) => {
+  if (!/permission[_ ]denied/i.test(String(error?.message || error || ''))) return error;
+
+  const where = stage === 'read' ? `читання колекції ${collection}` : 'запис у matchingCards';
+  const explained = new Error(
+    `Немає доступу: ${where}. Найімовірніше, не викочені правила бази — виконайте `
+      + '`firebase deploy --only database`. Або зберіть matchingCards.json локально '
+      + 'і залийте його вручну: тоді правила для запису не потрібні.',
+  );
+  explained.cause = error;
+  explained.code = 'MATCHING_CARDS_PERMISSION_DENIED';
+  return explained;
+};
+
 export const createMatchingCardsIndexInCollection = async (collection, onProgress, options = {}) => {
   const includeStorageAvatars = options.includeStorageAvatars !== false;
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  let usersData;
+  try {
+    usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  } catch (error) {
+    throw describeMatchingCardsFailure(error, { stage: 'read', collection });
+  }
   if (!usersData) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
 
   const userIds = Object.keys(usersData).filter(Boolean);
@@ -3920,8 +3943,12 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
     );
 
     if (Object.keys(chunkPayload).length) {
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref2(database), chunkPayload);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await update(ref2(database), chunkPayload);
+      } catch (error) {
+        throw describeMatchingCardsFailure(error, { stage: 'write', collection });
+      }
     }
 
     processed += batchIds.length;
