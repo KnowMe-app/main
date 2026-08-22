@@ -109,6 +109,8 @@ import {
   updatePublicProfileComment,
   COMMENTS_ROOT_PATH,
   fetchUsersByIds,
+  fetchMatchingCardsPage,
+  fetchMatchingCardsByIds,
   database,
   auth,
   updateDataInRealtimeDB,
@@ -138,6 +140,8 @@ import {
   logMatchingLocalStorageDebugStats,
 } from '../utils/searchKeyCache';
 import { findCachedCardsByText, getCardsByList, updateCard } from '../utils/cardsStorage';
+import { getCachedPhotoUrlsMap, setCachedPhotoUrls } from '../utils/photoUrlCache';
+import { isMatchingSummaryCard } from '../utils/matchingCardIndex';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
@@ -1308,8 +1312,10 @@ const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
 const MATCHING_MAX_PAGES_PER_LOAD = 3;
 const LOAD_MORE = 5;
-// How many feed rows get their avatar and comment hydrated up front.
-const FEED_PHOTO_HYDRATION_LIMIT = 60;
+// Стеля на одну пачку гідратації фото. Стрічка росте по 5 карток, тож стелю
+// вона впирає тільки після довгого скролу — сенс числа в тому, щоб обмежити
+// сплеск, а не в тому, щоб різати те, що читач уже прогорнув.
+const FEED_PHOTO_HYDRATION_LIMIT = 24;
 // A stable identity so a row without public comments doesn't re-render on it.
 const EMPTY_PUBLIC_COMMENTS = [];
 // Spec §3: the chips row never scrolls sideways, so it shows at most three.
@@ -1347,6 +1353,14 @@ const getStoredMatchingViewLayout = () => {
   }
 };
 
+// Проєкція `matchingCards` — це те, що показує рядок стрічки, а не картка.
+// Кеш карток обслуговує ще й екран редагування, тож класти туди проєкцію не
+// можна: вона виглядала б там як анкета, з якої зникла половина полів.
+const shouldCacheMatchingCard = user => Boolean(user) && !user.__fromCardCache && !isMatchingSummaryCard(user);
+
+// Стеля вікна пагінації повних анкет. Див. коментар у циклі нижче.
+const SOURCE_PAGE_WINDOW_CAP = 512;
+
 const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit = 9, lastDate) => {
   const usersRef = refDb(database, collection);
   const realLimit = limit + 1;
@@ -1356,11 +1370,17 @@ const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit 
       ? { date: lastDate.date || '', userId: lastDate.userId || '' }
       : { date: lastDate || '', userId: '' };
 
+  // Курсор регулярно потрапляє в групу анкет з однаковою датою `lastLogin2`:
+  // `endAt` віддає їх усі, а відсікання за парою (дата, id) лишає нуль нових,
+  // тож вікно доводиться розширювати. Кожне розширення перечитує той самий зріз
+  // з нуля — і робить це повними анкетами. Стеля в 5000 означала мегабайти
+  // трафіку на одну сторінку з п'яти карток; на цій висоті дані вже зламані, і
+  // правильна відповідь — зупинитись, а не викачати всю колекцію.
   let fetchLimit = realLimit;
   let entries = [];
   let snapshotSize = 0;
 
-  while (entries.length < realLimit && fetchLimit <= 5000) {
+  while (entries.length < realLimit && fetchLimit <= SOURCE_PAGE_WINDOW_CAP) {
     const q = cursor.date
       ? query(usersRef, orderByChild('lastLogin2'), endAt(cursor.date), limitToLast(fetchLimit))
       : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(fetchLimit));
@@ -2751,7 +2771,7 @@ const Matching = () => {
             loadedPages,
             visibleCount,
           });
-          collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+          collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
           void loadCommentsFor(collected);
           const toastSignature = `${currentAdditionalAccessRules}::${nextOffset}${sourceHasMore ? '+' : ''}`;
           if (additionalRulesToastRef.current !== toastSignature) {
@@ -2800,6 +2820,31 @@ const Matching = () => {
     recordInitialLoadDiagnostic,
   ]);
 
+  /**
+   * Гідратація карток для пошуку по індексу `searchKey`.
+   *
+   * Індекс називає id — показати треба картку. Спершу питаємо вузол проєкцій:
+   * там уся інформація, яку рендерить рядок стрічки, включно з аватаром, у
+   * сотнях байтів. Повна анкета читається лише для тих id, чиєї проєкції ще
+   * немає (або вона старої версії) — тобто рівно доти, доки адмін не запустить
+   * побудову карток.
+   */
+  const hydrateMatchingFeedCards = React.useCallback(async ids => {
+    const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+    if (!uniqueIds.length) return {};
+
+    try {
+      const { cards, missingIds } = await fetchMatchingCardsByIds(uniqueIds);
+      incrementMatchingLoadStat('matchingCardHits', Object.keys(cards).length);
+      if (!missingIds.length) return cards;
+      const hydrated = await fetchUsersByIds(missingIds, { collectionSource });
+      return { ...cards, ...(hydrated || {}) };
+    } catch (error) {
+      console.warn('[Matching][matchingCards] не вдалося прочитати проєкції, читаємо анкети', error);
+      return fetchUsersByIds(uniqueIds, { collectionSource });
+    }
+  }, [collectionSource]);
+
   const fetchChunk = React.useCallback(
     async (
       limit,
@@ -2820,6 +2865,7 @@ const Matching = () => {
       filterMainFn: filterMain,
       fetchUsersByLastLogin2,
       fetchUsersByLastLogin2FromCollection,
+      fetchMatchingCardsPage,
       hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
       onPart,
       onDiagnosticEvent: recordInitialLoadDiagnostic,
@@ -2969,7 +3015,7 @@ const Matching = () => {
           limit: INITIAL_LOAD,
           excludeIds: [...exclude],
           hydrateUsersByIds: ids => runInitialRequestWithTimeout(
-            () => fetchUsersByIds(ids, { collectionSource }),
+            () => hydrateMatchingFeedCards(ids),
             'profile-hydration',
           ),
           useIndexIdCache: !isBackendOnlyMode,
@@ -2980,7 +3026,7 @@ const Matching = () => {
         if (indexedUsers.length === 0 && !indexed.hasMore) {
           console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
         } else {
-          indexedUsers.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+          indexedUsers.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
           loadedIdsRef.current = new Set(indexedUsers.map(user => user.userId).filter(Boolean));
           setUsers(indexedUsers);
           setIdsForQuery(defaultListKey, indexedUsers.map(user => user.userId));
@@ -3086,7 +3132,7 @@ const Matching = () => {
         ...loadedIdsRef.current,
         ...res.users.map(u => u.userId),
       ]);
-      res.users.forEach(u => { if (!u.__fromCardCache) updateCard(u.userId, u); });
+      res.users.forEach(u => { if (shouldCacheMatchingCard(u)) updateCard(u.userId, u); });
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
@@ -3123,7 +3169,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [beginInitialRequest, collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [beginInitialRequest, collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -3992,7 +4038,7 @@ const Matching = () => {
         return;
       }
 
-      page.users.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+      page.users.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
       if (isFavoritesMode) {
         cacheFavoriteUsers(Object.fromEntries(page.users.map(user => [user.userId, user])));
       } else {
@@ -4450,7 +4496,7 @@ const Matching = () => {
 
         if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
 
-        page.users.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+        page.users.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
         if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
         loadedIdsRef.current = new Set(loadedIds);
@@ -4625,7 +4671,7 @@ const Matching = () => {
 
         if (!isLatestLoadMore()) return;
 
-        collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+        collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
         if (!isLatestLoadMore()) return;
         collected.forEach(user => {
           loadedIdsRef.current.add(user.userId);
@@ -4663,7 +4709,7 @@ const Matching = () => {
           viewMode,
           ownerId: getOwnerId(),
           fetchMatchingIndexedCandidates,
-          hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
+          hydrateUsersByIds: hydrateMatchingFeedCards,
           isLatestLoadMore: canApplyLoadMoreResultWithFilters,
         });
         if (indexedPage.stale) { logStaleLoadMoreResultIgnored('indexed-collect', { reason: indexedPage.staleReason || 'stale' }); return; }
@@ -4688,7 +4734,7 @@ const Matching = () => {
           hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
           refillBlockedReason: '',
         });
-        indexedPage.collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+        indexedPage.collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
         if (!canApplyLoadMoreResultWithFilters()) {
           logStaleLoadMoreResultIgnored('indexed-page-apply', {
             fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
@@ -4808,7 +4854,7 @@ const Matching = () => {
         else if (loadedChunkCalls >= MATCHING_MAX_PAGES_PER_LOAD) stopReason = 'max-pages-reached';
       }
 
-      collected.forEach(u => { if (!u.__fromCardCache) updateCard(u.userId, u); });
+      collected.forEach(u => { if (shouldCacheMatchingCard(u)) updateCard(u.userId, u); });
       if (!canApplyLoadMoreResultWithFilters()) {
         logStaleLoadMoreResultIgnored('default-source-apply', {
           fetchedIds: collected.map(u => u.userId).filter(Boolean),
@@ -4889,6 +4935,7 @@ const Matching = () => {
     classifyReactionIdsBySource,
     getAccessibleReactionIds,
     hasMore,
+    hydrateMatchingFeedCards,
     loading,
     lastKey,
     loadCommentsFor,
@@ -5557,51 +5604,127 @@ const Matching = () => {
   const detailIndex = detailOpen && feedSource.length ? activeProfileIndex : null;
   const activeProfile = detailIndex === null ? null : (feedSource[detailIndex] || null);
 
+  // Проєкція `matchingCards` несе рівно те, що видно в рядку стрічки. Розгорнутий
+  // рядок і шар деталей показують більше — освіту, зовнішність, контакти — тож
+  // повна анкета читається саме там: одна картка на дотик читача замість
+  // сорока наперед.
+  const [fullProfileByUserId, setFullProfileByUserId] = useState({});
+  const fullProfileRequestsRef = useRef(new Set());
+
+  const ensureFullProfile = React.useCallback(user => {
+    const userId = user?.userId;
+    if (!userId || !isMatchingSummaryCard(user)) return;
+    if (fullProfileRequestsRef.current.has(userId)) return;
+    fullProfileRequestsRef.current.add(userId);
+
+    fetchUsersByIds([userId], { collectionSource: user.__sourceCollection || collectionSource })
+      .then(hydrated => {
+        const profile = hydrated?.[userId];
+        if (!profile) return;
+        updateCard(userId, profile);
+        setFullProfileByUserId(previous => ({ ...previous, [userId]: profile }));
+      })
+      .catch(error => {
+        fullProfileRequestsRef.current.delete(userId);
+        console.error('[Matching] Failed to hydrate full profile', { userId, error });
+      });
+  }, [collectionSource]);
+
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;
+    const fullProfile = fullProfileByUserId[user.userId];
     const cachedPhotos = photoCacheByUserId[user.userId];
-    if (!cachedPhotos) return user;
-    return {
-      ...user,
-      photos: cachedPhotos,
-      __photosHydrated: true,
-    };
-  }, [photoCacheByUserId]);
+    if (!fullProfile && !cachedPhotos) return user;
+    // Проєкція перекривається анкетою, а не навпаки: анкета свіжіша й повніша.
+    const merged = fullProfile
+      ? { ...user, ...fullProfile, __sourceCollection: user.__sourceCollection || fullProfile.__sourceCollection }
+      : { ...user };
+
+    // Анкета з `fetchUsersByIds` приходить із порожнім `photos` — фото до неї
+    // йдуть окремо. Порожній список не має стирати аватар, який проєкція вже
+    // принесла, інакше картинка блимне і зникне на час догідратації.
+    const resolvedPhotos = cachedPhotos
+      || (Array.isArray(merged.photos) && merged.photos.length ? merged.photos : null)
+      || (Array.isArray(user.photos) && user.photos.length ? user.photos : null);
+    if (resolvedPhotos) {
+      merged.photos = resolvedPhotos;
+      merged.__photosHydrated = Boolean(cachedPhotos) || (!fullProfile && user.__photosHydrated === true);
+    }
+    return merged;
+  }, [fullProfileByUserId, photoCacheByUserId]);
 
   const activeProfileWithLazyPhotos = withLazyPhotos(activeProfile);
 
+  useEffect(() => {
+    if (activeProfile) ensureFullProfile(activeProfile);
+  }, [activeProfile, ensureFullProfile]);
+
+  // Розгортання рядка приходить із самим лише userId, а шукати за ним картку
+  // треба в актуальній стрічці — без того, щоб перестворювати обробник на
+  // кожній її зміні.
+  const feedSourceRef = useRef(feedSource);
+  useEffect(() => { feedSourceRef.current = feedSource; }, [feedSource]);
+
   // Rows carry an avatar, so the feed hydrates photos for everything it renders;
   // the detail layer only ever needs the current card and the next one.
+  //
+  // Три речі роблять це дешевим. Перше: картка з `matchingCards` приносить
+  // аватар із собою і сюди взагалі не потрапляє. Друге: URL, порахований у
+  // попередній сесії, береться з localStorage — без жодного запиту в Storage.
+  // Третє: результати збираються в пачку і лягають одним `setState`. Раніше
+  // кожне фото робило власний, тож стрічка з 60 рядків перемальовувалась 60
+  // разів поспіль — і щоразу цілком, бо `feedRows` перебудовував усі обʼєкти.
   useEffect(() => {
     const pool = detailOpen
       ? [feedSource[activeProfileIndex], feedSource[activeProfileIndex + 1]]
       : feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
-    const candidates = pool
-      .filter(user => user?.userId && !user.__photosHydrated && !photoCacheByUserId[user.userId]);
+    // Аватар проєкції — це одне фото, і рядку стрічки його досить. Шар деталей
+    // гортає всі фото, тож картка, яку відкрили (а отже, догідратували повною
+    // анкетою), потребує повного набору попри свій `__photosHydrated`.
+    const needsPhotos = user => {
+      if (!user?.userId || photoCacheByUserId[user.userId]) return false;
+      if (!user.__photosHydrated) return true;
+      return isMatchingSummaryCard(user) && Boolean(fullProfileByUserId[user.userId]);
+    };
+    const candidates = pool.filter(needsPhotos);
     if (!candidates.length) return undefined;
 
+    const cachedUrls = getCachedPhotoUrlsMap(candidates.map(user => user.userId));
+    const pending = candidates.filter(user => !cachedUrls[user.userId]);
+    if (Object.keys(cachedUrls).length) {
+      incrementMatchingLoadStat('photoUrlCacheHits', Object.keys(cachedUrls).length);
+      setPhotoCacheByUserId(prev => ({ ...cachedUrls, ...prev }));
+    }
+    if (!pending.length) return undefined;
+
     let cancelled = false;
-    candidates.forEach(user => {
-      lazyLoadProfilePhotos(user.userId).then(photos => {
-        if (cancelled) return;
-        incrementMatchingLoadStat('photoLazyLoadProfiles');
-        setPhotoCacheByUserId(prev => ({
-          ...prev,
-          [user.userId]: Array.isArray(photos) ? photos : [],
-        }));
-        const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
-        if (stats && typeof console.table === 'function') console.table([stats]);
-      }).catch(() => {
-        if (!cancelled) {
-          setPhotoCacheByUserId(prev => ({ ...prev, [user.userId]: [] }));
-        }
-      });
+    const resolved = {};
+    Promise.all(pending.map(user => (
+      // Анкета вже в руках, коли картка гідрована повністю: `knownPhotos` знімає
+      // друге читання того самого вузла заради поля `photos`.
+      lazyLoadProfilePhotos(user.userId, user.__sourceCollection || null, {
+        knownPhotos: Array.isArray(user.photos) ? user.photos : null,
+      })
+        .then(photos => {
+          const urls = Array.isArray(photos) ? photos : [];
+          resolved[user.userId] = urls;
+          setCachedPhotoUrls(user.userId, urls);
+          incrementMatchingLoadStat('photoLazyLoadProfiles');
+        })
+        .catch(() => {
+          resolved[user.userId] = [];
+        })
+    ))).then(() => {
+      if (cancelled || !Object.keys(resolved).length) return;
+      setPhotoCacheByUserId(prev => ({ ...prev, ...resolved }));
+      const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
+      if (stats && typeof console.table === 'function') console.table([stats]);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [activeProfileIndex, detailOpen, feedSource, photoCacheByUserId]);
+  }, [activeProfileIndex, detailOpen, feedSource, fullProfileByUserId, photoCacheByUserId]);
 
   useEffect(() => {
     if (activeProfile?.userId) {
@@ -6349,11 +6472,15 @@ const Matching = () => {
   const handleToggleRowExpand = React.useCallback(userId => {
     setExpandedRowIds(previous => {
       const next = new Set(previous);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+        ensureFullProfile(feedSourceRef.current.find(candidate => candidate?.userId === userId));
+      }
       return next;
     });
-  }, []);
+  }, [ensureFullProfile]);
 
   const handleRowContactsOpened = React.useCallback(user => {
     if (!user?.userId || !ownerId) return;
@@ -6417,8 +6544,12 @@ const Matching = () => {
 
   // The rows carry their public comments inline, so the feed loads them for the
   // page it renders and never asks twice for the same profile.
+  //
+  // Плитка галереї коментарів не показує взагалі (`GalleryCard` не має
+  // `commentSlot`), тож у цьому режимі читання — це запит на картку, чий
+  // результат нікуди не потрапляє.
   useEffect(() => {
-    if (detailOpen || !ownerId) return;
+    if (detailOpen || !ownerId || viewLayout !== 'list') return;
     const pendingIds = feedSource
       .slice(0, FEED_PHOTO_HYDRATION_LIMIT)
       .map(user => user?.userId)
@@ -6432,7 +6563,7 @@ const Matching = () => {
         pendingIds.forEach(id => publicCommentsRequestedRef.current.delete(id));
         console.error('[Matching] Failed to load public comments', error);
       });
-  }, [detailOpen, feedSource, ownerId]);
+  }, [detailOpen, feedSource, ownerId, viewLayout]);
 
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
     const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });

@@ -55,14 +55,32 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
     expect(fnBody).not.toContain('equalTo');
   });
 
-  it('reads bulk comments by exact card paths instead of downloading an owner comment root', () => {
+  // Дрібна пачка й далі читається поточковими шляхами: піддерево активного
+  // адміна — це тисячі записів, і тягнути його заради трьох карток дорожче за
+  // три запити. Великій пачці навпаки: один запит замість N.
+  it('reads a small bulk of comments by exact card paths', () => {
     const fnBody = source.slice(
       source.indexOf('export const fetchUserComments'),
       source.indexOf('export const fetchAllCommentsByCardId')
     );
     expect(fnBody).toContain('fetchUserComment(ownerId, cardId)');
+    expect(fnBody).toContain('cardIds.length >= OWNER_COMMENTS_SUBTREE_THRESHOLD');
     expect(fnBody).not.toContain('get(ref2(database, getCommentPath(ownerId)))');
     expect(fnBody).not.toContain('get(ref2(database, getLegacyCommentPath(ownerId)))');
+  });
+
+  // Заборона, яка лишається безумовною: піддерево читається тільки під одного
+  // названого власника. Корінь через усіх власників і легасі-корінь — ніколи.
+  it('scopes the bulk subtree read to a single owner and caches it', () => {
+    const readerBody = source.slice(
+      source.indexOf('const getCachedOwnerCommentsSubtree'),
+      source.indexOf('export const fetchUserComments')
+    );
+
+    expect(readerBody).toContain('`${COMMENTS_ROOT_PATH}/${ownerId}`');
+    expect(readerBody).not.toContain('get(ref2(database, COMMENTS_ROOT_PATH))');
+    expect(readerBody).toContain('OWNER_COMMENTS_SUBTREE_TTL_MS');
+    expect(source).toContain('export const invalidateOwnerCommentsCache');
   });
 
   it('reads card comments only from explicitly allowed owner/card paths', () => {

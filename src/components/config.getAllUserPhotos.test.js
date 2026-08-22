@@ -19,11 +19,25 @@ describe('getAllUserPhotos skips newUsers for long-format userIds on the cold-lo
       getAllUserPhotosBody.indexOf('if (!collectionSource && isLongFormatUserId(userId))'),
       getAllUserPhotosBody.indexOf('const sourceCollections = getPhotoSourceCollections(collectionSource);'),
     );
-    const usersReadIndex = longIdBranchBody.indexOf(`get(ref2(database, \`users/${userIdTemplate}\`))`);
-    const newUsersReadIndex = longIdBranchBody.indexOf(`get(ref2(database, \`newUsers/${userIdTemplate}\`))`);
+    const usersReadIndex = longIdBranchBody.indexOf("readPhotosField('users', userId)");
+    const newUsersReadIndex = longIdBranchBody.indexOf("readPhotosField('newUsers', userId)");
 
     expect(usersReadIndex).toBeGreaterThanOrEqual(0);
     expect(newUsersReadIndex).toBeGreaterThan(usersReadIndex);
+  });
+
+  // Обидва читання адресні: `${collection}/${userId}/photos`, а не вузол анкети
+  // цілком. Стрічка гідратує картку, а потім питає фото — читання цілого вузла
+  // означало другу копію тієї самої анкети в трафіку на кожну картку.
+  it('reads only the photos child, never the whole profile node', () => {
+    const readerBody = source.slice(
+      source.indexOf('const readPhotosField ='),
+      source.indexOf('export const getAllUserPhotos'),
+    );
+
+    expect(readerBody).toContain(`ref2(database, \`\${collection}/${userIdTemplate}/photos\`)`);
+    expect(getAllUserPhotosBody).not.toContain(`get(ref2(database, \`users/${userIdTemplate}\`))`);
+    expect(getAllUserPhotosBody).not.toContain(`get(ref2(database, \`newUsers/${userIdTemplate}\`))`);
   });
 
   it('keeps long-id database reads best-effort when either collection rejects', () => {

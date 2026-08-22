@@ -1,4 +1,4 @@
-import { endAt, get as firebaseGet, orderByKey, query, ref, remove, set, startAt, update } from 'firebase/database';
+import { endAt, get as firebaseGet, orderByChild, orderByKey, query, ref, remove, set, startAt, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
 import {
@@ -16,7 +16,7 @@ import {
   database,
 } from 'components/config';
 import { encodeKey } from './searchIndexCandidates';
-import { getSearchKeyEmptyBucket } from './searchKeyBuckets';
+import { SEARCH_KEY_INDEX_NAMES, getSearchKeyEmptyBucket } from './searchKeyBuckets';
 import {
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
@@ -251,17 +251,73 @@ const collectSearchKeyUserIdsForBuckets = (searchKeyFile, indexName, values) => 
  * mode that must never happen. The bucket is also small here - the set only holds
  * the users that rule already allows - and it is read only when something names it.
  */
-const buildSearchKeySetFromAllowedUsers = (searchKey, finalAllowedUserIds) => {
+/**
+ * Індекси, без яких набір не працює, незалежно від того, чи називають їх правила.
+ * `userId` — це перевірка «чи входить ця картка в набір», яку читають реакції та
+ * добір кандидатів.
+ */
+const ALWAYS_COPIED_SET_INDEX_NAMES = ['userId'];
+
+/**
+ * Індекси, які насправді називають правила доступу цього набору.
+ *
+ * Резолвер правил повертає ключ на кожен індекс, який він узагалі знає, і
+ * більшість — з порожнім списком бакетів. Названим індекс робить непорожній
+ * список; саме за цією ознакою його відбирає й читач набору, тож відбір тут
+ * повторює його рівно так само.
+ */
+const collectRuleIndexNames = parsedRuleGroups => {
+  const groups = Array.isArray(parsedRuleGroups) ? parsedRuleGroups : [parsedRuleGroups];
+  const names = new Set();
+
+  groups.forEach(parsedRules => {
+    const { bucketMap, hasImtFilter } = prepareAdditionalAccessBucketMapForSearchKey(
+      resolveAdditionalAccessSearchKeyBuckets(parsedRules)
+    );
+
+    Object.entries(bucketMap || {}).forEach(([indexName, rawValues]) => {
+      const normalizedIndexName = normalizePathSegment(indexName);
+      if (!normalizedIndexName || normalizedIndexName === 'users') return;
+
+      const valuesList = Array.isArray(rawValues)
+        ? rawValues
+        : (rawValues && typeof rawValues[Symbol.iterator] === 'function' ? [...rawValues] : Object.keys(rawValues || {}));
+      if (valuesList.map(normalizePathSegment).filter(Boolean).length) names.add(normalizedIndexName);
+    });
+
+    // ІМТ не зберігається як індекс — його рахують зі зросту й ваги, тож правило
+    // про нього тримає в наборі саме їх.
+    if (hasImtFilter) {
+      names.add('height');
+      names.add('weight');
+    }
+  });
+
+  return names;
+};
+
+const buildSearchKeySetFromAllowedUsers = (searchKey, finalAllowedUserIds, { keepIndexNames = null } = {}) => {
   const result = {};
 
   if (!searchKey || !finalAllowedUserIds || finalAllowedUserIds.size === 0) {
     return result;
   }
 
+  // Набір — це копія зрізу індексу, і копіювати в нього все, що є в `searchKey`,
+  // означає множити на кількість наборів усі шістнадцять індексів, разом з
+  // матеріалізованим порожнім бакетом на кожного дозволеного користувача. Копії
+  // потребують лише ті індекси, які називають правила доступу: там читання має
+  // бути точним, бо помилка розширює доступ. Фільтр із шухляди, який не знайшов
+  // свого індексу в наборі, тепер просто вибуває на користь пост-фільтра.
+  const keptIndexNames = keepIndexNames
+    ? new Set([...keepIndexNames, ...ALWAYS_COPIED_SET_INDEX_NAMES].filter(Boolean))
+    : null;
+
   const indexedUserIdsByField = {};
 
   Object.entries(searchKey).forEach(([fieldName, fieldBuckets]) => {
     if (fieldName === 'imt') return;
+    if (keptIndexNames && !keptIndexNames.has(fieldName)) return;
     if (!fieldBuckets || typeof fieldBuckets !== 'object' || Array.isArray(fieldBuckets)) return;
 
     indexedUserIdsByField[fieldName] = new Set();
@@ -857,7 +913,8 @@ export const buildNewUsersFilterSetIndex = async ({
 
     const filteredSearchKeySet = buildSearchKeySetFromAllowedUsers(
       searchKeyFile,
-      saveAllowedUserIds
+      saveAllowedUserIds,
+      { keepIndexNames: collectRuleIndexNames(parsedRuleGroups) }
     );
     const debugFilteredFields = Object.keys(filteredSearchKeySet || {});
     const payloadUserIds = collectUniqueUserIds(filteredSearchKeySet || {});
@@ -1289,8 +1346,14 @@ export const getIndexedNewUsersIdsByRules = async ({
     let emptyBucketsForSet = 0;
     let missingBucketsForSet = 0;
 
+    // Дві природи в одному циклі, і різниця між ними — це різниця між доступом і
+    // фільтром. Група з правила доступу вирішує, що читачеві взагалі можна
+    // бачити: якщо вона нічого не знайшла, набір порожній, і жодного пом'якшення
+    // тут бути не може. Група з шухляди Matching лише звужує показане, і її
+    // невдале читання має розширити деку, а не обнулити доступ — пост-фільтр усе
+    // одно проходить по кожній показаній картці.
     const bucketGroups = [
-      ...Object.entries(entry.indexBuckets).map(([indexName, values]) => ({ indexName, values })),
+      ...Object.entries(entry.indexBuckets).map(([indexName, values]) => ({ indexName, values, fromAccessRule: true })),
       ...(Array.isArray(entry.additionalFilterBucketGroups) ? entry.additionalFilterBucketGroups : []),
     ].filter(group => {
       if (group && typeof group === 'object' && Object.prototype.hasOwnProperty.call(group, 'groupActive')) {
@@ -1518,6 +1581,19 @@ export const getIndexedNewUsersIdsByRules = async ({
         }
       }
 
+      // Фільтр із шухляди, який в цьому наборі не знайшов нічого, майже завжди
+      // означає, що набір не тримає копії цього індексу, — а не що під фільтр не
+      // підпадає жодна анкета. Обнуляти через це набір не можна: доступ
+      // визначають правила, а фільтр відсіє своє після гідратації.
+      if (!idsForFilter.size && !group.fromAccessRule) {
+        emitDebug('additionalMatching: indexed filter left to the post-filter', {
+          setKey: entry.setKey,
+          indexName,
+          reason: 'no ids in this set for a drawer filter',
+        });
+        continue;
+      }
+
       // OR between bucket values for the same indexName, AND between different indexName fields.
       filterSets.push(idsForFilter);
     }
@@ -1655,7 +1731,45 @@ export const getIndexedNewUsersIdsByRules = async ({
   };
 };
 
-const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
+/**
+ * Читає корінь `searchKey` поіндексно і збирає з нього ту саму структуру, яку
+ * `ProfileForm` отримує з локального JSON-експорту.
+ *
+ * Одним запитом його не візьмеш: `.read` навмисне опущено з кореня на рівень
+ * окремого індексу, щоб ніхто не міг витягнути весь вузол. Тож читаємо по
+ * індексу — це рівно те, що правила дозволяють, і рівно те, що потрібно
+ * білдеру наборів.
+ */
+export const loadSearchKeyFileFromBackend = async ({ onProgress } = {}) => {
+  const searchKeyFile = {};
+  for (let index = 0; index < SEARCH_KEY_INDEX_NAMES.length; index += 1) {
+    const indexName = SEARCH_KEY_INDEX_NAMES[index];
+    // eslint-disable-next-line no-await-in-loop
+    const snapshot = await get(ref(database, `searchKey/${indexName}`));
+    if (snapshot.exists()) {
+      const value = snapshot.val();
+      if (value && typeof value === 'object') searchKeyFile[indexName] = value;
+    }
+    if (typeof onProgress === 'function') {
+      onProgress(Math.floor(((index + 1) / SEARCH_KEY_INDEX_NAMES.length) * 100), { indexName });
+    }
+  }
+  return searchKeyFile;
+};
+
+const readBucketIdsFromSearchKeyFile = (searchKeyFile, indexName, values) => {
+  const indexNode = searchKeyFile?.[indexName];
+  const ids = new Set();
+  if (!indexNode || typeof indexNode !== 'object') return ids;
+  values.forEach(value => {
+    const bucket = indexNode?.[value];
+    if (!bucket || typeof bucket !== 'object') return;
+    Object.keys(bucket).forEach(userId => { if (userId) ids.add(userId); });
+  });
+  return ids;
+};
+
+const getMatchedUserIdsFromSearchKey = async (parsedRuleGroups, { searchKeyFile = null } = {}) => {
   const groups = Array.isArray(parsedRuleGroups) ? parsedRuleGroups : [parsedRuleGroups];
   const matchedIds = new Set();
 
@@ -1686,6 +1800,11 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
     // eslint-disable-next-line no-await-in-loop
     const sourceIdSets = await Promise.all(
       activeSources.map(async ({ indexName, values }) => {
+        // Зібраний файл `searchKey` — джерело правди, коли він є: перебудова
+        // читає його з бекенда сама. Без нього лишається локальний кеш, як
+        // раніше, і тоді знайдеться рівно те, що встигло в нього потрапити.
+        if (searchKeyFile) return readBucketIdsFromSearchKeyFile(searchKeyFile, indexName, values);
+
         const paths = values.map(value => `searchKey/${indexName}/${value}`);
         const payloads = await Promise.all(
           paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
@@ -1712,10 +1831,12 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
     }
 
     if (hasImtFilter) {
-      const [heightPayload, weightPayload] = await Promise.all([
-        Promise.resolve(peekCachedSearchKeyPayload('searchKey/height')),
-        Promise.resolve(peekCachedSearchKeyPayload('searchKey/weight')),
-      ]);
+      const [heightPayload, weightPayload] = searchKeyFile
+        ? [{ exists: true, value: searchKeyFile.height || {} }, { exists: true, value: searchKeyFile.weight || {} }]
+        : await Promise.all([
+          Promise.resolve(peekCachedSearchKeyPayload('searchKey/height')),
+          Promise.resolve(peekCachedSearchKeyPayload('searchKey/weight')),
+        ]);
       const metricSearchKeyFile = {
         height: heightPayload?.exists && typeof heightPayload?.value === 'object' ? heightPayload.value : {},
         weight: weightPayload?.exists && typeof weightPayload?.value === 'object' ? weightPayload.value : {},
@@ -1742,20 +1863,58 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
   return [...matchedIds];
 };
 
-export const rebuildAllNewUsersFilterSetIndexes = async () => {
-  const [usersSnap, searchKeySetSnap] = await Promise.all([
-    get(ref(database, 'users')),
+/**
+ * Власники, у яких взагалі є правила доступу.
+ *
+ * `orderByChild('additionalAccessRules')` + `startAt('')` віддає лише записи, де
+ * поле — непорожній рядок. Це все ще повні вузли анкет, але тільки тих кількох
+ * власників, що мають правила, а не вся колекція `users` у браузер. Потребує
+ * `.indexOn` на `additionalAccessRules`; без нього RTDB відсортує на клієнті,
+ * тобто віддасть усе — тому запит обгорнутий і падає в явну помилку, а не тихо
+ * качає колекцію.
+ */
+const loadAccessRuleOwners = async () => {
+  const ownersQuery = query(ref(database, 'users'), orderByChild('additionalAccessRules'), startAt(''));
+  const snapshot = await get(ownersQuery);
+  return snapshot.exists() ? snapshot.val() || {} : {};
+};
+
+export const rebuildAllNewUsersFilterSetIndexes = async ({ onProgress } = {}) => {
+  const reportProgress = (stage, payload = {}) => {
+    if (typeof onProgress === 'function') onProgress(stage, payload);
+  };
+
+  reportProgress('searchKey', { percent: 0 });
+  // Білдер наборів працює з повним деревом `searchKey`; раніше його доводилось
+  // приносити руками як JSON-експорт, а ця функція його не приносила взагалі —
+  // і кидала `MISSING_SEARCHKEY_FILE` на першому ж власнику з правилами.
+  const searchKeyFile = await loadSearchKeyFileFromBackend({
+    onProgress: (percent, meta) => reportProgress('searchKey', { percent, ...meta }),
+  });
+
+  reportProgress('owners', {});
+  const [usersMap, searchKeySetSnap] = await Promise.all([
+    loadAccessRuleOwners(),
     get(ref(database, SEARCH_KEY_SETS_ROOT)),
   ]);
 
-  const usersMap = usersSnap.exists() ? usersSnap.val() || {} : {};
   const searchKeySetMap = searchKeySetSnap.exists() ? searchKeySetSnap.val() || {} : {};
   await Promise.all(Object.keys(searchKeySetMap).map(key => remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${key}`))));
 
   let totalRuleSets = 0;
   let indexedSets = 0;
+  const errors = [];
+  const ownerEntries = Object.entries(usersMap);
+  let processedOwners = 0;
 
-  for (const [userId, user] of Object.entries(usersMap)) {
+  for (const [userId, user] of ownerEntries) {
+    processedOwners += 1;
+    reportProgress('sets', {
+      percent: Math.floor((processedOwners / Math.max(1, ownerEntries.length)) * 100),
+      processed: processedOwners,
+      total: ownerEntries.length,
+    });
+
     const rawRules = user?.additionalAccessRules;
     const setTexts = splitRawRulesToSetTexts(rawRules);
     if (!setTexts.length) {
@@ -1785,19 +1944,31 @@ export const rebuildAllNewUsersFilterSetIndexes = async () => {
       if (!parsedRuleGroups.length) continue;
 
       // eslint-disable-next-line no-await-in-loop
-      matchedUserIdsBySetKey[setKey] = await getMatchedUserIdsFromSearchKey(parsedRuleGroups);
+      matchedUserIdsBySetKey[setKey] = await getMatchedUserIdsFromSearchKey(parsedRuleGroups, { searchKeyFile });
     }
 
-    const indexed = await buildNewUsersFilterSetIndex({
-      rawRules,
-      accessUserId: userId,
-      matchedUserIdsBySetKey,
-    });
-    if (indexed?.setKeys?.length) indexedSets += indexed.setKeys.length;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const indexed = await buildNewUsersFilterSetIndex({
+        rawRules,
+        accessUserId: userId,
+        matchedUserIdsBySetKey,
+        searchKeyFile,
+      });
+      if (indexed?.setKeys?.length) indexedSets += indexed.setKeys.length;
+    } catch (error) {
+      // Один зламаний набір правил не має лишати решту власників без індексу:
+      // їхні набори вже стерті на початку, тож зупинитись тут — гірше, ніж
+      // дійти до кінця і назвати те, що не вийшло.
+      console.error('[searchKeySets] набір власника не перебудовано', { accessUserId: userId, error });
+      errors.push({ accessUserId: userId, message: error?.message || String(error) });
+    }
   }
 
   return {
     totalRuleSets,
     indexedRuleSets: indexedSets,
+    owners: ownerEntries.length,
+    errors,
   };
 };

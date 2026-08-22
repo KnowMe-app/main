@@ -1,4 +1,4 @@
-import { get, ref } from 'firebase/database';
+import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
 import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
@@ -10,6 +10,7 @@ import {
   isSparseProfile,
 } from './fieldCountBuckets';
 import { getCachedSearchKeyPayload } from './searchKeyCache';
+import { MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
 import {
   BLOOD_SEARCH_KEY_BUCKETS,
   BMI_SEARCH_KEY_BUCKETS,
@@ -351,36 +352,74 @@ const collectIdsFromValue = value => {
   return Object.keys(value).filter(Boolean);
 };
 
+/**
+ * Скільки id з одного бакета варто тягнути, перш ніж визнати групу неселективною.
+ *
+ * Індекс відповідає на «які id підходять» так: качає всі id усіх обраних бакетів
+ * і перетинає їх у браузері. Вартість — від розміру бакетів, а не від розміру
+ * сторінки, тож на великій базі фільтр «заміжня» означав мегабайти id заради
+ * пʼяти карток. Але група, що лишає пів бази, індексу нічого й не дає: перетин
+ * від неї майже не звужується. Дешевше визнати її неселективною і лишити
+ * пост-фільтру, який усе одно проходить по кожній показаній картці.
+ *
+ * Число: із запасом більше за будь-яку сторінку, менше за стелю кеша
+ * (`MATCHING_QUERY_MAX_IDS`), тож перетин прочитаних множин у неї завжди влазить.
+ */
+export const MATCHING_SEARCH_KEY_BUCKET_READ_CAP = 1500;
+
+/**
+ * Читає вузол бакета з межею.
+ *
+ * `limitToFirst(CAP + 1)` дає одразу обидві відповіді одним запитом: якщо
+ * повернулось CAP або менше — це весь бакет, і читати повторно нема чого; якщо
+ * CAP + 1 — бакет завідомо більший за межу, і решту качати не треба.
+ */
+const readBucketNodeIds = async path => {
+  // Кешується під ключем, що містить межу: зміна межі має знецінити старі
+  // записи, бо в них лежить зріз іншого розміру, а не весь вузол.
+  const cacheKey = `${path}#cap${MATCHING_SEARCH_KEY_BUCKET_READ_CAP}`;
+  const payload = await getCachedSearchKeyPayload(cacheKey, async () => {
+    const snapshot = await get(query(ref(database, path), orderByKey(), limitToFirst(MATCHING_SEARCH_KEY_BUCKET_READ_CAP + 1)));
+    return { exists: snapshot.exists(), value: snapshot.exists() ? snapshot.val() || {} : null };
+  }, { ttlMs: MATCHING_PERFORMANCE_CACHE_TTL_MS });
+
+  const ids = payload?.exists ? collectIdsFromValue(payload.value) : [];
+  return { ids, overflowed: ids.length > MATCHING_SEARCH_KEY_BUCKET_READ_CAP };
+};
+
+// `{ ids, overflowed }`: `overflowed` означає «група не звужує пошук настільки,
+// щоб її читання окупилось», і викликач прибирає її з індексного плану.
 const readBucketIds = async ({ rootPath, indexName, values }) => {
   if (indexName === FIELD_COUNT_SEARCH_KEY_INDEX_NAME && hasFieldCountRangeBuckets(values)) {
     // The rebuilt index stores the four range buckets, so the ranges asked for can be
     // read one node at a time. A legacy index stores one node per filled-field count
     // and has to be scanned whole; fall back to that only when no range node exists.
-    const rangeSnapshots = await Promise.all(
-      values.map(value => get(ref(database, `${rootPath}/${indexName}/${value}`))),
+    const rangeReads = await Promise.all(
+      values.map(value => readBucketNodeIds(`${rootPath}/${indexName}/${value}`)),
     );
-    if (rangeSnapshots.some(snapshot => snapshot.exists())) {
+    if (rangeReads.some(read => read.ids.length)) {
       const rangeIds = new Set();
-      rangeSnapshots.forEach(snapshot => {
-        if (!snapshot.exists()) return;
-        collectIdsFromValue(snapshot.val()).forEach(id => rangeIds.add(id));
-      });
-      return rangeIds;
+      rangeReads.forEach(read => read.ids.forEach(id => rangeIds.add(id)));
+      return { ids: rangeIds, overflowed: rangeReads.some(read => read.overflowed) || rangeIds.size > MATCHING_SEARCH_KEY_BUCKET_READ_CAP };
     }
 
+    // Легасі-вузол `fields` — один лист на кожне число заповнених полів, тож
+    // порахувати його можна тільки цілим. Межа тут застосовується постфактум:
+    // читання вже сталось, але план і список кандидатів лишаються обмеженими.
     const snapshot = await get(ref(database, `${rootPath}/${indexName}`));
-    return snapshot.exists()
+    const legacyIds = snapshot.exists()
       ? collectFieldCountIdsFromIndexNode(snapshot.val(), values)
       : new Set();
+    return { ids: legacyIds, overflowed: legacyIds.size > MATCHING_SEARCH_KEY_BUCKET_READ_CAP };
   }
 
   const ids = new Set();
-  await Promise.all(values.map(async value => {
-    const snapshot = await get(ref(database, `${rootPath}/${indexName}/${value}`));
-    if (!snapshot.exists()) return;
-    collectIdsFromValue(snapshot.val()).forEach(id => ids.add(id));
-  }));
-  return ids;
+  const reads = await Promise.all(values.map(value => readBucketNodeIds(`${rootPath}/${indexName}/${value}`)));
+  reads.forEach(read => read.ids.forEach(id => ids.add(id)));
+  return {
+    ids,
+    overflowed: reads.some(read => read.overflowed) || ids.size > MATCHING_SEARCH_KEY_BUCKET_READ_CAP,
+  };
 };
 
 // Can this group produce a candidate list on its own? 'include' names buckets and
@@ -417,19 +456,24 @@ const readMatchingUsersFilterIds = async ({ group, filters }) => {
     const ageIds = await collectAgeIdsByFilters(filters?.age, [MATCHING_USERS_INDEX_ROOT], {
       includeUnofferedBuckets: true,
     });
-    return ageIds instanceof Set ? { mode: 'include', ids: ageIds } : null;
+    if (!(ageIds instanceof Set)) return null;
+    // Діапазонне читання обмежити наперед не вийшло б: `limitToFirst` різав би
+    // кількість вузлів-дат, а не id, тобто тихо викидав би цілі роки народження.
+    // Тому межа перевіряється постфактум — читання вже сталось, але план і
+    // список кандидатів лишаються обмеженими.
+    return { mode: 'include', ids: ageIds, overflowed: ageIds.size > MATCHING_SEARCH_KEY_BUCKET_READ_CAP };
   }
 
   const buckets = group?.readBuckets || [];
   if (!buckets.length) return null;
 
-  const ids = await readBucketIds({
+  const { ids, overflowed } = await readBucketIds({
     rootPath: MATCHING_USERS_INDEX_ROOT,
     indexName: group.indexName,
     values: buckets,
   });
 
-  return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids };
+  return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids, overflowed };
 };
 
 // The least-filled bucket of the field-count index. A card with nothing on record
@@ -772,10 +816,28 @@ export const fetchMatchingIndexedCandidates = async ({
   const idSets = await Promise.all(
     plannedGroups.map(group => readMatchingUsersFilterIds({ group, filters }))
   );
-  const combinedIds = combineFilterGroupIds(idSets);
+
+  // Група, чиє читання впeрлось у межу, лишає надто велику частку бази, щоб
+  // звузити перетин, — вона вибуває з плану. Це ніколи не змінює видачу:
+  // `applyMatchingSearchKeyFilters` — повний двійник індексного плану і проходить
+  // по кожній показаній картці, тож викинута група й далі відкидає своє, просто
+  // після гідратації, а не до неї. Round-trip тест тримає цю рівність.
+  const overflowedGroups = plannedGroups.filter((group, index) => idSets[index]?.overflowed);
+  const selectiveIdSets = idSets.map(result => (result?.overflowed ? null : result));
+  if (overflowedGroups.length) {
+    console.info('[Matching][indexedProvider] групи поза межею читання лишаються пост-фільтру', {
+      cacheKey,
+      readCap: MATCHING_SEARCH_KEY_BUCKET_READ_CAP,
+      groups: overflowedGroups.map(group => ({ indexName: group.indexName, readMode: group.readMode })),
+    });
+  }
+
+  const combinedIds = combineFilterGroupIds(selectiveIdSets);
+  // Жодної групи в межах — індекс не назвав кандидатів, і читати далі нема що.
+  // Дека йде звичайною пагінацією, де сторінка коштує сторінки.
   if (!combinedIds) return deferToSourcePagination();
   const allMatchingIds = await orderSparseCardsLast(combinedIds, MATCHING_USERS_INDEX_ROOT);
-  const ageGroupIndex = filterGroups.findIndex(group => group.indexName === 'age');
+  const ageGroupIndex = plannedGroups.findIndex(group => group.indexName === 'age');
   const ageDateRangeIdsCount = ageGroupIndex >= 0
     ? (idSets[ageGroupIndex]?.ids?.size || 0)
     : null;
@@ -805,6 +867,7 @@ export const fetchMatchingIndexedCandidates = async ({
     nextOffset,
     hasMore,
     filterGroups: plannedGroups,
+    overflowedFilterGroups: overflowedGroups.map(group => group.indexName),
     usedAgeDateRangeReader: ageDateRangeIdsCount !== null,
     ageDateRangeIdsCount,
   };
@@ -1444,6 +1507,12 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   };
 };
 
+// Скільки анкет просити в джерела на одну сторінку стрічки. Фільтри відсіюють
+// частину, тож запас потрібен — але фіксований, а не такий, що росте зі скролом.
+const MATCHING_SOURCE_PAGE_OVERFETCH = 3;
+const MATCHING_SOURCE_PAGE_OVERFETCH_FLOOR = 5;
+const MATCHING_SOURCE_PAGE_LIMIT_CAP = 100;
+
 export const fetchFilteredMatchingSourceChunk = ({
   targetVisibleCount,
   initialCursor,
@@ -1458,6 +1527,7 @@ export const fetchFilteredMatchingSourceChunk = ({
   filterMainFn = passthroughFilterMain,
   fetchUsersByLastLogin2,
   fetchUsersByLastLogin2FromCollection,
+  fetchMatchingCardsPage,
   hydrateUsersByIds,
   onPart,
   onDiagnosticEvent,
@@ -1479,14 +1549,46 @@ export const fetchFilteredMatchingSourceChunk = ({
     initialCursor,
     exclude,
     isSameCursor: isSameMatchingCursor,
-    getSourceLimit: ({ remaining }) => remaining + exclude.size + 1,
+    // Запас на відсіяні картки — а не `exclude.size`. Множина виключень росте з
+    // кожною прогорнутою сторінкою (завантажені + обране + приховані), тож
+    // прив'язка до неї означала, що на 40-й картці стрічка просила в бекенда
+    // ~50 повних анкет, щоб показати п'ять. Постійний множник тримає запас
+    // пропорційним тому, що справді потрібно.
+    getSourceLimit: ({ remaining }) => Math.min(
+      MATCHING_SOURCE_PAGE_LIMIT_CAP,
+      remaining * MATCHING_SOURCE_PAGE_OVERFETCH + MATCHING_SOURCE_PAGE_OVERFETCH_FLOOR,
+    ),
+    // Сторінка джерела вже віддає все, що рядок стрічки показує — чи то повна
+    // анкета, чи то проєкція `matchingCards`. Перечитувати її поштучно за id
+    // нема потреби. Урізаний пошуковий хіт — інша річ: за ним стоїть не картка,
+    // а проєкція з пʼяти полів, і його треба догідратувати.
+    isHydrated: user => Boolean(user) && !user.__limitedProfile,
     maxSourceCards: 500,
     debugLabel: `matchingSourceBackfill:${collectionSource}`,
-    fetchSourcePage: ({ limit: sourceLimit, cursor }) => (
-      collectionSource === 'newUsers'
-        ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
-        : fetchUsersByLastLogin2(sourceLimit, cursor)
-    ),
+    fetchSourcePage: async ({ limit: sourceLimit, cursor }) => {
+      const readProfilePage = () => (
+        collectionSource === 'newUsers'
+          ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
+          : fetchUsersByLastLogin2(sourceLimit, cursor)
+      );
+
+      if (typeof fetchMatchingCardsPage !== 'function') return readProfilePage();
+
+      // Основний шлях: одна сторінка стрічки = один запит по вузлу проєкцій,
+      // де картка важить сотні байтів і вже несе аватар. Проєкція може бути ще
+      // не побудована (нова база, індексація не запускалась) — тоді перша ж
+      // сторінка приходить порожньою, і читач мовчки повертається до анкет.
+      try {
+        const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor, collectionSource });
+        if (cardsPage?.users?.length) return cardsPage;
+        if (cursor) return cardsPage;
+        console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму', { collectionSource });
+      } catch (error) {
+        console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
+      }
+
+      return readProfilePage();
+    },
     filterSourceUsers: sourceUsers => {
       if (!isAdmin) {
         return sourceUsers.filter(

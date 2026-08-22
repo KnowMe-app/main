@@ -80,7 +80,7 @@ const safeRemoveItem = key => {
   }
 };
 
-const readStorageRecord = storageKey => {
+const readStorageRecord = (storageKey, overrideTtlMs) => {
   if (typeof localStorage === 'undefined') return null;
 
   const raw = localStorage.getItem(storageKey);
@@ -95,7 +95,9 @@ const readStorageRecord = storageKey => {
   try {
     const parsed = JSON.parse(raw);
     const data = getStoredData(parsed);
-    const ttl = isNegativePayload(data) ? NEGATIVE_CACHE_TTL_MS : TTL_MS;
+    const ttl = isNegativePayload(data)
+      ? NEGATIVE_CACHE_TTL_MS
+      : (Number.isFinite(overrideTtlMs) && overrideTtlMs > 0 ? overrideTtlMs : TTL_MS);
     if (ttl && parsed?.timestamp && Date.now() - parsed.timestamp > ttl) {
       safeRemoveItem(storageKey);
       return null;
@@ -134,7 +136,7 @@ const writeStorageRecord = (storageKey, payload) => {
   }
 };
 
-export const peekCachedSearchKeyPayload = path => {
+export const peekCachedSearchKeyPayload = (path, { ttlMs } = {}) => {
   const normalizedPath = normalizePath(path);
   if (!normalizedPath) return null;
 
@@ -142,15 +144,22 @@ export const peekCachedSearchKeyPayload = path => {
   const currentKey = buildStorageKey(normalizedPath);
   if (legacyKey !== currentKey) safeRemoveItem(legacyKey);
 
-  return readStorageRecord(currentKey);
+  return readStorageRecord(currentKey, ttlMs);
 };
 
-export const getCachedSearchKeyPayload = async (path, loader) => {
+/**
+ * `ttlMs` вкорочує строк життя запису для викликача, який не може дозволити собі
+ * шість годин черствості. Вузли індексу змінюються з кожним збереженням анкети:
+ * для рідко змінних зрізів довгий строк доречний, а для бакетів, за якими
+ * фільтрує стрічка, — ні, бо анкета, яку щойно виправили, має потрапити під
+ * фільтр не завтра.
+ */
+export const getCachedSearchKeyPayload = async (path, loader, { ttlMs } = {}) => {
   const normalizedPath = normalizePath(path);
   if (!normalizedPath || typeof loader !== 'function') return null;
 
   const storageKey = buildStorageKey(normalizedPath);
-  const cached = peekCachedSearchKeyPayload(normalizedPath);
+  const cached = peekCachedSearchKeyPayload(normalizedPath, { ttlMs });
   if (cached) return cached;
 
   const loaded = await loader();

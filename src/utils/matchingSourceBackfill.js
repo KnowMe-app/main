@@ -7,6 +7,10 @@ export const collectFilteredMatchingSourceCards = async ({
   hydrateUsersByIds,
   decorateUser = user => user,
   isSameCursor = (a, b) => a === b,
+  // Чи є запис зі сторінки джерела повноцінною карткою? За замовчуванням — ні,
+  // тобто стара поведінка: гідратувати все поштучно. Викликач, який знає, що
+  // його сторінка віддає анкети цілком, вмикає повторне використання сам.
+  isHydrated = () => false,
   getSourceLimit,
   onPart,
   onDiagnosticEvent,
@@ -68,14 +72,32 @@ export const collectFilteredMatchingSourceCards = async ({
 
     const slice = filtered.slice(0, remaining);
     const ids = slice.map(user => user?.userId).filter(Boolean);
-    emitDiagnostic('profile-hydration', 'started', { page: loadedPages, count: ids.length });
+
+    // Сторінка джерела вже повернула записи цілком. Гідратація потрібна лише
+    // тим, кого `isHydrated` не визнає повним (проєкція `matchingCards`,
+    // урізаний пошуковий хіт) — інакше кожна картка викачувалась двічі: раз у
+    // складі сторінки, вдруге поштучно за id.
+    const alreadyHydrated = new Map();
+    const idsToHydrate = [];
+    slice.forEach(user => {
+      if (!user?.userId) return;
+      if (isHydrated(user)) alreadyHydrated.set(user.userId, user);
+      else idsToHydrate.push(user.userId);
+    });
+
+    emitDiagnostic('profile-hydration', 'started', { page: loadedPages, count: idsToHydrate.length });
     let hydratedMap;
     try {
-      hydratedMap = ids.length && hydrateUsersByIds
+      const fetched = idsToHydrate.length && hydrateUsersByIds
         // eslint-disable-next-line no-await-in-loop
-        ? await hydrateUsersByIds(ids)
-        : Object.fromEntries(slice.map(user => [user.userId, user]));
-      emitDiagnostic('profile-hydration', 'completed', { page: loadedPages, count: Object.keys(hydratedMap || {}).length });
+        ? await hydrateUsersByIds(idsToHydrate)
+        : {};
+      hydratedMap = { ...Object.fromEntries(alreadyHydrated), ...(fetched || {}) };
+      emitDiagnostic('profile-hydration', 'completed', {
+        page: loadedPages,
+        count: Object.keys(hydratedMap || {}).length,
+        reusedFromSourcePage: alreadyHydrated.size,
+      });
     } catch (error) {
       emitDiagnostic('profile-hydration', 'failed', { page: loadedPages });
       if (error && !error.requestLabel) error.requestLabel = 'profile-hydration';

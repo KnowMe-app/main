@@ -510,15 +510,41 @@ export const getIndexIdsByQuery = (queryKey, options = {}) => {
   return { ids, meta: entry.meta || null, complete: entry.complete === true, cacheVersion: entry.cacheVersion };
 };
 
+/**
+ * Кешує список кандидатів індексу.
+ *
+ * `complete` — це обіцянка «тут увесь список», і саме на неї спирається
+ * пагінація: читач нарізає кеш на сторінки і зупиняється, коли той скінчився.
+ * Список довший за стелю доводиться обрізати — але обрізаний список повним не є,
+ * і позначити його таким означало б мовчки відрубати деці хвіст: усе, що не
+ * влізло, зникало б з видачі до кінця TTL. Тому обрізання знімає обіцянку, і
+ * читач іде в бакети заново.
+ *
+ * У нормі сюди не потрапляє нічого задовгого: читання бакетів обмежене
+ * `MATCHING_SEARCH_KEY_BUCKET_READ_CAP`, а перетин не більший за найменшу з
+ * прочитаних множин. Це запобіжник, а не робочий шлях.
+ */
 export const setIndexIdsForQuery = (queryKey, ids, options = {}) => {
   const { complete = false, meta = null, cacheVersion = MATCHING_INDEX_CACHE_VERSION } = options || {};
   const key = normalizeQueryKey(queryKey);
   const queries = loadIndexQueries();
   const now = Date.now();
-  const nextIds = Array.isArray(ids) ? ids.slice(0, MATCHING_QUERY_MAX_IDS) : [];
-  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now, complete: complete === true, meta: meta && typeof meta === 'object' ? meta : null, cacheVersion };
+  const sourceIds = Array.isArray(ids) ? ids : [];
+  const nextIds = sourceIds.slice(0, MATCHING_QUERY_MAX_IDS);
+  const truncated = nextIds.length < sourceIds.length;
+  const isComplete = complete === true && !truncated;
+
+  if (truncated) {
+    logMatchingCacheWarning('matchingIndex ids list truncated, cached as incomplete', [{
+      key,
+      idsCount: sourceIds.length,
+      maxIds: MATCHING_QUERY_MAX_IDS,
+    }]);
+  }
+
+  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now, complete: isComplete, meta: meta && typeof meta === 'object' ? meta : null, cacheVersion };
   saveIndexQueries(queries);
-  logMatchingCacheDebug('index ids cache save', { key, idsCount: nextIds.length, complete: complete === true });
+  logMatchingCacheDebug('index ids cache save', { key, idsCount: nextIds.length, complete: isComplete, truncated });
 };
 
 export const clearMatchingCache = (reason = 'manual') => resetMatchingLocalStorageCache(reason);

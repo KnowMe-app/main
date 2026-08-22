@@ -47,6 +47,15 @@ import {
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import {
+  MATCHING_CARDS_ROOT,
+  MATCHING_CARD_ORDER_FIELD,
+  areMatchingCardProjectionsEqual,
+  buildMatchingCardProjection,
+  expandMatchingCard,
+  isCurrentMatchingCardSchema,
+  resolveMatchingCardAvatarFromProfile,
+} from '../utils/matchingCardIndex';
+import {
   AGE_BUCKET_FILTER_KEYS,
   SEARCH_KEY_EMPTY_BUCKET,
   resolveBmiBucket,
@@ -597,6 +606,9 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
   };
 };
 
+// Стеля вікна пагінації повних анкет. Див. коментар у циклі нижче.
+const SOURCE_PAGE_WINDOW_CAP = 512;
+
 export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
   const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;
@@ -606,11 +618,17 @@ export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
       ? { date: lastDate.date || '', userId: lastDate.userId || '' }
       : { date: lastDate || '', userId: '' };
 
+  // Курсор регулярно потрапляє в групу анкет з однаковою датою `lastLogin2`:
+  // `endAt` віддає їх усі, а відсікання за парою (дата, id) лишає нуль нових,
+  // тож вікно доводиться розширювати. Кожне розширення перечитує той самий зріз
+  // з нуля — і робить це повними анкетами. Стеля в 5000 означала мегабайти
+  // трафіку на одну сторінку з п'яти карток; на цій висоті дані вже зламані, і
+  // правильна відповідь — зупинитись, а не викачати всю колекцію.
   let fetchLimit = realLimit;
   let entries = [];
   let snapshotSize = 0;
 
-  while (entries.length < realLimit && fetchLimit <= 5000) {
+  while (entries.length < realLimit && fetchLimit <= SOURCE_PAGE_WINDOW_CAP) {
     const q =
       cursor.date
         ? query(usersRef, orderByChild('lastLogin2'), endAt(cursor.date), limitToLast(fetchLimit))
@@ -1240,6 +1258,7 @@ export const setUserComment = async (cardId, text, ownerId) => {
     const commentsOwnerId = ownerId || user.uid;
     const updatedAt = Date.now();
     await set(ref2(database, getCommentPath(commentsOwnerId, cardId)), { text, updatedAt });
+    invalidateOwnerCommentsCache(commentsOwnerId);
     return { lastAction: updatedAt };
   } catch (error) {
     console.error('Error setting comment:', error);
@@ -1261,6 +1280,7 @@ export const updateCommentByOwner = async ({ ownerId, cardId, text }) => {
     }
     const updatedAt = Date.now();
     await set(ref2(database, getCommentPath(ownerId, cardId)), { text, updatedAt });
+    invalidateOwnerCommentsCache(ownerId);
     return { lastAction: updatedAt, ownerId };
   } catch (error) {
     console.error('Error updating comment by owner:', error);
@@ -1278,6 +1298,7 @@ export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
       throw new Error('ownerId і cardId обовʼязкові');
     }
     await remove(ref2(database, getCommentPath(ownerId, cardId)));
+    invalidateOwnerCommentsCache(ownerId);
     return true;
   } catch (error) {
     console.error('Error deleting comment by owner:', error);
@@ -1327,6 +1348,7 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
     // Persist the new source of truth first. Legacy cleanup is deliberately
     // best-effort: missing permissions on an old root must not roll this write back.
     await set(ref2(database, getCommentPath(commentsOwnerId, cardId)), { text, updatedAt });
+    invalidateOwnerCommentsCache(commentsOwnerId);
     Promise.allSettled([
       remove(ref2(database, `users/${cardId}/myComment`)),
       remove(ref2(database, `newUsers/${cardId}/myComment`)),
@@ -1339,6 +1361,7 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
   }
 
   await remove(ref2(database, getCommentPath(commentsOwnerId, cardId)));
+  invalidateOwnerCommentsCache(commentsOwnerId);
   Promise.allSettled([
     remove(ref2(database, `users/${cardId}/myComment`)),
     remove(ref2(database, `newUsers/${cardId}/myComment`)),
@@ -1431,6 +1454,7 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
     try {
       // eslint-disable-next-line no-await-in-loop
       await update(ref2(database), updates);
+      invalidateOwnerCommentsCache(commentsOwnerId);
       report.migratedCards += chunkCardIds.length;
       report.migratedCardIds.push(...chunkCardIds);
       const cleanup = {};
@@ -1451,10 +1475,68 @@ export const migrateAllLegacyCardComments = async (ownerId, { onProgress } = {})
   return report;
 };
 
+// Коментарі одного власника — це одне піддерево `multiData/comments/{ownerId}`,
+// на яке правила дають читачеві право цілком.
+//
+// Читати його не можна безоглядно: в активного адміна там тисячі записів, і
+// заради трьох карток тягнути все — гірше, ніж три поштучні запити. Тому
+// піддерево береться лише тоді, коли поштучних запитів було б більше за поріг,
+// і після цього живе в памʼяті короткий TTL — стрічка питає коментарі до кожної
+// нової сторінки карток, і без кешу перша ж сторінка знецінила б виграш.
+//
+// Що лишається забороненим (і чого цей код не робить): корінь
+// `multiData/comments` через усіх власників і будь-який легасі-корінь.
+const ownerCommentsSubtreeCache = new Map();
+const OWNER_COMMENTS_SUBTREE_TTL_MS = 2 * 60 * 1000;
+const OWNER_COMMENTS_SUBTREE_THRESHOLD = 8;
+
+const getCachedOwnerCommentsSubtree = ownerId => {
+  const cached = ownerCommentsSubtreeCache.get(ownerId);
+  if (!cached || Date.now() - cached.cachedAt > OWNER_COMMENTS_SUBTREE_TTL_MS) return null;
+  return cached.promise;
+};
+
+const readOwnerCommentsSubtree = async ownerId => {
+  const cached = getCachedOwnerCommentsSubtree(ownerId);
+  if (cached) return cached;
+
+  const promise = get(ref2(database, `${COMMENTS_ROOT_PATH}/${ownerId}`))
+    .then(snapshot => (snapshot.exists() ? snapshot.val() || {} : {}))
+    .catch(error => {
+      // Не кешуємо провал: наступний виклик має спробувати ще раз.
+      ownerCommentsSubtreeCache.delete(ownerId);
+      throw error;
+    });
+
+  ownerCommentsSubtreeCache.set(ownerId, { promise, cachedAt: Date.now() });
+  return promise;
+};
+
+/** Скидає кеш піддерева — після запису чи видалення коментаря. */
+export const invalidateOwnerCommentsCache = ownerId => {
+  if (ownerId) ownerCommentsSubtreeCache.delete(ownerId);
+  else ownerCommentsSubtreeCache.clear();
+};
+
 export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
-    incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);
     if (!ownerId || !Array.isArray(cardIds) || !cardIds.length) return {};
+
+    const cachedSubtree = getCachedOwnerCommentsSubtree(ownerId);
+    const shouldReadSubtree = Boolean(cachedSubtree) || cardIds.length >= OWNER_COMMENTS_SUBTREE_THRESHOLD;
+
+    if (shouldReadSubtree) {
+      incrementMatchingLoadStat('commentsSubtreeReads');
+      const subtree = await readOwnerCommentsSubtree(ownerId);
+      const result = {};
+      cardIds.forEach(cardId => {
+        const raw = subtree?.[cardId];
+        if (raw) result[cardId] = normalizeComment(raw);
+      });
+      return result;
+    }
+
+    incrementMatchingLoadStat('commentsReads', cardIds.length);
     const result = {};
     await Promise.all(cardIds.map(async cardId => {
       const comment = await fetchUserComment(ownerId, cardId);
@@ -2160,7 +2242,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
   }
 };
 
-export const lazyLoadProfilePhotos = async (userId, collectionSource = null) => getAllUserPhotos(userId, collectionSource);
+export const lazyLoadProfilePhotos = async (userId, collectionSource = null, options = {}) => getAllUserPhotos(userId, collectionSource, options);
 
 // The projection a viewer without full matching access gets from a search hit
 // (surname, name, age, region, city - and the public comment, which lives in its
@@ -2449,6 +2531,9 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   // Записуємо нового користувача в базу даних
   await set(newUserRef, newUser);
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
+  // Нова анкета одразу отримує урізану картку, інакше вона зʼявиться в стрічці
+  // тільки після наступної індексації.
+  await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });
 
   if (searchMeta?.searchIdKey) {
     const { searchIdKey } = searchMeta;
@@ -3175,6 +3260,34 @@ const normalizeIndexedValues = value => Array.isArray(value)
       ? [value].filter(Boolean)
       : [];
 
+
+/**
+ * Оновлює урізану картку після запису анкети.
+ *
+ * Стоїть у самих писачах (`updateDataInRealtimeDB`, `updateDataInNewUsersRTDB`),
+ * а не у викликачів: правити анкету можна з кількох екранів, і хук на кожному з
+ * них рано чи пізно десь забули б поставити. Часткове оновлення (`update`) не
+ * містить усієї анкети, тож запис перечитується — одне читання на збереження,
+ * тоді як виграш це дає на кожному показі стрічки.
+ *
+ * Ніколи не кидає: проєкція — це прискорення читання, а не частина збереження.
+ */
+const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
+  const id = String(userId || '').trim();
+  if (!id) return;
+  try {
+    let nextData = payload;
+    if (condition === 'update') {
+      const snapshot = await get(ref2(database, `${collection}/${id}`));
+      nextData = snapshot.exists() ? snapshot.val() : null;
+    }
+    if (!nextData || typeof nextData !== 'object') return;
+    await syncMatchingCardIndex(id, { ...nextData, __sourceCollection: collection });
+  } catch (error) {
+    console.warn('[matchingCards] не вдалося оновити картку після збереження анкети', { userId: id, error });
+  }
+};
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
@@ -3186,6 +3299,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     } else {
       await set(userRefRTDB, cleanedUploadedInfo);
     }
+    await refreshMatchingCardAfterProfileWrite('users', userId, cleanedUploadedInfo, condition);
   } catch (error) {
     console.error(
       'Сталася помилка під час збереження даних в Realtime Database2:',
@@ -3292,6 +3406,8 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
         console.error('Error updating lastLogin2 in users:', e);
       }
     }
+
+    await refreshMatchingCardAfterProfileWrite('newUsers', userId, cleanedUploadedInfo, condition);
 
     clearEmptySearchQueryCache();
   } catch (error) {
@@ -3478,47 +3594,54 @@ export const getUserStorageAvatarPhotoFiles = async userId => {
   return { items: files, error: '' };
 };
 
-export const getAllUserPhotos = async (userId, collectionSource = null, { includeStorage = true } = {}) => {
+// Читає рівно `${collection}/${userId}/photos`, а не весь вузол анкети.
+// Стрічка викликає це для кожної картки, чию анкету щойно гідратувала повністю —
+// читання цілого вузла заради одного поля означало другу копію тієї самої анкети
+// в трафіку на кожну картку.
+const readPhotosField = async (collection, userId) => {
+  const snapshot = await get(ref2(database, `${collection}/${userId}/photos`));
+  return snapshot.exists() ? normalizePhotoValues(snapshot.val()) : null;
+};
+
+export const getAllUserPhotos = async (userId, collectionSource = null, { includeStorage = true, knownPhotos = null } = {}) => {
   if (!userId) return [];
 
   const storageUrls = includeStorage ? await getUserStorageAvatarPhotos(userId) : [];
 
   let databaseUrls;
-  if (!collectionSource && isLongFormatUserId(userId)) {
-    const [usersResult] = await Promise.allSettled([
-      get(ref2(database, `users/${userId}`)),
-    ]);
+  if (Array.isArray(knownPhotos)) {
+    // Викликач уже тримає анкету в руках (щойно гідратував картку) — ходити за
+    // тим самим полем у базу вдруге нема за чим.
+    databaseUrls = normalizePhotoValues(knownPhotos);
+  } else if (!collectionSource && isLongFormatUserId(userId)) {
+    const [usersResult] = await Promise.allSettled([readPhotosField('users', userId)]);
     if (usersResult.status === 'rejected') {
       console.error('Error loading user photos from users:', usersResult.reason);
       databaseUrls = [];
-    } else if (usersResult.value.exists()) {
-      databaseUrls = normalizePhotoValues(usersResult.value.val()?.photos);
+    } else if (usersResult.value !== null) {
+      databaseUrls = usersResult.value;
     } else {
       // Fallback: інваріант ("довгі userId живуть лише в users") міг ще не
       // встигнути виконатись для цього конкретного запису.
-      const [newUsersResult] = await Promise.allSettled([
-        get(ref2(database, `newUsers/${userId}`)),
-      ]);
+      const [newUsersResult] = await Promise.allSettled([readPhotosField('newUsers', userId)]);
       if (newUsersResult.status === 'rejected') {
         console.error('Error loading user photos from newUsers:', newUsersResult.reason);
         databaseUrls = [];
       } else {
-        const newUsersSnapshot = newUsersResult.value;
-        databaseUrls = newUsersSnapshot.exists() ? normalizePhotoValues(newUsersSnapshot.val()?.photos) : [];
+        databaseUrls = newUsersResult.value || [];
       }
     }
   } else {
     const sourceCollections = getPhotoSourceCollections(collectionSource);
     const snapshots = await Promise.allSettled(
-      sourceCollections.map(source => get(ref2(database, `${source}/${userId}`)))
+      sourceCollections.map(source => readPhotosField(source, userId))
     );
     databaseUrls = snapshots.flatMap((result, index) => {
       if (result.status === 'rejected') {
         console.error(`Error loading user photos from ${sourceCollections[index]}:`, result.reason);
         return [];
       }
-      const snapshot = result.value;
-      return snapshot.exists() ? normalizePhotoValues(snapshot.val()?.photos) : [];
+      return result.value || [];
     });
   }
 
@@ -3527,6 +3650,287 @@ export const getAllUserPhotos = async (userId, collectionSource = null, { includ
     .filter(Boolean);
 
   return Array.from(new Set(filterOutMedicationPhotos(urls, userId)));
+};
+
+// ---------------------------------------------------------------------------
+// matchingCards — урізана картка під стрічку матчингу
+//
+// Читач стрічки більше не тягне повні анкети: він бере цей вузол. Писач тримає
+// його в актуальному стані на кожному збереженні анкети адміном, а разова
+// індексація з AddNewProfile добудовує його для анкет, які ще жодного разу не
+// зберігали після появи цієї проєкції.
+// ---------------------------------------------------------------------------
+
+// Стеля вікна пагінації урізаних карток. Вище її не піднімають: якщо стільки
+// карток ділять одну дату `lastLogin2`, проблема в даних, а не в розмірі вікна.
+const MATCHING_CARDS_PAGE_WINDOW_CAP = 512;
+
+const buildMatchingCardRef = userId => ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`);
+
+const readMatchingCardRaw = async userId => {
+  const snapshot = await get(buildMatchingCardRef(userId));
+  return snapshot.exists() ? snapshot.val() : null;
+};
+
+/**
+ * Аватар для проєкції.
+ *
+ * Дешевий шлях — поле `photos` анкети. Дорогий — рекурсивний лістинг
+ * `avatar/{userId}` у Storage, і саме його стрічка робила на кожній картці при
+ * кожному відкритті сторінки. Тут він робиться щонайбільше раз на збереження
+ * анкети, а результат лягає в базу, тож переглядач не платить за нього ніколи.
+ */
+const resolveMatchingCardAvatar = async (userId, data, { includeStorage = true } = {}) => {
+  const fromProfile = resolveMatchingCardAvatarFromProfile(data);
+  if (fromProfile) return fromProfile;
+  if (!includeStorage) return '';
+  try {
+    const storageUrls = await getUserStorageAvatarPhotos(userId);
+    const usable = filterOutMedicationPhotos(storageUrls, userId).map(convertDriveLinkToImage).filter(Boolean);
+    return usable[0] || '';
+  } catch (error) {
+    // Аватар — не привід завалити збереження анкети.
+    console.warn('[matchingCards] не вдалося зчитати аватар зі Storage', { userId, error });
+    return '';
+  }
+};
+
+/**
+ * Приводить `matchingCards/{userId}` у відповідність до анкети.
+ *
+ * Викликається поруч із `syncUserSearchKeyIndex` — там, де анкету вже зберегли,
+ * і там, де вже відомі і попередні, і нові дані. Коли жодне поле стрічки не
+ * змінилось, запис не робиться взагалі: правка коментаря чи контакту не має
+ * коштувати ще одного запису в базу.
+ */
+export const syncMatchingCardIndex = async (userId, nextData = {}, options = {}) => {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+
+  const hasProfileData = Boolean(nextData) && typeof nextData === 'object' && Object.keys(nextData).length > 0;
+  if (!hasProfileData) return null;
+
+  try {
+    const existing = options.existingCard !== undefined ? options.existingCard : await readMatchingCardRaw(id);
+    const knownAvatar = typeof options.avatar === 'string'
+      ? options.avatar
+      : await resolveMatchingCardAvatar(id, nextData, { includeStorage: options.includeStorageAvatar !== false });
+
+    const projection = buildMatchingCardProjection(id, nextData, { avatar: knownAvatar });
+    if (!projection) return null;
+
+    if (existing && areMatchingCardProjectionsEqual(existing, projection)) return projection;
+
+    await set(buildMatchingCardRef(id), projection);
+    return projection;
+  } catch (error) {
+    console.error('[matchingCards] не вдалося оновити урізану картку', { userId: id, error });
+    return null;
+  }
+};
+
+/** Знімає картку зі стрічки разом з видаленням анкети. */
+export const removeMatchingCardIndex = async userId => {
+  const id = String(userId || '').trim();
+  if (!id) return;
+  try {
+    await remove(buildMatchingCardRef(id));
+  } catch (error) {
+    console.error('[matchingCards] не вдалося видалити урізану картку', { userId: id, error });
+  }
+};
+
+/**
+ * Сторінка стрічки — один запит.
+ *
+ * Замість `limitToLast` по колекції `users` з повними анкетами (і циклу
+ * подвоєння ліміту, який перечитував той самий зріз з нуля) тут звичайна
+ * пагінація по курсору: `endAt(курсор)` + `limitToLast(limit + 1)` по вузлу,
+ * де одна картка важить сотні байтів, а не кілобайти.
+ */
+export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collectionSource = null } = {}) => {
+  const safeLimit = Math.max(1, Number(limit) || 1);
+  const cardsRef = ref2(database, MATCHING_CARDS_ROOT);
+  const normalizedCursor = cursor && typeof cursor === 'object'
+    ? { date: String(cursor.date || ''), userId: String(cursor.userId || '') }
+    : { date: String(cursor || ''), userId: '' };
+
+  // +1 щоб дізнатись про наявність наступної сторінки, не роблячи другий запит.
+  const fetchLimit = safeLimit + 1;
+
+  // `lastLogin2` — це дата з точністю до дня, тож курсор регулярно потрапляє в
+  // групу карток з однаковою датою: `endAt` віддає їх усі, а відсікання за
+  // парою (дата, id) лишає нуль нових. Тоді вікно розширюється — але, на
+  // відміну від пагінації повних анкет, тут це дешево: картка важить сотні
+  // байтів, і стеля стоїть на порядок нижче.
+  let entries = [];
+  let windowSize = fetchLimit;
+
+  while (windowSize <= MATCHING_CARDS_PAGE_WINDOW_CAP) {
+    const cardsQuery = normalizedCursor.date
+      ? query(cardsRef, orderByChild(MATCHING_CARD_ORDER_FIELD), endAt(normalizedCursor.date), limitToLast(windowSize))
+      : query(cardsRef, orderByChild(MATCHING_CARD_ORDER_FIELD), limitToLast(windowSize));
+
+    // eslint-disable-next-line no-await-in-loop
+    const snapshot = await get(cardsQuery);
+    if (!snapshot.exists()) return { users: [], lastKey: null, hasMore: false };
+
+    const raw = snapshot.val() || {};
+    const snapshotSize = Object.keys(raw).length;
+
+    entries = Object.entries(raw).sort((a, b) => {
+      const byDate = String(b[1]?.[MATCHING_CARD_ORDER_FIELD] || '').localeCompare(String(a[1]?.[MATCHING_CARD_ORDER_FIELD] || ''));
+      return byDate !== 0 ? byDate : b[0].localeCompare(a[0]);
+    });
+
+    if (normalizedCursor.date) {
+      entries = entries.filter(([id, card]) => {
+        const date = String(card?.[MATCHING_CARD_ORDER_FIELD] || '');
+        if (date < normalizedCursor.date) return true;
+        if (date > normalizedCursor.date) return false;
+        return normalizedCursor.userId ? id.localeCompare(normalizedCursor.userId) < 0 : false;
+      });
+    }
+
+    if (collectionSource === 'users' || collectionSource === 'newUsers') {
+      entries = entries.filter(([, card]) => (card?.source || 'users') === collectionSource);
+    }
+
+    // Досить карток, або вузол вичерпано — розширювати вікно нема сенсу.
+    if (entries.length >= fetchLimit || snapshotSize < windowSize) break;
+    windowSize *= 2;
+  }
+
+  const hasMore = entries.length > safeLimit;
+  if (hasMore) entries = entries.slice(0, safeLimit);
+
+  const users = entries
+    .map(([id, card]) => expandMatchingCard(id, card))
+    .filter(Boolean);
+  const lastEntry = entries[entries.length - 1];
+
+  return {
+    users,
+    lastKey: lastEntry
+      ? { date: String(lastEntry[1]?.[MATCHING_CARD_ORDER_FIELD] || ''), userId: lastEntry[0] }
+      : null,
+    hasMore,
+  };
+};
+
+/**
+ * Урізані картки за списком id — шлях, яким ходить пошук по індексу
+ * `searchKey`: індекс називає id, а показати треба картку.
+ *
+ * Це так само один запит на id, але картка на два порядки менша за анкету і не
+ * тягне за собою ні другого читання заради `photos`, ні лістингу Storage.
+ * Id, для якого проєкції ще немає (або вона старої версії), повертається в
+ * `missingIds` — викликач догідратує його повною анкетою.
+ */
+export const fetchMatchingCardsByIds = async (ids = []) => {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
+  if (!uniqueIds.length) return { cards: {}, missingIds: [] };
+
+  const cards = {};
+  const missingIds = [];
+  await Promise.all(uniqueIds.map(async id => {
+    try {
+      const raw = await readMatchingCardRaw(id);
+      const expanded = isCurrentMatchingCardSchema(raw) ? expandMatchingCard(id, raw) : null;
+      if (expanded) cards[id] = expanded;
+      else missingIds.push(id);
+    } catch (error) {
+      console.warn('[matchingCards] не вдалося прочитати урізану картку', { userId: id, error });
+      missingIds.push(id);
+    }
+  }));
+
+  return { cards, missingIds };
+};
+
+const MATCHING_CARDS_BACKFILL_BATCH_SIZE = 200;
+const MATCHING_CARDS_AVATAR_CONCURRENCY = 8;
+
+const mapWithConcurrency = async (items, limit, worker) => {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = new Array(Math.min(limit, items.length)).fill(null).map(async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      // eslint-disable-next-line no-await-in-loop
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+};
+
+const buildBackfillProjection = async (collection, rawProfile, userId, includeStorageAvatars) => {
+  const data = { ...(rawProfile || {}), __sourceCollection: collection };
+  let avatar = resolveMatchingCardAvatarFromProfile(data);
+  let avatarFromStorage = false;
+  if (!avatar && includeStorageAvatars) {
+    avatar = await resolveMatchingCardAvatar(userId, data, { includeStorage: true });
+    avatarFromStorage = Boolean(avatar);
+  }
+  return { userId, projection: buildMatchingCardProjection(userId, data, { avatar }), avatarFromStorage };
+};
+
+/**
+ * Разова побудова проєкцій для цілої колекції.
+ *
+ * Колекція читається один раз (через той самий кеш, що й решта індексацій), а
+ * записи йдуть пачками через мультилокаційний `update` — тобто ~1 запит на 200
+ * карток замість запиту на картку.
+ *
+ * `includeStorageAvatars` вмикає найдорожчу частину: для анкет без поля `photos`
+ * доводиться лістити Storage. Це саме та робота, яку раніше робив кожен
+ * переглядач при кожному завантаженні стрічки; тут вона робиться один раз.
+ */
+export const createMatchingCardsIndexInCollection = async (collection, onProgress, options = {}) => {
+  const includeStorageAvatars = options.includeStorageAvatars !== false;
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  if (!usersData) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+
+  const userIds = Object.keys(usersData).filter(Boolean);
+  const total = userIds.length;
+  if (!total) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+
+  let written = 0;
+  let skipped = 0;
+  let withStorageAvatar = 0;
+  let processed = 0;
+
+  for (let start = 0; start < userIds.length; start += MATCHING_CARDS_BACKFILL_BATCH_SIZE) {
+    const batchIds = userIds.slice(start, start + MATCHING_CARDS_BACKFILL_BATCH_SIZE);
+
+    // eslint-disable-next-line no-await-in-loop
+    const projections = await mapWithConcurrency(batchIds, MATCHING_CARDS_AVATAR_CONCURRENCY, id =>
+      buildBackfillProjection(collection, usersData[id], id, includeStorageAvatars));
+
+    const usable = projections.filter(entry => entry?.userId && entry.projection);
+    withStorageAvatar += projections.filter(entry => entry?.avatarFromStorage).length;
+    skipped += projections.filter(entry => entry?.userId && !entry.projection).length;
+    written += usable.length;
+
+    const chunkPayload = Object.fromEntries(
+      usable.map(entry => [`${MATCHING_CARDS_ROOT}/${entry.userId}`, entry.projection]),
+    );
+
+    if (Object.keys(chunkPayload).length) {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database), chunkPayload);
+    }
+
+    processed += batchIds.length;
+    if (typeof onProgress === 'function') {
+      onProgress(Math.floor((processed / total) * 100), { collection, processed, total });
+    }
+  }
+
+  return { collection, total, written, skipped, withStorageAvatar };
 };
 
 export const getMedicationPhotos = async userId => {
@@ -7125,22 +7529,28 @@ export const filterMain = (
     }
 
     if (hasContactFilter) {
-      const contactMap = {
-        vk: hasContactValue(value.vk),
-        instagram: hasContactValue(value.instagram),
-        ameblo: hasContactValue(value.ameblo),
-        facebook: hasContactValue(value.facebook),
-        phone: hasContactValue(value.phone),
-        telegram: hasTelegramNonUk(value.telegram),
-        telegram2: isTelegramUkOnly(value.telegram),
-        tiktok: hasContactValue(value.tiktok),
-        linkedin: hasContactValue(value.linkedin),
-        youtube: hasContactValue(value.youtube),
-        email: hasContactValue(value.email),
-        twitter: hasContactValue(value.twitter),
-        line: hasContactValue(value.line),
-        otherLink: hasContactValue(value.otherLink),
-      };
+      // Проєкція `matchingCards` носить перелік наявних контактів, а не самі
+      // значення — контакти в стрічці не показуються, і класти їх у публічний
+      // вузол не можна. Коли перелік є, він і є відповіддю.
+      const precomputedContactKeys = Array.isArray(value.__contactKeys) ? value.__contactKeys : null;
+      const contactMap = precomputedContactKeys
+        ? Object.fromEntries(precomputedContactKeys.map(contactKey => [contactKey, true]))
+        : {
+          vk: hasContactValue(value.vk),
+          instagram: hasContactValue(value.instagram),
+          ameblo: hasContactValue(value.ameblo),
+          facebook: hasContactValue(value.facebook),
+          phone: hasContactValue(value.phone),
+          telegram: hasTelegramNonUk(value.telegram),
+          telegram2: isTelegramUkOnly(value.telegram),
+          tiktok: hasContactValue(value.tiktok),
+          linkedin: hasContactValue(value.linkedin),
+          youtube: hasContactValue(value.youtube),
+          email: hasContactValue(value.email),
+          twitter: hasContactValue(value.twitter),
+          line: hasContactValue(value.line),
+          otherLink: hasContactValue(value.otherLink),
+        };
       if (!addCheck('contact', allowedContacts.some(contactKey => contactMap[contactKey]), contactMap, allowedContacts) && !shouldDebugUser) return false;
     }
 
@@ -7929,6 +8339,9 @@ export const removeCardAndSearchId = async userId => {
     }
 
     await syncUserSearchKeyIndex(userId, userData, {});
+    // Картка йде зі стрічки разом з анкетою, інакше проєкція лишилась би
+    // висіти як привид, на який нічого не вказує.
+    await removeMatchingCardIndex(userId);
 
     // console.warn(`Видаляємо картку користувача з newUsers: ${userId}`);
     // Видаляємо картку користувача з newUsers
