@@ -4,14 +4,27 @@ import { normalizeLastAction } from './normalizeLastAction';
 export const CARDS_KEY = 'cards';
 export const QUERIES_KEY = 'queries';
 export const INDEX_QUERIES_KEY = 'matchingIndexQueries';
+// Проєкції стрічки живуть окремо від `cards`. Спільний кеш карток тримає повні
+// анкети, і покласти туди проєкцію означало б підмінити анкету десятком полів
+// для всіх інших сторінок — рівно те, від чого захищає `shouldCacheMatchingCard`.
+// Тут же лежить саме те, що читає стрічка, і ніхто інший сюди не заглядає.
+export const MATCHING_SUMMARY_CARDS_KEY = 'matchingSummaryCards';
 export const TTL_MS = CACHE_TTL_MS;
 export const MATCHING_INDEX_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
+export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 
 export const CARDS_CACHE_VERSION = 2;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 export const MATCHING_INDEX_CACHE_VERSION = 1;
-const MATCHING_LOCAL_STORAGE_KEYS = new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]);
+export const MATCHING_SUMMARY_CARDS_CACHE_VERSION = 1;
+export const MATCHING_SUMMARY_CARDS_MAX = 2000;
+const MATCHING_LOCAL_STORAGE_KEYS = new Set([
+  CARDS_KEY,
+  QUERIES_KEY,
+  INDEX_QUERIES_KEY,
+  MATCHING_SUMMARY_CARDS_KEY,
+]);
 const MATCHING_LOCAL_STORAGE_PREFIXES = ['searchKey:', 'searchHistory:', 'cardsCache:'];
 const MATCHING_LOCAL_STORAGE_SUBSTRINGS = [
   'matchingindex',
@@ -64,7 +77,7 @@ const logMatchingCacheDebug = (message, payload = {}) => {
 
 export const getMatchingLocalStorageCacheStats = () => {
   if (typeof localStorage === 'undefined') return [];
-  const keys = [CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]
+  const keys = [...MATCHING_LOCAL_STORAGE_KEYS]
     .concat(Object.keys(localStorage).filter(key => key.toLowerCase().includes('matching')));
   return [...new Set(keys)].map(key => {
     const value = localStorage.getItem(key) || '';
@@ -108,7 +121,7 @@ export const resetMatchingLocalStorageCache = (reason = 'manual') => {
   const dynamicKeysToReset = typeof localStorage === 'undefined'
     ? []
     : Object.keys(localStorage).filter(isMatchingLocalStorageCacheKey);
-  const keysToReset = [...new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY, ...dynamicKeysToReset])];
+  const keysToReset = [...new Set([...MATCHING_LOCAL_STORAGE_KEYS, ...dynamicKeysToReset])];
   logMatchingCacheDebug('clearMatchingCache started', { reason, keys: keysToReset });
   const rows = getMatchingLocalStorageCacheStats();
   const cancelledPendingWritesForKeys = [];
@@ -545,6 +558,98 @@ export const setIndexIdsForQuery = (queryKey, ids, options = {}) => {
   queries[key] = { ids: nextIds, cachedAt: now, lastAction: now, complete: isComplete, meta: meta && typeof meta === 'object' ? meta : null, cacheVersion };
   saveIndexQueries(queries);
   logMatchingCacheDebug('index ids cache save', { key, idsCount: nextIds.length, complete: isComplete, truncated });
+};
+
+/**
+ * Кеш проєкцій стрічки (`matchingCards`).
+ *
+ * Індекс називає id, а показати треба картку — і раніше кожен показ id означав
+ * окремий `get` на `matchingCards/{id}`. Список id при цьому вже мав свій кеш,
+ * тож перезавантаження сторінки повторно тягнуло з бекенду рівно ті самі
+ * картки, які щойно були на екрані.
+ *
+ * TTL тут короткий (той самий, що й у кеша списку кандидатів): проєкція — це
+ * фото, імʼя, вік і рядок метрик, і показати їх на десять хвилин старішими
+ * дешевше, ніж перечитати всю сторінку. Все, що старше, читається наново.
+ */
+const loadMatchingSummaryCards = () => {
+  const parsed = loadJson(MATCHING_SUMMARY_CARDS_KEY);
+  if (parsed?.__cacheVersion !== MATCHING_SUMMARY_CARDS_CACHE_VERSION) {
+    if (parsed && Object.keys(parsed).length > 0) {
+      resetMatchingStorageKey(MATCHING_SUMMARY_CARDS_KEY);
+    }
+    return {};
+  }
+  return parsed.items && typeof parsed.items === 'object' ? parsed.items : {};
+};
+
+/**
+ * Записи протухають при читанні, але читають лише те, що зараз на екрані, — тож
+ * без стелі сховище росло б рівно на довжину скролу. Обрізаємо найстаріші:
+ * стрічка йде згори вниз, тож саме вони і не знадобляться.
+ */
+const pruneMatchingSummaryCards = items => {
+  const ids = Object.keys(items);
+  if (ids.length <= MATCHING_SUMMARY_CARDS_MAX) return items;
+
+  const keptIds = ids
+    .sort((left, right) => getEntryCacheTimestamp(items[right]) - getEntryCacheTimestamp(items[left]))
+    .slice(0, MATCHING_SUMMARY_CARDS_MAX);
+  return keptIds.reduce((acc, id) => {
+    acc[id] = items[id];
+    return acc;
+  }, {});
+};
+
+const saveMatchingSummaryCards = items => saveJson(
+  MATCHING_SUMMARY_CARDS_KEY,
+  { __cacheVersion: MATCHING_SUMMARY_CARDS_CACHE_VERSION, cachedAt: Date.now(), items },
+  { debounceMs: 300 },
+);
+
+export const getCachedMatchingSummaryCards = (ids, options = {}) => {
+  const { ttlMs = MATCHING_SUMMARY_CARD_TTL_MS } = options || {};
+  const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String))];
+  if (!uniqueIds.length) return { cards: {}, missingIds: [] };
+
+  const stored = loadMatchingSummaryCards();
+  const now = Date.now();
+  const cards = {};
+  const missingIds = [];
+  let expired = false;
+
+  uniqueIds.forEach(id => {
+    const entry = stored[id];
+    const cachedAt = getEntryCacheTimestamp(entry);
+    if (!entry?.card || !cachedAt) {
+      missingIds.push(id);
+      return;
+    }
+    if (now - cachedAt > ttlMs) {
+      delete stored[id];
+      expired = true;
+      missingIds.push(id);
+      return;
+    }
+    cards[id] = entry.card;
+  });
+
+  if (expired) saveMatchingSummaryCards(stored);
+  incrementMatchingLoadStat('matchingSummaryCardCacheHits', Object.keys(cards).length);
+  incrementMatchingLoadStat('matchingSummaryCardCacheMisses', missingIds.length);
+  return { cards, missingIds };
+};
+
+export const setCachedMatchingSummaryCards = cardsById => {
+  const entries = Object.entries(cardsById || {}).filter(([id, card]) => id && card);
+  if (!entries.length) return;
+
+  const stored = loadMatchingSummaryCards();
+  const now = Date.now();
+  entries.forEach(([id, card]) => {
+    stored[id] = { card, cachedAt: now };
+  });
+  saveMatchingSummaryCards(pruneMatchingSummaryCards(stored));
 };
 
 export const clearMatchingCache = (reason = 'manual') => resetMatchingLocalStorageCache(reason);

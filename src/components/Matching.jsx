@@ -69,6 +69,7 @@ import {
   Chip,
   ChipCount,
   ChipRemove,
+  ChipsGroup,
   ChipsRow,
   FeedList,
   FeedNotice,
@@ -134,7 +135,17 @@ import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import { buildMatchingFilterChips } from './SearchFilters';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
-import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard, clearMatchingCache } from '../utils/cardIndex';
+import {
+  clearMatchingCache,
+  getCachedMatchingSummaryCards,
+  getCard,
+  getIdsByQuery,
+  incrementMatchingLoadStat,
+  logMatchingLocalStorageCacheStats,
+  normalizeQueryKey,
+  setCachedMatchingSummaryCards,
+  setIdsForQuery,
+} from '../utils/cardIndex';
 import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
@@ -142,6 +153,12 @@ import {
 import { findCachedCardsByText, getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCachedPhotoUrlsMap, setCachedPhotoUrls } from '../utils/photoUrlCache';
 import { isMatchingSummaryCard } from '../utils/matchingCardIndex';
+import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
+import {
+  MATCHING_THROTTLED_LOAD_BATCH,
+  MATCHING_THROTTLED_LOAD_DELAY_MS,
+} from '../utils/matchingFeedThrottle';
+import FeedLoadCountdown from './FeedLoadCountdown';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
@@ -254,10 +271,8 @@ export {
 } from 'utils/matchingLoadError';
 
 
-const MATCHING_SEARCH_ID_PREFIXES = ['phone'];
 const MATCHING_SEARCH_BAR_ENABLED_KEYS = {
   searchId: true,
-  phone: true,
   equalToAllCards: false,
   searchKey: false,
   partialUserId: false,
@@ -271,13 +286,15 @@ const getMatchingSearchResultCount = result => {
   return 0;
 };
 
+// Підпис статусу називає лише сам запит. Ключ звідси прибрано свідомо: пошук
+// пробує всі префікси індексу одразу, тож назвати один із них («phone: Ольга»)
+// означало б збрехати про те, де саме шукали.
 const formatMatchingSearchKeyLabel = searchKey => {
   const entries = searchKey && typeof searchKey === 'object' ? Object.entries(searchKey) : [];
   if (entries.length === 0) return '';
 
   const [[key, value]] = entries;
-  const normalizedValue = String(value ?? '').trim();
-  return normalizedValue ? `${key}: ${normalizedValue}` : key;
+  return String(value ?? '').trim() || key;
 };
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
@@ -1318,7 +1335,8 @@ const LOAD_MORE = 5;
 const FEED_PHOTO_HYDRATION_LIMIT = 24;
 // A stable identity so a row without public comments doesn't re-render on it.
 const EMPTY_PUBLIC_COMMENTS = [];
-// Spec §3: the chips row never scrolls sideways, so it shows at most three.
+// Скільки чіпів фільтрів ряд показує згорнутим. Решта — за «+N», яке розгортає
+// ряд на місці; ряд не скролиться вбік, він переноситься.
 const MAX_FILTER_CHIPS = 3;
 // Spec §2: the screen switches state a beat after typing stops, not on Enter.
 const MATCHING_SEARCH_DEBOUNCE_MS = 250;
@@ -2831,17 +2849,36 @@ const Matching = () => {
     const uniqueIds = [...new Set((ids || []).filter(Boolean))];
     if (!uniqueIds.length) return {};
 
+    // Список id для цієї сторінки вже міг прийти з кеша — тоді читати з бекенду
+    // ті самі проєкції ще раз немає за чим. Тому спершу локальний кеш проєкцій,
+    // а по мережу йдуть тільки ті id, яких у ньому немає або чий запис протух.
+    const isBackendOnlyMode = matchingDataSourceMode === 'backend';
+    const cachedSummaries = isBackendOnlyMode
+      ? { cards: {}, missingIds: uniqueIds }
+      : getCachedMatchingSummaryCards(uniqueIds);
+    if (isBackendOnlyMode) {
+      writeMatchingDebugLog('matchingBackendOnlyModeUsed', {
+        mode: matchingDataSourceMode,
+        collectionSource,
+        stage: 'summary-card-cache-read-skipped',
+      });
+    }
+    const idsToFetch = cachedSummaries.missingIds;
+    if (!idsToFetch.length) return { ...cachedSummaries.cards };
+
     try {
-      const { cards, missingIds } = await fetchMatchingCardsByIds(uniqueIds);
+      const { cards, missingIds } = await fetchMatchingCardsByIds(idsToFetch);
       incrementMatchingLoadStat('matchingCardHits', Object.keys(cards).length);
-      if (!missingIds.length) return cards;
+      setCachedMatchingSummaryCards(cards);
+      if (!missingIds.length) return { ...cachedSummaries.cards, ...cards };
       const hydrated = await fetchUsersByIds(missingIds, { collectionSource });
-      return { ...cards, ...(hydrated || {}) };
+      return { ...cachedSummaries.cards, ...cards, ...(hydrated || {}) };
     } catch (error) {
       console.warn('[Matching][matchingCards] не вдалося прочитати проєкції, читаємо анкети', error);
-      return fetchUsersByIds(uniqueIds, { collectionSource });
+      const hydrated = await fetchUsersByIds(idsToFetch, { collectionSource });
+      return { ...cachedSummaries.cards, ...(hydrated || {}) };
     }
-  }, [collectionSource]);
+  }, [collectionSource, matchingDataSourceMode]);
 
   const fetchChunk = React.useCallback(
     async (
@@ -4252,10 +4289,12 @@ const Matching = () => {
       if (ids.length > 0) {
         const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
         if (cards.length > 0) {
-          if (key === 'name' || key === 'names') {
-            return Object.fromEntries(cards.map(c => [c.userId, c]));
-          }
-          return cards[0];
+          // Та сама форма, що й у `searchUsersOnly`: один збіг — картка, кілька —
+          // мапа. Раніше все, крім `name`, згорталось у `cards[0]`, і кеш віддавав
+          // одну анкету там, де запит знайшов кілька — а по імені в індексі
+          // `searchId` кілька збігів це норма, а не виняток.
+          if (cards.length === 1 && key !== 'name' && key !== 'names') return cards[0];
+          return Object.fromEntries(cards.map(c => [c.userId, c]));
         }
       }
     }
@@ -5840,7 +5879,7 @@ const Matching = () => {
     });
   }, [loadMore]);
 
-  const triggerEndOfDeckLoad = React.useCallback((reason = 'navigate-forward') => {
+  const triggerEndOfDeckLoad = React.useCallback((reason = 'navigate-forward', { limit = MATCHING_REFILL_LIMIT } = {}) => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (renderedCardsLength < 1) return;
 
@@ -5876,10 +5915,14 @@ const Matching = () => {
       lastKey,
     });
 
+    // Ціль на дві картки вище за поточну довжину — це те, що вмикає
+    // `forceRefillBecauseVisibleBufferLow` у `runAutoLoadMore`: без нього
+    // черговий цикл відліку впирався б у guard за однаковим підписом.
+    const visibleBuffer = Math.max(1, Math.min(MATCHING_VISIBLE_BUFFER, Number(limit) || MATCHING_VISIBLE_BUFFER));
     runAutoLoadMore(`end-of-deck:${triggerSignature}`, {
       currentVisibleCount: renderedCardsLength,
-      targetVisibleCount: renderedCardsLength + MATCHING_VISIBLE_BUFFER,
-      limit: MATCHING_REFILL_LIMIT,
+      targetVisibleCount: renderedCardsLength + visibleBuffer,
+      limit,
     });
   }, [
     activeProfileIndex,
@@ -6344,12 +6387,21 @@ const Matching = () => {
     },
   ], [filteredUsers.length, navigate, searchQuery, similarUsers.length]);
 
-  // Spec §3: at most three filter chips, then a "+N" that opens the drawer -
-  // the row never scrolls sideways, so anything past three collapses instead.
+  // Згорнутий ряд показує три чіпи, решта ховається за «+N». Але «+N» тепер
+  // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
+  // фільтри», і відповідь на це — самі підписи, а не форма, де їх треба шукати
+  // заново. Розгорнутий ряд переноситься на кілька рядків і нічого не обрізає.
   const filterChips = useMemo(() => buildMatchingFilterChips(filters), [filters]);
-  const visibleFilterChips = filterChips.slice(0, MAX_FILTER_CHIPS);
+  const [showAllFilterChips, setShowAllFilterChips] = useState(false);
+  const visibleFilterChips = showAllFilterChips ? filterChips : filterChips.slice(0, MAX_FILTER_CHIPS);
   const hiddenFilterChipCount = filterChips.length - visibleFilterChips.length;
   const emptyFilterGroup = filterChips.find(chip => chip.danger) || null;
+
+  // Розгорнутий ряд, з якого зняли фільтри, не має лишатись розгорнутим назавжди.
+  useEffect(() => {
+    if (filterChips.length > MAX_FILTER_CHIPS) return;
+    setShowAllFilterChips(false);
+  }, [filterChips.length]);
 
   const resetFilterGroup = React.useCallback(filterName => {
     setFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
@@ -6526,16 +6578,55 @@ const Matching = () => {
   const feedSentinelRef = useRef(null);
   const endOfDeckLoadRef = useRef(triggerEndOfDeckLoad);
   useEffect(() => { endOfDeckLoadRef.current = triggerEndOfDeckLoad; }, [triggerEndOfDeckLoad]);
+
+  // Не-адмін гортає стрічку з паузою: замість того, щоб підвантажити наступну
+  // сторінку одразу, сентинел лише вмикає відлік, і поки той іде — до бекенду не
+  // йде жодного запиту. Це і стеля на трафік (дві картки на десять секунд), і
+  // видима обіцянка: читач бачить, що картки будуть, і коли саме.
+  //
+  // Адмінові стрічка — робочий інструмент, і він впирається в її кінець щодня,
+  // тож для нього все лишається як було: сентинел вантажить одразу.
+  const isThrottledFeedPaging = !isAdmin;
+  const [feedEndVisible, setFeedEndVisible] = useState(false);
   useEffect(() => {
     const node = feedSentinelRef.current;
-    if (!node || detailIndex !== null || !hasMore || loading) return undefined;
+    if (!node || detailIndex !== null || !hasMore) {
+      setFeedEndVisible(false);
+      return undefined;
+    }
+    // Адмінський шлях знімає спостерігача на час завантаження; шлях з відліком
+    // тримає його завжди, бо відлік має знати про видимість і поки триває
+    // завантаження — інакше після кожної порції він би не перезапустився.
+    if (!isThrottledFeedPaging && loading) return undefined;
     const observer = new IntersectionObserver(entries => {
-      if (!entries.some(entry => entry.isIntersecting)) return;
+      const isVisible = entries.some(entry => entry.isIntersecting);
+      if (isThrottledFeedPaging) {
+        setFeedEndVisible(isVisible);
+        return;
+      }
+      if (!isVisible) return;
       endOfDeckLoadRef.current('feed-sentinel');
     }, { rootMargin: '400px' });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [detailIndex, filteredUsers.length, hasMore, loading]);
+  }, [detailIndex, filteredUsers.length, hasMore, isThrottledFeedPaging, loading]);
+
+  // Відлік прив'язаний до видимості кінця списку. Інакше залишена відкритою
+  // вкладка тягла б по дві картки щодесять секунд нескінченно — рівно те
+  // навантаження, від якого ця пауза й захищає.
+  const showFeedLoadCountdown = Boolean(
+    isThrottledFeedPaging &&
+    feedEndVisible &&
+    hasMore &&
+    !loading &&
+    !loadError &&
+    detailIndex === null &&
+    renderedCardsLength > 0
+  );
+
+  const handleThrottledFeedLoad = React.useCallback(() => {
+    endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
+  }, []);
 
   // The rows carry their public comments inline, so the feed loads them for the
   // page it renders and never asks twice for the same profile.
@@ -6878,45 +6969,58 @@ const Matching = () => {
             </MatchingSearchStatusMessage>
           )}
           <ChipsRow role="group" aria-label={isSearching ? 'Результати пошуку' : 'Колекції matching'}>
-            {(isSearching ? searchChips : (hasFullProfileAccess ? collectionChips : [])).map(chip => {
-              const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
-              return (
+            <ChipsGroup>
+              {(isSearching ? searchChips : (hasFullProfileAccess ? collectionChips : [])).map(chip => {
+                const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
+                return (
+                  <Chip
+                    key={chip.key}
+                    type="button"
+                    $active={active}
+                    aria-pressed={active}
+                    disabled={!isSearching && !ownerId}
+                    onClick={chip.onSelect}
+                    title={chip.title}
+                  >
+                    <span>{chip.label}</span>
+                    {chip.count !== undefined && <ChipCount>{chip.count}</ChipCount>}
+                  </Chip>
+                );
+              })}
+              {visibleFilterChips.map(chip => (
                 <Chip
-                  key={chip.key}
+                  key={chip.filterName}
                   type="button"
-                  $active={active}
-                  aria-pressed={active}
-                  disabled={!isSearching && !ownerId}
-                  onClick={chip.onSelect}
-                  title={chip.title}
+                  $active
+                  $danger={chip.danger}
+                  title={`${chip.text} — повернути групу в дефолт`}
+                  onClick={() => resetFilterGroup(chip.filterName)}
                 >
-                  <span>{chip.label}</span>
-                  {chip.count !== undefined && <ChipCount>{chip.count}</ChipCount>}
+                  <span>{chip.text}</span>
+                  <ChipRemove aria-hidden="true">✕</ChipRemove>
                 </Chip>
-              );
-            })}
-            {visibleFilterChips.map(chip => (
-              <Chip
-                key={chip.filterName}
-                type="button"
-                $active
-                $danger={chip.danger}
-                title={`${chip.text} — повернути групу в дефолт`}
-                onClick={() => resetFilterGroup(chip.filterName)}
-              >
-                <span>{chip.text}</span>
-                <ChipRemove aria-hidden="true">✕</ChipRemove>
-              </Chip>
-            ))}
-            {hiddenFilterChipCount > 0 && (
-              <Chip
-                type="button"
-                title="Показати всі активні фільтри"
-                onClick={() => setShowFilters(true)}
-              >
-                <span>+{hiddenFilterChipCount}</span>
-              </Chip>
-            )}
+              ))}
+              {hiddenFilterChipCount > 0 && (
+                <Chip
+                  type="button"
+                  aria-expanded={false}
+                  title={`Показати ще ${hiddenFilterChipCount} активних фільтрів`}
+                  onClick={() => setShowAllFilterChips(true)}
+                >
+                  <span>+{hiddenFilterChipCount}</span>
+                </Chip>
+              )}
+              {showAllFilterChips && filterChips.length > MAX_FILTER_CHIPS && (
+                <Chip
+                  type="button"
+                  aria-expanded
+                  title="Згорнути список активних фільтрів"
+                  onClick={() => setShowAllFilterChips(false)}
+                >
+                  <span>Згорнути</span>
+                </Chip>
+              )}
+            </ChipsGroup>
             <LayoutToggleButton
               type="button"
               onClick={toggleViewLayout}
@@ -7013,6 +7117,14 @@ const Matching = () => {
                     Спробувати ще раз
                   </ActionButton>
                 </FeedNotice>
+              )}
+              {showFeedLoadCountdown && (
+                <FeedLoadCountdown
+                  durationMs={MATCHING_THROTTLED_LOAD_DELAY_MS}
+                  batchSize={MATCHING_THROTTLED_LOAD_BATCH}
+                  cycleKey={renderedCardsLength}
+                  onElapsed={handleThrottledFeedLoad}
+                />
               )}
               <FeedSentinel ref={feedSentinelRef} />
             </FeedWrap>

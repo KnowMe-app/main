@@ -1629,12 +1629,11 @@ export const SearchClearButton = styled.button`
 
 export const ChipsRow = styled.div`
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   width: 100%;
   box-sizing: border-box;
   padding: 0 12px 8px;
-  overflow: hidden;
 
   @media (max-width: 768px) {
     padding-left: 8px;
@@ -1642,11 +1641,27 @@ export const ChipsRow = styled.div`
   }
 `;
 
+/* Чіпи переносяться на новий рядок, а не тиснуться в один.
+ *
+ * Раніше ряд був `overflow: hidden` з `flex: 0 1 auto` на чіпах, тож кожен
+ * зайвий чіп забирав ширину в усіх інших: при кількох активних фільтрах ряд
+ * перетворювався на «З… 0 · Ство… · С. 2» — підписи, за якими не видно, який це
+ * фільтр і як його зняти. Перенос коштує рядок висоти й лишає підпис цілим. */
+export const ChipsGroup = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+`;
+
 export const Chip = styled.button`
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  max-width: 100%;
   min-width: 0;
   height: 26px;
   padding: 0 9px;
@@ -1705,7 +1720,6 @@ export const ChipRemove = styled.span`
 // we would switch *into*, so the grid icon means "go to gallery".
 export const LayoutToggleButton = styled.button`
   flex: 0 0 auto;
-  margin-left: auto;
   width: 26px;
   height: 24px;
   display: grid;
@@ -1845,6 +1859,42 @@ export const GalleryFacts = styled.div`
 
 export const FeedSentinel = styled.div`
   height: 1px;
+`;
+
+/* Пауза між сторінками стрічки — видима, а не мовчазна.
+ *
+ * Читач має бачити не «список скінчився», а «наступні картки будуть, і ось
+ * коли»: звідси відлік з мілісекундами замість спінера чи порожнечі. */
+export const FeedCountdown = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 12px 22px;
+  text-align: center;
+  color: var(--matching-muted-text);
+  font-size: 12px;
+  line-height: 1.4;
+`;
+
+export const FeedCountdownDial = styled.div`
+  display: grid;
+  place-items: center;
+  min-width: 92px;
+  padding: 7px 14px;
+  border: 1px solid var(--matching-chip-border);
+  border-radius: 999px;
+  background: var(--matching-chip-bg);
+  color: var(--matching-chip-text);
+  /* Табличні цифри: без них останні розряди смикають ширину щокадру. */
+  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.1;
+`;
+
+export const FeedCountdownHint = styled.div`
+  max-width: 280px;
 `;
 
 export const FeedNotice = styled.div`
