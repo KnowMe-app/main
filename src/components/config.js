@@ -3282,7 +3282,10 @@ const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload,
       nextData = snapshot.exists() ? snapshot.val() : null;
     }
     if (!nextData || typeof nextData !== 'object') return;
-    await syncMatchingCardIndex(id, { ...nextData, __sourceCollection: collection });
+    const projection = await syncMatchingCardIndex(id, { ...nextData, __sourceCollection: collection });
+    if (!projection) {
+      await set(ref2(database, `matchingCardsMeta/${collection}/complete`), false);
+    }
   } catch (error) {
     console.warn('[matchingCards] не вдалося оновити картку після збереження анкети', { userId: id, error });
   }
@@ -3751,6 +3754,15 @@ export const removeMatchingCardIndex = async userId => {
 export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collectionSource = null } = {}) => {
   const safeLimit = Math.max(1, Number(limit) || 1);
   const cardsRef = ref2(database, MATCHING_CARDS_ROOT);
+  const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
+  const orderField = source ? 'sourceLastLogin2' : MATCHING_CARD_ORDER_FIELD;
+  const today = new Date().toISOString().split('T')[0];
+  const upperBound = source ? `${source}:${today}` : today;
+  let indexComplete = true;
+  if (source) {
+    const completenessSnapshot = await get(ref2(database, `matchingCardsMeta/${source}/complete`));
+    indexComplete = completenessSnapshot.val() === true;
+  }
   const normalizedCursor = cursor && typeof cursor === 'object'
     ? { date: String(cursor.date || ''), userId: String(cursor.userId || '') }
     : { date: String(cursor || ''), userId: '' };
@@ -3767,9 +3779,10 @@ export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collec
   let windowSize = fetchLimit;
 
   while (windowSize <= MATCHING_CARDS_PAGE_WINDOW_CAP) {
-    const cardsQuery = normalizedCursor.date
-      ? query(cardsRef, orderByChild(MATCHING_CARD_ORDER_FIELD), endAt(normalizedCursor.date), limitToLast(windowSize))
-      : query(cardsRef, orderByChild(MATCHING_CARD_ORDER_FIELD), limitToLast(windowSize));
+    const cursorBound = normalizedCursor.date
+      ? (source ? `${source}:${normalizedCursor.date}` : normalizedCursor.date)
+      : upperBound;
+    const cardsQuery = query(cardsRef, orderByChild(orderField), endAt(cursorBound), limitToLast(windowSize));
 
     // eslint-disable-next-line no-await-in-loop
     const snapshot = await get(cardsQuery);
@@ -3792,10 +3805,6 @@ export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collec
       });
     }
 
-    if (collectionSource === 'users' || collectionSource === 'newUsers') {
-      entries = entries.filter(([, card]) => (card?.source || 'users') === collectionSource);
-    }
-
     // Досить карток, або вузол вичерпано — розширювати вікно нема сенсу.
     if (entries.length >= fetchLimit || snapshotSize < windowSize) break;
     windowSize *= 2;
@@ -3815,6 +3824,7 @@ export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collec
       ? { date: String(lastEntry[1]?.[MATCHING_CARD_ORDER_FIELD] || ''), userId: lastEntry[0] }
       : null,
     hasMore,
+    indexComplete,
   };
 };
 
@@ -3894,9 +3904,25 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
   const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
 
+  // A rebuild is authoritative for this collection: remove projections whose
+  // canonical profile no longer exists, then publish completeness atomically
+  // with the final batch so readers never trust a half-built index.
+  const cardsSnapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
+  const stalePayload = {};
+  Object.entries(cardsSnapshot.val() || {}).forEach(([id, card]) => {
+    if ((card?.source || 'users') === collection && !usersData[id]) {
+      stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
+    }
+  });
+  stalePayload[`matchingCardsMeta/${collection}/complete`] = null;
+  await update(ref2(database), stalePayload);
+
   const userIds = Object.keys(usersData).filter(Boolean);
   const total = userIds.length;
-  if (!total) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+  if (!total) {
+    await set(ref2(database, `matchingCardsMeta/${collection}/complete`), true);
+    return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+  }
 
   let written = 0;
   let skipped = 0;
@@ -3929,6 +3955,8 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
       onProgress(Math.floor((processed / total) * 100), { collection, processed, total });
     }
   }
+
+  await set(ref2(database, `matchingCardsMeta/${collection}/complete`), true);
 
   return { collection, total, written, skipped, withStorageAvatar };
 };
@@ -8546,6 +8574,8 @@ export const indexLastLogin = async onProgress => {
 
     // eslint-disable-next-line no-await-in-loop
     await update(ref2(database, `users/${id}`), { lastLogin2: date });
+    // eslint-disable-next-line no-await-in-loop
+    await refreshMatchingCardAfterProfileWrite('users', id, { ...user, lastLogin2: date }, 'set');
 
     processed += 1;
     const progress = Math.floor((processed / total) * 100);
