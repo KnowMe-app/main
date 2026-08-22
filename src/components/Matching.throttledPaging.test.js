@@ -158,3 +158,39 @@ describe('ряд чіпів', () => {
     expect(source).toContain('onClick={() => setShowAllFilterChips(false)}');
   });
 });
+
+describe('публічні коментарі', () => {
+  const matching = () => read('Matching.jsx');
+
+  it('показує їх і у відкритій анкеті, не лише в рядку списку', () => {
+    // Досі блок жив тільки в рядках стрічки: у самій анкеті була лише приватна
+    // нотатка переглядача («Мій коментар»), і публічних коментарів не було видно.
+    const source = matching();
+    expect(source.match(/<PublicCommentBlock/g)).toHaveLength(2);
+    expect(source).toContain('publicCommentSlot={(');
+    expect(source).toContain('<ModernSectionTitle>Публічні коментарі</ModernSectionTitle>');
+  });
+
+  it('тримає публічні коментарі окремо від приватної нотатки', () => {
+    const source = matching();
+    const card = source.slice(
+      source.indexOf('<ModernSectionTitle>Comment</ModernSectionTitle>'),
+      source.indexOf('</ModernProfileBody>'),
+    );
+    expect(card).toContain('placeholder="Мій коментар / My comment"');
+    expect(card.indexOf('placeholder="Мій коментар / My comment"'))
+      .toBeLessThan(card.indexOf('{publicCommentSlot}'));
+  });
+
+  it('читає коментарі для відкритої анкети, а не тільки для списку', () => {
+    // Раніше ефект виходив на `detailOpen`, тож у відкритій анкеті читати не було
+    // чого — і в галереї, звідки анкету теж відкривають, поготів.
+    const source = matching();
+    const effect = source.slice(
+      source.indexOf('const visibleIds = detailOpen'),
+      source.indexOf('fetchPublicProfileComments(pendingIds)'),
+    );
+    expect(effect).toContain('[activeProfile?.userId]');
+    expect(effect).toContain("viewLayout === 'list'");
+  });
+});

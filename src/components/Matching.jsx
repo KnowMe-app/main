@@ -1005,6 +1005,7 @@ const SwipeableCard = ({
   sharedCommentTexts = [],
   onCommentChange,
   onCommentBlur,
+  publicCommentSlot = null,
   onAdminEdit,
   debugRejectReasons = [],
   showDebugRejectReasons = false,
@@ -1308,6 +1309,14 @@ const SwipeableCard = ({
               )}
             </CommentBox>
           </ModernSection>
+          {/* Секція «Comment» вище — це приватна нотатка переглядача. Публічні
+              коментарі бачать усі, тож вони стоять окремо і зі своїм підписом. */}
+          {publicCommentSlot && (
+            <ModernSection onClick={e => e.stopPropagation()}>
+              <ModernSectionTitle>Публічні коментарі</ModernSectionTitle>
+              {publicCommentSlot}
+            </ModernSection>
+          )}
         </ModernProfileBody>
         </ModernProfileScroll>
         <ModernActionRail>
@@ -6697,17 +6706,21 @@ const Matching = () => {
     setScrolledDownSinceLoad(true);
   }, []);
 
-  // The rows carry their public comments inline, so the feed loads them for the
-  // page it renders and never asks twice for the same profile.
+  // Коментарі читаються рівно для того, що зараз їх показує, і жодного id не
+  // питають двічі.
   //
-  // Плитка галереї коментарів не показує взагалі (`GalleryCard` не має
-  // `commentSlot`), тож у цьому режимі читання — це запит на картку, чий
-  // результат нікуди не потрапляє.
+  // Показують їх двоє: рядки списку — і відкрита анкета. Плитка галереї не
+  // показує (`GalleryCard` не має `commentSlot`), тож у режимі галереї стрічка
+  // не читає нічого — але відкрити анкету з галереї можна, і тоді читаємо саме
+  // її одну.
   useEffect(() => {
-    if (detailOpen || !ownerId || viewLayout !== 'list') return;
-    const pendingIds = feedSource
-      .slice(0, FEED_PHOTO_HYDRATION_LIMIT)
-      .map(user => user?.userId)
+    if (!ownerId) return;
+    const visibleIds = detailOpen
+      ? [activeProfile?.userId]
+      : (viewLayout === 'list'
+        ? feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT).map(user => user?.userId)
+        : []);
+    const pendingIds = visibleIds
       .filter(Boolean)
       .filter(id => !publicCommentsRequestedRef.current.has(id));
     if (!pendingIds.length) return;
@@ -6718,7 +6731,7 @@ const Matching = () => {
         pendingIds.forEach(id => publicCommentsRequestedRef.current.delete(id));
         console.error('[Matching] Failed to load public comments', error);
       });
-  }, [detailOpen, feedSource, ownerId, viewLayout]);
+  }, [activeProfile?.userId, detailOpen, feedSource, ownerId, viewLayout]);
 
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
     const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
@@ -7294,6 +7307,15 @@ const Matching = () => {
                         commentsRef.current = { ...commentsRef.current, [user.userId]: val };
                         setComments(prev => ({ ...prev, [user.userId]: val }));
                       }}
+                      publicCommentSlot={(
+                        <PublicCommentBlock
+                          profileId={user.userId}
+                          comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
+                          viewerId={auth.currentUser?.uid || ''}
+                          onCreate={handleCreatePublicComment}
+                          onUpdate={handleUpdatePublicComment}
+                        />
+                      )}
                       onCommentBlur={async () => {
                         if (auth.currentUser) {
                           const text = comments[user.userId] || '';
