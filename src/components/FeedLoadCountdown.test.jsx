@@ -18,7 +18,7 @@ describe('FeedLoadCountdown', () => {
     <FeedLoadCountdown durationMs={10000} batchSize={2} cycleKey={0} onElapsed={() => {}} {...props} />,
   );
 
-  const dial = () => screen.getByTestId('feed-load-countdown').firstChild.textContent;
+  const dial = () => screen.getByTestId('feed-load-countdown-dial').textContent;
 
   it('починає з повних десяти секунд і показує мілісекунди', () => {
     renderCountdown();

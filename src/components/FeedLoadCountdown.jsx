@@ -44,7 +44,7 @@ export const FeedLoadCountdown = ({ durationMs, batchSize, cycleKey, onElapsed }
   // область читала б його вголос без кінця. Що відбувається, каже підпис.
   return (
     <FeedCountdown data-testid="feed-load-countdown">
-      <FeedCountdownDial aria-hidden="true">
+      <FeedCountdownDial data-testid="feed-load-countdown-dial" aria-hidden="true">
         {formatMatchingCountdown(quantizeMatchingCountdown(remainingMs))}
       </FeedCountdownDial>
       <FeedCountdownHint>
