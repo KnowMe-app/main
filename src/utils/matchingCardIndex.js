@@ -21,7 +21,7 @@ export const MATCHING_CARDS_ROOT = 'matchingCards';
  * Версія схеми. Читач, що бачить чужу версію, вважає картку застарілою і
  * догідратовує анкету повністю — так півмігрований індекс не показує порожнеч.
  */
-export const MATCHING_CARD_SCHEMA_VERSION = 1;
+export const MATCHING_CARD_SCHEMA_VERSION = 2;
 
 /** Поле, за яким сортується стрічка (потребує `.indexOn` у правилах БД). */
 export const MATCHING_CARD_ORDER_FIELD = 'lastLogin2';
@@ -174,6 +174,7 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
 
   projection.fieldsCount = countProfileFieldsForIndex(data);
   projection.source = resolveMatchingCardCollection(id, data);
+  projection.sourceLastLogin2 = `${projection.source}:${projection.lastLogin2 || ''}`;
   projection.v = MATCHING_CARD_SCHEMA_VERSION;
 
   return projection;

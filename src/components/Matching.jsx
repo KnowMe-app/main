@@ -1331,7 +1331,6 @@ const readQueryFromUrl = () => {
   }
 };
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
-const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
 const MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS = 2;
 const SCROLL_Y_KEY = 'matchingScrollY';
@@ -2692,7 +2691,6 @@ const Matching = () => {
 
         while (
           sourceHasMore &&
-          loadedPages < ADDITIONAL_BACKFILL_MAX_PAGES &&
           (collected.length === 0 || visibleCount < INITIAL_LOAD)
         ) {
           loadedPages += 1;
@@ -4567,7 +4565,6 @@ const Matching = () => {
         let canLoadMoreAdditional = true;
         let visibleCount = shouldResetAdditionalPagination ? 0 : Math.max(0, Number(currentVisibleCount) || 0);
         const requiredVisibleCount = Math.max(0, Number(targetVisibleCount) || 0);
-        let loadedPages = 0;
         const additionalCandidateBase = shouldResetAdditionalPagination ? [] : additionalNewUsers;
 
         if (!freshParsedAdditionalAccessRules.length) {
@@ -4584,10 +4581,8 @@ const Matching = () => {
 
         while (
           canLoadMoreAdditional &&
-          loadedPages < ADDITIONAL_BACKFILL_MAX_PAGES &&
           (collected.length === 0 || visibleCount < requiredVisibleCount)
         ) {
-          loadedPages += 1;
           // eslint-disable-next-line no-await-in-loop
           const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(
             freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys,
@@ -5703,7 +5698,7 @@ const Matching = () => {
       // Анкета вже в руках, коли картка гідрована повністю: `knownPhotos` знімає
       // друге читання того самого вузла заради поля `photos`.
       lazyLoadProfilePhotos(user.userId, user.__sourceCollection || null, {
-        knownPhotos: Array.isArray(user.photos) ? user.photos : null,
+        knownPhotos: !isMatchingSummaryCard(user) && Array.isArray(user.photos) ? user.photos : null,
       })
         .then(photos => {
           const urls = Array.isArray(photos) ? photos : [];
