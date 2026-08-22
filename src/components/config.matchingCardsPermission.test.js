@@ -13,18 +13,31 @@ describe('доступ до вузла matchingCards', () => {
     expect(node).toBeTruthy();
     // Без `.indexOn` пагінація стрічки сортувала б на клієнті, тобто качала б усе.
     expect(node['.indexOn']).toContain('lastLogin2');
-  });
-
-  it('дозволяє адміну замінити вузол цілком', () => {
-    // Побудова пише мультилокаційним `update` від кореня. Права на рівні вузла —
-    // те саме, що вже зроблено для `searchKey`, щоб перебудова могла його замінити.
-    ADMIN_UIDS.forEach(uid => expect(node['.write']).toContain(uid));
+    // Пагінація в межах однієї колекції йде за складеним ключем.
+    expect(node['.indexOn']).toContain('sourceLastLogin2');
   });
 
   it('дозволяє власнику писати свою картку, а адміну — будь-яку', () => {
+    // Побудова пише мультилокаційним `update` від кореня, тож права потрібні саме
+    // на рівні картки: кожен шлях у пачці перевіряється окремо.
     const uidWrite = node.$uid['.write'];
     expect(uidWrite).toContain('auth.uid == $uid');
     ADMIN_UIDS.forEach(uid => expect(uidWrite).toContain(uid));
+  });
+
+  it('не дає завести картку без анкети за нею', () => {
+    // Проєкція без канонічної анкети — привид, на який нічого не вказує.
+    const validate = node.$uid['.validate'];
+    expect(validate).toContain("root.child('users').child($uid).exists()");
+    expect(validate).toContain("root.child('newUsers').child($uid).exists()");
+  });
+
+  it('тримає позначку готовності індексу під адмінським записом', () => {
+    // Читач звіряється з нею, щоб не довіритись напівзібраному індексу.
+    const meta = rules.matchingCardsMeta;
+    expect(meta).toBeTruthy();
+    expect(meta['.read']).toBe('auth != null');
+    ADMIN_UIDS.forEach(uid => expect(meta.$source['.write']).toContain(uid));
   });
 
   it('відкриває читання рівно тим, хто читає users', () => {

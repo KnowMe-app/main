@@ -1580,7 +1580,11 @@ export const fetchFilteredMatchingSourceChunk = ({
       // сторінка приходить порожньою, і читач мовчки повертається до анкет.
       try {
         const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor, collectionSource });
-        if (cardsPage?.users?.length) return cardsPage;
+        if (cardsPage?.users?.length && cardsPage.indexComplete !== false) return cardsPage;
+        if (cardsPage?.indexComplete === false) {
+          console.info('[Matching][matchingCards] індекс неповний — читаємо анкети напряму', { collectionSource });
+          return readProfilePage();
+        }
         if (cursor) return cardsPage;
         console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму', { collectionSource });
       } catch (error) {
