@@ -16,6 +16,9 @@ import {
   normalizeDisplayValue,
   maritalStatusLabel,
   getBloodGroupDisplay,
+  getProfileRole,
+  getRoleCode,
+  getRoleLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { getContactEntries } from './contactMethods';
@@ -712,6 +715,7 @@ const ProfileRow = ({
   clientComment,
   onCommentSave,
   primaryAction,
+  secondaryAction,
   priorityMetricKeys,
   commentSlot,
   diagnosticsSlot,
@@ -724,6 +728,8 @@ const ProfileRow = ({
   // chevron, the edit button and the swipe actions rather than showing them empty.
   const isLimited = user?.__limitedProfile === true;
   const name = getProfileName(user);
+  const rowRole = getProfileRole(user);
+  const roleCode = getRoleCode(rowRole);
   const age = getProfileAge(user);
   const location = getLocationLine(user);
   const photos = getProfilePhotos(user);
@@ -791,10 +797,13 @@ const ProfileRow = ({
           {!photo && getInitials(name)}
         </S.Photo>
         <S.Body>
-          <S.Name>
-            {name}
-            {age && <>, {age}</>}
-          </S.Name>
+          <S.NameRow>
+            <S.Name>
+              {name}
+              {age && <>, {age}</>}
+            </S.Name>
+            {roleCode && <S.RoleCode title={getRoleLabel(rowRole)}>{roleCode}</S.RoleCode>}
+          </S.NameRow>
           {hasLocation && (
             <S.Location>
               <FaMapMarkerAlt aria-hidden="true" />
@@ -827,6 +836,19 @@ const ProfileRow = ({
                 onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
               >
                 {primaryAction.icon}
+              </S.RowActionButton>
+            )}
+            {secondaryAction && !isLimited && (
+              <S.RowActionButton
+                type="button"
+                $accent={Boolean(secondaryAction.accent)}
+                $on={Boolean(secondaryAction.active)}
+                title={secondaryAction.title}
+                aria-label={secondaryAction.title}
+                aria-pressed={secondaryAction.active}
+                onClick={e => { e.stopPropagation(); secondaryAction.onClick(user); }}
+              >
+                {secondaryAction.icon}
               </S.RowActionButton>
             )}
             {isAdmin && onEditProfile && !isLimited && (
@@ -892,6 +914,7 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.clientComment === next.clientComment
   && prev.isAdmin === next.isAdmin
   && prev.primaryAction?.active === next.primaryAction?.active
+  && prev.secondaryAction?.active === next.secondaryAction?.active
   && prev.priorityMetricKeys === next.priorityMetricKeys
   && prev.commentSlot === next.commentSlot
   && prev.diagnosticsSlot === next.diagnosticsSlot

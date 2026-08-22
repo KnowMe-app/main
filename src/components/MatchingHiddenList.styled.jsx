@@ -86,6 +86,26 @@ export const Name = styled.div`
   text-overflow: ellipsis;
 `;
 
+/* Дволітерний код ролі поруч з іменем: у рядку так само немає ширини під
+ * «Intended parents», а знати, хто перед тобою, треба до відкриття анкети. */
+export const RoleCode = styled.span`
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 5px;
+  color: var(--matching-muted-text);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+`;
+
+export const NameRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+`;
+
 export const Location = styled.div`
   font-size: 12px;
   color: var(--matching-muted-text);

@@ -118,6 +118,19 @@ export const getRoleLabel = role => {
   return 'Profile';
 };
 
+/**
+ * Дволітерний код ролі для плитки стрічки.
+ *
+ * На картці ширини під «Intended parents» немає, а знати, хто перед тобою,
+ * треба ще до відкриття анкети. Код — це той самий рядок, яким роль лежить у
+ * даних, тільки великими: він і короткий, і збігається з тим, що показують
+ * фільтри. Роль, якої немає в переліку, коду не отримує — краще нічого, ніж
+ * позначка, яку нема як прочитати.
+ */
+const ROLE_CODES = { ed: 'ED', sm: 'SM', ip: 'IP', ag: 'AG', cl: 'CL' };
+
+export const getRoleCode = role => ROLE_CODES[String(role || '').trim().toLowerCase()] || '';
+
 const getEmailName = user => {
   const email = normalizeDisplayValue(user?.email);
   if (!email) return '';

@@ -7,7 +7,7 @@ describe('пауза між сторінками стрічки — тільки
   const matching = () => read('Matching.jsx');
 
   it('вмикає відлік саме для не-адміна', () => {
-    expect(matching()).toContain('const isThrottledFeedPaging = !isAdmin;');
+    expect(matching()).toContain('const isThrottledFeedPaging = !access.isAdmin;');
   });
 
   it('лишає адмінові миттєве дозавантаження по сентинелу', () => {
@@ -192,5 +192,101 @@ describe('публічні коментарі', () => {
     );
     expect(effect).toContain('[activeProfile?.userId]');
     expect(effect).toContain("viewLayout === 'list'");
+  });
+});
+
+describe('одна порція — один жест, і рівно дві картки', () => {
+  const matching = () => read('Matching.jsx');
+
+  it('добирає до обіцяної порції в межах того самого циклу', () => {
+    // `loadMore` рахує те, що віддало джерело; фільтри показу проріджують його
+    // ще раз, і ряд галереї виходив напівпорожній — одна картка замість двох.
+    const source = matching();
+    const effect = source.slice(
+      source.indexOf('if (!isThrottledFeedPaging || !throttledCycle || loading) return;'),
+      source.indexOf("endOfDeckLoadRef.current('feed-countdown-topup'"),
+    );
+    expect(effect).toContain('renderedCardsLength >= throttledCycle.target');
+    // Зі стелею на спроби, інакше добір сам став би потоком.
+    expect(effect).toContain('throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS');
+  });
+
+  it('ховає відлік і запрошення, поки цикл ще добирає', () => {
+    const source = matching();
+    const gate = source.slice(
+      source.indexOf('const canOfferMoreFeedCards = Boolean('),
+      source.indexOf('const showFeedLoadCountdown ='),
+    );
+    expect(gate).toContain('!throttledCycle');
+  });
+});
+
+describe('самохідні шляхи дозавантаження не обходять відлік', () => {
+  const matching = () => read('Matching.jsx');
+
+  it('глушить дозаправку, поки на екрані є хоч одна картка', () => {
+    // Дозаправка перезапускалась на кожну зміну `filteredUsers` і вважала
+    // приводом те, що фільтри зрізали пару карток — а зрізають вони їх щоразу.
+    // Виходив потік, що йшов повз відлік.
+    expect(matching()).toContain('if (isThrottledFeedPaging && filteredUsers.length > 0) {');
+  });
+
+  it('глушить тригер останньої картки', () => {
+    // На стрічці з однієї картки активний індекс одразу дорівнює останньому.
+    const source = matching();
+    const effect = source.slice(
+      source.indexOf('const lastRenderedIndex = renderedCardsLength - 1;') - 400,
+      source.indexOf('const lastRenderedIndex = renderedCardsLength - 1;'),
+    );
+    expect(effect).toContain('if (isThrottledFeedPaging) return;');
+  });
+
+  it('оголошує прапорець до ефектів, які його читають', () => {
+    // Інакше список залежностей ефекту звертався б до нього в TDZ.
+    const source = matching();
+    expect(source.indexOf('const isThrottledFeedPaging = !access.isAdmin;'))
+      .toBeLessThan(source.indexOf('refillBlockedReason: \'throttled-paging-owned-by-countdown\''));
+  });
+});
+
+describe('перший екран зі стрічкового кеша', () => {
+  const matching = () => read('Matching.jsx');
+
+  it('не перечитує з бекенду те, що щойно намалював з кеша', () => {
+    const source = matching();
+    expect(source).not.toContain('// continue to fetch latest data to refresh cache');
+    expect(source).toContain('if (filteredCached.length >= INITIAL_LOAD && cursorFromCache) {');
+    expect(source).toContain('setLastKey(cursorFromCache);');
+  });
+
+  it('будує курсор наступної сторінки з останньої кешованої картки', () => {
+    // Пагінація джерела курсорна: пара (lastLogin2, userId) лежить прямо в
+    // картці, тож питати її в бекенду немає за чим.
+    const source = matching();
+    const helper = source.slice(
+      source.indexOf('export const buildMatchingCursorFromCard'),
+      source.indexOf('const countChangedMatchingFilterGroups'),
+    );
+    expect(helper).toContain('MATCHING_CARD_ORDER_FIELD');
+    expect(helper).toContain('if (!date || !userId) return null;');
+  });
+});
+
+describe('дії та роль на картці стрічки', () => {
+  it('дає плитці і кнопку «приховати», а не лише серце', () => {
+    const source = read('Matching.jsx');
+    expect(source).toContain('<GalleryHideButton');
+    expect(source).toContain('onToggleHidden={toggleRowHidden}');
+  });
+
+  it('дає те саме рядку списку', () => {
+    const source = read('Matching.jsx');
+    expect(source).toContain('secondaryAction={{');
+    expect(read('ProfileRow.jsx')).toContain('{secondaryAction && !isLimited && (');
+  });
+
+  it('показує дволітерний код ролі на обох виглядах', () => {
+    expect(read('Matching.jsx')).toContain('<GalleryRoleCode');
+    expect(read('ProfileRow.jsx')).toContain('<S.RoleCode');
   });
 });
