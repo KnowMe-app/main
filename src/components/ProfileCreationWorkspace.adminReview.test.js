@@ -41,11 +41,11 @@ jest.mock('./formFields', () => ({
   pickerFields: [
     { name: 'name', ukrainian: "Ім'я" },
     { name: 'phone', ukrainian: 'Телефон' },
-    { name: 'publicComment', ukrainian: 'Публічний коментар' },
+    { name: 'publicComment', ukrainian: 'Публічний коментар', placeholder: 'Будьте чемні, Ваш коментар побачать усі' },
     { name: 'role', ukrainian: 'Роль', options: ['A', 'B'] },
   ],
   getFieldLabel: field => field.ukrainian || field.name,
-  getFieldPlaceholder: () => '',
+  getFieldPlaceholder: field => field.placeholder || '',
   getOptionLabel: value => value,
   getOptionValue: value => value,
 }));
@@ -137,7 +137,8 @@ describe('ProfileCreationWorkspace admin review', () => {
 
     const comment = await screen.findByDisplayValue('Авторський коментар');
     expect(comment).toBeInTheDocument();
-    expect(screen.getByText(/анкета зникає із загального списку Matching/)).toBeInTheDocument();
+    expect(comment).toHaveAttribute('placeholder', 'Будьте чемні, Ваш коментар побачать усі');
+    expect(screen.queryByText(/анкета зникає із загального списку Matching/)).not.toBeInTheDocument();
 
     fireEvent.change(comment, { target: { value: 'Виправлений коментар' } });
     fireEvent.blur(comment);

@@ -1151,11 +1151,6 @@ export const ProfileCreationWorkspace = () => {
 
     return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)}>
       <FieldLabel>{label}</FieldLabel>
-      {fieldName === 'publicComment' && (
-        <Meta style={{ margin: '-2px 0 10px', fontSize: 13 }}>
-          Видно всім у картці. Якщо заповнено — анкета зникає із загального списку Matching, але лишається доступною через пошук.
-        </Meta>
-      )}
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <FieldChipRow>
           {field.options.map(option => {
