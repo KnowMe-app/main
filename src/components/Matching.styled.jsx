@@ -1822,6 +1822,32 @@ export const GalleryHeartButton = styled.button`
   }
 `;
 
+/* Приховати — дія такого ж рангу, як «в обране», тож і кнопка така сама, поруч.
+ * Досі плитка пропонувала лише серце, і сховати картку можна було, тільки
+ * відкривши анкету. */
+export const GalleryHideButton = styled(GalleryHeartButton)`
+  top: 40px;
+  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : '#fff')};
+`;
+
+/* Дволітерний код ролі. Стоїть у нижньому кутку фото, щоб не сперечатися за
+ * місце з кнопками вгорі. */
+export const GalleryRoleCode = styled.span`
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+`;
+
 export const GalleryHiddenBadge = styled.span`
   position: absolute;
   top: 6px;

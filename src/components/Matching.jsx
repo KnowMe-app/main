@@ -82,6 +82,8 @@ import {
   FilterApplyButton,
   SearchField,
   GalleryFacts,
+  GalleryHideButton,
+  GalleryRoleCode,
   GalleryGrid,
   GalleryHeartButton,
   GalleryHiddenBadge,
@@ -155,11 +157,12 @@ import {
 } from '../utils/searchKeyCache';
 import { findCachedCardsByText, getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCachedPhotoUrlsMap, setCachedPhotoUrls } from '../utils/photoUrlCache';
-import { isMatchingSummaryCard } from '../utils/matchingCardIndex';
+import { MATCHING_CARD_ORDER_FIELD, isMatchingSummaryCard } from '../utils/matchingCardIndex';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import {
   MATCHING_THROTTLED_LOAD_BATCH,
   MATCHING_THROTTLED_LOAD_DELAY_MS,
+  MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS,
 } from '../utils/matchingFeedThrottle';
 import FeedLoadCountdown from './FeedLoadCountdown';
 import { getCurrentDate } from './foramtDate';
@@ -172,7 +175,7 @@ import ProfileRow, {
   renderFacts as renderProfileFacts,
 } from './ProfileRow';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart } from 'react-icons/fa';
+import { FaRegHeart, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -192,6 +195,7 @@ import {
   getProfilePhotos,
   getProfileRole,
   getProfileSections,
+  getRoleCode,
   getRoleLabel,
 } from './profileLayoutConfig';
 import {
@@ -1454,6 +1458,23 @@ const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit 
   };
 };
 
+/**
+ * Курсор наступної сторінки, відновлений з останньої картки на екрані.
+ *
+ * Пагінація джерела курсорна: пара (`lastLogin2`, `userId`) — це те місце, з
+ * якого читати далі. Коли перший екран прийшов з кеша, ця пара лежить прямо в
+ * останній кешованій картці, тож питати її в бекенду немає за чим.
+ *
+ * Картка без `lastLogin2` курсором бути не може: за нею сторінка почалась би з
+ * початку і повернула те саме. Тоді краще чесно піти в джерело.
+ */
+export const buildMatchingCursorFromCard = card => {
+  const date = String(card?.[MATCHING_CARD_ORDER_FIELD] || '').trim();
+  const userId = String(card?.userId || '').trim();
+  if (!date || !userId) return null;
+  return { date, userId };
+};
+
 const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
   if (!currentFilters || !defaultFilters) return 0;
 
@@ -1470,11 +1491,12 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 // Spec §6: the gallery is the "what do they look like" mode. Every tile is the
 // same 4/5 box - vertical shots get cropped like everything else so the columns
 // stay level - and neither the comment nor the location appears here.
-const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite, diagnosticsSlot }) => {
+const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, diagnosticsSlot }) => {
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const photo = getProfilePhotos(user)[0];
   const facts = useMemo(() => renderProfileFacts(user), [user]);
+  const roleCode = getRoleCode(getProfileRole(user));
 
   return (
     <GalleryTile
@@ -1494,17 +1516,30 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
           : getProfileInitials(name)}
         {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
         {!user?.__limitedProfile && (
-        <GalleryHeartButton
-          type="button"
-          $on={isFavorite}
-          aria-label="В обране"
-          aria-pressed={isFavorite}
-          title="В обране"
-          onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
-        >
-          {isFavorite ? <FaHeart /> : <FaRegHeart />}
-        </GalleryHeartButton>
+        <>
+          <GalleryHeartButton
+            type="button"
+            $on={isFavorite}
+            aria-label="В обране"
+            aria-pressed={isFavorite}
+            title="В обране"
+            onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+          >
+            {isFavorite ? <FaHeart /> : <FaRegHeart />}
+          </GalleryHeartButton>
+          <GalleryHideButton
+            type="button"
+            $on={isHidden}
+            aria-label={isHidden ? 'Повернути зі схованих' : 'Приховати'}
+            aria-pressed={isHidden}
+            title={isHidden ? 'Повернути зі схованих' : 'Приховати'}
+            onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
+          >
+            {isHidden ? <FaEye /> : <FaEyeSlash />}
+          </GalleryHideButton>
+        </>
         )}
+        {roleCode && <GalleryRoleCode title={getRoleLabel(getProfileRole(user))}>{roleCode}</GalleryRoleCode>}
       </GalleryPhotoBox>
       <GalleryName>
         {name}
@@ -1526,6 +1561,7 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
   && prev.isFavorite === next.isFavorite
   && prev.isHidden === next.isHidden
   && prev.diagnosticsSlot === next.diagnosticsSlot
+  && prev.onToggleHidden === next.onToggleHidden
 ));
 
 const Matching = () => {
@@ -1678,6 +1714,18 @@ const Matching = () => {
     canCreateProfiles: currentCanCreateProfiles,
   });
   const isAdmin = access.isAdmin;
+
+  // Не-адмін гортає стрічку з паузою: замість того, щоб підвантажити наступну
+  // сторінку одразу, сентинел лише вмикає відлік, і поки той іде — до бекенду не
+  // йде жодного запиту. Це і стеля на трафік (дві картки на десять секунд), і
+  // видима обіцянка: читач бачить, що картки будуть, і коли саме.
+  //
+  // Адмінові стрічка — робочий інструмент, і він впирається в її кінець щодня,
+  // тож для нього все лишається як було: сентинел вантажить одразу.
+  //
+  // Оголошено тут, а не поруч зі стрічкою: цей прапорець читають ефекти вище за
+  // текстом, і в їхніх списках залежностей він має бути вже ініціалізований.
+  const isThrottledFeedPaging = !access.isAdmin;
 
   useEffect(() => {
     let active = true;
@@ -1901,6 +1949,9 @@ const Matching = () => {
   const [scrolledDownSinceLoad, setScrolledDownSinceLoad] = useState(false);
   // Остання спроба дозавантаження не дала жодної картки.
   const [lastLoadAddedNothing, setLastLoadAddedNothing] = useState(false);
+  // Поточний цикл відліку: скільки карток він пообіцяв і скільки спроб уже зробив.
+  // null — циклу немає, кінець списку може знову запропонувати відлік.
+  const [throttledCycle, setThrottledCycle] = useState(null);
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
@@ -3153,7 +3204,27 @@ const Matching = () => {
         void loadCommentsFor(filteredCached);
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         setViewMode('default');
-        // continue to fetch latest data to refresh cache
+
+        // Кеш віддав повний перший екран — на цьому й зупиняємось.
+        //
+        // Раніше тут стояло «continue to fetch latest data to refresh cache», і
+        // стрічка щоразу перечитувала з бекенду ту саму сторінку `users`, яку
+        // щойно намалювала з кеша: кеш був лише способом швидше показати те, за
+        // що однаково платили трафіком. Курсор для наступної сторінки будуємо з
+        // останньої кешованої картки — це та сама пара (дата, id), яку віддав би
+        // запит.
+        const cursorFromCache = buildMatchingCursorFromCard(filteredCached[filteredCached.length - 1]);
+        if (filteredCached.length >= INITIAL_LOAD && cursorFromCache) {
+          writeMatchingDebugLog('matchingLocalCacheServedInitialLoad', {
+            cacheKey: defaultListKey,
+            cardsCount: filteredCached.length,
+            cursorFromCache,
+          });
+          setLastKey(cursorFromCache);
+          setHasMore(true);
+          return;
+        }
+        // Кеша не вистачило на екран — дочитуємо джерело, як і раніше.
       } else if (!isBackendOnlyMode) {
         writeMatchingDebugLog('matchingBackendFallbackUsed', {
           mode: matchingDataSourceMode,
@@ -5534,6 +5605,9 @@ const Matching = () => {
     visibleUsers,
   ]);
   const renderedCardsLength = renderedCards.length;
+  // Читається з обробника відліку, який живе поза рендером.
+  const renderedCardsLengthRef = useRef(renderedCardsLength);
+  useEffect(() => { renderedCardsLengthRef.current = renderedCardsLength; }, [renderedCardsLength]);
   const debugFilteredOutReasonById = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')) return new Map();
     const map = new Map();
@@ -6048,6 +6122,17 @@ const Matching = () => {
       additionalNextOffset,
     });
       if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+    // Для не-адміна догортання належить відліку: одна порція — один жест.
+    //
+    // Ця дозаправка живе власним життям: вона перезапускається на кожну зміну
+    // `filteredUsers` і вважає приводом уже те, що фільтри зрізали пару карток —
+    // а зрізають вони їх щоразу. Виходив самохідний потік, який ішов повз відлік
+    // і зводив нанівець усю паузу. Лишаємо її тільки на випадок, коли на екрані
+    // взагалі порожньо: тоді читачеві нема чого гортати і нема чим завести відлік.
+    if (isThrottledFeedPaging && filteredUsers.length > 0) {
+      console.log('[Matching][refillEffect] blocked', { refillBlockedReason: 'throttled-paging-owned-by-countdown' });
+      return;
+    }
     const isReactionMode = viewMode === 'favorites' || viewMode === 'dislikes';
     const reactionPipelineReady = isReactionMode ? Boolean(reactionPipelineReadyByType[viewMode]) : true;
     const reactionPagination = isReactionMode ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()) : buildEmptyReactionPagination();
@@ -6128,7 +6213,7 @@ const Matching = () => {
       targetVisibleCount,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
+  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, isThrottledFeedPaging, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
 
   useEffect(() => {
     writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
@@ -6153,6 +6238,10 @@ const Matching = () => {
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (renderedCardsLength < 1) return;
+    // Другий самохідний шлях повз відлік: на стрічці з однієї картки активний
+    // індекс одразу дорівнює останньому, і вона вантажить сама. Для не-адміна
+    // це робота відліку.
+    if (isThrottledFeedPaging) return;
 
     const lastRenderedIndex = renderedCardsLength - 1;
     const activeRenderedIndex = activeProfileIndex;
@@ -6263,6 +6352,7 @@ const Matching = () => {
     additionalNextOffset,
     collectionSource,
     hasMore,
+    isThrottledFeedPaging,
     lastKey,
     runAutoLoadMore,
     loading,
@@ -6621,14 +6711,6 @@ const Matching = () => {
   const endOfDeckLoadRef = useRef(triggerEndOfDeckLoad);
   useEffect(() => { endOfDeckLoadRef.current = triggerEndOfDeckLoad; }, [triggerEndOfDeckLoad]);
 
-  // Не-адмін гортає стрічку з паузою: замість того, щоб підвантажити наступну
-  // сторінку одразу, сентинел лише вмикає відлік, і поки той іде — до бекенду не
-  // йде жодного запиту. Це і стеля на трафік (дві картки на десять секунд), і
-  // видима обіцянка: читач бачить, що картки будуть, і коли саме.
-  //
-  // Адмінові стрічка — робочий інструмент, і він впирається в її кінець щодня,
-  // тож для нього все лишається як було: сентинел вантажить одразу.
-  const isThrottledFeedPaging = !isAdmin;
   const [feedEndVisible, setFeedEndVisible] = useState(false);
   useEffect(() => {
     const node = feedSentinelRef.current;
@@ -6675,6 +6757,7 @@ const Matching = () => {
   // участі читача. Саме від цього стеля й мала захищати.
   const canOfferMoreFeedCards = Boolean(
     isThrottledFeedPaging &&
+    !throttledCycle &&
     feedEndVisible &&
     hasMore &&
     !loading &&
@@ -6694,8 +6777,32 @@ const Matching = () => {
 
   const handleThrottledFeedLoad = React.useCallback(() => {
     disarmFeedPaging();
+    setThrottledCycle({ target: renderedCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH, attempts: 1 });
     endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
   }, [disarmFeedPaging]);
+
+  // Відлік обіцяє дві картки, а не дві спроби.
+  //
+  // `loadMore` рахує те, що віддало джерело, а на екран воно потрапляє вже після
+  // фільтрів показу — з двох знайдених могла лишитись одна, і ряд галереї виходив
+  // напівпорожній. Тож цикл добирає, доки не набереться обіцяне: без нового
+  // відліку, без нового жесту і зі стелею на спроби, щоб не перетворитись на той
+  // самий потік, від якого пауза й захищає.
+  useEffect(() => {
+    if (!isThrottledFeedPaging || !throttledCycle || loading) return;
+    if (
+      renderedCardsLength >= throttledCycle.target ||
+      !hasMore ||
+      throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS
+    ) {
+      setThrottledCycle(null);
+      return;
+    }
+    setThrottledCycle({ ...throttledCycle, attempts: throttledCycle.attempts + 1 });
+    endOfDeckLoadRef.current('feed-countdown-topup', {
+      limit: Math.max(1, throttledCycle.target - renderedCardsLength),
+    });
+  }, [hasMore, isThrottledFeedPaging, loading, renderedCardsLength, throttledCycle]);
 
   // Стрічка може виявитись коротшою за екран — тоді крутити нема чого, і жест
   // лишається недосяжним. Дотик робить те саме, що прокрутка.
@@ -7146,6 +7253,7 @@ const Matching = () => {
                       isHidden={Boolean(dislikeUsers[user.userId])}
                       onOpen={openDetailFor}
                       onToggleFavorite={toggleRowFavorite}
+                      onToggleHidden={toggleRowHidden}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
                     />
                   ))}
@@ -7182,6 +7290,12 @@ const Matching = () => {
                         accent: true,
                         active: Boolean(favoriteUsers[user.userId]),
                         onClick: toggleRowFavorite,
+                      }}
+                      secondaryAction={{
+                        icon: dislikeUsers[user.userId] ? <FaEye size={13} /> : <FaEyeSlash size={13} />,
+                        title: dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати',
+                        active: Boolean(dislikeUsers[user.userId]),
+                        onClick: toggleRowHidden,
                       }}
                     />
                   ))}
