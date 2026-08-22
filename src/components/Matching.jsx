@@ -71,7 +71,10 @@ import {
   ChipRemove,
   ChipsGroup,
   ChipsRow,
+  FeedCountdown,
+  FeedCountdownHint,
   FeedList,
+  FeedLoadPromptButton,
   FeedNotice,
   FeedSentinel,
   FeedWrap,
@@ -1002,6 +1005,7 @@ const SwipeableCard = ({
   sharedCommentTexts = [],
   onCommentChange,
   onCommentBlur,
+  publicCommentSlot = null,
   onAdminEdit,
   debugRejectReasons = [],
   showDebugRejectReasons = false,
@@ -1305,6 +1309,14 @@ const SwipeableCard = ({
               )}
             </CommentBox>
           </ModernSection>
+          {/* Секція «Comment» вище — це приватна нотатка переглядача. Публічні
+              коментарі бачать усі, тож вони стоять окремо і зі своїм підписом. */}
+          {publicCommentSlot && (
+            <ModernSection onClick={e => e.stopPropagation()}>
+              <ModernSectionTitle>Публічні коментарі</ModernSectionTitle>
+              {publicCommentSlot}
+            </ModernSection>
+          )}
         </ModernProfileBody>
         </ModernProfileScroll>
         <ModernActionRail>
@@ -1883,6 +1895,12 @@ const Matching = () => {
   }, []);
   const restoreRef = useRef(false);
   const scrollPositionRef = useRef(0);
+  // Чи прокрутив читач стрічку донизу відтоді, як приїхала остання порція.
+  // Ref читають обробники, стан — рендер; тримаємо обидва в парі.
+  const scrolledDownSinceLoadRef = useRef(false);
+  const [scrolledDownSinceLoad, setScrolledDownSinceLoad] = useState(false);
+  // Остання спроба дозавантаження не дала жодної картки.
+  const [lastLoadAddedNothing, setLastLoadAddedNothing] = useState(false);
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
@@ -1924,10 +1942,26 @@ const Matching = () => {
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
-      scrollPositionRef.current = window.scrollY;
+      const previousY = scrollPositionRef.current;
+      const nextY = window.scrollY;
+      scrollPositionRef.current = nextY;
+      if (nextY <= previousY) return;
+
+      // Прокрутка донизу повертає дозавантаженню бюджет спроб. Стеля на порожні
+      // спроби ловить самохідний цикл «видно кінець → вантажимо → нічого не
+      // приїхало»; ловити нею живу людину, яка досі гортає, не можна — саме
+      // через це стрічка застрягала намертво до перезавантаження сторінки.
+      emptyAutoLoadMoreAttemptsRef.current = 0;
+
+      // І цей же жест — єдине, чим читач просить продовження: він заводить
+      // відлік у кінці списку.
+      if (scrolledDownSinceLoadRef.current) return;
+      scrolledDownSinceLoadRef.current = true;
+      setScrolledDownSinceLoad(true);
+      setLastLoadAddedNothing(false);
     };
     handleScroll();
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       window.removeEventListener('scroll', handleScroll);
       saveScrollPosition();
@@ -1940,6 +1974,10 @@ const Matching = () => {
     if (savedY !== null) {
       requestAnimationFrame(() => {
         window.scrollTo(0, Number(savedY));
+        // Відновлення позиції — не жест читача. Посуваємо орієнтир одразу, щоб
+        // подія скролу, яка зараз прийде, не зарахувалась як прокрутка донизу і
+        // не завела відлік сама.
+        scrollPositionRef.current = Number(savedY);
         restoreRef.current = true;
         sessionStorage.removeItem(SCROLL_Y_KEY);
       });
@@ -5868,6 +5906,10 @@ const Matching = () => {
     Promise.resolve(loadMore(payload)).then(addedCount => {
       const visibleAdded = Math.max(0, Number(addedCount) || 0);
       incrementMatchingLoadStat('visibleCardsAdded', visibleAdded);
+      // Сторінка джерела могла прийти повністю відфільтрованою. Кажемо про це
+      // вголос: мовчазний відлік, після якого нічого не змінюється, читається як
+      // зламана сторінка, а не як «під ці фільтри більше нічого не підійшло».
+      setLastLoadAddedNothing(visibleAdded === 0);
       if (visibleAdded > 0) {
         emptyAutoLoadMoreAttemptsRef.current = 0;
       } else {
@@ -6600,21 +6642,38 @@ const Matching = () => {
     if (!isThrottledFeedPaging && loading) return undefined;
     const observer = new IntersectionObserver(entries => {
       const isVisible = entries.some(entry => entry.isIntersecting);
-      if (isThrottledFeedPaging) {
-        setFeedEndVisible(isVisible);
-        return;
-      }
-      if (!isVisible) return;
+      setFeedEndVisible(isVisible);
+      if (isThrottledFeedPaging || !isVisible) return;
       endOfDeckLoadRef.current('feed-sentinel');
     }, { rootMargin: '400px' });
     observer.observe(node);
     return () => observer.disconnect();
   }, [detailIndex, filteredUsers.length, hasMore, isThrottledFeedPaging, loading]);
 
-  // Відлік прив'язаний до видимості кінця списку. Інакше залишена відкритою
-  // вкладка тягла б по дві картки щодесять секунд нескінченно — рівно те
-  // навантаження, від якого ця пауза й захищає.
-  const showFeedLoadCountdown = Boolean(
+  // Прокрутка донизу — це ще й повторна спроба для адміна.
+  //
+  // Сторінка джерела може прийти повністю відфільтрованою: `loadMore` віддає нуль
+  // карток, хоча `hasMore` лишається. Кінець списку при цьому вже видно, тож
+  // нової події перетину не буде — спостерігач мовчить, і стрічка стоїть, доки
+  // читач не перезавантажить сторінку. Саме на це й скаржились.
+  //
+  // Жест витрачається: одна прокрутка донизу — одна спроба.
+  useEffect(() => {
+    if (isThrottledFeedPaging || !scrolledDownSinceLoad) return;
+    if (!feedEndVisible || !hasMore || loading || detailIndex !== null) return;
+    scrolledDownSinceLoadRef.current = false;
+    setScrolledDownSinceLoad(false);
+    endOfDeckLoadRef.current('feed-scroll');
+  }, [detailIndex, feedEndVisible, hasMore, isThrottledFeedPaging, loading, scrolledDownSinceLoad]);
+
+  // Кінець стрічки видно — але цього замало. Порція карток коштує один жест:
+  // поки читач не прокрутив донизу, відлік не заводиться, і кінець списку показує
+  // не таймер, а запрошення прокрутити далі.
+  //
+  // Раніше відлік перезапускався сам після кожної порції, тож достатньо було
+  // залишити вкладку в кінці списку — і картки їхали нескінченно, без жодної
+  // участі читача. Саме від цього стеля й мала захищати.
+  const canOfferMoreFeedCards = Boolean(
     isThrottledFeedPaging &&
     feedEndVisible &&
     hasMore &&
@@ -6623,22 +6682,45 @@ const Matching = () => {
     detailIndex === null &&
     renderedCardsLength > 0
   );
+  const showFeedLoadCountdown = canOfferMoreFeedCards && scrolledDownSinceLoad;
+  const showFeedLoadPrompt = canOfferMoreFeedCards && !scrolledDownSinceLoad;
 
-  const handleThrottledFeedLoad = React.useCallback(() => {
-    endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
+  // Жест витрачено: наступна порція вимагатиме нового. Знімаємо прапорець ще до
+  // запиту, інакше відлік перезапустився б сам, поки картки їдуть.
+  const disarmFeedPaging = React.useCallback(() => {
+    scrolledDownSinceLoadRef.current = false;
+    setScrolledDownSinceLoad(false);
   }, []);
 
-  // The rows carry their public comments inline, so the feed loads them for the
-  // page it renders and never asks twice for the same profile.
+  const handleThrottledFeedLoad = React.useCallback(() => {
+    disarmFeedPaging();
+    endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
+  }, [disarmFeedPaging]);
+
+  // Стрічка може виявитись коротшою за екран — тоді крутити нема чого, і жест
+  // лишається недосяжним. Дотик робить те саме, що прокрутка.
+  const handleArmFeedPaging = React.useCallback(() => {
+    emptyAutoLoadMoreAttemptsRef.current = 0;
+    setLastLoadAddedNothing(false);
+    scrolledDownSinceLoadRef.current = true;
+    setScrolledDownSinceLoad(true);
+  }, []);
+
+  // Коментарі читаються рівно для того, що зараз їх показує, і жодного id не
+  // питають двічі.
   //
-  // Плитка галереї коментарів не показує взагалі (`GalleryCard` не має
-  // `commentSlot`), тож у цьому режимі читання — це запит на картку, чий
-  // результат нікуди не потрапляє.
+  // Показують їх двоє: рядки списку — і відкрита анкета. Плитка галереї не
+  // показує (`GalleryCard` не має `commentSlot`), тож у режимі галереї стрічка
+  // не читає нічого — але відкрити анкету з галереї можна, і тоді читаємо саме
+  // її одну.
   useEffect(() => {
-    if (detailOpen || !ownerId || viewLayout !== 'list') return;
-    const pendingIds = feedSource
-      .slice(0, FEED_PHOTO_HYDRATION_LIMIT)
-      .map(user => user?.userId)
+    if (!ownerId) return;
+    const visibleIds = detailOpen
+      ? [activeProfile?.userId]
+      : (viewLayout === 'list'
+        ? feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT).map(user => user?.userId)
+        : []);
+    const pendingIds = visibleIds
       .filter(Boolean)
       .filter(id => !publicCommentsRequestedRef.current.has(id));
     if (!pendingIds.length) return;
@@ -6649,7 +6731,7 @@ const Matching = () => {
         pendingIds.forEach(id => publicCommentsRequestedRef.current.delete(id));
         console.error('[Matching] Failed to load public comments', error);
       });
-  }, [detailOpen, feedSource, ownerId, viewLayout]);
+  }, [activeProfile?.userId, detailOpen, feedSource, ownerId, viewLayout]);
 
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
     const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
@@ -7118,6 +7200,18 @@ const Matching = () => {
                   </ActionButton>
                 </FeedNotice>
               )}
+              {showFeedLoadPrompt && (
+                <FeedCountdown>
+                  <FeedLoadPromptButton type="button" onClick={handleArmFeedPaging}>
+                    {`Показати ще ${MATCHING_THROTTLED_LOAD_BATCH}`}
+                  </FeedLoadPromptButton>
+                  <FeedCountdownHint>
+                    {lastLoadAddedNothing
+                      ? 'Минула порція не дала нових карток — під ці фільтри більше нічого не підійшло'
+                      : 'Прокрутіть донизу, щоб запустити відлік'}
+                  </FeedCountdownHint>
+                </FeedCountdown>
+              )}
               {showFeedLoadCountdown && (
                 <FeedLoadCountdown
                   durationMs={MATCHING_THROTTLED_LOAD_DELAY_MS}
@@ -7125,6 +7219,13 @@ const Matching = () => {
                   cycleKey={renderedCardsLength}
                   onElapsed={handleThrottledFeedLoad}
                 />
+              )}
+              {/* Між нулем відліку і новими картками кінець списку інакше порожній,
+                  і пауза читалась би як «зламалось». */}
+              {isThrottledFeedPaging && loading && renderedCardsLength > 0 && (
+                <FeedCountdown>
+                  <FeedCountdownHint>Завантажую…</FeedCountdownHint>
+                </FeedCountdown>
               )}
               <FeedSentinel ref={feedSentinelRef} />
             </FeedWrap>
@@ -7206,6 +7307,15 @@ const Matching = () => {
                         commentsRef.current = { ...commentsRef.current, [user.userId]: val };
                         setComments(prev => ({ ...prev, [user.userId]: val }));
                       }}
+                      publicCommentSlot={(
+                        <PublicCommentBlock
+                          profileId={user.userId}
+                          comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
+                          viewerId={auth.currentUser?.uid || ''}
+                          onCreate={handleCreatePublicComment}
+                          onUpdate={handleUpdatePublicComment}
+                        />
+                      )}
                       onCommentBlur={async () => {
                         if (auth.currentUser) {
                           const text = comments[user.userId] || '';
