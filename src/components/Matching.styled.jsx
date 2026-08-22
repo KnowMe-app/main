@@ -1880,13 +1880,15 @@ export const FeedCountdown = styled.div`
 export const FeedCountdownDial = styled.div`
   display: grid;
   place-items: center;
-  min-width: 92px;
+  min-width: 104px;
   padding: 7px 14px;
   border: 1px solid var(--matching-chip-border);
   border-radius: 999px;
   background: var(--matching-chip-bg);
   color: var(--matching-chip-text);
-  /* Табличні цифри: без них останні розряди смикають ширину щокадру. */
+  /* Моноширинні цифри плюс tabular-nums: інтерфейсний шрифт дає розрядам різну
+     ширину, і на кожному кроці відліку рядок смикався вбік. */
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-variant-numeric: tabular-nums;
   font-size: 17px;
   font-weight: 700;
@@ -1895,6 +1897,32 @@ export const FeedCountdownDial = styled.div`
 
 export const FeedCountdownHint = styled.div`
   max-width: 280px;
+`;
+
+/* Кінець списку до того, як читач попросив продовження.
+ *
+ * Порожнеча тут читалась би як «більше нічого немає», тож місце каже, що робити:
+ * прокрутити далі — або натиснути, якщо стрічка коротша за екран і крутити нічого. */
+export const FeedLoadPromptButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border: 1px solid var(--matching-chip-border);
+  border-radius: 999px;
+  background: var(--matching-chip-bg);
+  color: var(--matching-chip-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
 `;
 
 export const FeedNotice = styled.div`

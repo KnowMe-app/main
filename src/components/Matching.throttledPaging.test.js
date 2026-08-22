@@ -12,8 +12,9 @@ describe('пауза між сторінками стрічки — тільки
 
   it('лишає адмінові миттєве дозавантаження по сентинелу', () => {
     const source = matching();
-    // Гілка спостерігача: не-адмін лише повідомляє про видимість, адмін вантажить.
-    expect(source).toContain('if (isThrottledFeedPaging) {\n        setFeedEndVisible(isVisible);');
+    // Видимість кінця списку потрібна обом шляхам; вантажить одразу лише адмін.
+    expect(source).toContain('setFeedEndVisible(isVisible);');
+    expect(source).toContain('if (isThrottledFeedPaging || !isVisible) return;');
     expect(source).toContain("endOfDeckLoadRef.current('feed-sentinel');");
   });
 
@@ -26,24 +27,91 @@ describe('пауза між сторінками стрічки — тільки
   it('показує відлік лише в кінці видимого списку і лише коли є що вантажити', () => {
     const source = matching();
     const gate = source.slice(
-      source.indexOf('const showFeedLoadCountdown = Boolean('),
-      source.indexOf('const handleThrottledFeedLoad'),
+      source.indexOf('const canOfferMoreFeedCards = Boolean('),
+      source.indexOf('const showFeedLoadCountdown ='),
     );
     ['isThrottledFeedPaging', 'feedEndVisible', 'hasMore', '!loading', '!loadError', 'detailIndex === null']
       .forEach(condition => expect(gate).toContain(condition));
   });
 
+  it('вимагає прокрутки донизу, щоб завести відлік', () => {
+    const source = matching();
+    expect(source).toContain('const showFeedLoadCountdown = canOfferMoreFeedCards && scrolledDownSinceLoad;');
+    expect(source).toContain('const showFeedLoadPrompt = canOfferMoreFeedCards && !scrolledDownSinceLoad;');
+  });
+
+  it('витрачає жест на порцію — наступна вимагає нового', () => {
+    const source = matching();
+    const handler = source.slice(
+      source.indexOf('const handleThrottledFeedLoad = React.useCallback('),
+      source.indexOf('const handleArmFeedPaging'),
+    );
+    // Знімається до запиту, інакше відлік перезапустився б сам, поки картки їдуть.
+    expect(handler.indexOf('disarmFeedPaging()')).toBeLessThan(handler.indexOf('endOfDeckLoadRef.current'));
+  });
+
+  it('лишає спосіб попросити ще, коли стрічка коротша за екран', () => {
+    // Тоді крутити нема чого, і жест лишався б недосяжним.
+    expect(matching()).toContain('onClick={handleArmFeedPaging}');
+  });
+
   it('перезапускає відлік після кожної підвантаженої порції', () => {
     // `cycleKey` міняється разом з довжиною стрічки, і саме це змушує ефект
-    // всередині відліку початися спочатку — звідси «і так далі».
+    // всередині відліку початися спочатку.
     expect(matching()).toContain('cycleKey={renderedCardsLength}');
   });
 
   it('тримає тік у власному компоненті, а не в стані сторінки', () => {
-    // Інакше стрічка перемальовувалась би щокадру: поведінку відліку перевіряє
-    // FeedLoadCountdown.test.jsx, тут — що сторінка його не всмоктала назад.
+    // Інакше стрічка перемальовувалась би з кожним кроком відліку: поведінку
+    // перевіряє FeedLoadCountdown.test.jsx, тут — що сторінка його не всмоктала.
     expect(matching()).toContain("import FeedLoadCountdown from './FeedLoadCountdown';");
     expect(matching()).not.toContain('const [remainingMs, setRemainingMs]');
+  });
+});
+
+describe('стеля на порожні спроби не має бути глухим кутом', () => {
+  const matching = () => read('Matching.jsx');
+
+  it('повертає бюджет спроб на прокрутку донизу', () => {
+    // Регресія: після двох порожніх спроб `runAutoLoadMore` виходив ще до
+    // виклику `loadMore`, і стрічка стояла намертво до перезавантаження
+    // сторінки. Стеля ловить самохідний цикл, а не живу людину, яка гортає.
+    const source = matching();
+    const handler = source.slice(
+      source.indexOf("window.history.scrollRestoration = 'manual';"),
+      source.indexOf("window.addEventListener('scroll', handleScroll"),
+    );
+    expect(handler).toContain('if (nextY <= previousY) return;');
+    expect(handler).toContain('emptyAutoLoadMoreAttemptsRef.current = 0;');
+  });
+
+  it('дає адмінові повторну спробу на прокрутку, бо перетин уже не спрацює', () => {
+    // Кінець списку вже видно, тож нової події перетину не буде: без цього
+    // стрічка стояла б, доки читач не перезавантажить сторінку.
+    const source = matching();
+    const effect = source.slice(
+      source.indexOf('if (isThrottledFeedPaging || !scrolledDownSinceLoad) return;'),
+      source.indexOf("endOfDeckLoadRef.current('feed-scroll');"),
+    );
+    expect(effect).toContain('if (!feedEndVisible || !hasMore || loading || detailIndex !== null) return;');
+    // Жест витрачається: одна прокрутка донизу — одна спроба.
+    expect(effect).toContain('scrolledDownSinceLoadRef.current = false;');
+  });
+
+  it('каже вголос, що порція не дала карток, замість мовчазного відліку', () => {
+    // Відлік, після якого нічого не змінюється, читається як зламана сторінка.
+    const source = matching();
+    expect(source).toContain('setLastLoadAddedNothing(visibleAdded === 0);');
+    expect(source).toContain('Минула порція не дала нових карток');
+  });
+
+  it('не рахує відновлення позиції за жест читача', () => {
+    const source = matching();
+    const restore = source.slice(
+      source.indexOf('window.scrollTo(0, Number(savedY));'),
+      source.indexOf('restoreRef.current = true;'),
+    );
+    expect(restore).toContain('scrollPositionRef.current = Number(savedY);');
   });
 });
 
