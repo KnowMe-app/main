@@ -1,5 +1,6 @@
 import {
   MATCHING_CARD_SCHEMA_VERSION,
+  buildMatchingCardsPayloadFromCollections,
   MATCHING_SUMMARY_FLAG,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
@@ -171,5 +172,63 @@ describe('resolveMatchingCardAvatarFromProfile', () => {
     expect(resolveMatchingCardAvatarFromProfile({ photos: { '0': 'https://a' } })).toBe('https://a');
     expect(resolveMatchingCardAvatarFromProfile({ photos: [] })).toBe('');
     expect(resolveMatchingCardAvatarFromProfile({})).toBe('');
+  });
+});
+
+describe('buildMatchingCardsPayloadFromCollections', () => {
+  const collections = {
+    users: {
+      ['a'.repeat(28)]: { name: 'Яна', photos: ['https://example.test/a.jpg'], lastLogin2: '2026-08-19' },
+      ['b'.repeat(28)]: { name: 'Ольга', lastLogin2: '2026-08-18' },
+    },
+    newUsers: {
+      short1: { name: 'Ірина', lastLogin2: '2026-08-17' },
+    },
+  };
+
+  it('віддає вміст вузла, придатний для прямого імпорту в matchingCards', () => {
+    const { payload } = buildMatchingCardsPayloadFromCollections(collections);
+
+    expect(Object.keys(payload).sort()).toEqual(['a'.repeat(28), 'b'.repeat(28), 'short1'].sort());
+    // Ключі — це userId, а не шлях від кореня: файл лягає саме у вузол matchingCards.
+    expect(payload['a'.repeat(28)].name).toBe('Яна');
+    expect(payload['a'.repeat(28)].v).toBe(MATCHING_CARD_SCHEMA_VERSION);
+  });
+
+  it('проставляє колекцію за тим, з якого файлу прийшла картка', () => {
+    const { payload } = buildMatchingCardsPayloadFromCollections(collections);
+    expect(payload['a'.repeat(28)].source).toBe('users');
+    expect(payload.short1.source).toBe('newUsers');
+  });
+
+  it('рахує, скільки карток лишились без аватара', () => {
+    const { stats } = buildMatchingCardsPayloadFromCollections(collections);
+
+    expect(stats.total).toBe(3);
+    expect(stats.written).toBe(3);
+    // Офлайн-збірка не ходить у Storage, тож аватар мають лише анкети з `photos`.
+    expect(stats.withAvatar).toBe(1);
+    expect(stats.withoutAvatar).toBe(2);
+    expect(stats.byCollection.users.written).toBe(2);
+    expect(stats.byCollection.newUsers.written).toBe(1);
+  });
+
+  it('пропускає биті записи, не ламаючи решту файлу', () => {
+    const { payload, stats } = buildMatchingCardsPayloadFromCollections({
+      users: {
+        ['c'.repeat(28)]: { name: 'Ок' },
+        ['d'.repeat(28)]: null,
+        '': { name: 'Без id' },
+      },
+    });
+
+    expect(Object.keys(payload)).toEqual(['c'.repeat(28)]);
+    expect(stats.written).toBe(1);
+  });
+
+  it('переживає порожній вхід', () => {
+    const { payload, stats } = buildMatchingCardsPayloadFromCollections({});
+    expect(payload).toEqual({});
+    expect(stats.written).toBe(0);
   });
 });
