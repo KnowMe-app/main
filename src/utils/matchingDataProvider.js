@@ -1572,7 +1572,18 @@ export const fetchFilteredMatchingSourceChunk = ({
           : fetchUsersByLastLogin2(sourceLimit, cursor)
       );
 
-      if (typeof fetchMatchingCardsPage !== 'function') return readProfilePage();
+      // Читач мусить знати, чим саме він зараз читає стрічку: різниця між
+      // проєкцією і повною анкетою — це порядок величини трафіку, і мовчазне
+      // сповзання на анкети виглядає просто як «чомусь важко».
+      const reportFeedSource = (feedSource, reason) => {
+        if (typeof onDiagnosticEvent !== 'function') return;
+        onDiagnosticEvent({ stage: 'feed-source', status: 'completed', feedSource, reason, collectionSource });
+      };
+
+      if (typeof fetchMatchingCardsPage !== 'function') {
+        reportFeedSource('profiles', 'pager-unavailable');
+        return readProfilePage();
+      }
 
       // Основний шлях: одна сторінка стрічки = один запит по вузлу проєкцій,
       // де картка важить сотні байтів і вже несе аватар. Проєкція може бути ще
@@ -1580,15 +1591,24 @@ export const fetchFilteredMatchingSourceChunk = ({
       // сторінка приходить порожньою, і читач мовчки повертається до анкет.
       try {
         const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor, collectionSource });
-        if (cardsPage?.users?.length && cardsPage.indexComplete !== false) return cardsPage;
+        if (cardsPage?.users?.length && cardsPage.indexComplete !== false) {
+          reportFeedSource('matchingCards', '');
+          return cardsPage;
+        }
         if (cardsPage?.indexComplete === false) {
           console.info('[Matching][matchingCards] індекс неповний — читаємо анкети напряму', { collectionSource });
+          reportFeedSource('profiles', 'index-incomplete');
           return readProfilePage();
         }
-        if (cursor) return cardsPage;
+        if (cursor) {
+          reportFeedSource('matchingCards', '');
+          return cardsPage;
+        }
         console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму', { collectionSource });
+        reportFeedSource('profiles', 'index-empty');
       } catch (error) {
         console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
+        reportFeedSource('profiles', 'index-read-failed');
       }
 
       return readProfilePage();

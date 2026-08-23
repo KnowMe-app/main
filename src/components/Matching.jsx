@@ -304,6 +304,17 @@ const formatMatchingSearchKeyLabel = searchKey => {
   return String(value ?? '').trim() || key;
 };
 
+// Чому стрічка сповзла з проєкцій на повні анкети. Текст говорить, що робити:
+// сама по собі наявність вузла `matchingCards` нічого не вмикає — читач довіряє
+// йому лише тоді, коли `matchingCardsMeta/{колекція}/complete === true`, а цей
+// прапорець ставить тільки повна перебудова.
+const FEED_SOURCE_FALLBACK_REASONS = {
+  'index-incomplete': 'matchingCards позначено неповним — потрібна перебудова індексу',
+  'index-empty': 'matchingCards порожній для цієї колекції — індекс не побудовано',
+  'index-read-failed': 'matchingCards не вдалося прочитати',
+  'pager-unavailable': 'пагінація matchingCards недоступна',
+};
+
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
 const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
@@ -1727,6 +1738,11 @@ const Matching = () => {
   // текстом, і в їхніх списках залежностей він має бути вже ініціалізований.
   const isThrottledFeedPaging = !access.isAdmin;
 
+  // Повідомлення про джерело стрічки адресоване тому, хто може перебудувати
+  // індекс або хоча б повідомити про проблему, а не кожному читачеві.
+  const canSeeFeedSourceNotice = access.isAdmin
+    || String(auth.currentUser?.uid || '').trim() === BACKEND_TRAFFIC_TRACKING_TEST_UID;
+
   useEffect(() => {
     let active = true;
     if (!ownerId || isAdmin) {
@@ -1879,6 +1895,26 @@ const Matching = () => {
     setLoading(true);
     return requestId;
   }, []);
+  // Стрічка читається або проєкціями, або повними анкетами — між ними порядок
+  // величини трафіку. Сповзання на анкети мовчазне: воно виглядає просто як
+  // «чомусь важко», і без цього повідомлення причину видно лише в консолі, якої
+  // на телефоні немає. Кажемо один раз на причину за сесію і лише тим, хто може
+  // з цим щось зробити.
+  const announcedFeedSourceRef = useRef(new Set());
+  const announceFeedSource = React.useCallback(event => {
+    if (!canSeeFeedSourceNotice) return;
+    const reason = String(event?.reason || '');
+    if (event?.feedSource !== 'profiles' || !reason) return;
+    const key = `${event?.collectionSource || ''}:${reason}`;
+    if (announcedFeedSourceRef.current.has(key)) return;
+    announcedFeedSourceRef.current.add(key);
+    toast(`${FEED_SOURCE_FALLBACK_REASONS[reason] || reason} — стрічка читає повні анкети замість matchingCards`, {
+      icon: '📦',
+      id: `matching-feed-source-${key}`,
+      duration: 8000,
+    });
+  }, [canSeeFeedSourceNotice]);
+
   const recordInitialLoadDiagnostic = React.useCallback(event => {
     const requestId = initialRequestIdRef.current;
     const timestamp = new Date().toISOString();
@@ -1887,7 +1923,8 @@ const Matching = () => {
     initialLoadTraceRef.current = next;
     setInitialLoadTrace(next);
     writeMatchingDebugLog('initialLoad:trace', entry);
-  }, []);
+    if (event?.stage === 'feed-source') announceFeedSource(event);
+  }, [announceFeedSource]);
   const reportInitialLoadError = React.useCallback(error => {
     const diagnostic = normalizeMatchingInitialLoadError(error, {
       collectionSource,
