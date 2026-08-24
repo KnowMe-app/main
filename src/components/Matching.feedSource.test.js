@@ -35,8 +35,9 @@ describe('дзеркалення анкет у matchingCards', () => {
 describe('чим саме читається стрічка', () => {
   it('називає причину, коли сповзає з проєкцій на повні анкети', () => {
     const provider = read('../utils/matchingDataProvider.js');
-    ['index-incomplete', 'index-empty', 'index-read-failed', 'pager-unavailable']
+    ['index-incomplete', 'index-empty', 'pager-unavailable']
       .forEach(reason => expect(provider).toContain(`reportFeedSource('profiles', '${reason}')`));
+    expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
     expect(provider).toContain("reportFeedSource('matchingCards', '')");
   });
 
@@ -54,6 +55,15 @@ describe('чим саме читається стрічка', () => {
     const source = read('Matching.jsx');
     expect(source).toContain('const canSeeFeedSourceNotice = access.isAdmin');
     expect(source).toContain('if (!canSeeFeedSourceNotice) return;');
+  });
+
+  it('несе код помилки, бо саме він і є відповіддю', () => {
+    // PERMISSION_DENIED і «Index not defined» лікуються по-різному, а без коду
+    // обидва виглядають однаково — просто «не вдалося прочитати».
+    const provider = read('../utils/matchingDataProvider.js');
+    expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
+    expect(provider).toContain("const errorCode = String(error?.code || error?.name || '').trim();");
+    expect(read('Matching.jsx')).toContain("const detail = [event?.errorCode, event?.errorMessage]");
   });
 
   it('не повторює ту саму причину за сесію', () => {

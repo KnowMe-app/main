@@ -1575,9 +1575,21 @@ export const fetchFilteredMatchingSourceChunk = ({
       // Читач мусить знати, чим саме він зараз читає стрічку: різниця між
       // проєкцією і повною анкетою — це порядок величини трафіку, і мовчазне
       // сповзання на анкети виглядає просто як «чомусь важко».
-      const reportFeedSource = (feedSource, reason) => {
+      const reportFeedSource = (feedSource, reason, error = null) => {
         if (typeof onDiagnosticEvent !== 'function') return;
-        onDiagnosticEvent({ stage: 'feed-source', status: 'completed', feedSource, reason, collectionSource });
+        // Код помилки — це і є відповідь: PERMISSION_DENIED і «Index not defined»
+        // лікуються по-різному, а без нього обидва виглядають як «не вдалося».
+        const errorCode = String(error?.code || error?.name || '').trim();
+        const errorMessage = String(error?.message || '').trim().slice(0, 200);
+        onDiagnosticEvent({
+          stage: 'feed-source',
+          status: 'completed',
+          feedSource,
+          reason,
+          collectionSource,
+          errorCode,
+          errorMessage,
+        });
       };
 
       if (typeof fetchMatchingCardsPage !== 'function') {
@@ -1608,7 +1620,7 @@ export const fetchFilteredMatchingSourceChunk = ({
         reportFeedSource('profiles', 'index-empty');
       } catch (error) {
         console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
-        reportFeedSource('profiles', 'index-read-failed');
+        reportFeedSource('profiles', 'index-read-failed', error);
       }
 
       return readProfilePage();

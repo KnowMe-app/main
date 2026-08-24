@@ -1908,7 +1908,9 @@ const Matching = () => {
     const key = `${event?.collectionSource || ''}:${reason}`;
     if (announcedFeedSourceRef.current.has(key)) return;
     announcedFeedSourceRef.current.add(key);
-    toast(`${FEED_SOURCE_FALLBACK_REASONS[reason] || reason} — стрічка читає повні анкети замість matchingCards`, {
+    const detail = [event?.errorCode, event?.errorMessage].map(part => String(part || '').trim()).filter(Boolean).join(': ');
+    const suffix = detail ? `\n${detail}` : '';
+    toast(`${FEED_SOURCE_FALLBACK_REASONS[reason] || reason} — стрічка читає повні анкети замість matchingCards${suffix}`, {
       icon: '📦',
       id: `matching-feed-source-${key}`,
       duration: 8000,
