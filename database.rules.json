@@ -102,15 +102,16 @@
     "searchId": {
       "$key": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.uid == $key || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write' || (!data.exists() && newData.isString() && newData.val() == auth.uid) || (data.isString() && data.val() != auth.uid && !newData.child('2').exists() && newData.child('0').val() == data.val() && newData.child('1').val() == auth.uid) || (!newData.exists() && data.isString() && data.val() == auth.uid))"
       }
     },
     "searchKey": {
       "$indexName": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write')",
         "$value": {
           "$userId": {
+            ".write": "auth != null && auth.uid == $userId",
             ".validate": "newData.val() === true || newData.val() === null"
           }
         }
@@ -118,9 +119,10 @@
       "users": {
         "$indexName": {
           ".read": "auth != null",
-          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write')",
           "$value": {
             "$userId": {
+              ".write": "auth != null && auth.uid == $userId",
               ".validate": "newData.val() === true || newData.val() === null"
             }
           }
@@ -138,7 +140,7 @@
     "searchKeySets": {
       ".read": "auth != null",
       "$keySet": {
-        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write')",
         "$indexName": {
           "$value": {
             "$userId": {
