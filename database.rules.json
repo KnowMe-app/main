@@ -135,13 +135,6 @@
         ".validate": "!newData.exists() || (newData.child('source').val() == 'users' && root.child('users').child($uid).exists()) || (newData.child('source').val() == 'newUsers' && root.child('newUsers').child($uid).exists())"
       }
     },
-    "matchingCardsMeta": {
-      ".read": "auth != null",
-      "$source": {
-        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
-        ".validate": "$source == 'users' || $source == 'newUsers'"
-      }
-    },
     "searchKeySets": {
       ".read": "auth != null",
       "$keySet": {

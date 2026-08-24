@@ -3282,10 +3282,7 @@ const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload,
       nextData = snapshot.exists() ? snapshot.val() : null;
     }
     if (!nextData || typeof nextData !== 'object') return;
-    const projection = await syncMatchingCardIndex(id, { ...nextData, __sourceCollection: collection });
-    if (!projection) {
-      await set(ref2(database, `matchingCardsMeta/${collection}/complete`), false);
-    }
+    await syncMatchingCardIndex(id, { ...nextData, __sourceCollection: collection });
   } catch (error) {
     console.warn('[matchingCards] не вдалося оновити картку після збереження анкети', { userId: id, error });
   }
@@ -3758,11 +3755,6 @@ export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collec
   const orderField = source ? 'sourceLastLogin2' : MATCHING_CARD_ORDER_FIELD;
   const today = new Date().toISOString().split('T')[0];
   const upperBound = source ? `${source}:${today}` : today;
-  let indexComplete = true;
-  if (source) {
-    const completenessSnapshot = await get(ref2(database, `matchingCardsMeta/${source}/complete`));
-    indexComplete = completenessSnapshot.val() === true;
-  }
   const normalizedCursor = cursor && typeof cursor === 'object'
     ? { date: String(cursor.date || ''), userId: String(cursor.userId || '') }
     : { date: String(cursor || ''), userId: '' };
@@ -3824,7 +3816,6 @@ export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collec
       ? { date: String(lastEntry[1]?.[MATCHING_CARD_ORDER_FIELD] || ''), userId: lastEntry[0] }
       : null,
     hasMore,
-    indexComplete,
   };
 };
 
@@ -3907,7 +3898,6 @@ const MATCHING_CARDS_FAILURE_STAGES = {
   read: collection => `читання колекції ${collection}`,
   cleanup: () => 'прибирання застарілих карток у matchingCards',
   write: () => 'запис карток у matchingCards',
-  meta: () => 'позначка готовності в matchingCardsMeta',
 };
 
 const describeMatchingCardsFailure = (error, { stage, collection }) => {
@@ -3916,21 +3906,13 @@ const describeMatchingCardsFailure = (error, { stage, collection }) => {
   const where = (MATCHING_CARDS_FAILURE_STAGES[stage] || (() => stage))(collection);
   const explained = new Error(
     `Немає доступу: ${where}. Найімовірніше, не викочені правила бази — вузлів `
-      + '`matchingCards` і `matchingCardsMeta` для правил ще не існує, тож діє заборона '
+      + '`matchingCards` для правил ще не існує, тож діє заборона '
       + 'з кореня. Виконайте `firebase deploy --only database`. Або зберіть '
       + 'matchingCards.json локально і залийте його вручну: ручний імпорт іде повз правила.',
   );
   explained.cause = error;
   explained.code = 'MATCHING_CARDS_PERMISSION_DENIED';
   return explained;
-};
-
-const markMatchingCardsCollectionComplete = async collection => {
-  try {
-    await set(ref2(database, `matchingCardsMeta/${collection}/complete`), true);
-  } catch (error) {
-    throw describeMatchingCardsFailure(error, { stage: 'meta', collection });
-  }
 };
 
 export const createMatchingCardsIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3954,7 +3936,6 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
         stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
       }
     });
-    stalePayload[`matchingCardsMeta/${collection}/complete`] = null;
     await update(ref2(database), stalePayload);
   } catch (error) {
     throw describeMatchingCardsFailure(error, { stage: 'cleanup', collection });
@@ -3963,7 +3944,6 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
   const userIds = Object.keys(usersData).filter(Boolean);
   const total = userIds.length;
   if (!total) {
-    await markMatchingCardsCollectionComplete(collection);
     return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
   }
 
@@ -4002,8 +3982,6 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
       onProgress(Math.floor((processed / total) * 100), { collection, processed, total });
     }
   }
-
-  await markMatchingCardsCollectionComplete(collection);
 
   return { collection, total, written, skipped, withStorageAvatar };
 };

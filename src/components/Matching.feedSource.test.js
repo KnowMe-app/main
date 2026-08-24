@@ -35,7 +35,7 @@ describe('дзеркалення анкет у matchingCards', () => {
 describe('чим саме читається стрічка', () => {
   it('називає причину, коли сповзає з проєкцій на повні анкети', () => {
     const provider = read('../utils/matchingDataProvider.js');
-    ['index-incomplete', 'index-empty', 'pager-unavailable']
+    ['index-empty', 'pager-unavailable']
       .forEach(reason => expect(provider).toContain(`reportFeedSource('profiles', '${reason}')`));
     expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
     expect(provider).toContain("reportFeedSource('matchingCards', '')");
@@ -47,7 +47,7 @@ describe('чим саме читається стрічка', () => {
       source.indexOf('const FEED_SOURCE_FALLBACK_REASONS = {'),
       source.indexOf('const DEBUG_ADDITIONAL_MATCHING_USER_ID'),
     );
-    ['index-incomplete', 'index-empty', 'index-read-failed', 'pager-unavailable']
+    ['index-empty', 'index-read-failed', 'pager-unavailable']
       .forEach(reason => expect(map).toContain(`'${reason}':`));
   });
 

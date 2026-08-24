@@ -32,12 +32,11 @@ describe('доступ до вузла matchingCards', () => {
     expect(validate).toContain("root.child('newUsers').child($uid).exists()");
   });
 
-  it('тримає позначку готовності індексу під адмінським записом', () => {
-    // Читач звіряється з нею, щоб не довіритись напівзібраному індексу.
-    const meta = rules.matchingCardsMeta;
-    expect(meta).toBeTruthy();
-    expect(meta['.read']).toBe('auth != null');
-    ADMIN_UIDS.forEach(uid => expect(meta.$source['.write']).toContain(uid));
+  it('більше не тримає окремої позначки готовності індексу', () => {
+    // Колекція перебудована під вимоги `matchingCards`, а дзеркалення тримає її
+    // такою: картка зʼявляється разом з анкетою і зникає разом з нею. Прапорець
+    // лишався б зайвим читанням перед кожною сторінкою заради сталого `true`.
+    expect(rules.matchingCardsMeta).toBeUndefined();
   });
 
   it('відкриває читання рівно тим, хто читає users', () => {
