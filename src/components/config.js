@@ -33,7 +33,7 @@ import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
-import { getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
+import { getExplicitlyDeletedKeys, getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdCandidateKeys,
@@ -3350,19 +3350,11 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
           // console.log(`${key} currentValues :>> `, currentValues);
           // console.log(`${key} newValues :>> `, newValues);
 
-          // Видаляємо значення, яких більше немає у новому масиві
-          for (const value of currentValues) {
-            let cleanedValue = value;
-
-            // Якщо ключ — це 'phone', прибираємо пробіли у значенні
-            if (key === 'phone') {
-              cleanedValue = normalizePhoneForStorage(value);
-            }
-
-            if (!newValues.includes(cleanedValue)) {
-              await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'remove'); // Видаляємо конкретний ID
-            }
-          }
+          // Значення, яких більше немає в новому масиві, лишаються в індексі.
+          // Змінена пошта — не зникла пошта: анкету шукають ще й ті, хто знає
+          // лише старий контакт. Юзер бачить у себе тільки нову адресу, а
+          // адмін бачить обидві й сам вирішує, чи стару зносити. Ключ
+          // знімається вище — коли поле стерли навмисно.
 
           // Додаємо нові значення, яких не було в старому масиві
           for (const value of newValues) {
@@ -4111,8 +4103,19 @@ const extractIndexableFieldValues = rawValue => {
   return [];
 };
 
+/**
+ * Індекс `searchId` доповнюється, а не переписується.
+ *
+ * Змінена пошта — не зникла пошта. Анкету шукають ще й ті, хто знає лише
+ * старий контакт, тож заміна значення додає новий ключ і лишає старий: юзер
+ * бачить у себе тільки нову адресу, адмін бачить обидві й сам вирішує, чи
+ * стару зносити. Знімається ключ лише тоді, коли поле стерли навмисно —
+ * тобто воно прийшло в `deletedKeys`.
+ */
 export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}, deletedKeys = []) => {
   if (!userId) return;
+
+  const explicitlyDeletedKeys = new Set(getExplicitlyDeletedKeys(deletedKeys));
 
   for (const key of getSubmittedSearchIndexKeys(keysToCheck, nextData, deletedKeys)) {
 
@@ -4123,7 +4126,7 @@ export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}
       extractIndexableFieldValues(nextData[key]).flatMap(value => buildSearchIndexCandidates(key, value))
     );
 
-    for (const candidate of prevCandidates) {
+    for (const candidate of explicitlyDeletedKeys.has(key) ? prevCandidates : []) {
       if (!nextCandidates.has(candidate)) {
         // eslint-disable-next-line no-await-in-loop
         await updateSearchId(key, candidate, userId, 'remove');

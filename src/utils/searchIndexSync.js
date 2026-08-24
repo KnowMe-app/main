@@ -1,7 +1,7 @@
 export const hasOwn = (object, key) =>
   Object.prototype.hasOwnProperty.call(object || {}, key);
 
-const getExplicitlyDeletedKeys = deletedKeys => {
+export const getExplicitlyDeletedKeys = deletedKeys => {
   if (!deletedKeys) return [];
 
   if (Array.isArray(deletedKeys)) {
