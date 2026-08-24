@@ -1601,16 +1601,17 @@ export const fetchFilteredMatchingSourceChunk = ({
       // де картка важить сотні байтів і вже несе аватар. Проєкція може бути ще
       // не побудована (нова база, індексація не запускалась) — тоді перша ж
       // сторінка приходить порожньою, і читач мовчки повертається до анкет.
+      //
+      // Окремого прапорця повноти більше немає: колекція перебудована під вимоги
+      // `matchingCards`, а дзеркалення тримає її такою — картка зʼявляється разом
+      // з анкетою і зникає разом з нею. Питати дозволу в `matchingCardsMeta`
+      // означало б робити зайве читання перед кожною сторінкою заради значення,
+      // яке однаково завжди `true`.
       try {
         const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor, collectionSource });
-        if (cardsPage?.users?.length && cardsPage.indexComplete !== false) {
+        if (cardsPage?.users?.length) {
           reportFeedSource('matchingCards', '');
           return cardsPage;
-        }
-        if (cardsPage?.indexComplete === false) {
-          console.info('[Matching][matchingCards] індекс неповний — читаємо анкети напряму', { collectionSource });
-          reportFeedSource('profiles', 'index-incomplete');
-          return readProfilePage();
         }
         if (cursor) {
           reportFeedSource('matchingCards', '');

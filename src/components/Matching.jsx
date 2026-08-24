@@ -304,12 +304,8 @@ const formatMatchingSearchKeyLabel = searchKey => {
   return String(value ?? '').trim() || key;
 };
 
-// Чому стрічка сповзла з проєкцій на повні анкети. Текст говорить, що робити:
-// сама по собі наявність вузла `matchingCards` нічого не вмикає — читач довіряє
-// йому лише тоді, коли `matchingCardsMeta/{колекція}/complete === true`, а цей
-// прапорець ставить тільки повна перебудова.
+// Чому стрічка сповзла з проєкцій на повні анкети. Текст говорить, що робити.
 const FEED_SOURCE_FALLBACK_REASONS = {
-  'index-incomplete': 'matchingCards позначено неповним — потрібна перебудова індексу',
   'index-empty': 'matchingCards порожній для цієї колекції — індекс не побудовано',
   'index-read-failed': 'matchingCards не вдалося прочитати',
   'pager-unavailable': 'пагінація matchingCards недоступна',
