@@ -1,4 +1,6 @@
 import {
+  syncUserSearchIdIndex,
+  syncUserSearchKeyIndex,
   updateDataInFiresoreDB,
   updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
@@ -45,6 +47,22 @@ export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCon
       : { lastLogin2: uploadedInfo.lastLogin2 },
     shouldWriteFullProfileToNewUsers ? 'update' : 'set'
   );
+
+  // Реєстрація — це поява анкети, тож тут же зʼявляються і її пошукові індекси.
+  //
+  // Проєкцію під стрічку писачі оновлюють самі, а `searchId` і `searchKey` досі
+  // не писав ніхто: щойно зареєстрований акаунт не знаходився ні за поштою, ні
+  // за іменем, доки власник не відкриє й не збереже анкету вручну. Індекси —
+  // прискорення читання, а не частина реєстрації, тож збій тут її не валить.
+  if (firestoreCondition !== 'set') return;
+  await Promise.all([
+    syncUserSearchIdIndex(userId, {}, uploadedInfo).catch(error => {
+      console.warn('[registration] не вдалося оновити searchId', error);
+    }),
+    syncUserSearchKeyIndex(userId, {}, uploadedInfo).catch(error => {
+      console.warn('[registration] не вдалося оновити searchKey', error);
+    }),
+  ]);
 };
 
 export const buildAuthSessionPayload = ({ todayDays, todayDash }) => ({

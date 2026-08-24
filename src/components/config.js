@@ -2534,6 +2534,11 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   // Нова анкета одразу отримує урізану картку, інакше вона зʼявиться в стрічці
   // тільки після наступної індексації.
   await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });
+  // І повний `searchId` по всіх полях, а не лише по тому, з якого її створили.
+  // Запит на кшталт «УК СМ …» кладе в анкету і імʼя, і прізвище, і контакт —
+  // але нижче в індекс іде тільки ключ самого запиту, тож за рештою полів нова
+  // анкета не знаходилась, доки хтось її не відредагує.
+  await syncUserSearchIdIndex(newUserId, {}, newUser);
 
   if (searchMeta?.searchIdKey) {
     const { searchIdKey } = searchMeta;
