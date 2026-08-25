@@ -72,19 +72,30 @@ describe('buildMatchingCardProjection', () => {
     expect(projection).not.toHaveProperty('weight');
   });
 
-  it('пише publish лише коли анкету не показують — за міркою стрічки', () => {
-    expect(buildMatchingCardProjection('id', { name: 'A', publish: true })).not.toHaveProperty('publish');
-    expect(buildMatchingCardProjection('id', { name: 'A', publish: 'true' })).not.toHaveProperty('publish');
+  it('пише publish лише коли анкету users не показують — за міркою стрічки', () => {
+    const usersId = 'a'.repeat(28);
+    const build = profile => buildMatchingCardProjection(usersId, profile);
+
+    expect(build({ name: 'A', publish: true })).not.toHaveProperty('publish');
+    expect(build({ name: 'A', publish: 'true' })).not.toHaveProperty('publish');
     // Анкети старих поколінь тримають publish масивом; стрічка читає його як
     // «показувати», щойно там є true.
-    expect(buildMatchingCardProjection('id', { name: 'A', publish: [false, true] })).not.toHaveProperty('publish');
+    expect(build({ name: 'A', publish: [false, true] })).not.toHaveProperty('publish');
 
-    expect(buildMatchingCardProjection('id', { name: 'A', publish: false }).publish).toBe(false);
+    expect(build({ name: 'A', publish: false }).publish).toBe(false);
     // «Не показувати» — це не лише літеральне false: анкета, яка ніколи не
     // вмикала показ, теж має лягти в проєкцію винятком, інакше картка без
     // ключа назве її показаною.
-    expect(buildMatchingCardProjection('id', { name: 'A' }).publish).toBe(false);
-    expect(buildMatchingCardProjection('id', { name: 'A', publish: '' }).publish).toBe(false);
+    expect(build({ name: 'A' }).publish).toBe(false);
+    expect(build({ name: 'A', publish: '' }).publish).toBe(false);
+  });
+
+  it('не пише publish у картку newUsers — там показ вирішують правила доступу', () => {
+    expect(buildMatchingCardProjection('short', { name: 'A' })).not.toHaveProperty('publish');
+    expect(buildMatchingCardProjection('short', { name: 'A', publish: false })).not.toHaveProperty('publish');
+    expect(
+      buildMatchingCardProjection('a'.repeat(28), { name: 'A', __sourceCollection: 'newUsers' }),
+    ).not.toHaveProperty('publish');
   });
 
   it('відносить короткий id до newUsers, довгий — до users', () => {
