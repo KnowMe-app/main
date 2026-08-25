@@ -11,6 +11,7 @@ import {
   resolveMatchingCardAvatarFromProfile,
 } from '../matchingCardIndex';
 import { countProfileFields, resolveProfileFieldCountBucket } from '../fieldCountBuckets';
+import { canShowMatchingUser } from '../reactionPriority';
 
 const fullProfile = {
   name: 'Яна',
@@ -27,6 +28,7 @@ const fullProfile = {
   ownKids: '2',
   lastDelivery: '2023-02-21',
   role: 'ed',
+  publish: true,
   lastLogin2: '2026-08-19',
   phone: '+380671112233',
   telegram: 'yana',
@@ -70,10 +72,19 @@ describe('buildMatchingCardProjection', () => {
     expect(projection).not.toHaveProperty('weight');
   });
 
-  it('пише publish лише коли анкету сховано', () => {
-    expect(buildMatchingCardProjection('id', { name: 'A' })).not.toHaveProperty('publish');
-    expect(buildMatchingCardProjection('id', { name: 'A', publish: false }).publish).toBe(false);
+  it('пише publish лише коли анкету не показують — за міркою стрічки', () => {
     expect(buildMatchingCardProjection('id', { name: 'A', publish: true })).not.toHaveProperty('publish');
+    expect(buildMatchingCardProjection('id', { name: 'A', publish: 'true' })).not.toHaveProperty('publish');
+    // Анкети старих поколінь тримають publish масивом; стрічка читає його як
+    // «показувати», щойно там є true.
+    expect(buildMatchingCardProjection('id', { name: 'A', publish: [false, true] })).not.toHaveProperty('publish');
+
+    expect(buildMatchingCardProjection('id', { name: 'A', publish: false }).publish).toBe(false);
+    // «Не показувати» — це не лише літеральне false: анкета, яка ніколи не
+    // вмикала показ, теж має лягти в проєкцію винятком, інакше картка без
+    // ключа назве її показаною.
+    expect(buildMatchingCardProjection('id', { name: 'A' }).publish).toBe(false);
+    expect(buildMatchingCardProjection('id', { name: 'A', publish: '' }).publish).toBe(false);
   });
 
   it('відносить короткий id до newUsers, довгий — до users', () => {
@@ -132,6 +143,39 @@ describe('expandMatchingCard', () => {
   it('лишає порожній список фото, коли аватара немає', () => {
     const projection = buildMatchingCardProjection('id', { name: 'A' });
     expect(expandMatchingCard('id', projection).photos).toEqual([]);
+  });
+
+  it('розгортає відсутній publish у явне true, а виняток лишає false', () => {
+    const id = 'a'.repeat(28);
+    const shown = expandMatchingCard(id, buildMatchingCardProjection(id, fullProfile));
+    const hidden = expandMatchingCard(id, buildMatchingCardProjection(id, { ...fullProfile, publish: false }));
+
+    expect(shown.publish).toBe(true);
+    expect(hidden.publish).toBe(false);
+  });
+});
+
+// Стрічка міряє картку тим самим `canShowMatchingUser`, що й повну анкету, а той
+// рахує відсутній `publish` за «не показувати». Тож проєкція, що мовчала про
+// показані анкети, лишала неадміну нуль карток при повному вузлі matchingCards.
+describe('картка проходить фінальну перевірку показу', () => {
+  const id = 'a'.repeat(28);
+  const expand = profile => expandMatchingCard(id, buildMatchingCardProjection(id, profile));
+
+  it('показану анкету бачить і неадмін', () => {
+    expect(canShowMatchingUser(expand(fullProfile), { isAdmin: false })).toBe(true);
+    expect(canShowMatchingUser(expand({ ...fullProfile, publish: [false, true] }), { isAdmin: false })).toBe(true);
+  });
+
+  it('сховану анкету не бачить ніхто, крім адміна', () => {
+    expect(canShowMatchingUser(expand({ ...fullProfile, publish: false }), { isAdmin: false })).toBe(false);
+    expect(canShowMatchingUser(expand({ ...fullProfile, publish: false }), { isAdmin: true })).toBe(true);
+  });
+
+  it('анкету, яка ніколи не вмикала показ, стрічка теж не показує', () => {
+    const { publish, ...neverPublished } = fullProfile;
+    expect(canShowMatchingUser(expand(neverPublished), { isAdmin: false })).toBe(false);
+    expect(canShowMatchingUser(expand({ ...neverPublished, publish: '' }), { isAdmin: false })).toBe(false);
   });
 });
 

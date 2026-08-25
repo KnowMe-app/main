@@ -1,4 +1,5 @@
 import { resolveProfileFieldCountBucket } from './fieldCountBuckets';
+import { normalizePublish } from './reactionPriority';
 
 /**
  * `matchingCards` — проєкція анкети рівно під стрічку матчингу.
@@ -168,9 +169,14 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
 
-  // `publish: false` — це виняток («не показувати»), тож пишеться лише він.
-  // Відсутність ключа читається як «показувати», як і в повній анкеті.
-  if (data.publish === false) projection.publish = false;
+  // `publish: false` — це виняток («не показувати»), тож пишеться лише він, а
+  // відсутність ключа читається як «показувати».
+  //
+  // Виняток міряється тим самим `normalizePublish`, яким його міряє стрічка:
+  // «не показувати» — це не лише літеральне `false`, а й порожнє чи відсутнє
+  // значення. Звірка `data.publish === false` лишала без ключа і ті анкети, які
+  // ніколи не вмикали показ, — і проєкція звала їх показаними.
+  if (!normalizePublish(data.publish)) projection.publish = false;
 
   projection.fieldsCount = countProfileFieldsForIndex(data);
   projection.source = resolveMatchingCardCollection(id, data);
@@ -246,12 +252,20 @@ export const expandMatchingCard = (userId, card) => {
   const id = trimmed(userId);
   if (!id) return null;
 
-  const { avatar, contacts, fieldsCount, source, v, ...rest } = card;
+  const { avatar, contacts, fieldsCount, source, v, publish, ...rest } = card;
   const contactKeys = trimmed(contacts) ? contacts.split(',').filter(Boolean) : [];
 
   return {
     ...rest,
     userId: id,
+    // Відсутній ключ — це «показувати», тож розгортається він у явне `true`.
+    //
+    // Мовчати тут не можна: `canShowMatchingUser` міряє `publish` через
+    // `normalizePublish`, а той рахує `undefined` за «не показувати». Тобто
+    // картка без ключа — а це переважна більшість карток — зникала зі стрічки
+    // для всіх, крім двох адмінських uid, і стрічка показувала нуль карток при
+    // повному вузлі `matchingCards`.
+    publish: publish === false ? false : true,
     photos: avatar ? [avatar] : [],
     __photosHydrated: true,
     __sourceCollection: source === 'newUsers' ? 'newUsers' : 'users',
