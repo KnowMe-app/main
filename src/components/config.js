@@ -49,6 +49,7 @@ import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_ORDER_FIELD,
+  resolveMatchingCardFeedField,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
   expandMatchingCard,
@@ -3662,11 +3663,20 @@ export const getAllUserPhotos = async (userId, collectionSource = null, { includ
 // карток ділять одну дату `lastLogin2`, проблема в даних, а не в розмірі вікна.
 const MATCHING_CARDS_PAGE_WINDOW_CAP = 512;
 
-// У скільки разів перше вікно ширше за порцію. Замір на живих даних: із вікном
-// рівно на `limit + 1` кожна зі 120 сторінок поспіль ішла на друге коло —
-// 240 запитів замість 120. Четверний запас покриває звичайну групу карток з
-// однією датою і лишає сторінку одним запитом.
-const MATCHING_CARDS_FIRST_WINDOW_FACTOR = 4;
+// У скільки разів перше вікно ширше за порцію.
+//
+// Запас потрібен через збіг дат: `lastLogin2` — це день, тож курсор регулярно
+// стоїть усередині групи карток з тією самою датою, і вікно рівно на
+// `limit + 1` після відсікання за парою (дата, id) лишало менше, ніж треба.
+// Без запасу кожна зі 120 сторінок поспіль ішла на друге коло.
+//
+// Четверний запас закладався тоді, коли вікно наполовину складалося з карток,
+// які однаково не показуються. Тепер в індексі стрічки лежать лише показані,
+// і запас можна міряти самим збігом дат: на живих даних 277 показаних карток
+// розкидані по 219 датах, найбільша група однією датою — 4, найгірший випадок
+// «група + порція» — 10 карток. Подвійний запас це покриває, а подвоєння вікна
+// лишається запасним ходом на випадок, якого замір не бачив.
+const MATCHING_CARDS_FIRST_WINDOW_FACTOR = 2;
 
 const buildMatchingCardRef = userId => ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`);
 
@@ -3755,9 +3765,12 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null, co
   const safeLimit = Math.max(1, Number(limit) || 1);
   const cardsRef = ref2(database, MATCHING_CARDS_ROOT);
   const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
-  const orderField = source ? 'sourceLastLogin2' : MATCHING_CARD_ORDER_FIELD;
+  // Індекс стрічки містить лише показані картки, тож сторінка приходить щільною:
+  // фільтр показу відпрацював у базі, а не в браузері. Без джерела лишається
+  // старий порядок за датою — ним ходить хіба що читання повз деку.
+  const orderField = source ? resolveMatchingCardFeedField(source) : MATCHING_CARD_ORDER_FIELD;
   const today = new Date().toISOString().split('T')[0];
-  const upperBound = source ? `${source}:${today}` : today;
+  const upperBound = today;
   const normalizedCursor = cursor && typeof cursor === 'object'
     ? { date: String(cursor.date || ''), userId: String(cursor.userId || '') }
     : { date: String(cursor || ''), userId: '' };
@@ -3786,9 +3799,9 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null, co
   let windowSize = firstWindow;
 
   while (windowSize <= MATCHING_CARDS_PAGE_WINDOW_CAP) {
-    const cursorBound = normalizedCursor.date
-      ? (source ? `${source}:${normalizedCursor.date}` : normalizedCursor.date)
-      : upperBound;
+    // Ключ стрічки і `lastLogin2` — обидва чисті дати, тож межа однакова для
+    // будь-якого з них.
+    const cursorBound = normalizedCursor.date || upperBound;
     const cardsQuery = query(cardsRef, orderByChild(orderField), endAt(cursorBound), limitToLast(windowSize));
 
     // eslint-disable-next-line no-await-in-loop

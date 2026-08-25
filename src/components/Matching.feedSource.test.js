@@ -23,12 +23,14 @@ describe('дзеркалення анкет у matchingCards', () => {
     expect(config()).toContain('await syncMatchingCardIndex(newUserId, newUser,');
   });
 
-  it('пише поле, за яким стрічка сортує сторінку', () => {
-    // Без `sourceLastLogin2` інкрементально оновлена картка не потрапила б у
-    // запит стрічки, хоч і лежала б у вузлі.
+  it('пише ключ, за яким стрічка бере сторінку', () => {
+    // Без ключа стрічки інкрементально оновлена картка не потрапила б у запит,
+    // хоч і лежала б у вузлі.
     const index = read('../utils/matchingCardIndex.js');
-    expect(index).toContain('projection.sourceLastLogin2 =');
-    expect(index).toMatch(/projection\.sourceLastLogin2 = .+projection\.source.+projection\.lastLogin2/);
+    expect(index).toContain('projection[resolveMatchingCardFeedField(projection.source)] = projection.lastLogin2;');
+
+    // І лише показаній картці з датою: наявність ключа — це і є право показу.
+    expect(index).toMatch(/if \(normalizePublish\(data\.publish\) && projection\.lastLogin2\) \{/);
   });
 });
 

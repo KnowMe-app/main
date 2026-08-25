@@ -22,10 +22,45 @@ export const MATCHING_CARDS_ROOT = 'matchingCards';
  * Версія схеми. Читач, що бачить чужу версію, вважає картку застарілою і
  * догідратовує анкету повністю — так півмігрований індекс не показує порожнеч.
  */
-export const MATCHING_CARD_SCHEMA_VERSION = 2;
+export const MATCHING_CARD_SCHEMA_VERSION = 3;
 
 /** Поле, за яким сортується стрічка (потребує `.indexOn` у правилах БД). */
 export const MATCHING_CARD_ORDER_FIELD = 'lastLogin2';
+
+/**
+ * Ключі стрічки: `feedUsers` і `feedNewUsers`, значення — сама дата.
+ *
+ * Ключ є лише в показаної картки, і саме наявність, а не значення, дає право
+ * показу. Це не економія байтів, а перенесення фільтра з клієнта в індекс:
+ * схованої картки в діапазоні немає, тож вона не може приїхати у видачу.
+ * Перевірено на живій базі: з 26 610 карток 26 236 не мають `lastLogin2`, і
+ * `limitToLast(50)` по цьому індексу не повернув жодної з них, тоді як
+ * `limitToFirst(50)` повернув 50 — відсутній ключ сортується на початку і в
+ * хвіст діапазону не потрапляє.
+ *
+ * Джерело сидить у назві ключа, а не в значенні. Значення — чиста дата, тож
+ * межі діапазону читаються очима, а не розбираються по двокрапці. А два ключі
+ * замість одного зі складеним значенням тримають деки нарізно структурно:
+ * показана картка `newUsers` фізично не може опинитись в індексі `users`.
+ * Одного спільного ключа з датою вистачало б лише доти, доки в `newUsers`
+ * немає жодної показаної анкети з датою, — а це властивість сьогоднішніх
+ * даних, не схеми.
+ *
+ * Порядок у RTDB завжди зростаючий, і `val()` до того ж повертає обʼєкт, у
+ * якому порядок запиту не зберігається. Тож найновіші беруться з хвоста
+ * (`limitToLast`), а сортує читач.
+ */
+export const MATCHING_CARD_FEED_FIELDS = Object.freeze({
+  users: 'feedUsers',
+  newUsers: 'feedNewUsers',
+});
+
+/** Ключ стрічки тієї колекції, на яку показує дека. */
+export const resolveMatchingCardFeedField = source => (
+  source === 'newUsers' ? MATCHING_CARD_FEED_FIELDS.newUsers : MATCHING_CARD_FEED_FIELDS.users
+);
+
+export const buildMatchingCardFeedKey = (source, date) => `${source}:${date || ''}`;
 
 /** Прапорець на розгорнутій картці: це проєкція, а не повна анкета. */
 export const MATCHING_SUMMARY_FLAG = '__matchingSummary';
@@ -169,27 +204,24 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
 
-  // `publish: true` — це виняток («показувати»), тож пишеться лише він, а
-  // відсутність ключа означає «не показувати».
-  //
-  // Виняток саме такий, а не навпаки, з двох причин. Перша: так `publish` у
-  // картці означає рівно те саме, що в анкеті — `normalizePublish` читає
-  // відсутнє значення як «не показувати» в обох. Читачу нема чого
-  // переінтерпретовувати, і другого контракту, який треба тримати синхронним
-  // з першим, більше немає — а розходження цих двох контрактів і лишило
-  // стрічку без карток.
-  //
-  // Друга: загублений ключ ховає картку, а не показує її. «Стрічка порожня» —
-  // відмова, яку видно того ж дня; зайво показана анкета не помітна ніколи.
-  //
-  // Умови на джерело тут не треба: показ анкети `newUsers` вирішують правила
-  // доступу, і показаних серед них немає (0 з вибірки 795), тож ключ туди
-  // однаково не поїде.
-  if (normalizePublish(data.publish)) projection.publish = true;
-
   projection.fieldsCount = countProfileFieldsForIndex(data);
+
+  // `source` лишається окремим полем, хоч і повторює префікс ключа стрічки: на
+  // нього спирається `.validate` у правилах бази (картку можна писати лише
+  // тоді, коли анкета такого джерела справді існує), і саме з нього свою
+  // колекцію дізнається картка, дістана не стрічкою, а пошуком за id.
   projection.source = resolveMatchingCardCollection(id, data);
-  projection.sourceLastLogin2 = `${projection.source}:${projection.lastLogin2 || ''}`;
+
+  // Показані картки — і тільки вони — потрапляють в індекс стрічки. Окремих
+  // полів `publish` і `sourceLastLogin2` більше немає: перше виражається
+  // наявністю ключа, друге — його назвою і значенням.
+  //
+  // Картка без дати в індекс не йде: впорядкувати її нема за чим, а з порожнім
+  // значенням вона лягла б на дно діапазону і однаково не показалась би.
+  if (normalizePublish(data.publish) && projection.lastLogin2) {
+    projection[resolveMatchingCardFeedField(projection.source)] = projection.lastLogin2;
+  }
+
   projection.v = MATCHING_CARD_SCHEMA_VERSION;
 
   return projection;
@@ -261,14 +293,21 @@ export const expandMatchingCard = (userId, card) => {
   const id = trimmed(userId);
   if (!id) return null;
 
-  // `publish` іде далі як є — і в цьому суть: картка міряє показ тією самою
-  // міркою, що й повна анкета, тож перекладати його тут нема чого.
-  const { avatar, contacts, fieldsCount, source, v, ...rest } = card;
+  const {
+    avatar, contacts, fieldsCount, source, v,
+    [MATCHING_CARD_FEED_FIELDS.users]: feedUsers,
+    [MATCHING_CARD_FEED_FIELDS.newUsers]: feedNewUsers,
+    ...rest
+  } = card;
   const contactKeys = trimmed(contacts) ? contacts.split(',').filter(Boolean) : [];
 
   return {
     ...rest,
     userId: id,
+    // Ключ стрічки є — картка показана; немає — ні. `publish` ставиться лише в
+    // першому випадку: `normalizePublish` читає відсутнє значення як «не
+    // показувати», так само як у повній анкеті.
+    ...(trimmed(feedUsers) || trimmed(feedNewUsers) ? { publish: true } : {}),
     photos: avatar ? [avatar] : [],
     __photosHydrated: true,
     __sourceCollection: source === 'newUsers' ? 'newUsers' : 'users',
