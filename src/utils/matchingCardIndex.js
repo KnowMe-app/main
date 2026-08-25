@@ -169,6 +169,8 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
 
+  const source = resolveMatchingCardCollection(id, data);
+
   // `publish: false` — це виняток («не показувати»), тож пишеться лише він, а
   // відсутність ключа читається як «показувати».
   //
@@ -176,10 +178,16 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   // «не показувати» — це не лише літеральне `false`, а й порожнє чи відсутнє
   // значення. Звірка `data.publish === false` лишала без ключа і ті анкети, які
   // ніколи не вмикали показ, — і проєкція звала їх показаними.
-  if (!normalizePublish(data.publish)) projection.publish = false;
+  //
+  // І тільки для джерела `users`: показ анкети `newUsers` вирішують правила
+  // доступу, а `publish` у неї не питає ніхто — ні `canShowMatchingUser`, ні
+  // пост-фільтри стрічки. Поля `publish` не має жодна з 26 тисяч анкет
+  // `newUsers`, тож безумовний запис поклав би у вузол стільки ж мертвих
+  // ключів — у вузол, який тримають маленьким навмисне.
+  if (source === 'users' && !normalizePublish(data.publish)) projection.publish = false;
 
   projection.fieldsCount = countProfileFieldsForIndex(data);
-  projection.source = resolveMatchingCardCollection(id, data);
+  projection.source = source;
   projection.sourceLastLogin2 = `${projection.source}:${projection.lastLogin2 || ''}`;
   projection.v = MATCHING_CARD_SCHEMA_VERSION;
 
