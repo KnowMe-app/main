@@ -3662,6 +3662,12 @@ export const getAllUserPhotos = async (userId, collectionSource = null, { includ
 // карток ділять одну дату `lastLogin2`, проблема в даних, а не в розмірі вікна.
 const MATCHING_CARDS_PAGE_WINDOW_CAP = 512;
 
+// У скільки разів перше вікно ширше за порцію. Замір на живих даних: із вікном
+// рівно на `limit + 1` кожна зі 120 сторінок поспіль ішла на друге коло —
+// 240 запитів замість 120. Четверний запас покриває звичайну групу карток з
+// однією датою і лишає сторінку одним запитом.
+const MATCHING_CARDS_FIRST_WINDOW_FACTOR = 4;
+
 const buildMatchingCardRef = userId => ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`);
 
 const readMatchingCardRaw = async userId => {
@@ -3759,13 +3765,25 @@ export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collec
   // +1 щоб дізнатись про наявність наступної сторінки, не роблячи другий запит.
   const fetchLimit = safeLimit + 1;
 
+  // Перше вікно береться із запасом на збіг дат.
+  //
+  // `lastLogin2` — це день, тож курсор майже завжди стоїть усередині групи
+  // карток з тією самою датою. Вікно рівно на `limit + 1` після відсікання за
+  // парою (дата, id) лишало менше, ніж треба, вікно подвоювалось — і кожна
+  // сторінка коштувала два запити замість одного. Запас дешевший за зайвий
+  // круг: картка важить сотні байтів, а круг — це ще й затримка.
+  const firstWindow = Math.min(
+    MATCHING_CARDS_PAGE_WINDOW_CAP,
+    Math.max(fetchLimit, safeLimit * MATCHING_CARDS_FIRST_WINDOW_FACTOR),
+  );
+
   // `lastLogin2` — це дата з точністю до дня, тож курсор регулярно потрапляє в
   // групу карток з однаковою датою: `endAt` віддає їх усі, а відсікання за
   // парою (дата, id) лишає нуль нових. Тоді вікно розширюється — але, на
   // відміну від пагінації повних анкет, тут це дешево: картка важить сотні
   // байтів, і стеля стоїть на порядок нижче.
   let entries = [];
-  let windowSize = fetchLimit;
+  let windowSize = firstWindow;
 
   while (windowSize <= MATCHING_CARDS_PAGE_WINDOW_CAP) {
     const cursorBound = normalizedCursor.date

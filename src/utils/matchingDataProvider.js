@@ -879,6 +879,25 @@ export const isShortMatchingUserId = id => typeof id === 'string' && id.length >
 export const isMatchingCardId = id => isValidMatchingUserId(id) || isShortMatchingUserId(id);
 export const isAllowedIdForMatchingCollection = (id, collection = 'users') =>
   collection === 'newUsers' ? isShortMatchingUserId(id) : isValidMatchingUserId(id);
+
+/**
+ * Чи належить картка тій колекції, на яку показує стрічка.
+ *
+ * Довжина id — здогадка, а не факт. Замір на живих даних: у `matchingCards`
+ * 1650 карток із довгим id, а джерело `users` мають лише 379. Тобто 1271
+ * картка `newUsers` пройшла б перевірку як своя — і сипалась би у стрічку
+ * `users`, щойно власні картки скінчаться і хвіст діапазону опуститься нижче.
+ *
+ * Картка називає своє джерело сама: `source` є в кожній, і `expandMatchingCard`
+ * кладе його в `__sourceCollection`. Тож питаємо картку, а до довжини id
+ * відкочуємось лише там, де джерело невідоме — наприклад, у повної анкети,
+ * догідратованої повз проєкцію.
+ */
+export const matchesMatchingCollectionSource = (user, collection = 'users') => {
+  const source = user?.__sourceCollection;
+  if (source === 'users' || source === 'newUsers') return source === collection;
+  return isAllowedIdForMatchingCollection(user?.userId, collection);
+};
 export const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
 
@@ -1320,7 +1339,7 @@ export const applyMatchingUiFiltersToUsers = ({
       // Search spans both collections by design: which one the drawer's source
       // selector points at governs the feed, not what a query is allowed to find.
       viewMode === 'search' ||
-      isAllowedIdForMatchingCollection(u.userId, collectionSource)
+      matchesMatchingCollectionSource(u, collectionSource)
     ));
 
   return orderSparseUsersLast(baseUsers);
@@ -1629,7 +1648,7 @@ export const fetchFilteredMatchingSourceChunk = ({
     filterSourceUsers: sourceUsers => {
       if (!isAdmin) {
         return sourceUsers.filter(
-          user => isAllowedIdForMatchingCollection(user.userId, collectionSource) && !exclude.has(user.userId)
+          user => matchesMatchingCollectionSource(user, collectionSource) && !exclude.has(user.userId)
         );
       }
 
@@ -1644,7 +1663,7 @@ export const fetchFilteredMatchingSourceChunk = ({
         filters,
         roleIndexSets
       ).filter(
-        user => isAllowedIdForMatchingCollection(user.userId, collectionSource) && !exclude.has(user.userId)
+        user => matchesMatchingCollectionSource(user, collectionSource) && !exclude.has(user.userId)
       );
     },
     hydrateUsersByIds,
