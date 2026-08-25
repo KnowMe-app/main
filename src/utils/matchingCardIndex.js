@@ -169,25 +169,26 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
 
-  const source = resolveMatchingCardCollection(id, data);
-
-  // `publish: false` — це виняток («не показувати»), тож пишеться лише він, а
-  // відсутність ключа читається як «показувати».
+  // `publish: true` — це виняток («показувати»), тож пишеться лише він, а
+  // відсутність ключа означає «не показувати».
   //
-  // Виняток міряється тим самим `normalizePublish`, яким його міряє стрічка:
-  // «не показувати» — це не лише літеральне `false`, а й порожнє чи відсутнє
-  // значення. Звірка `data.publish === false` лишала без ключа і ті анкети, які
-  // ніколи не вмикали показ, — і проєкція звала їх показаними.
+  // Виняток саме такий, а не навпаки, з двох причин. Перша: так `publish` у
+  // картці означає рівно те саме, що в анкеті — `normalizePublish` читає
+  // відсутнє значення як «не показувати» в обох. Читачу нема чого
+  // переінтерпретовувати, і другого контракту, який треба тримати синхронним
+  // з першим, більше немає — а розходження цих двох контрактів і лишило
+  // стрічку без карток.
   //
-  // І тільки для джерела `users`: показ анкети `newUsers` вирішують правила
-  // доступу, а `publish` у неї не питає ніхто — ні `canShowMatchingUser`, ні
-  // пост-фільтри стрічки. Поля `publish` не має жодна з 26 тисяч анкет
-  // `newUsers`, тож безумовний запис поклав би у вузол стільки ж мертвих
-  // ключів — у вузол, який тримають маленьким навмисне.
-  if (source === 'users' && !normalizePublish(data.publish)) projection.publish = false;
+  // Друга: загублений ключ ховає картку, а не показує її. «Стрічка порожня» —
+  // відмова, яку видно того ж дня; зайво показана анкета не помітна ніколи.
+  //
+  // Умови на джерело тут не треба: показ анкети `newUsers` вирішують правила
+  // доступу, і показаних серед них немає (0 з вибірки 795), тож ключ туди
+  // однаково не поїде.
+  if (normalizePublish(data.publish)) projection.publish = true;
 
   projection.fieldsCount = countProfileFieldsForIndex(data);
-  projection.source = source;
+  projection.source = resolveMatchingCardCollection(id, data);
   projection.sourceLastLogin2 = `${projection.source}:${projection.lastLogin2 || ''}`;
   projection.v = MATCHING_CARD_SCHEMA_VERSION;
 
@@ -260,20 +261,14 @@ export const expandMatchingCard = (userId, card) => {
   const id = trimmed(userId);
   if (!id) return null;
 
-  const { avatar, contacts, fieldsCount, source, v, publish, ...rest } = card;
+  // `publish` іде далі як є — і в цьому суть: картка міряє показ тією самою
+  // міркою, що й повна анкета, тож перекладати його тут нема чого.
+  const { avatar, contacts, fieldsCount, source, v, ...rest } = card;
   const contactKeys = trimmed(contacts) ? contacts.split(',').filter(Boolean) : [];
 
   return {
     ...rest,
     userId: id,
-    // Відсутній ключ — це «показувати», тож розгортається він у явне `true`.
-    //
-    // Мовчати тут не можна: `canShowMatchingUser` міряє `publish` через
-    // `normalizePublish`, а той рахує `undefined` за «не показувати». Тобто
-    // картка без ключа — а це переважна більшість карток — зникала зі стрічки
-    // для всіх, крім двох адмінських uid, і стрічка показувала нуль карток при
-    // повному вузлі `matchingCards`.
-    publish: publish === false ? false : true,
     photos: avatar ? [avatar] : [],
     __photosHydrated: true,
     __sourceCollection: source === 'newUsers' ? 'newUsers' : 'users',

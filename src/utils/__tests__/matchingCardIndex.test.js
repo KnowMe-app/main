@@ -72,30 +72,25 @@ describe('buildMatchingCardProjection', () => {
     expect(projection).not.toHaveProperty('weight');
   });
 
-  it('пише publish лише коли анкету users не показують — за міркою стрічки', () => {
-    const usersId = 'a'.repeat(28);
-    const build = profile => buildMatchingCardProjection(usersId, profile);
+  it('пише publish лише коли анкету показують — за міркою стрічки', () => {
+    const build = profile => buildMatchingCardProjection('a'.repeat(28), profile);
 
-    expect(build({ name: 'A', publish: true })).not.toHaveProperty('publish');
-    expect(build({ name: 'A', publish: 'true' })).not.toHaveProperty('publish');
+    expect(build({ name: 'A', publish: true }).publish).toBe(true);
+    expect(build({ name: 'A', publish: 'true' }).publish).toBe(true);
     // Анкети старих поколінь тримають publish масивом; стрічка читає його як
     // «показувати», щойно там є true.
-    expect(build({ name: 'A', publish: [false, true] })).not.toHaveProperty('publish');
+    expect(build({ name: 'A', publish: [false, true] }).publish).toBe(true);
 
-    expect(build({ name: 'A', publish: false }).publish).toBe(false);
-    // «Не показувати» — це не лише літеральне false: анкета, яка ніколи не
-    // вмикала показ, теж має лягти в проєкцію винятком, інакше картка без
-    // ключа назве її показаною.
-    expect(build({ name: 'A' }).publish).toBe(false);
-    expect(build({ name: 'A', publish: '' }).publish).toBe(false);
+    // Усе інше — відсутність ключа: і явне false, і порожнє, і анкета, яка
+    // показ ніколи не вмикала.
+    expect(build({ name: 'A', publish: false })).not.toHaveProperty('publish');
+    expect(build({ name: 'A', publish: '' })).not.toHaveProperty('publish');
+    expect(build({ name: 'A' })).not.toHaveProperty('publish');
   });
 
-  it('не пише publish у картку newUsers — там показ вирішують правила доступу', () => {
+  it('міряє показ однаково для обох джерел', () => {
     expect(buildMatchingCardProjection('short', { name: 'A' })).not.toHaveProperty('publish');
-    expect(buildMatchingCardProjection('short', { name: 'A', publish: false })).not.toHaveProperty('publish');
-    expect(
-      buildMatchingCardProjection('a'.repeat(28), { name: 'A', __sourceCollection: 'newUsers' }),
-    ).not.toHaveProperty('publish');
+    expect(buildMatchingCardProjection('short', { name: 'A', publish: true }).publish).toBe(true);
   });
 
   it('відносить короткий id до newUsers, довгий — до users', () => {
@@ -156,19 +151,20 @@ describe('expandMatchingCard', () => {
     expect(expandMatchingCard('id', projection).photos).toEqual([]);
   });
 
-  it('розгортає відсутній publish у явне true, а виняток лишає false', () => {
+  it('віддає publish як є, нічого не добудовуючи', () => {
     const id = 'a'.repeat(28);
     const shown = expandMatchingCard(id, buildMatchingCardProjection(id, fullProfile));
     const hidden = expandMatchingCard(id, buildMatchingCardProjection(id, { ...fullProfile, publish: false }));
 
     expect(shown.publish).toBe(true);
-    expect(hidden.publish).toBe(false);
+    expect(hidden).not.toHaveProperty('publish');
   });
 });
 
-// Стрічка міряє картку тим самим `canShowMatchingUser`, що й повну анкету, а той
-// рахує відсутній `publish` за «не показувати». Тож проєкція, що мовчала про
-// показані анкети, лишала неадміну нуль карток при повному вузлі matchingCards.
+// Ось навіщо проєкція носить `publish`: стрічка міряє картку тим самим
+// `canShowMatchingUser`, що й повну анкету. Поки картка про показ мовчала,
+// `normalizePublish` рахував це за «не показувати» — і неадмін бачив нуль
+// карток при повному вузлі matchingCards.
 describe('картка проходить фінальну перевірку показу', () => {
   const id = 'a'.repeat(28);
   const expand = profile => expandMatchingCard(id, buildMatchingCardProjection(id, profile));
@@ -187,6 +183,14 @@ describe('картка проходить фінальну перевірку п
     const { publish, ...neverPublished } = fullProfile;
     expect(canShowMatchingUser(expand(neverPublished), { isAdmin: false })).toBe(false);
     expect(canShowMatchingUser(expand({ ...neverPublished, publish: '' }), { isAdmin: false })).toBe(false);
+  });
+
+  // Картка, яку писав ще старий писач, ключа не має — і ховається, а не
+  // показується. Саме такої відмови ми й хотіли: помітної, а не тихої.
+  it('картку без ключа ховає, а не показує', () => {
+    const legacyCard = { ...buildMatchingCardProjection(id, fullProfile) };
+    delete legacyCard.publish;
+    expect(canShowMatchingUser(expandMatchingCard(id, legacyCard), { isAdmin: false })).toBe(false);
   });
 });
 
