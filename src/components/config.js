@@ -3751,7 +3751,7 @@ export const removeMatchingCardIndex = async userId => {
  * пагінація по курсору: `endAt(курсор)` + `limitToLast(limit + 1)` по вузлу,
  * де одна картка важить сотні байтів, а не кілобайти.
  */
-export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collectionSource = null } = {}) => {
+const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null, collectionSource = null } = {}) => {
   const safeLimit = Math.max(1, Number(limit) || 1);
   const cardsRef = ref2(database, MATCHING_CARDS_ROOT);
   const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
@@ -3832,6 +3832,53 @@ export const fetchMatchingCardsPage = async ({ limit = 10, cursor = null, collec
       : null,
     hasMore,
   };
+};
+
+/**
+ * Сторінки в польоті — щоб та сама сторінка не читалась двічі.
+ *
+ * `loadInitial` і `loadMore` стартують незалежно один від одного, і другий
+ * встигає піти в базу раніше, ніж перший поклав курсор у стан. Тобто обидва
+ * читають ту саму першу сторінку. Замір на прод-збірці: два запити по 33 КБ,
+ * обидва з `cursor: null`, з різницею 62 мс — тобто другий стартував усередині
+ * першого, який іде ~190 мс. Половина трафіку стрічки була цим дублем.
+ *
+ * Однаковий запит — це однакова відповідь, тож другий викликач чекає на
+ * перший замість власного круга. Тримається лише політ: щойно запит
+ * завершився, ключ прибирається, і наступне читання тієї самої сторінки знову
+ * піде в базу. Кешу тут немає — застарілої сторічки теж.
+ *
+ * Сторінка віддається кожному викликачу власною копією масиву: картки в ній
+ * і так не мутують (`decorateUser` розкладає кожну в новий обʼєкт), але
+ * спільний масив — це запрошення до помилки, яку потім не знайти.
+ */
+const matchingCardsPageInFlight = new Map();
+
+const buildMatchingCardsPageKey = ({ limit, cursor, collectionSource }) => {
+  const normalized = cursor && typeof cursor === 'object'
+    ? `${cursor.date || ''}|${cursor.userId || ''}`
+    : `${cursor || ''}|`;
+  return `${collectionSource || ''}|${limit}|${normalized}`;
+};
+
+export const fetchMatchingCardsPage = (options = {}) => {
+  const key = buildMatchingCardsPageKey({
+    limit: Math.max(1, Number(options.limit) || 1),
+    cursor: options.cursor,
+    collectionSource: options.collectionSource,
+  });
+
+  let pending = matchingCardsPageInFlight.get(key);
+  if (!pending) {
+    pending = fetchMatchingCardsPageUncoalesced(options).finally(() => {
+      matchingCardsPageInFlight.delete(key);
+    });
+    matchingCardsPageInFlight.set(key, pending);
+  }
+
+  return pending.then(page => (
+    page && Array.isArray(page.users) ? { ...page, users: [...page.users] } : page
+  ));
 };
 
 /**

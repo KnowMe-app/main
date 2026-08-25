@@ -3,9 +3,11 @@ import path from 'path';
 
 const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
+// Читаємо саме реалізацію: назовні `fetchMatchingCardsPage` — це обгортка,
+// яка зливає однакові сторінки в один запит, а вікно живе під нею.
 const fnBody = source.slice(
-  source.indexOf('export const fetchMatchingCardsPage'),
-  source.indexOf('export const fetchMatchingCardsByIds'),
+  source.indexOf('const fetchMatchingCardsPageUncoalesced'),
+  source.indexOf('const matchingCardsPageInFlight'),
 );
 
 describe('сторінка стрічки коштує один запит, а не два', () => {
