@@ -278,17 +278,6 @@ export const removeField = (
     return removeRecursive(obj, 0);
   };
 
-  if (typeof setState === 'function') {
-    setState(prev => {
-      const { changed, value } = removePath(prev);
-      return changed ? value : prev;
-    });
-  }
-
-  if (typeof setUsers !== 'function') {
-    return;
-  }
-
   const removalKey = removedKey ?? nestedKey;
   const removalList = removalKey ? [removalKey] : [];
   const topLevelKey = keys[0];
@@ -300,53 +289,108 @@ export const removeField = (
     options.onSubmitHistorySnapshot(snapshot);
   };
 
-  // handleSubmit (called below) fires an un-queued, un-awaited backend write,
-  // so it must never run *inside* the setUsers updater callback — same
-  // hazard as EditProfile's handleClear/handleDelKeyValue. Worse here: the
-  // old code sent the *entire* locally-known card object as the write
-  // payload. Since these writes race with no ordering guarantee, deleting
-  // two different fields back-to-back could land out of order, and
-  // whichever write's local snapshot was captured *before* the other
-  // field's deletion would silently resurrect it. Only capture what changed
-  // here (pure, no side effects); submit a payload containing nothing but
-  // the one top-level field that actually changed (+ lastAction) — it can
-  // never carry a stale value for any other field, so it can never
-  // resurrect one, regardless of write ordering.
-  let capturedUserId;
-  let capturedTopLevelValue;
-  let capturedChanged = false;
+  // Запис у бекенд шлемо рівно один раз на виклик: нижче є два незалежні
+  // джерела зміненої картки (синхронний знімок і колбек setUsers), і без цього
+  // прапорця вони могли б відправити одне й те саме видалення двічі.
+  let submitted = false;
 
-  setUsers(prev => {
-    const shape = getUserStateShape(prev);
-    const next = updateUserInState(prev, userId, currentUser => {
-      const { changed, value } = removePath(currentUser);
-      if (!changed) return currentUser;
-      const updated = value ?? {};
-      const resolvedUserId = userId || updated.userId;
-      if (resolvedUserId) {
-        capturedChanged = true;
-        capturedUserId = resolvedUserId;
-        capturedTopLevelValue = Object.prototype.hasOwnProperty.call(updated, topLevelKey)
-          ? updated[topLevelKey]
-          : null;
-        triggerHistorySnapshot({ ...updated, userId: resolvedUserId });
-      }
-      return updated;
-    });
+  // Пейлоад містить лише той один top-level ключ, який реально змінився
+  // (+ lastAction). Ці записи не впорядковані між собою, тож видалення двох
+  // полів поспіль можуть лягти в будь-якому порядку — але мінімальний пейлоад
+  // фізично не несе чужих (застарілих) значень, тому жодне видалення не може
+  // воскресити інше поле.
+  const sendRemoval = (resolvedUserId, cardAfterRemoval) => {
+    const topLevelValue = Object.prototype.hasOwnProperty.call(cardAfterRemoval, topLevelKey)
+      ? cardAfterRemoval[topLevelKey]
+      : null;
 
-    if (shape === 'unknown' || capturedChanged || next !== prev) {
-      return next;
-    }
-
-    return prev;
-  });
-
-  if (capturedChanged && capturedUserId) {
+    triggerHistorySnapshot({ ...cardAfterRemoval, userId: resolvedUserId });
     handleSubmit(
-      { userId: capturedUserId, [topLevelKey]: capturedTopLevelValue },
+      { userId: resolvedUserId, [topLevelKey]: topLevelValue },
       'overwrite',
       removalList,
     );
+  };
+
+  const submitRemoval = (resolvedUserId, cardAfterRemoval) => {
+    if (submitted || !resolvedUserId) {
+      return;
+    }
+    submitted = true;
+    sendRemoval(resolvedUserId, cardAfterRemoval);
+  };
+
+  // Те саме, але відкладене в мікротаску: викликається лише з середини
+  // updater-колбека setUsers, щоб мережевий запис не стартував під час рендеру
+  // React. Місце в черзі займаємо одразу, тож повторний прогін того самого
+  // колбека (React має право його переграти) другого запису не зробить.
+  const submitRemovalAsync = (resolvedUserId, cardAfterRemoval) => {
+    if (submitted || !resolvedUserId) {
+      return;
+    }
+    submitted = true;
+    const run = () => sendRemoval(resolvedUserId, cardAfterRemoval);
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(run);
+    } else {
+      Promise.resolve().then(run);
+    }
+  };
+
+  // Головний шлях: рахуємо видалення прямо з переданого знімка картки —
+  // звичайним синхронним JS, без жодного React-планувальника. Раніше пейлоад
+  // знімався всередині updater-колбека setUsers, а React виконує такий колбек
+  // синхронно лише через внутрішню оптимізацію "eager state" — і лише поки на
+  // цьому fiber немає інших запланованих оновлень. У списку карток setUsers і
+  // setState живуть в одному компоненті (AddNewProfile), тож setState вище вже
+  // помічав fiber як брудний, колбек setUsers відкладався до рендеру, і
+  // перевірка "чи є що слати" бачила ще незаповнені змінні: локально ключ
+  // зникав, а в базу не летіло нічого. Саме тому не видалялись поля, наявні у
+  // відкритій анкеті (name, writer), і "видалялись" ті, яких у ній не було.
+  const cardSnapshot =
+    options?.cardData && typeof options.cardData === 'object' ? options.cardData : null;
+
+  if (cardSnapshot) {
+    const { changed, value } = removePath(cardSnapshot);
+    if (changed) {
+      const updated = value ?? {};
+      submitRemoval(userId || updated.userId || cardSnapshot.userId, updated);
+    }
+  }
+
+  if (typeof setUsers === 'function') {
+    // Резервний шлях для викликачів без cardData: там пейлоад доводиться брати
+    // з updater-колбека, тож сам запис відкладаємо в мікротаску (колбек може
+    // виконатись під час рендеру).
+    let capturedChanged = false;
+
+    setUsers(prev => {
+      const shape = getUserStateShape(prev);
+      const next = updateUserInState(prev, userId, currentUser => {
+        const { changed, value } = removePath(currentUser);
+        if (!changed) return currentUser;
+        const updated = value ?? {};
+        const resolvedUserId = userId || updated.userId;
+        if (resolvedUserId) {
+          capturedChanged = true;
+          submitRemovalAsync(resolvedUserId, updated);
+        }
+        return updated;
+      });
+
+      if (shape === 'unknown' || capturedChanged || next !== prev) {
+        return next;
+      }
+
+      return prev;
+    });
+  }
+
+  if (typeof setState === 'function') {
+    setState(prev => {
+      const { changed, value } = removePath(prev);
+      return changed ? value : prev;
+    });
   }
 };
 

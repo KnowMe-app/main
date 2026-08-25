@@ -84,3 +84,111 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     expect(updateDataInRealtimeDB).not.toHaveBeenCalled();
   });
 });
+
+// React виконує updater-колбек setState/setUsers синхронно лише через
+// внутрішню оптимізацію "eager state", і лише поки на цьому fiber немає інших
+// запланованих оновлень. У списку карток це не виконується: setUsers і setState
+// живуть в одному компоненті, тож перший же setState робить fiber брудним, і
+// колбек setUsers відкладається до рендеру. Ці тести моделюють саме такий
+// setter — updater не виконується в момент виклику.
+const makeDeferredStateBox = initial => {
+  let current = initial;
+  const queue = [];
+  const setter = updater => {
+    queue.push(updater);
+  };
+  const flushRender = () => {
+    while (queue.length) {
+      const updater = queue.shift();
+      current = typeof updater === 'function' ? updater(current) : updater;
+    }
+  };
+  return { get: () => current, setter, flushRender };
+};
+
+describe('removeField writes to the backend even when React defers the state updaters', () => {
+  const flushSubmit = () => new Promise(resolve => setTimeout(resolve, 0));
+  const longUserId = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
+
+  beforeEach(() => {
+    updateDataInNewUsersRTDB.mockClear();
+    updateDataInRealtimeDB.mockClear();
+    getCardStorageCollection.mockImplementation(async userId => userId === 'ID0001' ? 'newUsers' : 'users');
+  });
+
+  it('sends the deletion from the synchronous card snapshot, without waiting for a render', async () => {
+    const card = { userId: longUserId, name: '', writer: 'IgF', deviceWidth: 360 };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+    const profileState = makeDeferredStateBox({ ...card });
+
+    removeField(longUserId, 'name', users.setter, profileState.setter, 'name', { cardData: card });
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [writtenUserId, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(writtenUserId).toBe(longUserId);
+    expect(payload).toEqual({ userId: longUserId, name: null, lastAction: expect.any(Number) });
+  });
+
+  it('does not write the same deletion twice once the deferred updaters finally run', async () => {
+    const card = { userId: longUserId, name: '', writer: 'IgF' };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+    const profileState = makeDeferredStateBox({ ...card });
+
+    removeField(longUserId, 'writer', users.setter, profileState.setter, 'writer', { cardData: card });
+    users.flushRender();
+    profileState.flushRender();
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    expect(users.get()[longUserId]).toEqual({ userId: longUserId, name: '' });
+    expect(profileState.get()).toEqual({ userId: longUserId, name: '' });
+  });
+
+  it('deletes several fields in a row, each with its own minimal payload', async () => {
+    let card = { userId: longUserId, name: '', writer: 'IgF', deviceWidth: 360 };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+    const profileState = makeDeferredStateBox({ ...card });
+
+    ['name', 'writer', 'deviceWidth'].forEach(field => {
+      removeField(longUserId, field, users.setter, profileState.setter, field, { cardData: card });
+      const { [field]: _removed, ...rest } = card;
+      card = rest;
+    });
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(3);
+    const payloads = updateDataInRealtimeDB.mock.calls.map(([, payload]) => payload);
+    expect(payloads).toEqual([
+      { userId: longUserId, name: null, lastAction: expect.any(Number) },
+      { userId: longUserId, writer: null, lastAction: expect.any(Number) },
+      { userId: longUserId, deviceWidth: null, lastAction: expect.any(Number) },
+    ]);
+  });
+
+  it('still writes without a card snapshot, once the deferred setUsers updater runs', async () => {
+    const users = makeDeferredStateBox({
+      [longUserId]: { userId: longUserId, key1: 'value1', key2: 'value2' },
+    });
+
+    removeField(longUserId, 'key1', users.setter, undefined, 'key1');
+    users.flushRender();
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({ userId: longUserId, key1: null, lastAction: expect.any(Number) });
+  });
+
+  it('removes a nested path from the snapshot and writes the surviving parent value', async () => {
+    const card = { userId: longUserId, language: ['uk', 'en'] };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+
+    removeField(longUserId, 'language.0', users.setter, undefined, 'language.0', { cardData: card });
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({ userId: longUserId, language: 'en', lastAction: expect.any(Number) });
+  });
+});
