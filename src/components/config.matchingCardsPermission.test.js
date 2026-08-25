@@ -13,8 +13,9 @@ describe('доступ до вузла matchingCards', () => {
     expect(node).toBeTruthy();
     // Без `.indexOn` пагінація стрічки сортувала б на клієнті, тобто качала б усе.
     expect(node['.indexOn']).toContain('lastLogin2');
-    // Пагінація в межах однієї колекції йде за складеним ключем.
-    expect(node['.indexOn']).toContain('sourceLastLogin2');
+    // Пагінація в межах однієї колекції йде за ключем стрічки цієї колекції.
+    expect(node['.indexOn']).toContain('feedUsers');
+    expect(node['.indexOn']).toContain('feedNewUsers');
   });
 
   it('дозволяє власнику писати свою картку, а адміну — будь-яку', () => {

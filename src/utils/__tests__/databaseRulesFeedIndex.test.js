@@ -7,11 +7,12 @@ const rules = JSON.parse(
 
 describe('правила, без яких стрічка не може читати проєкції', () => {
   it('індексує поле, за яким сортується сторінка стрічки', () => {
-    // Регресія в проді: у базі був лише `lastLogin2`, а запит іде за
-    // `sourceLastLogin2` — Firebase відповідав «Index not defined», і стрічка
-    // мовчки сповзала на повні анкети.
+    // Регресія в проді: у базі був лише `lastLogin2`, а запит ішов за складеним
+    // ключем — Firebase відповідав «Index not defined», і стрічка мовчки
+    // сповзала на повні анкети. Тепер запит іде за `feed`, тож індекс мусить
+    // виїхати в базу РАНІШЕ за код, інакше повториться те саме.
     expect(rules.matchingCards['.indexOn']).toEqual(
-      expect.arrayContaining(['lastLogin2', 'sourceLastLogin2']),
+      expect.arrayContaining(['lastLogin2', 'feedUsers', 'feedNewUsers']),
     );
   });
 
