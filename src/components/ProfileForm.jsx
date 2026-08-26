@@ -47,6 +47,10 @@ import {
   saveCachedAdditionalRulesPreview,
 } from 'utils/searchKeyCache';
 import { MULTI_DATA_ACCESS_FIELD } from 'utils/multiDataAccess';
+import {
+  groupProfileFormFieldsByBlock,
+  buildProfileFormBlockHeader,
+} from './profileFormNodeBlocks';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -2497,7 +2501,10 @@ ${entries.join('\n')}`;
     }
   };
 
-  const sortedFieldsToRender = [
+  // Пріоритетна сортовка нікуди не дівається — вона просто діє всередині
+  // блоку. Адмін і далі бачить дату народження перед розміром взуття, але
+  // тепер бачить ще й те, у який вузол бекенду ці двоє поїдуть.
+  const prioritySortedFields = [
     ...priorityOrder
       .map(key => normalizedFieldsToRender.find(field => field.name === key))
       .filter(Boolean),
@@ -2506,6 +2513,9 @@ ${entries.join('\n')}`;
     ),
     ...normalizedFieldsToRender.filter(field => PROFILE_FORM_TECHNICAL_FIELDS.has(field.name)),
   ];
+
+  const { fields: sortedFieldsToRender, blockStarts: profileFormBlockStarts } =
+    groupProfileFormFieldsByBlock(prioritySortedFields);
 
   const roleTokens = Array.isArray(state?.role || state?.userRole)
     ? (state?.role || state?.userRole)
@@ -2754,12 +2764,28 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
-            {isAdmin && PROFILE_FORM_TECHNICAL_FIELDS.has(field.name) &&
-              !sortedFieldsToRender.slice(0, index).some(item => PROFILE_FORM_TECHNICAL_FIELDS.has(item.name)) && (
+            {profileFormBlockStarts.has(field.name) && (() => {
+              const block = buildProfileFormBlockHeader(profileFormBlockStarts.get(field.name), {
+                profileId: state?.userId,
+                ownerId: auth.currentUser?.uid,
+              });
+              return (
                 <TechnicalFieldsSection>
-                  <TechnicalFieldsTitle>Технічні налаштування</TechnicalFieldsTitle>
+                  <TechnicalFieldsTitle>{block.title}</TechnicalFieldsTitle>
+                  {isAdmin && (
+                    <BlockBackendLink
+                      href={block.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={block.hint}
+                    >
+                      {block.path}
+                    </BlockBackendLink>
+                  )}
+                  {block.hint && <BlockHint>{block.hint}</BlockHint>}
                 </TechnicalFieldsSection>
-              )}
+              );
+            })()}
             <PickerContainer
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
@@ -3532,12 +3558,31 @@ const TechnicalFieldsSection = styled.section`
 `;
 
 const TechnicalFieldsTitle = styled.h3`
-  margin: 0 0 12px;
+  margin: 0 0 4px;
   color: var(--km-muted);
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+`;
+
+// Шлях у консоль показується самим шляхом, а не словом «відкрити»: адмін читає
+// його як адресу і без кліку — а саме адреса і є відповіддю на питання «де ці
+// дані лежать».
+const BlockBackendLink = styled.a`
+  display: inline-block;
+  margin: 0 0 6px;
+  color: var(--km-accent, #2b6);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+`;
+
+const BlockHint = styled.p`
+  margin: 0 0 12px;
+  color: var(--km-muted);
+  font-size: 11px;
+  line-height: 1.45;
 `;
 
 

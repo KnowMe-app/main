@@ -17,13 +17,26 @@ import {
   checkGetInTouchKeySafety,
   normalizeFeedDateValue,
 } from '../rtdbMigrationDerive';
-import { MATCHING_CARD_FORBIDDEN_FIELDS } from '../profileNodeSchema';
+import { MATCHING_CARD_FORBIDDEN_FIELDS, MATCHING_CARD_METADATA_FIELDS } from '../profileNodeSchema';
+import { MATCHING_CARD_SCHEMA_VERSION } from '../matchingCardIndex';
 
 const OWNER = 'ADMIN_UID';
 
 const stateWith = (users, newUsers) => createMigrationState({ users, newUsers });
 
 const card = (state, id) => state.targets.matchingCards[id];
+
+/**
+ * Картка без метаданих — щоб перевірки читались про перенесені поля, а не про
+ * `v` і `fieldsCount`, які стоять у кожній картці й нічого не мігрують.
+ */
+const cardFields = (state, id) => {
+  const value = card(state, id);
+  if (!value) return value;
+  return Object.fromEntries(
+    Object.entries(value).filter(([field]) => !MATCHING_CARD_METADATA_FIELDS.includes(field)),
+  );
+};
 
 describe('surnameShort', () => {
   it('бере перший символ скалярного прізвища', () => {
@@ -216,12 +229,12 @@ describe('Matching Cards', () => {
     });
     runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toEqual({ name: 'Катерина', height: '168', ownKids: 2, city: 'Київ' });
+    expect(cardFields(state, 'P1')).toEqual({ name: 'Катерина', height: '168', ownKids: 2, city: 'Київ' });
     expect(state.workingNewUsers.P1).toEqual({});
   });
 
   it('складає похідні і лишає їхні джерела на місці', () => {
-    const state = stateWith({}, {
+    const state = stateWith({
       P1: {
         surname: 'Коваленко',
         blood: '2+',
@@ -230,20 +243,28 @@ describe('Matching Cards', () => {
         publish: true,
         lastLogin2: '2026-08-25',
       },
+    }, {
+      P1: {
+        surname: 'Коваленко',
+        blood: '2+',
+        photos: ['https://p1', 'https://p2'],
+        userRole: 'sm',
+        lastLogin2: '2026-08-25',
+      },
     });
     runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toEqual({
+    expect(cardFields(state, 'P1')).toEqual({
       surnameShort: 'К.',
       rh: '+',
+      bloodGroup: '2',
       avatar: 'https://p1',
       role: 'sm',
       feedDate: '2026-08-25',
     });
 
     // Повне прізвище і повна група ще потрібні Profiles, набір фото — теж.
-    // lastLogin2 чекає на Technical. Пішов тільки publish, чия семантика
-    // тепер повністю виражена наявністю feedDate.
+    // lastLogin2 чекає на Technical. Пішов тільки userRole, зведений у role.
     expect(state.workingNewUsers.P1).toEqual({
       surname: 'Коваленко',
       blood: '2+',
@@ -252,11 +273,34 @@ describe('Matching Cards', () => {
     });
   });
 
+  it('картку метаданими підписує завжди — і схемою, і колекцією, і заповненістю', () => {
+    // Без `v` читач вважав би картку чужої схеми і догідратовував анкету
+    // повністю — тобто мігрований вузол не дав би жодної економії.
+    const state = stateWith({ P1: { name: 'Оля', surname: 'К', phone: '+380' } }, {});
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(card(state, 'P1')).toMatchObject({
+      source: 'users',
+      v: MATCHING_CARD_SCHEMA_VERSION,
+      fieldsCount: 3,
+    });
+  });
+
+  it('feedDate не зʼявляється у картки з newUsers, а її publish не чіпають', () => {
+    const state = stateWith({}, { P1: { name: 'Оля', publish: true, lastLogin2: '2026-08-25' } });
+    const plan = runMigrationGroup(state, 'matchingCards');
+
+    expect(card(state, 'P1')).not.toHaveProperty('feedDate');
+    expect(card(state, 'P1').source).toBe('newUsers');
+    expect(state.workingNewUsers.P1.publish).toBe(true);
+    expect(plan.warningsByCode.PUBLISH_IN_NEW_USERS_IGNORED).toBe(1);
+  });
+
   it('прибирає окреме поле avatar, бо це пряма копія', () => {
     const state = stateWith({}, { P1: { avatar: 'https://direct', photos: ['https://p'] } });
     runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toEqual({ avatar: 'https://direct' });
+    expect(cardFields(state, 'P1')).toEqual({ avatar: 'https://direct' });
     expect(state.workingNewUsers.P1).toEqual({ photos: ['https://p'] });
   });
 
@@ -269,21 +313,20 @@ describe('Matching Cards', () => {
     expect(plan.conflicts).toContainEqual(expect.objectContaining({ reason: 'ROLE_CONFLICT' }));
   });
 
-  it('не створює feedDate і не прибирає publish, коли дати немає', () => {
-    const state = stateWith({}, { P1: { publish: true } });
+  it('не створює feedDate, коли показана анкета не має жодної дати', () => {
+    const state = stateWith({ P1: { name: 'Оля', publish: true } }, {});
     const plan = runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toBeUndefined();
-    expect(state.workingNewUsers.P1).toEqual({ publish: true });
+    expect(card(state, 'P1')).not.toHaveProperty('feedDate');
     expect(plan.warningsByCode.FEED_DATE_MISSING_DATE).toBe(1);
+    expect(plan.counters.errors).toBe(1);
   });
 
-  it('не показана картка лишається без feedDate, а publish іде', () => {
-    const state = stateWith({}, { P1: { publish: false, lastLogin2: '2026-08-25' } });
+  it('не показана анкета лишається без feedDate', () => {
+    const state = stateWith({ P1: { name: 'Оля', publish: false, lastLogin2: '2026-08-25' } }, {});
     runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toBeUndefined();
-    expect(state.workingNewUsers.P1).toEqual({ lastLogin2: '2026-08-25' });
+    expect(card(state, 'P1')).not.toHaveProperty('feedDate');
   });
 
   it('ніколи не кладе в картку заборонених ключів', () => {
@@ -480,7 +523,7 @@ describe('однаковий id у users та newUsers', () => {
     const state = stateWith({ P1: { height: '168' } }, { P1: { height: '168' } });
     runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toEqual({ height: '168' });
+    expect(cardFields(state, 'P1')).toEqual({ height: '168' });
     expect(state.workingNewUsers.P1).toEqual({});
   });
 
@@ -488,7 +531,7 @@ describe('однаковий id у users та newUsers', () => {
     const state = stateWith({ P1: { height: '168' } }, { P1: { height: '170' } });
     const plan = runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toEqual({ height: '168' });
+    expect(cardFields(state, 'P1')).toEqual({ height: '168' });
     expect(state.workingNewUsers.P1).toEqual({ height: '170' });
     expect(plan.conflicts).toContainEqual(expect.objectContaining({
       profileId: 'P1',
@@ -517,7 +560,7 @@ describe('однаковий id у users та newUsers', () => {
     expect(state.workingNewUsers.P1).toEqual({ phone: { a: [1, { b: 'd' }] } });
   });
 
-  it('розбіжність у публікації не «виражається відсутністю ключа» мовчки', () => {
+  it('про публікацію говорить лише users — publish у newUsers лишається недоторканим', () => {
     const state = stateWith(
       { P1: { publish: true, lastLogin2: '2026-08-25' } },
       { P1: { publish: false, lastLogin2: '2026-08-25' } },
@@ -526,9 +569,7 @@ describe('однаковий id у users та newUsers', () => {
 
     expect(card(state, 'P1').feedDate).toBe('2026-08-25');
     expect(state.workingNewUsers.P1.publish).toBe(false);
-    expect(plan.conflicts).toContainEqual(expect.objectContaining({
-      reason: 'FEED_DATE_PUBLISH_CONFLICT',
-    }));
+    expect(plan.warningsByCode.PUBLISH_IN_NEW_USERS_IGNORED).toBe(1);
   });
 });
 
@@ -591,8 +632,13 @@ describe('ідемпотентність', () => {
       education: 'вища',
     });
 
-    // Незнайоме поле лишилось на ручний розгляд — «profileDetails = решта» не сталось.
-    expect(state.workingNewUsers.P1).toEqual({ unknownLegacyField: 'лишається' });
+    // Незнайоме поле лишилось на ручний розгляд — «profileDetails = решта» не
+    // сталось. `publish` тут теж лишився: анкета з `newUsers` у стрічку не
+    // потрапляє, тож переносити його нема куди, а видаляти — нема підстав.
+    expect(state.workingNewUsers.P1).toEqual({
+      publish: true,
+      unknownLegacyField: 'лишається',
+    });
   });
 });
 

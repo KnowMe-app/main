@@ -46,14 +46,15 @@ import {
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
+import { buildProfileNodePatch } from '../utils/profileNodeWriter';
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_ORDER_FIELD,
-  resolveMatchingCardFeedField,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
   expandMatchingCard,
   isCurrentMatchingCardSchema,
+  isMatchingSummaryCard,
   resolveMatchingCardAvatarFromProfile,
 } from '../utils/matchingCardIndex';
 import {
@@ -3309,6 +3310,53 @@ const runMatchingCardRefresh = async (collection, id, payload, condition) => {
 // дві пари читання-запис, а не десять.
 const matchingCardRefreshes = new Map();
 
+/**
+ * Розкладає збережені поля по їхніх вузлах.
+ *
+ * Це друга половина запису анкети: перша поклала все в legacy `/users` чи
+ * `/newUsers` (їх читає мобільний застосунок і ще не перенесена веб-логіка), а
+ * ця кладе кожне поле туди, де воно живе після розділення — контакти в
+ * `profileContacts`, робочі позначки в `profileWorkflow` і так далі.
+ *
+ * Один мультилокаційний `update` від кореня: RTDB застосовує його атомарно, тож
+ * анкета не розʼїжджається по вузлах наполовину.
+ *
+ * Ніколи не кидає. Розділені вузли — це дешевше читання і вужчий доступ, а не
+ * частина збереження: якщо на якийсь із них у писача немає прав, анкета все
+ * одно має зберегтися. Тиші тут теж немає — відмова йде в консоль із переліком
+ * шляхів, які не доїхали.
+ */
+const fanOutProfileNodes = async (userId, payload) => {
+  const patch = buildProfileNodePatch(userId, payload);
+  const paths = Object.keys(patch);
+  if (!paths.length) return;
+
+  // Запис іде вузол за вузлом, а не одним патчем від кореня, і саме тому, що
+  // мультилокаційний `update` атомарний. Права на нові вузли різні: редактор
+  // матчингу без токена контактів має право на `profileDetails`, але не на
+  // `profileContacts`. В одному патчі відмова на одному шляху скасувала б
+  // запис і в решту вузлів — тобто одне закрите право тихо знеструмило б усе
+  // розділення. Окремими записами відмова лишається там, де вона є.
+  const byNode = paths.reduce((acc, path) => {
+    const node = path.split('/')[0];
+    (acc[node] = acc[node] || {})[path] = patch[path];
+    return acc;
+  }, {});
+
+  await Promise.all(Object.entries(byNode).map(async ([node, nodePatch]) => {
+    try {
+      await update(ref2(database, '/'), nodePatch);
+    } catch (error) {
+      console.warn('[profileNodes] вузол не оновлено', {
+        userId,
+        node,
+        paths: Object.keys(nodePatch),
+        error,
+      });
+    }
+  }));
+};
+
 const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
   const id = String(userId || '').trim();
   if (!id) return;
@@ -3406,6 +3454,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
       await set(userRefRTDB, cleanedUploadedInfo);
     }
     await mirrorRemovalsToOtherCollection('users', userId, explicitRemovals);
+    await fanOutProfileNodes(userId, cleanedUploadedInfo);
     await refreshMatchingCardAfterProfileWrite('users', userId, cleanedUploadedInfo, condition);
   } catch (error) {
     console.error(
@@ -3510,6 +3559,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     }
 
     await mirrorRemovalsToOtherCollection('newUsers', userId, explicitRemovals);
+    await fanOutProfileNodes(userId, cleanedUploadedInfo);
     await refreshMatchingCardAfterProfileWrite('newUsers', userId, cleanedUploadedInfo, condition);
 
     clearEmptySearchQueryCache();
@@ -3866,14 +3916,13 @@ export const removeMatchingCardIndex = async userId => {
  * пагінація по курсору: `endAt(курсор)` + `limitToLast(limit + 1)` по вузлу,
  * де одна картка важить сотні байтів, а не кілобайти.
  */
-const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null, collectionSource = null } = {}) => {
+const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } = {}) => {
   const safeLimit = Math.max(1, Number(limit) || 1);
   const cardsRef = ref2(database, MATCHING_CARDS_ROOT);
-  const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
-  // Індекс стрічки містить лише показані картки, тож сторінка приходить щільною:
-  // фільтр показу відпрацював у базі, а не в браузері. Без джерела лишається
-  // старий порядок за датою — ним ходить хіба що читання повз деку.
-  const orderField = source ? resolveMatchingCardFeedField(source) : MATCHING_CARD_ORDER_FIELD;
+  // Індекс стрічки містить лише показані картки колекції `users`, тож сторінка
+  // приходить щільною і вже своєю: і фільтр показу, і розділення колекцій
+  // відпрацювали в базі, а не в браузері.
+  const orderField = MATCHING_CARD_ORDER_FIELD;
   const today = new Date().toISOString().split('T')[0];
   const upperBound = today;
   const normalizedCursor = cursor && typeof cursor === 'object'
@@ -3972,18 +4021,17 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null, co
  */
 const matchingCardsPageInFlight = new Map();
 
-const buildMatchingCardsPageKey = ({ limit, cursor, collectionSource }) => {
+const buildMatchingCardsPageKey = ({ limit, cursor }) => {
   const normalized = cursor && typeof cursor === 'object'
     ? `${cursor.date || ''}|${cursor.userId || ''}`
     : `${cursor || ''}|`;
-  return `${collectionSource || ''}|${limit}|${normalized}`;
+  return `${limit}|${normalized}`;
 };
 
 export const fetchMatchingCardsPage = (options = {}) => {
   const key = buildMatchingCardsPageKey({
     limit: Math.max(1, Number(options.limit) || 1),
     cursor: options.cursor,
-    collectionSource: options.collectionSource,
   });
 
   let pending = matchingCardsPageInFlight.get(key);
@@ -7772,29 +7820,28 @@ export const filterMain = (
       if (!addCheck('age', filterSettings.age[filterCat], cat, getExpectedFilterKeys(filterSettings.age)) && !shouldDebugUser) return false;
     }
 
-    if (hasContactFilter) {
-      // Проєкція `matchingCards` носить перелік наявних контактів, а не самі
-      // значення — контакти в стрічці не показуються, і класти їх у публічний
-      // вузол не можна. Коли перелік є, він і є відповіддю.
-      const precomputedContactKeys = Array.isArray(value.__contactKeys) ? value.__contactKeys : null;
-      const contactMap = precomputedContactKeys
-        ? Object.fromEntries(precomputedContactKeys.map(contactKey => [contactKey, true]))
-        : {
-          vk: hasContactValue(value.vk),
-          instagram: hasContactValue(value.instagram),
-          ameblo: hasContactValue(value.ameblo),
-          facebook: hasContactValue(value.facebook),
-          phone: hasContactValue(value.phone),
-          telegram: hasTelegramNonUk(value.telegram),
-          telegram2: isTelegramUkOnly(value.telegram),
-          tiktok: hasContactValue(value.tiktok),
-          linkedin: hasContactValue(value.linkedin),
-          youtube: hasContactValue(value.youtube),
-          email: hasContactValue(value.email),
-          twitter: hasContactValue(value.twitter),
-          line: hasContactValue(value.line),
-          otherLink: hasContactValue(value.otherLink),
-        };
+    // Картка стрічки про контакти не знає нічого: вони живуть у
+    // `profileContacts` з власними правами, і в проєкцію не потрапляє навіть
+    // перелік їхніх ключів. Тож фільтр «є контакт» до неї не застосовується —
+    // не «нічого не знайшлось», а «питання не до цієї картки». Мовчазне
+    // застосування відсіяло б усю стрічку до нуля.
+    if (hasContactFilter && !isMatchingSummaryCard(value)) {
+      const contactMap = {
+        vk: hasContactValue(value.vk),
+        instagram: hasContactValue(value.instagram),
+        ameblo: hasContactValue(value.ameblo),
+        facebook: hasContactValue(value.facebook),
+        phone: hasContactValue(value.phone),
+        telegram: hasTelegramNonUk(value.telegram),
+        telegram2: isTelegramUkOnly(value.telegram),
+        tiktok: hasContactValue(value.tiktok),
+        linkedin: hasContactValue(value.linkedin),
+        youtube: hasContactValue(value.youtube),
+        email: hasContactValue(value.email),
+        twitter: hasContactValue(value.twitter),
+        line: hasContactValue(value.line),
+        otherLink: hasContactValue(value.otherLink),
+      };
       if (!addCheck('contact', allowedContacts.some(contactKey => contactMap[contactKey]), contactMap, allowedContacts) && !shouldDebugUser) return false;
     }
 

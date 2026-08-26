@@ -15,7 +15,6 @@
 
 import { getCurrentValue } from 'components/getCurrentValue';
 import { normalizePublish } from './reactionPriority';
-import { resolveMatchingCardAvatarFromProfile } from './matchingCardIndex';
 
 /** Значення, яке взагалі є. `0` і `false` — є; `''`, `null`, `undefined` — немає. */
 export const hasMeaningfulValue = value => {
@@ -121,6 +120,48 @@ export const deriveRh = rawBlood => {
   if (found.size > 1) return { value: undefined, warning: 'RH_CONFLICT' };
   return { value: [...found][0] };
 };
+
+const BLOOD_GROUP_PATTERN = /^([1-4])\s*[+-]?$/;
+
+/**
+ * Номер групи крові окремо від резуса.
+ *
+ * Стрічка фільтрує і за групою, і за резусом, а сире `blood` — це вільний
+ * текст: «2+», «2 положительная», інколи масив версій. Тож у картку йдуть два
+ * впорядковані скаляри, а сире значення лишається в `profileDetails`.
+ *
+ * Розбіжність між версіями не вгадується, як і в резусі.
+ */
+export const deriveBloodGroup = rawBlood => {
+  if (!hasMeaningfulValue(rawBlood)) return { value: undefined };
+
+  const found = new Set();
+  bloodCandidates(rawBlood).forEach(candidate => {
+    const match = BLOOD_GROUP_PATTERN.exec(candidate.replace(/\s+/g, ''));
+    if (match) found.add(match[1]);
+  });
+
+  if (found.size === 0) return { value: undefined };
+  if (found.size > 1) return { value: undefined, warning: 'BLOOD_GROUP_CONFLICT' };
+  return { value: [...found][0] };
+};
+
+const normalizePhotoList = value => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(normalizePhotoList);
+  if (typeof value === 'object') return Object.values(value).flatMap(normalizePhotoList);
+  const photo = typeof value === 'string' ? value.trim() : '';
+  return photo ? [photo] : [];
+};
+
+/**
+ * Основне фото анкети — перше з `photos`.
+ *
+ * `photos` у живих даних буває і рядком, і масивом, і обʼєктом з числовими
+ * ключами (так RTDB віддає масив із дірками). Розкладка тут одна на всіх, тож
+ * аватар у стрічці і перше фото в картці — це один і той самий знімок.
+ */
+export const resolveMatchingCardAvatarFromProfile = data => normalizePhotoList(data?.photos)[0] || '';
 
 /**
  * `avatar` — окреме поле, якщо воно є; інакше основне фото з `photos`.

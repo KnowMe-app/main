@@ -27,17 +27,19 @@ describe('дзеркалення анкет у matchingCards', () => {
     // Без ключа стрічки інкрементально оновлена картка не потрапила б у запит,
     // хоч і лежала б у вузлі.
     const index = read('../utils/matchingCardIndex.js');
-    expect(index).toContain('projection[resolveMatchingCardFeedField(projection.source)] = projection.lastLogin2;');
+    expect(index).toContain('if (feedDate) projection[MATCHING_CARD_FEED_FIELD] = feedDate;');
 
-    // І лише показаній картці з датою: наявність ключа — це і є право показу.
-    expect(index).toMatch(/if \(normalizePublish\(data\.publish\) && projection\.lastLogin2\) \{/);
+    // І лише показаній картці з датою, і лише з колекції `users`: наявність
+    // ключа — це і є право показу, а стрічка збирається з однієї колекції.
+    expect(index).toMatch(/if \(source !== 'users'\) return '';/);
+    expect(index).toMatch(/if \(!normalizePublish\(data\?\.publish\)\) return '';/);
   });
 });
 
 describe('чим саме читається стрічка', () => {
   it('називає причину, коли сповзає з проєкцій на повні анкети', () => {
     const provider = read('../utils/matchingDataProvider.js');
-    ['index-empty', 'pager-unavailable']
+    ['index-empty', 'pager-unavailable', 'new-users-deck']
       .forEach(reason => expect(provider).toContain(`reportFeedSource('profiles', '${reason}')`));
     expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
     expect(provider).toContain("reportFeedSource('matchingCards', '')");

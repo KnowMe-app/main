@@ -1616,6 +1616,16 @@ export const fetchFilteredMatchingSourceChunk = ({
         return readProfilePage();
       }
 
+      // Індекс стрічки — це рівно показані картки колекції `users`. `newUsers`
+      // поля `publish` не має взагалі, її анкети користувачам не показуються, і
+      // `feedDate` у них не зʼявляється — тобто питати індекс за цю деку нема
+      // про що. Адмін дивиться `newUsers` повними анкетами, і повний доступ у
+      // нього вже є.
+      if (collectionSource === 'newUsers') {
+        reportFeedSource('profiles', 'new-users-deck');
+        return readProfilePage();
+      }
+
       // Основний шлях: одна сторінка стрічки = один запит по вузлу проєкцій,
       // де картка важить сотні байтів і вже несе аватар. Проєкція може бути ще
       // не побудована (нова база, індексація не запускалась) — тоді перша ж
@@ -1627,7 +1637,7 @@ export const fetchFilteredMatchingSourceChunk = ({
       // означало б робити зайве читання перед кожною сторінкою заради значення,
       // яке однаково завжди `true`.
       try {
-        const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor, collectionSource });
+        const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor });
         if (cardsPage?.users?.length) {
           reportFeedSource('matchingCards', '');
           return cardsPage;

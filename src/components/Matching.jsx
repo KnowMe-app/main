@@ -309,6 +309,10 @@ const FEED_SOURCE_FALLBACK_REASONS = {
   'index-empty': 'matchingCards порожній для цієї колекції — індекс не побудовано',
   'index-read-failed': 'matchingCards не вдалося прочитати',
   'pager-unavailable': 'пагінація matchingCards недоступна',
+  // Не збій, а влаштування: індекс стрічки — це показані анкети `users`.
+  // `newUsers` користувачам не показується взагалі, тож адмін дивиться її
+  // повними анкетами, а не проєкціями.
+  'new-users-deck': 'дека newUsers читається анкетами — стрічка збирається лише з users',
 };
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;

@@ -112,13 +112,15 @@ describe('однакова сторінка стрічки читається о
   it('різні сторінки лишаються різними запитами', async () => {
     const release = deferredGet();
 
-    const first = fetchMatchingCardsPage({ limit: 5, cursor: null, collectionSource: 'users' });
+    // Колекції в ключі більше немає: індекс стрічки — це показані картки
+    // `users`, і другої деки в ньому не буває. Різними сторінки роблять курсор
+    // і розмір порції.
+    const first = fetchMatchingCardsPage({ limit: 5, cursor: null });
     const second = fetchMatchingCardsPage({
       limit: 5,
       cursor: { date: '2026-12-31', userId: 'user-id-of-twenty-chars-1' },
-      collectionSource: 'users',
     });
-    const third = fetchMatchingCardsPage({ limit: 5, cursor: null, collectionSource: 'newUsers' });
+    const third = fetchMatchingCardsPage({ limit: 10, cursor: null });
     release();
     await Promise.all([first, second, third]);
 

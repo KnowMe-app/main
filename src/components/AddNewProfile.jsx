@@ -6208,7 +6208,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     downloadJsonFile(`matchingCards-${stamp}.json`, payload);
     toast.success(
-      `matchingCards.json зібрано: ${stats.written} карток, з них з фото ${stats.withAvatar}.\n`
+      `matchingCards.json зібрано: ${stats.written} карток, з них з фото ${stats.withAvatar}, `
+        + `у стрічку потрапляють ${stats.inFeed}.\n`
         + 'Імпортуйте файл у вузол matchingCards.',
       { duration: 8000 },
     );

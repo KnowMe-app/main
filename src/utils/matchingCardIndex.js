@@ -1,5 +1,13 @@
 import { resolveProfileFieldCountBucket } from './fieldCountBuckets';
 import { normalizePublish } from './reactionPriority';
+import {
+  deriveSurnameShort,
+  deriveRh,
+  deriveBloodGroup,
+  deriveRole,
+  normalizeFeedDateValue,
+  resolveMatchingCardAvatarFromProfile,
+} from './rtdbMigrationDerive';
 
 /**
  * `matchingCards` — проєкція анкети рівно під стрічку матчингу.
@@ -9,6 +17,10 @@ import { normalizePublish } from './reactionPriority';
  * кілька кілобайтів контактів, описів і службових полів. Раніше стрічка тягнула
  * повний вузол `users/{id}` на кожну картку (та ще й двічі: вдруге заради поля
  * `photos`), плюс рекурсивний лістинг Storage заради одного аватара.
+ *
+ * Тепер це ще й межа безпеки, а не лише економія трафіку. Контакти, повне
+ * прізвище, робочі позначки і технічні дані живуть у власних вузлах із власними
+ * правами; сюди потрапляє тільки те, без чого не намалювати рядок стрічки.
  *
  * Тут лежить контракт цієї проєкції: що в ній є, як її зібрати з анкети і як
  * розгорнути назад у форму, яку розуміють `renderFacts`, `filterMain` і
@@ -21,54 +33,46 @@ export const MATCHING_CARDS_ROOT = 'matchingCards';
 /**
  * Версія схеми. Читач, що бачить чужу версію, вважає картку застарілою і
  * догідратовує анкету повністю — так півмігрований індекс не показує порожнеч.
+ *
+ * Саме тому версія не зникла разом із рештою службових полів: міграція йде
+ * вручну і не миттєво, і весь цей час у вузлі лежать картки обох поколінь.
  */
-export const MATCHING_CARD_SCHEMA_VERSION = 3;
-
-/** Поле, за яким сортується стрічка (потребує `.indexOn` у правилах БД). */
-export const MATCHING_CARD_ORDER_FIELD = 'lastLogin2';
+export const MATCHING_CARD_SCHEMA_VERSION = 4;
 
 /**
- * Ключі стрічки: `feedUsers` і `feedNewUsers`, значення — сама дата.
+ * `feedDate` — і допуск до стрічки, і порядок у ній, одним ключем.
  *
  * Ключ є лише в показаної картки, і саме наявність, а не значення, дає право
  * показу. Це не економія байтів, а перенесення фільтра з клієнта в індекс:
  * схованої картки в діапазоні немає, тож вона не може приїхати у видачу.
- * Перевірено на живій базі: з 26 610 карток 26 236 не мають `lastLogin2`, і
- * `limitToLast(50)` по цьому індексу не повернув жодної з них, тоді як
- * `limitToFirst(50)` повернув 50 — відсутній ключ сортується на початку і в
- * хвіст діапазону не потрапляє.
  *
- * Джерело сидить у назві ключа, а не в значенні. Значення — чиста дата, тож
- * межі діапазону читаються очима, а не розбираються по двокрапці. А два ключі
- * замість одного зі складеним значенням тримають деки нарізно структурно:
- * показана картка `newUsers` фізично не може опинитись в індексі `users`.
- * Одного спільного ключа з датою вистачало б лише доти, доки в `newUsers`
- * немає жодної показаної анкети з датою, — а це властивість сьогоднішніх
- * даних, не схеми.
+ * Ключ один, бо стрічка одна. `newUsers` не має поля `publish` взагалі, і
+ * картки цієї колекції користувачам не показуються — адмін дивиться їх іншим
+ * шляхом, маючи повний доступ. Тобто «дека `newUsers`» — це не стрічка, і
+ * власного ключа їй не треба: другий ключ стеріг би розділення, якого в
+ * стрічці більше немає.
  *
  * Порядок у RTDB завжди зростаючий, і `val()` до того ж повертає обʼєкт, у
  * якому порядок запиту не зберігається. Тож найновіші беруться з хвоста
  * (`limitToLast`), а сортує читач.
  */
-export const MATCHING_CARD_FEED_FIELDS = Object.freeze({
-  users: 'feedUsers',
-  newUsers: 'feedNewUsers',
-});
+export const MATCHING_CARD_FEED_FIELD = 'feedDate';
 
-/** Ключ стрічки тієї колекції, на яку показує дека. */
-export const resolveMatchingCardFeedField = source => (
-  source === 'newUsers' ? MATCHING_CARD_FEED_FIELDS.newUsers : MATCHING_CARD_FEED_FIELDS.users
-);
-
-export const buildMatchingCardFeedKey = (source, date) => `${source}:${date || ''}`;
+/** Поле, за яким сортується стрічка (потребує `.indexOn` у правилах БД). */
+export const MATCHING_CARD_ORDER_FIELD = MATCHING_CARD_FEED_FIELD;
 
 /** Прапорець на розгорнутій картці: це проєкція, а не повна анкета. */
 export const MATCHING_SUMMARY_FLAG = '__matchingSummary';
 
-// Скаляри, які переносяться в проєкцію як є. Порядок не має значення — це набір.
+/**
+ * Скаляри, які переносяться в проєкцію як є.
+ *
+ * Тут немає ані `surname`, ані `blood`, ані `lastLogin2`, ані `lastAction`,
+ * ані `getInTouch`: у кожного з них тепер свій вузол, а стрічці потрібне не
+ * саме значення, а похідна від нього.
+ */
 const COPIED_FIELDS = [
   'name',
-  'surname',
   'birth',
   'city',
   'region',
@@ -78,14 +82,11 @@ const COPIED_FIELDS = [
   'bmi',
   'maritalStatus',
   'csection',
-  'blood',
   'ownKids',
   'lastDelivery',
-  'role',
-  'userRole',
-  'lastLogin2',
-  'lastAction',
-  'getInTouch',
+  'experience',
+  'eyeColor',
+  'hairColor',
 ];
 
 // Аліаси кесаревого: анкети різних поколінь тримають його під різними іменами,
@@ -107,63 +108,17 @@ const firstNonEmpty = (data, keys) => {
   return '';
 };
 
-const hasContactValue = value => {
-  if (Array.isArray(value)) return value.some(item => trimmed(item));
-  return trimmed(value).length > 0;
-};
-
-const telegramValues = value => {
-  const values = Array.isArray(value) ? value : [value];
-  return values.map(trimmed).filter(Boolean);
-};
-
-/**
- * Ключі контактів, які має анкета — без самих значень.
- *
- * Фільтр «контакт» питає лише «чи є телеграм / телефон / інстаграм», тож
- * проєкції достатньо переліку ключів. Значення сюди не потрапляють: стрічка їх
- * не показує, а контакти — найчутливіше, що є в анкеті.
- *
- * Розкладка `telegram` / `telegram2` повторює `getContactIndexSet` у config.js:
- * «ук…» — це український телеграм, решта — ні, і одна анкета може дати обидва.
- */
-export const collectMatchingCardContactKeys = data => {
-  const keys = [];
-  const add = (key, present) => { if (present) keys.push(key); };
-
-  add('vk', hasContactValue(data?.vk));
-  add('instagram', hasContactValue(data?.instagram));
-  add('ameblo', hasContactValue(data?.ameblo));
-  add('facebook', hasContactValue(data?.facebook));
-  add('phone', hasContactValue(data?.phone));
-  add('telegram', telegramValues(data?.telegram).some(item => !item.toLowerCase().startsWith('ук')));
-  add('telegram2', telegramValues(data?.telegram).some(item => item.toLowerCase().startsWith('ук')));
-  add('tiktok', hasContactValue(data?.tiktok));
-  add('linkedin', hasContactValue(data?.linkedin));
-  add('youtube', hasContactValue(data?.youtube));
-  add('email', hasContactValue(data?.email));
-  add('twitter', hasContactValue(data?.twitter));
-  add('line', hasContactValue(data?.line));
-  add('otherLink', hasContactValue(data?.otherLink));
-
-  return keys;
-};
-
-const normalizePhotoList = value => {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.flatMap(normalizePhotoList);
-  if (typeof value === 'object') return Object.values(value).flatMap(normalizePhotoList);
-  const photo = trimmed(value);
-  return photo ? [photo] : [];
-};
-
-/** Перше фото анкети з поля `photos` (Storage тут не чіпається). */
-export const resolveMatchingCardAvatarFromProfile = data => normalizePhotoList(data?.photos)[0] || '';
+// Вибір основного фото живе поруч з рештою похідних — і офлайн-міграція, і
+// писач індексу беруть його звідти, тож аватар у них не може розійтись.
+export { resolveMatchingCardAvatarFromProfile };
 
 /**
  * Кількість заповнених полів — так само, як її рахує писач індексу `fields`.
- * Службові `__ключі` не рахуються, інакше проєкція і повна анкета розійшлися б
- * на межі бакета.
+ *
+ * Рахується по повній анкеті, а не по картці: фільтр «Заповненість» питає, чи
+ * заповнена анкета, а картка після розділення вузлів має рівно стільки полів,
+ * скільки їх у схемі проєкції. Службові `__ключі` не рахуються, інакше проєкція
+ * і повна анкета розійшлися б на межі бакета.
  */
 const countProfileFieldsForIndex = data => (
   data && typeof data === 'object'
@@ -175,6 +130,23 @@ export const resolveMatchingCardCollection = (userId, data) => {
   const explicit = trimmed(data?.__sourceCollection);
   if (explicit === 'users' || explicit === 'newUsers') return explicit;
   return String(userId || '').length >= 20 ? 'users' : 'newUsers';
+};
+
+/**
+ * Дата для стрічки — тільки для картки з колекції `users` і тільки показаної.
+ *
+ * `newUsers` поля `publish` не має взагалі, тож питати його там нема сенсу:
+ * анкета звідти в стрічку не потрапляє за визначенням, і `feedDate` у неї не
+ * зʼявляється навіть тоді, коли дата в анкеті є.
+ *
+ * Показана картка без придатної дати в індекс не йде: впорядкувати її нема за
+ * чим, а з порожнім значенням вона лягла б на дно діапазону і однаково не
+ * показалась би.
+ */
+const resolveFeedDate = (source, data) => {
+  if (source !== 'users') return '';
+  if (!normalizePublish(data?.publish)) return '';
+  return normalizeFeedDateValue(data?.lastLogin2) || normalizeFeedDateValue(data?.lastLogin);
 };
 
 /**
@@ -198,29 +170,34 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const csection = firstNonEmpty(data, CSECTION_ALIASES);
   if (csection) projection.csection = csection;
 
-  const contacts = collectMatchingCardContactKeys(data);
-  if (contacts.length) projection.contacts = contacts.join(',');
+  // Похідні від полів, які самі в картку не потрапляють. Кожна з них рахується
+  // тим самим кодом, що й офлайн-міграція, — інакше картка, зібрана вручну з
+  // локальних файлів, розійшлася б із карткою, дописаною при збереженні анкети.
+  const surnameShort = deriveSurnameShort(data.surname).value;
+  if (surnameShort) projection.surnameShort = surnameShort;
+
+  const rh = deriveRh(data.blood).value;
+  if (rh) projection.rh = rh;
+
+  const bloodGroup = deriveBloodGroup(data.blood).value;
+  if (bloodGroup) projection.bloodGroup = bloodGroup;
+
+  const role = trimmed(deriveRole(data).value);
+  if (role) projection.role = role;
 
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
 
   projection.fieldsCount = countProfileFieldsForIndex(data);
 
-  // `source` лишається окремим полем, хоч і повторює префікс ключа стрічки: на
-  // нього спирається `.validate` у правилах бази (картку можна писати лише
-  // тоді, коли анкета такого джерела справді існує), і саме з нього свою
-  // колекцію дізнається картка, дістана не стрічкою, а пошуком за id.
+  // `source` лишається, хоч ТЗ його й не передбачає, і причина вимірювана: у
+  // `matchingCards` 1650 карток із довгим id, а джерело `users` мають лише 379.
+  // Тобто здогадка за довжиною id помиляється на 1271 картці, і без цього поля
+  // картка `newUsers`, дістана пошуком за id, вважалася б своєю в деці `users`.
   projection.source = resolveMatchingCardCollection(id, data);
 
-  // Показані картки — і тільки вони — потрапляють в індекс стрічки. Окремих
-  // полів `publish` і `sourceLastLogin2` більше немає: перше виражається
-  // наявністю ключа, друге — його назвою і значенням.
-  //
-  // Картка без дати в індекс не йде: впорядкувати її нема за чим, а з порожнім
-  // значенням вона лягла б на дно діапазону і однаково не показалась би.
-  if (normalizePublish(data.publish) && projection.lastLogin2) {
-    projection[resolveMatchingCardFeedField(projection.source)] = projection.lastLogin2;
-  }
+  const feedDate = resolveFeedDate(projection.source, data);
+  if (feedDate) projection[MATCHING_CARD_FEED_FIELD] = feedDate;
 
   projection.v = MATCHING_CARD_SCHEMA_VERSION;
 
@@ -244,11 +221,11 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
  */
 export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) => {
   const payload = {};
-  const stats = { total: 0, written: 0, skipped: 0, withAvatar: 0, byCollection: {} };
+  const stats = { total: 0, written: 0, skipped: 0, withAvatar: 0, inFeed: 0, byCollection: {} };
 
   Object.entries(collectionsMap).forEach(([collectionName, usersMap]) => {
     const source = collectionName === 'newUsers' ? 'newUsers' : 'users';
-    const collectionStats = { total: 0, written: 0, withAvatar: 0 };
+    const collectionStats = { total: 0, written: 0, withAvatar: 0, inFeed: 0 };
 
     Object.entries(usersMap || {}).forEach(([userId, userData]) => {
       if (!userId || !userData || typeof userData !== 'object') return;
@@ -268,6 +245,10 @@ export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) =>
         collectionStats.withAvatar += 1;
         stats.withAvatar += 1;
       }
+      if (projection[MATCHING_CARD_FEED_FIELD]) {
+        collectionStats.inFeed += 1;
+        stats.inFeed += 1;
+      }
     });
 
     stats.byCollection[source] = collectionStats;
@@ -283,10 +264,14 @@ export const isCurrentMatchingCardSchema = card =>
 /**
  * Розгортає проєкцію у форму, яку читають рендер рядка і пост-фільтри.
  *
- * Похідні, які не відновити зі скалярів (перелік контактів, лічильник полів),
- * їдуть під службовими `__ключами`; `filterMain` і `countProfileFields` віддають
- * їм перевагу, коли вони є. Фото вважається гідратованим: аватар уже в картці,
- * тож стрічці нема за чим іти в Storage.
+ * Це адаптер, а не друга схема: у базі лежать похідні (`surnameShort`, `rh`,
+ * `bloodGroup`, `feedDate`), а стрічка й далі отримує ті імена полів, які знала
+ * завжди. Тобто розділення вузлів не переписує ані `renderFacts`, ані
+ * `applyMatchingSearchKeyFilters`, ані сортування — вони бачать те саме, просто
+ * значення приходить з іншого місця.
+ *
+ * Фото вважається гідратованим: аватар уже в картці, тож стрічці нема за чим
+ * іти в Storage.
  */
 export const expandMatchingCard = (userId, card) => {
   if (!isCurrentMatchingCardSchema(card)) return null;
@@ -294,24 +279,33 @@ export const expandMatchingCard = (userId, card) => {
   if (!id) return null;
 
   const {
-    avatar, contacts, fieldsCount, source, v,
-    [MATCHING_CARD_FEED_FIELDS.users]: feedUsers,
-    [MATCHING_CARD_FEED_FIELDS.newUsers]: feedNewUsers,
+    avatar, fieldsCount, source, v,
+    surnameShort, rh, bloodGroup,
+    [MATCHING_CARD_FEED_FIELD]: feedDate,
     ...rest
   } = card;
-  const contactKeys = trimmed(contacts) ? contacts.split(',').filter(Boolean) : [];
+
+  // `blood` збирається назад із двох похідних, бо саме його формат читають
+  // `toBloodGroupCategory` і `toRhCategory`. Сирого значення анкети (яке буває
+  // масивом версій чи текстом на пів рядка) у вузлі немає — воно в
+  // `profileDetails`.
+  const blood = `${trimmed(bloodGroup)}${trimmed(rh)}`;
 
   return {
     ...rest,
     userId: id,
+    // Повного прізвища в картці немає; стрічка показує ініціал там, де раніше
+    // показувала прізвище.
+    ...(trimmed(surnameShort) ? { surname: surnameShort } : {}),
+    ...(blood ? { blood } : {}),
     // Ключ стрічки є — картка показана; немає — ні. `publish` ставиться лише в
     // першому випадку: `normalizePublish` читає відсутнє значення як «не
-    // показувати», так само як у повній анкеті.
-    ...(trimmed(feedUsers) || trimmed(feedNewUsers) ? { publish: true } : {}),
+    // показувати», так само як у повній анкеті. Сама дата віддається під
+    // старим іменем, бо за ним сортує і курсор, і `compareUsersByLastLogin2`.
+    ...(trimmed(feedDate) ? { publish: true, lastLogin2: feedDate } : {}),
     photos: avatar ? [avatar] : [],
     __photosHydrated: true,
     __sourceCollection: source === 'newUsers' ? 'newUsers' : 'users',
-    __contactKeys: contactKeys,
     __fieldsCount: Number.isFinite(Number(fieldsCount)) ? Number(fieldsCount) : undefined,
     [MATCHING_SUMMARY_FLAG]: true,
   };

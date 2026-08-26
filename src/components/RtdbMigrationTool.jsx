@@ -13,6 +13,7 @@ import {
   buildMigrationAudit,
 } from 'utils/rtdbMigration';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
+import { auth } from './config';
 
 /**
  * Локальний інструмент міграції RTDB.
@@ -163,7 +164,11 @@ export const RtdbMigrationTool = () => {
   const [usersInventory, setUsersInventory] = useState(null);
   const [newUsersInventory, setNewUsersInventory] = useState(null);
   const [existingCards, setExistingCards] = useState(null);
-  const [ownerUid, setOwnerUid] = useState('');
+  // Legacy `getInTouch` був фактично одним значенням від одного адміна, і цей
+  // адмін — той, хто зараз запустив інструмент. Тож поле заповнюється його
+  // UID: типовий випадок не має вимагати копіювання ідентифікатора з консолі.
+  // Замінити його вручну можна — перенести чужі позначки теж буває треба.
+  const [ownerUid, setOwnerUid] = useState(() => auth?.currentUser?.uid || '');
   const [plans, setPlans] = useState({});
   const [audit, setAudit] = useState(null);
   // Робочий стан живе в ref, а не в state: він великий і мутується на місці.
@@ -313,7 +318,20 @@ export const RtdbMigrationTool = () => {
             onChange={event => setOwnerUid(event.target.value)}
             placeholder="UID адміна, чиї getInTouch переносимо"
           />
+          {auth?.currentUser?.uid && auth.currentUser.uid !== ownerUid && (
+            <button
+              type="button"
+              style={styles.button}
+              onClick={() => setOwnerUid(auth.currentUser.uid)}
+            >
+              Мій UID
+            </button>
+          )}
         </div>
+        <p style={styles.muted}>
+          `getInTouch` — це персональна позначка адміна, а не поле анкети: у новій структурі вона
+          лежить під тим, хто її поставив (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/значення/анкета</code>).
+        </p>
         <InventoryTable title="users" inventory={usersInventory} />
         <InventoryTable title="newUsers" inventory={newUsersInventory} />
         {cardsComparison && (

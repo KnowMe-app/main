@@ -32,6 +32,7 @@ export const MATCHING_CARD_DIRECT_FIELDS = Object.freeze([
   'country',
   'height',
   'weight',
+  'bmi',
   'ownKids',
   'csection',
   'lastDelivery',
@@ -51,14 +52,30 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   role: ['userRole', 'role'],
   surnameShort: ['surname'],
   rh: ['blood'],
+  bloodGroup: ['blood'],
   avatar: ['avatar', 'photos'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
 });
+
+/**
+ * Метадані самої картки — не перенесені поля, а факти про проєкцію.
+ *
+ * `v` каже читачеві, чи картка тієї схеми, яку він розуміє: міграція йде
+ * вручну і не миттєво, і без версії читач малював би порожнечі замість того,
+ * щоб догідратувати анкету. `fieldsCount` рахується по повній анкеті, бо
+ * фільтр «Заповненість» питає саме про анкету. `source` називає колекцію,
+ * і чому здогадки за довжиною id тут не досить — сказано в `matchingCardIndex`.
+ *
+ * Вони не мігрують і нікого не авторизують видаляти: перераховуються з
+ * недоторканих оригіналів на кожному прогоні.
+ */
+export const MATCHING_CARD_METADATA_FIELDS = Object.freeze(['fieldsCount', 'source', 'v']);
 
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
   ...MATCHING_CARD_DIRECT_FIELDS,
   ...Object.keys(MATCHING_CARD_DERIVED_FIELDS),
+  ...MATCHING_CARD_METADATA_FIELDS,
 ]);
 
 /**
@@ -76,9 +93,6 @@ export const MATCHING_CARD_FORBIDDEN_FIELDS = Object.freeze([
   'facebook',
   'telegram',
   'contacts',
-  'source',
-  'fieldsCount',
-  'v',
   'sortAt',
   'publish',
   'lastLogin',

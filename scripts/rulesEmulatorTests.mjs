@@ -17,7 +17,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import fs from 'node:fs';
-import { ref, get, set, remove } from 'firebase/database';
+import { ref, get, set, update, remove } from 'firebase/database';
 
 const SUPERADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const MATCHING_VIEWER = 'matchingViewerUid0000000000';
@@ -206,31 +206,82 @@ await it('surnameShort не приймає повного прізвища', () 
   assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/surnameShort`),
     'ДужеДовгеПрізвищеЯкеТочноНеІніціал')));
 
-await it('повна проєкція цільової схеми лягає одним записом', () =>
+// Найважливіша перевірка розгортання: те, що пише писач, має проходити
+// правила цілком, одним записом. Якби бодай одне поле випало з переліку,
+// кожне збереження анкети падало б одразу після деплою правил.
+await it('повна проєкція писача лягає одним записом', () =>
   assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}`), {
     name: 'Катерина', surnameShort: 'К.', birth: '15.07.1995',
     city: 'Київ', region: 'Київська', country: 'Україна', role: 'sm',
-    height: '168', weight: '58', rh: '+', ownKids: '2', csection: '0',
-    lastDelivery: '2022-05-15', maritalStatus: 'No', experience: '2',
-    eyeColor: 'Green', hairColor: 'Dark Brown', avatar: 'https://a',
-    feedDate: '2026-08-25',
+    height: '168', weight: '58', bmi: '20.5', rh: '+', bloodGroup: '2',
+    ownKids: '2', csection: '0', lastDelivery: '2022-05-15',
+    maritalStatus: 'No', experience: '2', eyeColor: 'Green',
+    hairColor: 'Dark Brown', avatar: 'https://a', feedDate: '2026-08-25',
+    fieldsCount: 42, source: 'users', v: 4,
   })));
 
-// Перехідні поля сьогоднішнього писача. Поки `buildMatchingCardProjection`
-// пише їх, правила мусять їх приймати — інакше кожне збереження анкети
-// відхилялось би. Ці чотири рядки перевертаються на assertFails тим самим
-// комітом, який перемкне писача на нову схему.
-await it('ПЕРЕХІДНЕ: повна проєкція сьогоднішнього писача теж лягає одним записом', () =>
-  // Найважливіша перевірка розгортання: якби ці правила відхилили сьогоднішню
-  // проєкцію, кожне збереження анкети падало б одразу після деплою правил.
-  assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}`), {
-    name: 'Катерина', surname: 'Коваленко', birth: '15.07.1995', city: 'Київ',
-    region: 'Київська', country: 'Україна', height: '168', weight: '58',
-    bmi: '20.5', maritalStatus: 'No', csection: '0', blood: '2+', ownKids: '2',
-    lastDelivery: '2022-05-15', role: 'sm', userRole: 'sm', lastLogin2: '2026-08-25',
-    lastAction: 'дзвінок', getInTouch: '2026-09-01', contacts: 'phone,email',
-    avatar: 'https://a', fieldsCount: 42, source: 'users', feedUsers: '2026-08-25', v: 3,
-  })));
+await it('сирі поля, що переїхали в інші вузли, картка вже не приймає', async () => {
+  for (const [field, value] of [
+    ['surname', 'Коваленко'],
+    ['blood', '2+'],
+    ['getInTouch', '2026-09-01'],
+    ['lastAction', 'дзвінок'],
+    ['lastLogin2', '2026-08-25'],
+    ['contacts', 'phone,email'],
+    ['userRole', 'sm'],
+    ['feedUsers', '2026-08-25'],
+    ['feedNewUsers', '2026-08-25'],
+  ]) {
+    await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/${field}`), value));
+  }
+});
+
+await it('bloodGroup приймає лише номер групи', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '2'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '2+'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '5'));
+});
+
+describe('розкладка збереженої анкети по вузлах');
+
+await it('власниця анкети розкладає власні дані по всіх своїх вузлах', async () => {
+  const db1 = db(PROFILE_OWNER);
+  await assertSucceeds(update(ref(db1, '/'), {
+    [`profileContacts/${PROFILE_OWNER}/phone`]: '+380',
+  }));
+  await assertSucceeds(update(ref(db1, '/'), {
+    [`profileDetails/${PROFILE_OWNER}/surname`]: 'Власна',
+  }));
+  await assertSucceeds(update(ref(db1, '/'), {
+    [`profileTechnical/${PROFILE_OWNER}/language`]: 'uk',
+  }));
+});
+
+await it('редактор матчингу пише деталі чужої анкети, але не її контакти', async () => {
+  const db1 = db(MATCHING_EDITOR);
+  await assertSucceeds(update(ref(db1, '/'), { [`profileDetails/${CARD}/surname`]: 'Коваленко' }));
+  await assertSucceeds(update(ref(db1, '/'), { [`profileWorkflow/${CARD}/lastAction`]: 'дзвінок' }));
+  await assertFails(update(ref(db1, '/'), { [`profileContacts/${CARD}/phone`]: '+380' }));
+});
+
+await it('відмова на одному вузлі не тягне за собою решту', async () => {
+  // Саме тому розкладка йде вузол за вузлом: в одному патчі ці два шляхи
+  // впали б разом, і закрите право на контакти знеструмило б `profileDetails`.
+  const db1 = db(MATCHING_EDITOR);
+  await assertFails(update(ref(db1, '/'), {
+    [`profileDetails/${CARD}/education`]: 'вища',
+    [`profileContacts/${CARD}/phone`]: '+380',
+  }));
+  await assertSucceeds(update(ref(db1, '/'), { [`profileDetails/${CARD}/education`]: 'вища' }));
+});
+
+await it('видалення поля доїжджає до нового вузла', async () => {
+  await assertSucceeds(update(ref(db(SUPERADMIN), '/'), { [`profileContacts/${CARD}/telegram`]: null }));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const snapshot = await get(ref(context.database(), `profileContacts/${CARD}/telegram`));
+    if (snapshot.exists()) throw new Error('telegram лишився після видалення');
+  });
+});
 
 describe('feedDate — публікація і зняття з публікації');
 

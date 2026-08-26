@@ -52,22 +52,21 @@ describe('нові вузли профілю в database.rules.json', () => {
 });
 
 describe('індекси стрічки', () => {
-  it('тримає і новий feedDate, і ключі, за якими стрічка ходить сьогодні', () => {
-    // Правила виїжджають у базу раніше за код. Якби індекс лишився самим
-    // `feedDate`, живий читач дістав би «Index not defined» і мовчки сповз на
-    // повні анкети — рівно та регресія, заради якої написано
-    // databaseRulesFeedIndex.
-    expect(rules.matchingCards['.indexOn']).toEqual(
-      expect.arrayContaining(['feedDate', 'lastLogin2', 'feedUsers', 'feedNewUsers']),
-    );
+  it('індексує рівно те поле, за яким стрічка бере сторінку', () => {
+    // Стрічка — це показані анкети `users`, і ключ у неї один. Розділяти деки
+    // другим ключем більше нема потреби: анкети `newUsers` користувачам не
+    // показуються, і в індексі стрічки їх немає взагалі.
+    expect(rules.matchingCards['.indexOn']).toEqual(['feedDate']);
   });
 
-  it('індексує рівно ті ключі, за якими сортує сьогоднішній писач', () => {
-    // Якщо з писача зникне feedUsers/feedNewUsers, зайвий індекс у правилах
-    // помітить цей тест, а не рахунок за базу.
-    ['feedUsers', 'feedNewUsers'].forEach(field => {
-      expect(matchingCardIndexSource).toContain(field);
-    });
+  it('писач сортує за тим самим полем, яке індексують правила', () => {
+    // Регресія в проді: у базі був один індекс, а запит ішов за іншим ключем —
+    // Firebase відповідав «Index not defined», і стрічка мовчки сповзала на
+    // повні анкети. Тут ці двоє звіряються між собою.
+    expect(matchingCardIndexSource).toContain("export const MATCHING_CARD_FEED_FIELD = 'feedDate'");
+    expect(matchingCardIndexSource).toContain('MATCHING_CARD_ORDER_FIELD = MATCHING_CARD_FEED_FIELD');
+    expect(matchingCardIndexSource).not.toContain('feedUsers');
+    expect(matchingCardIndexSource).not.toContain('feedNewUsers');
   });
 });
 
@@ -112,15 +111,16 @@ describe('matchingCards приймає лише перелічені поля', 
     expect(card['.validate']).toContain("root.child('newUsers').child($uid).exists()");
   });
 
-  it('перехідні поля сьогоднішнього писача ще дозволені і всі перелічені', () => {
-    // Заборонити їх можна тільки разом із перемиканням
-    // `buildMatchingCardProjection` на нову схему — інакше правила відхиляли б
-    // кожен запис картки. Перелік тут, щоб зняття було одним рухом і щоб
-    // ніхто не додав до нього нового поля непомітно.
-    expect(allowed.filter(field => !MATCHING_CARD_ALLOWED_FIELDS.includes(field)).sort()).toEqual([
-      'bmi', 'blood', 'contacts', 'feedNewUsers', 'feedUsers', 'fieldsCount',
-      'getInTouch', 'lastAction', 'lastLogin2', 'source', 'surname', 'userRole', 'v',
-    ].sort());
+  it('нічого понад цільову схему не приймає', () => {
+    // Ані сирих полів, які тепер живуть в інших вузлах, ані перехідних
+    // залишків: писач і правила описують той самий набір.
+    expect(allowed.slice().sort()).toEqual(MATCHING_CARD_ALLOWED_FIELDS.slice().sort());
+  });
+
+  it('feedDate стереже лише той, кому дозволено писати картку', () => {
+    // Публікація і зняття з публікації — це запис і видалення однієї дати,
+    // тож право на неї те саме, що й на решту картки.
+    expect(card.feedDate['.validate']).toContain('newData.isString()');
   });
 });
 

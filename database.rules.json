@@ -132,9 +132,6 @@
     },
     "matchingCards": {
       ".indexOn": [
-        "lastLogin2",
-        "feedUsers",
-        "feedNewUsers",
         "feedDate"
       ],
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('users').child(auth.uid).child('userRole').isString() && root.child('users').child(auth.uid).child('userRole').val() != '' && root.child('users').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('users').child(auth.uid).child('userRole').exists() && root.child('users').child(auth.uid).child('role').isString() && root.child('users').child(auth.uid).child('role').val() != '' && root.child('users').child(auth.uid).child('role').val() != 'ed') || (root.child('newUsers').child(auth.uid).child('accessLevel').isString() && root.child('newUsers').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('newUsers').child(auth.uid).child('userRole').isString() && root.child('newUsers').child(auth.uid).child('userRole').val() != '' && root.child('newUsers').child(auth.uid).child('userRole').val() != 'ed') || (!root.child('newUsers').child(auth.uid).child('userRole').exists() && root.child('newUsers').child(auth.uid).child('role').isString() && root.child('newUsers').child(auth.uid).child('role').val() != '' && root.child('newUsers').child(auth.uid).child('role').val() != 'ed'))",
@@ -153,8 +150,12 @@
         "role": {},
         "height": {},
         "weight": {},
+        "bmi": {},
         "rh": {
           ".validate": "!newData.exists() || (newData.isString() && (newData.val() == '+' || newData.val() == '-'))"
+        },
+        "bloodGroup": {
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().length == 1 && newData.val() >= '1' && newData.val() <= '4')"
         },
         "ownKids": {},
         "csection": {},
@@ -167,19 +168,15 @@
         "feedDate": {
           ".validate": "!newData.exists() || newData.isString()"
         },
-        "surname": {},
-        "blood": {},
-        "bmi": {},
-        "userRole": {},
-        "lastLogin2": {},
-        "lastAction": {},
-        "getInTouch": {},
-        "contacts": {},
-        "fieldsCount": {},
-        "source": {},
-        "v": {},
-        "feedUsers": {},
-        "feedNewUsers": {},
+        "fieldsCount": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        },
+        "source": {
+          ".validate": "!newData.exists() || newData.val() == 'users' || newData.val() == 'newUsers'"
+        },
+        "v": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        },
         "$other": {
           ".validate": false
         }

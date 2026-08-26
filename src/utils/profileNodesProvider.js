@@ -19,7 +19,13 @@ import { ref as ref2, get } from 'firebase/database';
 
 import { database } from 'components/config';
 import { withAdminDownloadToast } from './backendDownloadToast';
-import { PROFILE_NODES } from './profileNodeSchema';
+import {
+  PROFILE_NODES,
+  PROFILE_CONTACT_FIELDS,
+  PROFILE_WORKFLOW_FIELDS,
+  PROFILE_TECHNICAL_FIELDS,
+  PROFILE_DETAIL_FIELDS,
+} from './profileNodeSchema';
 
 const readNode = async (node, profileId) => {
   const id = String(profileId || '').trim();
@@ -41,11 +47,47 @@ const readNode = async (node, profileId) => {
   }
 };
 
+/**
+ * Поля вузла, вибрані з legacy-анкети.
+ *
+ * Міграція йде вручну і не миттєво: доки вона не пройшла, новий вузол для
+ * частини анкет порожній, а дані лежать там, де лежали. Читати новий вузол і
+ * мовчки показувати порожнечу — найгірший з можливих варіантів, тож поки він
+ * порожній, відповідь збирається зі старого місця тим самим переліком полів.
+ *
+ * Відкат зникне сам собою: щойно анкета мігрована (або бодай раз збережена
+ * після розділення), новий вузол непорожній, і legacy більше не читається.
+ */
+const pickNodeFields = (legacyProfile, fields) => {
+  if (!legacyProfile || typeof legacyProfile !== 'object') return null;
+  const picked = {};
+  fields.forEach(field => {
+    if (legacyProfile[field] !== undefined && legacyProfile[field] !== null) {
+      picked[field] = legacyProfile[field];
+    }
+  });
+  return Object.keys(picked).length ? picked : null;
+};
+
+const readNodeWithLegacyFallback = async (node, profileId, fields, legacyProfile) => {
+  const stored = await readNode(node, profileId);
+  if (stored) return stored;
+  return pickNodeFields(legacyProfile, fields);
+};
+
 export const getMatchingCard = profileId => readNode(PROFILE_NODES.matchingCards, profileId);
-export const getProfileDetails = profileId => readNode(PROFILE_NODES.profileDetails, profileId);
-export const getContacts = profileId => readNode(PROFILE_NODES.profileContacts, profileId);
-export const getWorkflow = profileId => readNode(PROFILE_NODES.profileWorkflow, profileId);
-export const getTechnical = profileId => readNode(PROFILE_NODES.profileTechnical, profileId);
+
+export const getProfileDetails = (profileId, legacyProfile = null) =>
+  readNodeWithLegacyFallback(PROFILE_NODES.profileDetails, profileId, PROFILE_DETAIL_FIELDS, legacyProfile);
+
+export const getContacts = (profileId, legacyProfile = null) =>
+  readNodeWithLegacyFallback(PROFILE_NODES.profileContacts, profileId, PROFILE_CONTACT_FIELDS, legacyProfile);
+
+export const getWorkflow = (profileId, legacyProfile = null) =>
+  readNodeWithLegacyFallback(PROFILE_NODES.profileWorkflow, profileId, PROFILE_WORKFLOW_FIELDS, legacyProfile);
+
+export const getTechnical = (profileId, legacyProfile = null) =>
+  readNodeWithLegacyFallback(PROFILE_NODES.profileTechnical, profileId, PROFILE_TECHNICAL_FIELDS, legacyProfile);
 
 /**
  * Повна анкета — картка стрічки плюс залишкові деталі, і тільки за окремим
@@ -65,14 +107,15 @@ export const getFullProfile = async (profileId, options = {}) => {
     includeContacts = false,
     includeWorkflow = false,
     includeTechnical = false,
+    legacyProfile = null,
   } = options;
 
   const [card, details, contacts, workflow, technical] = await Promise.all([
     getMatchingCard(profileId),
-    getProfileDetails(profileId),
-    includeContacts ? getContacts(profileId) : null,
-    includeWorkflow ? getWorkflow(profileId) : null,
-    includeTechnical ? getTechnical(profileId) : null,
+    getProfileDetails(profileId, legacyProfile),
+    includeContacts ? getContacts(profileId, legacyProfile) : null,
+    includeWorkflow ? getWorkflow(profileId, legacyProfile) : null,
+    includeTechnical ? getTechnical(profileId, legacyProfile) : null,
   ]);
 
   if (!card && !details && !contacts && !workflow && !technical) return null;

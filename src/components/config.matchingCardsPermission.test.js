@@ -9,13 +9,11 @@ describe('доступ до вузла matchingCards', () => {
   const node = rules.matchingCards;
   const ADMIN_UIDS = ['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J010v4CDyD2'];
 
-  it('існує і сортується за lastLogin2', () => {
+  it('існує і сортується за ключем стрічки', () => {
     expect(node).toBeTruthy();
     // Без `.indexOn` пагінація стрічки сортувала б на клієнті, тобто качала б усе.
-    expect(node['.indexOn']).toContain('lastLogin2');
-    // Пагінація в межах однієї колекції йде за ключем стрічки цієї колекції.
-    expect(node['.indexOn']).toContain('feedUsers');
-    expect(node['.indexOn']).toContain('feedNewUsers');
+    // Ключ один: у стрічці лише показані анкети `users`.
+    expect(node['.indexOn']).toEqual(['feedDate']);
   });
 
   it('дозволяє власнику писати свою картку, а адміну — будь-яку', () => {
