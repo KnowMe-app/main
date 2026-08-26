@@ -49,7 +49,7 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     expect(payload).not.toHaveProperty('writer');
   });
 
-  it('two rapid deletions of different fields each send their own minimal payload, so neither can resurrect the other', async () => {
+  it('coalesces two rapid deletions into one write that nulls both fields', async () => {
     const longUserId = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
     const box = makeStateBox({
       [longUserId]: { userId: longUserId, key1: 'value1', key2: 'value2' },
@@ -59,14 +59,14 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     removeField(longUserId, 'key2', box.setter, undefined, 'key2');
     await flushSubmit();
 
-    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(2);
-    const [, firstPayload] = updateDataInRealtimeDB.mock.calls[0];
-    const [, secondPayload] = updateDataInRealtimeDB.mock.calls[1];
-
-    expect(firstPayload).toEqual({ userId: longUserId, key1: null, lastAction: expect.any(Number) });
-    expect(secondPayload).toEqual({ userId: longUserId, key2: null, lastAction: expect.any(Number) });
-    expect(firstPayload).not.toHaveProperty('key2');
-    expect(secondPayload).not.toHaveProperty('key1');
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({
+      userId: longUserId,
+      key1: null,
+      key2: null,
+      lastAction: expect.any(Number),
+    });
 
     // The local (in-memory) state still ends up correctly missing both fields.
     expect(box.get()[longUserId]).toEqual({ userId: longUserId });
@@ -111,8 +111,8 @@ describe('removeField writes to the backend even when React defers the state upd
   const longUserId = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
 
   beforeEach(() => {
-    updateDataInNewUsersRTDB.mockClear();
-    updateDataInRealtimeDB.mockClear();
+    updateDataInNewUsersRTDB.mockReset();
+    updateDataInRealtimeDB.mockReset();
     getCardStorageCollection.mockImplementation(async userId => userId === 'ID0001' ? 'newUsers' : 'users');
   });
 
@@ -145,25 +145,64 @@ describe('removeField writes to the backend even when React defers the state upd
     expect(profileState.get()).toEqual({ userId: longUserId, name: '' });
   });
 
-  it('deletes several fields in a row, each with its own minimal payload', async () => {
-    let card = { userId: longUserId, name: '', writer: 'IgF', deviceWidth: 360 };
+  it('sends a burst of deletions as one write with every key nulled', async () => {
+    const card = { userId: longUserId, name: '', writer: 'IgF', deviceWidth: 360 };
     const users = makeDeferredStateBox({ [longUserId]: card });
     const profileState = makeDeferredStateBox({ ...card });
 
+    // Знімок навмисно той самий на всі три кліки: у застосунку React ще не
+    // перемалював список, тож замикання відстає рівно так само.
     ['name', 'writer', 'deviceWidth'].forEach(field => {
       removeField(longUserId, field, users.setter, profileState.setter, field, { cardData: card });
-      const { [field]: _removed, ...rest } = card;
-      card = rest;
     });
     await flushSubmit();
 
-    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(3);
-    const payloads = updateDataInRealtimeDB.mock.calls.map(([, payload]) => payload);
-    expect(payloads).toEqual([
-      { userId: longUserId, name: null, lastAction: expect.any(Number) },
-      { userId: longUserId, writer: null, lastAction: expect.any(Number) },
-      { userId: longUserId, deviceWidth: null, lastAction: expect.any(Number) },
-    ]);
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({
+      userId: longUserId,
+      name: null,
+      writer: null,
+      deviceWidth: null,
+      lastAction: expect.any(Number),
+    });
+  });
+
+  it('never loses a key clicked while the previous write is still in flight', async () => {
+    let releaseFirstWrite;
+    const firstWrite = new Promise(resolve => { releaseFirstWrite = resolve; });
+    let writeCount = 0;
+    updateDataInRealtimeDB.mockImplementation(async () => {
+      writeCount += 1;
+      if (writeCount === 1) await firstWrite;
+    });
+
+    const card = { userId: longUserId, a: 1, b: 2, c: 3 };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+
+    removeField(longUserId, 'a', users.setter, undefined, 'a', { cardData: card });
+    await flushSubmit();
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+
+    // Клікаємо ще два хрестики, поки перший запис висить у польоті.
+    removeField(longUserId, 'b', users.setter, undefined, 'b', { cardData: card });
+    removeField(longUserId, 'c', users.setter, undefined, 'c', { cardData: card });
+    await flushSubmit();
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+
+    releaseFirstWrite();
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(2);
+    const [, firstPayload] = updateDataInRealtimeDB.mock.calls[0];
+    const [, secondPayload] = updateDataInRealtimeDB.mock.calls[1];
+    expect(firstPayload).toEqual({ userId: longUserId, a: null, lastAction: expect.any(Number) });
+    expect(secondPayload).toEqual({
+      userId: longUserId,
+      b: null,
+      c: null,
+      lastAction: expect.any(Number),
+    });
   });
 
   it('still writes without a card snapshot, once the deferred setUsers updater runs', async () => {

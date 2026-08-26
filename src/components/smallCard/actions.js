@@ -202,6 +202,95 @@ export const handleChange = (
   }
 };
 
+// Ланцюжок видалень: одна картка — один запис за раз.
+//
+// Хрестики натискають серіями: десяток ключів за кілька секунд. Поки кожен клік
+// слав власний незалежний, ні з чим не впорядкований запис, вони йшли внапуск —
+// і кожен тягнув за собою окремий прогін проєкції стрічки, який читає анкету,
+// читає проєкцію і лістить Storage. Тут вони шикуються в ланцюжок: перший клік
+// іде одразу (без штучної затримки і без вікна, в якому видалення можна
+// втратити, закривши вкладку), а все, що натиснули, поки той запис у польоті,
+// накопичується і йде наступним запитом — одним `update` на всі ключі одразу.
+// Десять кліків стають двома-трьома записами, і жоден ключ не губиться.
+//
+// `card` — накопичений стан картки після всіх видалень цієї серії. Наступний
+// клік рахується саме від нього, а не від знімка з рендера: React ще не
+// перемалював список, тож знімок у замиканні відстає рівно на всі попередні
+// кліки серії.
+const fieldRemovalQueues = new Map();
+
+const flushFieldRemovals = async userId => {
+  const entry = fieldRemovalQueues.get(userId);
+  if (!entry || entry.flushing) return;
+
+  entry.flushing = true;
+  try {
+    while (entry.removalKeys.size) {
+      const removalList = [...entry.removalKeys];
+      const payload = { userId };
+      entry.topLevelKeys.forEach(key => {
+        // Ключа немає в накопиченій картці — значить, його зносять цілком, і
+        // null за нього підставить handleSubmit за removalList. Є — значить,
+        // зняли лише частину (елемент масиву чи вкладений ключ), і в базу має
+        // лягти те, що лишилось.
+        if (Object.prototype.hasOwnProperty.call(entry.card, key)) {
+          payload[key] = entry.card[key];
+        }
+      });
+
+      entry.removalKeys = new Set();
+      entry.topLevelKeys = new Set();
+
+      try {
+        await handleSubmit(payload, 'overwrite', removalList);
+      } catch (error) {
+        console.error('[removeField] не вдалося зберегти видалення полів', {
+          userId,
+          removalList,
+          error,
+        });
+      }
+    }
+  } finally {
+    entry.flushing = false;
+    if (!entry.removalKeys.size) {
+      fieldRemovalQueues.delete(userId);
+    }
+  }
+};
+
+const enqueueFieldRemoval = (userId, removalKey, topLevelKey, cardAfterRemoval) => {
+  let entry = fieldRemovalQueues.get(userId);
+  if (!entry) {
+    entry = {
+      card: cardAfterRemoval,
+      removalKeys: new Set(),
+      topLevelKeys: new Set(),
+      flushing: false,
+    };
+    fieldRemovalQueues.set(userId, entry);
+  }
+
+  entry.card = cardAfterRemoval;
+  if (removalKey) entry.removalKeys.add(removalKey);
+  entry.topLevelKeys.add(topLevelKey);
+
+  if (entry.flushing) return;
+  // Мікротаска, а не таймер: затримки немає, але кліки одного тіку встигають
+  // злитися в один запис. Планувати треба саме звідси — enqueue може статись з
+  // updater-колбека setUsers, тобто під час рендеру, а мережевий запис звідти
+  // стартувати не повинен.
+  const run = () => flushFieldRemovals(userId);
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(run);
+  } else {
+    Promise.resolve().then(run);
+  }
+};
+
+/** Стан ланцюжка для цієї картки — база для розрахунку наступного видалення. */
+export const peekQueuedRemovalCard = userId => fieldRemovalQueues.get(userId)?.card ?? null;
+
 export const removeField = (
   userId,
   nestedKey,
@@ -279,7 +368,6 @@ export const removeField = (
   };
 
   const removalKey = removedKey ?? nestedKey;
-  const removalList = removalKey ? [removalKey] : [];
   const topLevelKey = keys[0];
   const triggerHistorySnapshot = payload => {
     if (typeof options?.onSubmitHistorySnapshot !== 'function') {
@@ -289,66 +377,34 @@ export const removeField = (
     options.onSubmitHistorySnapshot(snapshot);
   };
 
-  // Запис у бекенд шлемо рівно один раз на виклик: нижче є два незалежні
-  // джерела зміненої картки (синхронний знімок і колбек setUsers), і без цього
-  // прапорця вони могли б відправити одне й те саме видалення двічі.
+  // В ланцюжок це видалення стає рівно один раз: нижче є два незалежні джерела
+  // зміненої картки (синхронний знімок і колбек setUsers), а React до того ж
+  // має право переграти свій колбек.
   let submitted = false;
-
-  // Пейлоад містить лише той один top-level ключ, який реально змінився
-  // (+ lastAction). Ці записи не впорядковані між собою, тож видалення двох
-  // полів поспіль можуть лягти в будь-якому порядку — але мінімальний пейлоад
-  // фізично не несе чужих (застарілих) значень, тому жодне видалення не може
-  // воскресити інше поле.
-  const sendRemoval = (resolvedUserId, cardAfterRemoval) => {
-    const topLevelValue = Object.prototype.hasOwnProperty.call(cardAfterRemoval, topLevelKey)
-      ? cardAfterRemoval[topLevelKey]
-      : null;
-
-    triggerHistorySnapshot({ ...cardAfterRemoval, userId: resolvedUserId });
-    handleSubmit(
-      { userId: resolvedUserId, [topLevelKey]: topLevelValue },
-      'overwrite',
-      removalList,
-    );
-  };
 
   const submitRemoval = (resolvedUserId, cardAfterRemoval) => {
     if (submitted || !resolvedUserId) {
       return;
     }
     submitted = true;
-    sendRemoval(resolvedUserId, cardAfterRemoval);
+    triggerHistorySnapshot({ ...cardAfterRemoval, userId: resolvedUserId });
+    enqueueFieldRemoval(resolvedUserId, removalKey, topLevelKey, cardAfterRemoval);
   };
 
-  // Те саме, але відкладене в мікротаску: викликається лише з середини
-  // updater-колбека setUsers, щоб мережевий запис не стартував під час рендеру
-  // React. Місце в черзі займаємо одразу, тож повторний прогін того самого
-  // колбека (React має право його переграти) другого запису не зробить.
-  const submitRemovalAsync = (resolvedUserId, cardAfterRemoval) => {
-    if (submitted || !resolvedUserId) {
-      return;
-    }
-    submitted = true;
-    const run = () => sendRemoval(resolvedUserId, cardAfterRemoval);
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(run);
-    } else {
-      Promise.resolve().then(run);
-    }
-  };
-
-  // Головний шлях: рахуємо видалення прямо з переданого знімка картки —
-  // звичайним синхронним JS, без жодного React-планувальника. Раніше пейлоад
-  // знімався всередині updater-колбека setUsers, а React виконує такий колбек
-  // синхронно лише через внутрішню оптимізацію "eager state" — і лише поки на
-  // цьому fiber немає інших запланованих оновлень. У списку карток setUsers і
-  // setState живуть в одному компоненті (AddNewProfile), тож setState вище вже
-  // помічав fiber як брудний, колбек setUsers відкладався до рендеру, і
-  // перевірка "чи є що слати" бачила ще незаповнені змінні: локально ключ
-  // зникав, а в базу не летіло нічого. Саме тому не видалялись поля, наявні у
-  // відкритій анкеті (name, writer), і "видалялись" ті, яких у ній не було.
-  const cardSnapshot =
-    options?.cardData && typeof options.cardData === 'object' ? options.cardData : null;
+  // Головний шлях: рахуємо видалення звичайним синхронним JS — від стану
+  // ланцюжка, якщо серія вже почалась, і від знімка картки з рендера, якщо ні.
+  // Ніякого React-планувальника в ланцюжку запису немає навмисно: раніше
+  // пейлоад знімався всередині updater-колбека setUsers, а React виконує такий
+  // колбек синхронно лише через внутрішню оптимізацію "eager state" — і лише
+  // поки на цьому fiber немає інших запланованих оновлень. У списку карток
+  // setUsers і setState живуть в одному компоненті (AddNewProfile), тож
+  // setState нижче вже позначав fiber брудним, колбек setUsers відкладався до
+  // рендеру, і перевірка "чи є що слати" бачила ще незаповнені змінні: локально
+  // ключ зникав, а в базу не летіло нічого. Саме тому не видалялись поля,
+  // наявні у відкритій анкеті (name, writer), і "видалялись" ті, яких у ній не
+  // було.
+  const cardSnapshot = peekQueuedRemovalCard(userId)
+    || (options?.cardData && typeof options.cardData === 'object' ? options.cardData : null);
 
   if (cardSnapshot) {
     const { changed, value } = removePath(cardSnapshot);
@@ -359,9 +415,9 @@ export const removeField = (
   }
 
   if (typeof setUsers === 'function') {
-    // Резервний шлях для викликачів без cardData: там пейлоад доводиться брати
-    // з updater-колбека, тож сам запис відкладаємо в мікротаску (колбек може
-    // виконатись під час рендеру).
+    // Резервний шлях для викликачів без cardData: там картку доводиться брати
+    // з updater-колбека. Сам запис звідси не стартує — enqueue лише ставить
+    // ключ у ланцюжок, а той шле його вже з мікротаски, поза рендером.
     let capturedChanged = false;
 
     setUsers(prev => {
@@ -373,7 +429,7 @@ export const removeField = (
         const resolvedUserId = userId || updated.userId;
         if (resolvedUserId) {
           capturedChanged = true;
-          submitRemovalAsync(resolvedUserId, updated);
+          submitRemoval(resolvedUserId, updated);
         }
         return updated;
       });
