@@ -3,6 +3,11 @@ name: Build and deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  # Ручний запуск з вкладки Actions. Потрібен рівно тоді, коли деплой стоїть, а
+  # коміта, яким його штовхнути, немає: прогін завис у черзі без раннера,
+  # збірка впала через щось поза кодом, або gh-pages розійшлася з main.
+  # Без цього тригера єдиний спосіб перезібрати — покласти в main новий коміт.
+  workflow_dispatch:
 
 concurrency:
   group: github-pages
