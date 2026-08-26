@@ -3337,9 +3337,62 @@ const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload,
   return entry.done;
 };
 
+/**
+ * Дзеркалить видалення ключа в сусідню колекцію.
+ *
+ * Картка читається як обʼєднання `users` і `newUsers` — `fetchUserById` зливає
+ * обидва записи через `mergeUserCollectionData`, коли вони обидва є, і те саме
+ * робить `fetchAllUsers` при наповненні кешу. А пишеться картка рівно в одну
+ * колекцію, яку вибрала маршрутизація за довжиною id: довгий id — завжди
+ * `users`, без жодної перевірки `newUsers`.
+ *
+ * Через це ключ, що фізично лежить у сусідній колекції, видно на картці, але
+ * видалити його неможливо: null летить туди, де його ніколи не було. З екрана
+ * ключ зникає (локальний стан оновився), а після перечитування повертається зі
+ * злиття. Найпомітніше це на полях, які `isUsersAllowedField` взагалі не пускає
+ * в `users`, — writer, role, cycleStatus, lastCycle, stimulationSchedule: вони
+ * живуть лише в `newUsers`, тож у довгій картці їх видно і не видалити.
+ *
+ * Дзеркалимо лише ті null, що прийшли від викликача, тобто справжні видалення.
+ * Ті, що дописують самі писачі, — ні: `stripTransientUserDataFields` додає null
+ * за кеш-мітками на кожен запис, а індексна чистка в `newUsers` — за порожніми
+ * контактами; жодне з цього не є проханням щось видалити в сусідній колекції.
+ *
+ * Пейлоад із самих null не створює нічого: порожніх вузлів у RTDB не буває,
+ * тож карткам, які живуть в одній колекції, це не заводить сусіднього запису.
+ */
+const collectExplicitRemovals = payload => Object.entries(payload || {})
+  .filter(([key, value]) => value === null && key !== 'userId')
+  .map(([key]) => key);
+
+const mirrorRemovalsToOtherCollection = async (primaryCollection, userId, removals) => {
+  const id = String(userId || '').trim();
+  if (!id || !removals.length) return;
+
+  const mirror = primaryCollection === 'users' ? 'newUsers' : 'users';
+  // Один мультишляховий `update` замість `remove` на кожен ключ: серія
+  // видалень і так коштує запис у свою колекцію, другого круга по одному
+  // запиту на ключ вона не варта. Пейлоад із самих null нічого не створює —
+  // порожніх вузлів у RTDB не буває.
+  const payload = Object.fromEntries(removals.map(key => [key, null]));
+  try {
+    await update(ref2(database, `${mirror}/${id}`), payload);
+  } catch (error) {
+    console.warn('[видалення] не вдалося зняти ключі в сусідній колекції', {
+      userId: id,
+      mirror,
+      keys: removals,
+      error,
+    });
+  }
+};
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
+    // Знімається до strip: далі до пейлоада додадуться службові null, які
+    // видаленнями не є.
+    const explicitRemovals = condition === 'update' ? collectExplicitRemovals(uploadedInfo) : [];
     const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
     });
@@ -3348,6 +3401,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     } else {
       await set(userRefRTDB, cleanedUploadedInfo);
     }
+    await mirrorRemovalsToOtherCollection('users', userId, explicitRemovals);
     await refreshMatchingCardAfterProfileWrite('users', userId, cleanedUploadedInfo, condition);
   } catch (error) {
     console.error(
@@ -3360,6 +3414,9 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
 
 export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, skipIndexing = false) => {
   try {
+    // Знімається до індексної чистки нижче: та теж ставить null, але за
+    // порожніми контактами, а не на прохання щось видалити.
+    const explicitRemovals = condition === 'update' ? collectExplicitRemovals(uploadedInfo) : [];
     uploadedInfo = sanitizeUploadedInfoPhones(uploadedInfo);
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
     const snapshot = await get(userRefRTDB);
@@ -3448,6 +3505,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
       }
     }
 
+    await mirrorRemovalsToOtherCollection('newUsers', userId, explicitRemovals);
     await refreshMatchingCardAfterProfileWrite('newUsers', userId, cleanedUploadedInfo, condition);
 
     clearEmptySearchQueryCache();
