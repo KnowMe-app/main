@@ -124,28 +124,37 @@ describe('matchingCards приймає лише перелічені поля', 
   });
 });
 
-describe('profileContacts закритий за замовчуванням', () => {
+describe('profileContacts — відкриті, але з власним правилом', () => {
+  // Ховати контакти сьогодні не треба. Цінність окремого вузла в іншому:
+  // доступ до нього описаний одним власним правилом, тож звузити його до
+  // окремої категорії людей — це правка одного рядка, а не переїзд даних.
   it('не має читання на рівні колекції — контакти не можна перелічити', () => {
     expect(rules.profileContacts['.read']).toBeUndefined();
     expect(rules.profileContacts['.indexOn']).toBeUndefined();
   });
 
-  it('відкривається власнику, суперадмінам і явному токену доступу', () => {
+  it('читає та сама аудиторія, що й картки стрічки, плюс власник анкети', () => {
     const read = rules.profileContacts.$uid['.read'];
     expect(read).toContain('auth.uid == $uid');
     ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
-    expect(read).toContain("child('accessLevel').val().contains('profileContacts')");
+    // Решта умови збігається з карткою стрічки — саме тому нічого не ламається.
+    expect(read.endsWith(rules.matchingCards['.read'].slice('auth != null && ('.length))).toBe(true);
   });
 
-  it('на запис вимагає ще й view&write', () => {
+  it('правило власне, а не успадковане — його можна звузити окремо', () => {
+    expect(rules.profileContacts.$uid['.read']).not.toBe(rules.matchingCards['.read']);
+  });
+
+  it('редагує той, хто редагує анкету, і власник токена контактів', () => {
     const write = rules.profileContacts.$uid['.write'];
+    expect(write).toContain("contains('matching')");
     expect(write).toContain("contains('profileContacts')");
     expect(write).toContain("contains('view&write')");
   });
 
-  it('токен, який шукають правила, справді можна видати з форми', () => {
-    // Без цієї перевірки правило було б формально коректним і практично
-    // мертвим: жоден рівень доступу не містив би підрядка, який воно шукає.
+  it('токен звуження справді можна видати з форми', () => {
+    // Без цього правило запису було б формально коректним і практично мертвим:
+    // жоден рівень доступу не містив би підрядка, який воно шукає.
     const block = profileFormSource.slice(
       profileFormSource.indexOf('const accessLevelOptions = ['),
       profileFormSource.indexOf('];', profileFormSource.indexOf('const accessLevelOptions = [')),
@@ -154,11 +163,6 @@ describe('profileContacts закритий за замовчуванням', () 
 
     expect(assignable.some(level => level.includes('profileContacts'))).toBe(true);
     expect(assignable.some(level => level.includes('profileContacts') && level.includes('view&write'))).toBe(true);
-  });
-
-  it('матчинговий рівень доступу сам собою контактів не відкриває', () => {
-    expect('matching:view&write'.includes('profileContacts')).toBe(false);
-    expect('add+matching:view&write'.includes('profileContacts')).toBe(false);
   });
 });
 

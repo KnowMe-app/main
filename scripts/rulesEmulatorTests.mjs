@@ -101,22 +101,42 @@ await it('матчинговий переглядач читає деталі а
 await it('стороння без матчингу не читає карток', () =>
   assertFails(get(ref(db(OUTSIDER), `matchingCards/${CARD}`))));
 
-describe('profileContacts — окреме право, а не наслідок матчингу');
+// Ховати контакти сьогодні не треба: їх читає та сама аудиторія, що й картки
+// стрічки. Цінність окремого вузла в іншому — доступ до нього описаний одним
+// власним правилом, тож звузити його до окремої категорії людей можна, не
+// чіпаючи ані анкети, ані стрічки. Токен `profileContacts` — уже готовий для
+// цього гвинт.
+describe('profileContacts — відкриті, але з власним правилом');
 
-await it('матчинговий переглядач БЕЗ токена контактів не читає контактів', () =>
-  assertFails(get(ref(db(MATCHING_VIEWER), `profileContacts/${CARD}`))));
+await it('матчинговий переглядач читає контакти', () =>
+  assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileContacts/${CARD}`))));
 
-await it('навіть матчинговий редактор без токена контактів не читає контактів', () =>
-  assertFails(get(ref(db(MATCHING_EDITOR), `profileContacts/${CARD}`))));
-
-await it('власник токена profileContacts читає контакти', () =>
+await it('власник токена profileContacts теж читає', () =>
   assertSucceeds(get(ref(db(CONTACTS_VIEWER), `profileContacts/${CARD}`))));
 
-await it('власник токена profileContacts із view&write пише контакти', () =>
-  assertSucceeds(set(ref(db(CONTACTS_VIEWER), `profileContacts/${CARD}/telegram`), '@x')));
+await it('стороння без матчингу контактів не читає', () =>
+  assertFails(get(ref(db(OUTSIDER), `profileContacts/${CARD}`))));
+
+await it('матчинговий редактор пише контакти — так само, як редагував анкету', () =>
+  assertSucceeds(set(ref(db(MATCHING_EDITOR), `profileContacts/${CARD}/telegram`), '@x')));
+
+await it('матчинговий переглядач без view&write контактів не пише', () =>
+  assertFails(set(ref(db(MATCHING_VIEWER), `profileContacts/${CARD}/telegram`), '@nope')));
 
 await it('контакти не можна перелічити цілою колекцією', () =>
   assertFails(get(ref(db(CONTACTS_VIEWER), 'profileContacts'))));
+
+await it('правило контактів окреме — звузити його можна, не чіпаючи стрічки', () => {
+  // Саме заради цього вузол і виділявся: `profileContacts` має власний `.read`,
+  // не успадкований від `matchingCards`, тож обмеження до окремої категорії
+  // людей — це правка одного рядка, а не переїзд даних.
+  const rules = JSON.parse(fs.readFileSync('database.rules.json', 'utf8')).rules;
+  if (!rules.profileContacts.$uid['.read']) throw new Error('немає власного .read');
+  if (rules.profileContacts['.read']) throw new Error('колекцію не можна робити читабельною цілком');
+  if (!rules.profileContacts.$uid['.write'].includes("contains('profileContacts')")) {
+    throw new Error('токен звуження зник із правила запису');
+  }
+});
 
 describe('власниця анкети');
 
@@ -262,20 +282,22 @@ await it('власниця анкети розкладає власні дані
   }));
 });
 
-await it('редактор матчингу пише деталі чужої анкети, але не її контакти', async () => {
+await it('редактор матчингу пише деталі й контакти, але не технічне', async () => {
   const db1 = db(MATCHING_EDITOR);
   await assertSucceeds(update(ref(db1, '/'), { [`profileDetails/${CARD}/surname`]: 'Коваленко' }));
+  await assertSucceeds(update(ref(db1, '/'), { [`profileContacts/${CARD}/phone`]: '+380' }));
   await assertSucceeds(update(ref(db1, '/'), { [`profileWorkflow/${CARD}/lastAction`]: 'дзвінок' }));
-  await assertFails(update(ref(db1, '/'), { [`profileContacts/${CARD}/phone`]: '+380' }));
+  // Технічні дані чужої анкети — тільки власник і суперадміни.
+  await assertFails(update(ref(db1, '/'), { [`profileTechnical/${CARD}/language`]: 'uk' }));
 });
 
 await it('відмова на одному вузлі не тягне за собою решту', async () => {
   // Саме тому розкладка йде вузол за вузлом: в одному патчі ці два шляхи
-  // впали б разом, і закрите право на контакти знеструмило б `profileDetails`.
+  // впали б разом, і закрите право на технічне знеструмило б `profileDetails`.
   const db1 = db(MATCHING_EDITOR);
   await assertFails(update(ref(db1, '/'), {
     [`profileDetails/${CARD}/education`]: 'вища',
-    [`profileContacts/${CARD}/phone`]: '+380',
+    [`profileTechnical/${CARD}/language`]: 'uk',
   }));
   await assertSucceeds(update(ref(db1, '/'), { [`profileDetails/${CARD}/education`]: 'вища' }));
 });

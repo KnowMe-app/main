@@ -47,6 +47,8 @@ import {
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
+import { mergeProfileNodes, hasAnyProfileNode } from '../utils/profileNodeMerge';
+import { PROFILE_NODES } from '../utils/profileNodeSchema';
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_ORDER_FIELD,
@@ -2136,6 +2138,70 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }
   await remove(fromRef);
 };
 
+/**
+ * Читає анкету з нових вузлів.
+ *
+ * Це основний шлях: `users` лишається лише для мобільного застосунку, а
+ * `newUsers` після перебудови колекції зникне зовсім. Тобто джерелом істини для
+ * вебу є саме ці пʼять вузлів, і legacy читається тільки як відкат для анкет,
+ * які ще не переїхали.
+ *
+ * Читання паралельне і поштучне: контакти, робочі позначки і технічне беруться
+ * лише тоді, коли їх справді показують. Для списку вистачає картки і деталей —
+ * решта не їде по мережі взагалі.
+ *
+ * Відмова в правах — не помилка анкети. `profileContacts` може бути закритий
+ * для цього читача, і картка має відкритись без контактів, а не впасти.
+ */
+const readProfileNodePart = async (node, id) => {
+  try {
+    const snapshot = await get(ref2(database, `${node}/${id}`));
+    return snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.warn('[profileNodes] вузол не прочитано', { node, userId: id, error });
+    return null;
+  }
+};
+
+export const readProfileFromNodes = async (userId, options = {}) => {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+
+  const {
+    includeContacts = true,
+    includeWorkflow = true,
+    includeTechnical = false,
+    legacy = null,
+  } = options;
+
+  const [card, details, contacts, workflow, technical] = await Promise.all([
+    readProfileNodePart(PROFILE_NODES.matchingCards, id),
+    readProfileNodePart(PROFILE_NODES.profileDetails, id),
+    includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
+    includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
+    includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
+  ]);
+
+  const parts = { card, details, contacts, workflow, technical };
+  if (!hasAnyProfileNode(parts)) return null;
+
+  const merged = mergeProfileNodes({ userId: id, ...parts, legacy });
+  if (!merged) return null;
+
+  // `getInTouch` підмішується з `multiData` — це персональна позначка того, хто
+  // зараз дивиться, а не поле анкети. Стара логіка сортування і фільтрів бачить
+  // рівно те саме `card.getInTouch`, просто значення приходить з іншого місця.
+  // Мапа власника читається раз на сесію, тож ця гілка не коштує запиту.
+  const ownerId = auth.currentUser?.uid;
+  if (ownerId) {
+    const ownerMap = await readOwnerGetInTouchMap(ownerId);
+    if (Object.prototype.hasOwnProperty.call(ownerMap, id)) merged.getInTouch = ownerMap[id];
+    else delete merged.getInTouch;
+  }
+
+  return merged;
+};
+
 export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
   try {
     const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
@@ -2164,6 +2230,13 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
     const snaps = await Promise.all(
       missingIds.map(async id => {
         try {
+          // Спершу нові вузли — вони і є джерелом істини. Legacy читається
+          // тільки тоді, коли анкета туди ще не переїхала.
+          const fromNodes = await readProfileFromNodes(id);
+          if (fromNodes) {
+            return [id, updateCard(id, { ...fromNodes, photos: fromNodes.photos || [] })];
+          }
+
           if (!source && isLongFormatUserId(id)) {
             const [usersResult, newUsersResult] = await Promise.allSettled([
               get(ref2(database, `users/${id}`)),
@@ -3331,6 +3404,15 @@ const matchingCardRefreshes = new Map();
  * шляхів, які не доїхали.
  */
 const fanOutProfileNodes = async (userId, payload) => {
+  // `getInTouch` — не поле анкети, а персональна позначка того, хто її поставив,
+  // тож вона їде не у вузол профілю, а під власника в `multiData`. Значення там
+  // сидить у назві ключа, і зміна значення — це переїзд, а не запис; цим
+  // займається `setOwnerGetInTouch`.
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'getInTouch')) {
+    const ownerId = auth.currentUser?.uid;
+    if (ownerId) await setOwnerGetInTouch(ownerId, userId, payload.getInTouch);
+  }
+
   const patch = buildProfileNodePatch(userId, payload);
   const paths = Object.keys(patch);
   if (!paths.length) return;
@@ -3359,6 +3441,116 @@ const fanOutProfileNodes = async (userId, payload) => {
       });
     }
   }));
+};
+
+// ---------------------------------------------------------------------------
+// getInTouch — персональна позначка адміна в `multiData`
+//
+// У новій структурі значення сидить у назві ключа:
+//
+//   multiData/getInTouch/{ownerId}/{значення}/{profileId}: true
+//
+// Так однакове значення не плодить тисячі однакових підструктур: «2099-99-99»
+// на пів тисячі карток — це один вузол із пів тисячею прапорців, а не пів
+// тисячі вузлів з однаковим рядком усередині.
+//
+// Ціна цієї форми — відповідь на питання «яке значення в цієї картки» більше не
+// лежить поруч із карткою. Тому власників мапа читається цілком, один раз на
+// сесію, і тримається в памʼяті: вона потрібна на кожен список, а важить
+// стільки ж, скільки важили б ті самі значення в анкетах.
+// ---------------------------------------------------------------------------
+
+const OWNER_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
+
+const ownerGetInTouchCache = new Map();
+
+const buildGetInTouchValueKey = value => {
+  const text = value === null || value === undefined ? '' : String(value).trim();
+  if (!text) return '';
+  // Ті самі символи, яких не приймає ключ RTDB. Значення з ними не пишеться —
+  // мовчазне кодування зробило б його невпізнаваним для адміна, який його й
+  // ставив.
+  // eslint-disable-next-line no-control-regex
+  if (/[.#$/[\]]/.test(text) || /[\u0000-\u001F\u007F]/.test(text)) return '';
+  return text;
+};
+
+/** `profileId -> значення` для одного власника. */
+export const readOwnerGetInTouchMap = async ownerId => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return {};
+
+  const cached = ownerGetInTouchCache.get(owner);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    try {
+      const snapshot = await get(ref2(database, `${OWNER_GET_IN_TOUCH_PATH}/${owner}`));
+      if (!snapshot.exists()) return {};
+      const map = {};
+      Object.entries(snapshot.val() || {}).forEach(([value, profiles]) => {
+        Object.entries(profiles || {}).forEach(([profileId, isSet]) => {
+          if (isSet === true) map[profileId] = value;
+        });
+      });
+      return map;
+    } catch (error) {
+      console.warn('[getInTouch] не вдалося прочитати мапу власника', { ownerId: owner, error });
+      return {};
+    }
+  })();
+
+  ownerGetInTouchCache.set(owner, pending);
+  return pending;
+};
+
+/** Скидає памʼять — після власного запису або зміни власника. */
+export const invalidateOwnerGetInTouchMap = ownerId => {
+  if (ownerId) ownerGetInTouchCache.delete(String(ownerId).trim());
+  else ownerGetInTouchCache.clear();
+};
+
+/**
+ * Ставить (або знімає) позначку `getInTouch` для однієї картки.
+ *
+ * Value-first структура означає, що зміна значення — це не запис, а переїзд:
+ * старий ключ треба зняти, новий поставити. Обидва йдуть одним патчем, тож
+ * картка не може на мить опинитись одразу в двох списках.
+ */
+export const setOwnerGetInTouch = async (ownerId, profileId, value) => {
+  const owner = String(ownerId || '').trim();
+  const id = String(profileId || '').trim();
+  if (!owner || !id) return false;
+
+  const nextKey = buildGetInTouchValueKey(value);
+  const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
+  if (hasValue && !nextKey) {
+    console.warn('[getInTouch] значення не може бути ключем бази — позначку не змінено', { profileId: id });
+    return false;
+  }
+
+  const map = await readOwnerGetInTouchMap(owner);
+  const previousKey = map[id];
+  if (previousKey === nextKey) return true;
+
+  const patch = {};
+  if (previousKey) patch[`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${previousKey}/${id}`] = null;
+  if (nextKey) patch[`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${nextKey}/${id}`] = true;
+  if (!Object.keys(patch).length) return true;
+
+  try {
+    await update(ref2(database, '/'), patch);
+    // Мапа оновлюється на місці — перечитувати цілий вузол заради однієї зміни
+    // означало б платити за кожну позначку читанням усього списку власника.
+    const nextMap = { ...map };
+    if (nextKey) nextMap[id] = nextKey;
+    else delete nextMap[id];
+    ownerGetInTouchCache.set(owner, Promise.resolve(nextMap));
+    return true;
+  } catch (error) {
+    console.warn('[getInTouch] позначку не збережено', { ownerId: owner, profileId: id, error });
+    return false;
+  }
 };
 
 const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
@@ -8091,6 +8283,16 @@ export const fetchUserById = async userId => {
   const userRefInUsers = ref2(db, `users/${userId}`);
 
   try {
+    // Нові вузли — основний шлях; legacy лишається відкатом для анкет, які ще
+    // не переїхали, і джерелом для мобільного застосунку.
+    const fromNodes = await readProfileFromNodes(userId, { includeTechnical: true });
+    if (fromNodes) {
+      const photos = fromNodes.__photosHydrated
+        ? fromNodes.photos
+        : await getAllUserPhotos(userId, fromNodes.__sourceCollection);
+      return { ...fromNodes, photos: photos || [], __photosHydrated: true };
+    }
+
     const [usersResult, newUsersResult] = await Promise.allSettled([
       get(userRefInUsers),
       get(userRefInNewUsers),
