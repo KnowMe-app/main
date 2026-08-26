@@ -31,6 +31,9 @@ describe('доступ до вузла matchingCards', () => {
     const validate = node.$uid['.validate'];
     expect(validate).toContain("root.child('users').child($uid).exists()");
     expect(validate).toContain("root.child('newUsers').child($uid).exists()");
+    // Але питається це напряму в обох колекціях, а не через поле `source`:
+    // у цільовій схемі картки `source` немає, а перевірка потрібна.
+    expect(validate).not.toContain("child('source')");
   });
 
   it('більше не тримає окремої позначки готовності індексу', () => {

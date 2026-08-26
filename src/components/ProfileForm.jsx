@@ -1975,6 +1975,12 @@ export const ProfileForm = ({
     { value: 'add:view&write', label: 'перегляд і редагування add' },
     { value: 'add+matching:view', label: 'перегляд add і matching' },
     { value: 'add+matching:view&write', label: 'перегляд і редагування add та matching' },
+    // Контакти живуть окремим вузлом `profileContacts` із власним правом
+    // читання. Правило бази шукає в рівні доступу підрядок `profileContacts`,
+    // тож без цих варіантів право нікому не можна було б видати — вузол
+    // лишався б доступним рівно власнику анкети і суперадмінам.
+    { value: 'matching+profileContacts:view', label: 'перегляд matching і контактів' },
+    { value: 'matching+profileContacts:view&write', label: 'перегляд і редагування matching та контактів' },
   ];
 
   const fieldsToRender = getFieldsToRender(state);

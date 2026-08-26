@@ -110,11 +110,27 @@ describe('buildMatchingCardProjection', () => {
     expect(shownUser).not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.newUsers);
   });
 
+  it('логін не публікує анкету, яка не була показана', () => {
+    // Логін оновлює `lastLogin2` — і саме тому індекс стрічки не можна
+    // будувати з самої лише дати. Прихід користувача в застосунок не є
+    // рішенням показати його анкету, і writer це поважає: без `publish`
+    // ключа стрічки не зʼявляється, скільки б разів людина не залогінилась.
+    const usersId = 'a'.repeat(28);
+    const afterLogin = { name: 'A', publish: false, lastLogin2: '2026-08-26' };
+
+    expect(buildMatchingCardProjection(usersId, afterLogin))
+      .not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.users);
+    expect(buildMatchingCardProjection(usersId, { ...afterLogin, publish: undefined }))
+      .not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.users);
+  });
+
   it('більше не пише окремих publish і sourceLastLogin2', () => {
     const projection = buildMatchingCardProjection('a'.repeat(28), fullProfile);
     expect(projection).not.toHaveProperty('publish');
     expect(projection).not.toHaveProperty('sourceLastLogin2');
-    // `source` лишається: на нього спирається `.validate` у правилах бази.
+    // `source` лишається перехідним полем: правила більше не вимагають його
+    // (`.validate` на картці знято), але читач, який дістав картку пошуком за
+    // id, а не стрічкою, досі дізнається колекцію саме з нього.
     expect(projection.source).toBe('users');
   });
 
