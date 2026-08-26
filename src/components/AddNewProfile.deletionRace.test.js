@@ -87,7 +87,7 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
     expect(remoteUpdateBody).toContain('const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;');
   });
 
-  it('long-userId delete-only branch writes only nulls (filtered by isUsersAllowedField) + lastAction, never touching makeUploadedInfo', () => {
+  it('long-userId delete-only branch nulls every deleted key + lastAction, never touching makeUploadedInfo', () => {
     const longBranch = remoteUpdateBody.slice(
       remoteUpdateBody.indexOf("if (syncedState?.userId?.length > 20) {"),
       remoteUpdateBody.indexOf('} else {\n      if (isDeleteOnlySubmit) {')
@@ -98,7 +98,13 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
     );
 
     expect(deleteBranch).toContain('const deletePayload = { lastAction: syncedState.lastAction };');
-    expect(deleteBranch).toContain('.filter(key => isUsersAllowedField(key))');
+    // Відбору за назвою ключа тут бути не має. Він лишався з часів, коли довгий
+    // userId жив одночасно в `users` і `newUsers`: половина полів анкети
+    // належала другій колекції, тож null за таким ключем викидався з пейлоада —
+    // і writer, role, lastCycle було видно на картці й неможливо видалити.
+    // Довгий userId тепер лежить лише в `users`, і знімається там усе.
+    expect(deleteBranch).not.toContain('isUsersAllowedField');
+    expect(deleteBranch).toContain('deleteOnlyKeys.forEach(key => {');
     expect(deleteBranch).toContain('deletePayload[key] = null;');
     expect(deleteBranch).not.toContain('makeUploadedInfo(');
     expect(deleteBranch).toContain(

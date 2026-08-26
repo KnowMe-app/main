@@ -111,8 +111,6 @@ import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './Sea
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import {
-  isUsersAllowedField,
-  pickUsersAllowedFields,
   sanitizeNewUsersPayload,
   sanitizeTechnicalPayload,
 } from './formFields';
@@ -1921,12 +1919,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (syncedState?.userId?.length > 20) {
 
       if (isDeleteOnlySubmit) {
+        // Жодного відбору за назвою ключа: колись довгий userId жив одночасно
+        // в `users` і `newUsers`, і половина полів анкети належала другій
+        // колекції — null за таким ключем летів у `users`, де його ніколи не
+        // було, тож writer, role і lastCycle було видно і неможливо видалити.
+        // Тепер довгий userId лежить лише в `users`, і знімається там усе.
         const deletePayload = { lastAction: syncedState.lastAction };
-        deleteOnlyKeys
-          .filter(key => isUsersAllowedField(key))
-          .forEach(key => {
-            deletePayload[key] = null;
-          });
+        deleteOnlyKeys.forEach(key => {
+          deletePayload[key] = null;
+        });
 
         console.log('[SAVE] payload to firebase:', deletePayload);
         await Promise.all([
@@ -1934,19 +1935,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           updateDataInFiresoreDB(syncedState.userId, deletePayload, 'check', delCondition),
         ]);
       } else {
-        const cleanedState = sanitizeTechnicalPayload(pickUsersAllowedFields(syncedState));
+        const cleanedState = sanitizeTechnicalPayload(syncedState);
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
-            if (key !== 'userId' && isUsersAllowedField(key)) {
+            if (key !== 'userId') {
               delete cleanedState[key];
             }
           });
         }
 
-        const sanitizedExistingData = sanitizeTechnicalPayload(pickUsersAllowedFields(existingData || {}));
+        const sanitizedExistingData = sanitizeTechnicalPayload(existingData || {});
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
-            if (key !== 'userId' && isUsersAllowedField(key)) {
+            if (key !== 'userId') {
               delete sanitizedExistingData[key];
             }
           });
@@ -1958,9 +1959,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         );
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
-            if (isUsersAllowedField(key)) {
-              uploadedInfo[key] = null;
-            }
+            uploadedInfo[key] = null;
           });
         }
 

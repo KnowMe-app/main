@@ -304,6 +304,11 @@ export const newUsersMirrorFieldNames = [
 ].filter(fieldName => fieldName !== 'publish');
 
 
+// Поля, які має отримати запис у `newUsers` понад дзеркальні контакти. Це
+// список для наповнення `newUsers`, а не заборона для `users`: колись довгі
+// userId жили одночасно в обох колекціях, і той самий запис був розділений між
+// ними, тож ці поля мали власного власника. Тепер довгий userId лежить лише в
+// `users`, і жодне поле не заборонене там за назвою.
 export const fieldsForNewUsersOnly = [
   'role',
   'lastCycle',
@@ -353,18 +358,9 @@ export const newUsersSanitizedFieldNames = [
   'photo',
 ];
 
-export const isSharedCollectionField = key => fieldsForBothCollections.includes(key);
-
-export const isUsersAllowedField = key =>
-  isSharedCollectionField(key) || !fieldsForNewUsersOnly.includes(key);
-
 export const isNewUsersAllowedField = key => newUsersRequiredFieldNames.includes(key);
 
 export const isNewUsersSanitizedField = key => newUsersSanitizedFieldNames.includes(key);
-
-export const pickUsersAllowedFields = source => Object.fromEntries(
-  Object.entries(source || {}).filter(([key]) => isUsersAllowedField(key))
-);
 
 export const pickNewUsersAllowedFields = source => Object.fromEntries(
   Object.entries(source || {}).filter(([key]) => isNewUsersAllowedField(key))
