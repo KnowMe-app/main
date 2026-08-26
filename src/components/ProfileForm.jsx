@@ -799,6 +799,13 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
   const effectiveSetUsers = typeof setUsers === 'function' ? setUsers : stateUpdater;
   const canRemove = typeof effectiveSetUsers === 'function';
 
+  // keyPath у handleRemove завжди рахується від кореня картки, тож removeField
+  // потрібен саме кореневий об'єкт, а не піддерево поточного рівня рекурсії.
+  // Він дає removeField синхронний знімок картки, щоб пейлоад для бекенду не
+  // залежав від того, чи встигне React виконати updater-колбек setUsers.
+  const rootData = parentKey ? options.rootData : data;
+  const childOptions = parentKey ? options : { ...options, rootData: data };
+
   const handleRemove = keyPath => {
     if (typeof onRemoveKey === 'function') {
       const handled = onRemoveKey(keyPath);
@@ -811,7 +818,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
       return;
     }
 
-    removeField(userId, keyPath, effectiveSetUsers, stateUpdater, keyPath);
+    removeField(userId, keyPath, effectiveSetUsers, stateUpdater, keyPath, { cardData: rootData });
   };
 
   const extendedData = { ...data };
@@ -881,7 +888,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                           </span>
                           <div style={{ ...nestedValueContainerStyle }}>
                             <div style={nestedIndentStyle}>
-                              {renderAllFields(item, arrayKey, options)}
+                              {renderAllFields(item, arrayKey, childOptions)}
                             </div>
                           </div>
                           {canRemove && (
@@ -944,7 +951,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
               {': '}
             </span>
             <div style={{ ...nestedValueContainerStyle }}>
-              <div style={nestedIndentStyle}>{renderAllFields(value, nestedKey, options)}</div>
+              <div style={nestedIndentStyle}>{renderAllFields(value, nestedKey, childOptions)}</div>
             </div>
             {canRemove && (
               <OrangeBtn

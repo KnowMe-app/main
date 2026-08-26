@@ -202,6 +202,95 @@ export const handleChange = (
   }
 };
 
+// Ланцюжок видалень: одна картка — один запис за раз.
+//
+// Хрестики натискають серіями: десяток ключів за кілька секунд. Поки кожен клік
+// слав власний незалежний, ні з чим не впорядкований запис, вони йшли внапуск —
+// і кожен тягнув за собою окремий прогін проєкції стрічки, який читає анкету,
+// читає проєкцію і лістить Storage. Тут вони шикуються в ланцюжок: перший клік
+// іде одразу (без штучної затримки і без вікна, в якому видалення можна
+// втратити, закривши вкладку), а все, що натиснули, поки той запис у польоті,
+// накопичується і йде наступним запитом — одним `update` на всі ключі одразу.
+// Десять кліків стають двома-трьома записами, і жоден ключ не губиться.
+//
+// `card` — накопичений стан картки після всіх видалень цієї серії. Наступний
+// клік рахується саме від нього, а не від знімка з рендера: React ще не
+// перемалював список, тож знімок у замиканні відстає рівно на всі попередні
+// кліки серії.
+const fieldRemovalQueues = new Map();
+
+const flushFieldRemovals = async userId => {
+  const entry = fieldRemovalQueues.get(userId);
+  if (!entry || entry.flushing) return;
+
+  entry.flushing = true;
+  try {
+    while (entry.removalKeys.size) {
+      const removalList = [...entry.removalKeys];
+      const payload = { userId };
+      entry.topLevelKeys.forEach(key => {
+        // Ключа немає в накопиченій картці — значить, його зносять цілком, і
+        // null за нього підставить handleSubmit за removalList. Є — значить,
+        // зняли лише частину (елемент масиву чи вкладений ключ), і в базу має
+        // лягти те, що лишилось.
+        if (Object.prototype.hasOwnProperty.call(entry.card, key)) {
+          payload[key] = entry.card[key];
+        }
+      });
+
+      entry.removalKeys = new Set();
+      entry.topLevelKeys = new Set();
+
+      try {
+        await handleSubmit(payload, 'overwrite', removalList);
+      } catch (error) {
+        console.error('[removeField] не вдалося зберегти видалення полів', {
+          userId,
+          removalList,
+          error,
+        });
+      }
+    }
+  } finally {
+    entry.flushing = false;
+    if (!entry.removalKeys.size) {
+      fieldRemovalQueues.delete(userId);
+    }
+  }
+};
+
+const enqueueFieldRemoval = (userId, removalKey, topLevelKey, cardAfterRemoval) => {
+  let entry = fieldRemovalQueues.get(userId);
+  if (!entry) {
+    entry = {
+      card: cardAfterRemoval,
+      removalKeys: new Set(),
+      topLevelKeys: new Set(),
+      flushing: false,
+    };
+    fieldRemovalQueues.set(userId, entry);
+  }
+
+  entry.card = cardAfterRemoval;
+  if (removalKey) entry.removalKeys.add(removalKey);
+  entry.topLevelKeys.add(topLevelKey);
+
+  if (entry.flushing) return;
+  // Мікротаска, а не таймер: затримки немає, але кліки одного тіку встигають
+  // злитися в один запис. Планувати треба саме звідси — enqueue може статись з
+  // updater-колбека setUsers, тобто під час рендеру, а мережевий запис звідти
+  // стартувати не повинен.
+  const run = () => flushFieldRemovals(userId);
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(run);
+  } else {
+    Promise.resolve().then(run);
+  }
+};
+
+/** Стан ланцюжка для цієї картки — база для розрахунку наступного видалення. */
+export const peekQueuedRemovalCard = userId => fieldRemovalQueues.get(userId)?.card ?? null;
+
 export const removeField = (
   userId,
   nestedKey,
@@ -278,19 +367,7 @@ export const removeField = (
     return removeRecursive(obj, 0);
   };
 
-  if (typeof setState === 'function') {
-    setState(prev => {
-      const { changed, value } = removePath(prev);
-      return changed ? value : prev;
-    });
-  }
-
-  if (typeof setUsers !== 'function') {
-    return;
-  }
-
   const removalKey = removedKey ?? nestedKey;
-  const removalList = removalKey ? [removalKey] : [];
   const topLevelKey = keys[0];
   const triggerHistorySnapshot = payload => {
     if (typeof options?.onSubmitHistorySnapshot !== 'function') {
@@ -300,53 +377,76 @@ export const removeField = (
     options.onSubmitHistorySnapshot(snapshot);
   };
 
-  // handleSubmit (called below) fires an un-queued, un-awaited backend write,
-  // so it must never run *inside* the setUsers updater callback — same
-  // hazard as EditProfile's handleClear/handleDelKeyValue. Worse here: the
-  // old code sent the *entire* locally-known card object as the write
-  // payload. Since these writes race with no ordering guarantee, deleting
-  // two different fields back-to-back could land out of order, and
-  // whichever write's local snapshot was captured *before* the other
-  // field's deletion would silently resurrect it. Only capture what changed
-  // here (pure, no side effects); submit a payload containing nothing but
-  // the one top-level field that actually changed (+ lastAction) — it can
-  // never carry a stale value for any other field, so it can never
-  // resurrect one, regardless of write ordering.
-  let capturedUserId;
-  let capturedTopLevelValue;
-  let capturedChanged = false;
+  // В ланцюжок це видалення стає рівно один раз: нижче є два незалежні джерела
+  // зміненої картки (синхронний знімок і колбек setUsers), а React до того ж
+  // має право переграти свій колбек.
+  let submitted = false;
 
-  setUsers(prev => {
-    const shape = getUserStateShape(prev);
-    const next = updateUserInState(prev, userId, currentUser => {
-      const { changed, value } = removePath(currentUser);
-      if (!changed) return currentUser;
-      const updated = value ?? {};
-      const resolvedUserId = userId || updated.userId;
-      if (resolvedUserId) {
-        capturedChanged = true;
-        capturedUserId = resolvedUserId;
-        capturedTopLevelValue = Object.prototype.hasOwnProperty.call(updated, topLevelKey)
-          ? updated[topLevelKey]
-          : null;
-        triggerHistorySnapshot({ ...updated, userId: resolvedUserId });
-      }
-      return updated;
-    });
-
-    if (shape === 'unknown' || capturedChanged || next !== prev) {
-      return next;
+  const submitRemoval = (resolvedUserId, cardAfterRemoval) => {
+    if (submitted || !resolvedUserId) {
+      return;
     }
+    submitted = true;
+    triggerHistorySnapshot({ ...cardAfterRemoval, userId: resolvedUserId });
+    enqueueFieldRemoval(resolvedUserId, removalKey, topLevelKey, cardAfterRemoval);
+  };
 
-    return prev;
-  });
+  // Головний шлях: рахуємо видалення звичайним синхронним JS — від стану
+  // ланцюжка, якщо серія вже почалась, і від знімка картки з рендера, якщо ні.
+  // Ніякого React-планувальника в ланцюжку запису немає навмисно: раніше
+  // пейлоад знімався всередині updater-колбека setUsers, а React виконує такий
+  // колбек синхронно лише через внутрішню оптимізацію "eager state" — і лише
+  // поки на цьому fiber немає інших запланованих оновлень. У списку карток
+  // setUsers і setState живуть в одному компоненті (AddNewProfile), тож
+  // setState нижче вже позначав fiber брудним, колбек setUsers відкладався до
+  // рендеру, і перевірка "чи є що слати" бачила ще незаповнені змінні: локально
+  // ключ зникав, а в базу не летіло нічого. Саме тому не видалялись поля,
+  // наявні у відкритій анкеті (name, writer), і "видалялись" ті, яких у ній не
+  // було.
+  const cardSnapshot = peekQueuedRemovalCard(userId)
+    || (options?.cardData && typeof options.cardData === 'object' ? options.cardData : null);
 
-  if (capturedChanged && capturedUserId) {
-    handleSubmit(
-      { userId: capturedUserId, [topLevelKey]: capturedTopLevelValue },
-      'overwrite',
-      removalList,
-    );
+  if (cardSnapshot) {
+    const { changed, value } = removePath(cardSnapshot);
+    if (changed) {
+      const updated = value ?? {};
+      submitRemoval(userId || updated.userId || cardSnapshot.userId, updated);
+    }
+  }
+
+  if (typeof setUsers === 'function') {
+    // Резервний шлях для викликачів без cardData: там картку доводиться брати
+    // з updater-колбека. Сам запис звідси не стартує — enqueue лише ставить
+    // ключ у ланцюжок, а той шле його вже з мікротаски, поза рендером.
+    let capturedChanged = false;
+
+    setUsers(prev => {
+      const shape = getUserStateShape(prev);
+      const next = updateUserInState(prev, userId, currentUser => {
+        const { changed, value } = removePath(currentUser);
+        if (!changed) return currentUser;
+        const updated = value ?? {};
+        const resolvedUserId = userId || updated.userId;
+        if (resolvedUserId) {
+          capturedChanged = true;
+          submitRemoval(resolvedUserId, updated);
+        }
+        return updated;
+      });
+
+      if (shape === 'unknown' || capturedChanged || next !== prev) {
+        return next;
+      }
+
+      return prev;
+    });
+  }
+
+  if (typeof setState === 'function') {
+    setState(prev => {
+      const { changed, value } = removePath(prev);
+      return changed ? value : prev;
+    });
   }
 };
 

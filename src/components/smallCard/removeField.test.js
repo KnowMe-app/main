@@ -49,7 +49,7 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     expect(payload).not.toHaveProperty('writer');
   });
 
-  it('two rapid deletions of different fields each send their own minimal payload, so neither can resurrect the other', async () => {
+  it('coalesces two rapid deletions into one write that nulls both fields', async () => {
     const longUserId = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
     const box = makeStateBox({
       [longUserId]: { userId: longUserId, key1: 'value1', key2: 'value2' },
@@ -59,14 +59,14 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     removeField(longUserId, 'key2', box.setter, undefined, 'key2');
     await flushSubmit();
 
-    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(2);
-    const [, firstPayload] = updateDataInRealtimeDB.mock.calls[0];
-    const [, secondPayload] = updateDataInRealtimeDB.mock.calls[1];
-
-    expect(firstPayload).toEqual({ userId: longUserId, key1: null, lastAction: expect.any(Number) });
-    expect(secondPayload).toEqual({ userId: longUserId, key2: null, lastAction: expect.any(Number) });
-    expect(firstPayload).not.toHaveProperty('key2');
-    expect(secondPayload).not.toHaveProperty('key1');
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({
+      userId: longUserId,
+      key1: null,
+      key2: null,
+      lastAction: expect.any(Number),
+    });
 
     // The local (in-memory) state still ends up correctly missing both fields.
     expect(box.get()[longUserId]).toEqual({ userId: longUserId });
@@ -82,5 +82,152 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
 
     expect(updateDataInNewUsersRTDB).toHaveBeenCalledTimes(1);
     expect(updateDataInRealtimeDB).not.toHaveBeenCalled();
+  });
+});
+
+// React виконує updater-колбек setState/setUsers синхронно лише через
+// внутрішню оптимізацію "eager state", і лише поки на цьому fiber немає інших
+// запланованих оновлень. У списку карток це не виконується: setUsers і setState
+// живуть в одному компоненті, тож перший же setState робить fiber брудним, і
+// колбек setUsers відкладається до рендеру. Ці тести моделюють саме такий
+// setter — updater не виконується в момент виклику.
+const makeDeferredStateBox = initial => {
+  let current = initial;
+  const queue = [];
+  const setter = updater => {
+    queue.push(updater);
+  };
+  const flushRender = () => {
+    while (queue.length) {
+      const updater = queue.shift();
+      current = typeof updater === 'function' ? updater(current) : updater;
+    }
+  };
+  return { get: () => current, setter, flushRender };
+};
+
+describe('removeField writes to the backend even when React defers the state updaters', () => {
+  const flushSubmit = () => new Promise(resolve => setTimeout(resolve, 0));
+  const longUserId = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
+
+  beforeEach(() => {
+    updateDataInNewUsersRTDB.mockReset();
+    updateDataInRealtimeDB.mockReset();
+    getCardStorageCollection.mockImplementation(async userId => userId === 'ID0001' ? 'newUsers' : 'users');
+  });
+
+  it('sends the deletion from the synchronous card snapshot, without waiting for a render', async () => {
+    const card = { userId: longUserId, name: '', writer: 'IgF', deviceWidth: 360 };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+    const profileState = makeDeferredStateBox({ ...card });
+
+    removeField(longUserId, 'name', users.setter, profileState.setter, 'name', { cardData: card });
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [writtenUserId, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(writtenUserId).toBe(longUserId);
+    expect(payload).toEqual({ userId: longUserId, name: null, lastAction: expect.any(Number) });
+  });
+
+  it('does not write the same deletion twice once the deferred updaters finally run', async () => {
+    const card = { userId: longUserId, name: '', writer: 'IgF' };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+    const profileState = makeDeferredStateBox({ ...card });
+
+    removeField(longUserId, 'writer', users.setter, profileState.setter, 'writer', { cardData: card });
+    users.flushRender();
+    profileState.flushRender();
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    expect(users.get()[longUserId]).toEqual({ userId: longUserId, name: '' });
+    expect(profileState.get()).toEqual({ userId: longUserId, name: '' });
+  });
+
+  it('sends a burst of deletions as one write with every key nulled', async () => {
+    const card = { userId: longUserId, name: '', writer: 'IgF', deviceWidth: 360 };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+    const profileState = makeDeferredStateBox({ ...card });
+
+    // Знімок навмисно той самий на всі три кліки: у застосунку React ще не
+    // перемалював список, тож замикання відстає рівно так само.
+    ['name', 'writer', 'deviceWidth'].forEach(field => {
+      removeField(longUserId, field, users.setter, profileState.setter, field, { cardData: card });
+    });
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({
+      userId: longUserId,
+      name: null,
+      writer: null,
+      deviceWidth: null,
+      lastAction: expect.any(Number),
+    });
+  });
+
+  it('never loses a key clicked while the previous write is still in flight', async () => {
+    let releaseFirstWrite;
+    const firstWrite = new Promise(resolve => { releaseFirstWrite = resolve; });
+    let writeCount = 0;
+    updateDataInRealtimeDB.mockImplementation(async () => {
+      writeCount += 1;
+      if (writeCount === 1) await firstWrite;
+    });
+
+    const card = { userId: longUserId, a: 1, b: 2, c: 3 };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+
+    removeField(longUserId, 'a', users.setter, undefined, 'a', { cardData: card });
+    await flushSubmit();
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+
+    // Клікаємо ще два хрестики, поки перший запис висить у польоті.
+    removeField(longUserId, 'b', users.setter, undefined, 'b', { cardData: card });
+    removeField(longUserId, 'c', users.setter, undefined, 'c', { cardData: card });
+    await flushSubmit();
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+
+    releaseFirstWrite();
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(2);
+    const [, firstPayload] = updateDataInRealtimeDB.mock.calls[0];
+    const [, secondPayload] = updateDataInRealtimeDB.mock.calls[1];
+    expect(firstPayload).toEqual({ userId: longUserId, a: null, lastAction: expect.any(Number) });
+    expect(secondPayload).toEqual({
+      userId: longUserId,
+      b: null,
+      c: null,
+      lastAction: expect.any(Number),
+    });
+  });
+
+  it('still writes without a card snapshot, once the deferred setUsers updater runs', async () => {
+    const users = makeDeferredStateBox({
+      [longUserId]: { userId: longUserId, key1: 'value1', key2: 'value2' },
+    });
+
+    removeField(longUserId, 'key1', users.setter, undefined, 'key1');
+    users.flushRender();
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({ userId: longUserId, key1: null, lastAction: expect.any(Number) });
+  });
+
+  it('removes a nested path from the snapshot and writes the surviving parent value', async () => {
+    const card = { userId: longUserId, language: ['uk', 'en'] };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+
+    removeField(longUserId, 'language.0', users.setter, undefined, 'language.0', { cardData: card });
+    await flushSubmit();
+
+    expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
+    const [, payload] = updateDataInRealtimeDB.mock.calls[0];
+    expect(payload).toEqual({ userId: longUserId, language: 'en', lastAction: expect.any(Number) });
   });
 });

@@ -3278,9 +3278,7 @@ const normalizeIndexedValues = value => Array.isArray(value)
  *
  * Ніколи не кидає: проєкція — це прискорення читання, а не частина збереження.
  */
-const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
-  const id = String(userId || '').trim();
-  if (!id) return;
+const runMatchingCardRefresh = async (collection, id, payload, condition) => {
   try {
     let nextData = payload;
     if (condition === 'update') {
@@ -3292,6 +3290,51 @@ const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload,
   } catch (error) {
     console.warn('[matchingCards] не вдалося оновити картку після збереження анкети', { userId: id, error });
   }
+};
+
+// Проєкція стрічки — рівно один прогін на картку за раз.
+//
+// Кожен запис в анкету тягне за собою перечитування анкети, читання самої
+// проєкції і (коли в анкеті немає фото) рекурсивний лістинг Storage. Поки ці
+// прогони йшли паралельно, N записів поспіль давали N незалежних `set` в один
+// і той самий вузол, зібраних з N різних читань анкети. Вигравав не найсвіжіший
+// стан, а той прогін, що завершився останнім, — і проєкція лишалась зі старим
+// імʼям, хоча в `users` уже лежало нове. Стрічка читає саме проєкцію, тож для
+// ока це виглядало як «зміна не збереглась».
+//
+// Тепер на картку є щонайбільше один активний прогін і один відкладений.
+// Відкладені не копичаться: той, що чекає, однаково перечитає анкету, коли
+// дійде до нього черга, тож усі, хто прийшов за час очікування, отримують
+// рівно його. Звідси й друга властивість: сплеск із десятка записів коштує
+// дві пари читання-запис, а не десять.
+const matchingCardRefreshes = new Map();
+
+const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
+  const id = String(userId || '').trim();
+  if (!id) return;
+
+  const active = matchingCardRefreshes.get(id);
+  if (active) {
+    active.pending = { collection, payload, condition };
+    return active.done;
+  }
+
+  const entry = { pending: null, done: null };
+  matchingCardRefreshes.set(id, entry);
+  entry.done = (async () => {
+    try {
+      let next = { collection, payload, condition };
+      while (next) {
+        entry.pending = null;
+        await runMatchingCardRefresh(next.collection, id, next.payload, next.condition);
+        next = entry.pending;
+      }
+    } finally {
+      matchingCardRefreshes.delete(id);
+    }
+  })();
+
+  return entry.done;
 };
 
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
