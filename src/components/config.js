@@ -2533,8 +2533,12 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   // Записуємо нового користувача в базу даних
   await set(newUserRef, newUser);
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
-  // Нова анкета одразу отримує урізану картку, інакше вона зʼявиться в стрічці
-  // тільки після наступної індексації.
+  // Нова анкета одразу розкладається по вузлах — так само, як це робить кожне
+  // збереження. Інакше вона зʼявилась би розділеною тільки після першої правки,
+  // а до того контакт із неї не прочитався б новим шляхом.
+  await fanOutProfileNodes(newUserId, newUser);
+  // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
+  // після наступної індексації.
   await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });
   // І повний `searchId` по всіх полях, а не лише по тому, з якого її створили.
   // Запит на кшталт «УК СМ …» кладе в анкету і імʼя, і прізвище, і контакт —
@@ -5348,8 +5352,12 @@ const collectReactionIdsByFilters = async (
 export const resolveSearchKeyRootForCollection = collection =>
   (collection === 'users' ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);
 
-// A users-collection key is a Firebase uid; newUsers keys are short editorial ids.
-export const isUsersCollectionUserId = userId => String(userId || '').trim().length >= 20;
+// A users-collection key is a Firebase-Auth uid — always 28 characters. newUsers
+// keys are either short editorial ids or Firebase push keys, and a push key is
+// exactly 20, so the boundary is "longer than 20", not "20 or more". The old
+// `>= 20` counted every newUsers push key as a users key and indexed it into the
+// wrong searchKey root.
+export const isUsersCollectionUserId = userId => String(userId || '').trim().length > 20;
 
 export const resolveSearchKeyRootForUserId = userId =>
   (isUsersCollectionUserId(userId) ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);

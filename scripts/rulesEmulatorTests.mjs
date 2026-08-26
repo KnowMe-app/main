@@ -217,7 +217,6 @@ await it('повна проєкція писача лягає одним зап�
     ownKids: '2', csection: '0', lastDelivery: '2022-05-15',
     maritalStatus: 'No', experience: '2', eyeColor: 'Green',
     hairColor: 'Dark Brown', avatar: 'https://a', feedDate: '2026-08-25',
-    fieldsCount: 42, source: 'users', v: 4,
   })));
 
 await it('сирі поля, що переїхали в інші вузли, картка вже не приймає', async () => {
@@ -231,6 +230,12 @@ await it('сирі поля, що переїхали в інші вузли, к�
     ['userRole', 'sm'],
     ['feedUsers', '2026-08-25'],
     ['feedNewUsers', '2026-08-25'],
+    // Службові поля проєкції теж пішли: усі картки перебудовані, тож версія
+    // схеми більше нічого не розрізняє; заповненість прибрано разом із
+    // фільтром; а колекцію називає формат id.
+    ['v', 5],
+    ['fieldsCount', 42],
+    ['source', 'users'],
   ]) {
     await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/${field}`), value));
   }

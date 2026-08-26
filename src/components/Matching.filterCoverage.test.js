@@ -48,9 +48,12 @@ describe('every Matching filter reaches the index', () => {
     expect(Object.values(defaults.userRole).some(Boolean)).toBe(true);
   });
 
-  it('keeps the near-empty cards while the fill-level group is untouched', () => {
-    const group = MATCHING_FILTER_GROUPS.find(entry => entry.filterName === 'fields');
-    expect(group.options.map(option => option.val)).toContain('le5');
-    expect(Object.values(defaults.fields).every(Boolean)).toBe(true);
+  it('has no fill-level group at all', () => {
+    // Заповненість зі стрічки прибрано разом із полем `fieldsCount` у картці:
+    // картка після розділення вузлів має рівно стільки полів, скільки їх у
+    // схемі проєкції, тож рахувати по ній заповненість анкети нічого не варте.
+    // У AddNewProfile, який працює з повними анкетами, фільтр лишився.
+    expect(MATCHING_FILTER_GROUPS.some(entry => entry.filterName === 'fields')).toBe(false);
+    expect(defaults.fields).toBeUndefined();
   });
 });

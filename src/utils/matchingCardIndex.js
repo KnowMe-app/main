@@ -1,4 +1,3 @@
-import { resolveProfileFieldCountBucket } from './fieldCountBuckets';
 import { normalizePublish } from './reactionPriority';
 import {
   deriveSurnameShort,
@@ -29,15 +28,6 @@ import {
  */
 
 export const MATCHING_CARDS_ROOT = 'matchingCards';
-
-/**
- * Версія схеми. Читач, що бачить чужу версію, вважає картку застарілою і
- * догідратовує анкету повністю — так півмігрований індекс не показує порожнеч.
- *
- * Саме тому версія не зникла разом із рештою службових полів: міграція йде
- * вручну і не миттєво, і весь цей час у вузлі лежать картки обох поколінь.
- */
-export const MATCHING_CARD_SCHEMA_VERSION = 4;
 
 /**
  * `feedDate` — і допуск до стрічки, і порядок у ній, одним ключем.
@@ -113,23 +103,20 @@ const firstNonEmpty = (data, keys) => {
 export { resolveMatchingCardAvatarFromProfile };
 
 /**
- * Кількість заповнених полів — так само, як її рахує писач індексу `fields`.
+ * Колекція картки — за форматом id, і окремого поля для цього не треба.
  *
- * Рахується по повній анкеті, а не по картці: фільтр «Заповненість» питає, чи
- * заповнена анкета, а картка після розділення вузлів має рівно стільки полів,
- * скільки їх у схемі проєкції. Службові `__ключі` не рахуються, інакше проєкція
- * і повна анкета розійшлися б на межі бакета.
+ * `users` тримає Firebase-Auth UID: 28 символів. `newUsers` — або короткий
+ * згенерований id (`AC00001`), або push-ключ Firebase, а той має рівно 20.
+ * Тобто межа проходить по «більше за 20», і саме на цьому ламалась стара умова
+ * `>= 20`: вона зараховувала кожен push-ключ `newUsers` до `users`.
+ *
+ * Явний `__sourceCollection` поважається, коли він є: анкета, прочитана
+ * напряму з колекції, знає своє джерело точно.
  */
-const countProfileFieldsForIndex = data => (
-  data && typeof data === 'object'
-    ? Object.keys(data).filter(key => !key.startsWith('__') && data[key] !== null && data[key] !== undefined).length
-    : 0
-);
-
 export const resolveMatchingCardCollection = (userId, data) => {
   const explicit = trimmed(data?.__sourceCollection);
   if (explicit === 'users' || explicit === 'newUsers') return explicit;
-  return String(userId || '').length >= 20 ? 'users' : 'newUsers';
+  return String(userId || '').length > 20 ? 'users' : 'newUsers';
 };
 
 /**
@@ -188,18 +175,11 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
 
-  projection.fieldsCount = countProfileFieldsForIndex(data);
-
-  // `source` лишається, хоч ТЗ його й не передбачає, і причина вимірювана: у
-  // `matchingCards` 1650 карток із довгим id, а джерело `users` мають лише 379.
-  // Тобто здогадка за довжиною id помиляється на 1271 картці, і без цього поля
-  // картка `newUsers`, дістана пошуком за id, вважалася б своєю в деці `users`.
-  projection.source = resolveMatchingCardCollection(id, data);
-
-  const feedDate = resolveFeedDate(projection.source, data);
+  // Ані `source`, ані `fieldsCount`, ані `v` картка більше не носить. Колекцію
+  // називає формат id; заповненість зі стрічки прибрано разом із фільтром; а
+  // версія була потрібна лише доти, доки у вузлі лежали картки двох поколінь.
+  const feedDate = resolveFeedDate(resolveMatchingCardCollection(id, data), data);
   if (feedDate) projection[MATCHING_CARD_FEED_FIELD] = feedDate;
-
-  projection.v = MATCHING_CARD_SCHEMA_VERSION;
 
   return projection;
 };
@@ -258,8 +238,15 @@ export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) =>
   return { payload, stats };
 };
 
+/**
+ * Чи це взагалі картка.
+ *
+ * Версії схеми більше немає: усі картки перебудовані, і другого покоління у
+ * вузлі не лишилось. Тож питання звузилось до «чи є тут хоч щось» — порожній
+ * або битий вузол читач і далі відрізняє від картки й догідратовує анкету.
+ */
 export const isCurrentMatchingCardSchema = card =>
-  Boolean(card) && typeof card === 'object' && Number(card.v) === MATCHING_CARD_SCHEMA_VERSION;
+  Boolean(card) && typeof card === 'object' && !Array.isArray(card) && Object.keys(card).length > 0;
 
 /**
  * Розгортає проєкцію у форму, яку читають рендер рядка і пост-фільтри.
@@ -279,8 +266,7 @@ export const expandMatchingCard = (userId, card) => {
   if (!id) return null;
 
   const {
-    avatar, fieldsCount, source, v,
-    surnameShort, rh, bloodGroup,
+    avatar, surnameShort, rh, bloodGroup,
     [MATCHING_CARD_FEED_FIELD]: feedDate,
     ...rest
   } = card;
@@ -305,8 +291,7 @@ export const expandMatchingCard = (userId, card) => {
     ...(trimmed(feedDate) ? { publish: true, lastLogin2: feedDate } : {}),
     photos: avatar ? [avatar] : [],
     __photosHydrated: true,
-    __sourceCollection: source === 'newUsers' ? 'newUsers' : 'users',
-    __fieldsCount: Number.isFinite(Number(fieldsCount)) ? Number(fieldsCount) : undefined,
+    __sourceCollection: resolveMatchingCardCollection(id),
     [MATCHING_SUMMARY_FLAG]: true,
   };
 };
@@ -325,7 +310,3 @@ export const areMatchingCardProjectionsEqual = (a, b) => {
   }
   return true;
 };
-
-/** Бакет заповненості — щоб фільтр «?» рахував проєкцію так само, як анкету. */
-export const resolveMatchingCardFieldsBucket = card =>
-  resolveProfileFieldCountBucket({ __fieldsCount: Number(card?.fieldsCount) || 0 });

@@ -32,7 +32,6 @@ import {
   PROFILE_WORKFLOW_FIELDS,
   PROFILE_TECHNICAL_FIELDS,
   PROFILE_DETAIL_FIELDS,
-  MATCHING_CARD_METADATA_FIELDS,
   NEVER_MIGRATED_FIELDS,
   ACCESS_CONTROL_FIELDS,
   SECRET_FIELDS,
@@ -50,7 +49,6 @@ import {
   deriveFeedDate,
   checkGetInTouchKeySafety,
 } from './rtdbMigrationDerive';
-import { MATCHING_CARD_SCHEMA_VERSION } from './matchingCardIndex';
 
 /** Кнопки міграції, у порядку, в якому їх задумано натискати. */
 export const MIGRATION_GROUPS = Object.freeze([
@@ -518,50 +516,6 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
   }
 };
 
-/**
- * Метадані картки — не перенесені поля, а факти про саму проєкцію.
- *
- * Рахуються з недоторканих оригіналів, а не з `workingNewUsers`, і саме тому
- * повторний прогін дає те саме число: якби `fieldsCount` рахувався по робочій
- * копії, він танув би з кожною натиснутою кнопкою.
- *
- * Конфліктом вони бути не можуть і нікого не авторизують видаляти — просто
- * перезаписуються обчисленим значенням.
- */
-const stampMatchingCardMetadata = (ctx, profileId) => {
-  const fromUsers = ctx.state.originalUsers?.[profileId];
-  const fromNewUsers = ctx.state.originalNewUsers?.[profileId];
-  if (!fromUsers && !fromNewUsers) return;
-
-  const pending = ctx.pendingTargets[profileId];
-  const stored = ctx.state.targets[ctx.node]?.[profileId];
-  const hasCardFields = Boolean(pending && Object.keys(pending).length)
-    || Boolean(stored && Object.keys(stored).some(field => !MATCHING_CARD_METADATA_FIELDS.includes(field)));
-  if (!hasCardFields) return;
-
-  // Заповненість міряється анкетою, а не карткою: після розділення вузлів у
-  // картці рівно стільки полів, скільки їх у схемі проєкції.
-  const allKeys = new Set([
-    ...Object.keys(fromUsers || {}),
-    ...Object.keys(fromNewUsers || {}),
-  ]);
-  const fieldsCount = [...allKeys].filter(key => !key.startsWith('__')).length;
-
-  const metadata = {
-    fieldsCount,
-    source: fromUsers ? 'users' : 'newUsers',
-    v: MATCHING_CARD_SCHEMA_VERSION,
-  };
-
-  Object.entries(metadata).forEach(([field, value]) => {
-    const existing = readPlannedTarget(ctx, profileId, field);
-    if (existing.exists && deepEqual(existing.value, value)) return;
-    ctx.writes.push({ node: ctx.node, profileId, field, value, origin: 'metadata' });
-    if (!ctx.pendingTargets[profileId]) ctx.pendingTargets[profileId] = {};
-    ctx.pendingTargets[profileId][field] = { value, origin: 'metadata' };
-  });
-};
-
 /** Кнопка GetInTouch: `owner/value/profileId = true` (§14). */
 const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) => {
   if (!Object.prototype.hasOwnProperty.call(source, 'getInTouch')) {
@@ -688,10 +642,6 @@ export const planMigrationGroup = (state, group, options = {}) => {
         planMatchingDerivedFields(ctx, { profileId, source, sourceCollection });
       }
     });
-
-    // Метадані ставляться після обох проходів: `source` і `fieldsCount` — це
-    // властивість анкети загалом, а не того джерела, яке саме зараз читали.
-    if (group === 'matchingCards') stampMatchingCardMetadata(ctx, profileId);
   });
 
   return {

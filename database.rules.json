@@ -168,15 +168,6 @@
         "feedDate": {
           ".validate": "!newData.exists() || newData.isString()"
         },
-        "fieldsCount": {
-          ".validate": "!newData.exists() || newData.isNumber()"
-        },
-        "source": {
-          ".validate": "!newData.exists() || newData.val() == 'users' || newData.val() == 'newUsers'"
-        },
-        "v": {
-          ".validate": "!newData.exists() || newData.isNumber()"
-        },
         "$other": {
           ".validate": false
         }

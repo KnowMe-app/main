@@ -17,26 +17,14 @@ import {
   checkGetInTouchKeySafety,
   normalizeFeedDateValue,
 } from '../rtdbMigrationDerive';
-import { MATCHING_CARD_FORBIDDEN_FIELDS, MATCHING_CARD_METADATA_FIELDS } from '../profileNodeSchema';
-import { MATCHING_CARD_SCHEMA_VERSION } from '../matchingCardIndex';
+import { MATCHING_CARD_FORBIDDEN_FIELDS } from '../profileNodeSchema';
 
 const OWNER = 'ADMIN_UID';
 
 const stateWith = (users, newUsers) => createMigrationState({ users, newUsers });
 
 const card = (state, id) => state.targets.matchingCards[id];
-
-/**
- * Картка без метаданих — щоб перевірки читались про перенесені поля, а не про
- * `v` і `fieldsCount`, які стоять у кожній картці й нічого не мігрують.
- */
-const cardFields = (state, id) => {
-  const value = card(state, id);
-  if (!value) return value;
-  return Object.fromEntries(
-    Object.entries(value).filter(([field]) => !MATCHING_CARD_METADATA_FIELDS.includes(field)),
-  );
-};
+const cardFields = card;
 
 describe('surnameShort', () => {
   it('бере перший символ скалярного прізвища', () => {
@@ -273,17 +261,14 @@ describe('Matching Cards', () => {
     });
   });
 
-  it('картку метаданими підписує завжди — і схемою, і колекцією, і заповненістю', () => {
-    // Без `v` читач вважав би картку чужої схеми і догідратовував анкету
-    // повністю — тобто мігрований вузол не дав би жодної економії.
+  it('не підписує картку ані версією, ані колекцією, ані заповненістю', () => {
+    // Усі картки перебудовані, тож версія більше нічого не розрізняє;
+    // заповненість зі стрічки прибрано разом із фільтром; а колекцію називає
+    // формат id, і другого місця для цієї відповіді бути не повинно.
     const state = stateWith({ P1: { name: 'Оля', surname: 'К', phone: '+380' } }, {});
     runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toMatchObject({
-      source: 'users',
-      v: MATCHING_CARD_SCHEMA_VERSION,
-      fieldsCount: 3,
-    });
+    expect(card(state, 'P1')).toEqual({ name: 'Оля', surnameShort: 'К.' });
   });
 
   it('feedDate не зʼявляється у картки з newUsers, а її publish не чіпають', () => {
@@ -291,7 +276,6 @@ describe('Matching Cards', () => {
     const plan = runMigrationGroup(state, 'matchingCards');
 
     expect(card(state, 'P1')).not.toHaveProperty('feedDate');
-    expect(card(state, 'P1').source).toBe('newUsers');
     expect(state.workingNewUsers.P1.publish).toBe(true);
     expect(plan.warningsByCode.PUBLISH_IN_NEW_USERS_IGNORED).toBe(1);
   });

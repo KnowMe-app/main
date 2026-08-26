@@ -391,51 +391,32 @@ describe('what the reader gets back', () => {
 });
 
 
-describe('cards with nothing on record', () => {
+describe('заповненість зі стрічки прибрано', () => {
   const emptyCardId = uid('Empty');
 
-  it('are still reachable, and come last', async () => {
-    // A fill-level selection that keeps them, plus a role selection that keeps "?" -
-    // nothing here asks to hide a card with no data.
-    const { usedIndex, userIds } = await readCandidates({
-      fields: { le5: true, f6_10: true, f11_20: true, f20_plus: false },
-      userRole: { ed: true, ag: true, ip: false, other: true },
-    });
-
-    expect(usedIndex).toBe(true);
-    expect(userIds).toContain(emptyCardId);
-    expect(userIds[userIds.length - 1]).toBe(emptyCardId);
-  });
-
-  it('can be asked for on their own through the fill-level group', async () => {
-    const { usedIndex, userIds } = await readCandidates({
-      fields: { le5: true, f6_10: false, f11_20: false, f20_plus: false },
-    });
-
-    expect(usedIndex).toBe(true);
-    expect(userIds).toContain(emptyCardId);
-    expect(userIds).not.toContain(uid('Filled'));
-  });
-
-  it('can be hidden by switching the "порожні" option off', async () => {
-    const { usedIndex, userIds } = await readCandidates({
+  it('вибір заповненості до індексу стрічки більше не доходить', async () => {
+    // Групи «Заповненість» у стрічці немає ані як фільтра, ані як порядку.
+    // Тож навіть якщо в збережених фільтрах лишився старий вибір `fields`,
+    // він нічого не звужує: індексного плану з нього не виходить, і стрічка
+    // просто гортає деку.
+    const { usedIndex } = await readCandidates({
       fields: { le5: false, f6_10: true, f11_20: true, f20_plus: true },
     });
 
-    expect(usedIndex).toBe(true);
-    expect(userIds).not.toContain(emptyCardId);
+    expect(usedIndex).toBe(false);
   });
 
-  it('survive the rendered list too, still last', () => {
+  it('порядок у списку задає дека, а не кількість заповнених полів', () => {
     const { applyMatchingUiFiltersToUsers } = require('../matchingDataProvider');
     const rendered = applyMatchingUiFiltersToUsers({
-      // Deliberately fed empty-first to prove the list is reordered, not just kept.
+      // Порожня картка йде першою — і першою ж лишається: перестановки за
+      // заповненістю більше немає. Стрічку впорядковує `feedDate`.
       users: [PROFILES[emptyCardId], PROFILES[uid('Filled')], PROFILES[uid('Agency')]],
       filters: {},
       collectionSource: 'users',
     });
 
-    expect(rendered.map(user => user.userId)).toEqual([uid('Filled'), uid('Agency'), emptyCardId]);
+    expect(rendered.map(user => user.userId)).toEqual([emptyCardId, uid('Filled'), uid('Agency')]);
   });
 });
 

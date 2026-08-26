@@ -7,7 +7,6 @@ import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
   collectFieldCountIdsFromIndexNode,
   hasFieldCountRangeBuckets,
-  isSparseProfile,
 } from './fieldCountBuckets';
 import { getCachedSearchKeyPayload } from './searchKeyCache';
 import { MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
@@ -17,7 +16,6 @@ import {
   CONTACT_SEARCH_KEY_BUCKETS,
   COUNTRY_SEARCH_KEY_BUCKETS,
   CSECTION_SEARCH_KEY_BUCKETS,
-  FIELD_COUNT_SEARCH_KEY_BUCKETS,
   IMT_BUCKET_FILTER_KEYS,
   IMT_SEARCH_KEY_BUCKETS,
   MARITAL_STATUS_BUCKET_FILTER_KEYS,
@@ -42,7 +40,6 @@ const CSECTION_BUCKETS = CSECTION_SEARCH_KEY_BUCKETS;
 const IMT_BUCKETS = IMT_SEARCH_KEY_BUCKETS;
 const CONTACT_BUCKETS = CONTACT_SEARCH_KEY_BUCKETS;
 const USER_ID_BUCKETS = USER_ID_SEARCH_KEY_BUCKETS;
-const FIELD_COUNT_BUCKETS = FIELD_COUNT_SEARCH_KEY_BUCKETS;
 const AGE_BUCKETS_BY_MATCHING_KEY = {
   le21: ['le21'],
   le25: ['le21', '22_25'],
@@ -293,18 +290,6 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
       ...buildExcludeBucketMeta({ group: filters?.userId, allBuckets: USER_ID_BUCKETS, allowedBuckets: userIdBuckets }),
     }
   );
-  const fieldBuckets = FIELD_COUNT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'fields').includes(bucket));
-  addGroup(
-    groups,
-    'fields',
-    fieldBuckets,
-    {
-      source: 'searchKey/users',
-      allBuckets: FIELD_COUNT_BUCKETS,
-      ...getFilterGroupDebugState('fields', filters?.fields),
-      ...buildExcludeBucketMeta({ group: filters?.fields, allBuckets: FIELD_COUNT_BUCKETS, allowedBuckets: fieldBuckets }),
-    }
-  );
 
   const bmiBuckets = selectSearchKeyBuckets(filters?.bmi, BMI_SEARCH_KEY_BUCKETS);
   addGroup(
@@ -476,47 +461,6 @@ const readMatchingUsersFilterIds = async ({ group, filters }) => {
   return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids, overflowed };
 };
 
-// The least-filled bucket of the field-count index. A card with nothing on record
-// is in no other index at all, so this is the one place it can be recognised
-// without hydrating it.
-export const SPARSE_CARD_FIELD_BUCKET = FIELD_COUNT_SEARCH_KEY_BUCKETS[0];
-
-/**
- * Keep the near-empty cards, but put them at the end.
- *
- * They must not drop out of the deck - a reader who has not switched off "?" asked
- * to see cards with nothing on record, and losing them silently is the failure this
- * whole index rework is about. They are also not what anyone is scrolling for, so
- * they sort behind everything that has data, once, over the whole candidate list
- * rather than per page, so pagination inherits the order.
- *
- * One bucket read, cached like every other searchKey read.
- */
-const orderSparseCardsLast = async (ids, rootPath) => {
-  if (!Array.isArray(ids) || ids.length < 2) return ids;
-
-  const path = `${rootPath}/${FIELD_COUNT_SEARCH_KEY_INDEX_NAME}/${SPARSE_CARD_FIELD_BUCKET}`;
-  let sparseIds = null;
-  try {
-    const payload = await getCachedSearchKeyPayload(path, async () => {
-      const snapshot = await get(ref(database, path));
-      return { exists: snapshot.exists(), value: snapshot.exists() ? snapshot.val() || {} : null };
-    });
-    sparseIds = payload?.exists ? new Set(Object.keys(payload.value || {})) : null;
-  } catch (error) {
-    // Ordering is a nicety; never fail a page over it.
-    console.warn('[Matching][indexedProvider] could not read the sparse-card bucket', { path, error });
-    return ids;
-  }
-
-  if (!sparseIds?.size) return ids;
-
-  const withData = [];
-  const nearlyEmpty = [];
-  ids.forEach(id => (sparseIds.has(id) ? nearlyEmpty : withData).push(id));
-  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : ids;
-};
-
 const intersectIdSets = sets => {
   const usableSets = (sets || []).filter(set => set instanceof Set);
   if (!usableSets.length) return null;
@@ -600,7 +544,8 @@ export const buildMatchingIndexQueryKey = ({
 
 const isCachedCardCompatible = (card, collectionSource) => {
   if (!card?.userId) return false;
-  const cachedSource = card.__sourceCollection || (card.userId.length < 20 ? 'newUsers' : 'users');
+  const cachedSource = card.__sourceCollection
+    || (isValidMatchingUserId(card.userId) ? 'users' : 'newUsers');
   if (collectionSource === 'users') return cachedSource === 'users' || cachedSource === undefined;
   if (collectionSource === 'newUsers') return cachedSource === 'newUsers';
   return true;
@@ -836,7 +781,10 @@ export const fetchMatchingIndexedCandidates = async ({
   // Жодної групи в межах — індекс не назвав кандидатів, і читати далі нема що.
   // Дека йде звичайною пагінацією, де сторінка коштує сторінки.
   if (!combinedIds) return deferToSourcePagination();
-  const allMatchingIds = await orderSparseCardsLast(combinedIds, MATCHING_USERS_INDEX_ROOT);
+  // Заповненість зі стрічки прибрано разом із фільтром: ані окремого читання
+  // бакета «порожні», ані перестановки за ним більше немає. Порядок задає
+  // `feedDate`, і тільки він.
+  const allMatchingIds = combinedIds;
   const ageGroupIndex = plannedGroups.findIndex(group => group.indexName === 'age');
   const ageDateRangeIdsCount = ageGroupIndex >= 0
     ? (idSets[ageGroupIndex]?.ids?.size || 0)
@@ -874,8 +822,22 @@ export const fetchMatchingIndexedCandidates = async ({
 };
 
 
-export const isValidMatchingUserId = id => typeof id === 'string' && id.length >= 20;
-export const isShortMatchingUserId = id => typeof id === 'string' && id.length > 0 && id.length < 20;
+/**
+ * Межа між колекціями — довжина id, і саме «більше за 20», а не «20 і більше».
+ *
+ * `users` тримає Firebase-Auth UID: це завжди 28 символів
+ * (`3LiD7JGCJTSJoVMU7fdR1ZrcIZH2`). `newUsers` тримає або короткий згенерований
+ * id (`AC00001`), або push-ключ Firebase — а push-ключ має рівно 20 символів
+ * (`-OA1b2c3d4e5f6g7h8i9`).
+ *
+ * Саме на цих двадцяти й ламалась стара умова `>= 20`: кожен push-ключ
+ * `newUsers` вона зараховувала до `users`. Звідси й бралися «картки з довгим
+ * id, у яких джерело newUsers» — насправді то були не довгі id, а рівно
+ * двадцятисимвольні. З правильною межею довжина називає колекцію однозначно, і
+ * окреме поле `source` у картці стає непотрібним.
+ */
+export const isValidMatchingUserId = id => typeof id === 'string' && id.length > 20;
+export const isShortMatchingUserId = id => typeof id === 'string' && id.length > 0 && id.length <= 20;
 export const isMatchingCardId = id => isValidMatchingUserId(id) || isShortMatchingUserId(id);
 export const isAllowedIdForMatchingCollection = (id, collection = 'users') =>
   collection === 'newUsers' ? isShortMatchingUserId(id) : isValidMatchingUserId(id);
@@ -883,15 +845,10 @@ export const isAllowedIdForMatchingCollection = (id, collection = 'users') =>
 /**
  * Чи належить картка тій колекції, на яку показує стрічка.
  *
- * Довжина id — здогадка, а не факт. Замір на живих даних: у `matchingCards`
- * 1650 карток із довгим id, а джерело `users` мають лише 379. Тобто 1271
- * картка `newUsers` пройшла б перевірку як своя — і сипалась би у стрічку
- * `users`, щойно власні картки скінчаться і хвіст діапазону опуститься нижче.
- *
- * Картка називає своє джерело сама: `source` є в кожній, і `expandMatchingCard`
- * кладе його в `__sourceCollection`. Тож питаємо картку, а до довжини id
- * відкочуємось лише там, де джерело невідоме — наприклад, у повної анкети,
- * догідратованої повз проєкцію.
+ * Формат id відповідає на це однозначно (див. `isValidMatchingUserId`), тож
+ * окремого поля в картці для цього не треба. `__sourceCollection` лишається
+ * поважаним, коли він є: повна анкета, прочитана напряму з колекції, знає своє
+ * джерело точно, і здогадуватись за id там нема потреби.
  */
 export const matchesMatchingCollectionSource = (user, collection = 'users') => {
   const source = user?.__sourceCollection;
@@ -1275,21 +1232,6 @@ const getFilterMainInputsForMatchingView = ({
   };
 };
 
-/**
- * Cards with almost nothing on record go to the end of whatever list is rendered.
- *
- * This is the same promise the indexed provider makes about the candidate ids, kept
- * here as well so it also holds for the decks the index does not drive: source
- * pagination, the newUsers deck and the reaction tabs. It is a stable partition, so
- * the order the deck chose is untouched apart from moving those cards down.
- */
-const orderSparseUsersLast = users => {
-  const withData = [];
-  const nearlyEmpty = [];
-  users.forEach(user => (isSparseProfile(user) ? nearlyEmpty : withData).push(user));
-  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : users;
-};
-
 export const applyMatchingUiFiltersToUsers = ({
   users,
   filters,
@@ -1342,7 +1284,7 @@ export const applyMatchingUiFiltersToUsers = ({
       matchesMatchingCollectionSource(u, collectionSource)
     ));
 
-  return orderSparseUsersLast(baseUsers);
+  return baseUsers;
 };
 
 export const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {
