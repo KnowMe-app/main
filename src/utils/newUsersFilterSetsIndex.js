@@ -1,20 +1,7 @@
 import { endAt, get as firebaseGet, orderByChild, orderByKey, query, ref, remove, set, startAt, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
-import {
-  collectAgeIdsByFilters,
-  createAgeSearchKeyIndexInCollection,
-  createContactSearchKeyIndexInCollection,
-  createCsectionSearchKeyIndexInCollection,
-  createFieldCountSearchKeyIndexInCollection,
-  createImtHeightWeightSearchKeyIndexInCollection,
-  createMaritalStatusSearchKeyIndexInCollection,
-  createReactionSearchKeyIndexInCollection,
-  createRoleSearchKeyIndexInCollection,
-  createSearchKeyIndexInCollection,
-  createUserIdSearchKeyIndexInCollection,
-  database,
-} from 'components/config';
+import { collectAgeIdsByFilters, database } from 'components/config';
 import { encodeKey } from './searchIndexCandidates';
 import { SEARCH_KEY_INDEX_NAMES, getSearchKeyEmptyBucket } from './searchKeyBuckets';
 import {
@@ -517,18 +504,6 @@ const buildUserIdsMapFromList = userIds =>
       return acc;
     }, {});
 
-const SEARCH_KEY_SET_BUILDERS = [
-  createSearchKeyIndexInCollection,
-  createMaritalStatusSearchKeyIndexInCollection,
-  createCsectionSearchKeyIndexInCollection,
-  createContactSearchKeyIndexInCollection,
-  createRoleSearchKeyIndexInCollection,
-  createUserIdSearchKeyIndexInCollection,
-  createAgeSearchKeyIndexInCollection,
-  createImtHeightWeightSearchKeyIndexInCollection,
-  createReactionSearchKeyIndexInCollection,
-  createFieldCountSearchKeyIndexInCollection,
-];
 
 
 const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyFile = null, rawText = '' }) => {
@@ -732,83 +707,6 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       imtValues,
       skippedDerivedMetricBuckets,
     },
-  };
-};
-
-export const buildSearchKeySetIndexFromMatchedUsers = async ({
-  rawRules,
-  accessUserId,
-  matchedUserIdsBySetKey = null,
-  searchKeyFile = null,
-}) => {
-  const normalizedAccessUserId = String(accessUserId || '').trim();
-  if (!normalizedAccessUserId) return null;
-
-  const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
-  const setPayloads = ruleSetEntries
-    .map(({ text: setText, inputIndex }) => {
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
-      if (parsedRuleGroups.length === 0) return null;
-
-      const setKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
-      if (!setKey) return null;
-
-      const prefilteredIds = matchedUserIdsBySetKey?.[setKey];
-      if (!Array.isArray(prefilteredIds)) {
-        return {
-          setKey,
-          userIds: [],
-          parsedRuleGroups,
-          missingSearchKeyIndex: true,
-        };
-      }
-
-      const userIds = [...new Set(prefilteredIds.filter(Boolean))];
-      return { setKey, userIds, parsedRuleGroups };
-    })
-    .filter(Boolean);
-
-  if (setPayloads.some(item => item.missingSearchKeyIndex)) {
-    const error = new Error('Missing searchKey index for one or more additional access rule sets');
-    error.code = 'MISSING_SEARCHKEY_INDEX';
-    throw error;
-  }
-
-  for (const setPayload of setPayloads) {
-    // eslint-disable-next-line no-await-in-loop
-    await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`));
-
-    if (setPayload.userIds.length === 0) {
-      // eslint-disable-next-line no-continue
-      continue;
-    }
-
-    const options = {
-      rootPath: `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`,
-    };
-    const { writes: ruleBucketWrites } = buildRuleBucketWrites({
-      rootPath: options.rootPath,
-      parsedRuleGroups: setPayload.parsedRuleGroups,
-      userIds: setPayload.userIds,
-      searchKeyFile,
-    });
-
-    // eslint-disable-next-line no-await-in-loop
-    for (const builder of SEARCH_KEY_SET_BUILDERS) {
-      // eslint-disable-next-line no-await-in-loop
-      await builder('newUsers', undefined, options);
-    }
-
-    if (Object.keys(ruleBucketWrites).length) {
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref(database), ruleBucketWrites);
-    }
-  }
-
-  return {
-    setKeys: setPayloads.map(item => item.setKey),
-    userIds: [...new Set(setPayloads.flatMap(item => item.userIds))],
-    ownerId: normalizedAccessUserId,
   };
 };
 

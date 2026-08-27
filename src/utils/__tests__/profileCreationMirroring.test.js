@@ -90,15 +90,21 @@ describe('що саме дістається кожному вузлу при с
     expect(card).not.toHaveProperty('surname');
   });
 
-  it('нова анкета з newUsers у стрічку не потрапляє', () => {
-    // `makeNewUser` заводить анкету саме в `newUsers`, а стрічка — це показані
-    // анкети `users`. Тож ключа стрічки у щойно створеної картки бути не може.
+  it('нова анкета потрапляє в стрічку, щойно її опублікували', () => {
+    // Це і є «застосунок живе без адміністрування»: анкету створив користувач,
+    // її опублікували — вона в стрічці. Раніше ключ стрічки давався лише
+    // анкетам з `users`, а `makeNewUser` заводить анкету з push-ключем, тож
+    // створена у вебі анкета не показалась би ніколи.
     const card = buildMatchingCardProjection(newUser.userId, {
       ...newUser,
       publish: true,
       lastLogin2: '2026-08-26',
-      __sourceCollection: 'newUsers',
     });
+    expect(card.feedDate).toBe('2026-08-26');
+  });
+
+  it('без publish нова анкета в стрічку не йде', () => {
+    const card = buildMatchingCardProjection(newUser.userId, { ...newUser, lastLogin2: '2026-08-26' });
     expect(card).not.toHaveProperty('feedDate');
   });
 });

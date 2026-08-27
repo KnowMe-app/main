@@ -209,7 +209,7 @@ const buildIndex = async () => {
     });
   });
 
-  await config.createSelectedSearchKeyIndexesInCollection('users', ALL_INDEX_TYPES);
+  await config.createSelectedSearchKeyIndexes(ALL_INDEX_TYPES);
 };
 
 const writtenIndex = () => {
@@ -227,7 +227,6 @@ const writtenIndex = () => {
 
 const readCandidates = async filters => {
   const result = await fetchMatchingIndexedCandidates({
-    collectionSource: 'users',
     filters,
     limit: PROFILE_LIST.length,
     useIndexIdCache: false,

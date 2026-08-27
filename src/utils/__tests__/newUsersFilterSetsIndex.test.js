@@ -18,16 +18,16 @@ jest.mock('firebase/database', () => ({
 
 jest.mock('components/config', () => ({
   collectAgeIdsByFilters: (...args) => mockCollectAgeIdsByFilters(...args),
-  createAgeSearchKeyIndexInCollection: jest.fn(),
-  createContactSearchKeyIndexInCollection: jest.fn(),
-  createCsectionSearchKeyIndexInCollection: jest.fn(),
-  createFieldCountSearchKeyIndexInCollection: jest.fn(),
-  createImtHeightWeightSearchKeyIndexInCollection: jest.fn(),
-  createMaritalStatusSearchKeyIndexInCollection: jest.fn(),
-  createReactionSearchKeyIndexInCollection: jest.fn(),
-  createRoleSearchKeyIndexInCollection: jest.fn(),
-  createSearchKeyIndexInCollection: jest.fn(),
-  createUserIdSearchKeyIndexInCollection: jest.fn(),
+  createAgeSearchKeyIndex: jest.fn(),
+  createContactSearchKeyIndex: jest.fn(),
+  createCsectionSearchKeyIndex: jest.fn(),
+  createFieldCountSearchKeyIndex: jest.fn(),
+  createImtHeightWeightSearchKeyIndex: jest.fn(),
+  createMaritalStatusSearchKeyIndex: jest.fn(),
+  createReactionSearchKeyIndex: jest.fn(),
+  createRoleSearchKeyIndex: jest.fn(),
+  createSearchKeyIndex: jest.fn(),
+  createUserIdSearchKeyIndex: jest.fn(),
   database: { app: 'test-db' },
 }));
 

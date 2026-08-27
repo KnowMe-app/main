@@ -48,6 +48,7 @@ import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
 import { mergeProfileNodes, hasAnyProfileNode } from '../utils/profileNodeMerge';
+import { mergeProfileNodeCollections, PROFILE_NODE_NAMES } from '../utils/profileNodeCollections';
 import { PROFILE_NODES } from '../utils/profileNodeSchema';
 import {
   MATCHING_CARDS_ROOT,
@@ -271,51 +272,20 @@ const loadCollectionWithIndexCache = async (collection, options = {}) => {
  * шлях користувача — і саме тому воно йде через той самий кеш колекцій, що й
  * решта індексацій.
  */
-const PROFILE_NODE_ROOTS_FOR_INDEXING = [
-  PROFILE_NODES.matchingCards,
-  PROFILE_NODES.profileDetails,
-  PROFILE_NODES.profileContacts,
-  PROFILE_NODES.profileWorkflow,
-  PROFILE_NODES.profileTechnical,
-];
-
-export const loadProfilesFromNodesForIndexing = async (collection, options = {}) => {
-  const [cards, details, contacts, workflow, technical, legacyUsers] = await Promise.all([
-    ...PROFILE_NODE_ROOTS_FOR_INDEXING.map(node => loadCollectionWithIndexCache(node, options)),
-    // Тільки заради `publish`: він лишається за мобільним застосунком.
+export const loadProfilesFromNodesForIndexing = async (options = {}) => {
+  const [nodeMaps, legacyUsers] = await Promise.all([
+    Promise.all(PROFILE_NODE_NAMES.map(node => loadCollectionWithIndexCache(node, options))),
+    // Тільки заради `publish`: власного вузла в нього немає, ним володіє
+    // мобільний застосунок. Якщо `users` уже прибрали — читання просто дасть
+    // порожньо, і стан публікації візьметься з `feedDate` у картці.
     loadCollectionWithIndexCache('users', options),
   ]);
 
-  const ids = new Set([
-    ...Object.keys(cards || {}),
-    ...Object.keys(details || {}),
-    ...Object.keys(contacts || {}),
-    ...Object.keys(workflow || {}),
-    ...Object.keys(technical || {}),
-  ]);
+  const sources = Object.fromEntries(PROFILE_NODE_NAMES.map((node, index) => [node, nodeMaps[index]]));
+  // Колекція у вебі одна: сюди приходять усі анкети, а не «анкети деки».
+  const { profiles } = mergeProfileNodeCollections({ ...sources, users: legacyUsers });
 
-  const wantUsers = collection !== 'newUsers';
-  const merged = {};
-
-  ids.forEach(id => {
-    if (isUsersCollectionUserId(id) !== wantUsers) return;
-
-    const profile = mergeProfileNodes({
-      userId: id,
-      card: cards?.[id] || null,
-      details: details?.[id] || null,
-      contacts: contacts?.[id] || null,
-      workflow: workflow?.[id] || null,
-      technical: technical?.[id] || null,
-    });
-    if (!profile) return;
-
-    const publish = legacyUsers?.[id]?.publish;
-    if (publish !== undefined) profile.publish = publish;
-    merged[id] = profile;
-  });
-
-  return Object.keys(merged).length ? merged : null;
+  return Object.keys(profiles).length ? profiles : null;
 };
 
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
@@ -2265,29 +2235,30 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   return merged;
 };
 
-export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
+/**
+ * Прочитати анкети за id.
+ *
+ * Колекції в аргументах більше немає: у вебі вона одна. Спершу нові вузли —
+ * вони і є джерелом істини; legacy лишається запасним шляхом для анкет, які ще
+ * не переїхали, і зникне разом із самими колекціями.
+ */
+export const fetchUsersByIds = async ids => {
   try {
-    const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
     const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
     const result = {};
     const missingIds = [];
 
     uniqueIds.forEach(id => {
       const cached = getCard(id);
-      if (cached && source && cached.__sourceCollection === source) {
-        result[id] = cached;
-      } else if (
-        cached && !source
-        && (
-          cached.__sourceCollection === 'newUsers'
-          || (isLongFormatUserId(id) && cached.__sourceCollection === 'users')
-        )
-      ) {
-        result[id] = cached;
-      } else {
-        if (cached && !source) result[id] = cached;
+      if (!cached) {
         missingIds.push(id);
+        return;
       }
+      result[id] = cached;
+      // Картка без позначки джерела прийшла з попередньої моделі — її треба
+      // перечитати, а не роздавати далі напівпорожньою.
+      const source = cached.__sourceCollection;
+      if (source !== 'users' && source !== 'newUsers') missingIds.push(id);
     });
 
     const snaps = await Promise.all(
@@ -2300,7 +2271,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
             return [id, updateCard(id, { ...fromNodes, photos: fromNodes.photos || [] })];
           }
 
-          if (!source && isLongFormatUserId(id)) {
+          if (isLongFormatUserId(id)) {
             const [usersResult, newUsersResult] = await Promise.allSettled([
               get(ref2(database, `users/${id}`)),
               get(ref2(database, `newUsers/${id}`)),
@@ -2334,7 +2305,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
             return [id, updateCard(id, data)];
           }
 
-          const readSources = source ? [source] : ['users', 'newUsers'];
+          const readSources = ['users', 'newUsers'];
           const entries = await Promise.all(
             readSources.map(sourceName => get(ref2(database, `${sourceName}/${id}`)).then(snapshot => [sourceName, snapshot]))
           );
@@ -2349,7 +2320,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
           const hasUser = Object.prototype.hasOwnProperty.call(dataBySource, 'users');
           const hasNewUser = Object.prototype.hasOwnProperty.call(dataBySource, 'newUsers');
           if (!hasUser && !hasNewUser) return null;
-          const useNewUsers = hasNewUser && (!source || source === 'newUsers');
+          const useNewUsers = hasNewUser;
           const data = {
             userId: id,
             ...mergeUserCollectionData(
@@ -4015,16 +3986,37 @@ const readPhotosField = async (collection, userId) => {
   return snapshot.exists() ? normalizePhotoValues(snapshot.val()) : null;
 };
 
+/**
+ * Фото живуть у `profileDetails` — там їхнє місце після переїзду.
+ *
+ * Питати їх тут, а не в legacy, — це не оптимізація, а умова того, що галерея
+ * працює далі, коли `users`/`newUsers` не стане. `null` означає «у вузлі цього
+ * немає», і тоді читач повертається до старих колекцій.
+ */
+const readPhotosFromProfileNode = async userId => {
+  try {
+    const snapshot = await get(ref2(database, `${PROFILE_NODES.profileDetails}/${userId}/photos`));
+    return snapshot.exists() ? normalizePhotoValues(snapshot.val()) : null;
+  } catch (error) {
+    console.error('Error loading user photos from profileDetails:', error);
+    return null;
+  }
+};
+
 export const getAllUserPhotos = async (userId, collectionSource = null, { includeStorage = true, knownPhotos = null } = {}) => {
   if (!userId) return [];
 
   const storageUrls = includeStorage ? await getUserStorageAvatarPhotos(userId) : [];
 
   let databaseUrls;
+  const fromProfileNode = Array.isArray(knownPhotos) ? null : await readPhotosFromProfileNode(userId);
+
   if (Array.isArray(knownPhotos)) {
     // Викликач уже тримає анкету в руках (щойно гідратував картку) — ходити за
     // тим самим полем у базу вдруге нема за чим.
     databaseUrls = normalizePhotoValues(knownPhotos);
+  } else if (fromProfileNode !== null) {
+    databaseUrls = fromProfileNode;
   } else if (!collectionSource && isLongFormatUserId(userId)) {
     const [usersResult] = await Promise.allSettled([readPhotosField('users', userId)]);
     if (usersResult.status === 'rejected') {
@@ -4355,8 +4347,13 @@ const mapWithConcurrency = async (items, limit, worker) => {
   return results;
 };
 
-const buildBackfillProjection = async (collection, rawProfile, userId, includeStorageAvatars) => {
-  const data = { ...(rawProfile || {}), __sourceCollection: collection };
+const buildBackfillProjection = async (rawProfile, userId, includeStorageAvatars) => {
+  const data = {
+    ...(rawProfile || {}),
+    // Проєкція `source` не несе, але дорогою до неї це поле ще читається —
+    // і формат id відповідає на питання «звідки анкета» точніше за деку.
+    __sourceCollection: isUsersCollectionUserId(userId) ? 'users' : 'newUsers',
+  };
   let avatar = resolveMatchingCardAvatarFromProfile(data);
   let avatarFromStorage = false;
   if (!avatar && includeStorageAvatars) {
@@ -4367,7 +4364,7 @@ const buildBackfillProjection = async (collection, rawProfile, userId, includeSt
 };
 
 /**
- * Разова побудова проєкцій для цілої колекції.
+ * Разова побудова проєкцій для всієї колекції.
  *
  * Колекція читається один раз (через той самий кеш, що й решта індексацій), а
  * записи йдуть пачками через мультилокаційний `update` — тобто ~1 запит на 200
@@ -4382,15 +4379,15 @@ const buildBackfillProjection = async (collection, rawProfile, userId, includeSt
 // відповідь Firebase цього не каже й не підказує, що робити, тож перекладаємо її
 // в текст, з якого видно і причину, і два виходи.
 const MATCHING_CARDS_FAILURE_STAGES = {
-  read: collection => `читання колекції ${collection}`,
-  cleanup: () => 'прибирання застарілих карток у matchingCards',
-  write: () => 'запис карток у matchingCards',
+  read: 'читання анкет',
+  cleanup: 'прибирання застарілих карток у matchingCards',
+  write: 'запис карток у matchingCards',
 };
 
-const describeMatchingCardsFailure = (error, { stage, collection }) => {
+const describeMatchingCardsFailure = (error, { stage }) => {
   if (!/permission[_ ]denied/i.test(String(error?.message || error || ''))) return error;
 
-  const where = (MATCHING_CARDS_FAILURE_STAGES[stage] || (() => stage))(collection);
+  const where = MATCHING_CARDS_FAILURE_STAGES[stage] || stage;
   const explained = new Error(
     `Немає доступу: ${where}. Найімовірніше, не викочені правила бази — вузлів `
       + '`matchingCards` для правил ще не існує, тож діє заборона '
@@ -4402,40 +4399,34 @@ const describeMatchingCardsFailure = (error, { stage, collection }) => {
   return explained;
 };
 
-export const createMatchingCardsIndexInCollection = async (collection, onProgress, options = {}) => {
+export const createMatchingCardsIndex = async (onProgress, options = {}) => {
   const includeStorageAvatars = options.includeStorageAvatars !== false;
   let usersData;
   try {
-    usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+    usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   } catch (error) {
-    throw describeMatchingCardsFailure(error, { stage: 'read', collection });
+    throw describeMatchingCardsFailure(error, { stage: 'read' });
   }
-  if (!usersData) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+  if (!usersData) return { total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
 
-  // A rebuild is authoritative for this collection: remove projections whose
-  // canonical profile no longer exists, then publish completeness atomically
-  // with the final batch so readers never trust a half-built index.
+  // Перебудова авторитетна: картка, за якою вже немає анкети, зникає. Прогін
+  // один на всю колекцію — тож жодного «а чи ця картка з моєї деки»: деки
+  // одна, і все, чому немає анкети, тут зайве.
   try {
     const cardsSnapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
     const stalePayload = {};
     Object.entries(cardsSnapshot.val() || {}).forEach(([id]) => {
-      // Колекцію картки називає формат id — окремого поля `source` у ній
-      // більше немає. Без цієї перевірки перебудова однієї колекції зносила б
-      // картки другої.
-      const cardCollection = isUsersCollectionUserId(id) ? 'users' : 'newUsers';
-      if (cardCollection === collection && !usersData[id]) {
-        stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
-      }
+      if (!usersData[id]) stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
     });
     await update(ref2(database), stalePayload);
   } catch (error) {
-    throw describeMatchingCardsFailure(error, { stage: 'cleanup', collection });
+    throw describeMatchingCardsFailure(error, { stage: 'cleanup' });
   }
 
   const userIds = Object.keys(usersData).filter(Boolean);
   const total = userIds.length;
   if (!total) {
-    return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+    return { total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
   }
 
   let written = 0;
@@ -4448,7 +4439,7 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
 
     // eslint-disable-next-line no-await-in-loop
     const projections = await mapWithConcurrency(batchIds, MATCHING_CARDS_AVATAR_CONCURRENCY, id =>
-      buildBackfillProjection(collection, usersData[id], id, includeStorageAvatars));
+      buildBackfillProjection(usersData[id], id, includeStorageAvatars));
 
     const usable = projections.filter(entry => entry?.userId && entry.projection);
     withStorageAvatar += projections.filter(entry => entry?.avatarFromStorage).length;
@@ -4464,17 +4455,17 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
         // eslint-disable-next-line no-await-in-loop
         await update(ref2(database), chunkPayload);
       } catch (error) {
-        throw describeMatchingCardsFailure(error, { stage: 'write', collection });
+        throw describeMatchingCardsFailure(error, { stage: 'write' });
       }
     }
 
     processed += batchIds.length;
     if (typeof onProgress === 'function') {
-      onProgress(Math.floor((processed / total) * 100), { collection, processed, total });
+      onProgress(Math.floor((processed / total) * 100), { processed, total });
     }
   }
 
-  return { collection, total, written, skipped, withStorageAvatar };
+  return { total, written, skipped, withStorageAvatar };
 };
 
 export const getMedicationPhotos = async userId => {
@@ -5605,12 +5596,6 @@ const collectReactionIdsByFilters = async (
 };
 /* eslint-enable no-unused-vars */
 
-// One root per collection, resolved here so no call site can put a users-collection
-// profile into the shared newUsers root - which is how 1300+ ids ended up indexed
-// twice and the users index ended up covering a quarter of its own collection.
-export const resolveSearchKeyRootForCollection = collection =>
-  (collection === 'users' ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);
-
 // A users-collection key is a Firebase-Auth uid — always 28 characters. newUsers
 // keys are either short editorial ids or Firebase push keys, and a push key is
 // exactly 20, so the boundary is "longer than 20", not "20 or more". The old
@@ -5628,6 +5613,25 @@ const resolveSearchKeyLeafPath = (rootPath, indexName, value, userId) => {
 
 // A rebuild replaces an index, it does not merge into it: without this the `no`
 // buckets and the legacy numeric `fields` nodes would survive every reindex.
+/**
+ * Два корені `searchKey` — це не дві колекції, а одна, розкладена за форматом
+ * id: `searchKey/users` тримає довгі id, `searchKey` — короткі. Читання завжди
+ * питає обидва (див. `SEARCH_KEY_INDEXED_ROOT_PATHS`), тож перебудова мусить
+ * охопити обидва теж — інакше половина колекції зникає з пошуку.
+ */
+const SEARCH_KEY_INDEX_ROOT_PATHS = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
+
+/** Куди пишеться запис конкретної анкети. Вирішує формат її id. */
+const resolveSearchKeyWriteRoot = (options, userId) => (
+  options?.rootPath || resolveSearchKeyRootForUserId(userId)
+);
+
+/** Скинути індекс перед перебудовою — в обох коренях, якщо не вказано один. */
+const resetSearchKeyIndexRoots = async (options, indexNames = []) => {
+  const roots = options?.rootPath ? [options.rootPath] : SEARCH_KEY_INDEX_ROOT_PATHS;
+  await Promise.all(roots.map(root => resetSearchKeyIndexNodes(root, indexNames)));
+};
+
 const resetSearchKeyIndexNodes = async (searchKeyRoot, indexNames = []) => {
   await Promise.all(
     [...new Set(indexNames.filter(Boolean))].map(indexName =>
@@ -5938,16 +5942,15 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   }
 };
 
-export const createSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [BLOOD_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [BLOOD_SEARCH_KEY_INDEX]);
 
   for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
     const batchIds = userIds.slice(i, i + BATCH_SIZE);
@@ -5959,7 +5962,7 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress, o
         const bloodValues = withoutEmptySearchKeyBucket(getBloodIndexSet(user), BLOOD_SEARCH_KEY_INDEX);
         await Promise.all(
           [...bloodValues].map(value =>
-            updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add', { ...options, rootPath: searchKeyRoot })
+            updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add', { ...options, rootPath: resolveSearchKeyWriteRoot(options, userId) })
           )
         );
       })
@@ -5987,16 +5990,15 @@ const uploadChunkedSearchKeyIndexUpdates = async (userIds, totalUsers, buildUpda
   }
 };
 
-export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createMaritalStatusSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [MARITAL_STATUS_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [MARITAL_STATUS_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6006,7 +6008,7 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
         const user = usersData[userId] || {};
         const maritalStatusValues = withoutEmptySearchKeyBucket(getMaritalStatusIndexSet(user), MARITAL_STATUS_SEARCH_KEY_INDEX);
         maritalStatusValues.forEach(maritalStatusValue => {
-          acc[`${searchKeyRoot}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6014,16 +6016,15 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
   );
 };
 
-export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createCsectionSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [CSECTION_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [CSECTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6033,7 +6034,7 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
         const user = usersData[userId] || {};
         const csectionValues = withoutEmptySearchKeyBucket(getCsectionIndexSet(user), CSECTION_SEARCH_KEY_INDEX);
         csectionValues.forEach(csectionValue => {
-          acc[`${searchKeyRoot}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6041,16 +6042,15 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
   );
 };
 
-export const createContactSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createContactSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [CONTACT_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [CONTACT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6060,7 +6060,7 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
         const user = usersData[userId] || {};
         const contactValues = getContactIndexSet(user);
         contactValues.forEach(contactValue => {
-          acc[`${searchKeyRoot}/${CONTACT_SEARCH_KEY_INDEX}/${contactValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${CONTACT_SEARCH_KEY_INDEX}/${contactValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6068,16 +6068,15 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
   );
 };
 
-export const createRoleSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createRoleSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [ROLE_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [ROLE_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6087,7 +6086,7 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
         const user = usersData[userId] || {};
         const roleValues = withoutEmptySearchKeyBucket(getRoleIndexSet(user), ROLE_SEARCH_KEY_INDEX);
         roleValues.forEach(roleValue => {
-          acc[`${searchKeyRoot}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6095,16 +6094,15 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
   );
 };
 
-export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createUserIdSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [USER_ID_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [USER_ID_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6114,7 +6112,7 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
         const user = usersData[userId] || {};
         const userIdValues = getUserIdIndexSet(user.userId || userId);
         userIdValues.forEach(userIdValue => {
-          acc[`${searchKeyRoot}/${USER_ID_SEARCH_KEY_INDEX}/${userIdValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${USER_ID_SEARCH_KEY_INDEX}/${userIdValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6122,16 +6120,15 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
   );
 };
 
-export const createAgeSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createAgeSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [AGE_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [AGE_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6141,7 +6138,7 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
         const user = usersData[userId] || {};
         const ageValues = withoutEmptySearchKeyBucket(getAgeIndexSet(user), AGE_SEARCH_KEY_INDEX);
         ageValues.forEach(ageValue => {
-          acc[`${searchKeyRoot}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6149,16 +6146,15 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
   );
 };
 
-export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createImtHeightWeightSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [IMT_SEARCH_KEY_INDEX, HEIGHT_SEARCH_KEY_INDEX, WEIGHT_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [IMT_SEARCH_KEY_INDEX, HEIGHT_SEARCH_KEY_INDEX, WEIGHT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6170,13 +6166,13 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
         const heightValues = withoutEmptySearchKeyBucket(normalizeMetricIndexValues(user.height), HEIGHT_SEARCH_KEY_INDEX);
         const weightValues = withoutEmptySearchKeyBucket(normalizeMetricIndexValues(user.weight), WEIGHT_SEARCH_KEY_INDEX);
         imtValues.forEach(imtValue => {
-          acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
         });
         heightValues.forEach(heightValue => {
-          acc[`${searchKeyRoot}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
         });
         weightValues.forEach(weightValue => {
-          acc[`${searchKeyRoot}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6184,16 +6180,15 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
   );
 };
 
-export const createReactionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createReactionSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [REACTION_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [REACTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6203,7 +6198,7 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
         const user = usersData[userId] || {};
         const reactionValues = withoutEmptySearchKeyBucket(getReactionIndexSet(user), REACTION_SEARCH_KEY_INDEX);
         reactionValues.forEach(reactionValue => {
-          acc[`${searchKeyRoot}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6211,16 +6206,15 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
   );
 };
 
-export const createFieldCountSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createFieldCountSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [FIELD_COUNT_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [FIELD_COUNT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6229,7 +6223,7 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         const fieldCountValue = normalizeFieldCountSearchKeyIndexValue(user);
-        acc[`${searchKeyRoot}/${FIELD_COUNT_SEARCH_KEY_INDEX}/${fieldCountValue}/${userId}`] = true;
+        acc[`${resolveSearchKeyWriteRoot(options, userId)}/${FIELD_COUNT_SEARCH_KEY_INDEX}/${fieldCountValue}/${userId}`] = true;
         return acc;
       }, {}),
     onProgress
@@ -6237,16 +6231,15 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
 };
 
 
-const createDerivedSearchKeyIndexInCollection = async (collection, indexName, getIndexSet, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+const createDerivedSearchKeyIndex = async (indexName, getIndexSet, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [indexName]);
+  await resetSearchKeyIndexRoots(options, [indexName]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6255,7 +6248,7 @@ const createDerivedSearchKeyIndexInCollection = async (collection, indexName, ge
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         withoutEmptySearchKeyBucket(getIndexSet(user), indexName).forEach(value => {
-          acc[`${searchKeyRoot}/${indexName}/${value}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${indexName}/${value}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -6263,22 +6256,21 @@ const createDerivedSearchKeyIndexInCollection = async (collection, indexName, ge
   );
 };
 
-export const createBmiSearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
-  createDerivedSearchKeyIndexInCollection(collection, BMI_SEARCH_KEY_INDEX, getBmiIndexSet, onProgress, options);
+export const createBmiSearchKeyIndex = (onProgress, options = {}) =>
+  createDerivedSearchKeyIndex(BMI_SEARCH_KEY_INDEX, getBmiIndexSet, onProgress, options);
 
-export const createCountrySearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
-  createDerivedSearchKeyIndexInCollection(collection, COUNTRY_SEARCH_KEY_INDEX, getCountryIndexSet, onProgress, options);
+export const createCountrySearchKeyIndex = (onProgress, options = {}) =>
+  createDerivedSearchKeyIndex(COUNTRY_SEARCH_KEY_INDEX, getCountryIndexSet, onProgress, options);
 
-export const createLastActionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createLastActionSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [LAST_ACTION_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [LAST_ACTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6288,7 +6280,7 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
         const user = usersData[userId] || {};
         const bucket = normalizeLastActionSearchKeyBucket(user.lastAction);
         if (bucket === SEARCH_KEY_EMPTY_BUCKET) return acc;
-        acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
+        acc[`${resolveSearchKeyWriteRoot(options, userId)}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
         return acc;
       }, {}),
     onProgress
@@ -6296,16 +6288,15 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
 };
 
 
-export const createGetInTouchSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
-  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
+export const createGetInTouchSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [GET_IN_TOUCH_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [GET_IN_TOUCH_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6315,7 +6306,7 @@ export const createGetInTouchSearchKeyIndexInCollection = async (collection, onP
         const user = usersData[userId] || {};
         const bucket = normalizeDateSearchKeyBucket(user.getInTouch);
         if (bucket === SEARCH_KEY_EMPTY_BUCKET) return acc;
-        acc[`${searchKeyRoot}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
+        acc[`${resolveSearchKeyWriteRoot(options, userId)}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
         return acc;
       }, {}),
     onProgress
@@ -6334,24 +6325,32 @@ const normalizeSearchKeyIndexTypes = indexTypes =>
   [...new Set((indexTypes || []).map(normalizeSearchKeyIndexType))];
 
 const SEARCH_KEY_INDEX_BUILDERS = {
-  [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.csection]: createCsectionSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.contact]: createContactSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.role]: createRoleSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.userId]: createUserIdSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.age]: createAgeSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.imtHeightWeight]: createImtHeightWeightSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.getInTouch]: createGetInTouchSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.bmi]: createBmiSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.country]: createCountrySearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.csection]: createCsectionSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.contact]: createContactSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.role]: createRoleSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.userId]: createUserIdSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.age]: createAgeSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.imtHeightWeight]: createImtHeightWeightSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.getInTouch]: createGetInTouchSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.bmi]: createBmiSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.country]: createCountrySearchKeyIndex,
 };
 
-export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress, options = {}) => {
-  if (!collection || !Array.isArray(indexTypes) || indexTypes.length === 0) return;
+/**
+ * Перебудувати обрані індекси `searchKey`.
+ *
+ * Прогін один на всю колекцію, і це не оптимізація: колекція у вебі одна, а
+ * два корені `searchKey` — лише розкладка за форматом id. Два прогони (по
+ * одному «на колекцію») читали б ті самі вузли двічі й писали б у той самий
+ * індекс двічі.
+ */
+export const createSelectedSearchKeyIndexes = async (indexTypes = [], onProgress, options = {}) => {
+  if (!Array.isArray(indexTypes) || indexTypes.length === 0) return;
 
   const uniqueIndexTypes = normalizeSearchKeyIndexTypes(indexTypes).filter(indexType => SEARCH_KEY_INDEX_BUILDERS[indexType]);
   if (!uniqueIndexTypes.length) return;
@@ -6359,7 +6358,7 @@ export const createSelectedSearchKeyIndexesInCollection = async (collection, ind
   // Індекс будується з того ж джерела, з якого читає застосунок. Читати тут
   // `users`/`newUsers` означало б індексувати те, чого веб уже не показує, — а
   // після зникнення `newUsers` перебудова просто дала б порожній індекс.
-  const usersData = await loadProfilesFromNodesForIndexing(collection, {
+  const usersData = await loadProfilesFromNodesForIndexing({
     maxAgeMs: SEARCH_INDEX_COLLECTION_CACHE_TTL_MS,
   });
 
@@ -6381,7 +6380,7 @@ export const createSelectedSearchKeyIndexesInCollection = async (collection, ind
         : undefined;
 
     // eslint-disable-next-line no-await-in-loop
-    await SEARCH_KEY_INDEX_BUILDERS[indexType](collection, progressReporter, { usersData, ...options });
+    await SEARCH_KEY_INDEX_BUILDERS[indexType](progressReporter, { usersData, ...options });
   }
 };
 
@@ -6652,7 +6651,7 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
 // The getInTouch deck pages both collections at once, so its bulk reads span both
 // roots. Per-card checks must not: they resolve the one root that can hold the id
 // (see resolveSearchKeyRootForUserId) instead of asking both and paying twice.
-const SEARCH_KEY_INDEXED_ROOT_PATHS = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
+const SEARCH_KEY_INDEXED_ROOT_PATHS = SEARCH_KEY_INDEX_ROOT_PATHS;
 
 const collectIdsFromSearchKeyBucketSnapshot = (snapshot, idSet) => {
   if (!snapshot.exists()) return;
@@ -7681,10 +7680,10 @@ export const fetchUsersByDefaultGetInTouchPaged = options => fetchUsersBySearchK
 //   }
 // };
 
-export const createSearchIdsInCollection = async (collection, onProgress) => {
+export const createSearchIds = async onProgress => {
   // Те саме джерело, що й у решти індексацій: контакти, за якими будується
   // `searchId`, живуть у `profileContacts`, а не в legacy-анкеті.
-  const usersData = await loadProfilesFromNodesForIndexing(collection);
+  const usersData = await loadProfilesFromNodesForIndexing();
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);

@@ -131,8 +131,19 @@ describe('resolvePrioritizedReactionMaps', () => {
 
 
 describe('canShowMatchingUser', () => {
-  it('allows newUsers reaction records for non-admin viewers even without publish', () => {
-    expect(canShowMatchingUser({ userId: 'ID0001', __sourceCollection: 'newUsers' }, { isAdmin: false })).toBe(true);
+  // Колекція у вебі одна, тож «показати непубліковану картку» більше не
+  // випливає з того, звідки вона приїхала. Це тепер каже явно наданий доступ —
+  // і тільки він.
+  it('allows explicitly granted records for non-admin viewers even without publish', () => {
+    expect(canShowMatchingUser({ userId: 'ID0001', __matchingAccessAllowed: true }, { isAdmin: false })).toBe(true);
+  });
+
+  it('hides an unpublished record when nothing granted it', () => {
+    expect(canShowMatchingUser({ userId: 'ID0002' }, { isAdmin: false })).toBe(false);
+  });
+
+  it('hides a record whose access was explicitly withdrawn, published or not', () => {
+    expect(canShowMatchingUser({ userId: 'ID0003', publish: true, __matchingAccessAllowed: false }, { isAdmin: false })).toBe(false);
   });
 });
 
@@ -148,7 +159,6 @@ describe('mergeMatchingCandidateUsers', () => {
       ],
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
     });
 
     expect(result.map(user => user.userId)).toEqual(['publishedBase']);
@@ -167,7 +177,6 @@ describe('mergeMatchingCandidateUsers', () => {
       }],
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
 
@@ -183,7 +192,6 @@ describe('mergeMatchingCandidateUsers', () => {
       sharedReactionCandidateUsers: [{ userId: 'ID0001', __sourceCollection: 'newUsers' }],
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
 
@@ -201,7 +209,6 @@ describe('mergeMatchingCandidateUsers', () => {
       sharedReactionCandidateUsers: [{ userId: 'sharedFavorite', publish: true, __sourceCollection: 'users' }],
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
       favoriteUsers: {},
       dislikeUsers: {},
     });
@@ -220,7 +227,6 @@ describe('mergeMatchingCandidateUsers', () => {
       ],
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
       favoriteUsers: {},
       dislikeUsers: {},
       hasAdditionalAccessRules: true,
@@ -240,7 +246,6 @@ describe('mergeMatchingCandidateUsers', () => {
       sharedReactionCandidateUsers: [{ userId: 'sharedDislike', publish: true, __sourceCollection: 'users' }],
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
       favoriteUsers: {},
       dislikeUsers: { sharedDislike: true },
     });
@@ -264,7 +269,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: { ID0001: true },
       isAdmin: false,
       viewMode: 'dislikes',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
 
@@ -282,7 +286,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: {},
       isAdmin: false,
       viewMode: 'favorites',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
 
@@ -303,7 +306,6 @@ describe('mergeMatchingCandidateUsers', () => {
       ownDislikeUsers: {},
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
     });
 
     const dislikesTab = mergeMatchingCandidateUsers({
@@ -314,7 +316,6 @@ describe('mergeMatchingCandidateUsers', () => {
       ownDislikeUsers: {},
       isAdmin: false,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(defaultDeck).toEqual([]);
@@ -337,7 +338,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: merged.dislikes,
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
     });
     const favoritesTab = mergeMatchingCandidateUsers({
       users: [card],
@@ -345,7 +345,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: merged.dislikes,
       isAdmin: false,
       viewMode: 'favorites',
-      collectionSource: 'users',
     }).filter(user => merged.favorites[user.userId]);
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [card],
@@ -353,7 +352,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: merged.dislikes,
       isAdmin: false,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     }).filter(user => merged.dislikes[user.userId]);
 
     expect(merged.favorites).toEqual({ ownFavoriteSharedDislike: true });
@@ -380,7 +378,6 @@ describe('mergeMatchingCandidateUsers', () => {
       ownDislikeUsers: { ownDislikeSharedFavorite: true },
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
     });
     const favoritesTab = mergeMatchingCandidateUsers({
       users: [card],
@@ -388,7 +385,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: merged.dislikes,
       isAdmin: false,
       viewMode: 'favorites',
-      collectionSource: 'users',
     }).filter(user => merged.favorites[user.userId]);
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [card],
@@ -396,7 +392,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: merged.dislikes,
       isAdmin: false,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     }).filter(user => merged.dislikes[user.userId]);
 
     expect(merged.favorites).toEqual({});
@@ -420,28 +415,24 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers,
       dislikeUsers,
       viewMode: 'search',
-      collectionSource: 'users',
     });
     const defaultDeck = mergeMatchingCandidateUsers({
       users: [favoriteCard, dislikeCard, neutralCard],
       favoriteUsers,
       dislikeUsers,
       viewMode: 'default',
-      collectionSource: 'users',
     });
     const favoritesTab = mergeMatchingCandidateUsers({
       users: [favoriteCard, dislikeCard, neutralCard],
       favoriteUsers,
       dislikeUsers,
       viewMode: 'favorites',
-      collectionSource: 'users',
     });
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [favoriteCard, dislikeCard, neutralCard],
       favoriteUsers,
       dislikeUsers,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(searchResults.map(user => user.userId)).toEqual(['favoriteCard', 'dislikeCard', 'neutralCard']);
@@ -458,7 +449,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers: { reactedCard: true },
       dislikeUsers: {},
       viewMode: 'custom-non-default',
-      collectionSource: 'users',
     });
 
     expect(result.map(user => user.userId)).toEqual(['reactedCard']);
@@ -477,7 +467,6 @@ describe('mergeMatchingCandidateUsers', () => {
       dislikeUsers: { effectiveDislike: true },
       isAdmin: false,
       viewMode: 'default',
-      collectionSource: 'users',
     });
 
     expect(defaultDeck.map(user => user.userId)).toEqual(['plainCard']);
@@ -496,7 +485,6 @@ describe('mergeMatchingCandidateUsers', () => {
       ownDislikeUsers: {},
       isAdmin: false,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(result.map(user => user.userId)).toEqual(['sharedDislikeOnly']);
@@ -516,7 +504,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers: { effectiveFavorite: true },
       dislikeUsers: { effectiveDislike: true },
       viewMode: 'favorites',
-      collectionSource: 'users',
     });
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -524,7 +511,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers: { effectiveFavorite: true },
       dislikeUsers: { effectiveDislike: true },
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(favoritesTab.map(user => user.userId)).toEqual(['effectiveFavorite']);
@@ -543,7 +529,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers,
       dislikeUsers,
       viewMode: 'default',
-      collectionSource: 'users',
     });
     const favoritesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -551,7 +536,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers,
       dislikeUsers,
       viewMode: 'favorites',
-      collectionSource: 'users',
     });
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -559,7 +543,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers,
       dislikeUsers,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(defaultDeck).toEqual([]);
@@ -579,7 +562,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers,
       dislikeUsers,
       viewMode: 'default',
-      collectionSource: 'users',
     });
     const favoritesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -587,7 +569,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers,
       dislikeUsers,
       viewMode: 'favorites',
-      collectionSource: 'users',
     });
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -595,7 +576,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers,
       dislikeUsers,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(defaultDeck).toEqual([]);
@@ -614,7 +594,6 @@ describe('mergeMatchingCandidateUsers', () => {
       favoriteUsers: {},
       dislikeUsers: { sharedDislike: true },
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(dislikesTab.map(user => user.userId)).toEqual(['sharedDislike']);
@@ -650,7 +629,6 @@ describe('pre-merge shared reaction verification', () => {
       favoriteUsers: favorites,
       dislikeUsers: dislikes,
       viewMode: 'default',
-      collectionSource: 'users',
     });
 
     expect(defaultDeck.map(user => user.userId)).toEqual(['neutral']);
@@ -696,7 +674,6 @@ describe('pre-merge shared reaction verification', () => {
       favoriteUsers: favorites,
       dislikeUsers: dislikes,
       viewMode: 'favorites',
-      collectionSource: 'users',
     });
 
     expect(favorites).toEqual({ sharedFavorite: true, ownFavorite: true, ownFavoriteSharedDislike: true });
@@ -727,7 +704,6 @@ describe('pre-merge shared reaction verification', () => {
       favoriteUsers: favorites,
       dislikeUsers: dislikes,
       viewMode: 'dislikes',
-      collectionSource: 'users',
     });
 
     expect(favorites).toEqual({});
@@ -760,7 +736,6 @@ describe('pre-merge shared reaction verification', () => {
       favoriteUsers: { ID0001: true, ID0003: true },
       dislikeUsers: {},
       viewMode: 'favorites',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
     const dislikesTab = mergeMatchingCandidateUsers({
@@ -769,7 +744,6 @@ describe('pre-merge shared reaction verification', () => {
       favoriteUsers: {},
       dislikeUsers: { ID0002: true, ID0004: true },
       viewMode: 'dislikes',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
 
@@ -802,7 +776,6 @@ describe('pre-merge shared reaction verification', () => {
       favoriteUsers: { duplicate: true },
       dislikeUsers: {},
       viewMode: 'favorites',
-      collectionSource: 'users',
     });
 
     expect(result.map(user => user.userId)).toEqual(['duplicate']);
@@ -874,17 +847,6 @@ describe('shouldApplySharedReactionCandidateResult', () => {
       currentVersion: 3,
       requestViewMode: 'favorites',
       currentViewMode: 'dislikes',
-      requestCollectionSource: 'users',
-      currentCollectionSource: 'users',
-    })).toBe(false);
-
-    expect(shouldApplySharedReactionCandidateResult({
-      requestVersion: 3,
-      currentVersion: 3,
-      requestViewMode: 'default',
-      currentViewMode: 'default',
-      requestCollectionSource: 'users',
-      currentCollectionSource: 'newUsers',
     })).toBe(false);
   });
 });
@@ -1176,7 +1138,6 @@ describe('reaction pagination race guards', () => {
       favoriteUsers: {},
       dislikeUsers: { ID0001: true },
       viewMode: 'default',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
     const dislikesTab = mergeMatchingCandidateUsers({
@@ -1187,7 +1148,6 @@ describe('reaction pagination race guards', () => {
       dislikeUsers: { ID0001: true },
       ownDislikeUsers: {},
       viewMode: 'dislikes',
-      collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     }).filter(user => user.__matchingAccessAllowed && user.userId === 'ID0001');
 
@@ -1208,7 +1168,6 @@ describe('reaction pagination race guards', () => {
       favoriteUsers: { effectiveFavorite: true },
       dislikeUsers: { effectiveDislike: true },
       viewMode: 'default',
-      collectionSource: 'users',
     });
 
     expect(defaultDeck.map(user => user.userId)).toEqual(['neutralCard']);
@@ -1216,62 +1175,53 @@ describe('reaction pagination race guards', () => {
 
 });
 
-describe('global cross-collection reaction overlay', () => {
-  const usersCard = { userId: 'firebasePushIdCard0001', publish: true, __sourceCollection: 'users' };
-  const newUsersCard = { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true };
-  const inaccessibleNewUsersCard = { userId: 'ID0002', __sourceCollection: 'newUsers' };
+describe('вкладки реакцій — накладка поверх усієї колекції', () => {
+  const usersCard = { userId: 'firebasePushIdCard0001', publish: true };
+  const newUsersCard = { userId: 'ID0001', __matchingAccessAllowed: true };
+  const inaccessibleNewUsersCard = { userId: 'ID0002' };
 
-  it('shows own /users and /newUsers favorites in both collection modes', () => {
-    ['users', 'newUsers'].forEach(collectionSource => {
-      const favoritesTab = mergeMatchingCandidateUsers({
-        users: [usersCard, newUsersCard],
-        favoriteUsers: { firebasePushIdCard0001: true, ID0001: true },
-        dislikeUsers: {},
-        viewMode: 'favorites',
-        collectionSource,
-        hasAdditionalAccessRules: true,
-      });
-
-      expect(favoritesTab.map(user => user.userId)).toEqual(['firebasePushIdCard0001', 'ID0001']);
+  it('shows both published and access-granted favorites', () => {
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [usersCard, newUsersCard],
+      favoriteUsers: { firebasePushIdCard0001: true, ID0001: true },
+      dislikeUsers: {},
+      viewMode: 'favorites',
+      hasAdditionalAccessRules: true,
     });
+
+    expect(favoritesTab.map(user => user.userId)).toEqual(['firebasePushIdCard0001', 'ID0001']);
   });
 
-  it('shows shared /users and accessible /newUsers dislikes in both collection modes', () => {
-    ['users', 'newUsers'].forEach(collectionSource => {
-      const dislikesTab = mergeMatchingCandidateUsers({
-        users: [usersCard, newUsersCard],
-        favoriteUsers: {},
-        dislikeUsers: { firebasePushIdCard0001: true, ID0001: true },
-        viewMode: 'dislikes',
-        collectionSource,
-        hasAdditionalAccessRules: true,
-      });
-
-      expect(dislikesTab.map(user => user.userId)).toEqual(['firebasePushIdCard0001', 'ID0001']);
+  it('shows both published and access-granted dislikes', () => {
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [usersCard, newUsersCard],
+      favoriteUsers: {},
+      dislikeUsers: { firebasePushIdCard0001: true, ID0001: true },
+      viewMode: 'dislikes',
+      hasAdditionalAccessRules: true,
     });
+
+    expect(dislikesTab.map(user => user.userId)).toEqual(['firebasePushIdCard0001', 'ID0001']);
   });
 
-  it('excludes all effective favorites and dislikes from the default deck in both collection modes', () => {
-    ['users', 'newUsers'].forEach(collectionSource => {
-      const defaultDeck = mergeMatchingCandidateUsers({
-        users: [
-          usersCard,
-          newUsersCard,
-          { userId: 'neutralUserCard0000001', publish: true, __sourceCollection: 'users' },
-          { userId: 'ID0099', __sourceCollection: 'newUsers', __matchingAccessAllowed: true },
-        ],
-        favoriteUsers: { firebasePushIdCard0001: true },
-        dislikeUsers: { ID0001: true },
-        viewMode: 'default',
-        collectionSource,
-        hasAdditionalAccessRules: true,
-      });
-
-      expect(defaultDeck.map(user => user.userId)).not.toEqual(expect.arrayContaining(['firebasePushIdCard0001', 'ID0001']));
+  it('excludes all effective favorites and dislikes from the default deck', () => {
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [
+        usersCard,
+        newUsersCard,
+        { userId: 'neutralUserCard0000001', publish: true },
+        { userId: 'ID0099', __matchingAccessAllowed: true },
+      ],
+      favoriteUsers: { firebasePushIdCard0001: true },
+      dislikeUsers: { ID0001: true },
+      viewMode: 'default',
+      hasAdditionalAccessRules: true,
     });
+
+    expect(defaultDeck.map(user => user.userId)).not.toEqual(expect.arrayContaining(['firebasePushIdCard0001', 'ID0001']));
   });
 
-  it('keeps own reaction priority global across users and newUsers ids', () => {
+  it('keeps own reaction priority global across every id format', () => {
     const { favorites, dislikes } = resolvePrioritizedReactionMaps({
       ownerIds: ['viewer', 'sharedOwner'],
       ownOwnerId: 'viewer',
@@ -1289,31 +1239,32 @@ describe('global cross-collection reaction overlay', () => {
     expect(dislikes).toEqual({ ID0002: true });
   });
 
-  it('does not leak newUsers reaction cards without allowed searchKeySets/access scope', () => {
+  it('does not leak reaction cards nothing granted access to', () => {
     const favoritesTab = mergeMatchingCandidateUsers({
       users: [newUsersCard, inaccessibleNewUsersCard],
       favoriteUsers: { ID0001: true, ID0002: true },
       dislikeUsers: {},
       viewMode: 'favorites',
-      collectionSource: 'users',
       hasAdditionalAccessRules: true,
     });
 
     expect(favoritesTab.map(user => user.userId)).toEqual(['ID0001']);
   });
 
-  it('does not make reaction async results stale merely because collectionSource changed', () => {
+  it('свіжість відповіді тримається на версії й режимі — колекції в ній немає', () => {
+    // Раніше зміна деки робила відповідь застарілою. Деки одна, і лишились
+    // рівно дві причини відкинути результат: його обігнав новіший запит або
+    // користувач пішов на іншу вкладку.
     const base = {
       requestVersion: 1,
       currentVersion: 1,
       requestViewMode: 'favorites',
       currentViewMode: 'favorites',
-      requestCollectionSource: 'users',
-      currentCollectionSource: 'newUsers',
     };
 
     expect(shouldApplyReactionPageResult(base)).toBe(true);
     expect(shouldApplySharedReactionCandidateResult(base)).toBe(true);
-    expect(shouldApplyReactionPageResult({ ...base, requestViewMode: 'default', currentViewMode: 'default' })).toBe(false);
+    expect(shouldApplyReactionPageResult({ ...base, currentVersion: 2 })).toBe(false);
+    expect(shouldApplyReactionPageResult({ ...base, currentViewMode: 'dislikes' })).toBe(false);
   });
 });

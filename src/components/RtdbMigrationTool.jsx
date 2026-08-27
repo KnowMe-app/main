@@ -11,6 +11,7 @@ import {
   buildCombinedRootPatch,
   buildCleanedNewUsers,
   buildMigrationAudit,
+  buildRemaindersExport,
 } from 'utils/rtdbMigration';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
 import { auth } from './config';
@@ -494,7 +495,28 @@ export const RtdbMigrationTool = () => {
             >
               Download combined-root-patch.json
             </button>
+            <button
+              type="button"
+              style={styles.button}
+              onClick={() => download('migration-remainders', () => buildRemaindersExport(stateRef.current))}
+            >
+              Download migration-remainders.json
+            </button>
           </div>
+
+          {/*
+            Залишок — це не «нічого не сталось», а список того, що міграція
+            свідомо не взяла: конфлікти, порожні значення, поля поза жодним
+            allowlist. Побачити його треба до того, як `cleaned-newUsers`
+            поїде в базу, бо після імпорту питати вже нема в кого.
+          */}
+          <p style={styles.muted}>
+            migration-remainders.json — рештки обох колекцій в одному файлі: що з{' '}
+            <code>users</code> і <code>newUsers</code> не переїхало у нові вузли, плюс
+            підсумок по полях. Це звіт, а не патч: у базу він не імпортується, паролі в
+            ньому заміщені позначкою. З <code>users</code> при цьому нічого не видаляється —
+            там позначається лише те, що вже скопійовано.
+          </p>
 
           <p style={{ ...styles.muted, ...styles.warn }}>
             combined-root-patch.json — тільки для очей. Не імпортуйте його в корінь: імпорт

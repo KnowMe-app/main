@@ -36,11 +36,9 @@ export const MATCHING_CARDS_ROOT = 'matchingCards';
  * показу. Це не економія байтів, а перенесення фільтра з клієнта в індекс:
  * схованої картки в діапазоні немає, тож вона не може приїхати у видачу.
  *
- * Ключ один, бо стрічка одна. `newUsers` не має поля `publish` взагалі, і
- * картки цієї колекції користувачам не показуються — адмін дивиться їх іншим
- * шляхом, маючи повний доступ. Тобто «дека `newUsers`» — це не стрічка, і
- * власного ключа їй не треба: другий ключ стеріг би розділення, якого в
- * стрічці більше немає.
+ * Ключ один, бо стрічка одна — і колекція у вебі одна. Другий ключ стеріг би
+ * розділення на `users` і `newUsers`, якого більше немає: анкета потрапляє в
+ * стрічку за `publish`, а не за тим, у якій колекції лежить її тіло.
  *
  * Порядок у RTDB завжди зростаючий, і `val()` до того ж повертає обʼєкт, у
  * якому порядок запиту не зберігається. Тож найновіші беруться з хвоста
@@ -120,20 +118,23 @@ export const resolveMatchingCardCollection = (userId, data) => {
 };
 
 /**
- * Дата для стрічки — тільки для картки з колекції `users` і тільки показаної.
+ * Дата для стрічки — у показаної картки, хай звідки вона прийшла.
  *
- * `newUsers` поля `publish` не має взагалі, тож питати його там нема сенсу:
- * анкета звідти в стрічку не потрапляє за визначенням, і `feedDate` у неї не
- * зʼявляється навіть тоді, коли дата в анкеті є.
+ * Раніше тут стояла ще одна умова: картка мусила бути з колекції `users`. Це
+ * була умова часів двох дек, і коштувала вона дорого — анкета, створена у
+ * вебі, отримувала push-ключ, тобто «не users», і в стрічку не потрапляла
+ * ніколи. Колекція одна, і право показу дає рівно `publish`.
  *
  * Показана картка без придатної дати в індекс не йде: впорядкувати її нема за
  * чим, а з порожнім значенням вона лягла б на дно діапазону і однаково не
  * показалась би.
  */
-const resolveFeedDate = (source, data) => {
-  if (source !== 'users') return '';
+const resolveFeedDate = data => {
   if (!normalizePublish(data?.publish)) return '';
-  return normalizeFeedDateValue(data?.lastLogin2) || normalizeFeedDateValue(data?.lastLogin);
+  return normalizeFeedDateValue(data?.lastLogin2)
+    || normalizeFeedDateValue(data?.lastLogin)
+    || normalizeFeedDateValue(data?.createdAt2)
+    || normalizeFeedDateValue(data?.createdAt);
 };
 
 /**
@@ -178,7 +179,7 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   // Ані `source`, ані `fieldsCount`, ані `v` картка більше не носить. Колекцію
   // називає формат id; заповненість зі стрічки прибрано разом із фільтром; а
   // версія була потрібна лише доти, доки у вузлі лежали картки двох поколінь.
-  const feedDate = resolveFeedDate(resolveMatchingCardCollection(id, data), data);
+  const feedDate = resolveFeedDate(data);
   if (feedDate) projection[MATCHING_CARD_FEED_FIELD] = feedDate;
 
   return projection;

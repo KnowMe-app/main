@@ -99,6 +99,7 @@ const emptyCounters = () => ({
   unsafeKeys: 0,
   errors: 0,
   deletionsFromNewUsers: 0,
+  consumedFromUsers: 0,
 });
 
 const countProfileFields = collection => {
@@ -184,6 +185,15 @@ export const createMigrationState = ({ users = {}, newUsers = {} } = {}) => {
     originalUsers,
     originalNewUsers,
     workingNewUsers: deepClone(originalNewUsers),
+    /**
+     * Що з `users` ще не забрано.
+     *
+     * Сам `/users` не чіпається — це копія, і живе вона рівно заради одного
+     * питання адміна: «а що з цієї колекції не переїхало?». Планування далі
+     * читає `originalUsers`, бо в базі поля лишаються на місці і кожен
+     * наступний прогін мусить бачити їх знову.
+     */
+    remainingUsers: deepClone(originalUsers),
     targets: emptyTargets(),
     /** Хто саме поклав значення в цільовий вузол — щоб конфлікт називав обидві сторони. */
     targetOrigins: {},
@@ -231,7 +241,8 @@ const createPlanContext = (state, group) => ({
   writes: [],
   getInTouchWrites: [],
   deletions: [],
-  deletionKeys: new Set(),
+  consumedFromUsers: [],
+  consumedKeys: new Set(),
   conflicts: [],
   warnings: [],
   warningsByCode: {},
@@ -312,17 +323,40 @@ const offerValue = (ctx, { profileId, field, value, sourceCollection, derived = 
   return 'conflict';
 };
 
-/** Видалення з `workingNewUsers` — рівно те поле, за яке щойно відзвітували успіх. */
-const planDeletion = (ctx, profileId, field) => {
-  const profile = ctx.state.workingNewUsers[profileId];
+/**
+ * Поле спожите — тобто воно доїхало в новий вузол.
+ *
+ * Для `newUsers` це означає видалення з робочої копії: саме так із неї
+ * поступово зникає все перенесене. Для `users` видалення немає — це
+ * legacy-колекція мобільного застосунку, і чистити її нікому, — але знати, що
+ * поле переїхало, все одно треба: різниця між тим, що було, і тим, що спожито,
+ * і є відповіддю на питання «що не переїхало».
+ *
+ * Облік один на дві колекції навмисно: якби «спожито» рахувалось окремо від
+ * «видалено», вони б розійшлись, і залишок по `users` показував би не те.
+ */
+const planConsumption = (ctx, sourceCollection, profileId, field) => {
+  const key = `${sourceCollection}::${profileId}::${field}`;
+  if (ctx.consumedKeys.has(key)) return;
+
+  if (sourceCollection === 'newUsers') {
+    const profile = ctx.state.workingNewUsers[profileId];
+    if (!profile || typeof profile !== 'object') return;
+    if (!Object.prototype.hasOwnProperty.call(profile, field)) return;
+
+    ctx.consumedKeys.add(key);
+    ctx.deletions.push({ profileId, field });
+    ctx.counters.deletionsFromNewUsers += 1;
+    return;
+  }
+
+  const profile = ctx.state.originalUsers[profileId];
   if (!profile || typeof profile !== 'object') return;
   if (!Object.prototype.hasOwnProperty.call(profile, field)) return;
 
-  const key = `${profileId}::${field}`;
-  if (ctx.deletionKeys.has(key)) return;
-  ctx.deletionKeys.add(key);
-  ctx.deletions.push({ profileId, field });
-  ctx.counters.deletionsFromNewUsers += 1;
+  ctx.consumedKeys.add(key);
+  ctx.consumedFromUsers.push({ profileId, field });
+  ctx.counters.consumedFromUsers += 1;
 };
 
 const isSuccess = outcome => outcome === 'copied' || outcome === 'already';
@@ -356,7 +390,7 @@ const planDirectField = (ctx, { profileId, field, source, sourceCollection }) =>
     sourceCollection,
   });
 
-  if (sourceCollection === 'newUsers' && isSuccess(outcome)) planDeletion(ctx, profileId, field);
+  if (isSuccess(outcome)) planConsumption(ctx, sourceCollection, profileId, field);
 };
 
 /**
@@ -387,8 +421,8 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
       derived: true,
     });
     // Обидва старі ключі йдуть тільки разом і тільки після безконфліктного `role`.
-    if (sourceCollection === 'newUsers' && isSuccess(outcome)) {
-      role.consumed.forEach(field => planDeletion(ctx, profileId, field));
+    if (isSuccess(outcome)) {
+      role.consumed.forEach(field => planConsumption(ctx, sourceCollection, profileId, field));
     }
   }
 
@@ -444,8 +478,8 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
     });
     // Окреме поле `avatar` — це пряма копія, його можна прибрати. Виведене з
     // `photos` — ні: набір фото ще не мігрував.
-    if (sourceCollection === 'newUsers' && isSuccess(outcome) && !avatar.fromPhotos) {
-      planDeletion(ctx, profileId, 'avatar');
+    if (isSuccess(outcome) && !avatar.fromPhotos) {
+      planConsumption(ctx, sourceCollection, profileId, 'avatar');
     }
   }
 
@@ -492,7 +526,7 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
         sourceCollection,
         derived: true,
       });
-      if (sourceCollection === 'newUsers' && isSuccess(outcome)) planDeletion(ctx, profileId, 'publish');
+      if (isSuccess(outcome)) planConsumption(ctx, sourceCollection, profileId, 'publish');
     } else {
       // Не показана. Семантика виражається відсутністю ключа — але тільки якщо
       // ключа там справді немає. Якщо `users` уже поклав дату, це розбіжність
@@ -509,8 +543,8 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
           existingValue: existing.value,
           incomingValue: null,
         });
-      } else if (sourceCollection === 'newUsers') {
-        planDeletion(ctx, profileId, 'publish');
+      } else {
+        planConsumption(ctx, sourceCollection, profileId, 'publish');
       }
     }
   }
@@ -584,7 +618,7 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
     else ctx.counters.fieldsMovedFromNewUsers += 1;
   }
 
-  if (sourceCollection === 'newUsers') planDeletion(ctx, profileId, 'getInTouch');
+  planConsumption(ctx, sourceCollection, profileId, 'getInTouch');
 };
 
 /**
@@ -608,6 +642,7 @@ export const planMigrationGroup = (state, group, options = {}) => {
       writes: [],
       getInTouchWrites: [],
       deletions: [],
+      consumedFromUsers: [],
       conflicts: [],
       warnings: [],
       warningsByCode: {},
@@ -651,6 +686,7 @@ export const planMigrationGroup = (state, group, options = {}) => {
     writes: ctx.writes,
     getInTouchWrites: ctx.getInTouchWrites,
     deletions: ctx.deletions,
+    consumedFromUsers: ctx.consumedFromUsers,
     conflicts: ctx.conflicts,
     warnings: ctx.warnings,
     warningsByCode: ctx.warningsByCode,
@@ -726,12 +762,20 @@ export const applyMigrationPlan = (state, plan) => {
     if (profile && typeof profile === 'object') delete profile[field];
   });
 
+  // З `users` нічого не видаляється — тільки з копії залишку. Це не чистка
+  // колекції, а відмітка «це поле вже в новому вузлі».
+  (plan.consumedFromUsers || []).forEach(({ profileId, field }) => {
+    const profile = state.remainingUsers[profileId];
+    if (profile && typeof profile === 'object') delete profile[field];
+  });
+
   const previous = state.report.groups[plan.group];
   state.report.groups[plan.group] = {
     lastRunAt: new Date().toISOString(),
     runCount: (previous?.runCount || 0) + 1,
     ...plan.counters,
     remainingNewUsersKeys: countRemainingKeys(state.workingNewUsers),
+    remainingUsersKeys: countRemainingKeys(state.remainingUsers),
   };
 
   plan.conflicts.forEach(conflict => {
@@ -785,8 +829,78 @@ export const buildMigrationAudit = state => ({
     recordCount: Object.keys(state.workingNewUsers).length,
     keyCount: countRemainingKeys(state.workingNewUsers),
   },
+  remainingUsers: {
+    recordCount: Object.keys(state.remainingUsers).length,
+    keyCount: countRemainingKeys(state.remainingUsers),
+  },
   detailCap: MIGRATION_DETAIL_CAP,
 });
+
+/**
+ * Залишок колекції — звіт, а не патч.
+ *
+ * Порожні анкети звідси прибрані: анкета, з якої забрали все, — це успіх, і в
+ * списку «що не переїхало» їй робити нічого. Значення секретів заміщені
+ * позначкою: побачити треба, що поле лишилось, а не яке воно.
+ */
+const REDACTED = '[не показано]';
+
+const buildRemainderReport = collection => {
+  const out = {};
+  Object.entries(collection || {}).forEach(([profileId, profile]) => {
+    if (!profile || typeof profile !== 'object') {
+      if (profile !== undefined) out[profileId] = profile;
+      return;
+    }
+    const fields = Object.keys(profile);
+    if (!fields.length) return;
+    const copy = {};
+    fields.forEach(field => {
+      copy[field] = SECRET_FIELDS.includes(field) ? REDACTED : deepClone(profile[field]);
+    });
+    out[profileId] = copy;
+  });
+  return out;
+};
+
+/** Рештки `newUsers` — те саме, що поїде в `cleaned-newUsers`, але для очей. */
+export const buildRemainingNewUsers = state => buildRemainderReport(state.workingNewUsers);
+
+/** Рештки `users` — поля, яких жодна група не забрала. */
+export const buildRemainingUsers = state => buildRemainderReport(state.remainingUsers);
+
+/**
+ * Обидва залишки одним файлом, із підсумком.
+ *
+ * Дві колекції поруч, бо питання в адміна одне на дві: що лишилось поза новими
+ * вузлами. Розкладати відповідь по двох файлах і зводити руками — зайве.
+ */
+export const buildRemaindersExport = state => {
+  const users = buildRemainingUsers(state);
+  const newUsers = buildRemainingNewUsers(state);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    appliedGroups: [...state.appliedGroups],
+    note: 'Звіт, не патч. Не імпортувати в базу. Значення паролів заміщені.',
+    summary: {
+      users: {
+        sourceRecordCount: Object.keys(state.originalUsers).length,
+        remainingRecordCount: Object.keys(users).length,
+        remainingKeyCount: countRemainingKeys(state.remainingUsers),
+        unmappedFieldStats: buildUnmappedFieldStats(state.remainingUsers),
+      },
+      newUsers: {
+        sourceRecordCount: Object.keys(state.originalNewUsers).length,
+        remainingRecordCount: Object.keys(newUsers).length,
+        remainingKeyCount: countRemainingKeys(state.workingNewUsers),
+        unmappedFieldStats: state.report.unmappedFieldStats,
+      },
+    },
+    users,
+    newUsers,
+  };
+};
 
 export const buildCleanedNewUsers = state => deepClone(state.workingNewUsers);
 

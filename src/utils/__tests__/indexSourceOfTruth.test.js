@@ -26,19 +26,26 @@ describe('індекси будуються з нових вузлів', () => {
   it('є завантажувач, який збирає анкету з пʼяти вузлів', () => {
     const loader = sliceFn('export const loadProfilesFromNodesForIndexing', 'const collectUserIdsBySearchIdKeys');
 
-    expect(loader).toContain('mergeProfileNodes(');
+    // Збірка одна на два входи індексації — з бекенду і з локальних файлів.
+    // Якби вона була написана двічі, індекси розійшлися б непомітно.
+    expect(loader).toContain('mergeProfileNodeCollections(');
     ['matchingCards', 'profileDetails', 'profileContacts', 'profileWorkflow', 'profileTechnical']
       .forEach(node => expect(configSource).toContain(`PROFILE_NODES.${node}`));
   });
 
+  it('завантажувач не приймає колекцію — вона одна', () => {
+    expect(configSource).toContain('export const loadProfilesFromNodesForIndexing = async (options = {}) => {');
+    expect(configSource).not.toContain('loadProfilesFromNodesForIndexing(collection');
+  });
+
   it('searchKey перебудовується з вузлів, а не з legacy-колекції', () => {
     const builder = sliceFn(
-      'export const createSelectedSearchKeyIndexesInCollection',
+      'export const createSelectedSearchKeyIndexes',
       'const toPlainObjectFromSetMap',
     );
 
-    expect(builder).toContain('await loadProfilesFromNodesForIndexing(collection');
-    expect(builder).not.toContain('loadCollectionWithIndexCache(collection');
+    expect(builder).toContain('await loadProfilesFromNodesForIndexing({');
+    expect(builder).not.toContain('loadCollectionWithIndexCache(');
   });
 
   it('жоден будівник індексів не відкочується на legacy-колекцію', () => {
@@ -50,40 +57,43 @@ describe('індекси будуються з нових вузлів', () => {
   });
 
   it('searchId теж будується з вузлів — контакти вже не в анкеті', () => {
-    const builder = sliceFn('export const createSearchIdsInCollection', 'export const');
-    expect(builder).toContain('await loadProfilesFromNodesForIndexing(collection)');
+    const builder = sliceFn('export const createSearchIds', 'export const');
+    expect(builder).toContain('await loadProfilesFromNodesForIndexing()');
   });
 
   it('картки стрічки перебудовуються з вузлів', () => {
     const builder = sliceFn(
-      'export const createMatchingCardsIndexInCollection',
+      'export const createMatchingCardsIndex',
       'export const getMedicationPhotos',
     );
 
-    expect(builder).toContain('await loadProfilesFromNodesForIndexing(collection)');
-    expect(builder).not.toContain('loadCollectionWithIndexCache(collection)');
+    expect(builder).toContain('await loadProfilesFromNodesForIndexing()');
+    expect(builder).not.toContain('loadCollectionWithIndexCache(');
   });
 
-  it('прибирання карток-сиріт визначає колекцію форматом id, а не полем source', () => {
-    // `source` у картці більше немає. Якби перевірка лишилась на ньому, вона
-    // читала б `undefined` як `users` — і перебудова однієї колекції зносила б
-    // картки другої.
+  it('прибирання карток-сиріт не питає, з якої вони колекції', () => {
+    // Прогін один на всю колекцію, тож картка без анкети — просто зайва.
+    // Раніше тут стояла перевірка «а чи ця картка з тієї колекції, яку
+    // перебудовують»; без неї один прогін зносив би картки другої деки.
     const builder = sliceFn(
-      'export const createMatchingCardsIndexInCollection',
+      'export const createMatchingCardsIndex',
       'export const getMedicationPhotos',
     );
 
-    expect(builder).toContain("isUsersCollectionUserId(id) ? 'users' : 'newUsers'");
-    expect(builder).not.toContain("card?.source");
+    expect(builder).toContain('if (!usersData[id]) stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;');
+    expect(builder).not.toContain('card?.source');
   });
 
   it('publish береться з legacy — і це єдиний виняток', () => {
     // Власного вузла в нього немає: ним володіє мобільний застосунок, і лежить
-    // він у `/users`. Решта полів приходить із нових вузлів.
+    // він у `/users`. Решта полів приходить із нових вузлів. Коли `users`
+    // приберуть, читання просто дасть порожньо — і стан публікації візьметься
+    // з `feedDate` у картці.
     const loader = sliceFn('export const loadProfilesFromNodesForIndexing', 'const collectUserIdsBySearchIdKeys');
+    const merge = fs.readFileSync(path.join(__dirname, '..', 'profileNodeCollections.js'), 'utf8');
 
     expect(loader).toContain("loadCollectionWithIndexCache('users'");
-    expect(loader).toContain('profile.publish = publish');
+    expect(merge).toContain('profile.publish = publish');
   });
 
   it('поточні дані для індексації читаються тим самим шляхом, що й анкета', () => {

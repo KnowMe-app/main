@@ -53,9 +53,11 @@ describe('newUsers/users merge behaviour', () => {
       source.indexOf('const addUserFromUsers')
     );
 
-    expect(fetchUsersByIdsBody).toContain("const readSources = source ? [source] : ['users', 'newUsers'];");
+    // Колекції на вибір більше немає: читач завжди дивиться в обидві й зводить
+    // їх по полях. Це шлях для анкет, які ще не переїхали у нові вузли.
+    expect(fetchUsersByIdsBody).toContain("const readSources = ['users', 'newUsers'];");
     expect(fetchUsersByIdsBody).toContain('mergeUserCollectionData(');
-    expect(fetchUsersByIdsBody).toContain("const useNewUsers = hasNewUser && (!source || source === 'newUsers');");
+    expect(fetchUsersByIdsBody).toContain('const useNewUsers = hasNewUser;');
     expect(fetchUsersByIdsBody).toContain("__sourceCollection: useNewUsers ? 'newUsers' : 'users'");
   });
 

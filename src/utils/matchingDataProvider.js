@@ -69,12 +69,6 @@ const selectedFilterKeys = group => {
     .map(([key]) => key);
 };
 
-const hasFilterOption = (group, option) =>
-  Boolean(group && typeof group === 'object' && Object.prototype.hasOwnProperty.call(group, option));
-
-const shouldIncludeNoBucket = (group, noOption = 'empty') =>
-  !hasFilterOption(group, noOption) || Boolean(group?.[noOption]);
-
 const getFilterGroupDebugState = (groupName, group) => {
   const normalizedGroup = group && typeof group === 'object' ? group : {};
   const entries = Object.entries(normalizedGroup);
@@ -141,19 +135,16 @@ const buildExcludeBucketMeta = ({ group, allBuckets = [], bucketMap = {}, allowe
   };
 };
 
-const buildRoleBuckets = (filters, collectionSource) => {
+const buildRoleBuckets = filters => {
   const roleFilters = filters?.userRole || filters?.role;
   const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, ROLE_BUCKET_FILTER_KEYS);
   if (!buckets.length) return [];
 
-  // Matching treats additional newUsers without a role as donor profiles, so keep
-  // the indexed provider aligned with the existing post-filter fallback.
-  if (
-    collectionSource === 'newUsers' &&
-    Boolean(roleFilters?.ed) &&
-    shouldIncludeNoBucket(roleFilters, 'empty')
-  ) buckets.push('no');
-
+  // Раніше тут була гілка «на деці newUsers анкета без ролі рахується
+  // донорською». Пост-фільтр (`getUserRoleCategory`) так ніколи не рахував —
+  // анкета без ролі в нього завжди `other`, — тож на деці `users` індекс і
+  // пост-фільтр давали різні відповіді. Колекція одна, і відповідь одна:
+  // без ролі — це `other`.
   return unique(buckets);
 };
 
@@ -202,9 +193,9 @@ const buildAgeBuckets = filters => {
 const buildPointBuckets = (filters, filterName, bucketMap = {}) =>
   mapSelectedFilterBuckets(filters?.[filterName], bucketMap);
 
-export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource = 'users' } = {}) => {
+export const buildMatchingIndexFilterGroups = ({ filters = {} } = {}) => {
   const groups = [];
-  const roleBuckets = buildRoleBuckets(filters, collectionSource);
+  const roleBuckets = buildRoleBuckets(filters);
   const roleFilters = filters?.userRole || filters?.role;
   addGroup(
     groups,
@@ -314,20 +305,18 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     }
   );
 
-  if (collectionSource !== 'newUsers') {
-    const imtBuckets = IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket));
-    addGroup(
-      groups,
-      'imt',
-      imtBuckets,
-      {
-        source: 'searchKey/users',
-        allBuckets: IMT_BUCKETS,
-        ...getFilterGroupDebugState('imt', filters?.imt),
-        ...buildExcludeBucketMeta({ group: filters?.imt, allBuckets: IMT_BUCKETS, bucketMap: IMT_BUCKET_FILTER_KEYS, allowedBuckets: imtBuckets }),
-      }
-    );
-  }
+  const imtBuckets = IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket));
+  addGroup(
+    groups,
+    'imt',
+    imtBuckets,
+    {
+      source: 'searchKey/users',
+      allBuckets: IMT_BUCKETS,
+      ...getFilterGroupDebugState('imt', filters?.imt),
+      ...buildExcludeBucketMeta({ group: filters?.imt, allBuckets: IMT_BUCKETS, bucketMap: IMT_BUCKET_FILTER_KEYS, allowedBuckets: imtBuckets }),
+    }
+  );
 
   return groups;
 };
@@ -508,15 +497,21 @@ const normalizeSignatureValue = value => {
 const buildRawRulesSignature = rawRules => String(rawRules || '').trim();
 
 
-const buildMatchingIndexCacheMeta = ({ filterSignature = '', collectionSource = 'users', ownerId = '', accessUserId = '' } = {}) => ({
+const buildMatchingIndexCacheMeta = ({ filterSignature = '', ownerId = '', accessUserId = '' } = {}) => ({
   filterSignature: String(filterSignature || ''),
-  collectionSource: String(collectionSource || 'users'),
   ownerId: String(ownerId || ''),
   accessUserId: String(accessUserId || ''),
 });
 
+/**
+ * Ключ кешу сторінок індексу.
+ *
+ * Колекції в ключі більше немає — вона одна. Замість неї стоїть `accessScoped`:
+ * видача глядача з правилами додаткового доступу залежить від самих правил, і
+ * змішувати її з видачею без правил у одному кеші не можна.
+ */
 export const buildMatchingIndexQueryKey = ({
-  collectionSource = 'users',
+  accessScoped = false,
   filters = {},
   viewMode = 'default',
   ownerId = '',
@@ -527,12 +522,11 @@ export const buildMatchingIndexQueryKey = ({
 } = {}) => {
   const relevantViewMode = viewMode === 'favorites' || viewMode === 'dislikes' ? viewMode : 'default';
   return `matchingIndex:${serializeQueryFilters(normalizeSignatureValue({
-    collectionSource,
     filters: normalizeSignatureValue(filters || {}),
     viewMode: relevantViewMode,
     ownerId: String(ownerId || accessUserId || '').trim(),
     accessUserId: String(accessUserId || ownerId || '').trim(),
-    accessSnapshot: collectionSource === 'newUsers'
+    accessSnapshot: accessScoped
       ? {
           rawRulesSignature: buildRawRulesSignature(rawRules),
           searchKeySetKeys: normalizeSearchKeySetKeys(searchKeySetKeys),
@@ -542,26 +536,17 @@ export const buildMatchingIndexQueryKey = ({
   }))}`;
 };
 
-const isCachedCardCompatible = (card, collectionSource) => {
-  if (!card?.userId) return false;
-  const cachedSource = card.__sourceCollection
-    || (isValidMatchingUserId(card.userId) ? 'users' : 'newUsers');
-  if (collectionSource === 'users') return cachedSource === 'users' || cachedSource === undefined;
-  if (collectionSource === 'newUsers') return cachedSource === 'newUsers';
-  return true;
-};
-
-const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds, collectionSource }) => {
+const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds }) => {
   if (!ids.length || typeof hydrateUsersByIds !== 'function') return [];
   const cachedById = new Map();
   const missingIds = [];
   ids.forEach(id => {
     const cached = getCard(id);
-    if (cached && isCachedCardCompatible(cached, collectionSource)) {
+    if (cached?.userId || (cached && id)) {
       cachedById.set(id, {
         ...cached,
         userId: id,
-        __sourceCollection: cached.__sourceCollection || collectionSource,
+        __sourceCollection: resolveLegacyCollectionForId(cached.__sourceCollection, id),
         __fromCardCache: true,
       });
     } else {
@@ -578,7 +563,10 @@ const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds, collectionSource })
   return ids
     .map(id => map.get(id))
     .filter(Boolean)
-    .map(user => ({ ...user, __sourceCollection: collectionSource }));
+    .map(user => ({
+      ...user,
+      __sourceCollection: resolveLegacyCollectionForId(user.__sourceCollection, user.userId),
+    }));
 };
 
 const normalizeOffset = value => Math.max(0, Number(value) || 0);
@@ -613,8 +601,16 @@ const sliceIndexedBaseIds = ({ ids = [], offset = 0, limit = 1, excludedSet = ne
   };
 };
 
+/**
+ * Сторінка кандидатів із індексу.
+ *
+ * Два шляхи всередині — не дві колекції, а два способи знайти id: загальний
+ * індекс `searchKey` і індекс, звужений правилами додаткового доступу. Другий
+ * вмикається `accessScoped`, тобто наявністю правил у глядача, а не тим, на яку
+ * колекцію він дивиться: колекція одна.
+ */
 export const fetchMatchingIndexedCandidates = async ({
-  collectionSource = 'users',
+  accessScoped = false,
   filters = {},
   rawRules = '',
   accessUserId = '',
@@ -623,24 +619,23 @@ export const fetchMatchingIndexedCandidates = async ({
   limit = 1,
   excludeIds = [],
   hydrateUsersByIds,
-  newUsersIndexReader = getIndexedNewUsersIdsByRules,
+  accessScopedIndexReader = getIndexedNewUsersIdsByRules,
   viewMode = 'default',
   ownerId = '',
   useIndexIdCache = true,
 } = {}) => {
-  const filterGroups = buildMatchingIndexFilterGroups({ filters, collectionSource });
+  const filterGroups = buildMatchingIndexFilterGroups({ filters });
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
   const safeOffset = normalizeOffset(offset);
   const safeLimit = normalizeLimit(limit);
   const filterSignature = serializeQueryFilters(normalizeSignatureValue(filters || {}));
   const cacheMeta = buildMatchingIndexCacheMeta({
     filterSignature,
-    collectionSource,
     ownerId: String(ownerId || '').trim(),
     accessUserId: String(accessUserId || '').trim(),
   });
   const cacheKey = buildMatchingIndexQueryKey({
-    collectionSource,
+    accessScoped,
     filters,
     viewMode,
     ownerId,
@@ -651,7 +646,7 @@ export const fetchMatchingIndexedCandidates = async ({
   });
 
   const readCachedPage = () => {
-    if (!useIndexIdCache || collectionSource === 'newUsers') return null;
+    if (!useIndexIdCache || accessScoped) return null;
     const cached = getIndexIdsByQuery(cacheKey, {
       requiredComplete: true,
       expectedMeta: cacheMeta,
@@ -673,7 +668,7 @@ export const fetchMatchingIndexedCandidates = async ({
       offset: safeOffset,
       limit: safeLimit,
     });
-    const users = await hydrateOrderedUsers({ ids: cachedPage.pageIds, hydrateUsersByIds, collectionSource });
+    const users = await hydrateOrderedUsers({ ids: cachedPage.pageIds, hydrateUsersByIds });
     return {
       usedIndex: true,
       usedIndexIdCache: true,
@@ -689,13 +684,13 @@ export const fetchMatchingIndexedCandidates = async ({
   }
   console.info('[Matching][indexedProvider] cache miss', {
     cacheKey,
-    collectionSource,
+    accessScoped,
     offset: safeOffset,
     limit: safeLimit,
   });
 
-  if (collectionSource === 'newUsers') {
-    const indexed = await newUsersIndexReader({
+  if (accessScoped) {
+    const indexed = await accessScopedIndexReader({
       rawRules,
       accessUserId,
       searchKeySetsOfExactUser: searchKeySetKeys,
@@ -709,7 +704,7 @@ export const fetchMatchingIndexedCandidates = async ({
     const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
     const nextOffset = Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : safeOffset + userIds.length;
     const hasMore = Boolean(indexed?.hasMore);
-    const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds, collectionSource });
+    const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds });
     return {
       usedIndex: true,
       usedIndexIdCache: false,
@@ -802,7 +797,7 @@ export const fetchMatchingIndexedCandidates = async ({
     limit: safeLimit,
     excludedSet,
   });
-  const users = await hydrateOrderedUsers({ ids: pageIds, hydrateUsersByIds, collectionSource: 'users' });
+  const users = await hydrateOrderedUsers({ ids: pageIds, hydrateUsersByIds });
 
   return {
     usedIndex: true,
@@ -843,17 +838,19 @@ export const isAllowedIdForMatchingCollection = (id, collection = 'users') =>
   collection === 'newUsers' ? isShortMatchingUserId(id) : isValidMatchingUserId(id);
 
 /**
- * Чи належить картка тій колекції, на яку показує стрічка.
+ * У якій legacy-колекції лежить сире тіло цієї анкети.
  *
- * Формат id відповідає на це однозначно (див. `isValidMatchingUserId`), тож
- * окремого поля в картці для цього не треба. `__sourceCollection` лишається
- * поважаним, коли він є: повна анкета, прочитана напряму з колекції, знає своє
- * джерело точно, і здогадуватись за id там нема потреби.
+ * Стрічці це вже не потрібно: колекція у вебі одна, і дека в неї одна. Але
+ * дзеркалення в мобільну базу ще існує, і воно мусить знати, куди писати —
+ * `users` чи `newUsers`. Відповідь дає формат id, а явне значення (коли анкету
+ * прочитали прямо з колекції) поважається як точніше.
+ *
+ * Коли `newUsers` не стане, ця функція не зміниться: коротких id просто
+ * більше не зʼявлятиметься.
  */
-export const matchesMatchingCollectionSource = (user, collection = 'users') => {
-  const source = user?.__sourceCollection;
-  if (source === 'users' || source === 'newUsers') return source === collection;
-  return isAllowedIdForMatchingCollection(user?.userId, collection);
+export const resolveLegacyCollectionForId = (explicitSource, userId) => {
+  if (explicitSource === 'users' || explicitSource === 'newUsers') return explicitSource;
+  return isValidMatchingUserId(String(userId || '').trim()) ? 'users' : 'newUsers';
 };
 export const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
@@ -1239,7 +1236,6 @@ export const applyMatchingUiFiltersToUsers = ({
   dislikeUsers = {},
   excludeReactionUsers = false,
   roleIndexSets,
-  collectionSource,
   viewMode = 'default',
   filterMainFn = passthroughFilterMain,
 }) => {
@@ -1269,19 +1265,12 @@ export const applyMatchingUiFiltersToUsers = ({
     filterMainDislikeUsers
   )
     .map(([, u]) => u)
-    .filter(u => (
-      u?.__sourceCollection === 'newUsers' || u?.publish !== false
-    ))
+    // Явно наданий доступ б'є `publish`: правила додаткового доступу для того й
+    // існують, щоб показати картку, яку глядач інакше не побачив би.
+    .filter(u => u?.__matchingAccessAllowed === true || u?.publish !== false)
     .filter(u => (
       !excludeReactionUsers ||
       (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
-    ))
-    .filter(u => (
-      isReactionViewMode(viewMode) ||
-      // Search spans both collections by design: which one the drawer's source
-      // selector points at governs the feed, not what a query is allowed to find.
-      viewMode === 'search' ||
-      matchesMatchingCollectionSource(u, collectionSource)
     ));
 
   return baseUsers;
@@ -1366,7 +1355,6 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   rawRules,
   accessUserId,
   searchKeySetKeys,
-  collectionSource = 'newUsers',
   filters = {},
   excludeIds = [],
   offset = 0,
@@ -1381,16 +1369,17 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   const normalizedSearchKeySetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
 
   const indexRequestDebugData = {
-    collectionSource,
     accessUserId: normalizedAccessUserId,
     rawRules,
     searchKeySetsOfExactUser: searchKeySetKeys,
     offset,
     limit,
-    filterGroups: buildMatchingIndexFilterGroups({ filters, collectionSource }),
+    filterGroups: buildMatchingIndexFilterGroups({ filters }),
   };
 
-  if (collectionSource === 'newUsers' && normalizedSearchKeySetKeys.length === 0) {
+  // Без ключів наборів правила доступу нічого не звужують — а віддати за ними
+  // всю колекцію означало б роздати доступ, якого ніхто не давав.
+  if (normalizedSearchKeySetKeys.length === 0) {
     const reason = 'no searchKeySets data';
     console.info('[Matching][additionalNewUsers] access scope empty', {
       ...indexRequestDebugData,
@@ -1407,7 +1396,7 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   debugAdditionalToast(normalizedAccessUserId, 'before getIndexedNewUsersIdsByRules', indexRequestDebugData);
 
   const indexed = await fetchMatchingIndexedCandidates({
-    collectionSource: 'newUsers',
+    accessScoped: true,
     filters,
     rawRules,
     accessUserId: normalizedAccessUserId,
@@ -1423,12 +1412,12 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
         return rethrowMatchingStageError(error, 'profile-hydration');
       }
     },
-    newUsersIndexReader: async args => {
+    accessScopedIndexReader: async args => {
       try {
         return await getIndexedNewUsersIdsByRules({
           ...args,
           fetchMissingBuckets: true,
-          requireSearchKeySetKeys: collectionSource === 'newUsers',
+          requireSearchKeySetKeys: true,
           debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
           debugToast: (message, data) => debugAdditionalToast(normalizedAccessUserId, message, data),
         });
@@ -1478,7 +1467,6 @@ export const fetchFilteredMatchingSourceChunk = ({
   targetVisibleCount,
   initialCursor,
   exclude = new Set(),
-  collectionSource = 'users',
   parsedAdditionalAccessRules = [],
   filters = {},
   isAdmin = false,
@@ -1487,13 +1475,15 @@ export const fetchFilteredMatchingSourceChunk = ({
   roleIndexSets = null,
   filterMainFn = passthroughFilterMain,
   fetchUsersByLastLogin2,
-  fetchUsersByLastLogin2FromCollection,
   fetchMatchingCardsPage,
   hydrateUsersByIds,
   onPart,
   onDiagnosticEvent,
 }) => {
-  if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
+  // Глядач із правилами додаткового доступу отримує деку не звідси, а з
+  // індексу, звуженого його правилами: послідовне читання колекції віддало б
+  // йому картки, яких він бачити не має.
+  if (parsedAdditionalAccessRules.length > 0) {
     return Promise.resolve({
       users: [],
       lastKey: initialCursor ?? null,
@@ -1525,13 +1515,9 @@ export const fetchFilteredMatchingSourceChunk = ({
     // а проєкція з пʼяти полів, і його треба догідратувати.
     isHydrated: user => Boolean(user) && !user.__limitedProfile,
     maxSourceCards: 500,
-    debugLabel: `matchingSourceBackfill:${collectionSource}`,
+    debugLabel: 'matchingSourceBackfill',
     fetchSourcePage: async ({ limit: sourceLimit, cursor }) => {
-      const readProfilePage = () => (
-        collectionSource === 'newUsers'
-          ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
-          : fetchUsersByLastLogin2(sourceLimit, cursor)
-      );
+      const readProfilePage = () => fetchUsersByLastLogin2(sourceLimit, cursor);
 
       // Читач мусить знати, чим саме він зараз читає стрічку: різниця між
       // проєкцією і повною анкетою — це порядок величини трафіку, і мовчазне
@@ -1547,7 +1533,6 @@ export const fetchFilteredMatchingSourceChunk = ({
           status: 'completed',
           feedSource,
           reason,
-          collectionSource,
           errorCode,
           errorMessage,
         });
@@ -1555,16 +1540,6 @@ export const fetchFilteredMatchingSourceChunk = ({
 
       if (typeof fetchMatchingCardsPage !== 'function') {
         reportFeedSource('profiles', 'pager-unavailable');
-        return readProfilePage();
-      }
-
-      // Індекс стрічки — це рівно показані картки колекції `users`. `newUsers`
-      // поля `publish` не має взагалі, її анкети користувачам не показуються, і
-      // `feedDate` у них не зʼявляється — тобто питати індекс за цю деку нема
-      // про що. Адмін дивиться `newUsers` повними анкетами, і повний доступ у
-      // нього вже є.
-      if (collectionSource === 'newUsers') {
-        reportFeedSource('profiles', 'new-users-deck');
         return readProfilePage();
       }
 
@@ -1588,7 +1563,7 @@ export const fetchFilteredMatchingSourceChunk = ({
           reportFeedSource('matchingCards', '');
           return cardsPage;
         }
-        console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму', { collectionSource });
+        console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму');
         reportFeedSource('profiles', 'index-empty');
       } catch (error) {
         console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
@@ -1598,11 +1573,7 @@ export const fetchFilteredMatchingSourceChunk = ({
       return readProfilePage();
     },
     filterSourceUsers: sourceUsers => {
-      if (!isAdmin) {
-        return sourceUsers.filter(
-          user => matchesMatchingCollectionSource(user, collectionSource) && !exclude.has(user.userId)
-        );
-      }
+      if (!isAdmin) return sourceUsers.filter(user => !exclude.has(user.userId));
 
       return applyMatchingSearchKeyFilters(
         filterMainFn(
@@ -1614,14 +1585,12 @@ export const fetchFilteredMatchingSourceChunk = ({
         ).map(([, user]) => user),
         filters,
         roleIndexSets
-      ).filter(
-        user => matchesMatchingCollectionSource(user, collectionSource) && !exclude.has(user.userId)
-      );
+      ).filter(user => !exclude.has(user.userId));
     },
     hydrateUsersByIds,
     decorateUser: user => ({
       ...user,
-      __sourceCollection: collectionSource === 'newUsers' ? 'newUsers' : 'users',
+      __sourceCollection: resolveLegacyCollectionForId(user.__sourceCollection, user.userId),
     }),
     onPart,
     onDiagnosticEvent,

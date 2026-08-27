@@ -1,44 +1,37 @@
-import {
-  isAllowedIdForMatchingCollection,
-  matchesMatchingCollectionSource,
-} from '../matchingDataProvider';
+import { resolveLegacyCollectionForId } from '../matchingDataProvider';
 
 const LONG_ID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
 const SHORT_ID = 'mQ7x2';
 
-describe('стрічка питає картку про джерело, а не гадає за довжиною id', () => {
-  // Замір на живих даних: у `matchingCards` 1650 карток із довгим id, а
-  // джерело `users` мають лише 379. Тобто на здогадці 1271 картка `newUsers`
-  // пройшла б як своя.
-
-  it('картка з довгим id, але з newUsers, не потрапляє у стрічку users', () => {
-    const card = { userId: LONG_ID, __sourceCollection: 'newUsers' };
-    // Стара перевірка таку картку пропускала — саме тут і була міна.
-    expect(isAllowedIdForMatchingCollection(card.userId, 'users')).toBe(true);
-    expect(matchesMatchingCollectionSource(card, 'users')).toBe(false);
+/**
+ * Колекція у вебі одна, і стрічка більше нічого не питає про джерело картки.
+ * Питання лишилось одне, і воно не про показ: коли анкету треба віддзеркалити
+ * назад у мобільну базу, куди саме писати — `users` чи `newUsers`.
+ */
+describe('legacy-колекція визначається форматом id', () => {
+  it('довгий id (UID Firebase Auth) — це users', () => {
+    expect(resolveLegacyCollectionForId(undefined, LONG_ID)).toBe('users');
   });
 
-  it('картка з коротким id, але з users, зі стрічки users не випадає', () => {
-    const card = { userId: SHORT_ID, __sourceCollection: 'users' };
-    expect(isAllowedIdForMatchingCollection(card.userId, 'users')).toBe(false);
-    expect(matchesMatchingCollectionSource(card, 'users')).toBe(true);
+  it('короткий id (push-ключ) — це newUsers', () => {
+    expect(resolveLegacyCollectionForId(undefined, SHORT_ID)).toBe('newUsers');
   });
 
-  it('пускає картку в її власну стрічку', () => {
-    expect(matchesMatchingCollectionSource({ userId: LONG_ID, __sourceCollection: 'users' }, 'users')).toBe(true);
-    expect(matchesMatchingCollectionSource({ userId: SHORT_ID, __sourceCollection: 'newUsers' }, 'newUsers')).toBe(true);
+  it('явно вказане джерело точніше за здогадку по id', () => {
+    // Анкету прочитали прямо з колекції — вона знає, звідки прийшла, і
+    // здогадуватись тут нема потреби.
+    expect(resolveLegacyCollectionForId('newUsers', LONG_ID)).toBe('newUsers');
+    expect(resolveLegacyCollectionForId('users', SHORT_ID)).toBe('users');
   });
 
-  it('відкочується до довжини id, коли джерело невідоме', () => {
-    // Повна анкета, догідратована повз проєкцію, поля `source` не має.
-    expect(matchesMatchingCollectionSource({ userId: LONG_ID }, 'users')).toBe(true);
-    expect(matchesMatchingCollectionSource({ userId: SHORT_ID }, 'users')).toBe(false);
-    expect(matchesMatchingCollectionSource({ userId: SHORT_ID }, 'newUsers')).toBe(true);
+  it('сміттєве джерело ігнорується — вирішує формат id', () => {
+    expect(resolveLegacyCollectionForId('хтозна', LONG_ID)).toBe('users');
+    expect(resolveLegacyCollectionForId(null, '')).toBe('newUsers');
+    expect(resolveLegacyCollectionForId(undefined, undefined)).toBe('newUsers');
   });
 
-  it('не ламається на сміттєвому вводі', () => {
-    expect(matchesMatchingCollectionSource(null, 'users')).toBe(false);
-    expect(matchesMatchingCollectionSource({}, 'users')).toBe(false);
-    expect(matchesMatchingCollectionSource({ userId: LONG_ID, __sourceCollection: 'хтозна' }, 'users')).toBe(true);
+  it('межа — рівно 20 символів: push-ключ довший за неї не буває', () => {
+    expect(resolveLegacyCollectionForId(undefined, 'a'.repeat(20))).toBe('newUsers');
+    expect(resolveLegacyCollectionForId(undefined, 'a'.repeat(21))).toBe('users');
   });
 });

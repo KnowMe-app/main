@@ -7,6 +7,9 @@ import {
   buildCleanedNewUsers,
   buildMigrationAudit,
   buildCollectionInventory,
+  buildRemainingUsers,
+  buildRemainingNewUsers,
+  buildRemaindersExport,
 } from '../rtdbMigration';
 import {
   deriveSurnameShort,
@@ -673,6 +676,138 @@ describe('незмінність users', () => {
 
     expect(state.originalUsers).toEqual(before);
     expect(users).toEqual(before);
+  });
+});
+
+describe('рештки обох колекцій', () => {
+  // Питання в адміна одне: що не переїхало. Відповідь на нього не можна
+  // складати з `cleaned-newUsers` (там тільки одна колекція) і здогадок про
+  // `users` (звідти нічого не видаляється, тож файл виглядає незміненим).
+
+  const RICH = {
+    name: 'Оля',
+    surname: 'Коваленко',
+    publish: true,
+    lastLogin2: '2026-08-25',
+    phone: '+380',
+    lastAction: 'дзвінок',
+    education: 'вища',
+    createdAt2: '2026-01-01',
+    щосьНевідоме: 'лишиться',
+  };
+
+  const fullRun = state => ['matchingCards', 'profileContacts', 'profileWorkflow', 'profileTechnical', 'profileDetails']
+    .forEach(group => runMigrationGroup(state, group, { getInTouchOwnerUid: OWNER }));
+
+  it('показує по users рівно те, чого жодна група не забрала', () => {
+    const state = createMigrationState({ users: { P1: { ...RICH } }, newUsers: {} });
+    fullRun(state);
+
+    const remaining = buildRemainingUsers(state);
+
+    // Перенесене зникло зі звіту — разом із `publish`, чий сенс тепер
+    // виражений `feedDate`, і `lastLogin2`, який забрав profileTechnical.
+    ['name', 'surname', 'phone', 'lastAction', 'education', 'createdAt2', 'publish', 'lastLogin2']
+      .forEach(field => expect(remaining.P1).not.toHaveProperty(field));
+    // ...а невідоме поле лишилось видимим: заради нього звіт і потрібен.
+    expect(remaining.P1).toEqual({ щосьНевідоме: 'лишиться' });
+  });
+
+  it('не чіпає сам users — залишок рахується по копії', () => {
+    const users = { P1: { ...RICH } };
+    const before = JSON.parse(JSON.stringify(users));
+    const state = createMigrationState({ users, newUsers: {} });
+    fullRun(state);
+
+    expect(users).toEqual(before);
+    expect(state.originalUsers).toEqual(before);
+  });
+
+  it('анкета, з якої забрали все, у звіт не потрапляє', () => {
+    const state = createMigrationState({ users: { P1: { name: 'Оля' } }, newUsers: {} });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(buildRemainingUsers(state)).toEqual({});
+  });
+
+  it('поле, яке не змогли перенести, лишається в залишку', () => {
+    // Конфлікт: картка вже має інше імʼя. Джерело не видаляється — і звіт має
+    // сказати про це, інакше вихід «нічого не сталось» не відрізнити від
+    // «усе перенеслось».
+    const state = createMigrationState({ users: { P1: { name: 'Оля' } }, newUsers: {} });
+    state.targets.matchingCards.P1 = { name: 'Інша' };
+
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(buildRemainingUsers(state).P1).toEqual({ name: 'Оля' });
+  });
+
+  it('по newUsers звіт збігається з тим, що поїде в базу', () => {
+    const state = createMigrationState({ users: {}, newUsers: { N1: { name: 'Ірина', хвіст: 1 } } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(buildRemainingNewUsers(state)).toEqual({ N1: { хвіст: 1 } });
+    expect(buildCleanedNewUsers(state).N1).toEqual({ хвіст: 1 });
+  });
+
+  it('не показує значення пароля навіть у залишку', () => {
+    const state = createMigrationState({
+      users: { P1: { password: 'hunter2' } },
+      newUsers: { N1: { password: 'hunter2' } },
+    });
+
+    const dump = JSON.stringify(buildRemaindersExport(state));
+    expect(dump).not.toContain('hunter2');
+    expect(buildRemainingUsers(state).P1.password).toBe('[не показано]');
+    // А от файл на імпорт мусить нести справжнє значення: він замінює вузол
+    // цілком, і заміщена позначка стерла б людям паролі.
+    expect(buildCleanedNewUsers(state).N1.password).toBe('hunter2');
+  });
+
+  it('віддає обидві колекції одним файлом із підсумком', () => {
+    const state = createMigrationState({
+      users: { P1: { ...RICH } },
+      newUsers: { N1: { name: 'Ірина', хвіст: 1 } },
+    });
+    fullRun(state);
+
+    const dump = buildRemaindersExport(state);
+
+    expect(dump.users.P1).toBeDefined();
+    expect(dump.newUsers.N1).toEqual({ хвіст: 1 });
+    expect(dump.summary.users.sourceRecordCount).toBe(1);
+    expect(dump.summary.newUsers.remainingKeyCount).toBe(1);
+    expect(dump.summary.users.unmappedFieldStats.unknown).toHaveProperty('щосьНевідоме');
+    expect(dump.appliedGroups).toContain('matchingCards');
+  });
+
+  it('звіт — копія, а не посилання на робочий стан', () => {
+    const state = createMigrationState({ users: { P1: { photos: ['https://p'] } }, newUsers: {} });
+    const remaining = buildRemainingUsers(state);
+    remaining.P1.photos.push('https://зайве');
+
+    expect(state.remainingUsers.P1.photos).toEqual(['https://p']);
+  });
+
+  it('рахує залишок обох колекцій у звіті після кожної групи', () => {
+    const state = createMigrationState({
+      users: { P1: { name: 'Оля', хвіст: 1 } },
+      newUsers: { N1: { name: 'Ірина' } },
+    });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(state.report.groups.matchingCards.remainingUsersKeys).toBe(1);
+    expect(state.report.groups.matchingCards.remainingNewUsersKeys).toBe(0);
+    expect(buildMigrationAudit(state).remainingUsers).toEqual({ recordCount: 1, keyCount: 1 });
+  });
+
+  it('reset повертає залишок до вихідного файлу', () => {
+    const state = createMigrationState({ users: { P1: { name: 'Оля' } }, newUsers: {} });
+    runMigrationGroup(state, 'matchingCards');
+    expect(buildRemainingUsers(state)).toEqual({});
+
+    const fresh = createMigrationState({ users: state.originalUsers, newUsers: state.originalNewUsers });
+    expect(buildRemainingUsers(fresh)).toEqual({ P1: { name: 'Оля' } });
   });
 });
 

@@ -26,6 +26,8 @@ const CONTACTS_VIEWER = 'contactsViewerUid0000000000';
 const DELEGATED_READER = 'delegatedReaderUid000000000';
 const PROFILE_OWNER = 'profileOwnerUid00000000000';
 const OUTSIDER = 'outsiderUid000000000000000';
+// Звичайна донорка: роль `ed`, жодних прав адміністрування.
+const SELF_SERVE = 'selfServeUid00000000000000';
 
 const CARD = 'someOtherProfileId000000000';
 
@@ -70,6 +72,7 @@ await testEnv.withSecurityRulesDisabled(async context => {
     [DELEGATED_READER]: { name: 'Делегат', multiDataSourceUserIds: { [SUPERADMIN]: true } },
     [PROFILE_OWNER]: { name: 'Власниця', userRole: 'ed' },
     [OUTSIDER]: { name: 'Стороння', userRole: 'ed' },
+    [SELF_SERVE]: { name: 'Донорка', userRole: 'ed' },
     [CARD]: { name: 'Картка' },
   });
   await set(ref(db, 'matchingCards'), {
@@ -341,6 +344,56 @@ await it('публікація — це запис самої лише дати'
 
 await it('feedDate має бути рядком', () =>
   assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), 20260826)));
+
+// Застосунок має жити без адміністрування: людина заводить анкету, публікує
+// її, ховає — і все це без жодного погодження. Кожен крок тут — те, що робить
+// сама користувачка зі своєю анкетою.
+describe('самообслуговування: анкета живе без адміна');
+
+await it('заводить власну картку стрічки', () =>
+  assertSucceeds(update(ref(db(SELF_SERVE), '/'), {
+    [`matchingCards/${SELF_SERVE}/name`]: 'Донорка',
+    [`matchingCards/${SELF_SERVE}/birth`]: '01.01.1995',
+    [`matchingCards/${SELF_SERVE}/surnameShort`]: 'Д.',
+  })));
+
+await it('публікує себе — це запис однієї дати', () =>
+  assertSucceeds(set(ref(db(SELF_SERVE), `matchingCards/${SELF_SERVE}/feedDate`), '2026-08-26')));
+
+await it('ховається — це видалення тієї самої дати', () =>
+  assertSucceeds(remove(ref(db(SELF_SERVE), `matchingCards/${SELF_SERVE}/feedDate`))));
+
+await it('заповнює власні деталі, контакти й технічне', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileDetails/${SELF_SERVE}/surname`), 'Донорченко'));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileContacts/${SELF_SERVE}/phone`), '+380'));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/lastLogin2`), '2026-08-26'));
+});
+
+await it('індексує власну анкету — і старі значення, і нові', async () => {
+  // Пошук по контакту тримається на цих індексах. Якби їх могла писати лише
+  // адміністрація, самостійно заведена анкета не знаходилась би взагалі.
+  await assertSucceeds(set(ref(db(SELF_SERVE), `searchKey/users/role/ed/${SELF_SERVE}`), true));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380671112233`), SELF_SERVE));
+  // Старе значення лишається в індексі поруч із новим: змінена пошта — не
+  // зникла пошта, анкету шукають і ті, хто знає лише старий контакт.
+  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380500000000`), SELF_SERVE));
+});
+
+await it('не може підмінити чужу картку', () =>
+  assertFails(set(ref(db(SELF_SERVE), `matchingCards/${CARD}/feedDate`), '2026-08-26')));
+
+await it('відгук користувача видно всім авторизованим', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `comments/${CARD}/c1`), {
+    text: 'відгук', authorId: SELF_SERVE, createdAt: 1, visibility: 'public',
+  }));
+  await assertSucceeds(get(ref(db(OUTSIDER), `comments/${CARD}`)));
+  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `comments/${CARD}`)));
+});
+
+await it('чужий відгук підмінити не можна', () =>
+  assertFails(set(ref(db(OUTSIDER), `comments/${CARD}/c1`), {
+    text: 'підміна', authorId: OUTSIDER, createdAt: 2, visibility: 'public',
+  })));
 
 describe('legacy /users лишається як був');
 

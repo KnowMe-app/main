@@ -45,7 +45,6 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
           no: false,
         },
       },
-      collectionSource: 'newUsers',
     });
 
     expect(groups).toEqual(expect.arrayContaining([
@@ -71,7 +70,6 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
         bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: false },
         rh: { '+': true, '-': true, other: true, empty: false },
       },
-      collectionSource: 'newUsers',
     });
 
     expect(groups.find(group => group.indexName === 'role')?.values).not.toContain('no');
@@ -79,7 +77,10 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
     expect(groups.find(group => group.indexName === 'blood')?.values).not.toContain('no');
   });
 
-  it('keeps derived imt filters out of additional newUsers searchKeySets', () => {
+  it('будує групу imt для всієї колекції — деки, з якої її прибирали, більше немає', () => {
+    // Раніше `imt` не потрапляв у групи на деці `newUsers`: похідний індекс
+    // існував лише в корені `users`. Прогін індексації тепер один і накриває
+    // обидва корені, тож і читати цю групу можна для будь-якої анкети.
     const { buildMatchingIndexFilterGroups } = loadModule();
 
     const groups = buildMatchingIndexFilterGroups({
@@ -93,10 +94,9 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
           no: false,
         },
       },
-      collectionSource: 'newUsers',
     });
 
-    expect(groups.some(group => group.indexName === 'imt')).toBe(false);
+    expect(groups.some(group => group.indexName === 'imt')).toBe(true);
   });
 });
 
@@ -208,7 +208,6 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const groups = buildMatchingIndexFilterGroups({
       // The Matching drawer's real role group: no "no"/"empty" checkbox to tick.
       filters: { userRole: { ed: true, ag: false, ip: true, other: true } },
-      collectionSource: 'users',
     });
     const roleGroup = groups.find(group => group.indexName === 'role');
 
@@ -225,7 +224,6 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
 
     const groups = buildMatchingIndexFilterGroups({
       filters: { rh: { '+': true, '-': false, other: false } },
-      collectionSource: 'users',
     });
     const bloodGroup = groups.find(group => group.indexName === 'blood');
 

@@ -29,18 +29,21 @@ describe('дзеркалення анкет у matchingCards', () => {
     const index = read('../utils/matchingCardIndex.js');
     expect(index).toContain('if (feedDate) projection[MATCHING_CARD_FEED_FIELD] = feedDate;');
 
-    // І лише показаній картці з датою, і лише з колекції `users`: наявність
-    // ключа — це і є право показу, а стрічка збирається з однієї колекції.
-    expect(index).toMatch(/if \(source !== 'users'\) return '';/);
+    // І лише показаній картці з датою. Колекція тут ні до чого: анкета,
+    // створена у вебі, має push-ключ, і умова «лише з users» не пускала б її
+    // у стрічку ніколи.
     expect(index).toMatch(/if \(!normalizePublish\(data\?\.publish\)\) return '';/);
+    expect(index).not.toContain("if (source !== 'users') return '';");
   });
 });
 
 describe('чим саме читається стрічка', () => {
   it('називає причину, коли сповзає з проєкцій на повні анкети', () => {
     const provider = read('../utils/matchingDataProvider.js');
-    ['index-empty', 'pager-unavailable', 'new-users-deck']
+    ['index-empty', 'pager-unavailable']
       .forEach(reason => expect(provider).toContain(`reportFeedSource('profiles', '${reason}')`));
+    // Причини «дека newUsers» більше немає: дека одна, і стрічка для неї одна.
+    expect(provider).not.toContain('new-users-deck');
     expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
     expect(provider).toContain("reportFeedSource('matchingCards', '')");
   });

@@ -118,20 +118,38 @@ describe('buildMatchingCardProjection', () => {
     ).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
   });
 
-  it('картка з newUsers у стрічку не потрапляє за жодних умов', () => {
-    // Стрічка — це показані анкети `users`. У `newUsers` поля `publish` немає
-    // взагалі, а її картки користувачам не показуються; ключа стрічки їм не
-    // дають навіть тоді, коли в даних випадково є і дата, і publish.
-    const newUserCard = buildMatchingCardProjection('short', {
+  it('формат id більше не вирішує, чи картка в стрічці', () => {
+    // Колекція у вебі одна. Анкета, створена у вебі, отримує push-ключ — і
+    // умова «в стрічку лише з users» не пускала б її туди ніколи, скільки б
+    // разів її не опублікували.
+    const shortIdCard = buildMatchingCardProjection('short', {
       name: 'A', lastLogin2: '2026-08-19', publish: true,
     });
+    expect(shortIdCard[MATCHING_CARD_FEED_FIELD]).toBe('2026-08-19');
 
-    expect(newUserCard).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
-
-    const usersCard = buildMatchingCardProjection('a'.repeat(28), {
+    const longIdCard = buildMatchingCardProjection('a'.repeat(28), {
       name: 'A', lastLogin2: '2026-08-19', publish: true,
     });
-    expect(usersCard[MATCHING_CARD_FEED_FIELD]).toBe('2026-08-19');
+    expect(longIdCard[MATCHING_CARD_FEED_FIELD]).toBe('2026-08-19');
+  });
+
+  it('нова анкета без жодного логіна все одно стає в стрічку', () => {
+    // Анкету щойно створили й одразу опублікували: `lastLogin2` у неї ще
+    // немає, і без запасної дати вона лишилась би поза стрічкою до першого
+    // логіна — тобто для профілю, створеного кимось іншим, назавжди.
+    const card = buildMatchingCardProjection('freshPushKey00000000', {
+      name: 'A', publish: true, createdAt2: '2026-08-27',
+    });
+
+    expect(card[MATCHING_CARD_FEED_FIELD]).toBe('2026-08-27');
+  });
+
+  it('без publish дата створення в стрічку не пускає', () => {
+    const card = buildMatchingCardProjection('freshPushKey00000000', {
+      name: 'A', createdAt2: '2026-08-27',
+    });
+
+    expect(card).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
   });
 
   it('логін не публікує анкету, яка не була показана', () => {

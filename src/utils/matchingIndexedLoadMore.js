@@ -37,7 +37,6 @@ export const collectMatchingIndexedLoadMorePage = async ({
       ...collectedUserIds,
     ]);
     const indexed = await fetchMatchingIndexedCandidates({
-      collectionSource: 'users',
       filters,
       viewMode,
       ownerId,

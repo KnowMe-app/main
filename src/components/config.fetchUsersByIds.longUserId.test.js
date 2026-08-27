@@ -9,7 +9,7 @@ describe('fetchUsersByIds long-format user fallback handling', () => {
   );
 
   it('settles both long-id reads and accepts marked or recognizable legacy fallbacks', () => {
-    expect(body).toContain('if (!source && isLongFormatUserId(id))');
+    expect(body).toContain('if (isLongFormatUserId(id))');
     expect(body).toContain('const [usersResult, newUsersResult] = await Promise.allSettled([');
     expect(body).toContain('isFullProfileFallbackData(newUsersData)');
     expect(body).toContain('isLegacyFullProfileFallbackData(newUsersData)');
@@ -17,12 +17,14 @@ describe('fetchUsersByIds long-format user fallback handling', () => {
     expect(body).toContain("__sourceCollection: useFallback ? 'newUsers' : 'users'");
   });
 
-  it('retains an unscoped cached card while keeping mismatched scoped reads clean', () => {
-    expect(body).toContain('if (cached && !source) result[id] = cached;');
-    expect(body).toContain('return null;');
+  it('віддає кешовану картку, але перечитує ту, що без позначки джерела', () => {
+    // Картка без `__sourceCollection` лишилась від попередньої моделі даних.
+    // Роздати її як є означало б показати анкету, зібрану за старими правилами.
+    expect(body).toContain('result[id] = cached;');
+    expect(body).toContain("if (source !== 'users' && source !== 'newUsers') missingIds.push(id);");
   });
 
   it('still fans out to both collections for short-format ids', () => {
-    expect(body).toContain("const readSources = source ? [source] : ['users', 'newUsers'];");
+    expect(body).toContain("const readSources = ['users', 'newUsers'];");
   });
 });
