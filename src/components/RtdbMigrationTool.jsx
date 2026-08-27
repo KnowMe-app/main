@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
+import { ref as dbRef, update as dbUpdate } from 'firebase/database';
 
 import {
   MIGRATION_GROUPS,
@@ -17,12 +18,17 @@ import {
   CLEANED_COLLECTIONS_KIND,
 } from 'utils/rtdbMigration';
 import {
+  UPLOAD_CHUNK_SIZE,
+  countUploadEntries,
+  uploadCollection,
+} from 'utils/rtdbMigrationUpload';
+import {
   PROFILE_NODES,
   OWNER_MULTI_DATA_FIELDS,
   CLEANED_COLLECTION_NOISE_FIELDS,
   CLEANED_COLLECTION_PRESERVED_FIELDS,
 } from 'utils/profileNodeSchema';
-import { auth } from './config';
+import { auth, database } from './config';
 import PageNavMenu from './PageNavMenu';
 import {
   KmCard,
@@ -36,16 +42,20 @@ import {
 /**
  * Локальний інструмент міграції RTDB.
  *
- * У нього немає жодного шляху до Firebase — ані на читання, ані на запис. Він
- * бере локальні `users.json` / `newUsers.json`, розкладає їх по нових вузлах у
- * памʼяті браузера і віддає файлами. У базу вони потрапляють ручним імпортом,
- * після того як людина подивилась на звіт.
+ * Рахує він завжди локально: бере `users.json` / `newUsers.json`, розкладає їх
+ * по нових вузлах у памʼяті браузера і показує звіт. Жодна кнопка міграції в
+ * базу не пише — `Apply` міняє лише копію в памʼяті.
  *
- * Так зроблено не з обережності взагалі, а через дві конкретні речі. По-перше,
- * міграція видаляє поля з `newUsers`, і помилка тут незворотна — тож між
- * рішенням скрипта і записом у базу стоїть людина. По-друге, це десятки тисяч
- * дрібних записів: одним імпортом вони проходять за секунди, а по одному з
- * браузера — за години, і будь-який обрив лишає базу напівмігрованою.
+ * У базу веде рівно один шлях, і він окремий: кнопка «Залити» біля кожного
+ * новоствореного вузла в розділі «Експорт». Вона не робить `set` на корінь
+ * колекції (правила бази дають `.write` на рівні запису, а не колекції, та й
+ * `set` зніс би сусідні гілки) — вона шле серію `update` порціями по
+ * {@link UPLOAD_CHUNK_SIZE} записів. Тому заливка дописує і перезаписує свої
+ * записи, але нічого не видаляє.
+ *
+ * А от видалення полів із `newUsers` кнопки не має і не матиме: воно
+ * незворотне, і `cleaned-newUsers.json` так і їде ручним імпортом у консоль —
+ * між рішенням скрипта і зникненням даних стоїть людина.
  *
  * Кожна кнопка спершу показує preview, і лише другий клік застосовує план.
  */
@@ -221,7 +231,7 @@ const TableScroll = styled.div`
 const Table = styled.table`
   border-collapse: collapse;
   width: 100%;
-  min-width: 520px;
+  min-width: 640px;
   font-size: 12.5px;
   color: var(--km-text);
 
@@ -303,6 +313,16 @@ const CriticalTitle = styled(SectionTitle)`
 
 const HiddenFileInput = styled.input`
   display: none;
+`;
+
+/* Прогрес заливки стоїть під самою кнопкою: питання «скільки вже пройшло» виникає рівно тут. */
+const UploadStatus = styled.div`
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  font-weight: 700;
+  color: ${({ $status }) => ($status === 'error' ? 'var(--km-danger)' : 'var(--km-muted)')};
+  white-space: normal;
 `;
 
 const downloadJson = (filename, payload) => {
@@ -436,36 +456,48 @@ const OWNER_VALUE_EFFECTS = {
  * Тому шлях імпорту вказаний поруч із кнопкою, а не в інструкції збоку: один
  * рівень вище — і замість оновлення одного вузла ви зносите його сусідів.
  */
-const EXPORT_TARGETS = [
-  {
-    label: 'matchingCards',
-    importPath: 'matchingCards',
-    effect: 'замінює всі картки стрічки',
-    build: state => state.targets[PROFILE_NODES.matchingCards],
-  },
+export const EXPORT_TARGETS = [
   {
     label: 'profileDetails',
     importPath: 'profileDetails',
     effect: 'замінює всі деталі анкет',
     build: state => state.targets[PROFILE_NODES.profileDetails],
+    uploadDepth: 1,
   },
   {
     label: 'profileContacts',
     importPath: 'profileContacts',
     effect: 'замінює всі контакти',
     build: state => state.targets[PROFILE_NODES.profileContacts],
+    uploadDepth: 1,
   },
   {
     label: 'profileWorkflow',
     importPath: 'profileWorkflow',
     effect: 'замінює всі робочі позначки',
     build: state => state.targets[PROFILE_NODES.profileWorkflow],
+    uploadDepth: 1,
   },
   {
     label: 'profileTechnical',
     importPath: 'profileTechnical',
     effect: 'замінює всі технічні дані',
     build: state => state.targets[PROFILE_NODES.profileTechnical],
+    uploadDepth: 1,
+  },
+  /*
+   * matchingCards стоїть після вузлів анкети, а не першим, як раніше: правило
+   * `matchingCards/$uid` пускає картку тільки якщо анкета вже існує хоч в
+   * одному вузлі. Поки джерелом лишається `users`/`newUsers`, воно виконується
+   * і так, але порядок кнопок згори вниз — це і є порядок заливки, і хай він
+   * буде тим, який працює в обидва боки.
+   */
+  {
+    label: 'matchingCards',
+    importPath: 'matchingCards',
+    effect: 'замінює всі картки стрічки',
+    build: state => state.targets[PROFILE_NODES.matchingCards],
+    uploadDepth: 1,
   },
   /*
    * Саме `multiData/{поле}`, а не `multiData`: на рівень вище лежать обране,
@@ -477,6 +509,14 @@ const EXPORT_TARGETS = [
     importPath: path,
     effect: OWNER_VALUE_EFFECTS[field] || 'замінює персональні позначки всіх власників',
     build: state => state.targets.multiDataPatch[field],
+    /*
+     * Двійка, а не одиниця: під `multiData/getInTouch` спершу йде власник, і
+     * лише під ним анкета. Дозвіл на запис стоїть саме на анкеті
+     * (`$ownerId/$userId`), тож порція має адресувати цей рівень — інакше
+     * `update` цілим власником спробував би записати вузол, на якому правил
+     * немає.
+     */
+    uploadDepth: 2,
   })),
   {
     label: 'cleaned-newUsers',
@@ -507,6 +547,13 @@ export const RtdbMigrationTool = () => {
   const [ownerUid, setOwnerUid] = useState(() => auth?.currentUser?.uid || '');
   const [plans, setPlans] = useState({});
   const [audit, setAudit] = useState(null);
+  /*
+   * Стан заливки на кожен вузол окремо: {status, written, total, error}.
+   * Окремо, а не одним прапорцем на всю таблицю, бо саме так їх і натискають —
+   * по одному, дивлячись на результат попереднього.
+   */
+  const [uploads, setUploads] = useState({});
+  const uploadingRef = useRef(false);
   // Робочий стан живе в ref, а не в state: він великий і мутується на місці.
   // Лічильник — єдиний спосіб сказати React, що з нього треба перечитати.
   const [, bumpRevision] = useState(0);
@@ -621,6 +668,88 @@ export const RtdbMigrationTool = () => {
     refreshAudit();
     toast.success(`${group}: застосовано`);
   }, [ownerUid, plans, refreshAudit]);
+
+  /**
+   * Залити один вузол у базу.
+   *
+   * Пише не `set` на корінь колекції, а серію `update` на глибині записів —
+   * тобто дописує і перезаписує свої анкети, не чіпаючи сусідніх. Це навмисно
+   * слабша операція, ніж імпорт у консолі: імпорт замінює вузол цілком, і
+   * повторний захід ним стер би те, що заливка попереднього дня вже принесла.
+   */
+  const handleUpload = useCallback(async target => {
+    if (!stateRef.current) return;
+    if (uploadingRef.current) {
+      toast.error('Спершу дочекайтесь поточної заливки');
+      return;
+    }
+
+    const payload = target.build(stateRef.current);
+    const total = countUploadEntries(payload, target.uploadDepth);
+    if (!total) {
+      toast.error(`${target.label}: нічого заливати — спершу застосуйте потрібні групи`);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Залити «${target.label}» у базу?\n\n`
+      + `Шлях: ${target.importPath}\n`
+      + `Записів: ${formatCount(total)} (порціями по ${UPLOAD_CHUNK_SIZE})\n\n`
+      + 'Це запис у РЕАЛЬНУ базу. Записи з тими самими ключами будуть перезаписані; '
+      + 'усе інше в цьому вузлі лишиться недоторканим.',
+    );
+    if (!confirmed) return;
+
+    uploadingRef.current = true;
+    setUploads(current => ({
+      ...current,
+      [target.label]: { status: 'running', written: 0, total, error: null },
+    }));
+
+    const result = await uploadCollection(payload, {
+      path: target.importPath,
+      depth: target.uploadDepth,
+      write: (path, patch) => dbUpdate(dbRef(database, path), patch),
+      onProgress: ({ written }) => {
+        setUploads(current => ({
+          ...current,
+          [target.label]: { ...current[target.label], written },
+        }));
+      },
+    });
+
+    uploadingRef.current = false;
+
+    if (result.error) {
+      console.error('[RtdbMigrationTool] заливка обірвалась', result.error);
+      setUploads(current => ({
+        ...current,
+        [target.label]: {
+          status: 'error',
+          written: result.written,
+          total: result.total,
+          error: result.error?.message || 'невідома помилка',
+        },
+      }));
+      toast.error(
+        `${target.label}: обірвалось на ${formatCount(result.written)} з ${formatCount(result.total)}. `
+        + 'Повторний запуск перезаллє з початку — це безпечно.',
+      );
+      return;
+    }
+
+    setUploads(current => ({
+      ...current,
+      [target.label]: {
+        status: 'done',
+        written: result.written,
+        total: result.total,
+        error: null,
+        skipped: result.skipped,
+      },
+    }));
+    toast.success(`${target.label}: залито ${formatCount(result.written)} записів у ${target.importPath}`);
+  }, []);
 
   const handleReset = useCallback(() => {
     if (!stateRef.current) return;
@@ -818,27 +947,79 @@ export const RtdbMigrationTool = () => {
                   <tr>
                     <th>файл</th>
                     <th>імпортувати рівно в</th>
+                    <th>залити в базу</th>
                     <th>що станеться</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {EXPORT_TARGETS.map(target => (
-                    <tr key={target.label}>
-                      <td>
-                        <SmallGhost
-                          type="button"
-                          onClick={() => download(target.label, () => target.build(stateRef.current))}
-                        >
-                          {target.label}.json
-                        </SmallGhost>
-                      </td>
-                      <td><code>{target.importPath}</code></td>
-                      <td>{target.effect}</td>
-                    </tr>
-                  ))}
+                  {EXPORT_TARGETS.map(target => {
+                    const upload = uploads[target.label];
+                    return (
+                      <tr key={target.label}>
+                        <td>
+                          <SmallGhost
+                            type="button"
+                            onClick={() => download(target.label, () => target.build(stateRef.current))}
+                          >
+                            {target.label}.json
+                          </SmallGhost>
+                        </td>
+                        <td><code>{target.importPath}</code></td>
+                        <td>
+                          {/*
+                            Кнопки немає там, де запис у базу означав би не
+                            дозапис, а видалення: `cleaned-newUsers` замінює
+                            вузол цілком, `cleaned-collections` у базу не їде
+                            взагалі. Обидва лишаються файлами.
+                          */}
+                          {target.uploadDepth ? (
+                            <>
+                              <SmallPrimary
+                                type="button"
+                                disabled={upload?.status === 'running'}
+                                onClick={() => handleUpload(target)}
+                              >
+                                {upload?.status === 'running' ? 'Заливаю…' : 'Залити'}
+                              </SmallPrimary>
+                              {upload && (
+                                <UploadStatus $status={upload.status}>
+                                  {upload.status === 'error'
+                                    ? `обірвалось на ${formatCount(upload.written)} з ${formatCount(upload.total)}: ${upload.error}`
+                                    : `${formatCount(upload.written)} з ${formatCount(upload.total)}`}
+                                </UploadStatus>
+                              )}
+                            </>
+                          ) : (
+                            <Note as="span">лише файлом</Note>
+                          )}
+                        </td>
+                        <td>{target.effect}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </Table>
             </TableScroll>
+
+            <Note>
+              «Залити» пише в базу прямо звідси, порціями по {UPLOAD_CHUNK_SIZE} записів, і на
+              глибині самого запису (<code>{'matchingCards/{анкета}'}</code>,{' '}
+              <code>{'multiData/getInTouch/{власник}/{анкета}'}</code>) — саме там, де правила бази
+              дають дозвіл на запис. Тому вона <b>дописує і перезаписує</b> свої записи, але нічого
+              не видаляє: анкета, якої немає у файлі, лишається в базі як була. Це слабша операція,
+              ніж імпорт у консолі, і саме тому її можна повторювати: обірвалась на середині —
+              просто натисніть ще раз.
+            </Note>
+            <Note>
+              Порядок згори вниз: спершу вузли анкети, потім <code>matchingCards</code> (правило
+              пускає картку лише до існуючої анкети), потім <code>multiData</code>. Поки заливка
+              йде, решта кнопок чекає — база й так приймає порції одну за одною.
+            </Note>
+            <Warn>
+              <code>cleaned-newUsers.json</code> кнопки «Залити» не має навмисно. Це не дозапис, а
+              видалення: воно робиться імпортом у консолі, де вузол замінюється цілком, і рішення
+              про нього лишається за людиною.
+            </Warn>
 
             <Row style={{ marginTop: 12 }}>
               <SmallGhost
