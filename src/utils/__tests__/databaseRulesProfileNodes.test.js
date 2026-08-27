@@ -128,8 +128,13 @@ describe('profileContacts — відкриті, але з власним пра�
   // Ховати контакти сьогодні не треба. Цінність окремого вузла в іншому:
   // доступ до нього описаний одним власним правилом, тож звузити його до
   // окремої категорії людей — це правка одного рядка, а не переїзд даних.
-  it('не має читання на рівні колекції — контакти не можна перелічити', () => {
-    expect(rules.profileContacts['.read']).toBeUndefined();
+  it('перелічити контакти може тільки суперадмін', () => {
+    // Колекція цілком потрібна рівно одному: перебудові індексів. Поіменне
+    // читання 26 тисяч анкет — це вже не індексація. Суперадмін і так бачить
+    // кожну анкету поштучно, тож ширшим доступ не стає.
+    const read = rules.profileContacts['.read'];
+    ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
+    expect(read).not.toContain('accessLevel');
     expect(rules.profileContacts['.indexOn']).toBeUndefined();
   });
 
@@ -184,7 +189,9 @@ describe('решта вузлів не стає другим місцем для
     expect(read).toContain('auth.uid == $uid');
     ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
     expect(read).not.toContain('accessLevel');
-    expect(rules.profileTechnical['.read']).toBeUndefined();
+    // Колекцію цілком — теж тільки суперадмін, і теж заради перебудови індексів.
+    ADMIN_UIDS.forEach(uid => expect(rules.profileTechnical['.read']).toContain(uid));
+    expect(rules.profileTechnical['.read']).not.toContain('accessLevel');
   });
 
   it('profileTechnical не приймає device-полів, пароля і прав доступу', () => {
@@ -194,7 +201,8 @@ describe('решта вузлів не стає другим місцем для
   });
 
   it('profileWorkflow лишається внутрішнім і не тримає getInTouch/publish/lastLogin', () => {
-    expect(rules.profileWorkflow['.read']).toBeUndefined();
+    ADMIN_UIDS.forEach(uid => expect(rules.profileWorkflow['.read']).toContain(uid));
+    expect(rules.profileWorkflow['.read']).not.toContain('accessLevel');
     const read = rules.profileWorkflow.$uid['.read'];
     expect(read).toContain("contains('matching')");
     expect(read).toContain("contains('view&write')");

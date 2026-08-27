@@ -255,6 +255,69 @@ const loadCollectionWithIndexCache = async (collection, options = {}) => {
   return data;
 };
 
+/**
+ * Уся анкетна база, зібрана з нових вузлів — під перебудову індексів.
+ *
+ * Індекси мусять будуватись із того ж джерела, з якого читає застосунок.
+ * Інакше після зникнення `newUsers` перебудова тихо давала б порожній індекс,
+ * а пошук — порожню видачу; а до того — індексувала б значення, які веб уже
+ * не показує.
+ *
+ * `publish` — єдиний виняток, і він свідомий: власного вузла в нього немає, ним
+ * володіє мобільний застосунок, і лежить він у `/users`. Тож саме звідти він і
+ * береться, а `feedDate` у картці рахується з нього.
+ *
+ * Читання важке (пʼять вузлів цілком), але це разова адмінська операція, а не
+ * шлях користувача — і саме тому воно йде через той самий кеш колекцій, що й
+ * решта індексацій.
+ */
+const PROFILE_NODE_ROOTS_FOR_INDEXING = [
+  PROFILE_NODES.matchingCards,
+  PROFILE_NODES.profileDetails,
+  PROFILE_NODES.profileContacts,
+  PROFILE_NODES.profileWorkflow,
+  PROFILE_NODES.profileTechnical,
+];
+
+export const loadProfilesFromNodesForIndexing = async (collection, options = {}) => {
+  const [cards, details, contacts, workflow, technical, legacyUsers] = await Promise.all([
+    ...PROFILE_NODE_ROOTS_FOR_INDEXING.map(node => loadCollectionWithIndexCache(node, options)),
+    // Тільки заради `publish`: він лишається за мобільним застосунком.
+    loadCollectionWithIndexCache('users', options),
+  ]);
+
+  const ids = new Set([
+    ...Object.keys(cards || {}),
+    ...Object.keys(details || {}),
+    ...Object.keys(contacts || {}),
+    ...Object.keys(workflow || {}),
+    ...Object.keys(technical || {}),
+  ]);
+
+  const wantUsers = collection !== 'newUsers';
+  const merged = {};
+
+  ids.forEach(id => {
+    if (isUsersCollectionUserId(id) !== wantUsers) return;
+
+    const profile = mergeProfileNodes({
+      userId: id,
+      card: cards?.[id] || null,
+      details: details?.[id] || null,
+      contacts: contacts?.[id] || null,
+      workflow: workflow?.[id] || null,
+      technical: technical?.[id] || null,
+    });
+    if (!profile) return;
+
+    const publish = legacyUsers?.[id]?.publish;
+    if (publish !== undefined) profile.publish = publish;
+    merged[id] = profile;
+  });
+
+  return Object.keys(merged).length ? merged : null;
+};
+
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   const uniqueIds = new Set();
   const { includePrefixMatches = true } = options;
@@ -4343,7 +4406,7 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
   const includeStorageAvatars = options.includeStorageAvatars !== false;
   let usersData;
   try {
-    usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+    usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   } catch (error) {
     throw describeMatchingCardsFailure(error, { stage: 'read', collection });
   }
@@ -4355,8 +4418,12 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
   try {
     const cardsSnapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
     const stalePayload = {};
-    Object.entries(cardsSnapshot.val() || {}).forEach(([id, card]) => {
-      if ((card?.source || 'users') === collection && !usersData[id]) {
+    Object.entries(cardsSnapshot.val() || {}).forEach(([id]) => {
+      // Колекцію картки називає формат id — окремого поля `source` у ній
+      // більше немає. Без цієї перевірки перебудова однієї колекції зносила б
+      // картки другої.
+      const cardCollection = isUsersCollectionUserId(id) ? 'users' : 'newUsers';
+      if (cardCollection === collection && !usersData[id]) {
         stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
       }
     });
@@ -5872,7 +5939,7 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
 };
 
 export const createSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -5921,7 +5988,7 @@ const uploadChunkedSearchKeyIndexUpdates = async (userIds, totalUsers, buildUpda
 };
 
 export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -5948,7 +6015,7 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
 };
 
 export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -5975,7 +6042,7 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
 };
 
 export const createContactSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6002,7 +6069,7 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
 };
 
 export const createRoleSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6029,7 +6096,7 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
 };
 
 export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6056,7 +6123,7 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
 };
 
 export const createAgeSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6083,7 +6150,7 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
 };
 
 export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6118,7 +6185,7 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
 };
 
 export const createReactionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6145,7 +6212,7 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
 };
 
 export const createFieldCountSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6171,7 +6238,7 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
 
 
 const createDerivedSearchKeyIndexInCollection = async (collection, indexName, getIndexSet, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
@@ -6204,7 +6271,7 @@ export const createCountrySearchKeyIndexInCollection = (collection, onProgress, 
 
 export const createLastActionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -6231,7 +6298,7 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
 
 export const createGetInTouchSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
   const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -6289,7 +6356,10 @@ export const createSelectedSearchKeyIndexesInCollection = async (collection, ind
   const uniqueIndexTypes = normalizeSearchKeyIndexTypes(indexTypes).filter(indexType => SEARCH_KEY_INDEX_BUILDERS[indexType]);
   if (!uniqueIndexTypes.length) return;
 
-  const usersData = await loadCollectionWithIndexCache(collection, {
+  // Індекс будується з того ж джерела, з якого читає застосунок. Читати тут
+  // `users`/`newUsers` означало б індексувати те, чого веб уже не показує, — а
+  // після зникнення `newUsers` перебудова просто дала б порожній індекс.
+  const usersData = await loadProfilesFromNodesForIndexing(collection, {
     maxAgeMs: SEARCH_INDEX_COLLECTION_CACHE_TTL_MS,
   });
 
@@ -7612,7 +7682,9 @@ export const fetchUsersByDefaultGetInTouchPaged = options => fetchUsersBySearchK
 // };
 
 export const createSearchIdsInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+  // Те саме джерело, що й у решти індексацій: контакти, за якими будується
+  // `searchId`, живуть у `profileContacts`, а не в legacy-анкеті.
+  const usersData = await loadProfilesFromNodesForIndexing(collection);
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);

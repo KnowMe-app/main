@@ -158,6 +158,60 @@ const PlanSummary = ({ plan }) => {
   );
 };
 
+/**
+ * Куди саме їде кожен файл.
+ *
+ * Імпорт у консолі Firebase — це `set`, а не `update`: він замінює вузол цілком.
+ * Тому шлях імпорту вказаний поруч із кнопкою, а не в інструкції збоку: один
+ * рівень вище — і замість оновлення одного вузла ви зносите його сусідів.
+ */
+const EXPORT_TARGETS = [
+  {
+    label: 'matchingCards',
+    importPath: 'matchingCards',
+    effect: 'замінює всі картки стрічки',
+    build: state => state.targets[PROFILE_NODES.matchingCards],
+  },
+  {
+    label: 'profileDetails',
+    importPath: 'profileDetails',
+    effect: 'замінює всі деталі анкет',
+    build: state => state.targets[PROFILE_NODES.profileDetails],
+  },
+  {
+    label: 'profileContacts',
+    importPath: 'profileContacts',
+    effect: 'замінює всі контакти',
+    build: state => state.targets[PROFILE_NODES.profileContacts],
+  },
+  {
+    label: 'profileWorkflow',
+    importPath: 'profileWorkflow',
+    effect: 'замінює всі робочі позначки',
+    build: state => state.targets[PROFILE_NODES.profileWorkflow],
+  },
+  {
+    label: 'profileTechnical',
+    importPath: 'profileTechnical',
+    effect: 'замінює всі технічні дані',
+    build: state => state.targets[PROFILE_NODES.profileTechnical],
+  },
+  {
+    // Саме `multiData/getInTouch`, а не `multiData`: на рівень вище лежать
+    // обране, коментарі, правки й історія — імпорт туди зніс би їх усі.
+    label: 'multiData-getInTouch',
+    importPath: 'multiData/getInTouch',
+    effect: 'замінює позначки «звʼязатись» усіх власників',
+    build: state => state.targets.multiDataPatch.getInTouch,
+  },
+  {
+    label: 'cleaned-newUsers',
+    importPath: 'newUsers',
+    effect: 'і є видаленням: замінює newUsers версією без перенесених полів',
+    build: state => buildCleanedNewUsers(state),
+  },
+];
+
 export const RtdbMigrationTool = () => {
   const stateRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
@@ -391,40 +445,41 @@ export const RtdbMigrationTool = () => {
       {loaded && (
         <section style={styles.section}>
           <h3 style={styles.heading}>3. Експорт</h3>
+
+          {/*
+            Кожен файл — це ВМІСТ одного вузла, а імпорт у консолі Firebase
+            замінює вузол цілком. Тобто шлях імпорту — не подробиця, а половина
+            операції: той самий файл, залитий на рівень вище, зносить сусідні
+            гілки. Тому шлях стоїть на самій кнопці.
+          */}
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.cell}>файл</th>
+                <th style={styles.cell}>імпортувати рівно в</th>
+                <th style={styles.cell}>що станеться</th>
+              </tr>
+            </thead>
+            <tbody>
+              {EXPORT_TARGETS.map(target => (
+                <tr key={target.label}>
+                  <td style={styles.cell}>
+                    <button
+                      type="button"
+                      style={styles.button}
+                      onClick={() => download(target.label, () => target.build(stateRef.current))}
+                    >
+                      {target.label}.json
+                    </button>
+                  </td>
+                  <td style={styles.cell}><code>{target.importPath}</code></td>
+                  <td style={styles.cell}>{target.effect}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
           <div style={styles.row}>
-            {[
-              [PROFILE_NODES.matchingCards, 'matchingCards'],
-              [PROFILE_NODES.profileDetails, 'profileDetails'],
-              [PROFILE_NODES.profileContacts, 'profileContacts'],
-              [PROFILE_NODES.profileWorkflow, 'profileWorkflow'],
-              [PROFILE_NODES.profileTechnical, 'profileTechnical'],
-            ].map(([node, label]) => (
-              <button
-                key={node}
-                type="button"
-                style={styles.button}
-                onClick={() => download(label, () => stateRef.current.targets[node])}
-              >
-                Download {label}.json
-              </button>
-            ))}
-            <button
-              type="button"
-              style={styles.button}
-              onClick={() => download(
-                'multiData-getInTouch-patch',
-                () => stateRef.current.targets.multiDataPatch.getInTouch,
-              )}
-            >
-              Download multiData-getInTouch-patch.json
-            </button>
-            <button
-              type="button"
-              style={styles.button}
-              onClick={() => download('cleaned-newUsers', () => buildCleanedNewUsers(stateRef.current))}
-            >
-              Download cleaned-newUsers.json
-            </button>
             <button
               type="button"
               style={styles.button}
@@ -434,15 +489,24 @@ export const RtdbMigrationTool = () => {
             </button>
             <button
               type="button"
-              style={styles.primary}
+              style={styles.button}
               onClick={() => download('combined-root-patch', () => buildCombinedRootPatch(stateRef.current))}
             >
               Download combined-root-patch.json
             </button>
           </div>
+
+          <p style={{ ...styles.muted, ...styles.warn }}>
+            combined-root-patch.json — тільки для очей. Не імпортуйте його в корінь: імпорт
+            замінює вузол цілком, а в цьому файлі немає ані <code>users</code>, ані{' '}
+            <code>searchKey</code>, ані решти <code>multiData</code> — вони просто зникнуть.
+            У базу файли їдуть поодинці, кожен у свій шлях із таблиці вище.
+          </p>
           <p style={styles.muted}>
-            combined-root-patch.json навмисно не містить <code>/users</code>: legacy-колекція
-            мобільного застосунку з цього інструмента в базу не їде.
+            <code>cleaned-newUsers.json</code> — це і є видалення: він замінює вузол
+            <code> newUsers</code> версією без перенесених полів. Замінює <b>цілком</b>, тож усе,
+            що записали в <code>newUsers</code> після викачування вихідних файлів, буде втрачено.
+            Тож качайте, мігруйте і заливайте одним заходом, а не через день.
           </p>
         </section>
       )}

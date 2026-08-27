@@ -123,8 +123,19 @@ await it('матчинговий редактор пише контакти — 
 await it('матчинговий переглядач без view&write контактів не пише', () =>
   assertFails(set(ref(db(MATCHING_VIEWER), `profileContacts/${CARD}/telegram`), '@nope')));
 
-await it('контакти не можна перелічити цілою колекцією', () =>
-  assertFails(get(ref(db(CONTACTS_VIEWER), 'profileContacts'))));
+await it('перелічити контакти цілою колекцією може тільки суперадмін', async () => {
+  await assertFails(get(ref(db(CONTACTS_VIEWER), 'profileContacts')));
+  await assertFails(get(ref(db(MATCHING_EDITOR), 'profileContacts')));
+  // Суперадміну колекція потрібна рівно для перебудови індексів: індекс
+  // будується з тих самих вузлів, з яких читає застосунок.
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'profileContacts')));
+});
+
+await it('перебудова індексів читає всі пʼять вузлів цілком', async () => {
+  for (const node of ['matchingCards', 'profileDetails', 'profileContacts', 'profileWorkflow', 'profileTechnical']) {
+    await assertSucceeds(get(ref(db(SUPERADMIN), node)));
+  }
+});
 
 await it('правило контактів окреме — звузити його можна, не чіпаючи стрічки', () => {
   // Саме заради цього вузол і виділявся: `profileContacts` має власний `.read`,
@@ -132,7 +143,12 @@ await it('правило контактів окреме — звузити йо
   // людей — це правка одного рядка, а не переїзд даних.
   const rules = JSON.parse(fs.readFileSync('database.rules.json', 'utf8')).rules;
   if (!rules.profileContacts.$uid['.read']) throw new Error('немає власного .read');
-  if (rules.profileContacts['.read']) throw new Error('колекцію не можна робити читабельною цілком');
+  if (rules.profileContacts.$uid['.read'] === rules.matchingCards['.read']) {
+    throw new Error('правило контактів не має бути тим самим обʼєктом, що й у стрічки');
+  }
+  if (rules.profileContacts['.read'].includes('accessLevel')) {
+    throw new Error('колекцію цілком читає тільки суперадмін');
+  }
   if (!rules.profileContacts.$uid['.write'].includes("contains('profileContacts')")) {
     throw new Error('токен звуження зник із правила запису');
   }

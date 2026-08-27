@@ -166,7 +166,13 @@ const PROFILES = {
   },
   [uid('Empty')]: {
     // Nothing on record at all - the card that must never silently vanish.
+    //
+    // «Нічого» після розділення вузлів все одно означає дату створення: її
+    // ставить `makeNewUser`, і саме вона лишає анкету існувати в
+    // `profileTechnical`. Анкети зовсім без жодного поля не буває — а якби
+    // була, її не було б і в базі.
     userId: uid('Empty'),
+    createdAt2: '2026-01-01',
   },
 };
 
@@ -178,14 +184,28 @@ const ALL_INDEX_TYPES = [
   'bmi', 'country',
 ];
 
+const { resolveFieldOwnerNode } = require('../profileNodeSchema');
+const { buildMatchingCardProjection } = require('../matchingCardIndex');
+
 const buildIndex = async () => {
   mockStore.clear();
   localStorage.clear();
-  // The builders load the collection themselves, so seed the database rather than
-  // hand them data - that way the loader is part of what is under test.
+
+  // Індекс будується з тих самих вузлів, з яких читає застосунок, тож і сів
+  // даних тут розкладений так само — інакше тест перевіряв би джерело, якого
+  // в проді вже немає. Завантажувач лишається частиною того, що тестується.
   Object.entries(PROFILES).forEach(([userId, profile]) => {
+    const card = buildMatchingCardProjection(userId, { ...profile, __sourceCollection: 'users' });
+    Object.entries(card || {}).forEach(([field, value]) => {
+      mockStore.set(`matchingCards/${userId}/${field}`, value);
+    });
+
     Object.entries(profile).forEach(([field, value]) => {
-      mockStore.set(`users/${userId}/${field}`, value);
+      const node = resolveFieldOwnerNode(field);
+      // Поля картки вже поїхали проєкцією; сирих копій у вузлах немає.
+      if (node && node !== 'matchingCards') mockStore.set(`${node}/${userId}/${field}`, value);
+      // `publish` власного вузла не має — ним володіє мобільний застосунок.
+      if (field === 'publish') mockStore.set(`users/${userId}/publish`, value);
     });
   });
 
