@@ -49,7 +49,7 @@ import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
 import { mergeProfileNodes, hasAnyProfileNode } from '../utils/profileNodeMerge';
 import { mergeProfileNodeCollections, PROFILE_NODE_NAMES } from '../utils/profileNodeCollections';
-import { PROFILE_NODES } from '../utils/profileNodeSchema';
+import { PROFILE_NODES, resolveFieldOwnerNode } from '../utils/profileNodeSchema';
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_ORDER_FIELD,
@@ -2196,6 +2196,41 @@ const readProfileNodePart = async (node, id) => {
   }
 };
 
+/**
+ * Що з legacy-анкети ще має право говорити.
+ *
+ * Дзеркалення двостороннє: мобільний застосунок пише в `/users`, і веб мусить
+ * бачити ці зміни. Але накласти legacy цілим шаром не можна — тоді поле, яке у
+ * вебі навмисно стерли, поверталося б із кожним читанням.
+ *
+ * Межу проводить наявність вузла: якщо `profileContacts/{id}` існує, контакти
+ * належать вебу, і legacy про них мовчить — стерте лишається стертим. Якщо
+ * вузла немає, анкета в цій частині ще не переїхала, і legacy — єдиний, хто про
+ * неї щось знає. Поля без власного вузла (`publish`, `userRole`) проходять
+ * завжди: їх ніхто, крім legacy, і не тримає.
+ */
+const legacyFieldsNodesDoNotOwn = (legacy, parts) => {
+  if (!legacy || typeof legacy !== 'object') return null;
+
+  const presentNodes = new Set(
+    Object.entries({
+      [PROFILE_NODES.matchingCards]: parts.card,
+      [PROFILE_NODES.profileDetails]: parts.details,
+      [PROFILE_NODES.profileContacts]: parts.contacts,
+      [PROFILE_NODES.profileWorkflow]: parts.workflow,
+      [PROFILE_NODES.profileTechnical]: parts.technical,
+    })
+      .filter(([, value]) => value && typeof value === 'object' && Object.keys(value).length)
+      .map(([node]) => node),
+  );
+
+  const kept = Object.fromEntries(
+    Object.entries(legacy).filter(([field]) => !presentNodes.has(resolveFieldOwnerNode(field))),
+  );
+
+  return Object.keys(kept).length ? kept : null;
+};
+
 export const readProfileFromNodes = async (userId, options = {}) => {
   const id = String(userId || '').trim();
   if (!id) return null;
@@ -2204,21 +2239,36 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     includeContacts = true,
     includeWorkflow = true,
     includeTechnical = false,
+    // Читати legacy заради полів, яких нові вузли ще не тримають. Дорого на
+    // список (це +2 читання на анкету), дешево на одну анкету — тож вмикається
+    // там, де застарілі дані справді видно: на самій анкеті.
+    withLegacy = false,
     legacy = null,
   } = options;
 
-  const [card, details, contacts, workflow, technical] = await Promise.all([
+  const [card, details, contacts, workflow, technical, legacyUsers, legacyNewUsers] = await Promise.all([
     readProfileNodePart(PROFILE_NODES.matchingCards, id),
     readProfileNodePart(PROFILE_NODES.profileDetails, id),
     includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
     includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
     includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
+    withLegacy && !legacy ? readProfileNodePart('users', id) : null,
+    withLegacy && !legacy ? readProfileNodePart('newUsers', id) : null,
   ]);
 
   const parts = { card, details, contacts, workflow, technical };
   if (!hasAnyProfileNode(parts)) return null;
 
-  const merged = mergeProfileNodes({ userId: id, ...parts, legacy });
+  const legacySnapshot = legacy
+    || (legacyUsers || legacyNewUsers
+      ? { ...(legacyNewUsers || {}), ...(legacyUsers || {}) }
+      : null);
+
+  const merged = mergeProfileNodes({
+    userId: id,
+    ...parts,
+    legacy: legacyFieldsNodesDoNotOwn(legacySnapshot, parts),
+  });
   if (!merged) return null;
 
   // `getInTouch` підмішується з `multiData` — це персональна позначка того, хто
@@ -3390,13 +3440,36 @@ const normalizeIndexedValues = value => Array.isArray(value)
  *
  * Ніколи не кидає: проєкція — це прискорення читання, а не частина збереження.
  */
+/**
+ * Перечитати анкету, щоб зібрати з неї картку стрічки.
+ *
+ * Часткове збереження (`update`) не несе всієї анкети, а картка збирається з
+ * усієї: без перечитування вона згубила б поля, яких у цьому записі не було.
+ * Читається — з нових вузлів, бо саме вони джерело істини; legacy лишається
+ * запасним шляхом для анкет, які ще не переїхали, і зникне разом із собою.
+ */
+const readProfileForMatchingCard = async (collection, id) => {
+  const fromNodes = await readProfileFromNodes(id, { includeTechnical: true });
+  if (fromNodes) return fromNodes;
+
+  try {
+    const snapshot = await get(ref2(database, `${collection}/${id}`));
+    return snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.warn('[matchingCards] анкету не вдалося перечитати для картки', { userId: id, collection, error });
+    return null;
+  }
+};
+
 const runMatchingCardRefresh = async (collection, id, payload, condition) => {
   try {
-    let nextData = payload;
-    if (condition === 'update') {
-      const snapshot = await get(ref2(database, `${collection}/${id}`));
-      nextData = snapshot.exists() ? snapshot.val() : null;
-    }
+    // Перечитане знизу, збережене зверху. `publish` власного вузла не має —
+    // у нових вузлах він виражений наявністю `feedDate` у самій картці, тобто
+    // перечитування дає його *попередній* стан. Без цього накладання зняття
+    // публікації не спрацювало б жодного разу: картка перебудувалась би зі
+    // старою датою і лишилась у стрічці.
+    const stored = condition === 'update' ? await readProfileForMatchingCard(collection, id) : null;
+    const nextData = condition === 'update' ? { ...(stored || {}), ...payload } : payload;
     if (!nextData || typeof nextData !== 'object') return;
     await syncMatchingCardIndex(id, { ...nextData, __sourceCollection: collection });
   } catch (error) {
@@ -3432,10 +3505,13 @@ const matchingCardRefreshes = new Map();
  * Один мультилокаційний `update` від кореня: RTDB застосовує його атомарно, тож
  * анкета не розʼїжджається по вузлах наполовину.
  *
- * Ніколи не кидає. Розділені вузли — це дешевше читання і вужчий доступ, а не
- * частина збереження: якщо на якийсь із них у писача немає прав, анкета все
- * одно має зберегтися. Тиші тут теж немає — відмова йде в консоль із переліком
- * шляхів, які не доїхали.
+ * Ніколи не кидає — але каже, чи щось доїхало. Відмова на одному вузлі не
+ * скасовує решту (права на них різні), а виклик нагорі вирішує сам, чи вважати
+ * збереження провальним: анкета втрачена лише тоді, коли не прийняв ані
+ * жоден вузол, ані legacy. Тиші тут теж немає — відмова йде в консоль із
+ * переліком шляхів, які не доїхали.
+ *
+ * @returns {Promise<boolean>} чи прийняв запис хоч один вузол.
  */
 const fanOutProfileNodes = async (userId, payload) => {
   // `getInTouch` — не поле анкети, а персональна позначка того, хто її поставив,
@@ -3449,7 +3525,8 @@ const fanOutProfileNodes = async (userId, payload) => {
 
   const patch = buildProfileNodePatch(userId, payload);
   const paths = Object.keys(patch);
-  if (!paths.length) return;
+  // Порожній патч — це не відмова: писати не було чого.
+  if (!paths.length) return true;
 
   // Запис іде вузол за вузлом, а не одним патчем від кореня, і саме тому, що
   // мультилокаційний `update` атомарний. Права на нові вузли різні: редактор
@@ -3463,9 +3540,10 @@ const fanOutProfileNodes = async (userId, payload) => {
     return acc;
   }, {});
 
-  await Promise.all(Object.entries(byNode).map(async ([node, nodePatch]) => {
+  const results = await Promise.all(Object.entries(byNode).map(async ([node, nodePatch]) => {
     try {
       await update(ref2(database, '/'), nodePatch);
+      return true;
     } catch (error) {
       console.warn('[profileNodes] вузол не оновлено', {
         userId,
@@ -3473,8 +3551,11 @@ const fanOutProfileNodes = async (userId, payload) => {
         paths: Object.keys(nodePatch),
         error,
       });
+      return false;
     }
   }));
+
+  return results.some(Boolean);
 };
 
 // ---------------------------------------------------------------------------
@@ -3647,6 +3728,49 @@ const collectExplicitRemovals = payload => Object.entries(payload || {})
   .filter(([key, value]) => value === null && key !== 'userId')
   .map(([key]) => key);
 
+/**
+ * Дзеркалення анкети в legacy-колекцію.
+ *
+ * Дзеркалення двостороннє: мобільний застосунок пише в `/users` і читає звідти,
+ * тож веб мусить класти туди свої зміни. Але це саме дзеркало, а не збереження:
+ * коли `/users` перестане підтримуватись — вузол приберуть, права закриють —
+ * запис сюди почне відмовляти, і веб не має від цього падати. Тому відмова тут
+ * не кидається далі, а повертається викликачу, який уже вирішує, чи анкета
+ * взагалі кудись збереглась.
+ *
+ * @returns {Promise<boolean>} чи прийняла legacy-колекція запис.
+ */
+const mirrorProfileToLegacyCollection = async (collection, userId, payload, condition) => {
+  try {
+    const legacyRef = ref2(database, `${collection}/${userId}`);
+    if (condition === 'update') await update(legacyRef, payload);
+    else await set(legacyRef, payload);
+    return true;
+  } catch (error) {
+    console.warn('[legacy] анкету не вдалося віддзеркалити в стару колекцію', {
+      userId,
+      collection,
+      error,
+    });
+    return false;
+  }
+};
+
+/**
+ * Анкета не збереглась нікуди — ані у вузли, ані в legacy.
+ *
+ * Окремий текст, бо це єдиний випадок, коли користувач мусить побачити помилку:
+ * відмова однієї з двох сторін — це знижена надлишковість, відмова обох — це
+ * втрачені дані.
+ */
+const throwProfileWriteFailure = userId => {
+  const error = new Error(
+    `Анкету ${userId} не збережено: ні нові вузли, ні стара колекція не прийняли запис.`,
+  );
+  error.code = 'PROFILE_WRITE_FAILED';
+  throw error;
+};
+
 const mirrorRemovalsToOtherCollection = async (primaryCollection, userId, removals) => {
   const id = String(userId || '').trim();
   if (!id || !removals.length) return;
@@ -3671,20 +3795,21 @@ const mirrorRemovalsToOtherCollection = async (primaryCollection, userId, remova
 
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
-    const userRefRTDB = ref2(database, `users/${userId}`);
     // Знімається до strip: далі до пейлоада додадуться службові null, які
     // видаленнями не є.
     const explicitRemovals = condition === 'update' ? collectExplicitRemovals(uploadedInfo) : [];
     const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
     });
-    if (condition === 'update') {
-      await update(userRefRTDB, cleanedUploadedInfo);
-    } else {
-      await set(userRefRTDB, cleanedUploadedInfo);
-    }
+
+    // Спершу вузли — вони джерело істини для веба, і саме їх читає застосунок.
+    // Legacy йде другим: це дзеркало для мобільного застосунку, і його відмова
+    // не має скасовувати збереження.
+    const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
+    const legacyWritten = await mirrorProfileToLegacyCollection('users', userId, cleanedUploadedInfo, condition);
+    if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);
+
     await mirrorRemovalsToOtherCollection('users', userId, explicitRemovals);
-    await fanOutProfileNodes(userId, cleanedUploadedInfo);
     await refreshMatchingCardAfterProfileWrite('users', userId, cleanedUploadedInfo, condition);
   } catch (error) {
     console.error(
@@ -3701,9 +3826,16 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     // порожніми контактами, а не на прохання щось видалити.
     const explicitRemovals = condition === 'update' ? collectExplicitRemovals(uploadedInfo) : [];
     uploadedInfo = sanitizeUploadedInfoPhones(uploadedInfo);
-    const userRefRTDB = ref2(database, `newUsers/${userId}`);
-    const snapshot = await get(userRefRTDB);
-    const currentUserDataRaw = snapshot.exists() ? snapshot.val() : {};
+    // Попередній стан потрібен лише для звірки пошукових індексів. Коли legacy
+    // недоступна, звірка йде від порожнього — нові значення все одно
+    // проіндексуються, а зняти старі однаково нема з чого.
+    let currentUserDataRaw = {};
+    try {
+      const snapshot = await get(ref2(database, `newUsers/${userId}`));
+      if (snapshot.exists()) currentUserDataRaw = snapshot.val();
+    } catch (error) {
+      console.warn('[legacy] попередній стан анкети прочитати не вдалося', { userId, error });
+    }
     const currentUserData = sanitizeUploadedInfoPhones(currentUserDataRaw) || {};
 
     if (!skipIndexing) {
@@ -3772,13 +3904,15 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
       markForRealtimeDeletion: condition === 'update',
     });
 
-    if (condition === 'update') {
-      console.log('update :>> ');
-      await update(userRefRTDB, { ...cleanedUploadedInfo });
-    } else {
-      console.log('set :>> ');
-      await set(userRefRTDB, { ...cleanedUploadedInfo });
-    }
+    // Спершу вузли, потім дзеркало в legacy — див. `updateDataInRealtimeDB`.
+    const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
+    const legacyWritten = await mirrorProfileToLegacyCollection(
+      'newUsers',
+      userId,
+      { ...cleanedUploadedInfo },
+      condition,
+    );
+    if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);
 
     if (cleanedUploadedInfo.lastLogin2 !== undefined) {
       try {
@@ -3789,7 +3923,6 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     }
 
     await mirrorRemovalsToOtherCollection('newUsers', userId, explicitRemovals);
-    await fanOutProfileNodes(userId, cleanedUploadedInfo);
     await refreshMatchingCardAfterProfileWrite('newUsers', userId, cleanedUploadedInfo, condition);
 
     clearEmptySearchQueryCache();
@@ -8356,7 +8489,10 @@ export const fetchUserById = async userId => {
   try {
     // Нові вузли — основний шлях; legacy лишається відкатом для анкет, які ще
     // не переїхали, і джерелом для мобільного застосунку.
-    const fromNodes = await readProfileFromNodes(userId, { includeTechnical: true });
+    // `withLegacy` саме тут: анкета — це те місце, де застарілі дані видно
+    // одразу, і те місце, з якого їх правлять. Мобільний застосунок пише в
+    // `/users`, і без цього читання його зміни у вебі не зʼявились би ніколи.
+    const fromNodes = await readProfileFromNodes(userId, { includeTechnical: true, withLegacy: true });
     if (fromNodes) {
       const photos = fromNodes.__photosHydrated
         ? fromNodes.photos

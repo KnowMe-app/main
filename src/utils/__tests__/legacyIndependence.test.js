@@ -1,0 +1,173 @@
+import fs from 'fs';
+import path from 'path';
+
+import { buildMatchingCardProjection, expandMatchingCard } from '../matchingCardIndex';
+import { mergeProfileNodes } from '../profileNodeMerge';
+import { mergeProfileNodeCollections } from '../profileNodeCollections';
+
+const configSource = fs.readFileSync(
+  path.join(__dirname, '..', '..', 'components', 'config.js'),
+  'utf8',
+);
+
+const sliceFn = (name, until) => {
+  const from = configSource.indexOf(name);
+  const to = configSource.indexOf(until, from + name.length);
+  if (from < 0 || to < 0) throw new Error(`не знайдено межі зрізу: ${name} → ${until}`);
+  return configSource.slice(from, to);
+};
+
+/**
+ * Веб мусить пережити зникнення `/users`.
+ *
+ * Дзеркалення двостороннє, поки мобільний застосунок живий: він пише в `/users`,
+ * і веб кладе туди свої зміни. Але «поки живий» — це не «назавжди». Колекцію
+ * можуть перестати підтримувати: закрити права, прибрати вузол. Веб від цього
+ * не має ані падати на збереженні, ані втрачати стан публікації — бо єдине, що
+ * жило тільки в legacy, це `publish`.
+ */
+describe('збереження анкети не залежить від legacy-колекції', () => {
+  const writers = ['updateDataInRealtimeDB', 'updateDataInNewUsersRTDB'];
+
+  it.each(writers)('%s пише спершу у вузли, і лише потім дзеркалить у legacy', writerName => {
+    const writer = sliceFn(`export const ${writerName} =`, '\nexport const ');
+
+    const nodesIndex = writer.indexOf('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
+    const legacyIndex = writer.indexOf('await mirrorProfileToLegacyCollection(');
+
+    expect(nodesIndex).toBeGreaterThan(-1);
+    expect(legacyIndex).toBeGreaterThan(nodesIndex);
+  });
+
+  it.each(writers)('%s падає лише тоді, коли не прийняв ніхто', writerName => {
+    const writer = sliceFn(`export const ${writerName} =`, '\nexport const ');
+    expect(writer).toContain('if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);');
+  });
+
+  it('дзеркалення в legacy не кидає — воно повертає результат', () => {
+    const mirror = sliceFn(
+      'const mirrorProfileToLegacyCollection = async',
+      'const throwProfileWriteFailure',
+    );
+
+    expect(mirror).toContain('return true;');
+    expect(mirror).toContain('return false;');
+    expect(mirror).toContain("console.warn('[legacy] анкету не вдалося віддзеркалити в стару колекцію'");
+  });
+
+  it('розкладка по вузлах теж не кидає, але звітує про успіх', () => {
+    const fanOut = sliceFn('const fanOutProfileNodes = async', '\n// ---');
+    expect(fanOut).toContain('return results.some(Boolean);');
+  });
+
+  it('картка стрічки перебудовується з вузлів, а не з legacy', () => {
+    // Інакше після зникнення `/users` кожне збереження знімало б картку:
+    // перечитування дало б порожньо, і проєкція зібралась би ні з чого.
+    const reader = sliceFn('const readProfileForMatchingCard = async', 'const runMatchingCardRefresh');
+
+    expect(reader).toContain('await readProfileFromNodes(id, { includeTechnical: true })');
+    expect(reader.indexOf('readProfileFromNodes'))
+      .toBeLessThan(reader.indexOf('`${collection}/${id}`'));
+  });
+
+  it('щойно збережене перекриває перечитане', () => {
+    // `publish` власного вузла не має: у нових вузлах він виражений наявністю
+    // `feedDate` у самій картці. Перечитування тому дає *попередній* стан
+    // публікації, і без накладання пейлоада зняття публікації не спрацювало б
+    // жодного разу.
+    const refresh = sliceFn('const runMatchingCardRefresh = async', '// Проєкція стрічки');
+    expect(refresh).toContain('{ ...(stored || {}), ...payload }');
+  });
+
+  it('попередній стан legacy читається терпимо', () => {
+    const writer = sliceFn('export const updateDataInNewUsersRTDB =', '\nexport const ');
+    expect(writer).toContain("console.warn('[legacy] попередній стан анкети прочитати не вдалося'");
+  });
+});
+
+describe('дзеркалення читається і в зворотний бік', () => {
+  // Мобільний застосунок пише тільки в `/users`. Якби веб дивився лише у
+  // вузли, зміна, зроблена з телефона, не зʼявилась би в ньому ніколи.
+  it('анкета читається разом із legacy-шаром', () => {
+    const reader = sliceFn('export const fetchUserById =', 'export const removeKeyFromFirebase');
+    expect(reader).toContain('await readProfileFromNodes(userId, { includeTechnical: true, withLegacy: true })');
+  });
+
+  it('legacy читається лише коли його попросили — список за нього не платить', () => {
+    const loader = sliceFn('export const readProfileFromNodes =', 'export const fetchUsersByIds =');
+    expect(loader).toContain("withLegacy && !legacy ? readProfileNodePart('users', id) : null");
+    expect(loader).toContain('withLegacy = false');
+  });
+
+  it('legacy мовчить про те, чим уже володіє вузол', () => {
+    // Інакше поле, стерте у вебі, поверталося б із кожним читанням: у вузлі
+    // його немає, а в legacy воно ще лежить.
+    const filter = sliceFn('const legacyFieldsNodesDoNotOwn =', 'export const readProfileFromNodes');
+
+    expect(filter).toContain('!presentNodes.has(resolveFieldOwnerNode(field))');
+    expect(filter).toContain('Object.keys(value).length');
+  });
+});
+
+describe('стан публікації переживає зникнення legacy', () => {
+  const publishedCard = buildMatchingCardProjection('freshPushKey00000000', {
+    name: 'Оля',
+    publish: true,
+    lastLogin2: '2026-08-26',
+  });
+
+  it('картка несе стан публікації сама — окремого поля для цього не треба', () => {
+    expect(publishedCard.feedDate).toBe('2026-08-26');
+
+    const expanded = expandMatchingCard('freshPushKey00000000', publishedCard);
+    expect(expanded.publish).toBe(true);
+    expect(expanded.lastLogin2).toBe('2026-08-26');
+  });
+
+  it('знята публікація прибирає ключ, і анкета читається як прихована', () => {
+    const hiddenCard = buildMatchingCardProjection('freshPushKey00000000', {
+      name: 'Оля',
+      publish: false,
+      lastLogin2: '2026-08-26',
+    });
+
+    expect(hiddenCard).not.toHaveProperty('feedDate');
+    expect(expandMatchingCard('freshPushKey00000000', hiddenCard).publish).toBeUndefined();
+  });
+
+  it('анкета, зібрана лише з вузлів, знає, що вона показана', () => {
+    const profile = mergeProfileNodes({
+      userId: 'freshPushKey00000000',
+      card: publishedCard,
+      details: { surname: 'Коваленко' },
+      legacy: null,
+    });
+
+    expect(profile.publish).toBe(true);
+    expect(profile.surname).toBe('Коваленко');
+  });
+
+  it('індексація без legacy-шару бере публікацію з картки', () => {
+    const { profiles, stats } = mergeProfileNodeCollections({
+      matchingCards: { freshPushKey00000000: publishedCard },
+      profileDetails: { freshPushKey00000000: { surname: 'Коваленко' } },
+    });
+
+    expect(profiles.freshPushKey00000000.publish).toBe(true);
+    expect(stats.fromNodes).toBe(1);
+    // `withPublish` рахує саме legacy-джерело — його тут немає, і це не збій.
+    expect(stats.withPublish).toBe(0);
+  });
+
+  it('legacy, коли він є, лишається останнім словом про публікацію', () => {
+    // Поки мобільний застосунок живий, `publish` у `/users` — його рішення, і
+    // веб його поважає: інакше вимкнена в мобільному анкета лишалась би в
+    // стрічці до наступної перебудови картки.
+    const { profiles } = mergeProfileNodeCollections({
+      matchingCards: { freshPushKey00000000: publishedCard },
+      users: { freshPushKey00000000: { publish: false } },
+    });
+
+    expect(profiles.freshPushKey00000000.publish).toBe(false);
+  });
+});
