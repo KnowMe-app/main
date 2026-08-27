@@ -15,6 +15,9 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    # workflow_dispatch дозволяє вибрати будь-яку гілку, тому окремо захищаємо
+    # продакшн-деплой від ручного запуску коду, який ще не потрапив у main.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout 🛎️
