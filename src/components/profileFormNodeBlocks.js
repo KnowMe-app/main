@@ -106,7 +106,7 @@ const BLOCK_META = {
   },
   [PROFILE_FORM_BLOCK_IDS.access]: {
     title: 'Доступи',
-    hint: 'Джерело істини для правил бази — саме legacy-анкета. Другої копії прав у нових вузлах немає навмисно.',
+    hint: 'Рівень доступу і право створювати анкети живуть у profileTechnical — правила бази питають і його, і legacy. Делегування чужого multiData лишається тільки в legacy.',
   },
 };
 
@@ -136,8 +136,12 @@ export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, sourc
           ? ['multiData', 'getInTouch', ownerId]
           : ['multiData', 'getInTouch'];
       case PROFILE_FORM_BLOCK_IDS.legacy:
-      case PROFILE_FORM_BLOCK_IDS.access:
         return [legacyCollection, profileId];
+      // Права переїхали в технічний вузол, і посилання веде туди ж, куди тепер
+      // іде запис. Делегування (`multiDataSourceUserIds`, `godMode`) лишилось у
+      // legacy — його видно в блоці legacy-анкети.
+      case PROFILE_FORM_BLOCK_IDS.access:
+        return [PROFILE_NODES.profileTechnical, profileId];
       default:
         return [blockId, profileId];
     }

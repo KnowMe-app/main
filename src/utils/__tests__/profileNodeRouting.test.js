@@ -50,10 +50,24 @@ describe('роутер записів', () => {
       __sourceCollection: 'users',
       __photosHydrated: true,
       unknownLegacyField: 'x',
-      accessLevel: 'matching:view',
       deviceWidth: 1080,
       password: 'secret',
     })).toEqual({});
+  });
+
+  it('права акаунта веде у profileTechnical — там тепер їхнє місце', () => {
+    // Другої копії прав це не створює: запис у новий вузол іде додатково до
+    // legacy, як і для решти полів, а правила бази питають обидва джерела.
+    expect(buildProfileNodePatch('P1', {
+      accessLevel: 'matching:view&write',
+      canCreateProfiles: true,
+    })).toEqual({
+      'profileTechnical/P1/accessLevel': 'matching:view&write',
+      'profileTechnical/P1/canCreateProfiles': true,
+    });
+    // А делегування читання чужого multiData нікуди не їде: воно лишається
+    // тільки в legacy, і другого місця в нього немає.
+    expect(buildProfileNodePatch('P1', { multiDataSourceUserIds: { X: true } })).toEqual({});
   });
 
   it('без id не будує нічого', () => {
@@ -111,9 +125,10 @@ describe('блоки форми анкети', () => {
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.getInTouch, { profileId, ownerId: 'ADMIN' }).path)
       .toBe('multiData/getInTouch/ADMIN');
 
-    // Права доступу лишаються в legacy — саме звідти їх читають правила бази.
+    // Права переїхали в технічний вузол — посилання веде туди, куди тепер іде
+    // і запис із форми.
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.access, { profileId }).path)
-      .toBe(`users/${profileId}`);
+      .toBe(`profileTechnical/${profileId}`);
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.legacy, { profileId: 'short' }).path)
       .toBe('newUsers/short');
   });

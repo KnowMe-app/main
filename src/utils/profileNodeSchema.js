@@ -114,6 +114,7 @@ export const MATCHING_CARD_FORBIDDEN_FIELDS = Object.freeze([
   'accessLevel',
   'canCreateProfiles',
   'additionalAccessRules',
+  'multiDataAccessUserIds',
   'deviceWidth',
   'deviceHeight',
   'deviceResize',
@@ -156,7 +157,27 @@ export const PROFILE_WORKFLOW_FIELDS = Object.freeze([
   'lastCycle',
 ]);
 
-/** Технічні дані та account metadata. Без device-полів і без access-полів. */
+/**
+ * Права доступу — теж технічні дані, і живуть вони в `profileTechnical`.
+ *
+ * Спершу їх лишали в legacy-колекціях: правила бази читають рівень доступу
+ * саме звідти, і друга копія прав, яку ніхто не синхронізує, — це гірше, ніж
+ * незручний залишок. Але з цього виходило, що очищений `newUsers` мусить
+ * везти права з файлу у файл вічно, а вузол акаунта — не знати про них нічого.
+ *
+ * Тепер джерело істини одне і воно нове: правила питають про рівень доступу і
+ * `profileTechnical` теж, тож поле переїжджає туди разом з рештою технічного, а
+ * з колекції зникає. `/users` при цьому не чіпається — там своя копія лишається
+ * як була, і саме тому переїзд нікому не знімає доступ.
+ */
+export const PROFILE_TECHNICAL_ACCESS_FIELDS = Object.freeze([
+  'accessLevel',
+  'canCreateProfiles',
+  'multiDataAccessUserIds',
+  'additionalAccessRules',
+]);
+
+/** Технічні дані та account metadata. Без device-полів. */
 export const PROFILE_TECHNICAL_FIELDS = Object.freeze([
   'lastLogin',
   'lastLogin2',
@@ -168,6 +189,7 @@ export const PROFILE_TECHNICAL_FIELDS = Object.freeze([
   'createdAt2',
   'language',
   'login',
+  ...PROFILE_TECHNICAL_ACCESS_FIELDS,
 ]);
 
 /**
@@ -299,17 +321,25 @@ export const NEVER_MIGRATED_FIELDS = Object.freeze([
 ]);
 
 /**
- * Поля прав доступу. Джерелом істини для правил лишається legacy `/users`,
- * тож у нові вузли вони не їдуть — інакше зʼявиться друга копія прав, яку
- * ніхто не синхронізує.
+ * Права, які в нові вузли не їдуть узагалі.
+ *
+ * `multiDataSourceUserIds` — це делегування читання чужого `multiData`, тобто
+ * право не на анкету, а на дані іншого адміна; `godMode` — аварійний прапорець.
+ * Обидва читаються з legacy напряму, і другої копії їм не заводять.
+ *
+ * Решта прав переїхала в `profileTechnical` (див.
+ * `PROFILE_TECHNICAL_ACCESS_FIELDS`) — але забороненими для картки стрічки,
+ * деталей і контактів лишились усі: технічне право не має права лежати там.
  */
 export const ACCESS_CONTROL_FIELDS = Object.freeze([
-  'accessLevel',
-  'canCreateProfiles',
-  'additionalAccessRules',
-  'multiDataAccessUserIds',
   'multiDataSourceUserIds',
   'godMode',
+]);
+
+/** Усі права разом — там, де питання «чи це взагалі право доступу». */
+export const ALL_ACCESS_CONTROL_FIELDS = Object.freeze([
+  ...PROFILE_TECHNICAL_ACCESS_FIELDS,
+  ...ACCESS_CONTROL_FIELDS,
 ]);
 
 /** Пароль не потрапляє нікуди. Його поява в даних — інцидент, а не поле. */
@@ -411,16 +441,14 @@ export const CLEANED_COLLECTION_NOISE_FIELDS = Object.freeze([
 /**
  * Що лишається в очищеній копії завжди — навіть порожнім.
  *
- * Права доступу в нові вузли не їдуть навмисно (джерело істини для правил —
- * legacy `/users`), тож єдине місце, де вони живуть, — сама колекція. Якби
+ * Права, які нікуди не переїжджають, живуть тільки в самій колекції. Якби
  * очищення прибрало їх разом із рештою порожніх ключів, залитий назад файл
- * зняв би людям доступ — і зробив би це мовчки.
+ * зняв би делегування — і зробив би це мовчки. Решта прав тут не потрібна:
+ * вона переїжджає в `profileTechnical`, а звідти вже зникає з колекції як усе
+ * перенесене.
  */
 export const CLEANED_COLLECTION_PRESERVED_FIELDS = Object.freeze([
-  'accessLevel',
-  'canCreateProfiles',
-  'multiDataAccessUserIds',
-  'additionalAccessRules',
+  ...ACCESS_CONTROL_FIELDS,
 ]);
 
 /** Поле, за яким і сортується, і фільтрується стрічка. */
