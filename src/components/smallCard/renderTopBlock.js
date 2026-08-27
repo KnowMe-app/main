@@ -2165,7 +2165,9 @@ export const TopBlock = ({
         <div style={bioRowStyle}>
           {cardData.birth && (
             <span style={factChipStyle}>
-              {cardData.birth} {fieldBirth(cardData.birth)}
+              {/* У базі дата лежить у `РРРР-ММ-ДД`; людині вона показується
+                  крапками — так само, як усюди в застосунку. */}
+              {formatDateToDisplay(cardData.birth)} {fieldBirth(cardData.birth)}
             </span>
           )}
           {identityMeta.length > 0 && (

@@ -992,6 +992,21 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
   });
 };
 
+/**
+ * Поля, у яких лежить дата і тільки дата.
+ *
+ * Показуються вони крапками, у базу їдуть у `РРРР-ММ-ДД` — перетворення в
+ * обидва боки роблять `formatDateToDisplay` і `formatDateToServer`.
+ */
+const PROFILE_FORM_DATE_FIELDS = new Set([
+  'birth',
+  'birthWife',
+  'birthHusband',
+  'lastDelivery',
+  'opuDate',
+  'getInTouch',
+]);
+
 export const ProfileForm = ({
   state,
   setState: setExternalState,
@@ -2757,10 +2772,11 @@ ${entries.join('\n')}`;
           const displayValue =
             field.name === 'lastAction'
               ? formatDateToDisplay(normalizeLastAction(state.lastAction))
-              : field.name === 'lastDelivery'
-              ? formatDateToDisplay(state.lastDelivery)
-              : field.name === 'getInTouch'
-              ? formatDateToDisplay(state.getInTouch)
+              // У базі дата лежить у `РРРР-ММ-ДД`, а в полі введення людина
+              // бачить і набирає крапки. Поки перелік був коротший, дата
+              // народження показувалась так, як лежить, — тобто задом наперед.
+              : PROFILE_FORM_DATE_FIELDS.has(field.name)
+              ? formatDateToDisplay(state[field.name])
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>

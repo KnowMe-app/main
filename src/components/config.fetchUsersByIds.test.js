@@ -113,7 +113,9 @@ describe('newUsers/users merge behaviour', () => {
     expect(source).toContain('const transientUserDataKeys = [');
     expect(source).toContain("'__sourceCollection'");
     expect(source).toContain("'__photosHydrated'");
-    expect(source).toContain('const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo);');
+    // Пейлоад ще й проходить приведення дат до формату бази — чистка від цього
+    // не змінилась, просто вона тепер не остання ланка перед записом.
+    expect(source).toContain('normalizeStoredDates(stripTransientUserDataFields(uploadedInfo));');
     expect(source.match(/markForRealtimeDeletion: condition === 'update'/g)).toHaveLength(2);
   });
 });

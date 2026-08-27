@@ -9,6 +9,7 @@ import {
   get as firebaseGet,
 } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+import { formatDateToServer } from 'components/inputValidations';
 
 import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
 
@@ -63,10 +64,10 @@ export async function fetchUsersByLastLoginPaged(
     console.log('[fetchUsersByLastLoginPaged] fetched', dateStr, 'count', chunk.length);
 
     if (chunk.length > 0) {
-      const parse = str => {
-        const [d, m, y] = str.split('.');
-        return `${y}-${m}-${d}`;
-      };
+      // Сортуємо за датою у форматі бази. `formatDateToServer` розуміє і
+      // крапкову форму, і вже переїхану `РРРР-ММ-ДД` — інакше ISO-дати
+      // порівнювались би як `undefined-undefined-...`.
+      const parse = str => formatDateToServer(str);
       chunk.sort((a, b) => {
         const bDate = b[1].lastLogin ? parse(b[1].lastLogin) : '';
         const aDate = a[1].lastLogin ? parse(a[1].lastLogin) : '';

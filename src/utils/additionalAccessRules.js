@@ -284,11 +284,16 @@ const toContactBuckets = user => {
 const normalizeBirthToIsoBucket = birth => {
   const raw = String(birth || '').trim();
   if (!raw) return 'no';
-  const match = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  // У базі дата народження лежить у `РРРР-ММ-ДД`, у legacy-анкетах — крапками.
+  // Приймаються обидва написання: інакше після переїзду кожна анкета потрапляла
+  // б у кошик «?» і фільтр за віком не знаходив би нікого.
+  const dotted = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const match = dotted || iso;
   if (!match) return '?';
-  const day = Number(match[1]);
+  const day = Number(dotted ? match[1] : match[3]);
   const month = Number(match[2]);
-  const year = Number(match[3]);
+  const year = Number(dotted ? match[3] : match[1]);
   const date = new Date(year, month - 1, day);
   if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
     return '?';
