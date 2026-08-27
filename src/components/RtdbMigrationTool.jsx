@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import styled from 'styled-components';
 
 import {
   MIGRATION_GROUPS,
@@ -15,6 +16,15 @@ import {
 } from 'utils/rtdbMigration';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
 import { auth } from './config';
+import PageNavMenu from './PageNavMenu';
+import {
+  KmCard,
+  KmGhostButton,
+  KmPage,
+  KmPrimaryButton,
+  KmTopbar,
+  KnowMeBrand,
+} from './styles/knowme';
 
 /**
  * Локальний інструмент міграції RTDB.
@@ -33,22 +43,260 @@ import { auth } from './config';
  * Кожна кнопка спершу показує preview, і лише другий клік застосовує план.
  */
 
-const styles = {
-  page: { padding: 16, maxWidth: 1100, margin: '0 auto', fontSize: 14 },
-  section: { border: '1px solid #ddd', borderRadius: 8, padding: 12, marginBottom: 16 },
-  heading: { margin: '0 0 8px', fontSize: 16 },
-  row: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 },
-  button: { padding: '6px 12px', borderRadius: 6, border: '1px solid #888', cursor: 'pointer', background: '#fff' },
-  primary: { padding: '6px 12px', borderRadius: 6, border: '1px solid #2b6', background: '#2b6', color: '#fff', cursor: 'pointer' },
-  danger: { padding: '6px 12px', borderRadius: 6, border: '1px solid #c33', background: '#fff', color: '#c33', cursor: 'pointer' },
-  input: { padding: '6px 8px', borderRadius: 6, border: '1px solid #888', minWidth: 320 },
-  pre: { background: '#f6f6f6', padding: 8, borderRadius: 6, maxHeight: 320, overflow: 'auto', fontSize: 12 },
-  warn: { color: '#b40', fontWeight: 600 },
-  critical: { color: '#c00', fontWeight: 700 },
-  muted: { color: '#666' },
-  table: { borderCollapse: 'collapse', width: '100%', fontSize: 12 },
-  cell: { border: '1px solid #ddd', padding: '3px 6px', textAlign: 'left' },
-};
+/*
+ * Оформлення тримається на токенах `--km-*` (src/index.css), як і решта
+ * застосунку: сторінка адмінська, але тема на ній та сама, що всюди. Раніше тут
+ * стояли захардкожені `#fff` без `color` — у темній темі це давало білі написи
+ * на білих кнопках, тобто порожні прямокутники. Токен вирішує це сам собою:
+ * фон і текст завжди беруться з однієї палітри.
+ */
+const Shell = styled.div`
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 16px 56px;
+
+  /*
+   * Шляхи у вузлах довгі й без пробілів (multiData/getInTouch/{uid}/…), а
+   * контейнер вузький. Без примусового переносу вони вилазять за межі картки —
+   * саме те, що ламало верстку на телефоні.
+   */
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92em;
+    padding: 1px 5px;
+    border-radius: 6px;
+    background: var(--km-accent-light);
+    color: var(--km-accent);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+`;
+
+const PageTitle = styled.h1`
+  margin: 0 0 6px;
+  font-family: var(--km-font-display);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--km-text);
+`;
+
+const Section = styled(KmCard)`
+  padding: 14px;
+  margin-bottom: 16px;
+`;
+
+const SectionTitle = styled.h2`
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--km-text);
+`;
+
+const Note = styled.p`
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--km-muted);
+  overflow-wrap: anywhere;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const Warn = styled(Note)`
+  color: var(--km-danger);
+  font-weight: 600;
+`;
+
+const Row = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+`;
+
+const SmallGhost = styled(KmGhostButton)`
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 13px;
+`;
+
+const SmallPrimary = styled(KmPrimaryButton)`
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 13px;
+`;
+
+/*
+ * Ghost, а не залитий KmDangerButton: у темній темі --km-danger це світлий рожевий,
+ * і білий напис на ньому майже не читається. Тут же колір іде в текст і рамку, а фон
+ * лишається картковим — контраст однаковий в обох темах.
+ */
+const SmallDanger = styled(SmallGhost)`
+  border-color: var(--km-danger-border);
+  color: var(--km-danger);
+
+  &:hover {
+    background: var(--km-danger-bg);
+    border-color: var(--km-danger);
+    color: var(--km-danger);
+  }
+
+  &:focus-visible {
+    border-color: var(--km-danger);
+    box-shadow: 0 0 0 3px var(--km-danger-bg);
+  }
+`;
+
+const FileButton = styled(SmallGhost)`
+  /* <label> замість <button>: клік має відкривати схований file input. */
+  cursor: pointer;
+`;
+
+const FieldLabel = styled.label`
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--km-text);
+`;
+
+const TextInput = styled.input`
+  flex: 1 1 280px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--km-border);
+  border-radius: var(--km-radius);
+  background: var(--km-card);
+  color: var(--km-text);
+  font-family: var(--km-font);
+  font-size: 13px;
+
+  &::placeholder {
+    color: var(--km-muted);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--km-accent);
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
+  }
+`;
+
+const Stats = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 2px 18px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--km-border);
+  border-radius: 10px;
+  background: var(--km-bg);
+  color: var(--km-text);
+  font-size: 12.5px;
+  line-height: 1.6;
+`;
+
+const StatLine = styled.div`
+  color: ${({ $warn }) => ($warn ? 'var(--km-danger)' : 'inherit')};
+  font-weight: ${({ $warn }) => ($warn ? 700 : 400)};
+`;
+
+/* Таблиці ширші за телефон — хай їдуть горизонтально всередині себе, а не тягнуть сторінку. */
+const TableScroll = styled.div`
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+`;
+
+const Table = styled.table`
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 520px;
+  font-size: 12.5px;
+  color: var(--km-text);
+
+  /*
+   * Шлях імпорту — половина операції, і рвати його переносом посеред слова
+   * («matchingCard / s») означає давати прочитати не те. Тут хай краще
+   * горизонтально їде вся таблиця, ніж ламається окремий шлях.
+   */
+  code {
+    white-space: nowrap;
+  }
+
+  th,
+  td {
+    border: 1px solid var(--km-border);
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  th {
+    background: var(--km-bg);
+    color: var(--km-muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+`;
+
+const Disclosure = styled.details`
+  margin-top: 10px;
+
+  summary {
+    cursor: pointer;
+    padding: 8px 10px;
+    border: 1px solid var(--km-border);
+    border-radius: 10px;
+    background: var(--km-bg);
+    color: var(--km-text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  &[open] summary {
+    margin-bottom: 8px;
+  }
+`;
+
+const GroupBlock = styled.div`
+  padding: 12px 0;
+  border-top: 1px solid var(--km-border);
+
+  &:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+`;
+
+const GroupName = styled.strong`
+  flex: 1 1 100%;
+  font-size: 14px;
+  color: var(--km-text);
+
+  @media (min-width: 560px) {
+    flex: 0 0 auto;
+    min-width: 190px;
+  }
+`;
+
+const CriticalSection = styled(Section)`
+  border-color: var(--km-danger-border);
+  background: var(--km-danger-bg);
+`;
+
+const CriticalTitle = styled(SectionTitle)`
+  color: var(--km-danger);
+`;
+
+const HiddenFileInput = styled.input`
+  display: none;
+`;
 
 const downloadJson = (filename, payload) => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -92,70 +340,72 @@ const formatCount = value => new Intl.NumberFormat('uk-UA').format(value || 0);
 const InventoryTable = ({ title, inventory }) => {
   if (!inventory) return null;
   return (
-    <details style={{ marginTop: 8 }}>
+    <Disclosure>
       <summary>
         {title}: {formatCount(inventory.recordCount)} записів, {formatCount(inventory.uniqueFieldCount)} унікальних полів
       </summary>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th style={styles.cell}>поле</th>
-            <th style={styles.cell}>к-сть</th>
-            <th style={styles.cell}>типи</th>
-            <th style={styles.cell}>статус</th>
-          </tr>
-        </thead>
-        <tbody>
-          {inventory.fields.map(entry => (
-            <tr key={entry.field}>
-              <td style={styles.cell}>{entry.field}</td>
-              <td style={styles.cell}>{formatCount(entry.count)}</td>
-              <td style={styles.cell}>
-                {Object.entries(entry.types).map(([type, count]) => `${type}:${count}`).join(', ')}
-              </td>
-              <td style={styles.cell}>
-                {entry.excluded ? 'не мігрується' : (entry.mapped ? 'у мапінгу' : 'невідоме')}
-              </td>
+      <TableScroll>
+        <Table>
+          <thead>
+            <tr>
+              <th>поле</th>
+              <th>к-сть</th>
+              <th>типи</th>
+              <th>статус</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
+          </thead>
+          <tbody>
+            {inventory.fields.map(entry => (
+              <tr key={entry.field}>
+                <td>{entry.field}</td>
+                <td>{formatCount(entry.count)}</td>
+                <td>
+                  {Object.entries(entry.types).map(([type, count]) => `${type}:${count}`).join(', ')}
+                </td>
+                <td>
+                  {entry.excluded ? 'не мігрується' : (entry.mapped ? 'у мапінгу' : 'невідоме')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </TableScroll>
+    </Disclosure>
   );
 };
 
 const PlanSummary = ({ plan }) => {
   if (!plan) return null;
   if (plan.blocked === 'MISSING_GET_IN_TOUCH_OWNER') {
-    return <p style={styles.warn}>Потрібен Legacy getInTouch owner UID.</p>;
+    return <Warn>Потрібен Legacy getInTouch owner UID.</Warn>;
   }
 
   const { counters } = plan;
   return (
-    <div style={styles.pre}>
-      <div>анкет переглянуто: {formatCount(counters.profilesScanned)}</div>
-      <div>скопійовано з users: {formatCount(counters.fieldsCopiedFromUsers)}</div>
-      <div>перенесено з newUsers: {formatCount(counters.fieldsMovedFromNewUsers)}</div>
-      <div>похідних створено: {formatCount(counters.derivedValuesCreated)}</div>
-      <div>вже було в цілі: {formatCount(counters.alreadyPresent)}</div>
-      <div>пропущено порожніх: {formatCount(counters.skippedEmpty)}</div>
-      <div style={counters.conflicts ? styles.warn : undefined}>
+    <Stats>
+      <StatLine>анкет переглянуто: {formatCount(counters.profilesScanned)}</StatLine>
+      <StatLine>скопійовано з users: {formatCount(counters.fieldsCopiedFromUsers)}</StatLine>
+      <StatLine>перенесено з newUsers: {formatCount(counters.fieldsMovedFromNewUsers)}</StatLine>
+      <StatLine>похідних створено: {formatCount(counters.derivedValuesCreated)}</StatLine>
+      <StatLine>вже було в цілі: {formatCount(counters.alreadyPresent)}</StatLine>
+      <StatLine>пропущено порожніх: {formatCount(counters.skippedEmpty)}</StatLine>
+      <StatLine $warn={Boolean(counters.conflicts)}>
         конфліктів: {formatCount(counters.conflicts)}
-      </div>
-      <div style={counters.unsafeKeys ? styles.warn : undefined}>
+      </StatLine>
+      <StatLine $warn={Boolean(counters.unsafeKeys)}>
         непридатних ключів: {formatCount(counters.unsafeKeys)}
-      </div>
-      <div style={counters.errors ? styles.warn : undefined}>
+      </StatLine>
+      <StatLine $warn={Boolean(counters.errors)}>
         блокуючих помилок: {formatCount(counters.errors)}
-      </div>
-      <div>буде видалено з newUsers: {formatCount(counters.deletionsFromNewUsers)}</div>
+      </StatLine>
+      <StatLine>буде видалено з newUsers: {formatCount(counters.deletionsFromNewUsers)}</StatLine>
       {Object.keys(plan.warningsByCode).length > 0 && (
-        <div style={{ marginTop: 6 }}>
+        <StatLine style={{ gridColumn: '1 / -1', marginTop: 6 }}>
           попередження:{' '}
           {Object.entries(plan.warningsByCode).map(([code, count]) => `${code}×${count}`).join(', ')}
-        </div>
+        </StatLine>
       )}
-    </div>
+    </Stats>
   );
 };
 
@@ -339,220 +589,224 @@ export const RtdbMigrationTool = () => {
   })();
 
   return (
-    <div style={styles.page}>
-      <h2 style={styles.heading}>Локальна міграція RTDB</h2>
-      <p style={styles.muted}>
-        Інструмент не звертається до Firebase. Він читає локальні JSON-копії, розкладає їх по нових
-        вузлах і віддає файли для ручного імпорту. Локальний <code>users</code> не змінюється взагалі;
-        поле зникає з локального <code>newUsers</code> лише після того, як звіт підтвердив успіх саме
-        для нього.
-      </p>
+    <KmPage>
+      {/*
+        Топбар із «⋮» — щоб зі сторінки був вихід кудись, крім кнопки «назад»:
+        решта адмінських сторінок влаштована так само.
+      */}
+      <KmTopbar>
+        <KnowMeBrand tagline="RTDB" />
+        <PageNavMenu />
+      </KmTopbar>
 
-      <section style={styles.section}>
-        <h3 style={styles.heading}>1. Вхідні файли</h3>
-        <div style={styles.row}>
-          <label style={styles.button}>
-            Load users.json
-            <input type="file" accept="application/json,.json" hidden onChange={event => handleFile(event, 'users')} />
-          </label>
-          <label style={styles.button}>
-            Load newUsers.json
-            <input type="file" accept="application/json,.json" hidden onChange={event => handleFile(event, 'newUsers')} />
-          </label>
-          <label style={styles.button}>
-            Load matchingCards.json (звірка)
-            <input type="file" accept="application/json,.json" hidden onChange={event => handleFile(event, 'matchingCards')} />
-          </label>
-        </div>
-        <div style={styles.row}>
-          <label htmlFor="get-in-touch-owner">Legacy getInTouch owner UID:</label>
-          <input
-            id="get-in-touch-owner"
-            style={styles.input}
-            value={ownerUid}
-            onChange={event => setOwnerUid(event.target.value)}
-            placeholder="UID адміна, чиї getInTouch переносимо"
-          />
-          {auth?.currentUser?.uid && auth.currentUser.uid !== ownerUid && (
-            <button
-              type="button"
-              style={styles.button}
-              onClick={() => setOwnerUid(auth.currentUser.uid)}
-            >
-              Мій UID
-            </button>
+      <Shell>
+        <PageTitle>Локальна міграція RTDB</PageTitle>
+        <Note>
+          Інструмент не звертається до Firebase. Він читає локальні JSON-копії, розкладає їх по нових
+          вузлах і віддає файли для ручного імпорту. Локальний <code>users</code> не змінюється взагалі;
+          поле зникає з локального <code>newUsers</code> лише після того, як звіт підтвердив успіх саме
+          для нього.
+        </Note>
+
+        <Section>
+          <SectionTitle>1. Вхідні файли</SectionTitle>
+          <Row>
+            <FileButton as="label">
+              Load users.json
+              <HiddenFileInput type="file" accept="application/json,.json" onChange={event => handleFile(event, 'users')} />
+            </FileButton>
+            <FileButton as="label">
+              Load newUsers.json
+              <HiddenFileInput type="file" accept="application/json,.json" onChange={event => handleFile(event, 'newUsers')} />
+            </FileButton>
+            <FileButton as="label">
+              Load matchingCards.json (звірка)
+              <HiddenFileInput type="file" accept="application/json,.json" onChange={event => handleFile(event, 'matchingCards')} />
+            </FileButton>
+          </Row>
+          <Row>
+            <FieldLabel htmlFor="get-in-touch-owner">Legacy getInTouch owner UID:</FieldLabel>
+            <TextInput
+              id="get-in-touch-owner"
+              value={ownerUid}
+              onChange={event => setOwnerUid(event.target.value)}
+              placeholder="UID адміна, чиї getInTouch переносимо"
+            />
+            {auth?.currentUser?.uid && auth.currentUser.uid !== ownerUid && (
+              <SmallGhost type="button" onClick={() => setOwnerUid(auth.currentUser.uid)}>
+                Мій UID
+              </SmallGhost>
+            )}
+          </Row>
+          <Note>
+            <code>getInTouch</code> — це персональна позначка адміна, а не поле анкети: у новій структурі вона
+            лежить під тим, хто її поставив (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/значення/анкета</code>).
+          </Note>
+          <InventoryTable title="users" inventory={usersInventory} />
+          <InventoryTable title="newUsers" inventory={newUsersInventory} />
+          {cardsComparison && (
+            <Note>
+              Звірка з наявним matchingCards: зібрано {formatCount(cardsComparison.built)},
+              у файлі {formatCount(cardsComparison.existing)},
+              тільки у файлі {formatCount(cardsComparison.onlyInExisting)},
+              тільки зібрано {formatCount(cardsComparison.onlyInBuilt)}.
+            </Note>
           )}
-        </div>
-        <p style={styles.muted}>
-          `getInTouch` — це персональна позначка адміна, а не поле анкети: у новій структурі вона
-          лежить під тим, хто її поставив (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/значення/анкета</code>).
-        </p>
-        <InventoryTable title="users" inventory={usersInventory} />
-        <InventoryTable title="newUsers" inventory={newUsersInventory} />
-        {cardsComparison && (
-          <p style={styles.muted}>
-            Звірка з наявним matchingCards: зібрано {formatCount(cardsComparison.built)},
-            у файлі {formatCount(cardsComparison.existing)},
-            тільки у файлі {formatCount(cardsComparison.onlyInExisting)},
-            тільки зібрано {formatCount(cardsComparison.onlyInBuilt)}.
-          </p>
+        </Section>
+
+        {audit?.securityWarnings?.length > 0 && (
+          <CriticalSection>
+            <CriticalTitle>
+              CRITICAL: у даних знайдено {formatCount(audit.securityWarnings.length)} полів «password»
+            </CriticalTitle>
+            <Note>
+              Значення не показані і не переносяться в жоден новий вузол. Перелік адрес — у
+              migration-audit.json.
+            </Note>
+          </CriticalSection>
         )}
-      </section>
 
-      {audit?.securityWarnings?.length > 0 && (
-        <section style={{ ...styles.section, borderColor: '#c00' }}>
-          <h3 style={{ ...styles.heading, ...styles.critical }}>
-            CRITICAL: у даних знайдено {formatCount(audit.securityWarnings.length)} полів «password»
-          </h3>
-          <p style={styles.muted}>
-            Значення не показані і не переносяться в жоден новий вузол. Перелік адрес — у
-            migration-audit.json.
-          </p>
-        </section>
-      )}
+        <Section>
+          <SectionTitle>2. Кнопки міграції</SectionTitle>
+          {!loaded && <Note>Спершу завантажте users.json або newUsers.json.</Note>}
+          {loaded && MIGRATION_GROUPS.map(group => (
+            <GroupBlock key={group.id}>
+              <Row>
+                <GroupName>{group.label}</GroupName>
+                <SmallGhost type="button" onClick={() => handlePreview(group.id)}>
+                  Preview
+                </SmallGhost>
+                <SmallPrimary type="button" onClick={() => handleApply(group.id)}>
+                  Apply
+                </SmallPrimary>
+                {audit?.groups?.[group.id] && (
+                  <Note as="span">
+                    застосовано {audit.groups[group.id].runCount}×, залишок ключів у newUsers:{' '}
+                    {formatCount(audit.groups[group.id].remainingNewUsersKeys)}
+                  </Note>
+                )}
+              </Row>
+              <PlanSummary plan={plans[group.id]} />
+            </GroupBlock>
+          ))}
+          {loaded && (
+            <Row style={{ marginTop: 12, marginBottom: 0 }}>
+              <SmallDanger type="button" onClick={handleReset}>
+                Reset to original files
+              </SmallDanger>
+            </Row>
+          )}
+        </Section>
 
-      <section style={styles.section}>
-        <h3 style={styles.heading}>2. Кнопки міграції</h3>
-        {!loaded && <p style={styles.muted}>Спершу завантажте users.json або newUsers.json.</p>}
-        {loaded && MIGRATION_GROUPS.map(group => (
-          <div key={group.id} style={{ marginBottom: 12 }}>
-            <div style={styles.row}>
-              <strong>{group.label}</strong>
-              <button type="button" style={styles.button} onClick={() => handlePreview(group.id)}>
-                Preview
-              </button>
-              <button type="button" style={styles.primary} onClick={() => handleApply(group.id)}>
-                Apply
-              </button>
-              {audit?.groups?.[group.id] && (
-                <span style={styles.muted}>
-                  застосовано {audit.groups[group.id].runCount}×, залишок ключів у newUsers:{' '}
-                  {formatCount(audit.groups[group.id].remainingNewUsersKeys)}
-                </span>
-              )}
-            </div>
-            <PlanSummary plan={plans[group.id]} />
-          </div>
-        ))}
         {loaded && (
-          <div style={styles.row}>
-            <button type="button" style={styles.danger} onClick={handleReset}>
-              Reset to original files
-            </button>
-          </div>
+          <Section>
+            <SectionTitle>3. Експорт</SectionTitle>
+
+            {/*
+              Кожен файл — це ВМІСТ одного вузла, а імпорт у консолі Firebase
+              замінює вузол цілком. Тобто шлях імпорту — не подробиця, а половина
+              операції: той самий файл, залитий на рівень вище, зносить сусідні
+              гілки. Тому шлях стоїть на самій кнопці.
+            */}
+            <TableScroll>
+              <Table>
+                <thead>
+                  <tr>
+                    <th>файл</th>
+                    <th>імпортувати рівно в</th>
+                    <th>що станеться</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {EXPORT_TARGETS.map(target => (
+                    <tr key={target.label}>
+                      <td>
+                        <SmallGhost
+                          type="button"
+                          onClick={() => download(target.label, () => target.build(stateRef.current))}
+                        >
+                          {target.label}.json
+                        </SmallGhost>
+                      </td>
+                      <td><code>{target.importPath}</code></td>
+                      <td>{target.effect}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </TableScroll>
+
+            <Row style={{ marginTop: 12 }}>
+              <SmallGhost
+                type="button"
+                onClick={() => download('migration-audit', () => buildMigrationAudit(stateRef.current))}
+              >
+                Download migration-audit.json
+              </SmallGhost>
+              <SmallGhost
+                type="button"
+                onClick={() => download('combined-root-patch', () => buildCombinedRootPatch(stateRef.current))}
+              >
+                Download combined-root-patch.json
+              </SmallGhost>
+              <SmallGhost
+                type="button"
+                onClick={() => download('migration-remainders', () => buildRemaindersExport(stateRef.current))}
+              >
+                Download migration-remainders.json
+              </SmallGhost>
+            </Row>
+
+            {/*
+              Залишок — це не «нічого не сталось», а список того, що міграція
+              свідомо не взяла: конфлікти, порожні значення, поля поза жодним
+              allowlist. Побачити його треба до того, як `cleaned-newUsers`
+              поїде в базу, бо після імпорту питати вже нема в кого.
+            */}
+            <Note>
+              migration-remainders.json — рештки обох колекцій в одному файлі: що з{' '}
+              <code>users</code> і <code>newUsers</code> не переїхало у нові вузли, плюс
+              підсумок по полях. Це звіт, а не патч: у базу він не імпортується, паролі в
+              ньому заміщені позначкою. З <code>users</code> при цьому нічого не видаляється —
+              там позначається лише те, що вже скопійовано.
+            </Note>
+
+            <Warn>
+              combined-root-patch.json — тільки для очей. Не імпортуйте його в корінь: імпорт
+              замінює вузол цілком, а в цьому файлі немає ані <code>users</code>, ані{' '}
+              <code>searchKey</code>, ані решти <code>multiData</code> — вони просто зникнуть.
+              У базу файли їдуть поодинці, кожен у свій шлях із таблиці вище.
+            </Warn>
+            <Note>
+              <code>cleaned-newUsers.json</code> — це і є видалення: він замінює вузол{' '}
+              <code>newUsers</code> версією без перенесених полів. Замінює <b>цілком</b>, тож усе,
+              що записали в <code>newUsers</code> після викачування вихідних файлів, буде втрачено.
+              Тож качайте, мігруйте і заливайте одним заходом, а не через день.
+            </Note>
+          </Section>
         )}
-      </section>
 
-      {loaded && (
-        <section style={styles.section}>
-          <h3 style={styles.heading}>3. Експорт</h3>
-
-          {/*
-            Кожен файл — це ВМІСТ одного вузла, а імпорт у консолі Firebase
-            замінює вузол цілком. Тобто шлях імпорту — не подробиця, а половина
-            операції: той самий файл, залитий на рівень вище, зносить сусідні
-            гілки. Тому шлях стоїть на самій кнопці.
-          */}
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.cell}>файл</th>
-                <th style={styles.cell}>імпортувати рівно в</th>
-                <th style={styles.cell}>що станеться</th>
-              </tr>
-            </thead>
-            <tbody>
-              {EXPORT_TARGETS.map(target => (
-                <tr key={target.label}>
-                  <td style={styles.cell}>
-                    <button
-                      type="button"
-                      style={styles.button}
-                      onClick={() => download(target.label, () => target.build(stateRef.current))}
-                    >
-                      {target.label}.json
-                    </button>
-                  </td>
-                  <td style={styles.cell}><code>{target.importPath}</code></td>
-                  <td style={styles.cell}>{target.effect}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div style={styles.row}>
-            <button
-              type="button"
-              style={styles.button}
-              onClick={() => download('migration-audit', () => buildMigrationAudit(stateRef.current))}
-            >
-              Download migration-audit.json
-            </button>
-            <button
-              type="button"
-              style={styles.button}
-              onClick={() => download('combined-root-patch', () => buildCombinedRootPatch(stateRef.current))}
-            >
-              Download combined-root-patch.json
-            </button>
-            <button
-              type="button"
-              style={styles.button}
-              onClick={() => download('migration-remainders', () => buildRemaindersExport(stateRef.current))}
-            >
-              Download migration-remainders.json
-            </button>
-          </div>
-
-          {/*
-            Залишок — це не «нічого не сталось», а список того, що міграція
-            свідомо не взяла: конфлікти, порожні значення, поля поза жодним
-            allowlist. Побачити його треба до того, як `cleaned-newUsers`
-            поїде в базу, бо після імпорту питати вже нема в кого.
-          */}
-          <p style={styles.muted}>
-            migration-remainders.json — рештки обох колекцій в одному файлі: що з{' '}
-            <code>users</code> і <code>newUsers</code> не переїхало у нові вузли, плюс
-            підсумок по полях. Це звіт, а не патч: у базу він не імпортується, паролі в
-            ньому заміщені позначкою. З <code>users</code> при цьому нічого не видаляється —
-            там позначається лише те, що вже скопійовано.
-          </p>
-
-          <p style={{ ...styles.muted, ...styles.warn }}>
-            combined-root-patch.json — тільки для очей. Не імпортуйте його в корінь: імпорт
-            замінює вузол цілком, а в цьому файлі немає ані <code>users</code>, ані{' '}
-            <code>searchKey</code>, ані решти <code>multiData</code> — вони просто зникнуть.
-            У базу файли їдуть поодинці, кожен у свій шлях із таблиці вище.
-          </p>
-          <p style={styles.muted}>
-            <code>cleaned-newUsers.json</code> — це і є видалення: він замінює вузол
-            <code> newUsers</code> версією без перенесених полів. Замінює <b>цілком</b>, тож усе,
-            що записали в <code>newUsers</code> після викачування вихідних файлів, буде втрачено.
-            Тож качайте, мігруйте і заливайте одним заходом, а не через день.
-          </p>
-        </section>
-      )}
-
-      {audit && (
-        <section style={styles.section}>
-          <h3 style={styles.heading}>4. Звіт</h3>
-          <div style={styles.pre}>
-            <div>
-              залишок у newUsers: {formatCount(audit.remainingNewUsers.recordCount)} записів,{' '}
-              {formatCount(audit.remainingNewUsers.keyCount)} ключів
-            </div>
-            <div>конфліктів у звіті: {formatCount(audit.conflicts.length)}</div>
-            <div>
-              незмаплені поля:{' '}
-              {Object.entries(audit.unmappedFieldStats.unknown || {})
-                .sort((a, b) => b[1] - a[1])
-                .map(([field, count]) => `${field}×${count}`)
-                .join(', ') || '—'}
-            </div>
-          </div>
-        </section>
-      )}
-    </div>
+        {audit && (
+          <Section>
+            <SectionTitle>4. Звіт</SectionTitle>
+            <Stats>
+              <StatLine>
+                залишок у newUsers: {formatCount(audit.remainingNewUsers.recordCount)} записів,{' '}
+                {formatCount(audit.remainingNewUsers.keyCount)} ключів
+              </StatLine>
+              <StatLine>конфліктів у звіті: {formatCount(audit.conflicts.length)}</StatLine>
+              <StatLine style={{ gridColumn: '1 / -1' }}>
+                незмаплені поля:{' '}
+                {Object.entries(audit.unmappedFieldStats.unknown || {})
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([field, count]) => `${field}×${count}`)
+                  .join(', ') || '—'}
+              </StatLine>
+            </Stats>
+          </Section>
+        )}
+      </Shell>
+    </KmPage>
   );
 };
 

@@ -12,6 +12,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import { isAdminUid } from 'utils/accessLevel';
 
 const NAV_LINKS = [
   { path: '/add', label: 'Add profile' },
@@ -22,7 +23,19 @@ const NAV_LINKS = [
   { path: '/invoices', label: 'Invoice' },
   { path: '/documents', label: 'Documents' },
   { path: '/parties', label: 'Parties' },
+  // Інструмент міграції RTDB читає локальні копії обох колекцій цілком, тобто показує
+  // контакти всіх анкет. Маршрут адмінський (App.jsx), тож і пункт меню показуємо лише
+  // адміну - решта пунктів тут без гейта, бо ведуть на звичайні робочі сторінки.
+  { path: '/rtdb-migration', label: 'RTDB migration', adminOnly: true },
 ];
+
+// Права тут беруться з того ж localStorage, куди їх кладе App при вході: меню рендериться
+// всередині чужих сторінок і власного доступу до профілю не має.
+const visibleLinks = () => {
+  const ownerId = typeof localStorage !== 'undefined' ? localStorage.getItem('ownerId') : null;
+  const isAdmin = isAdminUid(ownerId);
+  return NAV_LINKS.filter(link => !link.adminOnly || isAdmin);
+};
 
 const Wrap = styled.div`
   position: relative;
@@ -136,7 +149,7 @@ const PageNavMenu = () => {
       </DotsButton>
       {open ? (
         <Dropdown $mobileAnchor={mobileAnchor}>
-          {NAV_LINKS.map(link => (
+          {visibleLinks().map(link => (
             <MenuItem
               key={link.path}
               type="button"
