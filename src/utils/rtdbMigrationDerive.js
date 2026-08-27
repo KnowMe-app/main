@@ -249,6 +249,37 @@ export const normalizeFeedDateValue = value => {
 };
 
 /**
+ * Дата в анкеті пишеться одним форматом — `YYYY-MM-DD`.
+ *
+ * У живих даних та сама дата лежить двома написаннями: `25.08.2026` з
+ * мобільної форми і `2026-08-25` з веба. Поки вони різні рядки, це два різні
+ * значення: у `getInTouch` вони дають дві групи замість однієї, у порівнянні
+ * копій — конфлікт на рівному місці, а сортування рядком ставить крапкові дати
+ * не туди, бо в них першим стоїть день.
+ *
+ * Тож при переїзді дата нормалізується. Не «переформатовується будь-що схоже»:
+ * міняється рівно те, що є датою цілком і повністю, — рядок із самих цифр і
+ * крапок, який дає осмислені день, місяць і рік. Усе інше (нотатка з датою
+ * всередині, номер версії, «2099-99-99») лишається символ у символ.
+ *
+ * Обхід глибокий: масив версій поля і вкладений обʼєкт — теж дані анкети.
+ */
+export const normalizeLegacyDates = value => {
+  if (typeof value === 'string') {
+    const normalized = normalizeFeedDateValue(value);
+    // Порожній результат означає «це не дата», а не «дата зникла».
+    return normalized || value;
+  }
+  if (Array.isArray(value)) return value.map(normalizeLegacyDates);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeLegacyDates(item)]),
+    );
+  }
+  return value;
+};
+
+/**
  * Порівняння двох дат входу — рівно настільки, наскільки це можливо чесно.
  *
  * `lastLogin` та `lastLogin2` — це «коли анкету востаннє бачили», і з двох
@@ -299,111 +330,3 @@ export const deriveFeedDate = source => {
     warning: 'FEED_DATE_MISSING_DATE',
   };
 };
-
-/** Символи, яких не може містити ключ RTDB. */
-const FORBIDDEN_KEY_CHARACTERS = /[.#$/[\]]/;
-const FORBIDDEN_KEY_CHARACTERS_GLOBAL = /[.#$/[\]]/g;
-
-/**
- * Контрольні коди база теж не приймає, а в legacy-значеннях вони трапляються
- * після копіювання з таблиць — невидимі очима і фатальні для запису.
- */
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARACTERS = new RegExp('[\\u0000-\\u001F\\u007F]');
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARACTERS_GLOBAL = new RegExp('[\\u0000-\\u001F\\u007F]', 'g');
-
-const utf8Length = text => (
-  typeof TextEncoder === 'function'
-    ? new TextEncoder().encode(text).length
-    : Buffer.byteLength(text, 'utf8')
-);
-
-/** Символ-замінник. Сам він у ключі дозволений, тож заміна не тягне за собою нову. */
-const KEY_REPLACEMENT_CHARACTER = '-';
-
-const MAX_KEY_BYTES = 768;
-
-/**
- * Обрізання по межі кодової точки, а не байта.
- *
- * Ріж посеред UTF-8 послідовності — і в ключі опиниться зламаний символ, який
- * база або відкине, або збереже нечитабельним.
- */
-const truncateToBytes = (text, limit) => {
-  let result = '';
-  let used = 0;
-  for (const character of text) {
-    const size = utf8Length(character);
-    if (used + size > limit) break;
-    result += character;
-    used += size;
-  }
-  return result;
-};
-
-/**
- * Коди попереджень для кожного поля, яке живе під власником.
- *
- * Поля два (`getInTouch` і `writer`), правило приведення до ключа в них одне, а
- * коди різні — інакше у звіті не було б видно, що саме довелось правити.
- */
-const OWNER_VALUE_KEY_CODES = Object.freeze({
-  getInTouch: Object.freeze({
-    empty: 'EMPTY_GET_IN_TOUCH_VALUE',
-    unsafe: 'UNSAFE_GET_IN_TOUCH_KEY',
-    tooLong: 'GET_IN_TOUCH_KEY_TOO_LONG',
-  }),
-  writer: Object.freeze({
-    empty: 'EMPTY_WRITER_VALUE',
-    unsafe: 'UNSAFE_WRITER_KEY',
-    tooLong: 'WRITER_KEY_TOO_LONG',
-  }),
-});
-
-/**
- * Значення власника (`getInTouch`, `writer`), приведене до придатного ключа.
- *
- * Legacy-значення не «виправляються» по суті: `2099-99-99` лишається
- * `2099-99-99`, а «Ik, » — рівно тим, чим його записав адмін, бо саме за ними
- * він їх упізнає. Правиться тільки те, через що база відмовила б у записі:
- * заборонені в ключі символи (`.#$/[]` і контрольні) стають дефісом, задовгий
- * ключ обрізається по межі символа.
- *
- * Замінене не зникає з поля зору: `changed` вмикає попередження, а `original`
- * несе вихідне значення, тож у звіті видно і що записано, і з чого воно
- * вийшло. Порожнє значення ключем не стає ніяк — з нічого ключа не буває, і
- * таке джерело лишається на місці.
- */
-export const checkOwnerValueKeySafety = (value, field = 'getInTouch') => {
-  const codes = OWNER_VALUE_KEY_CODES[field] || OWNER_VALUE_KEY_CODES.getInTouch;
-  const text = displayString(value);
-  if (!text) return { safe: false, reason: codes.empty };
-
-  let key = text;
-  const reasons = [];
-
-  if (FORBIDDEN_KEY_CHARACTERS.test(key) || CONTROL_CHARACTERS.test(key)) {
-    key = key
-      .replace(FORBIDDEN_KEY_CHARACTERS_GLOBAL, KEY_REPLACEMENT_CHARACTER)
-      .replace(CONTROL_CHARACTERS_GLOBAL, KEY_REPLACEMENT_CHARACTER);
-    reasons.push(codes.unsafe);
-  }
-
-  if (utf8Length(key) > MAX_KEY_BYTES) {
-    key = truncateToBytes(key, MAX_KEY_BYTES);
-    reasons.push(codes.tooLong);
-  }
-
-  // Із самих лише заборонених символів ключа не збереш: замінники нічого не
-  // розрізняють, і всі такі значення злилися б в один ключ.
-  if ([...key].every(character => character === KEY_REPLACEMENT_CHARACTER)) {
-    return { safe: false, original: text, reason: codes.empty };
-  }
-
-  if (!reasons.length) return { safe: true, key, original: text, changed: false };
-  return { safe: true, key, original: text, changed: true, reason: reasons[0], reasons };
-};
-
-/** Те саме для `getInTouch` — ім'я, під яким його кличуть решта модулів. */
-export const checkGetInTouchKeySafety = value => checkOwnerValueKeySafety(value, 'getInTouch');

@@ -30,6 +30,7 @@ import {
   readOwnerWriterMap,
   setOwnerWriter,
   invalidateOwnerWriterMap,
+  readOwnerGetInTouchSorted,
 } from 'components/config';
 import { withAdminDownloadToast } from './backendDownloadToast';
 import { PROFILE_NODES } from './profileNodeSchema';
@@ -76,11 +77,11 @@ export const getFullProfile = (profileId, options = {}) => readProfileFromNodes(
 /**
  * Персональні `getInTouch` одного власника у вигляді `profileId -> value`.
  *
- * У базі вони лежать навпаки — `owner/value/profileId` — щоб однакове значення
- * не плодило тисячі однакових підструктур. Стара логіка сортування і фільтрів
- * очікує значення на самій картці, тож адаптер перевертає структуру тут і
- * віддає мапу. Сама логіка сортування не змінюється: вона й далі отримує
- * `card.getInTouch`, просто значення приходить не з картки.
+ * У базі вони так і лежать — `owner/profileId` = значення, — тож перевертати
+ * нічого не треба. Стара логіка сортування і фільтрів очікує значення на самій
+ * картці; вона не змінюється: і далі отримує `card.getInTouch`, просто значення
+ * приходить не з картки. А коли впорядкувати треба базою, а не в памʼяті, поруч
+ * є `readOwnerGetInTouchSorted` — `orderByValue()` по індексу `.value`.
  */
 export const getOwnerGetInTouchMap = readOwnerGetInTouchMap;
 
@@ -130,3 +131,13 @@ export const forgetOwnerWriter = invalidateOwnerWriterMap;
 export const withOwnerWriter = (cards = [], writerMap = {}) => (
   withOwnerValue(cards, writerMap, 'writer')
 );
+
+/**
+ * Позначки «звʼязатись», уже впорядковані базою.
+ *
+ * Мапа вище відповідає на питання «яке значення в цієї картки», а це — на
+ * питання «які картки і в якому порядку»: `{ userId, getInTouch }` за
+ * зростанням дати, за потреби з діапазоном і межею. Сортувати той самий список
+ * у памʼяті браузера більше не потрібно.
+ */
+export const getOwnerGetInTouchSorted = readOwnerGetInTouchSorted;

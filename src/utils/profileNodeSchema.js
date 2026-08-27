@@ -174,6 +174,7 @@ export const PROFILE_TECHNICAL_ACCESS_FIELDS = Object.freeze([
   'accessLevel',
   'canCreateProfiles',
   'multiDataAccessUserIds',
+  'multiDataSourceUserIds',
   'additionalAccessRules',
 ]);
 
@@ -323,16 +324,12 @@ export const NEVER_MIGRATED_FIELDS = Object.freeze([
 /**
  * Права, які в нові вузли не їдуть узагалі.
  *
- * `multiDataSourceUserIds` — це делегування читання чужого `multiData`, тобто
- * право не на анкету, а на дані іншого адміна; `godMode` — аварійний прапорець.
- * Обидва читаються з legacy напряму, і другої копії їм не заводять.
- *
- * Решта прав переїхала в `profileTechnical` (див.
- * `PROFILE_TECHNICAL_ACCESS_FIELDS`) — але забороненими для картки стрічки,
+ * Лишився один: `godMode` — аварійний прапорець, який не видають ні формою, ні
+ * міграцією. Решта прав переїхала в `profileTechnical` (див.
+ * `PROFILE_TECHNICAL_ACCESS_FIELDS`), але забороненими для картки стрічки,
  * деталей і контактів лишились усі: технічне право не має права лежати там.
  */
 export const ACCESS_CONTROL_FIELDS = Object.freeze([
-  'multiDataSourceUserIds',
   'godMode',
 ]);
 
@@ -345,7 +342,13 @@ export const ALL_ACCESS_CONTROL_FIELDS = Object.freeze([
 /** Пароль не потрапляє нікуди. Його поява в даних — інцидент, а не поле. */
 export const SECRET_FIELDS = Object.freeze(['password']);
 
-/** Персональні дані власника щодо чужих карток — окремий вузол `multiData`. */
+/**
+ * Персональні дані власника щодо чужих карток — окремий вузол `multiData`.
+ *
+ * `getInTouch` каже, коли з контактом звʼязатись; анкети це не описує — та
+ * сама жінка для одного адміна «подзвонити 1 вересня», а для іншого не
+ * записана взагалі.
+ */
 export const MULTI_DATA_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
 
 /**
@@ -353,37 +356,11 @@ export const MULTI_DATA_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
  *
  * У старих даних воно лежить в анкеті рядком на кшталт «Ik, » або «IgTT, » —
  * тобто ініціалами адмінів, які писали цьому контакту, і яким саме способом.
- * Анкети це не описує: та сама жінка для одного адміна «Ik», а для іншого — не
- * записана взагалі. Тож живе воно там само, де `getInTouch`: під власником,
- * значенням у назві ключа.
  */
 export const MULTI_DATA_WRITER_PATH = 'multiData/writer';
 
 /**
- * Поля, які належать не анкеті, а тому, хто їх поставив.
- *
- * Обидва влаштовані однаково — `{path}/{ownerId}/{значення}/{profileId}: true`
- * — і саме тому перелічені разом: міграція, правила бази і runtime мають
- * бачити один список, а не три схожі.
- */
-export const OWNER_MULTI_DATA_FIELDS = Object.freeze([
-  Object.freeze({ field: 'getInTouch', path: MULTI_DATA_GET_IN_TOUCH_PATH }),
-  Object.freeze({ field: 'writer', path: MULTI_DATA_WRITER_PATH }),
-]);
-
-/** Самі назви полів — там, де шлях не потрібен. */
-export const OWNER_MULTI_DATA_FIELD_NAMES = Object.freeze(
-  OWNER_MULTI_DATA_FIELDS.map(entry => entry.field),
-);
-
-/**
- * Персональний графік стимуляції — теж під власником, але значенням, а не ключем.
- *
- * `getInTouch` і `writer` — це короткі позначки, тож у них значення сидить у
- * назві ключа. Графік так лежати не може: це не помітка, а таблиця днів і
- * призначень, і власників у неї стільки ж, скільки адмінів веде цю жінку —
- * кожен свій. Тож структура тут інша: `{шлях}/{ownerId}/{profileId}` = сам
- * графік.
+ * Персональний графік стимуляції — така сама позначка, тільки таблицею.
  *
  * Сусідній `multiData/stimulation` — це вже зведена таблиця медикаментів
  * (`rows`/`startDate`), яку будує сторінка графіка. Тут же лежить те, з чого
@@ -392,18 +369,43 @@ export const OWNER_MULTI_DATA_FIELD_NAMES = Object.freeze(
 export const MULTI_DATA_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedule';
 
 /**
- * Поля власника, які їдуть у `multiData` цілим значенням.
+ * Поля, які належать не анкеті, а тому, хто їх поставив.
  *
- * Від `OWNER_MULTI_DATA_FIELDS` відрізняються рівно формою запису: там ключ
- * несе значення, тут ключ — це анкета, а значення лежить значенням.
+ * Форма в усіх одна: `{path}/{ownerId}/{profileId}` = значення. Раніше короткі
+ * позначки лежали навпаки — значення в назві ключа, анкети прапорцями під ним,
+ * — щоб однакове значення не плодило тисячі однакових підструктур. Ця економія
+ * коштувала дорожче, ніж давала:
+ *
+ *   — значення мусило ставати ключем, тобто втрачати `.`, `/`, `#`, `[`, `]`
+ *     і власну довжину: нотатка адміна поверталась йому переписаною;
+ *   — зміна значення була не записом, а переїздом між двома ключами;
+ *   — база не вміла ані відсортувати такі позначки, ані взяти діапазон: під
+ *     ключем лежить набір анкет, а не значення.
+ *
+ * Значенням під анкетою все це зникає, а замість втраченої економії зʼявляється
+ * індекс: `.indexOn: ".value"` на вузлі власника (див. `OWNER_MULTI_DATA_INDEXED_FIELDS`)
+ * дає `orderByValue()` — і сортування за датою «звʼязатись», і вибірку
+ * діапазону, які раніше довелось би робити в памʼяті браузера.
  */
-export const OWNER_MULTI_DATA_PAYLOAD_FIELDS = Object.freeze([
+export const OWNER_MULTI_DATA_FIELDS = Object.freeze([
+  Object.freeze({ field: 'getInTouch', path: MULTI_DATA_GET_IN_TOUCH_PATH, indexed: true }),
+  Object.freeze({ field: 'writer', path: MULTI_DATA_WRITER_PATH }),
   Object.freeze({ field: 'stimulationSchedule', path: MULTI_DATA_STIMULATION_SCHEDULE_PATH }),
 ]);
 
 /** Самі назви полів — там, де шлях не потрібен. */
-export const OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES = Object.freeze(
-  OWNER_MULTI_DATA_PAYLOAD_FIELDS.map(entry => entry.field),
+export const OWNER_MULTI_DATA_FIELD_NAMES = Object.freeze(
+  OWNER_MULTI_DATA_FIELDS.map(entry => entry.field),
+);
+
+/**
+ * Поля власника, за якими база сортує сама.
+ *
+ * Індексується скаляр, за яким є сенс упорядковувати чи брати діапазон: дата
+ * «звʼязатись» — так, таблиця графіка — ні, її не порівнюють.
+ */
+export const OWNER_MULTI_DATA_INDEXED_FIELDS = Object.freeze(
+  OWNER_MULTI_DATA_FIELDS.filter(entry => entry.indexed).map(entry => entry.field),
 );
 
 /**

@@ -17,7 +17,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import fs from 'node:fs';
-import { ref, get, set, update, remove } from 'firebase/database';
+import { ref, get, set, update, remove, query, orderByValue, startAt, limitToFirst } from 'firebase/database';
 
 const SUPERADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const MATCHING_VIEWER = 'matchingViewerUid0000000000';
@@ -93,10 +93,10 @@ await testEnv.withSecurityRulesDisabled(async context => {
     [MIGRATED_EDITOR]: { accessLevel: 'matching:view&write', canCreateProfiles: true },
   });
   await set(ref(db, 'multiData/getInTouch'), {
-    [SUPERADMIN]: { '2026-09-01': { [CARD]: true } },
+    [SUPERADMIN]: { [CARD]: '2026-09-01', [PROFILE_OWNER]: '2026-08-20' },
   });
   await set(ref(db, 'multiData/writer'), {
-    [SUPERADMIN]: { 'Ik,': { [CARD]: true } },
+    [SUPERADMIN]: { [CARD]: 'Ik, ' },
   });
   await set(ref(db, 'multiData/stimulationSchedule'), {
     [SUPERADMIN]: { [CARD]: { startDate: '2026-09-01' } },
@@ -213,43 +213,59 @@ await it('publish не можна покласти у workflow', () =>
 
 describe('multiData/getInTouch — власник, делегат і решта');
 
-await it('власник читає власні групи', () =>
+await it('власник читає власні позначки', () =>
   assertSucceeds(get(ref(db(SUPERADMIN), `multiData/getInTouch/${SUPERADMIN}`))));
 
-await it('власник пише у власні групи', () =>
-  assertSucceeds(set(ref(db(SUPERADMIN), `multiData/getInTouch/${SUPERADMIN}/2026-10-01/${CARD}`), true)));
+await it('власник пише позначку під карткою', () =>
+  assertSucceeds(set(ref(db(SUPERADMIN), `multiData/getInTouch/${SUPERADMIN}/${CARD}`), '2026-10-01')));
 
-await it('делегований читач читає групи власника', () =>
+await it('делегований читач читає позначки власника', () =>
   assertSucceeds(get(ref(db(DELEGATED_READER), `multiData/getInTouch/${SUPERADMIN}`))));
 
-await it('делегований читач НЕ пише у групи власника', () =>
-  assertFails(set(ref(db(DELEGATED_READER), `multiData/getInTouch/${SUPERADMIN}/2026-10-01/${CARD}`), true)));
+await it('делегований читач НЕ пише у позначки власника', () =>
+  assertFails(set(ref(db(DELEGATED_READER), `multiData/getInTouch/${SUPERADMIN}/${CARD}`), '2026-10-01')));
 
-await it('стороння не читає чужих груп', () =>
+await it('стороння не читає чужих позначок', () =>
   assertFails(get(ref(db(OUTSIDER), `multiData/getInTouch/${SUPERADMIN}`))));
 
-await it('значенням може бути тільки true', () =>
-  assertFails(set(ref(db(SUPERADMIN), `multiData/getInTouch/${SUPERADMIN}/2026-10-01/${CARD}`), 'yes')));
+await it('позначка — рядок, а не структура', () =>
+  assertFails(set(ref(db(SUPERADMIN), `multiData/getInTouch/${SUPERADMIN}/${CARD}`), { date: '2026-10-01' })));
+
+await it('база сортує позначки за значенням — індекс на місці', async () => {
+  const rows = [];
+  const snapshot = await get(query(
+    ref(db(SUPERADMIN), `multiData/getInTouch/${SUPERADMIN}`),
+    orderByValue(),
+    startAt('2026-01-01'),
+    limitToFirst(10),
+  ));
+  snapshot.forEach(child => {
+    rows.push([child.key, child.val()]);
+  });
+  // Порядок саме за датою: без `.indexOn: ".value"` запит відповів би
+  // «Index not defined», а не відсортованим списком.
+  const dates = rows.map(([, value]) => value);
+  if (dates.length < 2) throw new Error(`очікували щонайменше дві позначки, отримали ${dates.length}`);
+  const sorted = [...dates].sort();
+  if (dates.join() !== sorted.join()) throw new Error(`не відсортовано: ${dates.join()}`);
+});
 
 describe('multiData/writer — та сама аудиторія, що й у getInTouch');
 
 await it('власник читає власні позначки способу звʼязку', () =>
   assertSucceeds(get(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}`))));
 
-await it('власник пише у власні позначки', () =>
-  assertSucceeds(set(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), true)));
+await it('власник пише позначку під карткою — зі скороченням, яке ключем бути не могло', () =>
+  assertSucceeds(set(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}/${CARD}`), 'Ik/T, 01.09')));
 
 await it('делегований читач читає позначки власника', () =>
   assertSucceeds(get(ref(db(DELEGATED_READER), `multiData/writer/${SUPERADMIN}`))));
 
 await it('делегований читач НЕ пише у позначки власника', () =>
-  assertFails(set(ref(db(DELEGATED_READER), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), true)));
+  assertFails(set(ref(db(DELEGATED_READER), `multiData/writer/${SUPERADMIN}/${CARD}`), 'T')));
 
 await it('стороння не читає чужих позначок', () =>
   assertFails(get(ref(db(OUTSIDER), `multiData/writer/${SUPERADMIN}`))));
-
-await it('значенням може бути тільки true', () =>
-  assertFails(set(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), 'yes')));
 
 describe('права після переїзду в profileTechnical');
 
@@ -289,12 +305,28 @@ await it('profileTechnical приймає права акаунта', () =>
     'matching:view',
   )));
 
-await it('profileTechnical і далі не приймає ані пароля, ані делегування', async () => {
-  await assertFails(set(ref(db(SUPERADMIN), `profileTechnical/${CARD}/password`), 'x'));
-  await assertFails(set(
+await it('profileTechnical приймає й делегування читання чужого multiData', () =>
+  assertSucceeds(set(
     ref(db(SUPERADMIN), `profileTechnical/${CARD}/multiDataSourceUserIds`),
     { [SUPERADMIN]: true },
-  ));
+  )));
+
+await it('profileTechnical і далі не приймає ані пароля, ані godMode', async () => {
+  await assertFails(set(ref(db(SUPERADMIN), `profileTechnical/${CARD}/password`), 'x'));
+  await assertFails(set(ref(db(SUPERADMIN), `profileTechnical/${CARD}/godMode`), true));
+});
+
+await it('делегування з profileTechnical відкриває чужі позначки', async () => {
+  const DELEGATE = 'technicalDelegateUid000000';
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await set(
+      ref(context.database(), `profileTechnical/${DELEGATE}/multiDataSourceUserIds/${SUPERADMIN}`),
+      true,
+    );
+  });
+  // У legacy про цього читача не сказано нічого — право лежить тільки в новому
+  // вузлі, і саме його правило й мусить побачити.
+  await assertSucceeds(get(ref(db(DELEGATE), `multiData/getInTouch/${SUPERADMIN}`)));
 });
 
 describe('multiData/stimulationSchedule — той самий власник, але значення значенням');

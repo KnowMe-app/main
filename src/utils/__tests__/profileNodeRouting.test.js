@@ -65,9 +65,11 @@ describe('роутер записів', () => {
       'profileTechnical/P1/accessLevel': 'matching:view&write',
       'profileTechnical/P1/canCreateProfiles': true,
     });
-    // А делегування читання чужого multiData нікуди не їде: воно лишається
-    // тільки в legacy, і другого місця в нього немає.
-    expect(buildProfileNodePatch('P1', { multiDataSourceUserIds: { X: true } })).toEqual({});
+    // Делегування читання чужого multiData — теж право акаунта, і їде туди ж.
+    expect(buildProfileNodePatch('P1', { multiDataSourceUserIds: { X: true } }))
+      .toEqual({ 'profileTechnical/P1/multiDataSourceUserIds': { X: true } });
+    // А аварійний `godMode` не видають ані формою, ані міграцією.
+    expect(buildProfileNodePatch('P1', { godMode: true })).toEqual({});
   });
 
   it('без id не будує нічого', () => {

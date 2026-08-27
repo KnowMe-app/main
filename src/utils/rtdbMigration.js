@@ -37,7 +37,6 @@ import {
   SECRET_FIELDS,
   ALL_MAPPED_FIELDS,
   OWNER_MULTI_DATA_FIELD_NAMES,
-  OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES,
   MATCHING_CARD_FIELD_SOURCES,
   CLEANED_COLLECTION_NOISE_FIELDS,
   CLEANED_COLLECTION_PRESERVED_FIELDS,
@@ -53,7 +52,7 @@ import {
   deriveRole,
   deriveFeedDate,
   compareLoginRecency,
-  checkOwnerValueKeySafety,
+  normalizeLegacyDates,
 } from './rtdbMigrationDerive';
 
 /** Кнопки міграції, у порядку, в якому їх задумано натискати. */
@@ -63,12 +62,10 @@ export const MIGRATION_GROUPS = Object.freeze([
   { id: 'profileWorkflow', label: 'Migrate Workflow', node: PROFILE_NODES.profileWorkflow },
   { id: 'profileTechnical', label: 'Migrate Technical', node: PROFILE_NODES.profileTechnical },
   { id: 'getInTouch', label: 'Migrate GetInTouch', node: 'multiDataPatch' },
-  // `writer` їде тим самим шляхом і з тієї ж причини: це позначка адміна про
-  // спосіб звʼязку з контактом, а не властивість самого контакту.
+  // `writer` і графік стимуляції їдуть тим самим шляхом і з тієї ж причини: це
+  // позначки адміна про контакт, а не властивості самого контакту.
   { id: 'writer', label: 'Migrate Writer', node: 'multiDataPatch' },
-  // Графік стимуляції теж належить не анкеті, а тому, хто його веде, — але
-  // їде цілим значенням, а не назвою ключа.
-  { id: 'stimulationSchedule', label: 'Migrate Stimulation Schedule', node: 'multiDataPayload' },
+  { id: 'stimulationSchedule', label: 'Migrate Stimulation Schedule', node: 'multiDataPatch' },
   { id: 'profileDetails', label: 'Migrate Profiles', node: PROFILE_NODES.profileDetails },
 ]);
 
@@ -105,11 +102,6 @@ const OWNER_VALUE_FIELD_BY_GROUP = Object.fromEntries(
   OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, field]),
 );
 
-/** Те саме для полів власника, які лежать під анкетою цілим значенням. */
-const OWNER_PAYLOAD_FIELD_BY_GROUP = Object.fromEntries(
-  OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.map(field => [field, field]),
-);
-
 /**
  * Скільки подробиць звіт тримає списком.
  *
@@ -137,9 +129,6 @@ const emptyTargets = () => ({
   // Не список літералів: поля власника перелічені в схемі, і другий перелік
   // тут розійшовся б із нею при першому ж додаванні.
   multiDataPatch: Object.fromEntries(OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, {}])),
-  multiDataPayload: Object.fromEntries(
-    OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.map(field => [field, {}]),
-  ),
 });
 
 const emptyCounters = () => ({
@@ -151,7 +140,6 @@ const emptyCounters = () => ({
   skippedEmpty: 0,
   skippedAbsent: 0,
   conflicts: 0,
-  unsafeKeys: 0,
   errors: 0,
   deletionsFromNewUsers: 0,
   consumedFromUsers: 0,
@@ -195,8 +183,7 @@ const isMappedField = field => ALL_MAPPED_FIELDS.includes(field)
   || field === 'publish'
   || field === 'userRole'
   || ALIAS_SOURCE_FIELDS.includes(field)
-  || OWNER_MULTI_DATA_FIELD_NAMES.includes(field)
-  || OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.includes(field);
+  || OWNER_MULTI_DATA_FIELD_NAMES.includes(field);
 
 /** Скільки анкет колекції звелись до самого лише `userId` (або до порожнечі). */
 const countIdentityOnlyRecords = collection => Object.values(collection || {}).reduce(
@@ -299,14 +286,6 @@ export const createMigrationState = ({ users = {}, newUsers = {} } = {}) => {
     targets: emptyTargets(),
     /** Хто саме поклав значення в цільовий вузол — щоб конфлікт називав обидві сторони. */
     targetOrigins: {},
-    /**
-     * `поле::owner::profileId -> value` для полів власника.
-     *
-     * У value-first структурі значення сидить у назві ключа, тож без цього
-     * покажчика довелось би обходити всі значення власника, щоб дізнатись, чи
-     * вже є ця картка. Тут це один пошук замість обходу.
-     */
-    ownerValueByProfile: {},
     appliedGroups: [],
     report: {
       startedAt: new Date().toISOString(),
@@ -339,11 +318,9 @@ const createPlanContext = (state, group) => ({
   group,
   node: MIGRATION_GROUPS.find(entry => entry.id === group)?.node || null,
   pendingTargets: {},
-  pendingOwnerValueByProfile: {},
-  pendingOwnerPayload: {},
+  pendingOwnerValues: {},
   writes: [],
   ownerValueWrites: [],
-  ownerPayloadWrites: [],
   deletions: [],
   consumedFromUsers: [],
   consumedKeys: new Set(),
@@ -542,7 +519,11 @@ const planDirectField = (ctx, { profileId, field, source, sourceCollection }) =>
   const outcome = offerValue(ctx, {
     profileId,
     field,
-    value: deepClone(source[sourceKey]),
+    // Дата переїжджає одним написанням — `YYYY-MM-DD`. Це не косметика: поки
+    // `25.08.2026` і `2026-08-25` різні рядки, дві копії тієї самої анкети
+    // дають конфлікт на рівному місці, а сортування рядком ставить крапкові
+    // дати не туди.
+    value: normalizeLegacyDates(deepClone(source[sourceKey])),
     sourceCollection,
   });
 
@@ -729,12 +710,20 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
 };
 
 /**
- * Кнопки GetInTouch і Writer: `owner/value/profileId = true` (§14).
+ * Кнопки GetInTouch, Writer і Stimulation Schedule: `owner/profileId = значення` (§14).
  *
- * Обидва поля — не властивість анкети, а позначка того, хто її поставив:
- * `getInTouch` каже, коли з контактом звʼязатись, `writer` — хто і чим із ним
- * уже спілкувався. В анкеті вони опинились через те, що іншого місця не було;
- * у новій структурі місце є, і воно одне на обидва.
+ * Жодне з трьох полів не описує анкету: `getInTouch` каже, коли з контактом
+ * звʼязатись, `writer` — хто і чим із ним уже спілкувався, графік стимуляції —
+ * як його ведуть. Та сама жінка для одного адміна «подзвонити 1 вересня», а
+ * для іншого не записана взагалі, тож усі три їдуть під власника.
+ *
+ * Значення лягає значенням, а не назвою ключа. Ключем воно було раніше — і
+ * платою за це були переписані нотатки (ключ не тримає `.`, `/`, `#`, `[`,
+ * `]`), переїзд між ключами замість запису і неможливість відсортувати
+ * позначки базою. Тепер сортує база: `.indexOn: ".value"` на вузлі власника.
+ *
+ * Розбіжність між копіями розсуджується як усюди: інше значення в цілі — це
+ * конфлікт, ціль не перезаписується, джерело лишається на місці.
  */
 const planOwnerValueField = (ctx, { field, profileId, source, sourceCollection, ownerUid }) => {
   if (!Object.prototype.hasOwnProperty.call(source, field)) {
@@ -755,107 +744,12 @@ const planOwnerValueField = (ctx, { field, profileId, source, sourceCollection, 
     return;
   }
 
-  const safety = checkOwnerValueKeySafety(raw, field);
-  if (!safety.safe) {
-    // Лишилось тільки те, з чого ключа не буває взагалі: порожнє значення або
-    // самі лише заборонені символи. Таке джерело лишається на місці.
-    ctx.counters.unsafeKeys += 1;
-    addWarning(ctx, {
-      code: safety.reason,
-      profileId,
-      field,
-      collection: sourceCollection,
-      targetGroup: ctx.group,
-      value: safety.original,
-    });
-    return;
-  }
-
-  if (safety.changed) {
-    // Значення виправлене, а не відкинуте, — але виправлення видно: у звіті
-    // стоять обидві форми, тож адмін упізнає свою нотатку і бачить, під яким
-    // ключем вона тепер лежить.
-    ctx.counters.unsafeKeys += 1;
-    addWarning(ctx, {
-      code: safety.reason,
-      profileId,
-      field,
-      collection: sourceCollection,
-      targetGroup: ctx.group,
-      value: safety.original,
-      key: safety.key,
-    });
-  }
-
-  // Одна картка має в одного власника рівно одне значення. Якщо `users` і
-  // `newUsers` кажуть різне, у value-first структурі це вилилось би у два
-  // записи під різними ключами — картка опинилась би одразу у двох списках.
-  // Тож розбіжність тут така сама, як і всюди: конфлікт, і джерело лишається
-  // на місці.
+  // Дата «звʼязатись» у старих даних написана двома способами; після переїзду
+  // вона одна, інакше сортування за значенням ставило б крапкові дати не туди.
+  const value = normalizeLegacyDates(deepClone(raw));
   const profileKey = `${field}::${ownerUid}::${profileId}`;
-  const known = ctx.pendingOwnerValueByProfile[profileKey]
-    ?? ctx.state.ownerValueByProfile?.[profileKey];
-
-  if (known !== undefined && known !== safety.key) {
-    addConflict(ctx, {
-      profileId,
-      targetGroup: ctx.group,
-      field,
-      reason: 'SOURCE_CONFLICT',
-      existingValue: known,
-      incomingValue: safety.key,
-      incomingSource: sourceCollection,
-    });
-    return;
-  }
-
-  if (known === safety.key) {
-    ctx.counters.alreadyPresent += 1;
-  } else {
-    ctx.ownerValueWrites.push({ field, ownerUid, value: safety.key, profileId });
-    ctx.pendingOwnerValueByProfile[profileKey] = safety.key;
-    ctx.counters.derivedValuesCreated += 1;
-    if (sourceCollection === 'users') ctx.counters.fieldsCopiedFromUsers += 1;
-    else ctx.counters.fieldsMovedFromNewUsers += 1;
-  }
-
-  planConsumption(ctx, sourceCollection, profileId, field);
-};
-
-/**
- * Кнопка Stimulation Schedule: `owner/profileId = графік` (§14, друга форма).
- *
- * Графік стимуляції веде адмін, а не жінка: у тієї самої анкети в різних
- * адмінів він різний, і саме тому поле переїжджає під власника. Від
- * `getInTouch` і `writer` відрізняється лише тим, що значення тут — дані, а не
- * назва ключа: таблицю днів у ключ не запхнеш, та й не треба — під власником
- * анкета вже одна.
- *
- * Розбіжність розсуджується як усюди: інший графік у цілі — це конфлікт, ціль
- * не перезаписується, джерело лишається на місці.
- */
-const planOwnerPayloadField = (ctx, { field, profileId, source, sourceCollection, ownerUid }) => {
-  if (!Object.prototype.hasOwnProperty.call(source, field)) {
-    ctx.counters.skippedAbsent += 1;
-    return;
-  }
-
-  const raw = source[field];
-  if (!hasMeaningfulValue(raw)) {
-    ctx.counters.skippedEmpty += 1;
-    addWarning(ctx, {
-      code: 'EMPTY_SOURCE_VALUE',
-      profileId,
-      field,
-      collection: sourceCollection,
-      targetGroup: ctx.group,
-    });
-    return;
-  }
-
-  const value = deepClone(raw);
-  const pending = ctx.pendingOwnerPayload[`${field}::${ownerUid}::${profileId}`];
-  const stored = ctx.state.targets.multiDataPayload?.[field]?.[ownerUid]?.[profileId];
+  const pending = ctx.pendingOwnerValues[profileKey];
+  const stored = ctx.state.targets.multiDataPatch?.[field]?.[ownerUid]?.[profileId];
   const existing = pending !== undefined ? pending : stored;
 
   if (existing !== undefined) {
@@ -877,8 +771,8 @@ const planOwnerPayloadField = (ctx, { field, profileId, source, sourceCollection
     return;
   }
 
-  ctx.ownerPayloadWrites.push({ field, ownerUid, profileId, value });
-  ctx.pendingOwnerPayload[`${field}::${ownerUid}::${profileId}`] = value;
+  ctx.ownerValueWrites.push({ field, ownerUid, profileId, value });
+  ctx.pendingOwnerValues[profileKey] = value;
   if (sourceCollection === 'users') ctx.counters.fieldsCopiedFromUsers += 1;
   else ctx.counters.fieldsMovedFromNewUsers += 1;
 
@@ -897,19 +791,17 @@ export const planMigrationGroup = (state, group, options = {}) => {
   const ctx = createPlanContext(state, group);
   const directFields = DIRECT_FIELDS_BY_GROUP[group] || [];
   const ownerValueField = OWNER_VALUE_FIELD_BY_GROUP[group] || null;
-  const ownerPayloadField = OWNER_PAYLOAD_FIELD_BY_GROUP[group] || null;
   // Ім'я опції лишилось від часів, коли поле власника було одне; обидва
   // приймаються, щоб виклики з `getInTouchOwnerUid` не поламались мовчки.
   const ownerUid = String(options.ownerUid || options.getInTouchOwnerUid || '').trim();
 
-  if ((ownerValueField || ownerPayloadField) && !ownerUid) {
+  if (ownerValueField && !ownerUid) {
     return {
       group,
       node: ctx.node,
       blocked: 'MISSING_OWNER_UID',
       writes: [],
       ownerValueWrites: [],
-      ownerPayloadWrites: [],
       deletions: [],
       consumedFromUsers: [],
       conflicts: [],
@@ -970,17 +862,6 @@ export const planMigrationGroup = (state, group, options = {}) => {
         return;
       }
 
-      if (ownerPayloadField) {
-        planOwnerPayloadField(ctx, {
-          field: ownerPayloadField,
-          profileId,
-          source,
-          sourceCollection,
-          ownerUid,
-        });
-        return;
-      }
-
       directFields.forEach(field => planDirectField(ctx, { profileId, field, source, sourceCollection }));
 
       if (group === 'matchingCards') {
@@ -999,7 +880,6 @@ export const planMigrationGroup = (state, group, options = {}) => {
     blocked: null,
     writes: ctx.writes,
     ownerValueWrites: ctx.ownerValueWrites,
-    ownerPayloadWrites: ctx.ownerPayloadWrites,
     deletions: ctx.deletions,
     consumedFromUsers: ctx.consumedFromUsers,
     conflicts: ctx.conflicts,
@@ -1061,18 +941,10 @@ export const applyMigrationPlan = (state, plan) => {
     rememberOrigin(state, node, profileId, field, origin);
   });
 
-  (plan.ownerPayloadWrites || []).forEach(({ field, ownerUid, profileId, value }) => {
-    const root = state.targets.multiDataPayload[field];
-    if (!root[ownerUid]) root[ownerUid] = {};
-    root[ownerUid][profileId] = deepClone(value);
-  });
-
-  (plan.ownerValueWrites || []).forEach(({ field, ownerUid, value, profileId }) => {
+  (plan.ownerValueWrites || []).forEach(({ field, ownerUid, profileId, value }) => {
     const root = state.targets.multiDataPatch[field];
     if (!root[ownerUid]) root[ownerUid] = {};
-    if (!root[ownerUid][value]) root[ownerUid][value] = {};
-    root[ownerUid][value][profileId] = true;
-    state.ownerValueByProfile[`${field}::${ownerUid}::${profileId}`] = value;
+    root[ownerUid][profileId] = deepClone(value);
   });
 
   plan.deletions.forEach(({ profileId, field }) => {
@@ -1135,12 +1007,9 @@ export const buildCombinedRootPatch = state => ({
   [PROFILE_NODES.profileContacts]: state.targets[PROFILE_NODES.profileContacts],
   [PROFILE_NODES.profileWorkflow]: state.targets[PROFILE_NODES.profileWorkflow],
   [PROFILE_NODES.profileTechnical]: state.targets[PROFILE_NODES.profileTechnical],
-  multiData: Object.fromEntries([
-    ...OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, state.targets.multiDataPatch[field]]),
-    ...OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.map(
-      field => [field, state.targets.multiDataPayload[field]],
-    ),
-  ]),
+  multiData: Object.fromEntries(
+    OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, state.targets.multiDataPatch[field]]),
+  ),
 });
 
 /** Звіт із підсумком по залишку — те, що адмін читає замість здогадок. */
@@ -1388,8 +1257,5 @@ export const buildCleanedCollections = state => ({
 export const getMigrationTarget = (state, node) => deepClone(state.targets[node]);
 
 export const getOwnerValuePatch = (state, field) => deepClone(state.targets.multiDataPatch[field]);
-
-/** `multiData/{поле}` для полів, які лежать під анкетою цілим значенням. */
-export const getOwnerPayloadPatch = (state, field) => deepClone(state.targets.multiDataPayload[field]);
 
 export const getGetInTouchPatch = state => getOwnerValuePatch(state, 'getInTouch');
