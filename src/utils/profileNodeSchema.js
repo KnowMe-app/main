@@ -250,6 +250,22 @@ export const NEVER_MIGRATED_FIELDS = Object.freeze([
   '__photosHydrated',
   'loading',
   'loadingCounter',
+
+  // Далі — рівно той перелік, який `config.js` уже вважає таким, що не має
+  // права лежати на картці (`transientUserDataKeys`). Без нього ті самі ключі
+  // потрапляли у звіті міграції в купку «поле поза жодним allowlist», тобто в
+  // список рішень для людини, — хоча рішення по них давно ухвалене: кеш-мітки
+  // транзитні, а `myComment` має власне сховище `multiData/comments`.
+  '__sourceCollection',
+  'cashVersion',
+  'cash version',
+  'localVersion',
+  'localUpdatedAt',
+  'source',
+  '__profileSnapshotVersion',
+  '__profileSnapshotSource',
+  '__profileSnapshotUpdatedAt',
+  'myComment',
 ]);
 
 /**

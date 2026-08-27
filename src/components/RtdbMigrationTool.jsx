@@ -392,9 +392,12 @@ const PlanSummary = ({ plan }) => {
       <StatLine $warn={Boolean(counters.conflicts)}>
         конфліктів: {formatCount(counters.conflicts)}
       </StatLine>
-      <StatLine $warn={Boolean(counters.unsafeKeys)}>
-        непридатних ключів: {formatCount(counters.unsafeKeys)}
-      </StatLine>
+      {/*
+        Не червоним: виправлений ключ — це записаний ключ, а не втрачений.
+        Рядок лишається, бо вихідну нотатку варто побачити в звіті: там стоять
+        обидві форми, і саме за вихідною адмін її впізнає.
+      */}
+      <StatLine>виправлено ключів: {formatCount(counters.unsafeKeys)}</StatLine>
       <StatLine $warn={Boolean(counters.errors)}>
         блокуючих помилок: {formatCount(counters.errors)}
       </StatLine>
@@ -701,6 +704,22 @@ export const RtdbMigrationTool = () => {
         {loaded && (
           <Section>
             <SectionTitle>3. Експорт</SectionTitle>
+
+            {/*
+              Preview нічого не застосовує — і файли після нього виходять
+              порожні, але не порожнього вигляду: combined-root-patch.json з
+              шістьма порожніми вузлами важко відрізнити від справжнього, а
+              залитий у корінь він знесе те, що там уже є. Тож поки жодної
+              кнопки не застосовано, це сказано прямо, а не лишається здогадкою
+              з `appliedGroups: []` усередині файлу.
+            */}
+            {audit?.appliedGroups?.length === 0 && (
+              <Warn>
+                Жодної групи ще не застосовано — Preview лише рахує. Файли вузлів і
+                combined-root-patch.json зараз порожні; migration-audit.json і
+                migration-remainders.json уже осмислені.
+              </Warn>
+            )}
 
             {/*
               Кожен файл — це ВМІСТ одного вузла, а імпорт у консолі Firebase
