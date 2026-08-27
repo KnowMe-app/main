@@ -205,7 +205,6 @@ export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) =>
   const stats = { total: 0, written: 0, skipped: 0, withAvatar: 0, inFeed: 0, byCollection: {} };
 
   Object.entries(collectionsMap).forEach(([collectionName, usersMap]) => {
-    const source = collectionName === 'newUsers' ? 'newUsers' : 'users';
     const collectionStats = { total: 0, written: 0, withAvatar: 0, inFeed: 0 };
 
     Object.entries(usersMap || {}).forEach(([userId, userData]) => {
@@ -213,7 +212,12 @@ export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) =>
       collectionStats.total += 1;
       stats.total += 1;
 
-      const projection = buildMatchingCardProjection(userId, { ...userData, __sourceCollection: source });
+      // Джерело картки називає формат id, а не назва мапи, з якої вона
+      // прийшла: колекція у вебі одна, і мапа сюди приходить уже зведена.
+      const projection = buildMatchingCardProjection(userId, {
+        __sourceCollection: resolveMatchingCardCollection(userId),
+        ...userData,
+      });
       if (!projection) {
         stats.skipped += 1;
         return;
@@ -232,7 +236,7 @@ export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) =>
       }
     });
 
-    stats.byCollection[source] = collectionStats;
+    stats.byCollection[collectionName] = collectionStats;
   });
 
   stats.withoutAvatar = stats.written - stats.withAvatar;
