@@ -545,14 +545,20 @@ export const normalizePhoneState = currentState => {
   };
 
 // Перетворення дати з формату DD.MM.YYYY в YYYY-MM-DD
+//
+// Переставляється тільки те, що є датою цілком: рядок із самих цифр і двох
+// крапок. Нотатка, у якій дата стоїть усередині («до 01.09.2026 не писати»),
+// має рівно три частини після `split('.')` — і без цієї перевірки поверталась
+// би перекрученою.
 export const formatDateToServer = (dateString) => {
   if (!dateString) return '';
-  const parts = dateString.split('.');
-  if (parts.length === 3) {
-    const [day, month, year] = parts;
-    return `${year}-${month}-${day}`;
-  }
-  return dateString; // Повертаємо оригінал, якщо формат неправильний
+  if (typeof dateString !== 'string') return dateString;
+
+  const match = dateString.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return dateString; // Повертаємо оригінал, якщо формат неправильний
+
+  const [, day, month, year] = match;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 };
 
 
@@ -624,7 +630,9 @@ export const formatDateToServer = (dateString) => {
   };
   
   export const calculateAge = date => {
-    const [day, month, year] = date.split('.');
+    // Приймає обидва написання: у базі дата лежить у `РРРР-ММ-ДД`, у полі
+    // введення — крапками.
+    const [day, month, year] = formatDateToDisplay(date).split('.');
     const enteredDate = new Date(`${year}-${month}-${day}`);
     const currentDate = new Date();
   

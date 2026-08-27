@@ -27,6 +27,7 @@ import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { getCurrentDate } from './foramtDate';
+import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import toast from 'react-hot-toast';
 import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
@@ -3320,7 +3321,7 @@ export const getUserCards = async () => {
 };
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition, delCondition) => {
-  const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo);
+  const cleanedUploadedInfo = normalizeStoredDates(stripTransientUserDataFields(uploadedInfo));
   const keysToDelete = [
     ...(delCondition ? Object.keys(delCondition) : []),
     ...transientUserDataKeys,
@@ -3386,6 +3387,56 @@ const transientUserDataKeys = [
   '__profileSnapshotUpdatedAt',
   'myComment',
 ];
+
+/**
+ * Поля, які тримають дату і тільки дату.
+ *
+ * Перелік явний, а не «усе, що схоже на дату»: `csection`, наприклад, буває і
+ * датою, і текстом («2 кесарі»), і чіпати його не можна.
+ */
+const STORAGE_DATE_FIELDS = [
+  'birth',
+  'birthWife',
+  'birthHusband',
+  'lastDelivery',
+  'opuDate',
+  'lastCycle',
+  'getInTouch',
+  'lastLogin',
+  'lastLogin2',
+  'registrationDate',
+];
+
+/**
+ * Дата в базі лежить у `РРРР-ММ-ДД` — незалежно від того, звідки прийшов запис.
+ *
+ * Людині дата і далі показується крапками: поле введення форматує ввід у
+ * `ДД.ММ.РРРР`, а `formatDateToDisplay` повертає її в такому ж вигляді при
+ * читанні. Перетворення на формат бази робиться в одному місці — тут, на
+ * виході з застосунку, — бо шляхів збереження кілька (форма анкети, поля
+ * картки, імпорт), і кожен інакше домовлявся б із базою окремо.
+ *
+ * Навіщо саме `РРРР-ММ-ДД`: у ньому рядкове порівняння збігається з
+ * хронологічним, тож база вміє і сортувати, і брати діапазон; у крапковому
+ * першим стоїть день, і `01.09.2026` виявляється «меншим» за `02.01.2020`.
+ */
+const normalizeStoredDates = payload => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+
+  const toStorage = value => {
+    if (Array.isArray(value)) return value.map(toStorage);
+    if (typeof value !== 'string') return value;
+    return formatDateToServer(value);
+  };
+
+  const next = { ...payload };
+  STORAGE_DATE_FIELDS.forEach(field => {
+    if (!Object.prototype.hasOwnProperty.call(next, field)) return;
+    if (next[field] === null || next[field] === undefined) return;
+    next[field] = toStorage(next[field]);
+  });
+  return next;
+};
 
 const stripTransientUserDataFields = (payload, options = {}) => {
   const { markForRealtimeDeletion = false } = options;
@@ -3901,9 +3952,9 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     // Знімається до strip: далі до пейлоада додадуться службові null, які
     // видаленнями не є.
     const explicitRemovals = condition === 'update' ? collectExplicitRemovals(uploadedInfo) : [];
-    const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
+    const cleanedUploadedInfo = normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
-    });
+    }));
 
     // Спершу вузли — вони джерело істини для веба, і саме їх читає застосунок.
     // Legacy йде другим: це дзеркало для мобільного застосунку, і його відмова
@@ -4003,9 +4054,9 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     console.log('currentUserData :>> ', currentUserData);
 
     // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
-    const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
+    const cleanedUploadedInfo = normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
-    });
+    }));
 
     // Спершу вузли, потім дзеркало в legacy — див. `updateDataInRealtimeDB`.
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
@@ -4985,12 +5036,17 @@ const normalizeAgeBirthDateIndexValue = rawValue => {
   const normalized = String(rawValue || '').trim();
   if (!normalized) return 'no';
 
-  const match = normalized.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  // Обидва написання: у базі дата лежить у `РРРР-ММ-ДД`, у legacy-анкетах —
+  // крапками. Приймати лише одне означало б, що половина анкет індексується
+  // як «вік невідомий».
+  const dotted = normalized.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  const iso = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const match = dotted || iso;
   if (!match) return '?';
 
-  const day = Number.parseInt(match[1], 10);
+  const day = Number.parseInt(dotted ? match[1] : match[3], 10);
   const month = Number.parseInt(match[2], 10);
-  const year = Number.parseInt(match[3], 10);
+  const year = Number.parseInt(dotted ? match[3] : match[1], 10);
 
   if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) {
     return '?';
@@ -8223,8 +8279,13 @@ const filterByAge = (value, ageLimit = 30) => {
   // Якщо дата народження відсутня або не є рядком, пропускаємо користувача
   if (!value.birth || typeof value.birth !== 'string') return true;
 
-  const birthParts = value.birth.split('.');
+  // Рік беремо з форми, у якій дату показують людині, — `formatDateToDisplay`
+  // зводить до неї і `РРРР-ММ-ДД` з бази, і крапкову з legacy-анкети. Без
+  // цього ISO-дата давала б `NaN`, а `NaN <= 30` — false, тобто анкета
+  // мовчки випадала б із фільтра.
+  const birthParts = formatDateToDisplay(value.birth).split('.');
   const birthYear = parseInt(birthParts[2], 10);
+  if (!Number.isFinite(birthYear)) return true;
   const currentYear = new Date().getFullYear();
   const age = currentYear - birthYear;
 
