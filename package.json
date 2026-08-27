@@ -32,6 +32,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:rules": "npx --yes firebase-tools@13 emulators:exec --only database --project demo-knowme-rules \"node scripts/rulesEmulatorTests.mjs\"",
     "eject": "react-scripts eject",
     "lint:js": "eslint src/**/*.{js,jsx}",
     "qa:pdf": "NODE_PATH=./src node scripts/pdfQaCheck.js",
@@ -61,6 +62,7 @@
     "@babel/preset-env": "^7.29.7",
     "@babel/preset-react": "^7.29.7",
     "@babel/register": "^7.29.7",
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@testing-library/react": "^14.3.1",
     "patch-package": "^8.0.1",
     "pdf-parse": "^2.4.5"

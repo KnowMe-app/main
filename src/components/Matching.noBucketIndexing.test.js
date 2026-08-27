@@ -26,17 +26,29 @@ describe('searchKey `no` bucket is neither written nor read', () => {
     const source = configSource();
 
     expect(source).toContain('const resetSearchKeyIndexNodes = async (searchKeyRoot, indexNames = []) => {');
-    expect(source).toContain('await resetSearchKeyIndexNodes(searchKeyRoot, [BLOOD_SEARCH_KEY_INDEX]);');
-    expect(source).toContain('await resetSearchKeyIndexNodes(searchKeyRoot, [IMT_SEARCH_KEY_INDEX, HEIGHT_SEARCH_KEY_INDEX, WEIGHT_SEARCH_KEY_INDEX]);');
+    expect(source).toContain('await resetSearchKeyIndexRoots(options, [BLOOD_SEARCH_KEY_INDEX]);');
+    expect(source).toContain('await resetSearchKeyIndexRoots(options, [IMT_SEARCH_KEY_INDEX, HEIGHT_SEARCH_KEY_INDEX, WEIGHT_SEARCH_KEY_INDEX]);');
   });
 
-  it('routes each collection to exactly one index root', () => {
+  it('кожен запис іде рівно в один корінь — за форматом id', () => {
+    // Коренів два, але це не дві колекції: `searchKey/users` тримає довгі id,
+    // `searchKey` — короткі. Один прогін перебудови накриває обидва, а кожен
+    // окремий запис має потрапити рівно в один — інакше половина колекції
+    // індексується двічі, а половина ніде.
     const source = configSource();
 
-    expect(source).toContain('export const resolveSearchKeyRootForCollection = collection =>');
-    expect(source).toContain("(collection === 'users' ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);");
     expect(source).toContain('export const resolveSearchKeyRootForUserId = userId =>');
+    expect(source).toContain('const resolveSearchKeyWriteRoot = (options, userId) => (');
+    expect(source).toContain('options?.rootPath || resolveSearchKeyRootForUserId(userId)');
+    expect(source).not.toContain('resolveSearchKeyRootForCollection');
     expect(source).not.toContain("const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;");
+  });
+
+  it('перебудова скидає обидва корені, а не той, на який дивиться дека', () => {
+    const source = configSource();
+
+    expect(source).toContain('const resetSearchKeyIndexRoots = async (options, indexNames = []) => {');
+    expect(source).toContain("const roots = options?.rootPath ? [options.rootPath] : SEARCH_KEY_INDEX_ROOT_PATHS;");
   });
 
   it('plans reads so the unstored bucket is never requested', () => {
@@ -79,8 +91,8 @@ describe('searchKey `no` bucket is neither written nor read', () => {
 
     expect(source).toContain("const BMI_SEARCH_KEY_INDEX = 'bmi';");
     expect(source).toContain("const COUNTRY_SEARCH_KEY_INDEX = 'country';");
-    expect(source).toContain('export const createBmiSearchKeyIndexInCollection =');
-    expect(source).toContain('export const createCountrySearchKeyIndexInCollection =');
+    expect(source).toContain('export const createBmiSearchKeyIndex =');
+    expect(source).toContain('export const createCountrySearchKeyIndex =');
     // One rule for the derived value, shared with the post-filter.
     expect(source).toContain('const getBmiCategory = value => resolveBmiBucket(value);');
     expect(source).toContain('const getCountryCategory = value => resolveCountryBucket(value);');

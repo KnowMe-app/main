@@ -140,36 +140,29 @@ export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
     };
   }
 
-  if (user?.__sourceCollection === 'newUsers' && user?.__matchingAccessAllowed === false) {
+  // Видимість більше не залежить від того, з якої колекції приїхала картка:
+  // колекція у вебі одна. Роль, яку раніше грало `__sourceCollection ===
+  // 'newUsers'`, тепер грає явний доступ: правила додаткового доступу кажуть
+  // «цю картку показати цьому глядачеві» незалежно від `publish`.
+  if (user?.__matchingAccessAllowed === false) {
     return {
       canShow: false,
       excludedFunction: 'canShowMatchingUser',
-      excludedCondition: 'user.__sourceCollection === "newUsers" && user.__matchingAccessAllowed === false',
-      exactReason: `newUsers_matchingAccessAllowed_false:userId=${userId},source=${user?.__sourceCollection},matchingAccessAllowed=${user?.__matchingAccessAllowed}`,
+      excludedCondition: 'user.__matchingAccessAllowed === false',
+      exactReason: `matchingAccessAllowed_false:userId=${userId},matchingAccessAllowed=${user?.__matchingAccessAllowed}`,
       excludedAtStage: 'final render guard',
-      reasonCode: 'newUsers_matchingAccessAllowed_false',
+      reasonCode: 'matching_access_denied',
     };
   }
 
-  if (user?.__sourceCollection !== 'newUsers' && user?.__sourceCollection !== 'users' && typeof user?.__sourceCollection !== 'undefined') {
-    return {
-      canShow: false,
-      excludedFunction: 'canShowMatchingUser',
-      excludedCondition: 'user.__sourceCollection is neither "users" nor "newUsers"',
-      exactReason: `invalid_collection_source:userId=${userId},source=${user?.__sourceCollection}`,
-      excludedAtStage: 'final render guard',
-      reasonCode: 'invalid_collection_source',
-    };
-  }
-
-  if (user?.__sourceCollection === 'newUsers') {
+  if (user?.__matchingAccessAllowed === true) {
     return {
       canShow: true,
       excludedFunction: 'canShowMatchingUser',
-      excludedCondition: 'user.__sourceCollection === "newUsers"',
-      exactReason: `newUsers_source_allowed:userId=${userId}`,
+      excludedCondition: 'user.__matchingAccessAllowed === true',
+      exactReason: `matchingAccessAllowed_true:userId=${userId}`,
       excludedAtStage: 'final render guard',
-      reasonCode: 'allowed_newUsers_source',
+      reasonCode: 'allowed_matching_access_granted',
     };
   }
 
@@ -204,26 +197,18 @@ export const canShowMatchingUser = (user, options = {}) => (
 
 const SHARED_REACTION_CANDIDATE_VIEW_MODES = new Set(['default', 'favorites', 'dislikes']);
 
-const isReactionViewMode = viewMode => viewMode === 'favorites' || viewMode === 'dislikes';
-
+/**
+ * Чи це відповідь на запит, який ще актуальний.
+ *
+ * Раніше сюди входила ще й колекція: перемикання деки робило відповідь
+ * застарілою. Деки тепер одна, тож лишились версія запиту й режим перегляду.
+ */
 const isCurrentMatchingAsyncResult = ({
   requestVersion,
   currentVersion,
   requestViewMode,
   currentViewMode,
-  requestCollectionSource,
-  currentCollectionSource,
-} = {}) => {
-  if (requestVersion !== currentVersion || requestViewMode !== currentViewMode) return false;
-
-  // Reaction tabs are a global overlay across /users and /newUsers. Source changes
-  // must not make an otherwise current favorites/dislikes request stale. Keep the
-  // source guard only for the default base deck, where collectionSource selects
-  // the backing pool.
-  if (isReactionViewMode(requestViewMode)) return true;
-
-  return requestCollectionSource === currentCollectionSource;
-};
+} = {}) => requestVersion === currentVersion && requestViewMode === currentViewMode;
 
 export const shouldApplySharedReactionCandidateResult = options => (
   SHARED_REACTION_CANDIDATE_VIEW_MODES.has(options?.requestViewMode) &&
@@ -257,7 +242,6 @@ export const mergeMatchingCandidateUsers = ({
   sharedReactionCandidateUsers = [],
   isAdmin = false,
   viewMode = 'default',
-  collectionSource = 'users',
   hasAdditionalAccessRules = false,
   ownFavoriteUsers = {},
   ownDislikeUsers = {},
@@ -265,26 +249,15 @@ export const mergeMatchingCandidateUsers = ({
   dislikeUsers = ownDislikeUsers,
 } = {}) => {
   const isDefaultMode = viewMode === 'default';
-  const isDefaultUsersDeck = isDefaultMode && collectionSource === 'users';
-  let baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
+  const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
 
-  const allowedBySetKey = new Set(additionalNewUsers.map(user => user.userId).filter(Boolean));
-  const isAllowedNewUsersCandidate = user => (
-    !hasAdditionalAccessRules ||
-    user?.__sourceCollection !== 'newUsers' ||
-    allowedBySetKey.has(user.userId) ||
-    user?.__matchingAccessAllowed === true
-  );
-  const canInjectCandidate = user => (
-    canShowMatchingUser(user, { isAdmin }) && isAllowedNewUsersCandidate(user)
-  );
-
-  if (hasAdditionalAccessRules && !isDefaultUsersDeck) {
-    baseUsers = baseUsers.filter(isAllowedNewUsersCandidate);
-  }
+  // Правила додаткового доступу нічого не забирають — вони додають. Колекція
+  // одна, і базова дека вже відфільтрована по `publish`; окремо надані картки
+  // просто доливаються до неї.
+  const canInjectCandidate = user => canShowMatchingUser(user, { isAdmin });
 
   if (isDefaultMode) {
-    const defaultCandidates = collectionSource === 'newUsers' && hasAdditionalAccessRules
+    const defaultCandidates = hasAdditionalAccessRules
       ? [
         ...baseUsers,
         ...additionalNewUsers.filter(user => user?.userId && canInjectCandidate(user)),

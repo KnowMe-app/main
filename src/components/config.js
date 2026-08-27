@@ -46,14 +46,18 @@ import {
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
+import { buildProfileNodePatch } from '../utils/profileNodeWriter';
+import { mergeProfileNodes, hasAnyProfileNode } from '../utils/profileNodeMerge';
+import { mergeProfileNodeCollections, PROFILE_NODE_NAMES } from '../utils/profileNodeCollections';
+import { PROFILE_NODES, resolveFieldOwnerNode } from '../utils/profileNodeSchema';
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_ORDER_FIELD,
-  resolveMatchingCardFeedField,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
   expandMatchingCard,
   isCurrentMatchingCardSchema,
+  isMatchingSummaryCard,
   resolveMatchingCardAvatarFromProfile,
 } from '../utils/matchingCardIndex';
 import {
@@ -250,6 +254,38 @@ const loadCollectionWithIndexCache = async (collection, options = {}) => {
   const data = snapshot.val() || {};
   writeCachedIndexCollection(collection, data);
   return data;
+};
+
+/**
+ * Уся анкетна база, зібрана з нових вузлів — під перебудову індексів.
+ *
+ * Індекси мусять будуватись із того ж джерела, з якого читає застосунок.
+ * Інакше після зникнення `newUsers` перебудова тихо давала б порожній індекс,
+ * а пошук — порожню видачу; а до того — індексувала б значення, які веб уже
+ * не показує.
+ *
+ * `publish` — єдиний виняток, і він свідомий: власного вузла в нього немає, ним
+ * володіє мобільний застосунок, і лежить він у `/users`. Тож саме звідти він і
+ * береться, а `feedDate` у картці рахується з нього.
+ *
+ * Читання важке (пʼять вузлів цілком), але це разова адмінська операція, а не
+ * шлях користувача — і саме тому воно йде через той самий кеш колекцій, що й
+ * решта індексацій.
+ */
+export const loadProfilesFromNodesForIndexing = async (options = {}) => {
+  const [nodeMaps, legacyUsers] = await Promise.all([
+    Promise.all(PROFILE_NODE_NAMES.map(node => loadCollectionWithIndexCache(node, options))),
+    // Тільки заради `publish`: власного вузла в нього немає, ним володіє
+    // мобільний застосунок. Якщо `users` уже прибрали — читання просто дасть
+    // порожньо, і стан публікації візьметься з `feedDate` у картці.
+    loadCollectionWithIndexCache('users', options),
+  ]);
+
+  const sources = Object.fromEntries(PROFILE_NODE_NAMES.map((node, index) => [node, nodeMaps[index]]));
+  // Колекція у вебі одна: сюди приходять усі анкети, а не «анкети деки».
+  const { profiles } = mergeProfileNodeCollections({ ...sources, users: legacyUsers });
+
+  return Object.keys(profiles).length ? profiles : null;
 };
 
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
@@ -2135,35 +2171,157 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }
   await remove(fromRef);
 };
 
-export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
+/**
+ * Читає анкету з нових вузлів.
+ *
+ * Це основний шлях: `users` лишається лише для мобільного застосунку, а
+ * `newUsers` після перебудови колекції зникне зовсім. Тобто джерелом істини для
+ * вебу є саме ці пʼять вузлів, і legacy читається тільки як відкат для анкет,
+ * які ще не переїхали.
+ *
+ * Читання паралельне і поштучне: контакти, робочі позначки і технічне беруться
+ * лише тоді, коли їх справді показують. Для списку вистачає картки і деталей —
+ * решта не їде по мережі взагалі.
+ *
+ * Відмова в правах — не помилка анкети. `profileContacts` може бути закритий
+ * для цього читача, і картка має відкритись без контактів, а не впасти.
+ */
+const readProfileNodePart = async (node, id) => {
   try {
-    const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
+    const snapshot = await get(ref2(database, `${node}/${id}`));
+    return snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.warn('[profileNodes] вузол не прочитано', { node, userId: id, error });
+    return null;
+  }
+};
+
+/**
+ * Що з legacy-анкети ще має право говорити.
+ *
+ * Дзеркалення двостороннє: мобільний застосунок пише в `/users`, і веб мусить
+ * бачити ці зміни. Але накласти legacy цілим шаром не можна — тоді поле, яке у
+ * вебі навмисно стерли, поверталося б із кожним читанням.
+ *
+ * Межу проводить наявність вузла: якщо `profileContacts/{id}` існує, контакти
+ * належать вебу, і legacy про них мовчить — стерте лишається стертим. Якщо
+ * вузла немає, анкета в цій частині ще не переїхала, і legacy — єдиний, хто про
+ * неї щось знає. Поля без власного вузла (`publish`, `userRole`) проходять
+ * завжди: їх ніхто, крім legacy, і не тримає.
+ */
+const legacyFieldsNodesDoNotOwn = (legacy, parts) => {
+  if (!legacy || typeof legacy !== 'object') return null;
+
+  const presentNodes = new Set(
+    Object.entries({
+      [PROFILE_NODES.matchingCards]: parts.card,
+      [PROFILE_NODES.profileDetails]: parts.details,
+      [PROFILE_NODES.profileContacts]: parts.contacts,
+      [PROFILE_NODES.profileWorkflow]: parts.workflow,
+      [PROFILE_NODES.profileTechnical]: parts.technical,
+    })
+      .filter(([, value]) => value && typeof value === 'object' && Object.keys(value).length)
+      .map(([node]) => node),
+  );
+
+  const kept = Object.fromEntries(
+    Object.entries(legacy).filter(([field]) => !presentNodes.has(resolveFieldOwnerNode(field))),
+  );
+
+  return Object.keys(kept).length ? kept : null;
+};
+
+export const readProfileFromNodes = async (userId, options = {}) => {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+
+  const {
+    includeContacts = true,
+    includeWorkflow = true,
+    includeTechnical = false,
+    // Читати legacy заради полів, яких нові вузли ще не тримають. Дорого на
+    // список (це +2 читання на анкету), дешево на одну анкету — тож вмикається
+    // там, де застарілі дані справді видно: на самій анкеті.
+    withLegacy = false,
+    legacy = null,
+  } = options;
+
+  const [card, details, contacts, workflow, technical, legacyUsers, legacyNewUsers] = await Promise.all([
+    readProfileNodePart(PROFILE_NODES.matchingCards, id),
+    readProfileNodePart(PROFILE_NODES.profileDetails, id),
+    includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
+    includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
+    includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
+    withLegacy && !legacy ? readProfileNodePart('users', id) : null,
+    withLegacy && !legacy ? readProfileNodePart('newUsers', id) : null,
+  ]);
+
+  const parts = { card, details, contacts, workflow, technical };
+  if (!hasAnyProfileNode(parts)) return null;
+
+  const legacySnapshot = legacy
+    || (legacyUsers || legacyNewUsers
+      ? { ...(legacyNewUsers || {}), ...(legacyUsers || {}) }
+      : null);
+
+  const merged = mergeProfileNodes({
+    userId: id,
+    ...parts,
+    legacy: legacyFieldsNodesDoNotOwn(legacySnapshot, parts),
+  });
+  if (!merged) return null;
+
+  // `getInTouch` підмішується з `multiData` — це персональна позначка того, хто
+  // зараз дивиться, а не поле анкети. Стара логіка сортування і фільтрів бачить
+  // рівно те саме `card.getInTouch`, просто значення приходить з іншого місця.
+  // Мапа власника читається раз на сесію, тож ця гілка не коштує запиту.
+  const ownerId = auth.currentUser?.uid;
+  if (ownerId) {
+    const ownerMap = await readOwnerGetInTouchMap(ownerId);
+    if (Object.prototype.hasOwnProperty.call(ownerMap, id)) merged.getInTouch = ownerMap[id];
+    else delete merged.getInTouch;
+  }
+
+  return merged;
+};
+
+/**
+ * Прочитати анкети за id.
+ *
+ * Колекції в аргументах більше немає: у вебі вона одна. Спершу нові вузли —
+ * вони і є джерелом істини; legacy лишається запасним шляхом для анкет, які ще
+ * не переїхали, і зникне разом із самими колекціями.
+ */
+export const fetchUsersByIds = async ids => {
+  try {
     const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
     const result = {};
     const missingIds = [];
 
     uniqueIds.forEach(id => {
       const cached = getCard(id);
-      if (cached && source && cached.__sourceCollection === source) {
-        result[id] = cached;
-      } else if (
-        cached && !source
-        && (
-          cached.__sourceCollection === 'newUsers'
-          || (isLongFormatUserId(id) && cached.__sourceCollection === 'users')
-        )
-      ) {
-        result[id] = cached;
-      } else {
-        if (cached && !source) result[id] = cached;
+      if (!cached) {
         missingIds.push(id);
+        return;
       }
+      result[id] = cached;
+      // Картка без позначки джерела прийшла з попередньої моделі — її треба
+      // перечитати, а не роздавати далі напівпорожньою.
+      const source = cached.__sourceCollection;
+      if (source !== 'users' && source !== 'newUsers') missingIds.push(id);
     });
 
     const snaps = await Promise.all(
       missingIds.map(async id => {
         try {
-          if (!source && isLongFormatUserId(id)) {
+          // Спершу нові вузли — вони і є джерелом істини. Legacy читається
+          // тільки тоді, коли анкета туди ще не переїхала.
+          const fromNodes = await readProfileFromNodes(id);
+          if (fromNodes) {
+            return [id, updateCard(id, { ...fromNodes, photos: fromNodes.photos || [] })];
+          }
+
+          if (isLongFormatUserId(id)) {
             const [usersResult, newUsersResult] = await Promise.allSettled([
               get(ref2(database, `users/${id}`)),
               get(ref2(database, `newUsers/${id}`)),
@@ -2197,7 +2355,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
             return [id, updateCard(id, data)];
           }
 
-          const readSources = source ? [source] : ['users', 'newUsers'];
+          const readSources = ['users', 'newUsers'];
           const entries = await Promise.all(
             readSources.map(sourceName => get(ref2(database, `${sourceName}/${id}`)).then(snapshot => [sourceName, snapshot]))
           );
@@ -2212,7 +2370,7 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
           const hasUser = Object.prototype.hasOwnProperty.call(dataBySource, 'users');
           const hasNewUser = Object.prototype.hasOwnProperty.call(dataBySource, 'newUsers');
           if (!hasUser && !hasNewUser) return null;
-          const useNewUsers = hasNewUser && (!source || source === 'newUsers');
+          const useNewUsers = hasNewUser;
           const data = {
             userId: id,
             ...mergeUserCollectionData(
@@ -2532,8 +2690,12 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   // Записуємо нового користувача в базу даних
   await set(newUserRef, newUser);
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
-  // Нова анкета одразу отримує урізану картку, інакше вона зʼявиться в стрічці
-  // тільки після наступної індексації.
+  // Нова анкета одразу розкладається по вузлах — так само, як це робить кожне
+  // збереження. Інакше вона зʼявилась би розділеною тільки після першої правки,
+  // а до того контакт із неї не прочитався б новим шляхом.
+  await fanOutProfileNodes(newUserId, newUser);
+  // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
+  // після наступної індексації.
   await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });
   // І повний `searchId` по всіх полях, а не лише по тому, з якого її створили.
   // Запит на кшталт «УК СМ …» кладе в анкету і імʼя, і прізвище, і контакт —
@@ -3278,13 +3440,36 @@ const normalizeIndexedValues = value => Array.isArray(value)
  *
  * Ніколи не кидає: проєкція — це прискорення читання, а не частина збереження.
  */
+/**
+ * Перечитати анкету, щоб зібрати з неї картку стрічки.
+ *
+ * Часткове збереження (`update`) не несе всієї анкети, а картка збирається з
+ * усієї: без перечитування вона згубила б поля, яких у цьому записі не було.
+ * Читається — з нових вузлів, бо саме вони джерело істини; legacy лишається
+ * запасним шляхом для анкет, які ще не переїхали, і зникне разом із собою.
+ */
+const readProfileForMatchingCard = async (collection, id) => {
+  const fromNodes = await readProfileFromNodes(id, { includeTechnical: true });
+  if (fromNodes) return fromNodes;
+
+  try {
+    const snapshot = await get(ref2(database, `${collection}/${id}`));
+    return snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.warn('[matchingCards] анкету не вдалося перечитати для картки', { userId: id, collection, error });
+    return null;
+  }
+};
+
 const runMatchingCardRefresh = async (collection, id, payload, condition) => {
   try {
-    let nextData = payload;
-    if (condition === 'update') {
-      const snapshot = await get(ref2(database, `${collection}/${id}`));
-      nextData = snapshot.exists() ? snapshot.val() : null;
-    }
+    // Перечитане знизу, збережене зверху. `publish` власного вузла не має —
+    // у нових вузлах він виражений наявністю `feedDate` у самій картці, тобто
+    // перечитування дає його *попередній* стан. Без цього накладання зняття
+    // публікації не спрацювало б жодного разу: картка перебудувалась би зі
+    // старою датою і лишилась у стрічці.
+    const stored = condition === 'update' ? await readProfileForMatchingCard(collection, id) : null;
+    const nextData = condition === 'update' ? { ...(stored || {}), ...payload } : payload;
     if (!nextData || typeof nextData !== 'object') return;
     await syncMatchingCardIndex(id, { ...nextData, __sourceCollection: collection });
   } catch (error) {
@@ -3308,6 +3493,180 @@ const runMatchingCardRefresh = async (collection, id, payload, condition) => {
 // рівно його. Звідси й друга властивість: сплеск із десятка записів коштує
 // дві пари читання-запис, а не десять.
 const matchingCardRefreshes = new Map();
+
+/**
+ * Розкладає збережені поля по їхніх вузлах.
+ *
+ * Це друга половина запису анкети: перша поклала все в legacy `/users` чи
+ * `/newUsers` (їх читає мобільний застосунок і ще не перенесена веб-логіка), а
+ * ця кладе кожне поле туди, де воно живе після розділення — контакти в
+ * `profileContacts`, робочі позначки в `profileWorkflow` і так далі.
+ *
+ * Один мультилокаційний `update` від кореня: RTDB застосовує його атомарно, тож
+ * анкета не розʼїжджається по вузлах наполовину.
+ *
+ * Ніколи не кидає — але каже, чи щось доїхало. Відмова на одному вузлі не
+ * скасовує решту (права на них різні), а виклик нагорі вирішує сам, чи вважати
+ * збереження провальним: анкета втрачена лише тоді, коли не прийняв ані
+ * жоден вузол, ані legacy. Тиші тут теж немає — відмова йде в консоль із
+ * переліком шляхів, які не доїхали.
+ *
+ * @returns {Promise<boolean>} чи прийняв запис хоч один вузол.
+ */
+const fanOutProfileNodes = async (userId, payload) => {
+  // `getInTouch` — не поле анкети, а персональна позначка того, хто її поставив,
+  // тож вона їде не у вузол профілю, а під власника в `multiData`. Значення там
+  // сидить у назві ключа, і зміна значення — це переїзд, а не запис; цим
+  // займається `setOwnerGetInTouch`.
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'getInTouch')) {
+    const ownerId = auth.currentUser?.uid;
+    if (ownerId) await setOwnerGetInTouch(ownerId, userId, payload.getInTouch);
+  }
+
+  const patch = buildProfileNodePatch(userId, payload);
+  const paths = Object.keys(patch);
+  // Порожній патч — це не відмова: писати не було чого.
+  if (!paths.length) return true;
+
+  // Запис іде вузол за вузлом, а не одним патчем від кореня, і саме тому, що
+  // мультилокаційний `update` атомарний. Права на нові вузли різні: редактор
+  // матчингу без токена контактів має право на `profileDetails`, але не на
+  // `profileContacts`. В одному патчі відмова на одному шляху скасувала б
+  // запис і в решту вузлів — тобто одне закрите право тихо знеструмило б усе
+  // розділення. Окремими записами відмова лишається там, де вона є.
+  const byNode = paths.reduce((acc, path) => {
+    const node = path.split('/')[0];
+    (acc[node] = acc[node] || {})[path] = patch[path];
+    return acc;
+  }, {});
+
+  const results = await Promise.all(Object.entries(byNode).map(async ([node, nodePatch]) => {
+    try {
+      await update(ref2(database, '/'), nodePatch);
+      return true;
+    } catch (error) {
+      console.warn('[profileNodes] вузол не оновлено', {
+        userId,
+        node,
+        paths: Object.keys(nodePatch),
+        error,
+      });
+      return false;
+    }
+  }));
+
+  return results.some(Boolean);
+};
+
+// ---------------------------------------------------------------------------
+// getInTouch — персональна позначка адміна в `multiData`
+//
+// У новій структурі значення сидить у назві ключа:
+//
+//   multiData/getInTouch/{ownerId}/{значення}/{profileId}: true
+//
+// Так однакове значення не плодить тисячі однакових підструктур: «2099-99-99»
+// на пів тисячі карток — це один вузол із пів тисячею прапорців, а не пів
+// тисячі вузлів з однаковим рядком усередині.
+//
+// Ціна цієї форми — відповідь на питання «яке значення в цієї картки» більше не
+// лежить поруч із карткою. Тому власників мапа читається цілком, один раз на
+// сесію, і тримається в памʼяті: вона потрібна на кожен список, а важить
+// стільки ж, скільки важили б ті самі значення в анкетах.
+// ---------------------------------------------------------------------------
+
+const OWNER_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
+
+const ownerGetInTouchCache = new Map();
+
+const buildGetInTouchValueKey = value => {
+  const text = value === null || value === undefined ? '' : String(value).trim();
+  if (!text) return '';
+  // Ті самі символи, яких не приймає ключ RTDB. Значення з ними не пишеться —
+  // мовчазне кодування зробило б його невпізнаваним для адміна, який його й
+  // ставив.
+  // eslint-disable-next-line no-control-regex
+  if (/[.#$/[\]]/.test(text) || /[\u0000-\u001F\u007F]/.test(text)) return '';
+  return text;
+};
+
+/** `profileId -> значення` для одного власника. */
+export const readOwnerGetInTouchMap = async ownerId => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return {};
+
+  const cached = ownerGetInTouchCache.get(owner);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    try {
+      const snapshot = await get(ref2(database, `${OWNER_GET_IN_TOUCH_PATH}/${owner}`));
+      if (!snapshot.exists()) return {};
+      const map = {};
+      Object.entries(snapshot.val() || {}).forEach(([value, profiles]) => {
+        Object.entries(profiles || {}).forEach(([profileId, isSet]) => {
+          if (isSet === true) map[profileId] = value;
+        });
+      });
+      return map;
+    } catch (error) {
+      console.warn('[getInTouch] не вдалося прочитати мапу власника', { ownerId: owner, error });
+      return {};
+    }
+  })();
+
+  ownerGetInTouchCache.set(owner, pending);
+  return pending;
+};
+
+/** Скидає памʼять — після власного запису або зміни власника. */
+export const invalidateOwnerGetInTouchMap = ownerId => {
+  if (ownerId) ownerGetInTouchCache.delete(String(ownerId).trim());
+  else ownerGetInTouchCache.clear();
+};
+
+/**
+ * Ставить (або знімає) позначку `getInTouch` для однієї картки.
+ *
+ * Value-first структура означає, що зміна значення — це не запис, а переїзд:
+ * старий ключ треба зняти, новий поставити. Обидва йдуть одним патчем, тож
+ * картка не може на мить опинитись одразу в двох списках.
+ */
+export const setOwnerGetInTouch = async (ownerId, profileId, value) => {
+  const owner = String(ownerId || '').trim();
+  const id = String(profileId || '').trim();
+  if (!owner || !id) return false;
+
+  const nextKey = buildGetInTouchValueKey(value);
+  const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
+  if (hasValue && !nextKey) {
+    console.warn('[getInTouch] значення не може бути ключем бази — позначку не змінено', { profileId: id });
+    return false;
+  }
+
+  const map = await readOwnerGetInTouchMap(owner);
+  const previousKey = map[id];
+  if (previousKey === nextKey) return true;
+
+  const patch = {};
+  if (previousKey) patch[`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${previousKey}/${id}`] = null;
+  if (nextKey) patch[`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${nextKey}/${id}`] = true;
+  if (!Object.keys(patch).length) return true;
+
+  try {
+    await update(ref2(database, '/'), patch);
+    // Мапа оновлюється на місці — перечитувати цілий вузол заради однієї зміни
+    // означало б платити за кожну позначку читанням усього списку власника.
+    const nextMap = { ...map };
+    if (nextKey) nextMap[id] = nextKey;
+    else delete nextMap[id];
+    ownerGetInTouchCache.set(owner, Promise.resolve(nextMap));
+    return true;
+  } catch (error) {
+    console.warn('[getInTouch] позначку не збережено', { ownerId: owner, profileId: id, error });
+    return false;
+  }
+};
 
 const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
   const id = String(userId || '').trim();
@@ -3369,6 +3728,49 @@ const collectExplicitRemovals = payload => Object.entries(payload || {})
   .filter(([key, value]) => value === null && key !== 'userId')
   .map(([key]) => key);
 
+/**
+ * Дзеркалення анкети в legacy-колекцію.
+ *
+ * Дзеркалення двостороннє: мобільний застосунок пише в `/users` і читає звідти,
+ * тож веб мусить класти туди свої зміни. Але це саме дзеркало, а не збереження:
+ * коли `/users` перестане підтримуватись — вузол приберуть, права закриють —
+ * запис сюди почне відмовляти, і веб не має від цього падати. Тому відмова тут
+ * не кидається далі, а повертається викликачу, який уже вирішує, чи анкета
+ * взагалі кудись збереглась.
+ *
+ * @returns {Promise<boolean>} чи прийняла legacy-колекція запис.
+ */
+const mirrorProfileToLegacyCollection = async (collection, userId, payload, condition) => {
+  try {
+    const legacyRef = ref2(database, `${collection}/${userId}`);
+    if (condition === 'update') await update(legacyRef, payload);
+    else await set(legacyRef, payload);
+    return true;
+  } catch (error) {
+    console.warn('[legacy] анкету не вдалося віддзеркалити в стару колекцію', {
+      userId,
+      collection,
+      error,
+    });
+    return false;
+  }
+};
+
+/**
+ * Анкета не збереглась нікуди — ані у вузли, ані в legacy.
+ *
+ * Окремий текст, бо це єдиний випадок, коли користувач мусить побачити помилку:
+ * відмова однієї з двох сторін — це знижена надлишковість, відмова обох — це
+ * втрачені дані.
+ */
+const throwProfileWriteFailure = userId => {
+  const error = new Error(
+    `Анкету ${userId} не збережено: ні нові вузли, ні стара колекція не прийняли запис.`,
+  );
+  error.code = 'PROFILE_WRITE_FAILED';
+  throw error;
+};
+
 const mirrorRemovalsToOtherCollection = async (primaryCollection, userId, removals) => {
   const id = String(userId || '').trim();
   if (!id || !removals.length) return;
@@ -3393,18 +3795,20 @@ const mirrorRemovalsToOtherCollection = async (primaryCollection, userId, remova
 
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
-    const userRefRTDB = ref2(database, `users/${userId}`);
     // Знімається до strip: далі до пейлоада додадуться службові null, які
     // видаленнями не є.
     const explicitRemovals = condition === 'update' ? collectExplicitRemovals(uploadedInfo) : [];
     const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
     });
-    if (condition === 'update') {
-      await update(userRefRTDB, cleanedUploadedInfo);
-    } else {
-      await set(userRefRTDB, cleanedUploadedInfo);
-    }
+
+    // Спершу вузли — вони джерело істини для веба, і саме їх читає застосунок.
+    // Legacy йде другим: це дзеркало для мобільного застосунку, і його відмова
+    // не має скасовувати збереження.
+    const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
+    const legacyWritten = await mirrorProfileToLegacyCollection('users', userId, cleanedUploadedInfo, condition);
+    if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);
+
     await mirrorRemovalsToOtherCollection('users', userId, explicitRemovals);
     await refreshMatchingCardAfterProfileWrite('users', userId, cleanedUploadedInfo, condition);
   } catch (error) {
@@ -3422,9 +3826,16 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     // порожніми контактами, а не на прохання щось видалити.
     const explicitRemovals = condition === 'update' ? collectExplicitRemovals(uploadedInfo) : [];
     uploadedInfo = sanitizeUploadedInfoPhones(uploadedInfo);
-    const userRefRTDB = ref2(database, `newUsers/${userId}`);
-    const snapshot = await get(userRefRTDB);
-    const currentUserDataRaw = snapshot.exists() ? snapshot.val() : {};
+    // Попередній стан потрібен лише для звірки пошукових індексів. Коли legacy
+    // недоступна, звірка йде від порожнього — нові значення все одно
+    // проіндексуються, а зняти старі однаково нема з чого.
+    let currentUserDataRaw = {};
+    try {
+      const snapshot = await get(ref2(database, `newUsers/${userId}`));
+      if (snapshot.exists()) currentUserDataRaw = snapshot.val();
+    } catch (error) {
+      console.warn('[legacy] попередній стан анкети прочитати не вдалося', { userId, error });
+    }
     const currentUserData = sanitizeUploadedInfoPhones(currentUserDataRaw) || {};
 
     if (!skipIndexing) {
@@ -3493,13 +3904,15 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
       markForRealtimeDeletion: condition === 'update',
     });
 
-    if (condition === 'update') {
-      console.log('update :>> ');
-      await update(userRefRTDB, { ...cleanedUploadedInfo });
-    } else {
-      console.log('set :>> ');
-      await set(userRefRTDB, { ...cleanedUploadedInfo });
-    }
+    // Спершу вузли, потім дзеркало в legacy — див. `updateDataInRealtimeDB`.
+    const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
+    const legacyWritten = await mirrorProfileToLegacyCollection(
+      'newUsers',
+      userId,
+      { ...cleanedUploadedInfo },
+      condition,
+    );
+    if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);
 
     if (cleanedUploadedInfo.lastLogin2 !== undefined) {
       try {
@@ -3706,16 +4119,37 @@ const readPhotosField = async (collection, userId) => {
   return snapshot.exists() ? normalizePhotoValues(snapshot.val()) : null;
 };
 
+/**
+ * Фото живуть у `profileDetails` — там їхнє місце після переїзду.
+ *
+ * Питати їх тут, а не в legacy, — це не оптимізація, а умова того, що галерея
+ * працює далі, коли `users`/`newUsers` не стане. `null` означає «у вузлі цього
+ * немає», і тоді читач повертається до старих колекцій.
+ */
+const readPhotosFromProfileNode = async userId => {
+  try {
+    const snapshot = await get(ref2(database, `${PROFILE_NODES.profileDetails}/${userId}/photos`));
+    return snapshot.exists() ? normalizePhotoValues(snapshot.val()) : null;
+  } catch (error) {
+    console.error('Error loading user photos from profileDetails:', error);
+    return null;
+  }
+};
+
 export const getAllUserPhotos = async (userId, collectionSource = null, { includeStorage = true, knownPhotos = null } = {}) => {
   if (!userId) return [];
 
   const storageUrls = includeStorage ? await getUserStorageAvatarPhotos(userId) : [];
 
   let databaseUrls;
+  const fromProfileNode = Array.isArray(knownPhotos) ? null : await readPhotosFromProfileNode(userId);
+
   if (Array.isArray(knownPhotos)) {
     // Викликач уже тримає анкету в руках (щойно гідратував картку) — ходити за
     // тим самим полем у базу вдруге нема за чим.
     databaseUrls = normalizePhotoValues(knownPhotos);
+  } else if (fromProfileNode !== null) {
+    databaseUrls = fromProfileNode;
   } else if (!collectionSource && isLongFormatUserId(userId)) {
     const [usersResult] = await Promise.allSettled([readPhotosField('users', userId)]);
     if (usersResult.status === 'rejected') {
@@ -3866,14 +4300,13 @@ export const removeMatchingCardIndex = async userId => {
  * пагінація по курсору: `endAt(курсор)` + `limitToLast(limit + 1)` по вузлу,
  * де одна картка важить сотні байтів, а не кілобайти.
  */
-const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null, collectionSource = null } = {}) => {
+const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } = {}) => {
   const safeLimit = Math.max(1, Number(limit) || 1);
   const cardsRef = ref2(database, MATCHING_CARDS_ROOT);
-  const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
-  // Індекс стрічки містить лише показані картки, тож сторінка приходить щільною:
-  // фільтр показу відпрацював у базі, а не в браузері. Без джерела лишається
-  // старий порядок за датою — ним ходить хіба що читання повз деку.
-  const orderField = source ? resolveMatchingCardFeedField(source) : MATCHING_CARD_ORDER_FIELD;
+  // Індекс стрічки містить лише показані картки колекції `users`, тож сторінка
+  // приходить щільною і вже своєю: і фільтр показу, і розділення колекцій
+  // відпрацювали в базі, а не в браузері.
+  const orderField = MATCHING_CARD_ORDER_FIELD;
   const today = new Date().toISOString().split('T')[0];
   const upperBound = today;
   const normalizedCursor = cursor && typeof cursor === 'object'
@@ -3972,18 +4405,17 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null, co
  */
 const matchingCardsPageInFlight = new Map();
 
-const buildMatchingCardsPageKey = ({ limit, cursor, collectionSource }) => {
+const buildMatchingCardsPageKey = ({ limit, cursor }) => {
   const normalized = cursor && typeof cursor === 'object'
     ? `${cursor.date || ''}|${cursor.userId || ''}`
     : `${cursor || ''}|`;
-  return `${collectionSource || ''}|${limit}|${normalized}`;
+  return `${limit}|${normalized}`;
 };
 
 export const fetchMatchingCardsPage = (options = {}) => {
   const key = buildMatchingCardsPageKey({
     limit: Math.max(1, Number(options.limit) || 1),
     cursor: options.cursor,
-    collectionSource: options.collectionSource,
   });
 
   let pending = matchingCardsPageInFlight.get(key);
@@ -4048,8 +4480,13 @@ const mapWithConcurrency = async (items, limit, worker) => {
   return results;
 };
 
-const buildBackfillProjection = async (collection, rawProfile, userId, includeStorageAvatars) => {
-  const data = { ...(rawProfile || {}), __sourceCollection: collection };
+const buildBackfillProjection = async (rawProfile, userId, includeStorageAvatars) => {
+  const data = {
+    ...(rawProfile || {}),
+    // Проєкція `source` не несе, але дорогою до неї це поле ще читається —
+    // і формат id відповідає на питання «звідки анкета» точніше за деку.
+    __sourceCollection: isUsersCollectionUserId(userId) ? 'users' : 'newUsers',
+  };
   let avatar = resolveMatchingCardAvatarFromProfile(data);
   let avatarFromStorage = false;
   if (!avatar && includeStorageAvatars) {
@@ -4060,7 +4497,7 @@ const buildBackfillProjection = async (collection, rawProfile, userId, includeSt
 };
 
 /**
- * Разова побудова проєкцій для цілої колекції.
+ * Разова побудова проєкцій для всієї колекції.
  *
  * Колекція читається один раз (через той самий кеш, що й решта індексацій), а
  * записи йдуть пачками через мультилокаційний `update` — тобто ~1 запит на 200
@@ -4075,15 +4512,15 @@ const buildBackfillProjection = async (collection, rawProfile, userId, includeSt
 // відповідь Firebase цього не каже й не підказує, що робити, тож перекладаємо її
 // в текст, з якого видно і причину, і два виходи.
 const MATCHING_CARDS_FAILURE_STAGES = {
-  read: collection => `читання колекції ${collection}`,
-  cleanup: () => 'прибирання застарілих карток у matchingCards',
-  write: () => 'запис карток у matchingCards',
+  read: 'читання анкет',
+  cleanup: 'прибирання застарілих карток у matchingCards',
+  write: 'запис карток у matchingCards',
 };
 
-const describeMatchingCardsFailure = (error, { stage, collection }) => {
+const describeMatchingCardsFailure = (error, { stage }) => {
   if (!/permission[_ ]denied/i.test(String(error?.message || error || ''))) return error;
 
-  const where = (MATCHING_CARDS_FAILURE_STAGES[stage] || (() => stage))(collection);
+  const where = MATCHING_CARDS_FAILURE_STAGES[stage] || stage;
   const explained = new Error(
     `Немає доступу: ${where}. Найімовірніше, не викочені правила бази — вузлів `
       + '`matchingCards` для правил ще не існує, тож діє заборона '
@@ -4095,36 +4532,34 @@ const describeMatchingCardsFailure = (error, { stage, collection }) => {
   return explained;
 };
 
-export const createMatchingCardsIndexInCollection = async (collection, onProgress, options = {}) => {
+export const createMatchingCardsIndex = async (onProgress, options = {}) => {
   const includeStorageAvatars = options.includeStorageAvatars !== false;
   let usersData;
   try {
-    usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+    usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   } catch (error) {
-    throw describeMatchingCardsFailure(error, { stage: 'read', collection });
+    throw describeMatchingCardsFailure(error, { stage: 'read' });
   }
-  if (!usersData) return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+  if (!usersData) return { total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
 
-  // A rebuild is authoritative for this collection: remove projections whose
-  // canonical profile no longer exists, then publish completeness atomically
-  // with the final batch so readers never trust a half-built index.
+  // Перебудова авторитетна: картка, за якою вже немає анкети, зникає. Прогін
+  // один на всю колекцію — тож жодного «а чи ця картка з моєї деки»: деки
+  // одна, і все, чому немає анкети, тут зайве.
   try {
     const cardsSnapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
     const stalePayload = {};
-    Object.entries(cardsSnapshot.val() || {}).forEach(([id, card]) => {
-      if ((card?.source || 'users') === collection && !usersData[id]) {
-        stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
-      }
+    Object.entries(cardsSnapshot.val() || {}).forEach(([id]) => {
+      if (!usersData[id]) stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;
     });
     await update(ref2(database), stalePayload);
   } catch (error) {
-    throw describeMatchingCardsFailure(error, { stage: 'cleanup', collection });
+    throw describeMatchingCardsFailure(error, { stage: 'cleanup' });
   }
 
   const userIds = Object.keys(usersData).filter(Boolean);
   const total = userIds.length;
   if (!total) {
-    return { collection, total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
+    return { total: 0, written: 0, skipped: 0, withStorageAvatar: 0 };
   }
 
   let written = 0;
@@ -4137,7 +4572,7 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
 
     // eslint-disable-next-line no-await-in-loop
     const projections = await mapWithConcurrency(batchIds, MATCHING_CARDS_AVATAR_CONCURRENCY, id =>
-      buildBackfillProjection(collection, usersData[id], id, includeStorageAvatars));
+      buildBackfillProjection(usersData[id], id, includeStorageAvatars));
 
     const usable = projections.filter(entry => entry?.userId && entry.projection);
     withStorageAvatar += projections.filter(entry => entry?.avatarFromStorage).length;
@@ -4153,17 +4588,17 @@ export const createMatchingCardsIndexInCollection = async (collection, onProgres
         // eslint-disable-next-line no-await-in-loop
         await update(ref2(database), chunkPayload);
       } catch (error) {
-        throw describeMatchingCardsFailure(error, { stage: 'write', collection });
+        throw describeMatchingCardsFailure(error, { stage: 'write' });
       }
     }
 
     processed += batchIds.length;
     if (typeof onProgress === 'function') {
-      onProgress(Math.floor((processed / total) * 100), { collection, processed, total });
+      onProgress(Math.floor((processed / total) * 100), { processed, total });
     }
   }
 
-  return { collection, total, written, skipped, withStorageAvatar };
+  return { total, written, skipped, withStorageAvatar };
 };
 
 export const getMedicationPhotos = async userId => {
@@ -5294,14 +5729,12 @@ const collectReactionIdsByFilters = async (
 };
 /* eslint-enable no-unused-vars */
 
-// One root per collection, resolved here so no call site can put a users-collection
-// profile into the shared newUsers root - which is how 1300+ ids ended up indexed
-// twice and the users index ended up covering a quarter of its own collection.
-export const resolveSearchKeyRootForCollection = collection =>
-  (collection === 'users' ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);
-
-// A users-collection key is a Firebase uid; newUsers keys are short editorial ids.
-export const isUsersCollectionUserId = userId => String(userId || '').trim().length >= 20;
+// A users-collection key is a Firebase-Auth uid — always 28 characters. newUsers
+// keys are either short editorial ids or Firebase push keys, and a push key is
+// exactly 20, so the boundary is "longer than 20", not "20 or more". The old
+// `>= 20` counted every newUsers push key as a users key and indexed it into the
+// wrong searchKey root.
+export const isUsersCollectionUserId = userId => String(userId || '').trim().length > 20;
 
 export const resolveSearchKeyRootForUserId = userId =>
   (isUsersCollectionUserId(userId) ? SEARCH_KEY_USERS_INDEX_ROOT : SEARCH_KEY_INDEX_ROOT);
@@ -5313,6 +5746,25 @@ const resolveSearchKeyLeafPath = (rootPath, indexName, value, userId) => {
 
 // A rebuild replaces an index, it does not merge into it: without this the `no`
 // buckets and the legacy numeric `fields` nodes would survive every reindex.
+/**
+ * Два корені `searchKey` — це не дві колекції, а одна, розкладена за форматом
+ * id: `searchKey/users` тримає довгі id, `searchKey` — короткі. Читання завжди
+ * питає обидва (див. `SEARCH_KEY_INDEXED_ROOT_PATHS`), тож перебудова мусить
+ * охопити обидва теж — інакше половина колекції зникає з пошуку.
+ */
+const SEARCH_KEY_INDEX_ROOT_PATHS = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
+
+/** Куди пишеться запис конкретної анкети. Вирішує формат її id. */
+const resolveSearchKeyWriteRoot = (options, userId) => (
+  options?.rootPath || resolveSearchKeyRootForUserId(userId)
+);
+
+/** Скинути індекс перед перебудовою — в обох коренях, якщо не вказано один. */
+const resetSearchKeyIndexRoots = async (options, indexNames = []) => {
+  const roots = options?.rootPath ? [options.rootPath] : SEARCH_KEY_INDEX_ROOT_PATHS;
+  await Promise.all(roots.map(root => resetSearchKeyIndexNodes(root, indexNames)));
+};
+
 const resetSearchKeyIndexNodes = async (searchKeyRoot, indexNames = []) => {
   await Promise.all(
     [...new Set(indexNames.filter(Boolean))].map(indexName =>
@@ -5623,16 +6075,15 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   }
 };
 
-export const createSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [BLOOD_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [BLOOD_SEARCH_KEY_INDEX]);
 
   for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
     const batchIds = userIds.slice(i, i + BATCH_SIZE);
@@ -5644,7 +6095,7 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress, o
         const bloodValues = withoutEmptySearchKeyBucket(getBloodIndexSet(user), BLOOD_SEARCH_KEY_INDEX);
         await Promise.all(
           [...bloodValues].map(value =>
-            updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add', { ...options, rootPath: searchKeyRoot })
+            updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add', { ...options, rootPath: resolveSearchKeyWriteRoot(options, userId) })
           )
         );
       })
@@ -5672,16 +6123,15 @@ const uploadChunkedSearchKeyIndexUpdates = async (userIds, totalUsers, buildUpda
   }
 };
 
-export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createMaritalStatusSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [MARITAL_STATUS_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [MARITAL_STATUS_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5691,7 +6141,7 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
         const user = usersData[userId] || {};
         const maritalStatusValues = withoutEmptySearchKeyBucket(getMaritalStatusIndexSet(user), MARITAL_STATUS_SEARCH_KEY_INDEX);
         maritalStatusValues.forEach(maritalStatusValue => {
-          acc[`${searchKeyRoot}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5699,16 +6149,15 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
   );
 };
 
-export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createCsectionSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [CSECTION_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [CSECTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5718,7 +6167,7 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
         const user = usersData[userId] || {};
         const csectionValues = withoutEmptySearchKeyBucket(getCsectionIndexSet(user), CSECTION_SEARCH_KEY_INDEX);
         csectionValues.forEach(csectionValue => {
-          acc[`${searchKeyRoot}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5726,16 +6175,15 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
   );
 };
 
-export const createContactSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createContactSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [CONTACT_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [CONTACT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5745,7 +6193,7 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
         const user = usersData[userId] || {};
         const contactValues = getContactIndexSet(user);
         contactValues.forEach(contactValue => {
-          acc[`${searchKeyRoot}/${CONTACT_SEARCH_KEY_INDEX}/${contactValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${CONTACT_SEARCH_KEY_INDEX}/${contactValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5753,16 +6201,15 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
   );
 };
 
-export const createRoleSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createRoleSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [ROLE_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [ROLE_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5772,7 +6219,7 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
         const user = usersData[userId] || {};
         const roleValues = withoutEmptySearchKeyBucket(getRoleIndexSet(user), ROLE_SEARCH_KEY_INDEX);
         roleValues.forEach(roleValue => {
-          acc[`${searchKeyRoot}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5780,16 +6227,15 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
   );
 };
 
-export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createUserIdSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [USER_ID_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [USER_ID_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5799,7 +6245,7 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
         const user = usersData[userId] || {};
         const userIdValues = getUserIdIndexSet(user.userId || userId);
         userIdValues.forEach(userIdValue => {
-          acc[`${searchKeyRoot}/${USER_ID_SEARCH_KEY_INDEX}/${userIdValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${USER_ID_SEARCH_KEY_INDEX}/${userIdValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5807,16 +6253,15 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
   );
 };
 
-export const createAgeSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createAgeSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [AGE_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [AGE_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5826,7 +6271,7 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
         const user = usersData[userId] || {};
         const ageValues = withoutEmptySearchKeyBucket(getAgeIndexSet(user), AGE_SEARCH_KEY_INDEX);
         ageValues.forEach(ageValue => {
-          acc[`${searchKeyRoot}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5834,16 +6279,15 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
   );
 };
 
-export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createImtHeightWeightSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [IMT_SEARCH_KEY_INDEX, HEIGHT_SEARCH_KEY_INDEX, WEIGHT_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [IMT_SEARCH_KEY_INDEX, HEIGHT_SEARCH_KEY_INDEX, WEIGHT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5855,13 +6299,13 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
         const heightValues = withoutEmptySearchKeyBucket(normalizeMetricIndexValues(user.height), HEIGHT_SEARCH_KEY_INDEX);
         const weightValues = withoutEmptySearchKeyBucket(normalizeMetricIndexValues(user.weight), WEIGHT_SEARCH_KEY_INDEX);
         imtValues.forEach(imtValue => {
-          acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
         });
         heightValues.forEach(heightValue => {
-          acc[`${searchKeyRoot}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
         });
         weightValues.forEach(weightValue => {
-          acc[`${searchKeyRoot}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5869,16 +6313,15 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
   );
 };
 
-export const createReactionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createReactionSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [REACTION_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [REACTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5888,7 +6331,7 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
         const user = usersData[userId] || {};
         const reactionValues = withoutEmptySearchKeyBucket(getReactionIndexSet(user), REACTION_SEARCH_KEY_INDEX);
         reactionValues.forEach(reactionValue => {
-          acc[`${searchKeyRoot}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5896,16 +6339,15 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
   );
 };
 
-export const createFieldCountSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createFieldCountSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [FIELD_COUNT_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [FIELD_COUNT_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5914,7 +6356,7 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         const fieldCountValue = normalizeFieldCountSearchKeyIndexValue(user);
-        acc[`${searchKeyRoot}/${FIELD_COUNT_SEARCH_KEY_INDEX}/${fieldCountValue}/${userId}`] = true;
+        acc[`${resolveSearchKeyWriteRoot(options, userId)}/${FIELD_COUNT_SEARCH_KEY_INDEX}/${fieldCountValue}/${userId}`] = true;
         return acc;
       }, {}),
     onProgress
@@ -5922,16 +6364,15 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
 };
 
 
-const createDerivedSearchKeyIndexInCollection = async (collection, indexName, getIndexSet, onProgress, options = {}) => {
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+const createDerivedSearchKeyIndex = async (indexName, getIndexSet, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [indexName]);
+  await resetSearchKeyIndexRoots(options, [indexName]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5940,7 +6381,7 @@ const createDerivedSearchKeyIndexInCollection = async (collection, indexName, ge
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         withoutEmptySearchKeyBucket(getIndexSet(user), indexName).forEach(value => {
-          acc[`${searchKeyRoot}/${indexName}/${value}/${userId}`] = true;
+          acc[`${resolveSearchKeyWriteRoot(options, userId)}/${indexName}/${value}/${userId}`] = true;
         });
         return acc;
       }, {}),
@@ -5948,22 +6389,21 @@ const createDerivedSearchKeyIndexInCollection = async (collection, indexName, ge
   );
 };
 
-export const createBmiSearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
-  createDerivedSearchKeyIndexInCollection(collection, BMI_SEARCH_KEY_INDEX, getBmiIndexSet, onProgress, options);
+export const createBmiSearchKeyIndex = (onProgress, options = {}) =>
+  createDerivedSearchKeyIndex(BMI_SEARCH_KEY_INDEX, getBmiIndexSet, onProgress, options);
 
-export const createCountrySearchKeyIndexInCollection = (collection, onProgress, options = {}) =>
-  createDerivedSearchKeyIndexInCollection(collection, COUNTRY_SEARCH_KEY_INDEX, getCountryIndexSet, onProgress, options);
+export const createCountrySearchKeyIndex = (onProgress, options = {}) =>
+  createDerivedSearchKeyIndex(COUNTRY_SEARCH_KEY_INDEX, getCountryIndexSet, onProgress, options);
 
-export const createLastActionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createLastActionSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [LAST_ACTION_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [LAST_ACTION_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -5973,7 +6413,7 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
         const user = usersData[userId] || {};
         const bucket = normalizeLastActionSearchKeyBucket(user.lastAction);
         if (bucket === SEARCH_KEY_EMPTY_BUCKET) return acc;
-        acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
+        acc[`${resolveSearchKeyWriteRoot(options, userId)}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
         return acc;
       }, {}),
     onProgress
@@ -5981,16 +6421,15 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
 };
 
 
-export const createGetInTouchSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
-  const searchKeyRoot = options?.rootPath || resolveSearchKeyRootForCollection(collection);
-  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+export const createGetInTouchSearchKeyIndex = async (onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadProfilesFromNodesForIndexing());
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  await resetSearchKeyIndexNodes(searchKeyRoot, [GET_IN_TOUCH_SEARCH_KEY_INDEX]);
+  await resetSearchKeyIndexRoots(options, [GET_IN_TOUCH_SEARCH_KEY_INDEX]);
 
   await uploadChunkedSearchKeyIndexUpdates(
     userIds,
@@ -6000,7 +6439,7 @@ export const createGetInTouchSearchKeyIndexInCollection = async (collection, onP
         const user = usersData[userId] || {};
         const bucket = normalizeDateSearchKeyBucket(user.getInTouch);
         if (bucket === SEARCH_KEY_EMPTY_BUCKET) return acc;
-        acc[`${searchKeyRoot}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
+        acc[`${resolveSearchKeyWriteRoot(options, userId)}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
         return acc;
       }, {}),
     onProgress
@@ -6019,29 +6458,40 @@ const normalizeSearchKeyIndexTypes = indexTypes =>
   [...new Set((indexTypes || []).map(normalizeSearchKeyIndexType))];
 
 const SEARCH_KEY_INDEX_BUILDERS = {
-  [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.csection]: createCsectionSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.contact]: createContactSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.role]: createRoleSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.userId]: createUserIdSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.age]: createAgeSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.imtHeightWeight]: createImtHeightWeightSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.getInTouch]: createGetInTouchSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.bmi]: createBmiSearchKeyIndexInCollection,
-  [SEARCH_KEY_INDEX_TYPES.country]: createCountrySearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.csection]: createCsectionSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.contact]: createContactSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.role]: createRoleSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.userId]: createUserIdSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.age]: createAgeSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.imtHeightWeight]: createImtHeightWeightSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.getInTouch]: createGetInTouchSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.bmi]: createBmiSearchKeyIndex,
+  [SEARCH_KEY_INDEX_TYPES.country]: createCountrySearchKeyIndex,
 };
 
-export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress, options = {}) => {
-  if (!collection || !Array.isArray(indexTypes) || indexTypes.length === 0) return;
+/**
+ * Перебудувати обрані індекси `searchKey`.
+ *
+ * Прогін один на всю колекцію, і це не оптимізація: колекція у вебі одна, а
+ * два корені `searchKey` — лише розкладка за форматом id. Два прогони (по
+ * одному «на колекцію») читали б ті самі вузли двічі й писали б у той самий
+ * індекс двічі.
+ */
+export const createSelectedSearchKeyIndexes = async (indexTypes = [], onProgress, options = {}) => {
+  if (!Array.isArray(indexTypes) || indexTypes.length === 0) return;
 
   const uniqueIndexTypes = normalizeSearchKeyIndexTypes(indexTypes).filter(indexType => SEARCH_KEY_INDEX_BUILDERS[indexType]);
   if (!uniqueIndexTypes.length) return;
 
-  const usersData = await loadCollectionWithIndexCache(collection, {
+  // Індекс будується з того ж джерела, з якого читає застосунок. Читати тут
+  // `users`/`newUsers` означало б індексувати те, чого веб уже не показує, — а
+  // після зникнення `newUsers` перебудова просто дала б порожній індекс.
+  const usersData = await loadProfilesFromNodesForIndexing({
     maxAgeMs: SEARCH_INDEX_COLLECTION_CACHE_TTL_MS,
   });
 
@@ -6063,7 +6513,7 @@ export const createSelectedSearchKeyIndexesInCollection = async (collection, ind
         : undefined;
 
     // eslint-disable-next-line no-await-in-loop
-    await SEARCH_KEY_INDEX_BUILDERS[indexType](collection, progressReporter, { usersData, ...options });
+    await SEARCH_KEY_INDEX_BUILDERS[indexType](progressReporter, { usersData, ...options });
   }
 };
 
@@ -6334,7 +6784,7 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
 // The getInTouch deck pages both collections at once, so its bulk reads span both
 // roots. Per-card checks must not: they resolve the one root that can hold the id
 // (see resolveSearchKeyRootForUserId) instead of asking both and paying twice.
-const SEARCH_KEY_INDEXED_ROOT_PATHS = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
+const SEARCH_KEY_INDEXED_ROOT_PATHS = SEARCH_KEY_INDEX_ROOT_PATHS;
 
 const collectIdsFromSearchKeyBucketSnapshot = (snapshot, idSet) => {
   if (!snapshot.exists()) return;
@@ -7363,8 +7813,10 @@ export const fetchUsersByDefaultGetInTouchPaged = options => fetchUsersBySearchK
 //   }
 // };
 
-export const createSearchIdsInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createSearchIds = async onProgress => {
+  // Те саме джерело, що й у решти індексацій: контакти, за якими будується
+  // `searchId`, живуть у `profileContacts`, а не в legacy-анкеті.
+  const usersData = await loadProfilesFromNodesForIndexing();
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -7772,29 +8224,28 @@ export const filterMain = (
       if (!addCheck('age', filterSettings.age[filterCat], cat, getExpectedFilterKeys(filterSettings.age)) && !shouldDebugUser) return false;
     }
 
-    if (hasContactFilter) {
-      // Проєкція `matchingCards` носить перелік наявних контактів, а не самі
-      // значення — контакти в стрічці не показуються, і класти їх у публічний
-      // вузол не можна. Коли перелік є, він і є відповіддю.
-      const precomputedContactKeys = Array.isArray(value.__contactKeys) ? value.__contactKeys : null;
-      const contactMap = precomputedContactKeys
-        ? Object.fromEntries(precomputedContactKeys.map(contactKey => [contactKey, true]))
-        : {
-          vk: hasContactValue(value.vk),
-          instagram: hasContactValue(value.instagram),
-          ameblo: hasContactValue(value.ameblo),
-          facebook: hasContactValue(value.facebook),
-          phone: hasContactValue(value.phone),
-          telegram: hasTelegramNonUk(value.telegram),
-          telegram2: isTelegramUkOnly(value.telegram),
-          tiktok: hasContactValue(value.tiktok),
-          linkedin: hasContactValue(value.linkedin),
-          youtube: hasContactValue(value.youtube),
-          email: hasContactValue(value.email),
-          twitter: hasContactValue(value.twitter),
-          line: hasContactValue(value.line),
-          otherLink: hasContactValue(value.otherLink),
-        };
+    // Картка стрічки про контакти не знає нічого: вони живуть у
+    // `profileContacts` з власними правами, і в проєкцію не потрапляє навіть
+    // перелік їхніх ключів. Тож фільтр «є контакт» до неї не застосовується —
+    // не «нічого не знайшлось», а «питання не до цієї картки». Мовчазне
+    // застосування відсіяло б усю стрічку до нуля.
+    if (hasContactFilter && !isMatchingSummaryCard(value)) {
+      const contactMap = {
+        vk: hasContactValue(value.vk),
+        instagram: hasContactValue(value.instagram),
+        ameblo: hasContactValue(value.ameblo),
+        facebook: hasContactValue(value.facebook),
+        phone: hasContactValue(value.phone),
+        telegram: hasTelegramNonUk(value.telegram),
+        telegram2: isTelegramUkOnly(value.telegram),
+        tiktok: hasContactValue(value.tiktok),
+        linkedin: hasContactValue(value.linkedin),
+        youtube: hasContactValue(value.youtube),
+        email: hasContactValue(value.email),
+        twitter: hasContactValue(value.twitter),
+        line: hasContactValue(value.line),
+        otherLink: hasContactValue(value.otherLink),
+      };
       if (!addCheck('contact', allowedContacts.some(contactKey => contactMap[contactKey]), contactMap, allowedContacts) && !shouldDebugUser) return false;
     }
 
@@ -8036,6 +8487,19 @@ export const fetchUserById = async userId => {
   const userRefInUsers = ref2(db, `users/${userId}`);
 
   try {
+    // Нові вузли — основний шлях; legacy лишається відкатом для анкет, які ще
+    // не переїхали, і джерелом для мобільного застосунку.
+    // `withLegacy` саме тут: анкета — це те місце, де застарілі дані видно
+    // одразу, і те місце, з якого їх правлять. Мобільний застосунок пише в
+    // `/users`, і без цього читання його зміни у вебі не зʼявились би ніколи.
+    const fromNodes = await readProfileFromNodes(userId, { includeTechnical: true, withLegacy: true });
+    if (fromNodes) {
+      const photos = fromNodes.__photosHydrated
+        ? fromNodes.photos
+        : await getAllUserPhotos(userId, fromNodes.__sourceCollection);
+      return { ...fromNodes, photos: photos || [], __photosHydrated: true };
+    }
+
     const [usersResult, newUsersResult] = await Promise.allSettled([
       get(userRefInUsers),
       get(userRefInNewUsers),

@@ -52,7 +52,6 @@ export const normalizeMatchingInitialLoadError = (error, context = {}) => {
   const code = getMatchingErrorCode(error);
   const candidateRequestLabel = String(error?.requestLabel || error?.stage || context.requestLabel || '').trim();
   const requestLabel = MATCHING_INITIAL_REQUEST_LABELS.has(candidateRequestLabel) ? candidateRequestLabel : 'unknown';
-  const collectionSource = String(context.collectionSource || 'unknown');
   const viewMode = String(context.viewMode || 'unknown');
   const ownerId = String(context.ownerId || 'unknown');
   const normalizedCode = code.toLowerCase().replace(/_/g, '-');
@@ -65,16 +64,16 @@ export const normalizeMatchingInitialLoadError = (error, context = {}) => {
     userMessage = `Таймаут на етапі ${requestLabel}`;
     message = originalMessage || 'Initial request timed out';
   } else if (normalizedCode.includes('permission-denied')) {
-    userMessage = `Немає доступу до ${collectionSource} на етапі ${requestLabel} (permission-denied)`;
+    userMessage = `Немає доступу до анкет на етапі ${requestLabel} (permission-denied)`;
     message = originalMessage || 'Permission denied';
   } else if (normalizedCode.includes('unavailable')) {
-    userMessage = `Сервіс ${collectionSource} тимчасово недоступний на етапі ${requestLabel}`;
+    userMessage = `Сервіс тимчасово недоступний на етапі ${requestLabel}`;
     message = 'Firebase service unavailable';
   } else if (normalizedCode.includes('failed-precondition') || /index/i.test(error?.message || '')) {
-    userMessage = `Для ${collectionSource} відсутній потрібний індекс на етапі ${requestLabel}`;
+    userMessage = `Відсутній потрібний індекс на етапі ${requestLabel}`;
     message = 'Required Firebase index is unavailable';
   } else if (normalizedCode.includes('network-error') || /network|offline|failed to fetch/i.test(`${code} ${error?.message || ''}`)) {
-    userMessage = `Помилка мережі на етапі ${requestLabel} під час завантаження ${collectionSource}`;
+    userMessage = `Помилка мережі на етапі ${requestLabel} під час завантаження анкет`;
     message = 'Network request failed';
   } else if (normalizedCode === 'matching/type-error') {
     userMessage = `Помилка обробки даних на етапі ${requestLabel}. Відкрийте технічні деталі.`;
@@ -85,7 +84,6 @@ export const normalizeMatchingInitialLoadError = (error, context = {}) => {
     name,
     message,
     requestLabel,
-    collectionSource,
     viewMode,
     ownerId,
     online: typeof navigator === 'undefined' ? null : navigator.onLine,

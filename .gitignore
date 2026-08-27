@@ -132,3 +132,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Firebase emulator (npm run test:rules)
+database-debug.log
+firebase-debug.log
+ui-debug.log

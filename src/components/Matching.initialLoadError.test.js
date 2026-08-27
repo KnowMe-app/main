@@ -14,7 +14,6 @@ const section = (startText, endText) => {
 };
 
 const context = {
-  collectionSource: 'users',
   viewMode: 'default',
   ownerId: 'viewer-id',
 };
@@ -26,7 +25,7 @@ describe('Matching initial loading error diagnostics', () => {
       error: Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' }),
       stage: 'source-page-read',
       expectedCode: 'PERMISSION_DENIED',
-      expectedMessage: 'Немає доступу до users на етапі source-page-read',
+      expectedMessage: 'Немає доступу до анкет на етапі source-page-read',
     },
     {
       title: 'RTDB permission errors',
@@ -37,28 +36,28 @@ describe('Matching initial loading error diagnostics', () => {
       },
       stage: 'source-page-read',
       expectedCode: 'permission-denied',
-      expectedMessage: 'Немає доступу до users на етапі source-page-read',
+      expectedMessage: 'Немає доступу до анкет на етапі source-page-read',
     },
     {
       title: 'RTDB permission messages without structured metadata',
       error: new Error('PERMISSION_DENIED: Permission denied at /users'),
       stage: 'source-page-read',
       expectedCode: 'permission-denied',
-      expectedMessage: 'Немає доступу до users на етапі source-page-read',
+      expectedMessage: 'Немає доступу до анкет на етапі source-page-read',
     },
     {
       title: 'bare RTDB permission rejections without a code',
       error: new Error('Permission denied'),
       stage: 'source-page-read',
       expectedCode: 'permission-denied',
-      expectedMessage: 'Немає доступу до users на етапі source-page-read',
+      expectedMessage: 'Немає доступу до анкет на етапі source-page-read',
     },
     {
       title: 'missing Firebase indexes',
       error: Object.assign(new Error('Index not defined'), { code: 'failed-precondition' }),
       stage: 'search-index',
       expectedCode: 'failed-precondition',
-      expectedMessage: 'відсутній потрібний індекс на етапі search-index',
+      expectedMessage: 'Відсутній потрібний індекс на етапі search-index',
     },
     {
       title: 'network errors',
@@ -88,7 +87,6 @@ describe('Matching initial loading error diagnostics', () => {
     expect(diagnostic).toEqual(expect.objectContaining({
       code: expectedCode,
       requestLabel: stage,
-      collectionSource: 'users',
     }));
     expect(diagnostic.userMessage).toContain(expectedMessage);
     expect(diagnostic.userMessage).not.toBe('Не вдалося завантажити users (matching/unknown)');
@@ -104,7 +102,7 @@ describe('Matching initial loading error diagnostics', () => {
     );
 
     expect(diagnostic.code).toBe('database/permission-denied');
-    expect(diagnostic.userMessage).toContain('Немає доступу до users на етапі profile-hydration');
+    expect(diagnostic.userMessage).toContain('Немає доступу до анкет на етапі profile-hydration');
   });
 
   it('preserves a non-Error Firebase rejection as the annotated error cause', () => {

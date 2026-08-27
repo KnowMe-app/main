@@ -45,7 +45,6 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
           no: false,
         },
       },
-      collectionSource: 'newUsers',
     });
 
     expect(groups).toEqual(expect.arrayContaining([
@@ -71,7 +70,6 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
         bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: false },
         rh: { '+': true, '-': true, other: true, empty: false },
       },
-      collectionSource: 'newUsers',
     });
 
     expect(groups.find(group => group.indexName === 'role')?.values).not.toContain('no');
@@ -79,7 +77,10 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
     expect(groups.find(group => group.indexName === 'blood')?.values).not.toContain('no');
   });
 
-  it('keeps derived imt filters out of additional newUsers searchKeySets', () => {
+  it('будує групу imt для всієї колекції — деки, з якої її прибирали, більше немає', () => {
+    // Раніше `imt` не потрапляв у групи на деці `newUsers`: похідний індекс
+    // існував лише в корені `users`. Прогін індексації тепер один і накриває
+    // обидва корені, тож і читати цю групу можна для будь-якої анкети.
     const { buildMatchingIndexFilterGroups } = loadModule();
 
     const groups = buildMatchingIndexFilterGroups({
@@ -93,10 +94,9 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
           no: false,
         },
       },
-      collectionSource: 'newUsers',
     });
 
-    expect(groups.some(group => group.indexName === 'imt')).toBe(false);
+    expect(groups.some(group => group.indexName === 'imt')).toBe(true);
   });
 });
 
@@ -131,11 +131,12 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const first = await fetchMatchingIndexedCandidates({ filters, limit: 2, hydrateUsersByIds });
     const second = await fetchMatchingIndexedCandidates({ filters, offset: 2, limit: 2, hydrateUsersByIds });
 
-    // The bucket, plus the one read that tells the deck which cards are near-empty so
-    // they can be ordered last. The second page comes from the cached id list.
-    expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
+    // Рівно один читаний бакет. Другого читання більше немає: разом із
+    // «Заповненістю» зі стрічки пішла й перестановка порожніх карток у хвіст,
+    // а вона коштувала окремого читання бакета на кожну сторінку.
+    expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/role/ag');
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
     expect(first.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002']);
     expect(second.pageIds).toEqual(['user00000000000000000003']);
   });
@@ -149,56 +150,24 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     Date.now.mockReturnValue(1_000_000 + (10 * 60 * 1000) + 1);
     await fetchMatchingIndexedCandidates({ filters, offset: 1, limit: 1, hydrateUsersByIds });
 
-    // The bucket is read again once the index-id cache expires; the near-empty
-    // ordering read is cached separately and outlives it.
-    expect(mockFirebaseGet).toHaveBeenCalledTimes(3);
+    // Бакет читається вдруге, щойно кеш id протух. Третього читання немає:
+    // впорядкування за заповненістю зі стрічки прибрано.
+    expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
   });
 
-  it('reads the field-count ranges it asked for as their own nodes', async () => {
+  it('вибір заповненості індексу стрічки більше не адресується', async () => {
+    // Групи «Заповненість» у стрічці немає, тож старий збережений вибір
+    // `fields` не породжує ані індексного плану, ані читання вузла `fields`.
+    // У AddNewProfile, який працює з повними анкетами, цей індекс лишився.
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
     const filters = { fields: { le5: true, f6_10: false, f11_20: false, f20_plus: true } };
 
-    mockFirebaseGet.mockImplementation(async path => {
-      if (path === 'searchKey/users/fields/le5') return makeSnapshot({ user00000000000000000001: true });
-      if (path === 'searchKey/users/fields/f20_plus') return makeSnapshot({ user00000000000000000004: true });
-      return makeSnapshot(null);
-    });
-
     const result = await fetchMatchingIndexedCandidates({ filters, limit: 10, hydrateUsersByIds });
 
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/f20_plus');
-    // The whole 400 KB node stays off the wire once the index stores ranges.
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields');
-    // ...001 is in `le5`, so it is kept and sorted behind the card that has data.
-    expect(result.pageIds).toEqual(['user00000000000000000004', 'user00000000000000000001']);
-  });
-
-  it('falls back to scanning the legacy per-count field index while a rebuild is pending', async () => {
-    const { fetchMatchingIndexedCandidates } = loadModule();
-    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
-    const filters = { fields: { le5: true, f6_10: false, f11_20: false, f20_plus: true } };
-
-    mockFirebaseGet.mockImplementation(async path => (
-      path === 'searchKey/users/fields'
-        ? makeSnapshot({
-          0: { user00000000000000000001: true },
-          5: { user00000000000000000002: true },
-          6: { user00000000000000000003: true },
-          21: { user00000000000000000004: true },
-        })
-        : makeSnapshot(null)
-    ));
-
-    const result = await fetchMatchingIndexedCandidates({ filters, limit: 10, hydrateUsersByIds });
-
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields');
-    expect(result.pageIds).toEqual([
-      'user00000000000000000001',
-      'user00000000000000000002',
-      'user00000000000000000004',
-    ]);
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
+    expect(result.usedIndex).toBe(false);
   });
 
   it('uses backend birth-date ranges for matching users age filters instead of frontend bucket nodes', async () => {
@@ -239,7 +208,6 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const groups = buildMatchingIndexFilterGroups({
       // The Matching drawer's real role group: no "no"/"empty" checkbox to tick.
       filters: { userRole: { ed: true, ag: false, ip: true, other: true } },
-      collectionSource: 'users',
     });
     const roleGroup = groups.find(group => group.indexName === 'role');
 
@@ -256,7 +224,6 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
 
     const groups = buildMatchingIndexFilterGroups({
       filters: { rh: { '+': true, '-': false, other: false } },
-      collectionSource: 'users',
     });
     const bloodGroup = groups.find(group => group.indexName === 'blood');
 
@@ -313,7 +280,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const excluded = await fetchMatchingIndexedCandidates({ filters, limit: 5, excludeIds: ['user00000000000000000001'], hydrateUsersByIds });
     const base = await fetchMatchingIndexedCandidates({ filters, limit: 5, hydrateUsersByIds });
 
-    expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
+    expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
     expect(excluded.pageIds).toEqual(['user00000000000000000002', 'user00000000000000000003']);
     expect(base.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002', 'user00000000000000000003']);
   });

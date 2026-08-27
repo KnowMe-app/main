@@ -92,7 +92,7 @@ describe('Matching loadMore stale pagination guards', () => {
 
   it('keeps active users indexed filters from falling through to source pagination', () => {
     const source = loadMoreSource();
-    const indexedBranchIndex = source.indexOf("if (collectionSource === 'users' && activeIndexFilterGroups.length > 0)");
+    const indexedBranchIndex = source.indexOf('if (activeIndexFilterGroups.length > 0)');
     const sourcePaginationIndex = source.indexOf('const collected = [];', indexedBranchIndex);
     const indexedBranch = source.slice(indexedBranchIndex, sourcePaginationIndex);
     const indexedReturnIndex = indexedBranch.indexOf('return indexedPage.collected.length;');

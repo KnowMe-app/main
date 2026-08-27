@@ -34,8 +34,8 @@ import {
   filterMain,
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
-  createMatchingCardsIndexInCollection,
-  createSelectedSearchKeyIndexesInCollection,
+  createMatchingCardsIndex,
+  createSelectedSearchKeyIndexes,
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
   fetchUsersBySearchKeyBloodPaged,
@@ -147,6 +147,11 @@ import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllNewUsersFilterSetIndexes } from 'utils/newUsersFilterSetsIndex';
 import { buildMatchingCardsPayloadFromCollections } from 'utils/matchingCardIndex';
+import {
+  PROFILE_NODE_NAMES,
+  mergeProfileNodeCollections,
+  describeLocalIndexingSources,
+} from 'utils/profileNodeCollections';
 import { mergeUserCollectionData } from 'utils/mergeUserCollections';
 import { buildFullCardKeyMap } from 'utils/cardKeyMap';
 import {
@@ -1264,6 +1269,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const localUsersFileInputRef = useRef(null);
   const localNewUsersFileInputRef = useRef(null);
   const localExportUsersFileInputRef = useRef(null);
+  /**
+   * Локально завантажені вузли нової колекції.
+   *
+   * Індексація має два входи, і другий існує не для зручності: читання всієї
+   * бази — це десятки мегабайтів і хвилини, а з телефона ще й трафік. Тут
+   * лежать ті самі вузли, тільки прочитані з файлів.
+   */
+  const [localNodeFiles, setLocalNodeFiles] = useState({});
+  const localNodeFilesInputRef = useRef(null);
   const localExportNewUsersFileInputRef = useRef(null);
   const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
     const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
@@ -5792,12 +5806,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }));
   };
 
+  /**
+   * Локальна індексація — та сама робота, що й на бекенді, тільки без бекенду.
+   *
+   * Анкети збираються тим самим `mergeProfileNodeCollections`, яким їх збирає
+   * серверний шлях. Це не охайність, а вимога: якби збірки розійшлись, індекс,
+   * зібраний локально, відрізнявся б від серверного — і побачити це можна було
+   * б хіба що по дірках у пошуку.
+   */
   const runLocalSearchIndexesWithCollections = useCallback(
-    async ({ usersData, newUsersData, indexTypes }) => {
-      const collectionsMap = {
+    async ({ usersData, newUsersData, nodeFiles, indexTypes }) => {
+      const { profiles, stats } = mergeProfileNodeCollections({
+        ...(nodeFiles || {}),
         users: usersData || {},
         newUsers: newUsersData || {},
-      };
+      });
+
+      // Колекція у вебі одна, тож і мапа одна: розділення на деки прибрано.
+      const collectionsMap = { profiles };
 
       const searchIdPayload = buildSearchIdIndexPayloadFromCollections(collectionsMap);
       const searchKeyPayload = buildSearchKeyIndexPayloadFromCollections(collectionsMap, indexTypes);
@@ -5805,6 +5831,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       downloadJsonFile(`searchId-index-${stamp}.json`, searchIdPayload);
       downloadJsonFile(`searchKey-index-${stamp}.json`, searchKeyPayload);
+      return stats;
     },
     [downloadJsonFile],
   );
@@ -5825,6 +5852,38 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setPendingLocalNewUsersData(localExportNewUsersData);
     setShowLocalIndexModal(true);
   }, [localExportNewUsersData, localExportUsersData]);
+
+  /**
+   * Викачати нові вузли, щоб індексувати з них локально.
+   *
+   * Два входи індексації мусять давати однакові анкети, а джерело істини тепер
+   * тут — у вузлах. Без цієї кнопки локальний шлях лишався б прив'язаним до
+   * legacy: людина викачала б `users.json`, зібрала індекс зі старого джерела і
+   * не побачила б жодної помилки, поки пошук не почав би не знаходити анкети.
+   *
+   * Кожен вузол — окремий файл, бо назад вони теж заливаються поокремо, кожен
+   * у свій шлях.
+   */
+  const handleDownloadProfileNodesForLocalIndex = useCallback(async () => {
+    const toastId = 'download-local-index-nodes';
+    toast.loading('Завантаження вузлів анкет...', { id: toastId });
+    try {
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const loaded = await Promise.all(PROFILE_NODE_NAMES.map(async node => {
+        const snapshot = await get(ref(database, node));
+        const value = snapshot.exists() ? snapshot.val() || {} : {};
+        downloadJsonFile(`${node}-${stamp}.json`, value);
+        return [node, Object.keys(value).length];
+      }));
+
+      toast.success(
+        `Вузли завантажено — ${loaded.map(([node, count]) => `${node}: ${count}`).join(', ')}`,
+        { id: toastId, duration: 8000 },
+      );
+    } catch (error) {
+      toast.error(`Не вдалося завантажити вузли: ${error?.message || 'невідома помилка'}`, { id: toastId });
+    }
+  }, [downloadJsonFile]);
 
   const handleDownloadCollectionsForLocalIndex = useCallback(async () => {
     const toastId = 'download-local-index-collections';
@@ -5888,6 +5947,63 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (localExportUsersFileInputRef.current) {
       localExportUsersFileInputRef.current.value = '';
       localExportUsersFileInputRef.current.click();
+    }
+  }, []);
+
+  /**
+   * Кожен файл сам себе називає: `matchingCards.json`, `profileDetails.json`
+   * і так далі — рівно ті імена, під якими їх віддає інструмент міграції та
+   * експорт. Тож замість пʼяти окремих кнопок один вибір із кількох файлів, а
+   * розкладає їх ім'я файлу.
+   */
+  const handleLocalNodeFilesSelected = useCallback(async event => {
+    const files = [...(event.target.files || [])];
+    event.target.value = '';
+    if (!files.length) return;
+
+    const next = {};
+    const unknown = [];
+
+    await Promise.all(files.map(async file => {
+      const node = PROFILE_NODE_NAMES.find(name => file.name.includes(name));
+      if (!node) {
+        unknown.push(file.name);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(await file.text());
+        // Файл може бути і вмістом вузла, і експортом із обгорткою.
+        next[node] = parsed?.[node] && typeof parsed[node] === 'object' ? parsed[node] : parsed;
+      } catch (error) {
+        unknown.push(`${file.name} (не JSON)`);
+      }
+    }));
+
+    if (Object.keys(next).length) {
+      setLocalNodeFiles(current => ({ ...current, ...next }));
+      toast.success(`Прочитано вузли: ${Object.keys(next).join(', ')}`);
+    }
+    if (unknown.length) {
+      toast.error(`Не впізнано за назвою: ${unknown.join(', ')}`);
+    }
+  }, []);
+
+  // Що саме зараз завантажено — і чи варте воно індексації. Мовчати не можна:
+  // людина натисне кнопку, отримає файл, заллє його — і зламає пошук, не
+  // побачивши жодної помилки.
+  const localIndexSources = describeLocalIndexingSources({
+    ...localNodeFiles,
+    // Обидва набори: файл могли обрати і з модалки експорту (`localExport*`), і
+    // з модалки індексації (`pendingLocal*`). Дивитись лише на один означало б
+    // сказати «нічого не завантажено» людині, яка щойно завантажила файл.
+    users: localExportUsersData || pendingLocalUsersData,
+    newUsers: localExportNewUsersData || pendingLocalNewUsersData,
+  });
+
+  const handlePickLocalNodeFiles = useCallback(() => {
+    if (localNodeFilesInputRef.current) {
+      localNodeFilesInputRef.current.value = '';
+      localNodeFilesInputRef.current.click();
     }
   }, []);
 
@@ -5970,43 +6086,69 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [ownerId]);
 
   const handleApplyLocalIndexing = useCallback(async () => {
-    if (!pendingLocalUsersData || !pendingLocalNewUsersData) {
-      toast.error('Спочатку оберіть обидва локальні файли: users.json і newUsers.json');
+    // Досить будь-якого джерела: після переїзду legacy-файлів може вже не бути
+    // взагалі, а вузлів вистачає — саме з них тепер читає застосунок.
+    if (!localIndexSources.isUsable) {
+      toast.error('Спочатку оберіть файли вузлів (або legacy users.json / newUsers.json)');
       return;
     }
 
     const toastId = 'local-index-build';
     toast.loading('Формуємо локальні JSON індекси searchId/searchKey...', { id: toastId });
     try {
-      await runLocalSearchIndexesWithCollections({
+      const stats = await runLocalSearchIndexesWithCollections({
         usersData: pendingLocalUsersData,
         newUsersData: pendingLocalNewUsersData,
+        nodeFiles: localNodeFiles,
         indexTypes: pendingLocalIndexTypes,
       });
-      toast.success('Локальні JSON індекси завантажено на пристрій', { id: toastId });
+      console.info('[localIndex] зібрано анкет', stats);
+      toast.success(
+        `Локальні JSON індекси завантажено: анкет ${stats.total}, з них із вузлів ${stats.fromNodes}`
+          + (stats.legacyOnly ? `, лише з legacy ${stats.legacyOnly}` : ''),
+        { id: toastId, duration: 8000 },
+      );
       setShowLocalIndexModal(false);
     } catch (error) {
       toast.error(`Помилка локальної індексації: ${error?.message || 'невідома помилка'}`, { id: toastId });
     }
-  }, [pendingLocalNewUsersData, pendingLocalUsersData, pendingLocalIndexTypes, runLocalSearchIndexesWithCollections]);
+  }, [
+    localIndexSources.isUsable,
+    pendingLocalNewUsersData,
+    pendingLocalUsersData,
+    pendingLocalIndexTypes,
+    localNodeFiles,
+    runLocalSearchIndexesWithCollections,
+  ]);
 
   const buildFullKeySetFromCollections = useCallback(() => {
-    if (!pendingLocalUsersData && !pendingLocalNewUsersData) {
-      toast.error('Спочатку оберіть хоча б один файл: users.json або newUsers.json');
+    if (!localIndexSources.isUsable) {
+      toast.error('Спочатку оберіть файли вузлів (або legacy users.json / newUsers.json)');
       return;
     }
 
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const keyMap = buildFullCardKeyMap({
-      users: pendingLocalUsersData,
-      newUsers: pendingLocalNewUsersData,
+    // Карта ключів будується по тих самих анкетах, що й індекси — зведених із
+    // усіх джерел. Інакше «повна карта» була б повною лише по legacy.
+    const { profiles } = mergeProfileNodeCollections({
+      ...localNodeFiles,
+      users: pendingLocalUsersData || {},
+      newUsers: pendingLocalNewUsersData || {},
     });
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const keyMap = buildFullCardKeyMap({ profiles });
     downloadJsonFile(`full-card-keys-${stamp}.json`, {
       createdAt: new Date().toISOString(),
       ...keyMap,
     });
     toast.success(`Знайдено ${keyMap.totalKeys} ключів у ${keyMap.totalCards} картках`);
-  }, [downloadJsonFile, pendingLocalNewUsersData, pendingLocalUsersData]);
+  }, [
+    downloadJsonFile,
+    localIndexSources.isUsable,
+    localNodeFiles,
+    pendingLocalNewUsersData,
+    pendingLocalUsersData,
+  ]);
 
   const longPressTimerRef = useRef(null);
   const showButtonHint = useCallback(helpText => {
@@ -6108,28 +6250,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const indexTypesForUsers = selectedIndexTypes.length ? selectedIndexTypes : allSearchKeyIndexTypes;
         toast.loading(
           selectedIndexTypes.length
-            ? 'Indexing searchKey/users selected indexes...'
-            : 'Indexing searchKey/users all indexes...',
+            ? 'Indexing searchKey selected indexes...'
+            : 'Indexing searchKey all indexes...',
           { id: toastId },
         );
-        await createSelectedSearchKeyIndexesInCollection(
-          'users',
+        await createSelectedSearchKeyIndexes(
           indexTypesForUsers,
           (progress, meta) => {
             const indexLabel = meta?.indexType || '';
             const indexNumber = meta?.indexNumber || 1;
             const totalIndexes = meta?.totalIndexes || indexTypesForUsers.length;
             toast.loading(
-              `Indexing searchKey/users/${indexLabel} ${progress}% (${indexNumber}/${totalIndexes})`,
+              `Indexing searchKey/${indexLabel} ${progress}% (${indexNumber}/${totalIndexes})`,
               { id: toastId },
             );
           },
-          { rootPath: 'searchKey/users' },
         );
         toast.success(
           selectedIndexTypes.length
-            ? 'Обрані searchKey/users індекси для users побудовано'
-            : 'Всі searchKey/users індекси для users побудовано',
+            ? 'Обрані searchKey індекси побудовано'
+            : 'Всі searchKey індекси побудовано',
           { id: toastId },
         );
       }
@@ -6143,22 +6283,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
 
       const toastId = 'index-searchkey-selected-progress';
-      const formatProgressMessage = (collection, progress, meta) => {
+      const formatProgressMessage = (progress, meta) => {
         const indexLabel = meta?.indexType || '';
         const indexNumber = meta?.indexNumber || 1;
         const totalIndexes = meta?.totalIndexes || selectedIndexTypes.length;
-        return `Indexing ${collection}/${indexLabel} ${progress}% (${indexNumber}/${totalIndexes})`;
+        return `Indexing searchKey/${indexLabel} ${progress}% (${indexNumber}/${totalIndexes})`;
       };
 
+      // Один прогін на всю колекцію. Раніше їх було два — по одному «на
+      // колекцію», — і обидва читали ті самі вузли й писали в той самий індекс.
+      // Корінь під кожен запис вибирає сам будівник, за форматом id.
       toast.loading('Indexing searchKey indexes...', { id: toastId });
-      await createSelectedSearchKeyIndexesInCollection('newUsers', selectedIndexTypes, (progress, meta) => {
-        toast.loading(formatProgressMessage('newUsers', progress, meta), { id: toastId });
-      });
-
-      // Goes to searchKey/users - createSelectedSearchKeyIndexesInCollection resolves
-      // the root from the collection, so the users deck no longer lands in the shared root.
-      await createSelectedSearchKeyIndexesInCollection('users', selectedIndexTypes, (progress, meta) => {
-        toast.loading(formatProgressMessage('users', progress, meta), { id: toastId });
+      await createSelectedSearchKeyIndexes(selectedIndexTypes, (progress, meta) => {
+        toast.loading(formatProgressMessage(progress, meta), { id: toastId });
       });
 
       toast.success('Обрані searchKey індекси побудовано', { id: toastId });
@@ -6190,15 +6327,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const usersData = pendingLocalUsersData || localExportUsersData;
     const newUsersData = pendingLocalNewUsersData || localExportNewUsersData;
 
-    if (!usersData && !newUsersData) {
-      toast.error('Спершу оберіть users.json або newUsers.json');
+    if (!localIndexSources.isUsable) {
+      toast.error('Спершу оберіть файли вузлів (або legacy users.json / newUsers.json)');
       return;
     }
 
-    const { payload, stats } = buildMatchingCardsPayloadFromCollections({
+    // Картки збираються з тих самих зведених анкет, що й індекси: два входи
+    // індексації мусять давати однаковий результат, інакше локальна збірка
+    // тихо розійдеться з бекендовою.
+    const { profiles } = mergeProfileNodeCollections({
+      ...localNodeFiles,
       users: usersData || {},
       newUsers: newUsersData || {},
     });
+
+    const { payload, stats } = buildMatchingCardsPayloadFromCollections({ profiles });
 
     if (!stats.written) {
       toast.error('У обраних файлах немає карток для побудови');
@@ -6208,11 +6351,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     downloadJsonFile(`matchingCards-${stamp}.json`, payload);
     toast.success(
-      `matchingCards.json зібрано: ${stats.written} карток, з них з фото ${stats.withAvatar}.\n`
+      `matchingCards.json зібрано: ${stats.written} карток, з них з фото ${stats.withAvatar}, `
+        + `у стрічку потрапляють ${stats.inFeed}.\n`
         + 'Імпортуйте файл у вузол matchingCards.',
       { duration: 8000 },
     );
-  }, [downloadJsonFile, localExportNewUsersData, localExportUsersData, pendingLocalNewUsersData, pendingLocalUsersData]);
+  }, [
+    downloadJsonFile,
+    localExportNewUsersData,
+    localExportUsersData,
+    localIndexSources.isUsable,
+    localNodeFiles,
+    pendingLocalNewUsersData,
+    pendingLocalUsersData,
+  ]);
 
   const handleBuildMatchingCards = async () => {
     if (!isAdmin || isMatchingCardsIndexing) return;
@@ -6229,22 +6381,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIsMatchingCardsIndexing(true);
     toast.loading('Побудова карток стрічки...', { id: toastId });
     try {
-      const report = [];
-      for (const collection of ['users', 'newUsers']) {
-        // eslint-disable-next-line no-await-in-loop
-        const stats = await createMatchingCardsIndexInCollection(
-          collection,
-          (progress, meta) => {
-            toast.loading(
-              `Побудова карток стрічки: ${collection} ${progress}% (${meta?.processed || 0}/${meta?.total || 0})`,
-              { id: toastId },
-            );
-          },
-          { includeStorageAvatars },
-        );
-        report.push(`${collection}: ${stats.written}/${stats.total}`);
-      }
-      toast.success(`Картки стрічки побудовано — ${report.join(', ')}`, { id: toastId });
+      // Один прогін: колекція у вебі одна, і перебудова накриває її цілком.
+      const stats = await createMatchingCardsIndex(
+        (progress, meta) => {
+          toast.loading(
+            `Побудова карток стрічки: ${progress}% (${meta?.processed || 0}/${meta?.total || 0})`,
+            { id: toastId },
+          );
+        },
+        { includeStorageAvatars },
+      );
+      toast.success(`Картки стрічки побудовано — ${stats.written}/${stats.total}`, { id: toastId });
     } catch (error) {
       console.error('[AddNewProfile] matchingCards indexing failed', error);
       toast.error(`Помилка побудови карток стрічки: ${error?.message || 'невідома помилка'}`, {
@@ -7353,6 +7500,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 onChange={handleNewUsersJsonUpload}
               />
               <input
+                ref={localNodeFilesInputRef}
+                type="file"
+                accept="application/json,.json"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleLocalNodeFilesSelected}
+              />
+              <input
                 ref={localExportUsersFileInputRef}
                 type="file"
                 accept="application/json,.json"
@@ -7540,6 +7695,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </SaveModalRadioRow>
               {exportDataSource === 'local' && (
                 <LocalIndexActions>
+                  <button type="button" onClick={handlePickLocalNodeFiles}>
+                    Обрати файли вузлів {localIndexSources.loadedNodes.length
+                      ? `✅ ${localIndexSources.loadedNodes.join(', ')}`
+                      : '(matchingCards, profileDetails, …)'}
+                  </button>
+                  {localIndexSources.isLegacyOnly && (
+                    <SaveModalComment>
+                      Завантажено лише legacy-колекції. Індекс збереться зі старого джерела —
+                      того, чого веб уже не показує. Додайте файли вузлів.
+                    </SaveModalComment>
+                  )}
                   <button type="button" onClick={handlePickUsersFileForLocalExport}>
                     Обрати users.json {localExportUsersData ? '✅' : ''}
                   </button>
@@ -7635,25 +7801,38 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <LocalIndexOverlay onClick={() => setShowLocalIndexModal(false)}>
           <LocalIndexModal onClick={event => event.stopPropagation()}>
             <h3>Локальна індексація</h3>
-            <p>1) Викачайте users та newUsers. 2) Оберіть ці файли локально. 3) Зберіть потрібний JSON і залийте його в базу вручну.</p>
+            <p>
+              Той самий індекс, що й на бекенді, тільки зібраний у браузері з уже викачаних
+              файлів: 1) викачайте вузли анкет, 2) оберіть їх локально, 3) зберіть потрібний
+              JSON і залийте його в базу вручну. Бекенд при цьому читається один раз, а не
+              на кожну перебудову.
+            </p>
             <LocalIndexActions>
+              <button type="button" onClick={handleDownloadProfileNodesForLocalIndex}>
+                1) Викачати вузли анкет (matchingCards, profileDetails, …)
+              </button>
+              <button type="button" onClick={handlePickLocalNodeFiles}>
+                2) Обрати файли вузлів {localIndexSources.loadedNodes.length
+                  ? `✅ ${localIndexSources.loadedNodes.join(', ')}`
+                  : ''}
+              </button>
               <button type="button" onClick={handleDownloadCollectionsForLocalIndex}>
-                1) Викачати колекції users + newUsers
+                Додатково: викачати legacy users + newUsers
               </button>
               <button type="button" onClick={handlePickUsersFileForLocalIndex}>
-                2) Обрати users.json {pendingLocalUsersData ? '✅' : ''}
+                Додатково: обрати users.json {pendingLocalUsersData ? '✅' : ''}
               </button>
               <button type="button" onClick={handlePickNewUsersFileForLocalIndex}>
-                3) Обрати newUsers.json {pendingLocalNewUsersData ? '✅' : ''}
+                Додатково: обрати newUsers.json {pendingLocalNewUsersData ? '✅' : ''}
               </button>
               <button type="button" onClick={handleBuildLocalMatchingCards}>
-                4) Зібрати matchingCards.json → імпорт у вузол matchingCards
+                3) Зібрати matchingCards.json → імпорт у вузол matchingCards
               </button>
               <button type="button" onClick={handleApplyLocalIndexing}>
-                5) Побудувати і скачати JSON індекси searchId/searchKey
+                4) Побудувати і скачати JSON індекси searchId/searchKey
               </button>
               <button type="button" onClick={buildFullKeySetFromCollections}>
-                6) Перебрати всі картки й знайти повну карту ключів
+                5) Перебрати всі картки й знайти повну карту ключів
               </button>
               {isAdmin && (
                 <button type="button" onClick={handleBuildMatchingCards} disabled={isMatchingCardsIndexing}>
@@ -7664,6 +7843,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 Скасувати
               </button>
             </LocalIndexActions>
+            {localIndexSources.isLegacyOnly && (
+              <p>
+                Завантажено лише legacy-колекції. Індекс збереться зі старого джерела — того,
+                чого веб уже не показує, — і після зникнення <code>newUsers</code> вийде
+                просто порожнім. Додайте файли вузлів.
+              </p>
+            )}
             <p>
               Офлайн-збірка не ходить у Storage, тож аватар беруть лише анкети з полем
               <code> photos</code>. Побудова на бекенді може дошукати решту, але це один

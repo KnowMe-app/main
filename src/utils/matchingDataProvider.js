@@ -7,7 +7,6 @@ import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
   collectFieldCountIdsFromIndexNode,
   hasFieldCountRangeBuckets,
-  isSparseProfile,
 } from './fieldCountBuckets';
 import { getCachedSearchKeyPayload } from './searchKeyCache';
 import { MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
@@ -17,7 +16,6 @@ import {
   CONTACT_SEARCH_KEY_BUCKETS,
   COUNTRY_SEARCH_KEY_BUCKETS,
   CSECTION_SEARCH_KEY_BUCKETS,
-  FIELD_COUNT_SEARCH_KEY_BUCKETS,
   IMT_BUCKET_FILTER_KEYS,
   IMT_SEARCH_KEY_BUCKETS,
   MARITAL_STATUS_BUCKET_FILTER_KEYS,
@@ -42,7 +40,6 @@ const CSECTION_BUCKETS = CSECTION_SEARCH_KEY_BUCKETS;
 const IMT_BUCKETS = IMT_SEARCH_KEY_BUCKETS;
 const CONTACT_BUCKETS = CONTACT_SEARCH_KEY_BUCKETS;
 const USER_ID_BUCKETS = USER_ID_SEARCH_KEY_BUCKETS;
-const FIELD_COUNT_BUCKETS = FIELD_COUNT_SEARCH_KEY_BUCKETS;
 const AGE_BUCKETS_BY_MATCHING_KEY = {
   le21: ['le21'],
   le25: ['le21', '22_25'],
@@ -71,12 +68,6 @@ const selectedFilterKeys = group => {
     .filter(([, enabled]) => enabled)
     .map(([key]) => key);
 };
-
-const hasFilterOption = (group, option) =>
-  Boolean(group && typeof group === 'object' && Object.prototype.hasOwnProperty.call(group, option));
-
-const shouldIncludeNoBucket = (group, noOption = 'empty') =>
-  !hasFilterOption(group, noOption) || Boolean(group?.[noOption]);
 
 const getFilterGroupDebugState = (groupName, group) => {
   const normalizedGroup = group && typeof group === 'object' ? group : {};
@@ -144,19 +135,16 @@ const buildExcludeBucketMeta = ({ group, allBuckets = [], bucketMap = {}, allowe
   };
 };
 
-const buildRoleBuckets = (filters, collectionSource) => {
+const buildRoleBuckets = filters => {
   const roleFilters = filters?.userRole || filters?.role;
   const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, ROLE_BUCKET_FILTER_KEYS);
   if (!buckets.length) return [];
 
-  // Matching treats additional newUsers without a role as donor profiles, so keep
-  // the indexed provider aligned with the existing post-filter fallback.
-  if (
-    collectionSource === 'newUsers' &&
-    Boolean(roleFilters?.ed) &&
-    shouldIncludeNoBucket(roleFilters, 'empty')
-  ) buckets.push('no');
-
+  // Раніше тут була гілка «на деці newUsers анкета без ролі рахується
+  // донорською». Пост-фільтр (`getUserRoleCategory`) так ніколи не рахував —
+  // анкета без ролі в нього завжди `other`, — тож на деці `users` індекс і
+  // пост-фільтр давали різні відповіді. Колекція одна, і відповідь одна:
+  // без ролі — це `other`.
   return unique(buckets);
 };
 
@@ -205,9 +193,9 @@ const buildAgeBuckets = filters => {
 const buildPointBuckets = (filters, filterName, bucketMap = {}) =>
   mapSelectedFilterBuckets(filters?.[filterName], bucketMap);
 
-export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource = 'users' } = {}) => {
+export const buildMatchingIndexFilterGroups = ({ filters = {} } = {}) => {
   const groups = [];
-  const roleBuckets = buildRoleBuckets(filters, collectionSource);
+  const roleBuckets = buildRoleBuckets(filters);
   const roleFilters = filters?.userRole || filters?.role;
   addGroup(
     groups,
@@ -293,18 +281,6 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
       ...buildExcludeBucketMeta({ group: filters?.userId, allBuckets: USER_ID_BUCKETS, allowedBuckets: userIdBuckets }),
     }
   );
-  const fieldBuckets = FIELD_COUNT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'fields').includes(bucket));
-  addGroup(
-    groups,
-    'fields',
-    fieldBuckets,
-    {
-      source: 'searchKey/users',
-      allBuckets: FIELD_COUNT_BUCKETS,
-      ...getFilterGroupDebugState('fields', filters?.fields),
-      ...buildExcludeBucketMeta({ group: filters?.fields, allBuckets: FIELD_COUNT_BUCKETS, allowedBuckets: fieldBuckets }),
-    }
-  );
 
   const bmiBuckets = selectSearchKeyBuckets(filters?.bmi, BMI_SEARCH_KEY_BUCKETS);
   addGroup(
@@ -329,20 +305,18 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
     }
   );
 
-  if (collectionSource !== 'newUsers') {
-    const imtBuckets = IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket));
-    addGroup(
-      groups,
-      'imt',
-      imtBuckets,
-      {
-        source: 'searchKey/users',
-        allBuckets: IMT_BUCKETS,
-        ...getFilterGroupDebugState('imt', filters?.imt),
-        ...buildExcludeBucketMeta({ group: filters?.imt, allBuckets: IMT_BUCKETS, bucketMap: IMT_BUCKET_FILTER_KEYS, allowedBuckets: imtBuckets }),
-      }
-    );
-  }
+  const imtBuckets = IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket));
+  addGroup(
+    groups,
+    'imt',
+    imtBuckets,
+    {
+      source: 'searchKey/users',
+      allBuckets: IMT_BUCKETS,
+      ...getFilterGroupDebugState('imt', filters?.imt),
+      ...buildExcludeBucketMeta({ group: filters?.imt, allBuckets: IMT_BUCKETS, bucketMap: IMT_BUCKET_FILTER_KEYS, allowedBuckets: imtBuckets }),
+    }
+  );
 
   return groups;
 };
@@ -476,47 +450,6 @@ const readMatchingUsersFilterIds = async ({ group, filters }) => {
   return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids, overflowed };
 };
 
-// The least-filled bucket of the field-count index. A card with nothing on record
-// is in no other index at all, so this is the one place it can be recognised
-// without hydrating it.
-export const SPARSE_CARD_FIELD_BUCKET = FIELD_COUNT_SEARCH_KEY_BUCKETS[0];
-
-/**
- * Keep the near-empty cards, but put them at the end.
- *
- * They must not drop out of the deck - a reader who has not switched off "?" asked
- * to see cards with nothing on record, and losing them silently is the failure this
- * whole index rework is about. They are also not what anyone is scrolling for, so
- * they sort behind everything that has data, once, over the whole candidate list
- * rather than per page, so pagination inherits the order.
- *
- * One bucket read, cached like every other searchKey read.
- */
-const orderSparseCardsLast = async (ids, rootPath) => {
-  if (!Array.isArray(ids) || ids.length < 2) return ids;
-
-  const path = `${rootPath}/${FIELD_COUNT_SEARCH_KEY_INDEX_NAME}/${SPARSE_CARD_FIELD_BUCKET}`;
-  let sparseIds = null;
-  try {
-    const payload = await getCachedSearchKeyPayload(path, async () => {
-      const snapshot = await get(ref(database, path));
-      return { exists: snapshot.exists(), value: snapshot.exists() ? snapshot.val() || {} : null };
-    });
-    sparseIds = payload?.exists ? new Set(Object.keys(payload.value || {})) : null;
-  } catch (error) {
-    // Ordering is a nicety; never fail a page over it.
-    console.warn('[Matching][indexedProvider] could not read the sparse-card bucket', { path, error });
-    return ids;
-  }
-
-  if (!sparseIds?.size) return ids;
-
-  const withData = [];
-  const nearlyEmpty = [];
-  ids.forEach(id => (sparseIds.has(id) ? nearlyEmpty : withData).push(id));
-  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : ids;
-};
-
 const intersectIdSets = sets => {
   const usableSets = (sets || []).filter(set => set instanceof Set);
   if (!usableSets.length) return null;
@@ -564,15 +497,21 @@ const normalizeSignatureValue = value => {
 const buildRawRulesSignature = rawRules => String(rawRules || '').trim();
 
 
-const buildMatchingIndexCacheMeta = ({ filterSignature = '', collectionSource = 'users', ownerId = '', accessUserId = '' } = {}) => ({
+const buildMatchingIndexCacheMeta = ({ filterSignature = '', ownerId = '', accessUserId = '' } = {}) => ({
   filterSignature: String(filterSignature || ''),
-  collectionSource: String(collectionSource || 'users'),
   ownerId: String(ownerId || ''),
   accessUserId: String(accessUserId || ''),
 });
 
+/**
+ * Ключ кешу сторінок індексу.
+ *
+ * Колекції в ключі більше немає — вона одна. Замість неї стоїть `accessScoped`:
+ * видача глядача з правилами додаткового доступу залежить від самих правил, і
+ * змішувати її з видачею без правил у одному кеші не можна.
+ */
 export const buildMatchingIndexQueryKey = ({
-  collectionSource = 'users',
+  accessScoped = false,
   filters = {},
   viewMode = 'default',
   ownerId = '',
@@ -583,12 +522,11 @@ export const buildMatchingIndexQueryKey = ({
 } = {}) => {
   const relevantViewMode = viewMode === 'favorites' || viewMode === 'dislikes' ? viewMode : 'default';
   return `matchingIndex:${serializeQueryFilters(normalizeSignatureValue({
-    collectionSource,
     filters: normalizeSignatureValue(filters || {}),
     viewMode: relevantViewMode,
     ownerId: String(ownerId || accessUserId || '').trim(),
     accessUserId: String(accessUserId || ownerId || '').trim(),
-    accessSnapshot: collectionSource === 'newUsers'
+    accessSnapshot: accessScoped
       ? {
           rawRulesSignature: buildRawRulesSignature(rawRules),
           searchKeySetKeys: normalizeSearchKeySetKeys(searchKeySetKeys),
@@ -598,25 +536,17 @@ export const buildMatchingIndexQueryKey = ({
   }))}`;
 };
 
-const isCachedCardCompatible = (card, collectionSource) => {
-  if (!card?.userId) return false;
-  const cachedSource = card.__sourceCollection || (card.userId.length < 20 ? 'newUsers' : 'users');
-  if (collectionSource === 'users') return cachedSource === 'users' || cachedSource === undefined;
-  if (collectionSource === 'newUsers') return cachedSource === 'newUsers';
-  return true;
-};
-
-const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds, collectionSource }) => {
+const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds }) => {
   if (!ids.length || typeof hydrateUsersByIds !== 'function') return [];
   const cachedById = new Map();
   const missingIds = [];
   ids.forEach(id => {
     const cached = getCard(id);
-    if (cached && isCachedCardCompatible(cached, collectionSource)) {
+    if (cached?.userId || (cached && id)) {
       cachedById.set(id, {
         ...cached,
         userId: id,
-        __sourceCollection: cached.__sourceCollection || collectionSource,
+        __sourceCollection: resolveLegacyCollectionForId(cached.__sourceCollection, id),
         __fromCardCache: true,
       });
     } else {
@@ -633,7 +563,10 @@ const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds, collectionSource })
   return ids
     .map(id => map.get(id))
     .filter(Boolean)
-    .map(user => ({ ...user, __sourceCollection: collectionSource }));
+    .map(user => ({
+      ...user,
+      __sourceCollection: resolveLegacyCollectionForId(user.__sourceCollection, user.userId),
+    }));
 };
 
 const normalizeOffset = value => Math.max(0, Number(value) || 0);
@@ -668,8 +601,16 @@ const sliceIndexedBaseIds = ({ ids = [], offset = 0, limit = 1, excludedSet = ne
   };
 };
 
+/**
+ * Сторінка кандидатів із індексу.
+ *
+ * Два шляхи всередині — не дві колекції, а два способи знайти id: загальний
+ * індекс `searchKey` і індекс, звужений правилами додаткового доступу. Другий
+ * вмикається `accessScoped`, тобто наявністю правил у глядача, а не тим, на яку
+ * колекцію він дивиться: колекція одна.
+ */
 export const fetchMatchingIndexedCandidates = async ({
-  collectionSource = 'users',
+  accessScoped = false,
   filters = {},
   rawRules = '',
   accessUserId = '',
@@ -678,24 +619,23 @@ export const fetchMatchingIndexedCandidates = async ({
   limit = 1,
   excludeIds = [],
   hydrateUsersByIds,
-  newUsersIndexReader = getIndexedNewUsersIdsByRules,
+  accessScopedIndexReader = getIndexedNewUsersIdsByRules,
   viewMode = 'default',
   ownerId = '',
   useIndexIdCache = true,
 } = {}) => {
-  const filterGroups = buildMatchingIndexFilterGroups({ filters, collectionSource });
+  const filterGroups = buildMatchingIndexFilterGroups({ filters });
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
   const safeOffset = normalizeOffset(offset);
   const safeLimit = normalizeLimit(limit);
   const filterSignature = serializeQueryFilters(normalizeSignatureValue(filters || {}));
   const cacheMeta = buildMatchingIndexCacheMeta({
     filterSignature,
-    collectionSource,
     ownerId: String(ownerId || '').trim(),
     accessUserId: String(accessUserId || '').trim(),
   });
   const cacheKey = buildMatchingIndexQueryKey({
-    collectionSource,
+    accessScoped,
     filters,
     viewMode,
     ownerId,
@@ -706,7 +646,7 @@ export const fetchMatchingIndexedCandidates = async ({
   });
 
   const readCachedPage = () => {
-    if (!useIndexIdCache || collectionSource === 'newUsers') return null;
+    if (!useIndexIdCache || accessScoped) return null;
     const cached = getIndexIdsByQuery(cacheKey, {
       requiredComplete: true,
       expectedMeta: cacheMeta,
@@ -728,7 +668,7 @@ export const fetchMatchingIndexedCandidates = async ({
       offset: safeOffset,
       limit: safeLimit,
     });
-    const users = await hydrateOrderedUsers({ ids: cachedPage.pageIds, hydrateUsersByIds, collectionSource });
+    const users = await hydrateOrderedUsers({ ids: cachedPage.pageIds, hydrateUsersByIds });
     return {
       usedIndex: true,
       usedIndexIdCache: true,
@@ -744,13 +684,13 @@ export const fetchMatchingIndexedCandidates = async ({
   }
   console.info('[Matching][indexedProvider] cache miss', {
     cacheKey,
-    collectionSource,
+    accessScoped,
     offset: safeOffset,
     limit: safeLimit,
   });
 
-  if (collectionSource === 'newUsers') {
-    const indexed = await newUsersIndexReader({
+  if (accessScoped) {
+    const indexed = await accessScopedIndexReader({
       rawRules,
       accessUserId,
       searchKeySetsOfExactUser: searchKeySetKeys,
@@ -764,7 +704,7 @@ export const fetchMatchingIndexedCandidates = async ({
     const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
     const nextOffset = Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : safeOffset + userIds.length;
     const hasMore = Boolean(indexed?.hasMore);
-    const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds, collectionSource });
+    const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds });
     return {
       usedIndex: true,
       usedIndexIdCache: false,
@@ -836,7 +776,10 @@ export const fetchMatchingIndexedCandidates = async ({
   // Жодної групи в межах — індекс не назвав кандидатів, і читати далі нема що.
   // Дека йде звичайною пагінацією, де сторінка коштує сторінки.
   if (!combinedIds) return deferToSourcePagination();
-  const allMatchingIds = await orderSparseCardsLast(combinedIds, MATCHING_USERS_INDEX_ROOT);
+  // Заповненість зі стрічки прибрано разом із фільтром: ані окремого читання
+  // бакета «порожні», ані перестановки за ним більше немає. Порядок задає
+  // `feedDate`, і тільки він.
+  const allMatchingIds = combinedIds;
   const ageGroupIndex = plannedGroups.findIndex(group => group.indexName === 'age');
   const ageDateRangeIdsCount = ageGroupIndex >= 0
     ? (idSets[ageGroupIndex]?.ids?.size || 0)
@@ -854,7 +797,7 @@ export const fetchMatchingIndexedCandidates = async ({
     limit: safeLimit,
     excludedSet,
   });
-  const users = await hydrateOrderedUsers({ ids: pageIds, hydrateUsersByIds, collectionSource: 'users' });
+  const users = await hydrateOrderedUsers({ ids: pageIds, hydrateUsersByIds });
 
   return {
     usedIndex: true,
@@ -874,29 +817,40 @@ export const fetchMatchingIndexedCandidates = async ({
 };
 
 
-export const isValidMatchingUserId = id => typeof id === 'string' && id.length >= 20;
-export const isShortMatchingUserId = id => typeof id === 'string' && id.length > 0 && id.length < 20;
+/**
+ * Межа між колекціями — довжина id, і саме «більше за 20», а не «20 і більше».
+ *
+ * `users` тримає Firebase-Auth UID: це завжди 28 символів
+ * (`3LiD7JGCJTSJoVMU7fdR1ZrcIZH2`). `newUsers` тримає або короткий згенерований
+ * id (`AC00001`), або push-ключ Firebase — а push-ключ має рівно 20 символів
+ * (`-OA1b2c3d4e5f6g7h8i9`).
+ *
+ * Саме на цих двадцяти й ламалась стара умова `>= 20`: кожен push-ключ
+ * `newUsers` вона зараховувала до `users`. Звідси й бралися «картки з довгим
+ * id, у яких джерело newUsers» — насправді то були не довгі id, а рівно
+ * двадцятисимвольні. З правильною межею довжина називає колекцію однозначно, і
+ * окреме поле `source` у картці стає непотрібним.
+ */
+export const isValidMatchingUserId = id => typeof id === 'string' && id.length > 20;
+export const isShortMatchingUserId = id => typeof id === 'string' && id.length > 0 && id.length <= 20;
 export const isMatchingCardId = id => isValidMatchingUserId(id) || isShortMatchingUserId(id);
 export const isAllowedIdForMatchingCollection = (id, collection = 'users') =>
   collection === 'newUsers' ? isShortMatchingUserId(id) : isValidMatchingUserId(id);
 
 /**
- * Чи належить картка тій колекції, на яку показує стрічка.
+ * У якій legacy-колекції лежить сире тіло цієї анкети.
  *
- * Довжина id — здогадка, а не факт. Замір на живих даних: у `matchingCards`
- * 1650 карток із довгим id, а джерело `users` мають лише 379. Тобто 1271
- * картка `newUsers` пройшла б перевірку як своя — і сипалась би у стрічку
- * `users`, щойно власні картки скінчаться і хвіст діапазону опуститься нижче.
+ * Стрічці це вже не потрібно: колекція у вебі одна, і дека в неї одна. Але
+ * дзеркалення в мобільну базу ще існує, і воно мусить знати, куди писати —
+ * `users` чи `newUsers`. Відповідь дає формат id, а явне значення (коли анкету
+ * прочитали прямо з колекції) поважається як точніше.
  *
- * Картка називає своє джерело сама: `source` є в кожній, і `expandMatchingCard`
- * кладе його в `__sourceCollection`. Тож питаємо картку, а до довжини id
- * відкочуємось лише там, де джерело невідоме — наприклад, у повної анкети,
- * догідратованої повз проєкцію.
+ * Коли `newUsers` не стане, ця функція не зміниться: коротких id просто
+ * більше не зʼявлятиметься.
  */
-export const matchesMatchingCollectionSource = (user, collection = 'users') => {
-  const source = user?.__sourceCollection;
-  if (source === 'users' || source === 'newUsers') return source === collection;
-  return isAllowedIdForMatchingCollection(user?.userId, collection);
+export const resolveLegacyCollectionForId = (explicitSource, userId) => {
+  if (explicitSource === 'users' || explicitSource === 'newUsers') return explicitSource;
+  return isValidMatchingUserId(String(userId || '').trim()) ? 'users' : 'newUsers';
 };
 export const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
@@ -1275,21 +1229,6 @@ const getFilterMainInputsForMatchingView = ({
   };
 };
 
-/**
- * Cards with almost nothing on record go to the end of whatever list is rendered.
- *
- * This is the same promise the indexed provider makes about the candidate ids, kept
- * here as well so it also holds for the decks the index does not drive: source
- * pagination, the newUsers deck and the reaction tabs. It is a stable partition, so
- * the order the deck chose is untouched apart from moving those cards down.
- */
-const orderSparseUsersLast = users => {
-  const withData = [];
-  const nearlyEmpty = [];
-  users.forEach(user => (isSparseProfile(user) ? nearlyEmpty : withData).push(user));
-  return nearlyEmpty.length ? [...withData, ...nearlyEmpty] : users;
-};
-
 export const applyMatchingUiFiltersToUsers = ({
   users,
   filters,
@@ -1297,7 +1236,6 @@ export const applyMatchingUiFiltersToUsers = ({
   dislikeUsers = {},
   excludeReactionUsers = false,
   roleIndexSets,
-  collectionSource,
   viewMode = 'default',
   filterMainFn = passthroughFilterMain,
 }) => {
@@ -1327,22 +1265,15 @@ export const applyMatchingUiFiltersToUsers = ({
     filterMainDislikeUsers
   )
     .map(([, u]) => u)
-    .filter(u => (
-      u?.__sourceCollection === 'newUsers' || u?.publish !== false
-    ))
+    // Явно наданий доступ б'є `publish`: правила додаткового доступу для того й
+    // існують, щоб показати картку, яку глядач інакше не побачив би.
+    .filter(u => u?.__matchingAccessAllowed === true || u?.publish !== false)
     .filter(u => (
       !excludeReactionUsers ||
       (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
-    ))
-    .filter(u => (
-      isReactionViewMode(viewMode) ||
-      // Search spans both collections by design: which one the drawer's source
-      // selector points at governs the feed, not what a query is allowed to find.
-      viewMode === 'search' ||
-      matchesMatchingCollectionSource(u, collectionSource)
     ));
 
-  return orderSparseUsersLast(baseUsers);
+  return baseUsers;
 };
 
 export const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {
@@ -1424,7 +1355,6 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   rawRules,
   accessUserId,
   searchKeySetKeys,
-  collectionSource = 'newUsers',
   filters = {},
   excludeIds = [],
   offset = 0,
@@ -1439,16 +1369,17 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   const normalizedSearchKeySetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
 
   const indexRequestDebugData = {
-    collectionSource,
     accessUserId: normalizedAccessUserId,
     rawRules,
     searchKeySetsOfExactUser: searchKeySetKeys,
     offset,
     limit,
-    filterGroups: buildMatchingIndexFilterGroups({ filters, collectionSource }),
+    filterGroups: buildMatchingIndexFilterGroups({ filters }),
   };
 
-  if (collectionSource === 'newUsers' && normalizedSearchKeySetKeys.length === 0) {
+  // Без ключів наборів правила доступу нічого не звужують — а віддати за ними
+  // всю колекцію означало б роздати доступ, якого ніхто не давав.
+  if (normalizedSearchKeySetKeys.length === 0) {
     const reason = 'no searchKeySets data';
     console.info('[Matching][additionalNewUsers] access scope empty', {
       ...indexRequestDebugData,
@@ -1465,7 +1396,7 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   debugAdditionalToast(normalizedAccessUserId, 'before getIndexedNewUsersIdsByRules', indexRequestDebugData);
 
   const indexed = await fetchMatchingIndexedCandidates({
-    collectionSource: 'newUsers',
+    accessScoped: true,
     filters,
     rawRules,
     accessUserId: normalizedAccessUserId,
@@ -1481,12 +1412,12 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
         return rethrowMatchingStageError(error, 'profile-hydration');
       }
     },
-    newUsersIndexReader: async args => {
+    accessScopedIndexReader: async args => {
       try {
         return await getIndexedNewUsersIdsByRules({
           ...args,
           fetchMissingBuckets: true,
-          requireSearchKeySetKeys: collectionSource === 'newUsers',
+          requireSearchKeySetKeys: true,
           debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
           debugToast: (message, data) => debugAdditionalToast(normalizedAccessUserId, message, data),
         });
@@ -1536,7 +1467,6 @@ export const fetchFilteredMatchingSourceChunk = ({
   targetVisibleCount,
   initialCursor,
   exclude = new Set(),
-  collectionSource = 'users',
   parsedAdditionalAccessRules = [],
   filters = {},
   isAdmin = false,
@@ -1545,13 +1475,15 @@ export const fetchFilteredMatchingSourceChunk = ({
   roleIndexSets = null,
   filterMainFn = passthroughFilterMain,
   fetchUsersByLastLogin2,
-  fetchUsersByLastLogin2FromCollection,
   fetchMatchingCardsPage,
   hydrateUsersByIds,
   onPart,
   onDiagnosticEvent,
 }) => {
-  if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
+  // Глядач із правилами додаткового доступу отримує деку не звідси, а з
+  // індексу, звуженого його правилами: послідовне читання колекції віддало б
+  // йому картки, яких він бачити не має.
+  if (parsedAdditionalAccessRules.length > 0) {
     return Promise.resolve({
       users: [],
       lastKey: initialCursor ?? null,
@@ -1583,13 +1515,9 @@ export const fetchFilteredMatchingSourceChunk = ({
     // а проєкція з пʼяти полів, і його треба догідратувати.
     isHydrated: user => Boolean(user) && !user.__limitedProfile,
     maxSourceCards: 500,
-    debugLabel: `matchingSourceBackfill:${collectionSource}`,
+    debugLabel: 'matchingSourceBackfill',
     fetchSourcePage: async ({ limit: sourceLimit, cursor }) => {
-      const readProfilePage = () => (
-        collectionSource === 'newUsers'
-          ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
-          : fetchUsersByLastLogin2(sourceLimit, cursor)
-      );
+      const readProfilePage = () => fetchUsersByLastLogin2(sourceLimit, cursor);
 
       // Читач мусить знати, чим саме він зараз читає стрічку: різниця між
       // проєкцією і повною анкетою — це порядок величини трафіку, і мовчазне
@@ -1605,7 +1533,6 @@ export const fetchFilteredMatchingSourceChunk = ({
           status: 'completed',
           feedSource,
           reason,
-          collectionSource,
           errorCode,
           errorMessage,
         });
@@ -1627,7 +1554,7 @@ export const fetchFilteredMatchingSourceChunk = ({
       // означало б робити зайве читання перед кожною сторінкою заради значення,
       // яке однаково завжди `true`.
       try {
-        const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor, collectionSource });
+        const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor });
         if (cardsPage?.users?.length) {
           reportFeedSource('matchingCards', '');
           return cardsPage;
@@ -1636,7 +1563,7 @@ export const fetchFilteredMatchingSourceChunk = ({
           reportFeedSource('matchingCards', '');
           return cardsPage;
         }
-        console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму', { collectionSource });
+        console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму');
         reportFeedSource('profiles', 'index-empty');
       } catch (error) {
         console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
@@ -1646,11 +1573,7 @@ export const fetchFilteredMatchingSourceChunk = ({
       return readProfilePage();
     },
     filterSourceUsers: sourceUsers => {
-      if (!isAdmin) {
-        return sourceUsers.filter(
-          user => matchesMatchingCollectionSource(user, collectionSource) && !exclude.has(user.userId)
-        );
-      }
+      if (!isAdmin) return sourceUsers.filter(user => !exclude.has(user.userId));
 
       return applyMatchingSearchKeyFilters(
         filterMainFn(
@@ -1662,14 +1585,12 @@ export const fetchFilteredMatchingSourceChunk = ({
         ).map(([, user]) => user),
         filters,
         roleIndexSets
-      ).filter(
-        user => matchesMatchingCollectionSource(user, collectionSource) && !exclude.has(user.userId)
-      );
+      ).filter(user => !exclude.has(user.userId));
     },
     hydrateUsersByIds,
     decorateUser: user => ({
       ...user,
-      __sourceCollection: collectionSource === 'newUsers' ? 'newUsers' : 'users',
+      __sourceCollection: resolveLegacyCollectionForId(user.__sourceCollection, user.userId),
     }),
     onPart,
     onDiagnosticEvent,

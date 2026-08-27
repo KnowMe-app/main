@@ -1,17 +1,15 @@
 import {
-  MATCHING_CARD_FEED_FIELDS,
-  MATCHING_CARD_SCHEMA_VERSION,
+  MATCHING_CARD_FEED_FIELD,
   buildMatchingCardsPayloadFromCollections,
+  resolveMatchingCardCollection,
   MATCHING_SUMMARY_FLAG,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
-  collectMatchingCardContactKeys,
   expandMatchingCard,
   isCurrentMatchingCardSchema,
   isMatchingSummaryCard,
   resolveMatchingCardAvatarFromProfile,
 } from '../matchingCardIndex';
-import { countProfileFields, resolveProfileFieldCountBucket } from '../fieldCountBuckets';
 import { canShowMatchingUser } from '../reactionPriority';
 
 const fullProfile = {
@@ -44,15 +42,35 @@ describe('buildMatchingCardProjection', () => {
 
     expect(projection.name).toBe('Яна');
     expect(projection.height).toBe('180');
-    expect(projection.blood).toBe('1+');
-    expect(projection.lastLogin2).toBe('2026-08-19');
-    expect(projection.v).toBe(MATCHING_CARD_SCHEMA_VERSION);
-    expect(projection.source).toBe('users');
-    // Опис і самі значення контактів у проєкцію не потрапляють.
+
+    // Ані версії схеми, ані колекції, ані заповненості: усі картки
+    // перебудовані, заповненість зі стрічки прибрано, а колекцію називає
+    // формат id — другого місця для цієї відповіді бути не повинно.
+    expect(projection.v).toBeUndefined();
+    expect(projection.source).toBeUndefined();
+    expect(projection.fieldsCount).toBeUndefined();
+
+    // Похідні замість сирих значень: у стрічці стоїть ініціал і розібрана
+    // група крові, а повні `surname` і `blood` живуть у `profileDetails`.
+    expect(projection.surnameShort).toBe('Д.');
+    expect(projection.rh).toBe('+');
+    expect(projection.bloodGroup).toBe('1');
+    expect(projection.surname).toBeUndefined();
+    expect(projection.blood).toBeUndefined();
+
+    // Опис, контакти, робочі й технічні поля у проєкцію не потрапляють —
+    // у кожного з них тепер власний вузол із власними правами.
     expect(projection.moreInfo_main).toBeUndefined();
     expect(projection.phone).toBeUndefined();
     expect(projection.telegram).toBeUndefined();
     expect(projection.photos).toBeUndefined();
+    expect(projection.lastLogin2).toBeUndefined();
+    expect(projection.lastAction).toBeUndefined();
+    expect(projection.getInTouch).toBeUndefined();
+    // Переліку наявних контактів теж більше немає: фільтр «є контакт» зі
+    // стрічки прибрано, а тримати підказку про контакти в публічнішому вузлі
+    // не було потреби.
+    expect(projection.contacts).toBeUndefined();
   });
 
   it('зводить аліаси кесаревого до одного ключа', () => {
@@ -76,13 +94,15 @@ describe('buildMatchingCardProjection', () => {
   it('кладе в індекс стрічки лише показану картку, і значенням — саму дату', () => {
     const usersId = 'a'.repeat(28);
     const build = profile => buildMatchingCardProjection(usersId, profile);
-    const FEED = MATCHING_CARD_FEED_FIELDS.users;
+    const FEED = MATCHING_CARD_FEED_FIELD;
 
     expect(build({ name: 'A', lastLogin2: '2026-08-19', publish: true })[FEED]).toBe('2026-08-19');
     expect(build({ name: 'A', lastLogin2: '2026-08-19', publish: 'true' })[FEED]).toBe('2026-08-19');
     // Анкети старих поколінь тримають publish масивом; стрічка читає його як
     // «показувати», щойно там є true.
     expect(build({ name: 'A', lastLogin2: '2026-08-19', publish: [false, true] })[FEED]).toBe('2026-08-19');
+    // Дата з legacy-формату теж придатна — вона просто переставляється.
+    expect(build({ name: 'A', lastLogin: '19.08.2026', publish: true })[FEED]).toBe('2026-08-19');
 
     // Усе інше — відсутність ключа: і явне false, і порожнє, і анкета, яка
     // показ ніколи не вмикала. Схованої картки в індексі немає взагалі, тож
@@ -95,53 +115,80 @@ describe('buildMatchingCardProjection', () => {
   it('не індексує показану картку без дати — впорядкувати її нема за чим', () => {
     expect(
       buildMatchingCardProjection('a'.repeat(28), { name: 'A', publish: true }),
-    ).not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.users);
+    ).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
   });
 
-  it('тримає деки в різних ключах, а не в одному зі складеним значенням', () => {
-    // Спільний ключ із датою працював би лише доти, доки в newUsers немає
-    // жодної показаної анкети з датою. Це властивість даних, а не схеми.
-    const shownNewUser = buildMatchingCardProjection('short', { name: 'A', lastLogin2: '2026-08-19', publish: true });
-    expect(shownNewUser[MATCHING_CARD_FEED_FIELDS.newUsers]).toBe('2026-08-19');
-    expect(shownNewUser).not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.users);
+  it('формат id більше не вирішує, чи картка в стрічці', () => {
+    // Колекція у вебі одна. Анкета, створена у вебі, отримує push-ключ — і
+    // умова «в стрічку лише з users» не пускала б її туди ніколи, скільки б
+    // разів її не опублікували.
+    const shortIdCard = buildMatchingCardProjection('short', {
+      name: 'A', lastLogin2: '2026-08-19', publish: true,
+    });
+    expect(shortIdCard[MATCHING_CARD_FEED_FIELD]).toBe('2026-08-19');
 
-    const shownUser = buildMatchingCardProjection('a'.repeat(28), { name: 'A', lastLogin2: '2026-08-19', publish: true });
-    expect(shownUser[MATCHING_CARD_FEED_FIELDS.users]).toBe('2026-08-19');
-    expect(shownUser).not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.newUsers);
+    const longIdCard = buildMatchingCardProjection('a'.repeat(28), {
+      name: 'A', lastLogin2: '2026-08-19', publish: true,
+    });
+    expect(longIdCard[MATCHING_CARD_FEED_FIELD]).toBe('2026-08-19');
+  });
+
+  it('нова анкета без жодного логіна все одно стає в стрічку', () => {
+    // Анкету щойно створили й одразу опублікували: `lastLogin2` у неї ще
+    // немає, і без запасної дати вона лишилась би поза стрічкою до першого
+    // логіна — тобто для профілю, створеного кимось іншим, назавжди.
+    const card = buildMatchingCardProjection('freshPushKey00000000', {
+      name: 'A', publish: true, createdAt2: '2026-08-27',
+    });
+
+    expect(card[MATCHING_CARD_FEED_FIELD]).toBe('2026-08-27');
+  });
+
+  it('без publish дата створення в стрічку не пускає', () => {
+    const card = buildMatchingCardProjection('freshPushKey00000000', {
+      name: 'A', createdAt2: '2026-08-27',
+    });
+
+    expect(card).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
+  });
+
+  it('логін не публікує анкету, яка не була показана', () => {
+    // Логін оновлює `lastLogin2` — і саме тому індекс стрічки не можна
+    // будувати з самої лише дати. Прихід користувача в застосунок не є
+    // рішенням показати його анкету, і writer це поважає: без `publish`
+    // ключа стрічки не зʼявляється, скільки б разів людина не залогінилась.
+    const usersId = 'a'.repeat(28);
+    const afterLogin = { name: 'A', publish: false, lastLogin2: '2026-08-26' };
+
+    expect(buildMatchingCardProjection(usersId, afterLogin))
+      .not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
+    expect(buildMatchingCardProjection(usersId, { ...afterLogin, publish: undefined }))
+      .not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
   });
 
   it('більше не пише окремих publish і sourceLastLogin2', () => {
     const projection = buildMatchingCardProjection('a'.repeat(28), fullProfile);
     expect(projection).not.toHaveProperty('publish');
     expect(projection).not.toHaveProperty('sourceLastLogin2');
-    // `source` лишається: на нього спирається `.validate` у правилах бази.
-    expect(projection.source).toBe('users');
   });
 
-  it('відносить короткий id до newUsers, довгий — до users', () => {
-    expect(buildMatchingCardProjection('short', { name: 'A' }).source).toBe('newUsers');
-    expect(buildMatchingCardProjection('a'.repeat(28), { name: 'A' }).source).toBe('users');
+  it('відносить id до колекції за довжиною, і межа проходить рівно по 20', () => {
+    // `users` тримає Firebase-Auth UID — це 28 символів. `newUsers` тримає або
+    // короткий згенерований id, або push-ключ Firebase, а той має рівно 20.
+    // Стара умова `>= 20` зараховувала кожен push-ключ до `users`; саме звідси
+    // й бралися «картки з довгим id, у яких джерело newUsers».
+    expect(resolveMatchingCardCollection('AC00001')).toBe('newUsers');
+    expect(resolveMatchingCardCollection('-OA1b2c3d4e5f6g7h8i9')).toBe('newUsers');
+    expect(resolveMatchingCardCollection('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2')).toBe('users');
+
+    // Явне джерело поважається: анкета, прочитана напряму з колекції, знає
+    // його точно.
+    expect(resolveMatchingCardCollection('AC00001', { __sourceCollection: 'users' })).toBe('users');
   });
 
   it('повертає null без id або без даних', () => {
     expect(buildMatchingCardProjection('', fullProfile)).toBeNull();
     expect(buildMatchingCardProjection('id', null)).toBeNull();
-  });
-});
-
-describe('collectMatchingCardContactKeys', () => {
-  it('називає ключі наявних контактів і мовчить про порожні', () => {
-    const keys = collectMatchingCardContactKeys(fullProfile);
-    expect(keys).toContain('phone');
-    expect(keys).toContain('telegram');
-    expect(keys).not.toContain('instagram');
-    expect(keys).not.toContain('facebook');
-  });
-
-  it('розділяє український телеграм і решту', () => {
-    expect(collectMatchingCardContactKeys({ telegram: 'ук_щось' })).toEqual(['telegram2']);
-    expect(collectMatchingCardContactKeys({ telegram: 'nickname' })).toEqual(['telegram']);
-    expect(collectMatchingCardContactKeys({ telegram: ['ук_один', 'nickname'] })).toEqual(['telegram', 'telegram2']);
   });
 });
 
@@ -155,20 +202,31 @@ describe('expandMatchingCard', () => {
     expect(expanded.photos).toEqual(['https://example.test/a.jpg']);
     expect(expanded.__photosHydrated).toBe(true);
     expect(expanded.__sourceCollection).toBe('users');
-    expect(expanded.__contactKeys).toEqual(expect.arrayContaining(['phone', 'telegram']));
     expect(expanded[MATCHING_SUMMARY_FLAG]).toBe(true);
     expect(isMatchingSummaryCard(expanded)).toBe(true);
+
+    // Адаптер віддає старі імена полів: стрічка, її фільтри й сортування не
+    // знають, що в базі лежать похідні під іншими ключами.
+    expect(expanded.surname).toBe('Д.');
+    expect(expanded.blood).toBe('1+');
+    expect(expanded.lastLogin2).toBe('2026-08-19');
+
     // Службові поля самої проєкції назовні не течуть.
     expect(expanded).not.toHaveProperty('v');
     expect(expanded).not.toHaveProperty('source');
     expect(expanded).not.toHaveProperty('contacts');
+    expect(expanded).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
   });
 
-  it('віддає null для чужої або відсутньої версії схеми', () => {
+  it('віддає null там, де картки немає', () => {
+    // Версії схеми більше немає — усі картки перебудовані. Лишилось питання
+    // «чи є тут узагалі щось»: порожній або битий вузол читач і далі
+    // відрізняє від картки й догідратовує анкету.
     expect(expandMatchingCard('id', null)).toBeNull();
-    expect(expandMatchingCard('id', { name: 'A' })).toBeNull();
-    expect(expandMatchingCard('id', { name: 'A', v: MATCHING_CARD_SCHEMA_VERSION + 1 })).toBeNull();
-    expect(isCurrentMatchingCardSchema({ v: MATCHING_CARD_SCHEMA_VERSION })).toBe(true);
+    expect(expandMatchingCard('id', {})).toBeNull();
+    expect(expandMatchingCard('id', 'не картка')).toBeNull();
+    expect(expandMatchingCard('', { name: 'A' })).toBeNull();
+    expect(isCurrentMatchingCardSchema({ name: 'A' })).toBe(true);
   });
 
   it('лишає порожній список фото, коли аватара немає', () => {
@@ -183,9 +241,10 @@ describe('expandMatchingCard', () => {
 
     expect(shown.publish).toBe(true);
     expect(hidden).not.toHaveProperty('publish');
-    // Сам ключ назовні не тече — він службовий для запиту, не для рендера.
-    expect(shown).not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.users);
-    expect(shown).not.toHaveProperty(MATCHING_CARD_FEED_FIELDS.newUsers);
+    // Сам ключ назовні не тече — він службовий для запиту, не для рендера;
+    // дата виходить під старим іменем, за яким сортує стрічка.
+    expect(shown).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
+    expect(shown.lastLogin2).toBe('2026-08-19');
   });
 });
 
@@ -217,22 +276,8 @@ describe('картка проходить фінальну перевірку п
   // не показується. Саме такої відмови ми й хотіли: помітної, а не тихої.
   it('картку без ключа стрічки ховає, а не показує', () => {
     const legacyCard = { ...buildMatchingCardProjection(id, fullProfile) };
-    delete legacyCard[MATCHING_CARD_FEED_FIELDS.users];
+    delete legacyCard[MATCHING_CARD_FEED_FIELD];
     expect(canShowMatchingUser(expandMatchingCard(id, legacyCard), { isAdmin: false })).toBe(false);
-  });
-});
-
-describe('лічильник заповнених полів', () => {
-  it('проєкція звітує про кількість полів анкети, а не власних', () => {
-    const projection = buildMatchingCardProjection('a'.repeat(28), fullProfile);
-    const expanded = expandMatchingCard('a'.repeat(28), projection);
-
-    expect(countProfileFields(expanded)).toBe(countProfileFields(fullProfile));
-    expect(resolveProfileFieldCountBucket(expanded)).toBe(resolveProfileFieldCountBucket(fullProfile));
-  });
-
-  it('без підказки рахує ключі, як і раніше', () => {
-    expect(countProfileFields({ a: 1, b: 2, __sourceCollection: 'users' })).toBe(2);
   });
 });
 
@@ -279,13 +324,19 @@ describe('buildMatchingCardsPayloadFromCollections', () => {
     expect(Object.keys(payload).sort()).toEqual(['a'.repeat(28), 'b'.repeat(28), 'short1'].sort());
     // Ключі — це userId, а не шлях від кореня: файл лягає саме у вузол matchingCards.
     expect(payload['a'.repeat(28)].name).toBe('Яна');
-    expect(payload['a'.repeat(28)].v).toBe(MATCHING_CARD_SCHEMA_VERSION);
+    // Службових полів у картці немає взагалі — ані версії, ані колекції,
+    // ані заповненості.
+    expect(payload['a'.repeat(28)]).not.toHaveProperty('v');
+    expect(payload['a'.repeat(28)]).not.toHaveProperty('source');
+    expect(payload['a'.repeat(28)]).not.toHaveProperty('fieldsCount');
   });
 
-  it('проставляє колекцію за тим, з якого файлу прийшла картка', () => {
-    const { payload } = buildMatchingCardsPayloadFromCollections(collections);
-    expect(payload['a'.repeat(28)].source).toBe('users');
-    expect(payload.short1.source).toBe('newUsers');
+  it('у стрічку пускає лише показані картки з users і рахує їх окремо', () => {
+    const { payload, stats } = buildMatchingCardsPayloadFromCollections(collections);
+    expect(payload.short1).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
+    expect(stats.inFeed).toBe(
+      Object.values(payload).filter(entry => entry[MATCHING_CARD_FEED_FIELD]).length,
+    );
   });
 
   it('рахує, скільки карток лишились без аватара', () => {

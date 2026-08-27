@@ -23,16 +23,6 @@ jest.mock('utils/backendDownloadToast', () => ({
 jest.mock('components/config', () => ({
   database: { app: 'test-db' },
   collectAgeIdsByFilters: jest.fn(async () => null),
-  createAgeSearchKeyIndexInCollection: jest.fn(),
-  createContactSearchKeyIndexInCollection: jest.fn(),
-  createCsectionSearchKeyIndexInCollection: jest.fn(),
-  createFieldCountSearchKeyIndexInCollection: jest.fn(),
-  createImtHeightWeightSearchKeyIndexInCollection: jest.fn(),
-  createMaritalStatusSearchKeyIndexInCollection: jest.fn(),
-  createReactionSearchKeyIndexInCollection: jest.fn(),
-  createRoleSearchKeyIndexInCollection: jest.fn(),
-  createSearchKeyIndexInCollection: jest.fn(),
-  createUserIdSearchKeyIndexInCollection: jest.fn(),
 }));
 
 const snapshot = value => ({ exists: () => value !== null && value !== undefined, val: () => value });
