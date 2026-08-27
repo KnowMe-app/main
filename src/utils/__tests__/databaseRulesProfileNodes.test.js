@@ -5,6 +5,8 @@ import {
   MATCHING_CARD_ALLOWED_FIELDS,
   PROFILE_CONTACT_FIELDS,
   ACCESS_CONTROL_FIELDS,
+  ALL_ACCESS_CONTROL_FIELDS,
+  PROFILE_TECHNICAL_ACCESS_FIELDS,
   NEVER_MIGRATED_FIELDS,
 } from '../profileNodeSchema';
 
@@ -102,7 +104,7 @@ describe('matchingCards приймає лише перелічені поля', 
 
   it.each([
     ...PROFILE_CONTACT_FIELDS,
-    ...ACCESS_CONTROL_FIELDS,
+    ...ALL_ACCESS_CONTROL_FIELDS,
     ...NEVER_MIGRATED_FIELDS,
     'password',
     'publish',
@@ -199,7 +201,7 @@ describe('profileContacts — відкриті, але з власним пра�
 describe('решта вузлів не стає другим місцем для чужих даних', () => {
   it('profileDetails не приймає ані контактів, ані прав, ані операційних полів', () => {
     const validate = rules.profileDetails.$uid.$field['.validate'];
-    [...PROFILE_CONTACT_FIELDS.filter(field => field !== 'other'), ...ACCESS_CONTROL_FIELDS,
+    [...PROFILE_CONTACT_FIELDS.filter(field => field !== 'other'), ...ALL_ACCESS_CONTROL_FIELDS,
       'password', 'getInTouch', 'publish', 'lastLogin', 'lastLogin2', 'lastAction',
       'cycleStatus', 'lastCycle', 'registrationDate']
       .forEach(field => expect(validate).toContain(`$field == '${field}'`));
@@ -219,10 +221,43 @@ describe('решта вузлів не стає другим місцем для
     expect(rules.profileTechnical['.read']).not.toContain('accessLevel');
   });
 
-  it('profileTechnical не приймає device-полів, пароля і прав доступу', () => {
+  it('profileTechnical не приймає device-полів, пароля і делегування', () => {
     const validate = rules.profileTechnical.$uid.$other['.validate'];
     ['deviceWidth', 'deviceHeight', 'deviceResize', 'password', ...ACCESS_CONTROL_FIELDS]
       .forEach(field => expect(validate).toContain(`$other != '${field}'`));
+  });
+
+  it('profileTechnical приймає права, які туди переїхали', () => {
+    // Права акаунта — це технічні дані, і місце в них тепер тут. Без цього
+    // рядка міграція забирала б їх із колекції в вузол, який їх не приймає.
+    const validate = rules.profileTechnical.$uid.$other['.validate'];
+    PROFILE_TECHNICAL_ACCESS_FIELDS
+      .forEach(field => expect(validate).not.toContain(`$other != '${field}'`));
+  });
+
+  it('правила питають про рівень доступу і profileTechnical теж', () => {
+    // Інакше переїзд прав зняв би доступ усім, чий акаунт лежав у `newUsers`:
+    // очищена колекція заливається в базу цілком, а разом із нею зникло б і
+    // єдине місце, звідки правила про цей доступ дізнавались.
+    const withAccessCheck = [
+      rules.matchingCards['.read'],
+      rules.matchingCards.$uid['.write'],
+      rules.profileDetails.$uid['.write'],
+      rules.profileContacts.$uid['.read'],
+      rules.profileContacts.$uid['.write'],
+      rules.profileWorkflow.$uid['.read'],
+      rules.newUsers.$uid['.write'],
+      rules.searchKeySets.$keySet['.write'],
+    ];
+
+    withAccessCheck.forEach(rule => {
+      expect(rule).toContain("root.child('profileTechnical').child(auth.uid).child('accessLevel')");
+      // Legacy-джерело нікуди не діло: `/users` міграція не чистить.
+      expect(rule).toContain("root.child('users').child(auth.uid).child('accessLevel')");
+    });
+
+    expect(rules.multiData.profileMutations['.read'])
+      .toContain("root.child('profileTechnical').child(auth.uid).child('canCreateProfiles')");
   });
 
   it('profileWorkflow лишається внутрішнім і не тримає getInTouch/publish/lastLogin', () => {
@@ -245,6 +280,10 @@ describe('legacy лишається недоторканим', () => {
   });
 
   it('users і newUsers зберігають свої правила і індекси', () => {
+    // Знімок оновлювався один раз — коли права переїхали в `profileTechnical`
+    // і кожна умова про рівень доступу отримала друге джерело. Сама legacy
+    // від цього не змінилась: ті самі вузли, ті самі індекси, та сама
+    // аудиторія — просто питання «який у тебе доступ» тепер має дві адреси.
     const legacy = JSON.parse(fs.readFileSync(
       path.join(repoRoot, 'src', 'utils', '__tests__', 'fixtures', 'legacyRulesShape.json'),
       'utf8',
@@ -254,6 +293,10 @@ describe('legacy лишається недоторканим', () => {
       expect(rules[collection]['.indexOn']).toEqual(legacy[collection]['.indexOn']);
       expect(rules[collection].$uid['.read']).toBe(legacy[collection].$uid['.read']);
       expect(rules[collection].$uid['.write']).toBe(legacy[collection].$uid['.write']);
+      // Legacy-джерело прав нікуди не поділось: `/users` міграція не чистить,
+      // і доступ, записаний там, працює далі.
+      expect(rules[collection]['.read'])
+        .toContain("root.child('users').child(auth.uid).child('accessLevel')");
     });
   });
 });

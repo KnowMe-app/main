@@ -28,6 +28,10 @@ const PROFILE_OWNER = 'profileOwnerUid00000000000';
 const OUTSIDER = 'outsiderUid000000000000000';
 // Звичайна донорка: роль `ed`, жодних прав адміністрування.
 const SELF_SERVE = 'selfServeUid00000000000000';
+// Адмін, чиї права вже переїхали: у legacy-колекціях про його доступ нічого
+// немає, усе лежить у `profileTechnical`. Саме так виглядатиме кожен адмін
+// після міграції, тож саме тут перевіряється, що доступ від переїзду не зник.
+const MIGRATED_EDITOR = 'migratedEditorUid0000000000';
 
 const CARD = 'someOtherProfileId000000000';
 
@@ -85,6 +89,8 @@ await testEnv.withSecurityRulesDisabled(async context => {
   await set(ref(db, 'profileTechnical'), {
     [CARD]: { lastLogin2: '2026-08-25' },
     [PROFILE_OWNER]: { lastLogin2: '2026-08-20' },
+    // Права після міграції: у legacy цього акаунта немає взагалі.
+    [MIGRATED_EDITOR]: { accessLevel: 'matching:view&write', canCreateProfiles: true },
   });
   await set(ref(db, 'multiData/getInTouch'), {
     [SUPERADMIN]: { '2026-09-01': { [CARD]: true } },
@@ -244,6 +250,52 @@ await it('стороння не читає чужих позначок', () =>
 
 await it('значенням може бути тільки true', () =>
   assertFails(set(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), 'yes')));
+
+describe('права після переїзду в profileTechnical');
+
+await it('адмін із правами лише в profileTechnical читає стрічку', () =>
+  assertSucceeds(get(ref(db(MIGRATED_EDITOR), `matchingCards/${CARD}`))));
+
+await it('він же редагує картку', () =>
+  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `matchingCards/${CARD}/city`), 'Львів')));
+
+await it('він же редагує деталі анкети', () =>
+  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `profileDetails/${CARD}/education`), 'вища')));
+
+await it('він же редагує контакти', () =>
+  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `profileContacts/${CARD}/phone`), '+380')));
+
+await it('він же пише в legacy-анкету', () =>
+  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `newUsers/${CARD}/name`), 'Картка')));
+
+await it('він же створює анкету через profileMutations', () =>
+  assertSucceeds(set(
+    ref(db(MIGRATED_EDITOR), `multiData/profileMutations/${MIGRATED_EDITOR}/${CARD}`),
+    {
+      cardId: CARD,
+      operation: 'update',
+      createdBy: MIGRATED_EDITOR,
+      status: 'draft',
+      revision: 1,
+    },
+  )));
+
+await it('стороння без прав ніде так не може', () =>
+  assertFails(set(ref(db(OUTSIDER), `matchingCards/${CARD}/city`), 'Львів')));
+
+await it('profileTechnical приймає права акаунта', () =>
+  assertSucceeds(set(
+    ref(db(SUPERADMIN), `profileTechnical/${CARD}/accessLevel`),
+    'matching:view',
+  )));
+
+await it('profileTechnical і далі не приймає ані пароля, ані делегування', async () => {
+  await assertFails(set(ref(db(SUPERADMIN), `profileTechnical/${CARD}/password`), 'x'));
+  await assertFails(set(
+    ref(db(SUPERADMIN), `profileTechnical/${CARD}/multiDataSourceUserIds`),
+    { [SUPERADMIN]: true },
+  ));
+});
 
 describe('multiData/stimulationSchedule — той самий власник, але значення значенням');
 

@@ -1,5 +1,6 @@
 import {
   CLEANED_COLLECTIONS_KIND,
+  MIGRATION_GROUPS,
   createMigrationState,
   planMigrationGroup,
   applyMigrationPlan,
@@ -597,34 +598,44 @@ describe('Workflow і Technical', () => {
     });
   });
 
-  it('technical не забирає device-, cache- і access-полів', () => {
+  it('technical забирає права акаунта і не забирає device- та cache-полів', () => {
     const state = stateWith({}, {
       P1: {
         lastLogin: '25.08.2026',
         lastLogin2: '2026-08-25',
         language: 'uk',
+        accessLevel: 'matching:view',
+        canCreateProfiles: true,
+        multiDataAccessUserIds: { ADMIN: true },
+        additionalAccessRules: 'усе видно',
         deviceWidth: 1080,
         deviceHeight: 1920,
         deviceResize: true,
         cachedAt: 123,
-        accessLevel: 'matching:view',
-        canCreateProfiles: true,
+        multiDataSourceUserIds: { ADMIN: true },
       },
     });
     runMigrationGroup(state, 'profileTechnical');
 
+    // Права акаунта — теж технічні дані, і тепер вони переїжджають разом із
+    // рештою: правила бази читають рівень доступу і з `profileTechnical`.
     expect(state.targets.profileTechnical.P1).toEqual({
       lastLogin: '25.08.2026',
       lastLogin2: '2026-08-25',
       language: 'uk',
+      accessLevel: 'matching:view',
+      canCreateProfiles: true,
+      multiDataAccessUserIds: { ADMIN: true },
+      additionalAccessRules: 'усе видно',
     });
+    // Делегування читання чужого multiData лишається в колекції: правила
+    // питають про нього тільки legacy, і другої копії йому не заводять.
     expect(state.workingNewUsers.P1).toEqual({
       deviceWidth: 1080,
       deviceHeight: 1920,
       deviceResize: true,
       cachedAt: 123,
-      accessLevel: 'matching:view',
-      canCreateProfiles: true,
+      multiDataSourceUserIds: { ADMIN: true },
     });
   });
 });
@@ -919,6 +930,77 @@ describe('порядок кнопок', () => {
       photos: ['https://p1', 'https://p2'],
       lastLogin2: '2026-08-25',
     });
+  });
+});
+
+describe('видалення перенесеного', () => {
+  // Питання, яке ставлять до цього інструмента найчастіше: якщо поле поїхало
+  // в новий вузол, чому воно й далі лежить у файлі? Відповідь має бути одна —
+  // не лежить. Тут це перевіряється по повній анкеті, а не по одному полю.
+  const FULL = {
+    userId: 'P1',
+    name: 'Оля',
+    state: 'Донецкая область',
+    surname: 'Коваленко',
+    phone: '+380',
+    lastAction: 'дзвінок',
+    language: 'uk',
+    accessLevel: 'matching:view&write',
+    canCreateProfiles: true,
+    multiDataAccessUserIds: { ADMIN_UID: true },
+    additionalAccessRules: 'усе видно',
+    getInTouch: '2026-09-01',
+    writer: 'Ik, ',
+    stimulationSchedule: { startDate: '2026-09-01' },
+    education: 'вища',
+  };
+
+  const ALL_GROUPS = MIGRATION_GROUPS.map(group => group.id);
+
+  const runAll = state => ALL_GROUPS.forEach(
+    group => runMigrationGroup(state, group, { ownerUid: OWNER }),
+  );
+
+  it('після всіх кнопок у newUsers не лишається нічого, крім адреси запису', () => {
+    const state = createMigrationState({ users: {}, newUsers: { P1: { ...FULL } } });
+    runAll(state);
+
+    // `userId` не переносить ніхто: він дублює назву вузла. У робочій копії він
+    // лишається (інакше повторний прогін вважав би, що анкети немає), а от у
+    // файл уже не їде — разом із самою анкетою-оболонкою.
+    expect(state.workingNewUsers.P1).toEqual({ userId: 'P1' });
+    expect(buildCleanedNewUsers(state)).toEqual({});
+  });
+
+  it('те саме видно й по копії users, з якої продовжують наступного разу', () => {
+    const state = createMigrationState({ users: { P1: { ...FULL } }, newUsers: {} });
+    runAll(state);
+
+    expect(buildCleanedUsers(state)).toEqual({});
+    // Сам вихідний файл при цьому недоторканий: `/users` чистить не міграція.
+    expect(state.originalUsers.P1).toEqual(FULL);
+  });
+
+  it('кожне поле опинилось саме там, куди його вели', () => {
+    const state = createMigrationState({ users: {}, newUsers: { P1: { ...FULL } } });
+    runAll(state);
+
+    expect(state.targets.matchingCards.P1)
+      .toMatchObject({ name: 'Оля', region: 'Донецкая область', surnameShort: 'К.' });
+    expect(state.targets.profileContacts.P1).toEqual({ phone: '+380' });
+    expect(state.targets.profileWorkflow.P1).toEqual({ lastAction: 'дзвінок' });
+    expect(state.targets.profileTechnical.P1).toEqual({
+      language: 'uk',
+      accessLevel: 'matching:view&write',
+      canCreateProfiles: true,
+      multiDataAccessUserIds: { ADMIN_UID: true },
+      additionalAccessRules: 'усе видно',
+    });
+    expect(state.targets.profileDetails.P1).toEqual({ surname: 'Коваленко', education: 'вища' });
+    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({ '2026-09-01': { P1: true } });
+    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ 'Ik,': { P1: true } });
+    expect(state.targets.multiDataPayload.stimulationSchedule[OWNER])
+      .toEqual({ P1: { startDate: '2026-09-01' } });
   });
 });
 
@@ -1477,28 +1559,35 @@ describe('очищені файли', () => {
     expect(buildCleanedNewUsers(state).N2).toBeUndefined();
   });
 
-  it('права доступу лишаються навіть порожніми — іншого місця в них немає', () => {
-    // Ці поля в нові вузли не їдуть навмисно, тож колекція — єдине місце, де
-    // вони живуть. Прибрати їх разом із рештою порожніх ключів означало б
-    // зняти людям доступ залитим назад файлом.
+  it('делегування лишається навіть порожнім — іншого місця в нього немає', () => {
+    // `multiDataSourceUserIds` у нові вузли не їде: правила питають про нього
+    // тільки legacy. Прибрати його разом із рештою порожніх ключів означало б
+    // зняти делегування залитим назад файлом.
     const state = createMigrationState({
       users: {},
-      newUsers: {
-        N1: {
-          accessLevel: 'matching:view&write',
-          canCreateProfiles: true,
-          multiDataAccessUserIds: { OWNER_UID: true },
-          additionalAccessRules: '',
-        },
-      },
+      newUsers: { N1: { multiDataSourceUserIds: { OWNER_UID: true }, godMode: '' } },
     });
 
     expect(buildCleanedNewUsers(state).N1).toEqual({
-      accessLevel: 'matching:view&write',
-      canCreateProfiles: true,
-      multiDataAccessUserIds: { OWNER_UID: true },
-      additionalAccessRules: '',
+      multiDataSourceUserIds: { OWNER_UID: true },
+      godMode: '',
     });
+  });
+
+  it('перенесені права в очищеному файлі не лишаються', () => {
+    // Це і є перевірка видалення перенесеного: після кнопки Technical права
+    // лежать у вузлі, а в колекції їх немає — ані в `newUsers`, ані в копії
+    // `users`, з якої інструмент продовжує наступного разу.
+    const rights = { accessLevel: 'matching:view&write', canCreateProfiles: true };
+    const state = createMigrationState({
+      users: { P1: { ...rights, хвіст: 1 } },
+      newUsers: { N1: { ...rights, хвіст: 1 } },
+    });
+    runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.N1).toEqual(rights);
+    expect(buildCleanedNewUsers(state).N1).toEqual({ хвіст: 1 });
+    expect(buildCleanedUsers(state).P1).toEqual({ хвіст: 1 });
   });
 
   it('каже, що саме прибрало і скільки разів', () => {
