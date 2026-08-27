@@ -19,7 +19,6 @@ import {
 import {
   PROFILE_NODES,
   OWNER_MULTI_DATA_FIELDS,
-  OWNER_MULTI_DATA_PAYLOAD_FIELDS,
   CLEANED_COLLECTION_NOISE_FIELDS,
   CLEANED_COLLECTION_PRESERVED_FIELDS,
 } from 'utils/profileNodeSchema';
@@ -409,12 +408,6 @@ const PlanSummary = ({ plan }) => {
       <StatLine $warn={Boolean(counters.conflicts)}>
         конфліктів: {formatCount(counters.conflicts)}
       </StatLine>
-      {/*
-        Не червоним: виправлений ключ — це записаний ключ, а не втрачений.
-        Рядок лишається, бо вихідну нотатку варто побачити в звіті: там стоять
-        обидві форми, і саме за вихідною адмін її впізнає.
-      */}
-      <StatLine>виправлено ключів: {formatCount(counters.unsafeKeys)}</StatLine>
       <StatLine $warn={Boolean(counters.errors)}>
         блокуючих помилок: {formatCount(counters.errors)}
       </StatLine>
@@ -427,6 +420,13 @@ const PlanSummary = ({ plan }) => {
       )}
     </Stats>
   );
+};
+
+/** Що саме замінить імпорт кожного вузла `multiData`. */
+const OWNER_VALUE_EFFECTS = {
+  getInTouch: 'замінює позначки «звʼязатись» усіх власників',
+  writer: 'замінює позначки способу звʼязку всіх власників',
+  stimulationSchedule: 'замінює персональні графіки стимуляції всіх власників',
 };
 
 /**
@@ -475,16 +475,8 @@ const EXPORT_TARGETS = [
   ...OWNER_MULTI_DATA_FIELDS.map(({ field, path }) => ({
     label: `multiData-${field}`,
     importPath: path,
-    effect: field === 'getInTouch'
-      ? 'замінює позначки «звʼязатись» усіх власників'
-      : 'замінює позначки способу звʼязку всіх власників',
+    effect: OWNER_VALUE_EFFECTS[field] || 'замінює персональні позначки всіх власників',
     build: state => state.targets.multiDataPatch[field],
-  })),
-  ...OWNER_MULTI_DATA_PAYLOAD_FIELDS.map(({ field, path }) => ({
-    label: `multiData-${field}`,
-    importPath: path,
-    effect: 'замінює персональні графіки стимуляції всіх власників',
-    build: state => state.targets.multiDataPayload[field],
   })),
   {
     label: 'cleaned-newUsers',
@@ -720,19 +712,23 @@ export const RtdbMigrationTool = () => {
             )}
           </Row>
           <Note>
-            <code>getInTouch</code> і <code>writer</code> — це персональні позначки адміна, а не поля анкети:
-            перша каже, коли з людиною звʼязатись, друга — хто і чим із нею вже спілкувався. У новій структурі
-            обидві лежать під тим, хто їх поставив
-            (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/значення/анкета</code>,{' '}
-            <code>multiData/writer/{ownerUid || '{ownerId}'}/значення/анкета</code>).
+            <code>getInTouch</code>, <code>writer</code> і <code>stimulationSchedule</code> — це персональні
+            позначки адміна, а не поля анкети: перша каже, коли з людиною звʼязатись, друга — хто і чим
+            із нею вже спілкувався, третя — як їй ведуть стимуляцію. Усі три лежать під тим, хто їх
+            поставив, і значенням, а не назвою ключа
+            (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/анкета</code> = дата).
           </Note>
           <Note>
-            <code>stimulationSchedule</code> — теж персональний: графік стимуляції веде адмін, і в
-            різних адмінів він різний. Лежить він там само, під власником, але значенням, а не
-            назвою ключа (<code>multiData/stimulationSchedule/{ownerUid || '{ownerId}'}/анкета</code>)
-            — таблицю днів у ключ не запхнеш. Читання цього вузла застосунком ще не підключене: поки
-            його немає, кнопку варто натискати лише разом із заливанням патча, інакше графік зникне
-            з анкети, не зʼявившись у новому місці.
+            Значення під анкетою, а не в назві ключа, — щоб нотатка не втрачала <code>.</code>,{' '}
+            <code>/</code> і власну довжину, а база вміла сортувати сама: на вузлі власника стоїть{' '}
+            <code>.indexOn: &quot;.value&quot;</code>, тож <code>orderByValue()</code> віддає картки
+            вже впорядкованими за датою «звʼязатись» і, за потреби, лише потрібний діапазон.
+          </Note>
+          <Note>
+            Дати всюди переїжджають одним написанням — <code>РРРР-ММ-ДД</code>. Те саме число,
+            записане як <code>25.08.2026</code>, до нового вузла їде як <code>2026-08-25</code>: інакше
+            дві копії анкети конфліктують на рівному місці, а сортування рядком ставить крапкові
+            дати не туди.
           </Note>
           <InventoryTable title="users" inventory={usersInventory} />
           <InventoryTable title="newUsers" inventory={newUsersInventory} />

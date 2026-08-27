@@ -11,7 +11,7 @@ const configSource = fs.readFileSync(
 /**
  * `getInTouch` — не поле анкети, а персональна позначка того, хто її поставив.
  *
- * Після розділення вона живе в `multiData/getInTouch/{owner}/{значення}/{id}`, і
+ * Після розділення вона живе в `multiData/getInTouch/{owner}/{id}` значенням, і
  * код мусить і читати, і писати саме туди. Легко зробити половину: почати
  * читати з нового місця, а писати по-старому — і тоді позначка мовчки зникає
  * після кожного збереження анкети.
@@ -44,16 +44,31 @@ describe('позначки власника читаються і пишутьс
     expect(fanOut).toContain('await setOwnerWriter(ownerId, userId, payload.writer)');
   });
 
-  it('зміна значення знімає старий ключ у тому самому патчі', () => {
-    // Value-first структура означає, що зміна значення — це переїзд між
-    // ключами. Якби старий ключ лишався, картка була б одразу у двох списках.
+  it('зміна позначки — це запис в одну адресу, а не переїзд між ключами', () => {
+    // Значення лежить значенням, тож міняти його — це `set` у ту саму адресу,
+    // а знімати — `null` у ній же. Переїзду між двома ключами, у якому картка
+    // на мить опинялась одразу у двох списках, більше немає.
     const setter = configSource.slice(
       configSource.indexOf('const setOwnerValue = async ('),
       configSource.indexOf('export const readOwnerGetInTouchMap ='),
     );
-    expect(setter).toContain('if (previousKey) patch[');
-    expect(setter).toContain('] = null;');
-    expect(setter).toContain('await update(ref2(database, \'/\'), patch)');
+    expect(setter).toContain('await set(ref2(database, `${path}/${owner}/${id}`), hasValue ? nextValue : null)');
+    expect(setter).not.toContain('previousKey');
+  });
+
+  it('база сортує позначки сама — це і є плата за окремий запис', () => {
+    // Ось заради чого значення під анкетою: `orderByValue` по індексу `.value`
+    // віддає вже впорядковані картки замість сортування в памʼяті браузера.
+    expect(configSource).toContain('export const readOwnerGetInTouchSorted');
+    expect(configSource).toContain('const constraints = [orderByValue()]');
+    expect(configSource).toContain('constraints.push(startAt(from))');
+    expect(configSource).toContain('constraints.push(limitToFirst(limit))');
+  });
+
+  it('графік стимуляції ходить тією самою реалізацією', () => {
+    expect(configSource).toContain("const OWNER_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedule'");
+    expect(configSource).toContain('export const readOwnerStimulationScheduleMap');
+    expect(configSource).toContain('export const setOwnerStimulationSchedule');
   });
 
   it('обидві позначки підмішуються у прочитану анкету під старими іменами', () => {
@@ -70,13 +85,22 @@ describe('позначки власника читаються і пишутьс
     expect(reader).toContain('else delete merged.writer;');
   });
 
-  it('значення з забороненим символом у ключ не йде', () => {
-    const keyGuard = configSource.slice(
-      configSource.indexOf('const buildOwnerValueKey ='),
+  it('читач розуміє і стару форму — позначки, поставлені до переїзду, не зникають', () => {
+    // Доки multiData не перезалито, під власником може лежати ще старе
+    // групування. Без цієї гілки все, поставлене до релізу, зникло б з карток
+    // мовчки — і виглядало б як «адмін нічого не позначав».
+    const reader = configSource.slice(
       configSource.indexOf('const readOwnerValueMap ='),
+      configSource.indexOf('const invalidateOwnerValueMap ='),
     );
-    expect(keyGuard).toContain('if (!text) return');
-    expect(keyGuard).toContain('u0000');
+    expect(reader).toContain('isLegacyOwnerValueGroup(value)');
+    expect(configSource).toContain('Object.values(value).every(flag => flag === true)');
+  });
+
+  it('значення більше не доводиться правити під ключ бази', () => {
+    // Поки воно було назвою ключа, з нього викидались `.`, `/`, `#`, `[`, `]`
+    // і контрольні символи — адмін отримував назад не свою нотатку.
+    expect(configSource).not.toContain('buildOwnerValueKey');
   });
 
   it('мапи двох полів не діляться кешем', () => {

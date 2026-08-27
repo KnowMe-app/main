@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  OWNER_MULTI_DATA_INDEXED_FIELDS,
   MATCHING_CARD_ALLOWED_FIELDS,
   PROFILE_CONTACT_FIELDS,
   ACCESS_CONTROL_FIELDS,
@@ -36,12 +37,23 @@ describe('нові вузли профілю в database.rules.json', () => {
       .forEach(node => expect(rules[node]).toBeDefined());
   });
 
-  it('multiData/getInTouch має структуру owner/value/profileId', () => {
-    const node = rules.multiData.getInTouch;
-    expect(node.$ownerId).toBeDefined();
-    expect(node.$ownerId.$value.$userId).toBeDefined();
-    // Значення — прапорець, а не ще один рівень даних.
-    expect(node.$ownerId.$value.$userId['.validate']).toContain('newData.val() === true');
+  it.each(['getInTouch', 'writer', 'stimulationSchedule'])(
+    'multiData/%s має структуру owner/profileId = значення',
+    field => {
+      const node = rules.multiData[field];
+      expect(node.$ownerId).toBeDefined();
+      // Рівня «значення» немає: значення лежить під анкетою, а не в назві ключа.
+      expect(node.$ownerId.$value).toBeUndefined();
+      expect(node.$ownerId.$userId).toBeDefined();
+    },
+  );
+
+  it('позначки, за якими сортують, база індексує сама', () => {
+    // Без індексу `orderByValue` на цьому вузлі отримав би «Index not defined»,
+    // і сортування мовчки сповзло б назад у памʼять браузера.
+    expect(rules.multiData.getInTouch.$ownerId['.indexOn']).toBe('.value');
+    OWNER_MULTI_DATA_INDEXED_FIELDS
+      .forEach(field => expect(rules.multiData[field].$ownerId['.indexOn']).toBe('.value'));
   });
 
   it('multiData/stimulationSchedule лежить під анкетою, а не під значенням', () => {
@@ -65,9 +77,14 @@ describe('нові вузли профілю в database.rules.json', () => {
   it('getInTouch читає делегований читач, але пише лише власник і суперадміни', () => {
     const owner = rules.multiData.getInTouch.$ownerId;
     expect(owner['.read']).toContain("multiDataSourceUserIds').child($ownerId).val() == true");
-    const write = owner.$value.$userId['.write'];
+    const write = owner.$userId['.write'];
     expect(write).toContain('auth.uid == $ownerId');
     expect(write).not.toContain('multiDataSourceUserIds');
+  });
+
+  it('делегування читається і з profileTechnical — воно теж переїхало', () => {
+    expect(rules.multiData.getInTouch.$ownerId['.read'])
+      .toContain("root.child('profileTechnical').child(auth.uid).child('multiDataSourceUserIds')");
   });
 });
 

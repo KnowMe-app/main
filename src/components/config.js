@@ -13,6 +13,7 @@ import {
   orderByChild,
   query,
   orderByKey,
+  orderByValue,
   startAfter,
   limitToFirst,
   limitToLast,
@@ -3597,22 +3598,33 @@ const fanOutProfileNodes = async (userId, payload) => {
 
 const OWNER_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
 const OWNER_WRITER_PATH = 'multiData/writer';
+const OWNER_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedule';
 
 /** `шлях::owner -> Promise<{ profileId: значення }>`. */
 const ownerValueMapCache = new Map();
 
-const buildOwnerValueKey = value => {
-  const text = value === null || value === undefined ? '' : String(value).trim();
-  if (!text) return '';
-  // Ті самі символи, яких не приймає ключ RTDB. Значення з ними не пишеться —
-  // мовчазне кодування зробило б його невпізнаваним для адміна, який його й
-  // ставив.
-  // eslint-disable-next-line no-control-regex
-  if (/[.#$/[\]]/.test(text) || /[\u0000-\u001F\u007F]/.test(text)) return '';
-  return text;
-};
+/**
+ * Стара форма запису: `{owner}/{значення}/{profileId}: true`.
+ *
+ * Впізнається однозначно — обʼєкт, у якому кожне значення дорівнює `true`.
+ * Ані дата, ані нотатка, ані графік стимуляції так не виглядають: у графіка
+ * під ключами лежать рядки й таблиці, а не самі лише прапорці.
+ */
+const isLegacyOwnerValueGroup = value => (
+  value !== null
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && Object.keys(value).length > 0
+  && Object.values(value).every(flag => flag === true)
+);
 
-/** `profileId -> значення` для одного власника і одного поля. */
+/**
+ * `profileId -> значення` для одного власника і одного поля.
+ *
+ * Читається так, як лежить: під власником — анкети, під анкетою — значення.
+ * Перевертати структуру більше не треба, і саме тому база вміє її сортувати
+ * (`orderByValue` по `.indexOn: ".value"`), а не тільки віддати цілком.
+ */
 const readOwnerValueMap = async (path, ownerId) => {
   const owner = String(ownerId || '').trim();
   if (!owner) return {};
@@ -3626,10 +3638,19 @@ const readOwnerValueMap = async (path, ownerId) => {
       const snapshot = await get(ref2(database, `${path}/${owner}`));
       if (!snapshot.exists()) return {};
       const map = {};
-      Object.entries(snapshot.val() || {}).forEach(([value, profiles]) => {
-        Object.entries(profiles || {}).forEach(([profileId, isSet]) => {
-          if (isSet === true) map[profileId] = value;
-        });
+      Object.entries(snapshot.val() || {}).forEach(([key, value]) => {
+        if (value === null || value === undefined) return;
+        // Позначки, записані до переїзду, лежать навпаки: під значенням —
+        // набір карток прапорцями. Читач розуміє обидві форми, бо інакше все,
+        // поставлене до цього релізу, зникло б з карток мовчки. Розрізняє їх
+        // сама форма: під анкетою лежить значення, під значенням — `true`.
+        if (isLegacyOwnerValueGroup(value)) {
+          Object.keys(value).forEach(profileId => {
+            map[profileId] = key;
+          });
+          return;
+        }
+        map[key] = value;
       });
       return map;
     } catch (error) {
@@ -3656,37 +3677,29 @@ const invalidateOwnerValueMap = (path, ownerId) => {
 /**
  * Ставить (або знімає) позначку власника для однієї картки.
  *
- * Value-first структура означає, що зміна значення — це не запис, а переїзд:
- * старий ключ треба зняти, новий поставити. Обидва йдуть одним патчем, тож
- * картка не може на мить опинитись одразу в двох списках.
+ * Один запис в одну адресу: значення лежить значенням, тож зміна позначки —
+ * це запис, а не переїзд між ключами. Зняття — `null` у тій самій адресі.
  */
 const setOwnerValue = async (path, ownerId, profileId, value) => {
   const owner = String(ownerId || '').trim();
   const id = String(profileId || '').trim();
   if (!owner || !id) return false;
 
-  const nextKey = buildOwnerValueKey(value);
-  const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
-  if (hasValue && !nextKey) {
-    console.warn('[multiData] значення не може бути ключем бази — позначку не змінено', { path, profileId: id });
-    return false;
-  }
+  const hasValue = value !== null && value !== undefined
+    && (typeof value !== 'string' || value.trim() !== '');
+  const nextValue = hasValue && typeof value === 'string' ? value.trim() : value;
 
   const map = await readOwnerValueMap(path, owner);
-  const previousKey = map[id];
-  if (previousKey === nextKey) return true;
-
-  const patch = {};
-  if (previousKey) patch[`${path}/${owner}/${previousKey}/${id}`] = null;
-  if (nextKey) patch[`${path}/${owner}/${nextKey}/${id}`] = true;
-  if (!Object.keys(patch).length) return true;
+  const previous = map[id];
+  if (!hasValue && previous === undefined) return true;
+  if (hasValue && previous === nextValue) return true;
 
   try {
-    await update(ref2(database, '/'), patch);
+    await set(ref2(database, `${path}/${owner}/${id}`), hasValue ? nextValue : null);
     // Мапа оновлюється на місці — перечитувати цілий вузол заради однієї зміни
     // означало б платити за кожну позначку читанням усього списку власника.
     const nextMap = { ...map };
-    if (nextKey) nextMap[id] = nextKey;
+    if (hasValue) nextMap[id] = nextValue;
     else delete nextMap[id];
     ownerValueMapCache.set(`${path}::${owner}`, Promise.resolve(nextMap));
     return true;
@@ -3713,6 +3726,50 @@ export const invalidateOwnerWriterMap = ownerId => invalidateOwnerValueMap(OWNER
 export const setOwnerWriter = (ownerId, profileId, value) => (
   setOwnerValue(OWNER_WRITER_PATH, ownerId, profileId, value)
 );
+
+export const readOwnerStimulationScheduleMap = ownerId => (
+  readOwnerValueMap(OWNER_STIMULATION_SCHEDULE_PATH, ownerId)
+);
+
+export const invalidateOwnerStimulationScheduleMap = ownerId => (
+  invalidateOwnerValueMap(OWNER_STIMULATION_SCHEDULE_PATH, ownerId)
+);
+
+export const setOwnerStimulationSchedule = (ownerId, profileId, value) => (
+  setOwnerValue(OWNER_STIMULATION_SCHEDULE_PATH, ownerId, profileId, value)
+);
+
+/**
+ * Позначки власника, впорядковані базою.
+ *
+ * Ось заради чого значення лежить значенням: `orderByValue()` по індексу
+ * `.value` віддає картки вже в потрібному порядку — і, за потреби, лише
+ * потрібний діапазон дат. Раніше для цього довелось би прочитати весь вузол
+ * власника і сортувати його в памʼяті браузера.
+ */
+export const readOwnerGetInTouchSorted = async (ownerId, { from, to, limit } = {}) => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return [];
+
+  const constraints = [orderByValue()];
+  if (from) constraints.push(startAt(from));
+  if (to) constraints.push(endAt(to));
+  if (limit) constraints.push(limitToFirst(limit));
+
+  try {
+    const snapshot = await get(query(ref2(database, `${OWNER_GET_IN_TOUCH_PATH}/${owner}`), ...constraints));
+    const rows = [];
+    // `forEach` знімка — єдиний спосіб не втратити порядок: звичайний обʼєкт
+    // його не тримає.
+    snapshot.forEach(child => {
+      rows.push({ userId: child.key, getInTouch: child.val() });
+    });
+    return rows;
+  } catch (error) {
+    console.warn('[multiData] не вдалося прочитати впорядковані позначки', { ownerId: owner, error });
+    return [];
+  }
+};
 
 const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
   const id = String(userId || '').trim();

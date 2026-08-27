@@ -14,7 +14,7 @@ import {
   buildRemaindersExport,
   buildCleanedUsers,
   buildCleanedCollections,
-  getOwnerPayloadPatch,
+  getOwnerValuePatch,
 } from '../rtdbMigration';
 import {
   deriveSurnameShort,
@@ -22,7 +22,7 @@ import {
   deriveAvatar,
   deriveRole,
   deriveFeedDate,
-  checkGetInTouchKeySafety,
+  normalizeLegacyDates,
   normalizeFeedDateValue,
 } from '../rtdbMigrationDerive';
 import { MATCHING_CARD_FORBIDDEN_FIELDS } from '../profileNodeSchema';
@@ -203,70 +203,29 @@ describe('feedDate', () => {
   });
 });
 
-describe('getInTouch key safety', () => {
-  it('пропускає звичайну дату', () => {
-    expect(checkGetInTouchKeySafety('2026-09-01')).toMatchObject({
-      safe: true, key: '2026-09-01', changed: false,
-    });
+describe('нормалізація дат', () => {
+  it('крапкову дату переписує в ISO, ISO лишає як є', () => {
+    expect(normalizeLegacyDates('25.08.2026')).toBe('2026-08-25');
+    expect(normalizeLegacyDates('2026-08-25')).toBe('2026-08-25');
   });
 
-  it('пропускає legacy 2099-99-99 без «виправлень»', () => {
-    expect(checkGetInTouchKeySafety('2099-99-99')).toMatchObject({
-      safe: true, key: '2099-99-99', changed: false,
-    });
+  it('не чіпає того, що датою цілком не є', () => {
+    // Нотатка з датою всередині — це нотатка: переписана, вона перестала б
+    // бути тим, що адмін упізнає.
+    expect(normalizeLegacyDates('до 25.08.2026 не писати')).toBe('до 25.08.2026 не писати');
+    expect(normalizeLegacyDates('2099-99-99')).toBe('2099-99-99');
+    expect(normalizeLegacyDates('1.2.3')).toBe('1.2.3');
   });
 
-  it('пропускає текстове значення з пробілами', () => {
-    expect(checkGetInTouchKeySafety(' Теж більше не писати ')).toMatchObject({
-      safe: true, key: 'Теж більше не писати', changed: false,
-    });
+  it('обходить масив версій і вкладений обʼєкт', () => {
+    expect(normalizeLegacyDates(['01.09.2026', 'нотатка'])).toEqual(['2026-09-01', 'нотатка']);
+    expect(normalizeLegacyDates({ a: { b: '01.09.2026' } })).toEqual({ a: { b: '2026-09-01' } });
   });
 
-  it.each(['.', '#', '$', '[', ']', '/'])('заміняє заборонений символ %s і каже, з чого вийшов ключ', character => {
-    expect(checkGetInTouchKeySafety(`нотатка${character}далі`)).toMatchObject({
-      safe: true,
-      key: 'нотатка-далі',
-      original: `нотатка${character}далі`,
-      changed: true,
-      reason: 'UNSAFE_GET_IN_TOUCH_KEY',
-    });
-  });
-
-  it('заміняє кожен заборонений символ окремо, а не групою', () => {
-    // Склеювання зробило б «а/б» і «а//б» одним ключем — тобто злило б дві
-    // різні нотатки в одну.
-    expect(checkGetInTouchKeySafety('а//б').key).toBe('а--б');
-  });
-
-  it('заміняє невидимий контрольний символ', () => {
-    expect(checkGetInTouchKeySafety('нотаткадалі')).toMatchObject({
-      safe: true,
-      key: 'нотатка-далі',
-      changed: true,
-    });
-  });
-
-  it('обрізає задовгий ключ по межі символа', () => {
-    const result = checkGetInTouchKeySafety('я'.repeat(500));
-
-    expect(result.changed).toBe(true);
-    expect(result.reason).toBe('GET_IN_TOUCH_KEY_TOO_LONG');
-    // Цілі «я», а не половина двобайтової послідовності на межі.
-    expect(Buffer.byteLength(result.key, 'utf8')).toBe(768);
-    expect(result.key).toBe('я'.repeat(384));
-  });
-
-  it('відхиляє порожнє значення', () => {
-    expect(checkGetInTouchKeySafety('   ')).toMatchObject({ reason: 'EMPTY_GET_IN_TOUCH_VALUE' });
-  });
-
-  it('відхиляє значення, у якому нема нічого, крім заборонених символів', () => {
-    // Із самих замінників ключа не буває: усі такі значення злилися б в одне.
-    expect(checkGetInTouchKeySafety('///')).toMatchObject({
-      safe: false,
-      reason: 'EMPTY_GET_IN_TOUCH_VALUE',
-      original: '///',
-    });
+  it('не чіпає чисел і булевих значень', () => {
+    expect(normalizeLegacyDates(1770456647255)).toBe(1770456647255);
+    expect(normalizeLegacyDates(true)).toBe(true);
+    expect(normalizeLegacyDates(null)).toBe(null);
   });
 });
 
@@ -607,12 +566,12 @@ describe('Workflow і Technical', () => {
         accessLevel: 'matching:view',
         canCreateProfiles: true,
         multiDataAccessUserIds: { ADMIN: true },
+        multiDataSourceUserIds: { ADMIN: true },
         additionalAccessRules: 'усе видно',
         deviceWidth: 1080,
         deviceHeight: 1920,
         deviceResize: true,
         cachedAt: 123,
-        multiDataSourceUserIds: { ADMIN: true },
       },
     });
     runMigrationGroup(state, 'profileTechnical');
@@ -620,22 +579,21 @@ describe('Workflow і Technical', () => {
     // Права акаунта — теж технічні дані, і тепер вони переїжджають разом із
     // рештою: правила бази читають рівень доступу і з `profileTechnical`.
     expect(state.targets.profileTechnical.P1).toEqual({
-      lastLogin: '25.08.2026',
+      // Дата входу приїхала одним написанням — крапкова стала ISO.
+      lastLogin: '2026-08-25',
       lastLogin2: '2026-08-25',
       language: 'uk',
       accessLevel: 'matching:view',
       canCreateProfiles: true,
       multiDataAccessUserIds: { ADMIN: true },
+      multiDataSourceUserIds: { ADMIN: true },
       additionalAccessRules: 'усе видно',
     });
-    // Делегування читання чужого multiData лишається в колекції: правила
-    // питають про нього тільки legacy, і другої копії йому не заводять.
     expect(state.workingNewUsers.P1).toEqual({
       deviceWidth: 1080,
       deviceHeight: 1920,
       deviceResize: true,
       cachedAt: 123,
-      multiDataSourceUserIds: { ADMIN: true },
     });
   });
 });
@@ -650,7 +608,7 @@ describe('GetInTouch', () => {
     expect(state.workingNewUsers.P1).toEqual({ getInTouch: '2026-09-01' });
   });
 
-  it('складає структуру owner/value/profileId, а не owner/profileId/value', () => {
+  it('складає структуру owner/profileId = значення', () => {
     const state = stateWith({}, {
       P1: { getInTouch: '2026-09-01' },
       P2: { getInTouch: '2026-09-01' },
@@ -659,57 +617,66 @@ describe('GetInTouch', () => {
     });
     runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
 
-    expect(state.targets.multiDataPatch.getInTouch).toEqual({
+    expect(getOwnerValuePatch(state, 'getInTouch')).toEqual({
       [OWNER]: {
-        '2026-09-01': { P1: true, P2: true },
-        '2099-99-99': { P3: true },
-        'Теж більше не писати': { P4: true },
+        P1: '2026-09-01',
+        P2: '2026-09-01',
+        P3: '2099-99-99',
+        P4: 'Теж більше не писати',
       },
     });
     ['P1', 'P2', 'P3', 'P4'].forEach(id => expect(state.workingNewUsers[id]).toEqual({}));
   });
 
-  it('непридатний ключ виправляється, а не відкидається', () => {
-    const state = stateWith({}, { P1: { getInTouch: 'до 01/09' }, P2: { getInTouch: 'а.б' } });
-    const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
-
-    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({
-      'до 01-09': { P1: true },
-      'а-б': { P2: true },
+  it('нотатку більше не доводиться правити під ключ бази', () => {
+    // Раніше значення ставало назвою ключа, тож `.`, `/`, `#`, `[`, `]` у ньому
+    // замінювались дефісом, а задовге обрізалось: адмін отримував назад не те,
+    // що записував. Значенням воно лежить як є.
+    const state = stateWith({}, {
+      P1: { getInTouch: 'до 01/09' },
+      P2: { getInTouch: 'а.б' },
+      P3: { getInTouch: 'я'.repeat(500) },
     });
-    // Джерело поїхало: значення записане, хай і під виправленим ключем.
+    const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'getInTouch')[OWNER]).toEqual({
+      P1: 'до 01/09',
+      P2: 'а.б',
+      P3: 'я'.repeat(500),
+    });
+    expect(plan.warningsByCode).toEqual({});
+    ['P1', 'P2', 'P3'].forEach(id => expect(state.workingNewUsers[id]).toEqual({}));
+  });
+
+  it('дата приїжджає одним написанням, з якого боку не прийшла б', () => {
+    // Це і є те, заради чого нормалізація: два написання тієї самої дати не
+    // повинні давати ані двох різних значень, ані конфлікту між копіями.
+    const state = stateWith(
+      { P1: { getInTouch: '01.09.2026' } },
+      { P1: { getInTouch: '2026-09-01' }, P2: { getInTouch: '01.09.2026' } },
+    );
+    const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'getInTouch')[OWNER])
+      .toEqual({ P1: '2026-09-01', P2: '2026-09-01' });
+    expect(plan.conflicts).toHaveLength(0);
     expect(state.workingNewUsers.P1).toEqual({});
-    expect(state.workingNewUsers.P2).toEqual({});
-    expect(plan.counters.unsafeKeys).toBe(2);
-    expect(plan.warningsByCode.UNSAFE_GET_IN_TOUCH_KEY).toBe(2);
   });
 
-  it('у звіті стоять обидві форми — вихідна нотатка і ключ, під яким вона лягла', () => {
-    const state = stateWith({}, { P1: { getInTouch: 'т/в?' } });
+  it('порожнє значення не переноситься і не зникає', () => {
+    const state = stateWith({}, { P1: { getInTouch: '   ' } });
     const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
 
-    expect(plan.warnings).toContainEqual(expect.objectContaining({
-      code: 'UNSAFE_GET_IN_TOUCH_KEY',
-      profileId: 'P1',
-      value: 'т/в?',
-      key: 'т-в?',
-    }));
-  });
-
-  it('значення без жодного придатного символа лишає джерело на місці', () => {
-    const state = stateWith({}, { P1: { getInTouch: '///' } });
-    const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
-
-    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toBeUndefined();
-    expect(state.workingNewUsers.P1).toEqual({ getInTouch: '///' });
-    expect(plan.warningsByCode.EMPTY_GET_IN_TOUCH_VALUE).toBe(1);
+    expect(getOwnerValuePatch(state, 'getInTouch')).toEqual({});
+    expect(state.workingNewUsers.P1).toEqual({ getInTouch: '   ' });
+    expect(plan.warningsByCode.EMPTY_SOURCE_VALUE).toBe(1);
   });
 
   it('не кладе одну картку під два різні значення', () => {
     const state = stateWith({ P1: { getInTouch: '2026-09-01' } }, { P1: { getInTouch: '2026-10-01' } });
     const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
 
-    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({ '2026-09-01': { P1: true } });
+    expect(getOwnerValuePatch(state, 'getInTouch')[OWNER]).toEqual({ P1: '2026-09-01' });
     expect(state.workingNewUsers.P1).toEqual({ getInTouch: '2026-10-01' });
     expect(plan.conflicts).toHaveLength(1);
   });
@@ -798,7 +765,7 @@ describe('Stimulation Schedule', () => {
     const state = stateWith({}, { P1: { stimulationSchedule: SCHEDULE }, P2: { stimulationSchedule: 'з 1 вересня' } });
     runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
 
-    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')).toEqual({
+    expect(getOwnerValuePatch(state, 'stimulationSchedule')).toEqual({
       [OWNER]: { P1: SCHEDULE, P2: 'з 1 вересня' },
     });
     expect(state.workingNewUsers.P1).toEqual({});
@@ -809,7 +776,7 @@ describe('Stimulation Schedule', () => {
     const state = stateWith({}, { P1: { stimulationSchedule: '' } });
     const plan = runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
 
-    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')).toEqual({});
+    expect(getOwnerValuePatch(state, 'stimulationSchedule')).toEqual({});
     expect(state.workingNewUsers.P1).toEqual({ stimulationSchedule: '' });
     expect(plan.warningsByCode.EMPTY_SOURCE_VALUE).toBe(1);
   });
@@ -821,7 +788,7 @@ describe('Stimulation Schedule', () => {
     );
     const plan = runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
 
-    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')[OWNER].P1).toEqual(SCHEDULE);
+    expect(getOwnerValuePatch(state, 'stimulationSchedule')[OWNER].P1).toEqual(SCHEDULE);
     expect(state.workingNewUsers.P1).toEqual({ stimulationSchedule: { startDate: '2026-10-01' } });
     expect(plan.conflicts).toHaveLength(1);
   });
@@ -842,9 +809,9 @@ describe('Stimulation Schedule', () => {
     runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
     const second = runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
 
-    expect(second.ownerPayloadWrites).toHaveLength(0);
+    expect(second.ownerValueWrites).toHaveLength(0);
     expect(second.deletions).toHaveLength(0);
-    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')[OWNER]).toEqual({ P1: SCHEDULE });
+    expect(getOwnerValuePatch(state, 'stimulationSchedule')[OWNER]).toEqual({ P1: SCHEDULE });
   });
 
   it('графік їде в патч кореня разом із рештою multiData', () => {
@@ -859,10 +826,10 @@ describe('Stimulation Schedule', () => {
     const state = stateWith({}, { P1: { stimulationSchedule: SCHEDULE } });
     runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
 
-    const patch = getOwnerPayloadPatch(state, 'stimulationSchedule');
+    const patch = getOwnerValuePatch(state, 'stimulationSchedule');
     patch[OWNER].P1.rows.push({ date: 'зайве' });
 
-    expect(state.targets.multiDataPayload.stimulationSchedule[OWNER].P1.rows).toHaveLength(1);
+    expect(state.targets.multiDataPatch.stimulationSchedule[OWNER].P1.rows).toHaveLength(1);
   });
 });
 
@@ -997,9 +964,9 @@ describe('видалення перенесеного', () => {
       additionalAccessRules: 'усе видно',
     });
     expect(state.targets.profileDetails.P1).toEqual({ surname: 'Коваленко', education: 'вища' });
-    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({ '2026-09-01': { P1: true } });
-    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ 'Ik,': { P1: true } });
-    expect(state.targets.multiDataPayload.stimulationSchedule[OWNER])
+    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({ P1: '2026-09-01' });
+    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ P1: 'Ik, ' });
+    expect(state.targets.multiDataPatch.stimulationSchedule[OWNER])
       .toEqual({ P1: { startDate: '2026-09-01' } });
   });
 });
@@ -1381,9 +1348,11 @@ describe('інвентаризація', () => {
 });
 
 describe('Writer', () => {
-  it('кладе позначку під власника, а не в анкету', () => {
+  it('кладе кожній картці власне значення, а не групує їх під ним', () => {
     // `writer` — це «хто з нею спілкувався», а не властивість жінки: у новій
-    // структурі він живе там само, де `getInTouch`.
+    // структурі він живе там само, де `getInTouch`, — під власником і під
+    // карткою. Групування під значенням не лишилось: воно нічого не давало,
+    // а нотатку доводилось правити під ключ бази.
     const state = stateWith({}, {
       P1: { writer: 'Ik, ' },
       P2: { writer: 'Ik, ' },
@@ -1391,11 +1360,8 @@ describe('Writer', () => {
     });
     runMigrationGroup(state, 'writer', { ownerUid: OWNER });
 
-    expect(state.targets.multiDataPatch.writer).toEqual({
-      [OWNER]: {
-        'Ik,': { P1: true, P2: true },
-        'T,': { P3: true },
-      },
+    expect(getOwnerValuePatch(state, 'writer')).toEqual({
+      [OWNER]: { P1: 'Ik, ', P2: 'Ik, ', P3: 'T, ' },
     });
     ['P1', 'P2', 'P3'].forEach(id => expect(state.workingNewUsers[id]).toEqual({}));
   });
@@ -1416,31 +1382,26 @@ describe('Writer', () => {
     runMigrationGroup(state, 'getInTouch', { ownerUid: OWNER });
     runMigrationGroup(state, 'writer', { ownerUid: OWNER });
 
-    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({ '2026-09-01': { P1: true } });
-    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ Ik: { P1: true } });
+    expect(getOwnerValuePatch(state, 'getInTouch')[OWNER]).toEqual({ P1: '2026-09-01' });
+    expect(getOwnerValuePatch(state, 'writer')[OWNER]).toEqual({ P1: 'Ik' });
     expect(state.workingNewUsers.P1).toEqual({});
   });
 
-  it('різні значення в двох колекціях — конфлікт, а не два ключі', () => {
+  it('різні значення в двох колекціях — конфлікт, а не два записи', () => {
     const state = stateWith({ P1: { writer: 'Ik' } }, { P1: { writer: 'T' } });
     const plan = runMigrationGroup(state, 'writer', { ownerUid: OWNER });
 
-    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ Ik: { P1: true } });
+    expect(getOwnerValuePatch(state, 'writer')[OWNER]).toEqual({ P1: 'Ik' });
     expect(state.workingNewUsers.P1).toEqual({ writer: 'T' });
     expect(plan.conflicts).toHaveLength(1);
   });
 
-  it('значення з забороненим символом виправляється, і в звіті стоять обидві форми', () => {
+  it('значення з забороненим у ключі символом їде як є', () => {
     const state = stateWith({}, { P1: { writer: 'Ik/T' } });
     const plan = runMigrationGroup(state, 'writer', { ownerUid: OWNER });
 
-    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ 'Ik-T': { P1: true } });
-    expect(plan.warnings).toContainEqual(expect.objectContaining({
-      code: 'UNSAFE_WRITER_KEY',
-      profileId: 'P1',
-      value: 'Ik/T',
-      key: 'Ik-T',
-    }));
+    expect(getOwnerValuePatch(state, 'writer')[OWNER]).toEqual({ P1: 'Ik/T' });
+    expect(plan.warningsByCode).toEqual({});
   });
 
   it('повторний запуск нічого не додає', () => {
