@@ -11,10 +11,12 @@ import {
   buildCollectionInventory,
   buildCombinedRootPatch,
   buildCleanedNewUsers,
+  buildCleanedCollections,
   buildMigrationAudit,
   buildRemaindersExport,
+  CLEANED_COLLECTIONS_KIND,
 } from 'utils/rtdbMigration';
-import { PROFILE_NODES } from 'utils/profileNodeSchema';
+import { PROFILE_NODES, OWNER_MULTI_DATA_FIELDS } from 'utils/profileNodeSchema';
 import { auth } from './config';
 import PageNavMenu from './PageNavMenu';
 import {
@@ -337,6 +339,15 @@ const unwrapCollection = (parsed, collectionName) => {
 
 const formatCount = value => new Intl.NumberFormat('uk-UA').format(value || 0);
 
+/** Обидві колекції в одному порядку скрізь, де їх показують поруч. */
+const REMAINDER_COLLECTIONS = ['newUsers', 'users'];
+
+/** `поле×кількість`, від найчастішого — так видно, з чого починати розбір. */
+const formatFieldStats = stats => Object.entries(stats || {})
+  .sort((a, b) => b[1] - a[1])
+  .map(([field, count]) => `${field}×${count}`)
+  .join(', ') || '—';
+
 const InventoryTable = ({ title, inventory }) => {
   if (!inventory) return null;
   return (
@@ -376,8 +387,8 @@ const InventoryTable = ({ title, inventory }) => {
 
 const PlanSummary = ({ plan }) => {
   if (!plan) return null;
-  if (plan.blocked === 'MISSING_GET_IN_TOUCH_OWNER') {
-    return <Warn>Потрібен Legacy getInTouch owner UID.</Warn>;
+  if (plan.blocked === 'MISSING_OWNER_UID') {
+    return <Warn>Потрібен UID власника позначок.</Warn>;
   }
 
   const { counters } = plan;
@@ -450,19 +461,32 @@ const EXPORT_TARGETS = [
     effect: 'замінює всі технічні дані',
     build: state => state.targets[PROFILE_NODES.profileTechnical],
   },
-  {
-    // Саме `multiData/getInTouch`, а не `multiData`: на рівень вище лежать
-    // обране, коментарі, правки й історія — імпорт туди зніс би їх усі.
-    label: 'multiData-getInTouch',
-    importPath: 'multiData/getInTouch',
-    effect: 'замінює позначки «звʼязатись» усіх власників',
-    build: state => state.targets.multiDataPatch.getInTouch,
-  },
+  /*
+   * Саме `multiData/{поле}`, а не `multiData`: на рівень вище лежать обране,
+   * коментарі, правки й історія — імпорт туди зніс би їх усі. Перелік іде зі
+   * схеми, тож нове поле власника зʼявляється тут само собою.
+   */
+  ...OWNER_MULTI_DATA_FIELDS.map(({ field, path }) => ({
+    label: `multiData-${field}`,
+    importPath: path,
+    effect: field === 'getInTouch'
+      ? 'замінює позначки «звʼязатись» усіх власників'
+      : 'замінює позначки способу звʼязку всіх власників',
+    build: state => state.targets.multiDataPatch[field],
+  })),
   {
     label: 'cleaned-newUsers',
     importPath: 'newUsers',
-    effect: 'і є видаленням: замінює newUsers версією без перенесених полів',
+    effect: 'і є видаленням: замінює newUsers версією без перенесених полів і без порожніх оболонок',
     build: state => buildCleanedNewUsers(state),
+  },
+  {
+    // Не для бази: `users` читає мобільний застосунок, і заливати туди залишок
+    // не можна. Це файл, з якого інструмент продовжує роботу наступного дня.
+    label: 'cleaned-collections',
+    importPath: '— не імпортувати',
+    effect: 'обидві колекції без перенесених полів — файл для повторного завантаження сюди',
+    build: state => buildCleanedCollections(state),
   },
 ];
 
@@ -508,7 +532,40 @@ export const RtdbMigrationTool = () => {
     if (!file) return;
 
     try {
-      const parsed = unwrapCollection(await readJsonFile(file), collectionName);
+      const raw = await readJsonFile(file);
+
+      /*
+       * Файл залишків несе обидві колекції одразу — це той самий стан, у якому
+       * скінчився попередній захід. Він і завантажується як одне ціле: інакше
+       * довелося б качати два файли і памʼятати, який із них до якого.
+       */
+      if (collectionName === 'cleanedCollections') {
+        if (!raw || typeof raw !== 'object' || (!raw.users && !raw.newUsers)) {
+          toast.error('У файлі немає ані users, ані newUsers');
+          return;
+        }
+        if (raw.kind && raw.kind !== CLEANED_COLLECTIONS_KIND) {
+          toast.error('Це не файл залишків міграції');
+          return;
+        }
+
+        const cleanedUsers = raw.users && typeof raw.users === 'object' ? raw.users : {};
+        const cleanedNewUsers = raw.newUsers && typeof raw.newUsers === 'object' ? raw.newUsers : {};
+        pendingRef.current.users = cleanedUsers;
+        pendingRef.current.newUsers = cleanedNewUsers;
+        const usersStats = buildCollectionInventory(cleanedUsers);
+        const newUsersStats = buildCollectionInventory(cleanedNewUsers);
+        setUsersInventory(usersStats);
+        setNewUsersInventory(newUsersStats);
+        rebuildState();
+        toast.success(
+          `Залишок прочитано: users ${formatCount(usersStats.recordCount)}, `
+          + `newUsers ${formatCount(newUsersStats.recordCount)} записів`,
+        );
+        return;
+      }
+
+      const parsed = unwrapCollection(raw, collectionName);
       if (collectionName === 'matchingCards') {
         // Тільки для порівняння у звіті — джерелом істини наявний вузол не є.
         setExistingCards(parsed);
@@ -531,21 +588,21 @@ export const RtdbMigrationTool = () => {
 
   const handlePreview = useCallback(group => {
     if (!stateRef.current) return;
-    const plan = planMigrationGroup(stateRef.current, group, { getInTouchOwnerUid: ownerUid });
+    const plan = planMigrationGroup(stateRef.current, group, { ownerUid });
     setPlans(current => ({ ...current, [group]: plan }));
   }, [ownerUid]);
 
   const handleApply = useCallback(group => {
     if (!stateRef.current) return;
-    const plan = plans[group] || planMigrationGroup(stateRef.current, group, { getInTouchOwnerUid: ownerUid });
+    const plan = plans[group] || planMigrationGroup(stateRef.current, group, { ownerUid });
     if (plan.blocked) {
-      toast.error('Потрібен Legacy getInTouch owner UID');
+      toast.error('Потрібен UID власника позначок');
       return;
     }
 
     const confirmed = window.confirm(
       `Застосувати «${MIGRATION_GROUPS.find(entry => entry.id === group)?.label}»?\n\n`
-      + `Записів у цілі: ${plan.writes.length + plan.getInTouchWrites.length}\n`
+      + `Записів у цілі: ${plan.writes.length + plan.ownerValueWrites.length}\n`
       + `Полів буде видалено з локального newUsers: ${plan.deletions.length}\n`
       + `Конфліктів: ${plan.counters.conflicts}\n\n`
       + 'У Firebase нічого не пишеться — зміни лише в локальній копії.',
@@ -555,7 +612,7 @@ export const RtdbMigrationTool = () => {
     applyMigrationPlan(stateRef.current, plan);
     // Після застосування план перераховується: тепер він має бути порожній —
     // це і є видима перевірка ідемпотентності.
-    const after = planMigrationGroup(stateRef.current, group, { getInTouchOwnerUid: ownerUid });
+    const after = planMigrationGroup(stateRef.current, group, { ownerUid });
     setPlans(current => ({ ...current, [group]: after }));
     refreshAudit();
     toast.success(`${group}: застосовано`);
@@ -626,14 +683,23 @@ export const RtdbMigrationTool = () => {
               Load matchingCards.json (звірка)
               <HiddenFileInput type="file" accept="application/json,.json" onChange={event => handleFile(event, 'matchingCards')} />
             </FileButton>
+            <FileButton as="label">
+              Load cleaned-collections.json (продовжити)
+              <HiddenFileInput type="file" accept="application/json,.json" onChange={event => handleFile(event, 'cleanedCollections')} />
+            </FileButton>
           </Row>
+          <Note>
+            <code>cleaned-collections.json</code> — файл із розділу «Експорт»: обидві колекції без уже
+            перенесених полів. Завантажений сюди, він замінює обидва вхідні файли, і міграція
+            продовжується з того місця, де скінчилась, а не з нуля.
+          </Note>
           <Row>
-            <FieldLabel htmlFor="get-in-touch-owner">Legacy getInTouch owner UID:</FieldLabel>
+            <FieldLabel htmlFor="owner-uid">UID власника (getInTouch і writer):</FieldLabel>
             <TextInput
-              id="get-in-touch-owner"
+              id="owner-uid"
               value={ownerUid}
               onChange={event => setOwnerUid(event.target.value)}
-              placeholder="UID адміна, чиї getInTouch переносимо"
+              placeholder="UID адміна, чиї позначки переносимо"
             />
             {auth?.currentUser?.uid && auth.currentUser.uid !== ownerUid && (
               <SmallGhost type="button" onClick={() => setOwnerUid(auth.currentUser.uid)}>
@@ -642,8 +708,11 @@ export const RtdbMigrationTool = () => {
             )}
           </Row>
           <Note>
-            <code>getInTouch</code> — це персональна позначка адміна, а не поле анкети: у новій структурі вона
-            лежить під тим, хто її поставив (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/значення/анкета</code>).
+            <code>getInTouch</code> і <code>writer</code> — це персональні позначки адміна, а не поля анкети:
+            перша каже, коли з людиною звʼязатись, друга — хто і чим із нею вже спілкувався. У новій структурі
+            обидві лежать під тим, хто їх поставив
+            (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/значення/анкета</code>,{' '}
+            <code>multiData/writer/{ownerUid || '{ownerId}'}/значення/анкета</code>).
           </Note>
           <InventoryTable title="users" inventory={usersInventory} />
           <InventoryTable title="newUsers" inventory={newUsersInventory} />
@@ -800,7 +869,14 @@ export const RtdbMigrationTool = () => {
               <code>cleaned-newUsers.json</code> — це і є видалення: він замінює вузол{' '}
               <code>newUsers</code> версією без перенесених полів. Замінює <b>цілком</b>, тож усе,
               що записали в <code>newUsers</code> після викачування вихідних файлів, буде втрачено.
-              Тож качайте, мігруйте і заливайте одним заходом, а не через день.
+              Тож качайте, мігруйте і заливайте одним заходом, а не через день. Анкети, від яких
+              лишився сам <code>userId</code>, у нього не входять — тобто імпорт прибирає і порожні
+              оболонки.
+            </Note>
+            <Note>
+              <code>cleaned-collections.json</code> — той самий залишок, але обома колекціями і зі
+              справжніми значеннями. У базу він не їде: його завантажують назад у цей інструмент
+              кнопкою «Load cleaned-collections.json», щоб продовжити з того місця, де скінчили.
             </Note>
           </Section>
         )}
@@ -808,19 +884,32 @@ export const RtdbMigrationTool = () => {
         {audit && (
           <Section>
             <SectionTitle>4. Звіт</SectionTitle>
+            {/*
+              Дві колекції поруч, а не сама лише `newUsers`: питання «що ще не
+              переїхало» одне на обидві, і відповідь по одній із них читалась би
+              як відповідь по всьому.
+            */}
             <Stats>
               <StatLine>
                 залишок у newUsers: {formatCount(audit.remainingNewUsers.recordCount)} записів,{' '}
                 {formatCount(audit.remainingNewUsers.keyCount)} ключів
               </StatLine>
-              <StatLine>конфліктів у звіті: {formatCount(audit.conflicts.length)}</StatLine>
-              <StatLine style={{ gridColumn: '1 / -1' }}>
-                незмаплені поля:{' '}
-                {Object.entries(audit.unmappedFieldStats.unknown || {})
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([field, count]) => `${field}×${count}`)
-                  .join(', ') || '—'}
+              <StatLine>
+                залишок у users: {formatCount(audit.remainingUsers.recordCount)} записів,{' '}
+                {formatCount(audit.remainingUsers.keyCount)} ключів
               </StatLine>
+              <StatLine>
+                порожніх оболонок (сам userId): newUsers{' '}
+                {formatCount(audit.remainingNewUsers.identityOnlyRecordCount)}, users{' '}
+                {formatCount(audit.remainingUsers.identityOnlyRecordCount)} — в очищені файли не йдуть
+              </StatLine>
+              <StatLine>конфліктів у звіті: {formatCount(audit.conflicts.length)}</StatLine>
+              {REMAINDER_COLLECTIONS.map(collection => (
+                <StatLine key={collection} style={{ gridColumn: '1 / -1' }}>
+                  незмаплені поля {collection}:{' '}
+                  {formatFieldStats(audit.remainderFieldStats?.[collection]?.unknown)}
+                </StatLine>
+              ))}
             </Stats>
           </Section>
         )}

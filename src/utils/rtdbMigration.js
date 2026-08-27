@@ -36,6 +36,7 @@ import {
   ACCESS_CONTROL_FIELDS,
   SECRET_FIELDS,
   ALL_MAPPED_FIELDS,
+  OWNER_MULTI_DATA_FIELD_NAMES,
 } from './profileNodeSchema';
 import {
   hasMeaningfulValue,
@@ -48,7 +49,7 @@ import {
   deriveRole,
   deriveFeedDate,
   compareLoginRecency,
-  checkGetInTouchKeySafety,
+  checkOwnerValueKeySafety,
 } from './rtdbMigrationDerive';
 
 /** Кнопки міграції, у порядку, в якому їх задумано натискати. */
@@ -58,6 +59,9 @@ export const MIGRATION_GROUPS = Object.freeze([
   { id: 'profileWorkflow', label: 'Migrate Workflow', node: PROFILE_NODES.profileWorkflow },
   { id: 'profileTechnical', label: 'Migrate Technical', node: PROFILE_NODES.profileTechnical },
   { id: 'getInTouch', label: 'Migrate GetInTouch', node: 'multiDataPatch' },
+  // `writer` їде тим самим шляхом і з тієї ж причини: це позначка адміна про
+  // спосіб звʼязку з контактом, а не властивість самого контакту.
+  { id: 'writer', label: 'Migrate Writer', node: 'multiDataPatch' },
   { id: 'profileDetails', label: 'Migrate Profiles', node: PROFILE_NODES.profileDetails },
 ]);
 
@@ -68,7 +72,13 @@ const DIRECT_FIELDS_BY_GROUP = {
   profileTechnical: PROFILE_TECHNICAL_FIELDS,
   profileDetails: PROFILE_DETAIL_FIELDS,
   getInTouch: [],
+  writer: [],
 };
+
+/** Група -> поле власника, яке вона переносить у `multiData`. */
+const OWNER_VALUE_FIELD_BY_GROUP = Object.fromEntries(
+  OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, field]),
+);
 
 /**
  * Скільки подробиць звіт тримає списком.
@@ -79,13 +89,24 @@ const DIRECT_FIELDS_BY_GROUP = {
  */
 export const MIGRATION_DETAIL_CAP = 500;
 
+/**
+ * Позначка у файлі залишків — щоб кнопка завантаження впізнала свій формат.
+ *
+ * Без неї `{ users, newUsers }` не відрізнити від експорту кореня бази, а
+ * переплутати їх дорого: у другому випадку в `users` лежала б уся колекція, і
+ * інструмент почав би міграцію з нуля поверх уже зробленого.
+ */
+export const CLEANED_COLLECTIONS_KIND = 'rtdb-migration-cleaned-collections';
+
 const emptyTargets = () => ({
   [PROFILE_NODES.matchingCards]: {},
   [PROFILE_NODES.profileDetails]: {},
   [PROFILE_NODES.profileContacts]: {},
   [PROFILE_NODES.profileWorkflow]: {},
   [PROFILE_NODES.profileTechnical]: {},
-  multiDataPatch: { getInTouch: {} },
+  // Не список літералів: поля власника перелічені в схемі, і другий перелік
+  // тут розійшовся б із нею при першому ж додаванні.
+  multiDataPatch: Object.fromEntries(OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, {}])),
 });
 
 const emptyCounters = () => ({
@@ -102,6 +123,53 @@ const emptyCounters = () => ({
   deletionsFromNewUsers: 0,
   consumedFromUsers: 0,
 });
+
+/**
+ * Ключі, які самі по собі нічого не розповідають про анкету.
+ *
+ * `userId` дублює назву самого вузла: він у ній і так є. Анкета, у якій після
+ * міграції не лишилось нічого, крім нього, — це порожня оболонка, а не дані.
+ * У звіті їй робити нічого (там питання «що не переїхало»), а в очищеному
+ * файлі — тим паче: файл замінює вузол цілком, тож відсутність такої картки в
+ * ньому і є прибиранням оболонки.
+ */
+const IDENTITY_ONLY_FIELDS = ['userId'];
+
+/** Чи лишилось в анкеті хоч щось, крім її ж ідентифікатора. */
+const hasRemainingData = profile => Object.keys(profile)
+  .some(field => !IDENTITY_ONLY_FIELDS.includes(field));
+
+/**
+ * Поле, яке міграція свідомо не переносить.
+ *
+ * `userId` тут же: він дублює назву вузла, тобто не дані, а їхня адреса. Без
+ * цього рядка він стояв би в купці «поле поза жодним allowlist» на всі 26
+ * тисяч анкет — тобто в списку рішень для людини, хоча вирішувати нема чого.
+ */
+const isExcludedField = field => NEVER_MIGRATED_FIELDS.includes(field)
+  || ACCESS_CONTROL_FIELDS.includes(field)
+  || SECRET_FIELDS.includes(field)
+  || IDENTITY_ONLY_FIELDS.includes(field);
+
+/**
+ * Поле, у якого є нове місце.
+ *
+ * Крім вузлів профілю сюди входять `publish` і `userRole` (їх забирають
+ * похідні картки) та поля власника — вони їдуть у `multiData`, а не у вузол
+ * анкети, але місце в них є, і в «невідоме» їм не місце.
+ */
+const isMappedField = field => ALL_MAPPED_FIELDS.includes(field)
+  || field === 'publish'
+  || field === 'userRole'
+  || OWNER_MULTI_DATA_FIELD_NAMES.includes(field);
+
+/** Скільки анкет колекції звелись до самого лише `userId` (або до порожнечі). */
+const countIdentityOnlyRecords = collection => Object.values(collection || {}).reduce(
+  (total, profile) => (
+    profile && typeof profile === 'object' && !hasRemainingData(profile) ? total + 1 : total
+  ),
+  0,
+);
 
 const countProfileFields = collection => {
   const stats = {};
@@ -134,10 +202,8 @@ export const buildCollectionInventory = collection => {
       field,
       count: fieldStats[field].count,
       types: fieldStats[field].types,
-      mapped: ALL_MAPPED_FIELDS.includes(field),
-      excluded: NEVER_MIGRATED_FIELDS.includes(field)
-        || ACCESS_CONTROL_FIELDS.includes(field)
-        || SECRET_FIELDS.includes(field),
+      mapped: isMappedField(field),
+      excluded: isExcludedField(field),
     })),
   };
 };
@@ -199,13 +265,13 @@ export const createMigrationState = ({ users = {}, newUsers = {} } = {}) => {
     /** Хто саме поклав значення в цільовий вузол — щоб конфлікт називав обидві сторони. */
     targetOrigins: {},
     /**
-     * `owner::profileId -> value` для `getInTouch`.
+     * `поле::owner::profileId -> value` для полів власника.
      *
      * У value-first структурі значення сидить у назві ключа, тож без цього
      * покажчика довелось би обходити всі значення власника, щоб дізнатись, чи
      * вже є ця картка. Тут це один пошук замість обходу.
      */
-    getInTouchByProfile: {},
+    ownerValueByProfile: {},
     appliedGroups: [],
     report: {
       startedAt: new Date().toISOString(),
@@ -238,9 +304,9 @@ const createPlanContext = (state, group) => ({
   group,
   node: MIGRATION_GROUPS.find(entry => entry.id === group)?.node || null,
   pendingTargets: {},
-  pendingGetInTouchByProfile: {},
+  pendingOwnerValueByProfile: {},
   writes: [],
-  getInTouchWrites: [],
+  ownerValueWrites: [],
   deletions: [],
   consumedFromUsers: [],
   consumedKeys: new Set(),
@@ -618,27 +684,34 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
   }
 };
 
-/** Кнопка GetInTouch: `owner/value/profileId = true` (§14). */
-const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) => {
-  if (!Object.prototype.hasOwnProperty.call(source, 'getInTouch')) {
+/**
+ * Кнопки GetInTouch і Writer: `owner/value/profileId = true` (§14).
+ *
+ * Обидва поля — не властивість анкети, а позначка того, хто її поставив:
+ * `getInTouch` каже, коли з контактом звʼязатись, `writer` — хто і чим із ним
+ * уже спілкувався. В анкеті вони опинились через те, що іншого місця не було;
+ * у новій структурі місце є, і воно одне на обидва.
+ */
+const planOwnerValueField = (ctx, { field, profileId, source, sourceCollection, ownerUid }) => {
+  if (!Object.prototype.hasOwnProperty.call(source, field)) {
     ctx.counters.skippedAbsent += 1;
     return;
   }
 
-  const raw = source.getInTouch;
+  const raw = source[field];
   if (!hasMeaningfulValue(raw)) {
     ctx.counters.skippedEmpty += 1;
     addWarning(ctx, {
       code: 'EMPTY_SOURCE_VALUE',
       profileId,
-      field: 'getInTouch',
+      field,
       collection: sourceCollection,
       targetGroup: ctx.group,
     });
     return;
   }
 
-  const safety = checkGetInTouchKeySafety(raw);
+  const safety = checkOwnerValueKeySafety(raw, field);
   if (!safety.safe) {
     // Лишилось тільки те, з чого ключа не буває взагалі: порожнє значення або
     // самі лише заборонені символи. Таке джерело лишається на місці.
@@ -646,7 +719,7 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
     addWarning(ctx, {
       code: safety.reason,
       profileId,
-      field: 'getInTouch',
+      field,
       collection: sourceCollection,
       targetGroup: ctx.group,
       value: safety.original,
@@ -662,7 +735,7 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
     addWarning(ctx, {
       code: safety.reason,
       profileId,
-      field: 'getInTouch',
+      field,
       collection: sourceCollection,
       targetGroup: ctx.group,
       value: safety.original,
@@ -670,20 +743,20 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
     });
   }
 
-  // Одна картка має в одного власника рівно одне значення `getInTouch`. Якщо
-  // `users` і `newUsers` кажуть різне, у value-first структурі це вилилось би
-  // у два записи під різними ключами — картка опинилась би одразу у двох
-  // списках. Тож розбіжність тут така сама, як і всюди: конфлікт, і джерело
-  // лишається на місці.
-  const profileKey = `${ownerUid}::${profileId}`;
-  const known = ctx.pendingGetInTouchByProfile[profileKey]
-    ?? ctx.state.getInTouchByProfile?.[profileKey];
+  // Одна картка має в одного власника рівно одне значення. Якщо `users` і
+  // `newUsers` кажуть різне, у value-first структурі це вилилось би у два
+  // записи під різними ключами — картка опинилась би одразу у двох списках.
+  // Тож розбіжність тут така сама, як і всюди: конфлікт, і джерело лишається
+  // на місці.
+  const profileKey = `${field}::${ownerUid}::${profileId}`;
+  const known = ctx.pendingOwnerValueByProfile[profileKey]
+    ?? ctx.state.ownerValueByProfile?.[profileKey];
 
   if (known !== undefined && known !== safety.key) {
     addConflict(ctx, {
       profileId,
       targetGroup: ctx.group,
-      field: 'getInTouch',
+      field,
       reason: 'SOURCE_CONFLICT',
       existingValue: known,
       incomingValue: safety.key,
@@ -695,14 +768,14 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
   if (known === safety.key) {
     ctx.counters.alreadyPresent += 1;
   } else {
-    ctx.getInTouchWrites.push({ ownerUid, value: safety.key, profileId });
-    ctx.pendingGetInTouchByProfile[profileKey] = safety.key;
+    ctx.ownerValueWrites.push({ field, ownerUid, value: safety.key, profileId });
+    ctx.pendingOwnerValueByProfile[profileKey] = safety.key;
     ctx.counters.derivedValuesCreated += 1;
     if (sourceCollection === 'users') ctx.counters.fieldsCopiedFromUsers += 1;
     else ctx.counters.fieldsMovedFromNewUsers += 1;
   }
 
-  planConsumption(ctx, sourceCollection, profileId, 'getInTouch');
+  planConsumption(ctx, sourceCollection, profileId, field);
 };
 
 /**
@@ -716,15 +789,18 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
 export const planMigrationGroup = (state, group, options = {}) => {
   const ctx = createPlanContext(state, group);
   const directFields = DIRECT_FIELDS_BY_GROUP[group] || [];
-  const ownerUid = String(options.getInTouchOwnerUid || '').trim();
+  const ownerValueField = OWNER_VALUE_FIELD_BY_GROUP[group] || null;
+  // Ім'я опції лишилось від часів, коли поле власника було одне; обидва
+  // приймаються, щоб виклики з `getInTouchOwnerUid` не поламались мовчки.
+  const ownerUid = String(options.ownerUid || options.getInTouchOwnerUid || '').trim();
 
-  if (group === 'getInTouch' && !ownerUid) {
+  if (ownerValueField && !ownerUid) {
     return {
       group,
       node: ctx.node,
-      blocked: 'MISSING_GET_IN_TOUCH_OWNER',
+      blocked: 'MISSING_OWNER_UID',
       writes: [],
-      getInTouchWrites: [],
+      ownerValueWrites: [],
       deletions: [],
       consumedFromUsers: [],
       conflicts: [],
@@ -774,8 +850,14 @@ export const planMigrationGroup = (state, group, options = {}) => {
     passes.forEach(([sourceCollection, source, derivationSource]) => {
       if (!source || typeof source !== 'object') return;
 
-      if (group === 'getInTouch') {
-        planGetInTouch(ctx, { profileId, source, sourceCollection, ownerUid });
+      if (ownerValueField) {
+        planOwnerValueField(ctx, {
+          field: ownerValueField,
+          profileId,
+          source,
+          sourceCollection,
+          ownerUid,
+        });
         return;
       }
 
@@ -796,7 +878,7 @@ export const planMigrationGroup = (state, group, options = {}) => {
     node: ctx.node,
     blocked: null,
     writes: ctx.writes,
-    getInTouchWrites: ctx.getInTouchWrites,
+    ownerValueWrites: ctx.ownerValueWrites,
     deletions: ctx.deletions,
     consumedFromUsers: ctx.consumedFromUsers,
     conflicts: ctx.conflicts,
@@ -830,11 +912,8 @@ const buildUnmappedFieldStats = workingNewUsers => {
     if (!profile || typeof profile !== 'object') return;
     Object.keys(profile).forEach(field => {
       let bucket = 'unknown';
-      if (NEVER_MIGRATED_FIELDS.includes(field)
-        || ACCESS_CONTROL_FIELDS.includes(field)
-        || SECRET_FIELDS.includes(field)) bucket = 'excluded';
-      else if (ALL_MAPPED_FIELDS.includes(field)
-        || field === 'publish' || field === 'userRole' || field === 'getInTouch') bucket = 'mapped';
+      if (isExcludedField(field)) bucket = 'excluded';
+      else if (isMappedField(field)) bucket = 'mapped';
       stats[bucket][field] = (stats[bucket][field] || 0) + 1;
     });
   });
@@ -861,12 +940,12 @@ export const applyMigrationPlan = (state, plan) => {
     rememberOrigin(state, node, profileId, field, origin);
   });
 
-  plan.getInTouchWrites.forEach(({ ownerUid, value, profileId }) => {
-    const root = state.targets.multiDataPatch.getInTouch;
+  (plan.ownerValueWrites || []).forEach(({ field, ownerUid, value, profileId }) => {
+    const root = state.targets.multiDataPatch[field];
     if (!root[ownerUid]) root[ownerUid] = {};
     if (!root[ownerUid][value]) root[ownerUid][value] = {};
     root[ownerUid][value][profileId] = true;
-    state.getInTouchByProfile[`${ownerUid}::${profileId}`] = value;
+    state.ownerValueByProfile[`${field}::${ownerUid}::${profileId}`] = value;
   });
 
   plan.deletions.forEach(({ profileId, field }) => {
@@ -929,7 +1008,9 @@ export const buildCombinedRootPatch = state => ({
   [PROFILE_NODES.profileContacts]: state.targets[PROFILE_NODES.profileContacts],
   [PROFILE_NODES.profileWorkflow]: state.targets[PROFILE_NODES.profileWorkflow],
   [PROFILE_NODES.profileTechnical]: state.targets[PROFILE_NODES.profileTechnical],
-  multiData: { getInTouch: state.targets.multiDataPatch.getInTouch },
+  multiData: Object.fromEntries(
+    OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, state.targets.multiDataPatch[field]]),
+  ),
 });
 
 /** Звіт із підсумком по залишку — те, що адмін читає замість здогадок. */
@@ -940,10 +1021,22 @@ export const buildMigrationAudit = state => ({
   remainingNewUsers: {
     recordCount: Object.keys(state.workingNewUsers).length,
     keyCount: countRemainingKeys(state.workingNewUsers),
+    identityOnlyRecordCount: countIdentityOnlyRecords(state.workingNewUsers),
   },
   remainingUsers: {
     recordCount: Object.keys(state.remainingUsers).length,
     keyCount: countRemainingKeys(state.remainingUsers),
+    identityOnlyRecordCount: countIdentityOnlyRecords(state.remainingUsers),
+  },
+  /*
+   * Розкладка залишку по обох колекціях, порахована тут і зараз.
+   * `report.unmappedFieldStats` каже те саме лише про `newUsers` і лише після
+   * першого `Apply` — а питання «що ще не переїхало» в адміна одне на дві
+   * колекції, і ставить він його з першої ж хвилини.
+   */
+  remainderFieldStats: {
+    users: buildUnmappedFieldStats(state.remainingUsers),
+    newUsers: buildUnmappedFieldStats(state.workingNewUsers),
   },
   detailCap: MIGRATION_DETAIL_CAP,
 });
@@ -951,9 +1044,10 @@ export const buildMigrationAudit = state => ({
 /**
  * Залишок колекції — звіт, а не патч.
  *
- * Порожні анкети звідси прибрані: анкета, з якої забрали все, — це успіх, і в
- * списку «що не переїхало» їй робити нічого. Значення секретів заміщені
- * позначкою: побачити треба, що поле лишилось, а не яке воно.
+ * Порожні анкети звідси прибрані — і ті, від яких лишився сам `userId`, теж:
+ * анкета, з якої забрали все, — це успіх, і в списку «що не переїхало» їй
+ * робити нічого. Значення секретів заміщені позначкою: побачити треба, що поле
+ * лишилось, а не яке воно.
  */
 const REDACTED = '[не показано]';
 
@@ -976,9 +1070,9 @@ const buildRemainderReport = collection => {
       if (profile !== undefined) out[profileId] = profile;
       return;
     }
-    const fields = Object.keys(profile);
-    if (!fields.length) return;
+    if (!hasRemainingData(profile)) return;
     const copy = {};
+    const fields = Object.keys(profile);
     fields.forEach(field => {
       if (SECRET_FIELDS.includes(field)) copy[field] = REDACTED;
       else if (BULKY_REPORT_FIELDS.includes(field)) copy[field] = OMITTED;
@@ -1013,12 +1107,16 @@ export const buildRemaindersExport = state => {
       users: {
         sourceRecordCount: Object.keys(state.originalUsers).length,
         remainingRecordCount: Object.keys(users).length,
+        // Скільки анкет звелись до порожньої оболонки. Без цього числа різниця
+        // між «було 26 тисяч» і «лишилось 900» читалась би як втрата даних.
+        identityOnlyRecordCount: countIdentityOnlyRecords(state.remainingUsers),
         remainingKeyCount: countRemainingKeys(state.remainingUsers),
         unmappedFieldStats: buildUnmappedFieldStats(state.remainingUsers),
       },
       newUsers: {
         sourceRecordCount: Object.keys(state.originalNewUsers).length,
         remainingRecordCount: Object.keys(newUsers).length,
+        identityOnlyRecordCount: countIdentityOnlyRecords(state.workingNewUsers),
         remainingKeyCount: countRemainingKeys(state.workingNewUsers),
         // Рахується тут і зараз, а не береться зі звіту: у звіті ця розкладка
         // зʼявляється лише після першого `Apply`, тож у файлі, викачаному після
@@ -1032,8 +1130,72 @@ export const buildRemaindersExport = state => {
   };
 };
 
-export const buildCleanedNewUsers = state => deepClone(state.workingNewUsers);
+/**
+ * Колекція без перенесених полів — те, що заливають назад у базу і що потім
+ * можна знову завантажити в цей самий інструмент.
+ *
+ * Від звіту вона відрізняється двома речами: значення тут справжні (звіт
+ * заміщає паролі й обрізає `attitude`, і залитий у базу він стер би людям
+ * дані), а порожні оболонки прибрані — анкета, від якої лишився сам `userId`,
+ * не картка, і возити її далі нема сенсу.
+ */
+const buildCleanedCollection = collection => {
+  const out = {};
+  Object.entries(collection || {}).forEach(([profileId, profile]) => {
+    if (!profile || typeof profile !== 'object') {
+      if (profile !== undefined) out[profileId] = profile;
+      return;
+    }
+    if (!hasRemainingData(profile)) return;
+    out[profileId] = deepClone(profile);
+  });
+  return out;
+};
+
+export const buildCleanedNewUsers = state => buildCleanedCollection(state.workingNewUsers);
+
+/**
+ * Те саме для `users` — але це не файл на імпорт.
+ *
+ * `/users` читає мобільний застосунок, і заливати в нього залишок не можна:
+ * там лежать поля, які міграція свідомо не чіпає. Тут він потрібен для іншого
+ * — щоб наступний прогін інструмента почався з того місця, де скінчився
+ * попередній, а не з повного вихідного файлу.
+ */
+export const buildCleanedUsers = state => buildCleanedCollection(state.remainingUsers);
+
+/**
+ * Обидві колекції одним файлом — саме тим, який інструмент уміє прочитати
+ * назад.
+ *
+ * Міграція не робиться за один захід: частину полів забирає конфлікт, частину
+ * — рішення людини, і між заходами стан має десь жити. Живе він тут: файл
+ * несе рівно те, що ще не переїхало, у справжніх значеннях, і завантажується
+ * однією кнопкою замість двох окремих файлів.
+ */
+export const buildCleanedCollections = state => ({
+  kind: CLEANED_COLLECTIONS_KIND,
+  generatedAt: new Date().toISOString(),
+  appliedGroups: [...state.appliedGroups],
+  note: 'Залишок обох колекцій у справжніх значеннях. `newUsers` звідси можна залити в базу; `users` — ні, він тільки для повторного завантаження в інструмент.',
+  summary: {
+    users: {
+      recordCount: Object.keys(state.remainingUsers).length,
+      keptRecordCount: Object.keys(buildCleanedUsers(state)).length,
+      keyCount: countRemainingKeys(state.remainingUsers),
+    },
+    newUsers: {
+      recordCount: Object.keys(state.workingNewUsers).length,
+      keptRecordCount: Object.keys(buildCleanedNewUsers(state)).length,
+      keyCount: countRemainingKeys(state.workingNewUsers),
+    },
+  },
+  users: buildCleanedUsers(state),
+  newUsers: buildCleanedNewUsers(state),
+});
 
 export const getMigrationTarget = (state, node) => deepClone(state.targets[node]);
 
-export const getGetInTouchPatch = state => deepClone(state.targets.multiDataPatch.getInTouch);
+export const getOwnerValuePatch = (state, field) => deepClone(state.targets.multiDataPatch[field]);
+
+export const getGetInTouchPatch = state => getOwnerValuePatch(state, 'getInTouch');

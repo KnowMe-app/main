@@ -288,6 +288,34 @@ export const SECRET_FIELDS = Object.freeze(['password']);
 /** Персональні дані власника щодо чужих карток — окремий вузол `multiData`. */
 export const MULTI_DATA_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
 
+/**
+ * `writer` — теж не поле анкети, а позначка того, хто з нею спілкувався.
+ *
+ * У старих даних воно лежить в анкеті рядком на кшталт «Ik, » або «IgTT, » —
+ * тобто ініціалами адмінів, які писали цьому контакту, і яким саме способом.
+ * Анкети це не описує: та сама жінка для одного адміна «Ik», а для іншого — не
+ * записана взагалі. Тож живе воно там само, де `getInTouch`: під власником,
+ * значенням у назві ключа.
+ */
+export const MULTI_DATA_WRITER_PATH = 'multiData/writer';
+
+/**
+ * Поля, які належать не анкеті, а тому, хто їх поставив.
+ *
+ * Обидва влаштовані однаково — `{path}/{ownerId}/{значення}/{profileId}: true`
+ * — і саме тому перелічені разом: міграція, правила бази і runtime мають
+ * бачити один список, а не три схожі.
+ */
+export const OWNER_MULTI_DATA_FIELDS = Object.freeze([
+  Object.freeze({ field: 'getInTouch', path: MULTI_DATA_GET_IN_TOUCH_PATH }),
+  Object.freeze({ field: 'writer', path: MULTI_DATA_WRITER_PATH }),
+]);
+
+/** Самі назви полів — там, де шлях не потрібен. */
+export const OWNER_MULTI_DATA_FIELD_NAMES = Object.freeze(
+  OWNER_MULTI_DATA_FIELDS.map(entry => entry.field),
+);
+
 /** Поле, за яким і сортується, і фільтрується стрічка. */
 export const FEED_DATE_FIELD = 'feedDate';
 

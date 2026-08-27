@@ -343,11 +343,30 @@ const truncateToBytes = (text, limit) => {
 };
 
 /**
- * Значення `getInTouch`, приведене до придатного ключа.
+ * Коди попереджень для кожного поля, яке живе під власником.
+ *
+ * Поля два (`getInTouch` і `writer`), правило приведення до ключа в них одне, а
+ * коди різні — інакше у звіті не було б видно, що саме довелось правити.
+ */
+const OWNER_VALUE_KEY_CODES = Object.freeze({
+  getInTouch: Object.freeze({
+    empty: 'EMPTY_GET_IN_TOUCH_VALUE',
+    unsafe: 'UNSAFE_GET_IN_TOUCH_KEY',
+    tooLong: 'GET_IN_TOUCH_KEY_TOO_LONG',
+  }),
+  writer: Object.freeze({
+    empty: 'EMPTY_WRITER_VALUE',
+    unsafe: 'UNSAFE_WRITER_KEY',
+    tooLong: 'WRITER_KEY_TOO_LONG',
+  }),
+});
+
+/**
+ * Значення власника (`getInTouch`, `writer`), приведене до придатного ключа.
  *
  * Legacy-значення не «виправляються» по суті: `2099-99-99` лишається
- * `2099-99-99`, а текстова нотатка — нотаткою, бо саме за ними адмін їх
- * упізнає. Правиться тільки те, через що база відмовила б у записі:
+ * `2099-99-99`, а «Ik, » — рівно тим, чим його записав адмін, бо саме за ними
+ * він їх упізнає. Правиться тільки те, через що база відмовила б у записі:
  * заборонені в ключі символи (`.#$/[]` і контрольні) стають дефісом, задовгий
  * ключ обрізається по межі символа.
  *
@@ -356,9 +375,10 @@ const truncateToBytes = (text, limit) => {
  * вийшло. Порожнє значення ключем не стає ніяк — з нічого ключа не буває, і
  * таке джерело лишається на місці.
  */
-export const checkGetInTouchKeySafety = value => {
+export const checkOwnerValueKeySafety = (value, field = 'getInTouch') => {
+  const codes = OWNER_VALUE_KEY_CODES[field] || OWNER_VALUE_KEY_CODES.getInTouch;
   const text = displayString(value);
-  if (!text) return { safe: false, reason: 'EMPTY_GET_IN_TOUCH_VALUE' };
+  if (!text) return { safe: false, reason: codes.empty };
 
   let key = text;
   const reasons = [];
@@ -367,20 +387,23 @@ export const checkGetInTouchKeySafety = value => {
     key = key
       .replace(FORBIDDEN_KEY_CHARACTERS_GLOBAL, KEY_REPLACEMENT_CHARACTER)
       .replace(CONTROL_CHARACTERS_GLOBAL, KEY_REPLACEMENT_CHARACTER);
-    reasons.push('UNSAFE_GET_IN_TOUCH_KEY');
+    reasons.push(codes.unsafe);
   }
 
   if (utf8Length(key) > MAX_KEY_BYTES) {
     key = truncateToBytes(key, MAX_KEY_BYTES);
-    reasons.push('GET_IN_TOUCH_KEY_TOO_LONG');
+    reasons.push(codes.tooLong);
   }
 
   // Із самих лише заборонених символів ключа не збереш: замінники нічого не
   // розрізняють, і всі такі значення злилися б в один ключ.
   if ([...key].every(character => character === KEY_REPLACEMENT_CHARACTER)) {
-    return { safe: false, original: text, reason: 'EMPTY_GET_IN_TOUCH_VALUE' };
+    return { safe: false, original: text, reason: codes.empty };
   }
 
   if (!reasons.length) return { safe: true, key, original: text, changed: false };
   return { safe: true, key, original: text, changed: true, reason: reasons[0], reasons };
 };
+
+/** Те саме для `getInTouch` — ім'я, під яким його кличуть решта модулів. */
+export const checkGetInTouchKeySafety = value => checkOwnerValueKeySafety(value, 'getInTouch');
