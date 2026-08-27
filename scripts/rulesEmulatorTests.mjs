@@ -92,6 +92,9 @@ await testEnv.withSecurityRulesDisabled(async context => {
   await set(ref(db, 'multiData/writer'), {
     [SUPERADMIN]: { 'Ik,': { [CARD]: true } },
   });
+  await set(ref(db, 'multiData/stimulationSchedule'), {
+    [SUPERADMIN]: { [CARD]: { startDate: '2026-09-01' } },
+  });
 });
 
 const db = uid => testEnv.authenticatedContext(uid).database();
@@ -241,6 +244,29 @@ await it('стороння не читає чужих позначок', () =>
 
 await it('значенням може бути тільки true', () =>
   assertFails(set(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), 'yes')));
+
+describe('multiData/stimulationSchedule — той самий власник, але значення значенням');
+
+await it('власник читає власні графіки', () =>
+  assertSucceeds(get(ref(db(SUPERADMIN), `multiData/stimulationSchedule/${SUPERADMIN}`))));
+
+await it('власник пише графік під анкету', () =>
+  assertSucceeds(set(
+    ref(db(SUPERADMIN), `multiData/stimulationSchedule/${SUPERADMIN}/${CARD}`),
+    { startDate: '2026-10-01', rows: [{ date: '2026-10-01' }] },
+  )));
+
+await it('делегований читач читає графіки власника', () =>
+  assertSucceeds(get(ref(db(DELEGATED_READER), `multiData/stimulationSchedule/${SUPERADMIN}`))));
+
+await it('делегований читач НЕ пише у графіки власника', () =>
+  assertFails(set(
+    ref(db(DELEGATED_READER), `multiData/stimulationSchedule/${SUPERADMIN}/${CARD}`),
+    { startDate: '2026-10-01' },
+  )));
+
+await it('стороння не читає чужих графіків', () =>
+  assertFails(get(ref(db(OUTSIDER), `multiData/stimulationSchedule/${SUPERADMIN}`))));
 
 describe('matchingCards — що взагалі можна покласти в картку');
 

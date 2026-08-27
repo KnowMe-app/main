@@ -259,6 +259,14 @@
           }
         }
       },
+      "stimulationSchedule": {
+        "$ownerId": {
+          ".read": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true || root.child('newUsers').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true)",
+          "$userId": {
+            ".write": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
+          }
+        }
+      },
       "profileMutations": {
         ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('users').child(auth.uid).child('canCreateProfiles').val() == true)",
         "$creatorUid": {

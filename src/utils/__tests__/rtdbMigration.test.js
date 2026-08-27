@@ -13,6 +13,7 @@ import {
   buildRemaindersExport,
   buildCleanedUsers,
   buildCleanedCollections,
+  getOwnerPayloadPatch,
 } from '../rtdbMigration';
 import {
   deriveSurnameShort,
@@ -383,6 +384,43 @@ describe('Matching Cards', () => {
     expect(card(state, 'P1')).not.toHaveProperty('feedDate');
   });
 
+  it('бере область і з `state` — це та сама локація під старою назвою', () => {
+    const state = stateWith({}, { P1: { state: 'Донецкая область' }, P2: { state: 'Бавария' } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(cardFields(state, 'P1')).toEqual({ region: 'Донецкая область' });
+    expect(cardFields(state, 'P2')).toEqual({ region: 'Бавария' });
+    // Старий ключ поїхав разом зі значенням: другого місця для області немає.
+    expect(state.workingNewUsers.P1).toEqual({});
+  });
+
+  it('канонічний `region` виграє, а зайвий `state` лишається на місці', () => {
+    // Забирати обидва ключі не можна: у картку поїхало значення лише одного, і
+    // друге зникло б, так і не переїхавши. Тож воно лишається в залишку —
+    // видимою розбіжністю, з якою розбереться людина.
+    const state = stateWith({}, { P1: { region: 'Київська область', state: 'Донецкая область' } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(cardFields(state, 'P1')).toEqual({ region: 'Київська область' });
+    expect(state.workingNewUsers.P1).toEqual({ state: 'Донецкая область' });
+  });
+
+  it('порожній `region` не заступає дорогу непорожньому `state`', () => {
+    const state = stateWith({}, { P1: { region: '', state: 'Житомирська область' } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(cardFields(state, 'P1')).toEqual({ region: 'Житомирська область' });
+    expect(state.workingNewUsers.P1).toEqual({ region: '' });
+  });
+
+  it('`state` не рахується полем, з яким має розбиратись людина', () => {
+    const { mapped, unknown } = buildRemaindersExport(stateWith({}, { P1: { state: 'Бавария' } }))
+      .summary.newUsers.unmappedFieldStats;
+
+    expect(mapped).toEqual({ state: 1 });
+    expect(unknown).toEqual({});
+  });
+
   it('ніколи не кладе в картку заборонених ключів', () => {
     const state = stateWith({
       P1: {
@@ -731,6 +769,92 @@ describe('однаковий id у users та newUsers', () => {
   });
 });
 
+describe('Stimulation Schedule', () => {
+  const SCHEDULE = { startDate: '2026-09-01', rows: [{ date: '2026-09-01', values: { menopur: '150' } }] };
+
+  it('без owner UID нічого не робить', () => {
+    const state = stateWith({}, { P1: { stimulationSchedule: SCHEDULE } });
+    const plan = planMigrationGroup(state, 'stimulationSchedule');
+
+    expect(plan.blocked).toBe('MISSING_OWNER_UID');
+    applyMigrationPlan(state, plan);
+    expect(state.workingNewUsers.P1).toEqual({ stimulationSchedule: SCHEDULE });
+  });
+
+  it('кладе графік під власника цілим значенням, а не назвою ключа', () => {
+    // Графік — це таблиця днів і призначень. У ключі їй не поміститись, та й
+    // не треба: під власником анкета вже одна, і значення лягає значенням.
+    const state = stateWith({}, { P1: { stimulationSchedule: SCHEDULE }, P2: { stimulationSchedule: 'з 1 вересня' } });
+    runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')).toEqual({
+      [OWNER]: { P1: SCHEDULE, P2: 'з 1 вересня' },
+    });
+    expect(state.workingNewUsers.P1).toEqual({});
+    expect(state.workingNewUsers.P2).toEqual({});
+  });
+
+  it('порожній графік не переноситься і не зникає', () => {
+    const state = stateWith({}, { P1: { stimulationSchedule: '' } });
+    const plan = runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')).toEqual({});
+    expect(state.workingNewUsers.P1).toEqual({ stimulationSchedule: '' });
+    expect(plan.warningsByCode.EMPTY_SOURCE_VALUE).toBe(1);
+  });
+
+  it('різні графіки у двох колекціях — це конфлікт, а не мовчазний перезапис', () => {
+    const state = stateWith(
+      { P1: { stimulationSchedule: SCHEDULE } },
+      { P1: { stimulationSchedule: { startDate: '2026-10-01' } } },
+    );
+    const plan = runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')[OWNER].P1).toEqual(SCHEDULE);
+    expect(state.workingNewUsers.P1).toEqual({ stimulationSchedule: { startDate: '2026-10-01' } });
+    expect(plan.conflicts).toHaveLength(1);
+  });
+
+  it('однаковий графік в обох колекціях чистить обидва джерела', () => {
+    const state = stateWith(
+      { P1: { stimulationSchedule: SCHEDULE } },
+      { P1: { stimulationSchedule: { ...SCHEDULE } } },
+    );
+    const plan = runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    expect(plan.conflicts).toHaveLength(0);
+    expect(state.workingNewUsers.P1).toEqual({});
+  });
+
+  it('повторний запуск нічого не додає', () => {
+    const state = stateWith({}, { P1: { stimulationSchedule: SCHEDULE } });
+    runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+    const second = runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    expect(second.ownerPayloadWrites).toHaveLength(0);
+    expect(second.deletions).toHaveLength(0);
+    expect(getOwnerPayloadPatch(state, 'stimulationSchedule')[OWNER]).toEqual({ P1: SCHEDULE });
+  });
+
+  it('графік їде в патч кореня разом із рештою multiData', () => {
+    const state = stateWith({}, { P1: { stimulationSchedule: SCHEDULE } });
+    runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    expect(buildCombinedRootPatch(state).multiData.stimulationSchedule)
+      .toEqual({ [OWNER]: { P1: SCHEDULE } });
+  });
+
+  it('патч — копія, а не посилання на робочий стан', () => {
+    const state = stateWith({}, { P1: { stimulationSchedule: SCHEDULE } });
+    runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    const patch = getOwnerPayloadPatch(state, 'stimulationSchedule');
+    patch[OWNER].P1.rows.push({ date: 'зайве' });
+
+    expect(state.targets.multiDataPayload.stimulationSchedule[OWNER].P1.rows).toHaveLength(1);
+  });
+});
+
 describe('порядок кнопок', () => {
   // Кнопок шість, вони поруч, і всі однаково активні. Порядок, у якому їх
   // «задумано натискати», — це коментар у коді, а не механізм, тож результат
@@ -990,16 +1114,18 @@ describe('рештки обох колекцій', () => {
 
   it('не показує значення пароля навіть у залишку', () => {
     const state = createMigrationState({
-      users: { P1: { password: 'hunter2' } },
-      newUsers: { N1: { password: 'hunter2' } },
+      users: { P1: { password: 'hunter2', хвіст: 1 } },
+      newUsers: { N1: { password: 'hunter2', хвіст: 1 } },
     });
 
     const dump = JSON.stringify(buildRemaindersExport(state));
     expect(dump).not.toContain('hunter2');
     expect(buildRemainingUsers(state).P1.password).toBe('[не показано]');
-    // А от файл на імпорт мусить нести справжнє значення: він замінює вузол
-    // цілком, і заміщена позначка стерла б людям паролі.
-    expect(buildCleanedNewUsers(state).N1.password).toBe('hunter2');
+    // У файлі на імпорт пароля немає взагалі — ані справжнього, ані
+    // заміщеного. Пароль у даних — інцидент, і возити його з файлу у файл
+    // означало б множити копії того, чого там бути не мало.
+    expect(buildCleanedNewUsers(state).N1).toEqual({ хвіст: 1 });
+    expect(JSON.stringify(buildCleanedCollections(state))).not.toContain('hunter2');
   });
 
   it('віддає обидві колекції одним файлом із підсумком', () => {
@@ -1123,7 +1249,7 @@ describe('звіт і експорт', () => {
       'matchingCards', 'profileDetails', 'profileContacts', 'profileWorkflow', 'profileTechnical', 'multiData',
     ]);
     expect(patch).not.toHaveProperty('users');
-    expect(patch.multiData).toEqual({ getInTouch: {}, writer: {} });
+    expect(patch.multiData).toEqual({ getInTouch: {}, writer: {}, stimulationSchedule: {} });
   });
 
   it('рахує залишок у workingNewUsers після кожної групи', () => {
@@ -1264,8 +1390,9 @@ describe('очищені файли', () => {
     });
     runMigrationGroup(state, 'matchingCards');
 
-    // Оболонка з самим `userId` — це успіх міграції, а не залишок.
-    expect(buildCleanedNewUsers(state)).toEqual({ N2: { userId: 'N2', хвіст: 1 } });
+    // Оболонка з самим `userId` — це успіх міграції, а не залишок. У самого
+    // `userId` в очищеному файлі місця теж немає: він дублює назву вузла.
+    expect(buildCleanedNewUsers(state)).toEqual({ N2: { хвіст: 1 } });
     expect(buildRemainingNewUsers(state)).toEqual({ N2: { userId: 'N2', хвіст: 1 } });
     // У самому робочому стані запис лишається — інакше повторний прогін
     // вважав би, що анкети не існує взагалі.
@@ -1286,19 +1413,106 @@ describe('очищені файли', () => {
   });
 
   it('віддає обидві колекції справжніми значеннями — на відміну від звіту', () => {
+    const attitude = [{ like: [{ reason: 'perfect', status: true }], userId: 'X' }];
     const state = createMigrationState({
-      users: { P1: { password: 'hunter2', хвіст: 1 } },
-      newUsers: { N1: { password: 'hunter2', хвіст: 2 } },
+      users: { P1: { attitude, myComment: 'подзвонити' } },
+      newUsers: { N1: { photos: ['https://p'], хвіст: 2 } },
     });
 
     const cleaned = buildCleanedCollections(state);
 
     expect(cleaned.kind).toBe(CLEANED_COLLECTIONS_KIND);
-    // Файл читає інструмент, а не людина: заміщене значення повернулось би в
-    // базу замість справжнього.
-    expect(cleaned.users.P1.password).toBe('hunter2');
-    expect(cleaned.newUsers.N1.password).toBe('hunter2');
+    // Звіт заміщає `attitude` позначкою, а файл — просто не везе його далі.
+    // Решта значень тут справжні: файл читає інструмент, а не людина, і
+    // обрізане значення повернулось би в базу замість справжнього.
+    expect(cleaned.newUsers.N1).toEqual({ photos: ['https://p'], хвіст: 2 });
+    expect(cleaned.users.P1).toEqual({ myComment: 'подзвонити' });
     expect(buildCleanedUsers(state)).toEqual(cleaned.users);
+  });
+
+  it('не везе далі шуму, який ніколи нікуди не поїде', () => {
+    // Це рівно те, з чого на бойових даних складається залишок: мертві
+    // списки, журнал реакцій, розміри екрана, кеш-мітки і адреса запису.
+    const state = createMigrationState({
+      users: {},
+      newUsers: {
+        N1: {
+          userId: 'N1',
+          id: 'N1',
+          collection: 'newUsers',
+          __sourceCollection: 'users',
+          blackList: ['X'],
+          whiteList: ['X'],
+          attitude: [{ like: [{ status: true }] }],
+          deviceWidth: 360,
+          deviceHeight: 718,
+          deviceResize: 0.8,
+          photo: 'https://p',
+          cachedAt: 1770456647255,
+          cacheVersion: 3,
+          updatedAt: 1770456647255,
+          login: '+380',
+          password: 'hunter2',
+          хвіст: 1,
+        },
+      },
+    });
+
+    expect(buildCleanedNewUsers(state)).toEqual({ N1: { хвіст: 1 } });
+  });
+
+  it('ключ із порожнім рядком — це не дані', () => {
+    const state = createMigrationState({
+      users: {},
+      newUsers: {
+        N1: { name: '', writer: '  ', photos: [], contacts: { phone: '' }, хвіст: 1 },
+        N2: { name: '', telegram: '' },
+      },
+    });
+
+    // Порожнє значення нікуди не переїхало і не переїде: переносити нема чого,
+    // а тягнути ключ із файлу у файл лише заради самого ключа — теж.
+    expect(buildCleanedNewUsers(state)).toEqual({ N1: { хвіст: 1 } });
+    // Анкета з самих порожніх ключів зникає цілим записом.
+    expect(buildCleanedNewUsers(state).N2).toBeUndefined();
+  });
+
+  it('права доступу лишаються навіть порожніми — іншого місця в них немає', () => {
+    // Ці поля в нові вузли не їдуть навмисно, тож колекція — єдине місце, де
+    // вони живуть. Прибрати їх разом із рештою порожніх ключів означало б
+    // зняти людям доступ залитим назад файлом.
+    const state = createMigrationState({
+      users: {},
+      newUsers: {
+        N1: {
+          accessLevel: 'matching:view&write',
+          canCreateProfiles: true,
+          multiDataAccessUserIds: { OWNER_UID: true },
+          additionalAccessRules: '',
+        },
+      },
+    });
+
+    expect(buildCleanedNewUsers(state).N1).toEqual({
+      accessLevel: 'matching:view&write',
+      canCreateProfiles: true,
+      multiDataAccessUserIds: { OWNER_UID: true },
+      additionalAccessRules: '',
+    });
+  });
+
+  it('каже, що саме прибрало і скільки разів', () => {
+    // Без цього рядка «поле поїхало у свій вузол» і «поле викинули як шум»
+    // виглядали б однаково: обидва зникають із файлу.
+    const state = createMigrationState({
+      users: { P1: { cachedAt: 1, хвіст: 1 } },
+      newUsers: { N1: { userId: 'N1', photo: '', хвіст: 1 }, N2: { userId: 'N2', photo: '', хвіст: 2 } },
+    });
+
+    const { summary } = buildCleanedCollections(state);
+
+    expect(summary.newUsers.droppedFields).toEqual({ userId: 2, photo: 2 });
+    expect(summary.users.droppedFields).toEqual({ cachedAt: 1 });
   });
 
   it('завантажений назад, продовжує з того місця, де скінчили', () => {
