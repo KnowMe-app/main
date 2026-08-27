@@ -658,12 +658,28 @@ export const planMigrationGroup = (state, group, options = {}) => {
   profileIds.forEach(profileId => {
     ctx.counters.profilesScanned += 1;
 
+    /**
+     * Пряме поле читається з робочої копії, похідне — з початкової.
+     *
+     * Різниця не косметична. Пряме поле картка забирає собі, тож робоча копія
+     * і є відповіддю на питання «чи воно ще тут». А `surname`, `blood`,
+     * `photos`, `lastLogin*` картка тільки читає: володіють ними `profileDetails`
+     * і `profileTechnical`, і саме вони їх видаляють. Якби похідні читались із
+     * робочої копії, порядок натискання кнопок міняв би результат: після
+     * «Migrate Profiles» стрічка лишилась би без `surnameShort`, `rh`,
+     * `bloodGroup` і аватарів — мовчки, бо джерело вже поїхало у свій вузол і
+     * скаржитись нема на що.
+     *
+     * Початкова копія цього не ламає: похідні не видаляють нічого, чим не
+     * володіють, а повторне виведення того самого значення впирається в
+     * `already` і нових записів не робить.
+     */
     const passes = [
-      ['users', state.originalUsers?.[profileId]],
-      ['newUsers', state.workingNewUsers?.[profileId]],
+      ['users', state.originalUsers?.[profileId], state.originalUsers?.[profileId]],
+      ['newUsers', state.workingNewUsers?.[profileId], state.originalNewUsers?.[profileId]],
     ];
 
-    passes.forEach(([sourceCollection, source]) => {
+    passes.forEach(([sourceCollection, source, derivationSource]) => {
       if (!source || typeof source !== 'object') return;
 
       if (group === 'getInTouch') {
@@ -674,7 +690,11 @@ export const planMigrationGroup = (state, group, options = {}) => {
       directFields.forEach(field => planDirectField(ctx, { profileId, field, source, sourceCollection }));
 
       if (group === 'matchingCards') {
-        planMatchingDerivedFields(ctx, { profileId, source, sourceCollection });
+        planMatchingDerivedFields(ctx, {
+          profileId,
+          source: derivationSource && typeof derivationSource === 'object' ? derivationSource : source,
+          sourceCollection,
+        });
       }
     });
   });
@@ -894,7 +914,11 @@ export const buildRemaindersExport = state => {
         sourceRecordCount: Object.keys(state.originalNewUsers).length,
         remainingRecordCount: Object.keys(newUsers).length,
         remainingKeyCount: countRemainingKeys(state.workingNewUsers),
-        unmappedFieldStats: state.report.unmappedFieldStats,
+        // Рахується тут і зараз, а не береться зі звіту: у звіті ця розкладка
+        // зʼявляється лише після першого `Apply`, тож у файлі, викачаному після
+        // самих лише Preview, на місці найбільшої колекції стояла порожнеча —
+        // при тому, що поруч чесно написано 192 тисячі ключів.
+        unmappedFieldStats: buildUnmappedFieldStats(state.workingNewUsers),
       },
     },
     users,

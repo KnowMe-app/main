@@ -560,6 +560,73 @@ describe('однаковий id у users та newUsers', () => {
   });
 });
 
+describe('порядок кнопок', () => {
+  // Кнопок шість, вони поруч, і всі однаково активні. Порядок, у якому їх
+  // «задумано натискати», — це коментар у коді, а не механізм, тож результат
+  // не має від нього залежати. Найдорожчий випадок — «Migrate Profiles»
+  // першою: вона володіє `surname`, `blood` і `photos`, тобто джерелами, з
+  // яких стрічка виводить ініціал, резус, групу крові й аватар.
+  const SEED = {
+    P1: {
+      name: 'Оля',
+      surname: 'Коваленко',
+      blood: '2+',
+      photos: ['https://p1', 'https://p2'],
+      userRole: 'sm',
+      phone: '+380',
+      lastAction: 'дзвінок',
+      lastLogin2: '2026-08-25',
+      getInTouch: '2026-09-01',
+      education: 'вища',
+    },
+  };
+
+  const ALL = ['matchingCards', 'profileContacts', 'profileWorkflow', 'profileTechnical', 'getInTouch', 'profileDetails'];
+
+  const runOrder = order => {
+    const state = createMigrationState({ users: {}, newUsers: JSON.parse(JSON.stringify(SEED)) });
+    order.forEach(group => runMigrationGroup(state, group, { getInTouchOwnerUid: OWNER }));
+    return state;
+  };
+
+  it('картка стрічки не залежить від того, коли натиснули Profiles', () => {
+    const expected = {
+      name: 'Оля',
+      surnameShort: 'К.',
+      rh: '+',
+      bloodGroup: '2',
+      avatar: 'https://p1',
+      role: 'sm',
+    };
+
+    expect(card(runOrder(ALL), 'P1')).toEqual(expected);
+    expect(card(runOrder(['profileDetails', ...ALL.filter(g => g !== 'profileDetails')]), 'P1')).toEqual(expected);
+    expect(card(runOrder([...ALL].reverse()), 'P1')).toEqual(expected);
+  });
+
+  it('зворотний порядок дає той самий результат у всіх вузлах і той самий залишок', () => {
+    const forward = runOrder(ALL);
+    const backward = runOrder([...ALL].reverse());
+
+    expect(buildCombinedRootPatch(backward)).toEqual(buildCombinedRootPatch(forward));
+    expect(buildCleanedNewUsers(backward)).toEqual(buildCleanedNewUsers(forward));
+  });
+
+  it('похідні не видаляють нічого, чим не володіють, навіть коли читають вихідний файл', () => {
+    // Джерела похідних читаються з початкової копії — але забирає їх звідти
+    // тільки той вузол, якому вони належать. Інакше `Profiles` лишився б без
+    // прізвища, а картка виявилась би єдиним місцем, де воно колись було.
+    const state = runOrder(['matchingCards']);
+
+    expect(state.workingNewUsers.P1).toMatchObject({
+      surname: 'Коваленко',
+      blood: '2+',
+      photos: ['https://p1', 'https://p2'],
+      lastLogin2: '2026-08-25',
+    });
+  });
+});
+
 describe('ідемпотентність', () => {
   const seed = () => stateWith(
     { P1: { name: 'Оля', surname: 'Коваленко', publish: true, lastLogin2: '2026-08-25' } },
@@ -779,6 +846,40 @@ describe('рештки обох колекцій', () => {
     expect(dump.summary.newUsers.remainingKeyCount).toBe(1);
     expect(dump.summary.users.unmappedFieldStats.unknown).toHaveProperty('щосьНевідоме');
     expect(dump.appliedGroups).toContain('matchingCards');
+  });
+
+  it('розкладає поля newUsers ще до першого Apply', () => {
+    // Файл, викачаний після самих лише Preview, — це нормальний сценарій: саме
+    // так адмін вирішує, чи натискати Apply взагалі. Порожня розкладка поруч із
+    // чесно порахованими ключами читалась би як «у newUsers нічого немає».
+    const state = createMigrationState({
+      users: {},
+      newUsers: { N1: { name: 'Ірина', щосьНевідоме: 1, deviceWidth: 1080 } },
+    });
+
+    const dump = buildRemaindersExport(state);
+
+    expect(dump.appliedGroups).toEqual([]);
+    expect(dump.summary.newUsers.remainingKeyCount).toBe(3);
+    expect(dump.summary.newUsers.unmappedFieldStats).toEqual({
+      mapped: { name: 1 },
+      unknown: { щосьНевідоме: 1 },
+      excluded: { deviceWidth: 1 },
+    });
+  });
+
+  it('не кличе людину розбиратись із полями, які мають власне сховище', () => {
+    // `myComment` живе в `multiData/comments`, кеш-мітки транзитні за природою.
+    // У купці «невідоме» їм робити нічого: це список рішень, а не сміття.
+    const state = createMigrationState({
+      users: {},
+      newUsers: { N1: { myComment: 'подзвонити', __sourceCollection: 'users', localVersion: 3 } },
+    });
+
+    const { unknown, excluded } = buildRemaindersExport(state).summary.newUsers.unmappedFieldStats;
+
+    expect(unknown).toEqual({});
+    expect(excluded).toEqual({ myComment: 1, __sourceCollection: 1, localVersion: 1 });
   });
 
   it('звіт — копія, а не посилання на робочий стан', () => {
