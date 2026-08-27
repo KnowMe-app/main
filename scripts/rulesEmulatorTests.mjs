@@ -89,6 +89,9 @@ await testEnv.withSecurityRulesDisabled(async context => {
   await set(ref(db, 'multiData/getInTouch'), {
     [SUPERADMIN]: { '2026-09-01': { [CARD]: true } },
   });
+  await set(ref(db, 'multiData/writer'), {
+    [SUPERADMIN]: { 'Ik,': { [CARD]: true } },
+  });
 });
 
 const db = uid => testEnv.authenticatedContext(uid).database();
@@ -218,6 +221,26 @@ await it('стороння не читає чужих груп', () =>
 
 await it('значенням може бути тільки true', () =>
   assertFails(set(ref(db(SUPERADMIN), `multiData/getInTouch/${SUPERADMIN}/2026-10-01/${CARD}`), 'yes')));
+
+describe('multiData/writer — та сама аудиторія, що й у getInTouch');
+
+await it('власник читає власні позначки способу звʼязку', () =>
+  assertSucceeds(get(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}`))));
+
+await it('власник пише у власні позначки', () =>
+  assertSucceeds(set(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), true)));
+
+await it('делегований читач читає позначки власника', () =>
+  assertSucceeds(get(ref(db(DELEGATED_READER), `multiData/writer/${SUPERADMIN}`))));
+
+await it('делегований читач НЕ пише у позначки власника', () =>
+  assertFails(set(ref(db(DELEGATED_READER), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), true)));
+
+await it('стороння не читає чужих позначок', () =>
+  assertFails(get(ref(db(OUTSIDER), `multiData/writer/${SUPERADMIN}`))));
+
+await it('значенням може бути тільки true', () =>
+  assertFails(set(ref(db(SUPERADMIN), `multiData/writer/${SUPERADMIN}/Ik,/${CARD}`), 'yes')));
 
 describe('matchingCards — що взагалі можна покласти в картку');
 

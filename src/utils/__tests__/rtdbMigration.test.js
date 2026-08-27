@@ -1,4 +1,5 @@
 import {
+  CLEANED_COLLECTIONS_KIND,
   createMigrationState,
   planMigrationGroup,
   applyMigrationPlan,
@@ -10,6 +11,8 @@ import {
   buildRemainingUsers,
   buildRemainingNewUsers,
   buildRemaindersExport,
+  buildCleanedUsers,
+  buildCleanedCollections,
 } from '../rtdbMigration';
 import {
   deriveSurnameShort,
@@ -593,7 +596,7 @@ describe('GetInTouch', () => {
     const state = stateWith({}, { P1: { getInTouch: '2026-09-01' } });
     const plan = planMigrationGroup(state, 'getInTouch');
 
-    expect(plan.blocked).toBe('MISSING_GET_IN_TOUCH_OWNER');
+    expect(plan.blocked).toBe('MISSING_OWNER_UID');
     applyMigrationPlan(state, plan);
     expect(state.workingNewUsers.P1).toEqual({ getInTouch: '2026-09-01' });
   });
@@ -669,7 +672,7 @@ describe('GetInTouch', () => {
 
     const second = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
     expect(JSON.stringify(state.targets.multiDataPatch.getInTouch)).toBe(before);
-    expect(second.getInTouchWrites).toHaveLength(0);
+    expect(second.ownerValueWrites).toHaveLength(0);
   });
 });
 
@@ -1087,7 +1090,8 @@ describe('рештки обох колекцій', () => {
 
     expect(state.report.groups.matchingCards.remainingUsersKeys).toBe(1);
     expect(state.report.groups.matchingCards.remainingNewUsersKeys).toBe(0);
-    expect(buildMigrationAudit(state).remainingUsers).toEqual({ recordCount: 1, keyCount: 1 });
+    expect(buildMigrationAudit(state).remainingUsers)
+      .toEqual({ recordCount: 1, keyCount: 1, identityOnlyRecordCount: 0 });
   });
 
   it('reset повертає залишок до вихідного файлу', () => {
@@ -1119,7 +1123,7 @@ describe('звіт і експорт', () => {
       'matchingCards', 'profileDetails', 'profileContacts', 'profileWorkflow', 'profileTechnical', 'multiData',
     ]);
     expect(patch).not.toHaveProperty('users');
-    expect(patch.multiData).toEqual({ getInTouch: {} });
+    expect(patch.multiData).toEqual({ getInTouch: {}, writer: {} });
   });
 
   it('рахує залишок у workingNewUsers після кожної групи', () => {
@@ -1127,7 +1131,8 @@ describe('звіт і експорт', () => {
     runMigrationGroup(state, 'matchingCards');
 
     expect(state.report.groups.matchingCards.remainingNewUsersKeys).toBe(1);
-    expect(buildMigrationAudit(state).remainingNewUsers).toEqual({ recordCount: 1, keyCount: 1 });
+    expect(buildMigrationAudit(state).remainingNewUsers)
+      .toEqual({ recordCount: 1, keyCount: 1, identityOnlyRecordCount: 0 });
   });
 
   it('розкладає залишок на відоме, невідоме і навмисно виключене', () => {
@@ -1164,5 +1169,154 @@ describe('інвентаризація', () => {
     expect(inventory.fields).toContainEqual({
       field: 'mystery', count: 1, types: { null: 1 }, mapped: false, excluded: false,
     });
+  });
+});
+
+describe('Writer', () => {
+  it('кладе позначку під власника, а не в анкету', () => {
+    // `writer` — це «хто з нею спілкувався», а не властивість жінки: у новій
+    // структурі він живе там само, де `getInTouch`.
+    const state = stateWith({}, {
+      P1: { writer: 'Ik, ' },
+      P2: { writer: 'Ik, ' },
+      P3: { writer: 'T, ' },
+    });
+    runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+
+    expect(state.targets.multiDataPatch.writer).toEqual({
+      [OWNER]: {
+        'Ik,': { P1: true, P2: true },
+        'T,': { P3: true },
+      },
+    });
+    ['P1', 'P2', 'P3'].forEach(id => expect(state.workingNewUsers[id]).toEqual({}));
+  });
+
+  it('без UID власника не робить нічого', () => {
+    const state = stateWith({}, { P1: { writer: 'Ik' } });
+    const plan = planMigrationGroup(state, 'writer');
+
+    expect(plan.blocked).toBe('MISSING_OWNER_UID');
+    applyMigrationPlan(state, plan);
+    expect(state.workingNewUsers.P1).toEqual({ writer: 'Ik' });
+  });
+
+  it('не змішується з getInTouch під тим самим власником', () => {
+    // Обидва поля лежать під одним UID, і сплутати їх означало б показати
+    // «звʼязатись» там, де стоїть ініціал адміна.
+    const state = stateWith({}, { P1: { writer: 'Ik', getInTouch: '2026-09-01' } });
+    runMigrationGroup(state, 'getInTouch', { ownerUid: OWNER });
+    runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+
+    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({ '2026-09-01': { P1: true } });
+    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ Ik: { P1: true } });
+    expect(state.workingNewUsers.P1).toEqual({});
+  });
+
+  it('різні значення в двох колекціях — конфлікт, а не два ключі', () => {
+    const state = stateWith({ P1: { writer: 'Ik' } }, { P1: { writer: 'T' } });
+    const plan = runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+
+    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ Ik: { P1: true } });
+    expect(state.workingNewUsers.P1).toEqual({ writer: 'T' });
+    expect(plan.conflicts).toHaveLength(1);
+  });
+
+  it('значення з забороненим символом виправляється, і в звіті стоять обидві форми', () => {
+    const state = stateWith({}, { P1: { writer: 'Ik/T' } });
+    const plan = runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+
+    expect(state.targets.multiDataPatch.writer[OWNER]).toEqual({ 'Ik-T': { P1: true } });
+    expect(plan.warnings).toContainEqual(expect.objectContaining({
+      code: 'UNSAFE_WRITER_KEY',
+      profileId: 'P1',
+      value: 'Ik/T',
+      key: 'Ik-T',
+    }));
+  });
+
+  it('повторний запуск нічого не додає', () => {
+    const state = stateWith({ P1: { writer: 'Ik' } }, { P1: { writer: 'Ik' } });
+    runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+    const before = JSON.stringify(state.targets.multiDataPatch.writer);
+
+    const second = runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+    expect(JSON.stringify(state.targets.multiDataPatch.writer)).toBe(before);
+    expect(second.ownerValueWrites).toHaveLength(0);
+  });
+
+  it('поле більше не числиться серед незмаплених', () => {
+    // Доки в нього не було місця, воно щоразу спливало в купці «розібратись
+    // людині» — при тому, що розбиратись там нема з чим.
+    const state = stateWith({}, { P1: { writer: 'Ik' } });
+    const { mapped, unknown } = buildRemaindersExport(state).summary.newUsers.unmappedFieldStats;
+
+    expect(mapped).toEqual({ writer: 1 });
+    expect(unknown).toEqual({});
+  });
+});
+
+describe('очищені файли', () => {
+  it('анкету, від якої лишився сам userId, не показує і не везе далі', () => {
+    const state = createMigrationState({
+      users: {},
+      newUsers: { N1: { userId: 'N1', name: 'Ірина' }, N2: { userId: 'N2', хвіст: 1 } },
+    });
+    runMigrationGroup(state, 'matchingCards');
+
+    // Оболонка з самим `userId` — це успіх міграції, а не залишок.
+    expect(buildCleanedNewUsers(state)).toEqual({ N2: { userId: 'N2', хвіст: 1 } });
+    expect(buildRemainingNewUsers(state)).toEqual({ N2: { userId: 'N2', хвіст: 1 } });
+    // У самому робочому стані запис лишається — інакше повторний прогін
+    // вважав би, що анкети не існує взагалі.
+    expect(state.workingNewUsers.N1).toEqual({ userId: 'N1' });
+  });
+
+  it('рахує оболонки окремо, щоб їх зникнення не читалось як втрата', () => {
+    const state = createMigrationState({
+      users: { P1: { userId: 'P1', name: 'Оля' } },
+      newUsers: { N1: { userId: 'N1', name: 'Ірина' } },
+    });
+    runMigrationGroup(state, 'matchingCards');
+
+    const audit = buildMigrationAudit(state);
+    expect(audit.remainingNewUsers.identityOnlyRecordCount).toBe(1);
+    expect(audit.remainingUsers.identityOnlyRecordCount).toBe(1);
+    expect(buildRemaindersExport(state).summary.newUsers.identityOnlyRecordCount).toBe(1);
+  });
+
+  it('віддає обидві колекції справжніми значеннями — на відміну від звіту', () => {
+    const state = createMigrationState({
+      users: { P1: { password: 'hunter2', хвіст: 1 } },
+      newUsers: { N1: { password: 'hunter2', хвіст: 2 } },
+    });
+
+    const cleaned = buildCleanedCollections(state);
+
+    expect(cleaned.kind).toBe(CLEANED_COLLECTIONS_KIND);
+    // Файл читає інструмент, а не людина: заміщене значення повернулось би в
+    // базу замість справжнього.
+    expect(cleaned.users.P1.password).toBe('hunter2');
+    expect(cleaned.newUsers.N1.password).toBe('hunter2');
+    expect(buildCleanedUsers(state)).toEqual(cleaned.users);
+  });
+
+  it('завантажений назад, продовжує з того місця, де скінчили', () => {
+    const first = createMigrationState({
+      users: { P1: { name: 'Оля', surname: 'Коваленко' } },
+      newUsers: { N1: { name: 'Ірина', phone: '+380' } },
+    });
+    runMigrationGroup(first, 'matchingCards');
+
+    const cleaned = buildCleanedCollections(first);
+    const second = createMigrationState({ users: cleaned.users, newUsers: cleaned.newUsers });
+
+    // Перенесене не пропонується вдруге, неперенесене — пропонується.
+    expect(second.workingNewUsers.N1).toEqual({ phone: '+380' });
+    expect(second.originalUsers.P1).toEqual({ surname: 'Коваленко' });
+
+    runMigrationGroup(second, 'profileContacts');
+    expect(second.targets.profileContacts.N1).toEqual({ phone: '+380' });
+    expect(buildCleanedNewUsers(second)).toEqual({});
   });
 });

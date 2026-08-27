@@ -2271,15 +2271,23 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   });
   if (!merged) return null;
 
-  // `getInTouch` підмішується з `multiData` — це персональна позначка того, хто
-  // зараз дивиться, а не поле анкети. Стара логіка сортування і фільтрів бачить
-  // рівно те саме `card.getInTouch`, просто значення приходить з іншого місця.
-  // Мапа власника читається раз на сесію, тож ця гілка не коштує запиту.
+  // `getInTouch` і `writer` підмішуються з `multiData` — це персональні
+  // позначки того, хто зараз дивиться, а не поля анкети. Стара логіка бачить
+  // рівно ті самі `card.getInTouch` і `card.writer`, просто значення приходять
+  // з іншого місця. Мапи власника читаються раз на сесію, тож ця гілка не
+  // коштує запиту.
   const ownerId = auth.currentUser?.uid;
   if (ownerId) {
-    const ownerMap = await readOwnerGetInTouchMap(ownerId);
-    if (Object.prototype.hasOwnProperty.call(ownerMap, id)) merged.getInTouch = ownerMap[id];
+    const [getInTouchMap, writerMap] = await Promise.all([
+      readOwnerGetInTouchMap(ownerId),
+      readOwnerWriterMap(ownerId),
+    ]);
+    if (Object.prototype.hasOwnProperty.call(getInTouchMap, id)) merged.getInTouch = getInTouchMap[id];
     else delete merged.getInTouch;
+    // Позначки немає — немає й поля: інакше стара, ще не дочищена з анкети,
+    // пережила б своє зняття.
+    if (Object.prototype.hasOwnProperty.call(writerMap, id)) merged.writer = writerMap[id];
+    else delete merged.writer;
   }
 
   return merged;
@@ -3514,13 +3522,18 @@ const matchingCardRefreshes = new Map();
  * @returns {Promise<boolean>} чи прийняв запис хоч один вузол.
  */
 const fanOutProfileNodes = async (userId, payload) => {
-  // `getInTouch` — не поле анкети, а персональна позначка того, хто її поставив,
-  // тож вона їде не у вузол профілю, а під власника в `multiData`. Значення там
-  // сидить у назві ключа, і зміна значення — це переїзд, а не запис; цим
-  // займається `setOwnerGetInTouch`.
+  // `getInTouch` і `writer` — не поля анкети, а персональні позначки того, хто
+  // їх поставив, тож вони їдуть не у вузол профілю, а під власника в
+  // `multiData`. Значення там сидить у назві ключа, і зміна значення — це
+  // переїзд, а не запис; цим займаються `setOwnerGetInTouch` і `setOwnerWriter`.
   if (payload && Object.prototype.hasOwnProperty.call(payload, 'getInTouch')) {
     const ownerId = auth.currentUser?.uid;
     if (ownerId) await setOwnerGetInTouch(ownerId, userId, payload.getInTouch);
+  }
+
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'writer')) {
+    const ownerId = auth.currentUser?.uid;
+    if (ownerId) await setOwnerWriter(ownerId, userId, payload.writer);
   }
 
   const patch = buildProfileNodePatch(userId, payload);
@@ -3559,27 +3572,36 @@ const fanOutProfileNodes = async (userId, payload) => {
 };
 
 // ---------------------------------------------------------------------------
-// getInTouch — персональна позначка адміна в `multiData`
+// Позначки власника в `multiData`
 //
-// У новій структурі значення сидить у назві ключа:
+// `getInTouch` («коли звʼязатись») і `writer` («хто і чим уже спілкувався») —
+// це не поля анкети, а позначки того, хто їх поставив. В анкеті вони опинились
+// лише тому, що іншого місця не було. Обидві живуть однаково, і значення в них
+// сидить у назві ключа:
 //
-//   multiData/getInTouch/{ownerId}/{значення}/{profileId}: true
+//   multiData/{поле}/{ownerId}/{значення}/{profileId}: true
 //
 // Так однакове значення не плодить тисячі однакових підструктур: «2099-99-99»
 // на пів тисячі карток — це один вузол із пів тисячею прапорців, а не пів
 // тисячі вузлів з однаковим рядком усередині.
 //
 // Ціна цієї форми — відповідь на питання «яке значення в цієї картки» більше не
-// лежить поруч із карткою. Тому власників мапа читається цілком, один раз на
+// лежить поруч із карткою. Тому мапа власника читається цілком, один раз на
 // сесію, і тримається в памʼяті: вона потрібна на кожен список, а важить
 // стільки ж, скільки важили б ті самі значення в анкетах.
+//
+// Реалізація одна на обидва поля навмисно: дві копії того самого коду
+// розійшлись би на першій же правці, і одне з полів тихо лишилось би зі старою
+// поведінкою.
 // ---------------------------------------------------------------------------
 
 const OWNER_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
+const OWNER_WRITER_PATH = 'multiData/writer';
 
-const ownerGetInTouchCache = new Map();
+/** `шлях::owner -> Promise<{ profileId: значення }>`. */
+const ownerValueMapCache = new Map();
 
-const buildGetInTouchValueKey = value => {
+const buildOwnerValueKey = value => {
   const text = value === null || value === undefined ? '' : String(value).trim();
   if (!text) return '';
   // Ті самі символи, яких не приймає ключ RTDB. Значення з ними не пишеться —
@@ -3590,17 +3612,18 @@ const buildGetInTouchValueKey = value => {
   return text;
 };
 
-/** `profileId -> значення` для одного власника. */
-export const readOwnerGetInTouchMap = async ownerId => {
+/** `profileId -> значення` для одного власника і одного поля. */
+const readOwnerValueMap = async (path, ownerId) => {
   const owner = String(ownerId || '').trim();
   if (!owner) return {};
 
-  const cached = ownerGetInTouchCache.get(owner);
+  const cacheKey = `${path}::${owner}`;
+  const cached = ownerValueMapCache.get(cacheKey);
   if (cached) return cached;
 
   const pending = (async () => {
     try {
-      const snapshot = await get(ref2(database, `${OWNER_GET_IN_TOUCH_PATH}/${owner}`));
+      const snapshot = await get(ref2(database, `${path}/${owner}`));
       if (!snapshot.exists()) return {};
       const map = {};
       Object.entries(snapshot.val() || {}).forEach(([value, profiles]) => {
@@ -3610,47 +3633,52 @@ export const readOwnerGetInTouchMap = async ownerId => {
       });
       return map;
     } catch (error) {
-      console.warn('[getInTouch] не вдалося прочитати мапу власника', { ownerId: owner, error });
+      console.warn('[multiData] не вдалося прочитати мапу власника', { path, ownerId: owner, error });
       return {};
     }
   })();
 
-  ownerGetInTouchCache.set(owner, pending);
+  ownerValueMapCache.set(cacheKey, pending);
   return pending;
 };
 
 /** Скидає памʼять — після власного запису або зміни власника. */
-export const invalidateOwnerGetInTouchMap = ownerId => {
-  if (ownerId) ownerGetInTouchCache.delete(String(ownerId).trim());
-  else ownerGetInTouchCache.clear();
+const invalidateOwnerValueMap = (path, ownerId) => {
+  if (ownerId) {
+    ownerValueMapCache.delete(`${path}::${String(ownerId).trim()}`);
+    return;
+  }
+  [...ownerValueMapCache.keys()]
+    .filter(key => key.startsWith(`${path}::`))
+    .forEach(key => ownerValueMapCache.delete(key));
 };
 
 /**
- * Ставить (або знімає) позначку `getInTouch` для однієї картки.
+ * Ставить (або знімає) позначку власника для однієї картки.
  *
  * Value-first структура означає, що зміна значення — це не запис, а переїзд:
  * старий ключ треба зняти, новий поставити. Обидва йдуть одним патчем, тож
  * картка не може на мить опинитись одразу в двох списках.
  */
-export const setOwnerGetInTouch = async (ownerId, profileId, value) => {
+const setOwnerValue = async (path, ownerId, profileId, value) => {
   const owner = String(ownerId || '').trim();
   const id = String(profileId || '').trim();
   if (!owner || !id) return false;
 
-  const nextKey = buildGetInTouchValueKey(value);
+  const nextKey = buildOwnerValueKey(value);
   const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
   if (hasValue && !nextKey) {
-    console.warn('[getInTouch] значення не може бути ключем бази — позначку не змінено', { profileId: id });
+    console.warn('[multiData] значення не може бути ключем бази — позначку не змінено', { path, profileId: id });
     return false;
   }
 
-  const map = await readOwnerGetInTouchMap(owner);
+  const map = await readOwnerValueMap(path, owner);
   const previousKey = map[id];
   if (previousKey === nextKey) return true;
 
   const patch = {};
-  if (previousKey) patch[`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${previousKey}/${id}`] = null;
-  if (nextKey) patch[`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${nextKey}/${id}`] = true;
+  if (previousKey) patch[`${path}/${owner}/${previousKey}/${id}`] = null;
+  if (nextKey) patch[`${path}/${owner}/${nextKey}/${id}`] = true;
   if (!Object.keys(patch).length) return true;
 
   try {
@@ -3660,13 +3688,31 @@ export const setOwnerGetInTouch = async (ownerId, profileId, value) => {
     const nextMap = { ...map };
     if (nextKey) nextMap[id] = nextKey;
     else delete nextMap[id];
-    ownerGetInTouchCache.set(owner, Promise.resolve(nextMap));
+    ownerValueMapCache.set(`${path}::${owner}`, Promise.resolve(nextMap));
     return true;
   } catch (error) {
-    console.warn('[getInTouch] позначку не збережено', { ownerId: owner, profileId: id, error });
+    console.warn('[multiData] позначку не збережено', { path, ownerId: owner, profileId: id, error });
     return false;
   }
 };
+
+export const readOwnerGetInTouchMap = ownerId => readOwnerValueMap(OWNER_GET_IN_TOUCH_PATH, ownerId);
+
+export const invalidateOwnerGetInTouchMap = ownerId => (
+  invalidateOwnerValueMap(OWNER_GET_IN_TOUCH_PATH, ownerId)
+);
+
+export const setOwnerGetInTouch = (ownerId, profileId, value) => (
+  setOwnerValue(OWNER_GET_IN_TOUCH_PATH, ownerId, profileId, value)
+);
+
+export const readOwnerWriterMap = ownerId => readOwnerValueMap(OWNER_WRITER_PATH, ownerId);
+
+export const invalidateOwnerWriterMap = ownerId => invalidateOwnerValueMap(OWNER_WRITER_PATH, ownerId);
+
+export const setOwnerWriter = (ownerId, profileId, value) => (
+  setOwnerValue(OWNER_WRITER_PATH, ownerId, profileId, value)
+);
 
 const refreshMatchingCardAfterProfileWrite = async (collection, userId, payload, condition) => {
   const id = String(userId || '').trim();

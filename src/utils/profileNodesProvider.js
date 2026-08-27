@@ -27,6 +27,9 @@ import {
   readOwnerGetInTouchMap,
   setOwnerGetInTouch,
   invalidateOwnerGetInTouchMap,
+  readOwnerWriterMap,
+  setOwnerWriter,
+  invalidateOwnerWriterMap,
 } from 'components/config';
 import { withAdminDownloadToast } from './backendDownloadToast';
 import { PROFILE_NODES } from './profileNodeSchema';
@@ -94,14 +97,36 @@ export const forgetOwnerGetInTouch = invalidateOwnerGetInTouchMap;
  * Це адаптер, а не зміна семантики: картка отримує рівно те поле і рівно те
  * значення, які раніше лежали в ній самій.
  */
-export const withOwnerGetInTouch = (cards = [], getInTouchMap = {}) => (
+export const withOwnerValue = (cards = [], valueMap = {}, field = 'getInTouch') => (
   cards.map(cardEntry => {
-    const value = getInTouchMap[cardEntry?.userId];
+    const value = valueMap[cardEntry?.userId];
     if (value === undefined) {
-      if (cardEntry?.getInTouch === undefined) return cardEntry;
-      const { getInTouch, ...rest } = cardEntry;
+      if (cardEntry?.[field] === undefined) return cardEntry;
+      const { [field]: removed, ...rest } = cardEntry;
       return rest;
     }
-    return { ...cardEntry, getInTouch: value };
+    return { ...cardEntry, [field]: value };
   })
+);
+
+export const withOwnerGetInTouch = (cards = [], getInTouchMap = {}) => (
+  withOwnerValue(cards, getInTouchMap, 'getInTouch')
+);
+
+/**
+ * `writer` живе там само, де `getInTouch`, і повертається на картку так само.
+ *
+ * Це позначка про спосіб звʼязку з контактом: хто з ним уже спілкувався і
+ * чим. Анкети вона не описує, тож лежить під власником, а не в самій анкеті.
+ */
+export const getOwnerWriterMap = readOwnerWriterMap;
+
+/** Поставити або зняти позначку способу звʼязку. */
+export const setWriter = setOwnerWriter;
+
+/** Скинути памʼять мапи `writer`. */
+export const forgetOwnerWriter = invalidateOwnerWriterMap;
+
+export const withOwnerWriter = (cards = [], writerMap = {}) => (
+  withOwnerValue(cards, writerMap, 'writer')
 );
