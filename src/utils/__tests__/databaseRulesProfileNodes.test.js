@@ -42,6 +42,24 @@ describe('нові вузли профілю в database.rules.json', () => {
     expect(node.$ownerId.$value.$userId['.validate']).toContain('newData.val() === true');
   });
 
+  it('multiData/stimulationSchedule лежить під анкетою, а не під значенням', () => {
+    // Друга форма поля власника: помітку можна засунути в назву ключа, а
+    // таблицю днів і призначень — ні. Тож рівня `$value` тут немає взагалі, і
+    // це не дрібниця форми: із ним графік розсипався б на ключі.
+    const node = rules.multiData.stimulationSchedule;
+    expect(node.$ownerId).toBeDefined();
+    expect(node.$ownerId.$value).toBeUndefined();
+    expect(node.$ownerId.$userId).toBeDefined();
+  });
+
+  it('графік читає делегований читач, але пише лише власник і суперадміни', () => {
+    const owner = rules.multiData.stimulationSchedule.$ownerId;
+    expect(owner['.read']).toContain("multiDataSourceUserIds').child($ownerId).val() == true");
+    const write = owner.$userId['.write'];
+    expect(write).toContain('auth.uid == $ownerId');
+    expect(write).not.toContain('multiDataSourceUserIds');
+  });
+
   it('getInTouch читає делегований читач, але пише лише власник і суперадміни', () => {
     const owner = rules.multiData.getInTouch.$ownerId;
     expect(owner['.read']).toContain("multiDataSourceUserIds').child($ownerId).val() == true");

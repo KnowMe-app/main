@@ -57,6 +57,25 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
 });
 
+/**
+ * Синоніми джерела: під яким іще іменем те саме поле лежить у старих даних.
+ *
+ * `state` — це та сама область, яку картка тримає в `region`: у мобільних
+ * анкетах поле називалось так, і в даних воно лежить рядком на кшталт
+ * «Донецкая область» або «Bayern». Окремого ключа в картці йому не заводять —
+ * стрічка фільтрує по локації одним полем, і другий ключ означав би дві різні
+ * відповіді на те саме питання. Тож `state` їде в `region`, а якщо обидва є і
+ * розходяться — це звичайний конфлікт, а не тихе перезаписування.
+ */
+export const MATCHING_CARD_FIELD_SOURCES = Object.freeze({
+  region: Object.freeze(['region', 'state']),
+});
+
+/** Усі ключі джерела, з яких збирається картка, включно з синонімами. */
+export const MATCHING_CARD_SOURCE_FIELDS = Object.freeze([...new Set(
+  MATCHING_CARD_DIRECT_FIELDS.flatMap(field => MATCHING_CARD_FIELD_SOURCES[field] || [field]),
+)]);
+
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
   ...MATCHING_CARD_DIRECT_FIELDS,
@@ -98,6 +117,9 @@ export const MATCHING_CARD_FORBIDDEN_FIELDS = Object.freeze([
   'deviceWidth',
   'deviceHeight',
   'deviceResize',
+  // Сира назва локації: у картці вона живе під `region`, і другого ключа
+  // для тієї самої області там бути не повинно.
+  'state',
 ]);
 
 /**
@@ -266,6 +288,14 @@ export const NEVER_MIGRATED_FIELDS = Object.freeze([
   '__profileSnapshotSource',
   '__profileSnapshotUpdatedAt',
   'myComment',
+
+  // Технічні мітки самого запису, а не анкети: `id` і `userId` дублюють адресу
+  // вузла, `collection` каже, з якого файлу запис прочитали, `updatedAt` —
+  // коли його востаннє записав UI. Жодне з них не описує людину, і рішення по
+  // них ухвалювати нема кому.
+  'id',
+  'collection',
+  'updatedAt',
 ]);
 
 /**
@@ -315,6 +345,83 @@ export const OWNER_MULTI_DATA_FIELDS = Object.freeze([
 export const OWNER_MULTI_DATA_FIELD_NAMES = Object.freeze(
   OWNER_MULTI_DATA_FIELDS.map(entry => entry.field),
 );
+
+/**
+ * Персональний графік стимуляції — теж під власником, але значенням, а не ключем.
+ *
+ * `getInTouch` і `writer` — це короткі позначки, тож у них значення сидить у
+ * назві ключа. Графік так лежати не може: це не помітка, а таблиця днів і
+ * призначень, і власників у неї стільки ж, скільки адмінів веде цю жінку —
+ * кожен свій. Тож структура тут інша: `{шлях}/{ownerId}/{profileId}` = сам
+ * графік.
+ *
+ * Сусідній `multiData/stimulation` — це вже зведена таблиця медикаментів
+ * (`rows`/`startDate`), яку будує сторінка графіка. Тут же лежить те, з чого
+ * вона будується, — сире поле анкети, тому і вузол окремий.
+ */
+export const MULTI_DATA_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedule';
+
+/**
+ * Поля власника, які їдуть у `multiData` цілим значенням.
+ *
+ * Від `OWNER_MULTI_DATA_FIELDS` відрізняються рівно формою запису: там ключ
+ * несе значення, тут ключ — це анкета, а значення лежить значенням.
+ */
+export const OWNER_MULTI_DATA_PAYLOAD_FIELDS = Object.freeze([
+  Object.freeze({ field: 'stimulationSchedule', path: MULTI_DATA_STIMULATION_SCHEDULE_PATH }),
+]);
+
+/** Самі назви полів — там, де шлях не потрібен. */
+export const OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES = Object.freeze(
+  OWNER_MULTI_DATA_PAYLOAD_FIELDS.map(entry => entry.field),
+);
+
+/**
+ * Чого не має бути в очищеній копії колекції.
+ *
+ * Це не той самий перелік, що `NEVER_MIGRATED_FIELDS`: там сказано, чого не
+ * копіюють у нові вузли, а тут — чого не тягнуть далі взагалі. Різниця видна
+ * на `photo` і `login`: обидва мають своє нове місце, але якщо після всіх
+ * груп вони й досі лежать у залишку, то лежать вони там порожніми або
+ * зайвими, і в наступний прогін їх не беруть.
+ *
+ * `userId` та `id` — адреса запису, а не дані; `password` у файлі, який
+ * зберігають на диску, — інцидент; решта — кеш-мітки, розміри екрана і мертві
+ * списки, які й так нікуди не їдуть.
+ */
+export const CLEANED_COLLECTION_NOISE_FIELDS = Object.freeze([
+  'blackList',
+  'whiteList',
+  'attitude',
+  'userId',
+  'deviceHeight',
+  'deviceResize',
+  'deviceWidth',
+  'photo',
+  'cachedAt',
+  'updatedAt',
+  '__sourceCollection',
+  'id',
+  'login',
+  'password',
+  'cacheVersion',
+  'collection',
+]);
+
+/**
+ * Що лишається в очищеній копії завжди — навіть порожнім.
+ *
+ * Права доступу в нові вузли не їдуть навмисно (джерело істини для правил —
+ * legacy `/users`), тож єдине місце, де вони живуть, — сама колекція. Якби
+ * очищення прибрало їх разом із рештою порожніх ключів, залитий назад файл
+ * зняв би людям доступ — і зробив би це мовчки.
+ */
+export const CLEANED_COLLECTION_PRESERVED_FIELDS = Object.freeze([
+  'accessLevel',
+  'canCreateProfiles',
+  'multiDataAccessUserIds',
+  'additionalAccessRules',
+]);
 
 /** Поле, за яким і сортується, і фільтрується стрічка. */
 export const FEED_DATE_FIELD = 'feedDate';

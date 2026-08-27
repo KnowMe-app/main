@@ -16,7 +16,13 @@ import {
   buildRemaindersExport,
   CLEANED_COLLECTIONS_KIND,
 } from 'utils/rtdbMigration';
-import { PROFILE_NODES, OWNER_MULTI_DATA_FIELDS } from 'utils/profileNodeSchema';
+import {
+  PROFILE_NODES,
+  OWNER_MULTI_DATA_FIELDS,
+  OWNER_MULTI_DATA_PAYLOAD_FIELDS,
+  CLEANED_COLLECTION_NOISE_FIELDS,
+  CLEANED_COLLECTION_PRESERVED_FIELDS,
+} from 'utils/profileNodeSchema';
 import { auth } from './config';
 import PageNavMenu from './PageNavMenu';
 import {
@@ -474,6 +480,12 @@ const EXPORT_TARGETS = [
       : 'замінює позначки способу звʼязку всіх власників',
     build: state => state.targets.multiDataPatch[field],
   })),
+  ...OWNER_MULTI_DATA_PAYLOAD_FIELDS.map(({ field, path }) => ({
+    label: `multiData-${field}`,
+    importPath: path,
+    effect: 'замінює персональні графіки стимуляції всіх власників',
+    build: state => state.targets.multiDataPayload[field],
+  })),
   {
     label: 'cleaned-newUsers',
     importPath: 'newUsers',
@@ -694,7 +706,7 @@ export const RtdbMigrationTool = () => {
             продовжується з того місця, де скінчилась, а не з нуля.
           </Note>
           <Row>
-            <FieldLabel htmlFor="owner-uid">UID власника (getInTouch і writer):</FieldLabel>
+            <FieldLabel htmlFor="owner-uid">UID власника (getInTouch, writer, графік):</FieldLabel>
             <TextInput
               id="owner-uid"
               value={ownerUid}
@@ -713,6 +725,14 @@ export const RtdbMigrationTool = () => {
             обидві лежать під тим, хто їх поставив
             (<code>multiData/getInTouch/{ownerUid || '{ownerId}'}/значення/анкета</code>,{' '}
             <code>multiData/writer/{ownerUid || '{ownerId}'}/значення/анкета</code>).
+          </Note>
+          <Note>
+            <code>stimulationSchedule</code> — теж персональний: графік стимуляції веде адмін, і в
+            різних адмінів він різний. Лежить він там само, під власником, але значенням, а не
+            назвою ключа (<code>multiData/stimulationSchedule/{ownerUid || '{ownerId}'}/анкета</code>)
+            — таблицю днів у ключ не запхнеш. Читання цього вузла застосунком ще не підключене: поки
+            його немає, кнопку варто натискати лише разом із заливанням патча, інакше графік зникне
+            з анкети, не зʼявившись у новому місці.
           </Note>
           <InventoryTable title="users" inventory={usersInventory} />
           <InventoryTable title="newUsers" inventory={newUsersInventory} />
@@ -878,6 +898,14 @@ export const RtdbMigrationTool = () => {
               справжніми значеннями. У базу він не їде: його завантажують назад у цей інструмент
               кнопкою «Load cleaned-collections.json», щоб продовжити з того місця, де скінчили.
             </Note>
+            <Warn>
+              Обидва очищені файли не везуть далі шуму: {CLEANED_COLLECTION_NOISE_FIELDS.join(', ')},
+              а також будь-який ключ, у якому лежить порожнє значення, і анкету, від якої після
+              цього не лишилось жодного ключа. Права доступу ({CLEANED_COLLECTION_PRESERVED_FIELDS.join(', ')})
+              лишаються завжди — вони живуть тільки тут. Скільки саме ключів прибрано і яких, видно
+              у <code>summary.droppedFields</code> самого файлу; звіт{' '}
+              <code>migration-remainders.json</code> показує залишок як є, без цього очищення.
+            </Warn>
           </Section>
         )}
 

@@ -37,6 +37,10 @@ import {
   SECRET_FIELDS,
   ALL_MAPPED_FIELDS,
   OWNER_MULTI_DATA_FIELD_NAMES,
+  OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES,
+  MATCHING_CARD_FIELD_SOURCES,
+  CLEANED_COLLECTION_NOISE_FIELDS,
+  CLEANED_COLLECTION_PRESERVED_FIELDS,
 } from './profileNodeSchema';
 import {
   hasMeaningfulValue,
@@ -62,6 +66,9 @@ export const MIGRATION_GROUPS = Object.freeze([
   // `writer` їде тим самим шляхом і з тієї ж причини: це позначка адміна про
   // спосіб звʼязку з контактом, а не властивість самого контакту.
   { id: 'writer', label: 'Migrate Writer', node: 'multiDataPatch' },
+  // Графік стимуляції теж належить не анкеті, а тому, хто його веде, — але
+  // їде цілим значенням, а не назвою ключа.
+  { id: 'stimulationSchedule', label: 'Migrate Stimulation Schedule', node: 'multiDataPayload' },
   { id: 'profileDetails', label: 'Migrate Profiles', node: PROFILE_NODES.profileDetails },
 ]);
 
@@ -73,11 +80,34 @@ const DIRECT_FIELDS_BY_GROUP = {
   profileDetails: PROFILE_DETAIL_FIELDS,
   getInTouch: [],
   writer: [],
+  stimulationSchedule: [],
 };
+
+/**
+ * Під якими ключами поле може лежати в джерелі.
+ *
+ * Синоніми описані в схемі, і сюди вони приходять цілим переліком: `region`
+ * читається і з `region`, і з `state`. Забирається з джерела рівно той ключ, з
+ * якого значення взяли, — другий лишається на місці і їде у звіт, бо це вже
+ * розбіжність, а не синонім.
+ */
+const sourceKeysFor = field => MATCHING_CARD_FIELD_SOURCES[field] || [field];
+
+/** Усі ключі-синоніми, які знає хоч одне поле. */
+const ALIAS_SOURCE_FIELDS = [...new Set(
+  Object.entries(MATCHING_CARD_FIELD_SOURCES).flatMap(([field, keys]) => (
+    keys.filter(key => key !== field)
+  )),
+)];
 
 /** Група -> поле власника, яке вона переносить у `multiData`. */
 const OWNER_VALUE_FIELD_BY_GROUP = Object.fromEntries(
   OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, field]),
+);
+
+/** Те саме для полів власника, які лежать під анкетою цілим значенням. */
+const OWNER_PAYLOAD_FIELD_BY_GROUP = Object.fromEntries(
+  OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.map(field => [field, field]),
 );
 
 /**
@@ -107,6 +137,9 @@ const emptyTargets = () => ({
   // Не список літералів: поля власника перелічені в схемі, і другий перелік
   // тут розійшовся б із нею при першому ж додаванні.
   multiDataPatch: Object.fromEntries(OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, {}])),
+  multiDataPayload: Object.fromEntries(
+    OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.map(field => [field, {}]),
+  ),
 });
 
 const emptyCounters = () => ({
@@ -161,7 +194,9 @@ const isExcludedField = field => NEVER_MIGRATED_FIELDS.includes(field)
 const isMappedField = field => ALL_MAPPED_FIELDS.includes(field)
   || field === 'publish'
   || field === 'userRole'
-  || OWNER_MULTI_DATA_FIELD_NAMES.includes(field);
+  || ALIAS_SOURCE_FIELDS.includes(field)
+  || OWNER_MULTI_DATA_FIELD_NAMES.includes(field)
+  || OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.includes(field);
 
 /** Скільки анкет колекції звелись до самого лише `userId` (або до порожнечі). */
 const countIdentityOnlyRecords = collection => Object.values(collection || {}).reduce(
@@ -305,8 +340,10 @@ const createPlanContext = (state, group) => ({
   node: MIGRATION_GROUPS.find(entry => entry.id === group)?.node || null,
   pendingTargets: {},
   pendingOwnerValueByProfile: {},
+  pendingOwnerPayload: {},
   writes: [],
   ownerValueWrites: [],
+  ownerPayloadWrites: [],
   deletions: [],
   consumedFromUsers: [],
   consumedKeys: new Set(),
@@ -475,20 +512,27 @@ const isSuccess = outcome => outcome === 'copied' || outcome === 'already' || ou
 
 /** Пряме поле: значення переноситься як є, без зміни типу (§20). */
 const planDirectField = (ctx, { profileId, field, source, sourceCollection }) => {
-  if (!Object.prototype.hasOwnProperty.call(source, field)) {
+  const present = sourceKeysFor(field).filter(
+    key => Object.prototype.hasOwnProperty.call(source, key),
+  );
+
+  if (!present.length) {
     ctx.counters.skippedAbsent += 1;
     return;
   }
 
-  const raw = source[field];
-  if (!hasMeaningfulValue(raw)) {
+  // Перший непорожній синонім і є значенням поля: `region` як назва
+  // канонічна, тож коли є обидва ключі, канонічний і виграє.
+  const sourceKey = present.find(key => hasMeaningfulValue(source[key]));
+
+  if (!sourceKey) {
     // Міграція — не прибирання. Порожнє значення не переноситься, але й не
     // зникає: розбиратись із ним буде людина, дивлячись на cleaned-newUsers.
     ctx.counters.skippedEmpty += 1;
     addWarning(ctx, {
       code: 'EMPTY_SOURCE_VALUE',
       profileId,
-      field,
+      field: present[0],
       collection: sourceCollection,
       targetGroup: ctx.group,
     });
@@ -498,11 +542,11 @@ const planDirectField = (ctx, { profileId, field, source, sourceCollection }) =>
   const outcome = offerValue(ctx, {
     profileId,
     field,
-    value: deepClone(raw),
+    value: deepClone(source[sourceKey]),
     sourceCollection,
   });
 
-  if (isSuccess(outcome)) planConsumption(ctx, sourceCollection, profileId, field);
+  if (isSuccess(outcome)) planConsumption(ctx, sourceCollection, profileId, sourceKey);
 };
 
 /**
@@ -779,6 +823,69 @@ const planOwnerValueField = (ctx, { field, profileId, source, sourceCollection, 
 };
 
 /**
+ * Кнопка Stimulation Schedule: `owner/profileId = графік` (§14, друга форма).
+ *
+ * Графік стимуляції веде адмін, а не жінка: у тієї самої анкети в різних
+ * адмінів він різний, і саме тому поле переїжджає під власника. Від
+ * `getInTouch` і `writer` відрізняється лише тим, що значення тут — дані, а не
+ * назва ключа: таблицю днів у ключ не запхнеш, та й не треба — під власником
+ * анкета вже одна.
+ *
+ * Розбіжність розсуджується як усюди: інший графік у цілі — це конфлікт, ціль
+ * не перезаписується, джерело лишається на місці.
+ */
+const planOwnerPayloadField = (ctx, { field, profileId, source, sourceCollection, ownerUid }) => {
+  if (!Object.prototype.hasOwnProperty.call(source, field)) {
+    ctx.counters.skippedAbsent += 1;
+    return;
+  }
+
+  const raw = source[field];
+  if (!hasMeaningfulValue(raw)) {
+    ctx.counters.skippedEmpty += 1;
+    addWarning(ctx, {
+      code: 'EMPTY_SOURCE_VALUE',
+      profileId,
+      field,
+      collection: sourceCollection,
+      targetGroup: ctx.group,
+    });
+    return;
+  }
+
+  const value = deepClone(raw);
+  const pending = ctx.pendingOwnerPayload[`${field}::${ownerUid}::${profileId}`];
+  const stored = ctx.state.targets.multiDataPayload?.[field]?.[ownerUid]?.[profileId];
+  const existing = pending !== undefined ? pending : stored;
+
+  if (existing !== undefined) {
+    if (deepEqual(existing, value)) {
+      ctx.counters.alreadyPresent += 1;
+      planConsumption(ctx, sourceCollection, profileId, field);
+      return;
+    }
+
+    addConflict(ctx, {
+      profileId,
+      targetGroup: ctx.group,
+      field,
+      reason: 'SOURCE_CONFLICT',
+      existingValue: existing,
+      incomingValue: value,
+      incomingSource: sourceCollection,
+    });
+    return;
+  }
+
+  ctx.ownerPayloadWrites.push({ field, ownerUid, profileId, value });
+  ctx.pendingOwnerPayload[`${field}::${ownerUid}::${profileId}`] = value;
+  if (sourceCollection === 'users') ctx.counters.fieldsCopiedFromUsers += 1;
+  else ctx.counters.fieldsMovedFromNewUsers += 1;
+
+  planConsumption(ctx, sourceCollection, profileId, field);
+};
+
+/**
  * План групи — що саме буде записано і що саме буде видалено.
  *
  * Нічого не мутує: план можна порахувати, показати адміну і не застосовувати.
@@ -790,17 +897,19 @@ export const planMigrationGroup = (state, group, options = {}) => {
   const ctx = createPlanContext(state, group);
   const directFields = DIRECT_FIELDS_BY_GROUP[group] || [];
   const ownerValueField = OWNER_VALUE_FIELD_BY_GROUP[group] || null;
+  const ownerPayloadField = OWNER_PAYLOAD_FIELD_BY_GROUP[group] || null;
   // Ім'я опції лишилось від часів, коли поле власника було одне; обидва
   // приймаються, щоб виклики з `getInTouchOwnerUid` не поламались мовчки.
   const ownerUid = String(options.ownerUid || options.getInTouchOwnerUid || '').trim();
 
-  if (ownerValueField && !ownerUid) {
+  if ((ownerValueField || ownerPayloadField) && !ownerUid) {
     return {
       group,
       node: ctx.node,
       blocked: 'MISSING_OWNER_UID',
       writes: [],
       ownerValueWrites: [],
+      ownerPayloadWrites: [],
       deletions: [],
       consumedFromUsers: [],
       conflicts: [],
@@ -861,6 +970,17 @@ export const planMigrationGroup = (state, group, options = {}) => {
         return;
       }
 
+      if (ownerPayloadField) {
+        planOwnerPayloadField(ctx, {
+          field: ownerPayloadField,
+          profileId,
+          source,
+          sourceCollection,
+          ownerUid,
+        });
+        return;
+      }
+
       directFields.forEach(field => planDirectField(ctx, { profileId, field, source, sourceCollection }));
 
       if (group === 'matchingCards') {
@@ -879,6 +999,7 @@ export const planMigrationGroup = (state, group, options = {}) => {
     blocked: null,
     writes: ctx.writes,
     ownerValueWrites: ctx.ownerValueWrites,
+    ownerPayloadWrites: ctx.ownerPayloadWrites,
     deletions: ctx.deletions,
     consumedFromUsers: ctx.consumedFromUsers,
     conflicts: ctx.conflicts,
@@ -938,6 +1059,12 @@ export const applyMigrationPlan = (state, plan) => {
     if (!state.targets[node][profileId]) state.targets[node][profileId] = {};
     state.targets[node][profileId][field] = deepClone(value);
     rememberOrigin(state, node, profileId, field, origin);
+  });
+
+  (plan.ownerPayloadWrites || []).forEach(({ field, ownerUid, profileId, value }) => {
+    const root = state.targets.multiDataPayload[field];
+    if (!root[ownerUid]) root[ownerUid] = {};
+    root[ownerUid][profileId] = deepClone(value);
   });
 
   (plan.ownerValueWrites || []).forEach(({ field, ownerUid, value, profileId }) => {
@@ -1008,9 +1135,12 @@ export const buildCombinedRootPatch = state => ({
   [PROFILE_NODES.profileContacts]: state.targets[PROFILE_NODES.profileContacts],
   [PROFILE_NODES.profileWorkflow]: state.targets[PROFILE_NODES.profileWorkflow],
   [PROFILE_NODES.profileTechnical]: state.targets[PROFILE_NODES.profileTechnical],
-  multiData: Object.fromEntries(
-    OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, state.targets.multiDataPatch[field]]),
-  ),
+  multiData: Object.fromEntries([
+    ...OWNER_MULTI_DATA_FIELD_NAMES.map(field => [field, state.targets.multiDataPatch[field]]),
+    ...OWNER_MULTI_DATA_PAYLOAD_FIELD_NAMES.map(
+      field => [field, state.targets.multiDataPayload[field]],
+    ),
+  ]),
 });
 
 /** Звіт із підсумком по залишку — те, що адмін читає замість здогадок. */
@@ -1135,10 +1265,44 @@ export const buildRemaindersExport = state => {
  * можна знову завантажити в цей самий інструмент.
  *
  * Від звіту вона відрізняється двома речами: значення тут справжні (звіт
- * заміщає паролі й обрізає `attitude`, і залитий у базу він стер би людям
- * дані), а порожні оболонки прибрані — анкета, від якої лишився сам `userId`,
- * не картка, і возити її далі нема сенсу.
+ * обрізає `attitude`, і залитий у базу він стер би людям дані), а шум
+ * прибраний — і ключами, і цілими анкетами. Анкета, від якої лишився сам
+ * `userId`, не картка; ключ із порожнім рядком не дані; кеш-мітки, розміри
+ * екрана і мертві списки не переживають навіть одного кола міграції, а
+ * тягнуться з файлу у файл і роблять залишок нечитабельним.
+ *
+ * Що саме прибрано — видно в `summary.droppedFields`: очищення тут не мовчазне.
  */
+const isNoiseField = field => CLEANED_COLLECTION_NOISE_FIELDS.includes(field);
+
+/**
+ * Що з анкети переживає очищення.
+ *
+ * Права доступу лишаються завжди — це єдине їхнє місце (див.
+ * `CLEANED_COLLECTION_PRESERVED_FIELDS`). Далі відсіюється шум за назвою і
+ * порожнє за значенням: ключ, у якому лежить порожній рядок, порожній масив
+ * або обʼєкт із самих порожніх рядків, не несе нічого — а в залишку саме такі
+ * ключі й складають більшість.
+ */
+const cleanProfile = profile => {
+  const cleaned = {};
+  const dropped = [];
+
+  Object.entries(profile).forEach(([field, value]) => {
+    if (CLEANED_COLLECTION_PRESERVED_FIELDS.includes(field)) {
+      cleaned[field] = deepClone(value);
+      return;
+    }
+    if (isNoiseField(field) || !hasMeaningfulValue(value)) {
+      dropped.push(field);
+      return;
+    }
+    cleaned[field] = deepClone(value);
+  });
+
+  return { cleaned, dropped };
+};
+
 const buildCleanedCollection = collection => {
   const out = {};
   Object.entries(collection || {}).forEach(([profileId, profile]) => {
@@ -1147,9 +1311,34 @@ const buildCleanedCollection = collection => {
       return;
     }
     if (!hasRemainingData(profile)) return;
-    out[profileId] = deepClone(profile);
+    const { cleaned } = cleanProfile(profile);
+    // Анкета, від якої після очищення не лишилось жодного ключа, — це шум
+    // цілим записом. У файл вона не їде: возити далі порожню оболонку так
+    // само нема сенсу, як і оболонку з самого `userId`.
+    if (!Object.keys(cleaned).length) return;
+    out[profileId] = cleaned;
   });
   return out;
+};
+
+/**
+ * Скільки ключів очищення прибрало і яких саме.
+ *
+ * Без цього рядка різниця між «поле поїхало у свій вузол» і «поле викинули як
+ * шум» була б невидима: обидва зникають із файлу однаково. Тут же видно, що
+ * саме зникло і скільки разів — і якщо в переліку раптом стоїть щось живе,
+ * це помітно до заливання, а не після.
+ */
+const buildCleanedDropStats = collection => {
+  const stats = {};
+  Object.values(collection || {}).forEach(profile => {
+    if (!profile || typeof profile !== 'object') return;
+    if (!hasRemainingData(profile)) return;
+    cleanProfile(profile).dropped.forEach(field => {
+      stats[field] = (stats[field] || 0) + 1;
+    });
+  });
+  return stats;
 };
 
 export const buildCleanedNewUsers = state => buildCleanedCollection(state.workingNewUsers);
@@ -1183,11 +1372,13 @@ export const buildCleanedCollections = state => ({
       recordCount: Object.keys(state.remainingUsers).length,
       keptRecordCount: Object.keys(buildCleanedUsers(state)).length,
       keyCount: countRemainingKeys(state.remainingUsers),
+      droppedFields: buildCleanedDropStats(state.remainingUsers),
     },
     newUsers: {
       recordCount: Object.keys(state.workingNewUsers).length,
       keptRecordCount: Object.keys(buildCleanedNewUsers(state)).length,
       keyCount: countRemainingKeys(state.workingNewUsers),
+      droppedFields: buildCleanedDropStats(state.workingNewUsers),
     },
   },
   users: buildCleanedUsers(state),
@@ -1197,5 +1388,8 @@ export const buildCleanedCollections = state => ({
 export const getMigrationTarget = (state, node) => deepClone(state.targets[node]);
 
 export const getOwnerValuePatch = (state, field) => deepClone(state.targets.multiDataPatch[field]);
+
+/** `multiData/{поле}` для полів, які лежать під анкетою цілим значенням. */
+export const getOwnerPayloadPatch = (state, field) => deepClone(state.targets.multiDataPayload[field]);
 
 export const getGetInTouchPatch = state => getOwnerValuePatch(state, 'getInTouch');
