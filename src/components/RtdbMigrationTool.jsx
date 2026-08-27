@@ -392,9 +392,12 @@ const PlanSummary = ({ plan }) => {
       <StatLine $warn={Boolean(counters.conflicts)}>
         конфліктів: {formatCount(counters.conflicts)}
       </StatLine>
-      <StatLine $warn={Boolean(counters.unsafeKeys)}>
-        непридатних ключів: {formatCount(counters.unsafeKeys)}
-      </StatLine>
+      {/*
+        Не червоним: виправлений ключ — це записаний ключ, а не втрачений.
+        Рядок лишається, бо вихідну нотатку варто побачити в звіті: там стоять
+        обидві форми, і саме за вихідною адмін її впізнає.
+      */}
+      <StatLine>виправлено ключів: {formatCount(counters.unsafeKeys)}</StatLine>
       <StatLine $warn={Boolean(counters.errors)}>
         блокуючих помилок: {formatCount(counters.errors)}
       </StatLine>

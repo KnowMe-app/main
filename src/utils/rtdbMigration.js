@@ -47,6 +47,7 @@ import {
   deriveAvatar,
   deriveRole,
   deriveFeedDate,
+  compareLoginRecency,
   checkGetInTouchKeySafety,
 } from './rtdbMigrationDerive';
 
@@ -276,11 +277,23 @@ const addConflict = (ctx, conflict) => {
 };
 
 /**
+ * Поля, у яких розбіжність між копіями розсуджується датою, а не людиною.
+ *
+ * «Коли анкету востаннє бачили» — це не думка колекції, а факт, і з двох
+ * записів правдивий пізніший: старіший просто відстав. Тож замість конфлікту
+ * тут перемагає та копія, що ближча до сьогодні, — але лише коли обидва
+ * значення справді дати. Незрозуміле значення повертає все до звичайного
+ * правила: розбіжність їде у звіт.
+ */
+const RECENCY_WINS_FIELDS = ['lastLogin', 'lastLogin2'];
+
+/**
  * Один запис у цільовий вузол — і рішення, чи можна після нього чіпати джерело.
  *
- * Три результати, і тільки два з них означають успіх:
+ * Чотири результати, і тільки останній не означає успіх:
  *   `copied`   — у цілі поля не було, кладемо;
  *   `already`  — там уже лежить те саме значення (повторний клік нічого не робить);
+ *   `replaced` — там лежить старіша дата входу, і її змінює свіжіша;
  *   `conflict` — там лежить інше значення. Ціль не перезаписується, джерело не
  *                видаляється, розбіжність їде у звіт.
  */
@@ -301,6 +314,39 @@ const offerValue = (ctx, { profileId, field, value, sourceCollection, derived = 
   if (deepEqual(existing.value, value)) {
     ctx.counters.alreadyPresent += 1;
     return 'already';
+  }
+
+  if (RECENCY_WINS_FIELDS.includes(field)) {
+    const comparison = compareLoginRecency(value, existing.value);
+    if (comparison !== null) {
+      const warning = {
+        code: 'LOGIN_RECENCY_RESOLVED',
+        profileId,
+        field,
+        collection: sourceCollection,
+        targetGroup: ctx.group,
+        keptValue: comparison > 0 ? value : existing.value,
+        droppedValue: comparison > 0 ? existing.value : value,
+        keptSource: comparison > 0 ? sourceCollection : existing.origin,
+      };
+      addWarning(ctx, warning);
+
+      // Свіжіше значення заміщає старіше просто новим записом: `applyMigrationPlan`
+      // виконує записи по черзі, тож останній і лишається в цілі.
+      if (comparison > 0) {
+        ctx.writes.push({ node: ctx.node, profileId, field, value, origin: sourceCollection });
+        if (!ctx.pendingTargets[profileId]) ctx.pendingTargets[profileId] = {};
+        ctx.pendingTargets[profileId][field] = { value, origin: sourceCollection };
+        if (sourceCollection === 'users') ctx.counters.fieldsCopiedFromUsers += 1;
+        else ctx.counters.fieldsMovedFromNewUsers += 1;
+        return 'replaced';
+      }
+
+      // Старіше значення не записується — але джерело своє віддало, і тримати
+      // його далі нема за чим: свіжіша дата вже в цілі.
+      ctx.counters.alreadyPresent += 1;
+      return 'already';
+    }
   }
 
   const conflict = {
@@ -359,7 +405,7 @@ const planConsumption = (ctx, sourceCollection, profileId, field) => {
   ctx.counters.consumedFromUsers += 1;
 };
 
-const isSuccess = outcome => outcome === 'copied' || outcome === 'already';
+const isSuccess = outcome => outcome === 'copied' || outcome === 'already' || outcome === 'replaced';
 
 /** Пряме поле: значення переноситься як є, без зміни типу (§20). */
 const planDirectField = (ctx, { profileId, field, source, sourceCollection }) => {
@@ -394,38 +440,60 @@ const planDirectField = (ctx, { profileId, field, source, sourceCollection }) =>
 };
 
 /**
+ * `role` — єдина похідна, яку рахують одразу по обох колекціях.
+ *
+ * Решта похідних відповідає на питання «що каже ця копія анкети», і на нього в
+ * кожної копії своя відповідь. Роль — питання іншого роду: у яких ролях анкета
+ * себе заявляла. Відповідь на нього одна на всю анкету, і збирається вона з
+ * усіх чотирьох місць, де роль буває, — `userRole` та `role` у `users` і в
+ * `newUsers`. Тому прохід тут один на профіль, а не по одному на колекцію:
+ * інакше друга копія приносила б у ціль інший масив і сперечалася б із першою.
+ *
+ * Ключі забираються з обох колекцій — але, як завжди, лише ті, з яких у
+ * зібраний набір справді щось потрапило.
+ */
+const planMergedRole = (ctx, { profileId, usersSource, newUsersSource }) => {
+  const merged = deriveRole(usersSource, newUsersSource);
+  if (merged.value === undefined) return;
+
+  const perCollection = [
+    ['users', deriveRole(usersSource)],
+    ['newUsers', deriveRole(newUsersSource)],
+  ];
+
+  // Походженням вважається `users`, коли вона внесла хоч один варіант: у
+  // конфлікті з нею legacy-колекція виграє, і облік має казати те саме.
+  const sourceCollection = perCollection[0][1].value !== undefined ? 'users' : 'newUsers';
+
+  const outcome = offerValue(ctx, {
+    profileId,
+    field: 'role',
+    value: merged.value,
+    sourceCollection,
+    derived: true,
+  });
+
+  if (!isSuccess(outcome)) return;
+  // Кожна колекція віддає рівно ті свої ключі, з яких у зібраний набір щось
+  // потрапило. Значення, з якого не вийшло жодного варіанта, лишається на
+  // місці — навіть коли роль у сусідній копії знайшлась.
+  perCollection.forEach(([collection, role]) => {
+    role.consumed.forEach(field => planConsumption(ctx, collection, profileId, field));
+  });
+};
+
+/**
  * Похідні картки стрічки.
  *
  * Кожна з них має власне правило щодо джерела, і всі правила — обмежувальні:
  * `surname` і `blood` не видаляються тут узагалі, бо повні значення ще потрібні
  * `profileDetails`; `photos` не видаляється, навіть коли з нього взято аватар;
  * `lastLogin*` не видаляються, бо на них чекає `profileTechnical`.
+ *
+ * `role` сюди не входить: він рахується один раз на анкету, по обох колекціях
+ * одразу (`planMergedRole`).
  */
 const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection }) => {
-  const role = deriveRole(source);
-  if (role.conflict) {
-    addConflict(ctx, {
-      profileId,
-      targetGroup: ctx.group,
-      field: 'role',
-      reason: role.conflict,
-      userRoleValue: source.userRole,
-      roleValue: source.role,
-    });
-  } else if (role.value !== undefined) {
-    const outcome = offerValue(ctx, {
-      profileId,
-      field: 'role',
-      value: role.value,
-      sourceCollection,
-      derived: true,
-    });
-    // Обидва старі ключі йдуть тільки разом і тільки після безконфліктного `role`.
-    if (isSuccess(outcome)) {
-      role.consumed.forEach(field => planConsumption(ctx, sourceCollection, profileId, field));
-    }
-  }
-
   const surnameShort = deriveSurnameShort(source.surname);
   if (surnameShort.warning) {
     addWarning(ctx, {
@@ -572,8 +640,8 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
 
   const safety = checkGetInTouchKeySafety(raw);
   if (!safety.safe) {
-    // Мовчазне кодування зробило б значення невпізнаваним для адміна, який його
-    // й писав. Тож джерело лишається, а випадок їде у звіт.
+    // Лишилось тільки те, з чого ключа не буває взагалі: порожнє значення або
+    // самі лише заборонені символи. Таке джерело лишається на місці.
     ctx.counters.unsafeKeys += 1;
     addWarning(ctx, {
       code: safety.reason,
@@ -581,9 +649,25 @@ const planGetInTouch = (ctx, { profileId, source, sourceCollection, ownerUid }) 
       field: 'getInTouch',
       collection: sourceCollection,
       targetGroup: ctx.group,
-      value: safety.key,
+      value: safety.original,
     });
     return;
+  }
+
+  if (safety.changed) {
+    // Значення виправлене, а не відкинуте, — але виправлення видно: у звіті
+    // стоять обидві форми, тож адмін упізнає свою нотатку і бачить, під яким
+    // ключем вона тепер лежить.
+    ctx.counters.unsafeKeys += 1;
+    addWarning(ctx, {
+      code: safety.reason,
+      profileId,
+      field: 'getInTouch',
+      collection: sourceCollection,
+      targetGroup: ctx.group,
+      value: safety.original,
+      key: safety.key,
+    });
   }
 
   // Одна картка має в одного власника рівно одне значення `getInTouch`. Якщо
@@ -678,6 +762,14 @@ export const planMigrationGroup = (state, group, options = {}) => {
       ['users', state.originalUsers?.[profileId], state.originalUsers?.[profileId]],
       ['newUsers', state.workingNewUsers?.[profileId], state.originalNewUsers?.[profileId]],
     ];
+
+    if (group === 'matchingCards') {
+      planMergedRole(ctx, {
+        profileId,
+        usersSource: state.originalUsers?.[profileId],
+        newUsersSource: state.originalNewUsers?.[profileId],
+      });
+    }
 
     passes.forEach(([sourceCollection, source, derivationSource]) => {
       if (!source || typeof source !== 'object') return;
@@ -865,6 +957,18 @@ export const buildMigrationAudit = state => ({
  */
 const REDACTED = '[не показано]';
 
+/**
+ * Поля, від яких у звіті лишається сам факт, а не вміст.
+ *
+ * `attitude` — це історія реакцій цілим журналом: на 71 анкету він дає майже
+ * третину мегабайта, тобто більше, ніж усе інше в залишку разом. У новий
+ * backend він не їде, розбирати його ніхто не буде, а читати звіт крізь нього
+ * доводиться. Тож ключ лишається видимим — щоб не здавалось, ніби поля немає
+ * зовсім, — а вміст ні: він і далі лежить у самій базі.
+ */
+const BULKY_REPORT_FIELDS = ['attitude'];
+const OMITTED = '[не показано у звіті]';
+
 const buildRemainderReport = collection => {
   const out = {};
   Object.entries(collection || {}).forEach(([profileId, profile]) => {
@@ -876,7 +980,9 @@ const buildRemainderReport = collection => {
     if (!fields.length) return;
     const copy = {};
     fields.forEach(field => {
-      copy[field] = SECRET_FIELDS.includes(field) ? REDACTED : deepClone(profile[field]);
+      if (SECRET_FIELDS.includes(field)) copy[field] = REDACTED;
+      else if (BULKY_REPORT_FIELDS.includes(field)) copy[field] = OMITTED;
+      else copy[field] = deepClone(profile[field]);
     });
     out[profileId] = copy;
   });

@@ -114,18 +114,38 @@ describe('role', () => {
     expect(deriveRole({ role: 'ip' })).toEqual({ value: 'ip', consumed: ['role'] });
   });
 
-  it('приймає обидва, коли вони однакові', () => {
+  it('приймає обидва, коли вони однакові, і лишає скаляр скаляром', () => {
     expect(deriveRole({ userRole: 'ag', role: 'ag' })).toEqual({
       value: 'ag',
       consumed: ['userRole', 'role'],
     });
   });
 
-  it('не вибирає мовчки, коли вони різні', () => {
+  it('зберігає обидва варіанти, коли вони різні', () => {
     expect(deriveRole({ userRole: 'sm', role: 'ed' })).toEqual({
-      value: undefined,
-      conflict: 'ROLE_CONFLICT',
-      consumed: [],
+      value: ['sm', 'ed'],
+      consumed: ['userRole', 'role'],
+    });
+  });
+
+  it('розгортає масив ролей і не дублює того, що вже є', () => {
+    expect(deriveRole({ userRole: 'ed', role: ['ed', 'ag'] })).toEqual({
+      value: ['ed', 'ag'],
+      consumed: ['userRole', 'role'],
+    });
+  });
+
+  it('збирає варіанти з обох колекцій у сталому порядку', () => {
+    expect(deriveRole({ userRole: 'ed' }, { role: 'ag', userRole: 'ip' })).toEqual({
+      value: ['ed', 'ip', 'ag'],
+      consumed: ['userRole', 'role'],
+    });
+  });
+
+  it('не забирає ключа, з якого не вийшло жодного варіанта', () => {
+    expect(deriveRole({ userRole: 'ed', role: { обгортка: '' } })).toEqual({
+      value: 'ed',
+      consumed: ['userRole'],
     });
   });
 });
@@ -180,36 +200,68 @@ describe('feedDate', () => {
 
 describe('getInTouch key safety', () => {
   it('пропускає звичайну дату', () => {
-    expect(checkGetInTouchKeySafety('2026-09-01')).toEqual({ safe: true, key: '2026-09-01' });
+    expect(checkGetInTouchKeySafety('2026-09-01')).toMatchObject({
+      safe: true, key: '2026-09-01', changed: false,
+    });
   });
 
   it('пропускає legacy 2099-99-99 без «виправлень»', () => {
-    expect(checkGetInTouchKeySafety('2099-99-99')).toEqual({ safe: true, key: '2099-99-99' });
+    expect(checkGetInTouchKeySafety('2099-99-99')).toMatchObject({
+      safe: true, key: '2099-99-99', changed: false,
+    });
   });
 
   it('пропускає текстове значення з пробілами', () => {
-    expect(checkGetInTouchKeySafety(' Теж більше не писати ')).toEqual({
+    expect(checkGetInTouchKeySafety(' Теж більше не писати ')).toMatchObject({
+      safe: true, key: 'Теж більше не писати', changed: false,
+    });
+  });
+
+  it.each(['.', '#', '$', '[', ']', '/'])('заміняє заборонений символ %s і каже, з чого вийшов ключ', character => {
+    expect(checkGetInTouchKeySafety(`нотатка${character}далі`)).toMatchObject({
       safe: true,
-      key: 'Теж більше не писати',
-    });
-  });
-
-  it.each(['.', '#', '$', '[', ']', '/'])('відхиляє заборонений символ %s', character => {
-    expect(checkGetInTouchKeySafety(`нотатка${character}`)).toMatchObject({
-      safe: false,
+      key: 'нотатка-далі',
+      original: `нотатка${character}далі`,
+      changed: true,
       reason: 'UNSAFE_GET_IN_TOUCH_KEY',
     });
   });
 
-  it('відхиляє невидимий контрольний символ', () => {
-    expect(checkGetInTouchKeySafety('нотатка')).toMatchObject({
-      safe: false,
-      reason: 'UNSAFE_GET_IN_TOUCH_KEY',
+  it('заміняє кожен заборонений символ окремо, а не групою', () => {
+    // Склеювання зробило б «а/б» і «а//б» одним ключем — тобто злило б дві
+    // різні нотатки в одну.
+    expect(checkGetInTouchKeySafety('а//б').key).toBe('а--б');
+  });
+
+  it('заміняє невидимий контрольний символ', () => {
+    expect(checkGetInTouchKeySafety('нотаткадалі')).toMatchObject({
+      safe: true,
+      key: 'нотатка-далі',
+      changed: true,
     });
+  });
+
+  it('обрізає задовгий ключ по межі символа', () => {
+    const result = checkGetInTouchKeySafety('я'.repeat(500));
+
+    expect(result.changed).toBe(true);
+    expect(result.reason).toBe('GET_IN_TOUCH_KEY_TOO_LONG');
+    // Цілі «я», а не половина двобайтової послідовності на межі.
+    expect(Buffer.byteLength(result.key, 'utf8')).toBe(768);
+    expect(result.key).toBe('я'.repeat(384));
   });
 
   it('відхиляє порожнє значення', () => {
     expect(checkGetInTouchKeySafety('   ')).toMatchObject({ reason: 'EMPTY_GET_IN_TOUCH_VALUE' });
+  });
+
+  it('відхиляє значення, у якому нема нічого, крім заборонених символів', () => {
+    // Із самих замінників ключа не буває: усі такі значення злилися б в одне.
+    expect(checkGetInTouchKeySafety('///')).toMatchObject({
+      safe: false,
+      reason: 'EMPTY_GET_IN_TOUCH_VALUE',
+      original: '///',
+    });
   });
 });
 
@@ -291,13 +343,25 @@ describe('Matching Cards', () => {
     expect(state.workingNewUsers.P1).toEqual({ photos: ['https://p'] });
   });
 
-  it('не прибирає жодного з role/userRole, поки вони конфліктують', () => {
+  it('зберігає обидва варіанти ролі і забирає обидва старі ключі', () => {
     const state = stateWith({}, { P1: { userRole: 'sm', role: 'ed' } });
     const plan = runMigrationGroup(state, 'matchingCards');
 
-    expect(card(state, 'P1')).toBeUndefined();
-    expect(state.workingNewUsers.P1).toEqual({ userRole: 'sm', role: 'ed' });
-    expect(plan.conflicts).toContainEqual(expect.objectContaining({ reason: 'ROLE_CONFLICT' }));
+    expect(card(state, 'P1')).toEqual({ role: ['sm', 'ed'] });
+    expect(state.workingNewUsers.P1).toEqual({});
+    expect(plan.counters.conflicts).toBe(0);
+  });
+
+  it('збирає роль з обох колекцій одним набором, а не двома записами', () => {
+    // Раніше друга колекція приносила в ціль інший масив і сперечалася з
+    // першою. Роль — питання про анкету, а не про копію анкети.
+    const state = stateWith({ P1: { userRole: 'ed' } }, { P1: { role: 'ag' } });
+    const plan = runMigrationGroup(state, 'matchingCards');
+
+    expect(card(state, 'P1')).toEqual({ role: ['ed', 'ag'] });
+    expect(state.workingNewUsers.P1).toEqual({});
+    expect(state.remainingUsers.P1).toEqual({});
+    expect(plan.counters.conflicts).toBe(0);
   });
 
   it('не створює feedDate, коли показана анкета не має жодної дати', () => {
@@ -384,6 +448,85 @@ describe('Contacts', () => {
       newUsersValue: '+999',
       reason: 'SOURCE_CONFLICT',
     }));
+  });
+});
+
+describe('дати входу з двох колекцій', () => {
+  it('лишає ту, що ближча до сьогодення, і чистить обидва джерела', () => {
+    const state = stateWith(
+      { P1: { lastLogin2: '2026-08-22' } },
+      { P1: { lastLogin2: '2026-08-01' } },
+    );
+    const plan = runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin2: '2026-08-22' });
+    expect(state.workingNewUsers.P1).toEqual({});
+    expect(plan.counters.conflicts).toBe(0);
+    expect(plan.warningsByCode.LOGIN_RECENCY_RESOLVED).toBe(1);
+  });
+
+  it('свіжіша дата з newUsers заміщає старішу з users', () => {
+    // `users` виграє в конфлікті, але тут не конфлікт: пізніша дата — не думка
+    // колекції, а факт.
+    const state = stateWith(
+      { P1: { lastLogin: '2026-01-01' } },
+      { P1: { lastLogin: '2026-08-25' } },
+    );
+    runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin: '2026-08-25' });
+    expect(state.workingNewUsers.P1).toEqual({});
+    expect(state.remainingUsers.P1).toEqual({});
+  });
+
+  it('зводить і різні формати запису тієї самої дати', () => {
+    const state = stateWith(
+      { P1: { lastLogin2: '01.08.2026' } },
+      { P1: { lastLogin2: '2026-08-25' } },
+    );
+    runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin2: '2026-08-25' });
+  });
+
+  it('у звіті видно, що саме лишили і що відкинули', () => {
+    const state = stateWith(
+      { P1: { lastLogin2: '2026-08-22' } },
+      { P1: { lastLogin2: '2026-08-01' } },
+    );
+    const plan = runMigrationGroup(state, 'profileTechnical');
+
+    expect(plan.warnings).toContainEqual(expect.objectContaining({
+      code: 'LOGIN_RECENCY_RESOLVED',
+      profileId: 'P1',
+      field: 'lastLogin2',
+      keptValue: '2026-08-22',
+      droppedValue: '2026-08-01',
+      keptSource: 'users',
+    }));
+  });
+
+  it('незрозуміле значення лишається конфліктом, а не «свіжішою датою»', () => {
+    const state = stateWith(
+      { P1: { lastLogin2: '2026-08-22' } },
+      { P1: { lastLogin2: 'колись улітку' } },
+    );
+    const plan = runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin2: '2026-08-22' });
+    expect(state.workingNewUsers.P1).toEqual({ lastLogin2: 'колись улітку' });
+    expect(plan.counters.conflicts).toBe(1);
+  });
+
+  it('дата входу не робить свіжішим нічого, крім lastLogin', () => {
+    const state = stateWith(
+      { P1: { registrationDate: '2026-08-22' } },
+      { P1: { registrationDate: '2026-08-25' } },
+    );
+    const plan = runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ registrationDate: '2026-08-22' });
+    expect(plan.counters.conflicts).toBe(1);
   });
 });
 
@@ -474,15 +617,40 @@ describe('GetInTouch', () => {
     ['P1', 'P2', 'P3', 'P4'].forEach(id => expect(state.workingNewUsers[id]).toEqual({}));
   });
 
-  it('непридатний ключ лишає джерело на місці', () => {
+  it('непридатний ключ виправляється, а не відкидається', () => {
     const state = stateWith({}, { P1: { getInTouch: 'до 01/09' }, P2: { getInTouch: 'а.б' } });
     const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
 
-    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toBeUndefined();
-    expect(state.workingNewUsers.P1).toEqual({ getInTouch: 'до 01/09' });
-    expect(state.workingNewUsers.P2).toEqual({ getInTouch: 'а.б' });
+    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toEqual({
+      'до 01-09': { P1: true },
+      'а-б': { P2: true },
+    });
+    // Джерело поїхало: значення записане, хай і під виправленим ключем.
+    expect(state.workingNewUsers.P1).toEqual({});
+    expect(state.workingNewUsers.P2).toEqual({});
     expect(plan.counters.unsafeKeys).toBe(2);
     expect(plan.warningsByCode.UNSAFE_GET_IN_TOUCH_KEY).toBe(2);
+  });
+
+  it('у звіті стоять обидві форми — вихідна нотатка і ключ, під яким вона лягла', () => {
+    const state = stateWith({}, { P1: { getInTouch: 'т/в?' } });
+    const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
+
+    expect(plan.warnings).toContainEqual(expect.objectContaining({
+      code: 'UNSAFE_GET_IN_TOUCH_KEY',
+      profileId: 'P1',
+      value: 'т/в?',
+      key: 'т-в?',
+    }));
+  });
+
+  it('значення без жодного придатного символа лишає джерело на місці', () => {
+    const state = stateWith({}, { P1: { getInTouch: '///' } });
+    const plan = runMigrationGroup(state, 'getInTouch', { getInTouchOwnerUid: OWNER });
+
+    expect(state.targets.multiDataPatch.getInTouch[OWNER]).toBeUndefined();
+    expect(state.workingNewUsers.P1).toEqual({ getInTouch: '///' });
+    expect(plan.warningsByCode.EMPTY_GET_IN_TOUCH_VALUE).toBe(1);
   });
 
   it('не кладе одну картку під два різні значення', () => {
@@ -880,6 +1048,26 @@ describe('рештки обох колекцій', () => {
 
     expect(unknown).toEqual({});
     expect(excluded).toEqual({ myComment: 1, __sourceCollection: 1, localVersion: 1 });
+  });
+
+  it('не тягне в звіт журнал attitude, але й не ховає самого поля', () => {
+    // На бойових даних це 71 анкета і майже третина мегабайта — більше, ніж
+    // весь інший залишок разом. У нові вузли поле не їде, а читати звіт крізь
+    // нього доводиться.
+    const attitude = [{ like: [{ reason: 'perfect', status: true }], userId: 'X' }];
+    const state = createMigrationState({
+      users: { P1: { attitude, щосьНевідоме: 1 } },
+      newUsers: {},
+    });
+
+    const remaining = buildRemainingUsers(state);
+
+    expect(remaining.P1.attitude).toBe('[не показано у звіті]');
+    expect(remaining.P1.щосьНевідоме).toBe(1);
+    expect(JSON.stringify(buildRemaindersExport(state))).not.toContain('perfect');
+    // Поле й далі рахується як навмисно виключене — зникло значення, не факт.
+    expect(buildRemaindersExport(state).summary.users.unmappedFieldStats.excluded)
+      .toMatchObject({ attitude: 1 });
   });
 
   it('звіт — копія, а не посилання на робочий стан', () => {

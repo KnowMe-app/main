@@ -181,27 +181,46 @@ export const deriveAvatar = source => {
   return { value: undefined, fromPhotos: false };
 };
 
+/** Плоский список рядків із будь-якої форми, у якій лежить роль. */
+const roleVariants = value => {
+  if (Array.isArray(value)) return value.flatMap(roleVariants);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(roleVariants);
+  if (typeof value === 'number') return [String(value)];
+  if (typeof value !== 'string') return [];
+  const text = value.trim();
+  return text ? [text] : [];
+};
+
 /**
- * Одна роль замість двох ключів.
+ * Усі варіанти ролі з обох ключів і обох колекцій.
  *
- * Старі анкети тримають роль то в `userRole`, то в `role`, а бувають і обидва.
- * Коли вони розходяться, міграція не вибирає мовчки: обидва лишаються в
- * `newUsers`, а розбіжність їде у звіт — це рішення людини, а не скрипта.
+ * Один варіант лишається скаляром, кілька стають масивом. Роль тут не факт, а
+ * набір ролей, у яких анкета себе заявляла: `userRole: 'ed'` проти
+ * `role: ['ed','ag']` — це не суперечність, яку треба розсудити, а два записи
+ * про ту саму людину. Порядок сталий (спершу `userRole`, потім `role`, у
+ * порядку колекцій), тож повторний прогін дає той самий масив, а не той самий
+ * набір у випадковому порядку.
  */
-export const deriveRole = source => {
-  const hasUserRole = hasMeaningfulValue(source?.userRole);
-  const hasRole = hasMeaningfulValue(source?.role);
+export const deriveRole = (...sources) => {
+  const variants = [];
+  const consumed = [];
 
-  if (hasUserRole && hasRole) {
-    if (deepEqual(source.userRole, source.role)) {
-      return { value: deepClone(source.role), consumed: ['userRole', 'role'] };
-    }
-    return { value: undefined, conflict: 'ROLE_CONFLICT', consumed: [] };
-  }
+  sources.filter(Boolean).forEach(source => {
+    ['userRole', 'role'].forEach(field => {
+      if (!hasMeaningfulValue(source?.[field])) return;
+      const found = roleVariants(source[field]);
+      // Ключ іде в `consumed` лише тоді, коли з нього справді щось узято:
+      // значення, з якого не вийшло жодного варіанта, лишається чекати людину.
+      if (!found.length) return;
+      if (!consumed.includes(field)) consumed.push(field);
+      found.forEach(variant => {
+        if (!variants.includes(variant)) variants.push(variant);
+      });
+    });
+  });
 
-  if (hasUserRole) return { value: deepClone(source.userRole), consumed: ['userRole'] };
-  if (hasRole) return { value: deepClone(source.role), consumed: ['role'] };
-  return { value: undefined, consumed: [] };
+  if (!variants.length) return { value: undefined, consumed: [] };
+  return { value: variants.length === 1 ? variants[0] : variants, consumed };
 };
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -227,6 +246,25 @@ export const normalizeFeedDateValue = value => {
   }
 
   return '';
+};
+
+/**
+ * Порівняння двох дат входу — рівно настільки, наскільки це можливо чесно.
+ *
+ * `lastLogin` та `lastLogin2` — це «коли анкету востаннє бачили», і з двох
+ * копій правдива та, що ближча до сьогодні: старіша просто відстала. Але
+ * зводити їх можна тільки тоді, коли обидві справді дати: `null` каже, що
+ * порівнювати нема чого, і тоді розбіжність лишається розбіжністю.
+ *
+ * Формат нормалізується до `YYYY-MM-DD`, тож рядки порівнюються лексикографічно
+ * і без часових поясів.
+ */
+export const compareLoginRecency = (left, right) => {
+  const a = normalizeFeedDateValue(left);
+  const b = normalizeFeedDateValue(right);
+  if (!a || !b) return null;
+  if (a === b) return 0;
+  return a > b ? 1 : -1;
 };
 
 /**
@@ -264,6 +302,7 @@ export const deriveFeedDate = source => {
 
 /** Символи, яких не може містити ключ RTDB. */
 const FORBIDDEN_KEY_CHARACTERS = /[.#$/[\]]/;
+const FORBIDDEN_KEY_CHARACTERS_GLOBAL = /[.#$/[\]]/g;
 
 /**
  * Контрольні коди база теж не приймає, а в legacy-значеннях вони трапляються
@@ -271,6 +310,8 @@ const FORBIDDEN_KEY_CHARACTERS = /[.#$/[\]]/;
  */
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = new RegExp('[\\u0000-\\u001F\\u007F]');
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS_GLOBAL = new RegExp('[\\u0000-\\u001F\\u007F]', 'g');
 
 const utf8Length = text => (
   typeof TextEncoder === 'function'
@@ -278,20 +319,68 @@ const utf8Length = text => (
     : Buffer.byteLength(text, 'utf8')
 );
 
+/** Символ-замінник. Сам він у ключі дозволений, тож заміна не тягне за собою нову. */
+const KEY_REPLACEMENT_CHARACTER = '-';
+
+const MAX_KEY_BYTES = 768;
+
 /**
- * Чи годиться значення `getInTouch` бути ключем.
+ * Обрізання по межі кодової точки, а не байта.
  *
- * Legacy-значення не «виправляються»: і `2099-99-99`, і текстова нотатка
- * переносяться як є, бо саме за ними адмін їх упізнає. Непридатне значення не
- * кодується мовчки — воно лишається в `newUsers` і потрапляє у звіт, щоб його
- * розібрала людина.
+ * Ріж посеред UTF-8 послідовності — і в ключі опиниться зламаний символ, який
+ * база або відкине, або збереже нечитабельним.
+ */
+const truncateToBytes = (text, limit) => {
+  let result = '';
+  let used = 0;
+  for (const character of text) {
+    const size = utf8Length(character);
+    if (used + size > limit) break;
+    result += character;
+    used += size;
+  }
+  return result;
+};
+
+/**
+ * Значення `getInTouch`, приведене до придатного ключа.
+ *
+ * Legacy-значення не «виправляються» по суті: `2099-99-99` лишається
+ * `2099-99-99`, а текстова нотатка — нотаткою, бо саме за ними адмін їх
+ * упізнає. Правиться тільки те, через що база відмовила б у записі:
+ * заборонені в ключі символи (`.#$/[]` і контрольні) стають дефісом, задовгий
+ * ключ обрізається по межі символа.
+ *
+ * Замінене не зникає з поля зору: `changed` вмикає попередження, а `original`
+ * несе вихідне значення, тож у звіті видно і що записано, і з чого воно
+ * вийшло. Порожнє значення ключем не стає ніяк — з нічого ключа не буває, і
+ * таке джерело лишається на місці.
  */
 export const checkGetInTouchKeySafety = value => {
   const text = displayString(value);
   if (!text) return { safe: false, reason: 'EMPTY_GET_IN_TOUCH_VALUE' };
-  if (FORBIDDEN_KEY_CHARACTERS.test(text) || CONTROL_CHARACTERS.test(text)) {
-    return { safe: false, key: text, reason: 'UNSAFE_GET_IN_TOUCH_KEY' };
+
+  let key = text;
+  const reasons = [];
+
+  if (FORBIDDEN_KEY_CHARACTERS.test(key) || CONTROL_CHARACTERS.test(key)) {
+    key = key
+      .replace(FORBIDDEN_KEY_CHARACTERS_GLOBAL, KEY_REPLACEMENT_CHARACTER)
+      .replace(CONTROL_CHARACTERS_GLOBAL, KEY_REPLACEMENT_CHARACTER);
+    reasons.push('UNSAFE_GET_IN_TOUCH_KEY');
   }
-  if (utf8Length(text) > 768) return { safe: false, key: text, reason: 'GET_IN_TOUCH_KEY_TOO_LONG' };
-  return { safe: true, key: text };
+
+  if (utf8Length(key) > MAX_KEY_BYTES) {
+    key = truncateToBytes(key, MAX_KEY_BYTES);
+    reasons.push('GET_IN_TOUCH_KEY_TOO_LONG');
+  }
+
+  // Із самих лише заборонених символів ключа не збереш: замінники нічого не
+  // розрізняють, і всі такі значення злилися б в один ключ.
+  if ([...key].every(character => character === KEY_REPLACEMENT_CHARACTER)) {
+    return { safe: false, original: text, reason: 'EMPTY_GET_IN_TOUCH_VALUE' };
+  }
+
+  if (!reasons.length) return { safe: true, key, original: text, changed: false };
+  return { safe: true, key, original: text, changed: true, reason: reasons[0], reasons };
 };
