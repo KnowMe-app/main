@@ -382,6 +382,20 @@ await it('індексує власну анкету — і старі знач�
 await it('не може підмінити чужу картку', () =>
   assertFails(set(ref(db(SELF_SERVE), `matchingCards/${CARD}/feedDate`), '2026-08-26')));
 
+// Це і є перевірка на життя без `/users`: анкета, яка існує лише в нових
+// вузлах, мусить мати право на картку. Стара умова питала саме legacy — тож
+// після зникнення колекції жодна картка не записалась би взагалі, і стрічка
+// перестала б оновлюватись з першого ж збереження.
+await it('картка законна, коли анкета живе лише в нових вузлах', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/createdAt2`), '2026-08-27'));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `matchingCards/${SELF_SERVE}/feedDate`), '2026-08-27'));
+});
+
+await it('картка без анкети де-небудь лишається неможливою', () =>
+  // Привид у вузлі стрічки — це картка, за якою нічого немає: вона показується,
+  // відкрити її нема куди.
+  assertFails(set(ref(db(SUPERADMIN), 'matchingCards/nobodyAtAllUid00000000/name'), 'Привид')));
+
 await it('відгук користувача видно всім авторизованим', async () => {
   await assertSucceeds(set(ref(db(SELF_SERVE), `comments/${CARD}/c1`), {
     text: 'відгук', authorId: SELF_SERVE, createdAt: 1, visibility: 'public',

@@ -104,11 +104,18 @@ describe('matchingCards приймає лише перелічені поля', 
   });
 
   it('більше не вимагає поля source, але й далі не пускає картку-привида', () => {
-    // ТЗ знімає вимогу `source`, а не вимогу існування анкети. Тож перевірка
-    // лишилась, просто питає обидві колекції напряму.
+    // ТЗ знімає вимогу `source`, а не вимогу існування анкети.
     expect(card['.validate']).not.toContain("child('source')");
     expect(card['.validate']).toContain("root.child('users').child($uid).exists()");
     expect(card['.validate']).toContain("root.child('newUsers').child($uid).exists()");
+  });
+
+  it('анкети, яка живе лише в нових вузлах, для картки досить', () => {
+    // Питати саме legacy означало б, що після зникнення `users`/`newUsers`
+    // жодна картка не запишеться взагалі — тобто стрічка перестане
+    // оновлюватись із першого ж збереження.
+    ['profileDetails', 'profileTechnical', 'profileContacts', 'profileWorkflow']
+      .forEach(node => expect(card['.validate']).toContain(`root.child('${node}').child($uid).exists()`));
   });
 
   it('нічого понад цільову схему не приймає', () => {
