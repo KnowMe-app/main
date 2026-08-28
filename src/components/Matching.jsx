@@ -2734,9 +2734,13 @@ const Matching = () => {
       additionalMatchingFetchVersionRef.current += 1;
       additionalHasMoreRef.current = false;
       additionalAccessLoadInFlightRef.current = false;
+      const deferredError = deferredInitialLoadErrorRef.current;
+      deferredInitialLoadErrorRef.current = null;
+      additionalNewUsersRef.current = [];
       setAdditionalHasMore(false);
       setAdditionalNewUsers([]);
       setAdditionalNextOffset(0);
+      if (deferredError) reportInitialLoadError(deferredError);
       return () => {};
     }
 
@@ -2746,6 +2750,7 @@ const Matching = () => {
     // replacement request is in flight (or if that request fails).
     additionalHasMoreRef.current = false;
     additionalAccessLoadInFlightRef.current = true;
+    additionalNewUsersRef.current = [];
     setAdditionalHasMore(false);
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
@@ -2777,6 +2782,7 @@ const Matching = () => {
           .filter(user => user?.userId && !publicIds.has(user.userId))
           .map(user => ({ ...user, __matchingAccessAllowed: true }));
         loadedScopedCards = scopedUsers.length > 0;
+        additionalNewUsersRef.current = scopedUsers;
         setAdditionalNewUsers(scopedUsers);
         additionalHasMoreRef.current = Boolean(loaded.hasMore);
         setAdditionalHasMore(Boolean(loaded.hasMore));
@@ -3117,8 +3123,8 @@ const Matching = () => {
       }
       console.error('Failed to load initial matching profiles', error);
     } finally {
-      initialLoadInFlightRef.current = false;
       if (loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current) {
+        initialLoadInFlightRef.current = false;
         loadingRef.current = false;
         loadingStateRef.current = false;
         setLoading(false);
@@ -3200,6 +3206,10 @@ const Matching = () => {
     lastCardLoadTriggerSignatureRef.current = '';
     lastCardInFlightTriggerSignatureRef.current = '';
     loadingRef.current = false;
+    loadingStateRef.current = false;
+    loadInitialVersionRef.current += 1;
+    initialRequestIdRef.current += 1;
+    initialLoadInFlightRef.current = false;
     loadedIdsRef.current = new Set();
     additionalRulesToastRef.current = '';
     additionalProfileCacheRef.current = null;
@@ -3214,6 +3224,7 @@ const Matching = () => {
     setFilters({});
     setDraftFilters({});
     setUsers([]);
+    additionalNewUsersRef.current = [];
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
     additionalHasMoreRef.current = false;
@@ -5526,6 +5537,9 @@ const Matching = () => {
   }, [filteredUsers, filters, ownerId, parsedAdditionalAccessRules.length, visibleUsers]);
 
   const runAutoLoadMore = React.useCallback((signature, payload) => {
+    const canPageDeck = hasMoreRef.current || (
+      viewModeRef.current === 'default' && additionalHasMoreRef.current
+    );
     const commonDebug = {
       matchingDebugVersion: MATCHING_DEBUG_VERSION,
       signature,
@@ -5540,7 +5554,9 @@ const Matching = () => {
       console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-max-empty-attempts' });
       return;
     }
-    const forceRefillBecauseVisibleBufferLow = Boolean(payload?.targetVisibleCount > payload?.currentVisibleCount && hasMoreRef.current);
+    const forceRefillBecauseVisibleBufferLow = Boolean(
+      payload?.targetVisibleCount > payload?.currentVisibleCount && canPageDeck
+    );
     if (autoLoadMoreSignatureRef.current === signature && !forceRefillBecauseVisibleBufferLow) {
       console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-duplicate-signature' });
       return;
@@ -5556,7 +5572,7 @@ const Matching = () => {
         retryAfterMs,
         stopReason: 'blocked-cooldown',
       });
-      if (!autoLoadMoreCooldownRetryTimerRef.current && hasMoreRef.current) {
+      if (!autoLoadMoreCooldownRetryTimerRef.current && canPageDeck) {
         autoLoadMoreCooldownRetryTimerRef.current = setTimeout(() => {
           autoLoadMoreCooldownRetryTimerRef.current = null;
           runAutoLoadMore(signature, payload);
@@ -5595,7 +5611,6 @@ const Matching = () => {
 
   const triggerEndOfDeckLoad = React.useCallback((reason = 'navigate-forward', { limit = MATCHING_REFILL_LIMIT } = {}) => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
-    if (renderedCardsLength < 1) return;
 
     const sourceNextOffset = viewMode === 'favorites' || viewMode === 'dislikes'
       ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()).nextOffset
@@ -6344,8 +6359,7 @@ const Matching = () => {
     deckHasMore &&
     !loading &&
     !loadError &&
-    detailIndex === null &&
-    renderedCardsLength > 0
+    detailIndex === null
   );
   const showFeedLoadCountdown = canOfferMoreFeedCards && scrolledDownSinceLoad;
   const showFeedLoadPrompt = canOfferMoreFeedCards && !scrolledDownSinceLoad;
