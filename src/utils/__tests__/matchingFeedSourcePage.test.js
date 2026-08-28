@@ -102,6 +102,19 @@ describe('стрічка читає урізані картки', () => {
     expect(result.users.map(user => user.userId)).toEqual([id('a')]);
   });
 
+  it('передає помилку проєкції нагору, коли fallback до анкет заборонений', async () => {
+    const error = new Error('temporary matchingCards failure');
+    const fetchMatchingCardsPage = jest.fn(async () => { throw error; });
+    const fetchUsersByLastLogin2 = jest.fn();
+
+    await expect(runChunk({
+      allowProfileFallback: false,
+      fetchMatchingCardsPage,
+      fetchUsersByLastLogin2,
+    })).rejects.toBe(error);
+    expect(fetchUsersByLastLogin2).not.toHaveBeenCalled();
+  });
+
   it('не відкочується на анкети посеред пагінації', async () => {
     // Порожня сторінка з курсором означає «дійшли до кінця», а не «індексу
     // немає» — інакше кінець стрічки щоразу тягнув би зайвий запит по анкетах.

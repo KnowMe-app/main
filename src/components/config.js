@@ -2457,8 +2457,19 @@ const readLimitedProfileFields = async (collection, userId) => {
 // Reads a search hit through the limited projection. Unlike the full read this
 // never touches the record's node, only the five child paths the rules open, so
 // there is nothing for the caller to strip afterwards.
-export const fetchLimitedProfileById = async userId => {
+export const fetchLimitedProfileById = async (userId, { collection } = {}) => {
   if (!userId) return null;
+  if (collection === 'users' || collection === 'newUsers') {
+    const projection = await readLimitedProfileFields(collection, userId);
+    if (!projection) return null;
+    return {
+      userId,
+      ...projection,
+      __sourceCollection: collection,
+      __limitedProfile: true,
+      publish: true,
+    };
+  }
   const [fromUsers, fromNewUsers] = await Promise.all([
     readLimitedProfileFields('users', userId),
     readLimitedProfileFields('newUsers', userId),
