@@ -204,8 +204,7 @@ describe('profileContacts — відкриті, але з власним пра�
     const read = rules.profileContacts.$uid['.read'];
     expect(read).toContain('auth.uid == $uid');
     ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
-    // Решта умови збігається з карткою стрічки — саме тому нічого не ламається.
-    expect(read.endsWith(rules.matchingCards['.read'].slice('auth != null && ('.length))).toBe(true);
+    expect(read).not.toBe(rules.matchingCards['.read']);
   });
 
   it('правило власне, а не успадковане — його можна звузити окремо', () => {
@@ -242,8 +241,9 @@ describe('решта вузлів не стає другим місцем для
       .forEach(field => expect(validate).toContain(`$field == '${field}'`));
   });
 
-  it('profileDetails читає та сама аудиторія, що й matchingCards', () => {
-    expect(rules.profileDetails['.read']).toBe(rules.matchingCards['.read']);
+  it('profileDetails не відкривається разом із публічною проєкцією matchingCards', () => {
+    expect(rules.matchingCards['.read']).toContain("query.orderByChild == 'feedDate'");
+    expect(rules.profileDetails['.read']).not.toBe(rules.matchingCards['.read']);
   });
 
   it('profileTechnical бачать лише власник і суперадміни', () => {
@@ -275,7 +275,6 @@ describe('решта вузлів не стає другим місцем для
     // очищена колекція заливається в базу цілком, а разом із нею зникло б і
     // єдине місце, звідки правила про цей доступ дізнавались.
     const withAccessCheck = [
-      rules.matchingCards['.read'],
       rules.matchingCards.$uid['.write'],
       rules.profileDetails.$uid['.write'],
       rules.profileContacts.$uid['.read'],

@@ -1467,7 +1467,6 @@ export const fetchFilteredMatchingSourceChunk = ({
   targetVisibleCount,
   initialCursor,
   exclude = new Set(),
-  parsedAdditionalAccessRules = [],
   filters = {},
   isAdmin = false,
   favoriteUsers = {},
@@ -1480,21 +1479,6 @@ export const fetchFilteredMatchingSourceChunk = ({
   onPart,
   onDiagnosticEvent,
 }) => {
-  // Глядач із правилами додаткового доступу отримує деку не звідси, а з
-  // індексу, звуженого його правилами: послідовне читання колекції віддало б
-  // йому картки, яких він бачити не має.
-  if (parsedAdditionalAccessRules.length > 0) {
-    return Promise.resolve({
-      users: [],
-      lastKey: initialCursor ?? null,
-      hasMore: false,
-      sourceHasMore: false,
-      cursorAdvanced: false,
-      excludedCount: 0,
-      loadedPages: 0,
-    });
-  }
-
   return collectFilteredMatchingSourceCards({
     targetVisibleCount,
     initialCursor,

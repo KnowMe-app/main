@@ -4514,7 +4514,16 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } =
     // Ключ стрічки і `lastLogin2` — обидва чисті дати, тож межа однакова для
     // будь-якого з них.
     const cursorBound = normalizedCursor.date || upperBound;
-    const cardsQuery = query(cardsRef, orderByChild(orderField), endAt(cursorBound), limitToLast(windowSize));
+    // `startAt('')` excludes projections without `feedDate` and is part of the
+    // database-rule contract: every signed-in viewer may scan published cards,
+    // while unpublished projections remain unreadable as a collection.
+    const cardsQuery = query(
+      cardsRef,
+      orderByChild(orderField),
+      startAt(''),
+      endAt(cursorBound),
+      limitToLast(windowSize)
+    );
 
     // eslint-disable-next-line no-await-in-loop
     const snapshot = await get(cardsQuery);

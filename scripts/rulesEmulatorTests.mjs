@@ -17,7 +17,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import fs from 'node:fs';
-import { ref, get, set, update, remove, query, orderByKey, orderByValue, startAt, endAt, limitToFirst } from 'firebase/database';
+import { ref, get, set, update, remove, query, orderByChild, orderByKey, orderByValue, startAt, endAt, limitToFirst, limitToLast } from 'firebase/database';
 
 const SUPERADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const MATCHING_VIEWER = 'matchingViewerUid0000000000';
@@ -113,8 +113,25 @@ await it('матчинговий переглядач читає картки с
 await it('матчинговий переглядач читає деталі анкети', () =>
   assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileDetails/${CARD}`))));
 
-await it('стороння без матчингу не читає карток', () =>
-  assertFails(get(ref(db(OUTSIDER), `matchingCards/${CARD}`))));
+await it('звичайний користувач може точково прочитати опубліковану проєкцію', () =>
+  assertSucceeds(get(ref(db(OUTSIDER), `matchingCards/${CARD}`))));
+
+await it('звичайний користувач не може точково читати неопубліковану проєкцію', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), null));
+  await assertFails(get(ref(db(OUTSIDER), `matchingCards/${CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-08-25'));
+});
+
+await it('кожен авторизований користувач читає стрічку опублікованих карток', () =>
+  assertSucceeds(get(query(
+    ref(db(OUTSIDER), 'matchingCards'),
+    orderByChild('feedDate'),
+    startAt(''),
+    endAt('9999-12-31'),
+    limitToLast(10),
+  ))));
 
 // Ховати контакти сьогодні не треба: їх читає та сама аудиторія, що й картки
 // стрічки. Цінність окремого вузла в іншому — доступ до нього описаний одним
