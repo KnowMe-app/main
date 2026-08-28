@@ -1476,6 +1476,7 @@ export const fetchFilteredMatchingSourceChunk = ({
   fetchUsersByLastLogin2,
   fetchMatchingCardsPage,
   hydrateUsersByIds,
+  allowProfileFallback = true,
   onPart,
   onDiagnosticEvent,
 }) => {
@@ -1547,6 +1548,10 @@ export const fetchFilteredMatchingSourceChunk = ({
           reportFeedSource('matchingCards', '');
           return cardsPage;
         }
+        if (!allowProfileFallback) {
+          reportFeedSource('matchingCards', 'index-empty');
+          return cardsPage;
+        }
         console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму');
         reportFeedSource('profiles', 'index-empty');
       } catch (error) {
@@ -1554,6 +1559,7 @@ export const fetchFilteredMatchingSourceChunk = ({
         reportFeedSource('profiles', 'index-read-failed', error);
       }
 
+      if (!allowProfileFallback) return { users: [], lastKey: null, hasMore: false };
       return readProfilePage();
     },
     filterSourceUsers: sourceUsers => {

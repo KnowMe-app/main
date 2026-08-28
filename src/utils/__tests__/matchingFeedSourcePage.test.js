@@ -72,6 +72,22 @@ describe('стрічка читає урізані картки', () => {
     expect(result.users.map(user => user.name)).toEqual(['Анкета', 'Анкета']);
   });
 
+  it('повертає порожню стрічку без fallback для читача без доступу до анкет', async () => {
+    const fetchMatchingCardsPage = jest.fn(async () => ({ users: [], lastKey: null, hasMore: false }));
+    const fetchUsersByLastLogin2 = jest.fn();
+
+    const result = await runChunk({
+      allowProfileFallback: false,
+      fetchMatchingCardsPage,
+      fetchUsersByLastLogin2,
+    });
+
+    expect(fetchMatchingCardsPage).toHaveBeenCalledTimes(1);
+    expect(fetchUsersByLastLogin2).not.toHaveBeenCalled();
+    expect(result.users).toEqual([]);
+    expect(result.hasMore).toBe(false);
+  });
+
   it('повертається до анкет, якщо читання проєкцій впало', async () => {
     const fetchMatchingCardsPage = jest.fn(async () => { throw new Error('permission denied'); });
     const fetchUsersByLastLogin2 = jest.fn(async () => ({

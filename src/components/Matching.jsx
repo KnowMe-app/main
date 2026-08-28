@@ -244,6 +244,7 @@ import {
   buildMatchingIndexFilterGroups,
   compareUsersByLastLogin2,
   fetchFilteredMatchingSourceChunk,
+  fetchAdditionalNewUsersBySearchIndex,
   fetchMatchingIndexedCandidates,
   fetchNewUsersByIdsForMatching as fetchNewUsersByIdsForMatchingData,
   getActiveMatchingFiltersDebug,
@@ -2691,11 +2692,83 @@ const Matching = () => {
       fetchUsersByLastLogin2,
       fetchMatchingCardsPage,
       hydrateUsersByIds: ids => fetchUsersByIds(ids),
+      allowProfileFallback: hasFullProfileAccess,
       onPart,
       onDiagnosticEvent: recordInitialLoadDiagnostic,
     }),
-    [isAdmin, recordInitialLoadDiagnostic, roleIndexSets]
+    [hasFullProfileAccess, isAdmin, recordInitialLoadDiagnostic, roleIndexSets]
   );
+
+  // Додаткові правила відкривають окремі newUsers, зокрема неопубліковані,
+  // яких за визначенням немає у публічному matchingCards. Тому scoped-індекс
+  // доповнює загальну стрічку, а не підміняє її джерело чи пагінацію.
+  useEffect(() => {
+    const accessUserId = String(ownerId || '').trim();
+    const searchKeySetKeys = normalizeSearchKeySetKeys(currentSearchKeySetKeys);
+    if (!accessUserId || !parsedAdditionalAccessRules.length || !searchKeySetKeys.length) {
+      setAdditionalNewUsers([]);
+      setAdditionalNextOffset(0);
+      return () => {};
+    }
+
+    const requestVersion = additionalMatchingFetchVersionRef.current + 1;
+    additionalMatchingFetchVersionRef.current = requestVersion;
+    let cancelled = false;
+
+    const loadAccessScopedCards = async () => {
+      try {
+        const scopedById = new Map();
+        let offset = 0;
+        let hasMore = true;
+        while (hasMore && !cancelled) {
+          // eslint-disable-next-line no-await-in-loop
+          const loaded = await fetchAdditionalNewUsersBySearchIndex({
+            rawRules: currentAdditionalAccessRules,
+            accessUserId,
+            searchKeySetKeys,
+            filters: filtersRef.current || {},
+            excludeIds: [
+              ...Object.keys(favoriteUsersRef.current),
+              ...Object.keys(dislikeUsersRef.current),
+            ],
+            offset,
+            limit: 100,
+            fetchNewUsersByIds: fetchNewUsersByIdsForMatching,
+            shouldDebugAdditionalMatching,
+            debugAdditionalToast,
+            logAdditionalMatchingDebug,
+          });
+          (loaded.users || []).forEach(user => {
+            if (user?.userId) scopedById.set(user.userId, user);
+          });
+          const nextOffset = Number(loaded.nextOffset) || 0;
+          hasMore = Boolean(loaded.hasMore) && nextOffset > offset;
+          offset = nextOffset;
+        }
+        if (cancelled || requestVersion !== additionalMatchingFetchVersionRef.current) return;
+
+        const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
+        const scopedUsers = Array.from(scopedById.values())
+          .filter(user => user?.userId && !publicIds.has(user.userId))
+          .map(user => ({ ...user, __matchingAccessAllowed: true }));
+        setAdditionalNewUsers(scopedUsers);
+        setAdditionalNextOffset(offset);
+        void loadCommentsFor(scopedUsers);
+      } catch (error) {
+        if (!cancelled) console.error('Failed to load access-scoped matching cards', error);
+      }
+    };
+
+    loadAccessScopedCards();
+    return () => { cancelled = true; };
+  }, [
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+    loadCommentsFor,
+    ownerId,
+    parsedAdditionalAccessRules.length,
+    filters,
+  ]);
 
   const loadInitial = React.useCallback(async () => {
     writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
