@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import styled, { css } from 'styled-components';
-import { endAt, get as firebaseGet, orderByKey, query, ref as refDb, startAt } from 'firebase/database';
+import { get as firebaseGet, ref as refDb } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
 import { inputUpdateValue } from './inputUpdatedValue';
@@ -46,10 +46,15 @@ import {
   getCachedAdditionalRulesPreview,
   saveCachedAdditionalRulesPreview,
 } from 'utils/searchKeyCache';
+// Перелік індексованих полів і формат ключа беремо з того самого модуля, яким
+// індексується анкета: локальна копія встигла розійтися з ним (не було
+// `ameblo`), а ключ, побудований інакше, вказував би не на той вузол.
+import { SEARCH_ID_INDEXED_FIELDS, buildSearchIdRecordKey } from 'utils/searchKeyUtils';
 import { MULTI_DATA_ACCESS_FIELD } from 'utils/multiDataAccess';
 import {
   groupProfileFormFieldsByBlock,
   buildProfileFormBlockHeader,
+  buildRtdbConsoleLink,
 } from './profileFormNodeBlocks';
 
 const get = (...args) =>
@@ -413,37 +418,6 @@ const HIDDEN_FOR_CL_PP_FIELDS = new Set([
   'bloodGroup',
   'rh',
 ]);
-const SEARCH_ID_INDEXED_FIELDS = new Set([
-  'instagram',
-  'facebook',
-  'email',
-  'phone',
-  'telegram',
-  'tiktok',
-  'linkedin',
-  'youtube',
-  'twitter',
-  'line',
-  'otherLink',
-  'other',
-  'vk',
-  'name',
-  'surname',
-]);
-const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
-const getFirebaseConsoleProjectId = () =>
-  process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
-const getFirebaseRealtimeDatabaseName = () => {
-  const fallbackProjectId = getFirebaseConsoleProjectId();
-  const databaseUrl = process.env.REACT_APP_DATABASE_URL || '';
-
-  try {
-    const { hostname } = new URL(databaseUrl);
-    return hostname.split('.')[0] || `${fallbackProjectId}-default-rtdb`;
-  } catch (error) {
-    return `${fallbackProjectId}-default-rtdb`;
-  }
-};
 const canOpenSearchIdBackendShortcut = (fieldName, value) =>
   (fieldName === 'userId' || SEARCH_ID_INDEXED_FIELDS.has(fieldName)) && String(value ?? '').trim();
 const searchIdRecordContainsUserId = (recordValue, userId) => {
@@ -455,28 +429,12 @@ const searchIdRecordContainsUserId = (recordValue, userId) => {
   return recordValue === userId;
 };
 
-const buildUsersBackendUrl = userId => {
-  if (!userId) return '';
-
-  const projectId = getFirebaseConsoleProjectId();
-  const databaseName = getFirebaseRealtimeDatabaseName();
-  const encodedPath = ['users', userId]
-    .map(segment => `~2F${encodeURIComponent(segment)}`)
-    .join('');
-
-  return `https://console.firebase.google.com/u/0/project/${projectId}/database/${databaseName}/data/${encodedPath}`;
-};
-const buildSearchIdBackendUrl = searchIdRecordKey => {
-  if (!searchIdRecordKey) return '';
-
-  const projectId = getFirebaseConsoleProjectId();
-  const databaseName = getFirebaseRealtimeDatabaseName();
-  const encodedPath = ['searchId', searchIdRecordKey]
-    .map(segment => `~2F${encodeURIComponent(segment)}`)
-    .join('');
-
-  return `https://console.firebase.google.com/u/0/project/${projectId}/database/${databaseName}/data/${encodedPath}`;
-};
+// Посилання в консоль будує один спільний хелпер — той самий, що й для
+// заголовків блоків. Дві копії форматування вже розійшлися одна з одною, і
+// саме в цьому був зламаний слеш після `/data`.
+const buildUsersBackendUrl = userId => (userId ? buildRtdbConsoleLink(['users', userId]) : '');
+const buildSearchIdBackendUrl = searchIdRecordKey =>
+  (searchIdRecordKey ? buildRtdbConsoleLink(['searchId', searchIdRecordKey]) : '');
 const SEARCH_KEY_ROOT = 'searchKey';
 const normalizeSearchKeyPayload = payload => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
@@ -2648,40 +2606,33 @@ ${entries.join('\n')}`;
       return;
     }
 
-    const searchIdPrefix = `${fieldName}_`;
+    // Ключ у `searchId` детермінований: індексація анкети будує його тим самим
+    // `buildSearchIdRecordKey`. Тому шукати його скануванням не треба — і не
+    // можна: правила бази дають читання на `searchId/$key`, а не на `searchId`,
+    // тож будь-який запит по кореню вузла завжди падав з Permission denied.
+    const searchIdRecordKey = buildSearchIdRecordKey({ [fieldName]: value });
+
+    if (!searchIdRecordKey) {
+      toast.error(`Не вдалося побудувати ключ searchId для ${fieldName}.`);
+      return;
+    }
 
     try {
-      const snapshot = await get(
-        query(
-          refDb(database, 'searchId'),
-          orderByKey(),
-          startAt(searchIdPrefix),
-          endAt(`${searchIdPrefix}\uf8ff`),
-        )
-      );
+      const snapshot = await get(refDb(database, `searchId/${searchIdRecordKey}`));
 
       if (!snapshot.exists()) {
-        toast.error(`У backend searchId немає записів для ${fieldName}.`);
+        toast.error(`У backend searchId немає запису ${searchIdRecordKey}.`);
         return;
       }
 
-      const matchedKeys = [];
-      snapshot.forEach(childSnapshot => {
-        if (searchIdRecordContainsUserId(childSnapshot.val(), userId)) {
-          matchedKeys.push(childSnapshot.key);
-        }
-      });
-
-      if (!matchedKeys.length) {
-        toast.error(`У backend searchId не знайдено ${fieldName} для userId ${userId}.`);
-        return;
+      // Запис існує саме за цим ключем — це і є місце зберігання значення.
+      // Якщо в ньому чужий id, це теж відповідь на питання «де мої дані»,
+      // тому вузол відкриваємо, але кажемо про розбіжність вголос.
+      if (!searchIdRecordContainsUserId(snapshot.val(), userId)) {
+        toast(`Запис ${searchIdRecordKey} не містить userId ${userId}; відкриваю його.`);
       }
 
-      if (matchedKeys.length > 1) {
-        toast(`Знайдено кілька searchId записів для ${fieldName}; відкриваю перший.`);
-      }
-
-      window.open(buildSearchIdBackendUrl(matchedKeys[0]), '_blank', 'noopener,noreferrer');
+      window.open(buildSearchIdBackendUrl(searchIdRecordKey), '_blank', 'noopener,noreferrer');
     } catch (error) {
       const details = error?.message || String(error);
       toast.error(`Не вдалося відкрити searchId backend.\n${details}`);
