@@ -11,6 +11,7 @@ import {
   chunkUploadEntries,
   countUploadEntries,
   flattenUploadEntries,
+  resumeChunkIndex,
   uploadCollection,
 } from '../rtdbMigrationUpload';
 
@@ -186,5 +187,86 @@ describe('uploadCollection', () => {
   it('порція за замовчуванням не безмежна', () => {
     expect(UPLOAD_CHUNK_SIZE).toBeGreaterThan(0);
     expect(countUploadEntries(payload, 1)).toBe(5);
+  });
+});
+
+/**
+ * Продовження після обриву.
+ *
+ * Заливка йде порціями по 200, тож один невдалий запис забирає з собою всю
+ * порцію, а решта вузла лишається незалитою. Другий захід не мусить писати
+ * наново те, що вже лежить у базі: перезапис не псує даних, але на 26 тисячах
+ * анкет це хвилини з телефона. Тут перевіряється не швидкість, а те, від чого
+ * залежить цілість: продовження ніколи не перестрибує запис.
+ */
+describe('продовження заливки', () => {
+  const payload = Object.fromEntries(
+    Array.from({ length: 5 }, (_, index) => [`uid${index}`, { name: `A${index}` }]),
+  );
+
+  it('рахує порцію за кількістю вже залитих записів', () => {
+    expect(resumeChunkIndex(0, 200)).toBe(0);
+    expect(resumeChunkIndex(200, 200)).toBe(1);
+    expect(resumeChunkIndex(5200, 200)).toBe(26);
+  });
+
+  it('округляє вниз: неповна порція переписується, а не пропускається', () => {
+    // 5 250 записів — це 26 повних порцій і половина 27-ї. Продовжувати треба
+    // з 27-ї цілком, інакше 50 записів лишились би незалитими назавжди.
+    expect(resumeChunkIndex(5250, 200)).toBe(26);
+  });
+
+  it('не приймає сміття за номер порції', () => {
+    expect(resumeChunkIndex(-5, 200)).toBe(0);
+    expect(resumeChunkIndex(undefined, 200)).toBe(0);
+    expect(resumeChunkIndex(Number.NaN, 200)).toBe(0);
+  });
+
+  it('пропускає вже залиті порції і дописує решту', async () => {
+    const write = jest.fn().mockResolvedValue(undefined);
+
+    await uploadCollection(payload, {
+      path: 'profileDetails',
+      depth: 1,
+      chunkSize: 2,
+      resumeFrom: 2,
+      write,
+      sleep: noSleep,
+    });
+
+    // Перша порція (uid0, uid1) не переписується.
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[0][1]).toEqual({ uid2: { name: 'A2' }, uid3: { name: 'A3' } });
+    expect(write.mock.calls[1][1]).toEqual({ uid4: { name: 'A4' } });
+  });
+
+  it('звітує наскрізним числом, а не від місця продовження', async () => {
+    const result = await uploadCollection(payload, {
+      path: 'profileDetails',
+      chunkSize: 2,
+      resumeFrom: 2,
+      write: jest.fn().mockResolvedValue(undefined),
+      sleep: noSleep,
+    });
+
+    // «5 з 5», а не «3 з 5»: інакше друга спроба звітує меншим числом, ніж
+    // перша, і зрозуміти по ній, чи вузол долитий, неможливо.
+    expect(result.written).toBe(5);
+    expect(result.total).toBe(5);
+    expect(result.resumedFrom).toBe(2);
+    expect(result.error).toBeNull();
+  });
+
+  it('без продовження заливає з початку', async () => {
+    const write = jest.fn().mockResolvedValue(undefined);
+
+    await uploadCollection(payload, {
+      path: 'profileDetails',
+      chunkSize: 2,
+      write,
+      sleep: noSleep,
+    });
+
+    expect(write).toHaveBeenCalledTimes(3);
   });
 });

@@ -92,6 +92,22 @@ export const flattenUploadEntries = (payload, depth = 1) => {
   return { entries, skipped };
 };
 
+/**
+ * З якої порції починати, якщо `written` записів уже в базі.
+ *
+ * Округлення вниз, до початку порції, у якій цей запис лежить, — і саме вниз.
+ * Обрив завжди приходиться на межу порції (вона або пройшла цілком, або не
+ * пройшла зовсім), тож у звичайному випадку округляти нема чого. Але якщо
+ * число прийшло не звідти — краще переписати кілька записів тими самими
+ * значеннями, ніж перестрибнути через них: перезапис коштує секунду, пропуск
+ * лишає діру, якої ніхто не побачить.
+ */
+export const resumeChunkIndex = (written, chunkSize = UPLOAD_CHUNK_SIZE) => {
+  const size = Math.max(1, chunkSize);
+  const done = Number.isFinite(written) && written > 0 ? Math.floor(written) : 0;
+  return Math.floor(done / size);
+};
+
 /** Порізати список записів на порції по `chunkSize`. */
 export const chunkUploadEntries = (entries, chunkSize = UPLOAD_CHUNK_SIZE) => {
   const size = Math.max(1, chunkSize);
@@ -113,6 +129,19 @@ export const countUploadEntries = (payload, depth = 1) => flattenUploadEntries(p
  * вгору, а повертається разом із лічильником залитого: після обриву на
  * 12-тисячному записі важливо знати, що перші 12 тисяч уже в базі, і що
  * повторний запуск просто перепише їх тими самими значеннями.
+ *
+ * `resumeFrom` — скільки записів уже лежить у базі з минулого заходу. Заливка
+ * тоді починається з порції, у якій цей запис лежить, а не з нуля. Перезапис
+ * тими самими значеннями шкоди не робить — але на 26 тисячах анкет це зайві
+ * хвилини з телефона і зайвий трафік, і головне: після обриву видно, скільки
+ * лишилось, а не «знову з початку».
+ *
+ * Умова, за якої це чесно, одна: порядок записів той самий, що й минулого
+ * разу. Порядок дає `flattenUploadEntries` з того самого `payload`, тож він
+ * тримається, доки той самий стан і ті самі застосовані групи. Виправлення
+ * самого значення порядку не міняє — ключі лишаються ті самі й на тих самих
+ * місцях, — а от інший файл чи інший набір груп його зсуває, і тоді
+ * продовжувати не можна, треба заливати з нуля.
  */
 export const uploadCollection = async (payload, {
   path,
@@ -120,6 +149,7 @@ export const uploadCollection = async (payload, {
   chunkSize = UPLOAD_CHUNK_SIZE,
   attempts = UPLOAD_ATTEMPTS,
   retryDelay = UPLOAD_RETRY_DELAY,
+  resumeFrom = 0,
   write,
   onProgress,
   shouldStop,
@@ -127,12 +157,23 @@ export const uploadCollection = async (payload, {
 } = {}) => {
   const { entries, skipped } = flattenUploadEntries(payload, depth);
   const chunks = chunkUploadEntries(entries, chunkSize);
+  const startChunk = Math.min(resumeChunkIndex(resumeFrom, chunkSize), chunks.length);
+  /*
+   * Лічильник веде наскрізний рахунок від початку вузла, а не від місця
+   * продовження: `written` і `total` мають лишитись тим самим «N з M», яке
+   * людина бачила до обриву, інакше друга спроба звітує меншим числом, ніж
+   * перша, і зрозуміти по ній, чи вузол долитий, неможливо.
+   */
+  const alreadyWritten = chunks
+    .slice(0, startChunk)
+    .reduce((sum, chunk) => sum + Object.keys(chunk).length, 0);
   const result = {
     path,
     total: entries.length,
-    written: 0,
+    written: alreadyWritten,
     chunks: chunks.length,
-    chunksWritten: 0,
+    chunksWritten: startChunk,
+    resumedFrom: alreadyWritten,
     skipped,
     stopped: false,
     error: null,
@@ -140,7 +181,7 @@ export const uploadCollection = async (payload, {
 
   if (typeof onProgress === 'function') onProgress({ ...result });
 
-  for (let index = 0; index < chunks.length; index += 1) {
+  for (let index = startChunk; index < chunks.length; index += 1) {
     if (typeof shouldStop === 'function' && shouldStop()) {
       result.stopped = true;
       return result;

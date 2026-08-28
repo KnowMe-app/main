@@ -37,6 +37,7 @@ import {
   SECRET_FIELDS,
   ALL_MAPPED_FIELDS,
   OWNER_MULTI_DATA_FIELD_NAMES,
+  OWNER_MULTI_DATA_STRING_FIELDS,
   FIELD_SOURCES,
   isTwinField,
   CLEANED_COLLECTION_NOISE_FIELDS,
@@ -54,6 +55,7 @@ import {
   deriveFeedDate,
   compareLoginRecency,
   normalizeLegacyDates,
+  flattenOwnerValueToString,
 } from './rtdbMigrationDerive';
 
 /** Кнопки міграції, у порядку, в якому їх задумано натискати. */
@@ -790,7 +792,50 @@ const planOwnerValueField = (ctx, { field, profileId, source, sourceCollection, 
 
   // Дата «звʼязатись» у старих даних написана двома способами; після переїзду
   // вона одна, інакше сортування за значенням ставило б крапкові дати не туди.
-  const value = normalizeLegacyDates(deepClone(raw));
+  const normalized = normalizeLegacyDates(deepClone(raw));
+
+  /*
+   * Скалярні поля власника зводяться до рядка тут, а не при заливці.
+   *
+   * `getInTouch` і `writer` база приймає тільки рядком (`.validate` на
+   * `$ownerId/$userId`), а в частині старих анкет вони лежать масивом — слід
+   * коду, який колись писав `updatedCodes` без `join`. Провалена `.validate`
+   * повертається як PERMISSION_DENIED, порція заливки — 200 записів, тож один
+   * такий масив валить 199 здорових сусідів і читається як «немає прав на весь
+   * вузол». Тому масив стає тим самим рядком, який дала б форма картки, ще на
+   * етапі плану: у файл експорту і в базу їде вже одне й те саме значення.
+   */
+  const value = OWNER_MULTI_DATA_STRING_FIELDS.includes(field) && typeof normalized !== 'string'
+    ? flattenOwnerValueToString(normalized)
+    : normalized;
+
+  // Порожній рядок після зведення означав би запис «нічого» поверх позначки —
+  // це не перенесення, а втрата. Такого в даних немає (вище стоїть перевірка
+  // на осмисленість), але ціна помилки тут вища за ціну перевірки.
+  if (value === '') {
+    ctx.counters.skippedEmpty += 1;
+    addWarning(ctx, {
+      code: 'EMPTY_SOURCE_VALUE',
+      profileId,
+      field,
+      collection: sourceCollection,
+      targetGroup: ctx.group,
+    });
+    return;
+  }
+
+  if (value !== normalized) {
+    addWarning(ctx, {
+      code: 'OWNER_VALUE_FLATTENED',
+      profileId,
+      field,
+      collection: sourceCollection,
+      targetGroup: ctx.group,
+      kept: value,
+      discarded: normalized,
+    });
+  }
+
   const profileKey = `${field}::${ownerUid}::${profileId}`;
   const pending = ctx.pendingOwnerValues[profileKey];
   const stored = ctx.state.targets.multiDataPatch?.[field]?.[ownerUid]?.[profileId];

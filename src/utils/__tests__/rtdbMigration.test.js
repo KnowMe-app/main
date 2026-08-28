@@ -24,6 +24,7 @@ import {
   deriveFeedDate,
   normalizeLegacyDates,
   normalizeFeedDateValue,
+  flattenOwnerValueToString,
 } from '../rtdbMigrationDerive';
 import { MATCHING_CARD_FORBIDDEN_FIELDS } from '../profileNodeSchema';
 
@@ -670,6 +671,69 @@ describe('Workflow і Technical', () => {
       deviceResize: true,
       cachedAt: 123,
     });
+  });
+});
+
+/**
+ * Скалярні поля власника мусять доїхати рядком.
+ *
+ * На `multiData/getInTouch/$ownerId/$userId` і `multiData/writer/$ownerId/$userId`
+ * стоїть `.validate: newData.isString()`. Масив звідти вертається як
+ * PERMISSION_DENIED — тим самим кодом, що й відсутній дозвіл, — і забирає з
+ * собою всю порцію заливки. Тож зводити до рядка треба тут, у плані, а не
+ * розбиратись потім по обриву на п'ятитисячному записі.
+ */
+describe('поля власника зводяться до рядка', () => {
+  it('масив кодів стає тим самим рядком, який пише форма картки', () => {
+    // Форма збирає `writer` через `updatedCodes.join(', ')`; у старих анкетах
+    // туди подекуди записався сам масив, без `join`.
+    expect(flattenOwnerValueToString(['Ig', 'Ik'])).toBe('Ig, Ik');
+    expect(flattenOwnerValueToString('Т, Ik, ')).toBe('Т, Ik, ');
+  });
+
+  it('порожні елементи відкидаються, а не стають комами', () => {
+    expect(flattenOwnerValueToString(['Т', '', 'Ik'])).toBe('Т, Ik');
+    expect(flattenOwnerValueToString(['V', ''])).toBe('V');
+  });
+
+  it('обʼєкт із числовими ключами читається як масив із дірками', () => {
+    // Саме так RTDB повертає масив, усередині якого був `null`: порядок дають
+    // ключі, а не вставка.
+    expect(flattenOwnerValueToString({ 0: 'Т', 2: 'Ik' })).toBe('Т, Ik');
+    expect(flattenOwnerValueToString({ 10: 'б', 2: 'а' })).toBe('а, б');
+  });
+
+  it('writer доїжджає рядком і не плодить конфлікту з рядковою копією', () => {
+    const state = stateWith(
+      { P1: { writer: 'V, Ik' } },
+      { P1: { writer: ['V', 'Ik'] }, P2: { writer: ['Т', '', 'Ін'] } },
+    );
+    const plan = runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'writer')[OWNER]).toEqual({
+      P1: 'V, Ik',
+      P2: 'Т, Ін',
+    });
+    // Однакове значення, записане двома способами, — це не розбіжність.
+    expect(plan.conflicts).toHaveLength(0);
+  });
+
+  it('getInTouch із нотаткою і датою зводиться в одне значення', () => {
+    const state = stateWith({}, { P1: { getInTouch: ['Тежбільшенеписати', '2025-02-12'] } });
+    const plan = runMigrationGroup(state, 'getInTouch', { ownerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'getInTouch')[OWNER])
+      .toEqual({ P1: 'Тежбільшенеписати, 2025-02-12' });
+    // Мовчки таке не проходить: у звіті видно, що значення переписане.
+    expect(plan.warningsByCode.OWNER_VALUE_FLATTENED).toBe(1);
+  });
+
+  it('графік стимуляції лишається таблицею — на ньому `.validate` немає', () => {
+    const schedule = { d1: 'Гонал 150', d3: 'Гонал 150' };
+    const state = stateWith({}, { P1: { stimulationSchedule: schedule } });
+    runMigrationGroup(state, 'stimulationSchedule', { ownerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'stimulationSchedule')[OWNER]).toEqual({ P1: schedule });
   });
 });
 
