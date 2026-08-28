@@ -446,8 +446,8 @@ export const MULTI_DATA_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedu
  * діапазону, які раніше довелось би робити в памʼяті браузера.
  */
 export const OWNER_MULTI_DATA_FIELDS = Object.freeze([
-  Object.freeze({ field: 'getInTouch', path: MULTI_DATA_GET_IN_TOUCH_PATH, indexed: true }),
-  Object.freeze({ field: 'writer', path: MULTI_DATA_WRITER_PATH }),
+  Object.freeze({ field: 'getInTouch', path: MULTI_DATA_GET_IN_TOUCH_PATH, indexed: true, stringOnly: true }),
+  Object.freeze({ field: 'writer', path: MULTI_DATA_WRITER_PATH, stringOnly: true }),
   Object.freeze({ field: 'stimulationSchedule', path: MULTI_DATA_STIMULATION_SCHEDULE_PATH }),
 ]);
 
@@ -464,6 +464,21 @@ export const OWNER_MULTI_DATA_FIELD_NAMES = Object.freeze(
  */
 export const OWNER_MULTI_DATA_INDEXED_FIELDS = Object.freeze(
   OWNER_MULTI_DATA_FIELDS.filter(entry => entry.indexed).map(entry => entry.field),
+);
+
+/**
+ * Поля власника, які база приймає лише рядком.
+ *
+ * Це не здогад про дані, а копія правила: на `multiData/getInTouch/$ownerId/$userId`
+ * і на `multiData/writer/$ownerId/$userId` у `database.rules.json` стоїть
+ * `.validate: "!newData.exists() || newData.isString()"`, а на графіку
+ * стимуляції — ні, бо він таблиця. Перелік потрібен саме тут: переїзд мусить
+ * зводити значення до рядка ще на етапі плану, інакше масив зі старої анкети
+ * доходить до заливки і провалює `.validate` — а це PERMISSION_DENIED на цілу
+ * порцію, без натяку, який саме запис завинив.
+ */
+export const OWNER_MULTI_DATA_STRING_FIELDS = Object.freeze(
+  OWNER_MULTI_DATA_FIELDS.filter(entry => entry.stringOnly).map(entry => entry.field),
 );
 
 /**

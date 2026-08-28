@@ -21,6 +21,7 @@ import {
   UPLOAD_CHUNK_SIZE,
   countUploadEntries,
   uploadCollection,
+  resumeChunkIndex,
 } from 'utils/rtdbMigrationUpload';
 import {
   PROFILE_NODES,
@@ -677,7 +678,7 @@ export const RtdbMigrationTool = () => {
    * слабша операція, ніж імпорт у консолі: імпорт замінює вузол цілком, і
    * повторний захід ним стер би те, що заливка попереднього дня вже принесла.
    */
-  const handleUpload = useCallback(async target => {
+  const handleUpload = useCallback(async (target, resumeFrom = 0) => {
     if (!stateRef.current) return;
     if (uploadingRef.current) {
       toast.error('Спершу дочекайтесь поточної заливки');
@@ -691,24 +692,35 @@ export const RtdbMigrationTool = () => {
       return;
     }
 
+    const startFrom = resumeFrom > 0 ? resumeChunkIndex(resumeFrom) * UPLOAD_CHUNK_SIZE : 0;
+
     const confirmed = window.confirm(
-      `Залити «${target.label}» у базу?\n\n`
-      + `Шлях: ${target.importPath}\n`
-      + `Записів: ${formatCount(total)} (порціями по ${UPLOAD_CHUNK_SIZE})\n\n`
-      + 'Це запис у РЕАЛЬНУ базу. Записи з тими самими ключами будуть перезаписані; '
-      + 'усе інше в цьому вузлі лишиться недоторканим.',
+      startFrom > 0
+        ? `Долити «${target.label}» у базу, починаючи з ${formatCount(startFrom + 1)}-го запису?\n\n`
+          + `Шлях: ${target.importPath}\n`
+          + `Лишилось: ${formatCount(total - startFrom)} з ${formatCount(total)} `
+          + `(порціями по ${UPLOAD_CHUNK_SIZE})\n\n`
+          + `Перші ${formatCount(startFrom)} записів пропускаються як уже залиті. `
+          + 'Це чесно лише тоді, коли з часу обриву не мінялись ані завантажені файли, '
+          + 'ані набір застосованих груп — інакше заливайте з початку.'
+        : `Залити «${target.label}» у базу?\n\n`
+          + `Шлях: ${target.importPath}\n`
+          + `Записів: ${formatCount(total)} (порціями по ${UPLOAD_CHUNK_SIZE})\n\n`
+          + 'Це запис у РЕАЛЬНУ базу. Записи з тими самими ключами будуть перезаписані; '
+          + 'усе інше в цьому вузлі лишиться недоторканим.',
     );
     if (!confirmed) return;
 
     uploadingRef.current = true;
     setUploads(current => ({
       ...current,
-      [target.label]: { status: 'running', written: 0, total, error: null },
+      [target.label]: { status: 'running', written: startFrom, total, error: null },
     }));
 
     const result = await uploadCollection(payload, {
       path: target.importPath,
       depth: target.uploadDepth,
+      resumeFrom: startFrom,
       write: (path, patch) => dbUpdate(dbRef(database, path), patch),
       onProgress: ({ written }) => {
         setUploads(current => ({
@@ -733,7 +745,7 @@ export const RtdbMigrationTool = () => {
       }));
       toast.error(
         `${target.label}: обірвалось на ${formatCount(result.written)} з ${formatCount(result.total)}. `
-        + 'Повторний запуск перезаллє з початку — це безпечно.',
+        + '«Долити» продовжить із цього місця; «Залити» перезаллє з початку — безпечні обидва.',
       );
       return;
     }
@@ -750,6 +762,37 @@ export const RtdbMigrationTool = () => {
     }));
     toast.success(`${target.label}: залито ${formatCount(result.written)} записів у ${target.importPath}`);
   }, []);
+
+  /**
+   * Долити вузол, пропустивши те, що вже пішло в базу минулого заходу.
+   *
+   * Заливка обривається на межі порції, і скільки записів устигло пройти,
+   * сказано в тості й у рядку стану. Це число сюди й вводиться: перезапис
+   * тими самими значеннями нічого не псує, але на 26 тисячах анкет це зайві
+   * хвилини з телефона, а після обриву важливо бачити, скільки лишилось.
+   *
+   * Пропуск чинний рівно доти, доки не змінився порядок записів, а його задають
+   * завантажені файли й набір застосованих груп. Тому попередження про це стоїть
+   * не тут, а у вікні підтвердження — там, де його читають.
+   */
+  const handleResume = useCallback(target => {
+    const suggested = uploads[target.label]?.written || 0;
+    const answer = window.prompt(
+      `Скільки записів «${target.label}» уже в базі?\n\n`
+      + 'Це число з попереднього заходу («обірвалось на N з M»). '
+      + 'Перші N записів будуть пропущені, решта — залита.',
+      String(suggested),
+    );
+    if (answer === null) return;
+
+    const parsed = Number.parseInt(String(answer).replace(/\s/g, ''), 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast.error('Потрібне число — скільки записів уже залито');
+      return;
+    }
+
+    handleUpload(target, parsed);
+  }, [handleUpload, uploads]);
 
   const handleReset = useCallback(() => {
     if (!stateRef.current) return;
@@ -981,6 +1024,21 @@ export const RtdbMigrationTool = () => {
                               >
                                 {upload?.status === 'running' ? 'Заливаю…' : 'Залити'}
                               </SmallPrimary>
+                              {/*
+                                Число питається, а не береться зі стану обриву.
+                                Стан живе рівно доти, доки відкрита вкладка, а
+                                продовжувати доводиться і наступного дня, і після
+                                оновлення застосунку — тобто саме тоді, коли
+                                пам'ятає його вже тільки людина, з тоста або зі
+                                звіту минулого заходу.
+                              */}
+                              <SmallGhost
+                                type="button"
+                                disabled={upload?.status === 'running'}
+                                onClick={() => handleResume(target)}
+                              >
+                                Долити з…
+                              </SmallGhost>
                               {upload && (
                                 <UploadStatus $status={upload.status}>
                                   {upload.status === 'error'
@@ -1008,7 +1066,10 @@ export const RtdbMigrationTool = () => {
               дають дозвіл на запис. Тому вона <b>дописує і перезаписує</b> свої записи, але нічого
               не видаляє: анкета, якої немає у файлі, лишається в базі як була. Це слабша операція,
               ніж імпорт у консолі, і саме тому її можна повторювати: обірвалась на середині —
-              просто натисніть ще раз.
+              просто натисніть ще раз. Сусідня «Долити з…» робить те саме, але питає, скільки
+              записів уже в базі (число з тоста «обірвалось на N з M»), і перших N не переписує.
+              Пропуск чинний, доки не мінялись завантажені файли й набір застосованих груп: саме
+              вони задають порядок записів.
             </Note>
             <Note>
               Порядок згори вниз: спершу вузли анкети, потім <code>matchingCards</code> (правило

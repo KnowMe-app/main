@@ -3,6 +3,7 @@ import path from 'path';
 
 import {
   OWNER_MULTI_DATA_INDEXED_FIELDS,
+  OWNER_MULTI_DATA_STRING_FIELDS,
   MATCHING_CARD_ALLOWED_FIELDS,
   PROFILE_CONTACT_FIELDS,
   ACCESS_CONTROL_FIELDS,
@@ -54,6 +55,23 @@ describe('нові вузли профілю в database.rules.json', () => {
     expect(rules.multiData.getInTouch.$ownerId['.indexOn']).toBe('.value');
     OWNER_MULTI_DATA_INDEXED_FIELDS
       .forEach(field => expect(rules.multiData[field].$ownerId['.indexOn']).toBe('.value'));
+  });
+
+  it('схема знає рівно ті поля, які база приймає лише рядком', () => {
+    /*
+     * `OWNER_MULTI_DATA_STRING_FIELDS` — не думка про дані, а копія правила, і
+     * розійтись їм не можна в жоден бік. Якщо схема забуде поле, переїзд
+     * пропустить масив зі старої анкети до заливки — і `.validate` поверне
+     * PERMISSION_DENIED на цілу порцію в 200 записів, не сказавши, який із них
+     * завинив. Якщо схема додасть зайве — переїзд зведе до рядка графік
+     * стимуляції, тобто розчавить таблицю в «Гонал 150, Гонал 150».
+     */
+    const requiresString = Object.entries(rules.multiData)
+      .filter(([, node]) => node.$ownerId?.$userId?.['.validate']?.includes('newData.isString()'))
+      .map(([field]) => field);
+
+    expect([...OWNER_MULTI_DATA_STRING_FIELDS].sort()).toEqual(requiresString.sort());
+    expect(OWNER_MULTI_DATA_STRING_FIELDS).not.toContain('stimulationSchedule');
   });
 
   it('multiData/stimulationSchedule лежить під анкетою, а не під значенням', () => {
