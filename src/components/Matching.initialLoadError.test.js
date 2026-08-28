@@ -172,4 +172,25 @@ describe('Matching initial loading error diagnostics', () => {
     expect(initial).toContain('initialRequest === initialRequestIdRef.current');
     expect(initial).toContain('loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current');
   });
+
+  it('always releases its dedicated overlap guard, including stale requests', () => {
+    const initial = section('  const loadInitial = React.useCallback', '  const reloadDefault');
+    const finallyBlock = initial.slice(initial.indexOf('} finally {'));
+
+    expect(initial).toContain('if (initialLoadInFlightRef.current)');
+    expect(finallyBlock).toContain('initialLoadInFlightRef.current = false;');
+    expect(finallyBlock.indexOf('initialLoadInFlightRef.current = false;'))
+      .toBeLessThan(finallyBlock.indexOf('loadInitialVersion === loadInitialVersionRef.current'));
+  });
+
+  it('defers a public-feed error until the access-scoped request settles', () => {
+    const initial = section('  const loadInitial = React.useCallback', '  const reloadDefault');
+    const accessLoad = section('// Додаткові правила відкривають окремі newUsers', '  const loadInitial = React.useCallback');
+
+    expect(initial).toContain('if (additionalAccessLoadInFlightRef.current)');
+    expect(initial).toContain('if (additionalNewUsersRef.current.length > 0)');
+    expect(initial).toContain('deferredInitialLoadErrorRef.current = error;');
+    expect(accessLoad).toContain('if (deferredError && !loadedScopedCards)');
+    expect(accessLoad).toContain('setLoadError(null);');
+  });
 });

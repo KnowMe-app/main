@@ -1632,6 +1632,7 @@ const Matching = () => {
   const additionalNewUsersRef = useRef(additionalNewUsers);
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
   const additionalNextOffsetRef = useRef(0);
+  const [additionalHasMore, setAdditionalHasMore] = useState(false);
   const additionalHasMoreRef = useRef(false);
   const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
   const [roleIndexSets] = useState(null);
@@ -1724,12 +1725,17 @@ const Matching = () => {
     [currentAdditionalAccessRules]
   );
   const loadingRef = useRef(false);
+  const initialLoadInFlightRef = useRef(false);
+  const additionalAccessLoadInFlightRef = useRef(false);
+  const deferredInitialLoadErrorRef = useRef(null);
   const hasMoreRef = useRef(hasMore);
   const loadingStateRef = useRef(loading);
 
   useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
+
+  const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore);
 
   useEffect(() => {
     loadingStateRef.current = loading;
@@ -1785,6 +1791,8 @@ const Matching = () => {
   const resetAdditionalMatchingState = React.useCallback(({ resetHasMore = true, resetLoading = false } = {}) => {
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
+    additionalHasMoreRef.current = false;
+    setAdditionalHasMore(false);
     setLastKey(null);
     loadedIdsRef.current = new Set();
     additionalRulesToastRef.current = '';
@@ -2032,6 +2040,8 @@ const Matching = () => {
     loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
+    additionalHasMoreRef.current = false;
+    setAdditionalHasMore(false);
     setHasMore(false);
     setLastKey(null);
     setLoading(false);
@@ -2722,6 +2732,8 @@ const Matching = () => {
     if (!accessUserId || !parsedAdditionalAccessRules.length || !searchKeySetKeys.length) {
       additionalMatchingFetchVersionRef.current += 1;
       additionalHasMoreRef.current = false;
+      additionalAccessLoadInFlightRef.current = false;
+      setAdditionalHasMore(false);
       setAdditionalNewUsers([]);
       setAdditionalNextOffset(0);
       return () => {};
@@ -2732,9 +2744,12 @@ const Matching = () => {
     // Do not retain cards granted by the previous owner/rule set while its
     // replacement request is in flight (or if that request fails).
     additionalHasMoreRef.current = false;
+    additionalAccessLoadInFlightRef.current = true;
+    setAdditionalHasMore(false);
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
     let cancelled = false;
+    let loadedScopedCards = false;
 
     const loadAccessScopedCards = async () => {
       try {
@@ -2760,13 +2775,28 @@ const Matching = () => {
         const scopedUsers = (loaded.users || [])
           .filter(user => user?.userId && !publicIds.has(user.userId))
           .map(user => ({ ...user, __matchingAccessAllowed: true }));
+        loadedScopedCards = scopedUsers.length > 0;
         setAdditionalNewUsers(scopedUsers);
         additionalHasMoreRef.current = Boolean(loaded.hasMore);
+        setAdditionalHasMore(Boolean(loaded.hasMore));
         setAdditionalNextOffset(Number(loaded.nextOffset) || 0);
-        if (loaded.hasMore) setHasMore(true);
+        if (scopedUsers.length) {
+          deferredInitialLoadErrorRef.current = null;
+          setLoadError(null);
+          toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
+        }
         void loadCommentsFor(scopedUsers);
       } catch (error) {
         if (!cancelled) console.error('Failed to load access-scoped matching cards', error);
+      } finally {
+        if (!cancelled && requestVersion === additionalMatchingFetchVersionRef.current) {
+          additionalAccessLoadInFlightRef.current = false;
+          const deferredError = deferredInitialLoadErrorRef.current;
+          deferredInitialLoadErrorRef.current = null;
+          if (deferredError && !loadedScopedCards) {
+            reportInitialLoadError(deferredError);
+          }
+        }
       }
     };
 
@@ -2779,11 +2809,12 @@ const Matching = () => {
     ownerId,
     parsedAdditionalAccessRules.length,
     filters,
+    reportInitialLoadError,
   ]);
 
   const loadInitial = React.useCallback(async () => {
     writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
-    if (loadingRef.current) {
+    if (initialLoadInFlightRef.current) {
       console.info('[loadInitial] skip overlapping request', { viewMode: viewModeRef.current });
       return;
     }
@@ -2803,6 +2834,8 @@ const Matching = () => {
       }
       return;
     }
+    initialLoadInFlightRef.current = true;
+    loadingRef.current = true;
     setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
     try {
@@ -3073,10 +3106,17 @@ const Matching = () => {
     } catch (error) {
       if (canApplyInitialLoad() && initialRequest === initialRequestIdRef.current) {
         recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
-        reportInitialLoadError(error);
+        if (additionalNewUsersRef.current.length > 0) {
+          deferredInitialLoadErrorRef.current = null;
+        } else if (additionalAccessLoadInFlightRef.current) {
+          deferredInitialLoadErrorRef.current = error;
+        } else {
+          reportInitialLoadError(error);
+        }
       }
       console.error('Failed to load initial matching profiles', error);
     } finally {
+      initialLoadInFlightRef.current = false;
       if (loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current) {
         loadingRef.current = false;
         loadingStateRef.current = false;
@@ -3126,6 +3166,8 @@ const Matching = () => {
       setUsers([]);
       setAdditionalNewUsers([]);
       setAdditionalNextOffset(0);
+      additionalHasMoreRef.current = false;
+      setAdditionalHasMore(false);
       setLastKey(null);
       setHasMore(true);
     }
@@ -3173,6 +3215,8 @@ const Matching = () => {
     setUsers([]);
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
+    additionalHasMoreRef.current = false;
+    setAdditionalHasMore(false);
     setSharedReactionIds([]);
     setSharedReactionCandidateUsers([]);
     setPhotoCacheByUserId({});
@@ -4181,7 +4225,7 @@ const Matching = () => {
       });
     };
     writeMatchingDebugLog('loadMore:start', buildLoadMoreDebugPayload(commonDebug));
-    if (!hasMoreRef.current) {
+    if (!hasMoreRef.current && !(viewMode === 'default' && additionalHasMoreRef.current)) {
       markBlockedLoadMore('blocked-no-hasMore', { guard: 'hasMore === false' });
       writeMatchingDebugLog('loadMore:blocked:noHasMore', buildLoadMoreDebugPayload(commonDebug));
       return;
@@ -4411,6 +4455,7 @@ const Matching = () => {
 
         const nextOffset = Number(scopedPage.nextOffset) || scopedOffset;
         additionalHasMoreRef.current = Boolean(scopedPage.hasMore && nextOffset > scopedOffset);
+        setAdditionalHasMore(additionalHasMoreRef.current);
         setAdditionalNextOffset(nextOffset);
         const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
         const scopedUsers = (scopedPage.users || [])
@@ -4423,9 +4468,6 @@ const Matching = () => {
             return Array.from(byId.values());
           });
           void loadCommentsFor(scopedUsers);
-          // Keep one subsequent pass available to resume the public cursor
-          // after the last scoped page has been displayed.
-          setHasMore(true);
           return scopedUsers.length;
         }
       }
@@ -6248,7 +6290,7 @@ const Matching = () => {
   const [feedEndVisible, setFeedEndVisible] = useState(false);
   useEffect(() => {
     const node = feedSentinelRef.current;
-    if (!node || detailIndex !== null || !hasMore) {
+    if (!node || detailIndex !== null || !deckHasMore) {
       setFeedEndVisible(false);
       return undefined;
     }
@@ -6264,7 +6306,7 @@ const Matching = () => {
     }, { rootMargin: '400px' });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [detailIndex, filteredUsers.length, hasMore, isThrottledFeedPaging, loading]);
+  }, [deckHasMore, detailIndex, filteredUsers.length, isThrottledFeedPaging, loading]);
 
   // Прокрутка донизу — це ще й повторна спроба для адміна.
   //
@@ -6276,11 +6318,11 @@ const Matching = () => {
   // Жест витрачається: одна прокрутка донизу — одна спроба.
   useEffect(() => {
     if (isThrottledFeedPaging || !scrolledDownSinceLoad) return;
-    if (!feedEndVisible || !hasMore || loading || detailIndex !== null) return;
+    if (!feedEndVisible || !deckHasMore || loading || detailIndex !== null) return;
     scrolledDownSinceLoadRef.current = false;
     setScrolledDownSinceLoad(false);
     endOfDeckLoadRef.current('feed-scroll');
-  }, [detailIndex, feedEndVisible, hasMore, isThrottledFeedPaging, loading, scrolledDownSinceLoad]);
+  }, [deckHasMore, detailIndex, feedEndVisible, isThrottledFeedPaging, loading, scrolledDownSinceLoad]);
 
   // Кінець стрічки видно — але цього замало. Порція карток коштує один жест:
   // поки читач не прокрутив донизу, відлік не заводиться, і кінець списку показує
@@ -6293,7 +6335,7 @@ const Matching = () => {
     isThrottledFeedPaging &&
     !throttledCycle &&
     feedEndVisible &&
-    hasMore &&
+    deckHasMore &&
     !loading &&
     !loadError &&
     detailIndex === null &&
