@@ -30,7 +30,7 @@ describe('пауза між сторінками стрічки — тільки
       source.indexOf('const canOfferMoreFeedCards = Boolean('),
       source.indexOf('const showFeedLoadCountdown ='),
     );
-    ['isThrottledFeedPaging', 'feedEndVisible', 'hasMore', '!loading', '!loadError', 'detailIndex === null']
+    ['isThrottledFeedPaging', 'feedEndVisible', 'deckHasMore', '!loading', '!loadError', 'detailIndex === null']
       .forEach(condition => expect(gate).toContain(condition));
   });
 
@@ -93,7 +93,7 @@ describe('стеля на порожні спроби не має бути гл�
       source.indexOf('if (isThrottledFeedPaging || !scrolledDownSinceLoad) return;'),
       source.indexOf("endOfDeckLoadRef.current('feed-scroll');"),
     );
-    expect(effect).toContain('if (!feedEndVisible || !hasMore || loading || detailIndex !== null) return;');
+    expect(effect).toContain('if (!feedEndVisible || !deckHasMore || loading || detailIndex !== null) return;');
     // Жест витрачається: одна прокрутка донизу — одна спроба.
     expect(effect).toContain('scrolledDownSinceLoadRef.current = false;');
   });
