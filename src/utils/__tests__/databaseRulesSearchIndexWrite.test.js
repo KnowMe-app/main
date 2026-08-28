@@ -69,9 +69,14 @@ describe('права, без яких нова анкета не потрапл�
       expect(write).toContain("data.isString() && data.val() == auth.uid");
     });
 
-    it('лишає корінь searchId несканованим', () => {
-      // Право писати свій ключ не відкриває перелік усього індексу.
-      expect(rules.searchId['.read']).toBeUndefined();
+    it('лишає корінь searchId несканованим для тих, хто в нього пише', () => {
+      // Право писати свій ключ не відкриває перелік усього індексу: перегляд
+      // вузла цілком лишається адмінським, а гуртового запису немає ні в кого.
+      EDITOR_LEVELS.forEach(level => {
+        expect(rules.searchId['.read']).not.toContain(level);
+      });
+      expect(rules.searchId['.read']).not.toBe('auth != null');
+      expect(rules.searchId['.read']).toBe(rules.profileContacts['.read']);
       expect(rules.searchId['.write']).toBeUndefined();
     });
   });

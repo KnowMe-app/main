@@ -42,9 +42,20 @@ describe('limited search projection', () => {
 
   it('lets any signed-in user resolve one searchId key but not scan the index', () => {
     expect(rules.searchId.$key['.read']).toBe('auth != null');
-    // No read at the searchId root: a lookup needs the exact value, so the index
-    // cannot be enumerated.
-    expect(rules.searchId['.read']).toBeUndefined();
+    // Read at the searchId root is what a scan needs, and it stays closed to
+    // ordinary viewers: for them a lookup still needs the exact value.
+    const rootRead = rules.searchId['.read'];
+    expect(rootRead).not.toBe('auth != null');
+    expect(rootRead).not.toContain("contains('matching')");
+  });
+
+  it('opens the searchId index to admins only, on the same terms as contacts', () => {
+    // Адмін мусить бачити, що лежить за посиланням у searchId, тож перегляд
+    // вузла цілком дано — але тим самим двом uid, що й `profileContacts`:
+    // індекс називає чужі контакти, і ширшої аудиторії в нього немає.
+    expect(rules.searchId['.read']).toBe(rules.profileContacts['.read']);
+    expect(rules.searchId['.read']).toContain("auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'");
+    expect(rules.searchId['.read']).toContain("auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'");
   });
 
   it('keeps a limited search off the paths its viewer cannot read', () => {
@@ -52,6 +63,22 @@ describe('limited search projection', () => {
     expect(config).toContain("const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;");
     expect(config).toContain("const searchIdOptions = limitedFields\n    ? { ...baseSearchIdOptions, includePrefixMatches: false }");
     expect(config).toContain('const addHit = limitedFields ? addLimitedUser : addUserFromUsers;');
+  });
+
+  it('keeps an exact-key hit when the admin-only prefix scan is refused', () => {
+    // The scan needs read at the searchId root, which only admins have. For
+    // everyone else it is refused, and that refusal must not throw away the
+    // ids the exact-key lookup already collected - otherwise an optional
+    // broadening step fails the whole search and the viewer is told
+    // "not found" for a value that is in the index.
+    const config = read('config.js');
+    expect(config).toContain('if (!isSearchIdPermissionDenied(error)) throw error;');
+    const scan = config.slice(
+      config.indexOf('if (includePrefixMatches) {'),
+      config.indexOf('return [...uniqueIds];'),
+    );
+    expect(scan).toContain('try {');
+    expect(scan).toContain('} catch (error) {');
   });
 
   it('keeps limited hits out of the shared card cache', () => {

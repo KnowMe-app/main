@@ -18,10 +18,11 @@ const source = fs.readFileSync(path.join(__dirname, 'ProfileForm.jsx'), 'utf8');
  * він детермінований, і його вже будує індексація анкети.
  */
 describe('стрілка «відкрити запис searchId»', () => {
-  it('правила дають читання лише по конкретному ключу, а не по вузлу', () => {
-    // Це і є причина, чому сканування не працювало й не запрацює.
+  it('дають читання по конкретному ключу всім, а по вузлу — тільки адмінам', () => {
+    // Стрілка працює для всіх, бо читає рівно один ключ. Сканування вузла
+    // лишається адмінським: саме його бракувало, щоб адмін побачив вузол цілком.
     expect(rules.searchId.$key['.read']).toBe('auth != null');
-    expect(rules.searchId['.read']).toBeUndefined();
+    expect(rules.searchId['.read']).toBe(rules.profileContacts['.read']);
     expect(rules['.read']).toBe(false);
   });
 

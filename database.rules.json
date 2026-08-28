@@ -100,6 +100,7 @@
       ".write": "auth != null && (auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'S0VhDLCYjuTFDNLalRa85u7fPcg2')"
     },
     "searchId": {
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
       "$key": {
         ".read": "auth != null",
         ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write') || newData.exists() || (data.isString() && data.val() == auth.uid))",
