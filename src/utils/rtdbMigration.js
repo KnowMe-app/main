@@ -37,7 +37,8 @@ import {
   SECRET_FIELDS,
   ALL_MAPPED_FIELDS,
   OWNER_MULTI_DATA_FIELD_NAMES,
-  MATCHING_CARD_FIELD_SOURCES,
+  FIELD_SOURCES,
+  isTwinField,
   CLEANED_COLLECTION_NOISE_FIELDS,
   CLEANED_COLLECTION_PRESERVED_FIELDS,
 } from './profileNodeSchema';
@@ -87,12 +88,16 @@ const DIRECT_FIELDS_BY_GROUP = {
  * читається і з `region`, і з `state`. Забирається з джерела рівно той ключ, з
  * якого значення взяли, — другий лишається на місці і їде у звіт, бо це вже
  * розбіжність, а не синонім.
+ *
+ * Виняток — близнюки (`lastLogin` / `lastLogin2`, `createdAt` / `createdAt2`).
+ * Там друга копія не розбіжність, а те саме значення іншим написанням, тож
+ * забираються обидва ключі: див. `consumeTwinKeys`.
  */
-const sourceKeysFor = field => MATCHING_CARD_FIELD_SOURCES[field] || [field];
+const sourceKeysFor = field => FIELD_SOURCES[field] || [field];
 
 /** Усі ключі-синоніми, які знає хоч одне поле. */
 const ALIAS_SOURCE_FIELDS = [...new Set(
-  Object.entries(MATCHING_CARD_FIELD_SOURCES).flatMap(([field, keys]) => (
+  Object.entries(FIELD_SOURCES).flatMap(([field, keys]) => (
     keys.filter(key => key !== field)
   )),
 )];
@@ -364,8 +369,12 @@ const addConflict = (ctx, conflict) => {
  * тут перемагає та копія, що ближча до сьогодні, — але лише коли обидва
  * значення справді дати. Незрозуміле значення повертає все до звичайного
  * правила: розбіжність їде у звіт.
+ *
+ * Поле тут одне, хоч у джерелі копій дві: `lastLogin2` більше не окреме поле
+ * цілі, а перша копія того самого `lastLogin` (`TWIN_FIELD_SOURCES`). Судити
+ * датою треба саме `users` проти `newUsers`, а не два написання в одній анкеті.
  */
-const RECENCY_WINS_FIELDS = ['lastLogin', 'lastLogin2'];
+const RECENCY_WINS_FIELDS = ['lastLogin'];
 
 /**
  * Один запис у цільовий вузол — і рішення, чи можна після нього чіпати джерело.
@@ -498,8 +507,9 @@ const planDirectField = (ctx, { profileId, field, source, sourceCollection }) =>
     return;
   }
 
-  // Перший непорожній синонім і є значенням поля: `region` як назва
-  // канонічна, тож коли є обидва ключі, канонічний і виграє.
+  // Перший непорожній ключ зі списку і є значенням поля. Порядок у списку —
+  // це і є рішення: у синонімів попереду канонічне ім'я (`region`, не
+  // `state`), у близнюків — ISO-копія (`lastLogin2`, не `lastLogin`).
   const sourceKey = present.find(key => hasMeaningfulValue(source[key]));
 
   if (!sourceKey) {
@@ -516,18 +526,52 @@ const planDirectField = (ctx, { profileId, field, source, sourceCollection }) =>
     return;
   }
 
-  const outcome = offerValue(ctx, {
-    profileId,
-    field,
-    // Дата переїжджає одним написанням — `YYYY-MM-DD`. Це не косметика: поки
-    // `25.08.2026` і `2026-08-25` різні рядки, дві копії тієї самої анкети
-    // дають конфлікт на рівному місці, а сортування рядком ставить крапкові
-    // дати не туди.
-    value: normalizeLegacyDates(deepClone(source[sourceKey])),
-    sourceCollection,
-  });
+  // Дата переїжджає одним написанням — `YYYY-MM-DD`. Це не косметика: поки
+  // `25.08.2026` і `2026-08-25` різні рядки, дві копії тієї самої анкети
+  // дають конфлікт на рівному місці, а сортування рядком ставить крапкові
+  // дати не туди.
+  const value = normalizeLegacyDates(deepClone(source[sourceKey]));
 
-  if (isSuccess(outcome)) planConsumption(ctx, sourceCollection, profileId, sourceKey);
+  const outcome = offerValue(ctx, { profileId, field, value, sourceCollection });
+
+  if (!isSuccess(outcome)) return;
+
+  planConsumption(ctx, sourceCollection, profileId, sourceKey);
+  consumeTwinKeys(ctx, { profileId, field, source, sourceCollection, sourceKey, value, present });
+};
+
+/**
+ * Забрати другу копію значення — ту, що програла.
+ *
+ * Для синоніма (`state` при наявному `region`) цього не роблять: два різні
+ * імені можуть нести два різні факти, і розбирається з цим людина. Близнюк —
+ * інша річ: `lastLogin` і `lastLogin2` пише один і той самий рядок коду з
+ * одного значення, тож лишити крапкову копію в `newUsers` означало б лишити
+ * її там назавжди — нового місця в неї немає.
+ *
+ * Мовчки це робиться лише тоді, коли копії справді збігаються. Розбіжність
+ * (а вона буває: `createdAt` рахують локальним часом, `createdAt2` — UTC, і
+ * після 21:00 за Києвом у них різні дати) їде у звіт окремим кодом. Не
+ * конфліктом — рішення вже ухвалене на користь ISO-копії, — але видимим.
+ */
+const consumeTwinKeys = (ctx, { profileId, field, source, sourceCollection, sourceKey, value, present }) => {
+  if (!isTwinField(field)) return;
+
+  present.filter(key => key !== sourceKey).forEach(key => {
+    const discarded = normalizeLegacyDates(deepClone(source[key]));
+    if (hasMeaningfulValue(discarded) && !deepEqual(discarded, value)) {
+      addWarning(ctx, {
+        code: 'TWIN_VALUE_DISCARDED',
+        profileId,
+        field: key,
+        collection: sourceCollection,
+        targetGroup: ctx.group,
+        kept: value,
+        discarded,
+      });
+    }
+    planConsumption(ctx, sourceCollection, profileId, key);
+  });
 };
 
 /**

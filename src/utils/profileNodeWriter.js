@@ -19,7 +19,12 @@
  * правила бази не приймають у картку сирих полів.
  */
 
-import { PROFILE_NODES, resolveFieldOwnerNode } from './profileNodeSchema';
+import {
+  PROFILE_NODES,
+  resolveCanonicalFieldName,
+  resolveFieldOwnerNode,
+  twinSourceRank,
+} from './profileNodeSchema';
 
 /** Вузли, які наповнює роутер. Картку стрічки пише проєкція, а не копія полів. */
 const ROUTED_NODES = new Set([
@@ -49,15 +54,31 @@ const isRoutableEntry = ([field, value]) => (
  * тож анкета не може опинитись наполовину в старому вузлі, а наполовину в
  * новому. `null` лишається `null` — це видалення ключа, і воно має доїхати до
  * нового вузла так само, як доїжджає до legacy.
+ *
+ * Близнюки дорогою зводяться в один ключ. Застосунок і далі пише в legacy
+ * обидві копії дати (`lastLogin` крапками, `lastLogin2` в ISO) — мобільний
+ * читає першу, і чіпати це не можна. Але в новому вузлі копія одна, ISO, під
+ * коротким ім'ям: саме так її поклала міграція. Виграє вона незалежно від
+ * того, в якому порядку ключі лежать у payload, — інакше результат залежав би
+ * від порядку властивостей обʼєкта, тобто ні від чого.
  */
 export const buildProfileNodePatch = (profileId, payload = {}) => {
   const id = String(profileId || '').trim();
   if (!id || !payload || typeof payload !== 'object') return {};
 
+  const ranks = {};
+
   return Object.entries(payload)
     .filter(isRoutableEntry)
     .reduce((patch, [field, value]) => {
-      patch[`${resolveFieldOwnerNode(field)}/${id}/${field}`] = value;
+      const canonical = resolveCanonicalFieldName(field);
+      const path = `${resolveFieldOwnerNode(field)}/${id}/${canonical}`;
+      const rank = twinSourceRank(field);
+
+      if (path in patch && ranks[path] <= rank) return patch;
+
+      ranks[path] = rank;
+      patch[path] = value;
       return patch;
     }, {});
 };
