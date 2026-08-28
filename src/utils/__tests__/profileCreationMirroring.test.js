@@ -65,11 +65,13 @@ describe('що саме дістається кожному вузлу при с
   it('кожне поле нової анкети їде у свій вузол', () => {
     const patch = buildProfileNodePatch(newUser.userId, newUser);
 
+    // Дата створення в новому вузлі одна, і це ISO-копія: `createdAt` рахують
+    // локальним часом, `createdAt2` — UTC, тож після 21:00 за Києвом вони
+    // розходяться на добу, а решта бази читає саме ISO.
     expect(patch).toEqual({
       'profileContacts/AC00042/phone': ['+380671112233'],
       'profileDetails/AC00042/surname': 'Коваленко',
-      'profileTechnical/AC00042/createdAt': '26.08.2026',
-      'profileTechnical/AC00042/createdAt2': '2026-08-26',
+      'profileTechnical/AC00042/createdAt': '2026-08-26',
     });
     expect(listTouchedProfileNodes(patch))
       .toEqual(['profileContacts', 'profileDetails', 'profileTechnical']);
@@ -77,6 +79,30 @@ describe('що саме дістається кожному вузлу при с
     // `name` і `userId` роутер не чіпає: імʼя належить картці стрічки, і туди
     // воно потрапляє проєкцією, а не копією поля.
     expect(patch).not.toHaveProperty('matchingCards/AC00042/name');
+  });
+
+  it('ISO-копія виграє незалежно від порядку ключів у payload', () => {
+    // Порядок властивостей обʼєкта — не рішення, а випадковість того, хто його
+    // збирав. Якби перемагав останній записаний ключ, дата створення анкети
+    // залежала б саме від цього.
+    const straight = buildProfileNodePatch('AC00042', {
+      createdAt: '26.08.2026',
+      createdAt2: '2026-08-26',
+      lastLogin: '26.08.2026',
+      lastLogin2: '2026-08-27',
+    });
+    const reversed = buildProfileNodePatch('AC00042', {
+      lastLogin2: '2026-08-27',
+      lastLogin: '26.08.2026',
+      createdAt2: '2026-08-26',
+      createdAt: '26.08.2026',
+    });
+
+    expect(straight).toEqual({
+      'profileTechnical/AC00042/createdAt': '2026-08-26',
+      'profileTechnical/AC00042/lastLogin': '2026-08-27',
+    });
+    expect(reversed).toEqual(straight);
   });
 
   it('картка стрічки збирається одразу і несе ініціал, а не прізвище', () => {

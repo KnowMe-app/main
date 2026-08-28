@@ -452,6 +452,80 @@ describe('Contacts', () => {
   });
 });
 
+describe('поля-близнюки', () => {
+  it('у нового вузла одне ім\'я і значення ISO-копії', () => {
+    const state = stateWith({}, { P1: { lastLogin: '25.08.2026', lastLogin2: '2026-08-27' } });
+    runMigrationGroup(state, 'profileTechnical');
+
+    // `lastLogin2` оновлюють шляхи, які до крапкового `lastLogin` не доходять,
+    // тож крапковий відстає — і саме він тут програє.
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin: '2026-08-27' });
+  });
+
+  it('забирає з джерела обидві копії, а не лише ту, що виграла', () => {
+    // Інакше крапкова копія лишилась би в `newUsers` назавжди: окремого місця
+    // в новій схемі в неї немає, і жодна наступна група її вже не візьме.
+    const state = stateWith({}, { P1: { createdAt: '26.08.2026', createdAt2: '2026-08-26' } });
+    runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ createdAt: '2026-08-26' });
+    expect(state.workingNewUsers.P1).toEqual({});
+  });
+
+  it('розбіжність копій видно у звіті, але вона не конфлікт', () => {
+    // Анкету створили після 21:00 за Києвом: локальна дата вже наступна доба,
+    // UTC — ще ні. Рішення тут ухвалене наперед (ISO), але мовчати про добу
+    // різниці не можна.
+    const state = stateWith({}, { P1: { createdAt: '21.08.2026', createdAt2: '2026-08-20' } });
+    const plan = runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ createdAt: '2026-08-20' });
+    expect(plan.counters.conflicts).toBe(0);
+    expect(plan.warnings).toContainEqual(expect.objectContaining({
+      code: 'TWIN_VALUE_DISCARDED',
+      profileId: 'P1',
+      field: 'createdAt',
+      kept: '2026-08-20',
+      discarded: '2026-08-21',
+    }));
+  });
+
+  it('однакові копії у звіт не потрапляють', () => {
+    const state = stateWith({}, { P1: { lastLogin: '25.08.2026', lastLogin2: '2026-08-25' } });
+    const plan = runMigrationGroup(state, 'profileTechnical');
+
+    expect(plan.warningsByCode.TWIN_VALUE_DISCARDED).toBeUndefined();
+    expect(state.workingNewUsers.P1).toEqual({});
+  });
+
+  it('коли ISO-копії немає, значення бере крапкова — і теж під коротким імʼям', () => {
+    const state = stateWith({}, { P1: { lastLogin: '25.08.2026' } });
+    runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin: '2026-08-25' });
+  });
+
+  it('порожня ISO-копія не робить поле порожнім', () => {
+    const state = stateWith({}, { P1: { lastLogin: '25.08.2026', lastLogin2: '' } });
+    runMigrationGroup(state, 'profileTechnical');
+
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin: '2026-08-25' });
+    expect(state.workingNewUsers.P1).toEqual({});
+  });
+
+  it('близнюк не рахується незмапленим полем', () => {
+    // Поки `lastLogin2` не мав нового місця, він стояв би в купці «поле поза
+    // жодним allowlist» на всі 26 тисяч анкет — тобто в списку рішень для
+    // людини, хоча вирішувати нема чого.
+    const state = stateWith({}, { P1: { lastLogin2: '2026-08-27', createdAt2: '2026-08-26' } });
+    const inventory = buildCollectionInventory({ P1: { lastLogin2: '2026-08-27', createdAt2: '2026-08-26' } });
+
+    expect(inventory.fields.every(entry => entry.mapped)).toBe(true);
+    runMigrationGroup(state, 'profileTechnical');
+    expect(state.workingNewUsers.P1).toEqual({});
+  });
+});
+
 describe('дати входу з двох колекцій', () => {
   it('лишає ту, що ближча до сьогодення, і чистить обидва джерела', () => {
     const state = stateWith(
@@ -460,7 +534,8 @@ describe('дати входу з двох колекцій', () => {
     );
     const plan = runMigrationGroup(state, 'profileTechnical');
 
-    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin2: '2026-08-22' });
+    // Ім'я в цілі коротке: `lastLogin2` — це джерело, а не поле нового вузла.
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin: '2026-08-22' });
     expect(state.workingNewUsers.P1).toEqual({});
     expect(plan.counters.conflicts).toBe(0);
     expect(plan.warningsByCode.LOGIN_RECENCY_RESOLVED).toBe(1);
@@ -487,7 +562,7 @@ describe('дати входу з двох колекцій', () => {
     );
     runMigrationGroup(state, 'profileTechnical');
 
-    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin2: '2026-08-25' });
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin: '2026-08-25' });
   });
 
   it('у звіті видно, що саме лишили і що відкинули', () => {
@@ -500,7 +575,7 @@ describe('дати входу з двох колекцій', () => {
     expect(plan.warnings).toContainEqual(expect.objectContaining({
       code: 'LOGIN_RECENCY_RESOLVED',
       profileId: 'P1',
-      field: 'lastLogin2',
+      field: 'lastLogin',
       keptValue: '2026-08-22',
       droppedValue: '2026-08-01',
       keptSource: 'users',
@@ -514,7 +589,7 @@ describe('дати входу з двох колекцій', () => {
     );
     const plan = runMigrationGroup(state, 'profileTechnical');
 
-    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin2: '2026-08-22' });
+    expect(state.targets.profileTechnical.P1).toEqual({ lastLogin: '2026-08-22' });
     expect(state.workingNewUsers.P1).toEqual({ lastLogin2: 'колись улітку' });
     expect(plan.counters.conflicts).toBe(1);
   });
@@ -579,9 +654,9 @@ describe('Workflow і Technical', () => {
     // Права акаунта — теж технічні дані, і тепер вони переїжджають разом із
     // рештою: правила бази читають рівень доступу і з `profileTechnical`.
     expect(state.targets.profileTechnical.P1).toEqual({
-      // Дата входу приїхала одним написанням — крапкова стала ISO.
+      // Дата входу приїхала одним ключем і одним написанням: значення взяте з
+      // `lastLogin2`, а крапкова копія забрана з джерела як та сама дата.
       lastLogin: '2026-08-25',
-      lastLogin2: '2026-08-25',
       language: 'uk',
       accessLevel: 'matching:view',
       canCreateProfiles: true,

@@ -71,6 +71,65 @@ export const MATCHING_CARD_FIELD_SOURCES = Object.freeze({
   region: Object.freeze(['region', 'state']),
 });
 
+/**
+ * Поля-близнюки: той самий факт, записаний двічі й різними форматами.
+ *
+ * `lastLogin` і `lastLogin2` — це один вхід: `buildAuthSessionPayload` пише їх
+ * разом з одного `getCurrentDate()`, просто перший крапками (`25.08.2026`), а
+ * другий в ISO (`2026-08-25`). Те саме з `createdAt` / `createdAt2` у
+ * `makeNewUser`. Тобто це не два значення, які треба звести, а одне, записане
+ * двома написаннями.
+ *
+ * У новий вузол їде ISO-копія — і під коротким ім'ям, без «2». Не з
+ * акуратності: ISO-копія чесніша. `lastLogin2` оновлюють шляхи, які до
+ * крапкового `lastLogin` не доходять узагалі (вхід у застосунок, показ картки),
+ * тож крапковий просто відстає. А `createdAt` рахується локальним часом, тоді
+ * як `createdAt2` — UTC: анкета, створена після 21:00 за Києвом, має в них
+ * різні дати, і саме ISO-копія збігається з тим, що бачить решта бази.
+ *
+ * Ключі перелічені в порядку переваги: перший непорожній і виграє.
+ */
+export const TWIN_FIELD_SOURCES = Object.freeze({
+  createdAt: Object.freeze(['createdAt2', 'createdAt']),
+  lastLogin: Object.freeze(['lastLogin2', 'lastLogin']),
+});
+
+/**
+ * Під яким ключем поле може лежати в старих даних — усі вузли разом.
+ *
+ * Синонім (`state` -> `region`) і близнюк (`lastLogin2` -> `lastLogin`)
+ * читаються однаково, а розходяться в тому, що робити з програшною копією:
+ * синонім лишається людині як розбіжність, близнюк зникає, бо це те саме
+ * значення. Цю різницю знає міграція, а не цей перелік.
+ */
+export const FIELD_SOURCES = Object.freeze({
+  ...MATCHING_CARD_FIELD_SOURCES,
+  ...TWIN_FIELD_SOURCES,
+});
+
+/** Чи є в поля близнюк, тобто друга копія того самого значення. */
+export const isTwinField = field => Object.prototype.hasOwnProperty.call(TWIN_FIELD_SOURCES, field);
+
+/**
+ * Канонічне ім'я поля в новому вузлі.
+ *
+ * `lastLogin2`, записаний застосунком сьогодні, лягає в `profileTechnical` під
+ * ім'ям `lastLogin` — тим самим, під яким його поклала міграція. Інакше вузол
+ * знову розʼїхався б на дві копії однієї дати, тільки вже після переїзду.
+ */
+const CANONICAL_BY_SOURCE_FIELD = Object.freeze(Object.fromEntries(
+  Object.entries(TWIN_FIELD_SOURCES).flatMap(([field, keys]) => keys.map(key => [key, field])),
+));
+
+export const resolveCanonicalFieldName = field => CANONICAL_BY_SOURCE_FIELD[field] || field;
+
+/** Наскільки ця копія переважна: 0 — та, що виграє. */
+export const twinSourceRank = field => {
+  const canonical = CANONICAL_BY_SOURCE_FIELD[field];
+  if (!canonical) return 0;
+  return TWIN_FIELD_SOURCES[canonical].indexOf(field);
+};
+
 /** Усі ключі джерела, з яких збирається картка, включно з синонімами. */
 export const MATCHING_CARD_SOURCE_FIELDS = Object.freeze([...new Set(
   MATCHING_CARD_DIRECT_FIELDS.flatMap(field => MATCHING_CARD_FIELD_SOURCES[field] || [field]),
@@ -180,14 +239,13 @@ export const PROFILE_TECHNICAL_ACCESS_FIELDS = Object.freeze([
 
 /** Технічні дані та account metadata. Без device-полів. */
 export const PROFILE_TECHNICAL_FIELDS = Object.freeze([
+  // `lastLogin` і `createdAt` тут в однині: пари з «2» більше немає, значення
+  // береться з ISO-копії, а ім'я лишається коротке. Звідки саме береться —
+  // у `TWIN_FIELD_SOURCES`.
   'lastLogin',
-  'lastLogin2',
   'registrationDate',
   'areTermsConfirmed',
   'createdAt',
-  // Той самий момент створення в ISO-форматі. Обидва пише `makeNewUser`, і
-  // якби тут стояв лише один, другий лишався б незмапленим назавжди.
-  'createdAt2',
   'language',
   'login',
   ...PROFILE_TECHNICAL_ACCESS_FIELDS,
@@ -481,7 +539,7 @@ const OWNER_BY_FIELD = OWNERSHIP.reduce((acc, [node, fields]) => {
  * `null` означає «нове місце не визначене»: такі поля лишаються у legacy
  * `/users` і в `newUsers`, і рішення по них ухвалює людина, а не міграція.
  */
-export const resolveFieldOwnerNode = field => OWNER_BY_FIELD[field] || null;
+export const resolveFieldOwnerNode = field => OWNER_BY_FIELD[resolveCanonicalFieldName(field)] || null;
 
 /** Чи можна це поле взагалі переносити у нові вузли. */
 export const isMigratableField = field => (
