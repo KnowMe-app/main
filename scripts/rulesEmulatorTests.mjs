@@ -124,6 +124,17 @@ await it('звичайний користувач не може точково �
     set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-08-25'));
 });
 
+await it('редактор може прочитати неопубліковану проєкцію перед синхронізацією', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), null));
+  await assertSucceeds(get(ref(db(MIGRATED_EDITOR), `matchingCards/${CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-08-25'));
+});
+
+await it('суперадмін читає всю колекцію для очищення індексу', () =>
+  assertSucceeds(get(ref(db(SUPERADMIN), 'matchingCards'))));
+
 await it('кожен авторизований користувач читає стрічку опублікованих карток', () =>
   assertSucceeds(get(query(
     ref(db(OUTSIDER), 'matchingCards'),
