@@ -290,6 +290,16 @@ export const loadProfilesFromNodesForIndexing = async (options = {}) => {
   return Object.keys(profiles).length ? profiles : null;
 };
 
+// Відмова в правах приходить то кодом, то текстом — залежно від виклику.
+const isSearchIdPermissionDenied = error => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  return code.includes('permission-denied')
+    || code.includes('permission_denied')
+    || message.includes('permission_denied')
+    || message.includes('permission denied');
+};
+
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   const uniqueIds = new Set();
   const { includePrefixMatches = true } = options;
@@ -314,23 +324,33 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
     })
   );
 
+  // Точний ключ уже прочитаний — далі йде тільки розширення пошуку по префіксу,
+  // а воно сканує вузол `searchId`, право на що є лише в адмінів. Для решти
+  // запит закономірно падає з PERMISSION_DENIED, і це не привід губити те, що
+  // вже знайдено за точним ключем: інакше відмова в необовʼязковому кроці
+  // валила весь пошук у `catch` і показувала «не знайшов».
   if (includePrefixMatches) {
     await Promise.all(
       uniqueSearchKeys.map(async searchKey => {
-        const prefixMatchesSnapshot = await get(
-          query(
-            ref2(database, 'searchId'),
-            orderByKey(),
-            startAt(searchKey),
-            endAt(`${searchKey}\uf8ff`),
-          )
-        );
+        try {
+          const prefixMatchesSnapshot = await get(
+            query(
+              ref2(database, 'searchId'),
+              orderByKey(),
+              startAt(searchKey),
+              endAt(`${searchKey}\uf8ff`),
+            )
+          );
 
-        if (!prefixMatchesSnapshot.exists()) return;
+          if (!prefixMatchesSnapshot.exists()) return;
 
-        prefixMatchesSnapshot.forEach(matchSnapshot => {
-          addIds(matchSnapshot.val());
-        });
+          prefixMatchesSnapshot.forEach(matchSnapshot => {
+            addIds(matchSnapshot.val());
+          });
+        } catch (error) {
+          // Будь-яка інша помилка — не про права, і ховати її не можна.
+          if (!isSearchIdPermissionDenied(error)) throw error;
+        }
       })
     );
   }

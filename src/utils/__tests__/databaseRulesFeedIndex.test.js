@@ -30,8 +30,11 @@ describe('правила, без яких стрічка не може чита�
     // Пошук по імені будує ключ і читає його напряму; без цього права кожен
     // запит падає в PERMISSION_DENIED, а пошук мовчки каже «не знайшов».
     expect(rules.searchId.$key['.read']).toBe('auth != null');
-    // І при цьому індекс лишається нескановним: на корені `searchId` читання немає.
-    expect(rules.searchId['.read']).toBeUndefined();
+    // І при цьому індекс лишається нескановним для звичайного читача: на корені
+    // `searchId` читання дане тільки адмінам, тим самим двом uid, що й на
+    // `profileContacts`.
+    expect(rules.searchId['.read']).toBe(rules.profileContacts['.read']);
+    expect(rules.searchId['.read']).not.toBe('auth != null');
   });
 
   it('тримає публічні коментарі читабельними', () => {

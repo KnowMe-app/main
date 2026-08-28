@@ -17,7 +17,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import fs from 'node:fs';
-import { ref, get, set, update, remove, query, orderByValue, startAt, limitToFirst } from 'firebase/database';
+import { ref, get, set, update, remove, query, orderByKey, orderByValue, startAt, endAt, limitToFirst } from 'firebase/database';
 
 const SUPERADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const MATCHING_VIEWER = 'matchingViewerUid0000000000';
@@ -510,6 +510,38 @@ await it('індексує власну анкету — і старі знач�
   // Старе значення лишається в індексі поруч із новим: змінена пошта — не
   // зникла пошта, анкету шукають і ті, хто знає лише старий контакт.
   await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380500000000`), SELF_SERVE));
+});
+
+describe('searchId — точковий резолв усім, перелік індексу тільки адміну');
+
+await it('будь-хто авторизований читає один ключ індексу', async () => {
+  // На цьому тримається і пошук, і стрілка «відкрити запис searchId» у формі:
+  // ключ будується з самого значення, тож перелік вузла для цього не потрібен.
+  await assertSucceeds(get(ref(db(SELF_SERVE), 'searchId/380671112233')));
+  await assertSucceeds(get(ref(db(MATCHING_EDITOR), 'searchId/380671112233')));
+});
+
+await it('перелічити індекс цілим вузлом може тільки суперадмін', async () => {
+  // Індекс називає чужі контакти, тож його перелік — це та сама чутливість,
+  // що й `profileContacts`, і та сама аудиторія.
+  await assertFails(get(ref(db(SELF_SERVE), 'searchId')));
+  await assertFails(get(ref(db(MATCHING_EDITOR), 'searchId')));
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'searchId')));
+});
+
+await it('сканування по префіксу ключа доступне адміну — і тільки йому', async () => {
+  // Це запит, яким пошук розширює точний збіг по префіксу ключа. Стрілка
+  // в анкеті сканування не робить — вона читає готовий ключ, тож працює
+  // і без цього права.
+  const scan = uid => query(
+    ref(db(uid), 'searchId'),
+    orderByKey(),
+    startAt('3805'),
+    endAt('3805\uf8ff'),
+  );
+
+  await assertFails(get(scan(MATCHING_EDITOR)));
+  await assertSucceeds(get(scan(SUPERADMIN)));
 });
 
 await it('не може підмінити чужу картку', () =>
