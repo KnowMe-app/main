@@ -113,6 +113,7 @@ import {
   fetchUsersByIds,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
+  fetchLimitedProfileById,
   database,
   auth,
   updateDataInRealtimeDB,
@@ -657,6 +658,12 @@ const fetchNewUsersByIdsForMatching = (ids, batchSize = FETCH_USERS_BY_IDS_BATCH
     database,
     getAllUserPhotos,
   });
+
+const fetchLimitedNewUsersByIdsForMatching = async ids => (
+  await Promise.all((ids || []).map(userId => (
+    fetchLimitedProfileById(userId, { collection: 'newUsers' })
+  )))
+).filter(Boolean);
 
 const ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS = [
   'searchKeySetsOfExactUser',
@@ -1624,6 +1631,8 @@ const Matching = () => {
   const [additionalNewUsers, setAdditionalNewUsers] = useState([]);
   const additionalNewUsersRef = useRef(additionalNewUsers);
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
+  const additionalNextOffsetRef = useRef(0);
+  const additionalHasMoreRef = useRef(false);
   const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({
@@ -2041,6 +2050,10 @@ const Matching = () => {
   }, [additionalNewUsers]);
 
   useEffect(() => {
+    additionalNextOffsetRef.current = additionalNextOffset;
+  }, [additionalNextOffset]);
+
+  useEffect(() => {
     favoriteUsersRef.current = favoriteUsers;
   }, [favoriteUsers]);
 
@@ -2060,6 +2073,7 @@ const Matching = () => {
     usersRef.current = users;
     const ids = [
       ...users.map(u => u.userId),
+      ...additionalNewUsers.map(u => u.userId),
       ...sharedReactionCandidateUsers.map(u => u.userId),
     ];
     const ownOwnerId = getOwnerId();
@@ -2078,7 +2092,7 @@ const Matching = () => {
       });
       return map;
     });
-  }, [sharedReactionCandidateUsers, users]);
+  }, [additionalNewUsers, sharedReactionCandidateUsers, users]);
 
   useEffect(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') {
@@ -2706,6 +2720,8 @@ const Matching = () => {
     const accessUserId = String(ownerId || '').trim();
     const searchKeySetKeys = normalizeSearchKeySetKeys(currentSearchKeySetKeys);
     if (!accessUserId || !parsedAdditionalAccessRules.length || !searchKeySetKeys.length) {
+      additionalMatchingFetchVersionRef.current += 1;
+      additionalHasMoreRef.current = false;
       setAdditionalNewUsers([]);
       setAdditionalNextOffset(0);
       return () => {};
@@ -2713,46 +2729,41 @@ const Matching = () => {
 
     const requestVersion = additionalMatchingFetchVersionRef.current + 1;
     additionalMatchingFetchVersionRef.current = requestVersion;
+    // Do not retain cards granted by the previous owner/rule set while its
+    // replacement request is in flight (or if that request fails).
+    additionalHasMoreRef.current = false;
+    setAdditionalNewUsers([]);
+    setAdditionalNextOffset(0);
     let cancelled = false;
 
     const loadAccessScopedCards = async () => {
       try {
-        const scopedById = new Map();
-        let offset = 0;
-        let hasMore = true;
-        while (hasMore && !cancelled) {
-          // eslint-disable-next-line no-await-in-loop
-          const loaded = await fetchAdditionalNewUsersBySearchIndex({
-            rawRules: currentAdditionalAccessRules,
-            accessUserId,
-            searchKeySetKeys,
-            filters: filtersRef.current || {},
-            excludeIds: [
-              ...Object.keys(favoriteUsersRef.current),
-              ...Object.keys(dislikeUsersRef.current),
-            ],
-            offset,
-            limit: 100,
-            fetchNewUsersByIds: fetchNewUsersByIdsForMatching,
-            shouldDebugAdditionalMatching,
-            debugAdditionalToast,
-            logAdditionalMatchingDebug,
-          });
-          (loaded.users || []).forEach(user => {
-            if (user?.userId) scopedById.set(user.userId, user);
-          });
-          const nextOffset = Number(loaded.nextOffset) || 0;
-          hasMore = Boolean(loaded.hasMore) && nextOffset > offset;
-          offset = nextOffset;
-        }
+        const loaded = await fetchAdditionalNewUsersBySearchIndex({
+          rawRules: currentAdditionalAccessRules,
+          accessUserId,
+          searchKeySetKeys,
+          filters: filtersRef.current || {},
+          excludeIds: [
+            ...Object.keys(favoriteUsersRef.current),
+            ...Object.keys(dislikeUsersRef.current),
+          ],
+          offset: 0,
+          limit: MATCHING_REFILL_LIMIT,
+          fetchNewUsersByIds: fetchLimitedNewUsersByIdsForMatching,
+          shouldDebugAdditionalMatching,
+          debugAdditionalToast,
+          logAdditionalMatchingDebug,
+        });
         if (cancelled || requestVersion !== additionalMatchingFetchVersionRef.current) return;
 
         const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
-        const scopedUsers = Array.from(scopedById.values())
+        const scopedUsers = (loaded.users || [])
           .filter(user => user?.userId && !publicIds.has(user.userId))
           .map(user => ({ ...user, __matchingAccessAllowed: true }));
         setAdditionalNewUsers(scopedUsers);
-        setAdditionalNextOffset(offset);
+        additionalHasMoreRef.current = Boolean(loaded.hasMore);
+        setAdditionalNextOffset(Number(loaded.nextOffset) || 0);
+        if (loaded.hasMore) setHasMore(true);
         void loadCommentsFor(scopedUsers);
       } catch (error) {
         if (!cancelled) console.error('Failed to load access-scoped matching cards', error);
@@ -4371,7 +4382,55 @@ const Matching = () => {
         ...Object.keys(dislikeUsersRef.current),
       ]);
 
-const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
+      // The scoped source is paged just like the public feed. Read only the
+      // next deck-sized page; never drain the entire additional-access index
+      // on initial load or after a filter change.
+      if (additionalHasMoreRef.current && parsedAdditionalAccessRules.length > 0) {
+        const scopedOffset = additionalNextOffsetRef.current;
+        const scopedPage = await fetchAdditionalNewUsersBySearchIndex({
+          rawRules: currentAdditionalAccessRules,
+          accessUserId: ownerId,
+          searchKeySetKeys: normalizeSearchKeySetKeys(currentSearchKeySetKeys),
+          filters: filtersRef.current || {},
+          excludeIds: [
+            ...baseExclude,
+            ...usersRef.current.map(user => user?.userId).filter(Boolean),
+            ...additionalNewUsersRef.current.map(user => user?.userId).filter(Boolean),
+          ],
+          offset: scopedOffset,
+          limit: requestedLimit,
+          fetchNewUsersByIds: fetchLimitedNewUsersByIdsForMatching,
+          shouldDebugAdditionalMatching,
+          debugAdditionalToast,
+          logAdditionalMatchingDebug,
+        });
+        if (!canApplyLoadMoreResultWithFilters()) {
+          logStaleLoadMoreResultIgnored('additional-access-page');
+          return;
+        }
+
+        const nextOffset = Number(scopedPage.nextOffset) || scopedOffset;
+        additionalHasMoreRef.current = Boolean(scopedPage.hasMore && nextOffset > scopedOffset);
+        setAdditionalNextOffset(nextOffset);
+        const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
+        const scopedUsers = (scopedPage.users || [])
+          .filter(user => user?.userId && !publicIds.has(user.userId))
+          .map(user => ({ ...user, __matchingAccessAllowed: true }));
+        if (scopedUsers.length) {
+          setAdditionalNewUsers(prev => {
+            const byId = new Map(prev.map(user => [user.userId, user]));
+            scopedUsers.forEach(user => byId.set(user.userId, user));
+            return Array.from(byId.values());
+          });
+          void loadCommentsFor(scopedUsers);
+          // Keep one subsequent pass available to resume the public cursor
+          // after the last scoped page has been displayed.
+          setHasMore(true);
+          return scopedUsers.length;
+        }
+      }
+
+      const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         filters: filtersRef.current || {},
       });
       if (activeIndexFilterGroups.length > 0) {
