@@ -1353,11 +1353,12 @@ export const ProfileCreationWorkspace = () => {
             setSearchNotFound(Boolean(value));
             if (value) setSearchResults([]);
           }}
-          onSearchExecuted={value => {
+          onSearchExecuted={() => {
             setSearchExecuted(true);
             setSearchFailed(false);
-            addMatchingSearchQuery(value);
           }}
+          // Історію пише лише завершений пошук, а не прогони на паузах у наборі.
+          onSearchCommitted={value => addMatchingSearchQuery(value)}
           onSearchError={() => {
             setSearchFailed(true);
             setSearchNotFound(false);

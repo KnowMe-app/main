@@ -2659,7 +2659,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setLastSearchBarQuery('');
       return;
     }
-    addMatchingSearchQuery(normalized);
     searchListIsolationRef.current = true;
     setSearchLoading(true);
     setHasSearched(true);
@@ -2677,6 +2676,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearchBarQueryActive,
     setLastSearchBarQuery,
   ]);
+
+  // Історію пише лише завершений пошук: прогони на паузах у наборі тексту
+  // лишили б у базі ланцюг початків одного слова.
+  const handleSearchCommitted = useCallback(value => {
+    addMatchingSearchQuery(value);
+  }, []);
 
   const handleFilterChange = useCallback(nextFilters => {
     const nextValue = nextFilters ?? {};
@@ -7050,6 +7055,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             setUserNotFound={setUserNotFound}
             onSearchKey={setSearchKeyValuePair}
             onSearchExecuted={handleSearchExecuted}
+            onSearchCommitted={handleSearchCommitted}
             onClear={() => {
               // Не чистимо localStorage тут: SearchBar сам синхронізує query key,
               // а налаштування варіантів пошуку (addSearchOptions) мають зберігатися.

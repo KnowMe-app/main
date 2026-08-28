@@ -1088,6 +1088,7 @@ const SearchBar = ({
   setSearch: externalSetSearch,
   onClear,
   onSearchExecuted,
+  onSearchCommitted,
   onSearchError,
   wrapperStyle = {},
   leftIcon = SearchIcon,
@@ -1130,10 +1131,14 @@ const SearchBar = ({
   const repeatedSearchCollectorRef = useRef(null);
   const lastEmittedSearchLabelRef = useRef(null);
   const lastNotifiedSearchRef = useRef(null);
+  // Окремо від сповіщення: підказка про виконаний пошук потрібна екрану на
+  // кожен прогін, а в історію лягає тільки завершений запит.
+  const lastCommittedSearchRef = useRef(null);
 
   useEffect(() => {
     lastEmittedSearchLabelRef.current = null;
     lastNotifiedSearchRef.current = null;
+    lastCommittedSearchRef.current = null;
   }, [search]);
 
   const collectSearchOutput = (output, requestId = null) => {
@@ -1893,6 +1898,12 @@ const SearchBar = ({
       requestId: inheritedRequestId = null,
       suppressHistory = false,
       suppressSearchExecuted = false,
+      // Пошук на паузі в наборі тексту — це ще не запит: поки людина друкує,
+      // кожна пауза прогоняє власний прогін ("Arma", "Arman", "Armand"), і
+      // запамʼятовувати їх усі — значить забити історію початками одного слова.
+      // Завершеним вважається лише пошук по Enter, по виході з поля або з
+      // підказки історії.
+      committed = false,
     } = options;
     const requestId = inheritedRequestId ?? ++activeSearchRequestRef.current;
     const isStaleRequest = () => activeSearchRequestRef.current !== requestId;
@@ -1907,12 +1918,17 @@ const SearchBar = ({
 
     if (onSearchExecuted && !suppressSearchExecuted && lastNotifiedSearchRef.current !== trimmed) {
       // Enter and the blur it triggers both call writeData() with the same
-      // unchanged value - only notify (and record history) once per value.
+      // unchanged value - only notify once per value.
       lastNotifiedSearchRef.current = trimmed;
       onSearchExecuted(trimmed);
     }
 
-    if (trimmed && !trimmed.startsWith('!') && !suppressHistory) {
+    if (committed && !suppressSearchExecuted && lastCommittedSearchRef.current !== trimmed) {
+      lastCommittedSearchRef.current = trimmed;
+      if (onSearchCommitted) onSearchCommitted(trimmed);
+    }
+
+    if (trimmed && !trimmed.startsWith('!') && !suppressHistory && committed) {
       addToHistory(trimmed);
     }
     if (trimmed && trimmed.startsWith('!')) {
@@ -2185,13 +2201,13 @@ const SearchBar = ({
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              writeData(search);
+              writeData(search, { committed: true });
             }
           }}
           onFocus={() => setShowHistory(true)}
           onBlur={() => {
             setTimeout(() => setShowHistory(false), 100);
-            writeData();
+            writeData(search, { committed: true });
           }}
         />
         {search && (
@@ -2218,7 +2234,7 @@ const SearchBar = ({
               onClick={() => {
                 if (!item.startsWith('!')) setSearch(item);
                 setShowHistory(false);
-                writeData(item);
+                writeData(item, { committed: true });
               }}
             >
               <span>{item}</span>

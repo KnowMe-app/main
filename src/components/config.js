@@ -22,6 +22,7 @@ import {
   endBefore,
   equalTo,
   serverTimestamp,
+  runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
@@ -31,6 +32,13 @@ import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import toast from 'react-hot-toast';
 import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
+import {
+  SEARCH_QUERIES_ROOT_PATH,
+  encodeSearchQueryKey,
+  isTypingContinuation,
+  normalizeSearchQuery,
+  shouldStoreSearchQuery,
+} from '../utils/searchQueryStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
@@ -776,31 +784,52 @@ export const addContactViewUser = async (userId, ownerId) => {
   }
 };
 
+// Історія пошуку — особисті дані, тож пише її лише сам власник, під власний UID
+// (правило RTDB `auth.uid == $ownerId`). Ключ рядка рахується з тексту запиту:
+// раніше кожен виконаний пошук ішов у `push()`, і база наповнювалась ланцюгами
+// набору тексту ("Arma", "Arman", "Armand", "Armando") — по ряду на кожну паузу.
+// Тепер повтор того самого запиту лише піднімає `count` і `updatedAt` у єдиному
+// ряді, а щойно збережений початок ланцюга прибирає його ж продовження.
+let lastRecordedSearchQuery = null;
+
 export const addMatchingSearchQuery = async searchQuery => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
 
-    const normalizedQuery = String(searchQuery || '').trim();
-    if (!normalizedQuery) return;
+    const normalizedQuery = normalizeSearchQuery(searchQuery);
+    if (!shouldStoreSearchQuery(normalizedQuery)) return;
 
-    // Search history is personal data. Always write it below the authenticated
-    // user's UID so the path agrees with the RTDB `auth.uid == $ownerId` rule.
-    const ownerRef = ref2(database, `multiData/searchQueries/${owner.uid}`);
+    const queryKey = encodeSearchQueryKey(normalizedQuery);
+    if (!queryKey) return;
 
-    // Drop earlier entries with the same text so repeating a search doesn't
-    // pile up duplicates - only the most recent occurrence is kept.
-    const snapshot = await firebaseGet(ownerRef);
-    if (snapshot.exists()) {
-      const duplicateKeys = [];
-      snapshot.forEach(child => {
-        if (child.val() === normalizedQuery) duplicateKeys.push(child.key);
-      });
-      await Promise.all(duplicateKeys.map(key => remove(ref2(database, `multiData/searchQueries/${owner.uid}/${key}`))));
+    const ownerPath = `${SEARCH_QUERIES_ROOT_PATH}/${owner.uid}`;
+    const now = Date.now();
+    const previous = lastRecordedSearchQuery;
+
+    // Дописані символи роблять із попереднього запису початок того самого
+    // пошуку — він іде геть замість того, щоб лишитись окремим рядом.
+    if (previous
+      && previous.ownerId === owner.uid
+      && previous.key !== queryKey
+      && isTypingContinuation(previous.query, normalizedQuery, now - previous.at)) {
+      lastRecordedSearchQuery = null;
+      await remove(ref2(database, `${ownerPath}/${previous.key}`));
     }
 
-    const queryRef = push(ownerRef);
-    await set(queryRef, normalizedQuery);
+    await runTransaction(ref2(database, `${ownerPath}/${queryKey}`), current => {
+      const stored = typeof current === 'string' ? { query: current } : (current || {});
+      const storedCount = Number(stored.count);
+      const storedCreatedAt = Number(stored.createdAt);
+      return {
+        query: normalizedQuery,
+        createdAt: Number.isFinite(storedCreatedAt) && storedCreatedAt > 0 ? storedCreatedAt : now,
+        updatedAt: now,
+        count: (Number.isFinite(storedCount) && storedCount > 0 ? storedCount : 0) + 1,
+      };
+    });
+
+    lastRecordedSearchQuery = { ownerId: owner.uid, query: normalizedQuery, key: queryKey, at: now };
   } catch (error) {
     console.error('Error adding matching search query:', error);
   }
@@ -1292,6 +1321,19 @@ export const updatePublicProfileComment = async ({ profileId, commentId, text })
   });
 
   return { id: commentId, text: trimmed, updatedAt: Date.now() };
+};
+
+// Автор прибирає власний запис, адмін — будь-який: публічний коментар про третю
+// особу мусить мати кому зняти. Правило RTDB на comments/{profileId}/{commentId}
+// пускає видалення тому самому колу (автор або адмін), тож обидві дороги —
+// стерти текст і натиснути «видалити» — ведуть сюди.
+export const deletePublicProfileComment = async ({ profileId, commentId }) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+  if (!profileId || !commentId) throw new Error('profileId і commentId обовʼязкові');
+
+  await remove(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`));
+  return null;
 };
 
 export const COMMENTS_ROOT_PATH = 'multiData/comments';

@@ -107,6 +107,7 @@ import {
   fetchUserComments,
   saveMyCardComment,
   addPublicProfileComment,
+  deletePublicProfileComment,
   fetchPublicProfileComments,
   updatePublicProfileComment,
   COMMENTS_ROOT_PATH,
@@ -4035,9 +4036,14 @@ const Matching = () => {
 
   const handleMatchingSearchExecuted = React.useCallback(value => {
     const normalizedValue = String(value || '').trim();
-    addMatchingSearchQuery(normalizedValue);
     matchingSearchKeyRef.current = null;
     setMatchingSearchStatus(normalizedValue ? 'Шукаю в searchId...' : '');
+  }, []);
+
+  // Історію пише лише завершений пошук: прогони на паузах у наборі тексту
+  // лишили б у базі ланцюг початків одного слова.
+  const handleMatchingSearchCommitted = React.useCallback(value => {
+    addMatchingSearchQuery(value);
   }, []);
 
   const handleMatchingSearchResultStatus = React.useCallback(result => {
@@ -6395,6 +6401,16 @@ const Matching = () => {
     });
   }, []);
 
+  // Публічний запис про третю особу мусить мати кому зняти: автор прибирає
+  // власний, адмін — будь-який.
+  const handleDeletePublicComment = React.useCallback(async (profileId, commentId) => {
+    await deletePublicProfileComment({ profileId, commentId });
+    setPublicComments(previous => ({
+      ...previous,
+      [profileId]: (previous[profileId] || []).filter(comment => comment.id !== commentId),
+    }));
+  }, []);
+
   useEffect(() => {
     if (!diagnosticsEnabled || !isAdmin || diagnosticsModule) return;
     let active = true;
@@ -6580,6 +6596,7 @@ const Matching = () => {
                 storageKey={SEARCH_KEY}
                 onSearchKey={handleMatchingSearchKey}
                 onSearchExecuted={handleMatchingSearchExecuted}
+                onSearchCommitted={handleMatchingSearchCommitted}
                 onSearchError={handleMatchingSearchError}
                 onClear={handleSearchCleared}
                 enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
@@ -6787,8 +6804,10 @@ const Matching = () => {
                           profileId={user.userId}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           viewerId={auth.currentUser?.uid || ''}
+                          canModerate={isAdmin}
                           onCreate={handleCreatePublicComment}
                           onUpdate={handleUpdatePublicComment}
+                          onDelete={handleDeletePublicComment}
                         />
                       )}
                       primaryAction={{
@@ -6933,8 +6952,10 @@ const Matching = () => {
                           profileId={user.userId}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           viewerId={auth.currentUser?.uid || ''}
+                          canModerate={isAdmin}
                           onCreate={handleCreatePublicComment}
                           onUpdate={handleUpdatePublicComment}
+                          onDelete={handleDeletePublicComment}
                         />
                       )}
                       onCommentBlur={async () => {
