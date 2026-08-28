@@ -14,16 +14,39 @@ import { PROFILE_NODES, resolveFieldOwnerNode } from 'utils/profileNodeSchema';
  * само, де стоїть поле.
  */
 
-const FIREBASE_CONSOLE_DATABASE_URL =
-  'https://console.firebase.google.com/u/0/project/webringitapp/database/webringitapp-default-rtdb/data';
+const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
 
-/** Консоль Firebase кодує слеші в шляху як `~2F`. */
+/** Проєкт беремо з конфігурації, а не з константи: dev і prod — різні бази. */
+const getFirebaseConsoleProjectId = () =>
+  process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
+
+const getFirebaseRealtimeDatabaseName = () => {
+  const fallbackDatabaseName = `${getFirebaseConsoleProjectId()}-default-rtdb`;
+
+  try {
+    const { hostname } = new URL(process.env.REACT_APP_DATABASE_URL || '');
+    return hostname.split('.')[0] || fallbackDatabaseName;
+  } catch (error) {
+    return fallbackDatabaseName;
+  }
+};
+
+/**
+ * Консоль Firebase кодує слеші всередині шляху як `~2F`, але сам шлях лишається
+ * окремим сегментом URL — після `/data` має стояти справжній слеш. Без нього
+ * консоль отримує `/data~2FprofileContacts…` і відкриває корінь бази замість
+ * вузла, тобто посилання мовчки веде не туди, куди написано.
+ */
 export const buildRtdbConsoleLink = segments => {
   const path = segments
     .filter(segment => segment !== null && segment !== undefined && String(segment) !== '')
     .map(segment => `~2F${encodeURIComponent(String(segment))}`)
     .join('');
-  return `${FIREBASE_CONSOLE_DATABASE_URL}${path}`;
+  const databaseUrl =
+    `https://console.firebase.google.com/u/0/project/${getFirebaseConsoleProjectId()}`
+    + `/database/${getFirebaseRealtimeDatabaseName()}/data`;
+
+  return path ? `${databaseUrl}/${path}` : databaseUrl;
 };
 
 /**
