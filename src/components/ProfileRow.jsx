@@ -554,12 +554,20 @@ export const PublicCommentBlock = ({
   profileId,
   comments = [],
   viewerId,
+  // Адмін відповідає за публічні записи про третіх осіб, тож редагує і знімає
+  // будь-який із них, не тільки власний.
+  canModerate = false,
   onCreate,
   onUpdate,
+  onDelete,
 }) => {
   const [editing, setEditing] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [savedAt, setSavedAt] = useState(0);
+  const [failedNotice, setFailedNotice] = useState('');
+  // Видалення публічного запису питає підтвердження в тому самому рядку —
+  // випадковий дотик до хрестика не мусить коштувати чужого коментаря.
+  const [confirmingDelete, setConfirmingDelete] = useState(null);
   // Optimistic rows: rendered straight away, and kept - with their text - if the
   // write fails, so a failure never costs what was typed.
   const [pending, setPending] = useState([]);
@@ -570,11 +578,25 @@ export const PublicCommentBlock = ({
     return () => clearTimeout(timer);
   }, [savedAt]);
 
+  const removeComment = useCallback(async commentId => {
+    setConfirmingDelete(null);
+    setFailedNotice('');
+    if (!onDelete) return;
+    try {
+      await onDelete(profileId, commentId);
+    } catch {
+      setFailedNotice('Не вдалось видалити — спробуйте ще раз');
+    }
+  }, [onDelete, profileId]);
+
   const submit = useCallback(async (draftId, text, commentId) => {
     const trimmed = String(text || '').trim();
     setEditing(null);
     if (!trimmed) {
       setPending(prev => prev.filter(entry => entry.id !== draftId));
+      // Стертий текст існуючого запису — це і є його видалення: інакше
+      // коментар нічим не прибрати, і він лишався б назавжди.
+      if (commentId) await removeComment(commentId);
       return;
     }
 
@@ -604,15 +626,20 @@ export const PublicCommentBlock = ({
         ? prev.map(entry => (entry.id === draftId ? { ...entry, ...failedEntry } : entry))
         : [...prev, failedEntry]));
     }
-  }, [onCreate, onUpdate, profileId, viewerId]);
+  }, [onCreate, onUpdate, profileId, removeComment, viewerId]);
 
   const rows = useMemo(() => [...comments, ...pending], [comments, pending]);
+  const storedIds = useMemo(() => new Set(comments.map(comment => comment.id)), [comments]);
   const visibleRows = expanded ? rows : rows.slice(0, 2);
 
   return (
     <S.PublicComments onClick={e => e.stopPropagation()}>
       {visibleRows.map(comment => {
         const isOwn = Boolean(viewerId) && comment.authorId === viewerId;
+        const canEdit = isOwn || canModerate;
+        // Знімати можна лише те, що вже лежить у базі: оптимістичний рядок
+        // прибирає сам запис, а не видалення.
+        const canRemove = canEdit && Boolean(onDelete) && storedIds.has(comment.id);
         const isEditingThis = editing?.commentId === comment.id;
         if (isEditingThis) {
           return (
@@ -628,10 +655,11 @@ export const PublicCommentBlock = ({
           <S.CommentEntry
             key={comment.id}
             $failed={comment.failed}
-            $editable={isOwn}
+            $editable={canEdit}
             onClick={() => {
-              // Spec §8: someone else's record opens, it never becomes editable.
-              if (isOwn) setEditing({ commentId: comment.id, draftId: comment.id });
+              // Spec §8: someone else's record opens, it never becomes editable -
+              // окрім адміна, який за ці записи відповідає.
+              if (canEdit) setEditing({ commentId: comment.id, draftId: comment.id });
               else setExpanded(true);
             }}
           >
@@ -648,6 +676,20 @@ export const PublicCommentBlock = ({
                 >
                   Повторити
                 </S.CommentRetry>
+              )}
+              {canRemove && (
+                <S.CommentDelete
+                  type="button"
+                  $confirming={confirmingDelete === comment.id}
+                  aria-label={confirmingDelete === comment.id ? 'Підтвердити видалення' : 'Видалити коментар'}
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (confirmingDelete === comment.id) void removeComment(comment.id);
+                    else setConfirmingDelete(comment.id);
+                  }}
+                >
+                  {confirmingDelete === comment.id ? 'Видалити?' : '×'}
+                </S.CommentDelete>
               )}
             </S.CommentMeta>
             <S.CommentText $clip={!expanded}>{comment.text}</S.CommentText>
@@ -687,6 +729,8 @@ export const PublicCommentBlock = ({
           Додати коментар
         </S.AddCommentTrigger>
       )}
+
+      {failedNotice && <S.CommentStatus aria-live="polite">{failedNotice}</S.CommentStatus>}
 
       {savedAt > 0 && (
         <S.CommentStatus aria-live="polite">Збережено {formatCommentClock(savedAt)}</S.CommentStatus>

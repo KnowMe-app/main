@@ -291,7 +291,10 @@
           ".read": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true || root.child('profileTechnical').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true))",
           "$queryId": {
             ".write": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
-            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
+            ".validate": "newData.isString() ? (newData.val().length > 0 && newData.val().length <= 500) : (newData.hasChildren(['query', 'updatedAt']) && newData.child('query').isString() && newData.child('query').val().length > 0 && newData.child('query').val().length <= 500 && newData.child('updatedAt').isNumber() && (!newData.child('createdAt').exists() || newData.child('createdAt').isNumber()) && (!newData.child('count').exists() || newData.child('count').isNumber()))",
+            "$field": {
+              ".validate": "$field == 'query' || $field == 'createdAt' || $field == 'updatedAt' || $field == 'count'"
+            }
           }
         }
       },
@@ -380,14 +383,15 @@
     "comments": {
       ".read": "auth != null",
       "$profileId": {
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$commentId": {
-          ".write": "auth != null && (data.exists() ? data.child('authorId').val() === auth.uid : newData.child('authorId').val() === auth.uid)",
+          ".write": "auth != null && (data.exists() ? (data.child('authorId').val() === auth.uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2') : newData.child('authorId').val() === auth.uid)",
           ".validate": "!newData.exists() || newData.hasChildren(['text', 'authorId', 'createdAt', 'visibility'])",
           "text": {
             ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 2000"
           },
           "authorId": {
-            ".validate": "newData.isString() && newData.val() === auth.uid && (!data.exists() || data.val() === newData.val())"
+            ".validate": "newData.isString() && (data.exists() ? data.val() === newData.val() : newData.val() === auth.uid)"
           },
           "authorName": {
             ".validate": "newData.isString() && newData.val().length <= 200"

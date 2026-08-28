@@ -602,6 +602,57 @@ await it('чужий відгук підмінити не можна', () =>
     text: 'підміна', authorId: OUTSIDER, createdAt: 2, visibility: 'public',
   })));
 
+// Публічний запис про третю особу мусить мати кому зняти: інакше єдиний спосіб
+// прибрати наклеп — писати розробникам.
+await it('стороння людина чужий відгук не знімає', () =>
+  assertFails(remove(ref(db(OUTSIDER), `comments/${CARD}/c1`))));
+
+await it('адмін правит текст чужого відгуку, не чіпаючи авторства', async () => {
+  await assertSucceeds(update(ref(db(SUPERADMIN), `comments/${CARD}/c1`), {
+    text: 'відредаговано адміном', updatedAt: 3,
+  }));
+  await assertFails(update(ref(db(SUPERADMIN), `comments/${CARD}/c1`), {
+    authorId: SUPERADMIN,
+  }));
+});
+
+await it('адмін знімає чужий відгук', () =>
+  assertSucceeds(remove(ref(db(SUPERADMIN), `comments/${CARD}/c1`))));
+
+await it('автор знімає власний відгук', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `comments/${CARD}/c2`), {
+    text: 'передумала', authorId: SELF_SERVE, createdAt: 4, visibility: 'public',
+  }));
+  await assertSucceeds(remove(ref(db(SELF_SERVE), `comments/${CARD}/c2`)));
+});
+
+describe('історія пошуку — один ряд на запит');
+
+await it('власниця пише запит із ключем від тексту', () =>
+  assertSucceeds(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/армандо`), {
+    query: 'Армандо', createdAt: 1, updatedAt: 2, count: 3,
+  })));
+
+await it('стара форма — просто рядок — лишається дійсною', () =>
+  assertSucceeds(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/марія`), 'Марія')));
+
+await it('зайве поле в ряді історії не проходить', () =>
+  assertFails(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/оксана`), {
+    query: 'Оксана', updatedAt: 2, ownerNote: 'зайве',
+  })));
+
+await it('ряд без тексту запиту не проходить', () =>
+  assertFails(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/пусто`), {
+    updatedAt: 2, count: 1,
+  })));
+
+await it('чужу історію пошуку сторонній не пише і не читає', async () => {
+  await assertFails(set(ref(db(OUTSIDER), `multiData/searchQueries/${SELF_SERVE}/чуже`), {
+    query: 'чуже', updatedAt: 2,
+  }));
+  await assertFails(get(ref(db(OUTSIDER), `multiData/searchQueries/${SELF_SERVE}`)));
+});
+
 describe('legacy /users лишається як був');
 
 await it('матчинговий переглядач і далі читає legacy-колекцію', () =>
