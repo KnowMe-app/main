@@ -102,7 +102,9 @@ describe('limited search projection', () => {
     expect(read('Matching.jsx')).not.toContain('{isAdmin && (\n              <SearchField>');
   });
 
-  it('does not request a feed the viewer cannot read', () => {
-    expect(read('Matching.jsx')).toContain('if (!hasFullProfileAccessRef.current) {');
+  it('loads the public feed independently from full-profile access', () => {
+    const matching = read('Matching.jsx');
+    expect(matching).not.toContain('hasFullProfileAccessRef');
+    expect(matching).toContain('(isSearching ? searchChips : collectionChips).map');
   });
 });

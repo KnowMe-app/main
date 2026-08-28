@@ -14,6 +14,13 @@ describe('правила, без яких стрічка не може чита�
     expect(rules.matchingCards['.indexOn']).toEqual(['feedDate']);
   });
 
+  it('дає кожному авторизованому користувачеві читати опубліковані картки', () => {
+    expect(rules.matchingCards['.read']).toContain('auth != null');
+    expect(rules.matchingCards['.read']).toContain("query.orderByChild == 'feedDate'");
+    expect(rules.matchingCards['.read']).toContain("query.startAt == ''");
+    expect(rules.matchingCards.$uid['.read']).toContain("data.child('feedDate').isString()");
+  });
+
   it('не тримає окремого прапорця повноти', () => {
     // Його читали ПЕРЕД запитом карток — зайвий круг до бекенду на кожну
     // сторінку заради значення, яке для перебудованої колекції завжди `true`.

@@ -243,7 +243,6 @@ import {
   applyMatchingUiFiltersToUsers,
   buildMatchingIndexFilterGroups,
   compareUsersByLastLogin2,
-  fetchAdditionalNewUsersBySearchIndex,
   fetchFilteredMatchingSourceChunk,
   fetchMatchingIndexedCandidates,
   fetchNewUsersByIdsForMatching as fetchNewUsersByIdsForMatchingData,
@@ -555,12 +554,6 @@ const debugReactionFlowLog = (stage, data = {}) => {
     return;
   }
   console.info('[Matching][reactionDebug]', stage, data);
-};
-
-const debugMissingNewUsersToast = (accessUserId, indexedCount) => {
-  if (!shouldDebugAdditionalMatching(accessUserId) || indexedCount <= 0) return;
-
-  logAdditionalMatchingDebug(accessUserId, 'missing fetched newUsers records', { indexedCount });
 };
 
 const get = (...args) => {
@@ -1707,8 +1700,6 @@ const Matching = () => {
   // (surname, name, age, region, city, public comment), because those are the only
   // child paths the rules let them read.
   const hasFullProfileAccess = access.isAdmin || access.canAccessMatching;
-  const hasFullProfileAccessRef = useRef(hasFullProfileAccess);
-  hasFullProfileAccessRef.current = hasFullProfileAccess;
 
   const activeFilterGroupCount = useMemo(
     () => countChangedMatchingFilterGroups(filters, matchingDefaultFilters),
@@ -2638,224 +2629,6 @@ const Matching = () => {
     };
   }, [getMatchingMultiDataOwnerIds]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const fetchVersion = additionalMatchingFetchVersionRef.current + 1;
-    const applyVersion = additionalMatchingApplyVersionRef.current + 1;
-    additionalMatchingFetchVersionRef.current = fetchVersion;
-    additionalMatchingApplyVersionRef.current = applyVersion;
-    const isLatestAdditionalFetch = () => (
-      !cancelled &&
-      fetchVersion === additionalMatchingFetchVersionRef.current &&
-      applyVersion === additionalMatchingApplyVersionRef.current
-    );
-
-    const loadAdditionalNewUsers = async () => {
-      // Деку глядача з правилами додаткового доступу збирає цей конвеєр, і
-      // тільки він: правила вирішують, які картки взагалі можна показати.
-      // Раніше входом сюди був вибір деки `newUsers` — деки більше немає.
-      if (!parsedAdditionalAccessRules.length) {
-        if (isLatestAdditionalFetch()) {
-          resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
-        }
-        return;
-      }
-
-      const initialRequest = beginInitialRequest();
-      try {
-        const freshProfileCache = await runInitialRequestWithTimeout(
-          () => ensureFreshAdditionalMatchingProfile({
-            accessUserId: ownerId,
-            reason: 'initial-additional-newUsers-load',
-          }),
-          'access-profile',
-        );
-        if (!isLatestAdditionalFetch()) {
-          logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional profile result', {
-            fetchVersion,
-            latestFetchVersion: additionalMatchingFetchVersionRef.current,
-            applyVersion,
-            latestApplyVersion: additionalMatchingApplyVersionRef.current,
-          });
-          return;
-        }
-        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
-        const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
-
-        if (!freshParsedAdditionalAccessRules || freshParsedAdditionalAccessRules.length === 0) {
-          if (isLatestAdditionalFetch()) {
-            resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
-          }
-          return;
-        }
-
-        if (!isLatestAdditionalFetch()) return;
-        resetAdditionalMatchingState({ resetHasMore: true });
-        loadingRef.current = true;
-        setLoading(true);
-
-        const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(
-          freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys,
-          ownerId
-        )
-          ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
-          : await runInitialRequestWithTimeout(
-            () => resolveAdditionalSearchKeySetKeysForMatching(null, ownerId),
-            'search-key-sets',
-          );
-
-        if (!isLatestAdditionalFetch()) {
-          logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional key resolution', {
-            fetchVersion,
-            latestFetchVersion: additionalMatchingFetchVersionRef.current,
-            applyVersion,
-            latestApplyVersion: additionalMatchingApplyVersionRef.current,
-          });
-          return;
-        }
-
-        console.info('[Matching][additionalNewUsers] resolvedSearchKeySetsOfExactUser', resolvedSearchKeySetKeys);
-        logAdditionalMatchingDebug(ownerId, 'initial additional matching request', {
-          rawRules: freshRawRules,
-          searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
-          filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
-          pagination: { offset: 0, limit: INITIAL_LOAD },
-        });
-
-        const collected = [];
-        const fetchedIds = [];
-        let nextOffset = 0;
-        let sourceHasMore = true;
-        let visibleCount = 0;
-        let loadedPages = 0;
-
-        while (
-          sourceHasMore &&
-          (collected.length === 0 || visibleCount < INITIAL_LOAD)
-        ) {
-          loadedPages += 1;
-          const requestOffset = nextOffset;
-          // eslint-disable-next-line no-await-in-loop
-          const loaded = await runInitialRequestWithTimeout(() => fetchAdditionalNewUsersBySearchIndex({
-            parsedRuleGroups: freshParsedAdditionalAccessRules,
-            rawRules: freshRawRules,
-            accessUserId: ownerId,
-            searchKeySetKeys: resolvedSearchKeySetKeys,
-            filters: filtersRef.current || {},
-            excludeIds: [
-              ...Object.keys(favoriteUsersRef.current),
-              ...Object.keys(dislikeUsersRef.current),
-            ],
-            offset: requestOffset,
-            limit: INITIAL_LOAD,
-            fetchNewUsersByIds: ids => runInitialRequestWithTimeout(
-              () => fetchNewUsersByIdsForMatching(ids),
-              'profile-hydration',
-            ),
-            shouldDebugAdditionalMatching,
-            debugAdditionalToast,
-            logAdditionalMatchingDebug,
-            debugMissingNewUsersToast,
-          }), 'search-index');
-
-          if (!isLatestAdditionalFetch()) {
-            logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional fetch result', {
-              fetchVersion,
-              latestFetchVersion: additionalMatchingFetchVersionRef.current,
-              applyVersion,
-              latestApplyVersion: additionalMatchingApplyVersionRef.current,
-              fetchedIds: loaded?.userIds || [],
-            });
-            return;
-          }
-
-          fetchedIds.push(...(loaded.userIds || []));
-          const previousOffset = nextOffset;
-          nextOffset = Number.isFinite(Number(loaded.nextOffset)) ? loaded.nextOffset : previousOffset;
-          sourceHasMore = Boolean(loaded.hasMore) && nextOffset > previousOffset;
-
-          const pageUsers = (loaded.users || []).filter(user =>
-            user?.userId &&
-            !favoriteUsersRef.current[user.userId] &&
-            !dislikeUsersRef.current[user.userId] &&
-            !collected.some(collectedUser => collectedUser.userId === user.userId)
-          );
-          collected.push(...pageUsers);
-
-          visibleCount = applyMatchingUiFiltersToUsers({
-            users: collected,
-            filters: filtersRef.current || {},
-            filterMainFn: filterMain,
-            favoriteUsers: favoriteUsersRef.current,
-            dislikeUsers: dislikeUsersRef.current,
-            excludeReactionUsers: true,
-            roleIndexSets,
-          }).length;
-        }
-
-        if (isLatestAdditionalFetch()) {
-          setAdditionalNewUsers(collected);
-          setAdditionalNextOffset(nextOffset);
-          loadedIdsRef.current = new Set(collected.map(user => user.userId).filter(Boolean));
-          setHasMore(sourceHasMore);
-          setLastKey(null);
-          logAdditionalMatchingDebug(ownerId, 'initial additional matching final cards', {
-            fetchedIds,
-            filteredIds: collected.map(user => user.userId).filter(Boolean),
-            pagination: { nextOffset, hasMore: sourceHasMore },
-            finalCardsCount: collected.length,
-            loadedPages,
-            visibleCount,
-          });
-          collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
-          void loadCommentsFor(collected);
-          const toastSignature = `${currentAdditionalAccessRules}::${nextOffset}${sourceHasMore ? '+' : ''}`;
-          if (additionalRulesToastRef.current !== toastSignature) {
-            toast(
-              `Додаткові правила доступу: завантажено ${nextOffset}${sourceHasMore ? '+' : ''} карточок для matching.`,
-              { icon: 'ℹ️' }
-            );
-            additionalRulesToastRef.current = toastSignature;
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load access-scoped cards for matching', error);
-        if (isLatestAdditionalFetch() && initialRequest === initialRequestIdRef.current) {
-          recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
-          reportInitialLoadError(error);
-        }
-        if (isLatestAdditionalFetch() && additionalNewUsersRef.current.length === 0) {
-          resetAdditionalMatchingState({ resetHasMore: false });
-          setHasMore(false);
-        }
-      } finally {
-        if (isLatestAdditionalFetch() && initialRequest === initialRequestIdRef.current) {
-          loadingRef.current = false;
-          loadingStateRef.current = false;
-          setLoading(false);
-        }
-      }
-    };
-
-    loadAdditionalNewUsers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    parsedAdditionalAccessRules.length,
-    beginInitialRequest,
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
-    ensureFreshAdditionalMatchingProfile,
-    loadCommentsFor,
-    ownerId,
-    resetAdditionalMatchingState,
-    reportInitialLoadError,
-    roleIndexSets,
-    recordInitialLoadDiagnostic,
-  ]);
-
   /**
    * Гідратація карток для пошуку по індексу `searchKey`.
    *
@@ -2909,7 +2682,6 @@ const Matching = () => {
       targetVisibleCount: limit,
       initialCursor: lastDate,
       exclude,
-      parsedAdditionalAccessRules,
       filters: filtersRef.current || {},
       isAdmin,
       favoriteUsers: favoriteUsersRef.current,
@@ -2922,13 +2694,11 @@ const Matching = () => {
       onPart,
       onDiagnosticEvent: recordInitialLoadDiagnostic,
     }),
-    [isAdmin, parsedAdditionalAccessRules, recordInitialLoadDiagnostic, roleIndexSets]
+    [isAdmin, recordInitialLoadDiagnostic, roleIndexSets]
   );
 
   const loadInitial = React.useCallback(async () => {
     writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
-    // Глядача з правилами додаткового доступу веде окремий конвеєр вище.
-    if (parsedAdditionalAccessRules.length > 0) return;
     if (loadingRef.current) {
       console.info('[loadInitial] skip overlapping request', { viewMode: viewModeRef.current });
       return;
@@ -3036,12 +2806,6 @@ const Matching = () => {
             ...Object.keys(localDis),
           ]);
         }
-      }
-
-      if (parsedAdditionalAccessRules.length > 0) {
-        setLastKey(null);
-        setViewMode('default');
-        return;
       }
 
       const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
@@ -3235,7 +2999,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -3250,28 +3014,8 @@ const Matching = () => {
     setViewMode('default');
     setActiveProfileIndex(0);
     resetReactionPaginationState();
-    // Without matching access there is no feed to load - the collections read the
-    // whole of users/newUsers, which the rules deny. The screen is search-only for
-    // that viewer, so skip the request rather than showing them a denied one.
-    if (!hasFullProfileAccessRef.current) {
-      loadingRef.current = false;
-      setLoading(false);
-      setUsers([]);
-      setAdditionalNewUsers([]);
-      setHasMore(false);
-      return;
-    }
     loadInitial();
   }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
-
-  // Access resolves asynchronously after mount, so a viewer who does have it can
-  // reach reloadDefault before it is known. Load the feed once it lands.
-  const previousFullProfileAccessRef = useRef(hasFullProfileAccess);
-  useEffect(() => {
-    if (previousFullProfileAccessRef.current === hasFullProfileAccess) return;
-    previousFullProfileAccessRef.current = hasFullProfileAccess;
-    if (hasFullProfileAccess && viewModeRef.current !== 'search') reloadDefault();
-  }, [hasFullProfileAccess, reloadDefault]);
 
 
   // Spec §10: toggling a filter must not cost a reload. The drawer edits a draft
@@ -3359,7 +3103,7 @@ const Matching = () => {
       logMatchingLocalStorageDebugStats('after reset');
     }
 
-    if (hasFullProfileAccessRef.current) loadInitial();
+    loadInitial();
     toast.success('Фільтри та кеш скинуто');
   }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
 
@@ -4554,153 +4298,7 @@ const Matching = () => {
         ...Object.keys(dislikeUsersRef.current),
       ]);
 
-      if (parsedAdditionalAccessRules.length > 0) {
-        const freshProfileCache = await ensureFreshAdditionalMatchingProfile({
-          accessUserId: ownerId,
-          reason: 'load-more-access-scoped',
-        });
-        if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('additional-profile'); return; }
-        if (!isLatestLoadMore()) {
-          logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional profile result', {
-            loadMoreVersion,
-            latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
-            applyVersion,
-            latestApplyVersion: additionalMatchingApplyVersionRef.current,
-          });
-          return;
-        }
-        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
-        const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
-        const shouldResetAdditionalPagination =
-          !freshProfileCache?.cacheHit &&
-          (freshProfileCache?.paginationInvalidationReasons || []).length > 0;
-        const collected = [];
-        let nextOffset = shouldResetAdditionalPagination ? 0 : additionalNextOffset;
-        let canLoadMoreAdditional = true;
-        let visibleCount = shouldResetAdditionalPagination ? 0 : Math.max(0, Number(currentVisibleCount) || 0);
-        const requiredVisibleCount = Math.max(0, Number(targetVisibleCount) || 0);
-        const additionalCandidateBase = shouldResetAdditionalPagination ? [] : additionalNewUsers;
-
-        if (!freshParsedAdditionalAccessRules.length) {
-          if (isLatestLoadMore()) {
-            resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
-          }
-          return;
-        }
-
-        if (shouldResetAdditionalPagination && isLatestLoadMore()) {
-          resetAdditionalMatchingState({ resetHasMore: true });
-        }
-        if (!isLatestLoadMore()) return;
-
-        while (
-          canLoadMoreAdditional &&
-          (collected.length === 0 || visibleCount < requiredVisibleCount)
-        ) {
-          // eslint-disable-next-line no-await-in-loop
-          const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(
-            freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys,
-            ownerId
-          )
-            ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
-            : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
-
-          if (!isLatestLoadMore()) {
-            logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional key resolution', {
-              loadMoreVersion,
-              latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
-              applyVersion,
-              latestApplyVersion: additionalMatchingApplyVersionRef.current,
-            });
-            return;
-          }
-
-          console.info('[Matching][additionalNewUsers] resolvedSearchKeySetsOfExactUser', resolvedSearchKeySetKeys);
-          logAdditionalMatchingDebug(ownerId, 'load more additional matching request', {
-            rawRules: freshRawRules,
-            searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
-            filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
-            pagination: { offset: nextOffset, limit: requestedLimit },
-          });
-
-          const loaded = await fetchAdditionalNewUsersBySearchIndex({
-            rawRules: freshRawRules,
-            accessUserId: ownerId,
-            searchKeySetKeys: resolvedSearchKeySetKeys,
-            filters: filtersRef.current || {},
-            excludeIds: [...baseExclude],
-            offset: nextOffset,
-            limit: requestedLimit,
-            fetchNewUsersByIds: fetchNewUsersByIdsForMatching,
-            shouldDebugAdditionalMatching,
-            debugAdditionalToast,
-            logAdditionalMatchingDebug,
-            debugMissingNewUsersToast,
-          });
-
-          if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('additional-page', { fetchedIds: loaded?.userIds || [] }); return; }
-          if (!isLatestLoadMore()) {
-            logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional page result', {
-              loadMoreVersion,
-              latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
-              applyVersion,
-              latestApplyVersion: additionalMatchingApplyVersionRef.current,
-              fetchedIds: loaded?.userIds || [],
-              pagination: { nextOffset: loaded?.nextOffset, hasMore: loaded?.hasMore },
-            });
-            return;
-          }
-
-          const pageUsers = loaded.users.filter(user =>
-            user?.userId &&
-            !baseExclude.has(user.userId) &&
-            !loadedIdsRef.current.has(user.userId) &&
-            !collected.some(collectedUser => collectedUser.userId === user.userId)
-          );
-          collected.push(...pageUsers);
-
-          const candidateMap = new Map(additionalCandidateBase.map(user => [user.userId, user]));
-          collected.forEach(user => candidateMap.set(user.userId, user));
-          visibleCount = applyMatchingUiFiltersToUsers({
-            users: Array.from(candidateMap.values()),
-            filters,
-            filterMainFn: filterMain,
-            favoriteUsers: favoriteUsersRef.current,
-            dislikeUsers: dislikeUsersRef.current,
-            excludeReactionUsers: true,
-            roleIndexSets,
-          }).length;
-
-          canLoadMoreAdditional = Boolean(loaded.hasMore) && loaded.nextOffset > nextOffset;
-          nextOffset = loaded.nextOffset;
-        }
-
-        if (!isLatestLoadMore()) return;
-
-        collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
-        if (!isLatestLoadMore()) return;
-        collected.forEach(user => {
-          loadedIdsRef.current.add(user.userId);
-        });
-        setAdditionalNewUsers(prev => {
-          const map = new Map((shouldResetAdditionalPagination ? [] : prev).map(user => [user.userId, user]));
-          collected.forEach(user => map.set(user.userId, user));
-          return Array.from(map.values());
-        });
-        void loadCommentsFor(collected);
-        setAdditionalNextOffset(nextOffset);
-        setHasMore(canLoadMoreAdditional);
-        logAdditionalMatchingDebug(ownerId, 'load more additional matching final cards', {
-          fetchedIds: collected.map(user => user.userId).filter(Boolean),
-          filteredIds: collected.map(user => user.userId).filter(Boolean),
-          pagination: { nextOffset, hasMore: canLoadMoreAdditional },
-          finalCardsCount: collected.length,
-        });
-        setLastKey(null);
-        return collected.length;
-      }
-
-      const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
+const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         filters: filtersRef.current || {},
       });
       if (activeIndexFilterGroups.length > 0) {
@@ -4928,14 +4526,11 @@ const Matching = () => {
       lastCardLoadTriggerSignatureRef.current = '';
     }
   }, [
-    additionalNewUsers,
-    additionalNextOffset,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ensureFreshAdditionalMatchingProfile,
     defaultListKey,
     fetchChunk,
-    filters,
     classifyReactionIdsBySource,
     getAccessibleReactionIds,
     hasMore,
@@ -4947,9 +4542,7 @@ const Matching = () => {
     loadReactionCardsPage,
     reactionPaginationByType,
     reactionPipelineReadyByType,
-    resetAdditionalMatchingState,
     parsedAdditionalAccessRules.length,
-    roleIndexSets,
     sharedReactionIds,
     viewMode,
   ]);
@@ -5824,11 +5417,9 @@ const Matching = () => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (renderedCardsLength < 1) return;
 
-    const sourceNextOffset = parsedAdditionalAccessRules.length > 0
-      ? additionalNextOffset
-      : (viewMode === 'favorites' || viewMode === 'dislikes'
-        ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()).nextOffset
-        : undefined);
+    const sourceNextOffset = viewMode === 'favorites' || viewMode === 'dislikes'
+      ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()).nextOffset
+      : undefined;
     const sourceCursorSignature = stableAdditionalSignature(
       sourceNextOffset !== undefined && sourceNextOffset !== null
         ? { type: 'sourceNextOffset', value: sourceNextOffset }
@@ -5866,9 +5457,7 @@ const Matching = () => {
     });
   }, [
     activeProfileIndex,
-    additionalNextOffset,
     lastKey,
-    parsedAdditionalAccessRules.length,
     reactionPaginationByType,
     renderedCardsLength,
     runAutoLoadMore,
@@ -6069,9 +5658,9 @@ const Matching = () => {
     if (activeRenderedIndex < lastRenderedIndex) return;
 
     const reactionPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
-    const sourceNextOffset = parsedAdditionalAccessRules.length > 0
-      ? additionalNextOffset
-      : (viewMode === 'favorites' || viewMode === 'dislikes' ? reactionPagination.nextOffset : undefined);
+    const sourceNextOffset = viewMode === 'favorites' || viewMode === 'dislikes'
+      ? reactionPagination.nextOffset
+      : undefined;
     const sourceCursor = sourceNextOffset ?? lastKey ?? null;
     const sourceCursorSignature = stableAdditionalSignature(
       sourceNextOffset !== undefined && sourceNextOffset !== null
@@ -6174,7 +5763,6 @@ const Matching = () => {
     lastKey,
     runAutoLoadMore,
     loading,
-    parsedAdditionalAccessRules.length,
     reactionPaginationByType,
     renderedCards,
     renderedCardsLength,
@@ -6510,8 +6098,6 @@ const Matching = () => {
   }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
 
   const resolveEmptyFeedMessage = () => {
-    // Search-only viewers have no feed to be empty; say what the screen is for.
-    if (!hasFullProfileAccess) return 'Скористайтеся пошуком, щоб знайти анкету';
     // An empty group is a different problem from "nothing matched", and saying so
     // is the difference between the reader fixing it and giving up (spec §3).
     if (emptyFilterGroup) return `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`;
@@ -6948,7 +6534,7 @@ const Matching = () => {
           )}
           <ChipsRow role="group" aria-label={isSearching ? 'Результати пошуку' : 'Колекції matching'}>
             <ChipsGroup>
-              {(isSearching ? searchChips : (hasFullProfileAccess ? collectionChips : [])).map(chip => {
+              {(isSearching ? searchChips : collectionChips).map(chip => {
                 const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
                 return (
                   <Chip

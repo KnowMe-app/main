@@ -112,4 +112,21 @@ describe('стрічка читає урізані картки', () => {
     expect(limit).toBeLessThanOrEqual(100);
     expect(limit).toBeGreaterThanOrEqual(5);
   });
+
+  it('не замінює загальну стрічку додатковим індексом', async () => {
+    const fetchMatchingCardsPage = jest.fn(async () => ({
+      users: [summaryCard(id('public'))],
+      lastKey: null,
+      hasMore: false,
+    }));
+
+    const result = await runChunk({
+      parsedAdditionalAccessRules: [{ role: ['ed'] }],
+      fetchMatchingCardsPage,
+    });
+
+    expect(fetchMatchingCardsPage).toHaveBeenCalledTimes(1);
+    expect(result.users.map(user => user.userId)).toEqual([id('public')]);
+  });
+
 });

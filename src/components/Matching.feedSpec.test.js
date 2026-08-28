@@ -66,6 +66,13 @@ describe('matching feed structure', () => {
     expect(source).toContain('const applyDraftFilters = React.useCallback(() => {');
     expect(source).toContain('Показати {draftFilteredCount}');
   });
+
+  it('loads the public feed without an access-level guard', () => {
+    const source = matching();
+    expect(source).not.toContain('hasFullProfileAccessRef');
+    expect(source).not.toContain('accessScopedOnly');
+    expect(source).toContain('(isSearching ? searchChips : collectionChips).map');
+  });
 });
 
 describe('matching row structure', () => {
