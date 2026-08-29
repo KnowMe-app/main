@@ -3145,8 +3145,13 @@ const Matching = () => {
       }
       console.error('Failed to load initial matching profiles', error);
     } finally {
+      // Захист від накладання звільняється завжди, а не лише коли запит
+      // лишився актуальним: інакше перший же застарілий запит замикав його
+      // назавжди, і кожне наступне перезавантаження стрічки мовчки вибувало —
+      // зміна фільтрів не давала б нічого. Стан гонки тут не виникає: чи можна
+      // застосувати відповідь, вирішує `canApplyInitialLoad`.
+      initialLoadInFlightRef.current = false;
       if (loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current) {
-        initialLoadInFlightRef.current = false;
         loadingRef.current = false;
         loadingStateRef.current = false;
         setLoading(false);
