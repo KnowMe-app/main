@@ -19,6 +19,8 @@ export const collectMatchingIndexedLoadMorePage = async ({
   let cursorStuck = false;
   let pageCalls = 0;
   let stopReason = '';
+  let usedIndex = false;
+  let deferReason = '';
   let indexedIdsCount = 0;
   let paginationInputIdsCount = 0;
   let pageIdsCount = 0;
@@ -53,9 +55,19 @@ export const collectMatchingIndexedLoadMorePage = async ({
         cursorStuck,
         pageCalls,
         stale: true,
+        usedIndex,
+        deferToSourcePagination: false,
+        deferReason,
         staleReason: 'loadMore-stale-or-filter-changed',
       };
     }
+
+    // План може не скластись зовсім: коли кожна група індексу вміє лише
+    // відкидати (усі «крім …»), провайдер не називає жодного id і віддає деку
+    // послідовній пагінації. Для читача це не «нічого не знайшлось» — це
+    // «питати треба інакше», і тому це має бути видно тому, хто викликав.
+    if (indexed.usedIndex === false) deferReason = indexed.reason || 'index-plan-unavailable';
+    else usedIndex = true;
 
     indexedIdsCount += Array.isArray(indexed.userIds) ? indexed.userIds.length : 0;
     paginationInputIdsCount += Array.isArray(indexed.paginationInputIds) ? indexed.paginationInputIds.length : 0;
@@ -104,6 +116,11 @@ export const collectMatchingIndexedLoadMorePage = async ({
     cursorStuck,
     pageCalls,
     stale: false,
+    usedIndex,
+    // Індекс не дав нічого і не був використаний — читати деку доведеться
+    // джерелом, інакше сторінка просто обірветься на порожньому місці.
+    deferToSourcePagination: !usedIndex && collected.length === 0,
+    deferReason,
     stopReason: stopReason || 'target_reached',
     indexedIdsCount,
     paginationInputIdsCount,

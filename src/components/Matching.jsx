@@ -255,7 +255,6 @@ import {
   isMatchingCardId,
   isSameMatchingCursor,
   isShortMatchingUserId,
-  isValidMatchingUserId,
   resolveLegacyCollectionForId,
 } from 'utils/matchingDataProvider';
 import { isLongFormatUserId } from 'utils/mergeUserCollections';
@@ -573,8 +572,6 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
   source: 'Matching',
 });
 
-// Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
-const isValidId = isValidMatchingUserId;
 const isShortId = isShortMatchingUserId;
 const NEW_USERS_USER_ID_PREFIXES = ['-O', 'AA', 'AB', 'VK', 'ID'];
 const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];
@@ -2040,7 +2037,12 @@ const Matching = () => {
   // which the same filters then narrow - there is no second filtering branch.
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
-    const filtered = arr.filter(u => isValidId(u?.userId));
+    // Картка з короткого id — така сама картка: колекція у вебі одна, і саме так
+    // її приймає індексна гілка стрічки. Мірка «довше за 20 символів» лишилась
+    // від поділу на `users`/`newUsers` і мовчки викидала з результатів усе, що
+    // заведено в застосунку (push-id рівно 20 символів): статус устигав сказати
+    // «Знайшов», а на екран не потрапляло нічого.
+    const filtered = arr.filter(u => isMatchingCardId(u?.userId));
 
     loadInitialVersionRef.current += 1;
     additionalLoadMoreFetchVersionRef.current += 1;
@@ -4186,9 +4188,9 @@ const Matching = () => {
       ? getSearchCacheKeyForParams(key, value, options)
       : getCacheKey('search', term ? normalizeQueryKey(term) : term);
     if (!isLimited) {
-      const ids = getIdsByQuery(cacheKey).filter(isValidId);
+      const ids = getIdsByQuery(cacheKey).filter(isMatchingCardId);
       if (ids.length > 0) {
-        const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
+        const cards = ids.map(id => getCard(id)).filter(c => c && isMatchingCardId(c.userId));
         if (cards.length > 0) {
           // Та сама форма, що й у `searchUsersOnly`: один збіг — картка, кілька —
           // мапа. Раніше все, крім `name`, згорталось у `cards[0]`, і кеш віддавав
@@ -4206,7 +4208,7 @@ const Matching = () => {
         : res.userId
           ? [res]
           : Object.values(res);
-      const filtered = arr.filter(u => isValidId(u?.userId));
+      const filtered = arr.filter(u => isMatchingCardId(u?.userId));
       if (!isLimited) {
         filtered.forEach(u => updateCard(u.userId, u));
         setIdsForQuery(cacheKey, filtered.map(u => u.userId));
@@ -4535,45 +4537,59 @@ const Matching = () => {
         });
         if (indexedPage.stale) { logStaleLoadMoreResultIgnored('indexed-collect', { reason: indexedPage.staleReason || 'stale' }); return; }
 
-        if (indexedPage.cursorStuck) {
-          console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
-            finalIndexedOffset: indexedPage.finalOffset,
-            indexedPageCalls: indexedPage.pageCalls,
-            stopReason: indexedPage.stopReason,
+        // Індексного плану могло не скластись: набір фільтрів на кшталт «крім
+        // Агентства» вміє лише відкидати, тож індекс не називає жодного id.
+        // `loadInitial` у цьому місці давно віддає деку послідовній пагінації;
+        // тут же порожня відповідь застосовувалась як справжня — `hasMore`
+        // ставав `false`, і загальна стрічка обривалась на першому ж фільтрі.
+        // На екрані лишались тільки власні картки, які приходять іншими
+        // конвеєрами, — «з фільтрами знову лише свої чернетки».
+        if (!indexedPage.deferToSourcePagination) {
+          if (indexedPage.cursorStuck) {
+            console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
+              finalIndexedOffset: indexedPage.finalOffset,
+              indexedPageCalls: indexedPage.pageCalls,
+              stopReason: indexedPage.stopReason,
+            });
+          }
+
+          const visibleAfterAppend = Number(usersRef.current?.length || 0) + indexedPage.collected.length;
+          console.log('[Matching][indexedProvider] loadMore diagnostics', {
+            indexedIdsCount: indexedPage.indexedIdsCount,
+            paginationInputIdsCount: indexedPage.paginationInputIdsCount,
+            pageIdsCount: indexedPage.pageIdsCount,
+            fetchedCardsCount: indexedPage.fetchedCardsCount,
+            safetyFilteredOutCount: indexedPage.safetyFilteredOutCount,
+            appendedCardsCount: indexedPage.collected.length,
+            visibleCardsAfterAppend: visibleAfterAppend,
+            hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
+            refillBlockedReason: '',
           });
+          indexedPage.collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
+          if (!canApplyLoadMoreResultWithFilters()) {
+            logStaleLoadMoreResultIgnored('indexed-page-apply', {
+              fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
+            });
+            return;
+          }
+          indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
+          setUsers(prev => {
+            const map = new Map(prev.map(user => [user.userId, user]));
+            indexedPage.collected.forEach(user => map.set(user.userId, user));
+            const result = Array.from(map.values());
+            setIdsForQuery(defaultListKey, result.map(user => user.userId));
+            return result;
+          });
+          void loadCommentsFor(indexedPage.collected);
+          setLastKey(indexedPage.finalOffset);
+          setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
+          return indexedPage.collected.length;
         }
 
-        const visibleAfterAppend = Number(usersRef.current?.length || 0) + indexedPage.collected.length;
-        console.log('[Matching][indexedProvider] loadMore diagnostics', {
-          indexedIdsCount: indexedPage.indexedIdsCount,
-          paginationInputIdsCount: indexedPage.paginationInputIdsCount,
-          pageIdsCount: indexedPage.pageIdsCount,
-          fetchedCardsCount: indexedPage.fetchedCardsCount,
-          safetyFilteredOutCount: indexedPage.safetyFilteredOutCount,
-          appendedCardsCount: indexedPage.collected.length,
-          visibleCardsAfterAppend: visibleAfterAppend,
-          hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
-          refillBlockedReason: '',
+        console.info('[Matching][indexedProvider] index plan unavailable; falling back to source pagination', {
+          reason: indexedPage.deferReason || 'index-plan-unavailable',
+          activeIndexFilterGroups: activeIndexFilterGroups.map(group => group.indexName),
         });
-        indexedPage.collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
-        if (!canApplyLoadMoreResultWithFilters()) {
-          logStaleLoadMoreResultIgnored('indexed-page-apply', {
-            fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
-          });
-          return;
-        }
-        indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
-        setUsers(prev => {
-          const map = new Map(prev.map(user => [user.userId, user]));
-          indexedPage.collected.forEach(user => map.set(user.userId, user));
-          const result = Array.from(map.values());
-          setIdsForQuery(defaultListKey, result.map(user => user.userId));
-          return result;
-        });
-        void loadCommentsFor(indexedPage.collected);
-        setLastKey(indexedPage.finalOffset);
-        setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
-        return indexedPage.collected.length;
       }
 
       const collected = [];
@@ -4775,8 +4791,11 @@ const Matching = () => {
 
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
-    // погодження адміном, щоб зʼявитись у власника в стрічці.
-    users: [...users, ...personalCreateProfiles],
+    // погодження адміном, щоб зʼявитись у власника в стрічці. Але стрічка — це
+    // не результати пошуку: доливати їх до відповіді на запит означає показати
+    // читачеві його ж чернетки замість того, кого він шукав, і ще й порахувати
+    // їх у «Знайдено N».
+    users: viewMode === 'search' ? users : [...users, ...personalCreateProfiles],
     additionalNewUsers,
     sharedReactionCandidateUsers,
     isAdmin,
