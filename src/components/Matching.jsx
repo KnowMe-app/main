@@ -536,7 +536,6 @@ const summarizeUsersForReactionDebug = (users, limit = 25) => ({
   ids: (users || []).map(user => user?.userId).filter(Boolean).slice(0, limit),
   sources: (users || []).slice(0, limit).map(user => ({
     userId: user?.userId,
-    source: user?.__sourceCollection,
     publish: user?.publish,
     matchingAccessAllowed: user?.__matchingAccessAllowed,
     fromCardCache: user?.__fromCardCache,
@@ -1045,7 +1044,6 @@ const SwipeableCard = ({
     : '';
   const debugContext = [
     user?.userId ? `userId=${user.userId}` : '',
-    user?.__sourceCollection ? `source=${user.__sourceCollection}` : '',
     typeof user?.__matchingAccessAllowed === 'boolean' ? `matchingAccess=${user.__matchingAccessAllowed ? 'allowed' : 'blocked'}` : '',
   ].filter(Boolean).join(' · ');
   const diagnostics = debugCardDiagnostics && typeof debugCardDiagnostics === 'object' ? debugCardDiagnostics : null;
@@ -1055,7 +1053,6 @@ const SwipeableCard = ({
   const debugDiagnosticsRows = diagnostics ? [
     `role=${diagnostics.role || '-'}`,
     `userRole=${diagnostics.userRole || '-'}`,
-    `cardSource=${diagnostics.__sourceCollection || '-'}`,
     `inVisible=${diagnostics.inVisibleCardIds ? 'yes' : 'no'}`,
     `inFiltered=${diagnostics.inFilteredUsers ? 'yes' : 'no'}`,
     `hiddenByUiFilter=${diagnostics.hiddenByUiFilter ? 'yes' : 'no'}`,
@@ -4891,7 +4888,6 @@ const Matching = () => {
       filteredOutByReason[reason] = (filteredOutByReason[reason] || 0) + 1;
       filteredOutCards.push({
         userId: userId || null,
-        collectionSource: card?.__sourceCollection || null,
         stage,
         reason,
         details,
@@ -5021,7 +5017,6 @@ const Matching = () => {
         possibleReason,
         cardRole,
         pub: card?.publish,
-        collectionSource: card?.__sourceCollection || null,
       });
     });
 
@@ -5056,7 +5051,6 @@ const Matching = () => {
         userId,
         role: cardRole,
         userRole: card?.userRole || null,
-        __sourceCollection: card?.__sourceCollection || null,
         inFilteredUsers: renderedIdsSet.has(userId),
         inRenderedUsers: renderedIdsSet.has(userId),
         inVisibleCardIds: visibleCardIdsSet.has(userId),
@@ -5275,9 +5269,7 @@ const Matching = () => {
     const cachedPhotos = photoCacheByUserId[user.userId];
     if (!fullProfile && !cachedPhotos) return user;
     // Проєкція перекривається анкетою, а не навпаки: анкета свіжіша й повніша.
-    const merged = fullProfile
-      ? { ...user, ...fullProfile, __sourceCollection: user.__sourceCollection || fullProfile.__sourceCollection }
-      : { ...user };
+    const merged = fullProfile ? { ...user, ...fullProfile } : { ...user };
 
     // Анкета з `fetchUsersByIds` приходить із порожнім `photos` — фото до неї
     // йдуть окремо. Порожній список не має стирати аватар, який проєкція вже

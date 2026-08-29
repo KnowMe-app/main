@@ -2326,14 +2326,20 @@ const addLimitedUser = async (userId, users) => {
   if (profile) users[userId] = profile;
 };
 
-const addUserFromUsers = async (userId, users) => {
-  const userSnap = await get(ref2(database, `users/${userId}`));
-  if (!userSnap.exists()) return;
+// Знайдену анкету треба ще й прочитати, а джерело істини — нові вузли: анкета,
+// заведена у вебі, взагалі не має тіла в legacy-колекції. Читати саму лише
+// legacy означало б знаходити id і не показувати за ним нічого.
+const readProfileForSearchHit = async userId => {
+  const fromNodes = await readProfileFromNodes(userId);
+  if (fromNodes) return fromNodes;
 
-  users[userId] = {
-    userId,
-    ...(userSnap.val() || {}),
-  };
+  const snapshot = await get(ref2(database, `users/${userId}`));
+  return snapshot.exists() ? { userId, ...(snapshot.val() || {}) } : null;
+};
+
+const addUserFromUsers = async (userId, users) => {
+  const profile = await readProfileForSearchHit(userId);
+  if (profile) users[userId] = profile;
 };
 
 const searchBySearchIdUsers = async (
@@ -2496,6 +2502,15 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   }
 };
 
+/**
+ * Завести нову анкету у вебі.
+ *
+ * Тіла в legacy-колекції вона не отримує, і це не економія: `users` — це вузол
+ * акаунтів, і право писати в чужий `users/$uid` має лише сам власник та адмін.
+ * Дати його редактору означало б дати право переписати чужий `accessLevel`.
+ * Нові ж вузли мають власні правила з перевіркою кожного поля — саме туди
+ * анкета й лягає, а `push` на `users` слугує лише генератором ключа.
+ */
 export const makeNewUser = async (searchedValue, rawQuery = '') => {
   const db = getDatabase();
   const usersRef = ref2(db, 'users');
@@ -2516,8 +2531,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
     ? makeSearchKeyValue(effectiveSearchValue)
     : null;
 
-  const newUserRef = push(usersRef); // Генеруємо унікальний ключ
-  const newUserId = newUserRef.key;
+  const newUserId = push(usersRef).key; // Генеруємо унікальний ключ, нічого не пишучи
 
   const now = new Date();
   const createdAt = now.toLocaleDateString('uk-UA');
@@ -2550,13 +2564,11 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
     }
   }
 
-  // Записуємо нового користувача в базу даних
-  await set(newUserRef, newUser);
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
-  // Нова анкета одразу розкладається по вузлах — так само, як це робить кожне
-  // збереження. Інакше вона зʼявилась би розділеною тільки після першої правки,
-  // а до того контакт із неї не прочитався б новим шляхом.
-  await fanOutProfileNodes(newUserId, newUser);
+  // Анкета одразу розкладається по вузлах — так само, як це робить кожне
+  // збереження. Це і є її запис: іншого тіла в неї немає.
+  const nodesWritten = await fanOutProfileNodes(newUserId, newUser);
+  if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');
   // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
   // після наступної індексації.
   await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });
@@ -2625,14 +2637,9 @@ export const searchUserByPartialUserId = async (userId, users) => {
 };
 
 const addUserToResults = async (userId, users) => {
-  const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
-  if (!userSnapshotInUsers.exists()) return;
-
+  const profile = await readProfileForSearchHit(userId);
   // Додаємо користувача у форматі userId -> userData
-  users[userId] = {
-    userId,
-    ...(userSnapshotInUsers.val() || {}),
-  };
+  if (profile) users[userId] = profile;
 };
 
 const getDateFormats = input => {
@@ -3695,16 +3702,14 @@ const mirrorProfileToLegacyUsers = async (userId, payload, condition) => {
 };
 
 /**
- * Анкета не збереглась нікуди — ані у вузли, ані в legacy.
+ * Анкета не збереглась нікуди.
  *
  * Окремий текст, бо це єдиний випадок, коли користувач мусить побачити помилку:
- * відмова однієї з двох сторін — це знижена надлишковість, відмова обох — це
- * втрачені дані.
+ * коли адресатів двоє, відмова одного — це знижена надлишковість, і мовчати про
+ * неї можна; відмова всіх — це втрачені дані, і мовчати про неї не можна.
  */
-const throwProfileWriteFailure = userId => {
-  const error = new Error(
-    `Анкету ${userId} не збережено: запис не прийняли ні нові вузли, ні стара колекція.`,
-  );
+const throwProfileWriteFailure = (userId, targets) => {
+  const error = new Error(`Анкету ${userId} не збережено: запис не прийняли ${targets}.`);
   error.code = 'PROFILE_WRITE_FAILED';
   throw error;
 };
@@ -3720,7 +3725,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     // не має скасовувати збереження.
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
     const legacyWritten = await mirrorProfileToLegacyUsers(userId, cleanedUploadedInfo, condition);
-    if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);
+    if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId, 'ні нові вузли, ні стара колекція');
 
     await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition);
   } catch (error) {
@@ -3816,7 +3821,7 @@ export const updateProfileNodesInRTDB = async (userId, uploadedInfo, condition, 
     }));
 
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
-    if (!nodesWritten) throwProfileWriteFailure(userId);
+    if (!nodesWritten) throwProfileWriteFailure(userId, 'вузли анкети');
 
     if (cleanedUploadedInfo.lastLogin2 !== undefined) {
       try {

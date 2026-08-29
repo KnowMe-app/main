@@ -1016,7 +1016,7 @@ const summarizeProfileCardForLog = card => {
     keys,
     cachedAt: card.cachedAt || null,
     updatedAt: card.updatedAt || card.lastUpdated || null,
-    dataSource: card.__sourceCollection || card.dataSource || null,
+    dataSource: card.dataSource || null,
   };
 };
 
@@ -6531,7 +6531,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     Promise.all(
       idsToLoad.map(async id => {
-        const photos = await lazyLoadProfilePhotos(id, paginatedUsers[id]?.__sourceCollection);
+        const photos = await lazyLoadProfilePhotos(id);
         return [id, Array.isArray(photos) ? photos : []];
       }),
     )

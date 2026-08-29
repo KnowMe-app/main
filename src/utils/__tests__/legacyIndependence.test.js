@@ -35,7 +35,7 @@ describe('збереження анкети не залежить від legacy-
 
     expect(nodesIndex).toBeGreaterThan(-1);
     expect(legacyIndex).toBeGreaterThan(nodesIndex);
-    expect(writer).toContain('if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);');
+    expect(writer).toContain('if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId,');
   });
 
   it('updateProfileNodesInRTDB не має legacy-тіла, тож пише лише у вузли', () => {
@@ -43,7 +43,7 @@ describe('збереження анкети не залежить від legacy-
 
     expect(writer).toContain('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
     expect(writer).not.toContain('mirrorProfileToLegacyUsers(');
-    expect(writer).toContain('if (!nodesWritten) throwProfileWriteFailure(userId);');
+    expect(writer).toContain('if (!nodesWritten) throwProfileWriteFailure(userId,');
   });
 
   it('дзеркалення в legacy не кидає — воно повертає результат', () => {

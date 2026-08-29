@@ -12,7 +12,7 @@ const normalizeBucketValues = values => {
 export const hasFieldCountRangeBuckets = values =>
   normalizeBucketValues(values).some(value => FIELD_COUNT_RANGE_BUCKETS.includes(String(value || '').trim()));
 
-// Keys the app adds to a hydrated card (`__sourceCollection`, `__fromCardCache`)
+// Keys the app adds to a hydrated card (`__fromCardCache`, `__photosHydrated`)
 // are not profile data. Excluding them keeps the count the index writes and the
 // count the post-filter derives from a loaded card identical.
 //
@@ -20,7 +20,7 @@ export const hasFieldCountRangeBuckets = values =>
 // count, so counting its keys would drop every card into `le5`. It brings the
 // count the writer measured on the full record under `__fieldsCount`; when that
 // is present it is the answer, and the key scan never runs.
-export const countProfileFields = profile => {
+const countProfileFields = profile => {
   if (!profile || typeof profile !== 'object') return 0;
   const precounted = Number(profile.__fieldsCount);
   if (Number.isFinite(precounted) && precounted >= 0) return precounted;

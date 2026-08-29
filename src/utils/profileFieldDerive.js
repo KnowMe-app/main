@@ -1,11 +1,10 @@
 /**
- * Похідні значення міграції — чисті функції без стану і без бази.
+ * Похідні значення картки стрічки — чисті функції без стану і без бази.
  *
- * Кожна з них відповідає на одне питання: «яке значення має отримати новий
- * вузол, і чи можна взагалі його вивести з цих даних». Друга половина питання
+ * Кожна з них відповідає на одне питання: «яке значення має отримати проєкція,
+ * і чи можна взагалі його вивести з цих даних». Друга половина питання
  * важливіша за першу: коли вивести не вдається, функція каже це вголос
- * (`warning`), а не вгадує. Саме на цій відповіді тримається головна гарантія
- * міграції — поле зникає з legacy-анкети тільки після успіху.
+ * (`warning`), а не вгадує.
  *
  * Резолвер поточного значення тут не власний: старі анкети тримають те саме
  * поле то скаляром, то масивом версій, і те, яку з них показує UI, вже вирішує
@@ -14,33 +13,14 @@
  */
 
 import { getCurrentValue } from 'components/getCurrentValue';
-import { normalizePublish } from './reactionPriority';
 
 /** Значення, яке взагалі є. `0` і `false` — є; `''`, `null`, `undefined` — немає. */
-export const hasMeaningfulValue = value => {
+const hasMeaningfulValue = value => {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') return value.trim().length > 0;
   if (Array.isArray(value)) return value.some(hasMeaningfulValue);
   if (typeof value === 'object') return Object.values(value).some(hasMeaningfulValue);
   return true;
-};
-
-/** Глибока копія без втрати типу: масив лишається масивом, обʼєкт — обʼєктом. */
-export const deepClone = value => {
-  if (value === null || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(deepClone);
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deepClone(item)]));
-};
-
-/** Порівняння за значенням — ним міряється ідемпотентність і конфлікт джерел. */
-export const deepEqual = (a, b) => {
-  if (a === b) return true;
-  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-  if (keysA.length !== keysB.length) return false;
-  return keysA.every(key => Object.prototype.hasOwnProperty.call(b, key) && deepEqual(a[key], b[key]));
 };
 
 const displayString = value => {
@@ -163,24 +143,6 @@ const normalizePhotoList = value => {
  */
 export const resolveMatchingCardAvatarFromProfile = data => normalizePhotoList(data?.photos)[0] || '';
 
-/**
- * `avatar` — окреме поле, якщо воно є; інакше основне фото з `photos`.
- *
- * Вибір основного фото робиться тим самим кодом, яким його робить застосунок,
- * тож аватар у стрічці і перше фото в картці — це один і той самий знімок.
- * `fromPhotos` потім вирішує долю джерела: похідне значення не дає права
- * видалити `photos`, бо повний набір фото ще потрібен `profileDetails`.
- */
-export const deriveAvatar = source => {
-  const direct = displayString(source?.avatar);
-  if (direct) return { value: direct, fromPhotos: false };
-
-  const fromPhotos = resolveMatchingCardAvatarFromProfile(source);
-  if (fromPhotos) return { value: fromPhotos, fromPhotos: true };
-
-  return { value: undefined, fromPhotos: false };
-};
-
 /** Плоский список рядків із будь-якої форми, у якій лежить роль. */
 const roleVariants = value => {
   if (Array.isArray(value)) return value.flatMap(roleVariants);
@@ -246,139 +208,4 @@ export const normalizeFeedDateValue = value => {
   }
 
   return '';
-};
-
-/**
- * Дата в анкеті пишеться одним форматом — `YYYY-MM-DD`.
- *
- * У живих даних та сама дата лежить двома написаннями: `25.08.2026` з
- * мобільної форми і `2026-08-25` з веба. Поки вони різні рядки, це два різні
- * значення: у `getInTouch` вони дають дві групи замість однієї, у порівнянні
- * копій — конфлікт на рівному місці, а сортування рядком ставить крапкові дати
- * не туди, бо в них першим стоїть день.
- *
- * Тож при переїзді дата нормалізується. Не «переформатовується будь-що схоже»:
- * міняється рівно те, що є датою цілком і повністю, — рядок із самих цифр і
- * крапок, який дає осмислені день, місяць і рік. Усе інше (нотатка з датою
- * всередині, номер версії, «2099-99-99») лишається символ у символ.
- *
- * Обхід глибокий: масив версій поля і вкладений обʼєкт — теж дані анкети.
- */
-export const normalizeLegacyDates = value => {
-  if (typeof value === 'string') {
-    const normalized = normalizeFeedDateValue(value);
-    // Порожній результат означає «це не дата», а не «дата зникла».
-    return normalized || value;
-  }
-  if (Array.isArray(value)) return value.map(normalizeLegacyDates);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, normalizeLegacyDates(item)]),
-    );
-  }
-  return value;
-};
-
-/**
- * Порівняння двох дат входу — рівно настільки, наскільки це можливо чесно.
- *
- * `lastLogin` та `lastLogin2` — це «коли анкету востаннє бачили», і з двох
- * копій правдива та, що ближча до сьогодні: старіша просто відстала. Але
- * зводити їх можна тільки тоді, коли обидві справді дати: `null` каже, що
- * порівнювати нема чого, і тоді розбіжність лишається розбіжністю.
- *
- * Формат нормалізується до `YYYY-MM-DD`, тож рядки порівнюються лексикографічно
- * і без часових поясів.
- */
-export const compareLoginRecency = (left, right) => {
-  const a = normalizeFeedDateValue(left);
-  const b = normalizeFeedDateValue(right);
-  if (!a || !b) return null;
-  if (a === b) return 0;
-  return a > b ? 1 : -1;
-};
-
-/**
- * `feedDate` — і допуск до стрічки, і порядок у ній, одним ключем.
- *
- * Наявність ключа означає «показувати», значення — місце в порядку. Тобто
- * старий `publish` виражається не окремим прапорцем, а самим фактом існування
- * дати, і зняти картку зі стрічки — це видалити ключ.
- *
- * Стан «показувати» читається тим самим `normalizePublish`, що й у застосунку:
- * `publish` у живих даних буває і булевим, і рядком, і масивом версій.
- *
- * Показана картка без жодної придатної дати — це не привід вигадати дату.
- * Такий випадок їде у звіт як блокуючий, а `publish` лишається в legacy.
- */
-export const deriveFeedDate = source => {
-  const published = normalizePublish(source?.publish);
-  if (!published) {
-    return { value: undefined, published: false, publishRepresented: true };
-  }
-
-  const fromLastLogin2 = normalizeFeedDateValue(source?.lastLogin2);
-  if (fromLastLogin2) return { value: fromLastLogin2, published: true, publishRepresented: true };
-
-  const fromLastLogin = normalizeFeedDateValue(source?.lastLogin);
-  if (fromLastLogin) return { value: fromLastLogin, published: true, publishRepresented: true };
-
-  return {
-    value: undefined,
-    published: true,
-    publishRepresented: false,
-    warning: 'FEED_DATE_MISSING_DATE',
-  };
-};
-
-/**
- * Звести значення поля власника до рядка — так, як його пише сам застосунок.
- *
- * `getInTouch` і `writer` — скаляри: у базі на них стоїть
- * `.validate: newData.isString()`, а форма картки збирає `writer` через
- * `updatedCodes.join(', ')`, тобто рядком «Т, Ik, V». Але в частині старих
- * анкет туди записався сам масив, без `join` — і такий запис база не приймає.
- * Відмова приходить як PERMISSION_DENIED (провалена `.validate` не має свого
- * коду), а заливка йде порціями, тож один масив забирає з собою 199 сусідніх
- * записів і виглядає це як відсутній дозвіл на весь вузол.
- *
- * Тож масив зводиться до того самого рядка, який дав би `join(', ')`. Порожні
- * елементи відкидаються: `['Т', '', 'Ik']` — це «Т, Ik», а не «Т, , Ik».
- * Обʼєкт із числовими ключами — той самий масив, тільки з дірками: RTDB
- * повертає його так, коли всередині є `null`, і читати його треба в порядку
- * ключів, а не в порядку вставки.
- */
-export const flattenOwnerValueToString = value => {
-  if (typeof value === 'string') return value;
-
-  const parts = [];
-
-  const orderedValues = node => {
-    const keys = Object.keys(node);
-    const numeric = keys.every(key => /^\d+$/.test(key));
-    const ordered = numeric ? [...keys].sort((a, b) => Number(a) - Number(b)) : keys;
-    return ordered.map(key => node[key]);
-  };
-
-  const walk = node => {
-    if (node === null || node === undefined) return;
-    if (typeof node === 'string') {
-      const trimmed = node.trim();
-      if (trimmed) parts.push(trimmed);
-      return;
-    }
-    if (typeof node === 'number' || typeof node === 'boolean') {
-      parts.push(String(node));
-      return;
-    }
-    if (Array.isArray(node)) {
-      node.forEach(walk);
-      return;
-    }
-    if (typeof node === 'object') orderedValues(node).forEach(walk);
-  };
-
-  walk(value);
-
-  return parts.join(', ');
 };

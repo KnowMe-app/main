@@ -70,15 +70,6 @@ export const saveComments = comments => {
   }
 };
 
-export const clearCachedComments = (ownerId, cardIds = []) => {
-  if (!ownerId || !Array.isArray(cardIds) || !cardIds.length) return;
-  const comments = loadComments();
-  if (!comments[ownerId]) return;
-  cardIds.forEach(cardId => delete comments[ownerId][cardId]);
-  if (!Object.keys(comments[ownerId]).length) delete comments[ownerId];
-  saveComments(comments);
-};
-
 export const getOwnerComments = ownerId => loadComments()[ownerId] || {};
 
 export const getCachedComment = (ownerId, cardId) => {

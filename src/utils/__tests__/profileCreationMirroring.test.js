@@ -13,10 +13,10 @@ const configSource = fs.readFileSync(
 /**
  * Створення анкети — це той самий запис, що й редагування, тільки перший.
  *
- * Легко зробити його «майже таким самим»: покласти анкету в legacy, оновити
- * картку стрічки — і забути розкласти по вузлах. Тоді нова анкета живе
- * нерозділеною доти, доки її вперше не відредагують, а контакт із неї новим
- * шляхом не читається взагалі. Тут перевіряється, що всі три кроки на місці.
+ * Легко зробити його «майже таким самим»: оновити картку стрічки — і забути
+ * розкласти анкету по вузлах. Тоді нова анкета живе нерозділеною доти, доки її
+ * вперше не відредагують, а контакт із неї новим шляхом не читається взагалі.
+ * Тут перевіряється, що всі кроки на місці.
  */
 describe('створення анкети розкладається так само, як збереження', () => {
   const creation = configSource.slice(
@@ -24,17 +24,21 @@ describe('створення анкети розкладається так са
     configSource.indexOf('export const', configSource.indexOf('export const makeNewUser =') + 10),
   );
 
-  it('пише анкету, розкладає її по вузлах і одразу будує картку', () => {
-    expect(creation).toContain('await set(newUserRef, newUser)');
+  it('розкладає анкету по вузлах і одразу будує картку', () => {
     expect(creation).toContain('await fanOutProfileNodes(newUserId, newUser)');
     expect(creation).toContain('await syncMatchingCardIndex(newUserId, newUser');
   });
 
-  it('розкладка йде після запису в legacy, а не замість нього', () => {
-    // Порядок важить: мобільний застосунок читає legacy, і нова анкета має
-    // зʼявитись там першою.
-    expect(creation.indexOf('await set(newUserRef, newUser)'))
-      .toBeLessThan(creation.indexOf('await fanOutProfileNodes'));
+  it('не заводить тіла в legacy-колекції — `push` лише генерує ключ', () => {
+    // `users` — вузол акаунтів: право писати в чужий `users/$uid` має тільки
+    // власник і адмін. Редактор, що заводить анкету, його не має і мати не
+    // повинен, інакше він міг би переписати чужий `accessLevel`.
+    expect(creation).toContain('const newUserId = push(usersRef).key;');
+    expect(creation).not.toContain('set(newUserRef');
+  });
+
+  it('падає, коли вузли не прийняли анкету — тихого «створив у нікуди» немає', () => {
+    expect(creation).toContain("if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');");
   });
 
   it.each([

@@ -301,7 +301,7 @@ export const ppTechnicalKeyValueFieldNames = [
 
 // Клієнтські службові ключі: у базі їм не місце, хай яким шляхом анкета туди
 // їде. Це не поля анкети, а мітки кешу й стану завантаження.
-export const technicalSanitizedFieldNames = [
+const technicalSanitizedFieldNames = [
   '_reactionType',
   '__sourceCollection',
   '__photosHydrated',
@@ -322,7 +322,7 @@ export const technicalSanitizedFieldNames = [
   'photo',
 ];
 
-export const isTechnicalSanitizedField = key => technicalSanitizedFieldNames.includes(key);
+const isTechnicalSanitizedField = key => technicalSanitizedFieldNames.includes(key);
 
 export const sanitizeTechnicalPayload = payload => Object.fromEntries(
   Object.entries(payload || {}).filter(([key]) => !isTechnicalSanitizedField(key))

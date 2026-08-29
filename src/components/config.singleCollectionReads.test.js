@@ -21,13 +21,17 @@ describe('single legacy collection reads', () => {
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
-  it('addUserFromUsers reads the one collection in search results', () => {
+  it('search hits are hydrated from the nodes first, legacy only as a fallback', () => {
     const body = source.slice(
-      source.indexOf('const addUserFromUsers'),
+      source.indexOf('const readProfileForSearchHit'),
       source.indexOf('const searchBySearchIdUsers'),
     );
 
-    expect(body).toContain('get(ref2(database, `users/${userId}`))');
+    const nodesIndex = body.indexOf('await readProfileFromNodes(userId)');
+    const legacyIndex = body.indexOf('get(ref2(database, `users/${userId}`))');
+
+    expect(nodesIndex).toBeGreaterThanOrEqual(0);
+    expect(legacyIndex).toBeGreaterThan(nodesIndex);
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
