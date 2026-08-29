@@ -25,16 +25,14 @@ describe('створення анкети розкладається так са
   );
 
   it('пише анкету, розкладає її по вузлах і одразу будує картку', () => {
-    expect(creation).toContain('await set(newUserRef, newUser)');
     expect(creation).toContain('await fanOutProfileNodes(newUserId, newUser)');
+    expect(creation).toContain('await set(newUserRef, newUser)');
     expect(creation).toContain('await syncMatchingCardIndex(newUserId, newUser');
   });
 
-  it('розкладка йде після запису в legacy, а не замість нього', () => {
-    // Порядок важить: мобільний застосунок читає legacy, і нова анкета має
-    // зʼявитись там першою.
-    expect(creation.indexOf('await set(newUserRef, newUser)'))
-      .toBeLessThan(creation.indexOf('await fanOutProfileNodes'));
+  it('канонічні вузли створюються до необовʼязкового legacy-дзеркала', () => {
+    expect(creation.indexOf('await fanOutProfileNodes'))
+      .toBeLessThan(creation.indexOf('await set(newUserRef, newUser)'));
   });
 
   it.each([

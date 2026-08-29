@@ -1,6 +1,8 @@
 import { get as firebaseGet, push, ref as ref2, remove, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import { isLongFormatUserId, mergeUserCollectionData } from 'utils/mergeUserCollections';
+import { mergeProfileNodes } from 'utils/profileNodeMerge';
+import { PROFILE_NODES } from 'utils/profileNodeSchema';
 
 import { database } from 'components/config';
 
@@ -97,34 +99,32 @@ export const getCardStorageCollection = async cardUserId => {
 };
 
 export const getCanonicalCard = async cardUserId => {
-  if (isLongFormatUserId(cardUserId)) {
-    const usersSnapshot = await get(ref2(database, `users/${cardUserId}`));
-    if (usersSnapshot.exists()) {
-      return {
-        userId: cardUserId,
-        ...mergeUserCollectionData(usersSnapshot.val(), {}),
-      };
-    }
+  const paths = [
+    'newUsers',
+    'users',
+    PROFILE_NODES.matchingCards,
+    PROFILE_NODES.profileDetails,
+    PROFILE_NODES.profileContacts,
+    PROFILE_NODES.profileWorkflow,
+    PROFILE_NODES.profileTechnical,
+  ];
+  const snapshots = await Promise.all(paths.map(path => get(ref2(database, `${path}/${cardUserId}`))));
+  const values = snapshots.map(snapshot => (snapshot.exists() ? snapshot.val() : null));
+  const [newUsersData, usersData, card, details, contacts, workflow, technical] = values;
+  const legacy = mergeUserCollectionData(usersData || {}, newUsersData || {});
 
-    const newUsersSnapshot = await get(ref2(database, `newUsers/${cardUserId}`));
-    return {
-      userId: cardUserId,
-      ...mergeUserCollectionData({}, newUsersSnapshot.exists() ? newUsersSnapshot.val() : {}),
-    };
-  }
-
-  const [newUsersSnapshot, usersSnapshot] = await Promise.all([
-    get(ref2(database, `newUsers/${cardUserId}`)),
-    get(ref2(database, `users/${cardUserId}`)),
-  ]);
-
-  const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
-  const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
-
-  return {
+  const merged = mergeProfileNodes({
     userId: cardUserId,
-    ...mergeUserCollectionData(usersData, newUsersData),
-  };
+    card,
+    details,
+    contacts,
+    workflow,
+    technical,
+    legacy,
+  }) || { userId: cardUserId };
+  delete merged.__sourceCollection;
+  delete merged.__photosHydrated;
+  return merged;
 };
 
 export const buildOverlayFromDraft = (canonical, draft) => {
