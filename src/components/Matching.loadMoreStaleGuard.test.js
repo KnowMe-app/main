@@ -32,11 +32,20 @@ describe('Matching loadMore stale pagination guards', () => {
     expect(source).toContain('loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));');
     expect(source).toContain('setAdditionalAccessUsers([]);');
     expect(source).toContain('setAdditionalNextOffset(0);');
+    expect(source).toContain('additionalHasMoreRef.current = false;');
+    expect(source).toContain('setAdditionalHasMore(false);');
     expect(source).toContain('setHasMore(false);');
     expect(source).toContain('setLastKey(null);');
     expect(source).toContain('setLoading(false);');
     expect(source).toContain('setSharedReactionCandidateUsers([]);');
     expect(source).toContain("setViewMode('search');");
+  });
+
+  it('limits access-source pagination availability to the default feed', () => {
+    const source = matchingSource();
+
+    expect(source).toContain("const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore);");
+    expect(loadMoreSource()).toContain("!hasMoreRef.current && !(viewMode === 'default' && additionalHasMoreRef.current)");
   });
   it('updates reaction cards before async comment loading while preserving stale guards', () => {
     const source = loadMoreSource();
@@ -55,18 +64,17 @@ describe('Matching loadMore stale pagination guards', () => {
   it('guards additional-access offset, hasMore, lastKey, and loadedIdsRef writes', () => {
     const source = loadMoreSource();
 
-    expect(source).toContain(`if (!isLatestLoadMore()) return;
-        collected.forEach(user => {
-          loadedIdsRef.current.add(user.userId);
-        });`);
+    const scopedFetchIndex = source.indexOf('const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({');
+    const scopedGuardIndex = source.indexOf("logStaleLoadMoreResultIgnored('additional-access-page');", scopedFetchIndex);
+    const scopedOffsetWriteIndex = source.indexOf('setAdditionalNextOffset(nextOffset);', scopedFetchIndex);
+    expect(scopedFetchIndex).toBeGreaterThan(-1);
+    expect(scopedGuardIndex).toBeGreaterThan(scopedFetchIndex);
+    expect(scopedGuardIndex).toBeLessThan(scopedOffsetWriteIndex);
+    expect(source).toContain('setAdditionalHasMore(additionalHasMoreRef.current);');
     const setAdditionalIndex = source.indexOf('setAdditionalAccessUsers(prev => {');
-    const commentsIndex = source.indexOf('void loadCommentsFor(collected);', setAdditionalIndex);
+    const commentsIndex = source.indexOf('void loadCommentsFor(scopedUsers);', setAdditionalIndex);
     expect(setAdditionalIndex).toBeGreaterThan(-1);
     expect(commentsIndex).toBeGreaterThan(setAdditionalIndex);
-    expect(source).toContain(`setAdditionalNextOffset(nextOffset);
-        setHasMore(canLoadMoreAdditional);`);
-    const additionalLastKeyIndex = source.indexOf('setLastKey(null);', commentsIndex);
-    expect(additionalLastKeyIndex).toBeGreaterThan(commentsIndex);
   });
 
   it('guards default source pagination writes from stale loadMore requests', () => {

@@ -6,16 +6,27 @@ import { PublicCommentBlock, PUBLIC_COMMENT_VISIBILITY_NOTE } from './ProfileRow
 const setup = (props = {}) => {
   const onCreate = props.onCreate || jest.fn().mockResolvedValue(undefined);
   const onUpdate = props.onUpdate || jest.fn().mockResolvedValue(undefined);
+  const onDelete = props.onDelete || jest.fn().mockResolvedValue(undefined);
   const utils = render(
     <PublicCommentBlock
       profileId="profile-1"
       viewerId="viewer-1"
       comments={props.comments || []}
+      canModerate={props.canModerate || false}
       onCreate={onCreate}
       onUpdate={onUpdate}
+      onDelete={onDelete}
     />
   );
-  return { ...utils, onCreate, onUpdate };
+  return { ...utils, onCreate, onUpdate, onDelete };
+};
+
+const ownComment = { id: 'c1', text: 'мій запис', authorId: 'viewer-1', authorName: 'Ольга Петрів', createdAt: Date.now() };
+const otherComment = { id: 'c2', text: 'чужий запис', authorId: 'viewer-2', authorName: 'Ігор Ковальчук', createdAt: Date.now() };
+
+const removeComment = async () => {
+  fireEvent.click(screen.getByLabelText('Видалити коментар'));
+  fireEvent.click(await screen.findByLabelText('Підтвердити видалення'));
 };
 
 const openComposer = () => {
@@ -116,6 +127,68 @@ describe('quick public comment', () => {
 
     fireEvent.click(screen.getByText('мій запис'));
     expect(screen.getByRole('textbox')).toHaveValue('мій запис');
+  });
+
+  it('lets the author take their own record down, after one confirmation', async () => {
+    const { onDelete } = setup({ comments: [ownComment] });
+
+    fireEvent.click(screen.getByLabelText('Видалити коментар'));
+    expect(onDelete).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByLabelText('Підтвердити видалення'));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith('profile-1', 'c1'));
+  });
+
+  it('clearing the text of a stored record deletes it', async () => {
+    const { onDelete, onUpdate } = setup({ comments: [ownComment] });
+
+    fireEvent.click(screen.getByText('мій запис'));
+    const field = screen.getByRole('textbox');
+    fireEvent.change(field, { target: { value: '   ' } });
+    fireEvent.blur(field);
+
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith('profile-1', 'c1'));
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("gives no one but the author a way at someone else's record", () => {
+    setup({ comments: [otherComment] });
+
+    fireEvent.click(screen.getByText('чужий запис'));
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Видалити коментар')).not.toBeInTheDocument();
+  });
+
+  it("lets an admin edit and delete someone else's record", async () => {
+    const { onUpdate, onDelete } = setup({ comments: [otherComment], canModerate: true });
+
+    fireEvent.click(screen.getByText('чужий запис'));
+    const field = screen.getByRole('textbox');
+    fireEvent.change(field, { target: { value: 'виправлено' } });
+    fireEvent.blur(field);
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('profile-1', 'c2', 'виправлено'));
+
+    await removeComment();
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith('profile-1', 'c2'));
+  });
+
+  it('says so when the delete does not go through', async () => {
+    const onDelete = jest.fn().mockRejectedValue(new Error('offline'));
+    setup({ comments: [ownComment], onDelete });
+
+    await removeComment();
+    expect(await screen.findByText(/Не вдалось видалити/)).toBeInTheDocument();
+    expect(screen.getByText('мій запис')).toBeInTheDocument();
+  });
+
+  it('offers no delete on a row that is not saved yet', async () => {
+    setup();
+    const field = openComposer();
+    fireEvent.change(field, { target: { value: 'щойно' } });
+    fireEvent.blur(field);
+
+    expect(await screen.findByText('щойно')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Видалити коментар')).not.toBeInTheDocument();
   });
 
   it('labels each comment with its author initials', () => {

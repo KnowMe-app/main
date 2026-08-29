@@ -632,6 +632,26 @@ export const CommentRetry = styled.button`
   text-decoration: underline;
 `;
 
+// Публічний запис про третю особу мусить мати кому зняти: хрестик бачить автор
+// запису і адмін. Він тримається в рядку підпису, щоб не важити більше за сам
+// коментар, і питає підтвердження перш ніж видалити.
+export const CommentDelete = styled.button`
+  font: inherit;
+  font-size: 11px;
+  font-weight: ${({ $confirming }) => ($confirming ? 700 : 600)};
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: ${({ $confirming }) => ($confirming ? '#d64545' : 'var(--matching-muted-text)')};
+  cursor: pointer;
+  opacity: ${({ $confirming }) => ($confirming ? 1 : 0.7)};
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
 export const CommentsMoreButton = styled.button`
   display: inline-flex;
   align-items: center;

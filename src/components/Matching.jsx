@@ -106,12 +106,14 @@ import {
   fetchUserComments,
   saveMyCardComment,
   addPublicProfileComment,
+  deletePublicProfileComment,
   fetchPublicProfileComments,
   updatePublicProfileComment,
   COMMENTS_ROOT_PATH,
   fetchUsersByIds,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
+  fetchLimitedProfileById,
   database,
   auth,
   updateDataInRealtimeDB,
@@ -250,7 +252,6 @@ import {
   getMatchingUiFilterDebugSummary,
   isMatchingCardId,
   isSameMatchingCursor,
-  isValidMatchingUserId,
 } from 'utils/matchingDataProvider';
 import {
   normalizeMatchingInitialLoadError,
@@ -566,8 +567,6 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
   source: 'Matching',
 });
 
-// Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
-const isValidId = isValidMatchingUserId;
 const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];
 
 const sanitizeCardForBackend = card => {
@@ -615,6 +614,12 @@ const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
   if (isAdmin) return true;
   return card.publish !== false;
 };
+
+// Глядач без повного доступу до матчингу бачить картку додаткового доступу
+// урізаною: рівно ті пʼять полів, які правила відкривають кожному авторизованому.
+const fetchLimitedProfilesByIdsForMatching = async ids => (
+  await Promise.all((ids || []).map(userId => fetchLimitedProfileById(userId)))
+).filter(Boolean);
 
 const ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS = [
   'searchKeySetsOfExactUser',
@@ -1582,6 +1587,9 @@ const Matching = () => {
   const [additionalAccessUsers, setAdditionalAccessUsers] = useState([]);
   const additionalAccessUsersRef = useRef(additionalAccessUsers);
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
+  const additionalNextOffsetRef = useRef(0);
+  const [additionalHasMore, setAdditionalHasMore] = useState(false);
+  const additionalHasMoreRef = useRef(false);
   const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({
@@ -1672,12 +1680,17 @@ const Matching = () => {
     [currentAdditionalAccessRules]
   );
   const loadingRef = useRef(false);
+  const initialLoadInFlightRef = useRef(false);
+  const additionalAccessLoadInFlightRef = useRef(false);
+  const deferredInitialLoadErrorRef = useRef(null);
   const hasMoreRef = useRef(hasMore);
   const loadingStateRef = useRef(loading);
 
   useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
+
+  const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore);
 
   useEffect(() => {
     loadingStateRef.current = loading;
@@ -1733,6 +1746,8 @@ const Matching = () => {
   const resetAdditionalMatchingState = React.useCallback(({ resetHasMore = true, resetLoading = false } = {}) => {
     setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
+    additionalHasMoreRef.current = false;
+    setAdditionalHasMore(false);
     setLastKey(null);
     loadedIdsRef.current = new Set();
     additionalRulesToastRef.current = '';
@@ -1807,6 +1822,19 @@ const Matching = () => {
     console.error({ event: 'Matching.initialLoadError', ...diagnosticWithTrace });
     toast.error(diagnostic.userMessage, {
       id: INITIAL_LOAD_ERROR_TOAST_ID,
+    });
+  }, []);
+  // Коли загальну стрічку прочитати не вдалось, а картки додаткового доступу
+  // вже є, деку показувати можна — екран помилки забрав би в глядача й те, що
+  // йому таки надали. Але мовчати теж не можна: коротка дека без пояснення
+  // читається як «більше нікого немає», а не як «половина не прочиталась».
+  // Один рядок з кодом помилки називає цю різницю там, де консолі немає.
+  const announcePublicFeedUnavailable = React.useCallback(error => {
+    if (!error) return;
+    const detail = String(error?.code || error?.message || error || '').trim();
+    toast(`Загальна стрічка недоступна${detail ? `: ${detail}` : ''}. Показані лише картки з додаткового доступу.`, {
+      id: 'matching-public-feed-unavailable',
+      icon: '⚠️',
     });
   }, []);
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
@@ -1966,7 +1994,12 @@ const Matching = () => {
   // which the same filters then narrow - there is no second filtering branch.
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
-    const filtered = arr.filter(u => isValidId(u?.userId));
+    // Картка з короткого id — така сама картка: колекція у вебі одна, і саме так
+    // її приймає індексна гілка стрічки. Мірка «довше за 20 символів» лишилась
+    // від поділу на дві колекції і мовчки викидала з результатів усе, що
+    // заведено в застосунку (push-id рівно 20 символів): статус устигав сказати
+    // «Знайшов», а на екран не потрапляло нічого.
+    const filtered = arr.filter(u => isMatchingCardId(u?.userId));
 
     loadInitialVersionRef.current += 1;
     additionalLoadMoreFetchVersionRef.current += 1;
@@ -1980,6 +2013,8 @@ const Matching = () => {
     loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));
     setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
+    additionalHasMoreRef.current = false;
+    setAdditionalHasMore(false);
     setHasMore(false);
     setLastKey(null);
     setLoading(false);
@@ -1996,6 +2031,10 @@ const Matching = () => {
   useEffect(() => {
     additionalAccessUsersRef.current = additionalAccessUsers;
   }, [additionalAccessUsers]);
+
+  useEffect(() => {
+    additionalNextOffsetRef.current = additionalNextOffset;
+  }, [additionalNextOffset]);
 
   useEffect(() => {
     favoriteUsersRef.current = favoriteUsers;
@@ -2017,6 +2056,7 @@ const Matching = () => {
     usersRef.current = users;
     const ids = [
       ...users.map(u => u.userId),
+      ...additionalAccessUsers.map(u => u.userId),
       ...sharedReactionCandidateUsers.map(u => u.userId),
     ];
     const ownOwnerId = getOwnerId();
@@ -2035,7 +2075,7 @@ const Matching = () => {
       });
       return map;
     });
-  }, [sharedReactionCandidateUsers, users]);
+  }, [additionalAccessUsers, sharedReactionCandidateUsers, users]);
 
   useEffect(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') {
@@ -2662,73 +2702,102 @@ const Matching = () => {
     const accessUserId = String(ownerId || '').trim();
     const searchKeySetKeys = normalizeSearchKeySetKeys(currentSearchKeySetKeys);
     if (!accessUserId || !parsedAdditionalAccessRules.length || !searchKeySetKeys.length) {
+      additionalMatchingFetchVersionRef.current += 1;
+      additionalHasMoreRef.current = false;
+      additionalAccessLoadInFlightRef.current = false;
+      const deferredError = deferredInitialLoadErrorRef.current;
+      deferredInitialLoadErrorRef.current = null;
+      additionalAccessUsersRef.current = [];
+      setAdditionalHasMore(false);
       setAdditionalAccessUsers([]);
       setAdditionalNextOffset(0);
+      if (deferredError) reportInitialLoadError(deferredError);
       return () => {};
     }
 
     const requestVersion = additionalMatchingFetchVersionRef.current + 1;
     additionalMatchingFetchVersionRef.current = requestVersion;
+    // Do not retain cards granted by the previous owner/rule set while its
+    // replacement request is in flight (or if that request fails).
+    additionalHasMoreRef.current = false;
+    additionalAccessLoadInFlightRef.current = true;
+    additionalAccessUsersRef.current = [];
+    setAdditionalHasMore(false);
+    setAdditionalAccessUsers([]);
+    setAdditionalNextOffset(0);
     let cancelled = false;
+    let loadedScopedCards = false;
 
     const loadAccessScopedCards = async () => {
       try {
-        const scopedById = new Map();
-        let offset = 0;
-        let hasMore = true;
-        while (hasMore && !cancelled) {
-          // eslint-disable-next-line no-await-in-loop
-          const loaded = await fetchAdditionalAccessUsersBySearchIndex({
-            rawRules: currentAdditionalAccessRules,
-            accessUserId,
-            searchKeySetKeys,
-            filters: filtersRef.current || {},
-            excludeIds: [
-              ...Object.keys(favoriteUsersRef.current),
-              ...Object.keys(dislikeUsersRef.current),
-            ],
-            offset,
-            limit: 100,
-            fetchUsersByIds,
-            shouldDebugAdditionalMatching,
-            debugAdditionalToast,
-            logAdditionalMatchingDebug,
-          });
-          (loaded.users || []).forEach(user => {
-            if (user?.userId) scopedById.set(user.userId, user);
-          });
-          const nextOffset = Number(loaded.nextOffset) || 0;
-          hasMore = Boolean(loaded.hasMore) && nextOffset > offset;
-          offset = nextOffset;
-        }
+        const loaded = await fetchAdditionalAccessUsersBySearchIndex({
+          rawRules: currentAdditionalAccessRules,
+          accessUserId,
+          searchKeySetKeys,
+          filters: filtersRef.current || {},
+          excludeIds: [
+            ...Object.keys(favoriteUsersRef.current),
+            ...Object.keys(dislikeUsersRef.current),
+          ],
+          offset: 0,
+          limit: MATCHING_REFILL_LIMIT,
+          fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
+          shouldDebugAdditionalMatching,
+          debugAdditionalToast,
+          logAdditionalMatchingDebug,
+        });
         if (cancelled || requestVersion !== additionalMatchingFetchVersionRef.current) return;
 
         const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
-        const scopedUsers = Array.from(scopedById.values())
+        const scopedUsers = (loaded.users || [])
           .filter(user => user?.userId && !publicIds.has(user.userId))
           .map(user => ({ ...user, __matchingAccessAllowed: true }));
+        loadedScopedCards = scopedUsers.length > 0;
+        additionalAccessUsersRef.current = scopedUsers;
         setAdditionalAccessUsers(scopedUsers);
-        setAdditionalNextOffset(offset);
+        additionalHasMoreRef.current = Boolean(loaded.hasMore);
+        setAdditionalHasMore(Boolean(loaded.hasMore));
+        setAdditionalNextOffset(Number(loaded.nextOffset) || 0);
+        if (scopedUsers.length) {
+          // Помилка загальної стрічки прийшла раніше за ці картки: екран
+          // помилки знімаємо, але сам факт збою лишаємо сказаним.
+          const droppedError = deferredInitialLoadErrorRef.current;
+          deferredInitialLoadErrorRef.current = null;
+          setLoadError(null);
+          toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
+          announcePublicFeedUnavailable(droppedError);
+        }
         void loadCommentsFor(scopedUsers);
       } catch (error) {
         if (!cancelled) console.error('Failed to load access-scoped matching cards', error);
+      } finally {
+        if (!cancelled && requestVersion === additionalMatchingFetchVersionRef.current) {
+          additionalAccessLoadInFlightRef.current = false;
+          const deferredError = deferredInitialLoadErrorRef.current;
+          deferredInitialLoadErrorRef.current = null;
+          if (deferredError && !loadedScopedCards) {
+            reportInitialLoadError(deferredError);
+          }
+        }
       }
     };
 
     loadAccessScopedCards();
     return () => { cancelled = true; };
   }, [
+    announcePublicFeedUnavailable,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     loadCommentsFor,
     ownerId,
     parsedAdditionalAccessRules.length,
     filters,
+    reportInitialLoadError,
   ]);
 
   const loadInitial = React.useCallback(async () => {
     writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
-    if (loadingRef.current) {
+    if (initialLoadInFlightRef.current) {
       console.info('[loadInitial] skip overlapping request', { viewMode: viewModeRef.current });
       return;
     }
@@ -2748,6 +2817,8 @@ const Matching = () => {
       }
       return;
     }
+    initialLoadInFlightRef.current = true;
+    loadingRef.current = true;
     setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
     try {
@@ -3018,17 +3089,33 @@ const Matching = () => {
     } catch (error) {
       if (canApplyInitialLoad() && initialRequest === initialRequestIdRef.current) {
         recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
-        reportInitialLoadError(error);
+        if (additionalAccessUsersRef.current.length > 0) {
+          deferredInitialLoadErrorRef.current = null;
+          // Дека лишається на екрані — але коротка, і без пояснення це читається
+          // як «більше нікого немає». Один рядок з кодом помилки називає різницю
+          // між «нікого» і «не прочиталось»: на телефоні консолі немає.
+          announcePublicFeedUnavailable(error);
+        } else if (additionalAccessLoadInFlightRef.current) {
+          deferredInitialLoadErrorRef.current = error;
+        } else {
+          reportInitialLoadError(error);
+        }
       }
       console.error('Failed to load initial matching profiles', error);
     } finally {
+      // Захист від накладання звільняється завжди, а не лише коли запит
+      // лишився актуальним: інакше перший же застарілий запит замикав його
+      // назавжди, і кожне наступне перезавантаження стрічки мовчки вибувало —
+      // зміна фільтрів не давала б нічого. Стан гонки тут не виникає: чи можна
+      // застосувати відповідь, вирішує `canApplyInitialLoad`.
+      initialLoadInFlightRef.current = false;
       if (loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current) {
         loadingRef.current = false;
         loadingStateRef.current = false;
         setLoading(false);
       }
     }
-  }, [beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -3071,6 +3158,8 @@ const Matching = () => {
       setUsers([]);
       setAdditionalAccessUsers([]);
       setAdditionalNextOffset(0);
+      additionalHasMoreRef.current = false;
+      setAdditionalHasMore(false);
       setLastKey(null);
       setHasMore(true);
     }
@@ -3102,6 +3191,10 @@ const Matching = () => {
     lastCardLoadTriggerSignatureRef.current = '';
     lastCardInFlightTriggerSignatureRef.current = '';
     loadingRef.current = false;
+    loadingStateRef.current = false;
+    loadInitialVersionRef.current += 1;
+    initialRequestIdRef.current += 1;
+    initialLoadInFlightRef.current = false;
     loadedIdsRef.current = new Set();
     additionalRulesToastRef.current = '';
     additionalProfileCacheRef.current = null;
@@ -3116,8 +3209,11 @@ const Matching = () => {
     setFilters({});
     setDraftFilters({});
     setUsers([]);
+    additionalAccessUsersRef.current = [];
     setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
+    additionalHasMoreRef.current = false;
+    setAdditionalHasMore(false);
     setSharedReactionIds([]);
     setSharedReactionCandidateUsers([]);
     setPhotoCacheByUserId({});
@@ -3859,9 +3955,14 @@ const Matching = () => {
 
   const handleMatchingSearchExecuted = React.useCallback(value => {
     const normalizedValue = String(value || '').trim();
-    addMatchingSearchQuery(normalizedValue);
     matchingSearchKeyRef.current = null;
     setMatchingSearchStatus(normalizedValue ? 'Шукаю в searchId...' : '');
+  }, []);
+
+  // Історію пише лише завершений пошук: прогони на паузах у наборі тексту
+  // лишили б у базі ланцюг початків одного слова.
+  const handleMatchingSearchCommitted = React.useCallback(value => {
+    addMatchingSearchQuery(value);
   }, []);
 
   const handleMatchingSearchResultStatus = React.useCallback(result => {
@@ -3922,9 +4023,9 @@ const Matching = () => {
       ? getSearchCacheKeyForParams(key, value, options)
       : getCacheKey('search', term ? normalizeQueryKey(term) : term);
     if (!isLimited) {
-      const ids = getIdsByQuery(cacheKey).filter(isValidId);
+      const ids = getIdsByQuery(cacheKey).filter(isMatchingCardId);
       if (ids.length > 0) {
-        const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
+        const cards = ids.map(id => getCard(id)).filter(c => c && isMatchingCardId(c.userId));
         if (cards.length > 0) {
           // Та сама форма, що й у `searchUsersOnly`: один збіг — картка, кілька —
           // мапа. Раніше все, крім `name`, згорталось у `cards[0]`, і кеш віддавав
@@ -3942,7 +4043,7 @@ const Matching = () => {
         : res.userId
           ? [res]
           : Object.values(res);
-      const filtered = arr.filter(u => isValidId(u?.userId));
+      const filtered = arr.filter(u => isMatchingCardId(u?.userId));
       if (!isLimited) {
         filtered.forEach(u => updateCard(u.userId, u));
         setIdsForQuery(cacheKey, filtered.map(u => u.userId));
@@ -4005,7 +4106,7 @@ const Matching = () => {
       });
     };
     writeMatchingDebugLog('loadMore:start', buildLoadMoreDebugPayload(commonDebug));
-    if (!hasMoreRef.current) {
+    if (!hasMoreRef.current && !(viewMode === 'default' && additionalHasMoreRef.current)) {
       markBlockedLoadMore('blocked-no-hasMore', { guard: 'hasMore === false' });
       writeMatchingDebugLog('loadMore:blocked:noHasMore', buildLoadMoreDebugPayload(commonDebug));
       return;
@@ -4205,7 +4306,53 @@ const Matching = () => {
         ...Object.keys(dislikeUsersRef.current),
       ]);
 
-const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
+      // The scoped source is paged just like the public feed. Read only the
+      // next deck-sized page; never drain the entire additional-access index
+      // on initial load or after a filter change.
+      if (additionalHasMoreRef.current && parsedAdditionalAccessRules.length > 0) {
+        const scopedOffset = additionalNextOffsetRef.current;
+        const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({
+          rawRules: currentAdditionalAccessRules,
+          accessUserId: ownerId,
+          searchKeySetKeys: normalizeSearchKeySetKeys(currentSearchKeySetKeys),
+          filters: filtersRef.current || {},
+          excludeIds: [
+            ...baseExclude,
+            ...usersRef.current.map(user => user?.userId).filter(Boolean),
+            ...additionalAccessUsersRef.current.map(user => user?.userId).filter(Boolean),
+          ],
+          offset: scopedOffset,
+          limit: requestedLimit,
+          fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
+          shouldDebugAdditionalMatching,
+          debugAdditionalToast,
+          logAdditionalMatchingDebug,
+        });
+        if (!canApplyLoadMoreResultWithFilters()) {
+          logStaleLoadMoreResultIgnored('additional-access-page');
+          return;
+        }
+
+        const nextOffset = Number(scopedPage.nextOffset) || scopedOffset;
+        additionalHasMoreRef.current = Boolean(scopedPage.hasMore && nextOffset > scopedOffset);
+        setAdditionalHasMore(additionalHasMoreRef.current);
+        setAdditionalNextOffset(nextOffset);
+        const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
+        const scopedUsers = (scopedPage.users || [])
+          .filter(user => user?.userId && !publicIds.has(user.userId))
+          .map(user => ({ ...user, __matchingAccessAllowed: true }));
+        if (scopedUsers.length) {
+          setAdditionalAccessUsers(prev => {
+            const byId = new Map(prev.map(user => [user.userId, user]));
+            scopedUsers.forEach(user => byId.set(user.userId, user));
+            return Array.from(byId.values());
+          });
+          void loadCommentsFor(scopedUsers);
+          return scopedUsers.length;
+        }
+      }
+
+      const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         filters: filtersRef.current || {},
       });
       if (activeIndexFilterGroups.length > 0) {
@@ -4224,45 +4371,59 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         });
         if (indexedPage.stale) { logStaleLoadMoreResultIgnored('indexed-collect', { reason: indexedPage.staleReason || 'stale' }); return; }
 
-        if (indexedPage.cursorStuck) {
-          console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
-            finalIndexedOffset: indexedPage.finalOffset,
-            indexedPageCalls: indexedPage.pageCalls,
-            stopReason: indexedPage.stopReason,
+        // Індексного плану могло не скластись: набір фільтрів на кшталт «крім
+        // Агентства» вміє лише відкидати, тож індекс не називає жодного id.
+        // `loadInitial` у цьому місці давно віддає деку послідовній пагінації;
+        // тут же порожня відповідь застосовувалась як справжня — `hasMore`
+        // ставав `false`, і загальна стрічка обривалась на першому ж фільтрі.
+        // На екрані лишались тільки власні картки, які приходять іншими
+        // конвеєрами, — «з фільтрами знову лише свої чернетки».
+        if (!indexedPage.deferToSourcePagination) {
+          if (indexedPage.cursorStuck) {
+            console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
+              finalIndexedOffset: indexedPage.finalOffset,
+              indexedPageCalls: indexedPage.pageCalls,
+              stopReason: indexedPage.stopReason,
+            });
+          }
+
+          const visibleAfterAppend = Number(usersRef.current?.length || 0) + indexedPage.collected.length;
+          console.log('[Matching][indexedProvider] loadMore diagnostics', {
+            indexedIdsCount: indexedPage.indexedIdsCount,
+            paginationInputIdsCount: indexedPage.paginationInputIdsCount,
+            pageIdsCount: indexedPage.pageIdsCount,
+            fetchedCardsCount: indexedPage.fetchedCardsCount,
+            safetyFilteredOutCount: indexedPage.safetyFilteredOutCount,
+            appendedCardsCount: indexedPage.collected.length,
+            visibleCardsAfterAppend: visibleAfterAppend,
+            hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
+            refillBlockedReason: '',
           });
+          indexedPage.collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
+          if (!canApplyLoadMoreResultWithFilters()) {
+            logStaleLoadMoreResultIgnored('indexed-page-apply', {
+              fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
+            });
+            return;
+          }
+          indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
+          setUsers(prev => {
+            const map = new Map(prev.map(user => [user.userId, user]));
+            indexedPage.collected.forEach(user => map.set(user.userId, user));
+            const result = Array.from(map.values());
+            setIdsForQuery(defaultListKey, result.map(user => user.userId));
+            return result;
+          });
+          void loadCommentsFor(indexedPage.collected);
+          setLastKey(indexedPage.finalOffset);
+          setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
+          return indexedPage.collected.length;
         }
 
-        const visibleAfterAppend = Number(usersRef.current?.length || 0) + indexedPage.collected.length;
-        console.log('[Matching][indexedProvider] loadMore diagnostics', {
-          indexedIdsCount: indexedPage.indexedIdsCount,
-          paginationInputIdsCount: indexedPage.paginationInputIdsCount,
-          pageIdsCount: indexedPage.pageIdsCount,
-          fetchedCardsCount: indexedPage.fetchedCardsCount,
-          safetyFilteredOutCount: indexedPage.safetyFilteredOutCount,
-          appendedCardsCount: indexedPage.collected.length,
-          visibleCardsAfterAppend: visibleAfterAppend,
-          hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
-          refillBlockedReason: '',
+        console.info('[Matching][indexedProvider] index plan unavailable; falling back to source pagination', {
+          reason: indexedPage.deferReason || 'index-plan-unavailable',
+          activeIndexFilterGroups: activeIndexFilterGroups.map(group => group.indexName),
         });
-        indexedPage.collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
-        if (!canApplyLoadMoreResultWithFilters()) {
-          logStaleLoadMoreResultIgnored('indexed-page-apply', {
-            fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
-          });
-          return;
-        }
-        indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
-        setUsers(prev => {
-          const map = new Map(prev.map(user => [user.userId, user]));
-          indexedPage.collected.forEach(user => map.set(user.userId, user));
-          const result = Array.from(map.values());
-          setIdsForQuery(defaultListKey, result.map(user => user.userId));
-          return result;
-        });
-        void loadCommentsFor(indexedPage.collected);
-        setLastKey(indexedPage.finalOffset);
-        setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
-        return indexedPage.collected.length;
       }
 
       const collected = [];
@@ -4464,8 +4625,11 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
 
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
-    // погодження адміном, щоб зʼявитись у власника в стрічці.
-    users: [...users, ...personalCreateProfiles],
+    // погодження адміном, щоб зʼявитись у власника в стрічці. Але стрічка — це
+    // не результати пошуку: доливати їх до відповіді на запит означає показати
+    // читачеві його ж чернетки замість того, кого він шукав, і ще й порахувати
+    // їх у «Знайдено N».
+    users: viewMode === 'search' ? users : [...users, ...personalCreateProfiles],
     additionalAccessUsers,
     sharedReactionCandidateUsers,
     isAdmin,
@@ -5253,6 +5417,9 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
   }, [filteredUsers, filters, ownerId, parsedAdditionalAccessRules.length, visibleUsers]);
 
   const runAutoLoadMore = React.useCallback((signature, payload) => {
+    const canPageDeck = hasMoreRef.current || (
+      viewModeRef.current === 'default' && additionalHasMoreRef.current
+    );
     const commonDebug = {
       matchingDebugVersion: MATCHING_DEBUG_VERSION,
       signature,
@@ -5267,7 +5434,9 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
       console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-max-empty-attempts' });
       return;
     }
-    const forceRefillBecauseVisibleBufferLow = Boolean(payload?.targetVisibleCount > payload?.currentVisibleCount && hasMoreRef.current);
+    const forceRefillBecauseVisibleBufferLow = Boolean(
+      payload?.targetVisibleCount > payload?.currentVisibleCount && canPageDeck
+    );
     if (autoLoadMoreSignatureRef.current === signature && !forceRefillBecauseVisibleBufferLow) {
       console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-duplicate-signature' });
       return;
@@ -5283,7 +5452,7 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         retryAfterMs,
         stopReason: 'blocked-cooldown',
       });
-      if (!autoLoadMoreCooldownRetryTimerRef.current && hasMoreRef.current) {
+      if (!autoLoadMoreCooldownRetryTimerRef.current && canPageDeck) {
         autoLoadMoreCooldownRetryTimerRef.current = setTimeout(() => {
           autoLoadMoreCooldownRetryTimerRef.current = null;
           runAutoLoadMore(signature, payload);
@@ -5322,7 +5491,6 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
 
   const triggerEndOfDeckLoad = React.useCallback((reason = 'navigate-forward', { limit = MATCHING_REFILL_LIMIT } = {}) => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
-    if (renderedCardsLength < 1) return;
 
     const sourceNextOffset = viewMode === 'favorites' || viewMode === 'dislikes'
       ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()).nextOffset
@@ -6023,7 +6191,7 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
   const [feedEndVisible, setFeedEndVisible] = useState(false);
   useEffect(() => {
     const node = feedSentinelRef.current;
-    if (!node || detailIndex !== null || !hasMore) {
+    if (!node || detailIndex !== null || !deckHasMore) {
       setFeedEndVisible(false);
       return undefined;
     }
@@ -6039,7 +6207,7 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
     }, { rootMargin: '400px' });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [detailIndex, filteredUsers.length, hasMore, isThrottledFeedPaging, loading]);
+  }, [deckHasMore, detailIndex, filteredUsers.length, isThrottledFeedPaging, loading]);
 
   // Прокрутка донизу — це ще й повторна спроба для адміна.
   //
@@ -6051,11 +6219,11 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
   // Жест витрачається: одна прокрутка донизу — одна спроба.
   useEffect(() => {
     if (isThrottledFeedPaging || !scrolledDownSinceLoad) return;
-    if (!feedEndVisible || !hasMore || loading || detailIndex !== null) return;
+    if (!feedEndVisible || !deckHasMore || loading || detailIndex !== null) return;
     scrolledDownSinceLoadRef.current = false;
     setScrolledDownSinceLoad(false);
     endOfDeckLoadRef.current('feed-scroll');
-  }, [detailIndex, feedEndVisible, hasMore, isThrottledFeedPaging, loading, scrolledDownSinceLoad]);
+  }, [deckHasMore, detailIndex, feedEndVisible, isThrottledFeedPaging, loading, scrolledDownSinceLoad]);
 
   // Кінець стрічки видно — але цього замало. Порція карток коштує один жест:
   // поки читач не прокрутив донизу, відлік не заводиться, і кінець списку показує
@@ -6068,11 +6236,10 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
     isThrottledFeedPaging &&
     !throttledCycle &&
     feedEndVisible &&
-    hasMore &&
+    deckHasMore &&
     !loading &&
     !loadError &&
-    detailIndex === null &&
-    renderedCardsLength > 0
+    detailIndex === null
   );
   const showFeedLoadCountdown = canOfferMoreFeedCards && scrolledDownSinceLoad;
   const showFeedLoadPrompt = canOfferMoreFeedCards && !scrolledDownSinceLoad;
@@ -6168,6 +6335,16 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         : current.filter(comment => comment.id !== commentId);
       return { ...previous, [profileId]: next };
     });
+  }, []);
+
+  // Публічний запис про третю особу мусить мати кому зняти: автор прибирає
+  // власний, адмін — будь-який.
+  const handleDeletePublicComment = React.useCallback(async (profileId, commentId) => {
+    await deletePublicProfileComment({ profileId, commentId });
+    setPublicComments(previous => ({
+      ...previous,
+      [profileId]: (previous[profileId] || []).filter(comment => comment.id !== commentId),
+    }));
   }, []);
 
   useEffect(() => {
@@ -6355,6 +6532,7 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
                 storageKey={SEARCH_KEY}
                 onSearchKey={handleMatchingSearchKey}
                 onSearchExecuted={handleMatchingSearchExecuted}
+                onSearchCommitted={handleMatchingSearchCommitted}
                 onSearchError={handleMatchingSearchError}
                 onClear={handleSearchCleared}
                 enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
@@ -6562,8 +6740,10 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
                           profileId={user.userId}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           viewerId={auth.currentUser?.uid || ''}
+                          canModerate={isAdmin}
                           onCreate={handleCreatePublicComment}
                           onUpdate={handleUpdatePublicComment}
+                          onDelete={handleDeletePublicComment}
                         />
                       )}
                       primaryAction={{
@@ -6708,8 +6888,10 @@ const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
                           profileId={user.userId}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           viewerId={auth.currentUser?.uid || ''}
+                          canModerate={isAdmin}
                           onCreate={handleCreatePublicComment}
                           onUpdate={handleUpdatePublicComment}
+                          onDelete={handleDeletePublicComment}
                         />
                       )}
                       onCommentBlur={async () => {

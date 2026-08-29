@@ -1476,9 +1476,9 @@ export const fetchFilteredMatchingSourceChunk = ({
       } catch (error) {
         console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
         reportFeedSource('profiles', 'index-read-failed', error);
+        if (!allowProfileFallback) throw error;
       }
 
-      if (!allowProfileFallback) return { users: [], lastKey: null, hasMore: false };
       return readProfilePage();
     },
     filterSourceUsers: sourceUsers => {
