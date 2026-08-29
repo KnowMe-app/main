@@ -12,8 +12,7 @@ describe('доступ до вузла matchingCards', () => {
   it('існує і сортується за ключем стрічки', () => {
     expect(node).toBeTruthy();
     // Без `.indexOn` пагінація стрічки сортувала б на клієнті, тобто качала б усе.
-    // Ключ один: у стрічці лише показані анкети `users`.
-    expect(node['.indexOn']).toEqual(['feedDate']);
+    expect(node['.indexOn']).toEqual(['feedDate', 'name', 'surnameShort']);
   });
 
   it('дозволяє власнику писати свою картку, а адміну — будь-яку', () => {
@@ -40,10 +39,13 @@ describe('доступ до вузла matchingCards', () => {
     expect(rules.matchingCardsMeta).toBeUndefined();
   });
 
-  it('відкриває читання рівно тим, хто читає users', () => {
-    // Стрічка читає проєкцію замість анкет — коло читачів має збігатись,
-    // інакше частина людей побачила б порожню стрічку замість карток.
-    expect(node['.read']).toBe(rules.users['.read']);
+  it('відкриває сканування тим, хто читає users, і стрічку — всім авторизованим', () => {
+    // Пошук ходить по `matchingCards`, тож сканувати вузол має право те саме
+    // коло, що сканує `users`, — інакше пошук мовчки повертав би порожньо.
+    const usersReaders = rules.users['.read'].replace('auth != null && (', '').replace(/\)$/, '');
+    expect(node['.read']).toContain(usersReaders);
+    // А запит самої стрічки лишається відкритим кожному авторизованому.
+    expect(node['.read']).toContain("query.orderByChild == 'feedDate' && query.startAt == ''");
   });
 
   it('індексує поле правил доступу, за яким шукають власників наборів', () => {

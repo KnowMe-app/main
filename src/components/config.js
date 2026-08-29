@@ -2413,21 +2413,39 @@ const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
   }
 };
 
+/**
+ * Пошук за частиною id ходить по `matchingCards`.
+ *
+ * Ключ картки — це userId, і картка є в кожної анкети, хай де лежить її тіло.
+ * Legacy-колекція таким каталогом більше не є: анкета, заведена у вебі, тіла в
+ * ній не має взагалі, і скан по `users` знаходив би лише акаунти.
+ */
+const collectIdsByPartialUserId = async userId => {
+  const cardsQuery = query(
+    ref2(database, MATCHING_CARDS_ROOT),
+    orderByKey(),
+    startAt(userId),
+    endAt(`${userId}\uf8ff`),
+  );
+  const snapshot = await get(cardsQuery);
+  if (!snapshot.exists()) return [];
+
+  const ids = [];
+  snapshot.forEach(cardSnapshot => {
+    const currentUserId = cardSnapshot.key;
+    if (currentUserId.includes(userId)) ids.push(currentUserId);
+  });
+  return ids;
+};
+
 export const searchUserByPartialUserIdUsers = async (userId, users) => {
   try {
-    const refToCollection = ref2(database, 'users');
-    const partialQuery = query(refToCollection, orderByKey(), startAt(userId), endAt(userId + '\uf8ff'));
-    const snapshot = await get(partialQuery);
-    if (snapshot.exists()) {
-      snapshot.forEach(userSnapshot => {
-        const currentUserId = userSnapshot.key;
-        if (currentUserId.includes(userId)) {
-          users[currentUserId] = { userId: currentUserId, ...userSnapshot.val() };
-        }
-      });
-      if (Object.keys(users).length > 0) return users;
-    }
-    return null;
+    const ids = await collectIdsByPartialUserId(userId);
+    await Promise.all(ids.map(async currentUserId => {
+      const profile = await readProfileForSearchHit(currentUserId);
+      if (profile) users[currentUserId] = profile;
+    }));
+    return Object.keys(users).length > 0 ? users : null;
   } catch (error) {
     console.error('Error fetching data by partial userId:', error);
     return null;
@@ -2604,32 +2622,11 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
 
 export const searchUserByPartialUserId = async (userId, users) => {
   try {
-    const refToCollection = ref2(database, 'users');
-    const partialUserIdQuery = query(refToCollection, orderByKey(), startAt(userId), endAt(userId + '\uf8ff'));
-
-    const snapshot = await get(partialUserIdQuery);
-
-    if (snapshot.exists()) {
-      const userPromises = []; // Масив для збереження обіцянок `addUserToResults`
-
-      snapshot.forEach(userSnapshot => {
-        const currentUserId = userSnapshot.key;
-
-        if (currentUserId.includes(userId)) {
-          // Додаємо обіцянку в масив
-          userPromises.push(addUserToResults(currentUserId, users));
-        }
-      });
-
-      await Promise.all(userPromises);
-
-      if (Object.keys(users).length > 0) {
-        return users;
-      }
-    }
+    const ids = await collectIdsByPartialUserId(userId);
+    await Promise.all(ids.map(currentUserId => addUserToResults(currentUserId, users)));
 
     // Користувача не знайдено
-    return null;
+    return Object.keys(users).length > 0 ? users : null;
   } catch (error) {
     console.error('Error fetching data by partial userId:', error);
     return null;
@@ -2743,7 +2740,72 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
     }
   }
 
+  // Дати анкети лежать у legacy, а `matchingCards` тримає рівно одну — ключ
+  // стрічки. Але тримає її для кожної показаної картки, зокрема заведеної у
+  // вебі, тіла в legacy якої немає взагалі.
+  for (const isoDate of isoDateVariants) {
+    try {
+      const snapshot = await get(query(
+        ref2(database, MATCHING_CARDS_ROOT),
+        orderByChild(MATCHING_CARD_ORDER_FIELD),
+        equalTo(isoDate),
+      ));
+      if (!snapshot.exists()) continue;
+      const promises = [];
+      snapshot.forEach(cardSnapshot => {
+        const userId = cardSnapshot.key;
+        if (uniqueUserIds.has(userId)) return;
+        uniqueUserIds.add(userId);
+        promises.push(addUserToResults(userId, users));
+      });
+      await Promise.all(promises);
+    } catch (error) {
+      if (isDev) console.error('Error searching matchingCards by feedDate:', error);
+    }
+  }
+
   return true;
+};
+
+/**
+ * Імʼя і початок прізвища — те, що з анкети лежить у самій картці стрічки.
+ *
+ * Решту широкий пошук бере з legacy, а `matchingCards` дає ту частину, яку
+ * legacy вже не має: анкету, заведену у вебі, знайти інакше нема де.
+ */
+const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name', 'surnameShort'];
+
+const searchMatchingCardsByText = async (searchValue, uniqueUserIds, users) => {
+  const trimmed = String(searchValue || '').trim();
+  if (!trimmed) return;
+
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+  const prefixes = [...new Set([capitalized, trimmed, trimmed.toLowerCase()])];
+
+  for (const field of MATCHING_CARD_TEXT_SEARCH_FIELDS) {
+    for (const prefix of prefixes) {
+      try {
+        const snapshot = await get(query(
+          ref2(database, MATCHING_CARDS_ROOT),
+          orderByChild(field),
+          startAt(prefix),
+          endAt(`${prefix}\uf8ff`),
+        ));
+        if (!snapshot.exists()) continue;
+        const promises = [];
+        snapshot.forEach(cardSnapshot => {
+          const userId = cardSnapshot.key;
+          if (uniqueUserIds.has(userId)) return;
+          uniqueUserIds.add(userId);
+          promises.push(addUserToResults(userId, users));
+        });
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.all(promises);
+      } catch (error) {
+        if (isDev) console.error(`Error searching matchingCards by ${field}:`, error);
+      }
+    }
+  }
 };
 
 const executeSearchBySearchIdIndex = async (
@@ -3092,6 +3154,7 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
         // явно увімкнув чекбокс "широкий пошук" (enabledSearchKeys.broadTextSearch),
         // а не автоматично для кожного пошуку картки.
         if (!shouldSkipBroadFallback && isBroadTextSearchEnabled) {
+          await searchMatchingCardsByText(searchValue, uniqueUserIds, users);
           await searchByPrefixes(searchValue, uniqueUserIds, users);
           await searchByIndexOn({
             searchValue,

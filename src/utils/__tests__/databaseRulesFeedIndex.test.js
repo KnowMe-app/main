@@ -11,7 +11,12 @@ describe('правила, без яких стрічка не може чита�
     // ключем — Firebase відповідав «Index not defined», і стрічка мовчки
     // сповзала на повні анкети. Тепер ключ один — `feedDate`, — і індекс мусить
     // виїхати в базу РАНІШЕ за код, інакше повториться те саме.
-    expect(rules.matchingCards['.indexOn']).toEqual(['feedDate']);
+    expect(rules.matchingCards['.indexOn'][0]).toBe('feedDate');
+    // Поруч — поля, за якими картку шукають: `matchingCards` тепер каталог
+    // усіх анкет, і пошук ходить по ньому, а не по legacy-колекції.
+    expect(rules.matchingCards['.indexOn']).toEqual(
+      expect.arrayContaining(['feedDate', 'name', 'surnameShort']),
+    );
   });
 
   it('дає кожному авторизованому користувачеві читати опубліковані картки', () => {
