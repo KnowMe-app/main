@@ -1,6 +1,8 @@
 import { get as firebaseGet, push, ref as ref2, remove, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import { isLongFormatUserId } from 'utils/userIdFormat';
+import { mergeProfileNodes } from 'utils/profileNodeMerge';
+import { PROFILE_NODES } from 'utils/profileNodeSchema';
 
 import { database } from 'components/config';
 
@@ -100,12 +102,34 @@ export const getCardLegacyCollection = async cardUserId => {
 };
 
 export const getCanonicalCard = async cardUserId => {
-  const usersSnapshot = await get(ref2(database, `users/${cardUserId}`));
+  // Анкета живе у вузлах; legacy-колекція `users` лишається для акаунтних
+  // профілів. Читаємо обидва джерела й зводимо в один канонічний запис.
+  const paths = [
+    'users',
+    PROFILE_NODES.matchingCards,
+    PROFILE_NODES.profileDetails,
+    PROFILE_NODES.profileContacts,
+    PROFILE_NODES.profileWorkflow,
+    PROFILE_NODES.profileTechnical,
+  ];
+  const snapshots = await Promise.all(paths.map(path => get(ref2(database, `${path}/${cardUserId}`))));
+  const values = snapshots.map(snapshot => (snapshot.exists() ? snapshot.val() : null));
+  const [legacy, card, details, contacts, workflow, technical] = values;
 
-  return {
+  const merged = mergeProfileNodes({
     userId: cardUserId,
-    ...(usersSnapshot.exists() ? usersSnapshot.val() : {}),
-  };
+    card,
+    details,
+    contacts,
+    workflow,
+    technical,
+    legacy,
+  }) || { userId: cardUserId };
+  // Кеш-мітки не мають права дожити до чернетки: у legacy-рядках вони лежать
+  // записаними, а `mergeProfileNodes` ставить `__photosHydrated` сам.
+  delete merged.__sourceCollection;
+  delete merged.__photosHydrated;
+  return merged;
 };
 
 export const buildOverlayFromDraft = (canonical, draft) => {

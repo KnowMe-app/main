@@ -24,17 +24,19 @@ describe('створення анкети розкладається так са
     configSource.indexOf('export const', configSource.indexOf('export const makeNewUser =') + 10),
   );
 
-  it('розкладає анкету по вузлах і одразу будує картку', () => {
+  it('пише анкету, розкладає її по вузлах і одразу будує картку', () => {
     expect(creation).toContain('await fanOutProfileNodes(newUserId, newUser)');
+    expect(creation).toContain('await set(newUserRef, newUser)');
     expect(creation).toContain('await syncMatchingCardIndex(newUserId, newUser');
   });
 
-  it('не заводить тіла в legacy-колекції — `push` лише генерує ключ', () => {
+  it('створює канонічні вузли ПЕРЕД необовʼязковим legacy-дзеркалом', () => {
     // `users` — вузол акаунтів: право писати в чужий `users/$uid` має тільки
-    // власник і адмін. Редактор, що заводить анкету, його не має і мати не
-    // повинен, інакше він міг би переписати чужий `accessLevel`.
-    expect(creation).toContain('const newUserId = push(usersRef).key;');
-    expect(creation).not.toContain('set(newUserRef');
+    // власник і адмін. Редактор, що заводить анкету, його не має, тому запис
+    // туди йде останнім і його відмова не скасовує вже створену анкету.
+    expect(creation.indexOf('await fanOutProfileNodes'))
+      .toBeLessThan(creation.indexOf('await set(newUserRef, newUser)'));
+    expect(creation).toContain("console.warn('[profileNodes] legacy-дзеркало нової анкети не створено'");
   });
 
   it('падає, коли вузли не прийняли анкету — тихого «створив у нікуди» немає', () => {

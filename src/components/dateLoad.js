@@ -2,13 +2,14 @@ import {
   getDatabase,
   ref as ref2,
   query,
-  orderByChild,
+  orderByValue,
   equalTo,
   limitToFirst,
   startAfter,
   endAt,
   get as firebaseGet,
 } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
 import { PAGE_SIZE } from './constants';
@@ -29,9 +30,8 @@ const isCurrentPastOrNonDateGetInTouch = (value, todayIso) => {
 
 async function defaultFetchGetInTouchOrdered(limit, options = {}) {
   const db = getDatabase();
-  // Legacy-колекція одна; курсори лишаються по колекціях, бо їх зберігає викликач.
-  const collections = ['users'];
-  const combined = {};
+  const ownerId = getAuth(db.app).currentUser?.uid;
+  if (!ownerId) return { entries: [], hasMore: false, afterKeys: {} };
   const orderedEntries = [];
   const { afterKeys = null, cursorLimit = null } = options || {};
   const nextCursors = { ...(afterKeys || {}) };
@@ -40,56 +40,38 @@ async function defaultFetchGetInTouchOrdered(limit, options = {}) {
   const cursorEntryLimit = Math.max(1, Number(cursorLimit) || requestedLimit);
   const fetchLimit = requestedLimit + 1;
 
-  for (const col of collections) {
-    const collectionRef = ref2(db, col);
-    const collectionCursor = afterKeys?.[col];
-    const q = collectionCursor?.value !== undefined
+  const cursor = afterKeys?.getInTouch;
+  const ownerRef = ref2(db, `multiData/getInTouch/${ownerId}`);
+  const q = cursor?.value !== undefined
       ? query(
-          collectionRef,
-          orderByChild('getInTouch'),
-          startAfter(collectionCursor.value, collectionCursor.key || ''),
+          ownerRef,
+          orderByValue(),
+          startAfter(cursor.value, cursor.key || ''),
           limitToFirst(fetchLimit),
         )
       : query(
-          collectionRef,
-          orderByChild('getInTouch'),
+          ownerRef,
+          orderByValue(),
           limitToFirst(fetchLimit),
         );
 
-    // eslint-disable-next-line no-await-in-loop
-    const snap = await get(q);
-    let collectionCount = 0;
-    if (snap.exists()) {
-      if (typeof snap.forEach === 'function') {
-        snap.forEach(childSnap => {
-          const id = childSnap.key;
-          const data = childSnap.val();
-          collectionCount += 1;
-          if (!combined[id]) {
-            combined[id] = data;
-            orderedEntries.push([id, data, col]);
-          }
-        });
-      } else {
-        Object.entries(snap.val()).forEach(([id, data]) => {
-          collectionCount += 1;
-          if (!combined[id]) {
-            combined[id] = data;
-            orderedEntries.push([id, data, col]);
-          }
-        });
-      }
-    }
-    if (collectionCount >= fetchLimit) hasMore = true;
+  const snap = await get(q);
+  if (snap.exists()) {
+    snap.forEach(childSnap => {
+      orderedEntries.push([childSnap.key, {
+        userId: childSnap.key,
+        getInTouch: childSnap.val(),
+      }]);
+    });
   }
 
-  orderedEntries.sort(([, a], [, b]) => String(a?.getInTouch || '').localeCompare(String(b?.getInTouch || '')));
   const limitedEntries = orderedEntries.slice(0, cursorEntryLimit);
-  limitedEntries.forEach(([id, data, col]) => {
-    nextCursors[col] = { value: data?.getInTouch ?? '', key: id };
-  });
-  hasMore = hasMore || orderedEntries.length > limitedEntries.length;
-  return { entries: orderedEntries.map(([id, data]) => [id, data]), hasMore, afterKeys: nextCursors };
+  const lastEntry = limitedEntries[limitedEntries.length - 1];
+  if (lastEntry) {
+    nextCursors.getInTouch = { value: lastEntry[1].getInTouch, key: lastEntry[0] };
+  }
+  hasMore = orderedEntries.length >= fetchLimit || orderedEntries.length > limitedEntries.length;
+  return { entries: orderedEntries, hasMore, afterKeys: nextCursors };
 }
 
 const normalizeDateFetchResult = result => {
@@ -112,10 +94,8 @@ const normalizeDateFetchResult = result => {
 
 export async function defaultFetchByDate(dateStr, limit, options = {}) {
   const db = getDatabase();
-
-  // Legacy-колекція одна; курсори лишаються по колекціях, бо їх зберігає викликач.
-  const collections = ['users'];
-  const combined = {};
+  const ownerId = getAuth(db.app).currentUser?.uid;
+  if (!ownerId) return { entries: [], hasMore: false, lastKey: null, afterKeys: {} };
   const orderedEntries = [];
   let hasMore = false;
   let lastKey = null;
@@ -126,23 +106,23 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
   const cursorEntryLimit = Math.max(1, Number(cursorLimit) || requestedLimit);
   const fetchLimit = requestedLimit + 1;
 
-  // Iterate through the collections and gather matching records.
-  // Keep reading one extra row so DATE2 can know whether the same date still
-  // has candidates after filters remove the first batch.
-  for (const col of collections) {
-    const collectionRef = ref2(db, col);
+  // Позначки належать поточному редактору. Читаємо їхній індекс, а повні
+  // анкети нижче гідратуються звичайним `fetchUserByIdFn`.
+  const col = 'getInTouch';
+  {
+    const collectionRef = ref2(db, `multiData/getInTouch/${ownerId}`);
     const collectionAfterKey = hasCollectionCursors ? afterKeys[col] : afterKey;
     const q = collectionAfterKey
       ? query(
           collectionRef,
-          orderByChild('getInTouch'),
+          orderByValue(),
           startAfter(dateStr, collectionAfterKey),
           endAt(dateStr),
           limitToFirst(fetchLimit),
         )
       : query(
           collectionRef,
-          orderByChild('getInTouch'),
+          orderByValue(),
           equalTo(dateStr),
           limitToFirst(fetchLimit),
         );
@@ -152,25 +132,17 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
       if (typeof snap.forEach === 'function') {
         snap.forEach(childSnap => {
           const id = childSnap.key;
-          const data = childSnap.val();
-          if (!combined[id]) {
-            combined[id] = data;
-            orderedEntries.push([id, data, col]);
-          }
+          orderedEntries.push([id, { userId: id, getInTouch: childSnap.val() }, col]);
         });
       } else {
-        Object.entries(snap.val()).forEach(([id, data]) => {
-          if (!combined[id]) {
-            combined[id] = data;
-            orderedEntries.push([id, data, col]);
-          }
+        Object.entries(snap.val()).forEach(([id, value]) => {
+          orderedEntries.push([id, { userId: id, getInTouch: value }, col]);
         });
       }
     }
 
     if (orderedEntries.length >= fetchLimit) {
       hasMore = true;
-      break;
     }
   }
 

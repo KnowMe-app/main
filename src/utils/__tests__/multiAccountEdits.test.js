@@ -241,44 +241,54 @@ describe('getCanonicalCard', () => {
     ref.mockImplementation((db, path) => ({ db, path }));
   });
 
-  it('reads only the single legacy collection for a long-format userId', async () => {
-    get.mockImplementation(async ({ path }) => {
-      if (path === `users/${LONG_USER_ID}`) {
-        return { exists: () => true, val: () => ({ name: 'Canonical' }) };
-      }
-      throw new Error(`unexpected read: ${path}`);
-    });
+  const snapshotFor = data => ({ exists: () => data !== null, val: () => data });
+
+  it('merges canonical profile nodes over the legacy baseline', async () => {
+    get.mockImplementation(async ({ path }) => snapshotFor({
+      [`users/${LONG_USER_ID}`]: { name: 'Legacy', phone: ['old'] },
+      [`matchingCards/${LONG_USER_ID}`]: { name: 'Canonical' },
+      [`profileContacts/${LONG_USER_ID}`]: { phone: ['new', 'kept'] },
+    }[path] || null));
 
     const card = await getCanonicalCard(LONG_USER_ID);
 
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: `users/${LONG_USER_ID}` }));
-    expect(card).toEqual({ userId: LONG_USER_ID, name: 'Canonical' });
+    expect(get).toHaveBeenCalledTimes(6);
+    expect(card).toEqual(expect.objectContaining({
+      userId: LONG_USER_ID,
+      name: 'Canonical',
+      phone: ['new', 'kept'],
+    }));
   });
 
-  it('returns just the id when the legacy record is missing', async () => {
-    get.mockImplementation(async ({ path }) => {
-      if (path === `users/${LONG_USER_ID}`) return { exists: () => false, val: () => null };
-      throw new Error(`unexpected read: ${path}`);
-    });
+  it('hydrates a node-only profile without a users record', async () => {
+    get.mockImplementation(async ({ path }) => snapshotFor(
+      path === `profileDetails/${LONG_USER_ID}` ? { languages: ['uk', 'en'] } : null,
+    ));
 
     const card = await getCanonicalCard(LONG_USER_ID);
 
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(card).toEqual({ userId: LONG_USER_ID });
+    expect(card).toEqual(expect.objectContaining({
+      userId: LONG_USER_ID,
+      languages: ['uk', 'en'],
+    }));
   });
 
-  it('reads the same single collection for a short-format userId', async () => {
-    get.mockImplementation(async ({ path }) => {
-      if (path === 'users/TG0016') return { exists: () => true, val: () => ({ name: 'Users' }) };
-      throw new Error(`unexpected read: ${path}`);
-    });
+  it('merges the single legacy collection with the nodes for a short-format userId', async () => {
+    // Legacy-колекція одна — `users`; усе інше приходить із вузлів анкети.
+    get.mockImplementation(async ({ path }) => snapshotFor({
+      'users/TG0016': { name: 'Users' },
+      'profileWorkflow/TG0016': { getInTouch: '2026-06-19' },
+    }[path] || null));
 
     const card = await getCanonicalCard('TG0016');
 
-    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(6);
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/TG0016' }));
-    expect(card).toEqual({ userId: 'TG0016', name: 'Users' });
+    expect(card).toEqual(expect.objectContaining({
+      userId: 'TG0016',
+      name: 'Users',
+      getInTouch: '2026-06-19',
+    }));
   });
 });
 
