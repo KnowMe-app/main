@@ -1870,6 +1870,19 @@ const Matching = () => {
       id: INITIAL_LOAD_ERROR_TOAST_ID,
     });
   }, []);
+  // Коли загальну стрічку прочитати не вдалось, а картки додаткового доступу
+  // вже є, деку показувати можна — екран помилки забрав би в глядача й те, що
+  // йому таки надали. Але мовчати теж не можна: коротка дека без пояснення
+  // читається як «більше нікого немає», а не як «половина не прочиталась».
+  // Один рядок з кодом помилки називає цю різницю там, де консолі немає.
+  const announcePublicFeedUnavailable = React.useCallback(error => {
+    if (!error) return;
+    const detail = String(error?.code || error?.message || error || '').trim();
+    toast(`Загальна стрічка недоступна${detail ? `: ${detail}` : ''}. Показані лише картки з додаткового доступу.`, {
+      id: 'matching-public-feed-unavailable',
+      icon: '⚠️',
+    });
+  }, []);
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
     if (reactionType === 'favorites' || reactionType === 'dislikes') {
       reactionLoadedIdsRef.current[reactionType] = new Set();
@@ -2788,9 +2801,13 @@ const Matching = () => {
         setAdditionalHasMore(Boolean(loaded.hasMore));
         setAdditionalNextOffset(Number(loaded.nextOffset) || 0);
         if (scopedUsers.length) {
+          // Помилка загальної стрічки прийшла раніше за ці картки: екран
+          // помилки знімаємо, але сам факт збою лишаємо сказаним.
+          const droppedError = deferredInitialLoadErrorRef.current;
           deferredInitialLoadErrorRef.current = null;
           setLoadError(null);
           toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
+          announcePublicFeedUnavailable(droppedError);
         }
         void loadCommentsFor(scopedUsers);
       } catch (error) {
@@ -2810,6 +2827,7 @@ const Matching = () => {
     loadAccessScopedCards();
     return () => { cancelled = true; };
   }, [
+    announcePublicFeedUnavailable,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     loadCommentsFor,
@@ -3115,6 +3133,10 @@ const Matching = () => {
         recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
         if (additionalNewUsersRef.current.length > 0) {
           deferredInitialLoadErrorRef.current = null;
+          // Дека лишається на екрані — але коротка, і без пояснення це читається
+          // як «більше нікого немає». Один рядок з кодом помилки називає різницю
+          // між «нікого» і «не прочиталось»: на телефоні консолі немає.
+          announcePublicFeedUnavailable(error);
         } else if (additionalAccessLoadInFlightRef.current) {
           deferredInitialLoadErrorRef.current = error;
         } else {
@@ -3123,14 +3145,19 @@ const Matching = () => {
       }
       console.error('Failed to load initial matching profiles', error);
     } finally {
+      // Захист від накладання звільняється завжди, а не лише коли запит
+      // лишився актуальним: інакше перший же застарілий запит замикав його
+      // назавжди, і кожне наступне перезавантаження стрічки мовчки вибувало —
+      // зміна фільтрів не давала б нічого. Стан гонки тут не виникає: чи можна
+      // застосувати відповідь, вирішує `canApplyInitialLoad`.
+      initialLoadInFlightRef.current = false;
       if (loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current) {
-        initialLoadInFlightRef.current = false;
         loadingRef.current = false;
         loadingStateRef.current = false;
         setLoading(false);
       }
     }
-  }, [beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
