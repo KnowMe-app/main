@@ -2285,11 +2285,11 @@ export const fetchUsersByIds = async ids => {
 
 export const lazyLoadProfilePhotos = async (userId, options = {}) => getAllUserPhotos(userId, options);
 
-// The projection a viewer without full matching access gets from a search hit
-// (surname, name, age, region, city - and the public comment, which lives in its
-// own tree and is readable by anyone signed in). The security rules grant read on
-// exactly these child paths of users/$uid, so this list and the rules have to
-// stay in step: asking for anything else is denied, not filtered.
+// Проєкція, яку отримує читач без повного доступу до матчингу: прізвище, імʼя,
+// вік, регіон, місто — і публічний коментар, що живе у власному дереві й
+// читається кожним авторизованим. Правила відкривають рівно ці дочірні шляхи
+// `users/$uid`, тож перелік і правила мусять іти в ногу: запит на щось інше
+// буде відхилено, а не відфільтровано.
 export const LIMITED_PROFILE_FIELDS = ['name', 'surname', 'birth', 'region', 'city'];
 
 const readLimitedProfileFields = async (collection, userId) => {
@@ -2306,16 +2306,54 @@ const readLimitedProfileFields = async (collection, userId) => {
   return Object.keys(projection).length ? projection : null;
 };
 
+/**
+ * Та сама проєкція, але з опублікованої картки стрічки.
+ *
+ * Анкета, заведена у вебі, тіла в legacy-колекції не має взагалі — і пошук за
+ * `searchId` знаходив її id, а показати за ним було нічого. Картка ж
+ * `matchingCards/{id}` відкрита кожному авторизованому, щойно вона має
+ * `feedDate`: це і є та «загальнодоступна картка», на яку можна подивитись і
+ * під якою можна лишити публічний відгук.
+ *
+ * Повне прізвище в картці не зберігається — тільки `surnameShort`. Для урізаної
+ * проєкції це не втрата, а рівно та форма, яку вона й має показувати.
+ */
+const readLimitedProfileFromMatchingCard = async userId => {
+  let card = null;
+  try {
+    const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`));
+    card = snapshot.exists() ? snapshot.val() : null;
+  } catch {
+    // Непублічну картку читати не дають — це не помилка, а відсутність проєкції.
+    return null;
+  }
+  if (!card || typeof card !== 'object') return null;
+
+  const projection = {};
+  LIMITED_PROFILE_FIELDS.forEach(field => {
+    if (field === 'surname') return;
+    if (card[field] !== undefined && card[field] !== null) projection[field] = card[field];
+  });
+  if (card.surnameShort) projection.surname = card.surnameShort;
+  if (card.country) projection.country = card.country;
+  if (card.avatar) projection.avatar = card.avatar;
+
+  return Object.keys(projection).length ? projection : null;
+};
+
 // Reads a search hit through the limited projection. Unlike the full read this
-// never touches the record's node, only the five child paths the rules open, so
-// there is nothing for the caller to strip afterwards.
+// never touches the record's node, only the paths the rules open, so there is
+// nothing for the caller to strip afterwards.
 export const fetchLimitedProfileById = async userId => {
   if (!userId) return null;
-  const fromUsers = await readLimitedProfileFields('users', userId);
-  if (!fromUsers) return null;
+  // Картка йде першою: один запит замість пʼяти, і вона є в анкети незалежно
+  // від того, чи має та тіло в legacy-колекції.
+  const projection =
+    (await readLimitedProfileFromMatchingCard(userId)) || (await readLimitedProfileFields('users', userId));
+  if (!projection) return null;
   return {
     userId,
-    ...fromUsers,
+    ...projection,
     __limitedProfile: true,
     publish: true,
   };
@@ -2550,7 +2588,6 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
     : null;
 
   const newUserId = push(usersRef).key; // `push` лише генерує ключ, тіла ще не пише
-  const newUserRef = ref2(db, `users/${newUserId}`);
 
   const now = new Date();
   const createdAt = now.toLocaleDateString('uk-UA');
@@ -2588,16 +2625,13 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   // тож саме вони і є записом анкети.
   const nodesWritten = await fanOutProfileNodes(newUserId, newUser);
   if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');
-  // Legacy-колекція — лише сумісне дзеркало для читачів, які ще ходять у
-  // `users`. Права на чужий `users/$uid` має тільки власник і адмін, тому
-  // відмова тут не має скасовувати вже створену анкету.
-  try {
-    await set(newUserRef, newUser);
-  } catch (error) {
-    console.warn('[profileNodes] legacy-дзеркало нової анкети не створено', {
-      userId: newUserId,
-      error,
-    });
+  // І одразу лягає в legacy-колекцію: з `users` читає мобільний застосунок, і
+  // нова анкета має бути там у його форматі — з крапковими датами і двійниками
+  // `createdAt`/`createdAt2`. Це робить спільне дзеркало, тож формат тут і
+  // формат при кожному наступному збереженні — той самий.
+  const legacyWritten = await mirrorProfileToLegacyUsers(newUserId, newUser, 'set');
+  if (!legacyWritten) {
+    console.warn('[profileNodes] legacy-дзеркало нової анкети не створено', { userId: newUserId });
   }
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
   // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
@@ -2781,12 +2815,17 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
 };
 
 /**
- * Імʼя і початок прізвища — те, що з анкети лежить у самій картці стрічки.
+ * Імʼя — єдине текстове поле анкети, що лежить у самій картці стрічки цілком.
+ *
+ * `surnameShort` тут навмисно немає: це одна літера, і префіксний запит по ній
+ * віддає всіх, у кого прізвище починається з тієї літери, — тобто відсотки
+ * колекції на кожен пошук. Прізвище шукається через `searchId`, де лежить
+ * повне значення.
  *
  * Решту широкий пошук бере з legacy, а `matchingCards` дає ту частину, яку
  * legacy вже не має: анкету, заведену у вебі, знайти інакше нема де.
  */
-const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name', 'surnameShort'];
+const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name'];
 
 const searchMatchingCardsByText = async (searchValue, uniqueUserIds, users) => {
   const trimmed = String(searchValue || '').trim();
@@ -3338,6 +3377,65 @@ const normalizeStoredDates = payload => {
   return next;
 };
 
+/**
+ * Дати для legacy-колекції `users`.
+ *
+ * `users` живе своїм життям: із неї читає мобільний застосунок, і там дата
+ * написана крапками — `ДД.ММ.РРРР`. Нові вузли й картка стрічки лишаються в
+ * `РРРР-ММ-ДД`, бо саме за ними база сортує і бере діапазони. Тому один і той
+ * самий запис лягає у два місця у двох написаннях, і перетворення стоїть на
+ * єдиному вході в legacy — тут.
+ *
+ * Виняток — поля-двійники. У legacy дата лежить двічі: крапкова під коротким
+ * імʼям і ISO-копія під тим самим імʼям із «2» (`lastLogin`/`lastLogin2`,
+ * `createdAt`/`createdAt2`). ISO-копію чіпати не можна: саме за нею ходить
+ * пагінація (`fetchUsersByLastLogin2`), а крапкову читає посторінковий
+ * завантажувач за датою входу (`defaultFetchByLastLogin`, `equalTo` рівно в
+ * `дд.мм.рррр`). Тож двійник дописується поруч, а не замість.
+ */
+const LEGACY_TWIN_DATE_FIELDS = Object.freeze({
+  createdAt: 'createdAt2',
+  lastLogin: 'lastLogin2',
+});
+
+const LEGACY_TWIN_DATE_KEYS = new Set([
+  ...Object.keys(LEGACY_TWIN_DATE_FIELDS),
+  ...Object.values(LEGACY_TWIN_DATE_FIELDS),
+]);
+
+const LEGACY_DOTTED_DATE_FIELDS = STORAGE_DATE_FIELDS.filter(field => !LEGACY_TWIN_DATE_KEYS.has(field));
+
+const formatDatesForLegacyUsers = payload => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+
+  const toDotted = value => {
+    if (Array.isArray(value)) return value.map(toDotted);
+    if (typeof value !== 'string') return value;
+    return formatDateToDisplay(value);
+  };
+
+  const next = { ...payload };
+  LEGACY_DOTTED_DATE_FIELDS.forEach(field => {
+    if (!Object.prototype.hasOwnProperty.call(next, field)) return;
+    if (next[field] === null || next[field] === undefined) return;
+    next[field] = toDotted(next[field]);
+  });
+
+  // Кожна копія двійника лишається своєю: `createdAt` рахується локальним часом,
+  // `createdAt2` — UTC, і після 21:00 за Києвом це різні дати. Тому наявне
+  // значення лише переписується у власне написання, а виводиться з сусіда тільки
+  // те, чого в записі немає.
+  Object.entries(LEGACY_TWIN_DATE_FIELDS).forEach(([dotted, iso]) => {
+    const dottedValue = typeof payload[dotted] === 'string' ? payload[dotted] : '';
+    const isoValue = typeof payload[iso] === 'string' ? payload[iso] : '';
+    if (!dottedValue && !isoValue) return;
+    next[dotted] = formatDateToDisplay(dottedValue || isoValue);
+    next[iso] = formatDateToServer(isoValue || dottedValue);
+  });
+
+  return next;
+};
+
 const stripTransientUserDataFields = (payload, options = {}) => {
   const { markForRealtimeDeletion = false } = options;
   const cleaned = removeUndefined(payload);
@@ -3765,8 +3863,11 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
 const mirrorProfileToLegacyUsers = async (userId, payload, condition) => {
   try {
     const legacyRef = ref2(database, `users/${userId}`);
-    if (condition === 'update') await update(legacyRef, payload);
-    else await set(legacyRef, payload);
+    // Дати переписуються у формат мобільного застосунку рівно тут — на єдиному
+    // вході в legacy. Вузли й картка стрічки лишаються в ISO.
+    const legacyPayload = formatDatesForLegacyUsers(payload);
+    if (condition === 'update') await update(legacyRef, legacyPayload);
+    else await set(legacyRef, legacyPayload);
     return true;
   } catch (error) {
     console.warn('[legacy] анкету не вдалося віддзеркалити в стару колекцію', {

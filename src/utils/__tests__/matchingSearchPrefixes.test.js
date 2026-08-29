@@ -43,4 +43,16 @@ describe('префікси пошуку matching', () => {
   it('лишає телефон робочим', () => {
     expect(candidateKeysFor('+380671234567')).toContain('phone_380671234567');
   });
+
+  it.each([
+    ['пошта', 'olga@example.com', 'email_'],
+    ['інстаграм', 'olga_ua', 'instagram_'],
+    ['телеграм', 'olga_ua', 'telegram_'],
+    ['фейсбук', 'olga_ua', 'facebook_'],
+  ])('будує ключ для контакту: %s', (_label, value, keyPrefix) => {
+    // Пошук на matching має знаходити анкету за будь-яким ключем індексу, а не
+    // лише за телефоном та імʼям: контакт — найчастіше те єдине, що про людину
+    // знають.
+    expect(candidateKeysFor(value).some(key => key.startsWith(keyPrefix))).toBe(true);
+  });
 });

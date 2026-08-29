@@ -45,8 +45,11 @@ describe('пошук ходить по matchingCards', () => {
     expect(body).toContain('ref2(database, MATCHING_CARDS_ROOT)');
   });
 
-  it('імʼя і прізвище шукаються в картці, і саме тими полями, які вона тримає', () => {
-    expect(source).toContain("const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name', 'surnameShort'];");
+  it('у картці шукається імʼя — і тільки воно', () => {
+    // `surnameShort` — одна літера. Префіксний запит по ній повертає всіх, у
+    // кого прізвище з тієї літери, тобто відсотки колекції на кожен пошук.
+    // Прізвище шукається через `searchId`, де лежить повне значення.
+    expect(source).toContain("const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name'];");
     expect(source).toContain('await searchMatchingCardsByText(searchValue, uniqueUserIds, users);');
   });
 
@@ -60,11 +63,50 @@ describe('пошук ходить по matchingCards', () => {
   });
 
   it('правила дозволяють ці запити — інакше пошук мовчки повертав би порожньо', () => {
-    expect(rules.matchingCards['.indexOn']).toEqual(
-      expect.arrayContaining(['name', 'surnameShort']),
-    );
+    expect(rules.matchingCards['.indexOn']).toEqual(expect.arrayContaining(['name']));
+    // І не індексують того, за чим не шукають: зайвий індекс — це зайва копія
+    // колекції, яку база перебудовує на кожен запис картки.
+    expect(rules.matchingCards['.indexOn']).not.toContain('surnameShort');
     const usersReaders = rules.users['.read'].replace('auth != null && (', '').replace(/\)$/, '');
     expect(rules.matchingCards['.read']).toContain(usersReaders);
+  });
+});
+
+/**
+ * Пошук на matching віддає урізану картку — і мусить віддавати її й тоді, коли
+ * тіла в legacy-колекції немає.
+ *
+ * Читач без повного доступу знаходить анкету за `searchId` (телефон, пошта,
+ * інстаграм — будь-який ключ індексу), а показати за знайденим id було нічого:
+ * проєкція читалася лише з `users/{id}`, а в анкети, заведеної у вебі, такого
+ * запису немає. Картка ж `matchingCards/{id}` відкрита кожному авторизованому,
+ * щойно вона опублікована, — це і є та загальнодоступна картка, яку можна
+ * подивитись і під якою можна лишити публічний відгук.
+ */
+describe('урізана проєкція пошукового влучання', () => {
+  const projection = source.slice(
+    source.indexOf('const readLimitedProfileFromMatchingCard'),
+    source.indexOf('const addLimitedUser'),
+  );
+
+  it('читає опубліковану картку стрічки', () => {
+    expect(projection).toContain('`${MATCHING_CARDS_ROOT}/${userId}`');
+  });
+
+  it('лишає legacy-колекцію запасним джерелом, а не єдиним', () => {
+    expect(projection).toContain("readLimitedProfileFields('users', userId)");
+    expect(projection.indexOf('readLimitedProfileFromMatchingCard(userId)'))
+      .toBeLessThan(projection.indexOf("readLimitedProfileFields('users', userId)"));
+  });
+
+  it('повне прізвище з картки не бере — його там і немає', () => {
+    // У картці лежить `surnameShort`, і для урізаної проєкції це не втрата, а
+    // рівно та форма, яку вона й має показувати.
+    expect(projection).toContain('projection.surname = card.surnameShort');
+  });
+
+  it('картка лишається читабельною для кожного авторизованого', () => {
+    expect(rules.matchingCards.$uid['.read']).toContain("data.child('feedDate').isString()");
   });
 });
 
