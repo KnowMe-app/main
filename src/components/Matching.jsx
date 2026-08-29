@@ -4535,45 +4535,59 @@ const Matching = () => {
         });
         if (indexedPage.stale) { logStaleLoadMoreResultIgnored('indexed-collect', { reason: indexedPage.staleReason || 'stale' }); return; }
 
-        if (indexedPage.cursorStuck) {
-          console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
-            finalIndexedOffset: indexedPage.finalOffset,
-            indexedPageCalls: indexedPage.pageCalls,
-            stopReason: indexedPage.stopReason,
+        // Індексного плану могло не скластись: набір фільтрів на кшталт «крім
+        // Агентства» вміє лише відкидати, тож індекс не називає жодного id.
+        // `loadInitial` у цьому місці давно віддає деку послідовній пагінації;
+        // тут же порожня відповідь застосовувалась як справжня — `hasMore`
+        // ставав `false`, і загальна стрічка обривалась на першому ж фільтрі.
+        // На екрані лишались тільки власні картки, які приходять іншими
+        // конвеєрами, — «з фільтрами знову лише свої чернетки».
+        if (!indexedPage.deferToSourcePagination) {
+          if (indexedPage.cursorStuck) {
+            console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
+              finalIndexedOffset: indexedPage.finalOffset,
+              indexedPageCalls: indexedPage.pageCalls,
+              stopReason: indexedPage.stopReason,
+            });
+          }
+
+          const visibleAfterAppend = Number(usersRef.current?.length || 0) + indexedPage.collected.length;
+          console.log('[Matching][indexedProvider] loadMore diagnostics', {
+            indexedIdsCount: indexedPage.indexedIdsCount,
+            paginationInputIdsCount: indexedPage.paginationInputIdsCount,
+            pageIdsCount: indexedPage.pageIdsCount,
+            fetchedCardsCount: indexedPage.fetchedCardsCount,
+            safetyFilteredOutCount: indexedPage.safetyFilteredOutCount,
+            appendedCardsCount: indexedPage.collected.length,
+            visibleCardsAfterAppend: visibleAfterAppend,
+            hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
+            refillBlockedReason: '',
           });
+          indexedPage.collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
+          if (!canApplyLoadMoreResultWithFilters()) {
+            logStaleLoadMoreResultIgnored('indexed-page-apply', {
+              fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
+            });
+            return;
+          }
+          indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
+          setUsers(prev => {
+            const map = new Map(prev.map(user => [user.userId, user]));
+            indexedPage.collected.forEach(user => map.set(user.userId, user));
+            const result = Array.from(map.values());
+            setIdsForQuery(defaultListKey, result.map(user => user.userId));
+            return result;
+          });
+          void loadCommentsFor(indexedPage.collected);
+          setLastKey(indexedPage.finalOffset);
+          setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
+          return indexedPage.collected.length;
         }
 
-        const visibleAfterAppend = Number(usersRef.current?.length || 0) + indexedPage.collected.length;
-        console.log('[Matching][indexedProvider] loadMore diagnostics', {
-          indexedIdsCount: indexedPage.indexedIdsCount,
-          paginationInputIdsCount: indexedPage.paginationInputIdsCount,
-          pageIdsCount: indexedPage.pageIdsCount,
-          fetchedCardsCount: indexedPage.fetchedCardsCount,
-          safetyFilteredOutCount: indexedPage.safetyFilteredOutCount,
-          appendedCardsCount: indexedPage.collected.length,
-          visibleCardsAfterAppend: visibleAfterAppend,
-          hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
-          refillBlockedReason: '',
+        console.info('[Matching][indexedProvider] index plan unavailable; falling back to source pagination', {
+          reason: indexedPage.deferReason || 'index-plan-unavailable',
+          activeIndexFilterGroups: activeIndexFilterGroups.map(group => group.indexName),
         });
-        indexedPage.collected.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
-        if (!canApplyLoadMoreResultWithFilters()) {
-          logStaleLoadMoreResultIgnored('indexed-page-apply', {
-            fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
-          });
-          return;
-        }
-        indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
-        setUsers(prev => {
-          const map = new Map(prev.map(user => [user.userId, user]));
-          indexedPage.collected.forEach(user => map.set(user.userId, user));
-          const result = Array.from(map.values());
-          setIdsForQuery(defaultListKey, result.map(user => user.userId));
-          return result;
-        });
-        void loadCommentsFor(indexedPage.collected);
-        setLastKey(indexedPage.finalOffset);
-        setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
-        return indexedPage.collected.length;
       }
 
       const collected = [];

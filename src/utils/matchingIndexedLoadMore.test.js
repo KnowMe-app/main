@@ -57,4 +57,53 @@ describe('collectMatchingIndexedLoadMorePage', () => {
     );
     expect(fetchChunk).not.toHaveBeenCalled();
   });
+
+  // Набір фільтрів на кшталт «крім Агентства» вміє лише відкидати: індекс не
+  // називає жодного id і віддає деку послідовній пагінації. Порожня відповідь
+  // тут не означає «нічого не знайшлось», і той, хто викликав, мусить бачити
+  // різницю — інакше стрічка обірветься на першому ж такому фільтрі.
+  it('відрізняє «індекс нічого не дав» від «плану індексу не склалось»', async () => {
+    const fetchMatchingIndexedCandidates = jest.fn().mockResolvedValue({
+      usedIndex: false,
+      users: [],
+      userIds: [],
+      nextOffset: 0,
+      hasMore: false,
+      reason: 'exclude-only-index-plan',
+    });
+
+    const result = await collectMatchingIndexedLoadMorePage({
+      requestedLimit: 5,
+      initialOffset: 0,
+      filters: { userRole: { ed: true, ag: false, ip: true, other: true } },
+      fetchMatchingIndexedCandidates,
+      hydrateUsersByIds: jest.fn(),
+    });
+
+    expect(result.usedIndex).toBe(false);
+    expect(result.deferToSourcePagination).toBe(true);
+    expect(result.deferReason).toBe('exclude-only-index-plan');
+    expect(result.collected).toEqual([]);
+  });
+
+  it('порожня, але справжня відповідь індексу деку джерелу не віддає', async () => {
+    const fetchMatchingIndexedCandidates = jest.fn().mockResolvedValue({
+      usedIndex: true,
+      users: [],
+      userIds: [],
+      nextOffset: 0,
+      hasMore: false,
+    });
+
+    const result = await collectMatchingIndexedLoadMorePage({
+      requestedLimit: 5,
+      initialOffset: 0,
+      filters: { userRole: { ag: true } },
+      fetchMatchingIndexedCandidates,
+      hydrateUsersByIds: jest.fn(),
+    });
+
+    expect(result.usedIndex).toBe(true);
+    expect(result.deferToSourcePagination).toBe(false);
+  });
 });
