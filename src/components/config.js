@@ -2770,13 +2770,20 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
     }
   }
 
-  // Записуємо нового користувача в базу даних
-  await set(newUserRef, newUser);
+  // Канонічні вузли доступні делегованим редакторам, на відміну від `/users`.
+  // Спершу створюємо анкету там: legacy — лише сумісне дзеркало і його відмова
+  // не повинна скасовувати вже створену веб-анкету.
+  const nodesWritten = await fanOutProfileNodes(newUserId, newUser);
+  if (!nodesWritten) throw new Error('Не вдалося створити анкету у профільних вузлах');
+  try {
+    await set(newUserRef, newUser);
+  } catch (error) {
+    console.warn('[profileNodes] legacy-дзеркало нової анкети не створено', {
+      userId: newUserId,
+      error,
+    });
+  }
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
-  // Нова анкета одразу розкладається по вузлах — так само, як це робить кожне
-  // збереження. Інакше вона зʼявилась би розділеною тільки після першої правки,
-  // а до того контакт із неї не прочитався б новим шляхом.
-  await fanOutProfileNodes(newUserId, newUser);
   // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
   // після наступної індексації.
   await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });
@@ -9245,14 +9252,18 @@ export const removeCardAndSearchId = async userId => {
   const db = getDatabase();
 
   try {
-    // Отримуємо картку користувача з newUsers
-    const userSnapshot = await get(ref2(db, `newUsers/${userId}`));
-    if (!userSnapshot.exists()) {
-      console.warn(`Користувач не знайдений у newUsers: ${userId}`);
-      return;
-    }
-
-    const userData = userSnapshot.val();
+    // Анкета може вже не мати legacy-запису. Нові вузли є джерелом істини,
+    // тому відсутність `newUsers` не перетворює видалення на no-op.
+    const [newUsersSnapshot, usersSnapshot, nodeProfile] = await Promise.all([
+      get(ref2(db, `newUsers/${userId}`)),
+      get(ref2(db, `users/${userId}`)),
+      readProfileFromNodes(userId, { includeTechnical: true }),
+    ]);
+    const userData = {
+      ...(newUsersSnapshot.exists() ? newUsersSnapshot.val() : {}),
+      ...(usersSnapshot.exists() ? usersSnapshot.val() : {}),
+      ...(nodeProfile || {}),
+    };
     console.log(`Дані користувача:`, userData);
 
     // Зберігаємо видалені значення для відображення в toast
@@ -9298,9 +9309,25 @@ export const removeCardAndSearchId = async userId => {
     await removeMatchingCardIndex(userId);
 
     // console.warn(`Видаляємо картку користувача з newUsers: ${userId}`);
-    // Видаляємо картку користувача з newUsers
-    await remove(ref2(db, `newUsers/${userId}`));
-    console.log(`Картка користувача видалена з newUsers: ${userId}`);
+    // Кожен шлях видаляється окремо: правила вузлів відрізняються, тож одна
+    // відмова не має залишити всі інші копії персональних даних недоторканими.
+    const profilePaths = [
+      PROFILE_NODES.matchingCards,
+      PROFILE_NODES.profileDetails,
+      PROFILE_NODES.profileContacts,
+      PROFILE_NODES.profileWorkflow,
+      PROFILE_NODES.profileTechnical,
+      'users',
+      'newUsers',
+    ];
+    const deletionResults = await Promise.allSettled(
+      profilePaths.map(path => remove(ref2(db, `${path}/${userId}`))),
+    );
+    const failedPaths = profilePaths.filter((path, index) => deletionResults[index].status === 'rejected');
+    if (failedPaths.length) {
+      throw new Error(`Не вдалося видалити вузли анкети: ${failedPaths.join(', ')}`);
+    }
+    console.log(`Картка користувача та її профільні вузли видалені: ${userId}`);
 
     removeCard(userId);
     clearEmptySearchQueryCache();

@@ -567,11 +567,17 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
         { photos: updatedPhotos },
         'update'
       );
-      await updateDataInFiresoreDB(
-        state.userId,
-        { photos: updatedPhotos },
-        'update'
-      );
+      // Firestore is a legacy mirror and node-only profiles have no document
+      // there. A failed mirror must not roll back UI after RTDB/Storage changed.
+      try {
+        await updateDataInFiresoreDB(
+          state.userId,
+          { photos: updatedPhotos },
+          'update'
+        );
+      } catch (error) {
+        console.warn('[photos] Firestore mirror was not updated', { userId: state.userId, error });
+      }
     }
   };
 

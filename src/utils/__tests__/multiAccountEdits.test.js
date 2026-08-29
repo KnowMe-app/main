@@ -241,49 +241,50 @@ describe('getCanonicalCard', () => {
     ref.mockImplementation((db, path) => ({ db, path }));
   });
 
-  it('reads only users for a long-format userId when found there, never touching newUsers', async () => {
-    get.mockImplementation(async ({ path }) => {
-      if (path === `users/${LONG_USER_ID}`) {
-        return { exists: () => true, val: () => ({ name: 'Canonical' }) };
-      }
-      throw new Error(`unexpected read: ${path}`);
-    });
+  const snapshotFor = data => ({ exists: () => data !== null, val: () => data });
+
+  it('merges canonical profile nodes over the legacy baseline', async () => {
+    get.mockImplementation(async ({ path }) => snapshotFor({
+      [`users/${LONG_USER_ID}`]: { name: 'Legacy', phone: ['old'] },
+      [`matchingCards/${LONG_USER_ID}`]: { name: 'Canonical' },
+      [`profileContacts/${LONG_USER_ID}`]: { phone: ['new', 'kept'] },
+    }[path] || null));
 
     const card = await getCanonicalCard(LONG_USER_ID);
 
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: `users/${LONG_USER_ID}` }));
-    expect(card).toEqual({ userId: LONG_USER_ID, name: 'Canonical' });
+    expect(get).toHaveBeenCalledTimes(7);
+    expect(card).toEqual(expect.objectContaining({
+      userId: LONG_USER_ID,
+      name: 'Canonical',
+      phone: ['new', 'kept'],
+    }));
   });
 
-  it('falls back to newUsers for a long-format userId only when users has no record', async () => {
-    get.mockImplementation(async ({ path }) => {
-      if (path === `users/${LONG_USER_ID}`) return { exists: () => false, val: () => null };
-      if (path === `newUsers/${LONG_USER_ID}`) {
-        return { exists: () => true, val: () => ({ name: 'Fallback' }) };
-      }
-      throw new Error(`unexpected read: ${path}`);
-    });
+  it('hydrates a node-only profile without a users record', async () => {
+    get.mockImplementation(async ({ path }) => snapshotFor(
+      path === `profileDetails/${LONG_USER_ID}` ? { languages: ['uk', 'en'] } : null,
+    ));
 
     const card = await getCanonicalCard(LONG_USER_ID);
 
-    expect(get).toHaveBeenCalledTimes(2);
-    expect(card).toEqual({ userId: LONG_USER_ID, name: 'Fallback' });
+    expect(card).toEqual(expect.objectContaining({
+      userId: LONG_USER_ID,
+      languages: ['uk', 'en'],
+    }));
   });
 
-  it('still checks both collections in parallel for a short-format userId', async () => {
-    get.mockImplementation(async ({ path }) => {
-      if (path === 'users/TG0016') return { exists: () => true, val: () => ({ name: 'Users' }) };
-      if (path === 'newUsers/TG0016') return { exists: () => true, val: () => ({ extra: 'NewUsers' }) };
-      throw new Error(`unexpected read: ${path}`);
-    });
+  it('still merges both legacy collections for a short-format userId', async () => {
+    get.mockImplementation(async ({ path }) => snapshotFor({
+      'users/TG0016': { name: 'Users' },
+      'newUsers/TG0016': { extra: 'NewUsers' },
+    }[path] || null));
 
     const card = await getCanonicalCard('TG0016');
 
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledTimes(7);
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/TG0016' }));
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'newUsers/TG0016' }));
-    expect(card).toEqual({ userId: 'TG0016', name: 'Users', extra: 'NewUsers' });
+    expect(card).toEqual(expect.objectContaining({ userId: 'TG0016', name: 'Users', extra: 'NewUsers' }));
   });
 });
 

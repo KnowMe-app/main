@@ -2,12 +2,16 @@ jest.mock('firebase/database', () => ({
   getDatabase: jest.fn(),
   ref: jest.fn(),
   query: jest.fn(),
-  orderByChild: jest.fn(),
+  orderByValue: jest.fn(),
   equalTo: jest.fn(),
   limitToFirst: jest.fn(),
   startAfter: jest.fn(),
   endAt: jest.fn(),
   get: jest.fn(),
+}));
+
+jest.mock('firebase/auth', () => ({
+  getAuth: jest.fn(() => ({ currentUser: { uid: 'owner-1' } })),
 }));
 
 jest.mock('utils/backendDownloadToast', () => ({
@@ -160,7 +164,7 @@ describe('fetchFilteredUsersByPage', () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
-    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.orderByValue.mockReturnValue(['orderByValue']);
     database.startAfter.mockImplementation((value, key) => ['startAfter', value, key]);
     database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
     database.query.mockImplementation((...args) => args);
@@ -168,7 +172,7 @@ describe('fetchFilteredUsersByPage', () => {
     const makeSnapshot = entries => ({
       exists: () => entries.length > 0,
       forEach: callback => {
-        entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
+        entries.forEach(([id, data]) => callback({ key: id, val: () => data?.getInTouch || data }));
       },
     });
     const firstNewUsersPage = Array.from({ length: 22 }, (_, index) => {
@@ -181,7 +185,7 @@ describe('fetchFilteredUsersByPage', () => {
 
     database.get.mockImplementation(async queryArgs => {
       const path = queryArgs[0];
-      if (path === 'db/users') return makeSnapshot([]);
+      if (path !== 'db/multiData/getInTouch/owner-1') return makeSnapshot([]);
       const hasCursor = queryArgs.some(arg => Array.isArray(arg) && arg[0] === 'startAfter');
       return makeSnapshot(hasCursor ? secondNewUsersPage : firstNewUsersPage);
     });
@@ -190,7 +194,7 @@ describe('fetchFilteredUsersByPage', () => {
     const first = await fetchFilteredUsersByPage(
       0,
       undefined,
-      async id => ({ hydrated: id }),
+      async id => ({ hydrated: id, keep: true }),
       {},
       {},
       {},
@@ -199,7 +203,7 @@ describe('fetchFilteredUsersByPage', () => {
     const second = await fetchFilteredUsersByPage(
       0,
       undefined,
-      async id => ({ hydrated: id }),
+      async id => ({ hydrated: id, keep: true }),
       {},
       {},
       {},
@@ -210,7 +214,7 @@ describe('fetchFilteredUsersByPage', () => {
 
     expect(Object.keys(first.users)).toEqual(firstNewUsersPage.slice(0, 20).map(([id]) => id));
     expect(first.hasMore).toBe(true);
-    expect(first.afterKeys?.newUsers).toEqual({ value: '2026-06-19', key: 'u20' });
+    expect(first.afterKeys?.getInTouch).toEqual({ value: '2026-06-19', key: 'u20' });
     expect(Object.keys(second.users)).toEqual(['u23']);
   });
 
@@ -218,14 +222,14 @@ describe('fetchFilteredUsersByPage', () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
-    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.orderByValue.mockReturnValue(['orderByValue']);
     database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
     database.query.mockImplementation((...args) => args);
 
     const makeSnapshot = entries => ({
       exists: () => entries.length > 0,
       forEach: callback => {
-        entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
+        entries.forEach(([id, data]) => callback({ key: id, val: () => data?.getInTouch || data }));
       },
     });
     const newUsersPage = Array.from({ length: 22 }, (_, index) => {
@@ -241,8 +245,7 @@ describe('fetchFilteredUsersByPage', () => {
       const path = queryArgs[0];
       const hasCursor = queryArgs.some(arg => Array.isArray(arg) && arg[0] === 'startAfter');
       if (hasCursor) return makeSnapshot([]);
-      if (path === 'db/newUsers') return makeSnapshot(newUsersPage);
-      if (path === 'db/users') return makeSnapshot(usersPage);
+      if (path === 'db/multiData/getInTouch/owner-1') return makeSnapshot(usersPage);
       return makeSnapshot([]);
     });
 
@@ -250,7 +253,7 @@ describe('fetchFilteredUsersByPage', () => {
     const result = await fetchFilteredUsersByPage(
       0,
       undefined,
-      async id => ({ hydrated: id }),
+      async id => ({ hydrated: id, keep: true }),
       {},
       {},
       {},
@@ -264,20 +267,20 @@ describe('fetchFilteredUsersByPage', () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
-    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.orderByValue.mockReturnValue(['orderByValue']);
     database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
     database.query.mockImplementation((...args) => args);
 
     const makeSnapshot = entries => ({
       exists: () => entries.length > 0,
       forEach: callback => {
-        entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
+        entries.forEach(([id, data]) => callback({ key: id, val: () => data?.getInTouch || data }));
       },
     });
 
     database.get.mockImplementation(async queryArgs => {
       const path = queryArgs[0];
-      if (path === 'db/newUsers') {
+      if (path === 'db/multiData/getInTouch/owner-1') {
         return makeSnapshot([
           ['long-id-future', { userId: 'long-id-future', getInTouch: '2026-06-19', keep: true }],
           ['long-id-current', { userId: 'long-id-current', getInTouch: '2026-06-19', keep: true }],
@@ -292,8 +295,8 @@ describe('fetchFilteredUsersByPage', () => {
       undefined,
       async id => (
         id === 'long-id-future'
-          ? { getInTouch: '2026-08-04' }
-          : { getInTouch: '2026-06-19' }
+          ? { getInTouch: '2026-08-04', keep: true }
+          : { getInTouch: '2026-06-19', keep: true }
       ),
       {},
       {},
@@ -314,7 +317,7 @@ describe('defaultFetchByDate', () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
-    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.orderByValue.mockReturnValue(['orderByValue']);
     database.equalTo.mockImplementation(value => ['equalTo', value]);
     database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
     database.query.mockImplementation((...args) => args);
@@ -322,11 +325,9 @@ describe('defaultFetchByDate', () => {
       exists: () => true,
       val: () => ({ z: { userId: 'z' }, a: { userId: 'a' } }),
       forEach: callback => {
-        callback({ key: 'a', val: () => ({ userId: 'a' }) });
-        callback({ key: 'z', val: () => ({ userId: 'z' }) });
+        callback({ key: 'a', val: () => '2026-06-19' });
+        callback({ key: 'z', val: () => '2026-06-19' });
       },
-    }).mockResolvedValueOnce({
-      exists: () => false,
     });
 
     const { defaultFetchByDate } = await import('./dateLoad');
@@ -334,14 +335,14 @@ describe('defaultFetchByDate', () => {
 
     expect(result.entries.map(([id]) => id)).toEqual(['a', 'z']);
     expect(result.lastKey).toBe('z');
-    expect(result.afterKeys).toEqual({ newUsers: 'z' });
+    expect(result.afterKeys).toEqual({ getInTouch: 'z' });
   });
 
   it('uses collection-specific cursors instead of applying a merged key to every collection', async () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
-    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.orderByValue.mockReturnValue(['orderByValue']);
     database.startAfter.mockImplementation((date, key) => ['startAfter', date, key]);
     database.endAt.mockImplementation(date => ['endAt', date]);
     database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
@@ -349,9 +350,9 @@ describe('defaultFetchByDate', () => {
     database.get.mockResolvedValue({ exists: () => false });
 
     const { defaultFetchByDate } = await import('./dateLoad');
-    await defaultFetchByDate('2026-06-19', 20, { afterKey: 'merged', afterKeys: { newUsers: 'new-cursor' } });
+    await defaultFetchByDate('2026-06-19', 20, { afterKey: 'merged', afterKeys: { getInTouch: 'owner-cursor' } });
 
-    expect(database.startAfter).toHaveBeenCalledWith('2026-06-19', 'new-cursor');
+    expect(database.startAfter).toHaveBeenCalledWith('2026-06-19', 'owner-cursor');
     expect(database.startAfter).not.toHaveBeenCalledWith('2026-06-19', 'merged');
   });
 });
