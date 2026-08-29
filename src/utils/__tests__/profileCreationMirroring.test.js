@@ -26,16 +26,17 @@ describe('створення анкети розкладається так са
 
   it('пише анкету, розкладає її по вузлах і одразу будує картку', () => {
     expect(creation).toContain('await fanOutProfileNodes(newUserId, newUser)');
-    expect(creation).toContain('await set(newUserRef, newUser)');
+    expect(creation).toContain("await mirrorProfileToLegacyUsers(newUserId, newUser, 'set')");
     expect(creation).toContain('await syncMatchingCardIndex(newUserId, newUser');
   });
 
-  it('створює канонічні вузли ПЕРЕД необовʼязковим legacy-дзеркалом', () => {
-    // `users` — вузол акаунтів: право писати в чужий `users/$uid` має тільки
-    // власник і адмін. Редактор, що заводить анкету, його не має, тому запис
-    // туди йде останнім і його відмова не скасовує вже створену анкету.
+  it('кладе анкету в legacy тим самим дзеркалом, що й кожне збереження', () => {
+    // Інакше нова анкета лягала б у `users` в іншому форматі, ніж її ж наступне
+    // збереження: дати з мобільного застосунку читаються крапками, і
+    // перетворення на них живе рівно в дзеркалі.
+    expect(creation).not.toContain('set(newUserRef');
     expect(creation.indexOf('await fanOutProfileNodes'))
-      .toBeLessThan(creation.indexOf('await set(newUserRef, newUser)'));
+      .toBeLessThan(creation.indexOf('await mirrorProfileToLegacyUsers'));
     expect(creation).toContain("console.warn('[profileNodes] legacy-дзеркало нової анкети не створено'");
   });
 

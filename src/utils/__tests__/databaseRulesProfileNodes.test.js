@@ -108,10 +108,11 @@ describe('нові вузли профілю в database.rules.json', () => {
 
 describe('індекси стрічки', () => {
   it('індексує поле сторінки стрічки і поля, за якими картку шукають', () => {
-    // Ключ стрічки один — `feedDate`. Решта індексів не для стрічки, а для
+    // Ключ стрічки один — `feedDate`. Другий індекс не для стрічки, а для
     // пошуку: `matchingCards` тримає картку кожної анкети, тож саме тут її й
-    // шукають за іменем, а не в legacy-колекції.
-    expect(rules.matchingCards['.indexOn']).toEqual(['feedDate', 'name', 'surnameShort']);
+    // шукають за іменем, а не в legacy-колекції. `surnameShort` не індексують:
+    // це одна літера, і запит по ній віддавав би відсотки колекції.
+    expect(rules.matchingCards['.indexOn']).toEqual(['feedDate', 'name']);
   });
 
   it('писач сортує за тим самим полем, яке індексують правила', () => {
@@ -321,7 +322,10 @@ describe('legacy лишається недоторканим', () => {
     expect(rules.users['.read']).toBe(legacy.users['.read']);
     expect(rules.users['.indexOn']).toEqual(legacy.users['.indexOn']);
     expect(rules.users.$uid['.read']).toBe(legacy.users.$uid['.read']);
-    expect(rules.users.$uid['.write']).toBe(legacy.users.$uid['.write']);
+    // Право на запис — єдине, що розширилось, і рівно на один диз'юнкт:
+    // редактор заводить анкету під `push`-ключем. Знімок лишається початком
+    // рядка, тож будь-яка правка самої legacy-умови все одно впаде тут.
+    expect(rules.users.$uid['.write'].startsWith(legacy.users.$uid['.write'].replace(/\)$/, ''))).toBe(true);
     // Legacy-джерело прав нікуди не поділось: доступ, записаний там, працює далі.
     expect(rules.users['.read'])
       .toContain("root.child('users').child(auth.uid).child('accessLevel')");

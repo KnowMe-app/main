@@ -12,11 +12,11 @@ describe('правила, без яких стрічка не може чита�
     // сповзала на повні анкети. Тепер ключ один — `feedDate`, — і індекс мусить
     // виїхати в базу РАНІШЕ за код, інакше повториться те саме.
     expect(rules.matchingCards['.indexOn'][0]).toBe('feedDate');
-    // Поруч — поля, за якими картку шукають: `matchingCards` тепер каталог
-    // усіх анкет, і пошук ходить по ньому, а не по legacy-колекції.
-    expect(rules.matchingCards['.indexOn']).toEqual(
-      expect.arrayContaining(['feedDate', 'name', 'surnameShort']),
-    );
+    // Поруч — `name`: `matchingCards` тепер каталог усіх анкет, і текстовий
+    // пошук ходить по ньому, а не по legacy-колекції. `surnameShort` тут не
+    // потрібен — це одна літера, і шукати за нею означало б віддавати відсотки
+    // колекції на кожен запит.
+    expect(rules.matchingCards['.indexOn']).toEqual(['feedDate', 'name']);
   });
 
   it('дає кожному авторизованому користувачеві читати опубліковані картки', () => {
