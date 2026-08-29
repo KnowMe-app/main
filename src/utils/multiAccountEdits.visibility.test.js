@@ -14,7 +14,7 @@ jest.mock('utils/backendDownloadToast', () => ({
   withAdminDownloadToast: promise => promise,
 }));
 
-const { getCardStorageCollection, getOverlaysForCard } = require('./multiAccountEdits');
+const { getCardLegacyCollection, getOverlaysForCard } = require('./multiAccountEdits');
 const snapshotOf = value => ({ exists: () => value != null, val: () => value });
 
 describe('shared card storage and overlay visibility', () => {
@@ -37,11 +37,11 @@ describe('shared card storage and overlay visibility', () => {
 
   it('routes a published push-id card to users based on its existing record', async () => {
     get.mockResolvedValue(snapshotOf({ userId: '-push-id-20-chars---' }));
-    await expect(getCardStorageCollection('-push-id-20-chars---')).resolves.toBe('users');
+    await expect(getCardLegacyCollection('-push-id-20-chars---')).resolves.toBe('users');
   });
 
-  it('keeps an unpublished short-id card in newUsers', async () => {
+  it('reports no legacy body for a card that lives only in the profile nodes', async () => {
     get.mockResolvedValue(snapshotOf(null));
-    await expect(getCardStorageCollection('TG0016')).resolves.toBe('newUsers');
+    await expect(getCardLegacyCollection('TG0016')).resolves.toBeNull();
   });
 });

@@ -30,7 +30,7 @@ describe('Matching loadMore stale pagination guards', () => {
     expect(source).toContain("viewModeRef.current = 'search';");
     expect(source).toContain('setUsers(filtered);');
     expect(source).toContain('loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));');
-    expect(source).toContain('setAdditionalNewUsers([]);');
+    expect(source).toContain('setAdditionalAccessUsers([]);');
     expect(source).toContain('setAdditionalNextOffset(0);');
     expect(source).toContain('setHasMore(false);');
     expect(source).toContain('setLastKey(null);');
@@ -52,14 +52,14 @@ describe('Matching loadMore stale pagination guards', () => {
         setLastKey(null);`);
   });
 
-  it('guards additional newUsers offset, hasMore, lastKey, and loadedIdsRef writes', () => {
+  it('guards additional-access offset, hasMore, lastKey, and loadedIdsRef writes', () => {
     const source = loadMoreSource();
 
     expect(source).toContain(`if (!isLatestLoadMore()) return;
         collected.forEach(user => {
           loadedIdsRef.current.add(user.userId);
         });`);
-    const setAdditionalIndex = source.indexOf('setAdditionalNewUsers(prev => {');
+    const setAdditionalIndex = source.indexOf('setAdditionalAccessUsers(prev => {');
     const commentsIndex = source.indexOf('void loadCommentsFor(collected);', setAdditionalIndex);
     expect(setAdditionalIndex).toBeGreaterThan(-1);
     expect(commentsIndex).toBeGreaterThan(setAdditionalIndex);

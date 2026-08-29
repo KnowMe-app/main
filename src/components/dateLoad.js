@@ -29,7 +29,8 @@ const isCurrentPastOrNonDateGetInTouch = (value, todayIso) => {
 
 async function defaultFetchGetInTouchOrdered(limit, options = {}) {
   const db = getDatabase();
-  const collections = ['newUsers', 'users'];
+  // Legacy-колекція одна; курсори лишаються по колекціях, бо їх зберігає викликач.
+  const collections = ['users'];
   const combined = {};
   const orderedEntries = [];
   const { afterKeys = null, cursorLimit = null } = options || {};
@@ -112,7 +113,8 @@ const normalizeDateFetchResult = result => {
 export async function defaultFetchByDate(dateStr, limit, options = {}) {
   const db = getDatabase();
 
-  const collections = ['newUsers', 'users'];
+  // Legacy-колекція одна; курсори лишаються по колекціях, бо їх зберігає викликач.
+  const collections = ['users'];
   const combined = {};
   const orderedEntries = [];
   let hasMore = false;
@@ -124,7 +126,7 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
   const cursorEntryLimit = Math.max(1, Number(cursorLimit) || requestedLimit);
   const fetchLimit = requestedLimit + 1;
 
-  // Iterate through both collections and gather matching records.
+  // Iterate through the collections and gather matching records.
   // Keep reading one extra row so DATE2 can know whether the same date still
   // has candidates after filters remove the first batch.
   for (const col of collections) {

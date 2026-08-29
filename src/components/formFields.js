@@ -299,45 +299,9 @@ export const ppTechnicalKeyValueFieldNames = [
   ...new Set([...pickerFieldNames, ...nonPickerContactFieldNames]),
 ].filter(fieldName => fieldName !== 'userId');
 
-export const newUsersMirrorFieldNames = [
-  ...new Set([...pickerFieldNames, ...nonPickerContactFieldNames]),
-].filter(fieldName => fieldName !== 'publish');
-
-
-// Поля, які має отримати запис у `newUsers` понад дзеркальні контакти. Це
-// список для наповнення `newUsers`, а не заборона для `users`: колись довгі
-// userId жили одночасно в обох колекціях, і той самий запис був розділений між
-// ними, тож ці поля мали власного власника. Тепер довгий userId лежить лише в
-// `users`, і жодне поле не заборонене там за назвою.
-export const fieldsForNewUsersOnly = [
-  'role',
-  'lastCycle',
-  'myComment',
-  'writer',
-  'cycleStatus',
-  'stimulationSchedule',
-];
-
-export const fieldsForBothCollections = [
-  'userId',
-  'lastAction',
-  'lastLogin2',
-  'getInTouch',
-  'lastDelivery',
-  'ownKids',
-  'cycleStatus',
-  'stimulationSchedule',
-];
-
-export const newUsersRequiredFieldNames = [
-  ...new Set([
-    ...fieldsForNewUsersOnly,
-    ...newUsersMirrorFieldNames,
-    ...fieldsForBothCollections,
-  ]),
-];
-
-export const newUsersSanitizedFieldNames = [
+// Клієнтські службові ключі: у базі їм не місце, хай яким шляхом анкета туди
+// їде. Це не поля анкети, а мітки кешу й стану завантаження.
+export const technicalSanitizedFieldNames = [
   '_reactionType',
   '__sourceCollection',
   '__photosHydrated',
@@ -358,16 +322,8 @@ export const newUsersSanitizedFieldNames = [
   'photo',
 ];
 
-export const isNewUsersAllowedField = key => newUsersRequiredFieldNames.includes(key);
-
-export const isNewUsersSanitizedField = key => newUsersSanitizedFieldNames.includes(key);
-
-export const pickNewUsersAllowedFields = source => Object.fromEntries(
-  Object.entries(source || {}).filter(([key]) => isNewUsersAllowedField(key))
-);
+export const isTechnicalSanitizedField = key => technicalSanitizedFieldNames.includes(key);
 
 export const sanitizeTechnicalPayload = payload => Object.fromEntries(
-  Object.entries(payload || {}).filter(([key]) => !isNewUsersSanitizedField(key))
+  Object.entries(payload || {}).filter(([key]) => !isTechnicalSanitizedField(key))
 );
-
-export const sanitizeNewUsersPayload = sanitizeTechnicalPayload;

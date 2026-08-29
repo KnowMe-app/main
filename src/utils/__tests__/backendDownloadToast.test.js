@@ -61,7 +61,7 @@ describe('backendDownloadToast admin traffic tracker', () => {
 
     tracker.recordAdminBackendTraffic(
       { exists: () => true, val: () => ({ name: 'Matching test payload' }) },
-      { operation: 'get', source: 'Matching', path: 'newUsers' },
+      { operation: 'get', source: 'Matching', path: 'users' },
     );
     jest.advanceTimersByTime(1000);
 
@@ -77,7 +77,7 @@ describe('backendDownloadToast admin traffic tracker', () => {
 
     tracker.recordAdminBackendTraffic(
       { exists: () => true, val: () => ({ id: 1 }) },
-      { operation: 'get', source: 'config', path: 'newUsers/TG0009' },
+      { operation: 'get', source: 'config', path: 'matchingCards/TG0009' },
     );
     tracker.recordAdminBackendTraffic(
       { exists: () => true, val: () => ({ bio: 'x'.repeat(5000) }) },
@@ -99,7 +99,7 @@ describe('backendDownloadToast admin traffic tracker', () => {
 
     tracker.recordAdminBackendTraffic(
       { exists: () => true, val: () => ({ name: 'Admin payload' }) },
-      { operation: 'get', source: 'AddNewProfile', path: 'newUsers' },
+      { operation: 'get', source: 'AddNewProfile', path: 'users' },
     );
     jest.advanceTimersByTime(1000);
 

@@ -109,7 +109,7 @@ describe('нові вузли профілю в database.rules.json', () => {
 describe('індекси стрічки', () => {
   it('індексує рівно те поле, за яким стрічка бере сторінку', () => {
     // Стрічка — це показані анкети `users`, і ключ у неї один. Розділяти деки
-    // другим ключем більше нема потреби: анкети `newUsers` користувачам не
+    // другим ключем більше нема потреби: анкети, заведені у вебі, користувачам не
     // показуються, і в індексі стрічки їх немає взагалі.
     expect(rules.matchingCards['.indexOn']).toEqual(['feedDate']);
   });
@@ -121,7 +121,7 @@ describe('індекси стрічки', () => {
     expect(matchingCardIndexSource).toContain("export const MATCHING_CARD_FEED_FIELD = 'feedDate'");
     expect(matchingCardIndexSource).toContain('MATCHING_CARD_ORDER_FIELD = MATCHING_CARD_FEED_FIELD');
     expect(matchingCardIndexSource).not.toContain('feedUsers');
-    expect(matchingCardIndexSource).not.toContain('feedNewUsers');
+    expect(matchingCardIndexSource).not.toContain('feedUsers');
   });
 });
 
@@ -162,13 +162,12 @@ describe('matchingCards приймає лише перелічені поля', 
     // ТЗ знімає вимогу `source`, а не вимогу існування анкети.
     expect(card['.validate']).not.toContain("child('source')");
     expect(card['.validate']).toContain("root.child('users').child($uid).exists()");
-    expect(card['.validate']).toContain("root.child('newUsers').child($uid).exists()");
   });
 
   it('анкети, яка живе лише в нових вузлах, для картки досить', () => {
-    // Питати саме legacy означало б, що після зникнення `users`/`newUsers`
-    // жодна картка не запишеться взагалі — тобто стрічка перестане
-    // оновлюватись із першого ж збереження.
+    // Питати саме legacy означало б, що після зникнення `users` жодна картка
+    // не запишеться взагалі — тобто стрічка перестане оновлюватись із першого
+    // ж збереження.
     ['profileDetails', 'profileTechnical', 'profileContacts', 'profileWorkflow']
       .forEach(node => expect(card['.validate']).toContain(`root.child('${node}').child($uid).exists()`));
   });
@@ -271,7 +270,7 @@ describe('решта вузлів не стає другим місцем для
   });
 
   it('правила питають про рівень доступу і profileTechnical теж', () => {
-    // Інакше переїзд прав зняв би доступ усім, чий акаунт лежав у `newUsers`:
+    // Інакше переїзд прав зняв би доступ усім, чий акаунт лежав у legacy:
     // очищена колекція заливається в базу цілком, а разом із нею зникло б і
     // єдине місце, звідки правила про цей доступ дізнавались.
     const withAccessCheck = [
@@ -280,7 +279,6 @@ describe('решта вузлів не стає другим місцем для
       rules.profileContacts.$uid['.read'],
       rules.profileContacts.$uid['.write'],
       rules.profileWorkflow.$uid['.read'],
-      rules.newUsers.$uid['.write'],
       rules.searchKeySets.$keySet['.write'],
     ];
 
@@ -313,24 +311,24 @@ describe('legacy лишається недоторканим', () => {
     expect(rules['.write']).toBe(false);
   });
 
-  it('users і newUsers зберігають свої правила і індекси', () => {
-    // Знімок оновлювався один раз — коли права переїхали в `profileTechnical`
-    // і кожна умова про рівень доступу отримала друге джерело. Сама legacy
-    // від цього не змінилась: ті самі вузли, ті самі індекси, та сама
-    // аудиторія — просто питання «який у тебе доступ» тепер має дві адреси.
+  it('users зберігає свої правила і індекси', () => {
+    // Знімок легко звірити з файлом правил: legacy-колекція одна, і вона не
+    // змінюється — ті самі вузли, ті самі індекси, та сама аудиторія.
     const legacy = JSON.parse(fs.readFileSync(
       path.join(repoRoot, 'src', 'utils', '__tests__', 'fixtures', 'legacyRulesShape.json'),
       'utf8',
     ));
-    ['users', 'newUsers'].forEach(collection => {
-      expect(rules[collection]['.read']).toBe(legacy[collection]['.read']);
-      expect(rules[collection]['.indexOn']).toEqual(legacy[collection]['.indexOn']);
-      expect(rules[collection].$uid['.read']).toBe(legacy[collection].$uid['.read']);
-      expect(rules[collection].$uid['.write']).toBe(legacy[collection].$uid['.write']);
-      // Legacy-джерело прав нікуди не поділось: `/users` міграція не чистить,
-      // і доступ, записаний там, працює далі.
-      expect(rules[collection]['.read'])
-        .toContain("root.child('users').child(auth.uid).child('accessLevel')");
-    });
+    expect(rules.users['.read']).toBe(legacy.users['.read']);
+    expect(rules.users['.indexOn']).toEqual(legacy.users['.indexOn']);
+    expect(rules.users.$uid['.read']).toBe(legacy.users.$uid['.read']);
+    expect(rules.users.$uid['.write']).toBe(legacy.users.$uid['.write']);
+    // Legacy-джерело прав нікуди не поділось: доступ, записаний там, працює далі.
+    expect(rules.users['.read'])
+      .toContain("root.child('users').child(auth.uid).child('accessLevel')");
+  });
+
+  it('другої legacy-колекції в правилах немає', () => {
+    expect(rules.newUsers).toBeUndefined();
+    expect(JSON.stringify(rules)).not.toContain('newUsers');
   });
 });

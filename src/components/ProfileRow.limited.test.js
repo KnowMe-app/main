@@ -12,7 +12,6 @@ const limitedUser = {
   birth: `15.01.${thisYear - 31}`,
   region: 'Київська область',
   city: 'Бровари',
-  __sourceCollection: 'newUsers',
   __limitedProfile: true,
   publish: true,
 };

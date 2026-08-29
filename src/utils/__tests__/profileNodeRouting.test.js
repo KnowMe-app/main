@@ -132,7 +132,7 @@ describe('блоки форми анкети', () => {
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.access, { profileId }).path)
       .toBe(`profileTechnical/${profileId}`);
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.legacy, { profileId: 'short' }).path)
-      .toBe('newUsers/short');
+      .toBe('users/short');
   });
 
   it('кодує слеші так, як їх читає консоль Firebase', () => {

@@ -76,9 +76,6 @@ export const mergeProfileNodes = ({
     if (details && isFilled(details[field])) merged[field] = details[field];
   });
 
-  merged.__sourceCollection = merged.__sourceCollection
-    || (id.length > 20 ? 'users' : 'newUsers');
-
   // Фото повні тільки тоді, коли їх дав `profileDetails`. Аватар із картки —
   // це один знімок, тож набір лишається негідратованим, і застосунок доб'є
   // його своїм звичайним шляхом.

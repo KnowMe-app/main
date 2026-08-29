@@ -1,7 +1,6 @@
 import {
   MATCHING_CARD_FEED_FIELD,
   buildMatchingCardsPayloadFromCollections,
-  resolveMatchingCardCollection,
   MATCHING_SUMMARY_FLAG,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
@@ -172,20 +171,6 @@ describe('buildMatchingCardProjection', () => {
     expect(projection).not.toHaveProperty('sourceLastLogin2');
   });
 
-  it('відносить id до колекції за довжиною, і межа проходить рівно по 20', () => {
-    // `users` тримає Firebase-Auth UID — це 28 символів. `newUsers` тримає або
-    // короткий згенерований id, або push-ключ Firebase, а той має рівно 20.
-    // Стара умова `>= 20` зараховувала кожен push-ключ до `users`; саме звідси
-    // й бралися «картки з довгим id, у яких джерело newUsers».
-    expect(resolveMatchingCardCollection('AC00001')).toBe('newUsers');
-    expect(resolveMatchingCardCollection('-OA1b2c3d4e5f6g7h8i9')).toBe('newUsers');
-    expect(resolveMatchingCardCollection('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2')).toBe('users');
-
-    // Явне джерело поважається: анкета, прочитана напряму з колекції, знає
-    // його точно.
-    expect(resolveMatchingCardCollection('AC00001', { __sourceCollection: 'users' })).toBe('users');
-  });
-
   it('повертає null без id або без даних', () => {
     expect(buildMatchingCardProjection('', fullProfile)).toBeNull();
     expect(buildMatchingCardProjection('id', null)).toBeNull();
@@ -201,7 +186,6 @@ describe('expandMatchingCard', () => {
     expect(expanded.name).toBe('Яна');
     expect(expanded.photos).toEqual(['https://example.test/a.jpg']);
     expect(expanded.__photosHydrated).toBe(true);
-    expect(expanded.__sourceCollection).toBe('users');
     expect(expanded[MATCHING_SUMMARY_FLAG]).toBe(true);
     expect(isMatchingSummaryCard(expanded)).toBe(true);
 
@@ -309,11 +293,11 @@ describe('resolveMatchingCardAvatarFromProfile', () => {
 
 describe('buildMatchingCardsPayloadFromCollections', () => {
   const collections = {
-    users: {
+    accounts: {
       ['a'.repeat(28)]: { name: 'Яна', photos: ['https://example.test/a.jpg'], lastLogin2: '2026-08-19' },
       ['b'.repeat(28)]: { name: 'Ольга', lastLogin2: '2026-08-18' },
     },
-    newUsers: {
+    webCards: {
       short1: { name: 'Ірина', lastLogin2: '2026-08-17' },
     },
   };
@@ -331,7 +315,7 @@ describe('buildMatchingCardsPayloadFromCollections', () => {
     expect(payload['a'.repeat(28)]).not.toHaveProperty('fieldsCount');
   });
 
-  it('у стрічку пускає лише показані картки з users і рахує їх окремо', () => {
+  it('у стрічку пускає лише показані картки і рахує їх окремо', () => {
     const { payload, stats } = buildMatchingCardsPayloadFromCollections(collections);
     expect(payload.short1).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
     expect(stats.inFeed).toBe(
@@ -347,8 +331,8 @@ describe('buildMatchingCardsPayloadFromCollections', () => {
     // Офлайн-збірка не ходить у Storage, тож аватар мають лише анкети з `photos`.
     expect(stats.withAvatar).toBe(1);
     expect(stats.withoutAvatar).toBe(2);
-    expect(stats.byCollection.users.written).toBe(2);
-    expect(stats.byCollection.newUsers.written).toBe(1);
+    expect(stats.byCollection.accounts.written).toBe(2);
+    expect(stats.byCollection.webCards.written).toBe(1);
   });
 
   it('пропускає биті записи, не ламаючи решту файлу', () => {

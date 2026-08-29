@@ -4,7 +4,7 @@ import path from 'path';
 describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId} (per-admin)', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-  it('strips myComment from every users/newUsers write and actively deletes it on updates', () => {
+  it('strips myComment from every users write and actively deletes it on updates', () => {
     const transientKeysBody = source.slice(
       source.indexOf('const transientUserDataKeys = ['),
       source.indexOf('const stripTransientUserDataFields')

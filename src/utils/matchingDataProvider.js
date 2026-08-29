@@ -2,7 +2,7 @@ import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
 import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
-import { getIndexedNewUsersIdsByRules, normalizeSearchKeySetKeys } from './newUsersFilterSetsIndex';
+import { getIndexedIdsByRules, normalizeSearchKeySetKeys } from './filterSetsIndex';
 import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
   collectFieldCountIdsFromIndexNode,
@@ -140,11 +140,9 @@ const buildRoleBuckets = filters => {
   const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, ROLE_BUCKET_FILTER_KEYS);
   if (!buckets.length) return [];
 
-  // Раніше тут була гілка «на деці newUsers анкета без ролі рахується
-  // донорською». Пост-фільтр (`getUserRoleCategory`) так ніколи не рахував —
-  // анкета без ролі в нього завжди `other`, — тож на деці `users` індекс і
-  // пост-фільтр давали різні відповіді. Колекція одна, і відповідь одна:
-  // без ролі — це `other`.
+  // Пост-фільтр (`getUserRoleCategory`) анкету без ролі завжди рахує як
+  // `other`. Індекс мусить відповідати так само — інакше та сама анкета
+  // потрапляє в різні кошики залежно від того, хто питає.
   return unique(buckets);
 };
 
@@ -546,7 +544,6 @@ const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds }) => {
       cachedById.set(id, {
         ...cached,
         userId: id,
-        __sourceCollection: resolveLegacyCollectionForId(cached.__sourceCollection, id),
         __fromCardCache: true,
       });
     } else {
@@ -560,13 +557,7 @@ const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds }) => {
     : new Map(Object.entries(hydrated || {}));
   cachedById.forEach((user, id) => map.set(id, user));
 
-  return ids
-    .map(id => map.get(id))
-    .filter(Boolean)
-    .map(user => ({
-      ...user,
-      __sourceCollection: resolveLegacyCollectionForId(user.__sourceCollection, user.userId),
-    }));
+  return ids.map(id => map.get(id)).filter(Boolean);
 };
 
 const normalizeOffset = value => Math.max(0, Number(value) || 0);
@@ -619,7 +610,7 @@ export const fetchMatchingIndexedCandidates = async ({
   limit = 1,
   excludeIds = [],
   hydrateUsersByIds,
-  accessScopedIndexReader = getIndexedNewUsersIdsByRules,
+  accessScopedIndexReader = getIndexedIdsByRules,
   viewMode = 'default',
   ownerId = '',
   useIndexIdCache = true,
@@ -818,40 +809,17 @@ export const fetchMatchingIndexedCandidates = async ({
 
 
 /**
- * Межа між колекціями — довжина id, і саме «більше за 20», а не «20 і більше».
+ * Довгий id — це Firebase-Auth UID акаунта: завжди 28 символів
+ * (`3LiD7JGCJTSJoVMU7fdR1ZrcIZH2`). Анкета, заведена у вебі, носить або
+ * короткий згенерований id (`AC00001`), або push-ключ Firebase — а push-ключ
+ * має рівно 20 символів (`-OA1b2c3d4e5f6g7h8i9`).
  *
- * `users` тримає Firebase-Auth UID: це завжди 28 символів
- * (`3LiD7JGCJTSJoVMU7fdR1ZrcIZH2`). `newUsers` тримає або короткий згенерований
- * id (`AC00001`), або push-ключ Firebase — а push-ключ має рівно 20 символів
- * (`-OA1b2c3d4e5f6g7h8i9`).
- *
- * Саме на цих двадцяти й ламалась стара умова `>= 20`: кожен push-ключ
- * `newUsers` вона зараховувала до `users`. Звідси й бралися «картки з довгим
- * id, у яких джерело newUsers» — насправді то були не довгі id, а рівно
- * двадцятисимвольні. З правильною межею довжина називає колекцію однозначно, і
- * окреме поле `source` у картці стає непотрібним.
+ * Тобто межа проходить по «більше за 20», а не «20 і більше»: саме на цих
+ * двадцяти й ламалась стара умова, зараховуючи кожен push-ключ до акаунтів.
  */
 export const isValidMatchingUserId = id => typeof id === 'string' && id.length > 20;
 export const isShortMatchingUserId = id => typeof id === 'string' && id.length > 0 && id.length <= 20;
 export const isMatchingCardId = id => isValidMatchingUserId(id) || isShortMatchingUserId(id);
-export const isAllowedIdForMatchingCollection = (id, collection = 'users') =>
-  collection === 'newUsers' ? isShortMatchingUserId(id) : isValidMatchingUserId(id);
-
-/**
- * У якій legacy-колекції лежить сире тіло цієї анкети.
- *
- * Стрічці це вже не потрібно: колекція у вебі одна, і дека в неї одна. Але
- * дзеркалення в мобільну базу ще існує, і воно мусить знати, куди писати —
- * `users` чи `newUsers`. Відповідь дає формат id, а явне значення (коли анкету
- * прочитали прямо з колекції) поважається як точніше.
- *
- * Коли `newUsers` не стане, ця функція не зміниться: коротких id просто
- * більше не зʼявлятиметься.
- */
-export const resolveLegacyCollectionForId = (explicitSource, userId) => {
-  if (explicitSource === 'users' || explicitSource === 'newUsers') return explicitSource;
-  return isValidMatchingUserId(String(userId || '').trim()) ? 'users' : 'newUsers';
-};
 export const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
 
@@ -931,14 +899,6 @@ const toRoleCategory = (user, roleIndexSets = null) => {
 
   const directRole = normalizeRole(user?.role);
   const fallbackRole = normalizeRole(user?.userRole);
-
-  if (
-    user?.__sourceCollection === 'newUsers' &&
-    fallbackRole === 'no' &&
-    (directRole === 'no' || directRole === '?')
-  ) {
-    return 'ed';
-  }
 
   const resolved = directRole !== 'no' && directRole !== '?' ? directRole : fallbackRole;
 
@@ -1289,47 +1249,6 @@ export const getActiveMatchingFiltersDebug = filters => Object.entries(filters |
   return acc;
 }, {});
 
-export const fetchNewUsersByIdsForMatching = async ({
-  ids,
-  batchSize = 100,
-  get,
-  ref,
-  database,
-  getAllUserPhotos,
-}) => {
-  if (!Array.isArray(ids) || ids.length === 0) return [];
-  if (typeof get !== 'function' || typeof ref !== 'function' || !database) {
-    throw new Error('fetchNewUsersByIdsForMatching requires get, ref and database dependencies');
-  }
-
-  const uniqueIds = [...new Set(ids.filter(Boolean))];
-  const safeBatchSize = Math.max(1, Number(batchSize) || 100);
-  const result = [];
-  let offset = 0;
-
-  while (offset < uniqueIds.length) {
-    const chunkIds = uniqueIds.slice(offset, offset + safeBatchSize);
-    const chunkSnapshots = await Promise.all(
-      chunkIds.map(async userId => {
-        const snapshot = await get(ref(database, `newUsers/${userId}`));
-        if (!snapshot.exists()) return null;
-        return {
-          userId,
-          ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
-          photos: [],
-          __photosHydrated: false,
-          __sourceCollection: 'newUsers',
-        };
-      })
-    );
-
-    result.push(...chunkSnapshots.filter(Boolean));
-    offset += safeBatchSize;
-  }
-
-  return result;
-};
-
 const buildEmptyAdditionalSearchIndexResult = (reason, offset = 0) => ({
   userIds: [],
   users: [],
@@ -1351,7 +1270,7 @@ const rethrowMatchingStageError = (error, stage) => {
   throw stagedError;
 };
 
-export const fetchAdditionalNewUsersBySearchIndex = async ({
+export const fetchAdditionalAccessUsersBySearchIndex = async ({
   rawRules,
   accessUserId,
   searchKeySetKeys,
@@ -1359,11 +1278,11 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   excludeIds = [],
   offset = 0,
   limit = 100,
-  fetchNewUsersByIds,
+  fetchUsersByIds,
   shouldDebugAdditionalMatching = () => false,
   debugAdditionalToast = () => {},
   logAdditionalMatchingDebug = () => {},
-  debugMissingNewUsersToast = () => {},
+  debugMissingUsersToast = () => {},
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   const normalizedSearchKeySetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
@@ -1381,7 +1300,7 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   // всю колекцію означало б роздати доступ, якого ніхто не давав.
   if (normalizedSearchKeySetKeys.length === 0) {
     const reason = 'no searchKeySets data';
-    console.info('[Matching][additionalNewUsers] access scope empty', {
+    console.info('[Matching][additionalAccessUsers] access scope empty', {
       ...indexRequestDebugData,
       reason,
     });
@@ -1392,8 +1311,8 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
     return buildEmptyAdditionalSearchIndexResult(reason, offset);
   }
 
-  console.info('[Matching][additionalNewUsers] getIndexedNewUsersIdsByRules request', indexRequestDebugData);
-  debugAdditionalToast(normalizedAccessUserId, 'before getIndexedNewUsersIdsByRules', indexRequestDebugData);
+  console.info('[Matching][additionalAccessUsers] getIndexedIdsByRules request', indexRequestDebugData);
+  debugAdditionalToast(normalizedAccessUserId, 'before getIndexedIdsByRules', indexRequestDebugData);
 
   const indexed = await fetchMatchingIndexedCandidates({
     accessScoped: true,
@@ -1407,14 +1326,14 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
     excludeIds,
     hydrateUsersByIds: async ids => {
       try {
-        return await fetchNewUsersByIds(ids);
+        return await fetchUsersByIds(ids);
       } catch (error) {
         return rethrowMatchingStageError(error, 'profile-hydration');
       }
     },
     accessScopedIndexReader: async args => {
       try {
-        return await getIndexedNewUsersIdsByRules({
+        return await getIndexedIdsByRules({
           ...args,
           fetchMissingBuckets: true,
           requireSearchKeySetKeys: true,
@@ -1428,7 +1347,7 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   });
 
   const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
-  console.info('[Matching][additionalNewUsers] indexedUserIdsCount', userIds.length);
+  console.info('[Matching][additionalAccessUsers] indexedUserIdsCount', userIds.length);
   logAdditionalMatchingDebug(normalizedAccessUserId, 'index response ids', {
     fetchedIds: userIds,
     indexedUserIds: userIds,
@@ -1438,15 +1357,15 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
   });
 
   const users = Array.isArray(indexed?.users) ? indexed.users : [];
-  console.info('[Matching][additionalNewUsers] fetchedUsersCount', users.length);
-  logAdditionalMatchingDebug(normalizedAccessUserId, 'newUsers fetch response', {
+  console.info('[Matching][additionalAccessUsers] fetchedUsersCount', users.length);
+  logAdditionalMatchingDebug(normalizedAccessUserId, 'profiles fetch response', {
     requestedIds: userIds,
     fetchedUsers: users,
     first10FetchedUserIds: users.map(user => user.userId).filter(Boolean).slice(0, 10),
   });
 
   if (userIds.length > 0 && users.length === 0) {
-    debugMissingNewUsersToast(normalizedAccessUserId, userIds.length);
+    debugMissingUsersToast(normalizedAccessUserId, userIds.length);
   }
 
   return {
@@ -1578,10 +1497,6 @@ export const fetchFilteredMatchingSourceChunk = ({
       ).filter(user => !exclude.has(user.userId));
     },
     hydrateUsersByIds,
-    decorateUser: user => ({
-      ...user,
-      __sourceCollection: resolveLegacyCollectionForId(user.__sourceCollection, user.userId),
-    }),
     onPart,
     onDiagnosticEvent,
   });

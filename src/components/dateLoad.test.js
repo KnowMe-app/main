@@ -171,19 +171,17 @@ describe('fetchFilteredUsersByPage', () => {
         entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
       },
     });
-    const firstNewUsersPage = Array.from({ length: 22 }, (_, index) => {
+    const firstPage = Array.from({ length: 22 }, (_, index) => {
       const id = `u${String(index + 1).padStart(2, '0')}`;
       return [id, { userId: id, getInTouch: '2026-06-19', keep: true }];
     });
-    const secondNewUsersPage = [
+    const secondPage = [
       ['u23', { userId: 'u23', getInTouch: '2026-06-19', keep: true }],
     ];
 
     database.get.mockImplementation(async queryArgs => {
-      const path = queryArgs[0];
-      if (path === 'db/users') return makeSnapshot([]);
       const hasCursor = queryArgs.some(arg => Array.isArray(arg) && arg[0] === 'startAfter');
-      return makeSnapshot(hasCursor ? secondNewUsersPage : firstNewUsersPage);
+      return makeSnapshot(hasCursor ? secondPage : firstPage);
     });
 
     const { fetchFilteredUsersByPage } = await import('./dateLoad');
@@ -208,13 +206,13 @@ describe('fetchFilteredUsersByPage', () => {
       { afterKeys: first.afterKeys },
     );
 
-    expect(Object.keys(first.users)).toEqual(firstNewUsersPage.slice(0, 20).map(([id]) => id));
+    expect(Object.keys(first.users)).toEqual(firstPage.slice(0, 20).map(([id]) => id));
     expect(first.hasMore).toBe(true);
-    expect(first.afterKeys?.newUsers).toEqual({ value: '2026-06-19', key: 'u20' });
+    expect(first.afterKeys?.users).toEqual({ value: '2026-06-19', key: 'u20' });
     expect(Object.keys(second.users)).toEqual(['u23']);
   });
 
-  it('does not skip users rows when merged newUsers rows fill the first ordered batch', async () => {
+  it('keeps reading past filtered-out rows until the page is filled', async () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
@@ -228,22 +226,19 @@ describe('fetchFilteredUsersByPage', () => {
         entries.forEach(([id, data]) => callback({ key: id, val: () => data }));
       },
     });
-    const newUsersPage = Array.from({ length: 22 }, (_, index) => {
-      const id = `new${String(index + 1).padStart(2, '0')}`;
+    const droppedRows = Array.from({ length: 22 }, (_, index) => {
+      const id = `drop${String(index + 1).padStart(2, '0')}`;
       return [id, { userId: id, getInTouch: '2026-06-01', keep: false }];
     });
-    const usersPage = Array.from({ length: 3 }, (_, index) => {
+    const keptRows = Array.from({ length: 3 }, (_, index) => {
       const id = `user${String(index + 1).padStart(2, '0')}`;
       return [id, { userId: id, getInTouch: '2026-06-19', keep: true }];
     });
 
     database.get.mockImplementation(async queryArgs => {
-      const path = queryArgs[0];
       const hasCursor = queryArgs.some(arg => Array.isArray(arg) && arg[0] === 'startAfter');
       if (hasCursor) return makeSnapshot([]);
-      if (path === 'db/newUsers') return makeSnapshot(newUsersPage);
-      if (path === 'db/users') return makeSnapshot(usersPage);
-      return makeSnapshot([]);
+      return makeSnapshot([...droppedRows, ...keptRows]);
     });
 
     const { fetchFilteredUsersByPage } = await import('./dateLoad');
@@ -277,7 +272,7 @@ describe('fetchFilteredUsersByPage', () => {
 
     database.get.mockImplementation(async queryArgs => {
       const path = queryArgs[0];
-      if (path === 'db/newUsers') {
+      if (path === 'db/users') {
         return makeSnapshot([
           ['long-id-future', { userId: 'long-id-future', getInTouch: '2026-06-19', keep: true }],
           ['long-id-current', { userId: 'long-id-current', getInTouch: '2026-06-19', keep: true }],
@@ -325,8 +320,6 @@ describe('defaultFetchByDate', () => {
         callback({ key: 'a', val: () => ({ userId: 'a' }) });
         callback({ key: 'z', val: () => ({ userId: 'z' }) });
       },
-    }).mockResolvedValueOnce({
-      exists: () => false,
     });
 
     const { defaultFetchByDate } = await import('./dateLoad');
@@ -334,10 +327,10 @@ describe('defaultFetchByDate', () => {
 
     expect(result.entries.map(([id]) => id)).toEqual(['a', 'z']);
     expect(result.lastKey).toBe('z');
-    expect(result.afterKeys).toEqual({ newUsers: 'z' });
+    expect(result.afterKeys).toEqual({ users: 'z' });
   });
 
-  it('uses collection-specific cursors instead of applying a merged key to every collection', async () => {
+  it('uses the per-collection cursor instead of the merged key', async () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
@@ -349,9 +342,9 @@ describe('defaultFetchByDate', () => {
     database.get.mockResolvedValue({ exists: () => false });
 
     const { defaultFetchByDate } = await import('./dateLoad');
-    await defaultFetchByDate('2026-06-19', 20, { afterKey: 'merged', afterKeys: { newUsers: 'new-cursor' } });
+    await defaultFetchByDate('2026-06-19', 20, { afterKey: 'merged', afterKeys: { users: 'users-cursor' } });
 
-    expect(database.startAfter).toHaveBeenCalledWith('2026-06-19', 'new-cursor');
+    expect(database.startAfter).toHaveBeenCalledWith('2026-06-19', 'users-cursor');
     expect(database.startAfter).not.toHaveBeenCalledWith('2026-06-19', 'merged');
   });
 });

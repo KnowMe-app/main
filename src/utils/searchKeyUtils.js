@@ -267,7 +267,7 @@ export const shouldSkipBroadFallbackForExactSearchId = searchKey => {
   if (searchKey !== 'searchId') return false;
 
   // `searchId` в UI — окремий режим пошуку.
-  // Тому додаткові broad-fallback запити (по users/newUsers, partial userId тощо)
+  // Тому додаткові broad-fallback запити (по `users`, partial userId тощо)
   // не мають виконуватись, інакше можна отримати результати з інших полів
   // (наприклад, telegram), навіть якщо вибрано тільки instagram-префікс.
   return true;

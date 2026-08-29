@@ -241,7 +241,7 @@ describe('getCanonicalCard', () => {
     ref.mockImplementation((db, path) => ({ db, path }));
   });
 
-  it('reads only users for a long-format userId when found there, never touching newUsers', async () => {
+  it('reads only the single legacy collection for a long-format userId', async () => {
     get.mockImplementation(async ({ path }) => {
       if (path === `users/${LONG_USER_ID}`) {
         return { exists: () => true, val: () => ({ name: 'Canonical' }) };
@@ -256,34 +256,29 @@ describe('getCanonicalCard', () => {
     expect(card).toEqual({ userId: LONG_USER_ID, name: 'Canonical' });
   });
 
-  it('falls back to newUsers for a long-format userId only when users has no record', async () => {
+  it('returns just the id when the legacy record is missing', async () => {
     get.mockImplementation(async ({ path }) => {
       if (path === `users/${LONG_USER_ID}`) return { exists: () => false, val: () => null };
-      if (path === `newUsers/${LONG_USER_ID}`) {
-        return { exists: () => true, val: () => ({ name: 'Fallback' }) };
-      }
       throw new Error(`unexpected read: ${path}`);
     });
 
     const card = await getCanonicalCard(LONG_USER_ID);
 
-    expect(get).toHaveBeenCalledTimes(2);
-    expect(card).toEqual({ userId: LONG_USER_ID, name: 'Fallback' });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(card).toEqual({ userId: LONG_USER_ID });
   });
 
-  it('still checks both collections in parallel for a short-format userId', async () => {
+  it('reads the same single collection for a short-format userId', async () => {
     get.mockImplementation(async ({ path }) => {
       if (path === 'users/TG0016') return { exists: () => true, val: () => ({ name: 'Users' }) };
-      if (path === 'newUsers/TG0016') return { exists: () => true, val: () => ({ extra: 'NewUsers' }) };
       throw new Error(`unexpected read: ${path}`);
     });
 
     const card = await getCanonicalCard('TG0016');
 
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/TG0016' }));
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'newUsers/TG0016' }));
-    expect(card).toEqual({ userId: 'TG0016', name: 'Users', extra: 'NewUsers' });
+    expect(card).toEqual({ userId: 'TG0016', name: 'Users' });
   });
 });
 

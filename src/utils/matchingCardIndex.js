@@ -6,7 +6,7 @@ import {
   deriveRole,
   normalizeFeedDateValue,
   resolveMatchingCardAvatarFromProfile,
-} from './rtdbMigrationDerive';
+} from './profileFieldDerive';
 
 /**
  * `matchingCards` — проєкція анкети рівно під стрічку матчингу.
@@ -36,9 +36,8 @@ export const MATCHING_CARDS_ROOT = 'matchingCards';
  * показу. Це не економія байтів, а перенесення фільтра з клієнта в індекс:
  * схованої картки в діапазоні немає, тож вона не може приїхати у видачу.
  *
- * Ключ один, бо стрічка одна — і колекція у вебі одна. Другий ключ стеріг би
- * розділення на `users` і `newUsers`, якого більше немає: анкета потрапляє в
- * стрічку за `publish`, а не за тим, у якій колекції лежить її тіло.
+ * Ключ один, бо стрічка одна — і колекція у вебі одна: анкета потрапляє в
+ * стрічку за `publish`, а не за тим, де лежить її тіло.
  *
  * Порядок у RTDB завжди зростаючий, і `val()` до того ж повертає обʼєкт, у
  * якому порядок запиту не зберігається. Тож найновіші беруться з хвоста
@@ -99,23 +98,6 @@ const firstNonEmpty = (data, keys) => {
 // Вибір основного фото живе поруч з рештою похідних — і офлайн-міграція, і
 // писач індексу беруть його звідти, тож аватар у них не може розійтись.
 export { resolveMatchingCardAvatarFromProfile };
-
-/**
- * Колекція картки — за форматом id, і окремого поля для цього не треба.
- *
- * `users` тримає Firebase-Auth UID: 28 символів. `newUsers` — або короткий
- * згенерований id (`AC00001`), або push-ключ Firebase, а той має рівно 20.
- * Тобто межа проходить по «більше за 20», і саме на цьому ламалась стара умова
- * `>= 20`: вона зараховувала кожен push-ключ `newUsers` до `users`.
- *
- * Явний `__sourceCollection` поважається, коли він є: анкета, прочитана
- * напряму з колекції, знає своє джерело точно.
- */
-export const resolveMatchingCardCollection = (userId, data) => {
-  const explicit = trimmed(data?.__sourceCollection);
-  if (explicit === 'users' || explicit === 'newUsers') return explicit;
-  return String(userId || '').length > 20 ? 'users' : 'newUsers';
-};
 
 /**
  * Дата для стрічки — у показаної картки, хай звідки вона прийшла.
@@ -189,9 +171,9 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
  * Збирає весь вузол `matchingCards` з локальних копій колекцій.
  *
  * Це офлайн-двійник фонової індексації: жодного запиту в базу, ані на читання,
- * ані на запис. Адмін викачує `users.json` і `newUsers.json`, збирає з них файл
- * тут, у браузері, і заливає його в базу вручну одним імпортом — замість
- * тисяч дрібних записів з телефона.
+ * ані на запис. Адмін викачує анкети файлом, збирає з них вузол тут, у
+ * браузері, і заливає його в базу вручну одним імпортом — замість тисяч
+ * дрібних записів з телефона.
  *
  * Аватар береться лише з поля `photos` анкети: лістинг Storage — це мережа, а
  * тут її немає за визначенням. Скільки карток лишилось без аватара, функція
@@ -212,12 +194,7 @@ export const buildMatchingCardsPayloadFromCollections = (collectionsMap = {}) =>
       collectionStats.total += 1;
       stats.total += 1;
 
-      // Джерело картки називає формат id, а не назва мапи, з якої вона
-      // прийшла: колекція у вебі одна, і мапа сюди приходить уже зведена.
-      const projection = buildMatchingCardProjection(userId, {
-        __sourceCollection: resolveMatchingCardCollection(userId),
-        ...userData,
-      });
+      const projection = buildMatchingCardProjection(userId, userData);
       if (!projection) {
         stats.skipped += 1;
         return;
@@ -296,7 +273,6 @@ export const expandMatchingCard = (userId, card) => {
     ...(trimmed(feedDate) ? { publish: true, lastLogin2: feedDate } : {}),
     photos: avatar ? [avatar] : [],
     __photosHydrated: true,
-    __sourceCollection: resolveMatchingCardCollection(id),
     [MATCHING_SUMMARY_FLAG]: true,
   };
 };

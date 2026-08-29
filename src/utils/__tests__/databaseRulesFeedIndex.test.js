@@ -30,7 +30,11 @@ describe('правила, без яких стрічка не може чита�
   it('дає редактору право оновити картку, яку він щойно змінив', () => {
     // Дзеркалення живе в писачах анкети: хто може зберегти анкету, той мусить
     // могти оновити і її проєкцію, інакше картка застигає застарілою.
-    expect(rules.matchingCards.$uid['.write']).toBe(rules.newUsers.$uid['.write']);
+    expect(rules.matchingCards.$uid['.write']).toBe(rules.profileDetails.$uid['.write']
+      .replace(" || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true"
+        + " || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true)", ''));
+    ["matching:view&write", 'matching+addNewProfile:view&write', 'add+matching:view&write']
+      .forEach(level => expect(rules.matchingCards.$uid['.write']).toContain(level));
   });
 
   it('лишає точковий резолв searchId доступним авторизованому читачеві', () => {

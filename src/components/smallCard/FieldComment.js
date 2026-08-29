@@ -41,7 +41,7 @@ const buildCommentBackendUrl = (ownerId, cardId) => {
 };
 
 // Персональний коментар поточного адміна до картки — зберігається в
-// multiData/comments/{ownerId}/{cardId}, а не прямо в самій картці (users/newUsers).
+// multiData/comments/{ownerId}/{cardId}, а не прямо в самій картці (users).
 export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMigrated }) => {
   const textareaRef = useRef(null);
   const [text, setText] = useState('');

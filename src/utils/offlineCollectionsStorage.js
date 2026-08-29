@@ -1,7 +1,7 @@
 const DB_NAME = 'offlineCollections';
 const DB_VERSION = 1;
 const STORE_NAME = 'collections';
-const COLLECTION_KEYS = ['users', 'newUsers'];
+const COLLECTION_KEYS = ['users'];
 
 const getScopedCollectionKey = (ownerId, collection) => {
   if (!ownerId) {
@@ -84,14 +84,9 @@ export const loadOfflineCollection = async (ownerId, collection) => {
 };
 
 export const loadOfflineCollections = async ownerId => {
-  if (!ownerId) return { users: null, newUsers: null };
+  if (!ownerId) return { users: null };
 
-  const [users, newUsers] = await Promise.all([
-    loadOfflineCollection(ownerId, 'users'),
-    loadOfflineCollection(ownerId, 'newUsers'),
-  ]);
-
-  return { users, newUsers };
+  return { users: await loadOfflineCollection(ownerId, 'users') };
 };
 
 export const clearOfflineCollections = async ownerId => {

@@ -345,7 +345,7 @@ export const parsePartialUserIdPrefix = input => {
   if (!candidate) return null;
 
   // RTDB keys cannot contain these characters, and the partial userId mode
-  // searches by the beginning of the users/newUsers catalog key exactly as typed.
+  // searches by the beginning of the users catalog key exactly as typed.
   if (/[.#$[\]/\s]/.test(candidate)) return null;
 
   const normalizedPhone = candidate.replace(/[+\s()-]/g, '');

@@ -4,7 +4,7 @@ import { buildAuthProfilePayload, buildAuthSessionPayload } from './authProfileP
 
 jest.mock('./config', () => ({
   updateDataInFiresoreDB: jest.fn(),
-  updateDataInNewUsersRTDB: jest.fn(),
+  updateProfileNodesInRTDB: jest.fn(),
   updateDataInRealtimeDB: jest.fn(),
 }));
 

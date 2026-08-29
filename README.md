@@ -76,7 +76,7 @@ The production URL is configured in `package.json` as `https://KnowMe-app.github
 GitHub Pages workflow — after changing the file, paste it into Firebase Console →
 Realtime Database → Rules (or run `firebase deploy --only database`).
 
-Matching reads the whole `users` / `newUsers` collections, so the collection-level
+Matching reads the whole `users` collection, so the collection-level
 `.read` rule must grant access to everyone the client lets onto `/matching`. The client
 gate (`canAccessMatchingByLevel` in `src/utils/accessLevel.js`) accepts any `accessLevel`
 that mentions `matching`, so the rules use `accessLevel.contains('matching')` instead of an

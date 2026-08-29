@@ -10,31 +10,27 @@ describe('Matching shared reaction card UI', () => {
     expect(source).not.toContain('ReactionOwnershipBadge');
   });
 
-  it('loads reaction tab cards through mixed users/newUsers fetch hydration', () => {
+  it('loads reaction tab cards through one hydration path', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const fetchReactionCardsByIds = React.useCallback');
-    expect(source).toContain("missingUserIds.length ? fetchUsersByIds(missingUserIds, { collectionSource: 'users' })");
-    expect(source).toContain('missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds)');
+    expect(source).toContain('const usersMap = missingIds.length ? await fetchUsersByIds(missingIds) : {};');
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
   });
 
 
-  it('hydrates uncached reaction cards with photos from both backing collections', () => {
+  it('hydrates uncached reaction cards with photos', () => {
     const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
     const configSource = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-    expect(matchingSource).toContain("missingUserIds.length ? fetchUsersByIds(missingUserIds, { collectionSource: 'users' })");
-    expect(matchingSource).toContain('missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds)');
+    expect(matchingSource).toContain('const usersMap = missingIds.length ? await fetchUsersByIds(missingIds) : {};');
     expect(configSource).toContain('getAllUserPhotos(userId)');
     expect(configSource).toContain('photos,');
   });
 
-  it('refreshes mixed users/newUsers reaction pagination when access scope changes in users mode', () => {
+  it('refreshes reaction pagination when access scope changes', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-    expect(source).toContain('const hasAccessScopedNewUsersUserIds = [');
-    expect(source).toContain("(collectionSource === 'newUsers' || hasAccessScopedNewUsersUserIds)");
     expect(source).toContain('currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey');
     expect(source).toContain('if (didAccessSnapshotChange) return page.users;');
     expect(source).toContain('const canUseCachedCard = cached && (');
@@ -78,7 +74,7 @@ describe('Matching shared reaction card UI', () => {
   });
 
 
-  it('requires searchKeySets for newUsers reaction access instead of falling back to global searchKey', () => {
+  it('requires searchKeySets for additional reaction access instead of falling back to global searchKey', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('requireSearchKeySetKeys: true');

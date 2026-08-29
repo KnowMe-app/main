@@ -523,30 +523,6 @@ const photosModalSubtitleStyle = {
   lineHeight: 1.35,
 };
 
-const photosCollectionToggleStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '4px',
-  padding: '3px',
-  marginTop: '8px',
-  borderRadius: '999px',
-  background: 'var(--km-accent-light)',
-  border: '1px solid var(--km-border)',
-};
-
-const getPhotosCollectionToggleButtonStyle = isActive => ({
-  border: 'none',
-  borderRadius: '999px',
-  padding: '5px 10px',
-  background: isActive ? 'var(--km-accent)' : 'transparent',
-  color: isActive ? '#fff' : 'var(--km-muted)',
-  cursor: 'pointer',
-  fontSize: '12px',
-  fontWeight: 700,
-  lineHeight: 1,
-  boxShadow: isActive ? '0 3px 8px rgba(232, 121, 26, 0.28)' : 'none',
-});
-
 const photosModalCloseButtonStyle = {
   width: '34px',
   height: '34px',
@@ -654,13 +630,6 @@ const hasAgentOrIPRole = data =>
 
 const hasRoleWithoutCycle = data =>
   data.userRole === 'pp' || data.role === 'pp' || hasAgentOrIPRole(data);
-
-const resolveUserPhotoCollection = data => {
-  if (data?.__sourceCollection === 'users' || data?.__sourceCollection === 'newUsers') {
-    return data.__sourceCollection;
-  }
-  return null;
-};
 
 const stateContainsUser = (state, userId) => {
   if (!state || !userId) return false;
@@ -1160,7 +1129,7 @@ const pdfExportButtonStyle = {
   textDecoration: 'none',
 };
 
-const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) => {
+const resolvePdfPhotoUrls = async ({ cardData, photoUrls }) => {
   const existingPhotos = Array.isArray(photoUrls) ? photoUrls : [];
 
   if (!cardData?.userId) {
@@ -1173,10 +1142,9 @@ const resolvePdfPhotoUrls = async ({ cardData, photoUrls, photosCollection }) =>
     return Array.from(new Set(storagePhotos));
   }
 
-  const sourceCollection = photosCollection || resolveUserPhotoCollection(cardData);
   let databasePhotos = [];
   try {
-    databasePhotos = await getAllUserPhotos(cardData.userId, sourceCollection, { includeStorage: false });
+    databasePhotos = await getAllUserPhotos(cardData.userId, { includeStorage: false });
   } catch (error) {
     console.error('Unable to load PDF fallback photos', error);
   }
@@ -1231,7 +1199,7 @@ const resolvePdfEmbeddedImageSource = async photoUrl => {
 
 const isSurrogateMotherRole = data => String(data?.userRole || data?.role || '').trim().toLowerCase() === 'sm';
 
-const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
+const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleExport = async event => {
@@ -1265,7 +1233,7 @@ const ProfilePdfExportButton = ({ cardData, photoUrls, photosCollection }) => {
       // The document's wordmark/footer identity comes from budget/technical/agency - this export
       // path doesn't otherwise load the budget catalog, so fetch it before rendering.
       await ensurePdfAgencyConfigLoaded();
-      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls, photosCollection });
+      const effectivePhotoUrls = await resolvePdfPhotoUrls({ cardData, photoUrls });
       const embeddedPhotoEntries = await Promise.all(
         effectivePhotoUrls.map(photoUrl => loadPdfEmbeddedImage(photoUrl))
       );
@@ -1347,9 +1315,6 @@ export const TopBlock = ({
   const containerRef = useRef(null);
   const [needsOwnSurface, setNeedsOwnSurface] = useState(false);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
-  const [resolvedPhotosCollection, setResolvedPhotosCollection] = React.useState(null);
-  const [selectedPhotosCollection, setSelectedPhotosCollection] = React.useState(null);
-  const syncedPhotosCollectionRef = React.useRef({ userId: null, sourceCollection: undefined });
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
     if (!userData) return null;
@@ -1422,89 +1387,14 @@ export const TopBlock = ({
   }, [cardData?.userId]);
 
   React.useEffect(() => {
-    const sourceCollection = resolveUserPhotoCollection(cardData);
-    setResolvedPhotosCollection(sourceCollection);
-    const syncedPhotosCollection = syncedPhotosCollectionRef.current;
-    const shouldSyncSelectedCollection =
-      syncedPhotosCollection.userId !== cardData?.userId ||
-      syncedPhotosCollection.sourceCollection !== sourceCollection;
-    if (shouldSyncSelectedCollection) {
-      setSelectedPhotosCollection(sourceCollection || null);
-      syncedPhotosCollectionRef.current = {
-        userId: cardData?.userId || null,
-        sourceCollection,
-      };
-    }
-
-    if (sourceCollection || !cardData?.userId) {
-      return undefined;
-    }
-
-    let isMounted = true;
-    const resolveCollection = async () => {
-      try {
-        const fresh = await fetchUserById(cardData.userId);
-        if (!isMounted) return;
-
-        const freshCollection = resolveUserPhotoCollection(fresh);
-        if (!freshCollection) {
-          if (isPhotosModalOpen) toast.error('Не вдалося визначити джерело фото профілю');
-          return;
-        }
-
-        setResolvedPhotosCollection(freshCollection);
-        setSelectedPhotosCollection(prev => prev || freshCollection);
-        if (typeof setState === 'function' && !isFromListOfUsers) {
-          setState(prev => {
-            const currentCard = prev && typeof prev === 'object' ? prev : cardData;
-            if (currentCard?.userId && currentCard.userId !== cardData.userId) return prev;
-            return {
-              ...currentCard,
-              __sourceCollection: freshCollection,
-            };
-          }, {
-            source: 'userChange',
-            caller: 'renderTopBlock.resolvePhotosCollection',
-            reason: 'photos-source-resolved',
-          });
-        }
-
-        if (typeof setUsers === 'function') {
-          setUsers(prev => (
-            stateContainsUser(prev, cardData.userId)
-              ? updateUserInState(prev, cardData.userId, currentCard => ({
-                ...currentCard,
-                __sourceCollection: freshCollection,
-              }))
-              : prev
-          ));
-        }
-      } catch (error) {
-        if (isMounted) {
-          console.error('Error resolving photo source:', error);
-          if (isPhotosModalOpen) toast.error('Не вдалося визначити джерело фото профілю');
-        }
-      }
-    };
-
-    resolveCollection();
-    return () => {
-      isMounted = false;
-    };
-  }, [cardData, isFromListOfUsers, isPhotosModalOpen, setState, setUsers]);
-
-  const photosCollection = resolvedPhotosCollection;
-  const effectivePhotosCollection = selectedPhotosCollection || photosCollection;
-
-  React.useEffect(() => {
-    if (!cardData?.userId || userPhotoUrls.length > 0 || !effectivePhotosCollection) {
+    if (!cardData?.userId || userPhotoUrls.length > 0) {
       return undefined;
     }
 
     let isMounted = true;
     const hydrateTopBlockPhotos = async () => {
       try {
-        const urls = await getAllUserPhotos(cardData.userId, effectivePhotosCollection);
+        const urls = await getAllUserPhotos(cardData.userId);
         if (!isMounted) return;
         const filteredUrls = filterOutMedicationPhotos(urls, cardData.userId);
         if (!filteredUrls.length) return;
@@ -1547,7 +1437,7 @@ export const TopBlock = ({
     return () => {
       isMounted = false;
     };
-  }, [cardData, effectivePhotosCollection, isFromListOfUsers, setState, setUsers, userPhotoUrls.length]);
+  }, [cardData, isFromListOfUsers, setState, setUsers, userPhotoUrls.length]);
 
   if (!cardData) return null;
 
@@ -1572,23 +1462,6 @@ export const TopBlock = ({
         reason: 'photos-updated',
       });
     }
-  };
-
-  const clearCardPhotosState = () => {
-    setCardPhotosState(currentCard => {
-      if (!currentCard || !Object.prototype.hasOwnProperty.call(currentCard, 'photos')) {
-        return currentCard;
-      }
-
-      const { photos, ...cardWithoutPhotos } = currentCard;
-      return cardWithoutPhotos;
-    });
-  };
-
-  const handlePhotosCollectionSelect = collection => {
-    if (!collection || collection === effectivePhotosCollection) return;
-    setSelectedPhotosCollection(collection);
-    clearCardPhotosState();
   };
 
   const renderOverlayEntries = fieldNames => {
@@ -2088,7 +1961,7 @@ export const TopBlock = ({
               {cardData.lastAction && cardData.userId && <span>·</span>}
               {cardData.userId && (
                 <a
-                  href={buildUserRtdbLink(cardData.userId, cardData.__sourceCollection)}
+                  href={buildUserRtdbLink(cardData.userId)}
                   target="_blank"
                   rel="noreferrer"
                   title="Відкрити профіль в Firebase RTDB"
@@ -2118,11 +1991,7 @@ export const TopBlock = ({
                   color: '#fff',
                 })}
               {isSurrogateMotherRole(cardData) && (
-                <ProfilePdfExportButton
-                  cardData={cardData}
-                  photoUrls={userPhotoUrls}
-                  photosCollection={photosCollection}
-                />
+                <ProfilePdfExportButton cardData={cardData} photoUrls={userPhotoUrls} />
               )}
               {additionalActions}
               {stimulationScheduleToggleButton}
@@ -2251,7 +2120,6 @@ export const TopBlock = ({
         ))}
       </div>
       {isPhotosModalOpen && (() => {
-        const collectionOptions = ['users', 'newUsers'];
         const photosModalContent = (
           <div
             style={inlineModalOverlayStyle}
@@ -2269,25 +2137,7 @@ export const TopBlock = ({
                   <h3 style={photosModalTitleStyle}>Фото профілю</h3>
                   <p style={photosModalSubtitleStyle}>
                     {buildName(cardData) || cardData.userId || 'Користувач'}
-                    {effectivePhotosCollection ? ` · ${effectivePhotosCollection}` : ' · визначаємо джерело фото…'}
                   </p>
-                  <div
-                    style={photosCollectionToggleStyle}
-                    role="group"
-                    aria-label="Вибір колекції фото"
-                  >
-                    {collectionOptions.map(collection => (
-                      <button
-                        key={collection}
-                        type="button"
-                        style={getPhotosCollectionToggleButtonStyle(effectivePhotosCollection === collection)}
-                        onClick={() => handlePhotosCollectionSelect(collection)}
-                        aria-pressed={effectivePhotosCollection === collection}
-                      >
-                        {collection}
-                      </button>
-                    ))}
-                  </div>
                 </div>
                 <button
                   type="button"
@@ -2299,17 +2149,12 @@ export const TopBlock = ({
                   ×
                 </button>
               </div>
-              {effectivePhotosCollection === 'users' || effectivePhotosCollection === 'newUsers' ? (
-                <Photos
-                  state={cardData}
-                  setState={setCardPhotosState}
-                  collection={effectivePhotosCollection}
-                  uploadInputId={`file-upload-${cardData.userId || 'card'}`}
-                  cropAspectRatio={2 / 3}
-                />
-              ) : (
-                <p style={photosModalSubtitleStyle}>Визначаємо джерело фото перед збереженням…</p>
-              )}
+              <Photos
+                state={cardData}
+                setState={setCardPhotosState}
+                uploadInputId={`file-upload-${cardData.userId || 'card'}`}
+                cropAspectRatio={2 / 3}
+              />
             </div>
           </div>
         );

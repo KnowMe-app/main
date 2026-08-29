@@ -1,6 +1,6 @@
 import { get as firebaseGet, push, ref as ref2, remove, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
-import { isLongFormatUserId, mergeUserCollectionData } from 'utils/mergeUserCollections';
+import { isLongFormatUserId } from 'utils/userIdFormat';
 
 import { database } from 'components/config';
 
@@ -84,46 +84,27 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
   };
 };
 
-// Published create-profile cards retain their Firebase push id, so id length
-// alone cannot identify their storage collection. Prefer an existing users
-// record and fall back to the legacy id convention for cards not yet there.
-export const getCardStorageCollection = async cardUserId => {
+// Legacy-колекція одна — `users`, і тіло анкети лежить у ній не завжди: анкети,
+// заведені у вебі, живуть тільки в нових вузлах. Довгий id — це Firebase-Auth
+// UID, тобто анкета акаунта, яку читає ще й мобільний застосунок; для короткого
+// відповідь дає наявність самого запису.
+//
+// `null` означає «legacy-тіла немає»: писати таку анкету треба лише у вузли.
+export const getCardLegacyCollection = async cardUserId => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return null;
   if (isLongFormatUserId(normalizedCardId)) return 'users';
 
   const usersSnapshot = await get(ref2(database, `users/${normalizedCardId}`));
-  return usersSnapshot.exists() ? 'users' : 'newUsers';
+  return usersSnapshot.exists() ? 'users' : null;
 };
 
 export const getCanonicalCard = async cardUserId => {
-  if (isLongFormatUserId(cardUserId)) {
-    const usersSnapshot = await get(ref2(database, `users/${cardUserId}`));
-    if (usersSnapshot.exists()) {
-      return {
-        userId: cardUserId,
-        ...mergeUserCollectionData(usersSnapshot.val(), {}),
-      };
-    }
-
-    const newUsersSnapshot = await get(ref2(database, `newUsers/${cardUserId}`));
-    return {
-      userId: cardUserId,
-      ...mergeUserCollectionData({}, newUsersSnapshot.exists() ? newUsersSnapshot.val() : {}),
-    };
-  }
-
-  const [newUsersSnapshot, usersSnapshot] = await Promise.all([
-    get(ref2(database, `newUsers/${cardUserId}`)),
-    get(ref2(database, `users/${cardUserId}`)),
-  ]);
-
-  const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
-  const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+  const usersSnapshot = await get(ref2(database, `users/${cardUserId}`));
 
   return {
     userId: cardUserId,
-    ...mergeUserCollectionData(usersData, newUsersData),
+    ...(usersSnapshot.exists() ? usersSnapshot.val() : {}),
   };
 };
 

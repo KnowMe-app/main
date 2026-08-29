@@ -19,8 +19,8 @@ describe('limited search projection', () => {
     expect(limitedProfileFields.sort()).toEqual(['birth', 'city', 'name', 'region', 'surname']);
   });
 
-  it.each(['users', 'newUsers'])('opens exactly those fields on %s/$uid and nothing more', collection => {
-    const uidRules = rules[collection].$uid;
+  it('opens exactly those fields on users/$uid and nothing more', () => {
+    const uidRules = rules.users.$uid;
     const openedFields = Object.keys(uidRules)
       .filter(key => !key.startsWith('.'))
       .filter(key => uidRules[key]['.read'] === 'auth != null');
@@ -32,12 +32,12 @@ describe('limited search projection', () => {
       .toEqual(limitedProfileFields.sort());
   });
 
-  it.each(['users', 'newUsers'])('leaves %s node-level reads gated as before', collection => {
-    const nodeRead = rules[collection].$uid['.read'];
+  it('leaves users node-level reads gated as before', () => {
+    const nodeRead = rules.users.$uid['.read'];
     expect(nodeRead).toContain('auth.uid == $uid');
     expect(nodeRead).not.toBe('auth != null');
     // The collection root - what a query would need - stays behind matching access.
-    expect(rules[collection]['.read']).toContain("accessLevel').val().contains('matching')");
+    expect(rules.users['.read']).toContain("accessLevel').val().contains('matching')");
   });
 
   it('lets any signed-in user resolve one searchId key but not scan the index', () => {

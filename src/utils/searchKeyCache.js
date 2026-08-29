@@ -47,7 +47,6 @@ const shouldTreatKeyAsMatchingCache = key => {
     normalized.startsWith(SEARCH_KEY_PREFIX) ||
     normalized.includes('searchKeySets') ||
     lower.includes('matching') ||
-    normalized.includes('additionalNewUsers') ||
     normalized.includes('cardsCache') ||
     normalized === 'cards' ||
     normalized === 'queries' ||

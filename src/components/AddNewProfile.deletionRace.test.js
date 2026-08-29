@@ -98,11 +98,10 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
     );
 
     expect(deleteBranch).toContain('const deletePayload = { lastAction: syncedState.lastAction };');
-    // Відбору за назвою ключа тут бути не має. Він лишався з часів, коли довгий
-    // userId жив одночасно в `users` і `newUsers`: половина полів анкети
-    // належала другій колекції, тож null за таким ключем викидався з пейлоада —
-    // і writer, role, lastCycle було видно на картці й неможливо видалити.
-    // Довгий userId тепер лежить лише в `users`, і знімається там усе.
+    // Відбору за назвою ключа тут бути не має. Він лишався з часів, коли анкета
+    // була розділена між двома колекціями: половина полів належала другій, тож
+    // null за таким ключем викидався з пейлоада — і writer, role, lastCycle було
+    // видно на картці й неможливо видалити. Колекція одна, і знімається все.
     expect(deleteBranch).not.toContain('isUsersAllowedField');
     expect(deleteBranch).toContain('deleteOnlyKeys.forEach(key => {');
     expect(deleteBranch).toContain('deletePayload[key] = null;');
@@ -123,7 +122,7 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
 
     expect(deleteBranch).toContain('const deletePayload = { lastAction: syncedState.lastAction };');
     expect(deleteBranch).toContain(
-      "await updateDataInNewUsersRTDB(syncedState.userId, deletePayload, 'update');"
+      "await updateProfileNodesInRTDB(syncedState.userId, deletePayload, 'update');"
     );
   });
 

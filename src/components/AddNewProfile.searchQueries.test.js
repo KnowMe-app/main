@@ -6,7 +6,7 @@ describe('AddNewProfile search query persistence', () => {
     const source = fs.readFileSync(path.join(__dirname, 'AddNewProfile.jsx'), 'utf8');
 
     expect(source).toContain('addMatchingSearchQuery(normalized);');
-    expect(source).toMatch(/migrateAllLegacyCardComments,\s+addMatchingSearchQuery,/);
+    expect(source).toContain('addMatchingSearchQuery,');
   });
 
   it("always stores history below the authenticated user's UID", () => {

@@ -36,12 +36,12 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
 import {
-  buildNewUsersFilterSetIndex,
+  buildFilterSetIndex,
   makeAdditionalRulesSetKey,
   collectMetricBucketsByUserId,
   prepareAdditionalAccessBucketMapForSearchKey,
   resolveImtTokensFromExactMetrics,
-} from 'utils/newUsersFilterSetsIndex';
+} from 'utils/filterSetsIndex';
 import {
   getCachedAdditionalRulesPreview,
   saveCachedAdditionalRulesPreview,
@@ -1309,7 +1309,7 @@ export const ProfileForm = ({
           (!Array.isArray(rawRules) && String(rawRules || '').trim().length > 0);
 
         if (!hasAnyAdditionalRules) {
-          await buildNewUsersFilterSetIndex({
+          await buildFilterSetIndex({
             rawRules: '',
             accessUserId,
             matchedUserIdsBySetKey: {},
@@ -1346,7 +1346,7 @@ export const ProfileForm = ({
           accessUserId,
           matchedUserIdsByInputIndex
         );
-        const indexResult = await buildNewUsersFilterSetIndex({
+        const indexResult = await buildFilterSetIndex({
           rawRules: rawRules !== undefined ? rawRules : '',
           accessUserId,
           matchedUserIdsBySetKey,
@@ -1420,7 +1420,7 @@ export const ProfileForm = ({
     } catch (error) {
       const code = String(error?.code || '');
       if (code.includes('PERMISSION_DENIED')) {
-        console.warn('Skipped additional access newUsers filter-set index rebuild due to permissions.', error);
+        console.warn('Skipped additional access filter-set index rebuild due to permissions.', error);
         const details = error?.message || String(error);
         toast.error(
           `Немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`
@@ -1436,7 +1436,7 @@ export const ProfileForm = ({
         const details = error?.message || String(error);
         toast.error(details);
       } else {
-        console.error('Failed to update additional access newUsers filter-set index', error);
+        console.error('Failed to update additional access filter-set index', error);
         const details = error?.message || String(error);
         toast.error(`Не вдалося зберегти індексацію наборів фільтрів.\n${details}`);
       }
@@ -1601,7 +1601,7 @@ export const ProfileForm = ({
 
       stage = 'write-index';
       stageToast('3/3 Запис індексів у searchKeySets...');
-      const indexResult = await buildNewUsersFilterSetIndex({
+      const indexResult = await buildFilterSetIndex({
         rawRules,
         accessUserId,
         matchedUserIdsBySetKey,
@@ -1986,7 +1986,7 @@ export const ProfileForm = ({
         {
           name: ADDITIONAL_ACCESS_FIELD,
           placeholder: 'age: 21,22,23',
-          ukrainianHint: 'додаткові правила доступу до newUsers',
+          ukrainianHint: 'додаткові правила доступу до анкет',
         },
       ];
     }

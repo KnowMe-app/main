@@ -10,7 +10,7 @@ beforeAll(() => {
 });
 
 describe('parsePartialUserIdPrefix', () => {
-  it('allows exact-case catalog key prefixes for users/newUsers userId search', () => {
+  it('allows exact-case catalog key prefixes for users userId search', () => {
     expect(parsePartialUserIdPrefix('IORgRD')).toBe('IORgRD');
     expect(parsePartialUserIdPrefix('  AbC_123-XYZ  ')).toBe('AbC_123-XYZ');
   });
@@ -622,9 +622,8 @@ describe('SearchBar cache-first search', () => {
     expect(cachedResult.negativeHit).toBe(false);
   });
 
-  it('keeps negative cache entries isolated by collection scope', () => {
+  it('keeps negative cache entries isolated by cache scope', () => {
     const usersScope = { cacheScope: { collections: ['users'] } };
-    const allCollectionsScope = { cacheScope: { collections: ['newUsers', 'users'] } };
     setIdsForQuery(
       getSearchCacheKeyForParams('instagram', 'collection-only', usersScope),
       [],
@@ -632,7 +631,9 @@ describe('SearchBar cache-first search', () => {
     );
 
     expect(getFreshCachedSearchResult('instagram', 'collection-only', usersScope).negativeHit).toBe(true);
-    expect(getFreshCachedSearchResult('instagram', 'collection-only', allCollectionsScope).negativeHit).toBe(false);
+    // Той самий запит без скоупа — це інший ключ, тож негативний кеш на нього
+    // не поширюється.
+    expect(getFreshCachedSearchResult('instagram', 'collection-only').negativeHit).toBe(false);
   });
 
   it('caches negative search results so repeated identical searches skip backend calls', async () => {

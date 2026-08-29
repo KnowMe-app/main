@@ -37,7 +37,7 @@ describe('resolvePrioritizedReactionMaps', () => {
     expect(dislikes).toEqual({ dislikedUsersCard: true, ownDislikeWins: true });
   });
 
-  it('keeps viewer favorites and dislikes ahead of shared reactions for users and newUsers ids', () => {
+  it('keeps viewer favorites and dislikes ahead of shared reactions for long and short ids', () => {
     const { favorites, dislikes } = resolvePrioritizedReactionMaps({
       ownerIds: ['viewer', 'sharedOwnerA', 'sharedOwnerB'],
       ownOwnerId: 'viewer',
@@ -164,15 +164,14 @@ describe('mergeMatchingCandidateUsers', () => {
     expect(result.map(user => user.userId)).toEqual(['publishedBase']);
   });
 
-  it('does not inject shared ID0001 newUsers candidates into the default deck', () => {
+  it('does not inject shared ID0001 candidates into the default deck', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
     const result = mergeMatchingCandidateUsers({
       users: [],
-      additionalNewUsers: [],
+      additionalAccessUsers: [],
       sharedReactionCandidateUsers: [{
         userId: 'ID0001',
-        __sourceCollection: 'newUsers',
         __matchingAccessAllowed: true,
       }],
       isAdmin: false,
@@ -183,13 +182,13 @@ describe('mergeMatchingCandidateUsers', () => {
     expect(result.map(user => user.userId)).toEqual([]);
   });
 
-  it('does not inject a shared ID0001 newUsers candidate without searchKeySets access', () => {
+  it('does not inject a shared ID0001 candidate without searchKeySets access', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
     const result = mergeMatchingCandidateUsers({
       users: [],
-      additionalNewUsers: [],
-      sharedReactionCandidateUsers: [{ userId: 'ID0001', __sourceCollection: 'newUsers' }],
+      additionalAccessUsers: [],
+      sharedReactionCandidateUsers: [{ userId: 'ID0001' }],
       isAdmin: false,
       viewMode: 'default',
       hasAdditionalAccessRules: true,
@@ -223,7 +222,7 @@ describe('mergeMatchingCandidateUsers', () => {
       users: [{ userId: 'normalUser', publish: true, __sourceCollection: 'users' }],
       sharedReactionCandidateUsers: [
         { userId: 'sharedFavorite', publish: true, __sourceCollection: 'users' },
-        { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true },
+        { userId: 'ID0001', __matchingAccessAllowed: true },
       ],
       isAdmin: false,
       viewMode: 'default',
@@ -254,15 +253,14 @@ describe('mergeMatchingCandidateUsers', () => {
   });
 
 
-  it('keeps access-validated shared-only newUsers cards in reaction tabs when base users are empty', () => {
+  it('keeps access-validated shared-only cards in reaction tabs when base users are empty', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
     const result = mergeMatchingCandidateUsers({
       users: [],
-      additionalNewUsers: [],
+      additionalAccessUsers: [],
       sharedReactionCandidateUsers: [{
         userId: 'ID0001',
-        __sourceCollection: 'newUsers',
         __matchingAccessAllowed: true,
       }],
       favoriteUsers: {},
@@ -275,13 +273,13 @@ describe('mergeMatchingCandidateUsers', () => {
     expect(result.map(user => user.userId)).toEqual(['ID0001']);
   });
 
-  it('rejects shared-only newUsers reaction tab cards without searchKeySets access validation', () => {
+  it('rejects shared-only reaction tab cards without searchKeySets access validation', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
     const result = mergeMatchingCandidateUsers({
       users: [],
-      additionalNewUsers: [],
-      sharedReactionCandidateUsers: [{ userId: 'ID0001', __sourceCollection: 'newUsers' }],
+      additionalAccessUsers: [],
+      sharedReactionCandidateUsers: [{ userId: 'ID0001' }],
       favoriteUsers: { ID0001: true },
       dislikeUsers: {},
       isAdmin: false,
@@ -715,20 +713,18 @@ describe('pre-merge shared reaction verification', () => {
     ]);
   });
 
-  it('applies searchKeySets validation to shared newUsers favorites and dislikes', () => {
+  it('applies searchKeySets validation to shared favorites and dislikes', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
     const validatedFavorite = {
       userId: 'ID0001',
-      __sourceCollection: 'newUsers',
       __matchingAccessAllowed: true,
     };
     const validatedDislike = {
       userId: 'ID0002',
-      __sourceCollection: 'newUsers',
       __matchingAccessAllowed: true,
     };
-    const unvalidatedFavorite = { userId: 'ID0003', __sourceCollection: 'newUsers' };
-    const unvalidatedDislike = { userId: 'ID0004', __sourceCollection: 'newUsers' };
+    const unvalidatedFavorite = { userId: 'ID0003' };
+    const unvalidatedDislike = { userId: 'ID0004' };
 
     const favoritesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -764,7 +760,7 @@ describe('pre-merge shared reaction verification', () => {
     expect(shouldApplySharedReactionCandidateResult(base)).toBe(true);
     expect(shouldApplySharedReactionCandidateResult({ ...base, currentVersion: 10 })).toBe(false);
     expect(shouldApplySharedReactionCandidateResult({ ...base, currentViewMode: 'favorites' })).toBe(false);
-    expect(shouldApplySharedReactionCandidateResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(true);
+    expect(shouldApplySharedReactionCandidateResult({ ...base, currentCollectionSource: 'nodes' })).toBe(true);
   });
 
   it('deduplicates when a card exists in both base users and shared reaction candidates', () => {
@@ -1048,7 +1044,7 @@ describe('reaction pagination race guards', () => {
     expect(shouldApplyReactionPageResult(base)).toBe(true);
     expect(shouldApplyReactionPageResult({ ...base, currentVersion: 8 })).toBe(false);
     expect(shouldApplyReactionPageResult({ ...base, currentViewMode: 'favorites' })).toBe(false);
-    expect(shouldApplyReactionPageResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(true);
+    expect(shouldApplyReactionPageResult({ ...base, currentCollectionSource: 'nodes' })).toBe(true);
   });
 
   it('can exhaust more than two pages of shared dislikes without duplicates', () => {
@@ -1123,17 +1119,16 @@ describe('reaction pagination race guards', () => {
     expect(secondDislikes.pageIds).toEqual(['dislike-4', 'dislike-5', 'dislike-6']);
   });
 
-  it('keeps accessible shared-only newUsers dislikes in dislikes tab but out of default deck', () => {
+  it('keeps accessible shared-only dislikes in dislikes tab but out of default deck', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
     const sharedNewUserDislike = {
       userId: 'ID0001',
-      __sourceCollection: 'newUsers',
       __matchingAccessAllowed: true,
     };
 
     const defaultDeck = mergeMatchingCandidateUsers({
       users: [],
-      additionalNewUsers: [],
+      additionalAccessUsers: [],
       sharedReactionCandidateUsers: [sharedNewUserDislike],
       favoriteUsers: {},
       dislikeUsers: { ID0001: true },
@@ -1142,7 +1137,7 @@ describe('reaction pagination race guards', () => {
     });
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [],
-      additionalNewUsers: [],
+      additionalAccessUsers: [],
       sharedReactionCandidateUsers: [sharedNewUserDislike],
       favoriteUsers: {},
       dislikeUsers: { ID0001: true },
@@ -1177,12 +1172,12 @@ describe('reaction pagination race guards', () => {
 
 describe('вкладки реакцій — накладка поверх усієї колекції', () => {
   const usersCard = { userId: 'firebasePushIdCard0001', publish: true };
-  const newUsersCard = { userId: 'ID0001', __matchingAccessAllowed: true };
-  const inaccessibleNewUsersCard = { userId: 'ID0002' };
+  const sharedAccessCard = { userId: 'ID0001', __matchingAccessAllowed: true };
+  const inaccessibleSharedCard = { userId: 'ID0002' };
 
   it('shows both published and access-granted favorites', () => {
     const favoritesTab = mergeMatchingCandidateUsers({
-      users: [usersCard, newUsersCard],
+      users: [usersCard, sharedAccessCard],
       favoriteUsers: { firebasePushIdCard0001: true, ID0001: true },
       dislikeUsers: {},
       viewMode: 'favorites',
@@ -1194,7 +1189,7 @@ describe('вкладки реакцій — накладка поверх усі
 
   it('shows both published and access-granted dislikes', () => {
     const dislikesTab = mergeMatchingCandidateUsers({
-      users: [usersCard, newUsersCard],
+      users: [usersCard, sharedAccessCard],
       favoriteUsers: {},
       dislikeUsers: { firebasePushIdCard0001: true, ID0001: true },
       viewMode: 'dislikes',
@@ -1208,7 +1203,7 @@ describe('вкладки реакцій — накладка поверх усі
     const defaultDeck = mergeMatchingCandidateUsers({
       users: [
         usersCard,
-        newUsersCard,
+        sharedAccessCard,
         { userId: 'neutralUserCard0000001', publish: true },
         { userId: 'ID0099', __matchingAccessAllowed: true },
       ],
@@ -1241,7 +1236,7 @@ describe('вкладки реакцій — накладка поверх усі
 
   it('does not leak reaction cards nothing granted access to', () => {
     const favoritesTab = mergeMatchingCandidateUsers({
-      users: [newUsersCard, inaccessibleNewUsersCard],
+      users: [sharedAccessCard, inaccessibleSharedCard],
       favoriteUsers: { ID0001: true, ID0002: true },
       dislikeUsers: {},
       viewMode: 'favorites',

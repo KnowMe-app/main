@@ -4,8 +4,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import styled from 'styled-components';
 import {
   fetchUserById,
-  updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
+  updateProfileNodesInRTDB,
   updateDataInFiresoreDB,
   syncUserSearchIdIndex,
   fetchUserComment,
@@ -37,7 +37,7 @@ import {
   applyOverlayToCard,
   applyOverlaysToCard,
   buildOverlayFromDraft,
-  getCardStorageCollection,
+  getCardLegacyCollection,
   getCanonicalCard,
   getOtherEditorsChangedFields,
   getOverlayHistoryForCard,
@@ -662,11 +662,11 @@ const EditProfile = () => {
       : [];
     const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;
 
-    const storageCollection = updatedState?.userId
-      ? await getCardStorageCollection(updatedState.userId)
+    const legacyCollection = updatedState?.userId
+      ? await getCardLegacyCollection(updatedState.userId)
       : null;
 
-    if (storageCollection === 'users') {
+    if (legacyCollection === 'users') {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 
@@ -731,7 +731,7 @@ const EditProfile = () => {
           },
         });
       }
-    } else if (storageCollection === 'newUsers') {
+    } else if (updatedState?.userId) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 
@@ -741,11 +741,11 @@ const EditProfile = () => {
           deletePayload[key] = null;
         });
         await syncUserSearchIdIndex(updatedState.userId, existingData, deletePayload, deletedKeys);
-        await updateDataInNewUsersRTDB(updatedState.userId, deletePayload, 'update', true);
+        await updateProfileNodesInRTDB(updatedState.userId, deletePayload, 'update', true);
       } else {
-        const payloadForNewUsers = applyDeletedKeysToPayload({ ...updatedState }, deletedKeys);
-        await syncUserSearchIdIndex(updatedState.userId, existingData, payloadForNewUsers, deletedKeys);
-        await updateDataInNewUsersRTDB(updatedState.userId, payloadForNewUsers, 'update', true);
+        const payloadForNodes = applyDeletedKeysToPayload({ ...updatedState }, deletedKeys);
+        await syncUserSearchIdIndex(updatedState.userId, existingData, payloadForNodes, deletedKeys);
+        await updateProfileNodesInRTDB(updatedState.userId, payloadForNodes, 'update', true);
       }
     }
 
@@ -1148,7 +1148,7 @@ const EditProfile = () => {
     await syncUserSearchIdIndex(mergedCard.userId, existingData, mergedCard);
     const sanitizedMergedCard = { ...mergedCard };
     delete sanitizedMergedCard.cacheVersion;
-    await updateDataInNewUsersRTDB(mergedCard.userId, sanitizedMergedCard, 'update', true);
+    await updateProfileNodesInRTDB(mergedCard.userId, sanitizedMergedCard, 'update', true);
   };
 
   // Bulk review of everything editors have pending on this card. Accepting

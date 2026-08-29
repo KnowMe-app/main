@@ -1,4 +1,3 @@
-import { isLongFormatUserId } from 'utils/mergeUserCollections';
 import { PROFILE_NODES, resolveFieldOwnerNode } from 'utils/profileNodeSchema';
 
 /**
@@ -144,13 +143,10 @@ export const resolveProfileFormBlock = fieldName => {
 /**
  * Заголовок блоку разом із посиланням саме на той вузол, де лежать його дані.
  *
- * Для legacy й доступів колекція вгадується за форматом id тим самим правилом,
- * що й скрізь: довгий id — це Firebase-Auth UID, тобто `users`.
+ * Legacy-колекція одна — `users`; саме туди веде посилання блоку legacy-анкети.
  */
-export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, sourceCollection } = {}) => {
+export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId } = {}) => {
   const meta = BLOCK_META[blockId] || { title: blockId, hint: '' };
-  const legacyCollection = sourceCollection
-    || (isLongFormatUserId(profileId) ? 'users' : 'newUsers');
 
   const path = (() => {
     switch (blockId) {
@@ -159,7 +155,7 @@ export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, sourc
           ? ['multiData', 'getInTouch', ownerId]
           : ['multiData', 'getInTouch'];
       case PROFILE_FORM_BLOCK_IDS.legacy:
-        return [legacyCollection, profileId];
+        return ['users', profileId];
       // Права переїхали в технічний вузол, і посилання веде туди ж, куди тепер
       // іде запис. Делегування (`multiDataSourceUserIds`, `godMode`) лишилось у
       // legacy — його видно в блоці legacy-анкети.

@@ -1,6 +1,6 @@
 const FIREBASE_FORBIDDEN_KEY_CHARACTERS = ['.', '#', '$', '[', ']', '/'];
 
-export const parseNewUsersJson = jsonText => {
+export const parseProfileCardsJson = jsonText => {
   let parsed;
 
   try {

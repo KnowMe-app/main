@@ -27,26 +27,28 @@ const sliceFn = (name, until) => {
  * жило тільки в legacy, це `publish`.
  */
 describe('збереження анкети не залежить від legacy-колекції', () => {
-  const writers = ['updateDataInRealtimeDB', 'updateDataInNewUsersRTDB'];
-
-  it.each(writers)('%s пише спершу у вузли, і лише потім дзеркалить у legacy', writerName => {
-    const writer = sliceFn(`export const ${writerName} =`, '\nexport const ');
+  it('updateDataInRealtimeDB пише спершу у вузли, і лише потім дзеркалить у legacy', () => {
+    const writer = sliceFn('export const updateDataInRealtimeDB =', '\nexport const ');
 
     const nodesIndex = writer.indexOf('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
-    const legacyIndex = writer.indexOf('await mirrorProfileToLegacyCollection(');
+    const legacyIndex = writer.indexOf('await mirrorProfileToLegacyUsers(');
 
     expect(nodesIndex).toBeGreaterThan(-1);
     expect(legacyIndex).toBeGreaterThan(nodesIndex);
+    expect(writer).toContain('if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);');
   });
 
-  it.each(writers)('%s падає лише тоді, коли не прийняв ніхто', writerName => {
-    const writer = sliceFn(`export const ${writerName} =`, '\nexport const ');
-    expect(writer).toContain('if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId);');
+  it('updateProfileNodesInRTDB не має legacy-тіла, тож пише лише у вузли', () => {
+    const writer = sliceFn('export const updateProfileNodesInRTDB =', '\nexport const ');
+
+    expect(writer).toContain('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
+    expect(writer).not.toContain('mirrorProfileToLegacyUsers(');
+    expect(writer).toContain('if (!nodesWritten) throwProfileWriteFailure(userId);');
   });
 
   it('дзеркалення в legacy не кидає — воно повертає результат', () => {
     const mirror = sliceFn(
-      'const mirrorProfileToLegacyCollection = async',
+      'const mirrorProfileToLegacyUsers = async',
       'const throwProfileWriteFailure',
     );
 
@@ -67,7 +69,7 @@ describe('збереження анкети не залежить від legacy-
 
     expect(reader).toContain('await readProfileFromNodes(id, { includeTechnical: true })');
     expect(reader.indexOf('readProfileFromNodes'))
-      .toBeLessThan(reader.indexOf('`${collection}/${id}`'));
+      .toBeLessThan(reader.indexOf('`users/${id}`'));
   });
 
   it('щойно збережене перекриває перечитане', () => {
@@ -79,9 +81,9 @@ describe('збереження анкети не залежить від legacy-
     expect(refresh).toContain('{ ...(stored || {}), ...payload }');
   });
 
-  it('попередній стан legacy читається терпимо', () => {
-    const writer = sliceFn('export const updateDataInNewUsersRTDB =', '\nexport const ');
-    expect(writer).toContain("console.warn('[legacy] попередній стан анкети прочитати не вдалося'");
+  it('попередній стан для звірки індексів читається з вузлів', () => {
+    const writer = sliceFn('export const updateProfileNodesInRTDB =', '\nexport const ');
+    expect(writer).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
   });
 });
 

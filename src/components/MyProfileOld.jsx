@@ -7,7 +7,7 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import {
   updateDataInFiresoreDB,
   updateDataInRealtimeDB,
-  updateDataInNewUsersRTDB,
+  updateProfileNodesInRTDB,
 } from './config';
 import {
   pickerFields,
@@ -606,7 +606,7 @@ export const MyProfileOld = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
-    let shouldWriteFullProfileToNewUsers = false;
+    let canonicalWriteFailed = false;
 
     try {
       await updateDataInRealtimeDB(userId, uploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
@@ -614,22 +614,20 @@ export const MyProfileOld = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!isPermissionDeniedError(error)) {
         throw error;
       }
-      shouldWriteFullProfileToNewUsers = true;
-      console.warn('No write access to users/$uid, fallback to newUsers.');
+      canonicalWriteFailed = true;
+      console.warn('No write access to users/$uid, falling back to the profile nodes.');
     }
 
     try {
       await updateDataInFiresoreDB(userId, uploadedInfo, firestoreCondition);
     } catch (error) {
-      shouldWriteFullProfileToNewUsers = true;
-      console.warn('Firestore write failed, fallback to newUsers.', error);
+      canonicalWriteFailed = true;
+      console.warn('Firestore write failed, falling back to the profile nodes.', error);
     }
 
-    await updateDataInNewUsersRTDB(
-      userId,
-      shouldWriteFullProfileToNewUsers ? uploadedInfo : { lastLogin2: uploadedInfo.lastLogin2 },
-      'update'
-    );
+    if (canonicalWriteFailed) {
+      await updateProfileNodesInRTDB(userId, uploadedInfo, 'update');
+    }
   };
 
   const handleAgree = async () => {
@@ -781,21 +779,10 @@ export const MyProfileOld = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!existingData?.lastLogin) defaults.lastLogin = todayDays;
       if (!existingData?.lastLogin2) defaults.lastLogin2 = todayDash;
 
+      await updateDataInRealtimeDB(user.uid, { ...defaults, lastLogin2: todayDash }, 'update');
       if (Object.keys(defaults).length) {
-        await updateDataInRealtimeDB(user.uid, defaults, 'update');
         await updateDataInFiresoreDB(user.uid, defaults, 'check');
-        await updateDataInNewUsersRTDB(
-          user.uid,
-          { lastLogin2: todayDash },
-          'update'
-        );
         Object.assign(processedData, defaults);
-      } else {
-        await updateDataInNewUsersRTDB(
-          user.uid,
-          { lastLogin2: todayDash },
-          'update'
-        );
       }
 
       console.log('processedData :>> ', processedData);

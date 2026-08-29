@@ -22,10 +22,8 @@ export const AddNewProfileOfflineLoadControls = ({
   loadSortMode,
   onModeChange,
   onPickUsersFile,
-  onPickNewUsersFile,
   onClearSavedFiles,
   hasUsersFile,
-  hasNewUsersFile,
 }) => (
   <>
     <SortModeLabel>
@@ -43,10 +41,7 @@ export const AddNewProfileOfflineLoadControls = ({
         <button type="button" onClick={onPickUsersFile}>
           Обрати users.json {hasUsersFile ? '✅' : ''}
         </button>
-        <button type="button" onClick={onPickNewUsersFile}>
-          Обрати newUsers.json {hasNewUsersFile ? '✅' : ''}
-        </button>
-        {(hasUsersFile || hasNewUsersFile) && onClearSavedFiles && (
+        {hasUsersFile && onClearSavedFiles && (
           <button type="button" onClick={onClearSavedFiles}>
             Очистити збережені offline-файли
           </button>
@@ -197,7 +192,7 @@ export const loadMoreUsersOffline = async ({
   });
 
   if (!localIds) {
-    toast.error('Оберіть локальні users.json та newUsers.json для offline load');
+    toast.error('Оберіть локальний users.json для offline load');
     appendLoadDebugLog('loadMoreUsersOffline:missing-local-files', { queryKey });
     setHasMore(false);
     return { cacheCount: 0, backendCount: 0, hasMore: false };

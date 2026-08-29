@@ -22,7 +22,7 @@ import {
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
     operation: 'get',
-    source: 'newUsersFilterSetsIndex',
+    source: 'filterSetsIndex',
     path: args[0],
   });
 
@@ -710,7 +710,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   };
 };
 
-export const buildNewUsersFilterSetIndex = async ({
+export const buildFilterSetIndex = async ({
   rawRules,
   accessUserId,
   matchedUserIdsBySetKey = null,
@@ -939,7 +939,7 @@ export const buildNewUsersFilterSetIndex = async ({
   };
 };
 
-export const checkReactionNewUsersMembership = async ({
+export const checkReactionCardMembership = async ({
   candidateUserIds,
   searchKeySetKeys,
   debugMatchingFlow = false,
@@ -956,7 +956,7 @@ export const checkReactionNewUsersMembership = async ({
   const emitDebug = (message, data = {}) => {
     if (!debugMatchingFlow) return;
 
-    console.info('[checkReactionNewUsersMembership]', message, data);
+    console.info('[checkReactionCardMembership]', message, data);
     if (typeof debugToast === 'function') {
       debugToast(`reactionMembership: ${message}`, data);
     }
@@ -1010,7 +1010,7 @@ export const checkReactionNewUsersMembership = async ({
           allowedIds.add(check.candidateId);
         }
       } catch (error) {
-        console.warn('[checkReactionNewUsersMembership] direct membership read failed; treating candidate as blocked', {
+        console.warn('[checkReactionCardMembership] direct membership read failed; treating candidate as blocked', {
           path: check.path,
           setKey: check.setKey,
           candidateId: check.candidateId,
@@ -1039,7 +1039,7 @@ export const checkReactionNewUsersMembership = async ({
   };
 };
 
-export const getIndexedNewUsersIdsByRules = async ({
+export const getIndexedIdsByRules = async ({
   rawRules,
   accessUserId,
   searchKeySetKeys = [],
@@ -1058,7 +1058,7 @@ export const getIndexedNewUsersIdsByRules = async ({
   const emitDebug = (message, data = {}) => {
     if (!debugMatchingFlow) return;
 
-    console.info('[getIndexedNewUsersIdsByRules][additionalNewUsers]', message, data);
+    console.info('[getIndexedIdsByRules][additionalAccessUsers]', message, data);
     if (typeof debugToast === 'function') {
       debugToast(`getIndexed: ${message}`, data);
     }
@@ -1066,7 +1066,7 @@ export const getIndexedNewUsersIdsByRules = async ({
 
   const emitAccessScopeEmpty = (reason, data = {}) => {
     const payload = { reason, ...data };
-    console.info('[searchKeySets][additionalNewUsers] access scope empty', payload);
+    console.info('[searchKeySets][additionalAccessUsers] access scope empty', payload);
     emitDebug('access scope empty', payload);
   };
 
@@ -1498,7 +1498,7 @@ export const getIndexedNewUsersIdsByRules = async ({
 
     if (!filterSets.length || filterSets.some(set => set.size === 0)) {
       // Empty or missing searchKeySets buckets mean this rule set allows no cards.
-      // Do not fallback to searchKey/searchKeyFile/newUsers scans.
+      // Do not fallback to searchKey/searchKeyFile/collection scans.
       const reason = existingBucketsForSet === 0
         ? 'missing setKey'
         : emptyBucketsForSet > 0 || missingBucketsForSet > 0
@@ -1777,7 +1777,7 @@ const loadAccessRuleOwners = async () => {
   return snapshot.exists() ? snapshot.val() || {} : {};
 };
 
-export const rebuildAllNewUsersFilterSetIndexes = async ({ onProgress } = {}) => {
+export const rebuildAllFilterSetIndexes = async ({ onProgress } = {}) => {
   const reportProgress = (stage, payload = {}) => {
     if (typeof onProgress === 'function') onProgress(stage, payload);
   };
@@ -1847,7 +1847,7 @@ export const rebuildAllNewUsersFilterSetIndexes = async ({ onProgress } = {}) =>
 
     try {
       // eslint-disable-next-line no-await-in-loop
-      const indexed = await buildNewUsersFilterSetIndex({
+      const indexed = await buildFilterSetIndex({
         rawRules,
         accessUserId: userId,
         matchedUserIdsBySetKey,

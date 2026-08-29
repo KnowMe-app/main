@@ -69,7 +69,7 @@ describe('searchKey `no` bucket is neither written nor read', () => {
   });
 
   it('never lets an exclusion plan be read as an inclusion in searchKeySets', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../utils/newUsersFilterSetsIndex.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '../utils/filterSetsIndex.js'), 'utf8');
 
     expect(source).toContain("const useExcludeStrategy = readMode === 'exclude';");
     expect(source).toContain('(useExcludeStrategy && (planBuckets.length === 0 || filterSets.length === 0))');
@@ -79,7 +79,7 @@ describe('searchKey `no` bucket is neither written nor read', () => {
   });
 
   it('materialises the empty bucket inside searchKeySets, where an access rule names it', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../utils/newUsersFilterSetsIndex.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '../utils/filterSetsIndex.js'), 'utf8');
 
     expect(source).toContain('const emptyBucket = getSearchKeyEmptyBucket(fieldName);');
     expect(source).toContain('result[fieldName][emptyBucket][userId] = true;');

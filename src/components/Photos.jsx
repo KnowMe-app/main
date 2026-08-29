@@ -7,7 +7,6 @@ import {
   getAllUserPhotos,
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
-  updateDataInNewUsersRTDB,
 } from './config';
 import { color } from './styles';
 import PhotoViewer from './PhotoViewer';
@@ -391,7 +390,7 @@ const cropPhotoToStandardRatio = async (file, cropSettings) => {
   });
 };
 
-export const Photos = ({ state, setState, collection, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9, cropAspectRatio = DEFAULT_CROP_ASPECT_RATIO }) => {
+export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9, cropAspectRatio = DEFAULT_CROP_ASPECT_RATIO }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
   const [pendingCropFiles, setPendingCropFiles] = useState([]);
   const [croppedPendingFiles, setCroppedPendingFiles] = useState([]);
@@ -499,7 +498,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
     const load = async () => {
       if (state.userId) {
         try {
-          const urls = await getAllUserPhotos(state.userId, collection);
+          const urls = await getAllUserPhotos(state.userId);
           const filteredUrls = filterOutMedicationPhotos(urls, state.userId);
           if (filteredUrls.length > 0) {
             const currentPhotos = normalizePhotosArray(state.photos);
@@ -552,27 +551,11 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, photoValues, setState, collection, isUploadingPhotos]);
+  }, [state.userId, photoValues, setState, isUploadingPhotos]);
 
   const savePhotoList = async updatedPhotos => {
-    if (collection === 'newUsers') {
-      await updateDataInNewUsersRTDB(
-        state.userId,
-        { photos: updatedPhotos },
-        'update'
-      );
-    } else {
-      await updateDataInRealtimeDB(
-        state.userId,
-        { photos: updatedPhotos },
-        'update'
-      );
-      await updateDataInFiresoreDB(
-        state.userId,
-        { photos: updatedPhotos },
-        'update'
-      );
-    }
+    await updateDataInRealtimeDB(state.userId, { photos: updatedPhotos }, 'update');
+    await updateDataInFiresoreDB(state.userId, { photos: updatedPhotos }, 'update');
   };
 
   const handleDeletePhoto = async index => {
