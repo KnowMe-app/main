@@ -5,12 +5,12 @@ import * as XLSX from 'xlsx';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import {
   auth,
-  fetchNewUsersCollectionInRTDB,
+  searchUsersCollectionInRTDB,
   // fetchUserData,
-  updateDataInNewUsersRTDB,
+  updateProfileNodesInRTDB,
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
-  fetchPaginatedNewUsers,
+  fetchPaginatedUsers,
   fetchFavoriteUsers,
   fetchFavoriteUsersData,
   fetchDislikeUsers,
@@ -41,7 +41,6 @@ import {
   fetchUsersBySearchKeyBloodPaged,
   fetchUsersByIds,
   lazyLoadProfilePhotos,
-  migrateAllLegacyCardComments,
   addMatchingSearchQuery,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
@@ -111,12 +110,11 @@ import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './Sea
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import {
-  sanitizeNewUsersPayload,
   sanitizeTechnicalPayload,
 } from './formFields';
 import { PAGE_SIZE, database } from './config';
 import { get as firebaseGet, ref, update } from 'firebase/database';
-import { parseNewUsersJson } from 'utils/newUsersJsonImport';
+import { parseProfileCardsJson } from 'utils/profileCardsJsonImport';
 import {
   getBackendDownloadToastsEnabled,
   setBackendDownloadToastsEnabled,
@@ -136,7 +134,6 @@ import {
   getCacheKey,
 } from 'utils/cache';
 import { updateCard, saveCard } from 'utils/cardsStorage';
-import { clearCachedComments } from 'utils/commentsStorage';
 import {
   formatDateAndFormula,
   formatDateToDisplay,
@@ -145,14 +142,13 @@ import {
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
-import { rebuildAllNewUsersFilterSetIndexes } from 'utils/newUsersFilterSetsIndex';
+import { rebuildAllFilterSetIndexes } from 'utils/filterSetsIndex';
 import { buildMatchingCardsPayloadFromCollections } from 'utils/matchingCardIndex';
 import {
   PROFILE_NODE_NAMES,
   mergeProfileNodeCollections,
   describeLocalIndexingSources,
 } from 'utils/profileNodeCollections';
-import { mergeUserCollectionData } from 'utils/mergeUserCollections';
 import { buildFullCardKeyMap } from 'utils/cardKeyMap';
 import {
   LAST_ACTION2_FILTER,
@@ -970,7 +966,7 @@ const filterGitNewVisibleUsers = (queryKey, usersObj = {}) => {
   return { visibleUsers, droppedIds };
 };
 
-const appendGitNewUsersToQuery = (queryKey, usersObj = {}) => {
+const appendGitUsersToQuery = (queryKey, usersObj = {}) => {
   const normalizedUsers = usersObj && typeof usersObj === 'object' ? usersObj : {};
   const existingIds = getIdsByQuery(queryKey);
   const nextIds = [...existingIds];
@@ -1020,7 +1016,7 @@ const summarizeProfileCardForLog = card => {
     keys,
     cachedAt: card.cachedAt || null,
     updatedAt: card.updatedAt || card.lastUpdated || null,
-    dataSource: card.__sourceCollection || card.dataSource || null,
+    dataSource: card.dataSource || null,
   };
 };
 
@@ -1257,17 +1253,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [showLocalIndexModal, setShowLocalIndexModal] = useState(false);
   const [pendingLocalIndexTypes, setPendingLocalIndexTypes] = useState([]);
   const [pendingLocalUsersData, setPendingLocalUsersData] = useState(null);
-  const [pendingLocalNewUsersData, setPendingLocalNewUsersData] = useState(null);
   const [exportDataSource, setExportDataSource] = useState('server');
   const [exportOnlyPhonesStartingWith38, setExportOnlyPhonesStartingWith38] = useState(false);
   const [contactExportFormat, setContactExportFormat] = useState('vcf');
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [localExportUsersData, setLocalExportUsersData] = useState(null);
-  const [localExportNewUsersData, setLocalExportNewUsersData] = useState(null);
   const [isOfflineCollectionsRestoring, setIsOfflineCollectionsRestoring] = useState(true);
   const offlineCollectionsChangeVersionRef = useRef(0);
   const localUsersFileInputRef = useRef(null);
-  const localNewUsersFileInputRef = useRef(null);
   const localExportUsersFileInputRef = useRef(null);
   /**
    * Локально завантажені вузли нової колекції.
@@ -1278,7 +1271,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    */
   const [localNodeFiles, setLocalNodeFiles] = useState({});
   const localNodeFilesInputRef = useRef(null);
-  const localExportNewUsersFileInputRef = useRef(null);
   const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
     const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
     if (!storedRaw) return defaultSelectedIndexJobs;
@@ -1330,7 +1322,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
         { key: 'searchKey', label: 'searchKey bucket/date' },
         { key: 'partialUserId', label: 'userId (частковий збіг)' },
-        { key: 'broadTextSearch', label: 'широкий пошук (contains, усі поля users/newUsers)' },
+        { key: 'broadTextSearch', label: 'широкий пошук (contains, усі поля users)' },
       ],
     },
     {
@@ -1710,18 +1702,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [downloadJsonFile],
   );
 
-  const handleNewUsersJsonUpload = useCallback(async event => {
+  const handleProfileCardsJsonUpload = useCallback(async event => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
 
     setIsJsonImporting(true);
     try {
-      const cards = parseNewUsersJson(await file.text());
+      const cards = parseProfileCardsJson(await file.text());
 
-      // update() adds these keyed cards to newUsers instead of replacing the
+      // update() adds these keyed cards to `users` instead of replacing the
       // collection, so cards that are not present in the file remain intact.
-      await update(ref(database, 'newUsers'), cards);
+      await update(ref(database, 'users'), cards);
       toast.success(`Завантажено карток: ${Object.keys(cards).length}`);
     } catch (error) {
       console.error('[AddNewProfile] JSON import failed', error);
@@ -1898,9 +1890,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (syncedState?.userId) {
       try {
-        // The index root follows the collection the id belongs to; writing a profile
-        // into both roots is what left users-collection ids scattered across the
-        // shared newUsers index. syncUserSearchKeyIndex resolves it from the id.
+        // The index root follows the id format; writing a profile into both roots
+        // is what left account ids scattered across the shared card index.
+        // syncUserSearchKeyIndex resolves the root from the id.
         await Promise.all([
           syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
           syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
@@ -1933,11 +1925,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (syncedState?.userId?.length > 20) {
 
       if (isDeleteOnlySubmit) {
-        // Жодного відбору за назвою ключа: колись довгий userId жив одночасно
-        // в `users` і `newUsers`, і половина полів анкети належала другій
-        // колекції — null за таким ключем летів у `users`, де його ніколи не
-        // було, тож writer, role і lastCycle було видно і неможливо видалити.
-        // Тепер довгий userId лежить лише в `users`, і знімається там усе.
+        // Жодного відбору за назвою ключа: анкета акаунта лежить у `users`
+        // цілком, тож і знімається там усе.
         const deletePayload = { lastAction: syncedState.lastAction };
         deleteOnlyKeys.forEach(key => {
           deletePayload[key] = null;
@@ -1991,10 +1980,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           deletePayload[key] = null;
         });
         console.log('[SAVE] payload to firebase:', deletePayload);
-        await updateDataInNewUsersRTDB(syncedState.userId, deletePayload, 'update');
+        await updateProfileNodesInRTDB(syncedState.userId, deletePayload, 'update');
       } else if (hasNewState) {
         const newStateWithDelivery = applyDeletedKeysToPayload(
-          sanitizeNewUsersPayload({ ...syncedState }),
+          sanitizeTechnicalPayload({ ...syncedState }),
           deletedKeys
         );
 
@@ -2009,18 +1998,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           });
         }
         console.log('[SAVE] payload to firebase:', newStateWithDelivery);
-        await updateDataInNewUsersRTDB(
+        await updateProfileNodesInRTDB(
           syncedState.userId,
           newStateWithDelivery,
           'update'
         );
       } else {
-        const cleanedNewUsersState = applyDeletedKeysToPayload(
-          sanitizeNewUsersPayload(syncedState),
+        const cleanedState = applyDeletedKeysToPayload(
+          sanitizeTechnicalPayload(syncedState),
           deletedKeys
         );
-        console.log('[SAVE] payload to firebase:', cleanedNewUsersState);
-        await updateDataInNewUsersRTDB(syncedState.userId, cleanedNewUsersState, 'update');
+        console.log('[SAVE] payload to firebase:', cleanedState);
+        await updateProfileNodesInRTDB(syncedState.userId, cleanedState, 'update');
       }
     }
   }
@@ -3014,7 +3003,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         equalToAllCards: enabledSearchKeys.equalToAllCards,
         searchKey: enabledSearchKeys.searchKey,
         // Не вимикаємо partialUserId примусово: якщо чекбокс увімкнений,
-        // користувач очікує пошук по ключах users/newUsers.
+        // користувач очікує пошук по ключах `users`.
         partialUserId: enabledSearchKeys.partialUserId,
       }
     : enabledSearchKeys;
@@ -3609,7 +3598,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             equalToKeys: selectedEqualToKeys,
             searchKeyFields: selectedSearchKeyFields,
             enabledSearchKeys: effectiveEnabledSearchKeys,
-            cacheScope: { collections: ['newUsers', 'users'] },
+            cacheScope: { collections: ['users'] },
           });
           setIdsForQuery(profileSearchCacheKey, [newProfile.userId]);
         }
@@ -3951,7 +3940,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       hasExplicitReactionSelection,
     });
 
-    const res = await fetchPaginatedNewUsers(
+    const res = await fetchPaginatedUsers(
       param,
       filterForload,
       currentFilters,
@@ -3975,7 +3964,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const dropReasons = {};
 
       // Використовуємо Object.entries для обробки res.users
-      const newUsers = rawUsersEntries
+      const fetchedUsers = rawUsersEntries
         .filter(([id]) => {
           const keep = !currentFilters.favorite?.favOnly || fav[id];
           if (!keep) countLoadFilterDrop(dropReasons, 'favoriteOnly');
@@ -3990,20 +3979,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
         return acc;
       }, {});
-      cacheFetchedUsers(newUsers, cacheLoad2Users, currentFilters);
+      cacheFetchedUsers(fetchedUsers, cacheLoad2Users, currentFilters);
 
       // Оновлюємо стан користувачів
       if (canApplyLoadResultsToUsers()) {
-        setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers));
+        setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, fetchedUsers));
       }
       const queryKey = buildListQueryKey(filterForload, currentFilters);
       const existingIds = getIdsByQuery(queryKey);
       setIdsForQuery(queryKey, [
-        ...new Set([...existingIds, ...Object.keys(newUsers)]),
+        ...new Set([...existingIds, ...Object.keys(fetchedUsers)]),
       ]);
       setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
       setHasMore(res.hasMore); // Оновлюємо hasMore
-      const backendCount = Object.keys(newUsers).length;
+      const backendCount = Object.keys(fetchedUsers).length;
       appendLoadDebugLog('loadMoreUsers:result', {
         rawUsersCount: rawUsersEntries.length,
         backendCount,
@@ -4317,7 +4306,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       debug: (step, payload) => appendLoadDebugLog(step, payload),
       onProgress: partialUsers => {
         if (filtersKey !== activeFiltersKey()) return;
-        const normalizedPartialUsers = appendGitNewUsersToQuery(queryKey, partialUsers);
+        const normalizedPartialUsers = appendGitUsersToQuery(queryKey, partialUsers);
         const { visibleUsers: visiblePartialUsers, droppedIds: droppedPartialIds } = filterGitNewVisibleUsers(
           queryKey,
           normalizedPartialUsers,
@@ -4341,7 +4330,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
         }
 
-        const normalizedUsers = appendGitNewUsersToQuery(queryKey, res?.users || {});
+        const normalizedUsers = appendGitUsersToQuery(queryKey, res?.users || {});
         const { visibleUsers, droppedIds } = filterGitNewVisibleUsers(queryKey, normalizedUsers);
         cacheFetchedUsers(visibleUsers, cacheLoad2Users, currentFilters);
         if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) setUsers(prev => mergeWithoutOverwrite(prev, visibleUsers));
@@ -4769,7 +4758,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             loadedForPage,
             pageSize: PAGE_SIZE,
           });
-          const res = await fetchPaginatedNewUsers(
+          const res = await fetchPaginatedUsers(
             nextKey,
             'DATE3',
             currentFilters,
@@ -4834,7 +4823,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             rawUsersCount: loopBackendEntries.length,
             filteredCount: filteredIds.length,
             dropReasons: loopDropReasons,
-            zeroReason: filteredIds.length === 0 ? 'all fetchPaginatedNewUsers DATE3 users were removed by filters' : null,
+            zeroReason: filteredIds.length === 0 ? 'all fetchPaginatedUsers DATE3 users were removed by filters' : null,
           });
 
 
@@ -5268,22 +5257,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const getMergedUsersFromLocalExportCollections = useCallback(() => {
-    if (!localExportUsersData || !localExportNewUsersData) return null;
-    const usersData = localExportUsersData || {};
-    const newUsersData = localExportNewUsersData || {};
-    const allUserIds = new Set([...Object.keys(newUsersData), ...Object.keys(usersData)]);
-    const allUsersArray = Array.from(allUserIds).map(userId => {
-      const newUserRaw = newUsersData[userId] || {};
-      return [
-        userId,
-        {
-          userId,
-          ...mergeUserCollectionData(usersData[userId], newUserRaw),
-        },
-      ];
-    });
-    return Object.fromEntries(allUsersArray);
-  }, [localExportNewUsersData, localExportUsersData]);
+    if (!localExportUsersData) return null;
+    return Object.fromEntries(
+      Object.entries(localExportUsersData).map(([userId, user]) => [userId, { userId, ...(user || {}) }]),
+    );
+  }, [localExportUsersData]);
 
   const hasPhoneStartingWith38 = useCallback(user => {
     const phones = Array.isArray(user?.phone) ? user.phone : [user?.phone];
@@ -5305,7 +5283,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (source === 'local') {
       loadedUsers = getMergedUsersFromLocalExportCollections();
       if (!loadedUsers) {
-        toast.error('Оберіть локальні users.json та newUsers.json для експорту');
+        toast.error('Оберіть локальний users.json для експорту');
         return null;
       }
     } else {
@@ -5820,11 +5798,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * б хіба що по дірках у пошуку.
    */
   const runLocalSearchIndexesWithCollections = useCallback(
-    async ({ usersData, newUsersData, nodeFiles, indexTypes }) => {
+    async ({ usersData, nodeFiles, indexTypes }) => {
       const { profiles, stats } = mergeProfileNodeCollections({
         ...(nodeFiles || {}),
         users: usersData || {},
-        newUsers: newUsersData || {},
       });
 
       // Колекція у вебі одна, тож і мапа одна: розділення на деки прибрано.
@@ -5847,16 +5824,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    */
   const openMatchingCardsModal = useCallback(() => {
     setPendingLocalUsersData(localExportUsersData);
-    setPendingLocalNewUsersData(localExportNewUsersData);
     setShowLocalIndexModal(true);
-  }, [localExportNewUsersData, localExportUsersData]);
+  }, [localExportUsersData]);
 
   const openLocalIndexModal = useCallback(indexTypes => {
     setPendingLocalIndexTypes(indexTypes);
     setPendingLocalUsersData(localExportUsersData);
-    setPendingLocalNewUsersData(localExportNewUsersData);
     setShowLocalIndexModal(true);
-  }, [localExportNewUsersData, localExportUsersData]);
+  }, [localExportUsersData]);
 
   /**
    * Викачати нові вузли, щоб індексувати з них локально.
@@ -5892,16 +5867,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleDownloadCollectionsForLocalIndex = useCallback(async () => {
     const toastId = 'download-local-index-collections';
-    toast.loading('Завантаження users та newUsers...', { id: toastId });
+    toast.loading('Завантаження users...', { id: toastId });
     try {
-      const [usersData, newUsersData] = await Promise.all([
-        get(ref(database, 'users')).then(snapshot => (snapshot.exists() ? snapshot.val() || {} : {})),
-        get(ref(database, 'newUsers')).then(snapshot => (snapshot.exists() ? snapshot.val() || {} : {})),
-      ]);
+      const usersData = await get(ref(database, 'users'))
+        .then(snapshot => (snapshot.exists() ? snapshot.val() || {} : {}));
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       downloadJsonFile(`users-${stamp}.json`, usersData || {});
-      downloadJsonFile(`newUsers-${stamp}.json`, newUsersData || {});
-      toast.success('Колекції users/newUsers завантажено', { id: toastId });
+      toast.success('Колекцію users завантажено', { id: toastId });
     } catch (error) {
       toast.error(`Не вдалося завантажити колекції: ${error?.message || 'невідома помилка'}`, { id: toastId });
     }
@@ -5911,13 +5883,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (localUsersFileInputRef.current) {
       localUsersFileInputRef.current.value = '';
       localUsersFileInputRef.current.click();
-    }
-  }, []);
-
-  const handlePickNewUsersFileForLocalIndex = useCallback(() => {
-    if (localNewUsersFileInputRef.current) {
-      localNewUsersFileInputRef.current.value = '';
-      localNewUsersFileInputRef.current.click();
     }
   }, []);
 
@@ -5934,13 +5899,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return;
       }
 
-      if (collection === 'users') {
-        setPendingLocalUsersData(parsed);
-        setLocalExportUsersData(parsed);
-      } else {
-        setPendingLocalNewUsersData(parsed);
-        setLocalExportNewUsersData(parsed);
-      }
+      setPendingLocalUsersData(parsed);
+      setLocalExportUsersData(parsed);
       await saveOfflineCollection(ownerId, collection, parsed);
       toast.success(`Файл ${collection}.json прочитано`);
     } catch (error) {
@@ -6002,7 +5962,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // з модалки індексації (`pendingLocal*`). Дивитись лише на один означало б
     // сказати «нічого не завантажено» людині, яка щойно завантажила файл.
     users: localExportUsersData || pendingLocalUsersData,
-    newUsers: localExportNewUsersData || pendingLocalNewUsersData,
   });
 
   const handlePickLocalNodeFiles = useCallback(() => {
@@ -6012,31 +5971,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, []);
 
-  const handlePickNewUsersFileForLocalExport = useCallback(() => {
-    if (localExportNewUsersFileInputRef.current) {
-      localExportNewUsersFileInputRef.current.value = '';
-      localExportNewUsersFileInputRef.current.click();
-    }
-  }, []);
-
   useEffect(() => {
     let isCancelled = false;
     const restoreChangeVersion = offlineCollectionsChangeVersionRef.current;
 
     loadOfflineCollections(ownerId)
-      .then(({ users: savedUsers, newUsers: savedNewUsers }) => {
+      .then(({ users: savedUsers }) => {
         if (isCancelled || restoreChangeVersion !== offlineCollectionsChangeVersionRef.current) return;
 
         if (savedUsers) {
           setLocalExportUsersData(savedUsers);
           setPendingLocalUsersData(savedUsers);
-        }
-        if (savedNewUsers) {
-          setLocalExportNewUsersData(savedNewUsers);
-          setPendingLocalNewUsersData(savedNewUsers);
-        }
-
-        if (savedUsers || savedNewUsers) {
           toast.success('Offline-файли відновлено зі сховища браузера');
         }
       })
@@ -6061,13 +6006,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         toast.error(`Некоректний JSON для ${collection}`);
         return;
       }
-      if (collection === 'users') {
-        setLocalExportUsersData(parsed);
-        setPendingLocalUsersData(parsed);
-      } else {
-        setLocalExportNewUsersData(parsed);
-        setPendingLocalNewUsersData(parsed);
-      }
+      setLocalExportUsersData(parsed);
+      setPendingLocalUsersData(parsed);
       offlineCollectionsChangeVersionRef.current += 1;
       await saveOfflineCollection(ownerId, collection, parsed);
       toast.success(`Локальний файл для експорту ${collection}.json прочитано`);
@@ -6081,9 +6021,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       offlineCollectionsChangeVersionRef.current += 1;
       await clearOfflineCollections(ownerId);
       setLocalExportUsersData(null);
-      setLocalExportNewUsersData(null);
       setPendingLocalUsersData(null);
-      setPendingLocalNewUsersData(null);
       toast.success('Збережені offline-файли очищено');
     } catch (error) {
       toast.error(`Не вдалося очистити offline-файли: ${error?.message || 'невідома помилка'}`);
@@ -6094,7 +6032,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // Досить будь-якого джерела: після переїзду legacy-файлів може вже не бути
     // взагалі, а вузлів вистачає — саме з них тепер читає застосунок.
     if (!localIndexSources.isUsable) {
-      toast.error('Спочатку оберіть файли вузлів (або legacy users.json / newUsers.json)');
+      toast.error('Спочатку оберіть файли вузлів (або legacy users.json)');
       return;
     }
 
@@ -6103,7 +6041,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     try {
       const stats = await runLocalSearchIndexesWithCollections({
         usersData: pendingLocalUsersData,
-        newUsersData: pendingLocalNewUsersData,
         nodeFiles: localNodeFiles,
         indexTypes: pendingLocalIndexTypes,
       });
@@ -6119,7 +6056,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [
     localIndexSources.isUsable,
-    pendingLocalNewUsersData,
     pendingLocalUsersData,
     pendingLocalIndexTypes,
     localNodeFiles,
@@ -6128,7 +6064,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const buildFullKeySetFromCollections = useCallback(() => {
     if (!localIndexSources.isUsable) {
-      toast.error('Спочатку оберіть файли вузлів (або legacy users.json / newUsers.json)');
+      toast.error('Спочатку оберіть файли вузлів (або legacy users.json)');
       return;
     }
 
@@ -6137,7 +6073,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const { profiles } = mergeProfileNodeCollections({
       ...localNodeFiles,
       users: pendingLocalUsersData || {},
-      newUsers: pendingLocalNewUsersData || {},
     });
 
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -6151,7 +6086,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     downloadJsonFile,
     localIndexSources.isUsable,
     localNodeFiles,
-    pendingLocalNewUsersData,
     pendingLocalUsersData,
   ]);
 
@@ -6216,7 +6150,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (selectedIndexJobs.searchKeySetReindex) {
         const toastId = 'index-searchkey-set-reindex-progress';
         toast.loading('Перебудова searchKeySet наборів фільтрів...', { id: toastId });
-        const stats = await rebuildAllNewUsersFilterSetIndexes({
+        const stats = await rebuildAllFilterSetIndexes({
           onProgress: (stage, payload) => {
             if (stage === 'searchKey') {
               toast.loading(`Читаємо searchKey ${payload?.percent || 0}%${payload?.indexName ? ` (${payload.indexName})` : ''}...`, { id: toastId });
@@ -6325,15 +6259,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    *
    * Швидший шлях і, з телефона, єдиний практичний: побудова на бекенді — це
    * тисячі дрібних записів по мобільній мережі. Тут не робиться жодного запиту:
-   * файл збирається з уже викачаних `users.json` / `newUsers.json`, а в базу
-   * потрапляє одним ручним імпортом у вузол `matchingCards`.
+   * файл збирається з уже викачаних локальних файлів, а в базу потрапляє одним
+   * ручним імпортом у вузол `matchingCards`.
    */
   const handleBuildLocalMatchingCards = useCallback(() => {
     const usersData = pendingLocalUsersData || localExportUsersData;
-    const newUsersData = pendingLocalNewUsersData || localExportNewUsersData;
 
     if (!localIndexSources.isUsable) {
-      toast.error('Спершу оберіть файли вузлів (або legacy users.json / newUsers.json)');
+      toast.error('Спершу оберіть файли вузлів (або legacy users.json)');
       return;
     }
 
@@ -6343,7 +6276,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const { profiles } = mergeProfileNodeCollections({
       ...localNodeFiles,
       users: usersData || {},
-      newUsers: newUsersData || {},
     });
 
     const { payload, stats } = buildMatchingCardsPayloadFromCollections({ profiles });
@@ -6363,11 +6295,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   }, [
     downloadJsonFile,
-    localExportNewUsersData,
     localExportUsersData,
     localIndexSources.isUsable,
     localNodeFiles,
-    pendingLocalNewUsersData,
     pendingLocalUsersData,
   ]);
 
@@ -6406,48 +6336,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       });
     } finally {
       setIsMatchingCardsIndexing(false);
-    }
-  };
-
-  const handleMigrateAllLegacyCardComments = async () => {
-    if (!isAdmin) return;
-    if (
-      !window.confirm(
-        'Це перенесе всі старі коментарі з users/newUsers у multiData/comments під ваш акаунт ' +
-          'і видалить їх з карток. Дію неможливо скасувати вручну. Продовжити?',
-      )
-    ) {
-      return;
-    }
-
-    const toastId = 'migrate-legacy-card-comments-progress';
-    toast.loading('Міграція коментарів...', { id: toastId });
-    try {
-      const report = await migrateAllLegacyCardComments(auth.currentUser?.uid, {
-        onProgress: percent => toast.loading(`Міграція коментарів... ${percent}%`, { id: toastId }),
-      });
-      if (report.migratedCards) {
-        clearAllCardsCache();
-        clearCachedComments(auth.currentUser?.uid, report.migratedCardIds);
-        const migratedCardIds = new Set(report.migratedCardIds);
-        setUsers(currentUsers =>
-          Object.fromEntries(
-            Object.entries(currentUsers).map(([cardId, card]) => {
-              const cardWithoutLegacyComment = { ...(card || {}) };
-              if (migratedCardIds.has(cardId)) delete cardWithoutLegacyComment.myComment;
-              return [cardId, cardWithoutLegacyComment];
-            }),
-          ),
-        );
-      }
-      toast.success(
-        `Мігровано карток: ${report.migratedCards}` +
-          (report.errors.length ? `, помилок: ${report.errors.length}` : ''),
-        { id: toastId },
-      );
-    } catch (error) {
-      console.error('[AddNewProfile] Comment migration failed', error);
-      toast.error(`Помилка міграції коментарів: ${error?.message || 'невідома помилка'}`, { id: toastId });
     }
   };
 
@@ -6643,7 +6531,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     Promise.all(
       idsToLoad.map(async id => {
-        const photos = await lazyLoadProfilePhotos(id, paginatedUsers[id]?.__sourceCollection);
+        const photos = await lazyLoadProfilePhotos(id);
         return [id, Array.isArray(photos) ? photos : []];
       }),
     )
@@ -7045,7 +6933,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <SearchBarRow>
           <SearchBar
             key={`add-search-${searchBarResetVersion}`}
-            searchFunc={fetchNewUsersCollectionInRTDB}
+            searchFunc={searchUsersCollectionInRTDB}
             search={search}
             setSearch={value => {
               setSearch(value);
@@ -7084,7 +6972,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               searchKeyFields: selectedSearchKeyFields,
               autoOtherFallback: shouldAutoRunOtherFallback,
               enabledSearchKeys: effectiveEnabledSearchKeys,
-              cacheScope: { collections: ['newUsers', 'users'] },
+              cacheScope: { collections: ['users'] },
             }}
             searchHistoryLimit={15}
             suppressInitialSearchExecution={Boolean(
@@ -7410,10 +7298,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         loadSortMode={loadSortMode}
                         onModeChange={handleLoadSortModeChange}
                         onPickUsersFile={handlePickUsersFileForLocalExport}
-                        onPickNewUsersFile={handlePickNewUsersFileForLocalExport}
                         onClearSavedFiles={handleClearSavedOfflineCollections}
                         hasUsersFile={Boolean(localExportUsersData)}
-                        hasNewUsersFile={Boolean(localExportNewUsersData)}
                       />
                     </SortModeContainer>
                     <FilterPanel
@@ -7466,14 +7352,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {isMatchingCardsIndexing ? '...' : 'Картки'}
                 </Button>
               )}
-              {isAdmin && (
-                <Button
-                  onClick={handleMigrateAllLegacyCardComments}
-                  title="Перенести всі старі коментарі карток у multiData/comments"
-                >
-                  Мігрувати коментарі
-                </Button>
-              )}
               {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
               <Button
                 onClick={() => setShowSaveModal(true)}
@@ -7503,7 +7381,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 type="file"
                 accept="application/json,.json"
                 style={{ display: 'none' }}
-                onChange={handleNewUsersJsonUpload}
+                onChange={handleProfileCardsJsonUpload}
               />
               <input
                 ref={localNodeFilesInputRef}
@@ -7520,13 +7398,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 style={{ display: 'none' }}
                 onChange={event => handleLocalExportCollectionFileSelected(event, 'users')}
               />
-              <input
-                ref={localExportNewUsersFileInputRef}
-                type="file"
-                accept="application/json,.json"
-                style={{ display: 'none' }}
-                onChange={event => handleLocalExportCollectionFileSelected(event, 'newUsers')}
-              />
               <Button
                 onClick={() => excelImportInputRef.current?.click()}
                 disabled={isExcelImporting}
@@ -7538,8 +7409,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <Button
                 onClick={() => jsonImportInputRef.current?.click()}
                 disabled={isJsonImporting}
-                title="Додати картки з JSON у newUsers"
-                {...createLongPressHandlers('Завантажує картки з JSON та доповнює колекцію newUsers')}
+                title="Додати картки з JSON у users"
+                {...createLongPressHandlers('Завантажує картки з JSON та доповнює колекцію users')}
               >
                 {isJsonImporting ? '...' : 'JSON'}
               </Button>
@@ -7589,7 +7460,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       onChange={() => toggleIndexJobSelection('searchLocalImtHeightWeight')}
                     />
                     <SearchScopeLabelTextGroup>
-                      <span>Локальна індексація imt+height+weight (users + newUsers JSON)</span>
+                      <span>Локальна індексація imt+height+weight (users JSON)</span>
                     </SearchScopeLabelTextGroup>
                   </SearchScopeLabel>
                   <SearchScopeLabel>
@@ -7685,7 +7556,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 />
                 <span>
                   Backend
-                  <SaveModalComment>Читає всю актуальну колекцію users + newUsers напряму з Firebase/Realtime Database, без Local Storage.</SaveModalComment>
+                  <SaveModalComment>Читає всю актуальну колекцію users напряму з Firebase/Realtime Database, без Local Storage.</SaveModalComment>
                 </span>
               </SaveModalRadioRow>
               <SaveModalRadioRow>
@@ -7696,7 +7567,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 />
                 <span>
                   Local files
-                  <SaveModalComment>Бере дані з обраних локальних JSON-файлів users та newUsers і мержить їх по userId.</SaveModalComment>
+                  <SaveModalComment>Бере дані з обраного локального JSON-файлу users.</SaveModalComment>
                 </span>
               </SaveModalRadioRow>
               {exportDataSource === 'local' && (
@@ -7715,10 +7586,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <button type="button" onClick={handlePickUsersFileForLocalExport}>
                     Обрати users.json {localExportUsersData ? '✅' : ''}
                   </button>
-                  <button type="button" onClick={handlePickNewUsersFileForLocalExport}>
-                    Обрати newUsers.json {localExportNewUsersData ? '✅' : ''}
-                  </button>
-                  {(localExportUsersData || localExportNewUsersData) && (
+                  {localExportUsersData && (
                     <button type="button" onClick={handleClearSavedOfflineCollections}>
                       Очистити збережені offline-файли
                     </button>
@@ -7823,13 +7691,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   : ''}
               </button>
               <button type="button" onClick={handleDownloadCollectionsForLocalIndex}>
-                Додатково: викачати legacy users + newUsers
+                Додатково: викачати legacy users
               </button>
               <button type="button" onClick={handlePickUsersFileForLocalIndex}>
                 Додатково: обрати users.json {pendingLocalUsersData ? '✅' : ''}
-              </button>
-              <button type="button" onClick={handlePickNewUsersFileForLocalIndex}>
-                Додатково: обрати newUsers.json {pendingLocalNewUsersData ? '✅' : ''}
               </button>
               <button type="button" onClick={handleBuildLocalMatchingCards}>
                 3) Зібрати matchingCards.json → імпорт у вузол matchingCards
@@ -7851,9 +7716,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             </LocalIndexActions>
             {localIndexSources.isLegacyOnly && (
               <p>
-                Завантажено лише legacy-колекції. Індекс збереться зі старого джерела — того,
-                чого веб уже не показує, — і після зникнення <code>newUsers</code> вийде
-                просто порожнім. Додайте файли вузлів.
+                Завантажено лише legacy-колекцію. Індекс збереться зі старого джерела — того,
+                чого веб уже не показує. Додайте файли вузлів.
               </p>
             )}
             <p>
@@ -7867,13 +7731,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               accept="application/json,.json"
               style={{ display: 'none' }}
               onChange={event => handleLocalCollectionFileSelected(event, 'users')}
-            />
-            <input
-              ref={localNewUsersFileInputRef}
-              type="file"
-              accept="application/json,.json"
-              style={{ display: 'none' }}
-              onChange={event => handleLocalCollectionFileSelected(event, 'newUsers')}
             />
           </LocalIndexModal>
         </LocalIndexOverlay>

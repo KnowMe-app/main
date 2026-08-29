@@ -15,7 +15,6 @@ import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
-import RtdbMigrationTool from './RtdbMigrationTool';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
 import { clearStoredAccessRights, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
@@ -116,7 +115,6 @@ export const App = () => {
         обох колекцій цілком — тобто показує контакти всіх анкет. Тож маршрут
         адмінський, як і решта інструментів роботи з сирими даними.
       */}
-      {isAdmin && <Route path="/rtdb-migration" element={<RtdbMigrationTool />} />}
       {isAdmin && <Route path="/budget" element={<BudgetPage isAdmin={isAdmin} />} />}
       {canAccessInvoices && <Route path="/invoices" element={<InvoiceBuilderPage isAdmin={canAccessInvoices} />} />}
       {canAccessInvoices && <Route path="/documents" element={<DocumentsPage isAdmin={canAccessInvoices} />} />}

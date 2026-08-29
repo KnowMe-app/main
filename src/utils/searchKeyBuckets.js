@@ -2,7 +2,7 @@
 //
 // The same bucket names are produced by the index writers in `components/config.js`
 // and consumed by the readers (`utils/matchingDataProvider.js`,
-// `utils/newUsersFilterSetsIndex.js`, the point-membership path in `config.js`).
+// `utils/filterSetsIndex.js`, the point-membership path in `config.js`).
 // Keeping private copies of these lists is what made the Matching filters silently
 // drop cards: a bucket the reader did not know about (`+`/`-` for a known Rh without
 // a blood group, `sm`/`pp`/`cl` roles) or a bucket whose checkbox the drawer never

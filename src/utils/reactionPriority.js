@@ -140,9 +140,8 @@ export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
     };
   }
 
-  // Видимість більше не залежить від того, з якої колекції приїхала картка:
-  // колекція у вебі одна. Роль, яку раніше грало `__sourceCollection ===
-  // 'newUsers'`, тепер грає явний доступ: правила додаткового доступу кажуть
+  // Видимість не залежить від того, звідки приїхала картка: колекція у вебі
+  // одна. Право показу дає явний доступ — правила додаткового доступу кажуть
   // «цю картку показати цьому глядачеві» незалежно від `publish`.
   if (user?.__matchingAccessAllowed === false) {
     return {
@@ -238,7 +237,7 @@ export const mergeSharedReactionCandidateUsers = ({
 
 export const mergeMatchingCandidateUsers = ({
   users = [],
-  additionalNewUsers = [],
+  additionalAccessUsers = [],
   sharedReactionCandidateUsers = [],
   isAdmin = false,
   viewMode = 'default',
@@ -260,7 +259,7 @@ export const mergeMatchingCandidateUsers = ({
     const defaultCandidates = hasAdditionalAccessRules
       ? [
         ...baseUsers,
-        ...additionalNewUsers.filter(user => user?.userId && canInjectCandidate(user)),
+        ...additionalAccessUsers.filter(user => user?.userId && canInjectCandidate(user)),
       ]
       : baseUsers;
     const byId = new Map(defaultCandidates.map(user => [user.userId, user]));

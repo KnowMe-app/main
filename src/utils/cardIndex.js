@@ -29,7 +29,6 @@ const MATCHING_LOCAL_STORAGE_PREFIXES = ['searchKey:', 'searchHistory:', 'cardsC
 const MATCHING_LOCAL_STORAGE_SUBSTRINGS = [
   'matchingindex',
   'searchkeysets',
-  'additionalnewusers',
 ];
 
 export const isMatchingLocalStorageCacheKey = key => {
@@ -300,7 +299,7 @@ export const sanitizeMatchingCardForCache = card => {
   if (!card || typeof card !== 'object') return card;
   return Object.entries(card).reduce((acc, [key, value]) => {
     if (HEAVY_CARD_CACHE_KEYS.has(key)) return acc;
-    if (key.startsWith('__') && key !== '__sourceCollection' && key !== '__matchingAccessAllowed') return acc;
+    if (key.startsWith('__') && key !== '__matchingAccessAllowed') return acc;
     acc[key] = value;
     return acc;
   }, {});

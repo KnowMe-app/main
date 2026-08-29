@@ -31,7 +31,7 @@ describe('збій загальної стрічки лишається сказ
       '  const reloadDefault = React.useCallback',
     );
     const catchIndex = loadInitial.indexOf('} catch (error) {');
-    const scopedBranchIndex = loadInitial.indexOf('if (additionalNewUsersRef.current.length > 0) {', catchIndex);
+    const scopedBranchIndex = loadInitial.indexOf('if (additionalAccessUsersRef.current.length > 0) {', catchIndex);
     const announceIndex = loadInitial.indexOf('announcePublicFeedUnavailable(error);', scopedBranchIndex);
     const reportIndex = loadInitial.indexOf('reportInitialLoadError(error);', catchIndex);
 

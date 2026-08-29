@@ -34,7 +34,7 @@ describe('локальний вхід індексації читає ті са�
 
   it('локальні кнопки не вимагають legacy-файлів', () => {
     // Після переїзду їх може не бути взагалі — а вузлів вистачає.
-    expect(addNewProfileSource).not.toContain("Спочатку оберіть обидва локальні файли: users.json і newUsers.json");
+    expect(addNewProfileSource).not.toContain('Спочатку оберіть обидва локальні файли');
     const gates = addNewProfileSource.match(/if \(!localIndexSources\.isUsable\)/g) || [];
     expect(gates.length).toBeGreaterThanOrEqual(3);
   });
@@ -78,8 +78,8 @@ describe('локальний вхід індексації читає ті са�
 
   it('назва мапи більше не вирішує, з якої картка колекції', () => {
     // Мапа сюди приходить уже зведена, тож її ім'я нічого не означає. Раніше
-    // воно ставило `__sourceCollection` — і будь-яка мапа, названа не
-    // `newUsers`, оголошувалась users-колекцією.
+    // воно ставило `__sourceCollection`, і назва мапи вирішувала, звідки
+    // нібито прийшла картка.
     const shortId = 'freshPushKey00000000';
     const longId = '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2';
     const { payload } = buildMatchingCardsPayloadFromCollections({

@@ -7,13 +7,13 @@ describe('buildFullCardKeyMap', () => {
         one: { name: 'Anna', contacts: { phone: '1' }, children: [{ name: 'Eva' }] },
         two: { name: 'Bob', contacts: { email: 'b@example.com' } },
       },
-      newUsers: {
+      nodes: {
         three: { status: 'new', children: [{ birth: { year: 2020 } }] },
       },
     });
 
     expect(result.totalCards).toBe(3);
-    expect(result.cardsByCollection).toEqual({ users: 2, newUsers: 1 });
+    expect(result.cardsByCollection).toEqual({ users: 2, nodes: 1 });
     expect(result.keys).toEqual(expect.arrayContaining([
       'name',
       'contacts.phone',
@@ -24,12 +24,12 @@ describe('buildFullCardKeyMap', () => {
       'status',
     ]));
     expect(result.keysByCollection.users).toContain('contacts.email');
-    expect(result.keysByCollection.newUsers).not.toContain('contacts.email');
+    expect(result.keysByCollection.nodes).not.toContain('contacts.email');
     expect(result.totalKeys).toBe(result.keys.length);
   });
 
   it('can build a map from only one available collection', () => {
-    const result = buildFullCardKeyMap({ users: { one: { name: 'Anna' } }, newUsers: null });
+    const result = buildFullCardKeyMap({ users: { one: { name: 'Anna' } }, nodes: null });
 
     expect(result.totalCards).toBe(1);
     expect(result.keys).toEqual(['name']);

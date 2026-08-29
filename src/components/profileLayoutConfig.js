@@ -105,7 +105,6 @@ export const getProfileRole = user => {
   const role = normalizeDisplayValue(user?.role || user?.userRole).toLowerCase();
   const normalizedRole = normalizeProfileRole(role);
   if (normalizedRole) return normalizedRole;
-  if (user?.__sourceCollection === 'newUsers' && !role) return 'ed';
   return 'other';
 };
 

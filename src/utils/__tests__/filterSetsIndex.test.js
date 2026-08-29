@@ -46,9 +46,9 @@ const makeSnapshot = (exists, value = null) => ({
   val: () => value,
 });
 
-const loadModule = () => require('../newUsersFilterSetsIndex');
+const loadModule = () => require('../filterSetsIndex');
 
-describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
+describe('getIndexedIdsByRules searchKeySets access scope', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFirebaseGet.mockResolvedValue(makeSnapshot(false));
@@ -65,14 +65,14 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
   });
 
   it('reads age via single range query instead of daily buckets', async () => {
-    const { getIndexedNewUsersIdsByRules } = loadModule();
+    const { getIndexedIdsByRules } = loadModule();
 
     mockFirebaseGet.mockImplementation(arg => {
       if (arg && arg.__query) return Promise.resolve(makeSnapshot(true, { 'd_1995-05-19': { U1: true }, 'd_2005-05-18': { U2: true } }));
       return Promise.resolve(makeSnapshot(true, { U1: true, U2: true }));
     });
 
-    const result = await getIndexedNewUsersIdsByRules({
+    const result = await getIndexedIdsByRules({
       rawRules: 'role: ed',
       accessUserId: 'owner-1',
       searchKeySetKeys: ['owner-1_1'],
@@ -86,7 +86,7 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
 
 
   it('reads searchKeySets age matching buckets through backend DOB ranges', async () => {
-    const { getIndexedNewUsersIdsByRules } = loadModule();
+    const { getIndexedIdsByRules } = loadModule();
 
     mockFirebaseGet.mockImplementation(path => {
       const buckets = {
@@ -96,7 +96,7 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
     });
     mockCollectAgeIdsByFilters.mockResolvedValueOnce(new Set(['U1', 'U3']));
 
-    const result = await getIndexedNewUsersIdsByRules({
+    const result = await getIndexedIdsByRules({
       rawRules: 'role: ed',
       accessUserId: 'owner-1',
       searchKeySetKeys: ['owner-1_1'],
@@ -122,7 +122,7 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
   });
 
   it('does not read no bucket when point filter sends selected non-no buckets', async () => {
-    const { getIndexedNewUsersIdsByRules } = loadModule();
+    const { getIndexedIdsByRules } = loadModule();
 
     mockFirebaseGet.mockImplementation(path => {
       const buckets = {
@@ -136,7 +136,7 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
       return Promise.resolve(makeSnapshot(Object.prototype.hasOwnProperty.call(buckets, path), buckets[path]));
     });
 
-    const result = await getIndexedNewUsersIdsByRules({
+    const result = await getIndexedIdsByRules({
       rawRules: 'role: ed',
       accessUserId: 'owner-1',
       searchKeySetKeys: ['owner-1_1'],

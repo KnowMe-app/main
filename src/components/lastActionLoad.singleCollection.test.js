@@ -14,24 +14,15 @@ jest.mock('utils/backendDownloadToast', () => ({
 }));
 
 describe('defaultFetchByLastActionRange', () => {
-  it('queries both newUsers and users, merging results and deduping by id', async () => {
+  it('reads the single users collection and returns its entries', async () => {
     const { get } = require('firebase/database');
     get.mockImplementation(async refObj => {
-      if (refObj.path === 'newUsers') {
-        return {
-          exists: () => true,
-          val: () => ({
-            shared: { lastAction: 100 },
-            onlyNewUsers: { lastAction: 200 },
-          }),
-        };
-      }
       if (refObj.path === 'users') {
         return {
           exists: () => true,
           val: () => ({
-            shared: { lastAction: 100 },
-            onlyUsers: { lastAction: 300 },
+            first: { lastAction: 100 },
+            second: { lastAction: 300 },
           }),
         };
       }
@@ -40,13 +31,11 @@ describe('defaultFetchByLastActionRange', () => {
 
     const { defaultFetchByLastActionRange } = await import('./lastActionLoad');
     const result = await defaultFetchByLastActionRange(0, 1000, 10);
-    const ids = result.map(([id]) => id).sort();
 
-    expect(ids).toEqual(['onlyNewUsers', 'onlyUsers', 'shared']);
-    expect(result.filter(([id]) => id === 'shared')).toHaveLength(1);
+    expect(result.map(([id]) => id).sort()).toEqual(['first', 'second']);
   });
 
-  it('returns an empty array when neither collection has matches', async () => {
+  it('returns an empty array when the collection has no matches', async () => {
     const { get } = require('firebase/database');
     get.mockResolvedValue({ exists: () => false, val: () => null });
 

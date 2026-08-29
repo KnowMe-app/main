@@ -50,7 +50,7 @@ const buildGetImplementation = ({ owners }) => async target => {
   return snapshot(null);
 };
 
-describe('rebuildAllNewUsersFilterSetIndexes', () => {
+describe('rebuildAllFilterSetIndexes', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
@@ -62,8 +62,8 @@ describe('rebuildAllNewUsersFilterSetIndexes', () => {
       owners: { [OWNER]: { additionalAccessRules: 'role: ed' } },
     }));
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
-    const stats = await rebuildAllNewUsersFilterSetIndexes();
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
+    const stats = await rebuildAllFilterSetIndexes();
 
     expect(stats.errors).toEqual([]);
     expect(stats.totalRuleSets).toBe(1);
@@ -82,8 +82,8 @@ describe('rebuildAllNewUsersFilterSetIndexes', () => {
       owners: { [OWNER]: { additionalAccessRules: 'role: ed' } },
     }));
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
-    await rebuildAllNewUsersFilterSetIndexes();
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
+    await rebuildAllFilterSetIndexes();
 
     const usersCalls = mockGet.mock.calls.filter(([target]) => target?.path === 'users');
     expect(usersCalls).toHaveLength(1);
@@ -99,8 +99,8 @@ describe('rebuildAllNewUsersFilterSetIndexes', () => {
       owners: { [OWNER]: { additionalAccessRules: 'role: ed' } },
     }));
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
-    await rebuildAllNewUsersFilterSetIndexes();
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
+    await rebuildAllFilterSetIndexes();
 
     const paths = mockGet.mock.calls.map(([target]) => target?.path);
     expect(paths).toContain('searchKey/role');
@@ -114,8 +114,8 @@ describe('rebuildAllNewUsersFilterSetIndexes', () => {
       owners: { [OWNER]: { additionalAccessRules: 'role: ed' } },
     }));
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
-    await rebuildAllNewUsersFilterSetIndexes();
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
+    await rebuildAllFilterSetIndexes();
 
     expect(mockRemove).toHaveBeenCalledWith(expect.objectContaining({ path: 'searchKeySets/stale-set-key' }));
   });
@@ -129,8 +129,8 @@ describe('rebuildAllNewUsersFilterSetIndexes', () => {
       },
     }));
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
-    const stats = await rebuildAllNewUsersFilterSetIndexes();
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
+    const stats = await rebuildAllFilterSetIndexes();
 
     expect(stats.owners).toBe(2);
     // Здоровий власник проіндексований попри сусіда, що не зібрався.
@@ -144,9 +144,9 @@ describe('rebuildAllNewUsersFilterSetIndexes', () => {
       owners: { [OWNER]: { additionalAccessRules: 'role: ed' } },
     }));
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
     const stages = [];
-    await rebuildAllNewUsersFilterSetIndexes({ onProgress: stage => stages.push(stage) });
+    await rebuildAllFilterSetIndexes({ onProgress: stage => stages.push(stage) });
 
     expect(stages).toContain('searchKey');
     expect(stages).toContain('owners');
@@ -178,8 +178,8 @@ describe('копія індексу в наборі', () => {
       return snapshot(null);
     });
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
-    await rebuildAllNewUsersFilterSetIndexes();
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
+    await rebuildAllFilterSetIndexes();
 
     const [, payload] = mockSet.mock.calls[0];
     expect(Object.keys(payload).sort()).toEqual(['role', 'userId']);
@@ -205,8 +205,8 @@ describe('копія індексу в наборі', () => {
       return snapshot(null);
     });
 
-    const { rebuildAllNewUsersFilterSetIndexes } = require('../newUsersFilterSetsIndex');
-    await rebuildAllNewUsersFilterSetIndexes();
+    const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
+    await rebuildAllFilterSetIndexes();
 
     if (!mockSet.mock.calls.length) return;
     const [, payload] = mockSet.mock.calls[0];

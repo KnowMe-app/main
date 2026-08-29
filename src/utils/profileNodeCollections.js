@@ -14,9 +14,9 @@ import { mergeProfileNodes } from './profileNodeMerge';
  * буде хіба що по дірках у пошуку. Тому збірка тут одна на двох: різниця між
  * входами закінчується на тому, хто прочитав вузли.
  *
- * Колекція у вебі одна. `users` і `newUsers` приймаються лише як нижній шар
- * для анкет, які ще не переїхали, і як єдине джерело `publish` — власного
- * вузла в нього немає, ним володіє мобільний застосунок.
+ * Колекція у вебі одна. `users` приймається лише як нижній шар для анкет, які
+ * ще не переїхали, і як єдине джерело `publish` — власного вузла в нього
+ * немає, ним володіє мобільний застосунок.
  */
 
 /** Вузли, з яких складається анкета. Порядок — той самий, що й у читача. */
@@ -31,8 +31,8 @@ export const PROFILE_NODE_NAMES = Object.freeze([
 const asMap = value => (value && typeof value === 'object' ? value : {});
 
 /**
- * @param {object} sources вузли як `{ id: дані }` плюс необовʼязкові
- *   `users` / `newUsers` — legacy-шар для ще не перенесених анкет.
+ * @param {object} sources вузли як `{ id: дані }` плюс необовʼязковий
+ *   `users` — legacy-шар для ще не перенесених анкет.
  * @returns {{ profiles: object, stats: object }}
  */
 export const mergeProfileNodeCollections = (sources = {}) => {
@@ -40,12 +40,10 @@ export const mergeProfileNodeCollections = (sources = {}) => {
     PROFILE_NODE_NAMES.map(node => [node, asMap(sources[node])]),
   );
   const legacyUsers = asMap(sources.users);
-  const legacyNewUsers = asMap(sources.newUsers);
 
   const ids = new Set([
     ...PROFILE_NODE_NAMES.flatMap(node => Object.keys(nodes[node])),
     ...Object.keys(legacyUsers),
-    ...Object.keys(legacyNewUsers),
   ]);
 
   const profiles = {};
@@ -55,7 +53,7 @@ export const mergeProfileNodeCollections = (sources = {}) => {
     if (!id) return;
     stats.total += 1;
 
-    const legacy = legacyUsers[id] || legacyNewUsers[id] || null;
+    const legacy = legacyUsers[id] || null;
     const hasNodeData = PROFILE_NODE_NAMES.some(node => nodes[node][id]);
 
     const profile = mergeProfileNodes({
@@ -96,7 +94,7 @@ export const mergeProfileNodeCollections = (sources = {}) => {
  */
 export const describeLocalIndexingSources = (sources = {}) => {
   const loadedNodes = PROFILE_NODE_NAMES.filter(node => Object.keys(asMap(sources[node])).length);
-  const hasLegacy = Boolean(Object.keys(asMap(sources.users)).length || Object.keys(asMap(sources.newUsers)).length);
+  const hasLegacy = Boolean(Object.keys(asMap(sources.users)).length);
 
   return {
     loadedNodes,

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { buildProfileNodePatch, listTouchedProfileNodes } from '../profileNodeWriter';
-import { buildMatchingCardProjection, resolveMatchingCardCollection } from '../matchingCardIndex';
+import { buildMatchingCardProjection } from '../matchingCardIndex';
 import { isValidMatchingUserId, isShortMatchingUserId } from '../matchingDataProvider';
 
 const configSource = fs.readFileSync(
@@ -13,10 +13,10 @@ const configSource = fs.readFileSync(
 /**
  * Створення анкети — це той самий запис, що й редагування, тільки перший.
  *
- * Легко зробити його «майже таким самим»: покласти анкету в legacy, оновити
- * картку стрічки — і забути розкласти по вузлах. Тоді нова анкета живе
- * нерозділеною доти, доки її вперше не відредагують, а контакт із неї новим
- * шляхом не читається взагалі. Тут перевіряється, що всі три кроки на місці.
+ * Легко зробити його «майже таким самим»: оновити картку стрічки — і забути
+ * розкласти анкету по вузлах. Тоді нова анкета живе нерозділеною доти, доки її
+ * вперше не відредагують, а контакт із неї новим шляхом не читається взагалі.
+ * Тут перевіряється, що всі кроки на місці.
  */
 describe('створення анкети розкладається так само, як збереження', () => {
   const creation = configSource.slice(
@@ -30,14 +30,22 @@ describe('створення анкети розкладається так са
     expect(creation).toContain('await syncMatchingCardIndex(newUserId, newUser');
   });
 
-  it('канонічні вузли створюються до необовʼязкового legacy-дзеркала', () => {
+  it('створює канонічні вузли ПЕРЕД необовʼязковим legacy-дзеркалом', () => {
+    // `users` — вузол акаунтів: право писати в чужий `users/$uid` має тільки
+    // власник і адмін. Редактор, що заводить анкету, його не має, тому запис
+    // туди йде останнім і його відмова не скасовує вже створену анкету.
     expect(creation.indexOf('await fanOutProfileNodes'))
       .toBeLessThan(creation.indexOf('await set(newUserRef, newUser)'));
+    expect(creation).toContain("console.warn('[profileNodes] legacy-дзеркало нової анкети не створено'");
+  });
+
+  it('падає, коли вузли не прийняли анкету — тихого «створив у нікуди» немає', () => {
+    expect(creation).toContain("if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');");
   });
 
   it.each([
-    ['updateDataInRealtimeDB', 'users'],
-    ['updateDataInNewUsersRTDB', 'newUsers'],
+    ['updateDataInRealtimeDB'],
+    ['updateProfileNodesInRTDB'],
   ])('%s теж розкладає збережене по вузлах', writerName => {
     const writer = configSource.slice(
       configSource.indexOf(`export const ${writerName} =`),
@@ -106,7 +114,6 @@ describe('що саме дістається кожному вузлу при с
   it('картка стрічки збирається одразу і несе ініціал, а не прізвище', () => {
     const card = buildMatchingCardProjection(newUser.userId, {
       ...newUser,
-      __sourceCollection: 'newUsers',
     });
 
     expect(card).toEqual({ name: 'Катерина', surnameShort: 'К.' });
@@ -117,7 +124,7 @@ describe('що саме дістається кожному вузлу при с
   it('нова анкета потрапляє в стрічку, щойно її опублікували', () => {
     // Це і є «застосунок живе без адміністрування»: анкету створив користувач,
     // її опублікували — вона в стрічці. Раніше ключ стрічки давався лише
-    // анкетам з `users`, а `makeNewUser` заводить анкету з push-ключем, тож
+    // анкетам акаунтів, а `makeNewUser` заводить анкету з push-ключем, тож
     // створена у вебі анкета не показалась би ніколи.
     const card = buildMatchingCardProjection(newUser.userId, {
       ...newUser,
@@ -133,7 +140,7 @@ describe('що саме дістається кожному вузлу при с
   });
 });
 
-describe('id, який генерує створення, читається як newUsers', () => {
+describe('id, який генерує створення, читається як короткий', () => {
   // `makeNewUser` бере `push()`, а push-ключ Firebase — це рівно 20 символів.
   const pushKey = '-OA1b2c3d4e5f6g7h8i9';
   const authUid = '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2';
@@ -143,10 +150,7 @@ describe('id, який генерує створення, читається я�
     expect(authUid).toHaveLength(28);
   });
 
-  it('межа проходить по «більше за 20», тож push-ключ лишається в newUsers', () => {
-    expect(resolveMatchingCardCollection(pushKey)).toBe('newUsers');
-    expect(resolveMatchingCardCollection(authUid)).toBe('users');
-
+  it('межа проходить по «більше за 20», тож push-ключ лишається коротким', () => {
     expect(isShortMatchingUserId(pushKey)).toBe(true);
     expect(isValidMatchingUserId(pushKey)).toBe(false);
     expect(isValidMatchingUserId(authUid)).toBe(true);
@@ -154,7 +158,7 @@ describe('id, який генерує створення, читається я�
 
   it('той самий поріг стоїть і в маршрутизації searchKey', () => {
     // Інакше індекс щойно створеної анкети поїхав би в корінь `users`, а
-    // читали б його з `newUsers` — рівно так 1300+ id опинились у чужому індексі.
+    // читали б його зі спільного — рівно так 1300+ id опинились у чужому індексі.
     expect(configSource).toContain(
       "export const isUsersCollectionUserId = userId => String(userId || '').trim().length > 20;",
     );

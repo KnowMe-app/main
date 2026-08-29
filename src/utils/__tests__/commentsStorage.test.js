@@ -1,6 +1,5 @@
 import {
   COMMENTS_TTL_MS,
-  clearCachedComments,
   getCachedComment,
   loadComments,
   saveComments,
@@ -47,17 +46,6 @@ describe('commentsStorage owner-scoped cache', () => {
     expect(loadComments()['owner-a']).not.toHaveProperty('card-2');
   });
 
-  it('clears only migrated cards for the selected owner', () => {
-    setLocalComment('owner-a', 'card-1', 'migrated', 100);
-    setLocalComment('owner-a', 'card-2', 'unchanged', 200);
-    setLocalComment('owner-b', 'card-1', 'other owner', 300);
-
-    clearCachedComments('owner-a', ['card-1']);
-
-    expect(getCachedComment('owner-a', 'card-1')).toBeNull();
-    expect(getCachedComment('owner-a', 'card-2').text).toBe('unchanged');
-    expect(getCachedComment('owner-b', 'card-1').text).toBe('other owner');
-  });
 });
 
 describe('shouldUseServerComment', () => {

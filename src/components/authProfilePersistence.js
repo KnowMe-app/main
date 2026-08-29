@@ -2,10 +2,9 @@ import {
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
   updateDataInFiresoreDB,
-  updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
+  updateProfileNodesInRTDB,
 } from './config';
-import { markFullProfileFallback } from '../utils/userProfileFallback';
 
 export const MY_PROFILE_DRAFT_STORAGE_KEY = 'myProfileDraft';
 export const MY_PROFILE_ROUTE = '/my-profile';
@@ -20,8 +19,11 @@ export const normalizeAuthEmail = email => String(email || '').trim();
 
 export const isValidAuthEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+// Канонічне місце анкети акаунта — `users` (її читає мобільний застосунок) і
+// Firestore. Коли туди не пускають права, анкета все одно мусить десь бути: тоді
+// вона цілком їде у вузли профілю, на які власник акаунта право має завжди.
 export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
-  let shouldWriteFullProfileToNewUsers = false;
+  let canonicalWriteFailed = false;
 
   try {
     await updateDataInRealtimeDB(userId, uploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
@@ -29,24 +31,20 @@ export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCon
     if (!isPermissionDeniedError(error)) {
       throw error;
     }
-    shouldWriteFullProfileToNewUsers = true;
-    console.warn('No write access to users/$uid, fallback to newUsers.');
+    canonicalWriteFailed = true;
+    console.warn('No write access to users/$uid, falling back to the profile nodes.');
   }
 
   try {
     await updateDataInFiresoreDB(userId, uploadedInfo, firestoreCondition);
   } catch (error) {
-    shouldWriteFullProfileToNewUsers = true;
-    console.warn('Firestore write failed, fallback to newUsers.', error);
+    canonicalWriteFailed = true;
+    console.warn('Firestore write failed, falling back to the profile nodes.', error);
   }
 
-  await updateDataInNewUsersRTDB(
-    userId,
-    shouldWriteFullProfileToNewUsers
-      ? markFullProfileFallback(uploadedInfo)
-      : { lastLogin2: uploadedInfo.lastLogin2 },
-    shouldWriteFullProfileToNewUsers ? 'update' : 'set'
-  );
+  if (canonicalWriteFailed) {
+    await updateProfileNodesInRTDB(userId, uploadedInfo, 'update');
+  }
 
   // Реєстрація — це поява анкети, тож тут же зʼявляються і її пошукові індекси.
   //

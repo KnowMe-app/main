@@ -32,11 +32,10 @@ describe('database.rules.json matching read access', () => {
     );
   });
 
-  it.each(['users', 'newUsers'])('lets every matching access level read %s', collection => {
-    const readRule = rules[collection]['.read'];
+  it('lets every matching access level read users', () => {
+    const readRule = rules.users['.read'];
 
     expect(grantsAccessLevelByContains(readRule, 'users')).toBe(true);
-    expect(grantsAccessLevelByContains(readRule, 'newUsers')).toBe(true);
 
     assignableAccessLevels
       .filter(level => canAccessMatchingByLevel(level))
@@ -46,18 +45,14 @@ describe('database.rules.json matching read access', () => {
       });
   });
 
-  it('keeps admin uids and non-ed roles able to read both collections', () => {
-    ['users', 'newUsers'].forEach(collection => {
-      const readRule = rules[collection]['.read'];
-      expect(readRule).toContain("auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'");
-      expect(readRule).toContain("auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'");
-      expect(readRule).toContain("child('userRole').val() != 'ed'");
-    });
+  it('keeps admin uids and non-ed roles able to read the collection', () => {
+    const readRule = rules.users['.read'];
+    expect(readRule).toContain("auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'");
+    expect(readRule).toContain("auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'");
+    expect(readRule).toContain("child('userRole').val() != 'ed'");
   });
 
   it('keeps per-profile reads restricted to the owner and admins', () => {
-    ['users', 'newUsers'].forEach(collection => {
-      expect(rules[collection].$uid['.read']).toContain('auth.uid == $uid');
-    });
+    expect(rules.users.$uid['.read']).toContain('auth.uid == $uid');
   });
 });

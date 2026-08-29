@@ -1,28 +1,26 @@
 import fs from 'fs';
 import path from 'path';
 
-describe('fetchUserById fallback freshness', () => {
+describe('fetchUserById', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
   const body = source.slice(
     source.indexOf('export const fetchUserById'),
     source.indexOf('export const removeKeyFromFirebase'),
   );
 
-  it('settles both collection reads so either readable record can be returned', () => {
-    expect(body).toContain('const [usersResult, newUsersResult] = await Promise.allSettled([');
-    expect(body).toContain("usersResult.status === 'fulfilled'");
-    expect(body).toContain("newUsersResult.status === 'fulfilled'");
+  it('reads the profile nodes first and only then the single legacy collection', () => {
+    const nodesIndex = body.indexOf('await readProfileFromNodes(userId,');
+    const legacyIndex = body.indexOf('get(ref2(db, `users/${userId}`))');
+
+    expect(nodesIndex).toBeGreaterThanOrEqual(0);
+    expect(legacyIndex).toBeGreaterThan(nodesIndex);
   });
 
-  it('makes short-id and valid long-id newUsers records authoritative', () => {
-    expect(body).toContain('isLegacyFullProfileFallbackData(newUsersData)');
-    expect(body).toContain('!isLongFormatUserId(userId) || longIdFallback');
-    expect(body).toContain("const sourceCollection = useFallback ? 'newUsers' : 'users';");
+  it('reads legacy with `withLegacy` so mobile-app edits are visible on the profile', () => {
+    expect(body).toContain('{ includeTechnical: true, withLegacy: true }');
   });
 
-  it('falls back across collections when the authoritative payload has no photos', () => {
-    expect(body).toContain('normalizePhotoValues(primaryData.photos).length > 0');
-    expect(body).toContain('getAllUserPhotos(userId, photoSource)');
-    expect(body).toContain('__sourceCollection: sourceCollection');
+  it('hydrates photos for both paths', () => {
+    expect(body.match(/getAllUserPhotos\(userId\)/g)).toHaveLength(2);
   });
 });

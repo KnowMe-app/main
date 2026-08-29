@@ -42,7 +42,6 @@ describe('clearAllCardsCache', () => {
     localStorage.setItem('searchKey:v2:users/phone/123', '{}');
     localStorage.setItem('searchHistory:queries', '{}');
     localStorage.setItem('cardsCache:load2', '{}');
-    localStorage.setItem('additionalNewUsers:filters', '{}');
     localStorage.setItem('matchingIndex:lastAction', '{}');
     localStorage.setItem('searchKeySets:owner', '{}');
     localStorage.setItem('isLoggedIn', 'true');
@@ -59,7 +58,6 @@ describe('clearAllCardsCache', () => {
     expect(localStorage.getItem('searchKey:v2:users/phone/123')).toBeNull();
     expect(localStorage.getItem('searchHistory:queries')).toBeNull();
     expect(localStorage.getItem('cardsCache:load2')).toBeNull();
-    expect(localStorage.getItem('additionalNewUsers:filters')).toBeNull();
     expect(localStorage.getItem('matchingIndex:lastAction')).toBeNull();
     expect(localStorage.getItem('searchKeySets:owner')).toBeNull();
     expect(localStorage.getItem('other')).toBe('value');

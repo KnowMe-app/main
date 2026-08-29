@@ -6,12 +6,12 @@ const read = name => fs.readFileSync(path.join(__dirname, name), 'utf8');
 describe('дзеркалення анкет у matchingCards', () => {
   const config = () => read('config.js');
 
-  it('оновлює картку після запису в обидві колекції', () => {
+  it('оновлює картку після кожного запису анкети', () => {
     // Хук стоїть у самих писачах, а не у викликачів: правити анкету можна з
     // кількох екранів, і на котромусь із них його забули б поставити.
     const source = config();
-    expect(source).toContain("await refreshMatchingCardAfterProfileWrite('users', userId, cleanedUploadedInfo, condition);");
-    expect(source).toContain("await refreshMatchingCardAfterProfileWrite('newUsers', userId, cleanedUploadedInfo, condition);");
+    expect(source.match(/await refreshMatchingCardAfterProfileWrite\(userId, cleanedUploadedInfo, condition\);/g))
+      .toHaveLength(2);
   });
 
   it('знімає картку разом з видаленням анкети', () => {
@@ -29,8 +29,8 @@ describe('дзеркалення анкет у matchingCards', () => {
     const index = read('../utils/matchingCardIndex.js');
     expect(index).toContain('if (feedDate) projection[MATCHING_CARD_FEED_FIELD] = feedDate;');
 
-    // І лише показаній картці з датою. Колекція тут ні до чого: анкета,
-    // створена у вебі, має push-ключ, і умова «лише з users» не пускала б її
+    // І лише показаній картці з датою. Формат id тут ні до чого: анкета,
+    // створена у вебі, має push-ключ, і умова «лише з акаунтів» не пускала б її
     // у стрічку ніколи.
     expect(index).toMatch(/if \(!normalizePublish\(data\?\.publish\)\) return '';/);
     expect(index).not.toContain("if (source !== 'users') return '';");
@@ -42,7 +42,7 @@ describe('чим саме читається стрічка', () => {
     const provider = read('../utils/matchingDataProvider.js');
     ['index-empty', 'pager-unavailable']
       .forEach(reason => expect(provider).toContain(`reportFeedSource('profiles', '${reason}')`));
-    // Причини «дека newUsers» більше немає: дека одна, і стрічка для неї одна.
+    // Причини «друга дека» більше немає: дека одна, і стрічка для неї одна.
     expect(provider).not.toContain('new-users-deck');
     expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
     expect(provider).toContain("reportFeedSource('matchingCards', '')");

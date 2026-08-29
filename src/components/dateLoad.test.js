@@ -175,11 +175,11 @@ describe('fetchFilteredUsersByPage', () => {
         entries.forEach(([id, data]) => callback({ key: id, val: () => data?.getInTouch || data }));
       },
     });
-    const firstNewUsersPage = Array.from({ length: 22 }, (_, index) => {
+    const firstOrderedPage = Array.from({ length: 22 }, (_, index) => {
       const id = `u${String(index + 1).padStart(2, '0')}`;
       return [id, { userId: id, getInTouch: '2026-06-19', keep: true }];
     });
-    const secondNewUsersPage = [
+    const secondOrderedPage = [
       ['u23', { userId: 'u23', getInTouch: '2026-06-19', keep: true }],
     ];
 
@@ -187,7 +187,7 @@ describe('fetchFilteredUsersByPage', () => {
       const path = queryArgs[0];
       if (path !== 'db/multiData/getInTouch/owner-1') return makeSnapshot([]);
       const hasCursor = queryArgs.some(arg => Array.isArray(arg) && arg[0] === 'startAfter');
-      return makeSnapshot(hasCursor ? secondNewUsersPage : firstNewUsersPage);
+      return makeSnapshot(hasCursor ? secondOrderedPage : firstOrderedPage);
     });
 
     const { fetchFilteredUsersByPage } = await import('./dateLoad');
@@ -212,13 +212,13 @@ describe('fetchFilteredUsersByPage', () => {
       { afterKeys: first.afterKeys },
     );
 
-    expect(Object.keys(first.users)).toEqual(firstNewUsersPage.slice(0, 20).map(([id]) => id));
+    expect(Object.keys(first.users)).toEqual(firstOrderedPage.slice(0, 20).map(([id]) => id));
     expect(first.hasMore).toBe(true);
     expect(first.afterKeys?.getInTouch).toEqual({ value: '2026-06-19', key: 'u20' });
     expect(Object.keys(second.users)).toEqual(['u23']);
   });
 
-  it('does not skip users rows when merged newUsers rows fill the first ordered batch', async () => {
+  it('does not skip rows when the ordered batch is larger than the kept slice', async () => {
     const database = await import('firebase/database');
     database.getDatabase.mockReturnValue('db');
     database.ref.mockImplementation((db, col) => `${db}/${col}`);
@@ -231,10 +231,6 @@ describe('fetchFilteredUsersByPage', () => {
       forEach: callback => {
         entries.forEach(([id, data]) => callback({ key: id, val: () => data?.getInTouch || data }));
       },
-    });
-    const newUsersPage = Array.from({ length: 22 }, (_, index) => {
-      const id = `new${String(index + 1).padStart(2, '0')}`;
-      return [id, { userId: id, getInTouch: '2026-06-01', keep: false }];
     });
     const usersPage = Array.from({ length: 3 }, (_, index) => {
       const id = `user${String(index + 1).padStart(2, '0')}`;

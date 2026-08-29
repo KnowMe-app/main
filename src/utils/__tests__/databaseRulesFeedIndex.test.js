@@ -11,7 +11,12 @@ describe('правила, без яких стрічка не може чита�
     // ключем — Firebase відповідав «Index not defined», і стрічка мовчки
     // сповзала на повні анкети. Тепер ключ один — `feedDate`, — і індекс мусить
     // виїхати в базу РАНІШЕ за код, інакше повториться те саме.
-    expect(rules.matchingCards['.indexOn']).toEqual(['feedDate']);
+    expect(rules.matchingCards['.indexOn'][0]).toBe('feedDate');
+    // Поруч — поля, за якими картку шукають: `matchingCards` тепер каталог
+    // усіх анкет, і пошук ходить по ньому, а не по legacy-колекції.
+    expect(rules.matchingCards['.indexOn']).toEqual(
+      expect.arrayContaining(['feedDate', 'name', 'surnameShort']),
+    );
   });
 
   it('дає кожному авторизованому користувачеві читати опубліковані картки', () => {
@@ -30,7 +35,11 @@ describe('правила, без яких стрічка не може чита�
   it('дає редактору право оновити картку, яку він щойно змінив', () => {
     // Дзеркалення живе в писачах анкети: хто може зберегти анкету, той мусить
     // могти оновити і її проєкцію, інакше картка застигає застарілою.
-    expect(rules.matchingCards.$uid['.write']).toBe(rules.newUsers.$uid['.write']);
+    expect(rules.matchingCards.$uid['.write']).toBe(rules.profileDetails.$uid['.write']
+      .replace(" || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true"
+        + " || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true)", ''));
+    ["matching:view&write", 'matching+addNewProfile:view&write', 'add+matching:view&write']
+      .forEach(level => expect(rules.matchingCards.$uid['.write']).toContain(level));
   });
 
   it('лишає точковий резолв searchId доступним авторизованому читачеві', () => {

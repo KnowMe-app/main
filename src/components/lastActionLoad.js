@@ -35,34 +35,18 @@ const compareByLastActionDesc = ([, a], [, b]) =>
 
 export async function defaultFetchByLastActionRange(startTs, endTs, limit) {
   const db = getDatabase();
-  // Long-userId cards now only get lastAction written to users, so this has to
-  // query both collections or those cards would silently drop out of
-  // "recently active" sorting.
-  const snapshots = await Promise.all(
-    ['newUsers', 'users'].map(collectionName =>
-      get(
-        query(
-          ref2(db, collectionName),
-          orderByChild('lastAction'),
-          startAt(startTs),
-          endAt(endTs),
-          limitToLast(limit)
-        )
-      )
+  const snapshot = await get(
+    query(
+      ref2(db, 'users'),
+      orderByChild('lastAction'),
+      startAt(startTs),
+      endAt(endTs),
+      limitToLast(limit)
     )
   );
 
-  const seenIds = new Set();
-  const merged = [];
-  snapshots.forEach(snap => {
-    if (!snap.exists()) return;
-    Object.entries(snap.val()).forEach(([id, data]) => {
-      if (seenIds.has(id)) return;
-      seenIds.add(id);
-      merged.push([id, data]);
-    });
-  });
-  return merged;
+  if (!snapshot.exists()) return [];
+  return Object.entries(snapshot.val());
 }
 
 export async function fetchUsersByLastActionPaged(

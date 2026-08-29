@@ -252,7 +252,7 @@ describe('getCanonicalCard', () => {
 
     const card = await getCanonicalCard(LONG_USER_ID);
 
-    expect(get).toHaveBeenCalledTimes(7);
+    expect(get).toHaveBeenCalledTimes(6);
     expect(card).toEqual(expect.objectContaining({
       userId: LONG_USER_ID,
       name: 'Canonical',
@@ -273,18 +273,22 @@ describe('getCanonicalCard', () => {
     }));
   });
 
-  it('still merges both legacy collections for a short-format userId', async () => {
+  it('merges the single legacy collection with the nodes for a short-format userId', async () => {
+    // Legacy-колекція одна — `users`; усе інше приходить із вузлів анкети.
     get.mockImplementation(async ({ path }) => snapshotFor({
       'users/TG0016': { name: 'Users' },
-      'newUsers/TG0016': { extra: 'NewUsers' },
+      'profileWorkflow/TG0016': { getInTouch: '2026-06-19' },
     }[path] || null));
 
     const card = await getCanonicalCard('TG0016');
 
-    expect(get).toHaveBeenCalledTimes(7);
+    expect(get).toHaveBeenCalledTimes(6);
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/TG0016' }));
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'newUsers/TG0016' }));
-    expect(card).toEqual(expect.objectContaining({ userId: 'TG0016', name: 'Users', extra: 'NewUsers' }));
+    expect(card).toEqual(expect.objectContaining({
+      userId: 'TG0016',
+      name: 'Users',
+      getInTouch: '2026-06-19',
+    }));
   });
 });
 

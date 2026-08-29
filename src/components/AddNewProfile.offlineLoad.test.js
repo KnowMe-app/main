@@ -18,7 +18,7 @@ describe('AddNewProfile offline load mode', () => {
     expect(addNewProfileSource).toContain('return OFFLINE_LOAD_FILTER;');
   });
 
-  it('filters local users/newUsers ids before backend hydration and keeps getInTouch order', () => {
+  it('filters local users ids before backend hydration and keeps getInTouch order', () => {
     const getIdsBody = offlineSource.slice(
       offlineSource.indexOf('export const getOfflineFilteredIds'),
       offlineSource.indexOf('export const hydrateOfflineIdsPage')

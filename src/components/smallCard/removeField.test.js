@@ -1,16 +1,16 @@
 jest.mock('components/config', () => ({
   fetchUserById: jest.fn(),
-  updateDataInNewUsersRTDB: jest.fn(),
+  updateProfileNodesInRTDB: jest.fn(),
   updateDataInRealtimeDB: jest.fn(),
   updateDataInFiresoreDB: jest.fn(),
 }));
 jest.mock('utils/cache', () => ({ updateCachedUser: jest.fn() }));
 jest.mock('utils/multiAccountEdits', () => ({
-  getCardStorageCollection: jest.fn(async userId => userId === 'ID0001' ? 'newUsers' : 'users'),
+  getCardLegacyCollection: jest.fn(async userId => (userId === 'ID0001' ? null : 'users')),
 }));
 
-const { updateDataInNewUsersRTDB, updateDataInRealtimeDB } = require('components/config');
-const { getCardStorageCollection } = require('utils/multiAccountEdits');
+const { updateProfileNodesInRTDB, updateDataInRealtimeDB } = require('components/config');
+const { getCardLegacyCollection } = require('utils/multiAccountEdits');
 const { removeField } = require('./actions');
 
 // Simulates a real React setUsers(prev => ...) state setter: applies the
@@ -26,9 +26,9 @@ const makeStateBox = initial => {
 describe('removeField sends a minimal, targeted payload instead of the whole local card snapshot', () => {
   const flushSubmit = () => new Promise(resolve => setTimeout(resolve, 0));
   beforeEach(() => {
-    updateDataInNewUsersRTDB.mockClear();
+    updateProfileNodesInRTDB.mockClear();
     updateDataInRealtimeDB.mockClear();
-    getCardStorageCollection.mockImplementation(async userId => userId === 'ID0001' ? 'newUsers' : 'users');
+    getCardLegacyCollection.mockImplementation(async userId => (userId === 'ID0001' ? null : 'users'));
   });
 
   it('writes only the changed top-level field + lastAction for a long-userId card', async () => {
@@ -72,7 +72,7 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     expect(box.get()[longUserId]).toEqual({ userId: longUserId });
   });
 
-  it('routes to newUsers (not users) for an unpublished short-userId card', async () => {
+  it('writes only to the profile nodes for a card without a legacy body', async () => {
     const box = makeStateBox({
       ID0001: { userId: 'ID0001', key1: 'value1' },
     });
@@ -80,7 +80,7 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     removeField('ID0001', 'key1', box.setter, undefined, 'key1');
     await flushSubmit();
 
-    expect(updateDataInNewUsersRTDB).toHaveBeenCalledTimes(1);
+    expect(updateProfileNodesInRTDB).toHaveBeenCalledTimes(1);
     expect(updateDataInRealtimeDB).not.toHaveBeenCalled();
   });
 });
@@ -111,9 +111,9 @@ describe('removeField writes to the backend even when React defers the state upd
   const longUserId = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
 
   beforeEach(() => {
-    updateDataInNewUsersRTDB.mockReset();
+    updateProfileNodesInRTDB.mockReset();
     updateDataInRealtimeDB.mockReset();
-    getCardStorageCollection.mockImplementation(async userId => userId === 'ID0001' ? 'newUsers' : 'users');
+    getCardLegacyCollection.mockImplementation(async userId => (userId === 'ID0001' ? null : 'users'));
   });
 
   it('sends the deletion from the synchronous card snapshot, without waiting for a render', async () => {

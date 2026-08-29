@@ -96,7 +96,6 @@ import {
 import {
   fetchUsersByLastLogin2,
   fetchUserById,
-  getAllUserPhotos,
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
@@ -218,9 +217,9 @@ import {
   parseAdditionalAccessRuleGroups,
 } from 'utils/additionalAccessRules';
 import {
-  checkReactionNewUsersMembership,
+  checkReactionCardMembership,
   normalizeSearchKeySetKeys,
-} from 'utils/newUsersFilterSetsIndex';
+} from 'utils/filterSetsIndex';
 import {
   MULTI_DATA_ACCESS_FIELD,
   parseMultiDataAccessUserIds,
@@ -246,18 +245,14 @@ import {
   buildMatchingIndexFilterGroups,
   compareUsersByLastLogin2,
   fetchFilteredMatchingSourceChunk,
-  fetchAdditionalNewUsersBySearchIndex,
+  fetchAdditionalAccessUsersBySearchIndex,
   fetchMatchingIndexedCandidates,
-  fetchNewUsersByIdsForMatching as fetchNewUsersByIdsForMatchingData,
   getActiveMatchingFiltersDebug,
   getMatchingSearchKeyFilterDebugForUser,
   getMatchingUiFilterDebugSummary,
   isMatchingCardId,
   isSameMatchingCursor,
-  isShortMatchingUserId,
-  resolveLegacyCollectionForId,
 } from 'utils/matchingDataProvider';
-import { isLongFormatUserId } from 'utils/mergeUserCollections';
 import {
   normalizeMatchingInitialLoadError,
   runInitialRequestWithTimeout,
@@ -315,7 +310,7 @@ const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY = 'matchingDebugShowAllIndexedCards';
 const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
-const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
+const DEBUG_SHARED_CARD_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
 const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
@@ -510,7 +505,7 @@ const debugAdditionalToast = (accessUserId, message, data = {}) => {
     return;
   }
 
-  console.info('[ADD newUsers debug]', message, data, compact);
+  console.info('[ADD access debug]', message, data, compact);
   logAdditionalMatchingDebug(accessUserId, message, data);
 };
 
@@ -541,7 +536,6 @@ const summarizeUsersForReactionDebug = (users, limit = 25) => ({
   ids: (users || []).map(user => user?.userId).filter(Boolean).slice(0, limit),
   sources: (users || []).slice(0, limit).map(user => ({
     userId: user?.userId,
-    source: user?.__sourceCollection,
     publish: user?.publish,
     matchingAccessAllowed: user?.__matchingAccessAllowed,
     fromCardCache: user?.__fromCardCache,
@@ -572,23 +566,7 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
   source: 'Matching',
 });
 
-const isShortId = isShortMatchingUserId;
-const NEW_USERS_USER_ID_PREFIXES = ['-O', 'AA', 'AB', 'VK', 'ID'];
 const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];
-const isLikelyNewUsersUserId = id => {
-  const value = String(id || '').trim();
-  // A definitively long-format id (Firebase-Auth UID) can never live in newUsers
-  // (per the collection-routing invariant) even if it coincidentally starts with
-  // one of the short-id prefixes below — treat that as authoritative first.
-  if (isLongFormatUserId(value)) return false;
-  return Boolean(value) && (
-    isShortId(value) ||
-    NEW_USERS_USER_ID_PREFIXES.some(prefix => value.startsWith(prefix))
-  );
-};
-const getPreferredReactionSources = id => (
-  isLikelyNewUsersUserId(id) ? ['newUsers', 'users'] : ['users', 'newUsers']
-);
 
 const sanitizeCardForBackend = card => {
   if (!card || typeof card !== 'object') return card;
@@ -610,30 +588,20 @@ const hasRenderableMatchingProfilePayload = card => {
   return hasName || hasPhoto || hasPhotosArray || hasAbout;
 };
 
-// У якій legacy-колекції лежить тіло анкети — потрібно ще дзеркаленню в
-// мобільну базу, і тільки йому. Стрічка колекцій не розрізняє.
-const getReactionCardSource = (card, fallbackId = '') => (
-  resolveLegacyCollectionForId(card?.__sourceCollection, card?.userId || card?.id || fallbackId)
-);
-
-const normalizeReactionCard = (card, id, sourceHint) => {
+const normalizeReactionCard = (card, id) => {
   if (!card || typeof card !== 'object') return null;
   const normalizedId = String(card.userId || card.id || id || '').trim();
   if (!normalizedId) return null;
-  const source = sourceHint || getReactionCardSource(card, normalizedId);
   return {
     ...card,
     userId: normalizedId,
     id: card.id || normalizedId,
-    __sourceCollection: source,
   };
 };
 
-const isValidCachedReactionCard = (card, id, sourceHint) => {
-  const normalized = normalizeReactionCard(card, id, sourceHint);
+const isValidCachedReactionCard = (card, id) => {
+  const normalized = normalizeReactionCard(card, id);
   if (!normalized) return false;
-  const source = normalized.__sourceCollection;
-  if (source !== 'users' && source !== 'newUsers') return false;
   return hasRenderableMatchingProfilePayload(normalized);
 };
 const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
@@ -646,21 +614,10 @@ const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
   return card.publish !== false;
 };
 
-const FETCH_USERS_BY_IDS_BATCH_SIZE = 100;
-const fetchNewUsersByIdsForMatching = (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) =>
-  fetchNewUsersByIdsForMatchingData({
-    ids,
-    batchSize,
-    get,
-    ref: refDb,
-    database,
-    getAllUserPhotos,
-  });
-
-const fetchLimitedNewUsersByIdsForMatching = async ids => (
-  await Promise.all((ids || []).map(userId => (
-    fetchLimitedProfileById(userId, { collection: 'newUsers' })
-  )))
+// Глядач без повного доступу до матчингу бачить картку додаткового доступу
+// урізаною: рівно ті пʼять полів, які правила відкривають кожному авторизованому.
+const fetchLimitedProfilesByIdsForMatching = async ids => (
+  await Promise.all((ids || []).map(userId => fetchLimitedProfileById(userId)))
 ).filter(Boolean);
 
 const ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS = [
@@ -1087,7 +1044,6 @@ const SwipeableCard = ({
     : '';
   const debugContext = [
     user?.userId ? `userId=${user.userId}` : '',
-    user?.__sourceCollection ? `source=${user.__sourceCollection}` : '',
     typeof user?.__matchingAccessAllowed === 'boolean' ? `matchingAccess=${user.__matchingAccessAllowed ? 'allowed' : 'blocked'}` : '',
   ].filter(Boolean).join(' · ');
   const diagnostics = debugCardDiagnostics && typeof debugCardDiagnostics === 'object' ? debugCardDiagnostics : null;
@@ -1097,7 +1053,6 @@ const SwipeableCard = ({
   const debugDiagnosticsRows = diagnostics ? [
     `role=${diagnostics.role || '-'}`,
     `userRole=${diagnostics.userRole || '-'}`,
-    `cardSource=${diagnostics.__sourceCollection || '-'}`,
     `inVisible=${diagnostics.inVisibleCardIds ? 'yes' : 'no'}`,
     `inFiltered=${diagnostics.inFilteredUsers ? 'yes' : 'no'}`,
     `hiddenByUiFilter=${diagnostics.hiddenByUiFilter ? 'yes' : 'no'}`,
@@ -1626,8 +1581,8 @@ const Matching = () => {
   const [currentSearchKeySetKeys, setCurrentSearchKeySetKeys] = useState(() =>
     normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '')
   );
-  const [additionalNewUsers, setAdditionalNewUsers] = useState([]);
-  const additionalNewUsersRef = useRef(additionalNewUsers);
+  const [additionalAccessUsers, setAdditionalAccessUsers] = useState([]);
+  const additionalAccessUsersRef = useRef(additionalAccessUsers);
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
   const additionalNextOffsetRef = useRef(0);
   const [additionalHasMore, setAdditionalHasMore] = useState(false);
@@ -1671,7 +1626,6 @@ const Matching = () => {
         const pendingProfiles = items.map(mutation => ({
           ...getEffectiveProfile({ mutation }),
           publish: true,
-          __sourceCollection: 'newUsers',
           __matchingAccessAllowed: true,
           __profileMutationOperation: 'create',
           __profileMutationStatus: mutation.status,
@@ -1704,7 +1658,7 @@ const Matching = () => {
     () => getDefaultFilters({ mode: 'matching', nonAdminAllActive: !access.isAdmin }),
     [access.isAdmin],
   );
-  // The same condition the security rules use for reading users/newUsers. A viewer
+  // The same condition the security rules use for reading `users`. A viewer
   // without it can still search; what comes back is the limited projection
   // (surname, name, age, region, city, public comment), because those are the only
   // child paths the rules let them read.
@@ -1744,7 +1698,7 @@ const Matching = () => {
     favorites: new Set(),
     dislikes: new Set(),
   });
-  const reactionSourceByIdRef = useRef({});
+  const reactionStorageByIdRef = useRef({});
   const reactionClassificationRequestsRef = useRef(new Map());
   const reactionAccessRequestsRef = useRef(new Map());
   const loadInitialVersionRef = useRef(0);
@@ -1787,7 +1741,7 @@ const Matching = () => {
     currentSearchKeySetKeys,
   });
   const resetAdditionalMatchingState = React.useCallback(({ resetHasMore = true, resetLoading = false } = {}) => {
-    setAdditionalNewUsers([]);
+    setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
     additionalHasMoreRef.current = false;
     setAdditionalHasMore(false);
@@ -1928,7 +1882,7 @@ const Matching = () => {
   };
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
-    setAdditionalNewUsers(prev => prev.filter(u => u.userId !== id));
+    setAdditionalAccessUsers(prev => prev.filter(u => u.userId !== id));
     setSharedReactionCandidateUsers(prev => prev.filter(u => u.userId !== id));
   };
   useEffect(() => {
@@ -2039,7 +1993,7 @@ const Matching = () => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
     // Картка з короткого id — така сама картка: колекція у вебі одна, і саме так
     // її приймає індексна гілка стрічки. Мірка «довше за 20 символів» лишилась
-    // від поділу на `users`/`newUsers` і мовчки викидала з результатів усе, що
+    // від поділу на дві колекції і мовчки викидала з результатів усе, що
     // заведено в застосунку (push-id рівно 20 символів): статус устигав сказати
     // «Знайшов», а на екран не потрапляло нічого.
     const filtered = arr.filter(u => isMatchingCardId(u?.userId));
@@ -2054,7 +2008,7 @@ const Matching = () => {
 
     setUsers(filtered);
     loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));
-    setAdditionalNewUsers([]);
+    setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
     additionalHasMoreRef.current = false;
     setAdditionalHasMore(false);
@@ -2072,8 +2026,8 @@ const Matching = () => {
   }, [filters]);
 
   useEffect(() => {
-    additionalNewUsersRef.current = additionalNewUsers;
-  }, [additionalNewUsers]);
+    additionalAccessUsersRef.current = additionalAccessUsers;
+  }, [additionalAccessUsers]);
 
   useEffect(() => {
     additionalNextOffsetRef.current = additionalNextOffset;
@@ -2099,7 +2053,7 @@ const Matching = () => {
     usersRef.current = users;
     const ids = [
       ...users.map(u => u.userId),
-      ...additionalNewUsers.map(u => u.userId),
+      ...additionalAccessUsers.map(u => u.userId),
       ...sharedReactionCandidateUsers.map(u => u.userId),
     ];
     const ownOwnerId = getOwnerId();
@@ -2118,7 +2072,7 @@ const Matching = () => {
       });
       return map;
     });
-  }, [additionalNewUsers, sharedReactionCandidateUsers, users]);
+  }, [additionalAccessUsers, sharedReactionCandidateUsers, users]);
 
   useEffect(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') {
@@ -2431,7 +2385,7 @@ const Matching = () => {
             const additionalAccessRules = profile?.additionalAccessRules || '';
             const searchKeySetKeys = await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);
 
-            console.info('[Matching][additionalNewUsers] resolvedSearchKeySetKeys', searchKeySetKeys);
+            console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetKeys', searchKeySetKeys);
 
             setCurrentAccessLevel(accessLevel);
             setCurrentUserRole(userRole);
@@ -2462,7 +2416,7 @@ const Matching = () => {
               reason: 'auth-state-sync',
             });
 
-            console.info('[Matching][additionalNewUsers] resolvedSearchKeySetsOfExactUser', freshCache?.searchKeySetsOfExactUser || []);
+            console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetsOfExactUser', freshCache?.searchKeySetsOfExactUser || []);
           } catch (error) {
             console.error('Failed to refresh access profile on Matching', error);
             const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
@@ -2472,7 +2426,7 @@ const Matching = () => {
             const fallbackSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(cachedSearchKeySetKeys, user.uid)
               ? cachedSearchKeySetKeys
               : await resolveAdditionalSearchKeySetKeysForMatching(null, user.uid);
-            console.info('[Matching][additionalNewUsers] resolvedSearchKeySetsOfExactUser', fallbackSearchKeySetKeys);
+            console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetsOfExactUser', fallbackSearchKeySetKeys);
             setCurrentAccessLevel(cachedAccessLevel);
             setCurrentUserRole(cachedUserRole);
             setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
@@ -2505,8 +2459,7 @@ const Matching = () => {
       }
 
       const { todayDash } = getCurrentDate();
-      // lastLogin2 sort queries (fetchUsersByLastLogin2) read from users only,
-      // so write straight there instead of routing through newUsers.
+      // lastLogin2 sort queries (fetchUsersByLastLogin2) read from `users`.
       updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update');
 
     });
@@ -2597,12 +2550,12 @@ const Matching = () => {
         appliedDislikes: summarizeIdsForDebug(Object.keys(dislikes)),
         id0001SelfCheck: {
           hasAccessToSharedOwner: ownerIds.includes(DEBUG_SHARED_OWNER_ID),
-          sharedOwnerDislikesId0001: Boolean(normalizeReactionMap(dislikeSnapshots[DEBUG_SHARED_OWNER_ID])[DEBUG_SHARED_NEW_USER_ID]),
-          viewerOwnLikeId0001: Boolean(ownFavorites[DEBUG_SHARED_NEW_USER_ID]),
-          viewerOwnDislikeId0001: Boolean(ownDislikes[DEBUG_SHARED_NEW_USER_ID]),
-          appliedAsLiked: Boolean(favorites[DEBUG_SHARED_NEW_USER_ID]),
-          appliedAsDisliked: Boolean(dislikes[DEBUG_SHARED_NEW_USER_ID]),
-          requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_NEW_USER_ID),
+          sharedOwnerDislikesId0001: Boolean(normalizeReactionMap(dislikeSnapshots[DEBUG_SHARED_OWNER_ID])[DEBUG_SHARED_CARD_ID]),
+          viewerOwnLikeId0001: Boolean(ownFavorites[DEBUG_SHARED_CARD_ID]),
+          viewerOwnDislikeId0001: Boolean(ownDislikes[DEBUG_SHARED_CARD_ID]),
+          appliedAsLiked: Boolean(favorites[DEBUG_SHARED_CARD_ID]),
+          appliedAsDisliked: Boolean(dislikes[DEBUG_SHARED_CARD_ID]),
+          requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_CARD_ID),
         },
       });
       ownFavoriteUsersRef.current = ownFavorites;
@@ -2739,7 +2692,7 @@ const Matching = () => {
     [hasFullProfileAccess, isAdmin, recordInitialLoadDiagnostic, roleIndexSets]
   );
 
-  // Додаткові правила відкривають окремі newUsers, зокрема неопубліковані,
+  // Додаткові правила відкривають окремі анкети, зокрема неопубліковані,
   // яких за визначенням немає у публічному matchingCards. Тому scoped-індекс
   // доповнює загальну стрічку, а не підміняє її джерело чи пагінацію.
   useEffect(() => {
@@ -2751,9 +2704,9 @@ const Matching = () => {
       additionalAccessLoadInFlightRef.current = false;
       const deferredError = deferredInitialLoadErrorRef.current;
       deferredInitialLoadErrorRef.current = null;
-      additionalNewUsersRef.current = [];
+      additionalAccessUsersRef.current = [];
       setAdditionalHasMore(false);
-      setAdditionalNewUsers([]);
+      setAdditionalAccessUsers([]);
       setAdditionalNextOffset(0);
       if (deferredError) reportInitialLoadError(deferredError);
       return () => {};
@@ -2765,16 +2718,16 @@ const Matching = () => {
     // replacement request is in flight (or if that request fails).
     additionalHasMoreRef.current = false;
     additionalAccessLoadInFlightRef.current = true;
-    additionalNewUsersRef.current = [];
+    additionalAccessUsersRef.current = [];
     setAdditionalHasMore(false);
-    setAdditionalNewUsers([]);
+    setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
     let cancelled = false;
     let loadedScopedCards = false;
 
     const loadAccessScopedCards = async () => {
       try {
-        const loaded = await fetchAdditionalNewUsersBySearchIndex({
+        const loaded = await fetchAdditionalAccessUsersBySearchIndex({
           rawRules: currentAdditionalAccessRules,
           accessUserId,
           searchKeySetKeys,
@@ -2785,7 +2738,7 @@ const Matching = () => {
           ],
           offset: 0,
           limit: MATCHING_REFILL_LIMIT,
-          fetchNewUsersByIds: fetchLimitedNewUsersByIdsForMatching,
+          fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
           shouldDebugAdditionalMatching,
           debugAdditionalToast,
           logAdditionalMatchingDebug,
@@ -2797,8 +2750,8 @@ const Matching = () => {
           .filter(user => user?.userId && !publicIds.has(user.userId))
           .map(user => ({ ...user, __matchingAccessAllowed: true }));
         loadedScopedCards = scopedUsers.length > 0;
-        additionalNewUsersRef.current = scopedUsers;
-        setAdditionalNewUsers(scopedUsers);
+        additionalAccessUsersRef.current = scopedUsers;
+        setAdditionalAccessUsers(scopedUsers);
         additionalHasMoreRef.current = Boolean(loaded.hasMore);
         setAdditionalHasMore(Boolean(loaded.hasMore));
         setAdditionalNextOffset(Number(loaded.nextOffset) || 0);
@@ -2909,12 +2862,12 @@ const Matching = () => {
           sharedReactionIdsFound: summarizeIdsForDebug(nextSharedReactionIds),
           id0001SelfCheck: {
             hasAccessToSharedOwner: owners.includes(DEBUG_SHARED_OWNER_ID),
-            sharedOwnerDislikesId0001: Boolean(normalizeReactionMap(dislikeSnapshots[DEBUG_SHARED_OWNER_ID])[DEBUG_SHARED_NEW_USER_ID]),
-            viewerOwnLikeId0001: Boolean(ownFavorites[DEBUG_SHARED_NEW_USER_ID]),
-            viewerOwnDislikeId0001: Boolean(ownDislikes[DEBUG_SHARED_NEW_USER_ID]),
-            appliedAsLiked: Boolean(favIds[DEBUG_SHARED_NEW_USER_ID]),
-            appliedAsDisliked: Boolean(disIds[DEBUG_SHARED_NEW_USER_ID]),
-            requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_NEW_USER_ID),
+            sharedOwnerDislikesId0001: Boolean(normalizeReactionMap(dislikeSnapshots[DEBUG_SHARED_OWNER_ID])[DEBUG_SHARED_CARD_ID]),
+            viewerOwnLikeId0001: Boolean(ownFavorites[DEBUG_SHARED_CARD_ID]),
+            viewerOwnDislikeId0001: Boolean(ownDislikes[DEBUG_SHARED_CARD_ID]),
+            appliedAsLiked: Boolean(favIds[DEBUG_SHARED_CARD_ID]),
+            appliedAsDisliked: Boolean(disIds[DEBUG_SHARED_CARD_ID]),
+            requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_CARD_ID),
           },
         });
         ownFavoriteUsersRef.current = ownFavorites;
@@ -3133,7 +3086,7 @@ const Matching = () => {
     } catch (error) {
       if (canApplyInitialLoad() && initialRequest === initialRequestIdRef.current) {
         recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
-        if (additionalNewUsersRef.current.length > 0) {
+        if (additionalAccessUsersRef.current.length > 0) {
           deferredInitialLoadErrorRef.current = null;
           // Дека лишається на екрані — але коротка, і без пояснення це читається
           // як «більше нікого немає». Один рядок з кодом помилки називає різницю
@@ -3200,7 +3153,7 @@ const Matching = () => {
     if (currentMode === 'default') {
       loadedIdsRef.current = new Set();
       setUsers([]);
-      setAdditionalNewUsers([]);
+      setAdditionalAccessUsers([]);
       setAdditionalNextOffset(0);
       additionalHasMoreRef.current = false;
       setAdditionalHasMore(false);
@@ -3253,8 +3206,8 @@ const Matching = () => {
     setFilters({});
     setDraftFilters({});
     setUsers([]);
-    additionalNewUsersRef.current = [];
-    setAdditionalNewUsers([]);
+    additionalAccessUsersRef.current = [];
+    setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
     additionalHasMoreRef.current = false;
     setAdditionalHasMore(false);
@@ -3276,95 +3229,62 @@ const Matching = () => {
     toast.success('Фільтри та кеш скинуто');
   }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
 
-  const classifyReactionIdsBySource = React.useCallback(async ids => {
+  // Де лежить тіло анкети: у legacy `users` чи тільки в нових вузлах. Перше
+  // видно всім, кому взагалі відкрито матчинг; друге — лише тим, кому цю картку
+  // відкрили правилами додаткового доступу.
+  const classifyReactionIdsByStorage = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
     const requestKey = uniqueIds.slice().sort().join('|');
     if (reactionClassificationRequestsRef.current.has(requestKey)) {
-      debugReactionFlowLog('classifyReactionIdsBySource:dedupe-hit', { ids: summarizeIdsForDebug(uniqueIds) });
+      debugReactionFlowLog('classifyReactionIdsByStorage:dedupe-hit', { ids: summarizeIdsForDebug(uniqueIds) });
       return reactionClassificationRequestsRef.current.get(requestKey);
     }
 
     const requestPromise = (async () => {
       const classifications = {};
 
-      debugReactionFlowLog('classifyReactionIdsBySource:start', {
+      debugReactionFlowLog('classifyReactionIdsByStorage:start', {
         fullReactionIds: summarizeIdsForDebug(uniqueIds),
         fullReactionIdsCount: uniqueIds.length,
       });
 
       await Promise.all(uniqueIds.map(async id => {
-        const preferredSources = getPreferredReactionSources(id);
-        const attempts = [];
-        let found = null;
-
-        for (const sourceName of preferredSources) {
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            const snapshot = await get(refDb(database, `${sourceName}/${id}`));
-            const exists = snapshot.exists();
-            attempts.push({ source: sourceName, exists });
-            if (exists && !found) {
-              found = { source: sourceName };
-              break;
-            }
-          } catch (error) {
-            attempts.push({ source: sourceName, exists: false, error: error?.message || String(error) });
-          }
+        try {
+          const snapshot = await get(refDb(database, `users/${id}`));
+          classifications[id] = snapshot.exists()
+            ? { storage: 'users', reason: 'found-in-users' }
+            : { storage: 'nodes', reason: 'not-in-users' };
+        } catch (error) {
+          // Відмова в правах — це не відповідь «немає»: анкету однаково
+          // перевірить індекс додаткового доступу.
+          classifications[id] = { storage: 'nodes', reason: 'users-read-denied', error: error?.message || String(error) };
         }
-
-        const source = found?.source || null;
-        classifications[id] = {
-          source,
-          preferredSources,
-          attempts,
-          reason: source ? `found-in-${source}` : 'missing-in-users-and-newUsers',
-        };
       }));
 
-      const userReactionIds = uniqueIds.filter(id => classifications[id]?.source === 'users');
-      const newUserReactionIds = uniqueIds.filter(id => classifications[id]?.source === 'newUsers');
-      const unclassifiedIds = uniqueIds.filter(id => !classifications[id]?.source);
-      const classifiedTotal = userReactionIds.length + newUserReactionIds.length + unclassifiedIds.length;
-      debugReactionFlowLog('classifyReactionIdsBySource:result', {
+      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'users');
+      const nodeReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'nodes');
+      debugReactionFlowLog('classifyReactionIdsByStorage:result', {
         fullReactionIds: summarizeIdsForDebug(uniqueIds),
-        userReactionIds: summarizeIdsForDebug(userReactionIds),
-        newUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
-        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+        legacyReactionIds: summarizeIdsForDebug(legacyReactionIds),
+        nodeReactionIds: summarizeIdsForDebug(nodeReactionIds),
         counts: {
           fullReactionIds: uniqueIds.length,
-          userReactionIds: userReactionIds.length,
-          newUserReactionIds: newUserReactionIds.length,
-          unclassifiedIds: unclassifiedIds.length,
-          classifiedTotal,
-          integrityOk: classifiedTotal === uniqueIds.length,
+          legacyReactionIds: legacyReactionIds.length,
+          nodeReactionIds: nodeReactionIds.length,
         },
-        sourceCounts: Object.fromEntries(['users', 'newUsers', 'unclassified'].map(sourceName => [
-          sourceName,
-          sourceName === 'unclassified' ? unclassifiedIds.length : uniqueIds.filter(id => classifications[id]?.source === sourceName).length,
-        ])),
       });
 
-      if (classifiedTotal !== uniqueIds.length) {
-        console.error('[Matching][reactions] reaction ID classification integrity failed', {
-          fullReactionIds: uniqueIds,
-          userReactionIds,
-          newUserReactionIds,
-          unclassifiedIds,
-        });
-      }
-
-      reactionSourceByIdRef.current = {
-        ...reactionSourceByIdRef.current,
+      reactionStorageByIdRef.current = {
+        ...reactionStorageByIdRef.current,
         ...Object.fromEntries(
-          Object.entries(classifications).map(([id, classification]) => [id, classification.source])
+          Object.entries(classifications).map(([id, classification]) => [id, classification.storage])
         ),
       };
 
       return {
         fullReactionIds: uniqueIds,
-        userReactionIds,
-        newUserReactionIds,
-        unclassifiedIds,
+        legacyReactionIds,
+        nodeReactionIds,
         classifications,
       };
     })().finally(() => {
@@ -3377,74 +3297,29 @@ const Matching = () => {
 
   const fetchReactionCardsByIds = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
-    const sourceById = reactionSourceByIdRef.current || {};
     const cachedEntries = new Map();
     const invalidCacheHitIds = [];
-    const missingBySource = {
-      users: [],
-      newUsers: [],
-    };
-    const unknownSourceIds = [];
+    const missingIds = [];
 
     debugReactionFlowLog('fetchReactionCardsByIds:start', {
       ids: summarizeIdsForDebug(uniqueIds),
-      sourceCounts: Object.fromEntries(['users', 'newUsers', 'unknown'].map(sourceName => [
-        sourceName,
-        sourceName === 'unknown'
-          ? uniqueIds.filter(id => !sourceById[id]).length
-          : uniqueIds.filter(id => sourceById[id] === sourceName).length,
-      ])),
       viewMode: viewModeRef.current,
     });
 
     uniqueIds.forEach(id => {
       const cached = getCard(id);
-      let source = sourceById[id];
-      if (!source && (cached?.__sourceCollection === 'users' || cached?.__sourceCollection === 'newUsers')) {
-        source = cached.__sourceCollection;
-      }
-      const normalizedCached = normalizeReactionCard(cached, id, source || undefined);
-      const canUseCachedCard = isValidCachedReactionCard(normalizedCached, id, source || undefined)
-        && (!source || normalizedCached.__sourceCollection === source);
+      const normalizedCached = normalizeReactionCard(cached, id);
 
-      if (canUseCachedCard) {
-        const resolvedSource = normalizedCached.__sourceCollection;
-        reactionSourceByIdRef.current = {
-          ...reactionSourceByIdRef.current,
-          [id]: resolvedSource,
-        };
+      if (isValidCachedReactionCard(normalizedCached, id)) {
         cachedEntries.set(id, {
           ...normalizedCached,
           __fromCardCache: true,
         });
       } else {
         if (cached) invalidCacheHitIds.push(id);
-        const fallbackSource = source || getPreferredReactionSources(id)[0];
-        if (fallbackSource === 'users' || fallbackSource === 'newUsers') {
-          missingBySource[fallbackSource].push(id);
-        } else {
-          unknownSourceIds.push(id);
-        }
+        missingIds.push(id);
       }
     });
-
-    if (unknownSourceIds.length > 0) {
-      debugReactionFlowLog('fetchReactionCardsByIds:unknown-source-classification', {
-        unknownSourceIds: summarizeIdsForDebug(unknownSourceIds),
-      });
-      const classification = await classifyReactionIdsBySource(unknownSourceIds);
-      classification.userReactionIds.forEach(id => missingBySource.users.push(id));
-      classification.newUserReactionIds.forEach(id => missingBySource.newUsers.push(id));
-      if (classification.unclassifiedIds.length > 0) {
-        debugReactionFlowLog('fetchReactionCardsByIds:missing-unclassified-ids', {
-          missingIds: summarizeIdsForDebug(classification.unclassifiedIds),
-          classifications: classification.classifications,
-        });
-      }
-    }
-
-    const missingUserIds = [...new Set(missingBySource.users.filter(id => !cachedEntries.has(id)))];
-    const missingNewUserIds = [...new Set(missingBySource.newUsers.filter(id => !cachedEntries.has(id)))];
 
     debugReactionFlowLog('fetchReactionCardsByIds:request-backend', {
       requestedIds: summarizeIdsForDebug(uniqueIds),
@@ -3453,38 +3328,23 @@ const Matching = () => {
       validCacheHitIdsCount: cachedEntries.size,
       invalidCacheHitIds: summarizeIdsForDebug(invalidCacheHitIds),
       invalidCacheHitIdsCount: invalidCacheHitIds.length,
-      backendFetchIdsCount: missingUserIds.length + missingNewUserIds.length,
-      missingUserIds: summarizeIdsForDebug(missingUserIds),
-      missingNewUserIds: summarizeIdsForDebug(missingNewUserIds),
+      backendFetchIdsCount: missingIds.length,
+      missingIds: summarizeIdsForDebug(missingIds),
     });
 
-    const [usersMap, newUsersCards] = await Promise.all([
-      missingUserIds.length ? fetchUsersByIds(missingUserIds) : Promise.resolve({}),
-      missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds) : Promise.resolve([]),
-    ]);
+    const usersMap = missingIds.length ? await fetchUsersByIds(missingIds) : {};
 
     debugReactionFlowLog('fetchReactionCardsByIds:backend-returned', {
       usersMapIds: summarizeIdsForDebug(Object.keys(usersMap || {})),
-      newUsersCardIds: summarizeIdsForDebug((newUsersCards || []).map(card => card.userId).filter(Boolean)),
-      missingUsersIds: summarizeIdsForDebug(missingUserIds.filter(id => !usersMap?.[id])),
-      missingNewUsersIds: summarizeIdsForDebug(missingNewUserIds.filter(id => !(newUsersCards || []).some(card => card.userId === id))),
+      missingUsersIds: summarizeIdsForDebug(missingIds.filter(id => !usersMap?.[id])),
     });
 
-    const fetchedNewUsersMap = Object.fromEntries((newUsersCards || []).map(card => [String(card?.userId || '').trim(), card]).filter(([id]) => Boolean(id)));
     const result = {};
     uniqueIds.forEach(id => {
-      const source = reactionSourceByIdRef.current?.[id] || sourceById[id] || getPreferredReactionSources(id)[0];
-      const cached = cachedEntries.get(id);
-      const fetchedUser = usersMap?.[id];
-      const fetchedNewUser = fetchedNewUsersMap[id];
-      const selectedUser = cached || (source === 'newUsers' ? fetchedNewUser : fetchedUser) || fetchedUser || fetchedNewUser;
-      const normalizedUser = normalizeReactionCard(selectedUser, id, source);
+      const selectedUser = cachedEntries.get(id) || usersMap?.[id];
+      const normalizedUser = normalizeReactionCard(selectedUser, id);
 
-      if (normalizedUser && isValidCachedReactionCard(normalizedUser, id, source)) {
-        reactionSourceByIdRef.current = {
-          ...reactionSourceByIdRef.current,
-          [id]: normalizedUser.__sourceCollection,
-        };
+      if (normalizedUser && isValidCachedReactionCard(normalizedUser, id)) {
         result[id] = normalizedUser;
       }
     });
@@ -3499,7 +3359,7 @@ const Matching = () => {
     });
 
     return result;
-  }, [classifyReactionIdsBySource]);
+  }, []);
 
   const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}) => {
     const uniqueIds = [...new Set((reactionIds || []).map(id => String(id || '').trim()).filter(Boolean))];
@@ -3516,55 +3376,43 @@ const Matching = () => {
 
     const accessPromise = (async () => {
     const {
-      userReactionIds,
-      newUserReactionIds,
-      unclassifiedIds,
+      legacyReactionIds,
+      nodeReactionIds,
       classifications,
-    } = await classifyReactionIdsBySource(uniqueIds);
+    } = await classifyReactionIdsByStorage(uniqueIds);
 
     debugReactionFlowLog('getAccessibleReactionIds:start', {
       inputIds: summarizeIdsForDebug(uniqueIds),
-      userReactionIds: summarizeIdsForDebug(userReactionIds),
-      newUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
-      unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+      legacyReactionIds: summarizeIdsForDebug(legacyReactionIds),
+      nodeReactionIds: summarizeIdsForDebug(nodeReactionIds),
       classifications,
       viewMode: viewModeRef.current,
     });
 
-    if (unclassifiedIds.length > 0) {
-      debugReactionFlowLog('getAccessibleReactionIds:missing-unclassified-ids', {
-        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
-        classifications: Object.fromEntries(unclassifiedIds.map(id => [id, classifications[id]])),
+    if (nodeReactionIds.length === 0) {
+      debugReactionFlowLog('getAccessibleReactionIds:legacy-only-result', {
+        reactionIds: summarizeIdsForDebug(legacyReactionIds),
       });
-    }
-
-    if (newUserReactionIds.length === 0) {
-      debugReactionFlowLog('getAccessibleReactionIds:users-only-result', {
-        reactionIds: summarizeIdsForDebug(userReactionIds),
-        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
-      });
-      return uniqueIds.filter(id => userReactionIds.includes(id));
+      return uniqueIds.filter(id => legacyReactionIds.includes(id));
     }
 
     const rawRulesForRequest = accessSnapshot.rawRules ?? currentAdditionalAccessRules;
     const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
     if (parsedRulesForRequest.length === 0) {
-      const resultIds = uniqueIds.filter(id => userReactionIds.includes(id) || newUserReactionIds.includes(id));
       debugReactionFlowLog('getAccessibleReactionIds:no-rules-result', {
-        reactionIds: summarizeIdsForDebug(resultIds),
-        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+        reactionIds: summarizeIdsForDebug(uniqueIds),
       });
-      return resultIds;
+      return uniqueIds;
     }
 
     const searchKeySetsForRequest = accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys;
     const viewerId = accessSnapshot.accessUserId || ownerId || getOwnerId();
     if (!viewerId) {
       debugReactionFlowLog('getAccessibleReactionIds:no-viewer-result', {
-        reactionIds: summarizeIdsForDebug(userReactionIds),
-        blockedNewUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
+        reactionIds: summarizeIdsForDebug(legacyReactionIds),
+        blockedNodeReactionIds: summarizeIdsForDebug(nodeReactionIds),
       });
-      return uniqueIds.filter(id => userReactionIds.includes(id));
+      return uniqueIds.filter(id => legacyReactionIds.includes(id));
     }
 
     const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetsForRequest, viewerId)
@@ -3574,33 +3422,32 @@ const Matching = () => {
     if (!resolvedSearchKeySetKeys.length) {
       debugReactionFlowLog('getAccessibleReactionIds:no-search-key-sets-result', {
         viewerId,
-        reactionIds: summarizeIdsForDebug(userReactionIds),
-        blockedNewUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
+        reactionIds: summarizeIdsForDebug(legacyReactionIds),
+        blockedNodeReactionIds: summarizeIdsForDebug(nodeReactionIds),
       });
-      return uniqueIds.filter(id => userReactionIds.includes(id));
+      return uniqueIds.filter(id => legacyReactionIds.includes(id));
     }
 
     debugReactionFlowLog('getAccessibleReactionIds:index-request', {
       viewerId,
-      candidateUserIds: summarizeIdsForDebug(newUserReactionIds),
+      candidateUserIds: summarizeIdsForDebug(nodeReactionIds),
       searchKeySetKeysCount: resolvedSearchKeySetKeys.length,
     });
 
-    const indexed = await checkReactionNewUsersMembership({
-      candidateUserIds: newUserReactionIds,
+    const indexed = await checkReactionCardMembership({
+      candidateUserIds: nodeReactionIds,
       searchKeySetKeys: resolvedSearchKeySetKeys,
       debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
       debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
     });
     const allowedIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
-    const allowedNewUserReactionIds = newUserReactionIds.filter(id => allowedIds.has(id));
-    const blockedNewUserReactionIds = newUserReactionIds.filter(id => !allowedIds.has(id));
-    const resultIds = uniqueIds.filter(id => userReactionIds.includes(id) || allowedNewUserReactionIds.includes(id));
+    const allowedNodeReactionIds = nodeReactionIds.filter(id => allowedIds.has(id));
+    const blockedNodeReactionIds = nodeReactionIds.filter(id => !allowedIds.has(id));
+    const resultIds = uniqueIds.filter(id => legacyReactionIds.includes(id) || allowedNodeReactionIds.includes(id));
     debugReactionFlowLog('getAccessibleReactionIds:index-result', {
       indexedIds: summarizeIdsForDebug(Array.from(allowedIds)),
-      allowedNewUserReactionIds: summarizeIdsForDebug(allowedNewUserReactionIds),
-      blockedNewUserReactionIds: summarizeIdsForDebug(blockedNewUserReactionIds),
-      unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+      allowedNodeReactionIds: summarizeIdsForDebug(allowedNodeReactionIds),
+      blockedNodeReactionIds: summarizeIdsForDebug(blockedNodeReactionIds),
       reactionIds: summarizeIdsForDebug(resultIds),
     });
     return resultIds;
@@ -3611,7 +3458,7 @@ const Matching = () => {
     reactionAccessRequestsRef.current.set(accessRequestKey, accessPromise);
     return accessPromise;
   }, [
-    classifyReactionIdsBySource,
+    classifyReactionIdsByStorage,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ownerId,
@@ -3677,15 +3524,13 @@ const Matching = () => {
       .filter(user => canShowMatchingUser(user, { isAdmin }))
       .map(user => ({
         ...user,
-        ...(user.__sourceCollection === 'newUsers' ? { __matchingAccessAllowed: true } : {}),
+        ...(reactionStorageByIdRef.current?.[user.userId] === 'nodes' ? { __matchingAccessAllowed: true } : {}),
       }));
     const loadedIds = new Set(loadedUsers.map(user => user.userId).filter(Boolean));
-    const filteredInvalidIds = candidateIds.filter(id => !reactionSourceByIdRef.current?.[id]);
-    const filteredByCollectionIds = [];
-    const filteredByAccessIds = candidateIds.filter(id => !accessibleCandidateIds.includes(id) && reactionSourceByIdRef.current?.[id] === 'newUsers');
+    const filteredInvalidIds = candidateIds.filter(id => !reactionStorageByIdRef.current?.[id]);
+    const filteredByAccessIds = candidateIds.filter(id => !accessibleCandidateIds.includes(id) && reactionStorageByIdRef.current?.[id] === 'nodes');
     const missingAllowedIds = accessibleCandidateIds.filter(id => !loadedIds.has(id));
-    const allowedNewUserIds = accessibleCandidateIds.filter(id => reactionSourceByIdRef.current?.[id] === 'newUsers');
-    const indexedAllowedNewUserIds = new Set(allowedNewUserIds);
+    const allowedNodeCardIds = accessibleCandidateIds.filter(id => reactionStorageByIdRef.current?.[id] === 'nodes');
 
     if (!canApplySharedCandidateResult()) {
       return;
@@ -3709,21 +3554,15 @@ const Matching = () => {
     debugSharedReactionsLog(viewerId, 'shared reaction candidate pool resolved', {
       sharedReactionIds: summarizeIdsForDebug(candidateIds),
       addedToCandidatePool: summarizeIdsForDebug(loadedUsers.map(user => user.userId)),
-      foundCollections: loadedUsers.map(user => ({
-        userId: user.userId,
-        collection: user.__sourceCollection || (isShortId(user.userId) ? 'newUsers' : 'users'),
-      })),
       filteredInvalidIds: summarizeIdsForDebug(filteredInvalidIds),
-      filteredByCollectionIds: summarizeIdsForDebug(filteredByCollectionIds),
       filteredByAccessOrSearchKeySets: summarizeIdsForDebug(filteredByAccessIds),
       missingAllowedCards: summarizeIdsForDebug(missingAllowedIds),
-      allowedBySearchKeySetsCount: indexedAllowedNewUserIds ? indexedAllowedNewUserIds.size : null,
+      allowedBySearchKeySetsCount: allowedNodeCardIds.length,
       id0001SelfCheck: {
-        sharedReactionIdFound: candidateIds.includes(DEBUG_SHARED_NEW_USER_ID),
-        allowedBySearchKeySets: allowedNewUserIds.includes(DEBUG_SHARED_NEW_USER_ID),
-        filteredByAccessOrSearchKeySets: filteredByAccessIds.includes(DEBUG_SHARED_NEW_USER_ID),
-        foundInCollection: loadedUsers.find(user => user.userId === DEBUG_SHARED_NEW_USER_ID)?.__sourceCollection || null,
-        addedToCandidatePool: loadedIds.has(DEBUG_SHARED_NEW_USER_ID),
+        sharedReactionIdFound: candidateIds.includes(DEBUG_SHARED_CARD_ID),
+        allowedBySearchKeySets: allowedNodeCardIds.includes(DEBUG_SHARED_CARD_ID),
+        filteredByAccessOrSearchKeySets: filteredByAccessIds.includes(DEBUG_SHARED_CARD_ID),
+        addedToCandidatePool: loadedIds.has(DEBUG_SHARED_CARD_ID),
       },
     });
   }, [
@@ -3772,7 +3611,7 @@ const Matching = () => {
       mapUser: user => ({
         ...user,
         userId: user.userId,
-        ...(user.__sourceCollection === 'newUsers' ? { __matchingAccessAllowed: true } : {}),
+        ...(reactionStorageByIdRef.current?.[user.userId] === 'nodes' ? { __matchingAccessAllowed: true } : {}),
       }),
       filterUsers: candidates => {
         debugReactionFlowLog('loadReactionCardsPage:filterUsers-input', {
@@ -3933,10 +3772,10 @@ const Matching = () => {
       };
       const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
       const reactionIds = await getAccessibleReactionIds(fullReactionIds, reactionAccessSnapshot);
-      const classifiedReaction = await classifyReactionIdsBySource(reactionIds);
+      const classifiedReaction = await classifyReactionIdsByStorage(reactionIds);
       const safeReactionIds = [...new Set([
-        ...classifiedReaction.userReactionIds,
-        ...classifiedReaction.newUserReactionIds,
+        ...classifiedReaction.legacyReactionIds,
+        ...classifiedReaction.nodeReactionIds,
       ])];
       debugReactionFlowLog('loadReactionCards:accessibleReactionIds', {
         reactionType,
@@ -3945,17 +3784,10 @@ const Matching = () => {
         safeReactionIdsCount: safeReactionIds.length,
         paginationInitialized: false,
         reactionPipelineReady: false,
-        unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
+        nodeReactionIds: summarizeIdsForDebug(classifiedReaction.nodeReactionIds),
         removedByAccessIds: fullReactionIds.filter(id => !reactionIds.includes(id)),
         reactionAccessSnapshotKey,
       });
-      if (classifiedReaction.unclassifiedIds.length > 0) {
-        debugReactionFlowLog('loadReactionCards:unclassified-excluded', {
-          reactionType,
-          unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
-          count: classifiedReaction.unclassifiedIds.length,
-        });
-      }
       if (!canApplyReactionLoad()) {
         debugReactionFlowLog('loadReactionCards:stale-after-access', { reactionType, reactionLoadVersion });
         return;
@@ -4050,7 +3882,7 @@ const Matching = () => {
   }, [
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
-    classifyReactionIdsBySource,
+    classifyReactionIdsByStorage,
     getAccessibleReactionIds,
     loadCommentsFor,
     loadReactionCardsPage,
@@ -4362,8 +4194,7 @@ const Matching = () => {
           return 0;
         }
         // Права глядача з правилами доступу могли змінитись — перечитуємо їх
-        // перед сторінкою реакцій. Раніше сюди ще входило «а чи на деці
-        // newUsers ми зараз»; деки більше немає, лишились самі правила.
+        // перед сторінкою реакцій.
         const shouldRefreshReactionIds = parsedAdditionalAccessRules.length > 0;
         const freshProfileCache = shouldRefreshReactionIds
           ? await ensureFreshAdditionalMatchingProfile({
@@ -4388,10 +4219,10 @@ const Matching = () => {
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
           ? await getAccessibleReactionIds(reactionMapIds, reactionAccessSnapshot)
           : currentPagination.ids;
-        const classifiedReaction = await classifyReactionIdsBySource(reactionIds);
+        const classifiedReaction = await classifyReactionIdsByStorage(reactionIds);
         const safeReactionIds = [...new Set([
-          ...classifiedReaction.userReactionIds,
-          ...classifiedReaction.newUserReactionIds,
+          ...classifiedReaction.legacyReactionIds,
+          ...classifiedReaction.nodeReactionIds,
         ])];
         debugReactionFlowLog('loadMore:reactionIds', {
           viewMode,
@@ -4401,7 +4232,7 @@ const Matching = () => {
           didAccessSnapshotChange,
           shouldRefreshReactionIds,
           reactionAccessSnapshotKey,
-          unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
+          nodeReactionIds: summarizeIdsForDebug(classifiedReaction.nodeReactionIds),
         });
 
         if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
@@ -4477,7 +4308,7 @@ const Matching = () => {
       // on initial load or after a filter change.
       if (additionalHasMoreRef.current && parsedAdditionalAccessRules.length > 0) {
         const scopedOffset = additionalNextOffsetRef.current;
-        const scopedPage = await fetchAdditionalNewUsersBySearchIndex({
+        const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({
           rawRules: currentAdditionalAccessRules,
           accessUserId: ownerId,
           searchKeySetKeys: normalizeSearchKeySetKeys(currentSearchKeySetKeys),
@@ -4485,11 +4316,11 @@ const Matching = () => {
           excludeIds: [
             ...baseExclude,
             ...usersRef.current.map(user => user?.userId).filter(Boolean),
-            ...additionalNewUsersRef.current.map(user => user?.userId).filter(Boolean),
+            ...additionalAccessUsersRef.current.map(user => user?.userId).filter(Boolean),
           ],
           offset: scopedOffset,
           limit: requestedLimit,
-          fetchNewUsersByIds: fetchLimitedNewUsersByIdsForMatching,
+          fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
           shouldDebugAdditionalMatching,
           debugAdditionalToast,
           logAdditionalMatchingDebug,
@@ -4508,7 +4339,7 @@ const Matching = () => {
           .filter(user => user?.userId && !publicIds.has(user.userId))
           .map(user => ({ ...user, __matchingAccessAllowed: true }));
         if (scopedUsers.length) {
-          setAdditionalNewUsers(prev => {
+          setAdditionalAccessUsers(prev => {
             const byId = new Map(prev.map(user => [user.userId, user]));
             scopedUsers.forEach(user => byId.set(user.userId, user));
             return Array.from(byId.values());
@@ -4765,7 +4596,7 @@ const Matching = () => {
     ensureFreshAdditionalMatchingProfile,
     defaultListKey,
     fetchChunk,
-    classifyReactionIdsBySource,
+    classifyReactionIdsByStorage,
     getAccessibleReactionIds,
     hasMore,
     hydrateMatchingFeedCards,
@@ -4796,7 +4627,7 @@ const Matching = () => {
     // читачеві його ж чернетки замість того, кого він шукав, і ще й порахувати
     // їх у «Знайдено N».
     users: viewMode === 'search' ? users : [...users, ...personalCreateProfiles],
-    additionalNewUsers,
+    additionalAccessUsers,
     sharedReactionCandidateUsers,
     isAdmin,
     viewMode,
@@ -4806,7 +4637,7 @@ const Matching = () => {
     favoriteUsers,
     dislikeUsers,
   }), [
-    additionalNewUsers,
+    additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
     ownDislikeUsers,
@@ -4829,7 +4660,7 @@ const Matching = () => {
     const candidateUsersById = new Map();
     [
       ...users,
-      ...additionalNewUsers,
+      ...additionalAccessUsers,
       ...sharedReactionCandidateUsers,
       ...personalCreateProfiles,
     ].forEach(user => {
@@ -4848,7 +4679,7 @@ const Matching = () => {
         return true;
       });
   }, [
-    additionalNewUsers,
+    additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
     isAdmin,
@@ -5035,7 +4866,7 @@ const Matching = () => {
     const renderedIdsSet = new Set(renderedIds);
     const visibleCardIds = visibleUsers.map(card => card?.userId).filter(Boolean);
     const visibleCardIdsSet = new Set(visibleCardIds);
-    const loadedPool = [...users, ...additionalNewUsers, ...sharedReactionCandidateUsers];
+    const loadedPool = [...users, ...additionalAccessUsers, ...sharedReactionCandidateUsers];
     const cardById = new Map();
     loadedPool.forEach(card => {
       if (card?.userId && !cardById.has(card.userId)) cardById.set(card.userId, card);
@@ -5057,7 +4888,6 @@ const Matching = () => {
       filteredOutByReason[reason] = (filteredOutByReason[reason] || 0) + 1;
       filteredOutCards.push({
         userId: userId || null,
-        collectionSource: card?.__sourceCollection || null,
         stage,
         reason,
         details,
@@ -5073,7 +4903,7 @@ const Matching = () => {
 
       if (!card) {
         possibleReason = 'unknown_final_render_exclusion';
-      } else if (!card.publish && card.__sourceCollection !== 'newUsers') {
+      } else if (!card.publish && !card.__matchingAccessAllowed) {
         possibleReason = 'publish_false';
       } else if (!canShowMatchingUser(card, { isAdmin })) {
         possibleReason = 'hidden';
@@ -5155,7 +4985,7 @@ const Matching = () => {
         details.exactReason = canShowDebug.exactReason || 'visibility_guard:hidden';
       } else if (possibleReason === 'publish_false') {
         details.excludedFunction = 'publish_flag_check';
-        details.excludedCondition = '!card.publish && card.__sourceCollection !== newUsers';
+        details.excludedCondition = '!card.publish && !card.__matchingAccessAllowed';
         details.exactReason = 'publish_false';
       } else if (possibleReason === 'unknown_final_render_exclusion') {
         details.excludedFunction = 'final_render_diff';
@@ -5187,7 +5017,6 @@ const Matching = () => {
         possibleReason,
         cardRole,
         pub: card?.publish,
-        collectionSource: card?.__sourceCollection || null,
       });
     });
 
@@ -5222,7 +5051,6 @@ const Matching = () => {
         userId,
         role: cardRole,
         userRole: card?.userRole || null,
-        __sourceCollection: card?.__sourceCollection || null,
         inFilteredUsers: renderedIdsSet.has(userId),
         inRenderedUsers: renderedIdsSet.has(userId),
         inVisibleCardIds: visibleCardIdsSet.has(userId),
@@ -5255,7 +5083,7 @@ const Matching = () => {
       filteredOutCards,
     };
   }, [
-    additionalNewUsers,
+    additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
     filteredUsers,
@@ -5378,7 +5206,7 @@ const Matching = () => {
       hasMore,
       reactionIds: summarizeIdsForDebug(Object.keys(normalizeReactionMap(viewMode === 'favorites' ? favoriteUsers : dislikeUsers))),
       users: summarizeUsersForReactionDebug(users),
-      additionalNewUsers: summarizeUsersForReactionDebug(additionalNewUsers),
+      additionalAccessUsers: summarizeUsersForReactionDebug(additionalAccessUsers),
       sharedReactionCandidateUsers: summarizeUsersForReactionDebug(sharedReactionCandidateUsers),
       reactionTabUsers: summarizeUsersForReactionDebug(reactionTabUsers),
       visibleUsers: summarizeUsersForReactionDebug(visibleUsers),
@@ -5390,7 +5218,7 @@ const Matching = () => {
       reactionPagination: reactionPaginationByType[viewMode],
     });
   }, [
-    additionalNewUsers,
+    additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
     filteredUsers,
@@ -5441,9 +5269,7 @@ const Matching = () => {
     const cachedPhotos = photoCacheByUserId[user.userId];
     if (!fullProfile && !cachedPhotos) return user;
     // Проєкція перекривається анкетою, а не навпаки: анкета свіжіша й повніша.
-    const merged = fullProfile
-      ? { ...user, ...fullProfile, __sourceCollection: user.__sourceCollection || fullProfile.__sourceCollection }
-      : { ...user };
+    const merged = fullProfile ? { ...user, ...fullProfile } : { ...user };
 
     // Анкета з `fetchUsersByIds` приходить із порожнім `photos` — фото до неї
     // йдуть окремо. Порожній список не має стирати аватар, який проєкція вже
@@ -5507,7 +5333,7 @@ const Matching = () => {
     Promise.all(pending.map(user => (
       // Анкета вже в руках, коли картка гідрована повністю: `knownPhotos` знімає
       // друге читання того самого вузла заради поля `photos`.
-      lazyLoadProfilePhotos(user.userId, user.__sourceCollection || null, {
+      lazyLoadProfilePhotos(user.userId, {
         knownPhotos: !isMatchingSummaryCard(user) && Array.isArray(user.photos) ? user.photos : null,
       })
         .then(photos => {

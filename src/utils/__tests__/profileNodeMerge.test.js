@@ -88,13 +88,10 @@ describe('збірка анкети з розділених вузлів', () =>
     expect(merged.education).toBe('вища');
   });
 
-  it('колекцію називає формат id', () => {
-    expect(mergeProfileNodes({ userId: AUTH_UID, card }).__sourceCollection).toBe('users');
-    expect(mergeProfileNodes({ userId: 'AC00001', details: { surname: 'К' } }).__sourceCollection)
-      .toBe('newUsers');
-    // Push-ключ — це рівно 20 символів, тобто `newUsers`.
-    expect(mergeProfileNodes({ userId: '-OA1b2c3d4e5f6g7h8i9', details: { surname: 'К' } }).__sourceCollection)
-      .toBe('newUsers');
+  it('не носить позначки колекції — колекція у вебі одна', () => {
+    expect(mergeProfileNodes({ userId: AUTH_UID, card })).not.toHaveProperty('__sourceCollection');
+    expect(mergeProfileNodes({ userId: 'AC00001', details: { surname: 'К' } }))
+      .not.toHaveProperty('__sourceCollection');
   });
 
   it('порожні вузли означають «анкета сюди ще не переїхала»', () => {

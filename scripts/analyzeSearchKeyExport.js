@@ -178,14 +178,14 @@ const main = () => {
   console.log(`searchKey export: ${resolved}`);
   console.log(`full node size:   ${formatKb(byteSize(searchKey))}`);
 
-  const newUsersIds = describeRoot('searchKey/* (newUsers collection)', searchKey);
+  const sharedRootIds = describeRoot('searchKey/* (shared root)', searchKey);
   const usersIds = searchKey.users
-    ? describeRoot('searchKey/users/* (users collection)', searchKey.users)
+    ? describeRoot('searchKey/users/* (account profiles)', searchKey.users)
     : new Set();
 
   if (usersIds.size) {
-    const overlap = [...usersIds].filter(id => newUsersIds.has(id));
-    const longIdsInSharedRoot = [...newUsersIds].filter(id => id.length >= 20);
+    const overlap = [...usersIds].filter(id => sharedRootIds.has(id));
+    const longIdsInSharedRoot = [...sharedRootIds].filter(id => id.length >= 20);
     console.log('\n=== roots ===');
     console.log(`profiles in searchKey/users:                       ${usersIds.size}`);
     console.log(`of those also indexed under searchKey/*:           ${overlap.length}`);

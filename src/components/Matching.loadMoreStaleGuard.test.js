@@ -30,7 +30,7 @@ describe('Matching loadMore stale pagination guards', () => {
     expect(source).toContain("viewModeRef.current = 'search';");
     expect(source).toContain('setUsers(filtered);');
     expect(source).toContain('loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));');
-    expect(source).toContain('setAdditionalNewUsers([]);');
+    expect(source).toContain('setAdditionalAccessUsers([]);');
     expect(source).toContain('setAdditionalNextOffset(0);');
     expect(source).toContain('additionalHasMoreRef.current = false;');
     expect(source).toContain('setAdditionalHasMore(false);');
@@ -61,17 +61,17 @@ describe('Matching loadMore stale pagination guards', () => {
         setLastKey(null);`);
   });
 
-  it('guards additional newUsers offset, hasMore, lastKey, and loadedIdsRef writes', () => {
+  it('guards additional-access offset, hasMore, lastKey, and loadedIdsRef writes', () => {
     const source = loadMoreSource();
 
-    const scopedFetchIndex = source.indexOf('const scopedPage = await fetchAdditionalNewUsersBySearchIndex({');
+    const scopedFetchIndex = source.indexOf('const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({');
     const scopedGuardIndex = source.indexOf("logStaleLoadMoreResultIgnored('additional-access-page');", scopedFetchIndex);
     const scopedOffsetWriteIndex = source.indexOf('setAdditionalNextOffset(nextOffset);', scopedFetchIndex);
     expect(scopedFetchIndex).toBeGreaterThan(-1);
     expect(scopedGuardIndex).toBeGreaterThan(scopedFetchIndex);
     expect(scopedGuardIndex).toBeLessThan(scopedOffsetWriteIndex);
     expect(source).toContain('setAdditionalHasMore(additionalHasMoreRef.current);');
-    const setAdditionalIndex = source.indexOf('setAdditionalNewUsers(prev => {');
+    const setAdditionalIndex = source.indexOf('setAdditionalAccessUsers(prev => {');
     const commentsIndex = source.indexOf('void loadCommentsFor(scopedUsers);', setAdditionalIndex);
     expect(setAdditionalIndex).toBeGreaterThan(-1);
     expect(commentsIndex).toBeGreaterThan(setAdditionalIndex);

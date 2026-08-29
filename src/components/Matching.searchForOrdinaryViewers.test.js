@@ -58,7 +58,7 @@ describe('пошук у matching для читача без повного до�
     };
     const merged = mergeMatchingCandidateUsers({
       users: [draft],
-      additionalNewUsers: [],
+      additionalAccessUsers: [],
       isAdmin: false,
       viewMode: 'default',
     });

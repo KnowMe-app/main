@@ -98,7 +98,7 @@ const MatchingHiddenList = ({
     if (!pending.length) return;
     pending.forEach(user => {
       photoRequestedRef.current.add(user.userId);
-      lazyLoadProfilePhotos(user.userId, user.__sourceCollection)
+      lazyLoadProfilePhotos(user.userId)
         .then(photos => {
           setPhotosByUserId(prev => ({ ...prev, [user.userId]: Array.isArray(photos) ? photos : [] }));
         })

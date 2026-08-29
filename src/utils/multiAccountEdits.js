@@ -1,6 +1,6 @@
 import { get as firebaseGet, push, ref as ref2, remove, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
-import { isLongFormatUserId, mergeUserCollectionData } from 'utils/mergeUserCollections';
+import { isLongFormatUserId } from 'utils/userIdFormat';
 import { mergeProfileNodes } from 'utils/profileNodeMerge';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
 
@@ -86,21 +86,25 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
   };
 };
 
-// Published create-profile cards retain their Firebase push id, so id length
-// alone cannot identify their storage collection. Prefer an existing users
-// record and fall back to the legacy id convention for cards not yet there.
-export const getCardStorageCollection = async cardUserId => {
+// Legacy-колекція одна — `users`, і тіло анкети лежить у ній не завжди: анкети,
+// заведені у вебі, живуть тільки в нових вузлах. Довгий id — це Firebase-Auth
+// UID, тобто анкета акаунта, яку читає ще й мобільний застосунок; для короткого
+// відповідь дає наявність самого запису.
+//
+// `null` означає «legacy-тіла немає»: писати таку анкету треба лише у вузли.
+export const getCardLegacyCollection = async cardUserId => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return null;
   if (isLongFormatUserId(normalizedCardId)) return 'users';
 
   const usersSnapshot = await get(ref2(database, `users/${normalizedCardId}`));
-  return usersSnapshot.exists() ? 'users' : 'newUsers';
+  return usersSnapshot.exists() ? 'users' : null;
 };
 
 export const getCanonicalCard = async cardUserId => {
+  // Анкета живе у вузлах; legacy-колекція `users` лишається для акаунтних
+  // профілів. Читаємо обидва джерела й зводимо в один канонічний запис.
   const paths = [
-    'newUsers',
     'users',
     PROFILE_NODES.matchingCards,
     PROFILE_NODES.profileDetails,
@@ -110,8 +114,7 @@ export const getCanonicalCard = async cardUserId => {
   ];
   const snapshots = await Promise.all(paths.map(path => get(ref2(database, `${path}/${cardUserId}`))));
   const values = snapshots.map(snapshot => (snapshot.exists() ? snapshot.val() : null));
-  const [newUsersData, usersData, card, details, contacts, workflow, technical] = values;
-  const legacy = mergeUserCollectionData(usersData || {}, newUsersData || {});
+  const [legacy, card, details, contacts, workflow, technical] = values;
 
   const merged = mergeProfileNodes({
     userId: cardUserId,
@@ -122,6 +125,8 @@ export const getCanonicalCard = async cardUserId => {
     technical,
     legacy,
   }) || { userId: cardUserId };
+  // Кеш-мітки не мають права дожити до чернетки: у legacy-рядках вони лежать
+  // записаними, а `mergeProfileNodes` ставить `__photosHydrated` сам.
   delete merged.__sourceCollection;
   delete merged.__photosHydrated;
   return merged;

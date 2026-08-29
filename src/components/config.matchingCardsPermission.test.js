@@ -12,8 +12,7 @@ describe('доступ до вузла matchingCards', () => {
   it('існує і сортується за ключем стрічки', () => {
     expect(node).toBeTruthy();
     // Без `.indexOn` пагінація стрічки сортувала б на клієнті, тобто качала б усе.
-    // Ключ один: у стрічці лише показані анкети `users`.
-    expect(node['.indexOn']).toEqual(['feedDate']);
+    expect(node['.indexOn']).toEqual(['feedDate', 'name', 'surnameShort']);
   });
 
   it('дозволяє власнику писати свою картку, а адміну — будь-яку', () => {
@@ -28,9 +27,8 @@ describe('доступ до вузла matchingCards', () => {
     // Проєкція без канонічної анкети — привид, на який нічого не вказує.
     const validate = node.$uid['.validate'];
     expect(validate).toContain("root.child('users').child($uid).exists()");
-    expect(validate).toContain("root.child('newUsers').child($uid).exists()");
-    // Але питається це напряму в обох колекціях, а не через поле `source`:
-    // у цільовій схемі картки `source` немає, а перевірка потрібна.
+    // Але питається це напряму у вузлах і legacy-колекції, а не через поле
+    // `source`: у цільовій схемі картки `source` немає, а перевірка потрібна.
     expect(validate).not.toContain("child('source')");
   });
 
@@ -41,10 +39,13 @@ describe('доступ до вузла matchingCards', () => {
     expect(rules.matchingCardsMeta).toBeUndefined();
   });
 
-  it('відкриває читання рівно тим, хто читає users', () => {
-    // Стрічка читає проєкцію замість анкет — коло читачів має збігатись,
-    // інакше частина людей побачила б порожню стрічку замість карток.
-    expect(node['.read']).toBe(rules.users['.read']);
+  it('відкриває сканування тим, хто читає users, і стрічку — всім авторизованим', () => {
+    // Пошук ходить по `matchingCards`, тож сканувати вузол має право те саме
+    // коло, що сканує `users`, — інакше пошук мовчки повертав би порожньо.
+    const usersReaders = rules.users['.read'].replace('auth != null && (', '').replace(/\)$/, '');
+    expect(node['.read']).toContain(usersReaders);
+    // А запит самої стрічки лишається відкритим кожному авторизованому.
+    expect(node['.read']).toContain("query.orderByChild == 'feedDate' && query.startAt == ''");
   });
 
   it('індексує поле правил доступу, за яким шукають власників наборів', () => {

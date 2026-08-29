@@ -309,9 +309,6 @@ await it('він же редагує деталі анкети', () =>
 await it('він же редагує контакти', () =>
   assertSucceeds(set(ref(db(MIGRATED_EDITOR), `profileContacts/${CARD}/phone`), '+380')));
 
-await it('він же пише в legacy-анкету', () =>
-  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `newUsers/${CARD}/name`), 'Картка')));
-
 await it('він же створює анкету через profileMutations', () =>
   assertSucceeds(set(
     ref(db(MIGRATED_EDITOR), `multiData/profileMutations/${MIGRATED_EDITOR}/${CARD}`),
@@ -429,7 +426,6 @@ await it('сирі поля, що переїхали в інші вузли, к�
     ['contacts', 'phone,email'],
     ['userRole', 'sm'],
     ['feedUsers', '2026-08-25'],
-    ['feedNewUsers', '2026-08-25'],
     // Службові поля проєкції теж пішли: усі картки перебудовані, тож версія
     // схеми більше нічого не розрізняє; заповненість прибрано разом із
     // фільтром; а колекцію називає формат id.
