@@ -7,31 +7,30 @@ describe('single legacy collection reads', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
   const addNewProfileSource = fs.readFileSync(path.join(__dirname, 'AddNewProfile.jsx'), 'utf8');
 
-  it('fetchUsersByIds tries the profile nodes first and legacy only as a fallback', () => {
+  // Показ у вебі більше не спирається на legacy: колекція лишилась адресатом
+  // дзеркального запису для мобільного застосунку, а не джерелом читання.
+  // Читалась вона й так лише в адмінів (`users/$uid` відкритий власнику й
+  // двом uid), тож для решти це було читання заради PERMISSION_DENIED — а він
+  // із `Promise.all` валив увесь пошук у `catch`.
+  it('fetchUsersByIds reads the profile nodes and never falls back to legacy', () => {
     const body = source.slice(
       source.indexOf('export const fetchUsersByIds'),
-      source.indexOf('const addUserFromUsers'),
+      source.indexOf('export const lazyLoadProfilePhotos'),
     );
 
-    const nodesIndex = body.indexOf('await readProfileFromNodes(id)');
-    const legacyIndex = body.indexOf('get(ref2(database, `users/${id}`))');
-
-    expect(nodesIndex).toBeGreaterThanOrEqual(0);
-    expect(legacyIndex).toBeGreaterThan(nodesIndex);
+    expect(body).toContain('await readProfileFromNodes(id)');
+    expect(body).not.toContain('get(ref2(database, `users/${id}`))');
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
-  it('search hits are hydrated from the nodes first, legacy only as a fallback', () => {
+  it('search hits are hydrated from the nodes only', () => {
     const body = source.slice(
       source.indexOf('const readProfileForSearchHit'),
       source.indexOf('const searchBySearchIdUsers'),
     );
 
-    const nodesIndex = body.indexOf('await readProfileFromNodes(userId)');
-    const legacyIndex = body.indexOf('get(ref2(database, `users/${userId}`))');
-
-    expect(nodesIndex).toBeGreaterThanOrEqual(0);
-    expect(legacyIndex).toBeGreaterThan(nodesIndex);
+    expect(body).toContain('readProfileFromNodes(userId)');
+    expect(body).not.toContain('get(ref2(database, `users/${userId}`))');
     expect(body).not.toContain('mergeUserCollectionData');
   });
 

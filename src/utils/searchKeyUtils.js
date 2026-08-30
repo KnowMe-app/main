@@ -263,6 +263,73 @@ export const buildSearchIdCandidateKeys = (
   });
 };
 
+/**
+ * Черга кандидатів: спершу ті ключі, які взагалі можуть існувати.
+ *
+ * `buildSearchIdCandidateKeys` перебирає всі префікси індексу і на кожен ще й
+ * додає варіант «УК СМ». Для запиту з одним `@` це три десятки точкових читань,
+ * з яких влучає рівно одне: пошта не лежить ані в `name_`, ані в `phone_`, ані
+ * тим паче в `instagram_ук_см_…`. Решта — трафік, за який ніхто не отримує
+ * жодного id.
+ *
+ * Тому ключі діляться на дві черги за формою самого запиту, а не за здогадками
+ * про дані: рядок із `@` — це пошта, рядок з самих цифр — телефон, решта — усе,
+ * крім них. Друга черга не викидається: вона читається, коли перша не знайшла
+ * нічого, тож «не знайшов» коштує рівно стільки ж, скільки коштував раніше, а
+ * влучний пошук — на порядок менше.
+ *
+ * Варіант «УК СМ» лишається в першій черзі тільки для `name`/`surname`: це
+ * позначка в імені, і в пошті чи телефоні їй узятись нізвідки.
+ */
+const UK_SM_KEY_PART = encodeKey('УК СМ ').toLowerCase();
+const UK_SM_NATIVE_PREFIXES = new Set(['name', 'surname']);
+
+const getSearchIdKeyPrefix = searchKey => {
+  const separatorIndex = String(searchKey || '').indexOf('_');
+  return separatorIndex > 0 ? searchKey.slice(0, separatorIndex) : '';
+};
+
+const isUkSmVariantKey = searchKey => {
+  const prefix = getSearchIdKeyPrefix(searchKey);
+  return Boolean(prefix) && searchKey.slice(prefix.length + 1).startsWith(UK_SM_KEY_PART);
+};
+
+/** Форма запиту: `@` — пошта, самі цифри — телефон, решта — текст. */
+export const resolveSearchIdValueShape = rawSearchValue => {
+  const value = String(rawSearchValue || '').trim();
+  if (!value) return 'text';
+  if (value.includes('@')) return 'email';
+  if (/\d/.test(value) && !/[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(value)) return 'phone';
+  return 'text';
+};
+
+const isPrefixWorthTrying = (prefix, shape) => {
+  if (shape === 'email') return prefix === 'email';
+  if (shape === 'phone') return prefix === 'phone';
+  return prefix !== 'email' && prefix !== 'phone';
+};
+
+export const splitSearchIdCandidateKeys = (searchKeys, rawSearchValue) => {
+  const shape = resolveSearchIdValueShape(rawSearchValue);
+  const primary = [];
+  const fallback = [];
+
+  [...new Set(searchKeys || [])].filter(Boolean).forEach(searchKey => {
+    const prefix = getSearchIdKeyPrefix(searchKey);
+    const isNativeUkSm = UK_SM_NATIVE_PREFIXES.has(prefix);
+    const worthTrying = isPrefixWorthTrying(prefix, shape)
+      && (isNativeUkSm || !isUkSmVariantKey(searchKey));
+
+    (worthTrying ? primary : fallback).push(searchKey);
+  });
+
+  // Форма нічого не відсіяла — ділити нема чого, інакше друга черга лишиться
+  // порожньою, а перша не звузиться.
+  if (!primary.length) return { primary: fallback, fallback: [] };
+
+  return { primary, fallback };
+};
+
 export const shouldSkipBroadFallbackForExactSearchId = searchKey => {
   if (searchKey !== 'searchId') return false;
 

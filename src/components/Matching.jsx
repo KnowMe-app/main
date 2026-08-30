@@ -1996,7 +1996,22 @@ const Matching = () => {
     // від поділу на дві колекції і мовчки викидала з результатів усе, що
     // заведено в застосунку (push-id рівно 20 символів): статус устигав сказати
     // «Знайшов», а на екран не потрапляло нічого.
-    const filtered = arr.filter(u => isMatchingCardId(u?.userId));
+    //
+    // Знайдене за точним контактом — не дека, і правило деки на нього не
+    // поширюється. Дека показує лише картки з `feedDate`, і саме тому пошук у
+    // читача з повним доступом мовчав: він знаходив анкету в `searchId`,
+    // читав її проєкцію — і викидав на останньому кроці, бо картка не
+    // опублікована. Показати її нема кому: у стрічку вона не приїде ніколи.
+    //
+    // Читач з урізаною видачею таку картку бачив завжди (`fetchLimitedProfileById`
+    // віддає її з `publish: true`), тобто слабший доступ показував більше за
+    // сильніший. Позначка знімає саме цю розбіжність — і лише для того, хто вже
+    // має право на повну анкету, і лише для відповіді на запит.
+    const filtered = arr
+      .filter(u => isMatchingCardId(u?.userId))
+      .map(user => (hasFullProfileAccess && user?.__matchingAccessAllowed === undefined
+        ? { ...user, __matchingAccessAllowed: true }
+        : user));
 
     loadInitialVersionRef.current += 1;
     additionalLoadMoreFetchVersionRef.current += 1;
@@ -6168,6 +6183,17 @@ const Matching = () => {
     // An empty group is a different problem from "nothing matched", and saying so
     // is the difference between the reader fixing it and giving up (spec §3).
     if (emptyFilterGroup) return `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`;
+    // Знайдене, яке приховали чіпи, — теж окрема причина, і найгірше з нею те,
+    // що екран про неї мовчав: статус казав «Знайшов у searchId», а під ним
+    // стояло «немає профілів», тобто робочий пошук виглядав як зламаний.
+    // Фільтри звужують видачу запиту навмисно (spec §1) — сказати треба саме
+    // про це, а не показати картку повз фільтр.
+    const isReactionTab = viewMode === 'favorites' || viewMode === 'dislikes';
+    if (!isReactionTab && searchTab !== 'similar' && visibleUsers.length > 0) {
+      return isSearching
+        ? `Знайдено ${visibleUsers.length} — усіх приховали фільтри`
+        : `Фільтри приховали всі завантажені профілі (${visibleUsers.length})`;
+    }
     return 'Немає доступних профілів';
   };
   const emptyFeedMessage = resolveEmptyFeedMessage();
@@ -6974,7 +7000,7 @@ const Matching = () => {
             ) : loading ? (
               <MatchingSkeleton />
             ) : (
-              <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
+              <OwnerStatusMessage>{emptyFeedMessage}</OwnerStatusMessage>
             )}
           </Grid>
             </DetailInner>

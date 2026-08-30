@@ -53,7 +53,9 @@ import {
   normalizeSearchIdInput,
   normalizeSearchDateComparableValue,
   shouldSkipBroadFallbackForExactSearchId,
+  splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
+import { isAdminUid } from '../utils/accessLevel';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
@@ -304,7 +306,7 @@ const isSearchIdPermissionDenied = error => {
 
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   const uniqueIds = new Set();
-  const { includePrefixMatches = true } = options;
+  const { includePrefixMatches = true, rawSearchValue = '' } = options;
   const addIds = value => {
     const ids = Array.isArray(value) ? value : [value];
 
@@ -315,23 +317,36 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
     });
   };
 
+  const readKeys = async keys => {
+    if (!keys.length) return;
+    incrementMatchingLoadStat('searchIdKeyReads', keys.length);
+    await Promise.all(
+      keys.map(async searchKey => {
+        const searchEntrySnapshot = await get(ref2(database, `searchId/${searchKey}`));
+        if (!searchEntrySnapshot.exists()) return;
+
+        addIds(searchEntrySnapshot.val());
+      })
+    );
+  };
+
+  // Перша черга — ключі, які відповідають формі запиту; друга потрібна лише
+  // тоді, коли перша не знайшла нічого. Див. `splitSearchIdCandidateKeys`.
+  const { primary, fallback } = splitSearchIdCandidateKeys(searchKeys, rawSearchValue);
+  await readKeys(primary);
+  if (!uniqueIds.size) await readKeys(fallback);
+
   const uniqueSearchKeys = [...new Set(searchKeys)];
 
-  await Promise.all(
-    uniqueSearchKeys.map(async searchKey => {
-      const searchEntrySnapshot = await get(ref2(database, `searchId/${searchKey}`));
-      if (!searchEntrySnapshot.exists()) return;
-
-      addIds(searchEntrySnapshot.val());
-    })
-  );
-
   // Точний ключ уже прочитаний — далі йде тільки розширення пошуку по префіксу,
-  // а воно сканує вузол `searchId`, право на що є лише в адмінів. Для решти
-  // запит закономірно падає з PERMISSION_DENIED, і це не привід губити те, що
-  // вже знайдено за точним ключем: інакше відмова в необовʼязковому кроці
-  // валила весь пошук у `catch` і показувала «не знайшов».
-  if (includePrefixMatches) {
+  // а воно сканує вузол `searchId`, право на що є лише в адмінів. Тому для
+  // решти читачів цей крок навіть не починається: раніше він щоразу давав по
+  // запиту на кожен ключ, і кожен закономірно повертався з PERMISSION_DENIED —
+  // трафік і затримка за відповідь, у якій нічого немає.
+  //
+  // `try/catch` нижче лишається: права можуть змінитись, і відмова в
+  // необовʼязковому кроці не має губити те, що вже знайдено за точним ключем.
+  if (includePrefixMatches && isAdminUid(auth.currentUser?.uid)) {
     await Promise.all(
       uniqueSearchKeys.map(async searchKey => {
         try {
@@ -2225,9 +2240,12 @@ export const readProfileFromNodes = async (userId, options = {}) => {
 /**
  * Прочитати анкети за id.
  *
- * Колекції в аргументах більше немає: у вебі вона одна. Спершу нові вузли —
- * вони і є джерелом істини; legacy лишається запасним шляхом для анкет, які ще
- * не переїхали, і зникне разом із самою колекцією.
+ * Читаються лише нові вузли, і картка стрічки серед них — саме вона і є тим
+ * мінімумом, який завжди є в показаної анкети. Legacy-колекція звідси прибрана
+ * навмисно: у вебі вона лишилась дзеркалом для мобільного застосунку, тобто
+ * адресатом запису, а не джерелом показу. Читання з неї було ще й крихким —
+ * `users/{чужий id}` відкритий лише адмінам, тож на першій же відмові гинула
+ * вся відповідь.
  */
 export const fetchUsersByIds = async ids => {
   try {
@@ -2247,23 +2265,11 @@ export const fetchUsersByIds = async ids => {
     const snaps = await Promise.all(
       missingIds.map(async id => {
         try {
-          // Спершу нові вузли — вони і є джерелом істини. Legacy читається
-          // тільки тоді, коли анкета туди ще не переїхала.
+          // Вузли — єдине джерело показу. Немає жодного (навіть картки) —
+          // показувати нема чого, і це не привід іти в legacy.
           const fromNodes = await readProfileFromNodes(id);
-          if (fromNodes) {
-            return [id, updateCard(id, { ...fromNodes, photos: fromNodes.photos || [] })];
-          }
-
-          const snapshot = await get(ref2(database, `users/${id}`));
-          if (!snapshot.exists()) return null;
-          const legacyData = snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {};
-          const data = {
-            userId: id,
-            ...legacyData,
-            photos: [],
-            __photosHydrated: false,
-          };
-          return [id, updateCard(id, data)];
+          if (!fromNodes) return null;
+          return [id, updateCard(id, { ...fromNodes, photos: fromNodes.photos || [] })];
         } catch (error) {
           console.error(`Error fetching user ${id}:`, error);
           return null;
@@ -2291,20 +2297,6 @@ export const lazyLoadProfilePhotos = async (userId, options = {}) => getAllUserP
 // `users/$uid`, тож перелік і правила мусять іти в ногу: запит на щось інше
 // буде відхилено, а не відфільтровано.
 export const LIMITED_PROFILE_FIELDS = ['name', 'surname', 'birth', 'region', 'city'];
-
-const readLimitedProfileFields = async (collection, userId) => {
-  const entries = await Promise.all(LIMITED_PROFILE_FIELDS.map(async field => {
-    try {
-      const snap = await get(ref2(database, `${collection}/${userId}/${field}`));
-      return snap.exists() ? [field, snap.val()] : null;
-    } catch {
-      // A denied field is simply absent from the projection.
-      return null;
-    }
-  }));
-  const projection = Object.fromEntries(entries.filter(Boolean));
-  return Object.keys(projection).length ? projection : null;
-};
 
 /**
  * Та сама проєкція, але з опублікованої картки стрічки.
@@ -2346,10 +2338,10 @@ const readLimitedProfileFromMatchingCard = async userId => {
 // nothing for the caller to strip afterwards.
 export const fetchLimitedProfileById = async userId => {
   if (!userId) return null;
-  // Картка йде першою: один запит замість пʼяти, і вона є в анкети незалежно
-  // від того, чи має та тіло в legacy-колекції.
-  const projection =
-    (await readLimitedProfileFromMatchingCard(userId)) || (await readLimitedProfileFields('users', userId));
+  // Джерело одне — картка стрічки: один запит замість пʼяти, і вона є в анкети
+  // незалежно від того, чи має та тіло в legacy-колекції. Полів анкети з
+  // `users/$uid` тут більше не питають: веб з legacy не читає.
+  const projection = await readLimitedProfileFromMatchingCard(userId);
   if (!projection) return null;
   return {
     userId,
@@ -2364,18 +2356,24 @@ const addLimitedUser = async (userId, users) => {
   if (profile) users[userId] = profile;
 };
 
-// Знайдену анкету треба ще й прочитати, а джерело істини — нові вузли: анкета,
-// заведена у вебі, взагалі не має тіла в legacy-колекції. Читати саму лише
-// legacy означало б знаходити id і не показувати за ним нічого.
-const readProfileForSearchHit = async userId => {
-  const fromNodes = await readProfileFromNodes(userId);
-  if (fromNodes) return fromNodes;
+/**
+ * Чим показати знайдене.
+ *
+ * Пошук шукає в `searchId` — там лежать id, а не анкети, — тож знайдене треба
+ * ще й прочитати. Читаються нові вузли, і перший серед них `matchingCards`:
+ * проєкція є в кожної показаної анкети, відкрита кожному авторизованому і має
+ * рівно ті поля, якими малюють рядок. Тобто картка, якої немає в стрічці,
+ * показується з проєкції — і більше нізвідки.
+ *
+ * Legacy-колекції тут немає навмисно. `users/$uid` відкритий лише самому
+ * власнику й адмінам, тож звичайному читачеві це читання не давало нічого,
+ * крім `PERMISSION_DENIED` — а той летів з `Promise.all` у `catch` усього
+ * пошуку і перетворював знайдене на «Не знайшов». Вузли ж на відмову в правах
+ * не падають: `readProfileNodePart` віддає порожній вузол.
+ */
+const readProfileForSearchHit = async userId => readProfileFromNodes(userId);
 
-  const snapshot = await get(ref2(database, `users/${userId}`));
-  return snapshot.exists() ? { userId, ...(snapshot.val() || {}) } : null;
-};
-
-const addUserFromUsers = async (userId, users) => {
+const addSearchHit = async (userId, users) => {
   const profile = await readProfileForSearchHit(userId);
   if (profile) users[userId] = profile;
 };
@@ -2395,14 +2393,14 @@ const searchBySearchIdUsers = async (
     searchIdPrefixes,
     options,
   );
-  const userIds = await collectUserIdsBySearchIdKeys(searchKeys, options);
+  const userIds = await collectUserIdsBySearchIdKeys(searchKeys, { ...options, rawSearchValue });
 
   await Promise.all(
     userIds.map(async id => {
       if (uniqueUserIds.has(id)) return;
       uniqueUserIds.add(id);
       if (limitedFields) await addLimitedUser(id, users);
-      else await addUserFromUsers(id, users);
+      else await addSearchHit(id, users);
     })
   );
 };
@@ -2509,7 +2507,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const searchIdOptions = limitedFields
     ? { ...baseSearchIdOptions, includePrefixMatches: false }
     : baseSearchIdOptions;
-  const addHit = limitedFields ? addLimitedUser : addUserFromUsers;
+  const addHit = limitedFields ? addLimitedUser : addSearchHit;
   const users = {};
   const uniqueUserIds = new Set();
   try {
@@ -2874,7 +2872,7 @@ const executeSearchBySearchIdIndex = async (
     searchIdPrefixes,
     options,
   );
-  const userIds = await collectUserIdsBySearchIdKeys(searchKeys, options);
+  const userIds = await collectUserIdsBySearchIdKeys(searchKeys, { ...options, rawSearchValue });
 
   await Promise.all(
     userIds.map(async userId => {
