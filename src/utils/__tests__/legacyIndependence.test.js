@@ -104,8 +104,10 @@ describe('дзеркалення читається і в зворотний б�
     const loader = sliceFn('export const readProfileFromNodes =', 'export const fetchUsersByIds =');
     expect(loader).not.toContain("readProfileNodePart('users', id)");
     expect(loader).not.toContain('withLegacy');
-    // Шар, який викликач уже тримає в руках (файл офлайн-міграції), лишається.
-    expect(loader).toContain('legacy: legacyFieldsNodesDoNotOwn(legacy, parts)');
+    // Шар, який викликач уже тримає в руках (файл офлайн-міграції), лишається —
+    // але проходить ту саму межу видимості, що й вузли: контакти лежать і в
+    // ньому, тож читачеві прихованої анкети він теж не дістається.
+    expect(loader).toContain('legacy: legacyFieldsNodesDoNotOwn(scoped.legacy, parts)');
   });
 
   it('legacy мовчить про те, чим уже володіє вузол', () => {

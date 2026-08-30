@@ -13,7 +13,11 @@ export const TTL_MS = CACHE_TTL_MS;
 export const MATCHING_INDEX_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 
-export const CARDS_CACHE_VERSION = 2;
+// Версія 3 — щоб анкети, складені до межі «поза стрічкою видно саму картку»,
+// не пережили її в localStorage. У кеші пристрою лежать повні анкети, зокрема
+// контакти прихованих карток, прочитані тоді, коли правила їх ще віддавали:
+// без зміни версії застосунок і далі показував би їх із кеша, не питаючи бази.
+export const CARDS_CACHE_VERSION = 3;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 export const MATCHING_INDEX_CACHE_VERSION = 1;

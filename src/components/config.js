@@ -52,7 +52,8 @@ import {
   shouldSkipBroadFallbackForExactSearchId,
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
-import { isAdminUid } from '../utils/accessLevel';
+import { isAdminUid, readStoredAccessLevel } from '../utils/accessLevel';
+import { scopeProfileNodesToViewer } from '../utils/profileVisibilityScope';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
@@ -2022,13 +2023,26 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
   ]);
 
-  const parts = { card, details, contacts, workflow, technical };
+  // Анкета поза стрічкою — це анкета, показу якій ніхто не давав, і читачеві
+  // без службового доступу від неї лишається сама картка. Правила бази кажуть
+  // те саме й по-справжньому: `profileDetails/$uid` і `profileContacts/$uid`
+  // відкриті звичайному користувачеві лише доти, доки в картці є `feedDate`.
+  // Тут та сама межа стоїть у коді, який складає анкету, — щоб на екран не
+  // приїхало те, що прийшло повз правила: зі старого кеша або з legacy-шару.
+  const scoped = scopeProfileNodesToViewer({
+    profileId: id,
+    viewerId: auth.currentUser?.uid || '',
+    accessLevel: readStoredAccessLevel(),
+    parts: { card, details, contacts, workflow, technical },
+    legacy,
+  });
+  const parts = scoped.parts;
   if (!hasAnyProfileNode(parts)) return null;
 
   const merged = mergeProfileNodes({
     userId: id,
     ...parts,
-    legacy: legacyFieldsNodesDoNotOwn(legacy, parts),
+    legacy: legacyFieldsNodesDoNotOwn(scoped.legacy, parts),
   });
   if (!merged) return null;
 

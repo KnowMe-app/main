@@ -32,8 +32,15 @@ const SELF_SERVE = 'selfServeUid00000000000000';
 // немає, усе лежить у `profileTechnical`. Саме так виглядатиме кожен адмін
 // після міграції, тож саме тут перевіряється, що доступ від переїзду не зник.
 const MIGRATED_EDITOR = 'migratedEditorUid0000000000';
+// Звичайний користувач матчингу: зареєструвався з екрана входу як агенція
+// (`userRole: 'ag'`), жодного рівня доступу йому ніхто не видавав. Саме такий
+// акаунт бачить стрічку — і саме на ньому перевіряється, що поза стрічкою він
+// не бачить нічого, крім картки.
+const ORDINARY_VIEWER = 'ordinaryViewerUid000000000';
 
 const CARD = 'someOtherProfileId000000000';
+// Анкета без ключа стрічки: картка є, але в стрічку не потрапляє.
+const HIDDEN_CARD = 'hiddenProfileId00000000000';
 
 const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST || '127.0.0.1:9099';
 const [emulatorHost, emulatorPort] = host.split(':');
@@ -77,14 +84,24 @@ await testEnv.withSecurityRulesDisabled(async context => {
     [PROFILE_OWNER]: { name: 'Власниця', userRole: 'ed' },
     [OUTSIDER]: { name: 'Стороння', userRole: 'ed' },
     [SELF_SERVE]: { name: 'Донорка', userRole: 'ed' },
+    [ORDINARY_VIEWER]: { name: 'Агенція', userRole: 'ag' },
     [CARD]: { name: 'Картка' },
+    [HIDDEN_CARD]: { name: 'Прихована', publish: false },
   });
   await set(ref(db, 'matchingCards'), {
     [CARD]: { name: 'Картка', surnameShort: 'К.', feedDate: '2026-08-25' },
     [PROFILE_OWNER]: { name: 'Власниця', feedDate: '2026-08-20' },
+    // Ключа стрічки немає — анкети немає і в стрічці.
+    [HIDDEN_CARD]: { name: 'Прихована', surnameShort: 'П.', city: 'Київ' },
   });
-  await set(ref(db, 'profileDetails'), { [CARD]: { surname: 'Коваленко', blood: '2+' } });
-  await set(ref(db, 'profileContacts'), { [CARD]: { phone: ['+380'], email: 'a@b.c' } });
+  await set(ref(db, 'profileDetails'), {
+    [CARD]: { surname: 'Коваленко', blood: '2+' },
+    [HIDDEN_CARD]: { surname: 'Приховайло', blood: '3+' },
+  });
+  await set(ref(db, 'profileContacts'), {
+    [CARD]: { phone: ['+380'], email: 'a@b.c' },
+    [HIDDEN_CARD]: { phone: ['+380990000000'], email: 'hidden@b.c' },
+  });
   await set(ref(db, 'profileWorkflow'), { [CARD]: { lastAction: 'дзвінок', cycleStatus: 'active' } });
   await set(ref(db, 'profileTechnical'), {
     [CARD]: { lastLogin2: '2026-08-25' },
@@ -647,6 +664,69 @@ await it('чужу історію пошуку сторонній не пише 
     query: 'чуже', updatedAt: 2,
   }));
   await assertFails(get(ref(db(OUTSIDER), `multiData/searchQueries/${SELF_SERVE}`)));
+});
+
+/*
+ * Поза стрічкою звичайний користувач бачить рівно картку.
+ *
+ * Аудиторія матчингу — це не тільки адміністратори: акаунт, заведений з екрана
+ * входу як агенція, теж має роль, відмінну від `ed`, і саме за нею правила
+ * відкривали йому і `profileDetails`, і `profileContacts` — на будь-яку анкету,
+ * хоч і на ту, якої в стрічці немає. Тобто анкету, знайдену за точним
+ * контактом, він бачив цілком: прізвище, деталі й контакти, попри те що показу
+ * їй ніхто не давав.
+ *
+ * Межу проводить той самий ключ, що й для самої стрічки: є `feedDate` — анкета
+ * показана, і аудиторія матчингу читає її як завжди; немає — максимум, який
+ * лишається такому читачеві, це проєкція `matchingCards`. Службовий доступ
+ * (`accessLevel` з `matching`), власниця анкети й суперадміни від цієї межі не
+ * залежать: вони й ведуть анкети до публікації.
+ */
+describe('звичайний користувач і прихована анкета');
+
+await it('показану анкету читає як завжди — і деталі, і контакти', async () => {
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `matchingCards/${CARD}`)));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `profileDetails/${CARD}`)));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `profileContacts/${CARD}`)));
+});
+
+await it('на прихованій анкеті не отримує ані деталей, ані контактів', async () => {
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+await it('максимум, що лишається, — картка', () =>
+  assertSucceeds(get(ref(db(ORDINARY_VIEWER), `matchingCards/${HIDDEN_CARD}`))));
+
+await it('перелічити деталі цілою колекцією теж не може', () =>
+  assertFails(get(ref(db(ORDINARY_VIEWER), 'profileDetails'))));
+
+await it('зняття з публікації забирає доступ, публікація повертає', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), '2026-08-26'));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), null));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+await it('службовий доступ бачить приховану анкету цілком — інакше її нема кому вести', async () => {
+  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(MIGRATED_EDITOR), `profileDetails/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+await it('власниця читає власну анкету, поки та прихована', async () => {
+  await assertSucceeds(get(ref(db(HIDDEN_CARD), `profileDetails/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(HIDDEN_CARD), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+await it('донорка чужої анкети не читає ані показаної, ані прихованої', async () => {
+  await assertFails(get(ref(db(SELF_SERVE), `profileDetails/${CARD}`)));
+  await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
 });
 
 describe('legacy /users лишається як був');

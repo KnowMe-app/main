@@ -25,6 +25,29 @@ const matchingCardIndexSource = fs.readFileSync(
 
 const ADMIN_UIDS = ['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J010v4CDyD2'];
 
+const FEED_GATE = "root.child('matchingCards').child($uid).child('feedDate').isString()";
+
+/**
+ * Право за роллю живе під ключем стрічки — і більше ніде.
+ *
+ * Мова правил — це один довгий ланцюг `||`, у якому зайвий диз'юнкт нічого не
+ * ламає, лише тихо відкриває. Тому перевіряється не «умова згадується», а що
+ * жодного згадування ролі поза цим ключем не лишилось: інакше поруч із
+ * закритою гілкою спокійно жила б відкрита.
+ */
+const expectRoleClauseGatedByFeed = read => {
+  expect(read).toContain(FEED_GATE);
+  const [beforeGate, afterGate] = read.split(FEED_GATE);
+  expect(beforeGate).not.toContain('userRole');
+  expect(beforeGate).not.toContain("child('role')");
+  expect(afterGate).toContain("root.child('users').child(auth.uid).child('userRole').val() != 'ed'");
+  // Службовий доступ від стрічки не залежить — інакше приховану анкету не було б
+  // кому вести до публікації.
+  expect(beforeGate).toContain("contains('matching')");
+  expect(beforeGate).toContain('auth.uid == $uid');
+  ADMIN_UIDS.forEach(uid => expect(beforeGate).toContain(uid));
+};
+
 /**
  * Мова правил не має ані функцій, ані коментарів, тож перевіряти її можна лише
  * за формою умови. Ці тести й перевіряють форму — але кожен із них стереже
@@ -186,10 +209,9 @@ describe('matchingCards приймає лише перелічені поля', 
   });
 });
 
-describe('profileContacts — відкриті, але з власним правилом', () => {
-  // Ховати контакти сьогодні не треба. Цінність окремого вузла в іншому:
-  // доступ до нього описаний одним власним правилом, тож звузити його до
-  // окремої категорії людей — це правка одного рядка, а не переїзд даних.
+describe('profileContacts — власне правило, і воно йде за стрічкою', () => {
+  // Гвинт, заради якого вузол і виділявся, закручено: контакти читає аудиторія
+  // матчингу, але звичайному користувачеві — лише доти, доки картка в стрічці.
   it('перелічити контакти може тільки суперадмін', () => {
     // Колекція цілком потрібна рівно одному: перебудові індексів. Поіменне
     // читання 26 тисяч анкет — це вже не індексація. Суперадмін і так бачить
@@ -205,6 +227,18 @@ describe('profileContacts — відкриті, але з власним пра�
     expect(read).toContain('auth.uid == $uid');
     ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
     expect(read).not.toBe(rules.matchingCards['.read']);
+  });
+
+  it('звичайному користувачеві — тільки поки картка в стрічці', () => {
+    /*
+     * Аудиторія матчингу — це не самі лише адміністратори: акаунт, заведений з
+     * екрана входу як агенція, теж має роль, відмінну від `ed`, і саме за нею
+     * правила віддавали йому контакти будь-якої анкети — зокрема тієї, якої в
+     * стрічці немає. Умова ролі тепер стоїть під ключем стрічки: є `feedDate` —
+     * анкета показана, і контакти читаються; немає — максимум, що лишається
+     * такому читачеві, це проєкція `matchingCards`.
+     */
+    expectRoleClauseGatedByFeed(rules.profileContacts.$uid['.read']);
   });
 
   it('правило власне, а не успадковане — його можна звузити окремо', () => {
@@ -244,6 +278,22 @@ describe('решта вузлів не стає другим місцем для
   it('profileDetails не відкривається разом із публічною проєкцією matchingCards', () => {
     expect(rules.matchingCards['.read']).toContain("query.orderByChild == 'feedDate'");
     expect(rules.profileDetails['.read']).not.toBe(rules.matchingCards['.read']);
+  });
+
+  it('profileDetails звичайному користувачеві — теж тільки поки картка в стрічці', () => {
+    // Деталі анкети — це прізвище, стан здоровʼя і решта того, чого в картці
+    // стрічки навмисно немає. Правило те саме, що й у контактів, бо й питання
+    // те саме: показу цій анкеті ніхто не давав.
+    expectRoleClauseGatedByFeed(rules.profileDetails.$uid['.read']);
+  });
+
+  it('перелічити деталі цілою колекцією може лише службовий доступ', () => {
+    // У переліку немає де перевірити картку кожного запису, тож право за роллю
+    // з рівня колекції знято: звичайний користувач читає анкету поіменно.
+    const read = rules.profileDetails['.read'];
+    expect(read).not.toContain('userRole');
+    expect(read).toContain("contains('matching')");
+    ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
   });
 
   it('profileTechnical бачать лише власник і суперадміни', () => {

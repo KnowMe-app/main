@@ -45,6 +45,20 @@ export const canAccessAddByLevel = accessLevel => {
   return hasAdd;
 };
 
+export const ACCESS_LEVEL_STORAGE_KEY = 'accessLevel';
+
+/**
+ * Рівень доступу, збережений при вході.
+ *
+ * `null` — це не «немає прав», а «застосунок ще не знає»: ключ зникає на виході
+ * і зʼявляється назад лише після того, як прочитано власну анкету. Різниця між
+ * ним і порожнім рядком (звичайний користувач без жодного рівня) важлива для
+ * тих, хто вирішує за цим значенням, що показувати.
+ */
+export const readStoredAccessLevel = () => (
+  typeof localStorage !== 'undefined' ? localStorage.getItem(ACCESS_LEVEL_STORAGE_KEY) : null
+);
+
 export const CAN_CREATE_PROFILES_STORAGE_KEY = 'canCreateProfiles';
 
 export const readStoredCanCreateProfiles = () => (
