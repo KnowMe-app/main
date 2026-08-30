@@ -67,9 +67,8 @@ describe('збереження анкети не залежить від legacy-
     // перечитування дало б порожньо, і проєкція зібралась би ні з чого.
     const reader = sliceFn('const readProfileForMatchingCard = async', 'const runMatchingCardRefresh');
 
-    expect(reader).toContain('await readProfileFromNodes(id, { includeTechnical: true })');
-    expect(reader.indexOf('readProfileFromNodes'))
-      .toBeLessThan(reader.indexOf('`users/${id}`'));
+    expect(reader).toContain('readProfileFromNodes(id, { includeTechnical: true })');
+    expect(reader).not.toContain('`users/${id}`');
   });
 
   it('щойно збережене перекриває перечитане', () => {
@@ -90,15 +89,23 @@ describe('збереження анкети не залежить від legacy-
 describe('дзеркалення читається і в зворотний бік', () => {
   // Мобільний застосунок пише тільки в `/users`. Якби веб дивився лише у
   // вузли, зміна, зроблена з телефона, не зʼявилась би в ньому ніколи.
-  it('анкета читається разом із legacy-шаром', () => {
+  // Дзеркалення лишилось одностороннім: веб пише в legacy заради мобільного
+  // застосунку і більше з неї не читає. Читання назад показувало не анкету, а
+  // копію — ту саму, у якій ще лежить те, що у вебі вже стерли, — та ще й
+  // впиралось у права, яких у звичайного читача на чужий `users/$uid` немає.
+  it('анкета читається лише з вузлів', () => {
     const reader = sliceFn('export const fetchUserById =', 'export const removeKeyFromFirebase');
-    expect(reader).toContain('await readProfileFromNodes(userId, { includeTechnical: true, withLegacy: true })');
+    expect(reader).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
+    expect(reader).not.toContain('withLegacy');
+    expect(reader).not.toContain('users/${userId}');
   });
 
-  it('legacy читається лише коли його попросили — список за нього не платить', () => {
+  it('читач вузлів сам у legacy не ходить', () => {
     const loader = sliceFn('export const readProfileFromNodes =', 'export const fetchUsersByIds =');
-    expect(loader).toContain("withLegacy && !legacy ? readProfileNodePart('users', id) : null");
-    expect(loader).toContain('withLegacy = false');
+    expect(loader).not.toContain("readProfileNodePart('users', id)");
+    expect(loader).not.toContain('withLegacy');
+    // Шар, який викликач уже тримає в руках (файл офлайн-міграції), лишається.
+    expect(loader).toContain('legacy: legacyFieldsNodesDoNotOwn(legacy, parts)');
   });
 
   it('legacy мовчить про те, чим уже володіє вузол', () => {

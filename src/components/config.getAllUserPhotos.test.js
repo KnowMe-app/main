@@ -10,29 +10,31 @@ describe('getAllUserPhotos', () => {
     source.indexOf('export const getMedicationPhotos'),
   );
 
-  it('prefers the profileDetails node and falls back to the single legacy collection', () => {
-    const nodeIndex = getAllUserPhotosBody.indexOf('readPhotosFromProfileNode(userId)');
-    const legacyIndex = getAllUserPhotosBody.indexOf("readPhotosField('users', userId)");
-
-    expect(nodeIndex).toBeGreaterThanOrEqual(0);
-    expect(legacyIndex).toBeGreaterThan(nodeIndex);
+  // Фото живуть у `profileDetails`. Відкоту в legacy-колекцію більше немає:
+  // веб із неї не читає. `null` означає «у вузлі цього немає» — і на цьому все;
+  // аватар картки і файли Storage лишаються, тож галерея не порожня навіть в
+  // анкети, яка ще не має `profileDetails`.
+  it('reads photos from the profile node and nowhere else', () => {
+    expect(getAllUserPhotosBody).toContain('readPhotosFromProfileNode(userId)');
+    expect(getAllUserPhotosBody).toContain('databaseUrls = fromProfileNode || []');
+    expect(getAllUserPhotosBody).not.toContain("readPhotosField('users', userId)");
+    expect(source).not.toContain('const readPhotosField =');
   });
 
-  // Читання адресне: `users/${userId}/photos`, а не вузол анкети цілком. Стрічка
-  // гідратує картку, а потім питає фото — читання цілого вузла означало другу
-  // копію тієї самої анкети в трафіку на кожну картку.
+  // Читання адресне: `profileDetails/${userId}/photos`, а не вузол анкети
+  // цілком. Стрічка гідратує картку, а потім питає фото — читання цілого вузла
+  // означало другу копію тієї самої анкети в трафіку на кожну картку.
   it('reads only the photos child, never the whole profile node', () => {
     const readerBody = source.slice(
-      source.indexOf('const readPhotosField ='),
+      source.indexOf('const readPhotosFromProfileNode ='),
       source.indexOf('export const getAllUserPhotos'),
     );
 
-    expect(readerBody).toContain(`ref2(database, \`\${collection}/${userIdTemplate}/photos\`)`);
+    expect(readerBody).toContain(`\${PROFILE_NODES.profileDetails}/${userIdTemplate}/photos`);
     expect(getAllUserPhotosBody).not.toContain(`get(ref2(database, \`users/${userIdTemplate}\`))`);
   });
 
-  it('keeps the legacy read best-effort when it rejects', () => {
-    expect(getAllUserPhotosBody).toContain('Promise.allSettled');
-    expect(getAllUserPhotosBody).toContain("console.error('Error loading user photos from users:'");
+  it('keeps the Storage listing as the other half of the gallery', () => {
+    expect(getAllUserPhotosBody).toContain('await getUserStorageAvatarPhotos(userId)');
   });
 });

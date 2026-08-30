@@ -215,6 +215,9 @@ export const buildSearchIdCandidateKeys = (
   const {
     includeVariants = true,
     includeAdaptedPhoneVariant = false,
+    // «УК СМ» — робоча приставка адміна, а не частина значення. Для всіх інших
+    // запит із нею — звичайний текст: шукається рівно те, що набрали.
+    includeUkSmVariant = false,
   } = options;
   const ukSmPrefix = encodeKey('УК СМ ').toLowerCase();
   const hasUkSm = normalizedValue.startsWith(ukSmPrefix);
@@ -246,10 +249,12 @@ export const buildSearchIdCandidateKeys = (
       return searchKeys;
     }
 
-    if (hasUkSm) {
-      searchKeys.push(`${prefix}_${normalizedValue.slice(ukSmPrefix.length)}`);
-    } else {
-      searchKeys.push(`${prefix}_${ukSmPrefix}${normalizedValue}`);
+    if (includeUkSmVariant) {
+      if (hasUkSm) {
+        searchKeys.push(`${prefix}_${normalizedValue.slice(ukSmPrefix.length)}`);
+      } else {
+        searchKeys.push(`${prefix}_${ukSmPrefix}${normalizedValue}`);
+      }
     }
 
     if (normalizedValue.startsWith('0')) {

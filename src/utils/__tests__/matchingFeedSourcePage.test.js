@@ -32,8 +32,6 @@ const runChunk = overrides => fetchFilteredMatchingSourceChunk({
   collectionSource: 'users',
   isAdmin: false,
   hydrateUsersByIds: jest.fn(async ids => Object.fromEntries(ids.map(id => [id, fullProfile(id)]))),
-  fetchUsersByLastLogin2: jest.fn(async () => ({ users: [], lastKey: null, hasMore: false })),
-  fetchUsersByLastLogin2FromCollection: jest.fn(async () => ({ users: [], lastKey: null, hasMore: false })),
   ...overrides,
 });
 
@@ -44,91 +42,64 @@ describe('стрічка читає урізані картки', () => {
       lastKey: { date: '2026-08-19', userId: id('b') },
       hasMore: true,
     }));
-    const fetchUsersByLastLogin2 = jest.fn(async () => ({ users: [], lastKey: null, hasMore: false }));
     const hydrateUsersByIds = jest.fn();
 
-    const result = await runChunk({ fetchMatchingCardsPage, fetchUsersByLastLogin2, hydrateUsersByIds });
+    const result = await runChunk({ fetchMatchingCardsPage, hydrateUsersByIds });
 
     expect(fetchMatchingCardsPage).toHaveBeenCalledTimes(1);
-    expect(fetchUsersByLastLogin2).not.toHaveBeenCalled();
     // Проєкція вже містить усе, що показує рядок — поштучних читань анкет немає.
     expect(hydrateUsersByIds).not.toHaveBeenCalled();
     expect(result.users.map(user => user.userId)).toEqual([id('a'), id('b')]);
     expect(result.users[0].photos).toEqual(['https://example.test/a.jpg']);
   });
 
-  it('повертається до анкет, якщо вузол проєкцій ще порожній', async () => {
+  // Відкоту на повні анкети більше немає: він читав legacy-колекцію, з якої веб
+  // не читає, і коштував порядок величини трафіку на кожну сторінку. Порожній
+  // індекс — це порожня стрічка й названа причина, а не тихе сповзання на анкети.
+  it('порожній вузол проєкцій дає порожню стрічку і названу причину', async () => {
     const fetchMatchingCardsPage = jest.fn(async () => ({ users: [], lastKey: null, hasMore: false }));
-    const fetchUsersByLastLogin2 = jest.fn(async () => ({
-      users: [fullProfile(id('a')), fullProfile(id('b'))],
-      lastKey: { date: '2026-08-19', userId: id('b') },
-      hasMore: false,
-    }));
+    const onDiagnosticEvent = jest.fn();
 
-    const result = await runChunk({ fetchMatchingCardsPage, fetchUsersByLastLogin2 });
+    const result = await runChunk({ fetchMatchingCardsPage, onDiagnosticEvent });
 
     expect(fetchMatchingCardsPage).toHaveBeenCalledTimes(1);
-    expect(fetchUsersByLastLogin2).toHaveBeenCalledTimes(1);
-    expect(result.users.map(user => user.name)).toEqual(['Анкета', 'Анкета']);
-  });
-
-  it('повертає порожню стрічку без fallback для читача без доступу до анкет', async () => {
-    const fetchMatchingCardsPage = jest.fn(async () => ({ users: [], lastKey: null, hasMore: false }));
-    const fetchUsersByLastLogin2 = jest.fn();
-
-    const result = await runChunk({
-      allowProfileFallback: false,
-      fetchMatchingCardsPage,
-      fetchUsersByLastLogin2,
-    });
-
-    expect(fetchMatchingCardsPage).toHaveBeenCalledTimes(1);
-    expect(fetchUsersByLastLogin2).not.toHaveBeenCalled();
     expect(result.users).toEqual([]);
     expect(result.hasMore).toBe(false);
-  });
-
-  it('повертається до анкет, якщо читання проєкцій впало', async () => {
-    const fetchMatchingCardsPage = jest.fn(async () => { throw new Error('permission denied'); });
-    const fetchUsersByLastLogin2 = jest.fn(async () => ({
-      users: [fullProfile(id('a'))],
-      lastKey: null,
-      hasMore: false,
+    expect(onDiagnosticEvent).toHaveBeenCalledWith(expect.objectContaining({
+      feedSource: 'matchingCards',
+      reason: 'index-empty',
     }));
-
-    const result = await runChunk({ targetVisibleCount: 1, fetchMatchingCardsPage, fetchUsersByLastLogin2 });
-
-    expect(fetchUsersByLastLogin2).toHaveBeenCalledTimes(1);
-    expect(result.users.map(user => user.userId)).toEqual([id('a')]);
   });
 
-  it('передає помилку проєкції нагору, коли fallback до анкет заборонений', async () => {
+  it('передає помилку проєкції нагору — читати замість неї нема чого', async () => {
     const error = new Error('temporary matchingCards failure');
     const fetchMatchingCardsPage = jest.fn(async () => { throw error; });
-    const fetchUsersByLastLogin2 = jest.fn();
+    const onDiagnosticEvent = jest.fn();
 
-    await expect(runChunk({
-      allowProfileFallback: false,
-      fetchMatchingCardsPage,
-      fetchUsersByLastLogin2,
-    })).rejects.toBe(error);
-    expect(fetchUsersByLastLogin2).not.toHaveBeenCalled();
+    await expect(runChunk({ fetchMatchingCardsPage, onDiagnosticEvent })).rejects.toBe(error);
+    expect(onDiagnosticEvent).toHaveBeenCalledWith(expect.objectContaining({
+      feedSource: 'matchingCards',
+      reason: 'index-read-failed',
+    }));
   });
 
-  it('не відкочується на анкети посеред пагінації', async () => {
+  it('кінець стрічки не називає причини', async () => {
     // Порожня сторінка з курсором означає «дійшли до кінця», а не «індексу
-    // немає» — інакше кінець стрічки щоразу тягнув би зайвий запит по анкетах.
+    // немає» — і повідомляти про це читачеві нема про що.
     const fetchMatchingCardsPage = jest.fn(async () => ({ users: [], lastKey: null, hasMore: false }));
-    const fetchUsersByLastLogin2 = jest.fn(async () => ({ users: [], lastKey: null, hasMore: false }));
+    const onDiagnosticEvent = jest.fn();
 
     await runChunk({
       initialCursor: { date: '2026-08-19', userId: id('b') },
       fetchMatchingCardsPage,
-      fetchUsersByLastLogin2,
+      onDiagnosticEvent,
     });
 
     expect(fetchMatchingCardsPage).toHaveBeenCalledTimes(1);
-    expect(fetchUsersByLastLogin2).not.toHaveBeenCalled();
+    expect(onDiagnosticEvent).toHaveBeenCalledWith(expect.objectContaining({
+      feedSource: 'matchingCards',
+      reason: '',
+    }));
   });
 
   it('просить у джерела запас, який не росте з множиною виключень', async () => {

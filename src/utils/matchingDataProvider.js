@@ -1392,10 +1392,8 @@ export const fetchFilteredMatchingSourceChunk = ({
   dislikeUsers = {},
   roleIndexSets = null,
   filterMainFn = passthroughFilterMain,
-  fetchUsersByLastLogin2,
   fetchMatchingCardsPage,
   hydrateUsersByIds,
-  allowProfileFallback = true,
   onPart,
   onDiagnosticEvent,
 }) => {
@@ -1421,11 +1419,9 @@ export const fetchFilteredMatchingSourceChunk = ({
     maxSourceCards: 500,
     debugLabel: 'matchingSourceBackfill',
     fetchSourcePage: async ({ limit: sourceLimit, cursor }) => {
-      const readProfilePage = () => fetchUsersByLastLogin2(sourceLimit, cursor);
-
       // Читач мусить знати, чим саме він зараз читає стрічку: різниця між
       // проєкцією і повною анкетою — це порядок величини трафіку, і мовчазне
-      // сповзання на анкети виглядає просто як «чомусь важко».
+      // сповзання виглядало просто як «чомусь важко».
       const reportFeedSource = (feedSource, reason, error = null) => {
         if (typeof onDiagnosticEvent !== 'function') return;
         // Код помилки — це і є відповідь: PERMISSION_DENIED і «Index not defined»
@@ -1442,44 +1438,33 @@ export const fetchFilteredMatchingSourceChunk = ({
         });
       };
 
+      const emptyPage = { users: [], lastKey: null, hasMore: false };
+
       if (typeof fetchMatchingCardsPage !== 'function') {
-        reportFeedSource('profiles', 'pager-unavailable');
-        return readProfilePage();
+        reportFeedSource('matchingCards', 'pager-unavailable');
+        return emptyPage;
       }
 
-      // Основний шлях: одна сторінка стрічки = один запит по вузлу проєкцій,
-      // де картка важить сотні байтів і вже несе аватар. Проєкція може бути ще
-      // не побудована (нова база, індексація не запускалась) — тоді перша ж
-      // сторінка приходить порожньою, і читач мовчки повертається до анкет.
-      //
-      // Окремого прапорця повноти більше немає: колекція перебудована під вимоги
-      // `matchingCards`, а дзеркалення тримає її такою — картка зʼявляється разом
-      // з анкетою і зникає разом з нею. Питати дозволу в `matchingCardsMeta`
-      // означало б робити зайве читання перед кожною сторінкою заради значення,
-      // яке однаково завжди `true`.
+      // Джерело стрічки одне — вузол проєкцій, де картка важить сотні байтів і
+      // вже несе аватар. Відкоту на повні анкети більше немає: він читав
+      // legacy-колекцію, з якої веб не читає, і коштував порядок величини
+      // трафіку на кожну сторінку. Порожній чи нечитабельний індекс — це не
+      // привід качати анкети, а привід сказати про це тому, хто індекс
+      // перебудовує.
       try {
         const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor });
-        if (cardsPage?.users?.length) {
+        if (cardsPage?.users?.length || cursor) {
           reportFeedSource('matchingCards', '');
           return cardsPage;
         }
-        if (cursor) {
-          reportFeedSource('matchingCards', '');
-          return cardsPage;
-        }
-        if (!allowProfileFallback) {
-          reportFeedSource('matchingCards', 'index-empty');
-          return cardsPage;
-        }
-        console.info('[Matching][matchingCards] вузол порожній — читаємо анкети напряму');
-        reportFeedSource('profiles', 'index-empty');
+        // Порожня перша сторінка — індексу ще немає. З курсором те саме означає
+        // просто кінець стрічки, і причини тут немає.
+        reportFeedSource('matchingCards', 'index-empty');
+        return cardsPage || emptyPage;
       } catch (error) {
-        console.warn('[Matching][matchingCards] сторінку прочитати не вдалося, читаємо анкети напряму', error);
-        reportFeedSource('profiles', 'index-read-failed', error);
-        if (!allowProfileFallback) throw error;
+        reportFeedSource('matchingCards', 'index-read-failed', error);
+        throw error;
       }
-
-      return readProfilePage();
     },
     filterSourceUsers: sourceUsers => {
       if (!isAdmin) return sourceUsers.filter(user => !exclude.has(user.userId));

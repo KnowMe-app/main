@@ -105,14 +105,15 @@ describe('порожній екран називає свою причину', (
     source.indexOf('  const emptyFeedMessage = resolveEmptyFeedMessage();'),
   );
 
-  it('каже, що знайдене приховали фільтри, а не що його немає', () => {
-    expect(resolver).toContain('Знайдено ${visibleUsers.length} — усіх приховали фільтри');
+  it('каже, що стрічку спорожнили фільтри, а не що профілів немає', () => {
     expect(resolver).toContain('Фільтри приховали всі завантажені профілі');
   });
 
-  it('не приписує фільтрам порожні вкладки реакцій і «схожих»', () => {
+  it('не приписує фільтрам ані порожні вкладки реакцій, ані порожній пошук', () => {
+    // Видачу запиту чіпи більше не звужують, тож порожній пошук — це справді
+    // «не знайшлось», а не «приховали».
     expect(resolver).toContain("const isReactionTab = viewMode === 'favorites' || viewMode === 'dislikes';");
-    expect(resolver).toContain("!isReactionTab && searchTab !== 'similar' && visibleUsers.length > 0");
+    expect(resolver).toContain('!isReactionTab && !isSearching && visibleUsers.length > 0');
   });
 
   it('обидва порожні стани говорять одним текстом', () => {
@@ -121,5 +122,38 @@ describe('порожній екран називає свою причину', (
     expect(source).toContain('<OwnerStatusMessage>{emptyFeedMessage}</OwnerStatusMessage>');
     expect(source).toContain('<FeedNotice>{emptyFeedMessage}</FeedNotice>');
     expect(source).not.toContain('<OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>');
+  });
+});
+
+// Чіпи описують, кого показувати в деці. Запит називає конкретну людину, і
+// сховати її через те, що вона не того типу, означає відповісти «немає» на
+// питання «де ось цей».
+describe('фільтри не звужують видачу пошуку', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+  it('режим пошуку віддає знайдене як є', () => {
+    const filtered = source.slice(
+      source.indexOf('  const filteredUsers = useMemo(() => {'),
+      source.indexOf('  const draftFilteredCount = useMemo'),
+    );
+
+    expect(filtered).toContain("if (viewMode === 'search') return visibleUsers;");
+    const bypassIndex = filtered.indexOf("if (viewMode === 'search') return visibleUsers;");
+    const filterIndex = filtered.indexOf('return applyMatchingUiFiltersToUsers({');
+    expect(bypassIndex).toBeGreaterThan(-1);
+    expect(filterIndex).toBeGreaterThan(bypassIndex);
+  });
+
+  it('вкладка «Схожі» живе за тим самим правилом', () => {
+    const similar = source.slice(
+      source.indexOf('  const similarUsers = useMemo(() => {'),
+      source.indexOf('  const feedSource = '),
+    );
+
+    expect(similar).not.toContain('applyMatchingUiFiltersToUsers');
+  });
+
+  it('діагностика не рахує це за помилку фільтрації', () => {
+    expect(source).toContain("if (!showDiagnostics || viewMode === 'search') return null;");
   });
 });

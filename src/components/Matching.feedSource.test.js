@@ -38,14 +38,26 @@ describe('дзеркалення анкет у matchingCards', () => {
 });
 
 describe('чим саме читається стрічка', () => {
-  it('називає причину, коли сповзає з проєкцій на повні анкети', () => {
+  // Джерело стрічки одне — вузол проєкцій. Відкоту на повні анкети більше
+  // немає: він читав legacy-колекцію, з якої веб не читає, і коштував порядок
+  // величини трафіку на сторінку. Причини лишились — але тепер вони пояснюють
+  // порожню стрічку, а не мовчазне сповзання.
+  it('називає причину, коли індексу немає або він не читається', () => {
     const provider = read('../utils/matchingDataProvider.js');
     ['index-empty', 'pager-unavailable']
-      .forEach(reason => expect(provider).toContain(`reportFeedSource('profiles', '${reason}')`));
-    // Причини «друга дека» більше немає: дека одна, і стрічка для неї одна.
+      .forEach(reason => expect(provider).toContain(`reportFeedSource('matchingCards', '${reason}')`));
     expect(provider).not.toContain('new-users-deck');
-    expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
+    expect(provider).not.toContain("reportFeedSource('profiles'");
+    expect(provider).toContain("reportFeedSource('matchingCards', 'index-read-failed', error)");
     expect(provider).toContain("reportFeedSource('matchingCards', '')");
+  });
+
+  it('не має чим підмінити проєкції — і не вдає, що має', () => {
+    const provider = read('../utils/matchingDataProvider.js');
+    expect(provider).not.toContain('fetchUsersByLastLogin2');
+    expect(provider).not.toContain('allowProfileFallback');
+    expect(read('Matching.jsx')).not.toContain('fetchUsersByLastLogin2');
+    expect(read('config.js')).not.toContain('fetchUsersByLastLogin2');
   });
 
   it('перекладає кожну причину на людську мову', () => {
@@ -68,7 +80,7 @@ describe('чим саме читається стрічка', () => {
     // PERMISSION_DENIED і «Index not defined» лікуються по-різному, а без коду
     // обидва виглядають однаково — просто «не вдалося прочитати».
     const provider = read('../utils/matchingDataProvider.js');
-    expect(provider).toContain("reportFeedSource('profiles', 'index-read-failed', error)");
+    expect(provider).toContain("reportFeedSource('matchingCards', 'index-read-failed', error)");
     expect(provider).toContain("const errorCode = String(error?.code || error?.name || '').trim();");
     expect(read('Matching.jsx')).toContain("const detail = [event?.errorCode, event?.errorMessage]");
   });

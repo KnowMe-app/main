@@ -8,19 +8,17 @@ describe('fetchUserById', () => {
     source.indexOf('export const removeKeyFromFirebase'),
   );
 
-  it('reads the profile nodes first and only then the single legacy collection', () => {
-    const nodesIndex = body.indexOf('await readProfileFromNodes(userId,');
-    const legacyIndex = body.indexOf('get(ref2(db, `users/${userId}`))');
-
-    expect(nodesIndex).toBeGreaterThanOrEqual(0);
-    expect(legacyIndex).toBeGreaterThan(nodesIndex);
+  // Анкету складають нові вузли, і тільки вони. Legacy-колекція у вебі —
+  // адресат дзеркального запису для мобільного застосунку, а не джерело: читати
+  // її означало показувати те, що веб уже переніс і, бува, навмисно стер, та ще
+  // й впиратись у права, яких у звичайного читача на чужий `users/$uid` немає.
+  it('reads the profile nodes and nothing else', () => {
+    expect(body).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
+    expect(body).not.toContain('withLegacy');
+    expect(body).not.toContain('users/${userId}');
   });
 
-  it('reads legacy with `withLegacy` so mobile-app edits are visible on the profile', () => {
-    expect(body).toContain('{ includeTechnical: true, withLegacy: true }');
-  });
-
-  it('hydrates photos for both paths', () => {
-    expect(body.match(/getAllUserPhotos\(userId\)/g)).toHaveLength(2);
+  it('hydrates photos on the one path it has', () => {
+    expect(body.match(/getAllUserPhotos\(userId\)/g)).toHaveLength(1);
   });
 });

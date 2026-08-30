@@ -1939,32 +1939,21 @@ const SearchBar = ({
       const cacheKey = `allUsers:${filtersKey}`;
       const queries = loadQueries();
       const entry = queries[cacheKey];
-      let ids = [];
       const timestampSource =
         typeof entry?.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
           ? entry.cachedAt
           : Number(entry?.cachedAt ?? entry?.lastAction ?? 0);
-      if (entry && Number.isFinite(timestampSource) && timestampSource > 0 && Date.now() - timestampSource < TTL_MS) {
-        ids = getIdsByQuery(cacheKey);
-      } else {
-        if (entry) {
-          delete queries[cacheKey];
-          saveQueries(queries);
-        }
-        const { cacheFilteredUsers } = await import('./config');
-        await cacheFilteredUsers(
-          filterForload,
-          filters,
-          favoriteUsers,
-          cacheKey,
-          {
-            includeSpecialFutureDates: true,
-            dislikedUsers: dislikeUsers,
-          },
-        );
-        if (isStaleRequest()) return;
-        ids = getIdsByQuery(cacheKey);
+      const isFreshEntry =
+        Boolean(entry) && Number.isFinite(timestampSource) && timestampSource > 0 && Date.now() - timestampSource < TTL_MS;
+      if (entry && !isFreshEntry) {
+        delete queries[cacheKey];
+        saveQueries(queries);
       }
+      // `!запит` шукає в тому, що пристрій уже має. Раніше він спершу качав
+      // усю legacy-колекцію в браузер і шукав у ній — веб із `users` не читає,
+      // та й ціна була невідповідна: ціла колекція заради пошуку по кешу.
+      // Без неї режим лишається тим, чим його й називали, — локальним.
+      const ids = isFreshEntry ? getIdsByQuery(cacheKey) : [];
       const results = searchCachedCards(term, ids);
       if (Object.keys(results).length === 0) {
         applyState({}, requestId);

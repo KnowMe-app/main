@@ -3,6 +3,7 @@ import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
 import { collectAgeIdsByFilters, database } from 'components/config';
 import { encodeKey } from './searchIndexCandidates';
+import { PROFILE_NODES } from './profileNodeSchema';
 import { SEARCH_KEY_INDEX_NAMES, getSearchKeyEmptyBucket } from './searchKeyBuckets';
 import {
   parseAdditionalAccessRuleGroups,
@@ -1765,14 +1766,21 @@ const getMatchedUserIdsFromSearchKey = async (parsedRuleGroups, { searchKeyFile 
  * Власники, у яких взагалі є правила доступу.
  *
  * `orderByChild('additionalAccessRules')` + `startAt('')` віддає лише записи, де
- * поле — непорожній рядок. Це все ще повні вузли анкет, але тільки тих кількох
- * власників, що мають правила, а не вся колекція `users` у браузер. Потребує
- * `.indexOn` на `additionalAccessRules`; без нього RTDB відсортує на клієнті,
- * тобто віддасть усе — тому запит обгорнутий і падає в явну помилку, а не тихо
- * качає колекцію.
+ * поле — непорожній рядок, тобто тих кількох власників, що мають правила, а не
+ * весь вузол у браузер. Потребує `.indexOn` на `additionalAccessRules`; без
+ * нього RTDB відсортує на клієнті, тобто віддасть усе.
+ *
+ * Питається `profileTechnical`, а не legacy-колекція: права доступу переїхали
+ * туди разом з рештою технічного, і саме звідти їх читають правила бази. Веб із
+ * `users` не читає — вона лишилась адресатом дзеркального запису для мобільного
+ * застосунку.
  */
 const loadAccessRuleOwners = async () => {
-  const ownersQuery = query(ref(database, 'users'), orderByChild('additionalAccessRules'), startAt(''));
+  const ownersQuery = query(
+    ref(database, PROFILE_NODES.profileTechnical),
+    orderByChild('additionalAccessRules'),
+    startAt(''),
+  );
   const snapshot = await get(ownersQuery);
   return snapshot.exists() ? snapshot.val() || {} : {};
 };

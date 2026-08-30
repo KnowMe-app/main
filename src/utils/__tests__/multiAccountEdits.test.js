@@ -243,7 +243,10 @@ describe('getCanonicalCard', () => {
 
   const snapshotFor = data => ({ exists: () => data !== null, val: () => data });
 
-  it('merges canonical profile nodes over the legacy baseline', async () => {
+  it('merges the profile nodes and never reads the legacy collection', async () => {
+    // Legacy-колекція сюди не входить: веб із неї не читає, вона лишилась
+    // адресатом дзеркального запису для мобільного застосунку. Інакше чернетка
+    // правки складалася б із копії, у якій ще лежить те, що у вебі вже стерли.
     get.mockImplementation(async ({ path }) => snapshotFor({
       [`users/${LONG_USER_ID}`]: { name: 'Legacy', phone: ['old'] },
       [`matchingCards/${LONG_USER_ID}`]: { name: 'Canonical' },
@@ -252,7 +255,8 @@ describe('getCanonicalCard', () => {
 
     const card = await getCanonicalCard(LONG_USER_ID);
 
-    expect(get).toHaveBeenCalledTimes(6);
+    expect(get).toHaveBeenCalledTimes(5);
+    expect(get).not.toHaveBeenCalledWith(expect.objectContaining({ path: `users/${LONG_USER_ID}` }));
     expect(card).toEqual(expect.objectContaining({
       userId: LONG_USER_ID,
       name: 'Canonical',
@@ -273,20 +277,20 @@ describe('getCanonicalCard', () => {
     }));
   });
 
-  it('merges the single legacy collection with the nodes for a short-format userId', async () => {
-    // Legacy-колекція одна — `users`; усе інше приходить із вузлів анкети.
+  it('takes a short-format card from the nodes too', async () => {
     get.mockImplementation(async ({ path }) => snapshotFor({
       'users/TG0016': { name: 'Users' },
+      'matchingCards/TG0016': { name: 'Card' },
       'profileWorkflow/TG0016': { getInTouch: '2026-06-19' },
     }[path] || null));
 
     const card = await getCanonicalCard('TG0016');
 
-    expect(get).toHaveBeenCalledTimes(6);
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'users/TG0016' }));
+    expect(get).toHaveBeenCalledTimes(5);
+    expect(get).not.toHaveBeenCalledWith(expect.objectContaining({ path: 'users/TG0016' }));
     expect(card).toEqual(expect.objectContaining({
       userId: 'TG0016',
-      name: 'Users',
+      name: 'Card',
       getInTouch: '2026-06-19',
     }));
   });

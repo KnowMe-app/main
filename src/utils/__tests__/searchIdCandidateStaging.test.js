@@ -7,13 +7,16 @@ import {
 import { encodeKey } from '../searchIndexCandidates';
 
 // Те, з чим matching кличе індекс: усі префікси плюс варіант «УК СМ».
+// Те, з чим індекс кличе адмін: варіант «УК СМ» будується лише для нього.
+const ADMIN_OPTIONS = { includeVariants: true, includePrefixMatches: true, includeUkSmVariant: true };
+// І те, з чим його кличуть усі інші: набране — звичайний текст.
 const OPTIONS = { includeVariants: true, includePrefixMatches: true };
 
-const keysFor = rawValue => buildSearchIdCandidateKeys(
+const keysFor = (rawValue, options = OPTIONS) => buildSearchIdCandidateKeys(
   encodeKey(rawValue).toLowerCase(),
   rawValue,
   MATCHING_SEARCH_ID_PREFIXES,
-  OPTIONS,
+  options,
 );
 
 const stageFor = rawValue => splitSearchIdCandidateKeys(keysFor(rawValue), rawValue);
@@ -36,12 +39,12 @@ describe('черга кандидатів searchId', () => {
     expect(resolveSearchIdValueShape('')).toBe('text');
   });
 
-  it('пошту шукає в пошті — одним читанням замість трьох десятків', () => {
+  it('пошту шукає в пошті — одним читанням замість півтора десятка', () => {
     const all = keysFor('Sm.kiev.ukr@gmail.com');
     const { primary, fallback } = stageFor('Sm.kiev.ukr@gmail.com');
 
     expect(primary).toEqual(['email_sm_dot_kiev_dot_ukr_at_gmail_dot_com']);
-    expect(all.length).toBeGreaterThan(20);
+    expect(all.length).toBeGreaterThan(10);
     // Жоден ключ не загублено: відкладені читаються, коли перша черга порожня.
     expect([...primary, ...fallback].sort()).toEqual([...new Set(all)].sort());
   });
@@ -62,15 +65,35 @@ describe('черга кандидатів searchId', () => {
     expect(fallback.some(key => key.startsWith('email_'))).toBe(true);
   });
 
-  it('варіант «УК СМ» лишає лише там, де він буває — в імені та прізвищі', () => {
+  // «УК СМ» — робоча приставка адміна: тільки він заводить анкети, підписані
+  // нею, і тільки йому має сенс шукати те саме без неї (і навпаки). Для решти
+  // набране — звичайний текст, і додумувати до нього приставку означало б
+  // подвоїти читання індексу заради ключів, яких у цього читача не буває.
+  it('приставку «УК СМ» додумує лише адмінові', () => {
     const ukSm = encodeKey('УК СМ ').toLowerCase();
-    const { primary } = stageFor('Дорошенко');
+
+    expect(keysFor('Дорошенко').some(key => key.includes(ukSm))).toBe(false);
+    expect(keysFor('Дорошенко', ADMIN_OPTIONS)).toContain(`name_${ukSm}дорошенко`);
+  });
+
+  it('в адмінській черзі варіант лишається там, де він буває — в імені та прізвищі', () => {
+    const ukSm = encodeKey('УК СМ ').toLowerCase();
+    const { primary } = splitSearchIdCandidateKeys(keysFor('Дорошенко', ADMIN_OPTIONS), 'Дорошенко');
 
     expect(primary).toContain(`name_${ukSm}дорошенко`);
     expect(primary).toContain(`surname_${ukSm}дорошенко`);
     // В інстаграмі чи телеграмі імені з позначкою агентства не буває — такі
     // ключі йдуть у другу чергу, а не в кожен пошук.
     expect(primary.some(key => key.startsWith(`instagram_${ukSm}`))).toBe(false);
+  });
+
+  it('запит, що сам починається з «УК СМ», шукається як є', () => {
+    const ukSm = encodeKey('УК СМ ').toLowerCase();
+    const keys = keysFor('УК СМ Дорошенко');
+
+    expect(keys).toContain(`name_${ukSm}дорошенко`);
+    // Приставку не зрізають: набране — це значення, а не інструкція.
+    expect(keys).not.toContain('name_дорошенко');
   });
 
   it('не лишає першу чергу порожньою — інакше пошук нічого б не спитав', () => {
