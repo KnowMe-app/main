@@ -62,23 +62,28 @@ describe('limited search projection', () => {
     const config = read('config.js');
     expect(config).toContain("const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;");
     expect(config).toContain("const searchIdOptions = limitedFields\n    ? { ...baseSearchIdOptions, includePrefixMatches: false }");
-    expect(config).toContain('const addHit = limitedFields ? addLimitedUser : addUserFromUsers;');
+    expect(config).toContain('const addHit = limitedFields ? addLimitedUser : addSearchHit;');
   });
 
-  it('keeps an exact-key hit when the admin-only prefix scan is refused', () => {
-    // The scan needs read at the searchId root, which only admins have. For
-    // everyone else it is refused, and that refusal must not throw away the
-    // ids the exact-key lookup already collected - otherwise an optional
-    // broadening step fails the whole search and the viewer is told
-    // "not found" for a value that is in the index.
+  it('does not even start the prefix scan for a viewer who may not scan', () => {
+    // The scan needs read at the searchId root, and the rules give that to the
+    // two admin uids only. Firing it anyway cost one refused request per
+    // candidate key on every search - a couple of dozen round trips whose only
+    // possible answer is PERMISSION_DENIED. So the step is now gated by the
+    // same admin check the rules make, and the catch below stays as a net:
+    // rights can change, and a refusal in an optional step must not throw away
+    // the ids the exact-key lookup already collected.
     const config = read('config.js');
+    expect(config).toContain("if (includePrefixMatches && isAdminUid(auth.currentUser?.uid)) {");
     expect(config).toContain('if (!isSearchIdPermissionDenied(error)) throw error;');
     const scan = config.slice(
-      config.indexOf('if (includePrefixMatches) {'),
+      config.indexOf('if (includePrefixMatches && isAdminUid(auth.currentUser?.uid)) {'),
       config.indexOf('return [...uniqueIds];'),
     );
     expect(scan).toContain('try {');
     expect(scan).toContain('} catch (error) {');
+    // The rules are the enforcement; the client check only saves the trip.
+    expect(rules.searchId['.read']).not.toContain("contains('matching')");
   });
 
   it('keeps limited hits out of the shared card cache', () => {

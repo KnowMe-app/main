@@ -93,10 +93,18 @@ describe('урізана проєкція пошукового влучання'
     expect(projection).toContain('`${MATCHING_CARDS_ROOT}/${userId}`');
   });
 
-  it('лишає legacy-колекцію запасним джерелом, а не єдиним', () => {
-    expect(projection).toContain("readLimitedProfileFields('users', userId)");
-    expect(projection.indexOf('readLimitedProfileFromMatchingCard(userId)'))
-      .toBeLessThan(projection.indexOf("readLimitedProfileFields('users', userId)"));
+  it('до legacy-колекції не ходить узагалі', () => {
+    // Раніше картка була першим джерелом, а поля `users/$uid` — запасним. Але
+    // запасне джерело нічого не додавало: `users/$uid` відкритий лише самому
+    // власнику й адмінам, тож звичайному читачеві ці пʼять читань повертали
+    // саме лише PERMISSION_DENIED. Джерело лишилось одне — проєкція.
+    const readerBody = source.slice(
+      source.indexOf('export const fetchLimitedProfileById'),
+      source.indexOf('const addLimitedUser'),
+    );
+
+    expect(readerBody).toContain('await readLimitedProfileFromMatchingCard(userId)');
+    expect(source).not.toContain('readLimitedProfileFields');
   });
 
   it('повне прізвище з картки не бере — його там і немає', () => {
