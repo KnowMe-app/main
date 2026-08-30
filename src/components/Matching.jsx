@@ -1036,10 +1036,19 @@ const SwipeableCard = ({
     .join('');
   const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0);
   const debugReasons = Array.isArray(debugRejectReasons) ? debugRejectReasons.filter(Boolean) : [];
-  const debugReasonText = debugFilteredOutReason || (debugReasons.length > 0 ? debugReasons.join(', ') : '');
-  const debugReasonLabel = debugFilteredOutReason
-    ? `Filtered: ${debugFilteredOutReason}`
-    : (debugReasons.length > 0 ? 'DEBUG: normally hidden' : '');
+  // Плашка з причиною відсіву — інструмент режиму діагностики, а не частина
+  // картки. Поки вона малювалась із самої лише наявності причини, звичайний
+  // читач бачив і внутрішні назви функцій та умов, і — головне — саму картку,
+  // яку та причина забороняла показувати.
+  const showDebugOverlay = Boolean(showDebugRejectReasons);
+  const debugReasonText = showDebugOverlay
+    ? (debugFilteredOutReason || (debugReasons.length > 0 ? debugReasons.join(', ') : ''))
+    : '';
+  const debugReasonLabel = !showDebugOverlay
+    ? ''
+    : (debugFilteredOutReason
+      ? `Filtered: ${debugFilteredOutReason}`
+      : (debugReasons.length > 0 ? 'DEBUG: normally hidden' : ''));
   const debugReasonHint = debugReasonText === 'blocked_by_ui_filter'
     ? `Картка прихована активними UI-фільтрами${debugUiFilterSummary ? `: ${debugUiFilterSummary}` : ''}`
     : '';
@@ -1054,7 +1063,7 @@ const SwipeableCard = ({
   const matchingDebugTrace = diagnostics?.__matchingDebugTrace && typeof diagnostics.__matchingDebugTrace === 'object'
     ? diagnostics.__matchingDebugTrace
     : null;
-  const debugDiagnosticsRows = diagnostics ? [
+  const debugDiagnosticsRows = showDebugOverlay && diagnostics ? [
     `role=${diagnostics.role || '-'}`,
     `userRole=${diagnostics.userRole || '-'}`,
     `inVisible=${diagnostics.inVisibleCardIds ? 'yes' : 'no'}`,
@@ -1148,7 +1157,7 @@ const SwipeableCard = ({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       $activeProfile
-      style={debugFilteredOutReason ? { opacity: 0.58, filter: 'grayscale(0.85)' } : undefined}
+      style={showDebugOverlay && debugFilteredOutReason ? { opacity: 0.58, filter: 'grayscale(0.85)' } : undefined}
     >
       <ModernProfileShell>
         <ModernProfileScroll>
@@ -1165,7 +1174,7 @@ const SwipeableCard = ({
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
           {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}
         </ModernHero>
-        {(debugFilteredOutReason || (showDebugRejectReasons && debugReasons.length > 0)) && (
+        {showDebugOverlay && (debugFilteredOutReason || debugReasons.length > 0) && (
           <div style={{ margin: '10px 14px 0', padding: '8px 10px', borderRadius: 10, background: '#5a1325', color: '#fff', fontSize: 12, fontWeight: 700 }}>
             {debugReasonLabel && <div>{debugReasonLabel}</div>}
             {debugReasonText && <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugReasonText}</div>}
@@ -4814,8 +4823,15 @@ const Matching = () => {
     // «Схожі» — та сама відповідь на запит, тільки з локального кешу, тож і
     // правило те саме: чіпи стрічки її не звужують. Інакше вкладка «Знайдено»
     // показувала б людину, а «Схожі» ховали б її двійника.
-    return candidates;
-  }, [filteredUsers, isSearching, searchQuery]);
+    //
+    // Але кеш — це не право показу. У локальному сховищі лежить усе, що пристрій
+    // колись бачив (власні чернетки, картки з реакцій, залишки від іншого
+    // сеансу), і віддавати його читачеві як є означало показувати неопубліковані
+    // анкети: саме так приховані картки й пробивались у деку повз
+    // `canShowMatchingUser`. Кожен кандидат проходить той самий останній рубіж,
+    // що й картка зі стрічки чи з відповіді бекенду.
+    return candidates.filter(user => canShowMatchingUser(user, { isAdmin }));
+  }, [filteredUsers, isAdmin, isSearching, searchQuery]);
 
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
