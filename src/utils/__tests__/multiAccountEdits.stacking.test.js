@@ -209,7 +209,8 @@ describe('admin review actions', () => {
       if (path === 'multiData/edits/card-1') {
         return { exists: () => true, val: () => OVERLAYS };
       }
-      if (path === 'users/card-1') {
+      // Канонічна анкета лежить у вузлах: legacy-колекцію веб не читає.
+      if (path === 'profileDetails/card-1') {
         return { exists: () => true, val: () => CANONICAL };
       }
       return { exists: () => false, val: () => null };

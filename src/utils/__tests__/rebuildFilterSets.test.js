@@ -42,7 +42,7 @@ const SEARCH_KEY = {
 const buildGetImplementation = ({ owners }) => async target => {
   const path = target?.path;
   if (path === 'searchKeySets') return snapshot({ 'stale-set-key': { role: {} } });
-  if (path === 'users') return snapshot(owners);
+  if (path === 'profileTechnical') return snapshot(owners);
   if (path?.startsWith('searchKey/')) {
     const indexName = path.slice('searchKey/'.length);
     return snapshot(SEARCH_KEY[indexName] ?? null);
@@ -77,7 +77,7 @@ describe('rebuildAllFilterSetIndexes', () => {
     expect(payload.role.ed[OTHER]).toBeUndefined();
   });
 
-  it('читає лише власників правил, а не всю колекцію users', async () => {
+  it('читає лише власників правил, і з вузла технічних даних, а не з legacy', async () => {
     mockGet.mockImplementation(buildGetImplementation({
       owners: { [OWNER]: { additionalAccessRules: 'role: ed' } },
     }));
@@ -85,10 +85,11 @@ describe('rebuildAllFilterSetIndexes', () => {
     const { rebuildAllFilterSetIndexes } = require('../filterSetsIndex');
     await rebuildAllFilterSetIndexes();
 
-    const usersCalls = mockGet.mock.calls.filter(([target]) => target?.path === 'users');
-    expect(usersCalls).toHaveLength(1);
-    // Запит звужений індексом по полю правил — інакше це була б уся колекція.
-    expect(usersCalls[0][0].constraints).toEqual(expect.arrayContaining([
+    expect(mockGet.mock.calls.filter(([target]) => target?.path === 'users')).toHaveLength(0);
+    const ownersCalls = mockGet.mock.calls.filter(([target]) => target?.path === 'profileTechnical');
+    expect(ownersCalls).toHaveLength(1);
+    // Запит звужений індексом по полю правил — інакше це був би весь вузол.
+    expect(ownersCalls[0][0].constraints).toEqual(expect.arrayContaining([
       { type: 'orderByChild', field: 'additionalAccessRules' },
       { type: 'startAt', value: '' },
     ]));
@@ -173,7 +174,7 @@ describe('копія індексу в наборі', () => {
     mockGet.mockImplementation(async target => {
       const path = target?.path;
       if (path === 'searchKeySets') return snapshot(null);
-      if (path === 'users') return snapshot({ [OWNER]: { additionalAccessRules: 'role: ed' } });
+      if (path === 'profileTechnical') return snapshot({ [OWNER]: { additionalAccessRules: 'role: ed' } });
       if (path?.startsWith('searchKey/')) return snapshot(searchKey[path.slice('searchKey/'.length)] ?? null);
       return snapshot(null);
     });
@@ -200,7 +201,7 @@ describe('копія індексу в наборі', () => {
     mockGet.mockImplementation(async target => {
       const path = target?.path;
       if (path === 'searchKeySets') return snapshot(null);
-      if (path === 'users') return snapshot({ [OWNER]: { additionalAccessRules: 'imt: 18-25' } });
+      if (path === 'profileTechnical') return snapshot({ [OWNER]: { additionalAccessRules: 'imt: 18-25' } });
       if (path?.startsWith('searchKey/')) return snapshot(searchKey[path.slice('searchKey/'.length)] ?? null);
       return snapshot(null);
     });

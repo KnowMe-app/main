@@ -86,10 +86,12 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
   };
 };
 
-// Legacy-колекція одна — `users`, і тіло анкети лежить у ній не завжди: анкети,
-// заведені у вебі, живуть тільки в нових вузлах. Довгий id — це Firebase-Auth
-// UID, тобто анкета акаунта, яку читає ще й мобільний застосунок; для короткого
-// відповідь дає наявність самого запису.
+// Куди дзеркалити запис — єдине питання, заради якого веб ще заглядає в
+// legacy-колекцію. Не щоб узяти звідти дані (їх він бере з вузлів), а щоб не
+// завести там нового тіла: анкети, створені у вебі, живуть лише у вузлах, і
+// дзеркало для мобільного застосунку їм не потрібне. Довгий id — це
+// Firebase-Auth UID, тобто анкета акаунта, яку мобільний застосунок читає; для
+// короткого відповідь дає наявність самого запису.
 //
 // `null` означає «legacy-тіла немає»: писати таку анкету треба лише у вузли.
 export const getCardLegacyCollection = async cardUserId => {
@@ -102,10 +104,11 @@ export const getCardLegacyCollection = async cardUserId => {
 };
 
 export const getCanonicalCard = async cardUserId => {
-  // Анкета живе у вузлах; legacy-колекція `users` лишається для акаунтних
-  // профілів. Читаємо обидва джерела й зводимо в один канонічний запис.
+  // Анкета живе у вузлах — і тільки в них. Legacy-колекція сюди не входить:
+  // веб із неї не читає, вона лишилась адресатом дзеркального запису для
+  // мобільного застосунку. Інакше чернетка правки складалася б із копії, у
+  // якій ще лежить те, що у вебі вже стерли.
   const paths = [
-    'users',
     PROFILE_NODES.matchingCards,
     PROFILE_NODES.profileDetails,
     PROFILE_NODES.profileContacts,
@@ -114,7 +117,7 @@ export const getCanonicalCard = async cardUserId => {
   ];
   const snapshots = await Promise.all(paths.map(path => get(ref2(database, `${path}/${cardUserId}`))));
   const values = snapshots.map(snapshot => (snapshot.exists() ? snapshot.val() : null));
-  const [legacy, card, details, contacts, workflow, technical] = values;
+  const [card, details, contacts, workflow, technical] = values;
 
   const merged = mergeProfileNodes({
     userId: cardUserId,
@@ -123,7 +126,6 @@ export const getCanonicalCard = async cardUserId => {
     contacts,
     workflow,
     technical,
-    legacy,
   }) || { userId: cardUserId };
   // Кеш-мітки не мають права дожити до чернетки: у legacy-рядках вони лежать
   // записаними, а `mergeProfileNodes` ставить `__photosHydrated` сам.

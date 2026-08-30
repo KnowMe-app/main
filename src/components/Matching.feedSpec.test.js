@@ -20,17 +20,17 @@ describe('matching feed structure', () => {
     expect(source).toContain('debounceMs={MATCHING_SEARCH_DEBOUNCE_MS}');
   });
 
-  it('filters the feed and the search results through one path', () => {
+  it('builds every state of the list in one memo', () => {
     const source = matching();
     const memo = source.slice(
       source.indexOf('const filteredUsers = useMemo(() => {'),
       source.indexOf('const isSearching = searchQuery.trim().length > 0;'),
     );
-    // The results state must not get a filtering branch of its own: the memo
-    // special-cases the reaction collections and the debug override, and
-    // everything else - feed and search results alike - takes the same path.
+    // Одна пам'ятка на всі стани списку — але не одне правило: чіпи описують,
+    // кого показувати в деці, а запит називає конкретну людину, і ховати її за
+    // типом профілю означало б відповісти «немає» на питання «де ось цей».
     expect(memo).toContain("if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;");
-    expect(memo).not.toContain("viewMode === 'search'");
+    expect(memo).toContain("if (viewMode === 'search') return visibleUsers;");
     expect(source).toContain("const feedSource = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;");
   });
 

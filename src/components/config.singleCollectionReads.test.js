@@ -34,20 +34,24 @@ describe('single legacy collection reads', () => {
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
-  it('bulk RTDB exports read the one collection', () => {
-    const fetchAllFilteredUsersBody = source.slice(
-      source.indexOf('export const fetchAllFilteredUsers'),
-      source.indexOf('export const fetchAllUsersFromRTDB'),
-    );
+  // Читання legacy лишилось рівно там, де сама колекція і є предметом роботи —
+  // в інструментах адмінської консолі, які її вивантажують і зливають. Показ,
+  // пошук і стрічка з неї не читають узагалі.
+  it('the bulk export is the only bulk read left, and it is the admin tool', () => {
     const fetchAllUsersFromRTDBBody = source.slice(
       source.indexOf('export const fetchAllUsersFromRTDB'),
       source.indexOf('export const getAllUsersWithGetInTouch'),
     );
 
-    expect(fetchAllFilteredUsersBody).toContain("fetchByPathWithFilters('users', serverFilters)");
     expect(fetchAllUsersFromRTDBBody).toContain("get(ref2(database, 'users'))");
-    expect(fetchAllFilteredUsersBody).not.toContain('mergeUserCollectionData');
     expect(fetchAllUsersFromRTDBBody).not.toContain('mergeUserCollectionData');
+    // Читачі, що качали колекцію заради показу, прибрані разом із їхніми
+    // викликачами.
+    expect(source).not.toContain('export const fetchAllFilteredUsers');
+    expect(source).not.toContain('export const fetchAllUsers ');
+    expect(source).not.toContain('export const fetchUsersByLastLogin2');
+    expect(source).not.toContain('export const fetchLatestUsers');
+    expect(source).not.toContain('export const cacheFilteredUsers');
   });
 
   it('the local export merge is a plain pass-through of one file', () => {

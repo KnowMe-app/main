@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { collection, doc, getDoc as firebaseGetDoc, getDocs as firebaseGetDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { doc, getDoc as firebaseGetDoc, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes } from 'firebase/storage';
 import {
   getDatabase,
@@ -19,7 +19,6 @@ import {
   limitToLast,
   startAt,
   endAt,
-  endBefore,
   equalTo,
   serverTimestamp,
   runTransaction,
@@ -27,10 +26,9 @@ import {
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
-import { getCurrentDate } from './foramtDate';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -40,7 +38,6 @@ import {
   shouldStoreSearchQuery,
 } from '../utils/searchQueryStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
-import { getCacheKey } from '../utils/cache';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
 import { getExplicitlyDeletedKeys, getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
@@ -126,14 +123,6 @@ const getDoc = (...args) =>
   withAdminDownloadToast(firebaseGetDoc(...args), {
     getUid: getCurrentAdminUid,
     operation: 'getDoc',
-    source: 'config',
-    path: args[0],
-  });
-
-const getDocs = (...args) =>
-  withAdminDownloadToast(firebaseGetDocs(...args), {
-    getUid: getCurrentAdminUid,
-    operation: 'getDocs',
     source: 'config',
     path: args[0],
   });
@@ -574,176 +563,6 @@ export const fetchUserData = async userId => {
   return { existingData, userRef };
 };
 
-export const fetchUsersCollection = async () => {
-  //отримує дані як масив
-  const usersCollection = collection(db, 'users');
-  const querySnapshot = await getDocs(usersCollection);
-  const database = querySnapshot.docs.map(doc => doc.data());
-  // console.log('userDataArray!!!!!!! :>> ', userDataArray);
-  return database;
-};
-
-export const fetchUsersCollectionInRTDB = async () => {
-  //отримує дані як об"єкт, перероблюємо потім в масив
-  const usersRef = ref2(database, 'users');
-  // Отримання даних один раз
-  const snapshot = await get(usersRef);
-  if (snapshot.exists()) {
-    const data = snapshot.val();
-    // Перетворюємо об'єкт у масив
-    const dataArray = Object.keys(data).map(key => data[key]);
-    return dataArray;
-  } else {
-    return []; // Повертаємо пустий масив, якщо немає даних
-  }
-};
-
-export const fetchAllUsers = async () => {
-  const usersSnap = await get(ref2(database, 'users'));
-  const usersData = usersSnap.exists() ? usersSnap.val() : {};
-  const allIds = [];
-  Object.keys(usersData).forEach(id => {
-    const merged = usersData[id] || {};
-    updateCard(id, merged);
-    allIds.push(id);
-    Object.entries(merged).forEach(([key, value]) => {
-      if (value === undefined || value === null) return;
-      const cacheKey = getCacheKey(
-        'search',
-        normalizeQueryKey(`${key}=${value}`),
-      );
-      setIdsForQuery(cacheKey, [id]);
-    });
-  });
-  setIdsForQuery('allUsers', allIds);
-};
-
-export const cacheFilteredUsers = async (
-  filterForload,
-  filterSettings = {},
-  favoriteUsers = {},
-  cacheKey,
-  options = {},
-) => {
-  const usersObj = await fetchAllFilteredUsers(
-    filterForload,
-    filterSettings,
-    favoriteUsers,
-    options,
-  );
-  const ids = [];
-  Object.entries(usersObj).forEach(([id, data]) => {
-    updateCard(id, data);
-    ids.push(id);
-    Object.entries(data).forEach(([key, value]) => {
-      if (value === undefined || value === null) return;
-      const keyCache = getCacheKey(
-        'search',
-        normalizeQueryKey(`${key}=${value}`),
-      );
-      setIdsForQuery(keyCache, [id]);
-    });
-  });
-  if (cacheKey) setIdsForQuery(cacheKey, ids);
-  return ids;
-};
-
-export const fetchLatestUsers = async (limit = 9, lastKey) => {
-  const usersRef = ref2(database, 'users');
-  const realLimit = limit + 1;
-  const q =
-    lastKey !== undefined ? query(usersRef, orderByKey(), endBefore(lastKey), limitToLast(realLimit)) : query(usersRef, orderByKey(), limitToLast(realLimit));
-
-  const snapshot = await get(q);
-  if (!snapshot.exists()) {
-    return { users: [], lastKey: null, hasMore: false };
-  }
-
-  let entries = Object.entries(snapshot.val()).sort((a, b) => b[0].localeCompare(a[0]));
-
-  const hasMore = entries.length > limit;
-  if (hasMore) {
-    entries = entries.slice(0, limit);
-  }
-  const lastEntry = entries[entries.length - 1];
-
-  return {
-    users: entries.map(([id, data]) => ({ userId: id, ...data })),
-    lastKey: lastEntry ? lastEntry[0] : null,
-    hasMore,
-  };
-};
-
-// Стеля вікна пагінації повних анкет. Див. коментар у циклі нижче.
-const SOURCE_PAGE_WINDOW_CAP = 512;
-
-export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
-  const usersRef = ref2(database, 'users');
-  const realLimit = limit + 1;
-  const { todayDash } = getCurrentDate();
-  const cursor =
-    typeof lastDate === 'object' && lastDate !== null
-      ? { date: lastDate.date || '', userId: lastDate.userId || '' }
-      : { date: lastDate || '', userId: '' };
-
-  // Курсор регулярно потрапляє в групу анкет з однаковою датою `lastLogin2`:
-  // `endAt` віддає їх усі, а відсікання за парою (дата, id) лишає нуль нових,
-  // тож вікно доводиться розширювати. Кожне розширення перечитує той самий зріз
-  // з нуля — і робить це повними анкетами. Стеля в 5000 означала мегабайти
-  // трафіку на одну сторінку з п'яти карток; на цій висоті дані вже зламані, і
-  // правильна відповідь — зупинитись, а не викачати всю колекцію.
-  let fetchLimit = realLimit;
-  let entries = [];
-  let snapshotSize = 0;
-
-  while (entries.length < realLimit && fetchLimit <= SOURCE_PAGE_WINDOW_CAP) {
-    const q =
-      cursor.date
-        ? query(usersRef, orderByChild('lastLogin2'), endAt(cursor.date), limitToLast(fetchLimit))
-        : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(fetchLimit));
-
-    const snapshot = await get(q);
-    if (!snapshot.exists()) {
-      return { users: [], lastKey: null, hasMore: false };
-    }
-
-    entries = Object.entries(snapshot.val()).sort((a, b) => {
-      const bDate = b[1].lastLogin2 || '';
-      const aDate = a[1].lastLogin2 || '';
-      const byDate = bDate.localeCompare(aDate);
-      if (byDate !== 0) return byDate;
-      return b[0].localeCompare(a[0]);
-    });
-
-    if (cursor.date) {
-      entries = entries.filter(([id, data]) => {
-        const date = data.lastLogin2 || '';
-        if (date < cursor.date) return true;
-        if (date > cursor.date) return false;
-        return cursor.userId ? id.localeCompare(cursor.userId) < 0 : false;
-      });
-    }
-
-    snapshotSize = Object.keys(snapshot.val()).length;
-    if (entries.length >= realLimit || snapshotSize < fetchLimit) break;
-    fetchLimit *= 2;
-  }
-
-  const hasMore = entries.length > limit;
-  if (hasMore) entries = entries.slice(0, limit);
-  const lastEntry = entries[entries.length - 1];
-
-  return {
-    users: entries.map(([id, data]) => ({ userId: id, ...data })),
-    lastKey: lastEntry
-      ? { date: lastEntry[1].lastLogin2 || '', userId: lastEntry[0] }
-      : null,
-    hasMore,
-  };
-};
-
-// Favorites are stored per owner so multiple users can have their own lists
-// Add userId to the current owner's favorites list
 export const addFavoriteUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
@@ -2187,31 +2006,29 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     includeContacts = true,
     includeWorkflow = true,
     includeTechnical = false,
-    // Читати legacy заради полів, яких нові вузли ще не тримають. Дорого на
-    // список (це зайве читання на анкету), дешево на одну анкету — тож
-    // вмикається там, де застарілі дані справді видно: на самій анкеті.
-    withLegacy = false,
+    // Legacy-шар, який викликач уже тримає в руках, — з файлу офлайн-міграції
+    // або з іншого джерела поза базою. Сам його ніхто тут не читає: веб із
+    // `users` не читає взагалі, і читання «заради полів, яких вузли ще не
+    // тримають» перетворювало показ на показ копії — тієї самої, у якій ще
+    // лежить те, що у вебі вже стерли.
     legacy = null,
   } = options;
 
-  const [card, details, contacts, workflow, technical, legacyUsers] = await Promise.all([
+  const [card, details, contacts, workflow, technical] = await Promise.all([
     readProfileNodePart(PROFILE_NODES.matchingCards, id),
     readProfileNodePart(PROFILE_NODES.profileDetails, id),
     includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
     includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
     includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
-    withLegacy && !legacy ? readProfileNodePart('users', id) : null,
   ]);
 
   const parts = { card, details, contacts, workflow, technical };
   if (!hasAnyProfileNode(parts)) return null;
 
-  const legacySnapshot = legacy || legacyUsers || null;
-
   const merged = mergeProfileNodes({
     userId: id,
     ...parts,
-    legacy: legacyFieldsNodesDoNotOwn(legacySnapshot, parts),
+    legacy: legacyFieldsNodesDoNotOwn(legacy, parts),
   });
   if (!merged) return null;
 
@@ -2405,50 +2222,6 @@ const searchBySearchIdUsers = async (
   );
 };
 
-const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
-  const fieldMatchesSearch = (value, normalizedSearch) => {
-    if (typeof value === 'string') {
-      return value.trim().toLowerCase().includes(normalizedSearch);
-    }
-
-    if (typeof value === 'number') {
-      return String(value).toLowerCase().includes(normalizedSearch);
-    }
-
-    if (Array.isArray(value)) {
-      return value.some(item => fieldMatchesSearch(item, normalizedSearch));
-    }
-
-    return false;
-  };
-
-  for (const prefix of keysToCheck) {
-    let formatted = searchValue.trim();
-    if (prefix === 'name' || prefix === 'surname') {
-      formatted = searchValue.trim().charAt(0).toUpperCase() + searchValue.trim().slice(1).toLowerCase();
-    }
-    const searchPrefixes = [...new Set([formatted, formatted.toLowerCase()].filter(Boolean))];
-    try {
-      for (const queryPrefix of searchPrefixes) {
-        const snap = await get(
-          query(ref2(database, 'users'), orderByChild(prefix), startAt(queryPrefix), endAt(`${queryPrefix}\uf8ff`))
-        );
-        if (!snap.exists()) continue;
-
-        snap.forEach(userSnap => {
-          const userId = userSnap.key;
-          const userData = userSnap.val();
-          const fieldValue = userData[prefix];
-          if (fieldMatchesSearch(fieldValue, formatted.toLowerCase()) && !uniqueUserIds.has(userId)) {
-            uniqueUserIds.add(userId);
-            users[userId] = { userId, ...userData };
-          }
-        });
-      }
-    } catch {}
-  }
-};
-
 /**
  * Пошук за частиною id ходить по `matchingCards`.
  *
@@ -2493,13 +2266,24 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
+  // «УК СМ» у значенні — робоча приставка адміна: тільки він заводить анкети,
+  // підписані нею, і тільки йому має сенс шукати те саме без неї (і навпаки).
+  // Для решти набране — звичайний текст, і додумувати до нього приставку
+  // означало подвоїти кількість читань індексу на кожен пошук заради ключів,
+  // яких у цього читача не буває.
+  const includeUkSmVariant = isAdminUid(auth.currentUser?.uid);
   const baseSearchIdOptions = shouldSkipBroadFallback
     ? {
       includeVariants: false,
       includePrefixMatches: allowTelegramPrefixMatches,
       includeAdaptedPhoneVariant: true,
+      includeUkSmVariant,
     }
-    : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
+    : {
+      includeVariants: searchKey !== 'telegram',
+      includePrefixMatches: searchKey !== 'telegram',
+      includeUkSmVariant,
+    };
   // A limited viewer may read a searchId entry by its exact key but not scan the
   // index, and may not read either collection's root either. Both the prefix scan
   // and the broad fallback do exactly that, so neither runs for them - the index
@@ -2536,11 +2320,11 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       return users;
     }
 
-    // Широкий fallback (до ~16 запитів по всіх полях `users`) дорого коштує
-    // по трафіку, тому виконується лише коли користувач сам явно увімкнув чекбокс
-    // "широкий пошук" (enabledSearchKeys.broadTextSearch), а не автоматично щоразу.
+    // Широкий fallback більше не ходить по всіх полях legacy-колекції: веб з
+    // неї не читає. Текст, якого немає в `searchId`, шукається там, де він у
+    // вебі й лежить, — в імені картки стрічки; id — по ключах того ж вузла.
     if (isBroadTextSearchEnabled) {
-      await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
+      await searchMatchingCardsByText(searchValue, uniqueUserIds, users);
       await searchUserByPartialUserId(searchValue, users);
     }
 
@@ -2746,48 +2530,10 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
   if (isDev) console.log('searchByDate → formats:', dateFormats);
   if (dateFormats.length === 0) return false;
 
-  const fields = ['createdAt', 'lastCycle', 'lastAction', 'getInTouch'];
-  const refToCollection = ref2(database, 'users');
-
-  for (const date of dateFormats) {
-    for (const field of fields) {
-      if (isDev) console.log(`searchByDate → querying users.${field} for`, date);
-      const queries =
-        field === 'lastAction'
-          ? isoDateVariants
-              .map(getDayTimestampRange)
-              .filter(Boolean)
-              .flatMap(({ startMs, endMs, startSec, endSec }) => [
-                query(refToCollection, orderByChild(field), startAt(startMs), endAt(endMs)),
-                query(refToCollection, orderByChild(field), startAt(startSec), endAt(endSec)),
-              ])
-          : [query(refToCollection, orderByChild(field), equalTo(date))];
-      try {
-        for (const currentQuery of queries) {
-          const snapshot = await get(currentQuery);
-          if (isDev) console.log('snapshot.exists():', snapshot.exists());
-          if (snapshot.exists()) {
-            const promises = [];
-            snapshot.forEach(userSnapshot => {
-              const userId = userSnapshot.key;
-              if (isDev) console.log(`Found ${userId} in users.${field}`);
-              if (!uniqueUserIds.has(userId)) {
-                uniqueUserIds.add(userId);
-                promises.push(addUserToResults(userId, users));
-              }
-            });
-            await Promise.all(promises);
-          }
-        }
-      } catch (error) {
-        if (isDev) console.error('Error searching by date:', error);
-      }
-    }
-  }
-
-  // Дати анкети лежать у legacy, а `matchingCards` тримає рівно одну — ключ
-  // стрічки. Але тримає її для кожної показаної картки, зокрема заведеної у
-  // вебі, тіла в legacy якої немає взагалі.
+  // Дата, за якою можна шукати у вебі, лишилась одна — ключ стрічки в картці.
+  // Решта дат анкети (`createdAt`, `lastCycle`, `lastAction`, `getInTouch`)
+  // жили в legacy-колекції, а веб із неї не читає; ті, що переїхали, лежать у
+  // `profileWorkflow` і `multiData`, кожна зі своїм індексом.
   for (const isoDate of isoDateVariants) {
     try {
       const snapshot = await get(query(
@@ -3143,15 +2889,19 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
   if (isDev) console.log('searchUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
+  // Приставка «УК СМ» — адмінська; для решти набране є звичайним текстом.
+  const includeUkSmVariant = isAdminUid(auth.currentUser?.uid);
   const searchIdOptions = shouldSkipBroadFallback
     ? {
       includeVariants: false,
       includePrefixMatches: allowTelegramPrefixMatches,
       includeAdaptedPhoneVariant: true,
+      includeUkSmVariant,
     }
     : {
       includeVariants: searchKey !== 'telegram',
       includePrefixMatches: searchKey !== 'telegram' || allowTelegramPrefixMatches,
+      includeUkSmVariant,
     };
   if (isDev)
     console.log('searchUsersCollectionInRTDB → params:', {
@@ -3242,19 +2992,6 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
     console.error('Error fetching data:', error);
     return null;
   }
-};
-
-export const getUserCards = async () => {
-  const usersInCollection = await fetchUsersCollection();
-  const usersInRTDB = await fetchUsersCollectionInRTDB();
-
-  const userIdsInRTDB = usersInRTDB.map(user => user.userId);
-
-  const onlyInFirestore = usersInCollection.filter(user => !userIdsInRTDB.includes(user.userId));
-
-  const allUserCards = [...usersInRTDB, ...onlyInFirestore];
-
-  return allUserCards;
 };
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition, delCondition) => {
@@ -3386,10 +3123,10 @@ const normalizeStoredDates = payload => {
  *
  * Виняток — поля-двійники. У legacy дата лежить двічі: крапкова під коротким
  * імʼям і ISO-копія під тим самим імʼям із «2» (`lastLogin`/`lastLogin2`,
- * `createdAt`/`createdAt2`). ISO-копію чіпати не можна: саме за нею ходить
- * пагінація (`fetchUsersByLastLogin2`), а крапкову читає посторінковий
- * завантажувач за датою входу (`defaultFetchByLastLogin`, `equalTo` рівно в
- * `дд.мм.рррр`). Тож двійник дописується поруч, а не замість.
+ * `createdAt`/`createdAt2`). ISO-копію чіпати не можна: саме її читає
+ * мобільний застосунок як свіжу дату, а крапкову — посторінковий завантажувач
+ * за датою входу (`defaultFetchByLastLogin`, `equalTo` рівно в `дд.мм.рррр`).
+ * Тож двійник дописується поруч, а не замість.
  */
 const LEGACY_TWIN_DATE_FIELDS = Object.freeze({
   createdAt: 'createdAt2',
@@ -3501,21 +3238,11 @@ const normalizeIndexedValues = value => Array.isArray(value)
  *
  * Часткове збереження (`update`) не несе всієї анкети, а картка збирається з
  * усієї: без перечитування вона згубила б поля, яких у цьому записі не було.
- * Читається — з нових вузлів, бо саме вони джерело істини; legacy лишається
- * запасним шляхом для анкет, які ще не переїхали, і зникне разом із собою.
+ * Читаються нові вузли — джерело істини; в legacy веб не ходить навіть тут:
+ * той запис уже пішов туди дзеркалом, і перечитувати з нього означало б
+ * складати картку з копії, а не з оригіналу.
  */
-const readProfileForMatchingCard = async id => {
-  const fromNodes = await readProfileFromNodes(id, { includeTechnical: true });
-  if (fromNodes) return fromNodes;
-
-  try {
-    const snapshot = await get(ref2(database, `users/${id}`));
-    return snapshot.exists() ? snapshot.val() : null;
-  } catch (error) {
-    console.warn('[matchingCards] анкету не вдалося перечитати для картки', { userId: id, error });
-    return null;
-  }
-};
+const readProfileForMatchingCard = async id => readProfileFromNodes(id, { includeTechnical: true });
 
 const runMatchingCardRefresh = async (id, payload, condition) => {
   try {
@@ -4188,20 +3915,13 @@ export const getUserStorageAvatarPhotoFiles = async userId => {
 };
 
 // Читає рівно `${collection}/${userId}/photos`, а не весь вузол анкети.
-// Стрічка викликає це для кожної картки, чию анкету щойно гідратувала повністю —
-// читання цілого вузла заради одного поля означало другу копію тієї самої анкети
-// в трафіку на кожну картку.
-const readPhotosField = async (collection, userId) => {
-  const snapshot = await get(ref2(database, `${collection}/${userId}/photos`));
-  return snapshot.exists() ? normalizePhotoValues(snapshot.val()) : null;
-};
-
 /**
  * Фото живуть у `profileDetails` — там їхнє місце після переїзду.
  *
  * Питати їх тут, а не в legacy, — це не оптимізація, а умова того, що галерея
- * працює далі, коли `users` не стане. `null` означає «у вузлі цього немає», і
- * тоді читач повертається до старої колекції.
+ * працює далі, коли `users` не стане. Читання цілого вузла заради одного поля
+ * означало б другу копію тієї самої анкети в трафіку на кожну картку, тож
+ * береться саме поле.
  */
 const readPhotosFromProfileNode = async userId => {
   try {
@@ -4225,17 +3945,11 @@ export const getAllUserPhotos = async (userId, { includeStorage = true, knownPho
     // Викликач уже тримає анкету в руках (щойно гідратував картку) — ходити за
     // тим самим полем у базу вдруге нема за чим.
     databaseUrls = normalizePhotoValues(knownPhotos);
-  } else if (fromProfileNode !== null) {
-    databaseUrls = fromProfileNode;
   } else {
-    const snapshots = await Promise.allSettled([readPhotosField('users', userId)]);
-    databaseUrls = snapshots.flatMap(result => {
-      if (result.status === 'rejected') {
-        console.error('Error loading user photos from users:', result.reason);
-        return [];
-      }
-      return result.value || [];
-    });
+    // `null` означає «у вузлі цього немає» — і на цьому все: у legacy по фото
+    // веб більше не ходить. Аватар картки і файли Storage лишаються, тож
+    // галерея не порожня навіть в анкети, яка ще не має `profileDetails`.
+    databaseUrls = fromProfileNode || [];
   }
 
   const urls = [...storageUrls, ...databaseUrls]
@@ -8547,28 +8261,19 @@ export const fetchListOfUsers = async () => {
 };
 
 export const fetchUserById = async userId => {
-  const db = getDatabase();
-
   try {
-    // Нові вузли — основний шлях; legacy лишається відкатом для анкет, які ще
-    // не переїхали, і джерелом для мобільного застосунку.
-    // `withLegacy` саме тут: анкета — це те місце, де застарілі дані видно
-    // одразу, і те місце, з якого їх правлять. Мобільний застосунок пише в
-    // `/users`, і без цього читання його зміни у вебі не зʼявились би ніколи.
-    const fromNodes = await readProfileFromNodes(userId, { includeTechnical: true, withLegacy: true });
+    // Анкету складають нові вузли, і тільки вони. Legacy-колекція у вебі —
+    // адресат дзеркального запису для мобільного застосунку, а не джерело:
+    // читати її означало показувати те, що веб уже переніс і, бува, навмисно
+    // стер, та ще й впиратись у права, яких у звичайного читача на чужий
+    // `users/$uid` немає.
+    const fromNodes = await readProfileFromNodes(userId, { includeTechnical: true });
     if (fromNodes) {
       const photos = fromNodes.__photosHydrated ? fromNodes.photos : await getAllUserPhotos(userId);
       return { ...fromNodes, photos: photos || [], __photosHydrated: true };
     }
 
-    const userSnapshot = await get(ref2(db, `users/${userId}`));
-    if (userSnapshot.exists()) {
-      const usersData = userSnapshot.val() || {};
-      const photos = await getAllUserPhotos(userId);
-      return { userId, ...usersData, photos };
-    }
-
-    // Якщо користувача не знайдено
+    // Жодного вузла — анкети немає.
     console.log('Користувача не знайдено в жодній колекції.1.');
     return null;
   } catch (error) {
@@ -8952,93 +8657,6 @@ export const removeCardAndSearchId = async userId => {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
   }
 };
-// Повертає прості фільтри, які можна застосувати на сервері
-const getServerFilters = filterSettings => {
-  const simpleKeys = ['csection', 'userRole', 'role', 'maritalStatus', 'bloodGroup', 'rh'];
-  const result = {};
-  simpleKeys.forEach(key => {
-    const cfg = filterSettings[key];
-    if (cfg && Object.values(cfg).some(v => !v)) {
-      result[key] = Object.keys(cfg).filter(k => cfg[k]);
-    }
-  });
-  return result;
-};
-
-// Виконує запити до вказаного шляху з урахуванням простих фільтрів
-const fetchByPathWithFilters = async (path, filters) => {
-  const dataById = {};
-  const sets = [];
-
-  for (const [key, values] of Object.entries(filters)) {
-    const ids = new Set();
-    await Promise.all(
-      values.map(async value => {
-        const q = query(ref2(database, path), orderByChild(key), equalTo(value));
-        const snap = await get(q);
-        if (snap.exists()) {
-          Object.entries(snap.val()).forEach(([id, data]) => {
-            ids.add(id);
-            dataById[id] = { ...(dataById[id] || {}), ...data };
-          });
-        }
-      }),
-    );
-    sets.push(ids);
-  }
-
-  let finalIds = sets.length > 0 ? Array.from(sets[0]) : Object.keys(dataById);
-  for (let i = 1; i < sets.length; i++) {
-    finalIds = finalIds.filter(id => sets[i].has(id));
-  }
-
-  const result = {};
-  finalIds.forEach(id => {
-    result[id] = { userId: id, ...dataById[id] };
-  });
-
-  return result;
-};
-
-export const fetchAllFilteredUsers = async (
-  filterForload,
-  filterSettings = {},
-  favoriteUsers = {},
-  options = {},
-) => {
-  try {
-    const { dislikedUsers = {} } = options || {};
-    const serverFilters = getServerFilters(filterSettings);
-
-    let usersData = {};
-
-    if (Object.keys(serverFilters).length > 0) {
-      usersData = await fetchByPathWithFilters('users', serverFilters);
-    } else {
-      const usersSnapshot = await get(ref2(database, 'users'));
-      usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
-    }
-
-    const allUsersArray = Object.keys(usersData).map(userId => [
-      userId,
-      { userId, ...(usersData[userId] || {}) },
-    ]);
-
-    const filteredUsers = filterMain(
-      allUsersArray,
-      filterForload,
-      filterSettings,
-      favoriteUsers,
-      dislikedUsers,
-    );
-    const sortedUsers = sortUsers(filteredUsers, options);
-    return Object.fromEntries(sortedUsers);
-  } catch (error) {
-    console.error('Error fetching filtered users:', error);
-    return {};
-  }
-};
-
 export const fetchAllUsersFromRTDB = async () => {
   try {
     const usersSnapshot = await get(ref2(database, 'users'));

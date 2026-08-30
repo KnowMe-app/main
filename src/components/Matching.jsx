@@ -94,7 +94,6 @@ import {
   DetailPosition,
 } from './Matching.styled';
 import {
-  fetchUsersByLastLogin2,
   fetchUserById,
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
@@ -154,7 +153,12 @@ import {
 } from '../utils/searchKeyCache';
 import { findCachedCardsByText, getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCachedPhotoUrlsMap, setCachedPhotoUrls } from '../utils/photoUrlCache';
-import { MATCHING_CARD_ORDER_FIELD, isMatchingSummaryCard } from '../utils/matchingCardIndex';
+import {
+  MATCHING_CARDS_ROOT,
+  MATCHING_CARD_FEED_FIELD,
+  MATCHING_CARD_ORDER_FIELD,
+  isMatchingSummaryCard,
+} from '../utils/matchingCardIndex';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import {
   MATCHING_THROTTLED_LOAD_BATCH,
@@ -2474,7 +2478,8 @@ const Matching = () => {
       }
 
       const { todayDash } = getCurrentDate();
-      // lastLogin2 sort queries (fetchUsersByLastLogin2) read from `users`.
+      // Дата входу — це і ключ стрічки: писач розкладе її по вузлах, перебудує
+      // картку і віддзеркалить у legacy для мобільного застосунку.
       updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update');
 
     });
@@ -2697,14 +2702,12 @@ const Matching = () => {
       dislikeUsers: dislikeUsersRef.current,
       roleIndexSets,
       filterMainFn: filterMain,
-      fetchUsersByLastLogin2,
       fetchMatchingCardsPage,
       hydrateUsersByIds: ids => fetchUsersByIds(ids),
-      allowProfileFallback: hasFullProfileAccess,
       onPart,
       onDiagnosticEvent: recordInitialLoadDiagnostic,
     }),
-    [hasFullProfileAccess, isAdmin, recordInitialLoadDiagnostic, roleIndexSets]
+    [isAdmin, recordInitialLoadDiagnostic, roleIndexSets]
   );
 
   // Додаткові правила відкривають окремі анкети, зокрема неопубліковані,
@@ -3244,9 +3247,16 @@ const Matching = () => {
     toast.success('Фільтри та кеш скинуто');
   }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
 
-  // Де лежить тіло анкети: у legacy `users` чи тільки в нових вузлах. Перше
-  // видно всім, кому взагалі відкрито матчинг; друге — лише тим, кому цю картку
-  // відкрили правилами додаткового доступу.
+  // Чи картка є в загальній стрічці. Та, що є, видна всім, кому взагалі
+  // відкрито матчинг; та, якої немає, — лише тим, кому її відкрили правилами
+  // додаткового доступу.
+  //
+  // Питали про це раніше в legacy: «чи є тіло в `users/{id}`». Але веб з
+  // legacy не читає, та й відповідь була не про картку, а про читача — кому
+  // правила відкривають корінь `users`, тому й тіло. Питання ставиться там,
+  // де на нього є чесна відповідь: ключ стрічки `feedDate` у проєкції. Він є
+  // рівно в показаної картки, і саме його читає дека. Це ще й один рядок
+  // замість цілої анкети на кожен id.
   const classifyReactionIdsByStorage = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
     const requestKey = uniqueIds.slice().sort().join('|');
@@ -3265,18 +3275,18 @@ const Matching = () => {
 
       await Promise.all(uniqueIds.map(async id => {
         try {
-          const snapshot = await get(refDb(database, `users/${id}`));
+          const snapshot = await get(refDb(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_FEED_FIELD}`));
           classifications[id] = snapshot.exists()
-            ? { storage: 'users', reason: 'found-in-users' }
-            : { storage: 'nodes', reason: 'not-in-users' };
+            ? { storage: 'feed', reason: 'in-matching-feed' }
+            : { storage: 'nodes', reason: 'not-in-matching-feed' };
         } catch (error) {
-          // Відмова в правах — це не відповідь «немає»: анкету однаково
+          // Відмова в правах — це не відповідь «немає»: картку однаково
           // перевірить індекс додаткового доступу.
-          classifications[id] = { storage: 'nodes', reason: 'users-read-denied', error: error?.message || String(error) };
+          classifications[id] = { storage: 'nodes', reason: 'feed-read-denied', error: error?.message || String(error) };
         }
       }));
 
-      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'users');
+      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'feed');
       const nodeReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'nodes');
       debugReactionFlowLog('classifyReactionIdsByStorage:result', {
         fullReactionIds: summarizeIdsForDebug(uniqueIds),
@@ -4738,6 +4748,12 @@ const Matching = () => {
   const filteredUsers = useMemo(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
     if (debugShowAllIndexedCards && isIndexedDebugTestUser) return users;
+    // Пошук — не стрічка, і фільтри його не звужують. Чіпи описують, кого
+    // показувати в деці; запит називає конкретну людину, і сховати її через
+    // те, що вона не того типу, означає відповісти «немає» на питання «де
+    // ось цей». Саме так пошук і виглядав зламаним: статус казав «Знайшов у
+    // searchId», а під ним стояло «Немає доступних профілів».
+    if (viewMode === 'search') return visibleUsers;
     return applyMatchingUiFiltersToUsers({
       users: visibleUsers,
       filters,
@@ -4795,29 +4811,11 @@ const Matching = () => {
     const candidates = findCachedCardsByText(searchQuery, {
       excludeIds: filteredUsers.map(user => user?.userId).filter(Boolean),
     });
-    if (!candidates.length) return candidates;
-    // Cached cards go through the same access and filter path as everything else
-    // - "схожі" must not become a way around either (spec §1).
-    return applyMatchingUiFiltersToUsers({
-      users: candidates,
-      filters,
-      filterMainFn: filterMain,
-      favoriteUsers,
-      dislikeUsers,
-      excludeReactionUsers: false,
-      roleIndexSets,
-      viewMode,
-    });
-  }, [
-    dislikeUsers,
-    favoriteUsers,
-    filteredUsers,
-    filters,
-    isSearching,
-    roleIndexSets,
-    searchQuery,
-    viewMode,
-  ]);
+    // «Схожі» — та сама відповідь на запит, тільки з локального кешу, тож і
+    // правило те саме: чіпи стрічки її не звужують. Інакше вкладка «Знайдено»
+    // показувала б людину, а «Схожі» ховали б її двійника.
+    return candidates;
+  }, [filteredUsers, isSearching, searchQuery]);
 
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
@@ -6183,16 +6181,12 @@ const Matching = () => {
     // An empty group is a different problem from "nothing matched", and saying so
     // is the difference between the reader fixing it and giving up (spec §3).
     if (emptyFilterGroup) return `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`;
-    // Знайдене, яке приховали чіпи, — теж окрема причина, і найгірше з нею те,
-    // що екран про неї мовчав: статус казав «Знайшов у searchId», а під ним
-    // стояло «немає профілів», тобто робочий пошук виглядав як зламаний.
-    // Фільтри звужують видачу запиту навмисно (spec §1) — сказати треба саме
-    // про це, а не показати картку повз фільтр.
+    // Стрічка, з якої фільтри прибрали все, — теж окрема причина, і мовчати про
+    // неї найдорожче: екран каже «немає профілів» там, де насправді «є, але не
+    // показані». Пошуку це вже не стосується — його видачу чіпи не звужують.
     const isReactionTab = viewMode === 'favorites' || viewMode === 'dislikes';
-    if (!isReactionTab && searchTab !== 'similar' && visibleUsers.length > 0) {
-      return isSearching
-        ? `Знайдено ${visibleUsers.length} — усіх приховали фільтри`
-        : `Фільтри приховали всі завантажені профілі (${visibleUsers.length})`;
+    if (!isReactionTab && !isSearching && visibleUsers.length > 0) {
+      return `Фільтри приховали всі завантажені профілі (${visibleUsers.length})`;
     }
     return 'Немає доступних профілів';
   };
@@ -6383,8 +6377,11 @@ const Matching = () => {
 
   // A row that the UI filters would reject but that still reached the list means
   // the filtering pipeline let it through - worth flagging as a bug, not as data.
+  // Крім пошуку: там чіпи не застосовуються навмисно, тож кожен результат
+  // «не проходить фільтр» за визначенням, і позначати це як помилку означало б
+  // світити діагностикою на кожен запит.
   const diagnosticsFilterMisses = useMemo(() => {
-    if (!showDiagnostics) return null;
+    if (!showDiagnostics || viewMode === 'search') return null;
     const misses = new Set();
     filteredUsers.forEach(user => {
       if (!user?.userId) return;
