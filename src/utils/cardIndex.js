@@ -13,11 +13,10 @@ export const TTL_MS = CACHE_TTL_MS;
 export const MATCHING_INDEX_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 
-// Версія 3 — щоб анкети, складені до межі «поза стрічкою видно саму картку»,
-// не пережили її в localStorage. У кеші пристрою лежать повні анкети, зокрема
-// контакти прихованих карток, прочитані тоді, коли правила їх ще віддавали:
-// без зміни версії застосунок і далі показував би їх із кеша, не питаючи бази.
-export const CARDS_CACHE_VERSION = 3;
+// Повні анкети кешуються лише для поточного власника сесії: інакше контакти,
+// прочитані службовим акаунтом, переживають вихід і дістаються наступному
+// користувачеві цього браузера. Версія 4 також прибирає старі кеші без ownerId.
+export const CARDS_CACHE_VERSION = 4;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 export const MATCHING_INDEX_CACHE_VERSION = 1;
@@ -148,11 +147,17 @@ export const resetMatchingLocalStorageCache = (reason = 'manual') => {
 const unwrapVersionedCards = value => {
   if (!value || typeof value !== 'object') return {};
   if (value.__cacheVersion !== CARDS_CACHE_VERSION) return null;
+  if (value.ownerId !== getCardsCacheOwnerId()) return null;
   return value.items && typeof value.items === 'object' ? value.items : {};
 };
 
+const getCardsCacheOwnerId = () => (
+  typeof localStorage !== 'undefined' ? String(localStorage.getItem('ownerId') || '') : ''
+);
+
 const wrapVersionedCards = cards => ({
   __cacheVersion: CARDS_CACHE_VERSION,
+  ownerId: getCardsCacheOwnerId(),
   cachedAt: Date.now(),
   items: cards && typeof cards === 'object' ? cards : {},
 });
