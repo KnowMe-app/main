@@ -125,6 +125,7 @@ describe('межу тримає той, хто складає анкету', () 
   it('кеш пристрою не переживає цю межу', () => {
     const cardIndexSource = fs.readFileSync(path.join(__dirname, '..', 'cardIndex.js'), 'utf8');
     // Анкети, складені до неї, лежать у localStorage разом із контактами.
-    expect(cardIndexSource).toContain('export const CARDS_CACHE_VERSION = 3;');
+    expect(cardIndexSource).toContain('export const CARDS_CACHE_VERSION = 4;');
+    expect(cardIndexSource).toContain('value.ownerId !== getCardsCacheOwnerId()');
   });
 });

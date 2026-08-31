@@ -8,6 +8,8 @@ describe('cardIndex queries', () => {
     serializeQueryFilters,
     clearEmptySearchQueryCache,
     getQueryEntry,
+    resetMatchingLocalStorageCache,
+    CARDS_CACHE_VERSION,
   } = require('../cardIndex');
   const { updateCard } = require('../cardsStorage');
 
@@ -32,6 +34,18 @@ describe('cardIndex queries', () => {
     expect(ids).toEqual(['1']);
     const card = getCard('1');
     expect(card.title).toBe('New');
+  });
+
+  it('does not share full cards between signed-in viewers', () => {
+    resetMatchingLocalStorageCache('account isolation test');
+    localStorage.setItem('ownerId', 'privileged-viewer');
+    updateCard('hidden-profile', { phone: '+380000000000' });
+    expect(getCard('hidden-profile')).toMatchObject({ phone: '+380000000000' });
+
+    localStorage.setItem('ownerId', 'ordinary-viewer');
+
+    expect(getCard('hidden-profile')).toBeNull();
+    expect(localStorage.getItem('cards')).toBeNull();
   });
 
   it('removes card from cards and queries', () => {
@@ -67,11 +81,14 @@ describe('cardIndex queries', () => {
   });
 
   it('migrates legacy timestamps to cachedAt fields', () => {
+    resetMatchingLocalStorageCache('timestamp migration test');
     const now = Date.now();
     localStorage.setItem(
       'cards',
       JSON.stringify({
-        userId01: { userId: 'userId01', name: 'Legacy', lastAction: now },
+        __cacheVersion: CARDS_CACHE_VERSION,
+        ownerId: '',
+        items: { userId01: { userId: 'userId01', name: 'Legacy', lastAction: now } },
       }),
     );
     localStorage.setItem(
@@ -80,8 +97,7 @@ describe('cardIndex queries', () => {
     );
 
     expect(getIdsByQuery('test')).toEqual(['userId01']);
-    const storedQueries = JSON.parse(localStorage.getItem('queries'));
-    expect(storedQueries.test.cachedAt).toBe(now);
+    expect(getQueryEntry('test').cachedAt).toBe(now);
 
     const card = getCard('userId01');
     expect(card).not.toBeNull();
