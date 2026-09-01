@@ -836,6 +836,22 @@ const shouldUseExactFieldValidation = (key, expected, options = {}) => {
   return EXACT_SEARCH_ID_VALIDATION_FIELDS.has(key);
 };
 
+/**
+ * Поля, якими урізана проєкція може підтвердити збіг.
+ *
+ * `fetchLimitedProfileById` віддає картку стрічки: контактів у ній немає
+ * взагалі, а прізвище лежить скороченим (`surnameShort`). Решта — це те, що
+ * картка несе повністю, і саме воно ще має сенс перевіряти.
+ */
+const LIMITED_PROJECTION_VERIFIABLE_FIELDS = new Set([
+  'userId',
+  'name',
+  'birth',
+  'region',
+  'city',
+  'country',
+]);
+
 const getCardFieldValues = (card, key) => {
   if (!card || !key) return [];
   if (key === 'searchId') return [];
@@ -878,6 +894,18 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
     const expectedUserId = String(value || '').trim();
     return options.forcePartialUserIdSearch ? cardUserId.startsWith(expectedUserId) : cardUserId === expectedUserId;
   }
+
+  // Урізаній видачі нема чим підтвердити збіг за контактом: у проєкції немає
+  // ані пошти, ані телефона, ані лінків, а прізвище в ній скорочене. Перевірка
+  // поля викидала через це геть усе, що знайшлось за контактом, — знайдене в
+  // `searchId` не доходило до екрана, і звичайний читач бачив «Не знайшов»
+  // на будь-який запит, крім імені.
+  //
+  // Підтвердження тут дає сам ключ індексу: урізаний пошук читає точний
+  // `searchId/{поле}_{значення}` і більше нічого (скан по префіксу й широкий
+  // fallback йому вимкнені в `searchUsersOnly`), тож id, що лежить у такому
+  // ключі, — це вже точний збіг зі значенням запиту.
+  if (card?.__limitedProfile && !LIMITED_PROJECTION_VERIFIABLE_FIELDS.has(key)) return true;
 
   const expected = normalizeComparableSearchValue(key, value);
   if (!expected) return true;
