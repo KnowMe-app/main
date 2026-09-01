@@ -39,6 +39,9 @@ describe('cardIndex queries', () => {
   it('does not share full cards between signed-in viewers', () => {
     resetMatchingLocalStorageCache('account isolation test');
     localStorage.setItem('ownerId', 'privileged-viewer');
+    // Контакти в кеші лишає лише той, чиє право на них не залежить від
+    // стрічки, — тут це службовий доступ (див. profileVisibilityScope.test.js).
+    localStorage.setItem('accessLevel', 'matching:view&write');
     updateCard('hidden-profile', { phone: '+380000000000' });
     expect(getCard('hidden-profile')).toMatchObject({ phone: '+380000000000' });
 

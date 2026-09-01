@@ -1941,6 +1941,52 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }
 };
 
 /**
+ * Рівень доступу читача — прочитаний, а не вгаданий.
+ *
+ * `localStorage.accessLevel` зʼявляється лише після того, як екран прочитає
+ * власну анкету, тобто після мережевого круга. До того ключа немає — і поки
+ * межа читала його наосліп, кожне читання в цьому вікні йшло як «права ще не
+ * відомі», тобто повним. На холодному відкритті `/matching` туди потрапляв і
+ * пошук: прихована анкета встигала приїхати цілою, лягти в кеш карток і
+ * лишитись видимою до кінця TTL — уже після того, як права стали відомі.
+ *
+ * Тому рівень тепер саме читається: свій вузол відкритий кожному на себе
+ * (`users/$uid` і `profileTechnical/$uid`), а обіцянка на читача одна на
+ * сесію, тож паралельні картки діляться нею, а не множать запити. Невдале
+ * читання не запамʼятовується: інакше одна мережева похибка урізала б
+ * службовому читачеві видачу до кінця сесії.
+ */
+const viewerAccessLevelByUid = new Map();
+
+const readOwnAccessLevel = async (node, uid) => {
+  const snapshot = await get(ref2(database, `${node}/${uid}/accessLevel`));
+  return snapshot.exists() ? String(snapshot.val() || '') : '';
+};
+
+export const resolveViewerAccessLevel = async () => {
+  const stored = readStoredAccessLevel();
+  if (stored !== null && stored !== undefined) return stored;
+
+  const uid = String(auth.currentUser?.uid || '').trim();
+  if (!uid) return '';
+
+  if (!viewerAccessLevelByUid.has(uid)) {
+    const pending = Promise.all([
+      readOwnAccessLevel('users', uid),
+      readOwnAccessLevel(PROFILE_NODES.profileTechnical, uid),
+    ]).then(([legacyLevel, nodeLevel]) => legacyLevel || nodeLevel || '');
+    pending.catch(() => viewerAccessLevelByUid.delete(uid));
+    viewerAccessLevelByUid.set(uid, pending);
+  }
+
+  // Права не прочитались — читач іде далі як той, кому їх не видавали: межу
+  // однаково тримає база, а наступний виклик спробує ще раз.
+  return viewerAccessLevelByUid.get(uid).catch(() => '');
+};
+
+export const resetViewerAccessLevelCache = () => viewerAccessLevelByUid.clear();
+
+/**
  * Читає анкету з нових вузлів.
  *
  * Це основний шлях: `users` лишається лише для мобільного застосунку. Тобто
@@ -2015,12 +2061,16 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     legacy = null,
   } = options;
 
-  const [card, details, contacts, workflow, technical] = await Promise.all([
+  // Рівень доступу читається поруч із вузлами, а не перед ними: він потрібен
+  // лише на зведенні, і чекати на нього окремим кругом означало б додати
+  // затримку кожній картці.
+  const [card, details, contacts, workflow, technical, accessLevel] = await Promise.all([
     readProfileNodePart(PROFILE_NODES.matchingCards, id),
     readProfileNodePart(PROFILE_NODES.profileDetails, id),
     includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
     includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
     includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
+    resolveViewerAccessLevel(),
   ]);
 
   // Анкета поза стрічкою — це анкета, показу якій ніхто не давав, і читачеві
@@ -2032,7 +2082,7 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   const scoped = scopeProfileNodesToViewer({
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
-    accessLevel: readStoredAccessLevel(),
+    accessLevel,
     parts: { card, details, contacts, workflow, technical },
     legacy,
   });

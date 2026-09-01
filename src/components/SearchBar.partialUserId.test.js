@@ -229,6 +229,16 @@ describe('SearchBar result validation', () => {
 describe('SearchBar cache-first search', () => {
   beforeEach(() => {
     resetMatchingLocalStorageCache('SearchBar cache-first test');
+    // Пошук з кеша перевіряється на читачеві, який має право тримати там
+    // контакти: у решти вони в кеш не потрапляють узагалі, бо їхнє право на
+    // них тримається на `feedDate` (див. profileVisibilityScope.test.js).
+    localStorage.setItem('ownerId', 'searchbar-viewer');
+    localStorage.setItem('accessLevel', 'matching:view&write');
+  });
+
+  afterEach(() => {
+    localStorage.removeItem('ownerId');
+    localStorage.removeItem('accessLevel');
   });
 
   it('returns cached cards for repeated partial userId searches without calling the backend search function', async () => {

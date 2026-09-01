@@ -37,7 +37,10 @@ const FEED_GATE = "root.child('matchingCards').child($uid).child('feedDate').isS
  */
 const expectRoleClauseGatedByFeed = read => {
   expect(read).toContain(FEED_GATE);
-  expect(read).toContain("child('feedDate').val().matches(/.*\\S.*/)");
+  // `\\S` мова правил не знає, і файл з ним база не приймає цілком —
+  // клас пробілу тут записаний дозволеним діалектом (див.
+  // databaseRulesRegexDialect.test.js).
+  expect(read).toContain("child('feedDate').val().matches(/.*[^ ].*/)");
   const [beforeGate, afterGate] = read.split(FEED_GATE);
   expect(beforeGate).not.toContain('userRole');
   expect(beforeGate).not.toContain("child('role')");
