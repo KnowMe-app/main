@@ -39,10 +39,14 @@ export const canReadProfileOutsideFeed = ({ profileId, viewerId, accessLevel } =
   const normalizedProfileId = String(profileId || '').trim();
   if (normalizedViewerId && normalizedProfileId && normalizedViewerId === normalizedProfileId) return true;
   if (isAdminUid(normalizedViewerId)) return true;
-  // Права ще не прочитані (`null`, а не порожній рівень) — вирішує база, як і
-  // мусить. Урізати наосліп означало б у перші секунди після входу показати
-  // службовому читачеві проєкцію замість анкети, яку він веде.
-  if (accessLevel === null || accessLevel === undefined) return true;
+  // Права, яких немає на руках, — це не дозвіл. Раніше `null` («застосунок ще
+  // не знає») відкривав анкету цілком, бо ключ доступу зʼявляється лише після
+  // читання власної анкети, тобто після мережевого круга. Вікно виходило
+  // коротким, але справжнім: на холодному відкритті `/matching` пошук встигав
+  // прочитати приховану анкету повністю — з контактами — і покласти її в кеш
+  // карток, звідки її показували ще годинами. Хто справді має право, того
+  // назве прочитаний рівень (`resolveViewerAccessLevel`), а не його
+  // відсутність.
   return canAccessMatchingByLevel(accessLevel);
 };
 

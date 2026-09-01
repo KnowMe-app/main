@@ -110,7 +110,10 @@ const removeNestedValue = (current, segments, depth = 0) => {
 
 export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   const cards = loadCards();
-  const existing = sanitizeMatchingCardForCache(cards[cardId] || {});
+  // Ім'я картки передається окремо: у `data` його може не бути, а без нього
+  // власна анкета читалася б як чужа — і власниця втрачала б власні контакти з
+  // кеша.
+  const existing = sanitizeMatchingCardForCache(cards[cardId] || {}, cardId);
   const explicitRemovals = data && typeof data === 'object'
     ? Object.keys(data).filter(key => data[key] === null)
     : [];
@@ -122,7 +125,7 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
     .filter(key => key && key !== 'userId');
   const sanitizedData =
     data && typeof data === 'object'
-      ? sanitizeMatchingCardForCache(Object.fromEntries(Object.entries(data).filter(([, value]) => value !== null)))
+      ? sanitizeMatchingCardForCache(Object.fromEntries(Object.entries(data).filter(([, value]) => value !== null)), cardId)
       : data;
   let updatedCard = {
     ...existing,
@@ -210,7 +213,7 @@ export const getCardsByList = async (listKey, remoteFetch) => {
           const { id: _, ...rest } = fresh;
           const now = Date.now();
           const card = {
-            ...sanitizeMatchingCardForCache(rest),
+            ...sanitizeMatchingCardForCache(rest, id),
             userId: id,
             cachedAt: now,
             cacheVersion: CARDS_CACHE_VERSION,
