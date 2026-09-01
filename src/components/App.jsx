@@ -16,7 +16,7 @@ import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
+import { auth, fetchUserById } from './config';
 import { clearStoredAccessRights, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 
@@ -86,9 +86,6 @@ export const App = () => {
         localStorage.removeItem('accessLevel');
         localStorage.removeItem('userRole');
         clearStoredAccessRights();
-        // Прочитаний рівень доступу — теж стан входу: без цього наступний
-        // читач у тій самій вкладці дістав би обіцянку, видану попередньому.
-        resetViewerAccessLevelCache();
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessInvoices(false);

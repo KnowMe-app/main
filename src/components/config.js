@@ -28,7 +28,7 @@ import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard, withContactsFromSource } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -52,7 +52,7 @@ import {
   shouldSkipBroadFallbackForExactSearchId,
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
-import { isAdminUid, readStoredAccessLevel } from '../utils/accessLevel';
+import { isAdminUid } from '../utils/accessLevel';
 import { scopeProfileNodesToViewer } from '../utils/profileVisibilityScope';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
@@ -1941,52 +1941,6 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }
 };
 
 /**
- * Рівень доступу читача — прочитаний, а не вгаданий.
- *
- * `localStorage.accessLevel` зʼявляється лише після того, як екран прочитає
- * власну анкету, тобто після мережевого круга. До того ключа немає — і поки
- * межа читала його наосліп, кожне читання в цьому вікні йшло як «права ще не
- * відомі», тобто повним. На холодному відкритті `/matching` туди потрапляв і
- * пошук: прихована анкета встигала приїхати цілою, лягти в кеш карток і
- * лишитись видимою до кінця TTL — уже після того, як права стали відомі.
- *
- * Тому рівень тепер саме читається: свій вузол відкритий кожному на себе
- * (`users/$uid` і `profileTechnical/$uid`), а обіцянка на читача одна на
- * сесію, тож паралельні картки діляться нею, а не множать запити. Невдале
- * читання не запамʼятовується: інакше одна мережева похибка урізала б
- * службовому читачеві видачу до кінця сесії.
- */
-const viewerAccessLevelByUid = new Map();
-
-const readOwnAccessLevel = async (node, uid) => {
-  const snapshot = await get(ref2(database, `${node}/${uid}/accessLevel`));
-  return snapshot.exists() ? String(snapshot.val() || '') : '';
-};
-
-export const resolveViewerAccessLevel = async () => {
-  const stored = readStoredAccessLevel();
-  if (stored !== null && stored !== undefined) return stored;
-
-  const uid = String(auth.currentUser?.uid || '').trim();
-  if (!uid) return '';
-
-  if (!viewerAccessLevelByUid.has(uid)) {
-    const pending = Promise.all([
-      readOwnAccessLevel('users', uid),
-      readOwnAccessLevel(PROFILE_NODES.profileTechnical, uid),
-    ]).then(([legacyLevel, nodeLevel]) => legacyLevel || nodeLevel || '');
-    pending.catch(() => viewerAccessLevelByUid.delete(uid));
-    viewerAccessLevelByUid.set(uid, pending);
-  }
-
-  // Права не прочитались — читач іде далі як той, кому їх не видавали: межу
-  // однаково тримає база, а наступний виклик спробує ще раз.
-  return viewerAccessLevelByUid.get(uid).catch(() => '');
-};
-
-export const resetViewerAccessLevelCache = () => viewerAccessLevelByUid.clear();
-
-/**
  * Читає анкету з нових вузлів.
  *
  * Це основний шлях: `users` лишається лише для мобільного застосунку. Тобто
@@ -2061,28 +2015,26 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     legacy = null,
   } = options;
 
-  // Рівень доступу читається поруч із вузлами, а не перед ними: він потрібен
-  // лише на зведенні, і чекати на нього окремим кругом означало б додати
-  // затримку кожній картці.
-  const [card, details, contacts, workflow, technical, accessLevel] = await Promise.all([
+  const [card, details, contacts, workflow, technical] = await Promise.all([
     readProfileNodePart(PROFILE_NODES.matchingCards, id),
     readProfileNodePart(PROFILE_NODES.profileDetails, id),
     includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
     includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
     includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
-    resolveViewerAccessLevel(),
   ]);
 
-  // Анкета поза стрічкою — це анкета, показу якій ніхто не давав, і читачеві
-  // без службового доступу від неї лишається сама картка. Правила бази кажуть
-  // те саме й по-справжньому: `profileDetails/$uid` і `profileContacts/$uid`
-  // відкриті звичайному користувачеві лише доти, доки в картці є `feedDate`.
-  // Тут та сама межа стоїть у коді, який складає анкету, — щоб на екран не
-  // приїхало те, що прийшло повз правила: зі старого кеша або з legacy-шару.
+  // Анкета поза стрічкою — це анкета, показу якій ніхто не давав, і від неї
+  // читачеві лишається сама картка. Виданий рівень доступу тут не питається
+  // взагалі: доти будь-який `accessLevel` зі словом `matching` — тобто той,
+  // що видають агенції заради самої стрічки, — знімав межу цілком. Правила
+  // бази кажуть те саме й по-справжньому: `profileDetails/$uid` і
+  // `profileContacts/$uid` відкриті лише доти, доки в картці є `feedDate`;
+  // поза цим анкету читають власниця й суперадмін. Тут та сама межа стоїть у
+  // коді, який складає анкету, — щоб на екран не приїхало те, що прийшло повз
+  // правила: зі старого кеша або з legacy-шару.
   const scoped = scopeProfileNodesToViewer({
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
-    accessLevel,
     parts: { card, details, contacts, workflow, technical },
     legacy,
   });
@@ -2150,7 +2102,11 @@ export const fetchUsersByIds = async ids => {
           // показувати нема чого, і це не привід іти в legacy.
           const fromNodes = await readProfileFromNodes(id);
           if (!fromNodes) return null;
-          return [id, updateCard(id, { ...fromNodes, photos: fromNodes.photos || [] })];
+          const profile = { ...fromNodes, photos: fromNodes.photos || [] };
+          // `updateCard` віддає картку такою, якою вона лягла в кеш, а контакти
+          // туди не кладуться нікому, крім власниці анкети й адміна. Показувати
+          // ж треба щойно прочитане — те, що база цьому читачеві віддала.
+          return [id, withContactsFromSource(updateCard(id, profile), profile)];
         } catch (error) {
           console.error(`Error fetching user ${id}:`, error);
           return null;

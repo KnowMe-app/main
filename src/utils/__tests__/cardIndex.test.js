@@ -38,9 +38,10 @@ describe('cardIndex queries', () => {
 
   it('does not share full cards between signed-in viewers', () => {
     resetMatchingLocalStorageCache('account isolation test');
-    localStorage.setItem('ownerId', 'privileged-viewer');
     // Контакти в кеші лишає лише той, чиє право на них не залежить від
-    // стрічки, — тут це службовий доступ (див. profileVisibilityScope.test.js).
+    // стрічки, — власниця анкети й суперадмін (див. profileVisibilityScope.test.js).
+    // Виданий `accessLevel` таким правом більше не є, хай який він.
+    localStorage.setItem('ownerId', 'hidden-profile');
     localStorage.setItem('accessLevel', 'matching:view&write');
     updateCard('hidden-profile', { phone: '+380000000000' });
     expect(getCard('hidden-profile')).toMatchObject({ phone: '+380000000000' });
@@ -49,6 +50,29 @@ describe('cardIndex queries', () => {
 
     expect(getCard('hidden-profile')).toBeNull();
     expect(localStorage.getItem('cards')).toBeNull();
+  });
+
+  it('шле на екран те, що прочитано, а в кеш — те, що можна зберігати', () => {
+    const { withContactsFromSource } = require('../cardIndex');
+    resetMatchingLocalStorageCache('display vs cache test');
+    localStorage.setItem('ownerId', 'ordinary-viewer');
+
+    const fromDatabase = { userId: 'shown-profile', name: 'Показана', phone: '+380990000000', email: 'a@b.c' };
+    const cached = updateCard('shown-profile', fromDatabase);
+
+    // У кеші контактів немає: право на них тримається на `feedDate`, а він
+    // знімається в базі, не в браузері.
+    expect(cached.phone).toBeUndefined();
+    expect(cached.email).toBeUndefined();
+    expect(getCard('shown-profile').phone).toBeUndefined();
+
+    // А на екран іде щойно прочитане: базі цей читач уже показав, що має право.
+    const forDisplay = withContactsFromSource(cached, fromDatabase);
+    expect(forDisplay.phone).toBe('+380990000000');
+    expect(forDisplay.email).toBe('a@b.c');
+    expect(forDisplay.name).toBe('Показана');
+
+    localStorage.removeItem('ownerId');
   });
 
   it('removes card from cards and queries', () => {

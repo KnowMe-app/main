@@ -28,28 +28,33 @@ const ADMIN_UIDS = ['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J010v4CDyD
 const FEED_GATE = "root.child('matchingCards').child($uid).child('feedDate').isString()";
 
 /**
- * Право за роллю живе під ключем стрічки — і більше ніде.
+ * Право читати анкету живе під ключем стрічки — і більше ніде.
  *
  * Мова правил — це один довгий ланцюг `||`, у якому зайвий диз'юнкт нічого не
  * ламає, лише тихо відкриває. Тому перевіряється не «умова згадується», а що
- * жодного згадування ролі поза цим ключем не лишилось: інакше поруч із
- * закритою гілкою спокійно жила б відкрита.
+ * поза ключем стрічки не лишилось жодного способу відкрити анкету, крім двох:
+ * власниця (`auth.uid == $uid`) і суперадмін. Саме там і жила діра: рівень
+ * доступу зі словом `matching` — той, що видають агенції заради самої
+ * стрічки, — стояв окремим диз'юнктом і відкривав будь-яку анкету, зокрема
+ * приховану.
  */
-const expectRoleClauseGatedByFeed = read => {
+const expectReadGatedByFeed = read => {
   expect(read).toContain(FEED_GATE);
-  // `\\S` мова правил не знає, і файл з ним база не приймає цілком —
+  // `\S` мова правил не знає, і файл з ним база не приймає цілком —
   // клас пробілу тут записаний дозволеним діалектом (див.
   // databaseRulesRegexDialect.test.js).
   expect(read).toContain("child('feedDate').val().matches(/.*[^ ].*/)");
   const [beforeGate, afterGate] = read.split(FEED_GATE);
+  // До ключа стрічки — тільки власниця й суперадміни.
   expect(beforeGate).not.toContain('userRole');
   expect(beforeGate).not.toContain("child('role')");
-  expect(afterGate).toContain("root.child('users').child(auth.uid).child('userRole').val() != 'ed'");
-  // Службовий доступ від стрічки не залежить — інакше приховану анкету не було б
-  // кому вести до публікації.
-  expect(beforeGate).toContain("contains('matching')");
+  expect(beforeGate).not.toContain('accessLevel');
   expect(beforeGate).toContain('auth.uid == $uid');
   ADMIN_UIDS.forEach(uid => expect(beforeGate).toContain(uid));
+  // Аудиторія матчингу — і за роллю, і за рівнем доступу — читає анкету лише
+  // після ключа стрічки.
+  expect(afterGate).toContain("root.child('users').child(auth.uid).child('userRole').val() != 'ed'");
+  expect(afterGate).toContain("contains('matching')");
 };
 
 /**
@@ -242,7 +247,7 @@ describe('profileContacts — власне правило, і воно йде з
      * анкета показана, і контакти читаються; немає — максимум, що лишається
      * такому читачеві, це проєкція `matchingCards`.
      */
-    expectRoleClauseGatedByFeed(rules.profileContacts.$uid['.read']);
+    expectReadGatedByFeed(rules.profileContacts.$uid['.read']);
   });
 
   it('правило власне, а не успадковане — його можна звузити окремо', () => {
@@ -288,15 +293,18 @@ describe('решта вузлів не стає другим місцем для
     // Деталі анкети — це прізвище, стан здоровʼя і решта того, чого в картці
     // стрічки навмисно немає. Правило те саме, що й у контактів, бо й питання
     // те саме: показу цій анкеті ніхто не давав.
-    expectRoleClauseGatedByFeed(rules.profileDetails.$uid['.read']);
+    expectReadGatedByFeed(rules.profileDetails.$uid['.read']);
   });
 
-  it('перелічити деталі цілою колекцією може лише службовий доступ', () => {
-    // У переліку немає де перевірити картку кожного запису, тож право за роллю
-    // з рівня колекції знято: звичайний користувач читає анкету поіменно.
+  it('перелічити деталі цілою колекцією може лише суперадмін', () => {
+    // У переліку немає де перевірити картку кожного запису: він віддає і
+    // приховані анкети теж. Тож право на нього те саме, що й на контакти, —
+    // два адмінських uid і більше ніхто. Поіменно анкету читають за ключем
+    // стрічки.
     const read = rules.profileDetails['.read'];
     expect(read).not.toContain('userRole');
-    expect(read).toContain("contains('matching')");
+    expect(read).not.toContain('accessLevel');
+    expect(read).toBe(rules.profileContacts['.read']);
     ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
   });
 
@@ -380,9 +388,31 @@ describe('legacy лишається недоторканим', () => {
     // редактор заводить анкету під `push`-ключем. Знімок лишається початком
     // рядка, тож будь-яка правка самої legacy-умови все одно впаде тут.
     expect(rules.users.$uid['.write'].startsWith(legacy.users.$uid['.write'].replace(/\)$/, ''))).toBe(true);
-    // Legacy-джерело прав нікуди не поділось: доступ, записаний там, працює далі.
-    expect(rules.users['.read'])
+    // Виняток один і навмисний: перелічити legacy-колекцію може лише
+    // суперадмін. `users` — це дзеркало, у якому лежать і контакти, і анкети
+    // поза стрічкою; поки її корінь читала вся аудиторія матчингу, межа «поза
+    // стрічкою видно саму картку» знімалась одним запитом на сусідній вузол.
+    // Legacy-джерело прав від цього не постраждало: правила решти вузлів і далі
+    // питають `users/{читач}/accessLevel`, а свій вузол відкритий кожному на
+    // себе.
+    ADMIN_UIDS.forEach(uid => expect(rules.users['.read']).toContain(uid));
+    expect(rules.users['.read']).not.toContain('userRole');
+    expect(rules.users['.read']).not.toContain("contains('matching')");
+    expect(rules.profileDetails.$uid['.read'])
       .toContain("root.child('users').child(auth.uid).child('accessLevel')");
+  });
+
+  it('поля legacy-анкети, відкриті всім, тримає той самий ключ стрічки', () => {
+    // `users/$uid/{name,surname,birth,region,city}` були відкриті кожному
+    // авторизованому — це залишок урізаної проєкції пошуку, який веб уже читає
+    // з `matchingCards`. Поза стрічкою вони показували прізвище анкети, якої
+    // ніхто не публікував, тож тепер вони під тим самим ключем.
+    ['name', 'surname', 'birth', 'region', 'city'].forEach(field => {
+      const read = rules.users.$uid[field]['.read'];
+      expect(read).not.toBe('auth != null');
+      expect(read).toContain(FEED_GATE);
+      expect(read).toContain("child('feedDate').val().matches(/.*[^ ].*/)");
+    });
   });
 
   it('другої legacy-колекції в правилах немає', () => {

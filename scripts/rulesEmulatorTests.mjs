@@ -37,6 +37,10 @@ const MIGRATED_EDITOR = 'migratedEditorUid0000000000';
 // акаунт бачить стрічку — і саме на ньому перевіряється, що поза стрічкою він
 // не бачить нічого, крім картки.
 const ORDINARY_VIEWER = 'ordinaryViewerUid000000000';
+// Акаунт із реальної бази: рівень доступу заводять руками, і в проді трапляється
+// написання без роздільників форми. Йому видано і `matching`, і право створювати
+// анкети — тобто максимум того, що видають не адмінові.
+const GRANTED_CREATOR = 'grantedCreatorUid000000000';
 
 const CARD = 'someOtherProfileId000000000';
 // Анкета без ключа стрічки: картка є, але в стрічку не потрапляє.
@@ -85,6 +89,12 @@ await testEnv.withSecurityRulesDisabled(async context => {
     [OUTSIDER]: { name: 'Стороння', userRole: 'ed' },
     [SELF_SERVE]: { name: 'Донорка', userRole: 'ed' },
     [ORDINARY_VIEWER]: { name: 'Агенція', userRole: 'ag' },
+    [GRANTED_CREATOR]: {
+      name: 'Агенція з правами',
+      userRole: 'ag',
+      accessLevel: 'matching_add_profile_view_write',
+      canCreateProfiles: true,
+    },
     [CARD]: { name: 'Картка' },
     [HIDDEN_CARD]: { name: 'Прихована', publish: false },
   });
@@ -710,8 +720,14 @@ await it('legacy-картка з пробільним feedDate не відкри
 await it('максимум, що лишається, — картка', () =>
   assertSucceeds(get(ref(db(ORDINARY_VIEWER), `matchingCards/${HIDDEN_CARD}`))));
 
-await it('перелічити деталі цілою колекцією теж не може', () =>
-  assertFails(get(ref(db(ORDINARY_VIEWER), 'profileDetails'))));
+await it('перелічити деталі цілою колекцією теж не може', async () => {
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'profileDetails')));
+  // Перелік віддав би й приховані анкети — тож він закритий і тим, кому видано
+  // рівень доступу: інакше межу знімав би один запит на вузол вище.
+  await assertFails(get(ref(db(MATCHING_VIEWER), 'profileDetails')));
+  await assertFails(get(ref(db(GRANTED_CREATOR), 'profileDetails')));
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'profileDetails')));
+});
 
 await it('зняття з публікації забирає доступ, публікація повертає', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
@@ -724,10 +740,27 @@ await it('зняття з публікації забирає доступ, пу
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-await it('службовий доступ бачить приховану анкету цілком — інакше її нема кому вести', async () => {
-  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
-  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
-  await assertSucceeds(get(ref(db(MIGRATED_EDITOR), `profileDetails/${HIDDEN_CARD}`)));
+await it('виданий рівень доступу приховану анкету не відкриває', async () => {
+  // Це і була діра: `accessLevel` зі словом `matching` — рівно те, що видають
+  // агенції заради самої стрічки, — стояв окремим диз'юнктом і відкривав
+  // будь-яку анкету, зокрема ту, показу якій ніхто не давав.
+  await assertFails(get(ref(db(MATCHING_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(MATCHING_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(MATCHING_EDITOR), `profileContacts/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(MIGRATED_EDITOR), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(CONTACTS_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+await it('ані довільне написання рівня, ані право створювати анкети — теж не перепустка', async () => {
+  await assertFails(get(ref(db(GRANTED_CREATOR), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(GRANTED_CREATOR), `profileContacts/${HIDDEN_CARD}`)));
+  // Показану анкету той самий акаунт читає як завжди.
+  await assertSucceeds(get(ref(db(GRANTED_CREATOR), `profileDetails/${CARD}`)));
+  await assertSucceeds(get(ref(db(GRANTED_CREATOR), `profileContacts/${CARD}`)));
+});
+
+await it('приховану анкету цілком читає лише суперадмін — інакше її нема кому вести', async () => {
+  await assertSucceeds(get(ref(db(SUPERADMIN), `profileDetails/${HIDDEN_CARD}`)));
   await assertSucceeds(get(ref(db(SUPERADMIN), `profileContacts/${HIDDEN_CARD}`)));
 });
 
@@ -741,10 +774,32 @@ await it('донорка чужої анкети не читає ані пока
   await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-describe('legacy /users лишається як був');
+describe('legacy /users — дзеркало, а не другий шлях до анкети');
 
-await it('матчинговий переглядач і далі читає legacy-колекцію', () =>
-  assertSucceeds(get(ref(db(MATCHING_VIEWER), 'users'))));
+await it('перелічити legacy-колекцію може лише суперадмін', async () => {
+  // У `users` веб дзеркалить усе, включно з контактами, і картки для перевірки
+  // там немає. Поки корінь читала вся аудиторія матчингу, межа «поза стрічкою
+  // видно саму картку» знімалась одним запитом на сусідню колекцію.
+  await assertFails(get(ref(db(MATCHING_VIEWER), 'users')));
+  await assertFails(get(ref(db(GRANTED_CREATOR), 'users')));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'users')));
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'users')));
+});
+
+await it('свій вузол у legacy кожен читає далі — саме звідти беруться права', async () => {
+  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `users/${MATCHING_VIEWER}`)));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `users/${ORDINARY_VIEWER}`)));
+});
+
+await it('поля legacy-анкети, відкриті всім, тримає ключ стрічки', async () => {
+  // Залишок урізаної проєкції пошуку: веб читає її з `matchingCards`, але поки
+  // ці поля були відкриті всім, вони віддавали повне прізвище анкети, якої в
+  // стрічці немає.
+  for (const field of ['name', 'surname', 'birth', 'region', 'city']) {
+    await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `users/${CARD}/${field}`)));
+    await assertFails(get(ref(db(ORDINARY_VIEWER), `users/${HIDDEN_CARD}/${field}`)));
+  }
+});
 
 await it('корінь бази закритий', () =>
   assertFails(get(ref(db(SUPERADMIN), '/'))));

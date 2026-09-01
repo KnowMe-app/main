@@ -21,9 +21,10 @@ describe('limited search projection', () => {
 
   it('opens exactly those fields on users/$uid and nothing more', () => {
     const uidRules = rules.users.$uid;
+    const feedGate = "root.child('matchingCards').child($uid).child('feedDate')";
     const openedFields = Object.keys(uidRules)
       .filter(key => !key.startsWith('.'))
-      .filter(key => uidRules[key]['.read'] === 'auth != null');
+      .filter(key => uidRules[key]['.read'].includes(feedGate));
 
     // The rules are the enforcement; the field list is only what the client asks
     // for. If they drift apart the projection silently gains or loses a field.
@@ -32,12 +33,26 @@ describe('limited search projection', () => {
       .toEqual(limitedProfileFields.sort());
   });
 
+  it('opens those fields only while the card is in the feed', () => {
+    // These are the last legacy fields readable by any signed-in account. The
+    // web reads the projection from `matchingCards` now, but while they stayed
+    // open unconditionally they still handed out the full surname of a profile
+    // nobody had published.
+    limitedProfileFields.forEach(field => {
+      const read = rules.users.$uid[field]['.read'];
+      expect(read).not.toBe('auth != null');
+      expect(read).toContain("child('feedDate').val().matches(/.*[^ ].*/)");
+    });
+  });
+
   it('leaves users node-level reads gated as before', () => {
     const nodeRead = rules.users.$uid['.read'];
     expect(nodeRead).toContain('auth.uid == $uid');
     expect(nodeRead).not.toBe('auth != null');
-    // The collection root - what a query would need - stays behind matching access.
-    expect(rules.users['.read']).toContain("accessLevel').val().contains('matching')");
+    // The collection root - what a query would need - is admins only: a listing
+    // has no per-record card to check, so it would hand over hidden profiles too.
+    expect(rules.users['.read']).not.toContain("accessLevel').val().contains('matching')");
+    expect(rules.users['.read']).toContain("auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'");
   });
 
   it('lets any signed-in user resolve one searchId key but not scan the index', () => {

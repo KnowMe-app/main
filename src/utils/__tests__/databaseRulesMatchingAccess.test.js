@@ -32,10 +32,16 @@ describe('database.rules.json matching read access', () => {
     );
   });
 
-  it('lets every matching access level read users', () => {
-    const readRule = rules.users['.read'];
+  it('keeps the matching audience able to read a shown profile', () => {
+    // The matching audience is not the admins alone: an account registered from
+    // the login screen as an agency has a non-ed role, and an agency may also
+    // carry an assignable accessLevel. Both read a profile - but only while its
+    // card is in the feed.
+    const readRule = rules.profileDetails.$uid['.read'];
 
     expect(grantsAccessLevelByContains(readRule, 'users')).toBe(true);
+    expect(readRule).toContain("child('userRole').val() != 'ed'");
+    expect(readRule).toContain("child('feedDate').val().matches(/.*[^ ].*/)");
 
     assignableAccessLevels
       .filter(level => canAccessMatchingByLevel(level))
@@ -45,11 +51,18 @@ describe('database.rules.json matching read access', () => {
       });
   });
 
-  it('keeps admin uids and non-ed roles able to read the collection', () => {
+  it('leaves the legacy collection listable by admins only', () => {
+    // Reading the `users` root is reading every mirrored profile at once,
+    // contacts included - there is no per-record card to check there. It used to
+    // be open to the whole matching audience, which undid the feed boundary one
+    // node over.
     const readRule = rules.users['.read'];
+
     expect(readRule).toContain("auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'");
     expect(readRule).toContain("auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'");
-    expect(readRule).toContain("child('userRole').val() != 'ed'");
+    expect(readRule).not.toContain("child('userRole').val() != 'ed'");
+    expect(grantsAccessLevelByContains(readRule, 'users')).toBe(false);
+    expect(grantsAccessLevelByContains(readRule, 'profileTechnical')).toBe(false);
   });
 
   it('keeps per-profile reads restricted to the owner and admins', () => {

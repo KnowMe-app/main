@@ -1,6 +1,6 @@
 import { getCacheKey } from 'hooks/cardsCache';
 import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
-import { setIdsForQuery, resetMatchingLocalStorageCache } from './cardIndex';
+import { setIdsForQuery, resetMatchingLocalStorageCache, withContactsFromSource } from './cardIndex';
 
 export { getCacheKey };
 
@@ -23,7 +23,13 @@ export const updateCachedUser = (
   user,
   { removeFavorite = false, removeKeys = [] } = {},
 ) => {
-  const updatedCard = updateCard(user.userId, user, undefined, removeKeys);
+  // Кеш і показ — різні відповіді: `updateCard` віддає картку без контактів
+  // усім, крім власниці анкети й адміна (право на них тримається на `feedDate`),
+  // а екран має показати те, з чим його викликали.
+  const updatedCard = withContactsFromSource(
+    updateCard(user.userId, user, undefined, removeKeys),
+    user,
+  );
   addCardToList(user.userId, 'load2');
   const shouldFav = isFavorite(user.userId);
 

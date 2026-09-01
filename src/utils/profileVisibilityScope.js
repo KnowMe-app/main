@@ -1,4 +1,4 @@
-import { canAccessMatchingByLevel, isAdminUid } from './accessLevel';
+import { isAdminUid } from './accessLevel';
 import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
 
 /**
@@ -16,10 +16,15 @@ import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
  * - ключ **є** → анкета показана, і читач бачить її як завжди;
  * - ключа **немає** → максимум доступної інформації це `matchingCards`.
  *
- * Службовий доступ (`accessLevel` з `matching`), власник анкети й суперадміни
- * від цієї межі не залежать: саме вони й ведуть анкету до публікації.
+ * Виданий рівень доступу цієї межі не знімає. Спершу її не помічав кожен, чий
+ * `accessLevel` містив `matching`, — тобто рівно те, що видають агенції, щоб
+ * вона взагалі побачила стрічку («перегляд matching»). Виходило, що межа
+ * стосувалась лише акаунтів без жодного рівня, а всі інші читали приховану
+ * анкету цілком — з контактами. Тепер від межі не залежать тільки двоє:
+ * власниця анкети (це її дані) і суперадміни з `ADMIN_UIDS` (це вони ведуть
+ * анкету до публікації). Решті — картка, хай який рівень їм видано.
  *
- * Справжня межа — у `database.rules.json`, де ті самі три випадки описані
+ * Справжня межа — у `database.rules.json`, де ті самі випадки описані
  * правилом читання `profileDetails/$uid` і `profileContacts/$uid`. Тут вона
  * повторена в коді, який складає анкету: щоб застосунок не малював того, що
  * приїхало повз правила — зі старого кеша, з legacy-шару чи з вузла, права на
@@ -33,21 +38,20 @@ export const isCardInMatchingFeed = card => Boolean(
   && String(card[MATCHING_CARD_FEED_FIELD] || '').trim(),
 );
 
-/** Кому анкета відкрита без огляду на те, чи вона в стрічці. */
-export const canReadProfileOutsideFeed = ({ profileId, viewerId, accessLevel } = {}) => {
+/**
+ * Кому анкета відкрита без огляду на те, чи вона в стрічці.
+ *
+ * Питання лише про двох: власницю анкети й суперадміна. Рівень доступу тут не
+ * питається навмисно — саме він і був дірою: `accessLevel` зі словом
+ * `matching` має кожна агенція, якій відкрили стрічку, і поки він означав
+ * «службовий доступ», прихована анкета була для неї такою ж відкритою, як і
+ * показана.
+ */
+export const canReadProfileOutsideFeed = ({ profileId, viewerId } = {}) => {
   const normalizedViewerId = String(viewerId || '').trim();
   const normalizedProfileId = String(profileId || '').trim();
   if (normalizedViewerId && normalizedProfileId && normalizedViewerId === normalizedProfileId) return true;
-  if (isAdminUid(normalizedViewerId)) return true;
-  // Права, яких немає на руках, — це не дозвіл. Раніше `null` («застосунок ще
-  // не знає») відкривав анкету цілком, бо ключ доступу зʼявляється лише після
-  // читання власної анкети, тобто після мережевого круга. Вікно виходило
-  // коротким, але справжнім: на холодному відкритті `/matching` пошук встигав
-  // прочитати приховану анкету повністю — з контактами — і покласти її в кеш
-  // карток, звідки її показували ще годинами. Хто справді має право, того
-  // назве прочитаний рівень (`resolveViewerAccessLevel`), а не його
-  // відсутність.
-  return canAccessMatchingByLevel(accessLevel);
+  return isAdminUid(normalizedViewerId);
 };
 
 /**
@@ -60,12 +64,11 @@ export const canReadProfileOutsideFeed = ({ profileId, viewerId, accessLevel } =
 export const scopeProfileNodesToViewer = ({
   profileId,
   viewerId,
-  accessLevel,
   parts = {},
   legacy = null,
 } = {}) => {
   const cappedToCard = !isCardInMatchingFeed(parts.card)
-    && !canReadProfileOutsideFeed({ profileId, viewerId, accessLevel });
+    && !canReadProfileOutsideFeed({ profileId, viewerId });
 
   if (!cappedToCard) return { parts, legacy, cappedToCard };
 

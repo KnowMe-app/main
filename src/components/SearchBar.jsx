@@ -15,6 +15,7 @@ import {
   serializeQueryFilters,
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
+import { withContactsFromSource } from '../utils/cardIndex';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput, normalizeSearchDateComparableValue } from '../utils/searchKeyUtils';
 
@@ -1659,7 +1660,14 @@ const SearchBar = ({
       : 'userId' in filteredRes
         ? [filteredRes]
         : Object.values(filteredRes);
-    const updatedArr = skipCache ? arr : arr.map(u => updateCard(u.userId, u));
+    // Кеш і показ — це різні відповіді. `updateCard` віддає картку такою, якою
+    // вона лягла в `localStorage`, а туди контакти більше не кладуться нікому,
+    // крім власниці анкети й адміна: право на них тримається на `feedDate` і
+    // протухає без відома браузера. Показувати ж треба щойно прочитане — те,
+    // що база цьому читачеві щойно віддала.
+    const updatedArr = skipCache
+      ? arr
+      : arr.map(u => withContactsFromSource(updateCard(u.userId, u), u));
 
     if (key && value && !skipCache) {
       const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);

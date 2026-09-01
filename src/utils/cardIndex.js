@@ -1,6 +1,5 @@
 import { CACHE_TTL_MS, MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
 import { normalizeLastAction } from './normalizeLastAction';
-import { readStoredAccessLevel } from './accessLevel';
 import { PROFILE_CONTACT_FIELDS } from './profileNodeSchema';
 import { canReadProfileOutsideFeed } from './profileVisibilityScope';
 
@@ -21,8 +20,11 @@ export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 // користувачеві цього браузера. Версія 4 прибрала старі кеші без ownerId;
 // версія 5 — ті, що встигли зберегти контакти анкет, право на які тримається
 // на `feedDate` (див. `sanitizeMatchingCardForCache`): нове правило діє на
-// запис, а вже збережене чистить лише зміна версії.
-export const CARDS_CACHE_VERSION = 5;
+// запис, а вже збережене чистить лише зміна версії. Версія 6 — ті, що зберіг
+// акаунт з виданим `accessLevel`: доти будь-який рівень зі словом `matching`
+// вважався службовим доступом, і контакти прихованих анкет лягали в кеш йому
+// так само, як адмінові.
+export const CARDS_CACHE_VERSION = 6;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 export const MATCHING_INDEX_CACHE_VERSION = 1;
@@ -315,20 +317,19 @@ const CONTACT_CACHE_KEYS = new Set(PROFILE_CONTACT_FIELDS);
 /**
  * Контакти в кеші живуть рівно доти, доки право на них не залежить від стрічки.
  *
- * Право звичайного читача на контакти дає `feedDate`, а він знімається в базі —
- * не в браузері. Тобто анкета, прочитана цілком, поки була показана, лишалася в
+ * Право читача на контакти дає `feedDate`, а він знімається в базі — не в
+ * браузері. Тобто анкета, прочитана цілком, поки була показана, лишалася в
  * `localStorage` разом з телефоном і поштою ще до кінця TTL — і кожен шлях, що
  * бере картку з кеша (стрічка, реакції, пошук, «Схожі»), показував контакти
  * анкети, якої вже нема кому показувати. Перевіряти на читанні означало б
  * питати базу про `feedDate` на кожну картку; дешевше й надійніше не класти
- * туди того, чиє право протухає: службовий читач, власниця анкети й адмін
- * тримають контакти в кеші, як і тримали, а решта читає їх щоразу заново — і
- * саме там межу застосує і база, і `scopeProfileNodesToViewer`.
+ * туди того, чиє право протухає: власниця анкети й адмін тримають контакти в
+ * кеші, як і тримали, а решта читає їх щоразу заново — і саме там межу
+ * застосує і база, і `scopeProfileNodesToViewer`.
  */
 const mayCacheContacts = profileId => canReadProfileOutsideFeed({
   profileId,
   viewerId: getCardsCacheOwnerId(),
-  accessLevel: readStoredAccessLevel(),
 });
 
 export const sanitizeMatchingCardForCache = (card, profileId) => {
@@ -341,6 +342,26 @@ export const sanitizeMatchingCardForCache = (card, profileId) => {
     acc[key] = value;
     return acc;
   }, {});
+};
+
+/**
+ * Контакти для показу — зі щойно прочитаного, а не з кеша.
+ *
+ * `sanitizeMatchingCardForCache` знімає контакти з усього, що лягає в
+ * `localStorage`. Але той самий `updateCard` повертає картку ще й на екран —
+ * і читач, якому база контакти щойно віддала, бачив би замість них порожньо.
+ * Тож у кеші їх немає, а показ отримує їх назад із джерела: воно щойно з бази,
+ * тобто вже пройшло і правила, і `scopeProfileNodesToViewer`.
+ */
+export const withContactsFromSource = (card, source) => {
+  if (!card || typeof card !== 'object' || !source || typeof source !== 'object') return card;
+  const restored = { ...card };
+  CONTACT_CACHE_KEYS.forEach(key => {
+    const value = source[key];
+    if (value === undefined || value === null) return;
+    restored[key] = value;
+  });
+  return restored;
 };
 
 export const normalizeQueryKey = raw => {
