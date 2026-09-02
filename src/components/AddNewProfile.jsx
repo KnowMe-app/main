@@ -15,6 +15,7 @@ import {
   fetchFavoriteUsersData,
   fetchDislikeUsers,
   fetchDislikeUsersData,
+  isReactionPermissionDeniedError,
   fetchCycleUsersData,
   // fetchListOfUsers,
   makeNewUser,
@@ -3685,6 +3686,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cards: [],
     loading: false,
     showLikeDislikeCards: false,
+    // Причина порожнечі: без неї відмова в правах виглядала точнісінько як
+    // «реакцій немає».
+    error: '',
   });
   const moreActionsReturnStateRef = useRef(null);
   const shouldReturnToMoreActionsRef = useRef(false);
@@ -3708,6 +3712,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       cards: [],
       loading: false,
       showLikeDislikeCards: false,
+      error: '',
     });
   };
 
@@ -3724,13 +3729,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    setMoreActionsState(prev => ({ ...prev, loading: true, showLikeDislikeCards: true }));
+    setMoreActionsState(prev => ({ ...prev, loading: true, showLikeDislikeCards: true, error: '' }));
 
     try {
       const ownerId = moreActionsState.user.userId;
+      // `rethrow` тут обовʼязковий: реакції належать власниці картки, і відмова
+      // в правах на її вузол — не порожній список, а окрема відповідь.
       const [likesMap, dislikesMap] = await Promise.all([
-        fetchFavoriteUsersData(ownerId),
-        fetchDislikeUsersData(ownerId),
+        fetchFavoriteUsersData(ownerId, { rethrow: true }),
+        fetchDislikeUsersData(ownerId, { rethrow: true }),
       ]);
 
       const merged = {};
@@ -3755,8 +3762,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }));
     } catch (error) {
       console.error('Unable to load Like/Dislike cards for user:', error);
-      toast.error('Не вдалося завантажити Like/Dislike');
-      setMoreActionsState(prev => ({ ...prev, showLikeDislikeCards: false }));
+      const message = isReactionPermissionDeniedError(error)
+        ? 'Немає прав на читання реакцій цієї анкети'
+        : 'Не вдалося завантажити Like/Dislike';
+      toast.error(message);
+      setMoreActionsState(prev => ({ ...prev, cards: [], error: message }));
     } finally {
       setMoreActionsState(prev => ({ ...prev, loading: false }));
     }
@@ -3787,7 +3797,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         {moreActionsState.showLikeDislikeCards && !moreActionsState.loading && (
           <MatchingMiniList>
-            {moreActionsState.cards.length === 0 ? (
+            {moreActionsState.error ? (
+              <p>{moreActionsState.error}</p>
+            ) : moreActionsState.cards.length === 0 ? (
               <p>Список порожній</p>
             ) : (
               moreActionsState.cards.map(card => (

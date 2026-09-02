@@ -668,22 +668,37 @@ export const removeDislikeUser = async (userId, ownerId) => {
   }
 };
 
+// Reaction lists belong to their owner, so a read of someone else's node can
+// legitimately be refused. Мовчазний `{}` на відмову зрівнює «прав немає» з
+// «список порожній»: саме через це кнопка «Like/Dislike» на чужій картці
+// показувала порожньо, поки правила бази не пускали адміна. Викликач, який
+// уміє показати причину, просить `{ rethrow: true }`; решта поводиться як досі.
+export const isReactionPermissionDeniedError = error => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  return code.includes('permission-denied')
+    || code.includes('permission_denied')
+    || message.includes('permission_denied')
+    || message.includes('permission denied');
+};
+
 // Retrieve favorites for a specific owner
-export const fetchFavoriteUsers = async ownerId => {
+export const fetchFavoriteUsers = async (ownerId, { rethrow = false } = {}) => {
   try {
     const favRef = ref2(database, `multiData/favorites/${ownerId}`);
     const snap = await get(favRef);
     return snap.exists() ? snap.val() : {};
   } catch (error) {
     console.error('Error fetching favorite users:', error);
+    if (rethrow) throw error;
     return {};
   }
 };
 
 // Load full user records for all favorites of the given owner
-export const fetchFavoriteUsersData = async ownerId => {
+export const fetchFavoriteUsersData = async (ownerId, { rethrow = false } = {}) => {
   try {
-    const favoriteIds = await fetchFavoriteUsers(ownerId);
+    const favoriteIds = await fetchFavoriteUsers(ownerId, { rethrow });
     const ids = Object.keys(favoriteIds || {});
     const results = await Promise.all(ids.map(id => fetchUserById(id)));
     const data = {};
@@ -693,6 +708,7 @@ export const fetchFavoriteUsersData = async ownerId => {
     return data;
   } catch (error) {
     console.error('Error fetching favorite users data:', error);
+    if (rethrow) throw error;
     return {};
   }
 };
@@ -868,20 +884,21 @@ export const clearMedicationScheduleAfterDay = async (
   }
 };
 
-export const fetchDislikeUsers = async ownerId => {
+export const fetchDislikeUsers = async (ownerId, { rethrow = false } = {}) => {
   try {
     const refPath = ref2(database, `multiData/dislikes/${ownerId}`);
     const snap = await get(refPath);
     return snap.exists() ? snap.val() : {};
   } catch (error) {
     console.error('Error fetching dislike users:', error);
+    if (rethrow) throw error;
     return {};
   }
 };
 
-export const fetchDislikeUsersData = async ownerId => {
+export const fetchDislikeUsersData = async (ownerId, { rethrow = false } = {}) => {
   try {
-    const dislikeIds = await fetchDislikeUsers(ownerId);
+    const dislikeIds = await fetchDislikeUsers(ownerId, { rethrow });
     const ids = Object.keys(dislikeIds || {});
     const results = await Promise.all(ids.map(id => fetchUserById(id)));
     const data = {};
@@ -891,6 +908,7 @@ export const fetchDislikeUsersData = async ownerId => {
     return data;
   } catch (error) {
     console.error('Error fetching dislike users data:', error);
+    if (rethrow) throw error;
     return {};
   }
 };
