@@ -166,10 +166,17 @@ export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId } = {}
     }
   })();
 
+  // `label` — шлях без id анкети. Форма показує саме його: id той самий у
+  // кожного блоку, тобто нічого не розрізняє, зате займає майже весь рядок і
+  // ховає під собою назву вузла — єдине, заради чого блок і підписаний.
+  // Посилання при цьому веде на повний шлях, разом з id.
+  const labelSegments = profileId ? path.filter(segment => segment !== profileId) : path;
+
   return {
     id: blockId,
     title: meta.title,
     hint: meta.hint,
+    label: labelSegments.join('/'),
     path: path.join('/'),
     href: buildRtdbConsoleLink(path),
   };

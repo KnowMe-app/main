@@ -55,6 +55,8 @@ import {
   groupProfileFormFieldsByBlock,
   buildProfileFormBlockHeader,
   buildRtdbConsoleLink,
+  resolveProfileFormBlock,
+  PROFILE_FORM_BLOCK_IDS,
 } from './profileFormNodeBlocks';
 
 const get = (...args) =>
@@ -965,6 +967,58 @@ const PROFILE_FORM_DATE_FIELDS = new Set([
   'getInTouch',
 ]);
 
+/**
+ * Блоки, розгорнуті доти, доки їх не згорнули руками.
+ *
+ * Анкету заповнюють згори вниз: картка стрічки, контакти, решта анкети. Усе
+ * інше — робота з анкетою, технічне, legacy — читається зрідка й точково, і
+ * саме воно розтягувало форму на кілька екранів інпутів.
+ */
+const DEFAULT_OPEN_PROFILE_FORM_BLOCKS = new Set([
+  PROFILE_FORM_BLOCK_IDS.matchingCards,
+  PROFILE_FORM_BLOCK_IDS.profileContacts,
+  PROFILE_FORM_BLOCK_IDS.profileDetails,
+]);
+
+const OPEN_PROFILE_FORM_BLOCKS_STORAGE_KEY = 'profileFormOpenBlocks';
+
+const isProfileFormBlockOpen = (openBlocks, blockId) => (
+  Object.prototype.hasOwnProperty.call(openBlocks || {}, blockId)
+    ? Boolean(openBlocks[blockId])
+    : DEFAULT_OPEN_PROFILE_FORM_BLOCKS.has(blockId)
+);
+
+// `localStorage` тут — зручність, а не дані: у приватному вікні його може не
+// бути взагалі, і форма має відкритись із типовими блоками, а не впасти.
+const readOpenProfileFormBlocks = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(OPEN_PROFILE_FORM_BLOCKS_STORAGE_KEY) || 'null');
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  } catch (error) {
+    return {};
+  }
+};
+
+const persistOpenProfileFormBlocks = openBlocks => {
+  try {
+    localStorage.setItem(OPEN_PROFILE_FORM_BLOCKS_STORAGE_KEY, JSON.stringify(openBlocks));
+  } catch (error) {
+    // Ніде не показуємо: незбережений стан згортання нічого не ламає.
+  }
+};
+
+/**
+ * Поле, яке форма показує не в тому блоці, де воно лежить у базі.
+ *
+ * Повне прізвище живе в `profileDetails`, а картка стрічки несе лише ініціал
+ * (`surnameShort`). Через це інпут прізвища стояв за кілька блоків від імені —
+ * тобто рівно там, де його не шукають, заповнюючи ПІБ. Тепер він стоїть під
+ * імʼям, а свій справжній вузол називає сам: підпис поруч із полем.
+ */
+const PROFILE_FORM_FIELD_DISPLAY_BLOCKS = {
+  surname: { blockId: PROFILE_FORM_BLOCK_IDS.matchingCards, after: 'name' },
+};
+
 export const ProfileForm = ({
   state,
   setState: setExternalState,
@@ -1034,6 +1088,17 @@ export const ProfileForm = ({
   const [pendingRulesToApply, setPendingRulesToApply] = useState('');
   const searchKeyFileInputRef = useRef(null);
   const [localSearchKeyPayload, setLocalSearchKeyPayload] = useState(null);
+  // Які блоки анкети розгорнуті. Вибір переживає перезавантаження: анкету
+  // відкривають десятки разів на день, і згортати ті самі блоки щоразу заново —
+  // це та сама робота, від якої блоки й згортаються.
+  const [openProfileFormBlocks, setOpenProfileFormBlocks] = useState(readOpenProfileFormBlocks);
+  const toggleProfileFormBlock = useCallback(blockId => {
+    setOpenProfileFormBlocks(previous => {
+      const next = { ...previous, [blockId]: !isProfileFormBlockOpen(previous, blockId) };
+      persistOpenProfileFormBlocks(next);
+      return next;
+    });
+  }, []);
   const autoAppliedOverlayForUserRef = useRef('');
   const addEmptyAdditionalFilter = useCallback(() => {
     const used = new Set(additionalRuleBuilder.map(rule => rule.key));
@@ -2487,8 +2552,10 @@ ${entries.join('\n')}`;
     ...normalizedFieldsToRender.filter(field => PROFILE_FORM_TECHNICAL_FIELDS.has(field.name)),
   ];
 
-  const { fields: sortedFieldsToRender, blockStarts: profileFormBlockStarts } =
-    groupProfileFormFieldsByBlock(prioritySortedFields);
+  // Групування задає порядок полів, а з нього — і порядок блоків: перший блок
+  // той, чиє поле трапилось першим. Самі блоки форма складає нижче, за шляхом у
+  // базі (`profileFormBlocks`).
+  const { fields: sortedFieldsToRender } = groupProfileFormFieldsByBlock(prioritySortedFields);
 
   const roleTokens = Array.isArray(state?.role || state?.userRole)
     ? (state?.role || state?.userRole)
@@ -2499,6 +2566,95 @@ ${entries.join('\n')}`;
         .map(value => value.trim().toLowerCase())
         .filter(Boolean);
   const shouldHideFieldsForClPp = roleTokens.some(role => ['pp', 'cl'].includes(role));
+
+  // Поля, які форма справді показує. Перелік потрібен до рендера: з нього
+  // складаються блоки, а раніше він фільтрувався просто перед `.map`.
+  const visibleFieldsToRender = sortedFieldsToRender
+    .filter(field => !['myComment', 'writer'].includes(field.name))
+    .filter(field => (isAdmin ? true : !PROFILE_FORM_TECHNICAL_FIELDS.has(field.name)))
+    .filter(field => (shouldHideFieldsForClPp ? !HIDDEN_FOR_CL_PP_FIELDS.has(field.name) : true));
+
+  /**
+   * Куди поле стає у формі — на відміну від того, у якому вузлі воно лежить.
+   *
+   * Розходяться ці двоє рівно там, де так зручніше заповнювати (`surname` під
+   * `name`); сам запис від цього не змінюється — його маршрут визначає
+   * `profileNodeSchema`, а не форма.
+   */
+  const resolveFieldDisplayBlock = field => (
+    PROFILE_FORM_FIELD_DISPLAY_BLOCKS[field?.name]?.blockId || resolveProfileFormBlock(field?.name)
+  );
+
+  // Поле, пришпилене до чужого блоку, стає одразу за своїм якорем; якщо якоря
+  // на екрані немає — лишається в кінці блоку, а не зникає.
+  const orderPinnedFieldsWithinBlock = fields => {
+    const pinned = fields.filter(field => PROFILE_FORM_FIELD_DISPLAY_BLOCKS[field.name]?.after);
+    if (!pinned.length) return fields;
+
+    const rest = fields.filter(field => !pinned.includes(field));
+    const anchored = new Set();
+    const ordered = rest.reduce((result, field) => {
+      result.push(field);
+      pinned
+        .filter(pin => PROFILE_FORM_FIELD_DISPLAY_BLOCKS[pin.name].after === field.name)
+        .forEach(pin => {
+          anchored.add(pin);
+          result.push(pin);
+        });
+      return result;
+    }, []);
+
+    return [...ordered, ...pinned.filter(pin => !anchored.has(pin))];
+  };
+
+  /**
+   * Блоки форми: заголовок вузла, підказка і його поля.
+   *
+   * Зводяться блоки за шляхом у базі, а не за своїм id. Права доступу живуть у
+   * тому самому `profileTechnical`, що й решта технічного, і двома блоками той
+   * самий вузол малювався двічі — з однаковим посиланням і різними назвами.
+   */
+  const profileFormBlocks = (() => {
+    const byPath = new Map();
+
+    visibleFieldsToRender.forEach(field => {
+      const header = buildProfileFormBlockHeader(resolveFieldDisplayBlock(field), {
+        profileId: state?.userId,
+        ownerId: auth.currentUser?.uid,
+      });
+      const existing = byPath.get(header.path);
+
+      if (existing) {
+        existing.fields.push(field);
+        if (header.hint && !existing.hints.includes(header.hint)) existing.hints.push(header.hint);
+        return;
+      }
+
+      byPath.set(header.path, {
+        ...header,
+        hints: header.hint ? [header.hint] : [],
+        fields: [field],
+      });
+    });
+
+    return [...byPath.values()].map(block => {
+      const fields = orderPinnedFieldsWithinBlock(block.fields);
+      // Згорнутий блок не має права ховати те, чого від людини чекають: чужу
+      // пропозицію, підсвічене поле, стерте оверлеєм значення.
+      const needsAttention = fields.some(field => (
+        highlightedFields.includes(field.name)
+        || deletedOverlayFields.includes(field.name)
+        || getOverlayEntriesForField(field.name).length > 0
+      ));
+
+      return {
+        ...block,
+        fields,
+        hint: block.hints.join(' '),
+        isOpen: needsAttention || isProfileFormBlockOpen(openProfileFormBlocks, block.id),
+      };
+    });
+  })();
 
   const handlePpTechnicalInputSubmit = useCallback(() => {
     const rawValue = String(ppTechnicalInput || '').trim();
@@ -2710,16 +2866,48 @@ ${entries.join('\n')}`;
           </InputDiv>
         </FieldMainRow>
       </PickerContainer>
-      {sortedFieldsToRender
-        .filter(field => !['myComment', 'writer'].includes(field.name))
-        .filter(field => (isAdmin ? true : !PROFILE_FORM_TECHNICAL_FIELDS.has(field.name)))
-        .filter(field => {
-          if (!shouldHideFieldsForClPp) return true;
-          return !HIDDEN_FOR_CL_PP_FIELDS.has(field.name);
-        })
-        .map((field, index) => {
+      {/* Блок = вузол бекенду. Назва блоку словами звідси прибрана: два підписи
+          на одне й те саме («Технічне» і `profileTechnical`) забирали висоту, а
+          казали одне. Лишились адреса вузла — вона ж і кнопка згортання — і
+          опис, заради якого блок і підписаний. Поля лежать у
+          {sortedFieldsToRender}, згрупованому в profileFormBlocks. */}
+      {profileFormBlocks.map(block => (
+        <TechnicalFieldsSection key={block.path}>
+          <BlockHeaderRow>
+            <BlockToggle
+              type="button"
+              aria-expanded={block.isOpen}
+              onClick={() => toggleProfileFormBlock(block.id)}
+            >
+              <BlockChevron $open={block.isOpen} aria-hidden="true">▾</BlockChevron>
+              <BlockNodeName>{block.label}</BlockNodeName>
+              <BlockFieldCount>{block.fields.length}</BlockFieldCount>
+            </BlockToggle>
+            {isAdmin && (
+              <BlockBackendLink
+                href={block.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`Відкрити ${block.path} у Firebase`}
+                aria-label={`Відкрити ${block.path} у Firebase`}
+              >
+                <FaArrowRight size={12} />
+              </BlockBackendLink>
+            )}
+          </BlockHeaderRow>
+          {block.isOpen && block.hint && <BlockHint>{block.hint}</BlockHint>}
+          {block.isOpen && block.fields.map((field, index) => {
           const overlayEntries = getOverlayEntriesForField(field.name);
           const hasOverlaySuggestions = overlayEntries.length > 0;
+          // Поле, пришпилене до чужого блоку, називає свій справжній вузол саме
+          // тут: інпут стоїть під імʼям, а лежить значення в іншому місці, і
+          // мовчати про це означало б спитати «чому в картці немає прізвища».
+          const foreignNodeLabel = PROFILE_FORM_FIELD_DISPLAY_BLOCKS[field.name]
+            ? buildProfileFormBlockHeader(resolveProfileFormBlock(field.name), {
+                profileId: state?.userId,
+                ownerId: auth.currentUser?.uid,
+              }).label
+            : '';
           const displayValue =
             field.name === 'lastAction'
               ? formatDateToDisplay(normalizeLastAction(state.lastAction))
@@ -2731,28 +2919,7 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
-            {profileFormBlockStarts.has(field.name) && (() => {
-              const block = buildProfileFormBlockHeader(profileFormBlockStarts.get(field.name), {
-                profileId: state?.userId,
-                ownerId: auth.currentUser?.uid,
-              });
-              return (
-                <TechnicalFieldsSection>
-                  <TechnicalFieldsTitle>{block.title}</TechnicalFieldsTitle>
-                  {isAdmin && (
-                    <BlockBackendLink
-                      href={block.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={block.hint}
-                    >
-                      {block.path}
-                    </BlockBackendLink>
-                  )}
-                  {block.hint && <BlockHint>{block.hint}</BlockHint>}
-                </TechnicalFieldsSection>
-              );
-            })()}
+            {foreignNodeLabel && <FieldNodeNote>{foreignNodeLabel}</FieldNodeNote>}
             <PickerContainer
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
@@ -3313,7 +3480,9 @@ ${entries.join('\n')}`;
             </PickerContainer>
             </React.Fragment>
           );
-        })}
+          })}
+        </TechnicalFieldsSection>
+      ))}
       <KeyValueRow>
         <CustomInput
           placeholder="ключ"
@@ -3519,37 +3688,86 @@ const FormCard = styled.div`
 
 const TechnicalFieldsSection = styled.section`
   width: 100%;
-  margin-top: 28px;
-  padding-top: 18px;
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--km-border);
 `;
 
-const TechnicalFieldsTitle = styled.h3`
-  margin: 0 0 4px;
-  color: var(--km-muted);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+const BlockHeaderRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 `;
 
-// Шлях у консоль показується самим шляхом, а не словом «відкрити»: адмін читає
-// його як адресу і без кліку — а саме адреса і є відповіддю на питання «де ці
-// дані лежать».
-const BlockBackendLink = styled.a`
-  display: inline-block;
-  margin: 0 0 6px;
-  color: var(--km-accent, #2b6);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+// Заголовок блоку — він же кнопка згортання: клікати доводиться саме по назві,
+// і окрема стрілка збоку була б другою мішенню для того самого руху.
+const BlockToggle = styled.button`
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--km-muted);
+  text-align: left;
+  cursor: pointer;
+`;
+
+const BlockChevron = styled.span`
+  flex: 0 0 auto;
   font-size: 11px;
-  word-break: break-all;
+  line-height: 1;
+  transition: transform 0.15s ease;
+  transform: rotate(${({ $open }) => ($open ? '0deg' : '-90deg')});
+`;
+
+// Назва блоку — це адреса вузла в базі, а не слово. Саме вона й відповідає на
+// питання «де ці дані лежать»; id анкети з неї прибраний — він однаковий у всіх
+// блоків і лише витісняв назву вузла за край рядка.
+const BlockNodeName = styled.span`
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+`;
+
+const BlockFieldCount = styled.span`
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--km-border);
+  color: var(--km-muted);
+  font-size: 10px;
+  line-height: 1.6;
+`;
+
+const BlockBackendLink = styled.a`
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  color: var(--km-accent, #2b6);
 `;
 
 const BlockHint = styled.p`
-  margin: 0 0 12px;
+  margin: 4px 0 10px;
   color: var(--km-muted);
   font-size: 11px;
   line-height: 1.45;
+`;
+
+// Поле, показане не у своєму блоці, називає свій вузол просто над собою.
+const FieldNodeNote = styled.p`
+  width: 100%;
+  margin: 6px 0 -4px;
+  color: var(--km-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
 `;
 
 
