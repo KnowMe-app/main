@@ -59,12 +59,15 @@ describe('limited profile row', () => {
     expect(screen.queryByText(/BMI/)).not.toBeInTheDocument();
   });
 
-  it('does not open a card that has nothing more behind it', () => {
+  // Дотик мусить щось робити: рядок, який на дотик не робить нічого, читається
+  // як зламана картка. Шар деталей показує ту саму проєкцію, але з фото на весь
+  // екран, — а от розгортати рядок нема чим, метрик і контактів у ній немає.
+  it('opens the detail layer but never expands the row', () => {
     const onOpen = jest.fn();
     const onToggleExpand = jest.fn();
     renderRow(limitedUser, { onOpen, onToggleExpand });
     fireEvent.click(screen.getByText(/Олена Ткаченко/));
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(onOpen).toHaveBeenCalledWith(limitedUser);
     expect(onToggleExpand).not.toHaveBeenCalled();
   });
 

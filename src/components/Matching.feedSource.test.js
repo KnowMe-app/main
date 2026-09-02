@@ -27,7 +27,9 @@ describe('дзеркалення анкет у matchingCards', () => {
     // Без ключа стрічки інкрементально оновлена картка не потрапила б у запит,
     // хоч і лежала б у вузлі.
     const index = read('../utils/matchingCardIndex.js');
-    expect(index).toContain('if (feedDate) projection[MATCHING_CARD_FEED_FIELD] = feedDate;');
+    // `false` — теж значення ключа («сховали»), і воно мусить дійти до вузла:
+    // без нього сховану анкету не відрізнити від тієї, яку ще не публікували.
+    expect(index).toContain('if (feedDate || feedDate === false) projection[MATCHING_CARD_FEED_FIELD] = feedDate;');
 
     // І лише показаній картці з датою. Формат id тут ні до чого: анкета,
     // створена у вебі, має push-ключ, і умова «лише з акаунтів» не пускала б її

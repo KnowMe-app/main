@@ -160,6 +160,7 @@ import {
   isMatchingSummaryCard,
 } from '../utils/matchingCardIndex';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
+import { orderMatchingSearchResults } from '../utils/matchingSearchResultOrder';
 import {
   MATCHING_THROTTLED_LOAD_BATCH,
   MATCHING_THROTTLED_LOAD_DELAY_MS,
@@ -1286,6 +1287,11 @@ const SwipeableCard = ({
           )}
         </ModernProfileBody>
         </ModernProfileScroll>
+        {/* Реакції на урізану проєкцію не вішаються: разом із реакцією
+            картка лягла б у спільний кеш анкет, а проєкція — не анкета, і
+            саме тому пошук з урізаною видачею кеш узагалі не чіпає. Плитка
+            галереї й рядок списку ховають ці кнопки з тієї ж причини. */}
+        {!user?.__limitedProfile && (
         <ModernActionRail>
           <span ref={dislikeButtonWrapRef}>
             <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
@@ -1294,6 +1300,7 @@ const SwipeableCard = ({
             <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
           </span>
         </ModernActionRail>
+        )}
       </ModernProfileShell>
       </AnimatedCard>
       {viewerIndex !== null && allPhotos.length > 0 && (
@@ -2010,21 +2017,29 @@ const Matching = () => {
     // заведено в застосунку (push-id рівно 20 символів): статус устигав сказати
     // «Знайшов», а на екран не потрапляло нічого.
     //
-    // Знайдене за точним контактом — не дека, і правило деки на нього не
-    // поширюється. Дека показує лише картки з `feedDate`, і саме тому пошук у
-    // читача з повним доступом мовчав: він знаходив анкету в `searchId`,
-    // читав її проєкцію — і викидав на останньому кроці, бо картка не
-    // опублікована. Показати її нема кому: у стрічку вона не приїде ніколи.
+    // Знайдене — не дека, і правило деки на нього не поширюється. Дека показує
+    // лише картки з `feedDate`, і саме тому пошук мовчав про неопубліковані:
+    // він знаходив анкету в `searchId`, читав її проєкцію — і викидав на
+    // останньому кроці, бо картка не в стрічці. Але запит називає конкретну
+    // людину, і відповісти «немає» на те, що знайшлось, — це не межа
+    // приватності, а загублена відповідь: сама межа стоїть нижче, у тому, що
+    // саме читається (`profileDetails` і `profileContacts` неопублікованої
+    // анкети звичайному читачеві не віддають ані правила, ані
+    // `scopeProfileNodesToViewer`).
     //
-    // Читач з урізаною видачею таку картку бачив завжди (`fetchLimitedProfileById`
-    // віддає її з `publish: true`), тобто слабший доступ показував більше за
-    // сильніший. Позначка знімає саме цю розбіжність — і лише для того, хто вже
-    // має право на повну анкету, і лише для відповіді на запит.
-    const filtered = arr
-      .filter(u => isMatchingCardId(u?.userId))
-      .map(user => (hasFullProfileAccess && user?.__matchingAccessAllowed === undefined
-        ? { ...user, __matchingAccessAllowed: true }
-        : user));
+    // Тому позначка ставиться кожній знайденій картці, а не лише тій, чий
+    // читач має повний доступ: інакше слабший доступ показував би більше за
+    // сильніший.
+    //
+    // Порядок задає `orderMatchingSearchResults`: спершу картки з `feedDate`,
+    // за ними — решта знайденого.
+    const filtered = orderMatchingSearchResults(
+      arr
+        .filter(u => isMatchingCardId(u?.userId))
+        .map(user => (user?.__matchingAccessAllowed === undefined
+          ? { ...user, __matchingAccessAllowed: true }
+          : user))
+    );
 
     loadInitialVersionRef.current += 1;
     additionalLoadMoreFetchVersionRef.current += 1;
@@ -3285,7 +3300,13 @@ const Matching = () => {
       await Promise.all(uniqueIds.map(async id => {
         try {
           const snapshot = await get(refDb(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_FEED_FIELD}`));
-          classifications[id] = snapshot.exists()
+          // Питається значення, а не наявність: у ключа три стани, і `false`
+          // (сховали) теж «існує». У стрічці стоїть лише картка з датою — саме
+          // її бачить запит стрічки (`startAt('')` бере самі рядки), тож
+          // «існує» зарахувало б сховану до стрічкових і провело б її повз
+          // перевірку додаткового доступу.
+          const feedDate = snapshot.exists() ? snapshot.val() : null;
+          classifications[id] = typeof feedDate === 'string' && feedDate.trim()
             ? { storage: 'feed', reason: 'in-matching-feed' }
             : { storage: 'nodes', reason: 'not-in-matching-feed' };
         } catch (error) {
@@ -6089,9 +6110,11 @@ const Matching = () => {
   }, [filters, matchingDefaultFilters]);
 
   const openDetailFor = React.useCallback(user => {
-    // A limited projection has no full card behind it - the row already shows
-    // everything the viewer is entitled to.
-    if (user?.__limitedProfile) return;
+    // Урізана проєкція теж відкривається. Раніше — ні: рядок списку показує все,
+    // на що читач має право, і відкривати нібито не було чого. Але плитка
+    // галереї показує менше за рядок (ані локації, ані публічних коментарів),
+    // тож дотик до неї не робив рівно нічого — картка виглядала зламаною. Шар
+    // деталей малює те саме, що й проєкція: більше в ньому взятись нема звідки.
     const index = feedSource.findIndex(candidate => candidate?.userId === user?.userId);
     if (index === -1) return;
     feedScrollTopRef.current = window.scrollY;

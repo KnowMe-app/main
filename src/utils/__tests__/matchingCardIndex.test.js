@@ -103,12 +103,44 @@ describe('buildMatchingCardProjection', () => {
     // Дата з legacy-формату теж придатна — вона просто переставляється.
     expect(build({ name: 'A', lastLogin: '19.08.2026', publish: true })[FEED]).toBe('2026-08-19');
 
-    // Усе інше — відсутність ключа: і явне false, і порожнє, і анкета, яка
-    // показ ніколи не вмикала. Схованої картки в індексі немає взагалі, тож
-    // вона не може приїхати у видачу.
-    expect(build({ name: 'A', lastLogin2: '2026-08-19', publish: false })).not.toHaveProperty(FEED);
+    // Явне зняття публікації — це `false`, а не відсутність ключа: «сховали»
+    // і «ще не публікували» мусять розрізнятись, бо пошук поводиться з ними
+    // по-різному. У стрічку не потрапляє ні те, ні те: діапазон стрічки
+    // починається з `startAt('')`, тобто з рядків.
+    expect(build({ name: 'A', lastLogin2: '2026-08-19', publish: false })[FEED]).toBe(false);
+    expect(build({ name: 'A', lastLogin2: '2026-08-19', publish: 'false' })[FEED]).toBe(false);
+
+    // Решта — відсутність ключа: анкета, яка показ ніколи не вмикала.
     expect(build({ name: 'A', lastLogin2: '2026-08-19', publish: '' })).not.toHaveProperty(FEED);
     expect(build({ name: 'A', lastLogin2: '2026-08-19' })).not.toHaveProperty(FEED);
+  });
+
+  it('ховає лише те, що вже мало ключ стрічки', () => {
+    const usersId = 'a'.repeat(28);
+    const FEED = MATCHING_CARD_FEED_FIELD;
+    const hidden = { name: 'A', lastLogin2: '2026-08-19', publish: false };
+
+    // `publish: false` в анкеті — це не завжди рішення сховати: це ще й
+    // початковий стан форми і те, як виглядає анкета, якої ніколи не
+    // публікували. Різницю каже перехід, тож писач передає попередню картку.
+    expect(buildMatchingCardProjection(usersId, hidden, {
+      existingCard: { name: 'A', [FEED]: '2026-08-19' },
+    })[FEED]).toBe(false);
+    expect(buildMatchingCardProjection(usersId, hidden, {
+      existingCard: { name: 'A', [FEED]: false },
+    })[FEED]).toBe(false);
+
+    // Ключа не було — анкета так і лишається неопублікованою, а не стає
+    // схованою: інакше з пошуку випали б усі, кого щойно завели.
+    expect(buildMatchingCardProjection(usersId, hidden, { existingCard: { name: 'A' } }))
+      .not.toHaveProperty(FEED);
+    expect(buildMatchingCardProjection(usersId, hidden, { existingCard: null }))
+      .not.toHaveProperty(FEED);
+
+    // Попередньої картки не передали взагалі (офлайн-збірка вузла з локальних
+    // файлів) — переходу нема звідки взятись, і `publish` береться як є: туди
+    // він приходить із самої ж картки через `expandMatchingCard`.
+    expect(buildMatchingCardProjection(usersId, hidden)[FEED]).toBe(false);
   });
 
   it('не індексує показану картку без дати — впорядкувати її нема за чим', () => {
@@ -159,8 +191,8 @@ describe('buildMatchingCardProjection', () => {
     const usersId = 'a'.repeat(28);
     const afterLogin = { name: 'A', publish: false, lastLogin2: '2026-08-26' };
 
-    expect(buildMatchingCardProjection(usersId, afterLogin))
-      .not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
+    // Сховану анкету логін не повертає в стрічку: ключ лишається `false`.
+    expect(buildMatchingCardProjection(usersId, afterLogin)[MATCHING_CARD_FEED_FIELD]).toBe(false);
     expect(buildMatchingCardProjection(usersId, { ...afterLogin, publish: undefined }))
       .not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
   });
@@ -220,14 +252,21 @@ describe('expandMatchingCard', () => {
 
   it('виводить показ із наявності ключа стрічки', () => {
     const id = 'a'.repeat(28);
+    const { publish, ...neverPublished } = fullProfile;
     const shown = expandMatchingCard(id, buildMatchingCardProjection(id, fullProfile));
     const hidden = expandMatchingCard(id, buildMatchingCardProjection(id, { ...fullProfile, publish: false }));
+    const unpublished = expandMatchingCard(id, buildMatchingCardProjection(id, neverPublished));
 
     expect(shown.publish).toBe(true);
-    expect(hidden).not.toHaveProperty('publish');
+    // Сховану картку розгортання називає прямо: інакше перше ж збереження
+    // сусіднього поля перебудувало б проєкцію з перечитаної анкети, у якій
+    // `publish` уже нема, — і позначка «сховано» тихо зникла б.
+    expect(hidden.publish).toBe(false);
+    expect(unpublished).not.toHaveProperty('publish');
     // Сам ключ назовні не тече — він службовий для запиту, не для рендера;
     // дата виходить під старим іменем, за яким сортує стрічка.
     expect(shown).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
+    expect(hidden).not.toHaveProperty(MATCHING_CARD_FEED_FIELD);
     expect(shown.lastLogin2).toBe('2026-08-19');
   });
 });

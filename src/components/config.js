@@ -62,6 +62,7 @@ import { mergeProfileNodeCollections, PROFILE_NODE_NAMES } from '../utils/profil
 import { PROFILE_NODES, resolveFieldOwnerNode } from '../utils/profileNodeSchema';
 import {
   MATCHING_CARDS_ROOT,
+  MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_ORDER_FIELD,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
@@ -2180,13 +2181,20 @@ export const lazyLoadProfilePhotos = async (userId, options = {}) => getAllUserP
 export const LIMITED_PROFILE_FIELDS = ['name', 'surname', 'birth', 'region', 'city'];
 
 /**
- * Та сама проєкція, але з опублікованої картки стрічки.
+ * Та сама проєкція, але з картки стрічки.
  *
  * Анкета, заведена у вебі, тіла в legacy-колекції не має взагалі — і пошук за
  * `searchId` знаходив її id, а показати за ним було нічого. Картка ж
- * `matchingCards/{id}` відкрита кожному авторизованому, щойно вона має
- * `feedDate`: це і є та «загальнодоступна картка», на яку можна подивитись і
- * під якою можна лишити публічний відгук.
+ * `matchingCards/{id}` відкрита кожному авторизованому: це і є та
+ * «загальнодоступна картка», на яку можна подивитись і під якою можна лишити
+ * публічний відгук.
+ *
+ * `feedDate` тут більше не умова читання, а поле проєкції. Умовою він був, і
+ * коштувало це рівно того, за чим приходять у пошук: `searchId` знає всі
+ * анкети, а картку неопублікованої база віддавати відмовлялась — знайдений id
+ * мовчки випадав з видачі, і читач бачив лише те, що й так є в стрічці. Межа
+ * приватності від цього не зрушила: вона стоїть на `profileDetails` і
+ * `profileContacts`, і саме там `feedDate` і далі вирішує.
  *
  * Повне прізвище в картці не зберігається — тільки `surnameShort`. Для урізаної
  * проєкції це не втрата, а рівно та форма, яку вона й має показувати.
@@ -2197,7 +2205,8 @@ const readLimitedProfileFromMatchingCard = async userId => {
     const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`));
     card = snapshot.exists() ? snapshot.val() : null;
   } catch {
-    // Непублічну картку читати не дають — це не помилка, а відсутність проєкції.
+    // Картки може не бути або права можуть змінитись — це не помилка пошуку, а
+    // відсутність проєкції.
     return null;
   }
   if (!card || typeof card !== 'object') return null;
@@ -2210,6 +2219,13 @@ const readLimitedProfileFromMatchingCard = async userId => {
   if (card.surnameShort) projection.surname = card.surnameShort;
   if (card.country) projection.country = card.country;
   if (card.avatar) projection.avatar = card.avatar;
+  // Ключ стрічки їде разом з проєкцією: за ним видача пошуку відрізняє
+  // опубліковану картку від решти — і тільки цим він тут і є. `false` (сховану)
+  // копіювати обовʼязково: саме за ним пошук її й прибирає, і «якщо значення
+  // істинне» тут викидало б рівно ту позначку, заради якої ключ і читається.
+  if (card[MATCHING_CARD_FEED_FIELD] !== undefined && card[MATCHING_CARD_FEED_FIELD] !== null) {
+    projection[MATCHING_CARD_FEED_FIELD] = card[MATCHING_CARD_FEED_FIELD];
+  }
 
   return Object.keys(projection).length ? projection : null;
 };
@@ -2224,11 +2240,17 @@ export const fetchLimitedProfileById = async userId => {
   // `users/$uid` тут більше не питають: веб з legacy не читає.
   const projection = await readLimitedProfileFromMatchingCard(userId);
   if (!projection) return null;
+  const feedDate = String(projection[MATCHING_CARD_FEED_FIELD] || '').trim();
   return {
     userId,
     ...projection,
     __limitedProfile: true,
-    publish: true,
+    // Стан публікації називається так само, як у повній картці
+    // (`expandMatchingCard`): ключ є — `publish` і дата під старим іменем;
+    // ключа немає — немає й `publish`. Ставити його завжди означало б сказати
+    // «показана» про картку, якої в стрічці немає, — і саме за цим прапорцем
+    // потім вирішують і сортування, і фільтри.
+    ...(feedDate ? { publish: true, lastLogin2: feedDate } : {}),
   };
 };
 
@@ -4102,7 +4124,14 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       ? options.avatar
       : await resolveMatchingCardAvatar(id, nextData, { includeStorage: options.includeStorageAvatar !== false });
 
-    const projection = buildMatchingCardProjection(id, nextData, { avatar: knownAvatar });
+    // Попередня картка тут не лише для порівняння: за нею проєкція відрізняє
+    // зняття публікації (ключ у картці був) від анкети, якої ніколи не
+    // публікували (ключа не було). Різниця видима в пошуку: сховану він не
+    // показує, неопубліковану показує.
+    const projection = buildMatchingCardProjection(id, nextData, {
+      avatar: knownAvatar,
+      existingCard: existing,
+    });
     if (!projection) return null;
 
     if (existing && areMatchingCardProjectionsEqual(existing, projection)) return projection;

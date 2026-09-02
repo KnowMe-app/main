@@ -135,15 +135,28 @@ describe('стан публікації переживає зникнення le
     expect(expanded.lastLogin2).toBe('2026-08-26');
   });
 
-  it('знята публікація прибирає ключ, і анкета читається як прихована', () => {
+  it('знята публікація лишає ключ у стані false, і анкета читається як прихована', () => {
     const hiddenCard = buildMatchingCardProjection('freshPushKey00000000', {
       name: 'Оля',
       publish: false,
       lastLogin2: '2026-08-26',
     });
 
-    expect(hiddenCard).not.toHaveProperty('feedDate');
-    expect(expandMatchingCard('freshPushKey00000000', hiddenCard).publish).toBeUndefined();
+    // `false`, а не відсутність ключа: у стрічку не потрапляє ні те, ні те, але
+    // пошук показує ще не опубліковану анкету і мовчить про сховану — тож
+    // розрізнити їх картка мусить сама.
+    expect(hiddenCard.feedDate).toBe(false);
+    expect(expandMatchingCard('freshPushKey00000000', hiddenCard).publish).toBe(false);
+  });
+
+  it('анкета, яку ще не публікували, ключа стрічки не має взагалі', () => {
+    const neverPublishedCard = buildMatchingCardProjection('freshPushKey00000000', {
+      name: 'Оля',
+      lastLogin2: '2026-08-26',
+    });
+
+    expect(neverPublishedCard).not.toHaveProperty('feedDate');
+    expect(expandMatchingCard('freshPushKey00000000', neverPublishedCard).publish).toBeUndefined();
   });
 
   it('анкета, зібрана лише з вузлів, знає, що вона показана', () => {
