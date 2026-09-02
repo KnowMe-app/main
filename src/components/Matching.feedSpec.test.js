@@ -30,7 +30,9 @@ describe('matching feed structure', () => {
     // кого показувати в деці, а запит називає конкретну людину, і ховати її за
     // типом профілю означало б відповісти «немає» на питання «де ось цей».
     expect(memo).toContain("if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;");
-    expect(memo).toContain("if (viewMode === 'search') return visibleUsers;");
+    // Пошук і далі не звужується чіпами — але показується вікном, а не цілком:
+    // 400 знайдених це 400 рядків у DOM і стільки ж гідратацій.
+    expect(memo).toContain("if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);");
     expect(source).toContain("const feedSource = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;");
   });
 

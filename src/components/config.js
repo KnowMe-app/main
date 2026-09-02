@@ -2282,6 +2282,48 @@ const addSearchHit = async (userId, users) => {
   if (profile) users[userId] = profile;
 };
 
+/**
+ * Знайдене, показане карткою, а не анкетою.
+ *
+ * Видача пошуку — це рядок стрічки, і малює його рівно те, що лежить у
+ * проєкції. Читати заради нього повну анкету означає на кожен знайдений id
+ * витратити чотири вузли плюс рівень доступу плюс дві мапи `multiData` — і
+ * зробити це на всі знайдені одразу. На запиті, що дає сотні влучань, саме це
+ * й перетворювало пошук на кілька мегабайтів однією хвилею.
+ *
+ * Тому сторінка matching просить `cardsOnly`, а анкету читає окремо й пізніше —
+ * рівно для тієї картки, яку читач відкрив (`ensureFullProfile`). Це той самий
+ * порядок, яким уже живе стрічка: «одна картка на дотик читача замість сорока
+ * наперед».
+ *
+ * Межа приватності від цього не зрушує, а звужується: картка і є той публічний
+ * мінімум, який видно поза стрічкою, а `profileDetails` і `profileContacts`
+ * так і лишаються за `readProfileFromNodes`.
+ *
+ * Проєкції може не бути взагалі — анкета старша за вузол `matchingCards` або
+ * картку зняли. Тоді читається анкета: мовчки викинути знайдене гірше, ніж
+ * заплатити за нього повну ціну.
+ */
+const addCardHit = async (userId, users) => {
+  let expanded = null;
+  try {
+    const raw = await readMatchingCardRaw(userId);
+    expanded = isCurrentMatchingCardSchema(raw) ? expandMatchingCard(userId, raw) : null;
+  } catch {
+    expanded = null;
+  }
+  if (expanded) {
+    users[userId] = expanded;
+    return;
+  }
+  await addSearchHit(userId, users);
+};
+
+const resolveSearchHitAdder = ({ limitedFields = false, cardsOnly = false } = {}) => {
+  if (limitedFields) return addLimitedUser;
+  return cardsOnly ? addCardHit : addSearchHit;
+};
+
 const searchBySearchIdUsers = async (
   modifiedSearchValue,
   rawSearchValue,
@@ -2289,7 +2331,7 @@ const searchBySearchIdUsers = async (
   users,
   searchIdPrefixes,
   options = {},
-  { limitedFields = false } = {},
+  { limitedFields = false, cardsOnly = false } = {},
 ) => {
   const searchKeys = buildSearchIdCandidateKeys(
     modifiedSearchValue,
@@ -2298,13 +2340,13 @@ const searchBySearchIdUsers = async (
     options,
   );
   const userIds = await collectUserIdsBySearchIdKeys(searchKeys, { ...options, rawSearchValue });
+  const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
 
   await Promise.all(
     userIds.map(async id => {
       if (uniqueUserIds.has(id)) return;
       uniqueUserIds.add(id);
-      if (limitedFields) await addLimitedUser(id, users);
-      else await addSearchHit(id, users);
+      await addHit(id, users);
     })
   );
 };
@@ -2349,7 +2391,16 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 };
 
 export const searchUsersOnly = async (searchedValue, options = {}) => {
-  const { searchIdPrefixes, allowTelegramPrefixMatches = false, enabledSearchKeys, limitedFields = false } = options;
+  // `cardsOnly` — опція сторінки matching, а не нова поведінка пошуку.
+  // Дефолт лишається тим самим: знайдене гідратується з вузлів анкети. Див.
+  // `addCardHit` — чому видача matching просить саме проєкцію.
+  const {
+    searchIdPrefixes,
+    allowTelegramPrefixMatches = false,
+    enabledSearchKeys,
+    limitedFields = false,
+    cardsOnly = false,
+  } = options;
   const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
@@ -2378,7 +2429,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const searchIdOptions = limitedFields
     ? { ...baseSearchIdOptions, includePrefixMatches: false }
     : baseSearchIdOptions;
-  const addHit = limitedFields ? addLimitedUser : addSearchHit;
+  const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
   const users = {};
   const uniqueUserIds = new Set();
   try {
@@ -2396,7 +2447,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       users,
       searchIdPrefixes,
       searchIdOptions,
-      { limitedFields },
+      { limitedFields, cardsOnly },
     );
 
     if (shouldSkipBroadFallback) {
@@ -2411,8 +2462,8 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
     // неї не читає. Текст, якого немає в `searchId`, шукається там, де він у
     // вебі й лежить, — в імені картки стрічки; id — по ключах того ж вузла.
     if (isBroadTextSearchEnabled) {
-      await searchMatchingCardsByText(searchValue, uniqueUserIds, users);
-      await searchUserByPartialUserId(searchValue, users);
+      await searchMatchingCardsByText(searchValue, uniqueUserIds, users, { cardsOnly });
+      await searchUserByPartialUserId(searchValue, users, { cardsOnly });
     }
 
     if (Object.keys(users).length === 1) {
@@ -2533,10 +2584,10 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
 
 
 
-export const searchUserByPartialUserId = async (userId, users) => {
+export const searchUserByPartialUserId = async (userId, users, { cardsOnly = false } = {}) => {
   try {
     const ids = await collectIdsByPartialUserId(userId);
-    await Promise.all(ids.map(currentUserId => addUserToResults(currentUserId, users)));
+    await Promise.all(ids.map(currentUserId => addUserToResults(currentUserId, users, { cardsOnly })));
 
     // Користувача не знайдено
     return Object.keys(users).length > 0 ? users : null;
@@ -2546,10 +2597,9 @@ export const searchUserByPartialUserId = async (userId, users) => {
   }
 };
 
-const addUserToResults = async (userId, users) => {
-  const profile = await readProfileForSearchHit(userId);
+const addUserToResults = async (userId, users, { cardsOnly = false } = {}) => {
   // Додаємо користувача у форматі userId -> userData
-  if (profile) users[userId] = profile;
+  await resolveSearchHitAdder({ cardsOnly })(userId, users);
 };
 
 const getDateFormats = input => {
@@ -2655,7 +2705,7 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
  */
 const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name'];
 
-const searchMatchingCardsByText = async (searchValue, uniqueUserIds, users) => {
+const searchMatchingCardsByText = async (searchValue, uniqueUserIds, users, { cardsOnly = false } = {}) => {
   const trimmed = String(searchValue || '').trim();
   if (!trimmed) return;
 
@@ -2677,7 +2727,7 @@ const searchMatchingCardsByText = async (searchValue, uniqueUserIds, users) => {
           const userId = cardSnapshot.key;
           if (uniqueUserIds.has(userId)) return;
           uniqueUserIds.add(userId);
-          promises.push(addUserToResults(userId, users));
+          promises.push(addUserToResults(userId, users, { cardsOnly }));
         });
         // eslint-disable-next-line no-await-in-loop
         await Promise.all(promises);

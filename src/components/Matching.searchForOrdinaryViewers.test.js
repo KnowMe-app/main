@@ -69,7 +69,12 @@ describe('пошук у matching для читача без повного до�
     // `searchUsers` кладе знайдене в кеш карток, з якого його бере й стрічка.
     // Позначка ставиться після нього, в `applySearchResults`, інакше картка без
     // `feedDate` пролізла б у деку через кеш.
-    expect(searchUsers).toContain('filtered.forEach(u => updateCard(u.userId, u));');
+    //
+    // У кеш іде не все знайдене, а лише повні картки: проєкція замістила б
+    // повну своїми десятьма полями (`shouldCacheMatchingCard` — та сама
+    // сторожа, що й на всіх шляхах стрічки).
+    expect(searchUsers).toContain('const cacheable = filtered.filter(shouldCacheMatchingCard);');
+    expect(searchUsers).toContain('cacheable.forEach(u => updateCard(u.userId, u));');
     expect(searchUsers).not.toContain('__matchingAccessAllowed');
   });
 
@@ -140,8 +145,11 @@ describe('фільтри не звужують видачу пошуку', () =>
       source.indexOf('  const draftFilteredCount = useMemo'),
     );
 
-    expect(filtered).toContain("if (viewMode === 'search') return visibleUsers;");
-    const bypassIndex = filtered.indexOf("if (viewMode === 'search') return visibleUsers;");
+    // `searchRefinedUsers` — це та сама видача, звужена лише дофільтром, який
+    // читач увімкнув сам. Чіпи стрічки до неї так само не доходять.
+    const bypass = "if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);";
+    expect(filtered).toContain(bypass);
+    const bypassIndex = filtered.indexOf(bypass);
     const filterIndex = filtered.indexOf('return applyMatchingUiFiltersToUsers({');
     expect(bypassIndex).toBeGreaterThan(-1);
     expect(filterIndex).toBeGreaterThan(bypassIndex);

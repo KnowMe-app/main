@@ -1989,3 +1989,140 @@ export const FilterApplyButton = styled.button`
     outline-offset: 2px;
   }
 `;
+
+/* Рядок дофільтрації видачі.
+ *
+ * Стоїть під рядом чіпів і навмисно не липне до верху: дофільтр потрібен один
+ * раз на початку перегляду, а липкий рядок на мобільному зʼїдає висоту весь час.
+ *
+ * На відміну від `ChipsGroup`, значення не переносяться, а їдуть убік: перенос
+ * тут означав би, що ряд то на один рядок, то на три, і сітка карток стрибала б
+ * при кожному виборі. Скрол лишається всередині самого ряду — сторінка вбік
+ * не їде. */
+export const RefineBar = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 12px 10px;
+
+  @media (max-width: 768px) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+`;
+
+export const RefineScroller = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  > * {
+    scroll-snap-align: start;
+  }
+`;
+
+/* Чіп ключа обведений пунктиром, а не суцільним: він не є вибором значення, він
+ * називає, серед чого зараз обирають. */
+export const RefineKeyChip = styled(Chip)`
+  border-style: dashed;
+  font-weight: 500;
+`;
+
+/* Обране значення. Заливається акцентом, бо це єдине увімкнене в рядку. */
+export const RefineValueChip = styled(Chip)`
+  ${({ $active }) => ($active ? `
+    background: var(--matching-accent);
+    border-color: var(--matching-accent);
+    color: #fff;
+  ` : '')}
+
+  &:disabled {
+    opacity: 0.34;
+    cursor: default;
+  }
+`;
+
+export const RefineValueCount = styled.b`
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+`;
+
+/* Після вибору ряд перестає бути меню й стає твердженням: що увімкнено,
+ * скільки під це підпадає і як зняти. Тому тут окремий підпис, а не ще один
+ * чіп — інакше «показано 2 з 74» читалось би як ще одна кнопка. */
+export const RefineSummary = styled.span`
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--matching-chip-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+export const RefineKeyMenu = styled.div`
+  position: absolute;
+  z-index: 6;
+  top: calc(100% - 4px);
+  left: 12px;
+  min-width: 168px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--matching-section-bg);
+  border: 1px solid var(--matching-chip-border);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.32);
+
+  @media (max-width: 768px) {
+    left: 8px;
+  }
+`;
+
+export const RefineKeyMenuItem = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 13px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--matching-panel-text);
+
+  & + & {
+    border-top: 1px solid var(--matching-chip-border);
+  }
+
+  &[aria-checked='true'] {
+    color: var(--matching-accent);
+    font-weight: 700;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  small {
+    margin-left: auto;
+    font-size: 10px;
+    opacity: 0.7;
+  }
+`;

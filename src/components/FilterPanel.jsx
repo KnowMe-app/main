@@ -128,6 +128,9 @@ const FilterPanel = ({
   resetToken,
   groupResetToken,
   groupResetName,
+  groupSelectToken,
+  groupSelectName,
+  groupSelectValue,
   nonAdminAllActive = false,
   allowedFilterNames,
   bloodSearchKeyMode = false,
@@ -186,6 +189,32 @@ const FilterPanel = ({
       return { ...current, [groupResetName]: restored };
     });
   }, [groupResetName, groupResetToken]);
+
+  // Дзеркало скидання: рядок дофільтрації просить «лише це значення».
+  //
+  // Фільтри matching відніманні — група стартує з усім увімкненим, і читач
+  // гасить зайве. Тож «лише 31–33» не є новим видом стану: це та сама група з
+  // однією увімкненою опцією. Саме тому дофільтр у стрічці не заводить другої
+  // моделі й нічого нового не читає — план будує наявний планувальник, і
+  // виходить він найдешевшим (`include`).
+  //
+  // Значення, якого група не пропонує, ігнорується: увімкнути нуль опцій
+  // означало б фільтр «нічого», а не уточнення.
+  const prevGroupSelectTokenRef = useRef(groupSelectToken);
+  useEffect(() => {
+    if (prevGroupSelectTokenRef.current === groupSelectToken) return;
+    prevGroupSelectTokenRef.current = groupSelectToken;
+    if (!groupSelectName || !groupSelectValue) return;
+    setFilters(current => {
+      const group = current?.[groupSelectName];
+      if (!group || !Object.prototype.hasOwnProperty.call(group, groupSelectValue)) return current;
+      const narrowed = Object.keys(group).reduce(
+        (acc, option) => ({ ...acc, [option]: option === groupSelectValue }),
+        {},
+      );
+      return { ...current, [groupSelectName]: narrowed };
+    });
+  }, [groupSelectName, groupSelectToken, groupSelectValue]);
 
   return (
     <SearchFilters

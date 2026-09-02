@@ -886,7 +886,7 @@ const buildAllowedRoleIdsFromSearchKey = (roleFilters, roleIndexSets) => {
   return { allowedIds, allIndexedIds };
 };
 
-const toRoleCategory = (user, roleIndexSets = null) => {
+export const toRoleCategory = (user, roleIndexSets = null) => {
   const indexedCategory = resolveRoleCategoryFromSearchKey(user?.userId, roleIndexSets);
   if (indexedCategory) return indexedCategory;
 
@@ -906,7 +906,7 @@ const toRoleCategory = (user, roleIndexSets = null) => {
   return 'other';
 };
 
-const toMaritalStatusCategory = user => {
+export const toMaritalStatusCategory = user => {
   const raw = String(user?.maritalStatus || '').trim().toLowerCase();
   if (!raw) return 'other';
 
@@ -919,7 +919,7 @@ const toMaritalStatusCategory = user => {
   return 'other';
 };
 
-const toBloodGroupCategory = user => {
+export const toBloodGroupCategory = user => {
   const normalized = String(user?.blood || '')
     .trim()
     .toLowerCase()
@@ -930,7 +930,7 @@ const toBloodGroupCategory = user => {
   return 'other';
 };
 
-const toRhCategory = user => {
+export const toRhCategory = user => {
   const normalized = String(user?.blood || '')
     .trim()
     .toLowerCase()
@@ -941,7 +941,7 @@ const toRhCategory = user => {
   return 'other';
 };
 
-const toAgeCategory = user => {
+export const toAgeCategory = user => {
   const birth = String(user?.birth || '').trim();
   const match = birth.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
   if (!match) return 'other';
@@ -974,9 +974,9 @@ const toAgeCategory = user => {
 };
 
 // Same rule the index writer uses, so the two can never disagree on a boundary.
-const toBmiCategory = user => resolveBmiBucket(user);
+export const toBmiCategory = user => resolveBmiBucket(user);
 
-const toCountryCategory = user => resolveCountryBucket(user);
+export const toCountryCategory = user => resolveCountryBucket(user);
 
 export const getMatchingFiltersWithoutSearchKeyGroups = filters => {
   const base = { ...(filters || {}) };
