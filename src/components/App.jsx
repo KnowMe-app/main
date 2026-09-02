@@ -11,6 +11,7 @@ import EditProfile from './EditProfile';
 import MedicationsPage from './MedicationsPage';
 import FlowManager from './FlowManager';
 import BudgetPage from './BudgetPage';
+import RtdbMigrationTool from './RtdbMigrationTool';
 import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
@@ -118,6 +119,7 @@ export const App = () => {
         обох колекцій цілком — тобто показує контакти всіх анкет. Тож маршрут
         адмінський, як і решта інструментів роботи з сирими даними.
       */}
+      {isAdmin && <Route path="/rtdb-migration" element={<RtdbMigrationTool />} />}
       {isAdmin && <Route path="/budget" element={<BudgetPage isAdmin={isAdmin} />} />}
       {canAccessInvoices && <Route path="/invoices" element={<InvoiceBuilderPage isAdmin={canAccessInvoices} />} />}
       {canAccessInvoices && <Route path="/documents" element={<DocumentsPage isAdmin={canAccessInvoices} />} />}
