@@ -62,7 +62,10 @@ describe('limited search projection', () => {
     const config = read('config.js');
     expect(config).toContain("const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;");
     expect(config).toContain("const searchIdOptions = limitedFields\n    ? { ...baseSearchIdOptions, includePrefixMatches: false }");
-    expect(config).toContain('const addHit = limitedFields ? addLimitedUser : addSearchHit;');
+    // Урізаний читач лишається на урізаній проєкції незалежно від того, що
+    // просить сторінка: `limitedFields` перевіряється першим.
+    expect(config).toContain('const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });');
+    expect(config).toContain('  if (limitedFields) return addLimitedUser;');
   });
 
   it('does not even start the prefix scan for a viewer who may not scan', () => {

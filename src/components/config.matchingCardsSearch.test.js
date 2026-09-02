@@ -50,16 +50,26 @@ describe('пошук ходить по matchingCards', () => {
     // кого прізвище з тієї літери, тобто відсотки колекції на кожен пошук.
     // Прізвище шукається через `searchId`, де лежить повне значення.
     expect(source).toContain("const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name'];");
-    expect(source).toContain('await searchMatchingCardsByText(searchValue, uniqueUserIds, users);');
+    expect(source).toContain('await searchMatchingCardsByText(searchValue, uniqueUserIds, users, { cardsOnly });');
   });
 
-  it('знайдена картка гідратується з вузлів, а не роздається проєкцією', () => {
+  it('знайдена картка гідратується тим самим шляхом, що й решта влучань', () => {
+    // Широкий скан не має власного способу показати знайдене: він кличе того
+    // самого гідратора, що й влучання з `searchId`. Інакше та сама анкета
+    // приїжджала б різною залежно від того, яка гілка пошуку її знайшла.
     const body = source.slice(
       source.indexOf('const searchMatchingCardsByText'),
       source.indexOf('const executeSearchBySearchIdIndex'),
     );
 
-    expect(body).toContain('addUserToResults(userId, users)');
+    expect(body).toContain('addUserToResults(userId, users, { cardsOnly })');
+  });
+
+  it('за замовчуванням знайдене й далі читається з вузлів анкети', () => {
+    // `cardsOnly` — це опція сторінки matching, а не нова поведінка пошуку:
+    // `ProfileCreationWorkspace` шукає дублікати й потребує саме анкети.
+    expect(source).toContain('  return cardsOnly ? addCardHit : addSearchHit;');
+    expect(source).toContain('    cardsOnly = false,');
   });
 
   it('правила дозволяють ці запити — інакше пошук мовчки повертав би порожньо', () => {

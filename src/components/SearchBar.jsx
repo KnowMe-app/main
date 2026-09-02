@@ -1627,6 +1627,12 @@ const SearchBar = ({
     // full card the viewer isn't entitled to, and writing to it would replace real
     // cards with the handful of fields the projection carries.
     const skipCache = Boolean(extraOptions?.limitedFields ?? searchOptions?.limitedFields);
+    // Картка стрічки — теж проєкція, і писати її в кеш не можна з тієї самої
+    // причини: `updateCard` зливає нове поверх старого, тож повне прізвище
+    // назавжди стало б ініціалом. Читати з кеша при цьому вільно — там лежить
+    // більше, ніж просить сторінка, а не менше.
+    const skipCardCacheWrite = skipCache
+      || Boolean(extraOptions?.cardsOnly ?? searchOptions?.cardsOnly);
     const cachedResult = skipCache
       ? { hit: false, negativeHit: false, cards: [], map: {} }
       : getFreshCachedSearchResult(key, value, extraOptions);
@@ -1687,9 +1693,12 @@ const SearchBar = ({
       : 'userId' in filteredRes
         ? [filteredRes]
         : Object.values(filteredRes);
-    const updatedArr = skipCache ? arr : arr.map(u => updateCard(u.userId, u));
+    const updatedArr = skipCardCacheWrite ? arr : arr.map(u => updateCard(u.userId, u));
 
-    if (key && value && !skipCache) {
+    // Id запиту пишуться лише разом із картками: інакше наступний той самий
+    // запит узяв би з кеша рівно ту їх частину, яка потрапила туди іншим
+    // шляхом, і мовчки віддав би менше, ніж знайшов.
+    if (key && value && !skipCardCacheWrite) {
       const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
       setIdsForQuery(cacheKey, updatedArr.map(u => u.userId));
     }

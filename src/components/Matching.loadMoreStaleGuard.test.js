@@ -44,7 +44,10 @@ describe('Matching loadMore stale pagination guards', () => {
   it('limits access-source pagination availability to the default feed', () => {
     const source = matchingSource();
 
-    expect(source).toContain("const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore);");
+    // Джерело додаткового доступу лишається справою самої деки; видача пошуку
+    // додає до `deckHasMore` власний прапорець — вона гортається вікном, а не
+    // сторінками з бекенду, тож `hasMore` для неї хибний навмисно.
+    expect(source).toContain("const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore) || searchHasMore;");
     expect(loadMoreSource()).toContain("!hasMoreRef.current && !(viewMode === 'default' && additionalHasMoreRef.current)");
   });
   it('updates reaction cards before async comment loading while preserving stale guards', () => {

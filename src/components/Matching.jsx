@@ -167,6 +167,14 @@ import {
   MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS,
 } from '../utils/matchingFeedThrottle';
 import FeedLoadCountdown from './FeedLoadCountdown';
+import SearchRefineBar from './SearchRefineBar';
+import {
+  DEFAULT_REFINE_KEY,
+  REFINE_MIN_RESULTS,
+  applyRefineSelection,
+  getRefineKeySpec,
+  isRefineKeyAvailableInFeed,
+} from '../utils/matchingRefineKey';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
@@ -1321,6 +1329,7 @@ const LOAD_MORE = 5;
 const FEED_PHOTO_HYDRATION_LIMIT = 24;
 // A stable identity so a row without public comments doesn't re-render on it.
 const EMPTY_PUBLIC_COMMENTS = [];
+const EMPTY_USERS = [];
 // Скільки чіпів фільтрів ряд показує згорнутим. Решта — за «+N», яке розгортає
 // ряд на місці; ряд не скролиться вбік, він переноситься.
 const MAX_FILTER_CHIPS = 3;
@@ -1508,6 +1517,15 @@ const Matching = () => {
   // results, and the query lives in the URL so a reload keeps the context.
   const [searchQuery, setSearchQuery] = useState(readQueryFromUrl);
   const [searchTab, setSearchTab] = useState('results');
+  // Дофільтр: один ключ, одне значення. У пошуку значення живе тут; у стрічці
+  // воно виводиться з `filters` — інакше рядок і шухляда розійшлися б, щойно
+  // читач відкриє другу.
+  const [refineKey, setRefineKey] = useState(DEFAULT_REFINE_KEY);
+  const [searchRefineValue, setSearchRefineValue] = useState(null);
+  const [filterGroupSelect, setFilterGroupSelect] = useState({ token: 0, name: '', value: '' });
+  // Скільки знайдених уже на екрані. Видача більше не приїжджає одним шматком:
+  // її показує той самий притишений відлік, що й стрічку.
+  const [searchRevealCount, setSearchRevealCount] = useState(MATCHING_THROTTLED_LOAD_BATCH);
   useEffect(() => {
     try {
       const url = new URL(window.location.href);
@@ -1707,7 +1725,16 @@ const Matching = () => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
 
-  const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore);
+  // Курсор видачі живе в рефі теж: `triggerEndOfDeckLoad` читає його з
+  // обробника відліку, і перестворювати обробник на кожній зміні довжини
+  // означало б перезапускати сам відлік.
+  const searchRevealTargetRef = useRef(0);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+
+  // Видача гортається так само, як стрічка: `hasMore` для неї хибний навмисно
+  // (сторінок у мережі більше немає — усе знайдене вже в руках), тож право
+  // показати відлік дає окремий прапорець.
+  const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore) || searchHasMore;
 
   useEffect(() => {
     loadingStateRef.current = loading;
@@ -2061,7 +2088,14 @@ const Matching = () => {
     invalidateReactionAsyncWork();
     setSharedReactionCandidateUsers([]);
     setViewMode('search');
-    void loadCommentsFor(filtered);
+    // Нова видача — нове вікно показу і знятий дофільтр: значення попереднього
+    // запиту до нового не має стосунку, і мовчки лишити його означало б
+    // показати «нічого не знайдено» там, де знайшлося.
+    setSearchRefineValue(null);
+    setSearchRevealCount(isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE);
+    searchRevealTargetRef.current = filtered.length;
+    // Коментарі читаються для того, що на екрані, а не для всієї видачі.
+    void loadCommentsFor(filtered.slice(0, FEED_PHOTO_HYDRATION_LIMIT));
   };
 
   useEffect(() => {
@@ -4097,8 +4131,21 @@ const Matching = () => {
           : Object.values(res);
       const filtered = arr.filter(u => isMatchingCardId(u?.userId));
       if (!isLimited) {
-        filtered.forEach(u => updateCard(u.userId, u));
-        setIdsForQuery(cacheKey, filtered.map(u => u.userId));
+        // Проєкція в кеш не лягає — та сама сторожа, що й на всіх шляхах
+        // стрічки. Інакше вона замістила б повну картку своїми десятьма
+        // полями, і `surname` назавжди лишився б ініціалом: `updateCard`
+        // зливає нове поверх старого, а `sanitizeMatchingCardForCache` знімає
+        // з картки позначку `__matchingSummary`, тож догідратувати таку вже
+        // нема за чим.
+        const cacheable = filtered.filter(shouldCacheMatchingCard);
+        cacheable.forEach(u => updateCard(u.userId, u));
+        // Список id запиту пишеться лише разом із самими картками. Записати id
+        // без карток означало б, що наступний той самий запит візьме з кеша
+        // рівно ту їх частину, яка потрапила туди іншим шляхом, — і мовчки
+        // віддасть менше, ніж знайшов.
+        if (cacheable.length === filtered.length) {
+          setIdsForQuery(cacheKey, filtered.map(u => u.userId));
+        }
       }
       if (Array.isArray(res)) return filtered;
       if (res.userId) return filtered[0] || {};
@@ -4775,6 +4822,19 @@ const Matching = () => {
 
   // Spec §10: one `filtered` array feeds the list, the gallery and the detail
   // layer, and it is computed once per input change rather than on every render.
+  // Уся видача після дофільтра. Числа рядка й «Знайдено» рахуються по ній, а не
+  // по тому, що встигло потрапити на екран: інакше чіп обіцяв би «31–33 · 2».
+  const searchRefinedUsers = useMemo(
+    () => (viewMode === 'search' ? applyRefineSelection(visibleUsers, refineKey, searchRefineValue) : EMPTY_USERS),
+    [refineKey, searchRefineValue, viewMode, visibleUsers],
+  );
+
+  useEffect(() => {
+    const total = searchRefinedUsers.length;
+    searchRevealTargetRef.current = total;
+    setSearchHasMore(viewMode === 'search' && searchRevealCount < total);
+  }, [searchRefinedUsers, searchRevealCount, viewMode]);
+
   const filteredUsers = useMemo(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
     if (debugShowAllIndexedCards && isIndexedDebugTestUser) return users;
@@ -4783,7 +4843,11 @@ const Matching = () => {
     // те, що вона не того типу, означає відповісти «немає» на питання «де
     // ось цей». Саме так пошук і виглядав зламаним: статус казав «Знайшов у
     // searchId», а під ним стояло «Немає доступних профілів».
-    if (viewMode === 'search') return visibleUsers;
+    //
+    // Показується не вся видача, а її вікно: 400 знайдених — це 400 рядків у
+    // DOM і стільки ж гідратацій, і саме тому пошук не мав ані відліку, ані
+    // способу дочекатись кінця списку.
+    if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);
     return applyMatchingUiFiltersToUsers({
       users: visibleUsers,
       filters,
@@ -4802,6 +4866,8 @@ const Matching = () => {
     isIndexedDebugTestUser,
     reactionTabUsers,
     roleIndexSets,
+    searchRefinedUsers,
+    searchRevealCount,
     users,
     viewMode,
     visibleUsers,
@@ -5532,6 +5598,14 @@ const Matching = () => {
   }, [loadMore]);
 
   const triggerEndOfDeckLoad = React.useCallback((reason = 'navigate-forward', { limit = MATCHING_REFILL_LIMIT } = {}) => {
+    // Видача вже вся в руках: наступна порція — це зсув вікна показу, а не
+    // сторінка з бекенду. Ціна порції тут — гідратація фото, коментарів і
+    // анкети рівно для того, що зʼявилось на екрані.
+    if (viewMode === 'search') {
+      const step = Math.max(1, Number(limit) || MATCHING_THROTTLED_LOAD_BATCH);
+      setSearchRevealCount(current => Math.min(current + step, searchRevealTargetRef.current));
+      return;
+    }
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
 
     const sourceNextOffset = viewMode === 'favorites' || viewMode === 'dislikes'
@@ -6019,7 +6093,9 @@ const Matching = () => {
       key: 'results',
       label: 'Знайдено',
       title: 'Результати пошуку',
-      count: filteredUsers.length,
+      // Уся видача, а не її вікно показу: «Знайдено 2» на чотирьохстах
+      // знайдених було б відповіддю не на те питання.
+      count: searchRefinedUsers.length,
       onSelect: () => setSearchTab('results'),
     },
     {
@@ -6038,7 +6114,7 @@ const Matching = () => {
       count: similarUsers.length,
       onSelect: () => setSearchTab('similar'),
     },
-  ], [filteredUsers.length, navigate, searchQuery, similarUsers.length]);
+  ], [navigate, searchQuery, searchRefinedUsers.length, similarUsers.length]);
 
   // Згорнутий ряд показує три чіпи, решта ховається за «+N». Але «+N» тепер
   // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
@@ -6059,6 +6135,73 @@ const Matching = () => {
   const resetFilterGroup = React.useCallback(filterName => {
     setFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
   }, []);
+
+  // Скільки знайдених приїжджає за раз — те саме число, що й у стрічці.
+  const revealStep = isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE;
+
+  /**
+   * Значення дофільтра у стрічці не зберігається окремо — воно виводиться з
+   * фільтрів.
+   *
+   * Інакше рядок і шухляда розійшлися б від першого дотику до другої: читач
+   * зняв би групу в шухляді, а чіп і далі казав би «лише 31–33». «Рівно одна
+   * увімкнена опція групи» і є тим станом, який рядок уміє показати; будь-який
+   * інший — це вже не уточнення, і рядок чесно показує себе порожнім.
+   */
+  const feedRefineValue = useMemo(() => {
+    const spec = getRefineKeySpec(refineKey);
+    if (!spec.filterName) return null;
+    const group = filters?.[spec.filterName];
+    if (!group || typeof group !== 'object') return null;
+    const enabled = Object.keys(group).filter(option => group[option]);
+    return enabled.length === 1 ? enabled[0] : null;
+  }, [filters, refineKey]);
+
+  const refineActiveValue = isSearching ? searchRefineValue : feedRefineValue;
+
+  const handleRefineKeyChange = React.useCallback(nextKey => {
+    const previous = getRefineKeySpec(refineKey);
+    setRefineKey(nextKey);
+    setSearchRefineValue(null);
+    setSearchRevealCount(revealStep);
+    // Ключ змінився — попереднє звуження знімається разом з ним, інакше
+    // стрічка лишилась би відфільтрованою тим, чого рядок уже не показує.
+    if (!isSearching && previous.filterName) resetFilterGroup(previous.filterName);
+  }, [isSearching, refineKey, resetFilterGroup, revealStep]);
+
+  const handleRefineSelect = React.useCallback(value => {
+    if (isSearching) {
+      setSearchRefineValue(value);
+      setSearchRevealCount(revealStep);
+      return;
+    }
+    const spec = getRefineKeySpec(refineKey);
+    if (!spec.filterName) return;
+    if (!value) {
+      resetFilterGroup(spec.filterName);
+      return;
+    }
+    // У стрічці тап пише в ту саму групу, яку відкриває шухляда: жодного нового
+    // шляху читання: план будує наявний планувальник, і виходить він
+    // найдешевшим — `include`.
+    setFilterGroupSelect(previous => ({ token: previous.token + 1, name: spec.filterName, value }));
+  }, [isSearching, refineKey, resetFilterGroup, revealStep]);
+
+  // Рядок доречний лише на довгій видачі: на десяти знайдених він тільки
+  // забирає висоту, бо їх видно всі й так. Активне значення тримає рядок на
+  // екрані завжди — інакше зняти його не було б чим.
+  const showRefineBar = Boolean(refineActiveValue) || (
+    isSearching
+      ? searchRefinedUsers.length >= REFINE_MIN_RESULTS
+      : viewMode === 'default' && visibleUsers.length >= REFINE_MIN_RESULTS
+  );
+
+  // Ключ без індексу `searchKey` у стрічці не пропонується: там ключ мусить
+  // називати кандидатів, а не проріджувати завантажене.
+  useEffect(() => {
+    if (isSearching || isRefineKeyAvailableInFeed(refineKey)) return;
+    setRefineKey(DEFAULT_REFINE_KEY);
+  }, [isSearching, refineKey]);
 
   const collectionChips = useMemo(() => [
     {
@@ -6554,6 +6697,9 @@ const Matching = () => {
             resetToken={filterResetToken}
             groupResetToken={filterGroupReset.token}
             groupResetName={filterGroupReset.name}
+            groupSelectToken={filterGroupSelect.token}
+            groupSelectName={filterGroupSelect.name}
+            groupSelectValue={filterGroupSelect.value}
             nonAdminAllActive={!isAdmin}
           />
         </FilterDrawerBody>
@@ -6595,6 +6741,9 @@ const Matching = () => {
                   enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
                   cacheScope: { collections: ['users'] },
                   limitedFields: !hasFullProfileAccess,
+                  // Видача малюється карткою; анкета читається на дотик, коли
+                  // картку відкрили (`ensureFullProfile`). Див. `addCardHit`.
+                  cardsOnly: true,
                 }}
               />
             </SearchField>
@@ -6733,6 +6882,20 @@ const Matching = () => {
               {viewLayout === 'gallery' ? <FaListUl /> : <FaThLarge />}
             </LayoutToggleButton>
           </ChipsRow>
+          {showRefineBar && (
+            <SearchRefineBar
+              users={visibleUsers}
+              activeKey={refineKey}
+              activeValue={refineActiveValue}
+              shownCount={isSearching ? filteredUsers.length : undefined}
+              onChangeKey={handleRefineKeyChange}
+              onSelectValue={handleRefineSelect}
+              keysAvailableInFeedOnly={!isSearching}
+              // У стрічці числа рахуються по завантаженому, а не по всій базі —
+              // і рядок каже це прямо, а не вдає точність, якої не має.
+              scanNote={isSearching ? '' : 'серед завантажених'}
+            />
+          )}
           {!ownerId && (
             <OwnerStatusMessage>
               {ownerId === '' ? 'Owner not found' : 'Loading owner...'}
