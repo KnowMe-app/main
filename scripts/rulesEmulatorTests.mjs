@@ -127,6 +127,11 @@ await testEnv.withSecurityRulesDisabled(async context => {
   await set(ref(db, 'multiData/dislikes'), {
     [PROFILE_OWNER]: { [HIDDEN_CARD]: true },
   });
+  // Журнал «чиї контакти відкривали» — вузол тієї ж форми, що й реакції.
+  await set(ref(db, 'multiData/contactViews'), {
+    [PROFILE_OWNER]: { [CARD]: true },
+    [SUPERADMIN]: { [CARD]: true },
+  });
 });
 
 const db = uid => testEnv.authenticatedContext(uid).database();
@@ -377,6 +382,29 @@ await it('стороння не читає чужих лайків', () =>
 
 await it('стороння не читає чужих дизлайків', () =>
   assertFails(get(ref(db(OUTSIDER), `multiData/dislikes/${PROFILE_OWNER}`))));
+
+// Той самий вузол-журнал, та сама аудиторія: з вебу він лише пишеться
+// (`addContactViewUser`), і без адмінського винятку прочитати накопичене не
+// могла навіть та людина, задля якої журнал і ведеться.
+describe('multiData/contactViews — журнал переглядів контактів');
+
+await it('власник читає власний журнал', () =>
+  assertSucceeds(get(ref(db(PROFILE_OWNER), `multiData/contactViews/${PROFILE_OWNER}`))));
+
+await it('власник дописує запис у журнал', () =>
+  assertSucceeds(set(ref(db(PROFILE_OWNER), `multiData/contactViews/${PROFILE_OWNER}/${CARD}`), true)));
+
+await it('адмін читає чужий журнал', () =>
+  assertSucceeds(get(ref(db(SUPERADMIN), `multiData/contactViews/${PROFILE_OWNER}`))));
+
+await it('адмін НЕ дописує запис за власника', () =>
+  assertFails(set(ref(db(SUPERADMIN), `multiData/contactViews/${PROFILE_OWNER}/${CARD}`), true)));
+
+await it('делегований читач читає журнал власника', () =>
+  assertSucceeds(get(ref(db(DELEGATED_READER), `multiData/contactViews/${SUPERADMIN}`))));
+
+await it('стороння чужого журналу не читає', () =>
+  assertFails(get(ref(db(OUTSIDER), `multiData/contactViews/${PROFILE_OWNER}`))));
 
 describe('права після переїзду в profileTechnical');
 
