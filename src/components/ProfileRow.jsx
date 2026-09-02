@@ -770,6 +770,11 @@ const ProfileRow = ({
   // from a search: surname, name, age, region, city, and the public comment. There
   // is nothing else to expand into, so the row drops the metrics line, the detail
   // chevron, the edit button and the swipe actions rather than showing them empty.
+  //
+  // Відкрити її при цьому можна. Раніше — ні, і на дотик рядок не робив рівно
+  // нічого: жодної реакції, жодного пояснення — картка виглядала зламаною. Шар
+  // деталей показує ту саму проєкцію, але з фото на весь екран, тож дотик має
+  // що відкрити.
   const isLimited = user?.__limitedProfile === true;
   const name = getProfileName(user);
   const rowRole = getProfileRole(user);
@@ -821,7 +826,12 @@ const ProfileRow = ({
       swipedRef.current = false;
       return;
     }
-    if (isLimited) return;
+    // Розгортати рядок урізаної проєкції нема чим — метрик і контактів у ній
+    // немає, — тож дотик веде тільки в шар деталей.
+    if (isLimited) {
+      if (onOpen) onOpen(user);
+      return;
+    }
     if (onOpen) onOpen(user);
     else if (onToggleExpand) onToggleExpand(user.userId);
   };

@@ -113,8 +113,18 @@ describe('урізана проєкція пошукового влучання'
     expect(projection).toContain('projection.surname = card.surnameShort');
   });
 
-  it('картка лишається читабельною для кожного авторизованого', () => {
-    expect(rules.matchingCards.$uid['.read']).toContain("data.child('feedDate').isString()");
+  it('картка лишається читабельною для кожного авторизованого — і поза стрічкою', () => {
+    // Читання картки не вимагає дати: вона і є той мінімум, який видно поза
+    // стрічкою, і саме з неї пошук показує знайдене. Поки `feedDate` був тут
+    // умовою, знайдений у `searchId` id неопублікованої анкети мовчки випадав
+    // з видачі — читач бачив лише те, що й так є в стрічці. Схована анкета
+    // (`feedDate: false`) лишається закритою — це окремий стан, а не «ще не
+    // опублікована».
+    expect(rules.matchingCards.$uid['.read']).toContain("!data.child('feedDate').isBoolean()");
+  });
+
+  it('ключ стрічки їде разом з проєкцією — за ним видача розрізняє показане', () => {
+    expect(projection).toContain('projection[MATCHING_CARD_FEED_FIELD] = card[MATCHING_CARD_FEED_FIELD]');
   });
 });
 

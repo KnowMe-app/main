@@ -41,19 +41,22 @@ describe('пошук у matching для читача без повного до�
     expect(searchUsers).not.toContain('isValidId');
   });
 
-  // Знайдене за точним контактом — не дека. Дека бере картки з `feedDate`, і
-  // саме тому пошук мовчав: анкета знаходилась у `searchId`, читалась із
-  // проєкції — і зникала на останньому кроці, бо не опублікована. Показати її
-  // нема кому: у стрічку вона не приїде ніколи.
-  it('знайдене показується тому, хто вже має право на повну анкету', () => {
+  // Знайдене — не дека. Дека бере картки з `feedDate`, і саме тому пошук мовчав
+  // про неопубліковані: анкета знаходилась у `searchId`, читалась із проєкції —
+  // і зникала на останньому кроці, бо не в стрічці. Позначка тепер ставиться
+  // кожному знайденому, а не лише знайденому читачем із повним доступом:
+  // інакше слабший доступ показував би більше за сильніший.
+  it('знайдене показується тому, хто його знайшов', () => {
     const source = matchingSource();
     const applySearchResults = source.slice(
       source.indexOf('  const applySearchResults = async res => {'),
       source.indexOf('  useEffect(() => {', source.indexOf('  const applySearchResults = async res => {')),
     );
 
-    expect(applySearchResults).toContain('hasFullProfileAccess && user?.__matchingAccessAllowed === undefined');
+    expect(applySearchResults).toContain('user?.__matchingAccessAllowed === undefined');
     expect(applySearchResults).toContain('__matchingAccessAllowed: true');
+    // І в тому порядку, який відрізняє опубліковане від решти знайденого.
+    expect(applySearchResults).toContain('orderMatchingSearchResults(');
   });
 
   it('позначка не пише в спільний кеш карток — лише у відповідь на запит', () => {

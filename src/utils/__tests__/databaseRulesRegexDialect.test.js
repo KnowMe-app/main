@@ -41,7 +41,9 @@ describe('діалект регулярок у правилах бази', () =>
     const blankGuard = 'matches(/.*[^ ].*/)';
     const { rules } = JSON.parse(rulesSource);
 
-    expect(rules.matchingCards.$uid['.read']).toContain(blankGuard);
+    // Читання самої картки цієї умови більше не має — воно взагалі не питає
+    // `feedDate`: картка це мінімум, який видно поза стрічкою. Умова лишається
+    // там, де від неї залежить показ: у валідації ключа і в приватних вузлах.
     expect(rules.matchingCards.$uid.feedDate['.validate']).toContain(blankGuard);
     expect(rules.profileDetails.$uid['.read']).toContain(blankGuard);
     expect(rules.profileContacts.$uid['.read']).toContain(blankGuard);

@@ -133,10 +133,25 @@ await it('матчинговий переглядач читає деталі а
 await it('звичайний користувач може точково прочитати опубліковану проєкцію', () =>
   assertSucceeds(get(ref(db(OUTSIDER), `matchingCards/${CARD}`))));
 
-await it('звичайний користувач не може точково читати неопубліковану проєкцію', async () => {
+// Картка — це мінімум, який видно поза стрічкою: імʼя, ініціал прізвища, вік,
+// місто й аватар. `feedDate` більше не умова її читання, бо ним він коштував
+// пошуку: `searchId` знає всі анкети, а картку неопублікованої база віддавати
+// відмовлялась — знайдений id мовчки випадав з видачі. Межа приватності від
+// цього не зрушила: вона нижче, на `profileDetails` і `profileContacts`, де
+// `feedDate` і далі вирішує (перевірки на це — нижче в цьому ж файлі).
+await it('звичайний користувач точково читає й неопубліковану проєкцію', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/feedDate`), null));
-  await assertFails(get(ref(db(OUTSIDER), `matchingCards/${CARD}`)));
+  await assertSucceeds(get(ref(db(OUTSIDER), `matchingCards/${CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-08-25'));
+});
+
+await it('неопублікована анкета не віддає ані деталей, ані контактів', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), null));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${CARD}`)));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${CARD}`)));
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-08-25'));
 });
@@ -516,8 +531,68 @@ await it('видалення feedDate знімає картку зі стріч�
 await it('публікація — це запис самої лише дати', () =>
   assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), '2026-08-26')));
 
-await it('feedDate має бути рядком', () =>
-  assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), 20260826)));
+// «Приховати анкету» на `MyProfile` пише саме `false`, а не видаляє ключ:
+// «сховали» і «ще не публікували» — різні стани, і пошук поводиться з ними
+// по-різному (сховану не показує, ненадруковану показує).
+await it('зняття з публікації — це запис false', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), false));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const snapshot = await get(ref(context.database(), `matchingCards/${CARD}/feedDate`));
+    if (snapshot.val() !== false) throw new Error('feedDate не став false');
+  });
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), '2026-08-26'));
+});
+
+await it('схована картка не потрапляє у вікно стрічки', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), false));
+  const snapshot = await get(query(
+    ref(db(OUTSIDER), 'matchingCards'),
+    orderByChild('feedDate'),
+    startAt(''),
+    endAt('9999-12-31'),
+    limitToLast(50),
+  ));
+  if (snapshot.hasChild(HIDDEN_CARD)) throw new Error('схована картка приїхала у стрічці');
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), null));
+});
+
+await it('схована картка не відкриває ані деталей, ані контактів', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), false));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), null));
+});
+
+// Сховати анкету — це рішення власниці, і тримати його самим лише клієнтом не
+// можна: id знаходиться в `searchId`, а картка читається точково. Тож `false`
+// закриває й саму картку — на відміну від «ще не публікували», яку пошук
+// показує навмисно.
+await it('сховану картку сторонній не читає навіть точково', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), false));
+  await assertFails(get(ref(db(SELF_SERVE), `matchingCards/${HIDDEN_CARD}`)));
+  // А ті, хто веде анкету, і сама власниця — читають: інакше ані повернути її
+  // в стрічку, ані побачити власний стан публікації нема кому.
+  await assertSucceeds(get(ref(db(HIDDEN_CARD), `matchingCards/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `matchingCards/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(MIGRATED_EDITOR), `matchingCards/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `matchingCards/${HIDDEN_CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), null));
+});
+
+await it('неопубліковану картку сторонній читає — саме її показує пошук', () =>
+  assertSucceeds(get(ref(db(SELF_SERVE), `matchingCards/${HIDDEN_CARD}`))));
+
+await it('feedDate має бути рядком або false', async () => {
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), 20260826));
+  // `true` сюди не пишуть ніколи: показ описує дата, а не прапорець.
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), true));
+});
 
 await it('feedDate не приймає порожній або пробільний рядок', async () => {
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), ''));
