@@ -70,6 +70,7 @@ import {
   expandMatchingCard,
   isCurrentMatchingCardSchema,
   isMatchingSummaryCard,
+  listDroppedProjectionFields,
   resolveMatchingCardAvatarFromProfile,
 } from '../utils/matchingCardIndex';
 import {
@@ -4234,6 +4235,15 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       existingCard: existing,
     });
     if (!projection) return null;
+
+    // Поле, значення якого проєкція не змогла прочитати, зникає без сліду:
+    // ключа в картці просто немає, а помилки не було. Для `name` це означало
+    // «зберіг — і не зберіглось», бо іншого вузла в нього немає. Тепер таке
+    // видно хоча б у консолі — мовчазна втрата поля коштувала днів пошуку.
+    const droppedFields = listDroppedProjectionFields(nextData, projection);
+    if (droppedFields.length) {
+      console.warn('[matchingCards] поля анкети не потрапили в картку', { userId: id, fields: droppedFields });
+    }
 
     if (existing && areMatchingCardProjectionsEqual(existing, projection)) return projection;
 

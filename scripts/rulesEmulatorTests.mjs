@@ -527,6 +527,18 @@ await it('повна проєкція писача лягає одним зап�
     hairColor: 'Dark Brown', avatar: 'https://a', feedDate: '2026-08-25',
   })));
 
+// Поле анкети буває не одним значенням: два імені, дві дати пологів, дві
+// ролі. Картка — єдине місце, де `name` взагалі зберігається, тож якби правила
+// не приймали масив, писач мовчки лишав би поле поза базою — рівно те, через
+// що анкети переставали знаходитись за власним іменем.
+await it('поле з кількох значень картка приймає', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/name`), ['IDClinic', 'Ірина']));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/role`), ['ed', 'ag']));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/lastDelivery`), ['2022-05-15', '2024-01-02']));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/name`), 'Катерина'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/role`), 'sm'));
+});
+
 await it('сирі поля, що переїхали в інші вузли, картка вже не приймає', async () => {
   for (const [field, value] of [
     ['surname', 'Коваленко'],

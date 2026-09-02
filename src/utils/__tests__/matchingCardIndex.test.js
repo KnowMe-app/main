@@ -7,6 +7,7 @@ import {
   expandMatchingCard,
   isCurrentMatchingCardSchema,
   isMatchingSummaryCard,
+  listDroppedProjectionFields,
   resolveMatchingCardAvatarFromProfile,
 } from '../matchingCardIndex';
 import { canShowMatchingUser } from '../reactionPriority';
@@ -88,6 +89,60 @@ describe('buildMatchingCardProjection', () => {
     const projection = buildMatchingCardProjection('id', { name: 'Ольга', city: '   ', weight: null });
     expect(projection).not.toHaveProperty('city');
     expect(projection).not.toHaveProperty('weight');
+  });
+
+  // Поле з кількома значеннями лежить у базі масивом. Раніше проєкція мовчки
+  // повертала на нього порожній рядок — і `name`, у якого іншого вузла немає,
+  // не зберігався взагалі ніде: анкета переставала знаходитись за іменем, а
+  // повторне введення нічого не міняло.
+  it('лишає масивом те, що масивом і було', () => {
+    const projection = buildMatchingCardProjection('id', {
+      name: ['IDClinic', 'Ірина'],
+      // RTDB віддає масив із дірками обʼєктом із числовими ключами — це той
+      // самий масив, а не інша форма даних.
+      lastDelivery: { 0: '2023-02-21', 2: '2025-06-01' },
+      height: ['170'],
+      city: 'Крюківщина',
+    });
+
+    expect(projection.name).toEqual(['IDClinic', 'Ірина']);
+    expect(projection.lastDelivery).toEqual(['2023-02-21', '2025-06-01']);
+    // Одне значення в масиві лишається масивом: форма поля — теж дані.
+    expect(projection.height).toEqual(['170']);
+    // А скаляр лишається скаляром.
+    expect(projection.city).toBe('Крюківщина');
+  });
+
+  it('не двоїть однакові значення й не лишає порожніх', () => {
+    const projection = buildMatchingCardProjection('id', { name: ['Ірина', '  ', 'Ірина'] });
+    expect(projection.name).toEqual(['Ірина']);
+  });
+
+  it('зводить аліаси кесаревого і з масиву теж', () => {
+    expect(buildMatchingCardProjection('id', { cSection: ['2', '3'] }).csection).toEqual(['2', '3']);
+  });
+
+  // `deriveRole` навмисно віддає масив, коли анкета заявляла себе в кількох
+  // ролях, — а картка через `trimmed` лишалась узагалі без ролі.
+  it('переносить кілька ролей, а не втрачає їх усі', () => {
+    expect(buildMatchingCardProjection('id', { role: ['ed', 'ag'] }).role).toEqual(['ed', 'ag']);
+    expect(buildMatchingCardProjection('id', { role: 'ag' }).role).toBe('ag');
+  });
+
+  // Тиша при втраті поля — це те, що коштувало днів пошуку: ключа в картці
+  // немає, помилки немає, а анкета не знаходиться за власним іменем.
+  it('називає поля, значення яких є в анкеті, але в картку не доїхали', () => {
+    const data = { name: 'Ольга', city: true, weight: '' };
+    const projection = buildMatchingCardProjection('id', data);
+
+    expect(listDroppedProjectionFields(data, projection)).toEqual(['city']);
+
+    const multi = { name: ['IDClinic', 'Ірина'], role: ['ed', 'ag'] };
+    expect(listDroppedProjectionFields(multi, buildMatchingCardProjection('id', multi))).toEqual([]);
+
+    // Роль виводиться, а не копіюється, тож у переліку копійованих полів її
+    // немає — але губилась вона так само, і канарка мусить її бачити.
+    expect(listDroppedProjectionFields({ role: ['ed', 'ag'] }, { name: 'Ольга' })).toEqual(['role']);
   });
 
   it('кладе в індекс стрічки лише показану картку, і значенням — саму дату', () => {
@@ -305,6 +360,16 @@ describe('картка проходить фінальну перевірку п
 });
 
 describe('areMatchingCardProjectionsEqual', () => {
+  // Два масиви ніколи не рівні за `!==`, тож без порівняння за значенням писач
+  // вважав би картку зміненою на кожне збереження і переписував її дарма.
+  it('порівнює поле з кількох значень за значенням, а не за посиланням', () => {
+    expect(areMatchingCardProjectionsEqual({ name: ['A', 'B'] }, { name: ['A', 'B'] })).toBe(true);
+    expect(areMatchingCardProjectionsEqual({ name: ['A', 'B'] }, { name: ['B', 'A'] })).toBe(false);
+    expect(areMatchingCardProjectionsEqual({ name: ['A', 'B'] }, { name: ['A'] })).toBe(false);
+    // Перехід між скаляром і масивом — теж зміна: форма поля має доїхати в базу.
+    expect(areMatchingCardProjectionsEqual({ name: ['A'] }, { name: 'A' })).toBe(false);
+  });
+
   it('бачить зміну поля і не бачить її відсутність', () => {
     const a = buildMatchingCardProjection('id', fullProfile);
     const b = buildMatchingCardProjection('id', fullProfile);
