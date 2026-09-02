@@ -48,7 +48,11 @@ npm run test:rules        # сценарії доступу в емулятор�
 
 `/matchingCards`, `/profileDetails`, `/profileContacts`, `/profileWorkflow`,
 `/profileTechnical`; `/users` лишається **legacy-дзеркалом для мобільного застосунку** —
-веб туди пише, але з нього не читає. Розкладка описана декларативно в
+веб туди пише, але з нього не читає. Дзеркало не *створює* нового тіла: у `/users`
+живуть анкети акаунтів (довгий id — Firebase-Auth UID) і ті картки, тіло яких
+потрапило туди раніше. Картка, яку завела адміністраторка, тіла в `/users` не
+отримує — ані при створенні (`makeNewUser`), ані при публікації чернетки
+(`acceptCreateProfileMutation`). Розкладка описана декларативно в
 `src/utils/profileNodeSchema.js` — це джерело правди і для міграції, і для runtime, і для
 тестів правил. Деталі: `docs/rtdb-profile-nodes.md`.
 
