@@ -684,12 +684,13 @@ export const ProfileCreationWorkspace = () => {
     'search-key-index': 'пошуковий індекс',
     'mutation-transition': 'перехід публікації',
     'publication-update': 'фінальний запис картки',
+    'matching-card-index': 'картка стрічки',
     'profile-mutation': 'збереження чернетки',
     'identity-claim-or-mutation': 'збереження чернетки',
   };
 
   const safeSaveTargetNames = {
-    'users-card': 'запис users/{cardId}',
+    'profile-nodes': 'запис вузлів анкети',
     'mutation-status': 'статус profileMutations',
   };
 
@@ -1009,8 +1010,8 @@ export const ProfileCreationWorkspace = () => {
   );
 
   // "Зберегти чернетку" is the one action that turns the accepted base draft
-  // into a real users card. Pending editor overlays stay pending: publishing
-  // must neither apply nor remove them.
+  // into a real card in the profile nodes. Pending editor overlays stay
+  // pending: publishing must neither apply nor remove them.
   const saveDraftAsCard = async () => {
     setSaving(true);
     let publishing = false;
@@ -1030,7 +1031,7 @@ export const ProfileCreationWorkspace = () => {
         // visible stacked draft may also contain unaccepted editor overlays.
         finalData: draftBaseRef.current || current.data,
       });
-      toast.success('Чернетку збережено як картку — вона в users і проіндексована');
+      toast.success('Чернетку збережено як картку — вона у вузлах анкети і проіндексована');
       closeEditor();
       await refresh(uid, access);
     } catch (error) {

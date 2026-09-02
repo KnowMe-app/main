@@ -39,8 +39,8 @@ const pendingMutation = {
 };
 
 // Publishing a draft ("Зберегти чернетку") is the one step that turns it into a
-// real card: it lands in users, goes through the standard search indexes,
-// and is subsequently loaded from that canonical collection.
+// real card: it lands in the profile nodes the web actually reads, goes through
+// the standard search indexes, and only then gets its feed projection.
 describe('acceptCreateProfileMutation', () => {
   let transactionMutation;
 
@@ -80,8 +80,13 @@ describe('acceptCreateProfileMutation', () => {
       expectedRevision: 3,
     })).resolves.toEqual({ userId: 'card-1', name: 'Anna' });
 
+    // Імʼя належить картці стрічки, а не вузлам, тож вузлових полів у цієї
+    // чернетки немає — публікація відкриває вузол датою створення.
     expect(update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      'users/card-1': { userId: 'card-1', name: 'Anna' },
+      'profileTechnical/card-1/createdAt': expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    }));
+    expect(update).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      'users/card-1': expect.anything(),
     }));
   });
 
@@ -112,18 +117,19 @@ describe('acceptCreateProfileMutation', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it('writes the card to users, clears accepted revision history, and runs the indexes', async () => {
+  it('розкладає картку по вузлах, чистить історію ревізій і проганяє індекси', async () => {
+    const finalData = { userId: 'card-1', name: 'Anna', surname: 'Kovalenko', phone: '+380671112233' };
     const profile = await acceptCreateProfileMutation({
       cardId: 'card-1',
       creatorUid: 'author-1',
       expectedRevision: 3,
-      finalData: { userId: 'card-1', name: 'Anna' },
+      finalData,
     });
 
-    expect(profile).toEqual({ userId: 'card-1', name: 'Anna' });
-    expect(syncUserSearchKeyIndex).toHaveBeenCalledWith('card-1', {}, { userId: 'card-1', name: 'Anna' });
+    expect(profile).toEqual(finalData);
+    expect(syncUserSearchKeyIndex).toHaveBeenCalledWith('card-1', {}, finalData);
     // Публікація анкети одразу дає їй урізану картку для стрічки матчингу.
-    expect(syncMatchingCardIndex).toHaveBeenCalledWith('card-1', { userId: 'card-1', name: 'Anna' });
+    expect(syncMatchingCardIndex).toHaveBeenCalledWith('card-1', finalData);
     // searchId index entries are written through a transaction of their own.
     expect(runTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ path: expect.stringMatching(/^searchId\//) }),
@@ -132,7 +138,12 @@ describe('acceptCreateProfileMutation', () => {
     );
 
     const [, publication] = update.mock.calls.find(([target]) => target.path === undefined || target.path === '') || update.mock.calls[0];
-    expect(publication['users/card-1']).toEqual({ userId: 'card-1', name: 'Anna' });
+    // Кожне поле — у своєму вузлі; `name` і `userId` належать картці стрічки,
+    // і туди їх кладе проєкція, а не копія поля.
+    expect(publication['profileDetails/card-1/surname']).toBe('Kovalenko');
+    expect(publication['profileContacts/card-1/phone']).toBe('+380671112233');
+    expect(publication).not.toHaveProperty('users/card-1');
+    expect(publication).not.toHaveProperty('matchingCards/card-1/name');
     expect(Object.keys(publication).some(path => path.includes('createdProfileCardIds'))).toBe(false);
     expect(publication).not.toHaveProperty('multiData/profileMutationHistory/card-1');
     expect(publication['multiData/profileMutations/author-1/card-1'].status).toBe('accepted');
@@ -159,7 +170,7 @@ describe('acceptCreateProfileMutation', () => {
     expect(publications[1]['multiData/edits/card-1/editor-1/adminOnly']).toBe(true);
     expect(publications[1]).not.toHaveProperty('multiData/edits/card-1/editor-1/fields');
     const publication = publications[0];
-    expect(publication['users/card-1']).not.toHaveProperty('city');
+    expect(publication).not.toHaveProperty('matchingCards/card-1/city');
   });
 
   it('labels each failed publication phase without exposing its Firebase path', async () => {
@@ -200,7 +211,7 @@ describe('acceptCreateProfileMutation', () => {
     update.mockRejectedValueOnce(permissionError());
     await expect(publish()).rejects.toMatchObject({
       profileSaveStage: 'publication-update',
-      profileSaveTargets: ['users-card', 'mutation-status'],
+      profileSaveTargets: ['profile-nodes', 'mutation-status'],
       profileSaveRecovered: true,
     });
   });

@@ -26,22 +26,33 @@ describe('створення анкети розкладається так са
 
   it('пише анкету, розкладає її по вузлах і одразу будує картку', () => {
     expect(creation).toContain('await fanOutProfileNodes(newUserId, newUser)');
-    expect(creation).toContain("await mirrorProfileToLegacyUsers(newUserId, newUser, 'set')");
     expect(creation).toContain('await syncMatchingCardIndex(newUserId, newUser');
   });
 
-  it('кладе анкету в legacy тим самим дзеркалом, що й кожне збереження', () => {
-    // Інакше нова анкета лягала б у `users` в іншому форматі, ніж її ж наступне
-    // збереження: дати з мобільного застосунку читаються крапками, і
-    // перетворення на них живе рівно в дзеркалі.
+  it('legacy-тіла новій анкеті не заводить', () => {
+    // `users` — вузол акаунтів, і його дзеркалять для мобільного застосунку.
+    // Анкета, яку завела адміністраторка, акаунта не має: тіло під її
+    // push-ключем ніхто не читає, зате воно назавжди робить картку
+    // «legacy-анкетою» для `getCardLegacyCollection`.
+    expect(creation).not.toContain('mirrorProfileToLegacyUsers');
     expect(creation).not.toContain('set(newUserRef');
-    expect(creation.indexOf('await fanOutProfileNodes'))
-      .toBeLessThan(creation.indexOf('await mirrorProfileToLegacyUsers'));
-    expect(creation).toContain("console.warn('[profileNodes] legacy-дзеркало нової анкети не створено'");
   });
 
   it('падає, коли вузли не прийняли анкету — тихого «створив у нікуди» немає', () => {
     expect(creation).toContain("if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');");
+  });
+
+  it('дзеркало оновлює лише наявне legacy-тіло, а нового не створює', () => {
+    const mirror = configSource.slice(
+      configSource.indexOf('const hasLegacyUsersBody ='),
+      configSource.indexOf('const throwProfileWriteFailure ='),
+    );
+
+    expect(mirror).toContain('if (!(await hasLegacyUsersBody(userId))) return false;');
+    // Довгий id — це Firebase-Auth UID, тобто анкета акаунта: її мобільний
+    // застосунок читає, і дзеркалення для неї лишається безумовним.
+    expect(mirror).toContain('if (isLongFormatUserId(userId)) return true;');
+    expect(mirror).toContain('snapshot.exists()');
   });
 
   it.each([

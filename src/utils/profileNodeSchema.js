@@ -208,6 +208,10 @@ const PROFILE_DETAIL_FIELDS = Object.freeze([
   'hobbies',
   'sport',
   'moreInfo_main',
+  // Публічний коментар анкети. Свого вузла в нього не було, тож роутер його
+  // мовчки викидав, а в legacy `/users` його вже ніхто не читає: у стрічці й на
+  // сторінці анкети він показується з того, що зібрав `readProfileFromNodes`.
+  'publicComment',
   'reward',
   'fathersname',
 
