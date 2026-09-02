@@ -7,6 +7,7 @@ import {
   expandMatchingCard,
   isCurrentMatchingCardSchema,
   isMatchingSummaryCard,
+  listDroppedProjectionFields,
   resolveMatchingCardAvatarFromProfile,
 } from '../matchingCardIndex';
 import { canShowMatchingUser } from '../reactionPriority';
@@ -88,6 +89,42 @@ describe('buildMatchingCardProjection', () => {
     const projection = buildMatchingCardProjection('id', { name: 'Ольга', city: '   ', weight: null });
     expect(projection).not.toHaveProperty('city');
     expect(projection).not.toHaveProperty('weight');
+  });
+
+  // Поле з кількома значеннями лежить у базі масивом. Раніше проєкція мовчки
+  // повертала на нього порожній рядок — і `name`, у якого іншого вузла немає,
+  // не зберігався взагалі ніде: анкета переставала знаходитись за іменем, а
+  // повторне введення нічого не міняло.
+  it('переносить поле, яке лежить кількома значеннями', () => {
+    const projection = buildMatchingCardProjection('id', {
+      name: ['IDClinic', 'Ірина'],
+      city: { 0: 'Крюківщина' },
+      height: ['170'],
+    });
+
+    expect(projection.name).toBe('IDClinic, Ірина');
+    expect(projection.city).toBe('Крюківщина');
+    expect(projection.height).toBe('170');
+  });
+
+  it('не двоїть однакові значення й не лишає порожніх', () => {
+    const projection = buildMatchingCardProjection('id', { name: ['Ірина', '  ', 'Ірина'] });
+    expect(projection.name).toBe('Ірина');
+  });
+
+  it('зводить аліаси кесаревого і з масиву теж', () => {
+    expect(buildMatchingCardProjection('id', { cSection: ['2'] }).csection).toBe('2');
+  });
+
+  // Тиша при втраті поля — це те, що коштувало днів пошуку: ключа в картці
+  // немає, помилки немає, а анкета не знаходиться за власним іменем.
+  it('називає поля, значення яких є в анкеті, але в картку не доїхали', () => {
+    const data = { name: 'Ольга', city: true, weight: '' };
+    const projection = buildMatchingCardProjection('id', data);
+
+    expect(listDroppedProjectionFields(data, projection)).toEqual(['city']);
+    expect(listDroppedProjectionFields({ name: ['IDClinic', 'Ірина'] }, buildMatchingCardProjection('id', { name: ['IDClinic', 'Ірина'] })))
+      .toEqual([]);
   });
 
   it('кладе в індекс стрічки лише показану картку, і значенням — саму дату', () => {

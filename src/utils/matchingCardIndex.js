@@ -98,12 +98,70 @@ const trimmed = value => {
   return '';
 };
 
+/**
+ * Значення поля анкети для картки — включно з тим, що лежить кількома значеннями.
+ *
+ * `trimmed` лишається там, де значення завжди скаляр (id, аватар), а поля
+ * анкети скаляром бувають не завжди: форма дозволяє тримати в полі кілька
+ * значень, і в базі воно лежить масивом. Мовчазне `''` на такий масив коштувало
+ * імені: `name` живе **тільки** в цій проєкції — роутер записів `matchingCards`
+ * не чіпає (`profileNodeWriter.js`), а в `PROFILE_DETAIL_FIELDS` його немає.
+ * Тобто поле, викинуте тут, не зберігалось узагалі ніде, скільки б разів його
+ * не вводили, і анкета переставала знаходитись за власним іменем.
+ *
+ * Беруться всі значення, а не останнє: картка — це те, що видно в рядку
+ * стрічки, і показує вона їх усі (`buildName` друкує весь масив). Взяти лише
+ * поточну версію означало б і в стрічці, і в пошуку тихо згубити решту — ту
+ * саму втрату, тільки меншу. Індекс `searchId` тримає їх усі так само
+ * (`extractIndexableFieldValues`), тож знайдене за будь-яким зі значень
+ * підтверджується самою карткою.
+ */
+const collectFieldValues = value => {
+  if (Array.isArray(value)) return value.flatMap(collectFieldValues);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(collectFieldValues);
+  const scalar = trimmed(value);
+  return scalar ? [scalar] : [];
+};
+
+const fieldValue = value => [...new Set(collectFieldValues(value))].join(', ');
+
 const firstNonEmpty = (data, keys) => {
   for (const key of keys) {
-    const value = trimmed(data?.[key]);
+    const value = fieldValue(data?.[key]);
     if (value) return value;
   }
   return '';
+};
+
+/**
+ * Чи є в полі бодай щось, що мало б доїхати до картки.
+ *
+ * Навмисно ширше за `collectFieldValues`: питання тут не «що ми змогли
+ * прочитати», а «чи було що читати». Збіг цих двох відповідей і робив втрату
+ * поля невидимою.
+ */
+const hasAnyValue = value => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.some(hasAnyValue);
+  if (typeof value === 'object') return Object.values(value).some(hasAnyValue);
+  return true;
+};
+
+/**
+ * Поля, значення яких є в анкеті, але в картку не потрапили.
+ *
+ * Проєкція навмисно бере не все — але «не взяли, бо не належить картці» і «не
+ * взяли, бо не змогли прочитати значення» на вигляд однакові: обидва просто
+ * відсутній ключ. Саме на цій тиші й згубилось ім'я. Тут перелічені другі:
+ * поле є в переліку картки, значення в анкеті непорожнє, а в проєкції ключа
+ * немає. Викликач вирішує, що з цим робити, — писати в консоль чи в звіт.
+ */
+export const listDroppedProjectionFields = (data, projection) => {
+  if (!data || typeof data !== 'object') return [];
+  return COPIED_FIELDS.filter(key => (
+    hasAnyValue(data[key]) && !trimmed(projection?.[key])
+  ));
 };
 
 // Вибір основного фото живе поруч з рештою похідних — і офлайн-міграція, і
@@ -177,7 +235,7 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
 
   const projection = {};
   COPIED_FIELDS.forEach(key => {
-    const value = trimmed(data[key]);
+    const value = fieldValue(data[key]);
     if (value) projection[key] = value;
   });
 
