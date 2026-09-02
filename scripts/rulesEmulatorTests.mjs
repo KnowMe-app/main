@@ -118,6 +118,15 @@ await testEnv.withSecurityRulesDisabled(async context => {
   await set(ref(db, 'multiData/stimulationSchedule'), {
     [SUPERADMIN]: { [CARD]: { startDate: '2026-09-01' } },
   });
+  // Реакції звичайної власниці — саме їх адмін відкриває кнопкою «Like/Dislike»
+  // на чужій картці в AddNewProfile.
+  await set(ref(db, 'multiData/favorites'), {
+    [PROFILE_OWNER]: { [CARD]: true },
+    [SUPERADMIN]: { [CARD]: true },
+  });
+  await set(ref(db, 'multiData/dislikes'), {
+    [PROFILE_OWNER]: { [HIDDEN_CARD]: true },
+  });
 });
 
 const db = uid => testEnv.authenticatedContext(uid).database();
@@ -326,6 +335,48 @@ await it('делегований читач НЕ пише у позначки в
 
 await it('стороння не читає чужих позначок', () =>
   assertFails(get(ref(db(OUTSIDER), `multiData/writer/${SUPERADMIN}`))));
+
+// Реакції — особисті списки власника, і читає їх не той, хто бачить стрічку, а
+// той, кому власник делегував доступ, плюс адміни. Адмінського винятку тут
+// колись не було зовсім: AddNewProfile просив `multiData/favorites/$чужий`,
+// база відмовляла, а `fetchFavoriteUsers` ковтав відмову і повертав `{}` —
+// список «Like/Dislike» на чужій картці був порожній замість «немає прав».
+describe('multiData/favorites і dislikes — свої реакції, чужі реакції та адмін');
+
+await it('власниця читає власні лайки', () =>
+  assertSucceeds(get(ref(db(PROFILE_OWNER), `multiData/favorites/${PROFILE_OWNER}`))));
+
+await it('власниця ставить лайк', () =>
+  assertSucceeds(set(ref(db(PROFILE_OWNER), `multiData/favorites/${PROFILE_OWNER}/${CARD}`), true)));
+
+await it('власниця читає власні дизлайки', () =>
+  assertSucceeds(get(ref(db(PROFILE_OWNER), `multiData/dislikes/${PROFILE_OWNER}`))));
+
+await it('адмін читає чужі лайки — це і є список Like/Dislike на AddNewProfile', () =>
+  assertSucceeds(get(ref(db(SUPERADMIN), `multiData/favorites/${PROFILE_OWNER}`))));
+
+await it('адмін читає чужі дизлайки', () =>
+  assertSucceeds(get(ref(db(SUPERADMIN), `multiData/dislikes/${PROFILE_OWNER}`))));
+
+await it('адмін НЕ ставить реакцію за власницю', () =>
+  assertFails(set(ref(db(SUPERADMIN), `multiData/favorites/${PROFILE_OWNER}/${CARD}`), true)));
+
+await it('делегований читач читає лайки власника', () =>
+  assertSucceeds(get(ref(db(DELEGATED_READER), `multiData/favorites/${SUPERADMIN}`))));
+
+await it('делегований читач НЕ ставить лайк за власника', () =>
+  assertFails(set(ref(db(DELEGATED_READER), `multiData/favorites/${SUPERADMIN}/${CARD}`), true)));
+
+// Доступ до стрічки — не доступ до чужих реакцій: рівень `matching` лишається
+// поза цим списком, інакше особисті симпатії читав би кожен співробітник.
+await it('матчинговий переглядач не читає чужих лайків', () =>
+  assertFails(get(ref(db(MATCHING_VIEWER), `multiData/favorites/${PROFILE_OWNER}`))));
+
+await it('стороння не читає чужих лайків', () =>
+  assertFails(get(ref(db(OUTSIDER), `multiData/favorites/${PROFILE_OWNER}`))));
+
+await it('стороння не читає чужих дизлайків', () =>
+  assertFails(get(ref(db(OUTSIDER), `multiData/dislikes/${PROFILE_OWNER}`))));
 
 describe('права після переїзду в profileTechnical');
 
