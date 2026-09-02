@@ -99,7 +99,22 @@ const trimmed = value => {
 };
 
 /**
- * Значення поля анкети для картки — включно з тим, що лежить кількома значеннями.
+ * Плоский список значень поля: порядок збережено, порожні прибрано, однакові
+ * не двояться (повторне збереження інакше нарощувало б масив).
+ */
+const collectFieldValues = value => {
+  const flatten = current => {
+    if (Array.isArray(current)) return current.flatMap(flatten);
+    if (current && typeof current === 'object') return Object.values(current).flatMap(flatten);
+    const scalar = trimmed(current);
+    return scalar ? [scalar] : [];
+  };
+  return [...new Set(flatten(value))];
+};
+
+/**
+ * Значення поля анкети для картки: скаляр лишається скаляром, кілька значень
+ * лишаються кількома.
  *
  * `trimmed` лишається там, де значення завжди скаляр (id, аватар), а поля
  * анкети скаляром бувають не завжди: форма дозволяє тримати в полі кілька
@@ -109,28 +124,32 @@ const trimmed = value => {
  * Тобто поле, викинуте тут, не зберігалось узагалі ніде, скільки б разів його
  * не вводили, і анкета переставала знаходитись за власним іменем.
  *
- * Беруться всі значення, а не останнє: картка — це те, що видно в рядку
- * стрічки, і показує вона їх усі (`buildName` друкує весь масив). Взяти лише
- * поточну версію означало б і в стрічці, і в пошуку тихо згубити решту — ту
- * саму втрату, тільки меншу. Індекс `searchId` тримає їх усі так само
- * (`extractIndexableFieldValues`), тож знайдене за будь-яким зі значень
- * підтверджується самою карткою.
+ * Кілька значень лишаються масивом, а не зводяться до одного і не склеюються в
+ * рядок. Причина та сама, що й у решті бази: анкета тримає кілька імен, кілька
+ * телефонів, кілька дат пологів, і `searchId` індексує їх усі
+ * (`extractIndexableFieldValues`). Звести їх тут означало б зробити картку
+ * єдиним місцем, де частина анкети зникає, — а вона єдине місце, де ці поля
+ * взагалі зберігаються.
+ *
+ * Ціна одна, і вона свідома: `.indexOn: ['name']` упорядковує лише скаляри, тож
+ * картку з кількома іменами не знайде префіксний скан `searchMatchingCardsByText`.
+ * Її знаходить `searchId`, де лежить кожне зі значень.
  */
-const collectFieldValues = value => {
-  if (Array.isArray(value)) return value.flatMap(collectFieldValues);
-  if (value && typeof value === 'object') return Object.values(value).flatMap(collectFieldValues);
+const projectionValue = value => {
+  if (value !== null && typeof value === 'object') {
+    const values = collectFieldValues(value);
+    return values.length ? values : undefined;
+  }
   const scalar = trimmed(value);
-  return scalar ? [scalar] : [];
+  return scalar || undefined;
 };
-
-const fieldValue = value => [...new Set(collectFieldValues(value))].join(', ');
 
 const firstNonEmpty = (data, keys) => {
   for (const key of keys) {
-    const value = fieldValue(data?.[key]);
-    if (value) return value;
+    const value = projectionValue(data?.[key]);
+    if (value !== undefined) return value;
   }
-  return '';
+  return undefined;
 };
 
 /**
@@ -159,9 +178,15 @@ const hasAnyValue = value => {
  */
 export const listDroppedProjectionFields = (data, projection) => {
   if (!data || typeof data !== 'object') return [];
-  return COPIED_FIELDS.filter(key => (
-    hasAnyValue(data[key]) && !trimmed(projection?.[key])
-  ));
+  const isEmptyInCard = key => projectionValue(projection?.[key]) === undefined;
+
+  const dropped = COPIED_FIELDS.filter(key => hasAnyValue(data[key]) && isEmptyInCard(key));
+  // Роль виводиться, а не копіюється, але губилась так само — і в перелік
+  // копійованих полів вона не входить, тож перевіряється окремо.
+  if ((hasAnyValue(data.role) || hasAnyValue(data.userRole)) && isEmptyInCard('role')) {
+    dropped.push('role');
+  }
+  return dropped;
 };
 
 // Вибір основного фото живе поруч з рештою похідних — і офлайн-міграція, і
@@ -235,12 +260,12 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
 
   const projection = {};
   COPIED_FIELDS.forEach(key => {
-    const value = fieldValue(data[key]);
-    if (value) projection[key] = value;
+    const value = projectionValue(data[key]);
+    if (value !== undefined) projection[key] = value;
   });
 
   const csection = firstNonEmpty(data, CSECTION_ALIASES);
-  if (csection) projection.csection = csection;
+  if (csection !== undefined) projection.csection = csection;
 
   // Похідні від полів, які самі в картку не потрапляють. Кожна з них рахується
   // тим самим кодом, що й офлайн-міграція, — інакше картка, зібрана вручну з
@@ -254,8 +279,11 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const bloodGroup = deriveBloodGroup(data.blood).value;
   if (bloodGroup) projection.bloodGroup = bloodGroup;
 
-  const role = trimmed(deriveRole(data).value);
-  if (role) projection.role = role;
+  // Роль теж буває не одна: `deriveRole` навмисно віддає масив, коли анкета
+  // заявляла себе в кількох ролях. `trimmed` повертав на такий масив порожній
+  // рядок — і картка з двома ролями лишалась узагалі без `role`.
+  const role = projectionValue(deriveRole(data).value);
+  if (role !== undefined) projection.role = role;
 
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
@@ -391,6 +419,25 @@ export const expandMatchingCard = (userId, card) => {
 export const isMatchingSummaryCard = user => Boolean(user?.[MATCHING_SUMMARY_FLAG]);
 
 /**
+ * Порівняння значень, яке розуміє поле з кількох значень.
+ *
+ * `!==` на двох масивах істинний завжди, тож без цього писач вважав би картку
+ * зміненою на кожне збереження і переписував би її дарма. Скаляр і масив з тим
+ * самим значенням — теж різні: перехід між формами має доїхати до бази.
+ */
+const sameProjectionValue = (left, right) => {
+  const leftIsObject = left !== null && typeof left === 'object';
+  const rightIsObject = right !== null && typeof right === 'object';
+  if (leftIsObject !== rightIsObject) return false;
+  if (!leftIsObject) return left === right;
+
+  const leftValues = collectFieldValues(left);
+  const rightValues = collectFieldValues(right);
+  return leftValues.length === rightValues.length
+    && leftValues.every((value, index) => value === rightValues[index]);
+};
+
+/**
  * Чи змінилась проєкція? Писач звіряє її з тим, що вже лежить у базі, і мовчить,
  * коли правка анкети не зачепила жодного поля стрічки — а це більшість правок.
  */
@@ -398,7 +445,7 @@ export const areMatchingCardProjectionsEqual = (a, b) => {
   if (!a || !b) return false;
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const key of keys) {
-    if (a[key] !== b[key]) return false;
+    if (!sameProjectionValue(a[key], b[key])) return false;
   }
   return true;
 };
