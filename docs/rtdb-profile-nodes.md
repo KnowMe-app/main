@@ -257,12 +257,22 @@ matching+profileContacts:view&write
 
 | шлях | вузли | legacy | картка |
 |------|-------|--------|--------|
-| `makeNewUser` (створення) | `fanOutProfileNodes` | `set` у `users` | `syncMatchingCardIndex` |
-| `updateDataInRealtimeDB` | `fanOutProfileNodes` | `users` | `refreshMatchingCardAfterProfileWrite` |
+| `makeNewUser` (створення) | `fanOutProfileNodes` | — | `syncMatchingCardIndex` |
+| `updateDataInRealtimeDB` | `fanOutProfileNodes` | `users`, якщо тіло там уже є | `refreshMatchingCardAfterProfileWrite` |
 | `updateProfileNodesInRTDB` | `fanOutProfileNodes` | — | `refreshMatchingCardAfterProfileWrite` |
 
 Усе редагування з усіх екранів іде через два останні, тож окремих шляхів запису
 анкети немає.
+
+**Дзеркало нового legacy-тіла не заводить.** `/users` — вузол акаунтів: там
+лежать анкети тих, хто завів акаунт сам, і саме їх читає мобільний застосунок.
+Картка, яку завела адміністраторка, акаунта не має, тож `users/{push-ключ}` лише
+вдавав акаунт — зате назавжди робив картку «legacy-анкетою» для
+`getCardLegacyCollection`, і кожне наступне збереження йшло туди ж. Тепер
+`mirrorProfileToLegacyUsers` питає `hasLegacyUsersBody`: довгий id (Firebase-Auth
+UID) дзеркалиться завжди, короткий — лише поки тіло в `/users` уже існує.
+Публікація чернетки (`acceptCreateProfileMutation`) з тієї ж причини кладе анкету
+у вузли, а не в `users/{cardId}`.
 
 Порядок у таблиці не випадковий: **вузли пишуться першими**. Вони джерело
 істини для веба, і саме їх читає застосунок; legacy йде другим — це дзеркало
@@ -434,9 +444,10 @@ legacy обидва повертають результат замість то�
 
 Поки `/users` живий, дзеркалення двостороннє:
 
-- **веб → legacy** — кожен запис анкети йде і у вузли, і в legacy-колекцію.
+- **веб → legacy** — запис анкети акаунта йде і у вузли, і в legacy-колекцію.
   Але вузли перші, і відмова legacy більше не скасовує збереження: анкета
-  вважається втраченою тільки тоді, коли не прийняла жодна зі сторін;
+  вважається втраченою тільки тоді, коли не прийняла жодна зі сторін. Анкети,
+  заведені у вебі, дзеркала не мають узагалі — див. «Запис»;
 - **legacy → веб** — читання однієї анкети (`fetchUserById`) бере legacy нижнім
   шаром, але лише в тій частині, якою ще не володіє жоден вузол. Межу проводить
   наявність вузла: якщо `profileContacts/{id}` існує, контакти належать вебу, і

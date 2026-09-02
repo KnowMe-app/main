@@ -2,6 +2,7 @@ import { get, push, ref, remove, runTransaction, update } from 'firebase/databas
 
 import { database, syncUserSearchKeyIndex, syncMatchingCardIndex } from 'components/config';
 import { buildOverlayFromDraft, getOverlaysForCard } from './multiAccountEdits';
+import { buildProfileNodePatch } from './profileNodeWriter';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdRecordKey,
@@ -403,12 +404,6 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
       'search-key-index',
       () => syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
     );
-    // Публікація анкети — це поява картки в стрічці, тож проєкція під стрічку
-    // будується тут же, разом з пошуковими індексами.
-    await withProfileSaveStage(
-      'matching-card-index',
-      () => syncMatchingCardIndex(cardId, acceptedProfile),
-    );
   } catch (error) {
     await restorePendingMutation().catch(() => {});
     throw error;
@@ -417,27 +412,54 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     console.warn('[profileMutations] pending overlays unavailable', error);
     return {};
   });
-  // Once the canonical card is public in users, unresolved proposals are a
-  // private admin review queue. Keep their fields intact and mark only the
-  // existing editor nodes; non-admin profile screens ignore this marker.
+  // Once the canonical card is published, unresolved proposals are a private
+  // admin review queue. Keep their fields intact and mark only the existing
+  // editor nodes; non-admin profile screens ignore this marker.
   const pendingOverlayVisibility = Object.keys(pendingOverlays).reduce((updates, editorUserId) => {
     updates[`multiData/edits/${cardId}/${editorUserId}/adminOnly`] = true;
     return updates;
   }, {});
 
+  // Анкета лягає у власні вузли, а не в legacy `/users`. `/users` — вузол
+  // акаунтів, і його дзеркалять для мобільного застосунку; у картки, яку завела
+  // адміністраторка, акаунта немає, тож у `/users` вона лише вдавала б його.
+  // Веб же з legacy не читає взагалі: анкету збирає `readProfileFromNodes`, і
+  // до цієї правки опублікована чернетка не мала в нових вузлах жодного поля.
+  //
   // Keep the critical atomic publication deliberately small. Optional review
-  // bookkeeping has stricter/legacy rules and must never prevent the flat
-  // users/{cardId} card from being published together with its mutation.
+  // bookkeeping has stricter/legacy rules and must never prevent the profile
+  // nodes from being published together with its mutation.
+  const publishedNodes = buildProfileNodePatch(cardId, acceptedProfile);
+  // Анкета мусить існувати хоча б в одному вузлі: правило картки стрічки питає
+  // саме про це. Чернетка, у якій заповнене лише те, що живе в самій картці
+  // (імʼя, місто, дата народження), власних полів у вузлах не має — тоді вузол
+  // відкриває дата публікації, у тому ж вигляді, у якому її кладе `makeNewUser`.
+  if (!Object.keys(publishedNodes).length) {
+    publishedNodes[`profileTechnical/${cardId}/createdAt`] = new Date(acceptedAt)
+      .toISOString()
+      .split('T')[0];
+  }
   try {
     await withProfileSaveStage('publication-update', () => update(ref(database), {
-      [`users/${cardId}`]: acceptedProfile,
+      ...publishedNodes,
       [mutationPath]: { ...mutation, status: 'accepted' },
     }));
   } catch (error) {
-    error.profileSaveTargets = ['users-card', 'mutation-status'];
+    error.profileSaveTargets = ['profile-nodes', 'mutation-status'];
     error.profileSaveRecovered = Boolean((await restorePendingMutation().catch(() => null))?.committed);
     throw error;
   }
+
+  // Картка стрічки будується після тіла, а не разом з рештою індексів: правило
+  // `matchingCards/$uid` вимагає, щоб анкета вже десь існувала
+  // (`root.child('profileDetails').child($uid).exists()` і так далі). Поки
+  // проєкція йшла перед публікацією, вона на новій анкеті мовчки відпадала за
+  // правами — `syncMatchingCardIndex` помилок не кидає, — і щойно опублікована
+  // картка не з'являлась ані в стрічці, ані в пошуку за частиною id.
+  await withProfileSaveStage(
+    'matching-card-index',
+    () => syncMatchingCardIndex(cardId, acceptedProfile),
+  );
 
   // Cleanup is best-effort: legacy overlays and child-only history rules must
   // not roll back a successfully published canonical card.

@@ -53,6 +53,7 @@ import {
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
 import { isAdminUid, readStoredAccessLevel } from '../utils/accessLevel';
+import { isLongFormatUserId } from '../utils/userIdFormat';
 import { scopeProfileNodesToViewer } from '../utils/profileVisibilityScope';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
@@ -2544,14 +2545,11 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   // тож саме вони і є записом анкети.
   const nodesWritten = await fanOutProfileNodes(newUserId, newUser);
   if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');
-  // І одразу лягає в legacy-колекцію: з `users` читає мобільний застосунок, і
-  // нова анкета має бути там у його форматі — з крапковими датами і двійниками
-  // `createdAt`/`createdAt2`. Це робить спільне дзеркало, тож формат тут і
-  // формат при кожному наступному збереженні — той самий.
-  const legacyWritten = await mirrorProfileToLegacyUsers(newUserId, newUser, 'set');
-  if (!legacyWritten) {
-    console.warn('[profileNodes] legacy-дзеркало нової анкети не створено', { userId: newUserId });
-  }
+  // Legacy-тіла нова анкета не отримує. `push` на `users` тут — лише генератор
+  // ключа; сам вузол `users` — це акаунти, і анкета, яку завела адміністраторка,
+  // акаунтом не є: у мобільному застосунку немає нікого, хто б її прочитав.
+  // Раніше дзеркало заводило під цим ключем порожній акаунт — і `users`
+  // наповнювався картками, до яких він не має стосунку.
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
   // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
   // після наступної індексації.
@@ -3710,6 +3708,36 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
 };
 
 /**
+ * Чи є кому читати legacy-тіло цієї анкети.
+ *
+ * `/users` — вузол акаунтів: там лежать анкети тих, хто завів акаунт сам, і
+ * саме їх читає мобільний застосунок. Картка, яку завела адміністраторка,
+ * акаунта не має — дзеркалити її нема для кого, а створений під push-ключем
+ * `users/-P0W2CxWOGI-UGUk1NXt` лише вдає акаунт: ані власника, ані читача в
+ * нього немає, зате `getCardLegacyCollection` після цього назавжди вважає таку
+ * картку legacy-анкетою і жене в `/users` кожне наступне збереження.
+ *
+ * Тому дзеркало більше не *створює* legacy-тіла. Оновлює воно лише те, що там
+ * уже є: анкету акаунта (довгий id — це Firebase-Auth UID) і ті картки, тіло
+ * яких потрапило в `/users` раніше, — доки їх звідти хтось читає, вони мають
+ * лишатись цілими.
+ *
+ * Відмова в читанні — це «не видно», а не «немає»: право на чужий `users/$uid`
+ * є не в кожного, хто має право редагувати анкету. Створювати тіло наосліп у
+ * такому разі не можна, тож відповідь — «не дзеркалити».
+ */
+const hasLegacyUsersBody = async userId => {
+  if (isLongFormatUserId(userId)) return true;
+  try {
+    const snapshot = await get(ref2(database, `users/${userId}`));
+    return snapshot.exists();
+  } catch (error) {
+    console.warn('[legacy] не вдалося перевірити наявність legacy-анкети', { userId, error });
+    return false;
+  }
+};
+
+/**
  * Дзеркалення анкети в legacy-колекцію.
  *
  * Дзеркалення двостороннє: мобільний застосунок пише в `/users` і читає звідти,
@@ -3719,9 +3747,14 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
  * не кидається далі, а повертається викликачу, який уже вирішує, чи анкета
  * взагалі кудись збереглась.
  *
+ * Дзеркало пише лише туди, де legacy-тіло вже є (`hasLegacyUsersBody`) — нового
+ * воно не заводить.
+ *
  * @returns {Promise<boolean>} чи прийняла legacy-колекція запис.
  */
 const mirrorProfileToLegacyUsers = async (userId, payload, condition) => {
+  if (!(await hasLegacyUsersBody(userId))) return false;
+
   try {
     const legacyRef = ref2(database, `users/${userId}`);
     // Дати переписуються у формат мобільного застосунку рівно тут — на єдиному
