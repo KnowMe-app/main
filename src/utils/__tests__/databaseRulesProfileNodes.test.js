@@ -40,7 +40,7 @@ const expectRoleClauseGatedByFeed = read => {
   // `\\S` мова правил не знає, і файл з ним база не приймає цілком —
   // клас пробілу тут записаний дозволеним діалектом (див.
   // databaseRulesRegexDialect.test.js).
-  expect(read).toContain("child('feedDate').val().matches(/.*[^ ].*/)");
+  expect(read).toContain("child('feedDate').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)");
   const [beforeGate, afterGate] = read.split(FEED_GATE);
   expect(beforeGate).not.toContain('userRole');
   expect(beforeGate).not.toContain("child('role')");

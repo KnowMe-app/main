@@ -35,17 +35,17 @@ describe('діалект регулярок у правилах бази', () =>
     expect(offenders).toEqual([]);
   });
 
-  it('порожній і пробільний feedDate не рахуються за ключ стрічки', () => {
-    // Та сама умова, записана дозволеним класом: `isString()` пропускає '' і
-    // '   ', тож без неї прихована анкета відкривала б деталі й контакти.
-    const blankGuard = 'matches(/.*[^ ].*/)';
+  it('лише дата YYYY-MM-DD рахується за ключ стрічки', () => {
+    // Самого `isString()` недостатньо: `false` він відсікає, але довільний
+    // непорожній текст без формату дати інакше відкривав би деталі й контакти.
+    const dateGuard = 'matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)';
     const { rules } = JSON.parse(rulesSource);
 
     // Читання самої картки цієї умови більше не має — воно взагалі не питає
     // `feedDate`: картка це мінімум, який видно поза стрічкою. Умова лишається
     // там, де від неї залежить показ: у валідації ключа і в приватних вузлах.
-    expect(rules.matchingCards.$uid.feedDate['.validate']).toContain(blankGuard);
-    expect(rules.profileDetails.$uid['.read']).toContain(blankGuard);
-    expect(rules.profileContacts.$uid['.read']).toContain(blankGuard);
+    expect(rules.matchingCards.$uid.feedDate['.validate']).toContain(dateGuard);
+    expect(rules.profileDetails.$uid['.read']).toContain(dateGuard);
+    expect(rules.profileContacts.$uid['.read']).toContain(dateGuard);
   });
 });

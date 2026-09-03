@@ -1,5 +1,6 @@
 import { canAccessMatchingByLevel, isAdminUid } from './accessLevel';
 import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
+import { normalizeFeedDateValue } from './profileFieldDerive';
 
 /**
  * Скільки анкети віддавати читачеві, коли картки немає в стрічці.
@@ -30,7 +31,7 @@ import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
 export const isCardInMatchingFeed = card => Boolean(
   card
   && typeof card === 'object'
-  && String(card[MATCHING_CARD_FEED_FIELD] || '').trim(),
+  && normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD]),
 );
 
 /** Кому анкета відкрита без огляду на те, чи вона в стрічці. */
