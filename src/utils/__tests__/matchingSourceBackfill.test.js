@@ -71,6 +71,57 @@ describe('collectFilteredMatchingSourceCards', () => {
     expect(result.lastKey).toBe('page-2');
   });
 
+  it('backfills a two-card first page to ten, then keeps the next public batch at two', async () => {
+    const pages = [
+      {
+        users: [
+          { userId: 'visible-1', userRole: 'ag' },
+          { userId: 'excluded-1', userRole: 'ed' },
+          { userId: 'visible-2', userRole: 'ag' },
+        ],
+        lastKey: 'page-1',
+        hasMore: true,
+      },
+      {
+        users: Array.from({ length: 8 }, (_, index) => ({ userId: `older-${index + 1}`, userRole: 'ag' })),
+        lastKey: 'page-2',
+        hasMore: true,
+      },
+      {
+        users: [{ userId: 'next-1', userRole: 'ag' }, { userId: 'next-2', userRole: 'ag' }],
+        lastKey: 'page-3',
+        hasMore: true,
+      },
+    ];
+    const fetchSourcePage = jest.fn(async () => pages.shift());
+
+    const firstWindow = await collectFilteredMatchingSourceCards({
+      targetVisibleCount: 10,
+      fetchSourcePage,
+      filterSourceUsers: agFilter,
+      hydrateUsersByIds,
+      isSameCursor,
+    });
+
+    expect(firstWindow.users).toHaveLength(10);
+    expect(fetchSourcePage).toHaveBeenCalledTimes(2);
+    // Drafts are inserted by Matching only after this public window completes.
+    const deckWithOwnDrafts = [...firstWindow.users, { userId: 'own-draft' }];
+    expect(deckWithOwnDrafts[10].userId).toBe('own-draft');
+
+    const nextBatch = await collectFilteredMatchingSourceCards({
+      targetVisibleCount: 2,
+      initialCursor: firstWindow.lastKey,
+      fetchSourcePage,
+      filterSourceUsers: agFilter,
+      hydrateUsersByIds,
+      isSameCursor,
+    });
+
+    expect(nextBatch.users.map(user => user.userId)).toEqual(['next-1', 'next-2']);
+    expect(fetchSourcePage).toHaveBeenCalledTimes(3);
+  });
+
   it('reports successful source, filtering, and hydration stages without exposing card data', async () => {
     const events = [];
     await collectFilteredMatchingSourceCards({

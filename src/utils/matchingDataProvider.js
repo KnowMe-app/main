@@ -1504,21 +1504,20 @@ export const fetchFilteredMatchingSourceChunk = ({
         throw error;
       }
     },
-    filterSourceUsers: sourceUsers => {
-      if (!isAdmin) return sourceUsers.filter(user => !exclude.has(user.userId));
-
-      return applyMatchingSearchKeyFilters(
-        filterMainFn(
-          sourceUsers.map(user => [user.userId, user]),
-          null,
-          getMatchingFiltersWithoutSearchKeyGroups(filters),
-          favoriteUsers,
-          dislikeUsers
-        ).map(([, user]) => user),
-        filters,
-        roleIndexSets
-      ).filter(user => !exclude.has(user.userId));
-    },
+    // Backfill counts the cards which can actually enter the public deck.  In
+    // particular, an ordinary viewer's first source page must not look full
+    // merely because its records are rejected by reactions or by the UI
+    // filters one render later.
+    filterSourceUsers: sourceUsers => applyMatchingUiFiltersToUsers({
+      users: sourceUsers.filter(user => !exclude.has(user.userId)),
+      filters,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: true,
+      roleIndexSets,
+      viewMode: 'default',
+      filterMainFn,
+    }),
     hydrateUsersByIds,
     onPart,
     onDiagnosticEvent,

@@ -1486,6 +1486,10 @@ const Matching = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const usersRef = useRef(users);
+  // Public source readiness is deliberately separate from the rendered deck:
+  // own drafts and access-scoped cards must never satisfy the first ten-card
+  // matchingCards window.
+  const [initialPublicWindowComplete, setInitialPublicWindowComplete] = useState(false);
   const [lastKey, setLastKey] = useState(undefined);
   const [hasMore, setHasMore] = useState(true);
   // removed selected user modal logic
@@ -2920,6 +2924,7 @@ const Matching = () => {
     }
     initialLoadInFlightRef.current = true;
     loadingRef.current = true;
+    setInitialPublicWindowComplete(false);
     setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
     try {
@@ -3048,6 +3053,7 @@ const Matching = () => {
           if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
           setLastKey(indexed.nextOffset);
           setHasMore(Boolean(indexed.hasMore));
+          setInitialPublicWindowComplete(indexedUsers.length >= INITIAL_LOAD || !indexed.hasMore);
           setViewMode('default');
           return;
         }
@@ -3083,9 +3089,16 @@ const Matching = () => {
           mode: matchingDataSourceMode,
         });
         console.log('[loadInitial] using cache', cached.length);
-        const filteredCached = cached.filter(
-          u => isMatchingCardId(u.userId) && !exclude.has(u.userId)
-        );
+        const filteredCached = applyMatchingUiFiltersToUsers({
+          users: cached.filter(u => isMatchingCardId(u.userId) && !exclude.has(u.userId)),
+          filters: filtersRef.current || {},
+          filterMainFn: filterMain,
+          favoriteUsers: favoriteUsersRef.current,
+          dislikeUsers: dislikeUsersRef.current,
+          excludeReactionUsers: true,
+          roleIndexSets,
+          viewMode: 'default',
+        });
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
         setIdsForQuery(defaultListKey, filteredCached.map(u => u.userId));
@@ -3110,6 +3123,7 @@ const Matching = () => {
           });
           setLastKey(cursorFromCache);
           setHasMore(true);
+          setInitialPublicWindowComplete(true);
           return;
         }
         // Кеша не вистачило на екран — дочитуємо джерело, як і раніше.
@@ -3120,11 +3134,13 @@ const Matching = () => {
           reason: 'missing',
         });
       }
+      const cachedPublicCount = loadedIdsRef.current.size;
+      const initialExclude = new Set([...exclude, ...loadedIdsRef.current]);
       const res = await runInitialRequestWithTimeout(
         () => fetchChunk(
-          INITIAL_LOAD,
+          Math.max(1, INITIAL_LOAD - cachedPublicCount),
           undefined,
-          exclude,
+          initialExclude,
           async part => {
           if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
@@ -3176,6 +3192,11 @@ const Matching = () => {
       if (!canApplyInitialLoad()) return;
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
+      const sourceExhausted = res.stopReason === 'source_exhausted'
+        || res.stopReason === 'no_visible_cards_added';
+      setInitialPublicWindowComplete(
+        cachedPublicCount + res.users.length >= INITIAL_LOAD || sourceExhausted
+      );
       setViewMode('default');
       writeMatchingDebugLog('initialLoad:completed', {
         ownerId: getOwnerId(),
@@ -3216,7 +3237,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -3230,6 +3251,7 @@ const Matching = () => {
     viewModeRef.current = 'default';
     setViewMode('default');
     setActiveProfileIndex(0);
+    setInitialPublicWindowComplete(false);
     resetReactionPaginationState();
     loadInitial();
   }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
@@ -4482,7 +4504,11 @@ const Matching = () => {
       // The scoped source is paged just like the public feed. Read only the
       // next deck-sized page; never drain the entire additional-access index
       // on initial load or after a filter change.
-      if (additionalHasMoreRef.current && parsedAdditionalAccessRules.length > 0) {
+      // Public pagination owns its two-card quota. Access-scoped cards are a
+      // separate deck source and may only page after matchingCards is truly
+      // exhausted; otherwise two local/scoped cards could consume a cycle
+      // without adding the two promised public cards.
+      if (!hasMoreRef.current && additionalHasMoreRef.current && parsedAdditionalAccessRules.length > 0) {
         const scopedOffset = additionalNextOffsetRef.current;
         const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({
           rawRules: currentAdditionalAccessRules,
@@ -4604,6 +4630,7 @@ const Matching = () => {
       let canLoadMore = hasMore;
       let loadedChunkCalls = 0;
       let stopReason = '';
+      let sourceExhausted = false;
       writeMatchingDebugLog('loadMore:fetch:start', buildLoadMoreDebugPayload({
         ...commonDebug,
         requestVersion: applyVersion,
@@ -4671,6 +4698,9 @@ const Matching = () => {
           hasMore: Boolean(res.hasMore),
           sourceHasMore: Boolean(res.sourceHasMore),
         };
+        sourceExhausted = sourceExhausted
+          || res.stopReason === 'source_exhausted'
+          || res.stopReason === 'no_visible_cards_added';
         matchingLastCardsDebugStatsRef.current = {
           ...loadMoreStats,
           stage: 'loadMore',
@@ -4725,6 +4755,12 @@ const Matching = () => {
         setHasMore(canLoadMore);
       }
       setLastKey(cursor);
+      if (
+        viewMode === 'default'
+        && (Number(currentVisibleCount) + collected.length >= INITIAL_LOAD || sourceExhausted)
+      ) {
+        setInitialPublicWindowComplete(true);
+      }
       writeMatchingDebugLog('loadMore:emit', buildLoadMoreDebugPayload({
         ...commonDebug,
         requestVersion: applyVersion,
@@ -4796,13 +4832,26 @@ const Matching = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const publicVisibleUsers = useMemo(() => applyMatchingUiFiltersToUsers({
+    users,
+    filters,
+    filterMainFn: filterMain,
+    favoriteUsers,
+    dislikeUsers,
+    excludeReactionUsers: viewMode === 'default',
+    roleIndexSets,
+    viewMode,
+  }), [dislikeUsers, favoriteUsers, filters, roleIndexSets, users, viewMode]);
+
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
     // погодження адміном, щоб зʼявитись у власника в стрічці. Але стрічка — це
     // не результати пошуку: доливати їх до відповіді на запит означає показати
     // читачеві його ж чернетки замість того, кого він шукав, і ще й порахувати
     // їх у «Знайдено N».
-    users: viewMode === 'search' ? users : [...users, ...personalCreateProfiles],
+    users: viewMode === 'search'
+      ? users
+      : [...users, ...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS)],
     additionalAccessUsers,
     sharedReactionCandidateUsers,
     isAdmin,
@@ -4819,6 +4868,7 @@ const Matching = () => {
     ownDislikeUsers,
     ownFavoriteUsers,
     isAdmin,
+    initialPublicWindowComplete,
     parsedAdditionalAccessRules,
     sharedReactionCandidateUsers,
     users,
@@ -5287,9 +5337,12 @@ const Matching = () => {
     visibleUsers,
   ]);
   const renderedCardsLength = renderedCards.length;
+  // Pagination targets count only public cards. `renderedCardsLength` also
+  // contains drafts/access-scoped cards and is therefore only a DOM/deck size.
+  const publicCardsLength = viewMode === 'default' ? publicVisibleUsers.length : renderedCardsLength;
   // Читається з обробника відліку, який живе поза рендером.
-  const renderedCardsLengthRef = useRef(renderedCardsLength);
-  useEffect(() => { renderedCardsLengthRef.current = renderedCardsLength; }, [renderedCardsLength]);
+  const publicCardsLengthRef = useRef(publicCardsLength);
+  useEffect(() => { publicCardsLengthRef.current = publicCardsLength; }, [publicCardsLength]);
   const debugFilteredOutReasonById = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return new Map();
     const map = new Map();
@@ -5711,7 +5764,7 @@ const Matching = () => {
       reason,
       viewMode,
       sourceCursorSignature,
-      renderedLength: renderedCardsLength,
+      publicCardsLength,
       activeProfileIndex,
       filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
       loadedIdsCount: loadedIdsRef.current?.size || 0,
@@ -5719,7 +5772,7 @@ const Matching = () => {
 
     console.log('[Matching][endOfDeckLoad] requested', {
       reason,
-      renderedLength: renderedCardsLength,
+      publicCardsLength,
       activeProfileIndex,
       hasMore: Boolean(hasMoreRef.current),
       loadingRefCurrent: Boolean(loadingRef.current),
@@ -5732,15 +5785,15 @@ const Matching = () => {
     // черговий цикл відліку впирався б у guard за однаковим підписом.
     const visibleBuffer = Math.max(1, Math.min(MATCHING_VISIBLE_BUFFER, Number(limit) || MATCHING_VISIBLE_BUFFER));
     runAutoLoadMore(`end-of-deck:${triggerSignature}`, {
-      currentVisibleCount: renderedCardsLength,
-      targetVisibleCount: renderedCardsLength + visibleBuffer,
+      currentVisibleCount: publicCardsLength,
+      targetVisibleCount: publicCardsLength + visibleBuffer,
       limit,
     });
   }, [
     activeProfileIndex,
     lastKey,
     reactionPaginationByType,
-    renderedCardsLength,
+    publicCardsLength,
     runAutoLoadMore,
     viewMode,
   ]);
@@ -6032,7 +6085,7 @@ const Matching = () => {
     });
 
     runAutoLoadMore(`last-card:${triggerSignature}`, {
-      currentVisibleCount: renderedCardsLength,
+      currentVisibleCount: publicCardsLength,
       targetVisibleCount: MATCHING_VISIBLE_BUFFER,
       limit: MATCHING_REFILL_LIMIT,
     });
@@ -6047,6 +6100,7 @@ const Matching = () => {
     reactionPaginationByType,
     renderedCards,
     renderedCardsLength,
+    publicCardsLength,
     viewMode,
   ]);
   useEffect(() => {
@@ -6549,7 +6603,7 @@ const Matching = () => {
 
   const handleThrottledFeedLoad = React.useCallback(() => {
     disarmFeedPaging();
-    setThrottledCycle({ target: renderedCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH, attempts: 1 });
+    setThrottledCycle({ target: publicCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH, attempts: 1 });
     endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
   }, [disarmFeedPaging]);
 
@@ -6563,7 +6617,7 @@ const Matching = () => {
   useEffect(() => {
     if (!isThrottledFeedPaging || !throttledCycle || loading) return;
     if (
-      renderedCardsLength >= throttledCycle.target ||
+      publicCardsLength >= throttledCycle.target ||
       !hasMore ||
       throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS
     ) {
@@ -6572,9 +6626,9 @@ const Matching = () => {
     }
     setThrottledCycle({ ...throttledCycle, attempts: throttledCycle.attempts + 1 });
     endOfDeckLoadRef.current('feed-countdown-topup', {
-      limit: Math.max(1, throttledCycle.target - renderedCardsLength),
+      limit: Math.max(1, throttledCycle.target - publicCardsLength),
     });
-  }, [hasMore, isThrottledFeedPaging, loading, renderedCardsLength, throttledCycle]);
+  }, [hasMore, isThrottledFeedPaging, loading, publicCardsLength, throttledCycle]);
 
   // Стрічка може виявитись коротшою за екран — тоді крутити нема чого, і жест
   // лишається недосяжним. Дотик робить те саме, що прокрутка.
@@ -7111,7 +7165,7 @@ const Matching = () => {
                 <FeedLoadCountdown
                   durationMs={MATCHING_THROTTLED_LOAD_DELAY_MS}
                   batchSize={MATCHING_THROTTLED_LOAD_BATCH}
-                  cycleKey={renderedCardsLength}
+                  cycleKey={publicCardsLength}
                   onElapsed={handleThrottledFeedLoad}
                 />
               )}
