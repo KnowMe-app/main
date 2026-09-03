@@ -41,7 +41,7 @@ describe('quick public comment', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
-  it('shows the public / signed marking before any text is typed', () => {
+  it('labels the field as a publicly visible comment before any text is typed', () => {
     setup();
     const field = openComposer();
     expect(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();

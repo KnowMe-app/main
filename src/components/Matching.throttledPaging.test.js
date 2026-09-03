@@ -168,17 +168,17 @@ describe('публічні коментарі', () => {
     const source = matching();
     expect(source.match(/<PublicCommentBlock/g)).toHaveLength(2);
     expect(source).toContain('publicCommentSlot={(');
-    expect(source).toContain('<ModernSectionTitle>Публічні коментарі</ModernSectionTitle>');
+    expect(source).toContain('<ModernSectionTitle>Public comment</ModernSectionTitle>');
   });
 
   it('тримає публічні коментарі окремо від приватної нотатки', () => {
     const source = matching();
     const card = source.slice(
-      source.indexOf('<ModernSectionTitle>Comment</ModernSectionTitle>'),
+      source.indexOf('<ModernSectionTitle>My personal comment</ModernSectionTitle>'),
       source.indexOf('</ModernProfileBody>'),
     );
-    expect(card).toContain('placeholder="Мій коментар / My comment"');
-    expect(card.indexOf('placeholder="Мій коментар / My comment"'))
+    expect(card).toContain('placeholder="Мій приватний коментар / пам\'ятка для себе"');
+    expect(card.indexOf('placeholder="Мій приватний коментар / пам\'ятка для себе"'))
       .toBeLessThan(card.indexOf('{publicCommentSlot}'));
   });
 
