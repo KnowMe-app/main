@@ -30,21 +30,22 @@ const removeComment = async () => {
 };
 
 const openComposer = () => {
-  fireEvent.click(screen.getByText('Додати коментар'));
+  fireEvent.click(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE));
   return screen.getByRole('textbox');
 };
 
 describe('quick public comment', () => {
   it('offers a plain line of text, not a field, until it is clicked', () => {
     setup();
-    expect(screen.getByText('Додати коментар')).toBeInTheDocument();
+    expect(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('labels the field as a publicly visible comment before any text is typed', () => {
     setup();
     const field = openComposer();
-    expect(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
+    expect(field).toHaveAttribute('placeholder', PUBLIC_COMMENT_VISIBILITY_NOTE);
+    expect(screen.queryByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).not.toBeInTheDocument();
     expect(field).toHaveValue('');
   });
 
@@ -61,7 +62,7 @@ describe('quick public comment', () => {
     const field = openComposer();
     fireEvent.change(field, { target: { value: '   ' } });
     fireEvent.blur(field);
-    expect(await screen.findByText('Додати коментар')).toBeInTheDocument();
+    expect(await screen.findByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -71,7 +72,7 @@ describe('quick public comment', () => {
     fireEvent.change(field, { target: { value: 'не зберігати' } });
     fireEvent.keyDown(field, { key: 'Escape' });
     fireEvent.blur(field);
-    expect(await screen.findByText('Додати коментар')).toBeInTheDocument();
+    expect(await screen.findByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
   });
 

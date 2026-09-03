@@ -515,13 +515,11 @@ const CommentComposer = ({ initialText, onCancel, onCommit }) => {
 
   return (
     <S.CommentEditor onClick={e => e.stopPropagation()}>
-      <S.CommentEditorHead>
-        <span>{PUBLIC_COMMENT_VISIBILITY_NOTE}</span>
-      </S.CommentEditorHead>
       <S.PublicCommentInput
         ref={ref}
         rows={COMMENT_MIN_ROWS}
         value={draft}
+        placeholder={PUBLIC_COMMENT_VISIBILITY_NOTE}
         onTouchStart={e => e.stopPropagation()}
         onChange={e => {
           setDraft(e.target.value);
@@ -725,7 +723,7 @@ export const PublicCommentBlock = ({
             setEditing({ commentId: null, draftId: `draft-${Date.now()}` });
           }}
         >
-          Додати коментар
+          {PUBLIC_COMMENT_VISIBILITY_NOTE}
         </S.AddCommentTrigger>
       )}
 
