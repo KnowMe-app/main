@@ -54,7 +54,11 @@ import {
 } from '../utils/searchKeyUtils';
 import { isAdminUid, readStoredAccessLevel } from '../utils/accessLevel';
 import { isLongFormatUserId } from '../utils/userIdFormat';
-import { scopeProfileNodesToViewer } from '../utils/profileVisibilityScope';
+import {
+  canReadProfileOutsideFeed,
+  isCardInMatchingFeed,
+  scopeProfileNodesToViewer,
+} from '../utils/profileVisibilityScope';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
@@ -2082,24 +2086,52 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     legacy = null,
   } = options;
 
-  // Рівень доступу читається поруч із вузлами, а не перед ними: він потрібен
-  // лише на зведенні, і чекати на нього окремим кругом означало б додати
-  // затримку кожній картці.
-  const [card, details, contacts, workflow, technical, accessLevel] = await Promise.all([
+  // Картка і рівень доступу читаються першими — і саме тому, що від них
+  // залежить, які вузли взагалі можна питати. Разом вони один круг: рівень
+  // доступу читається раз на сесію і далі приходить з памʼяті
+  // (`resolveViewerAccessLevel`), тож на другій картці це вже одне читання.
+  const [card, accessLevel] = await Promise.all([
     readProfileNodePart(PROFILE_NODES.matchingCards, id),
-    readProfileNodePart(PROFILE_NODES.profileDetails, id),
-    includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
-    includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
-    includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
     resolveViewerAccessLevel(),
   ]);
 
-  // Анкета поза стрічкою — це анкета, показу якій ніхто не давав, і читачеві
-  // без службового доступу від неї лишається сама картка. Правила бази кажуть
-  // те саме й по-справжньому: `profileDetails/$uid` і `profileContacts/$uid`
-  // відкриті звичайному користувачеві лише доти, доки в картці є `feedDate`.
-  // Тут та сама межа стоїть у коді, який складає анкету, — щоб на екран не
-  // приїхало те, що прийшло повз правила: зі старого кеша або з legacy-шару.
+  // Приватні вузли не питають доти, доки право на них не доведене: або читач
+  // має його поза стрічкою (власниця, адмін, службовий доступ), або в картці
+  // лежить дата `feedDate` — сама лише наявність ключа не рахується, бо `false`
+  // означає «сховали», а формат, який не є датою, межу не відкриває.
+  //
+  // Раніше всі пʼять вузлів їхали одним `Promise.all`, а межу застосовували вже
+  // до відповіді. Тобто контакти прихованої анкети встигали приїхати в браузер,
+  // і єдиним, хто не пускав їх далі, лишалися правила бази. А правила тут
+  // викочуються руками (`npx firebase deploy --only database`, див. CLAUDE.md),
+  // тож «не показали» і «не віддали» — різні речі, і різниця між ними коштує
+  // рівно телефона людини. Тепер запиту просто немає: поза стрічкою звичайний
+  // читач бере з бази саму картку, як і сказано в межі приватності.
+  //
+  // Ціна — один круг мережі на анкету, яку читачеві таки видно. Прихована ж
+  // коштує тепер одне читання замість пʼяти, з яких чотири однаково
+  // поверталися відмовою.
+  const mayReadPrivateNodes = canReadProfileOutsideFeed({
+    profileId: id,
+    viewerId: auth.currentUser?.uid || '',
+    accessLevel,
+  }) || isCardInMatchingFeed(card);
+
+  const [details, contacts, workflow, technical] = mayReadPrivateNodes
+    ? await Promise.all([
+      readProfileNodePart(PROFILE_NODES.profileDetails, id),
+      includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
+      includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
+      includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
+    ])
+    : [null, null, null, null];
+
+  // Та сама межа вдруге — уже на зведенні. Вище вона вирішує, чого не питати, а
+  // тут — чого не показувати: у `parts` може приїхати вузол, якого ніхто не
+  // просив (legacy-шар від викликача), і зводити анкету з нього не можна.
+  // Правила бази кажуть те саме й по-справжньому: `profileDetails/$uid` і
+  // `profileContacts/$uid` відкриті звичайному користувачеві лише доти, доки в
+  // картці є дата `feedDate`.
   const scoped = scopeProfileNodesToViewer({
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
@@ -2925,6 +2957,20 @@ const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUs
   }
 };
 
+/**
+ * Широкий пошук по legacy-колекції: `contains` по кожному індексованому полю.
+ *
+ * Знайдене тут — це id, а не анкета. Рядок `users/{id}`, який повертає запит,
+ * лишається всередині: за ним лише звіряється збіг, а показувати його не можна
+ * — у legacy-тілі лежать і контакти, і саме звідти вони й потрапляли на екран
+ * повз усі межі. Вузол `users` відкритий цілком кожному акаунту з роллю,
+ * відмінною від `ed`, тож для звичайного користувача цей рядок приїжджає
+ * успішно — і, розкладений у результат, показував телефон і пошту анкети,
+ * якої той не має права бачити навіть у стрічці.
+ *
+ * Тому знайдений id іде тим самим шляхом, що й будь-яке інше влучання, —
+ * `addUserToResults` → `readProfileFromNodes`, де стоїть межа `feedDate`.
+ */
 const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
   const fieldMatchesSearch = (value, normalizedSearch) => {
     if (typeof value === 'string') {
@@ -2968,6 +3014,7 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
             const exactSnapshot = await get(query(ref2(database, collection), orderByChild(prefix), equalTo(queryPrefix)));
 
             if (exactSnapshot.exists()) {
+              const exactHits = [];
               exactSnapshot.forEach(userSnapshot => {
                 const userId = userSnapshot.key;
                 const userData = userSnapshot.val();
@@ -2975,12 +3022,11 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 
                 if (fieldMatchesSearch(fieldValue, queryPrefix.toLowerCase()) && !uniqueUserIds.has(userId)) {
                   uniqueUserIds.add(userId);
-                  users[userId] = {
-                    userId,
-                    ...userData,
-                  };
+                  exactHits.push(userId);
                 }
               });
+              // eslint-disable-next-line no-await-in-loop
+              await Promise.all(exactHits.map(userId => addUserToResults(userId, users)));
             }
           }
 
@@ -2992,6 +3038,7 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
           if (!snapshotByPrefix.exists()) continue;
           // console.log(`✅ Found results for '${collection}.${prefix}'`);
 
+          const prefixHits = [];
           snapshotByPrefix.forEach(userSnapshot => {
             const userId = userSnapshot.key;
             const userData = userSnapshot.val();
@@ -3012,13 +3059,12 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
               !uniqueUserIds.has(userId)
             ) {
               uniqueUserIds.add(userId);
-              users[userId] = {
-                userId,
-                ...userData,
-              };
+              prefixHits.push(userId);
               // console.log(`✅ Added user '${userId}' to results`);
             }
           });
+          // eslint-disable-next-line no-await-in-loop
+          await Promise.all(prefixHits.map(userId => addUserToResults(userId, users)));
         }
       }
     } catch (error) {
