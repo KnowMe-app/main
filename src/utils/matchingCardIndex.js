@@ -2,7 +2,6 @@ import { normalizePublish } from './reactionPriority';
 import {
   deriveSurnameShort,
   deriveRh,
-  deriveBloodGroup,
   deriveRole,
   normalizeFeedDateValue,
   resolveMatchingCardAvatarFromProfile,
@@ -273,11 +272,11 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const surnameShort = deriveSurnameShort(data.surname).value;
   if (surnameShort) projection.surnameShort = surnameShort;
 
+  // Тільки резус. Номер групи картка не носить: разом вони складаються назад у
+  // повне `blood`, а воно живе в `profileDetails` — за межею приватності, яку
+  // картка й позначає. За групою стрічка фільтрує через `searchKey/blood`.
   const rh = deriveRh(data.blood).value;
   if (rh) projection.rh = rh;
-
-  const bloodGroup = deriveBloodGroup(data.blood).value;
-  if (bloodGroup) projection.bloodGroup = bloodGroup;
 
   // Роль теж буває не одна: `deriveRole` навмисно віддає масив, коли анкета
   // заявляла себе в кількох ролях. `trimmed` повертав на такий масив порожній
@@ -366,7 +365,7 @@ export const isCurrentMatchingCardSchema = card =>
  * Розгортає проєкцію у форму, яку читають рендер рядка і пост-фільтри.
  *
  * Це адаптер, а не друга схема: у базі лежать похідні (`surnameShort`, `rh`,
- * `bloodGroup`, `feedDate`), а стрічка й далі отримує ті імена полів, які знала
+ * `feedDate`), а стрічка й далі отримує ті імена полів, які знала
  * завжди. Тобто розділення вузлів не переписує ані `renderFacts`, ані
  * `applyMatchingSearchKeyFilters`, ані сортування — вони бачать те саме, просто
  * значення приходить з іншого місця.
@@ -380,16 +379,16 @@ export const expandMatchingCard = (userId, card) => {
   if (!id) return null;
 
   const {
-    avatar, surnameShort, rh, bloodGroup,
+    avatar, surnameShort, rh,
     [MATCHING_CARD_FEED_FIELD]: feedDate,
     ...rest
   } = card;
 
-  // `blood` збирається назад із двох похідних, бо саме його формат читають
-  // `toBloodGroupCategory` і `toRhCategory`. Сирого значення анкети (яке буває
-  // масивом версій чи текстом на пів рядка) у вузлі немає — воно в
-  // `profileDetails`.
-  const blood = `${trimmed(bloodGroup)}${trimmed(rh)}`;
+  // `blood` збирається назад із резуса — і тільки з нього: номера групи картка
+  // не носить. Формат той самий, який читає `toRhCategory`; `toBloodGroupCategory`
+  // на такому значенні каже «групи тут немає», і фільтр за групою її не питає в
+  // картки, а бере з індексу `searchKey/blood`.
+  const blood = trimmed(rh);
 
   return {
     ...rest,

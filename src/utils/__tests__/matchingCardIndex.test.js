@@ -50,11 +50,13 @@ describe('buildMatchingCardProjection', () => {
     expect(projection.source).toBeUndefined();
     expect(projection.fieldsCount).toBeUndefined();
 
-    // Похідні замість сирих значень: у стрічці стоїть ініціал і розібрана
-    // група крові, а повні `surname` і `blood` живуть у `profileDetails`.
+    // Похідні замість сирих значень: у стрічці стоїть ініціал і резус, а повні
+    // `surname` і `blood` живуть у `profileDetails`. Номера групи в картці
+    // немає навмисно: разом із резусом він відновив би повне `blood`, тобто
+    // картка віддавала б поза стрічкою те, що лежить за межею приватності.
     expect(projection.surnameShort).toBe('Д.');
     expect(projection.rh).toBe('+');
-    expect(projection.bloodGroup).toBe('1');
+    expect(projection.bloodGroup).toBeUndefined();
     expect(projection.surname).toBeUndefined();
     expect(projection.blood).toBeUndefined();
 
@@ -279,7 +281,8 @@ describe('expandMatchingCard', () => {
     // Адаптер віддає старі імена полів: стрічка, її фільтри й сортування не
     // знають, що в базі лежать похідні під іншими ключами.
     expect(expanded.surname).toBe('Д.');
-    expect(expanded.blood).toBe('1+');
+    // Назад розгортається сам резус — номера групи в картці немає.
+    expect(expanded.blood).toBe('+');
     expect(expanded.lastLogin2).toBe('2026-08-19');
 
     // Службові поля самої проєкції назовні не течуть.

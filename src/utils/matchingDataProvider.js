@@ -919,6 +919,17 @@ export const toMaritalStatusCategory = user => {
   return 'other';
 };
 
+/**
+ * Категорія групи крові — або чесне «звідси її не видно».
+ *
+ * Картка стрічки носить лише резус: номер групи з проєкції прибрано, бо разом
+ * вони складаються назад у повне `blood`, яке живе за межею приватності. Тож
+ * значення з самого лише знака — це не «інша група», а відсутність відповіді, і
+ * пост-фільтр не має права відкидати картку за те, чого проєкція не носить.
+ * Звужує за групою індекс `searchKey/blood` — до того, як картка сюди дійде.
+ */
+export const BLOOD_GROUP_UNKNOWN = 'unknown';
+
 export const toBloodGroupCategory = user => {
   const normalized = String(user?.blood || '')
     .trim()
@@ -927,6 +938,7 @@ export const toBloodGroupCategory = user => {
 
   if (/^[1-4][+-]$/.test(normalized)) return normalized[0];
   if (/^[1-4]$/.test(normalized)) return normalized;
+  if (/^[+-]$/.test(normalized)) return BLOOD_GROUP_UNKNOWN;
   return 'other';
 };
 
@@ -1009,7 +1021,8 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
 
     if (isMatchingFilterGroupActive(activeFilters.bloodGroup)) {
       const category = toBloodGroupCategory(user);
-      if (!activeFilters.bloodGroup[category]) return false;
+      // `unknown` — це «картка не носить групи», а не «група не підійшла».
+      if (category !== BLOOD_GROUP_UNKNOWN && !activeFilters.bloodGroup[category]) return false;
     }
 
     if (isMatchingFilterGroupActive(activeFilters.rh)) {
@@ -1113,7 +1126,7 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
   if (isMatchingFilterGroupActive(filters.bloodGroup)) {
     const category = toBloodGroupCategory(user);
     const active = getActiveGroupFilterKeys(filters.bloodGroup);
-    const pass = Boolean(filters.bloodGroup?.[category]);
+    const pass = category === BLOOD_GROUP_UNKNOWN || Boolean(filters.bloodGroup?.[category]);
     checks.bloodGroup = {
       active, category, pass, ...getFilterGroupDebugState('bloodGroup', filters.bloodGroup), source: 'searchKey/users',
     };

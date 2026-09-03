@@ -15,7 +15,7 @@
 import { getCurrentValue } from 'components/getCurrentValue';
 
 /** Значення, яке взагалі є. `0` і `false` — є; `''`, `null`, `undefined` — немає. */
-const hasMeaningfulValue = value => {
+export const hasMeaningfulValue = value => {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') return value.trim().length > 0;
   if (Array.isArray(value)) return value.some(hasMeaningfulValue);
