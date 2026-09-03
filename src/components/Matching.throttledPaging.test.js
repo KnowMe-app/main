@@ -55,10 +55,10 @@ describe('пауза між сторінками стрічки — тільки
     expect(matching()).toContain('onClick={handleArmFeedPaging}');
   });
 
-  it('перезапускає відлік після кожної підвантаженої порції', () => {
-    // `cycleKey` міняється разом з довжиною стрічки, і саме це змушує ефект
+  it('перезапускає відлік після кожної підвантаженої публічної порції', () => {
+    // `cycleKey` міняється разом з кількістю публічних карток, і саме це змушує ефект
     // всередині відліку початися спочатку.
-    expect(matching()).toContain('cycleKey={renderedCardsLength}');
+    expect(matching()).toContain('cycleKey={publicCardsLength}');
   });
 
   it('тримає тік у власному компоненті, а не в стані сторінки', () => {
@@ -206,7 +206,7 @@ describe('одна порція — один жест, і рівно дві ка
       source.indexOf('if (!isThrottledFeedPaging || !throttledCycle || loading) return;'),
       source.indexOf("endOfDeckLoadRef.current('feed-countdown-topup'"),
     );
-    expect(effect).toContain('renderedCardsLength >= throttledCycle.target');
+    expect(effect).toContain('publicCardsLength >= throttledCycle.target');
     // Зі стелею на спроби, інакше добір сам став би потоком.
     expect(effect).toContain('throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS');
   });
@@ -218,6 +218,25 @@ describe('одна порція — один жест, і рівно дві ка
       source.indexOf('const showFeedLoadCountdown ='),
     );
     expect(gate).toContain('!throttledCycle');
+  });
+});
+
+describe('перше публічне вікно не змішується з власними чернетками', () => {
+  const matching = () => read('Matching.jsx');
+
+  it('відкриває чернетки лише після десяти публічних карток або вичерпання matchingCards', () => {
+    const source = matching();
+    expect(source).toContain('const [initialPublicWindowComplete, setInitialPublicWindowComplete] = useState(false);');
+    expect(source).toContain('initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS');
+    expect(source).toContain('cachedPublicCount + res.users.length >= INITIAL_LOAD || sourceExhausted');
+  });
+
+  it('рахує наступну порцію від публічних карток, а не від повної деки', () => {
+    const source = matching();
+    expect(source).toContain('const publicCardsLength = viewMode === \'default\' ? publicVisibleUsers.length : renderedCardsLength;');
+    expect(source).toContain('targetVisibleCount: publicCardsLength + visibleBuffer');
+    expect(source).toContain('publicCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH');
+    expect(source).not.toContain('renderedCardsLengthRef');
   });
 });
 
