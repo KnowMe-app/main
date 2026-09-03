@@ -4435,12 +4435,18 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } =
  * спільний масив — це запрошення до помилки, яку потім не знайти.
  */
 const matchingCardsPageInFlight = new Map();
+let matchingCardsPageInFlightEpoch = 0;
+
+export const clearMatchingCardsPageInFlight = () => {
+  matchingCardsPageInFlightEpoch += 1;
+  matchingCardsPageInFlight.clear();
+};
 
 const buildMatchingCardsPageKey = ({ limit, cursor }) => {
   const normalized = cursor && typeof cursor === 'object'
     ? `${cursor.date || ''}|${cursor.userId || ''}`
     : `${cursor || ''}|`;
-  return `${limit}|${normalized}`;
+  return `${matchingCardsPageInFlightEpoch}|${limit}|${normalized}`;
 };
 
 export const fetchMatchingCardsPage = (options = {}) => {

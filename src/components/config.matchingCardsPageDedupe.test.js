@@ -50,7 +50,7 @@ jest.mock('firebase/database', () => ({
 
 const get = mockGet;
 
-const { fetchMatchingCardsPage } = require('./config');
+const { clearMatchingCardsPageInFlight, fetchMatchingCardsPage } = require('./config');
 const { MATCHING_CARD_SCHEMA_VERSION } = require('../utils/matchingCardIndex');
 
 const makeCard = index => ({
@@ -149,5 +149,21 @@ describe('однакова сторінка стрічки читається о
 
     expect(get).toHaveBeenCalledTimes(2);
     expect(page.users.length).toBeGreaterThan(0);
+  });
+
+  it('після очищення новий запит не coalesce-иться зі старим Promise', async () => {
+    let releaseOld;
+    const oldGate = new Promise(resolve => { releaseOld = resolve; });
+    get.mockImplementationOnce(queryParts => oldGate.then(() => makeSnapshot(queryParts)));
+    get.mockImplementationOnce(queryParts => Promise.resolve(makeSnapshot(queryParts)));
+
+    const oldRequest = fetchMatchingCardsPage({ limit: 5, cursor: null });
+    clearMatchingCardsPageInFlight();
+    const newRequest = fetchMatchingCardsPage({ limit: 5, cursor: null });
+
+    await newRequest;
+    expect(get).toHaveBeenCalledTimes(2);
+    releaseOld();
+    await oldRequest;
   });
 });

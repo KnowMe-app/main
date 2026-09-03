@@ -112,6 +112,7 @@ import {
   fetchUsersByIds,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
+  clearMatchingCardsPageInFlight,
   fetchLimitedProfileById,
   database,
   auth,
@@ -144,6 +145,7 @@ import {
   getCompleteCachedProfile,
   getIdsByQuery,
   getIndexIdsByQuery,
+  getMatchingLocalStorageCacheEpoch,
   incrementMatchingLoadStat,
   logMatchingLocalStorageCacheStats,
   normalizeQueryKey,
@@ -2761,11 +2763,14 @@ const Matching = () => {
     }
     const idsToFetch = cachedSummaries.missingIds;
     if (!idsToFetch.length) return { ...cachedSummaries.cards };
+    const cacheEpoch = getMatchingLocalStorageCacheEpoch();
 
     try {
       const { cards, missingIds } = await fetchMatchingCardsByIds(idsToFetch);
       incrementMatchingLoadStat('matchingCardHits', Object.keys(cards).length);
-      setCachedMatchingSummaryCards(cards);
+      if (cacheEpoch === getMatchingLocalStorageCacheEpoch()) {
+        setCachedMatchingSummaryCards(cards);
+      }
       if (!missingIds.length) return { ...cachedSummaries.cards, ...cards };
       const hydrated = await fetchUsersByIds(missingIds);
       return { ...cachedSummaries.cards, ...cards, ...(hydrated || {}) };
@@ -2908,11 +2913,12 @@ const Matching = () => {
     }
     const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
     const loadInitialVersion = loadInitialVersionRef.current + 1;
+    const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     loadInitialVersionRef.current = loadInitialVersion;
     const initialRequest = beginInitialRequest();
     debugReactionFlowLog('loadInitial:start', { viewMode: viewModeRef.current });
     const startMode = viewModeRef.current;
-    const canApplyInitialLoad = () => loadInitialVersion === loadInitialVersionRef.current && viewModeRef.current === startMode;
+    const canApplyInitialLoad = () => loadInitialVersion === loadInitialVersionRef.current && viewModeRef.current === startMode && cacheEpoch === getMatchingLocalStorageCacheEpoch();
     const canApplyInitialLoadWithFilters = () => canApplyInitialLoad() && requestFiltersSignature === stableAdditionalSignature(filtersRef.current || {});
     if (startMode !== 'default') {
       if (initialRequest === initialRequestIdRef.current) {
@@ -3306,6 +3312,7 @@ const Matching = () => {
   const resetFiltersAndCache = React.useCallback(() => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
     const removedLocalStorageKeys = clearMatchingCache('matching reset filters and cache');
+    clearMatchingCardsPageInFlight();
     localStorage.removeItem('matchingFilters');
     localStorage.removeItem(SEARCH_KEY);
 
@@ -3604,11 +3611,12 @@ const Matching = () => {
   ]);
 
   const loadSharedReactionCandidates = React.useCallback(async () => {
+    const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     const viewerId = ownerId || getOwnerId();
     const requestVersion = sharedReactionCandidateLoadVersionRef.current + 1;
     sharedReactionCandidateLoadVersionRef.current = requestVersion;
     const requestViewMode = viewMode;
-    const canApplySharedCandidateResult = () => shouldApplySharedReactionCandidateResult({
+    const canApplySharedCandidateResult = () => cacheEpoch === getMatchingLocalStorageCacheEpoch() && shouldApplySharedReactionCandidateResult({
       requestVersion,
       currentVersion: sharedReactionCandidateLoadVersionRef.current,
       requestViewMode,
@@ -3808,6 +3816,7 @@ const Matching = () => {
   ]);
 
   const loadReactionCards = React.useCallback(async reactionType => {
+    const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     const isFavoritesMode = reactionType === 'favorites';
     loadInitialVersionRef.current += 1;
     additionalLoadMoreFetchVersionRef.current += 1;
@@ -3815,7 +3824,7 @@ const Matching = () => {
     reactionLoadVersionRef.current += 1;
     sharedReactionCandidateLoadVersionRef.current += 1;
     const reactionLoadVersion = reactionLoadVersionRef.current;
-    const canApplyReactionLoad = () => shouldApplyReactionPageResult({
+    const canApplyReactionLoad = () => cacheEpoch === getMatchingLocalStorageCacheEpoch() && shouldApplyReactionPageResult({
       requestVersion: reactionLoadVersion,
       currentVersion: reactionLoadVersionRef.current,
       requestViewMode: reactionType,
@@ -4148,6 +4157,8 @@ const Matching = () => {
   }, []);
 
   const searchUsers = async (params, options = {}) => {
+    const cacheEpoch = getMatchingLocalStorageCacheEpoch();
+    const canWriteMatchingCache = () => cacheEpoch === getMatchingLocalStorageCacheEpoch();
     // A limited hit is a projection, not a record. It never touches the shared card
     // cache in either direction: reading from it would hand back a full record the
     // viewer isn't entitled to, and writing to it would overwrite real cards with
@@ -4218,7 +4229,7 @@ const Matching = () => {
           ? [res]
           : Object.values(res);
       const filtered = arr.filter(u => isMatchingCardId(u?.userId));
-      if (!isLimited) {
+      if (!isLimited && canWriteMatchingCache()) {
         // Проєкція в кеш не лягає — та сама сторожа, що й на всіх шляхах
         // стрічки. Інакше вона замістила б повну картку своїми десятьма
         // полями, і `surname` назавжди лишився б ініціалом: `updateCard`
@@ -4237,7 +4248,7 @@ const Matching = () => {
       }
       // Проєкції видачі лягають у своє сховище, а список id — під ключ запиту.
       // Обидва записи роблять наступний той самий пошук безкоштовним.
-      if (summaryCacheKey && filtered.length) {
+      if (summaryCacheKey && filtered.length && canWriteMatchingCache()) {
         setCachedMatchingSummaryCards(Object.fromEntries(
           filtered.filter(isMatchingSummaryCard).map(u => [u.userId, u]),
         ));
@@ -4266,6 +4277,7 @@ const Matching = () => {
   };
 
   const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0, limit = LOAD_MORE } = {}) => {
+    const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     const isReactionViewMode = viewMode === 'favorites' || viewMode === 'dislikes';
     const commonDebug = {
       ownerId: getOwnerId(),
@@ -4332,7 +4344,8 @@ const Matching = () => {
     const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
     const isLatestLoadMore = () => (
       loadMoreVersion === additionalLoadMoreFetchVersionRef.current &&
-      applyVersion === additionalMatchingApplyVersionRef.current
+      applyVersion === additionalMatchingApplyVersionRef.current &&
+      cacheEpoch === getMatchingLocalStorageCacheEpoch()
     );
     const canApplyLoadMoreResult = () => (
       isLatestLoadMore() &&
