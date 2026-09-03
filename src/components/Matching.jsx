@@ -137,15 +137,19 @@ import { buildMatchingFilterChips } from './SearchFilters';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import {
+  buildMatchingSearchResultCacheKey,
   clearMatchingCache,
   getCachedMatchingSummaryCards,
   getCard,
+  getCompleteCachedProfile,
   getIdsByQuery,
+  getIndexIdsByQuery,
   incrementMatchingLoadStat,
   logMatchingLocalStorageCacheStats,
   normalizeQueryKey,
   setCachedMatchingSummaryCards,
   setIdsForQuery,
+  setIndexIdsForQuery,
 } from '../utils/cardIndex';
 import {
   cleanupMatchingLocalStorageCache,
@@ -162,6 +166,7 @@ import {
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { orderMatchingSearchResults } from '../utils/matchingSearchResultOrder';
 import {
+  MATCHING_FIRST_PAGE_BATCH,
   MATCHING_THROTTLED_LOAD_BATCH,
   MATCHING_THROTTLED_LOAD_DELAY_MS,
   MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS,
@@ -1318,7 +1323,9 @@ const SwipeableCard = ({
   );
 };
 
-const INITIAL_LOAD = 5;
+// Перший екран стрічки — та сама перша порція, що й у пошуку: десять рядків, а
+// не дві. Далі йде притишений крок (`MATCHING_THROTTLED_LOAD_BATCH`).
+const INITIAL_LOAD = MATCHING_FIRST_PAGE_BATCH;
 const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
 const MATCHING_MAX_PAGES_PER_LOAD = 3;
@@ -1536,14 +1543,10 @@ const Matching = () => {
   useEffect(() => {
     refineStateRef.current = { key: refineKey, value: searchRefineValue };
   }, [refineKey, searchRefineValue]);
-  // Правило «скільки звуженого показати одразу» живе нижче, поруч із кроком
-  // відліку; сюди воно приходить рефом, бо `applySearchResults` викликається з
-  // обробника, який навмисно не перестворюється на кожен рендер.
-  const revealCountForRefinedRef = useRef(null);
   const [filterGroupSelect, setFilterGroupSelect] = useState({ token: 0, name: '', value: '' });
   // Скільки знайдених уже на екрані. Видача більше не приїжджає одним шматком:
   // її показує той самий притишений відлік, що й стрічку.
-  const [searchRevealCount, setSearchRevealCount] = useState(MATCHING_THROTTLED_LOAD_BATCH);
+  const [searchRevealCount, setSearchRevealCount] = useState(MATCHING_FIRST_PAGE_BATCH);
   useEffect(() => {
     try {
       const url = new URL(window.location.href);
@@ -2116,9 +2119,7 @@ const Matching = () => {
     // сіткою, а видача, з якої уточнення прибрало все, каже про це прямо.
     const { key: activeRefineKey, value: activeRefineValue } = refineStateRef.current;
     const refined = applyRefineSelection(filtered, activeRefineKey, activeRefineValue);
-    setSearchRevealCount(activeRefineValue && revealCountForRefinedRef.current
-      ? revealCountForRefinedRef.current(refined.length)
-      : (isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE));
+    setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);
     searchRevealTargetRef.current = refined.length;
     // Коментарі читаються для того, що на екрані, а не для всієї видачі, — а на
     // екран іде вже звужене, тож і читати їх для відсіяного нема за що.
@@ -4130,25 +4131,63 @@ const Matching = () => {
     // viewer isn't entitled to, and writing to it would overwrite real cards with
     // five fields.
     const isLimited = Boolean(options?.limitedFields);
+    const isCardsOnly = Boolean(options?.cardsOnly);
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
     const cacheKey = key && value
       ? getSearchCacheKeyForParams(key, value, options)
       : getCacheKey('search', term ? normalizeQueryKey(term) : term);
+    // Та сама форма, що й у `searchUsersOnly`: один збіг — картка, кілька —
+    // мапа. Раніше все, крім `name`, згорталось у `cards[0]`, і кеш віддавав
+    // одну анкету там, де запит знайшов кілька — а по імені в індексі
+    // `searchId` кілька збігів це норма, а не виняток.
+    const asSearchResult = cards => {
+      if (cards.length === 1 && key !== 'name' && key !== 'names') return cards[0];
+      return Object.fromEntries(cards.map(c => [c.userId, c]));
+    };
+
     if (!isLimited) {
       const ids = getIdsByQuery(cacheKey).filter(isMatchingCardId);
       if (ids.length > 0) {
         const cards = ids.map(id => getCard(id)).filter(c => c && isMatchingCardId(c.userId));
-        if (cards.length > 0) {
-          // Та сама форма, що й у `searchUsersOnly`: один збіг — картка, кілька —
-          // мапа. Раніше все, крім `name`, згорталось у `cards[0]`, і кеш віддавав
-          // одну анкету там, де запит знайшов кілька — а по імені в індексі
-          // `searchId` кілька збігів це норма, а не виняток.
-          if (cards.length === 1 && key !== 'name' && key !== 'names') return cards[0];
-          return Object.fromEntries(cards.map(c => [c.userId, c]));
+        if (cards.length > 0) return asSearchResult(cards);
+      }
+    }
+
+    /**
+     * Видача `cardsOnly` має власний кеш — і доти, доки його не було, той самий
+     * запит щоразу коштував стільки ж, скільки перший.
+     *
+     * Причина, чому вона не потрапляла в загальний кеш карток, лишається в силі:
+     * проєкцію не можна класти в `cards`, інакше вона замістить повну анкету
+     * десятком полів. Але в проєкцій є власне сховище (`matchingSummaryCards`),
+     * а списки id уміє тримати кеш індексних запитів. Разом це рівно те, що
+     * потрібно: id запиту + картки під ними, обидва на ті самі шість годин.
+     *
+     * Неповний кеш не викидається: id, чиєї проєкції бракує, догідратовуються
+     * тим самим шляхом, що й сторінка стрічки, — тобто з бекенду читаються
+     * рівно вони, а не вся видача заново.
+     *
+     * Список id живе доти, доки хтось не змінить анкету: створення, збереження
+     * й видалення скидають його цілком (`clearMatchingSearchResultCache`) —
+     * інакше щойно заведена анкета не знаходилась би до вечора.
+     */
+    const summaryCacheKey = isCardsOnly && !isLimited
+      ? buildMatchingSearchResultCacheKey(cacheKey)
+      : null;
+    if (summaryCacheKey) {
+      const cachedEntry = getIndexIdsByQuery(summaryCacheKey);
+      const cachedIds = (cachedEntry?.ids || []).filter(isMatchingCardId);
+      if (cachedIds.length > 0) {
+        const hydrated = await hydrateMatchingFeedCards(cachedIds);
+        const cards = cachedIds.map(id => hydrated?.[id]).filter(Boolean);
+        if (cards.length === cachedIds.length) {
+          incrementMatchingLoadStat('matchingSearchCacheHits', cards.length);
+          return asSearchResult(cards);
         }
       }
     }
+
     const res = await searchUsersOnly(params, options);
     if (res && Object.keys(res).length > 0) {
       const arr = Array.isArray(res)
@@ -4173,6 +4212,14 @@ const Matching = () => {
         if (cacheable.length === filtered.length) {
           setIdsForQuery(cacheKey, filtered.map(u => u.userId));
         }
+      }
+      // Проєкції видачі лягають у своє сховище, а список id — під ключ запиту.
+      // Обидва записи роблять наступний той самий пошук безкоштовним.
+      if (summaryCacheKey && filtered.length) {
+        setCachedMatchingSummaryCards(Object.fromEntries(
+          filtered.filter(isMatchingSummaryCard).map(u => [u.userId, u]),
+        ));
+        setIndexIdsForQuery(summaryCacheKey, filtered.map(u => u.userId), { complete: true });
       }
       if (Array.isArray(res)) return filtered;
       if (res.userId) return filtered[0] || {};
@@ -5393,6 +5440,22 @@ const Matching = () => {
     if (fullProfileRequestsRef.current.has(userId)) return;
     fullProfileRequestsRef.current.add(userId);
 
+    // Картку, яку вже відкривали, читати вдруге нема за чим: повна анкета
+    // лежить у кеші й живе там ті самі шість годин, що й решта. Раніше сюди
+    // йшов безумовний `fetchUsersByIds`, тож кожне відкриття тієї самої анкети
+    // — після перезавантаження вкладки, після повернення з іншого екрана —
+    // коштувало чотири вузли плюс рівень доступу плюс дві мапи `multiData`.
+    //
+    // Кеш береться лише там, де він мав право бути повним: читачеві, чиє право
+    // на контакти тримається на `feedDate`, їх у кеш не кладуть, і віддати таку
+    // анкету означало б, що телефон зникає з другого відкриття
+    // (`getCompleteCachedProfile`).
+    const cached = getCompleteCachedProfile(userId);
+    if (cached) {
+      setFullProfileByUserId(previous => ({ ...previous, [userId]: cached }));
+      return;
+    }
+
     fetchUsersByIds([userId])
       .then(hydrated => {
         const profile = hydrated?.[userId];
@@ -6163,9 +6226,6 @@ const Matching = () => {
     setFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
   }, []);
 
-  // Скільки знайдених приїжджає за раз — те саме число, що й у стрічці.
-  const revealStep = isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE;
-
   /**
    * Значення дофільтра у стрічці не зберігається окремо — воно виводиться з
    * фільтрів.
@@ -6190,37 +6250,20 @@ const Matching = () => {
     const previous = getRefineKeySpec(refineKey);
     setRefineKey(nextKey);
     setSearchRefineValue(null);
-    setSearchRevealCount(revealStep);
+    setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);
     // Ключ змінився — попереднє звуження знімається разом з ним, інакше
     // стрічка лишилась би відфільтрованою тим, чого рядок уже не показує.
     if (!isSearching && previous.filterName) resetFilterGroup(previous.filterName);
-  }, [isSearching, refineKey, resetFilterGroup, revealStep]);
-
-  /**
-   * Скільки звуженої видачі показати одразу.
-   *
-   * Притишений відлік стереже трафік бекенду, а звужений набір за нього вже
-   * заплачено: усі його картки прочитані пошуком, і показ коштує фото рівно для
-   * тих кількох, кого читач щойно назвав. Тож набір, що вміщається в одну
-   * сторінку, показується цілком — чекати десять секунд заради третьої з трьох
-   * означає притишувати те, що притишувати нема потреби. Ширший лишається на
-   * звичайному кроці.
-   */
-  const revealCountForRefined = React.useCallback(narrowedLength => {
-    const narrowed = Number(narrowedLength) || 0;
-    return narrowed > 0 && narrowed <= LOAD_MORE ? narrowed : revealStep;
-  }, [revealStep]);
-
-  useEffect(() => {
-    revealCountForRefinedRef.current = revealCountForRefined;
-  }, [revealCountForRefined]);
+  }, [isSearching, refineKey, resetFilterGroup]);
 
   const handleRefineSelect = React.useCallback(value => {
     if (isSearching) {
       setSearchRefineValue(value);
-      setSearchRevealCount(revealCountForRefined(
-        value ? applyRefineSelection(visibleUsers, refineKey, value).length : 0
-      ));
+      // Уточнення відкриває перший екран заново: звужена видача — це новий
+      // перший результат, а не продовження попереднього. Набір, менший за
+      // сторінку, від цього показується цілком — чекати десять секунд заради
+      // третьої з трьох означало б притишувати те, за що пошук уже заплатив.
+      setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);
       return;
     }
     const spec = getRefineKeySpec(refineKey);
@@ -6233,7 +6276,7 @@ const Matching = () => {
     // шляху читання: план будує наявний планувальник, і виходить він
     // найдешевшим — `include`.
     setFilterGroupSelect(previous => ({ token: previous.token + 1, name: spec.filterName, value }));
-  }, [isSearching, refineKey, resetFilterGroup, revealCountForRefined, visibleUsers]);
+  }, [isSearching, refineKey, resetFilterGroup]);
 
   // Рядок доречний лише на довгій видачі: на десяти знайдених він тільки
   // забирає висоту, бо їх видно всі й так. Активне значення тримає рядок на

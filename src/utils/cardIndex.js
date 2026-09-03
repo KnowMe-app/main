@@ -373,6 +373,31 @@ export const getCard = id => {
   return card;
 };
 
+/**
+ * Кешована анкета, придатна для показу цілком.
+ *
+ * Кеш карток тримає повні анкети (проєкції в нього не пускає
+ * `shouldCacheMatchingCard`), тож повернути звідти анкету, яку читач уже
+ * відкривав, — це чистий виграш: жодного читання вузлів на повторний дотик.
+ *
+ * З однією поправкою, і вона тут головна. Читачеві, чиє право на контакти
+ * тримається на `feedDate`, контакти в кеш не кладуть узагалі
+ * (`sanitizeMatchingCardForCache`) — і така анкета в кеші **неповна**. Показати
+ * її замість читання означало б, що телефон, який був видно з першого разу,
+ * зникає з другого. Тому кеш віддається лише там, де він мав право бути повним;
+ * решта читає з бекенду, як і читала.
+ *
+ * Умову рахує та сама `mayCacheContacts`, якою кеш і наповнюється: два різні
+ * написання одного правила рано чи пізно розійшлись би саме на межі.
+ */
+export const getCompleteCachedProfile = id => {
+  if (!id || !mayCacheContacts(id)) return null;
+  const card = getCard(id);
+  if (!card || card.cacheVersion !== CARDS_CACHE_VERSION) return null;
+  incrementMatchingLoadStat('fullProfileCacheHits');
+  return card;
+};
+
 export const getCardsByIds = ids => {
   const cards = loadCards();
   let changed = false;
@@ -511,6 +536,42 @@ export const clearEmptySearchQueryCache = () => {
   });
   saveQueries(queries);
   logMatchingCacheDebug('cleared empty search query cache entries', { count: staleKeys.length });
+  return staleKeys.length;
+};
+
+/**
+ * Простір імен для кешованої видачі пошуку matching.
+ *
+ * Вона живе в тому ж сховищі, що й списки кандидатів індексу, але має власний
+ * префікс — саме він дає змогу скинути **всю** кешовану видачу, не чіпаючи
+ * кандидатів фільтрів.
+ */
+// Ключі в цьому сховищі нормалізуються (`normalizeQueryKey` зводить їх до
+// нижнього регістру), тож і префікс записаний уже нормалізованим — інакше
+// скидання шукало б `matchingSearch:` серед ключів, що лежать як
+// `matchingsearch:`, і не знаходило б жодного.
+export const MATCHING_SEARCH_RESULT_CACHE_PREFIX = 'matchingsearch:';
+
+export const buildMatchingSearchResultCacheKey = queryKey =>
+  `${MATCHING_SEARCH_RESULT_CACHE_PREFIX}${normalizeQueryKey(queryKey)}`;
+
+/**
+ * Скидає кешовану видачу пошуку — цілком.
+ *
+ * Кеш живе шість годин, і це рівно та зміна, через яку його не можна лишати на
+ * самий TTL: анкета, заведена або перейменована щойно, мусить знаходитись
+ * зараз, а не ввечері. Точково вирахувати, які запити її стосуються, не можна —
+ * запис в `searchId` іде по всіх полях анкети, — тож скидається все. Ціна цього
+ * — списки id, тобто кілобайти; ціна помилки — «щойно завела, а пошук її не
+ * бачить».
+ */
+export const clearMatchingSearchResultCache = () => {
+  const queries = loadIndexQueries();
+  const staleKeys = Object.keys(queries).filter(key => key.startsWith(MATCHING_SEARCH_RESULT_CACHE_PREFIX));
+  if (!staleKeys.length) return 0;
+  staleKeys.forEach(key => { delete queries[key]; });
+  saveIndexQueries(queries);
+  logMatchingCacheDebug('cleared matching search result cache', { count: staleKeys.length });
   return staleKeys.length;
 };
 

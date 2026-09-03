@@ -39,24 +39,20 @@ describe('видача пошуку гортається так само, як �
     expect(loader).toContain('setSearchRevealCount(current => Math.min(current + step, searchRevealTargetRef.current));');
   });
 
-  it('нова видача починається з першої порції', () => {
-    expect(matching()).toContain(
-      '(isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE));'
-    );
+  it('перший результат — повний екран, а не порція відліку', () => {
+    // Дві картки на старті — це не притишення, а порожня сторінка: відлік
+    // стереже довгий скрол, а не перше враження про видачу.
+    const source = matching();
+    expect(source).toContain('useState(MATCHING_FIRST_PAGE_BATCH)');
+    expect(source).toContain('setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);');
+    expect(source).toContain('const INITIAL_LOAD = MATCHING_FIRST_PAGE_BATCH;');
   });
 
-  it('звужений набір, що вміщається в сторінку, показується цілком', () => {
-    // Відлік стереже трафік бекенду, а за ці картки пошук уже заплатив: чекати
-    // десять секунд заради третьої з трьох — притишувати те, що притишувати
-    // нема потреби.
+  it('дозавантаження лишається притишеним кроком', () => {
+    // Перша порція виросла, ціна довгого скролу — ні.
     const source = matching();
-    const rule = source.slice(
-      source.indexOf('const revealCountForRefined = React.useCallback('),
-      source.indexOf('const handleRefineSelect = React.useCallback('),
-    );
-
-    expect(rule).toContain('return narrowed > 0 && narrowed <= LOAD_MORE ? narrowed : revealStep;');
-    expect(source).toContain('setSearchRevealCount(activeRefineValue && revealCountForRefinedRef.current');
+    expect(source).toContain("endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });");
+    expect(source).toContain('`Показати ще ${MATCHING_THROTTLED_LOAD_BATCH}`');
   });
 
   it('уточнення переживає новий запит — воно умова, а не сито', () => {
@@ -146,6 +142,61 @@ describe('пошук matching просить картку, а не анкету'
 
     expect(chooser.indexOf('if (limitedFields) return addLimitedUser;'))
       .toBeLessThan(chooser.indexOf('return cardsOnly ? addCardHit : addSearchHit;'));
+  });
+});
+
+/**
+ * Той самий пошук удруге не коштує нічого.
+ *
+ * Видача `cardsOnly` — це проєкції, і в загальний кеш карток їх класти не можна
+ * (вони замістили б повну анкету десятком полів). Доти, доки в них не було
+ * власного кеша, це означало, що повторення того самого запиту читало з
+ * бекенду всі знайдені картки заново — на «Анні» це чотириста читань.
+ */
+describe('видача пошуку кешується і читається з кеша', () => {
+  const matching = () => read('Matching.jsx');
+
+  it('спершу кеш проєкцій, і лише потім мережа', () => {
+    const source = matching();
+    const searcher = source.slice(
+      source.indexOf('const searchUsers = async (params, options = {}) => {'),
+      source.indexOf('const res = await searchUsersOnly(params, options);'),
+    );
+
+    expect(searcher).toContain('const cachedEntry = getIndexIdsByQuery(summaryCacheKey);');
+    expect(searcher).toContain('const hydrated = await hydrateMatchingFeedCards(cachedIds);');
+  });
+
+  it('неповний кеш добирає лише те, чого бракує, а не всю видачу', () => {
+    // `hydrateMatchingFeedCards` читає з бекенду рівно ті id, чиєї проєкції в
+    // кеші немає; решта лишається локальною.
+    const source = matching();
+    expect(source).toContain('const cards = cachedIds.map(id => hydrated?.[id]).filter(Boolean);');
+    expect(source).toContain('if (cards.length === cachedIds.length) {');
+  });
+
+  it('видача лягає і в кеш проєкцій, і в список id запиту', () => {
+    const source = matching();
+    expect(source).toContain("setIndexIdsForQuery(summaryCacheKey, filtered.map(u => u.userId), { complete: true });");
+    expect(source).toContain('filtered.filter(isMatchingSummaryCard).map(u => [u.userId, u]),');
+  });
+
+  it('зміна анкети скидає кешовану видачу — інакше щойно заведену не знайти', () => {
+    const config = read('config.js');
+    // Створення, збереження й видалення анкети: усі три пишуть у `searchId`.
+    expect(config.split('clearMatchingSearchResultCache();').length - 1).toBe(3);
+  });
+
+  it('картку, яку вже відкривали, вдруге з бекенду не читають', () => {
+    const source = matching();
+    const opener = source.slice(
+      source.indexOf('const ensureFullProfile = React.useCallback(user => {'),
+      source.indexOf('const withLazyPhotos = React.useCallback('),
+    );
+
+    expect(opener).toContain('const cached = getCompleteCachedProfile(userId);');
+    expect(opener.indexOf('const cached = getCompleteCachedProfile(userId);'))
+      .toBeLessThan(opener.indexOf('fetchUsersByIds([userId])'));
   });
 });
 
