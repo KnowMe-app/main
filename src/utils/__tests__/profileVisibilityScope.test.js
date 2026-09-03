@@ -32,7 +32,9 @@ describe('поза стрічкою видно саму картку', () => {
   it('ключ стрічки — це і є питання «чи показана»', () => {
     expect(isCardInMatchingFeed(shownCard)).toBe(true);
     expect(isCardInMatchingFeed(hiddenCard)).toBe(false);
+    expect(isCardInMatchingFeed({ feedDate: false })).toBe(false);
     expect(isCardInMatchingFeed({ feedDate: '   ' })).toBe(false);
+    expect(isCardInMatchingFeed({ feedDate: 'not-a-date' })).toBe(false);
     expect(isCardInMatchingFeed(null)).toBe(false);
   });
 

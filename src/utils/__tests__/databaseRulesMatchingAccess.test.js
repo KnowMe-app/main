@@ -55,4 +55,14 @@ describe('database.rules.json matching read access', () => {
   it('keeps per-profile reads restricted to the owner and admins', () => {
     expect(rules.users.$uid['.read']).toContain('auth.uid == $uid');
   });
+
+  it('grants ordinary matching-role access to contacts only for a dated projection', () => {
+    const readRule = rules.profileContacts.$uid['.read'];
+    const datedProjectionGate = "root.child('matchingCards').child($uid).child('feedDate')";
+
+    expect(readRule).toContain(`${datedProjectionGate}.isString()`);
+    expect(readRule).toContain(`${datedProjectionGate}.val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)`);
+    // Checking only for existence would also accept the explicit `false` state.
+    expect(readRule).not.toContain(`${datedProjectionGate}.exists()`);
+  });
 });

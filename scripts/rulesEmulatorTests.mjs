@@ -687,9 +687,11 @@ await it('feedDate має бути рядком або false', async () => {
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), true));
 });
 
-await it('feedDate не приймає порожній або пробільний рядок', async () => {
+await it('feedDate приймає лише дату YYYY-MM-DD або false', async () => {
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), ''));
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), '   '));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), 'not-a-date'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), '2026-19-42'));
 });
 
 // Застосунок має жити без адміністрування: людина заводить анкету, публікує
@@ -868,9 +870,9 @@ await it('на прихованій анкеті не отримує ані де
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-await it('legacy-картка з пробільним feedDate не відкриває приватні вузли', async () => {
+await it('legacy-картка без дати у feedDate не відкриває приватні вузли', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
-    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), '   '));
+    set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), 'not-a-date'));
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
 });
