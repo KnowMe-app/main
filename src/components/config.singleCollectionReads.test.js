@@ -34,6 +34,23 @@ describe('single legacy collection reads', () => {
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
+  // Широкий пошук — єдине місце показу, яке ще ходить у legacy-колекцію, і
+  // ходить туди по id, а не по анкету. Рядок `users/{id}` несе й контакти, а
+  // вузол `users` відкритий цілком кожному акаунту з роллю, відмінною від `ed`,
+  // — тож розкладений у результат, він показував телефон і пошту анкети, якої
+  // читач не має права бачити навіть у стрічці. Тепер знайдений id іде тим
+  // самим шляхом, що й решта влучань: через `readProfileFromNodes`, де стоїть
+  // межа `feedDate`.
+  it('the broad search hands over ids, never legacy bodies', () => {
+    const body = source.slice(
+      source.indexOf('const searchByPrefixes = async'),
+      source.indexOf('export const searchUsersCollectionInRTDB'),
+    );
+
+    expect(body).toContain('addUserToResults(userId, users)');
+    expect(body).not.toContain('...userData,');
+  });
+
   // Читання legacy лишилось рівно там, де сама колекція і є предметом роботи —
   // в інструментах адмінської консолі, які її вивантажують і зливають. Показ,
   // пошук і стрічка з неї не читають узагалі.
