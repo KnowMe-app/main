@@ -1,3 +1,4 @@
+import { expandMatchingCard } from '../matchingCardIndex';
 import {
   DEFAULT_REFINE_KEY,
   MATCHING_REFINE_KEYS,
@@ -39,8 +40,42 @@ describe('словник дофільтра', () => {
     // «Київ: 12» серед сотні завантажених брехало б про базу, де їх триста.
     expect(isRefineKeyAvailableInFeed('city')).toBe(false);
     expect(isRefineKeyAvailableInFeed('age')).toBe(true);
-    expect(isRefineKeyAvailableInFeed('bloodGroup')).toBe(true);
+    expect(isRefineKeyAvailableInFeed('rh')).toBe(true);
     expect(isRefineKeyAvailableInFeed('country')).toBe(true);
+  });
+
+  it('групи крові серед ключів немає — картка не носить її номера', () => {
+    // Номер групи з проєкції прибрано: разом із резусом вони складаються назад
+    // у повне `blood`, яке живе за межею приватності. Рядок рахує в памʼяті по
+    // картках, тож із самого лише знака порахувати групу не може — усі чіпи
+    // були б нульові й неактивні. Звужує за групою шухляда, індексом.
+    expect(MATCHING_REFINE_KEYS.some(spec => spec.key === 'bloodGroup')).toBe(false);
+  });
+
+  /**
+   * Сторож проти мовчазного розходження ключа з тим, що реально лежить у картці.
+   *
+   * Саме так зламався вік (картка носила ISO-дату, а бакет знав лише крапкову) і
+   * саме так — група крові, коли її номер прибрали з проєкції. Обидва рази ряд
+   * далі малювався, просто збирав усе в «?» або в порожні нулі. Тест бере
+   * **розгорнуту картку**, а не вигаданий обʼєкт, і вимагає, щоб її значення
+   * потрапило в один з оголошених бакетів ключа.
+   */
+  it('кожен ключ зі словником розкладає справжню картку у власний бакет', () => {
+    const card = expandMatchingCard('u1', {
+      name: 'Анна',
+      birth: '1994-05-12',
+      city: 'Київ',
+      country: 'Ukraine',
+      rh: '-',
+      feedDate: '2026-09-01',
+    });
+
+    MATCHING_REFINE_KEYS.filter(spec => spec.buckets).forEach(spec => {
+      const bucket = bucketOfUser(spec.key, card);
+      expect({ key: spec.key, bucket })
+        .toEqual({ key: spec.key, bucket: spec.buckets.find(item => item.value === bucket)?.value });
+    });
   });
 
   it('значення ключів збігаються з опціями груп шухляди', () => {
@@ -75,7 +110,7 @@ describe('розкладання по значеннях', () => {
     expect(bucketOfUser('age', donor({ birth: '1990-02-31' }))).toBe('other');
   });
 
-  it('резус береться з того ж `blood`, що й група крові', () => {
+  it('резус береться з `blood`, який картка збирає зі знака', () => {
     expect(bucketOfUser('rh', donor({ blood: '3-' }))).toBe('-');
     expect(bucketOfUser('rh', donor({ blood: '1+' }))).toBe('+');
     // Група без знака — це «резус невідомий», а не викинута картка.
@@ -85,7 +120,7 @@ describe('розкладання по значеннях', () => {
 
   it('незаповнене значення — це «?», а не викинута картка', () => {
     expect(bucketOfUser('age', donor({}))).toBe('other');
-    expect(bucketOfUser('bloodGroup', donor({}))).toBe('other');
+    expect(bucketOfUser('rh', donor({}))).toBe('other');
     expect(bucketOfUser('country', donor({}))).toBe('unknown');
   });
 

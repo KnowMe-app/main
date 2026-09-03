@@ -114,7 +114,7 @@ describe('рядок дофільтрації', () => {
     fireEvent.click(screen.getByTitle('Обрати ключ уточнення'));
 
     expect(screen.getByRole('radio', { name: /Місто/ })).toBeDisabled();
-    expect(screen.getByRole('radio', { name: /Група крові/ })).not.toBeDisabled();
+    expect(screen.getByRole('radio', { name: /Резус/ })).not.toBeDisabled();
   });
 
   it('підпис про джерело чисел показується там, де числа неповні', () => {

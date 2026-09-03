@@ -1,6 +1,5 @@
 import {
   toAgeCategory,
-  toBloodGroupCategory,
   toCountryCategory,
   toRhCategory,
 } from './matchingDataProvider';
@@ -19,9 +18,18 @@ import {
  * набір означає **менше** гідратації анкет, а не більше.
  *
  * Межі рахують ті самі функції, що й індексний план та пост-фільтр
- * (`toAgeCategory`, `toRhCategory`, `toBloodGroupCategory`, `toCountryCategory`
- * з `matchingDataProvider`). Свою копію тут заводити не можна: саме розбіжність
+ * (`toAgeCategory`, `toRhCategory`, `toCountryCategory` з
+ * `matchingDataProvider`). Свою копію тут заводити не можна: саме розбіжність
  * на межі округлення й робить фільтр і індекс різними фільтрами.
+ *
+ * **Групи крові тут немає, і це не пропуск.** Номер групи з проєкції прибрано —
+ * разом із резусом вони складаються назад у повне `blood`, яке живе за межею
+ * приватності. Картка носить самий лише знак, тож `toBloodGroupCategory` на ній
+ * чесно каже `unknown`: не «інша група», а «звідси її не видно». Рядок, що
+ * рахує в памʼяті по картках, з такого значення нічого порахувати не може — усі
+ * його чіпи були б нульові й неактивні, тобто ряд, у який неможливо тапнути.
+ * Звужує за групою шухляда, і робить це індексом `searchKey/blood`, а не
+ * карткою. Резус же лишається: він у проєкції є.
  */
 
 /** Категорія «значення не заповнене» — спільна для всіх ключів зі словником. */
@@ -87,19 +95,6 @@ export const MATCHING_REFINE_KEYS = [
     categorize: cityBucketOf,
     buckets: null,
     otherLabel: 'Без міста',
-  },
-  {
-    key: 'bloodGroup',
-    label: 'Група крові',
-    filterName: 'bloodGroup',
-    categorize: toBloodGroupCategory,
-    buckets: [
-      { value: '1', label: '1' },
-      { value: '2', label: '2' },
-      { value: '3', label: '3' },
-      { value: '4', label: '4' },
-      { value: REFINE_OTHER_BUCKET, label: '?' },
-    ],
   },
   {
     key: 'country',
