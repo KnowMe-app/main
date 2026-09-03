@@ -8,10 +8,12 @@ describe('Matching redesigned profile regressions', () => {
   it('renders contacts through actionable links instead of generic profile chips', () => {
     const matchingSource = source();
 
-    expect(matchingSource).toContain('const ProfileContactLinks = ({ user, role }) =>');
+    expect(matchingSource).toContain('const ProfileContactLinks = ({ user, role, language }) =>');
     expect(matchingSource).toContain("section.variant === 'contacts'");
-    expect(matchingSource).toContain('<ProfileContactLinks user={user} role={resolvedRole} />');
-    expect(matchingSource).toContain('<ModernContactSummary>Show contacts</ModernContactSummary>');
+    expect(matchingSource).toContain('<ProfileContactLinks user={user} role={resolvedRole} language={language} />');
+    // Напис під замком тепер іде мовою інтерфейсу, тож перевіряється сам слот,
+    // а не англійський рядок у ньому.
+    expect(matchingSource).toContain("<ModernContactSummary>{profileUiText('showContacts', language)}</ModernContactSummary>");
     expect(matchingSource).toContain('href={entry.href}');
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone');
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.viberFromPhone');
@@ -41,7 +43,10 @@ describe('Matching redesigned profile regressions', () => {
     expect(layoutSource).toContain('return name || getEmailName(user);');
     expect(layoutSource).not.toContain('agencyName || name');
     expect(layoutSource).not.toContain('companyName');
-    expect(matchingSource).toContain("const isGenericProfileRole = roleLabel === 'Profile';");
+    // Роль без назви впізнається за кодом, а не за написом: напис залежить від
+    // мови інтерфейсу, і порівняння з англійським рядком мовчки ламало б бейдж
+    // під українською.
+    expect(matchingSource).toContain("const isGenericProfileRole = resolvedRole === 'other';");
     expect(matchingSource).toContain('const shouldShowRoleBadge = !isGenericProfileRole;');
     expect(matchingSource).toContain("const name = profileName || '';");
     expect(matchingSource).toContain('{title && <ModernHeroTitle>{title}</ModernHeroTitle>}');

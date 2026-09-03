@@ -28,7 +28,7 @@ import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCard, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCompleteCachedProfile, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -2126,6 +2126,25 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     ])
     : [null, null, null, null];
 
+  // Показана анкета без деталей — це не порожня анкета, це відмова, яку ніхто
+  // не почув.
+  //
+  // Код відкриває приватні вузли за самим `feedDate`, а правила бази вимагають
+  // до нього ще й роль читача, відмінну від `ed`, — і шукають її **тільки** в
+  // legacy `users/{uid}`. Акаунт, чия роль туди не доїхала (запис у legacy
+  // відхилили правами, і `persistUserWithFallback` поклав анкету у вузли),
+  // отримує `PERMISSION_DENIED` на кожен приватний вузол. `readProfileNodePart`
+  // ковтає відмову навмисно — контакти можуть бути закриті, і анкета мусить
+  // відкритись без них, — тож назовні це виглядало як анкета, у якої просто
+  // немає ані прізвища, ані контактів: рівно та скарга, з якої почалась ця
+  // правка. Тепер причина названа в консолі там, де її видно.
+  if (mayReadPrivateNodes && isCardInMatchingFeed(card) && !details) {
+    console.warn(
+      '[profileNodes] картка в стрічці, а profileDetails порожній — найімовірніше відмова правил',
+      { userId: id, viewerId: auth.currentUser?.uid || '', accessLevel: accessLevel || '(немає)' },
+    );
+  }
+
   // Та сама межа вдруге — уже на зведенні. Вище вона вирішує, чого не питати, а
   // тут — чого не показувати: у `parts` може приїхати вузол, якого ніхто не
   // просив (legacy-шар від викликача), і зводити анкету з нього не можна.
@@ -2188,7 +2207,15 @@ export const fetchUsersByIds = async ids => {
     const missingIds = [];
 
     uniqueIds.forEach(id => {
-      const cached = getCard(id);
+      // Кеш віддається лише там, де він мав право бути повним.
+      //
+      // Читачеві, чиє право на контакти тримається на `feedDate`, їх у кеш не
+      // кладуть узагалі (`sanitizeMatchingCardForCache`), тож збережена картка
+      // в нього **неповна**. `getCard` цієї різниці не знає, і анкета, у якої
+      // з першого відкриття були і телефон, і повне прізвище, з другого
+      // приїжджала обрізаною — з кеша, без жодного запиту, отже й без шансу
+      // це помітити. Умову рахує та сама функція, якою кеш наповнюється.
+      const cached = getCompleteCachedProfile(id);
       if (!cached) {
         missingIds.push(id);
         return;

@@ -168,17 +168,22 @@ describe('публічні коментарі', () => {
     const source = matching();
     expect(source.match(/<PublicCommentBlock/g)).toHaveLength(2);
     expect(source).toContain('publicCommentSlot={(');
-    expect(source).toContain('<ModernSectionTitle>Public comment</ModernSectionTitle>');
+    expect(source).toContain("{profileUiText('publicComment', language)}");
   });
 
+  // Блок один, доріжки дві: приватна нотатка й публічний запис розділені не
+  // рамкою, а підписом і смужкою — але порядок лишається той самий, і приватне
+  // не може опинитись під виглядом публічного.
   it('тримає публічні коментарі окремо від приватної нотатки', () => {
     const source = matching();
     const card = source.slice(
-      source.indexOf('<ModernSectionTitle>My personal comment</ModernSectionTitle>'),
+      source.indexOf("<ModernSectionTitle $quiet>{profileUiText('notes', language)}</ModernSectionTitle>"),
       source.indexOf('</ModernProfileBody>'),
     );
-    expect(card).toContain('placeholder="Мій приватний коментар / пам\'ятка для себе"');
-    expect(card.indexOf('placeholder="Мій приватний коментар / пам\'ятка для себе"'))
+    expect(card).toContain("{profileUiText('personalNote', language)}");
+    expect(card).toContain("{profileUiText('personalNoteHint', language)}");
+    expect(card).toContain("{profileUiText('publicCommentHint', language)}");
+    expect(card.indexOf("profileUiText('personalNotePlaceholder', language)"))
       .toBeLessThan(card.indexOf('{publicCommentSlot}'));
   });
 
@@ -209,6 +214,20 @@ describe('одна порція — один жест, і рівно дві ка
     expect(effect).toContain('publicCardsLength >= throttledCycle.target');
     // Зі стелею на спроби, інакше добір сам став би потоком.
     expect(effect).toContain('throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS');
+  });
+
+  // Відлік добігає нуля, картки лягають у кінець — і кінець списку виглядає так
+  // само, як за секунду до того. Читач бачив блимання лічильника, а не
+  // результат, і мусив прокручувати вгору, щоб дізнатись, чи щось приїхало.
+  it('називає підсумок порції там, де щойно був відлік', () => {
+    const source = matching();
+    expect(source).toContain('const [lastBatchSummary, setLastBatchSummary] = useState(null);');
+    expect(source).toContain('startPublicCardsLength: publicCardsLengthRef.current,');
+    // Нуль — теж відповідь: «під ці фільтри більше нічого не підійшло».
+    expect(source).toContain('added: Math.max(0, publicCardsLength - throttledCycle.startPublicCardsLength)');
+    expect(source).toContain("Порція не дала нових карток");
+    expect(source).toContain('MATCHING_BATCH_SUMMARY_VISIBLE_MS');
+    expect(source).toContain("data-testid=\"feed-batch-summary\"");
   });
 
   it('ховає відлік і запрошення, поки цикл ще добирає', () => {
