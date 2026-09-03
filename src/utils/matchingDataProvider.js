@@ -953,14 +953,39 @@ export const toRhCategory = user => {
   return 'other';
 };
 
-export const toAgeCategory = user => {
-  const birth = String(user?.birth || '').trim();
-  const match = birth.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!match) return 'other';
+/**
+ * Дата народження в обох написаннях, які реально лежать у базі.
+ *
+ * У нових вузлах вона зберігається як `РРРР-ММ-ДД`, у legacy-анкетах —
+ * крапками. Тут довго стояла лише крапкова форма, і це коштувало дорожче, ніж
+ * виглядає: картка малювала вік (`utilCalculateAge` приймає обидва написання),
+ * а `toAgeCategory` для тієї самої картки вертав `other` — тож і фільтр віку в
+ * шухляді, і рядок уточнення бачили саму лише «?». На видачі з чотирьохсот
+ * знайдених це виглядало як «вік у всіх невідомий» поруч із картками, що
+ * підписані віком.
+ *
+ * Перевірка на переповнення (32.13.2000, 2000-02-31) лишається: індекс
+ * `searchKey/age` таку дату теж не бере, і розійтись на ній фільтр з індексом
+ * не має права.
+ */
+const parseBirthDate = birth => {
+  const raw = String(birth || '').trim();
+  const dotted = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const match = dotted || iso;
+  if (!match) return null;
 
-  const day = Number(match[1]);
+  const day = Number(dotted ? match[1] : match[3]);
   const month = Number(match[2]);
-  const year = Number(match[3]);
+  const year = Number(dotted ? match[3] : match[1]);
+  return { day, month, year };
+};
+
+export const toAgeCategory = user => {
+  const parsed = parseBirthDate(user?.birth);
+  if (!parsed) return 'other';
+
+  const { day, month, year } = parsed;
   const birthDate = new Date(year, month - 1, day);
   if (
     Number.isNaN(birthDate.getTime()) ||

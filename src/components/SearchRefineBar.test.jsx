@@ -53,14 +53,42 @@ describe('рядок дофільтрації', () => {
     setup({ activeValue: '31_33', shownCount: 1 });
 
     expect(screen.getByText('Вік · 31–33')).toBeInTheDocument();
-    expect(screen.getByText('показано 1 з 2')).toBeInTheDocument();
+    expect(screen.getByText('показано 1 з 2 · знайдено 3')).toBeInTheDocument();
     // Меню значень на екрані більше немає — місце під картки потрібніше.
     expect(screen.queryByTitle('Вік: ≤25 — 1')).not.toBeInTheDocument();
   });
 
   it('коли показано вже все, рядок каже розмір видачі, а не «1 з 1»', () => {
     setup({ activeValue: '31_33', shownCount: 2 });
-    expect(screen.getByText('2 у видачі')).toBeInTheDocument();
+    expect(screen.getByText('2 у видачі · знайдено 3')).toBeInTheDocument();
+  });
+
+  it('згорнутий рядок називає й те, скільки знайшлося до уточнення', () => {
+    // Уточнення переживає запит, тож «2» без «знайдено 3» поруч читалось би як
+    // загублена видача, а не як власне звуження читача.
+    setup({ activeValue: '31_33', shownCount: 2 });
+    expect(screen.getByText(/знайдено 3/)).toBeInTheDocument();
+  });
+
+  it('коли уточнення нічого не звужує, зайвого числа в рядку немає', () => {
+    // Усі троє під одним значенням — «3 у видачі · знайдено 3» було б шумом.
+    setup({
+      users: [
+        { userId: '1', birth: birthForAge(32) },
+        { userId: '2', birth: birthForAge(33) },
+        { userId: '3', birth: birthForAge(31) },
+      ],
+      activeValue: '31_33',
+      shownCount: 3,
+    });
+    expect(screen.getByText('3 у видачі')).toBeInTheDocument();
+  });
+
+  it('резус пропонується таким самим ключем, як вік', () => {
+    // «Мене цікавлять 26–30, Rh−» — друге запитання рядок мусить уміти теж.
+    setup({ users: [{ userId: '1', blood: '3-' }, { userId: '2', blood: '1+' }], activeKey: 'rh' });
+    expect(screen.getByTitle('Резус: Rh− — 1')).toBeInTheDocument();
+    expect(screen.getByTitle('Резус: Rh+ — 1')).toBeInTheDocument();
   });
 
   it('обране значення знімається одним тапом', () => {

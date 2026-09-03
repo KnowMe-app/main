@@ -7,6 +7,11 @@ describe('cardIndex queries', () => {
     removeCard,
     serializeQueryFilters,
     clearEmptySearchQueryCache,
+    clearMatchingSearchResultCache,
+    buildMatchingSearchResultCacheKey,
+    getCompleteCachedProfile,
+    getIndexIdsByQuery,
+    setIndexIdsForQuery,
     getQueryEntry,
     resetMatchingLocalStorageCache,
     CARDS_CACHE_VERSION,
@@ -49,6 +54,36 @@ describe('cardIndex queries', () => {
 
     expect(getCard('hidden-profile')).toBeNull();
     expect(localStorage.getItem('cards')).toBeNull();
+  });
+
+  it('віддає кешовану анкету лише там, де кеш мав право бути повним', () => {
+    // Читачеві, чиє право на контакти тримається на `feedDate`, їх у кеш не
+    // кладуть узагалі — і віддати таку анкету означало б, що телефон, видимий з
+    // першого відкриття, зникає з другого.
+    resetMatchingLocalStorageCache('complete profile cache test');
+    localStorage.setItem('ownerId', 'privileged-viewer');
+    localStorage.setItem('accessLevel', 'matching:view&write');
+    updateCard('cached-profile', { name: 'A', phone: '+380000000000' });
+    expect(getCompleteCachedProfile('cached-profile')).toMatchObject({ phone: '+380000000000' });
+
+    localStorage.setItem('ownerId', 'ordinary-viewer');
+    localStorage.setItem('accessLevel', 'ed');
+    updateCard('cached-profile', { name: 'A' });
+    expect(getCompleteCachedProfile('cached-profile')).toBeNull();
+  });
+
+  it('кешована видача пошуку скидається цілком, а кандидати фільтрів лишаються', () => {
+    // Запис в `searchId` іде по всіх полях анкети, тож вирахувати, яких саме
+    // запитів торкнулась зміна, не можна — скидається все. А кандидати фільтрів
+    // до цього стосунку не мають і переживають скидання.
+    resetMatchingLocalStorageCache('search result cache test');
+    const searchKey = buildMatchingSearchResultCacheKey('cards:search:name=анна');
+    setIndexIdsForQuery(searchKey, ['userId01'], { complete: true });
+    setIndexIdsForQuery('matchingIndex:role=ag', ['userId02'], { complete: true });
+
+    expect(clearMatchingSearchResultCache()).toBe(1);
+    expect(getIndexIdsByQuery(searchKey)).toBeNull();
+    expect(getIndexIdsByQuery('matchingIndex:role=ag')?.ids).toEqual(['userId02']);
   });
 
   it('removes card from cards and queries', () => {

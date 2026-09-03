@@ -16,11 +16,22 @@ const birthForAge = age => {
   return `01.01.${year}`;
 };
 
+/** Те саме, у написанні, яким дата лежить у базі. */
+const isoBirthForAge = age => `${new Date().getFullYear() - age}-01-01`;
+
 const donor = (overrides = {}) => ({ userId: 'u1', ...overrides });
 
 describe('словник дофільтра', () => {
   it('дефолтний ключ — вік: він уже написаний на самій картці', () => {
     expect(DEFAULT_REFINE_KEY).toBe('age');
+  });
+
+  it('резус — такий самий ключ, як вік: він уже лежить у проєкції', () => {
+    // «Мене цікавлять 26–30, Rh−» — це два запитання, і на друге рядок мусить
+    // уміти відповісти теж, не читаючи при цьому нічого нового.
+    const rh = MATCHING_REFINE_KEYS.find(spec => spec.key === 'rh');
+    expect(rh.filterName).toBe('rh');
+    expect(rh.buckets.map(bucket => bucket.value)).toEqual(['+', '-', 'other']);
   });
 
   it('ключ без індексу searchKey у стрічці не пропонується', () => {
@@ -46,6 +57,30 @@ describe('розкладання по значеннях', () => {
     expect(bucketOfUser('age', donor({ birth: birthForAge(24) }))).toBe('le25');
     expect(bucketOfUser('age', donor({ birth: birthForAge(32) }))).toBe('31_33');
     expect(bucketOfUser('age', donor({ birth: birthForAge(41) }))).toBe('37_plus');
+  });
+
+  it('вік читається і з ISO-дати — саме так він лежить у базі', () => {
+    // Крапкова форма лишилась у legacy-анкетах, нові вузли несуть `РРРР-ММ-ДД`.
+    // Поки тут стояла сама лише крапкова, картка малювала «39», а рядок
+    // уточнення для неї ж казав «?» — і вся видача з чотирьохсот знайдених
+    // збиралась в одному «?».
+    expect(bucketOfUser('age', donor({ birth: isoBirthForAge(24) }))).toBe('le25');
+    expect(bucketOfUser('age', donor({ birth: isoBirthForAge(28) }))).toBe('26_30');
+    expect(bucketOfUser('age', donor({ birth: isoBirthForAge(41) }))).toBe('37_plus');
+  });
+
+  it('дата, якої не існує, лишається «?» в обох написаннях', () => {
+    // Індекс `searchKey/age` таку теж не бере — розійтись на ній не можна.
+    expect(bucketOfUser('age', donor({ birth: '31.02.1990' }))).toBe('other');
+    expect(bucketOfUser('age', donor({ birth: '1990-02-31' }))).toBe('other');
+  });
+
+  it('резус береться з того ж `blood`, що й група крові', () => {
+    expect(bucketOfUser('rh', donor({ blood: '3-' }))).toBe('-');
+    expect(bucketOfUser('rh', donor({ blood: '1+' }))).toBe('+');
+    // Група без знака — це «резус невідомий», а не викинута картка.
+    expect(bucketOfUser('rh', donor({ blood: '2' }))).toBe('other');
+    expect(bucketOfUser('rh', donor({}))).toBe('other');
   });
 
   it('незаповнене значення — це «?», а не викинута картка', () => {
@@ -106,6 +141,16 @@ describe('звуження видачі', () => {
   it('обране значення лишає рівно своє', () => {
     expect(applyRefineSelection(users, 'age', '31_33').map(user => user.userId)).toEqual(['2']);
   });
+
+  it('резус звужує видачу так само, як вік', () => {
+    const donors = [
+      donor({ userId: '1', blood: '1+' }),
+      donor({ userId: '2', blood: '3-' }),
+      donor({ userId: '3' }),
+    ];
+    expect(applyRefineSelection(donors, 'rh', '-').map(user => user.userId)).toEqual(['2']);
+    expect(applyRefineSelection(donors, 'rh', 'other').map(user => user.userId)).toEqual(['3']);
+  });
 });
 
 describe('запис у групу шухляди', () => {
@@ -129,5 +174,10 @@ describe('запис у групу шухляди', () => {
 
   it('ключ без групи в шухляду не пише', () => {
     expect(buildFeedFilterGroupForRefine('city', 'Київ', group)).toBeNull();
+  });
+
+  it('резус пише в групу «rh», значення якої збігаються з його бакетами', () => {
+    expect(buildFeedFilterGroupForRefine('rh', '-', { '+': true, '-': true, other: true }))
+      .toEqual({ '+': false, '-': true, other: false });
   });
 });

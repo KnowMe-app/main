@@ -28,7 +28,7 @@ import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, getCard, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCard, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -2593,6 +2593,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   }
 
   clearEmptySearchQueryCache();
+  clearMatchingSearchResultCache();
 
   return {
     userId: newUserId,
@@ -3924,6 +3925,7 @@ export const updateProfileNodesInRTDB = async (userId, uploadedInfo, condition, 
     await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition);
 
     clearEmptySearchQueryCache();
+    clearMatchingSearchResultCache();
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database3:', error);
     throw error;
@@ -8849,6 +8851,7 @@ export const removeCardAndSearchId = async userId => {
 
     removeCard(userId);
     clearEmptySearchQueryCache();
+    clearMatchingSearchResultCache();
 
     if (deletedFields.length) {
       toast.success(`Видалені дані:\n${deletedFields.join('\n')}`, {

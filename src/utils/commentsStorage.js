@@ -1,8 +1,8 @@
-import { MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
+import { MATCHING_COMMENTS_CACHE_TTL_MS } from './cacheConstants';
 
 const COMMENTS_KEY = 'commentsCache';
 export const COMMENTS_UPDATED_EVENT = 'comments:updated';
-export const COMMENTS_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
+export const COMMENTS_TTL_MS = MATCHING_COMMENTS_CACHE_TTL_MS;
 
 const now = () => Date.now();
 

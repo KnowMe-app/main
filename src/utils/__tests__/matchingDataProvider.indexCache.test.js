@@ -19,6 +19,10 @@ jest.mock('components/config', () => ({
   collectAgeIdsByFilters: (...args) => mockCollectAgeIdsByFilters(...args),
 }));
 
+// Строк життя кеша береться з константи, а не переписується числом: інакше
+// зміна TTL мовчки перетворює цей тест на перевірку старого строку.
+const { MATCHING_PERFORMANCE_CACHE_TTL_MS } = require('../cacheConstants');
+
 const makeSnapshot = (value = null) => ({
   exists: () => value !== null,
   val: () => value,
@@ -147,7 +151,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const filters = { userRole: { ag: true, ed: false, ip: false, other: false } };
 
     await fetchMatchingIndexedCandidates({ filters, limit: 1, hydrateUsersByIds });
-    Date.now.mockReturnValue(1_000_000 + (10 * 60 * 1000) + 1);
+    Date.now.mockReturnValue(1_000_000 + MATCHING_PERFORMANCE_CACHE_TTL_MS + 1);
     await fetchMatchingIndexedCandidates({ filters, offset: 1, limit: 1, hydrateUsersByIds });
 
     // Бакет читається вдруге, щойно кеш id протух. Третього читання немає:
