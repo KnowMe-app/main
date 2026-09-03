@@ -39,16 +39,58 @@ describe('видача пошуку гортається так само, як �
     expect(loader).toContain('setSearchRevealCount(current => Math.min(current + step, searchRevealTargetRef.current));');
   });
 
-  it('нова видача починається з першої порції і без чужого дофільтра', () => {
+  it('нова видача починається з першої порції', () => {
+    expect(matching()).toContain(
+      '(isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE));'
+    );
+  });
+
+  it('звужений набір, що вміщається в сторінку, показується цілком', () => {
+    // Відлік стереже трафік бекенду, а за ці картки пошук уже заплатив: чекати
+    // десять секунд заради третьої з трьох — притишувати те, що притишувати
+    // нема потреби.
     const source = matching();
-    expect(source).toContain('setSearchRefineValue(null);');
-    expect(source).toContain(
-      'setSearchRevealCount(isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE);'
+    const rule = source.slice(
+      source.indexOf('const revealCountForRefined = React.useCallback('),
+      source.indexOf('const handleRefineSelect = React.useCallback('),
+    );
+
+    expect(rule).toContain('return narrowed > 0 && narrowed <= LOAD_MORE ? narrowed : revealStep;');
+    expect(source).toContain('setSearchRevealCount(activeRefineValue && revealCountForRefinedRef.current');
+  });
+
+  it('уточнення переживає новий запит — воно умова, а не сито', () => {
+    // Скидання на кожному «Знайшов» означало б ставити уточнення заново на
+    // кожній видачі, ще й устигаючи це зробити раніше, ніж відлік почне
+    // видавати картки по дві. Значення описує не цю видачу, а те, що читачеві
+    // цікаво, — тож воно й лишається.
+    const source = matching();
+    const applier = source.slice(
+      source.indexOf('const applySearchResults = async res => {'),
+      source.indexOf('useEffect(() => {\n    filtersRef.current = filters;'),
+    );
+
+    expect(applier).not.toContain('setSearchRefineValue(null)');
+    expect(applier).toContain(
+      'const { key: activeRefineKey, value: activeRefineValue } = refineStateRef.current;'
+    );
+    expect(applier).toContain(
+      'const refined = applyRefineSelection(filtered, activeRefineKey, activeRefineValue);'
+    );
+    expect(applier).toContain('searchRevealTargetRef.current = refined.length;');
+  });
+
+  it('видача, з якої уточнення прибрало все, називає причину', () => {
+    // Інакше мовчазне «Немає доступних профілів» читалось би як «не знайшов» —
+    // рівно той страх, заради якого уточнення колись скидали на кожному пошуку.
+    expect(matching()).toContain(
+      'if (isSearching && searchRefineValue && visibleUsers.length > 0) {'
     );
   });
 
   it('коментарі читаються для того, що на екрані, а не для всієї видачі', () => {
-    expect(matching()).toContain('void loadCommentsFor(filtered.slice(0, FEED_PHOTO_HYDRATION_LIMIT));');
+    // На екран іде вже звужене, тож і читати коментарі для відсіяного нема за що.
+    expect(matching()).toContain('void loadCommentsFor(refined.slice(0, FEED_PHOTO_HYDRATION_LIMIT));');
   });
 
   it('«Знайдено» рахує всю видачу, а не її вікно', () => {

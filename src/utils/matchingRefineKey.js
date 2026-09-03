@@ -2,6 +2,7 @@ import {
   toAgeCategory,
   toBloodGroupCategory,
   toCountryCategory,
+  toRhCategory,
 } from './matchingDataProvider';
 
 /**
@@ -14,12 +15,12 @@ import {
  *
  * Головне обмеження — **жодного додаткового читання з бекенду**. Усі значення
  * беруться з полів, які вже лежать у проєкції `matchingCards` (`birth`, `city`,
- * `blood`, `country`), тож дофільтр рахується в памʼяті, а звужений набір
- * означає **менше** гідратації анкет, а не більше.
+ * `rh`, `bloodGroup`, `country`), тож дофільтр рахується в памʼяті, а звужений
+ * набір означає **менше** гідратації анкет, а не більше.
  *
  * Межі рахують ті самі функції, що й індексний план та пост-фільтр
- * (`toAgeCategory`, `toBloodGroupCategory`, `toCountryCategory` з
- * `matchingDataProvider`). Свою копію тут заводити не можна: саме розбіжність
+ * (`toAgeCategory`, `toRhCategory`, `toBloodGroupCategory`, `toCountryCategory`
+ * з `matchingDataProvider`). Свою копію тут заводити не можна: саме розбіжність
  * на межі округлення й робить фільтр і індекс різними фільтрами.
  */
 
@@ -54,6 +55,27 @@ export const MATCHING_REFINE_KEYS = [
       { value: '31_33', label: '31–33' },
       { value: '34_36', label: '34–36' },
       { value: '37_plus', label: '37+' },
+      { value: REFINE_OTHER_BUCKET, label: '?' },
+    ],
+  },
+  {
+    /**
+     * Резус — другий розрізнювач, який питають найчастіше після віку.
+     *
+     * Він уже лежить у проєкції окремим полем (`rh`), тож коштує стільки ж,
+     * скільки вік: нуль додаткових читань. Значення беруться з `toRhCategory` —
+     * тієї самої функції, якою резус рахує пост-фільтр, тож рядок і шухляда не
+     * можуть розійтись на анкеті, де група крові записана без знака.
+     */
+    key: 'rh',
+    label: 'Резус',
+    filterName: 'rh',
+    categorize: toRhCategory,
+    buckets: [
+      // Підпис не голий знак: чіп «+» посеред ряду читається як кнопка «додати»,
+      // а «Rh+» — як значення.
+      { value: '+', label: 'Rh+' },
+      { value: '-', label: 'Rh−' },
       { value: REFINE_OTHER_BUCKET, label: '?' },
     ],
   },

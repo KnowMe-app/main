@@ -102,6 +102,13 @@ export const SearchRefineBar = ({
 
   if (activeValue) {
     const total = activeOption?.count ?? users.length;
+    // Скільки знайшлося **до** уточнення. Без цього числа згорнутий рядок каже
+    // «12» там, де запит дав чотириста, і різниця виглядає як загублена видача,
+    // а не як власне уточнення читача.
+    const overall = users.length;
+    const shown = shownCount !== undefined && shownCount < total
+      ? `показано ${shownCount} з ${total}`
+      : `${total}${scanNote ? ` ${scanNote}` : ' у видачі'}`;
     return (
       <RefineBar ref={barRef} data-testid="search-refine-bar">
         <RefineValueChip
@@ -117,9 +124,7 @@ export const SearchRefineBar = ({
           <span aria-hidden="true">✕</span>
         </RefineValueChip>
         <RefineSummary>
-          {shownCount !== undefined && shownCount < total
-            ? `показано ${shownCount} з ${total}`
-            : `${total}${scanNote ? ` ${scanNote}` : ' у видачі'}`}
+          {overall > total ? `${shown} · знайдено ${overall}` : shown}
         </RefineSummary>
       </RefineBar>
     );

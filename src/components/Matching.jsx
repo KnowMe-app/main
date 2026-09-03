@@ -1522,6 +1522,24 @@ const Matching = () => {
   // читач відкриє другу.
   const [refineKey, setRefineKey] = useState(DEFAULT_REFINE_KEY);
   const [searchRefineValue, setSearchRefineValue] = useState(null);
+  // Уточнення переживає наступний запит, і саме це робить його умовою, а не
+  // ситом. Питання читача не «серед знайденого — котра», а «мене цікавлять
+  // 26–30, Rh−»: сказане один раз, воно має діяти на кожен наступний запит, бо
+  // інакше на кожній новій видачі його довелось би ставити наново — і встигнути
+  // це зробити раніше, ніж відлік почне видавати картки по дві.
+  //
+  // Ціна помилки тут відома: уточнення може сховати саме того, кого шукали. Тож
+  // воно не має права бути мовчазним — чіп із числом і хрестиком стоїть над
+  // сіткою завжди, поки значення увімкнене, а порожня видача називає його
+  // причиною (`resolveEmptyFeedMessage`).
+  const refineStateRef = useRef({ key: DEFAULT_REFINE_KEY, value: null });
+  useEffect(() => {
+    refineStateRef.current = { key: refineKey, value: searchRefineValue };
+  }, [refineKey, searchRefineValue]);
+  // Правило «скільки звуженого показати одразу» живе нижче, поруч із кроком
+  // відліку; сюди воно приходить рефом, бо `applySearchResults` викликається з
+  // обробника, який навмисно не перестворюється на кожен рендер.
+  const revealCountForRefinedRef = useRef(null);
   const [filterGroupSelect, setFilterGroupSelect] = useState({ token: 0, name: '', value: '' });
   // Скільки знайдених уже на екрані. Видача більше не приїжджає одним шматком:
   // її показує той самий притишений відлік, що й стрічку.
@@ -2088,14 +2106,23 @@ const Matching = () => {
     invalidateReactionAsyncWork();
     setSharedReactionCandidateUsers([]);
     setViewMode('search');
-    // Нова видача — нове вікно показу і знятий дофільтр: значення попереднього
-    // запиту до нового не має стосунку, і мовчки лишити його означало б
-    // показати «нічого не знайдено» там, де знайшлося.
-    setSearchRefineValue(null);
-    setSearchRevealCount(isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE);
-    searchRevealTargetRef.current = filtered.length;
-    // Коментарі читаються для того, що на екрані, а не для всієї видачі.
-    void loadCommentsFor(filtered.slice(0, FEED_PHOTO_HYDRATION_LIMIT));
+    // Нова видача — нове вікно показу. Але уточнення знімається не тут: воно
+    // пережило запит навмисно (див. `refineStateRef`), бо описує не цю видачу,
+    // а те, що читачеві взагалі цікаво. Раніше його скидало кожне «Знайшов», і
+    // на запиті з чотирьохсот влучань уточнювати доводилось заново — щоразу
+    // після того, як відлік уже почав видавати картки по дві.
+    //
+    // Мовчазним воно від цього не стає: чіп із числом і хрестиком лишається над
+    // сіткою, а видача, з якої уточнення прибрало все, каже про це прямо.
+    const { key: activeRefineKey, value: activeRefineValue } = refineStateRef.current;
+    const refined = applyRefineSelection(filtered, activeRefineKey, activeRefineValue);
+    setSearchRevealCount(activeRefineValue && revealCountForRefinedRef.current
+      ? revealCountForRefinedRef.current(refined.length)
+      : (isThrottledFeedPaging ? MATCHING_THROTTLED_LOAD_BATCH : LOAD_MORE));
+    searchRevealTargetRef.current = refined.length;
+    // Коментарі читаються для того, що на екрані, а не для всієї видачі, — а на
+    // екран іде вже звужене, тож і читати їх для відсіяного нема за що.
+    void loadCommentsFor(refined.slice(0, FEED_PHOTO_HYDRATION_LIMIT));
   };
 
   useEffect(() => {
@@ -6169,10 +6196,31 @@ const Matching = () => {
     if (!isSearching && previous.filterName) resetFilterGroup(previous.filterName);
   }, [isSearching, refineKey, resetFilterGroup, revealStep]);
 
+  /**
+   * Скільки звуженої видачі показати одразу.
+   *
+   * Притишений відлік стереже трафік бекенду, а звужений набір за нього вже
+   * заплачено: усі його картки прочитані пошуком, і показ коштує фото рівно для
+   * тих кількох, кого читач щойно назвав. Тож набір, що вміщається в одну
+   * сторінку, показується цілком — чекати десять секунд заради третьої з трьох
+   * означає притишувати те, що притишувати нема потреби. Ширший лишається на
+   * звичайному кроці.
+   */
+  const revealCountForRefined = React.useCallback(narrowedLength => {
+    const narrowed = Number(narrowedLength) || 0;
+    return narrowed > 0 && narrowed <= LOAD_MORE ? narrowed : revealStep;
+  }, [revealStep]);
+
+  useEffect(() => {
+    revealCountForRefinedRef.current = revealCountForRefined;
+  }, [revealCountForRefined]);
+
   const handleRefineSelect = React.useCallback(value => {
     if (isSearching) {
       setSearchRefineValue(value);
-      setSearchRevealCount(revealStep);
+      setSearchRevealCount(revealCountForRefined(
+        value ? applyRefineSelection(visibleUsers, refineKey, value).length : 0
+      ));
       return;
     }
     const spec = getRefineKeySpec(refineKey);
@@ -6185,7 +6233,7 @@ const Matching = () => {
     // шляху читання: план будує наявний планувальник, і виходить він
     // найдешевшим — `include`.
     setFilterGroupSelect(previous => ({ token: previous.token + 1, name: spec.filterName, value }));
-  }, [isSearching, refineKey, resetFilterGroup, revealStep]);
+  }, [isSearching, refineKey, resetFilterGroup, revealCountForRefined, visibleUsers]);
 
   // Рядок доречний лише на довгій видачі: на десяти знайдених він тільки
   // забирає висоту, бо їх видно всі й так. Активне значення тримає рядок на
@@ -6369,6 +6417,17 @@ const Matching = () => {
     const isReactionTab = viewMode === 'favorites' || viewMode === 'dislikes';
     if (!isReactionTab && !isSearching && visibleUsers.length > 0) {
       return `Фільтри приховали всі завантажені профілі (${visibleUsers.length})`;
+    }
+    // Уточнення переживає запит, тож воно ж може виявитись єдиною причиною
+    // порожнього екрана на видачі, де насправді знайшлося чотириста. Це рівно
+    // той випадок, заради якого уточнення колись скидали на кожному пошуку:
+    // мовчазне «Немає доступних профілів» читалось би як «не знайшов». Тепер
+    // порожня видача називає причину — і чіп поруч знімає її одним тапом.
+    if (isSearching && searchRefineValue && visibleUsers.length > 0) {
+      const spec = getRefineKeySpec(refineKey);
+      const label = spec.buckets?.find(bucket => bucket.value === searchRefineValue)?.label
+        || searchRefineValue;
+      return `Уточнення «${spec.label} · ${label}» не лишило нічого зі знайдених (${visibleUsers.length})`;
     }
     return 'Немає доступних профілів';
   };
