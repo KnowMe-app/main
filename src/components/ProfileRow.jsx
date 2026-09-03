@@ -473,7 +473,7 @@ export const CommentBlock = ({ text, onSave }) => {
 const COMMENT_MIN_ROWS = 1;
 const COMMENT_MAX_ROWS = 6;
 const COMMENT_SAVED_STATUS_MS = 3000;
-export const PUBLIC_COMMENT_VISIBILITY_NOTE = 'публічно · від вашого імені';
+export const PUBLIC_COMMENT_VISIBILITY_NOTE = 'Загальнодоступний коментар';
 
 const autoGrowComment = el => {
   if (!el) return;
@@ -516,8 +516,7 @@ const CommentComposer = ({ initialText, onCancel, onCommit }) => {
   return (
     <S.CommentEditor onClick={e => e.stopPropagation()}>
       <S.CommentEditorHead>
-        <span>Коментар</span>
-        <S.CommentVisibilityNote>{PUBLIC_COMMENT_VISIBILITY_NOTE}</S.CommentVisibilityNote>
+        <span>{PUBLIC_COMMENT_VISIBILITY_NOTE}</span>
       </S.CommentEditorHead>
       <S.PublicCommentInput
         ref={ref}

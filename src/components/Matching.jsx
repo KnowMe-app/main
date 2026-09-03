@@ -1255,11 +1255,11 @@ const SwipeableCard = ({
             </ModernSection>
           ))}
           <ModernSection>
-            <ModernSectionTitle>Comment</ModernSectionTitle>
+            <ModernSectionTitle>My personal comment</ModernSectionTitle>
             <CommentBox>
               <ResizableCommentInput
                 plain
-                placeholder="Мій коментар / My comment"
+                placeholder="Мій приватний коментар / пам'ятка для себе"
                 value={commentValue || ''}
                 onClick={e => e.stopPropagation()}
                 onChange={e => onCommentChange && onCommentChange(e.target.value)}
@@ -1277,11 +1277,11 @@ const SwipeableCard = ({
               )}
             </CommentBox>
           </ModernSection>
-          {/* Секція «Comment» вище — це приватна нотатка переглядача. Публічні
+          {/* Секція «My personal comment» вище — це приватна нотатка переглядача. Публічні
               коментарі бачать усі, тож вони стоять окремо і зі своїм підписом. */}
           {publicCommentSlot && (
             <ModernSection onClick={e => e.stopPropagation()}>
-              <ModernSectionTitle>Публічні коментарі</ModernSectionTitle>
+              <ModernSectionTitle>Public comment</ModernSectionTitle>
               {publicCommentSlot}
             </ModernSection>
           )}
