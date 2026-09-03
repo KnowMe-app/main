@@ -17,7 +17,6 @@ import {
   fetchDislikeUsersData,
   isReactionPermissionDeniedError,
   fetchCycleUsersData,
-  // fetchListOfUsers,
   makeNewUser,
   // removeSearchId,
   // createSearchIdsForAllUsers,
@@ -1323,7 +1322,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
         { key: 'searchKey', label: 'searchKey bucket/date' },
         { key: 'partialUserId', label: 'userId (частковий збіг)' },
-        { key: 'broadTextSearch', label: 'широкий пошук (contains, усі поля users)' },
+        { key: 'broadTextSearch', label: 'широкий пошук (імʼя в картках стрічки)' },
       ],
     },
     {

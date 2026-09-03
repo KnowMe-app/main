@@ -86,7 +86,6 @@ import {
   planSearchKeyBucketRead,
   withoutEmptySearchKeyBucket,
 } from '../utils/searchKeyBuckets';
-import { searchByIndexOn } from './searchByIndexOn';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { normalizeProfileRole } from '../utils/profileRole';
 
@@ -1019,10 +1018,14 @@ export const fetchCycleUsersData = async (
 
     const idSet = new Set();
 
+    // `cycleStatus` живе в `profileWorkflow` — там його й питають. У legacy
+    // `users` він лишився копією, яку веб більше не читає: колекція доживає як
+    // дзеркало для мобільного застосунку, і запит по ній перестане працювати
+    // разом з нею.
     await Promise.all(
       normalizedStatuses.map(async status => {
         const q = query(
-          ref2(database, 'users'),
+          ref2(database, PROFILE_NODES.profileWorkflow),
           orderByChild('cycleStatus'),
           equalTo(status),
         );
@@ -2815,7 +2818,19 @@ const executeSearchBySearchIdIndex = async (
   );
 };
 
-const SEARCH_COLLECTIONS = ['users'];
+/**
+ * Де шукати поле запитом `equalTo`.
+ *
+ * Раніше відповідь була одна на всіх — `users`, бо там лежала вся анкета. Після
+ * розділення вузлів поле живе рівно в одному з них, і питати треба саме його:
+ * `resolveFieldOwnerNode` — той самий роутер, яким анкета туди й записується,
+ * тож розійтись писач із читачем не можуть.
+ *
+ * `null` — поля не тримає жоден вузол: `userId` є ключем, а не полем (його
+ * шукають прямим зверненням вище), `getInTouch` і `myComment` живуть під
+ * власником у `multiData` і мають власні шляхи пошуку.
+ */
+const resolveEqualToSearchNode = key => (key === 'userId' ? null : resolveFieldOwnerNode(key));
 
 const SEARCH_KEY_DATE_FIELDS = new Set([LAST_ACTION_SEARCH_KEY_INDEX, GET_IN_TOUCH_SEARCH_KEY_INDEX]);
 
@@ -2902,177 +2917,62 @@ const buildEqualToQueriesForField = (collectionRef, key, candidate) => {
 const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
   if (!Array.isArray(searchKeys) || searchKeys.length === 0) return;
 
-  for (const collection of SEARCH_COLLECTIONS) {
-    for (const key of searchKeys) {
-      const candidates = getEqualToCandidates(key, rawSearchValue);
-      if (candidates.length === 0) continue;
+  for (const key of searchKeys) {
+    const candidates = getEqualToCandidates(key, rawSearchValue);
+    if (candidates.length === 0) continue;
 
-      for (const candidate of candidates) {
-        try {
-          const promises = [];
+    const collection = resolveEqualToSearchNode(key);
 
-          if (key === 'userId') {
-            const directId = String(candidate || '').trim();
-            if (directId && !uniqueUserIds.has(directId)) {
-              // userId часто є ключем вузла, а не полем усередині картки.
-              // Для таких записів equalTo(orderByChild('userId')) нічого не повертає,
-              // тому перевіряємо direct lookup за ключем.
-              // eslint-disable-next-line no-await-in-loop
-              await addUserToResults(directId, users);
-              if (users[directId]) {
-                uniqueUserIds.add(directId);
-              }
-            }
-          }
+    for (const candidate of candidates) {
+      try {
+        const promises = [];
 
-          const collectionRef = ref2(database, collection);
-          const equalToQueries = buildEqualToQueriesForField(collectionRef, key, candidate);
-
-          for (const currentQuery of equalToQueries) {
+        if (key === 'userId') {
+          const directId = String(candidate || '').trim();
+          if (directId && !uniqueUserIds.has(directId)) {
+            // userId часто є ключем вузла, а не полем усередині картки.
+            // Для таких записів equalTo(orderByChild('userId')) нічого не повертає,
+            // тому перевіряємо direct lookup за ключем.
             // eslint-disable-next-line no-await-in-loop
-            const snapshot = await get(currentQuery);
-
-            if (snapshot.exists()) {
-              snapshot.forEach(userSnapshot => {
-                const userId = userSnapshot.key;
-                const userData = userSnapshot.val();
-                if (uniqueUserIds.has(userId)) return;
-                if (!isEqualToFieldMatch({ userId, ...userData }, key, candidate)) return;
-
-                uniqueUserIds.add(userId);
-                promises.push(addUserToResults(userId, users));
-              });
+            await addUserToResults(directId, users);
+            if (users[directId]) {
+              uniqueUserIds.add(directId);
             }
-          }
-
-          // eslint-disable-next-line no-await-in-loop
-          await Promise.all(promises);
-        } catch (error) {
-          if (isDev) {
-            console.error(`executeSearchByEqualToFields → error querying ${collection}.${key}:`, error);
           }
         }
-      }
-    }
-  }
-};
 
-/**
- * Широкий пошук по legacy-колекції: `contains` по кожному індексованому полю.
- *
- * Знайдене тут — це id, а не анкета. Рядок `users/{id}`, який повертає запит,
- * лишається всередині: за ним лише звіряється збіг, а показувати його не можна
- * — у legacy-тілі лежать і контакти, і саме звідти вони й потрапляли на екран
- * повз усі межі. Вузол `users` відкритий цілком кожному акаунту з роллю,
- * відмінною від `ed`, тож для звичайного користувача цей рядок приїжджає
- * успішно — і, розкладений у результат, показував телефон і пошту анкети,
- * якої той не має права бачити навіть у стрічці.
- *
- * Тому знайдений id іде тим самим шляхом, що й будь-яке інше влучання, —
- * `addUserToResults` → `readProfileFromNodes`, де стоїть межа `feedDate`.
- */
-const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
-  const fieldMatchesSearch = (value, normalizedSearch) => {
-    if (typeof value === 'string') {
-      return value.trim().toLowerCase().includes(normalizedSearch);
-    }
+        if (!collection) continue;
 
-    if (typeof value === 'number') {
-      return String(value).toLowerCase().includes(normalizedSearch);
-    }
+        const collectionRef = ref2(database, collection);
+        const equalToQueries = buildEqualToQueriesForField(collectionRef, key, candidate);
 
-    if (Array.isArray(value)) {
-      return value.some(item => fieldMatchesSearch(item, normalizedSearch));
-    }
+        for (const currentQuery of equalToQueries) {
+          // eslint-disable-next-line no-await-in-loop
+          const snapshot = await get(currentQuery);
 
-    return false;
-  };
+          if (snapshot.exists()) {
+            snapshot.forEach(nodeSnapshot => {
+              const userId = nodeSnapshot.key;
+              const nodeData = nodeSnapshot.val();
+              if (uniqueUserIds.has(userId)) return;
+              if (!isEqualToFieldMatch({ userId, ...nodeData }, key, candidate)) return;
 
-  // console.log('🔍 searchValue :>> ', searchValue);
-
-  for (const prefix of keysToCheck) {
-    // console.log('🛠 Searching by prefix:', prefix);
-
-    let formattedSearchValue = searchValue.trim();
-
-    // Якщо шукаємо за "surname", робимо пошук з урахуванням першої великої літери
-    if (prefix === 'name' || prefix === 'surname') {
-      formattedSearchValue = searchValue.trim().charAt(0).toUpperCase() + searchValue.trim().slice(1).toLowerCase();
-    }
-
-    //     if (prefix === 'telegram') {
-    //       formattedSearchValue = `telegram_ук_см_${searchValue.trim().toLowerCase()}`;
-    // }
-
-    const searchPrefixes = [...new Set([formattedSearchValue, formattedSearchValue.toLowerCase()].filter(Boolean))];
-    const shouldTryExactMatch = ['email', 'telegram', 'phone', 'instagram', 'facebook', 'tiktok', 'vk', 'twitter', 'line', 'otherLink'].includes(prefix);
-
-    try {
-      for (const queryPrefix of searchPrefixes) {
-        for (const collection of SEARCH_COLLECTIONS) {
-          if (shouldTryExactMatch) {
-            const exactSnapshot = await get(query(ref2(database, collection), orderByChild(prefix), equalTo(queryPrefix)));
-
-            if (exactSnapshot.exists()) {
-              const exactHits = [];
-              exactSnapshot.forEach(userSnapshot => {
-                const userId = userSnapshot.key;
-                const userData = userSnapshot.val();
-                const fieldValue = userData[prefix];
-
-                if (fieldMatchesSearch(fieldValue, queryPrefix.toLowerCase()) && !uniqueUserIds.has(userId)) {
-                  uniqueUserIds.add(userId);
-                  exactHits.push(userId);
-                }
-              });
-              // eslint-disable-next-line no-await-in-loop
-              await Promise.all(exactHits.map(userId => addUserToResults(userId, users)));
-            }
-          }
-
-          const snapshotByPrefix = await get(
-            query(ref2(database, collection), orderByChild(prefix), startAt(queryPrefix), endAt(`${queryPrefix}\uf8ff`))
-          );
-          // console.log(`📡 Firebase Query Executed for '${collection}.${prefix}'`);
-
-          if (!snapshotByPrefix.exists()) continue;
-          // console.log(`✅ Found results for '${collection}.${prefix}'`);
-
-          const prefixHits = [];
-          snapshotByPrefix.forEach(userSnapshot => {
-            const userId = userSnapshot.key;
-            const userData = userSnapshot.val();
-
-            const fieldValue = userData[prefix];
-
-            // console.log('📌 Checking user:', userId);
-            // console.log(`🧐 userData['${prefix}']:`, fieldValue);
-            // console.log('📏 Type of fieldValue:', typeof fieldValue);
-            // console.log(
-            //   '🔍 Includes searchValue?',
-            //   fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase())
-            // );
-            // console.log('🛑 Already in uniqueUserIds?', uniqueUserIds.has(userId));
-
-            if (
-              fieldMatchesSearch(fieldValue, formattedSearchValue.toLowerCase()) &&
-              !uniqueUserIds.has(userId)
-            ) {
               uniqueUserIds.add(userId);
-              prefixHits.push(userId);
-              // console.log(`✅ Added user '${userId}' to results`);
-            }
-          });
-          // eslint-disable-next-line no-await-in-loop
-          await Promise.all(prefixHits.map(userId => addUserToResults(userId, users)));
+              promises.push(addUserToResults(userId, users));
+            });
+          }
+        }
+
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.all(promises);
+      } catch (error) {
+        if (isDev) {
+          console.error(`executeSearchByEqualToFields → error querying ${collection}.${key}:`, error);
         }
       }
-    } catch (error) {
-      if (isDev) console.error(`❌ Error fetching data for '${prefix}'`, error);
     }
   }
 };
-
 
 export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) => {
   const {
@@ -3149,28 +3049,13 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
           searchIdOptions,
         );
 
-        // searchByPrefixes ганяє до 16 полів × 2 регістри по `users`, searchByIndexOn —
-        // ще додатково. Це дорого по трафіку, тому виконується лише коли користувач сам
-        // явно увімкнув чекбокс "широкий пошук" (enabledSearchKeys.broadTextSearch),
-        // а не автоматично для кожного пошуку картки.
+        // Широкий пошук шукає там, де текст анкети у вебі й лежить, — в імені
+        // картки стрічки. По legacy-колекції він більше не ходить: `users`
+        // лишився адресатом дзеркального запису для мобільного застосунку, а
+        // читання звідти ще й показувало сирий рядок разом із контактами.
+        // Решту тексту знаходить `searchId`, де лежить кожне значення анкети.
         if (!shouldSkipBroadFallback && isBroadTextSearchEnabled) {
           await searchMatchingCardsByText(searchValue, uniqueUserIds, users);
-          await searchByPrefixes(searchValue, uniqueUserIds, users);
-          await searchByIndexOn({
-            searchValue,
-            uniqueUserIds,
-            users,
-            searchCollections: SEARCH_COLLECTIONS,
-            database,
-            addUserToResults,
-            isDev,
-            ref2,
-            get,
-            query,
-            orderByChild,
-            startAt,
-            endAt,
-          });
         }
       }
     }
@@ -8484,34 +8369,6 @@ export const fetchPaginatedUsers = async (
   }
 };
 
-export const fetchListOfUsers = async () => {
-  const db = getDatabase();
-  const usersRef = ref2(db, 'users');
-
-  try {
-    // Паралельне виконання обох запитів
-    const [usersSnapshot] = await Promise.all([get(usersRef)]);
-
-    // Перевірка наявності даних у 'users'
-    let userIds = [];
-    if (usersSnapshot.exists()) {
-      const usersData = usersSnapshot.val();
-      userIds = Object.keys(usersData);
-      // .slice(0, 4); // Отримуємо перші три ключі
-    }
-
-    // Повертаємо перші три ID користувачів
-    return userIds;
-  } catch (error) {
-    console.error('Error fetching paginated data:', error);
-    return {
-      users: {},
-      lastKey: null,
-      hasMore: false,
-    };
-  }
-};
-
 export const fetchUserById = async userId => {
   try {
     // Анкету складають нові вузли, і тільки вони. Legacy-колекція у вебі —
@@ -8822,16 +8679,11 @@ export const removeCardAndSearchId = async userId => {
   const db = getDatabase();
 
   try {
-    // Анкета може вже не мати legacy-запису: нові вузли — джерело істини,
-    // тож порожній `users` не перетворює видалення на no-op.
-    const [usersSnapshot, nodeProfile] = await Promise.all([
-      get(ref2(db, `users/${userId}`)),
-      readProfileFromNodes(userId, { includeTechnical: true }),
-    ]);
-    const userData = {
-      ...(usersSnapshot.exists() ? usersSnapshot.val() : {}),
-      ...(nodeProfile || {}),
-    };
+    // Що саме прибрати з індексів, каже анкета з вузлів: вони — джерело істини,
+    // і кожне індексоване значення лежить у них. Legacy-тіло тут більше не
+    // читається: веб із `users` не читає взагалі, а сам вузол нижче однаково
+    // видаляється разом з рештою.
+    const userData = (await readProfileFromNodes(userId, { includeTechnical: true })) || {};
     console.log(`Дані користувача:`, userData);
 
     // Зберігаємо видалені значення для відображення в toast
@@ -8989,5 +8841,4 @@ export const indexLastLogin = async onProgress => {
 };
 
 export { fetchFilteredUsersByPage } from './dateLoad';
-export { fetchUsersByLastLoginPaged } from './lastLoginLoad';
 export { fetchUsersByLastActionPaged } from './lastActionLoad';

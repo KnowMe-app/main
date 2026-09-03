@@ -34,21 +34,37 @@ describe('single legacy collection reads', () => {
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
-  // Широкий пошук — єдине місце показу, яке ще ходить у legacy-колекцію, і
-  // ходить туди по id, а не по анкету. Рядок `users/{id}` несе й контакти, а
-  // вузол `users` відкритий цілком кожному акаунту з роллю, відмінною від `ed`,
-  // — тож розкладений у результат, він показував телефон і пошту анкети, якої
-  // читач не має права бачити навіть у стрічці. Тепер знайдений id іде тим
-  // самим шляхом, що й решта влучань: через `readProfileFromNodes`, де стоїть
-  // межа `feedDate`.
-  it('the broad search hands over ids, never legacy bodies', () => {
+  // Пошук більше не сканує legacy-колекцію взагалі. Рядок `users/{id}` несе й
+  // контакти, а сам вузол відкритий цілком кожному акаунту з роллю, відмінною
+  // від `ed`, — тож розкладений у результат, він показував телефон і пошту
+  // анкети, якої читач не має права бачити навіть у стрічці. Текст тепер
+  // шукається там, де він у вебі й лежить: `searchId`, `searchKey` і імʼя в
+  // картці стрічки.
+  it('no search path scans the legacy collection', () => {
+    expect(source).not.toContain("const SEARCH_COLLECTIONS = ['users']");
+    expect(source).not.toContain('searchByPrefixes');
+    expect(source).not.toContain('searchByIndexOn');
+
+    const broadFallbackStart = source.indexOf('if (!shouldSkipBroadFallback && isBroadTextSearchEnabled) {');
+    const broadFallback = source.slice(
+      broadFallbackStart,
+      source.indexOf('if (Object.keys(users).length === 1) {', broadFallbackStart),
+    );
+    expect(broadFallback).toContain('await searchMatchingCardsByText(searchValue, uniqueUserIds, users);');
+    expect(broadFallback).not.toContain("ref2(database, 'users')");
+  });
+
+  // `equalTo` шукає поле там, де поле живе: роутер вузлів той самий, яким
+  // анкета туди й записується.
+  it('the equalTo search asks the node that owns the field', () => {
+    expect(source).toContain("const resolveEqualToSearchNode = key => (key === 'userId' ? null : resolveFieldOwnerNode(key));");
+
     const body = source.slice(
-      source.indexOf('const searchByPrefixes = async'),
+      source.indexOf('const executeSearchByEqualToFields = async'),
       source.indexOf('export const searchUsersCollectionInRTDB'),
     );
-
-    expect(body).toContain('addUserToResults(userId, users)');
-    expect(body).not.toContain('...userData,');
+    expect(body).toContain('const collection = resolveEqualToSearchNode(key);');
+    expect(body).not.toContain("ref2(database, 'users')");
   });
 
   // Читання legacy лишилось рівно там, де сама колекція і є предметом роботи —
