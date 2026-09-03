@@ -10,6 +10,7 @@ jest.mock('utils/multiAccountEdits', () => ({
 }));
 
 const { updateProfileNodesInRTDB, updateDataInRealtimeDB } = require('components/config');
+const { updateCachedUser } = require('utils/cache');
 const { getCardLegacyCollection } = require('utils/multiAccountEdits');
 const { removeField } = require('./actions');
 
@@ -28,6 +29,7 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
   beforeEach(() => {
     updateProfileNodesInRTDB.mockClear();
     updateDataInRealtimeDB.mockClear();
+    updateCachedUser.mockClear();
     getCardLegacyCollection.mockImplementation(async userId => (userId === 'ID0001' ? null : 'users'));
   });
 
@@ -113,7 +115,41 @@ describe('removeField writes to the backend even when React defers the state upd
   beforeEach(() => {
     updateProfileNodesInRTDB.mockReset();
     updateDataInRealtimeDB.mockReset();
+    updateCachedUser.mockReset();
     getCardLegacyCollection.mockImplementation(async userId => (userId === 'ID0001' ? null : 'users'));
+  });
+
+  it('mirrors the optimistic card deletion to cache before React flushes its updater', () => {
+    const card = { userId: longUserId, name: 'Ada', writer: 'IgF' };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+
+    removeField(longUserId, 'writer', users.setter, undefined, 'writer', { cardData: card });
+
+    expect(users.get()[longUserId]).toEqual(card);
+    expect(updateCachedUser).toHaveBeenCalledTimes(1);
+    expect(updateCachedUser).toHaveBeenCalledWith(
+      { userId: longUserId, name: 'Ada' },
+      { removeKeys: ['writer'] },
+    );
+  });
+
+  it('mirrors the accumulated card to cache for every deletion in a rapid burst', () => {
+    const card = { userId: longUserId, a: 1, b: 2, c: 3 };
+    const users = makeDeferredStateBox({ [longUserId]: card });
+
+    removeField(longUserId, 'a', users.setter, undefined, 'a', { cardData: card });
+    removeField(longUserId, 'b', users.setter, undefined, 'b', { cardData: card });
+
+    expect(updateCachedUser).toHaveBeenNthCalledWith(
+      1,
+      { userId: longUserId, b: 2, c: 3 },
+      { removeKeys: ['a'] },
+    );
+    expect(updateCachedUser).toHaveBeenNthCalledWith(
+      2,
+      { userId: longUserId, c: 3 },
+      { removeKeys: ['b'] },
+    );
   });
 
   it('sends the deletion from the synchronous card snapshot, without waiting for a render', async () => {

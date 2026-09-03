@@ -387,6 +387,17 @@ export const removeField = (
       return;
     }
     submitted = true;
+
+    // Картка списку збирається з React state і локального кешу. Якщо змінити
+    // лише state, старий ключ із кешованої картки знову потрапить у mergedCard
+    // ще до завершення фонового запису. Дзеркалимо оптимістичне видалення в
+    // той самий кеш синхронно з карткою; handleSubmit повторить це після
+    // формування backend payload, що для updateCachedUser є ідемпотентним.
+    updateCachedUser(
+      { ...cardAfterRemoval, userId: resolvedUserId },
+      { removeKeys: removalKey ? [removalKey] : [] },
+    );
+
     triggerHistorySnapshot({ ...cardAfterRemoval, userId: resolvedUserId });
     enqueueFieldRemoval(resolvedUserId, removalKey, topLevelKey, cardAfterRemoval);
   };
