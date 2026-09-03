@@ -180,3 +180,66 @@ export const KmChip = styled.button`
     box-shadow: 0 0 0 3px var(--km-accent-ring);
   }
 `;
+
+/**
+ * Картка й кнопки дії — їх має лише екран міграції RTDB.
+ *
+ * Їх прибирали разом з ним і повертають разом з ним же: це не мертвий код,
+ * а поверхня єдиного споживача.
+ */
+export const KmCard = styled.div`
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
+  border-radius: var(--km-radius);
+  box-shadow: var(--km-shadow);
+`;
+
+export const KmPrimaryButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--km-radius);
+  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  color: #fff;
+  font-family: var(--km-font);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: box-shadow 0.18s ease, transform 0.18s ease, filter 0.18s ease;
+
+  &:hover {
+    filter: brightness(1.05);
+    box-shadow: 0 8px 22px rgba(232, 121, 26, 0.28);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+`;
+
+export const KmDangerButton = styled(KmPrimaryButton)`
+  background: var(--km-danger);
+
+  &:hover {
+    box-shadow: 0 8px 22px rgba(180, 35, 24, 0.25);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.18);
+  }
+`;

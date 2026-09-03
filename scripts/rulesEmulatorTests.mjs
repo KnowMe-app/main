@@ -521,7 +521,7 @@ await it('повна проєкція писача лягає одним зап�
   assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}`), {
     name: 'Катерина', surnameShort: 'К.', birth: '15.07.1995',
     city: 'Київ', region: 'Київська', country: 'Україна', role: 'sm',
-    height: '168', weight: '58', bmi: '20.5', rh: '+', bloodGroup: '2',
+    height: '168', weight: '58', bmi: '20.5', rh: '+',
     ownKids: '2', csection: '0', lastDelivery: '2022-05-15',
     maritalStatus: 'No', experience: '2', eyeColor: 'Green',
     hairColor: 'Dark Brown', avatar: 'https://a', feedDate: '2026-08-25',
@@ -560,10 +560,12 @@ await it('сирі поля, що переїхали в інші вузли, к�
   }
 });
 
-await it('bloodGroup приймає лише номер групи', async () => {
-  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '2'));
-  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '2+'));
-  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '5'));
+// Номер групи разом із резусом відновлює повне `blood`, а воно за межею
+// приватності — у `profileDetails`. Тож із картки він прибраний зовсім, і
+// правила мусять його відхиляти, а не валідувати.
+await it('номер групи крові картка вже не приймає', async () => {
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '2'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/rh`), '+'));
 });
 
 describe('розкладка збереженої анкети по вузлах');

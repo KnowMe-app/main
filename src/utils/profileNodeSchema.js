@@ -24,7 +24,7 @@ export const PROFILE_NODES = Object.freeze({
 });
 
 /** Легка картка стрічки: скаляри, які переносяться як є. */
-const MATCHING_CARD_DIRECT_FIELDS = Object.freeze([
+export const MATCHING_CARD_DIRECT_FIELDS = Object.freeze([
   'name',
   'birth',
   'city',
@@ -48,11 +48,14 @@ const MATCHING_CARD_DIRECT_FIELDS = Object.freeze([
  * `role` теж тут, бо в старих даних роль лежить під двома іменами
  * (`userRole` і `role`), і звести їх до одного ключа — це рішення, а не копія.
  */
-const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
+export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   role: ['userRole', 'role'],
   surnameShort: ['surname'],
+  // Резус — і все. Номер групи з картки прибрано навмисно: разом із резусом
+  // він відновлює повне `blood`, тобто картка віддавала б поза стрічкою те
+  // саме, що лежить у `profileDetails` за межею приватності. Стрічка фільтрує
+  // за групою через індекс `searchKey/blood`, а не за карткою.
   rh: ['blood'],
-  bloodGroup: ['blood'],
   avatar: ['avatar', 'photos'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
 });
@@ -75,7 +78,7 @@ const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
  *
  * Ключі перелічені в порядку переваги: перший непорожній і виграє.
  */
-const TWIN_FIELD_SOURCES = Object.freeze({
+export const TWIN_FIELD_SOURCES = Object.freeze({
   createdAt: Object.freeze(['createdAt2', 'createdAt']),
   lastLogin: Object.freeze(['lastLogin2', 'lastLogin']),
 });
@@ -134,7 +137,7 @@ export const PROFILE_CONTACT_FIELDS = Object.freeze([
 ]);
 
 /** Внутрішні робочі дані профілю. `getInTouch`/`lastLogin`/`publish` сюди не йдуть. */
-const PROFILE_WORKFLOW_FIELDS = Object.freeze([
+export const PROFILE_WORKFLOW_FIELDS = Object.freeze([
   'lastAction',
   'cycleStatus',
   'lastCycle',
@@ -162,7 +165,7 @@ export const PROFILE_TECHNICAL_ACCESS_FIELDS = Object.freeze([
 ]);
 
 /** Технічні дані та account metadata. Без device-полів. */
-const PROFILE_TECHNICAL_FIELDS = Object.freeze([
+export const PROFILE_TECHNICAL_FIELDS = Object.freeze([
   // `lastLogin` і `createdAt` тут в однині: пари з «2» більше немає, значення
   // береться з ISO-копії, а ім'я лишається коротке. Звідки саме береться —
   // у `TWIN_FIELD_SOURCES`.
@@ -182,7 +185,7 @@ const PROFILE_TECHNICAL_FIELDS = Object.freeze([
  * картці стрічки, і дублювати їх тут заборонено. Винятки — навмисно різна
  * деталізація: `surname` проти `surnameShort` і `blood` проти `rh`.
  */
-const PROFILE_DETAIL_FIELDS = Object.freeze([
+export const PROFILE_DETAIL_FIELDS = Object.freeze([
   // повна деталізація того, що в картці лежить урізаним
   'surname',
   'blood',
@@ -332,7 +335,7 @@ export const ALL_ACCESS_CONTROL_FIELDS = Object.freeze([
  * сама жінка для одного адміна «подзвонити 1 вересня», а для іншого не
  * записана взагалі.
  */
-const MULTI_DATA_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
+export const MULTI_DATA_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
 
 /**
  * `writer` — теж не поле анкети, а позначка того, хто з нею спілкувався.
@@ -340,7 +343,7 @@ const MULTI_DATA_GET_IN_TOUCH_PATH = 'multiData/getInTouch';
  * У старих даних воно лежить в анкеті рядком на кшталт «Ik, » або «IgTT, » —
  * тобто ініціалами адмінів, які писали цьому контакту, і яким саме способом.
  */
-const MULTI_DATA_WRITER_PATH = 'multiData/writer';
+export const MULTI_DATA_WRITER_PATH = 'multiData/writer';
 
 /**
  * Персональний графік стимуляції — така сама позначка, тільки таблицею.
@@ -349,7 +352,7 @@ const MULTI_DATA_WRITER_PATH = 'multiData/writer';
  * (`rows`/`startDate`), яку будує сторінка графіка. Тут же лежить те, з чого
  * вона будується, — сире поле анкети, тому і вузол окремий.
  */
-const MULTI_DATA_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedule';
+export const MULTI_DATA_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedule';
 
 /**
  * Поля, які належать не анкеті, а тому, хто їх поставив.
@@ -370,7 +373,7 @@ const MULTI_DATA_STIMULATION_SCHEDULE_PATH = 'multiData/stimulationSchedule';
  * дає `orderByValue()` — і сортування за датою «звʼязатись», і вибірку
  * діапазону, які раніше довелось би робити в памʼяті браузера.
  */
-const OWNER_MULTI_DATA_FIELDS = Object.freeze([
+export const OWNER_MULTI_DATA_FIELDS = Object.freeze([
   Object.freeze({ field: 'getInTouch', path: MULTI_DATA_GET_IN_TOUCH_PATH, indexed: true, stringOnly: true }),
   Object.freeze({ field: 'writer', path: MULTI_DATA_WRITER_PATH, stringOnly: true }),
   Object.freeze({ field: 'stimulationSchedule', path: MULTI_DATA_STIMULATION_SCHEDULE_PATH }),
@@ -427,3 +430,156 @@ const OWNER_BY_FIELD = OWNERSHIP.reduce((acc, [node, fields]) => {
  * `/users`, і рішення по них ухвалює людина, а не міграція.
  */
 export const resolveFieldOwnerNode = field => OWNER_BY_FIELD[resolveCanonicalFieldName(field)] || null;
+
+/**
+ * Далі — те, що потрібне самій міграції.
+ *
+ * Ці переліки жили тут і раніше; їх прибрали разом з інструментом міграції, і
+ * повертаються вони разом із ним. Тримати їх у схемі, а не в міграції, — умова:
+ * розкладка полів мусить мати одне джерело, інакше міграція розкладе анкету не
+ * так, як її розкладає щоденне збереження.
+ */
+
+/**
+ * Синоніми джерела: під яким іще іменем те саме поле лежить у старих даних.
+ *
+ * `state` — це та сама область, яку картка тримає в `region`: у мобільних
+ * анкетах поле називалось так, і в даних воно лежить рядком на кшталт
+ * «Донецкая область» або «Bayern». Окремого ключа в картці йому не заводять —
+ * стрічка фільтрує по локації одним полем, і другий ключ означав би дві різні
+ * відповіді на те саме питання. Тож `state` їде в `region`, а якщо обидва є і
+ * розходяться — це звичайний конфлікт, а не тихе перезаписування.
+ */
+export const MATCHING_CARD_FIELD_SOURCES = Object.freeze({
+  region: Object.freeze(['region', 'state']),
+});
+
+/**
+ * Під яким ключем поле може лежати в старих даних — усі вузли разом.
+ *
+ * Синонім (`state` -> `region`) і близнюк (`lastLogin2` -> `lastLogin`)
+ * читаються однаково, а розходяться в тому, що робити з програшною копією:
+ * синонім лишається людині як розбіжність, близнюк зникає, бо це те саме
+ * значення. Цю різницю знає міграція, а не цей перелік.
+ */
+export const FIELD_SOURCES = Object.freeze({
+  ...MATCHING_CARD_FIELD_SOURCES,
+  ...TWIN_FIELD_SOURCES,
+});
+
+/** Чи є в поля близнюк, тобто друга копія того самого значення. */
+export const isTwinField = field => Object.prototype.hasOwnProperty.call(TWIN_FIELD_SOURCES, field);
+
+/** Усі ключі джерела, з яких збирається картка, включно з синонімами. */
+export const MATCHING_CARD_SOURCE_FIELDS = Object.freeze([...new Set(
+  MATCHING_CARD_DIRECT_FIELDS.flatMap(field => MATCHING_CARD_FIELD_SOURCES[field] || [field]),
+)]);
+
+/**
+ * Чого в картці стрічки бути не повинно — перелік із ТЗ, дослівно.
+ *
+ * Це не документація, а тест: правила бази тримають той самий allowlist, і
+ * `databaseRulesProfileNodes` звіряє одне з одним.
+ */
+export const MATCHING_CARD_FORBIDDEN_FIELDS = Object.freeze([
+  'surname',
+  'blood',
+  // Номер групи крові: разом із резусом він складається назад у повне `blood`.
+  'bloodGroup',
+  'phone',
+  'email',
+  'instagram',
+  'facebook',
+  'telegram',
+  'contacts',
+  'source',
+  'fieldsCount',
+  'v',
+  'sortAt',
+  'publish',
+  'lastLogin',
+  'lastLogin2',
+  'lastAction',
+  'getInTouch',
+  'lastCycle',
+  'cycleStatus',
+  'registrationDate',
+  'myComment',
+  'publicComment',
+  'accessLevel',
+  'canCreateProfiles',
+  'additionalAccessRules',
+  'multiDataAccessUserIds',
+  'deviceWidth',
+  'deviceHeight',
+  'deviceResize',
+  // Сира назва локації: у картці вона живе під `region`, і другого ключа
+  // для тієї самої області там бути не повинно.
+  'state',
+]);
+
+/** Пароль не потрапляє нікуди. Його поява в даних — інцидент, а не поле. */
+export const SECRET_FIELDS = Object.freeze(['password']);
+
+/** Самі назви полів — там, де шлях не потрібен. */
+export const OWNER_MULTI_DATA_FIELD_NAMES = Object.freeze(
+  OWNER_MULTI_DATA_FIELDS.map(entry => entry.field),
+);
+
+/**
+ * Чого не має бути в очищеній копії колекції.
+ *
+ * Це не той самий перелік, що `NEVER_MIGRATED_FIELDS`: там сказано, чого не
+ * копіюють у нові вузли, а тут — чого не тягнуть далі взагалі. Різниця видна
+ * на `photo` і `login`: обидва мають своє нове місце, але якщо після всіх
+ * груп вони й досі лежать у залишку, то лежать вони там порожніми або
+ * зайвими, і в наступний прогін їх не беруть.
+ *
+ * `userId` та `id` — адреса запису, а не дані; `password` у файлі, який
+ * зберігають на диску, — інцидент; решта — кеш-мітки, розміри екрана і мертві
+ * списки, які й так нікуди не їдуть.
+ */
+export const CLEANED_COLLECTION_NOISE_FIELDS = Object.freeze([
+  'blackList',
+  'whiteList',
+  'attitude',
+  'userId',
+  'deviceHeight',
+  'deviceResize',
+  'deviceWidth',
+  'photo',
+  'cachedAt',
+  'updatedAt',
+  '__sourceCollection',
+  'id',
+  'login',
+  'password',
+  'cacheVersion',
+  'collection',
+]);
+
+/**
+ * Що лишається в очищеній копії завжди — навіть порожнім.
+ *
+ * Права, які нікуди не переїжджають, живуть тільки в самій колекції. Якби
+ * очищення прибрало їх разом із рештою порожніх ключів, залитий назад файл
+ * зняв би делегування — і зробив би це мовчки. Решта прав тут не потрібна:
+ * вона переїжджає в `profileTechnical`, а звідти вже зникає з колекції як усе
+ * перенесене.
+ */
+export const CLEANED_COLLECTION_PRESERVED_FIELDS = Object.freeze([
+  ...ACCESS_CONTROL_FIELDS,
+]);
+
+/** Поле, за яким і сортується, і фільтрується стрічка. */
+export const FEED_DATE_FIELD = 'feedDate';
+
+/** Усі поля, яким розкладка дала нове місце. */
+export const ALL_MAPPED_FIELDS = Object.freeze(Object.keys(OWNER_BY_FIELD).sort());
+
+/** Чи можна це поле взагалі переносити у нові вузли. */
+export const isMigratableField = field => (
+  !NEVER_MIGRATED_FIELDS.includes(field)
+  && !ACCESS_CONTROL_FIELDS.includes(field)
+  && !SECRET_FIELDS.includes(field)
+);

@@ -113,9 +113,6 @@
         "rh": {
           ".validate": "!newData.exists() || (newData.isString() && (newData.val() == '+' || newData.val() == '-'))"
         },
-        "bloodGroup": {
-          ".validate": "!newData.exists() || (newData.isString() && newData.val().length == 1 && newData.val() >= '1' && newData.val() <= '4')"
-        },
         "ownKids": {},
         "csection": {},
         "lastDelivery": {},
