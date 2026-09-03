@@ -38,7 +38,7 @@ describe('фільтр, який лише відкидає, не обриває 
     );
     const branchIndex = loadMore.indexOf('if (activeIndexFilterGroups.length > 0) {');
     const guardIndex = loadMore.indexOf('if (!indexedPage.deferToSourcePagination) {', branchIndex);
-    const applyIndex = loadMore.indexOf('setHasMore(Boolean(indexedPage.finalHasMore', guardIndex);
+    const applyIndex = loadMore.indexOf('setHasMore(indexedHasMore);', guardIndex);
     const sourcePaginationIndex = loadMore.indexOf('const collected = [];', branchIndex);
 
     expect(branchIndex).toBeGreaterThan(-1);

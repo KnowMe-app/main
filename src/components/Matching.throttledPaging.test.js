@@ -229,6 +229,25 @@ describe('перше публічне вікно не змішується з в
     expect(source).toContain('const [initialPublicWindowComplete, setInitialPublicWindowComplete] = useState(false);');
     expect(source).toContain('initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS');
     expect(source).toContain('cachedPublicCount + res.users.length >= INITIAL_LOAD || sourceExhausted');
+    expect(source).toContain('usersRef.current.length + indexedPage.collected.length >= INITIAL_LOAD || !indexedHasMore');
+    expect(source).toContain('usersRef.current.length + collected.length >= INITIAL_LOAD || sourceExhausted || !canLoadMore');
+  });
+
+  it('скидає готовність публічного вікна разом із декою під час застосування фільтрів', () => {
+    const source = matching();
+    const applyFilters = source.slice(
+      source.indexOf('const applyFilters = React.useCallback'),
+      source.indexOf('const handleFiltersChange = React.useCallback'),
+    );
+    expect(applyFilters).toContain("if (currentMode === 'default') {");
+    expect(applyFilters).toContain('setInitialPublicWindowComplete(false);');
+  });
+
+  it('після вичерпання public добирає scoped-картки в межах тієї самої порції', () => {
+    const source = matching();
+    expect(source).toContain('while (scopedUsers.length < requestedLimit && additionalHasMoreRef.current');
+    expect(source).toContain('pagedCardsLength - throttledCycle.startPagedCardsLength >= MATCHING_THROTTLED_LOAD_BATCH');
+    expect(source).toContain('(!hasMore && !additionalHasMore)');
   });
 
   it('рахує наступну порцію від публічних карток, а не від повної деки', () => {

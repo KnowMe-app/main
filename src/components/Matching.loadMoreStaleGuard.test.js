@@ -69,7 +69,7 @@ describe('Matching loadMore stale pagination guards', () => {
 
     const scopedFetchIndex = source.indexOf('const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({');
     const scopedGuardIndex = source.indexOf("logStaleLoadMoreResultIgnored('additional-access-page');", scopedFetchIndex);
-    const scopedOffsetWriteIndex = source.indexOf('setAdditionalNextOffset(nextOffset);', scopedFetchIndex);
+    const scopedOffsetWriteIndex = source.indexOf('scopedOffset = nextOffset;', scopedFetchIndex);
     expect(scopedFetchIndex).toBeGreaterThan(-1);
     expect(scopedGuardIndex).toBeGreaterThan(scopedFetchIndex);
     expect(scopedGuardIndex).toBeLessThan(scopedOffsetWriteIndex);
@@ -112,8 +112,9 @@ describe('Matching loadMore stale pagination guards', () => {
     expect(sourcePaginationIndex).toBeGreaterThan(indexedBranchIndex);
     expect(indexedBranch).toContain('collectMatchingIndexedLoadMorePage({');
     expect(indexedBranch).toContain('setLastKey(indexedPage.finalOffset);');
-    expect(indexedBranch).toContain('setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));');
-    expect(indexedReturnIndex).toBeGreaterThan(indexedBranch.indexOf('setHasMore(Boolean(indexedPage.finalHasMore'));
+    expect(indexedBranch).toContain('const indexedHasMore = Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck);');
+    expect(indexedBranch).toContain('setHasMore(indexedHasMore);');
+    expect(indexedReturnIndex).toBeGreaterThan(indexedBranch.indexOf('setHasMore(indexedHasMore)'));
   });
 
   it('does not clear loading state from stale requests after newer loadMore starts', () => {

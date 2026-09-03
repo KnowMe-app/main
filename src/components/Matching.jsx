@@ -3284,6 +3284,7 @@ const Matching = () => {
 
     if (currentMode === 'default') {
       loadedIdsRef.current = new Set();
+      setInitialPublicWindowComplete(false);
       setUsers([]);
       setAdditionalAccessUsers([]);
       setAdditionalNextOffset(0);
@@ -4522,37 +4523,46 @@ const Matching = () => {
       // exhausted; otherwise two local/scoped cards could consume a cycle
       // without adding the two promised public cards.
       if (!hasMoreRef.current && additionalHasMoreRef.current && parsedAdditionalAccessRules.length > 0) {
-        const scopedOffset = additionalNextOffsetRef.current;
-        const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({
-          rawRules: currentAdditionalAccessRules,
-          accessUserId: ownerId,
-          searchKeySetKeys: normalizeSearchKeySetKeys(currentSearchKeySetKeys),
-          filters: filtersRef.current || {},
-          excludeIds: [
-            ...baseExclude,
-            ...usersRef.current.map(user => user?.userId).filter(Boolean),
-            ...additionalAccessUsersRef.current.map(user => user?.userId).filter(Boolean),
-          ],
-          offset: scopedOffset,
-          limit: requestedLimit,
-          fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
-          shouldDebugAdditionalMatching,
-          debugAdditionalToast,
-          logAdditionalMatchingDebug,
-        });
-        if (!canApplyLoadMoreResultWithFilters()) {
-          logStaleLoadMoreResultIgnored('additional-access-page');
-          return;
+        const scopedUsers = [];
+        const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
+        const scopedIds = new Set(additionalAccessUsersRef.current.map(user => user?.userId).filter(Boolean));
+        let scopedOffset = additionalNextOffsetRef.current;
+        let scopedPageCalls = 0;
+
+        // A sparse index page may hydrate fewer cards than requested. Keep the
+        // same promised batch alive while the scoped source can still advance.
+        while (scopedUsers.length < requestedLimit && additionalHasMoreRef.current && scopedPageCalls < MATCHING_MAX_PAGES_PER_LOAD) {
+          scopedPageCalls += 1;
+          const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({
+            rawRules: currentAdditionalAccessRules,
+            accessUserId: ownerId,
+            searchKeySetKeys: normalizeSearchKeySetKeys(currentSearchKeySetKeys),
+            filters: filtersRef.current || {},
+            excludeIds: [...baseExclude, ...publicIds, ...scopedIds],
+            offset: scopedOffset,
+            limit: requestedLimit - scopedUsers.length,
+            fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
+            shouldDebugAdditionalMatching,
+            debugAdditionalToast,
+            logAdditionalMatchingDebug,
+          });
+          if (!canApplyLoadMoreResultWithFilters()) {
+            logStaleLoadMoreResultIgnored('additional-access-page');
+            return;
+          }
+
+          const nextOffset = Number(scopedPage.nextOffset) || scopedOffset;
+          additionalHasMoreRef.current = Boolean(scopedPage.hasMore && nextOffset > scopedOffset);
+          (scopedPage.users || []).forEach(user => {
+            if (!user?.userId || publicIds.has(user.userId) || scopedIds.has(user.userId)) return;
+            scopedIds.add(user.userId);
+            scopedUsers.push({ ...user, __matchingAccessAllowed: true });
+          });
+          scopedOffset = nextOffset;
         }
 
-        const nextOffset = Number(scopedPage.nextOffset) || scopedOffset;
-        additionalHasMoreRef.current = Boolean(scopedPage.hasMore && nextOffset > scopedOffset);
         setAdditionalHasMore(additionalHasMoreRef.current);
-        setAdditionalNextOffset(nextOffset);
-        const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
-        const scopedUsers = (scopedPage.users || [])
-          .filter(user => user?.userId && !publicIds.has(user.userId))
-          .map(user => ({ ...user, __matchingAccessAllowed: true }));
+        setAdditionalNextOffset(scopedOffset);
         if (scopedUsers.length) {
           setAdditionalAccessUsers(prev => {
             const byId = new Map(prev.map(user => [user.userId, user]));
@@ -4560,8 +4570,8 @@ const Matching = () => {
             return Array.from(byId.values());
           });
           void loadCommentsFor(scopedUsers);
-          return scopedUsers.length;
         }
+        return scopedUsers.length;
       }
 
       const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
@@ -4628,7 +4638,11 @@ const Matching = () => {
           });
           void loadCommentsFor(indexedPage.collected);
           setLastKey(indexedPage.finalOffset);
-          setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
+          const indexedHasMore = Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck);
+          setHasMore(indexedHasMore);
+          if (usersRef.current.length + indexedPage.collected.length >= INITIAL_LOAD || !indexedHasMore) {
+            setInitialPublicWindowComplete(true);
+          }
           return indexedPage.collected.length;
         }
 
@@ -4770,7 +4784,7 @@ const Matching = () => {
       setLastKey(cursor);
       if (
         viewMode === 'default'
-        && (Number(currentVisibleCount) + collected.length >= INITIAL_LOAD || sourceExhausted)
+        && (usersRef.current.length + collected.length >= INITIAL_LOAD || sourceExhausted || !canLoadMore)
       ) {
         setInitialPublicWindowComplete(true);
       }
@@ -5356,6 +5370,9 @@ const Matching = () => {
   // Читається з обробника відліку, який живе поза рендером.
   const publicCardsLengthRef = useRef(publicCardsLength);
   useEffect(() => { publicCardsLengthRef.current = publicCardsLength; }, [publicCardsLength]);
+  const pagedCardsLength = viewMode === 'default' ? filteredUsers.length : publicCardsLength;
+  const pagedCardsLengthRef = useRef(pagedCardsLength);
+  useEffect(() => { pagedCardsLengthRef.current = pagedCardsLength; }, [pagedCardsLength]);
   const debugFilteredOutReasonById = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return new Map();
     const map = new Map();
@@ -5914,7 +5931,8 @@ const Matching = () => {
       });
       return;
     }
-    if (!hasMore) {
+    const canRefillDeck = hasMore || (viewMode === 'default' && additionalHasMore);
+    if (!canRefillDeck) {
       console.log('[Matching][refillEffect] blocked', { refillBlockedReason: 'blocked-no-hasMore', reactionPipelineReady, paginationInitialized });
       return;
     }
@@ -5970,7 +5988,7 @@ const Matching = () => {
       targetVisibleCount,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [additionalNextOffset, filteredUsers.length, filters, hasMore, isThrottledFeedPaging, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
+  }, [additionalHasMore, additionalNextOffset, filteredUsers.length, filters, hasMore, isThrottledFeedPaging, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
 
   useEffect(() => {
     writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current });
@@ -6616,7 +6634,11 @@ const Matching = () => {
 
   const handleThrottledFeedLoad = React.useCallback(() => {
     disarmFeedPaging();
-    setThrottledCycle({ target: publicCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH, attempts: 1 });
+    setThrottledCycle({
+      target: publicCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH,
+      startPagedCardsLength: pagedCardsLengthRef.current,
+      attempts: 1,
+    });
     endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
   }, [disarmFeedPaging]);
 
@@ -6631,7 +6653,8 @@ const Matching = () => {
     if (!isThrottledFeedPaging || !throttledCycle || loading) return;
     if (
       publicCardsLength >= throttledCycle.target ||
-      !hasMore ||
+      pagedCardsLength - throttledCycle.startPagedCardsLength >= MATCHING_THROTTLED_LOAD_BATCH ||
+      (!hasMore && !additionalHasMore) ||
       throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS
     ) {
       setThrottledCycle(null);
@@ -6639,9 +6662,9 @@ const Matching = () => {
     }
     setThrottledCycle({ ...throttledCycle, attempts: throttledCycle.attempts + 1 });
     endOfDeckLoadRef.current('feed-countdown-topup', {
-      limit: Math.max(1, throttledCycle.target - publicCardsLength),
+      limit: Math.max(1, MATCHING_THROTTLED_LOAD_BATCH - (pagedCardsLength - throttledCycle.startPagedCardsLength)),
     });
-  }, [hasMore, isThrottledFeedPaging, loading, publicCardsLength, throttledCycle]);
+  }, [additionalHasMore, hasMore, isThrottledFeedPaging, loading, pagedCardsLength, publicCardsLength, throttledCycle]);
 
   // Стрічка може виявитись коротшою за екран — тоді крутити нема чого, і жест
   // лишається недосяжним. Дотик робить те саме, що прокрутка.

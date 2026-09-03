@@ -83,7 +83,7 @@ describe('пошук у matching для читача без повного до�
   // результат і ще й рахуються в чіпі «Знайдено N».
   it('власні чернетки не підмішуються у відповідь на запит', () => {
     const source = matchingSource();
-    expect(source).toContain("users: viewMode === 'search' ? users : [...users, ...personalCreateProfiles],");
+    expect(source).toContain("users: viewMode === 'search'\n      ? users\n      : [...users, ...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS)],");
   });
 
   it('у стрічці власні чернетки лишаються', () => {
