@@ -15,11 +15,36 @@ describe('cardIndex queries', () => {
     getQueryEntry,
     resetMatchingLocalStorageCache,
     CARDS_CACHE_VERSION,
+    clearMatchingCache,
+    getCachedMatchingSummaryCards,
+    setCachedMatchingSummaryCards,
+    getMatchingLocalStorageCacheEpoch,
   } = require('../cardIndex');
   const { updateCard } = require('../cardsStorage');
 
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it('очищає всі чотири matching-сховища і збільшує epoch', () => {
+    localStorage.setItem('ownerId', 'cache-owner');
+    localStorage.setItem('accessLevel', 'matching:view&write');
+    updateCard('userId01', { name: 'Повна анкета' });
+    setIdsForQuery('default', ['userId01']);
+    setIndexIdsForQuery('matchingIndex:role=ag', ['userId01'], { complete: true });
+    setCachedMatchingSummaryCards({ userId01: { userId: 'userId01', name: 'Проєкція', __matchingSummary: true } });
+    const epochBeforeReset = getMatchingLocalStorageCacheEpoch();
+
+    clearMatchingCache('four stores regression');
+
+    expect(getMatchingLocalStorageCacheEpoch()).toBe(epochBeforeReset + 1);
+    ['cards', 'queries', 'matchingIndexQueries', 'matchingSummaryCards'].forEach(key => {
+      expect(localStorage.getItem(key)).toBeNull();
+    });
+    expect(getCard('userId01')).toBeNull();
+    expect(getIdsByQuery('default')).toEqual([]);
+    expect(getIndexIdsByQuery('matchingIndex:role=ag')).toBeNull();
+    expect(getCachedMatchingSummaryCards(['userId01'])).toEqual({ cards: {}, missingIds: ['userId01'] });
   });
 
   it('stores ids separately per query', () => {

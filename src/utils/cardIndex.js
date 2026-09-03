@@ -52,6 +52,12 @@ export const isMatchingLocalStorageCacheKey = key => {
 const localJsonCache = new Map();
 const pendingSaveTimers = new Map();
 const pendingSaveValues = new Map();
+let matchingLocalStorageCacheEpoch = 0;
+
+// Асинхронні читачі фіксують це значення перед мережею і не повертають стару
+// відповідь у щойно очищений кеш. Epoch навмисно живе в пам'яті: він позначає
+// межу між запитами поточного екземпляра застосунку, а не ще один кеш-ключ.
+export const getMatchingLocalStorageCacheEpoch = () => matchingLocalStorageCacheEpoch;
 
 const getMatchingLoadStats = () => {
   if (typeof window === 'undefined') return null;
@@ -126,6 +132,7 @@ const resetMatchingStorageKey = key => {
 };
 
 export const resetMatchingLocalStorageCache = (reason = 'manual') => {
+  matchingLocalStorageCacheEpoch += 1;
   const dynamicKeysToReset = typeof localStorage === 'undefined'
     ? []
     : Object.keys(localStorage).filter(isMatchingLocalStorageCacheKey);
