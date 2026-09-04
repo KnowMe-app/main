@@ -6,6 +6,7 @@ import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
   fetchUserData,
+  updateProfileRole,
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -153,6 +154,36 @@ const Chip = styled.button`
   `}
 `;
 const SubmitWrap = styled.div`padding:20px;`;
+// Роль — перше рішення в анкеті: від неї залежить, які поля взагалі показувати.
+// Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
+const RoleCard = styled.div`
+  margin: ${CONTENT_SECTION_TOP_GAP}px 20px 16px;
+  padding: 14px 18px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+`;
+const RoleCardTitle = styled.div`
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--muted);
+  margin-bottom: 10px;
+`;
+const RoleOptions = styled.div`display:flex;flex-wrap:wrap;gap:8px;`;
+const RoleOption = styled.button`
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
+  background: ${({ $active }) => ($active ? 'var(--accent)' : 'var(--card)')};
+  color: ${({ $active }) => ($active ? '#fff' : 'var(--muted)')};
+`;
+const RoleHint = styled.p`margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--muted);`;
 const PhotoSection = styled.div`
   display: flex;
   flex-direction: column;
@@ -306,6 +337,17 @@ const baseSections = [
 ];
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
+
+// Ким людина заявляє себе в матчингу. Перелік той самий, що знають картка
+// (`ROLE_CODES` у `profileLayoutConfig`) і фільтри стрічки, — інакше анкета
+// отримала б роль, якої пошук не вміє шукати.
+const MY_PROFILE_ROLE_OPTIONS = [
+  { value: 'ed', label: 'Донорка яйцеклітин' },
+  { value: 'sm', label: 'Сурогатна мати' },
+  { value: 'ip', label: 'Батьки' },
+  { value: 'ag', label: 'Агенція' },
+  { value: 'cl', label: 'Клієнт' },
+];
 const readMyProfileDraft = () => {
   const savedDraft = localStorage.getItem(MY_PROFILE_DRAFT_STORAGE_KEY);
   if (!savedDraft) return null;
@@ -524,6 +566,43 @@ export const MyProfile = () => {
 
   const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
   const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
+  const selectedRole = MY_PROFILE_ROLE_OPTIONS.some(option => option.value === normalizedRole)
+    ? normalizedRole
+    : 'ed';
+
+  /**
+   * Змінити роль анкети.
+   *
+   * Роль — не звичайне поле форми: від неї залежить, які поля анкета взагалі
+   * показує, і живе вона в картці стрічки, а не в тілі анкети. Тому вона й
+   * зберігається окремим шляхом (`updateProfileRole`), який пише обидва
+   * написання (`userRole` і `role`) і пересуває анкету в бакеті фільтра.
+   * Автозбереження форми цього не вміє: воно лише додало б нове значення до
+   * старого, і анкета лишилась би ще й у попередній ролі.
+   */
+  const changeUserRole = useCallback(async nextRole => {
+    const role = String(nextRole || '').trim().toLowerCase();
+    const targetUserId = userId || stateRef.current?.userId;
+    if (!role || role === normalizedRole) return;
+
+    editedFieldsRef.current.add('userRole');
+    setState(prevState => {
+      const nextState = { ...prevState, userRole: role, role };
+      stateRef.current = nextState;
+      return nextState;
+    });
+
+    // Поки анкети ще немає в базі (реєстрацію не підтвердили), роль лишається в
+    // чернетці — вона поїде разом з анкетою при першому збереженні.
+    if (!targetUserId) return;
+
+    try {
+      await updateProfileRole(targetUserId, role);
+    } catch (error) {
+      console.warn('Failed to change profile role.', error);
+      toast.error('Не вдалося змінити роль — спробуйте ще раз');
+    }
+  }, [normalizedRole, userId]);
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
   const sections = useMemo(() => baseSections.map(section => {
     if (section.key !== 'personal' || !isProfileAccessConfirmed || section.fields.includes('email')) {
@@ -1236,6 +1315,24 @@ export const MyProfile = () => {
         <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm}>Підтвердити і продовжити</AuthActionButton>
       </FieldGroup>
     </AuthCard>}
+
+    <RoleCard>
+      <RoleCardTitle>Хто ви</RoleCardTitle>
+      <RoleOptions>
+        {MY_PROFILE_ROLE_OPTIONS.map(option => (
+          <RoleOption
+            key={option.value}
+            type="button"
+            $active={selectedRole === option.value}
+            aria-pressed={selectedRole === option.value}
+            onClick={() => changeUserRole(option.value)}
+          >
+            {option.label}
+          </RoleOption>
+        ))}
+      </RoleOptions>
+      <RoleHint>Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.</RoleHint>
+    </RoleCard>
 
     <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>

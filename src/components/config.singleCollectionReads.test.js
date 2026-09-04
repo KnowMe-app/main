@@ -34,21 +34,15 @@ describe('single legacy collection reads', () => {
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
-  // Широкий пошук — єдине місце показу, яке ще ходить у legacy-колекцію, і
-  // ходить туди по id, а не по анкету. Рядок `users/{id}` несе й контакти, а
-  // вузол `users` відкритий цілком кожному акаунту з роллю, відмінною від `ed`,
-  // — тож розкладений у результат, він показував телефон і пошту анкети, якої
-  // читач не має права бачити навіть у стрічці. Тепер знайдений id іде тим
-  // самим шляхом, що й решта влучань: через `readProfileFromNodes`, де стоїть
-  // межа `feedDate`.
-  it('the broad search hands over ids, never legacy bodies', () => {
-    const body = source.slice(
-      source.indexOf('const searchByPrefixes = async'),
-      source.indexOf('export const searchUsersCollectionInRTDB'),
-    );
-
-    expect(body).toContain('addUserToResults(userId, users)');
-    expect(body).not.toContain('...userData,');
+  // Широкий пошук більше не ходить у legacy взагалі. Два проходи, які там
+  // лишались (`searchByPrefixes` по 16 полях × 2 регістри і `searchByIndexOn`
+  // по метаданих `indexOn/users`), читали ту саму колекцію, з якої показ уже
+  // не читає, — і коштували десятки запитів на один пошук. Контакти лежать у
+  // `searchId`, а текст картки шукає `searchMatchingCardsByText`.
+  it('the broad search no longer touches the legacy collection', () => {
+    expect(source).not.toContain('const searchByPrefixes = async');
+    expect(source).not.toContain('searchByIndexOn');
+    expect(source).not.toContain("const SEARCH_COLLECTIONS = ['users']");
   });
 
   // Читання legacy лишилось рівно там, де сама колекція і є предметом роботи —
@@ -60,7 +54,10 @@ describe('single legacy collection reads', () => {
       source.indexOf('export const getAllUsersWithGetInTouch'),
     );
 
-    expect(fetchAllUsersFromRTDBBody).toContain("get(ref2(database, 'users'))");
+    // Експорт теж переїхав на вузли: та сама збірка, що й в індексації, тож
+    // вивантажене й проіндексоване не можуть розійтись.
+    expect(fetchAllUsersFromRTDBBody).toContain('loadProfilesFromNodesForIndexing()');
+    expect(fetchAllUsersFromRTDBBody).not.toContain("get(ref2(database, 'users'))");
     expect(fetchAllUsersFromRTDBBody).not.toContain('mergeUserCollectionData');
     // Читачі, що качали колекцію заради показу, прибрані разом із їхніми
     // викликачами.

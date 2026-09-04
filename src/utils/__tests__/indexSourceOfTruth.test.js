@@ -83,15 +83,17 @@ describe('індекси будуються з нових вузлів', () => {
     expect(builder).not.toContain('card?.source');
   });
 
-  it('publish береться з legacy — і це єдиний виняток', () => {
-    // Власного вузла в нього немає: ним володіє мобільний застосунок, і лежить
-    // він у `/users`. Решта полів приходить із нових вузлів. Коли `users`
-    // приберуть, читання просто дасть порожньо — і стан публікації візьметься
-    // з `feedDate` у картці.
+  it('publish приносить картка, а не legacy-колекція', () => {
+    // Останнє читання `/users` в індексації стояло тут — заради одного
+    // `publish`. Стан публікації живе у `feedDate`, і `expandMatchingCard`
+    // розгортає його назад у `publish`, тож legacy тут більше нема за чим.
     const loader = sliceFn('export const loadProfilesFromNodesForIndexing', 'const collectUserIdsBySearchIdKeys');
     const merge = fs.readFileSync(path.join(__dirname, '..', 'profileNodeCollections.js'), 'utf8');
 
-    expect(loader).toContain("loadCollectionWithIndexCache('users'");
+    expect(loader).not.toContain("loadCollectionWithIndexCache('users'");
+    expect(loader).toContain('mergeProfileNodeCollections(sources)');
+    // Локальний вхід (файл `users.json` під час міграції) legacy-шар приймати
+    // не перестав — саме заради нього злиття його й розуміє.
     expect(merge).toContain('profile.publish = publish');
   });
 

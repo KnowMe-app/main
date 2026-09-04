@@ -42,17 +42,19 @@ describe('створення анкети розкладається так са
     expect(creation).toContain("if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');");
   });
 
-  it('дзеркало оновлює лише наявне legacy-тіло, а нового не створює', () => {
+  it('дзеркалить лише анкети акаунтів — і питає про це сам id, а не базу', () => {
     const mirror = configSource.slice(
       configSource.indexOf('const hasLegacyUsersBody ='),
       configSource.indexOf('const throwProfileWriteFailure ='),
     );
 
-    expect(mirror).toContain('if (!(await hasLegacyUsersBody(userId))) return false;');
-    // Довгий id — це Firebase-Auth UID, тобто анкета акаунта: її мобільний
-    // застосунок читає, і дзеркалення для неї лишається безумовним.
-    expect(mirror).toContain('if (isLongFormatUserId(userId)) return true;');
-    expect(mirror).toContain('snapshot.exists()');
+    // Довгий id — це Firebase-Auth UID, тобто анкета акаунта. Короткій картці
+    // legacy-тіла не заводили й раніше.
+    expect(mirror).toContain('const hasLegacyUsersBody = userId => isLongFormatUserId(userId);');
+    expect(mirror).toContain('if (!hasLegacyUsersBody(userId)) return false;');
+    // Питання «чи є тіло в /users» більше не коштує читання legacy: у вебі
+    // читань цієї колекції не лишилось жодного.
+    expect(mirror).not.toContain("get(ref2(database, `users/");
   });
 
   it.each([

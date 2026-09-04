@@ -12,6 +12,7 @@ import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
 import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
 import normalizeLastAction from '../utils/normalizeLastAction';
+import { PROFILE_NODES } from '../utils/profileNodeSchema';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -33,11 +34,18 @@ const toLastActionTimestamp = value => {
 const compareByLastActionDesc = ([, a], [, b]) =>
   toLastActionTimestamp(b?.lastAction) - toLastActionTimestamp(a?.lastAction);
 
+// `lastAction` живе у `profileWorkflow` — там і питаємо. Раніше запит ішов у
+// legacy `users`: екран показував те, що лежало в дзеркалі, а не те, що веб
+// зберіг, і поле, оновлене у вебі, у видачу за датою не потрапляло.
+//
+// Віддаються ті самі пари `[id, дані]`: сам рядок робочого вузла тримає лише
+// `lastAction`, а анкету поверх нього догідратовує `fetchUserById` — так само,
+// як робив і з legacy-рядком.
 export async function defaultFetchByLastActionRange(startTs, endTs, limit) {
   const db = getDatabase();
   const snapshot = await get(
     query(
-      ref2(db, 'users'),
+      ref2(db, PROFILE_NODES.profileWorkflow),
       orderByChild('lastAction'),
       startAt(startTs),
       endAt(endTs),

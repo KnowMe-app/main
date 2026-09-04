@@ -14,10 +14,12 @@ jest.mock('utils/backendDownloadToast', () => ({
 }));
 
 describe('defaultFetchByLastActionRange', () => {
-  it('reads the single users collection and returns its entries', async () => {
+  // `lastAction` переїхав у `profileWorkflow`, і запит іде туди: legacy `users`
+  // у вебі більше не читають узагалі.
+  it('reads the profileWorkflow node and returns its entries', async () => {
     const { get } = require('firebase/database');
     get.mockImplementation(async refObj => {
-      if (refObj.path === 'users') {
+      if (refObj.path === 'profileWorkflow') {
         return {
           exists: () => true,
           val: () => ({
