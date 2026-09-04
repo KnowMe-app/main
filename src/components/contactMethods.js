@@ -114,14 +114,18 @@ export const CONTACT_LINK_BUILDERS = {
 
 export const isHiddenTelegramValue = value => String(value ?? '').trim().startsWith('УК СМ');
 
-const valueList = (value, currentValueGetter = getCurrentValue) => {
-  const current = currentValueGetter(value);
+// Поточне значення контакту — те саме, що й для будь-якого іншого поля:
+// останній запис у полі. Резолвер сюди більше не передається: другого правила
+// «яке значення показати» в застосунку немає, а параметр створював враження, що
+// воно буває.
+const valueList = value => {
+  const current = getCurrentValue(value);
   if (Array.isArray(current)) return current;
   return current ? [current] : [];
 };
 
-export const getContactValues = (data, key, currentValueGetter) => {
-  const values = valueList(data?.[key], currentValueGetter)
+export const getContactValues = (data, key) => {
+  const values = valueList(data?.[key])
     .map(value => (typeof value === 'string' ? value.trim() : value))
     .filter(value => value !== null && value !== undefined && String(value).trim() !== '');
 

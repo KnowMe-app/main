@@ -8,19 +8,13 @@ import { derivedValueTexts, translateProfileLabel } from '../utils/profileTexts'
 
 const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 'none', 'немає', 'нет']);
 
-const getMatchingCurrentValue = value => {
-  if (Array.isArray(value)) {
-    for (let index = value.length - 1; index >= 0; index -= 1) {
-      const current = getMatchingCurrentValue(value[index]);
-      if (current !== undefined && current !== null && String(current).trim() !== '') return current;
-    }
-    return undefined;
-  }
-  return getCurrentValue(value);
-};
+// Поточне значення поля тут не своє: правило одне на весь застосунок і живе в
+// `getCurrentValue` — масив у полі це історія, і поточне в ній останнє. Свій
+// обхід тут був, і відрізнявся він рівно тим, що пропускав порожні версії, тож
+// стертий контакт картка показувала далі.
 
 export const normalizeDisplayValue = value => {
-  const current = getMatchingCurrentValue(value);
+  const current = getCurrentValue(value);
   if (Array.isArray(current)) {
     return current.map(normalizeDisplayValue).filter(Boolean).join(', ');
   }
@@ -399,7 +393,7 @@ const contactFields = CONTACT_FIELDS.map(key =>
   field(
     key,
     key === 'otherLink' ? 'Other link' : key.charAt(0).toUpperCase() + key.slice(1),
-    user => getContactValues(user, key, getMatchingCurrentValue).join(', ')
+    user => getContactValues(user, key).join(', ')
   )
 );
 
