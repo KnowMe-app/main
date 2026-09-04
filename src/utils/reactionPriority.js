@@ -290,9 +290,26 @@ export const mergeMatchingCandidateUsers = ({
     // потім (зокрема за наданими картками, дочитаними після кінця стрічки).
     const grantedHead = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch === true);
     const grantedTail = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch !== true);
-    const byId = new Map(
-      [...grantedHead, ...baseUsers, ...grantedTail].map(user => [user.userId, user])
-    );
+    const byId = new Map();
+    [...grantedHead, ...baseUsers, ...grantedTail].forEach(user => {
+      const previous = byId.get(user.userId);
+      if (!previous) {
+        byId.set(user.userId, user);
+        return;
+      }
+      // Hydrated public-feed data may be newer, but it must not erase the access
+      // provenance that lets a deliberately granted peer survive the donor rule.
+      byId.set(user.userId, {
+        ...previous,
+        ...user,
+        ...(previous.__matchingAccessAllowed === true || user.__matchingAccessAllowed === true
+          ? { __matchingAccessAllowed: true }
+          : {}),
+        ...(previous.__matchingAccessInitialBatch === true || user.__matchingAccessInitialBatch === true
+          ? { __matchingAccessInitialBatch: true }
+          : {}),
+      });
+    });
 
     return keepDonorCounterpartyCards({
       users: Array.from(byId.values()).filter(

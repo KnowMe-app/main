@@ -260,6 +260,7 @@ import {
   mergeSharedReactionCandidateUsers,
   loadReactionCardsPageRecords,
   hasPendingSharedReactionCandidates,
+  normalizePublish,
   normalizeReactionMap,
   readReactionSnapshotMaps,
   resolvePrioritizedReactionMaps,
@@ -1688,6 +1689,9 @@ const Matching = () => {
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
+  const [currentUserRoleResolved, setCurrentUserRoleResolved] = useState(
+    () => Boolean((localStorage.getItem('userRole') || '').trim())
+  );
   // Роль читача потрібна не лише деці, а й дочитуванню сторінок: інакше запас
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
@@ -1829,6 +1833,7 @@ const Matching = () => {
   const reactionClassificationRequestsRef = useRef(new Map());
   const reactionAccessRequestsRef = useRef(new Map());
   const loadInitialVersionRef = useRef(0);
+  const pendingDefaultReloadRef = useRef(false);
   const initialRequestIdRef = useRef(0);
   const initialLoadTraceRef = useRef([]);
   const additionalRulesToastRef = useRef('');
@@ -2603,6 +2608,10 @@ const Matching = () => {
             setCurrentUserRole(cachedUserRole);
             setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
             setCurrentSearchKeySetKeys(fallbackSearchKeySetKeys);
+          } finally {
+            // An empty role is still a resolved profile result. Initial loading is
+            // gated on this flag so a cold session cannot cache an unscoped deck.
+            setCurrentUserRoleResolved(true);
           }
         };
 
@@ -3106,6 +3115,8 @@ const Matching = () => {
           filters: filtersRef.current || {},
           viewMode: viewModeRef.current,
           ownerId: getOwnerId(),
+          viewerRole: currentUserRoleRef.current,
+          viewerId: getOwnerId(),
           offset: 0,
           limit: INITIAL_LOAD,
           excludeIds: [...exclude],
@@ -3165,15 +3176,19 @@ const Matching = () => {
           mode: matchingDataSourceMode,
         });
         console.log('[loadInitial] using cache', cached.length);
-        const filteredCached = applyMatchingUiFiltersToUsers({
-          users: cached.filter(u => isMatchingCardId(u.userId) && !exclude.has(u.userId)),
-          filters: filtersRef.current || {},
-          filterMainFn: filterMain,
-          favoriteUsers: favoriteUsersRef.current,
-          dislikeUsers: dislikeUsersRef.current,
-          excludeReactionUsers: true,
-          roleIndexSets,
-          viewMode: 'default',
+        const filteredCached = keepDonorCounterpartyCards({
+          users: applyMatchingUiFiltersToUsers({
+            users: cached.filter(u => isMatchingCardId(u.userId) && !exclude.has(u.userId)),
+            filters: filtersRef.current || {},
+            filterMainFn: filterMain,
+            favoriteUsers: favoriteUsersRef.current,
+            dislikeUsers: dislikeUsersRef.current,
+            excludeReactionUsers: true,
+            roleIndexSets,
+            viewMode: 'default',
+          }),
+          viewerRole: currentUserRoleRef.current,
+          viewerId: getOwnerId(),
         });
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
@@ -3307,6 +3322,13 @@ const Matching = () => {
       // зміна фільтрів не давала б нічого. Стан гонки тут не виникає: чи можна
       // застосувати відповідь, вирішує `canApplyInitialLoad`.
       initialLoadInFlightRef.current = false;
+      if (pendingDefaultReloadRef.current) {
+        pendingDefaultReloadRef.current = false;
+        // A role/profile refresh may invalidate an in-flight cold load. Start
+        // the replacement after this request releases the overlap guard.
+        setTimeout(() => loadInitial(), 0);
+        return;
+      }
       if (loadInitialVersion === loadInitialVersionRef.current && initialRequest === initialRequestIdRef.current) {
         loadingRef.current = false;
         loadingStateRef.current = false;
@@ -3329,6 +3351,10 @@ const Matching = () => {
     setActiveProfileIndex(0);
     setInitialPublicWindowComplete(false);
     resetReactionPaginationState();
+    if (initialLoadInFlightRef.current) {
+      pendingDefaultReloadRef.current = true;
+      return;
+    }
     loadInitial();
   }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
 
@@ -4624,7 +4650,7 @@ const Matching = () => {
           const nextOffset = Number(scopedPage.nextOffset) || scopedOffset;
           additionalHasMoreRef.current = Boolean(scopedPage.hasMore && nextOffset > scopedOffset);
           (scopedPage.users || []).forEach(user => {
-            if (!user?.userId || publicIds.has(user.userId) || scopedIds.has(user.userId)) return;
+            if (!user?.userId || !normalizePublish(user.publish) || publicIds.has(user.userId) || scopedIds.has(user.userId)) return;
             scopedIds.add(user.userId);
             scopedUsers.push({ ...user, __matchingAccessAllowed: true });
           });
@@ -4657,6 +4683,8 @@ const Matching = () => {
           filters: filtersRef.current || {},
           viewMode,
           ownerId: getOwnerId(),
+          viewerRole: currentUserRoleRef.current,
+          viewerId: getOwnerId(),
           fetchMatchingIndexedCandidates,
           hydrateUsersByIds: hydrateMatchingFeedCards,
           isLatestLoadMore: canApplyLoadMoreResultWithFilters,
@@ -4921,13 +4949,16 @@ const Matching = () => {
     viewMode,
   ]);
 
+  const initialRoleLoadedRef = useRef(null);
   useEffect(() => {
     if (viewModeRef.current === 'favorites' || viewModeRef.current === 'dislikes') return;
+    if (!currentUserRoleResolved || initialRoleLoadedRef.current === currentUserRole) return;
+    initialRoleLoadedRef.current = currentUserRole;
     reloadDefault();
     // reloadDefault is intentionally not a dependency: mode/source switches call explicit handlers,
     // while reaction-state changes must not retrigger the default deck loader.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentUserRole, currentUserRoleResolved]);
 
   // Лічильник публічних карток має рахувати те саме, що видно на екрані:
   // інакше цикл відліку обіцяв би дві картки, а дорахувати їх на екрані було б

@@ -145,6 +145,33 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     expect(second.pageIds).toEqual(['user00000000000000000003']);
   });
 
+  it('backfills donor index pages past peers on both fresh and cached reads', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const roles = {
+      user00000000000000000001: 'ed',
+      user00000000000000000002: '',
+      user00000000000000000003: 'ag',
+    };
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(
+      ids.map(id => [id, { userId: id, role: roles[id] }])
+    ));
+    const request = {
+      filters: { userRole: { ag: true, ed: true, ip: false, other: false } },
+      limit: 1,
+      viewerRole: 'ed',
+      viewerId: 'viewer',
+      hydrateUsersByIds,
+    };
+
+    const fresh = await fetchMatchingIndexedCandidates(request);
+    const cached = await fetchMatchingIndexedCandidates(request);
+
+    expect(fresh.users.map(user => user.userId)).toEqual(['user00000000000000000003']);
+    expect(fresh.nextOffset).toBe(3);
+    expect(cached.users.map(user => user.userId)).toEqual(['user00000000000000000003']);
+    expect(cached.nextOffset).toBe(3);
+  });
+
   it('rereads bucket after matching index TTL expires', async () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
