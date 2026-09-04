@@ -12,7 +12,7 @@
  * розійшовся з прізвищем, яке адмін бачить у картці.
  */
 
-import { getCurrentValue } from 'components/getCurrentValue';
+import { getCurrentValue, hasCurrentValue } from 'components/getCurrentValue';
 
 /** Значення, яке взагалі є. `0` і `false` — є; `''`, `null`, `undefined` — немає. */
 export const hasMeaningfulValue = value => {
@@ -58,6 +58,13 @@ const firstVisibleCharacter = text => {
  */
 export const deriveSurnameShort = rawSurname => {
   if (!hasMeaningfulValue(rawSurname)) return { value: undefined };
+
+  // Прізвище стерли: у полі лишився масив версій, остання з яких порожня.
+  // `hasMeaningfulValue` бачить у ньому попередні записи й каже «значення є» —
+  // але поточного значення немає, а це не те саме, що «не вдалось вивести».
+  // Плутати їх не можна: попередження про невиведене прізвище вело б шукати
+  // поламані дані там, де людина просто стерла своє.
+  if (!hasCurrentValue(rawSurname)) return { value: undefined };
 
   const display = displayString(rawSurname);
   if (!display) {

@@ -56,7 +56,7 @@ describe('Matching redesigned profile regressions', () => {
   it('renders editor-created Firebase list values without breaking matching', () => {
     // The creation questionnaire stores every editable row as a list. Firebase
     // therefore shows even a single name/surname under child key `0`; matching
-    // must treat the last meaningful row as the current approved value.
+    // reads the last row of that list as the current value.
     expect(getProfileName({
       name: ['Ім’я'],
       surname: ['Прізвище'],
@@ -69,10 +69,20 @@ describe('Matching redesigned profile regressions', () => {
       surname: [null, 'Актуальне прізвище'],
     })).toBe('Актуальне ім’я Актуальне прізвище');
 
+    // `null` — це пропущений індекс, яким SDK добиває дірки в даних бази, тож
+    // на ньому береться попередня версія.
     expect(getProfileName({
-      name: ['Актуальне ім’я', ''],
+      name: ['Актуальне ім’я', null],
       surname: ['Актуальне прізвище', null],
     })).toBe('Актуальне ім’я Актуальне прізвище');
+
+    // А порожній рядок в останній версії — це стирання, і воно тут раніше не
+    // діяло: людина прибирала прізвище, бачила в себе порожнє поле, а картка
+    // показувала попередній запис. Останнє слово за останньою версією.
+    expect(getProfileName({
+      name: ['Ім’я', ''],
+      surname: ['Прізвище', ''],
+    })).toBe('');
   });
 
   it('warns when matching data is still unavailable after five seconds', () => {

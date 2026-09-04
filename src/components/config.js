@@ -2236,7 +2236,22 @@ export const fetchUsersByIds = async ids => {
           // показувати нема чого, і це не привід іти в legacy.
           const fromNodes = await readProfileFromNodes(id);
           if (!fromNodes) return null;
-          return [id, updateCard(id, { ...fromNodes, photos: fromNodes.photos || [] })];
+          const profile = { ...fromNodes, photos: fromNodes.photos || [] };
+          // Кеш вирішує, що зберегти, а не що показати.
+          //
+          // `updateCard` повертає те, що поклав у сховище, а кладе він не все:
+          // контакти читачеві, чиє право на них тримається на `feedDate`, у
+          // кеш не потрапляють узагалі (`sanitizeMatchingCardForCache`) — право
+          // знімається в базі, і браузер про це не дізнається. Поки цей
+          // результат ішов далі як анкета, разом із кешем контакти зникали й з
+          // екрана: донорка відкривала показану картку агенції, бачила About —
+          // і не бачила, як з агенцією звʼязатись, хоча `profileContacts`
+          // прочитались без жодної відмови. Тож у кеш іде своє, а викликачеві
+          // повертається прочитане: збережене з кеша (воно повніше за одне
+          // читання — там і позначки, і те, що приїхало раніше) з прочитаним
+          // зверху.
+          const cachedCard = updateCard(id, profile);
+          return [id, { ...cachedCard, ...profile }];
         } catch (error) {
           console.error(`Error fetching user ${id}:`, error);
           return null;
