@@ -2,6 +2,7 @@ import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
 import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
+import { keepDonorCounterpartyCards } from './matchingPeerVisibility';
 import { getIndexedIdsByRules, normalizeSearchKeySetKeys } from './filterSetsIndex';
 import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
@@ -1432,6 +1433,8 @@ export const fetchFilteredMatchingSourceChunk = ({
   filterMainFn = passthroughFilterMain,
   fetchMatchingCardsPage,
   hydrateUsersByIds,
+  viewerRole = '',
+  viewerId = '',
   onPart,
   onDiagnosticEvent,
 }) => {
@@ -1508,15 +1511,22 @@ export const fetchFilteredMatchingSourceChunk = ({
     // particular, an ordinary viewer's first source page must not look full
     // merely because its records are rejected by reactions or by the UI
     // filters one render later.
-    filterSourceUsers: sourceUsers => applyMatchingUiFiltersToUsers({
-      users: sourceUsers.filter(user => !exclude.has(user.userId)),
-      filters,
-      favoriteUsers,
-      dislikeUsers,
-      excludeReactionUsers: true,
-      roleIndexSets,
-      viewMode: 'default',
-      filterMainFn,
+    filterSourceUsers: sourceUsers => keepDonorCounterpartyCards({
+      users: applyMatchingUiFiltersToUsers({
+        users: sourceUsers.filter(user => !exclude.has(user.userId)),
+        filters,
+        favoriteUsers,
+        dislikeUsers,
+        excludeReactionUsers: true,
+        roleIndexSets,
+        viewMode: 'default',
+        filterMainFn,
+      }),
+      // Правило деки донорки — теж «чи ця картка дійде до екрана», тож рахувати
+      // запас без нього означало б брати сторінку за повну з карток, яких вона
+      // не побачить, і крутити відлік упусту.
+      viewerRole,
+      viewerId,
     }),
     hydrateUsersByIds,
     onPart,

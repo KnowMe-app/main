@@ -211,8 +211,13 @@ await it('матчинговий переглядач читає контакт�
 await it('власник токена profileContacts теж читає', () =>
   assertSucceeds(get(ref(db(CONTACTS_VIEWER), `profileContacts/${CARD}`))));
 
-await it('стороння без матчингу контактів не читає', () =>
-  assertFails(get(ref(db(OUTSIDER), `profileContacts/${CARD}`))));
+// Контакти показаної картки відкриті кожному авторизованому читачеві — це той
+// самий `feedDate`, що пускає картку в стрічку. Закриває їх зняття з публікації,
+// а не роль того, хто читає.
+await it('стороння читає контакти показаної картки, але не прихованої', async () => {
+  await assertSucceeds(get(ref(db(OUTSIDER), `profileContacts/${CARD}`)));
+  await assertFails(get(ref(db(OUTSIDER), `profileContacts/${HIDDEN_CARD}`)));
+});
 
 await it('матчинговий редактор пише контакти — так само, як редагував анкету', () =>
   assertSucceeds(set(ref(db(MATCHING_EDITOR), `profileContacts/${CARD}/telegram`), '@x')));
@@ -860,10 +865,15 @@ await it('чужу історію пошуку сторонній не пише 
  * їй ніхто не давав.
  *
  * Межу проводить той самий ключ, що й для самої стрічки: є `feedDate` — анкета
- * показана, і аудиторія матчингу читає її як завжди; немає — максимум, який
- * лишається такому читачеві, це проєкція `matchingCards`. Службовий доступ
- * (`accessLevel` з `matching`), власниця анкети й суперадміни від цієї межі не
- * залежать: вони й ведуть анкети до публікації.
+ * показана, і будь-який авторизований читач бачить її як завжди; немає —
+ * максимум, який лишається такому читачеві, це проєкція `matchingCards`.
+ * Службовий доступ (`accessLevel` з `matching`), власниця анкети й суперадміни
+ * від цієї межі не залежать: вони й ведуть анкети до публікації.
+ *
+ * Про читача правила не питають нічого, крім того, що він авторизований, — і це
+ * навмисно. Умова «роль, відмінна від `ed`» тут була, і саме вона показувала
+ * донорці картки агенцій без прізвища й контактів: код, який складає анкету,
+ * її не повторював, а відмову ковтав мовчки.
  */
 describe('звичайний користувач і прихована анкета');
 
@@ -878,70 +888,50 @@ await it('на прихованій анкеті не отримує ані де
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-// Роль читача правила шукали тільки в legacy `users`, тоді як рівень доступу —
-// і в `users`, і в `profileTechnical`. Акаунт, чия анкета цілком переїхала у
-// вузли, через це не проходив за роллю взагалі: показана анкета відкривалась
-// йому без прізвища й контактів, і відмову ніхто не бачив — код ковтає її
-// навмисно, щоб анкета без контактів усе-таки відкрилась.
-await it('роль із нових вузлів відкриває показану анкету так само, як legacy-роль', async () => {
+// Акаунт, чия анкета цілком переїхала у вузли, читає межу так само, як будь-хто
+// інший: у ній більше немає жодного питання про читача, крім «чи він
+// авторизований».
+await it('акаунт без legacy-тіла читає показану анкету', async () => {
   await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
   await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
 });
 
-await it('роль із нових вузлів не відкриває анкету поза стрічкою', async () => {
+await it('акаунт без legacy-тіла не відкриває анкету поза стрічкою', async () => {
   await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
   await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-// Донорка лишається доноркою, де б не лежала її роль: `ed` у нових вузлах не
-// має відкривати те, що закрите для `ed` у legacy.
-await it('роль ed у картці приватних вузлів не відкриває', async () => {
+// Роль читача межу більше не проводить — ані з картки, ані з legacy.
+//
+// Умова «роль, відмінна від `ed`» лишалась тут з часів, коли матчинг був
+// інструментом самих агенцій. Відтоді стрічка відкрилась усім
+// («Open published matching feed to all users»), а код, який складає анкету
+// (`profileVisibilityScope.js`), питання про роль так і не навчився ставити.
+// Через це донорка бачила показану анкету агенції без прізвища й контактів:
+// правила відмовляли, `readProfileNodePart` навмисно ковтав відмову, і назовні
+// це виглядало як порожня картка. Тепер обидві межі кажуть одне й те саме, і
+// каже це `feedDate` анкети, яку читають.
+await it('роль ed у картці показану анкету не закриває', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ed'));
-  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
-  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
+  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
+  // Прихована лишається прихованою — межа стоїть на ній, а не на читачеві.
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag'));
 });
 
-// Роль із картки головніша за legacy: саме її пише застосунок, коли людина
-// змінює роль у власній анкеті, і саме вона має вирішувати. Legacy лишається
-// відповіддю для акаунтів, чия картка ролі ще не має.
-await it('роль із картки перекриває стару legacy-роль', async () => {
-  await testEnv.withSecurityRulesDisabled(context =>
-    set(ref(context.database(), `users/${NODE_ROLE_VIEWER}`), { name: 'Колишня донорка', userRole: 'ed' }));
-  // Картка каже `ag` — межа відкрита, попри `ed` у дзеркалі.
+// Роль `ed` у legacy-дзеркалі — так само не привід відмовляти.
+await it('роль ed у legacy показану анкету не закриває', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const seed = context.database();
+    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), null);
+    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), { name: 'Колишня донорка', userRole: 'ed' });
+  });
   await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
   await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
-
-  // І навпаки: перехід у `ed` закриває межу, хоч би що лежало в legacy.
-  await testEnv.withSecurityRulesDisabled(async context => {
-    const seed = context.database();
-    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ed');
-    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), { name: 'Агенція', userRole: 'ag' });
-  });
-  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
-  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
-
-  await testEnv.withSecurityRulesDisabled(async context => {
-    const seed = context.database();
-    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag');
-    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), null);
-  });
-});
-
-// Картка з кількома ролями рядком не є — тоді відповідає legacy, як і раніше.
-await it('картка з кількома ролями лишає рішення за legacy-роллю', async () => {
-  await testEnv.withSecurityRulesDisabled(async context => {
-    const seed = context.database();
-    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), ['ed', 'ag']);
-    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), { name: 'Агенція', userRole: 'ag' });
-  });
-  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
-
-  await testEnv.withSecurityRulesDisabled(context =>
-    set(ref(context.database(), `users/${NODE_ROLE_VIEWER}`), { name: 'Донорка', userRole: 'ed' }));
-  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
 
   await testEnv.withSecurityRulesDisabled(async context => {
     const seed = context.database();
@@ -986,8 +976,14 @@ await it('власниця читає власну анкету, поки та �
   await assertSucceeds(get(ref(db(HIDDEN_CARD), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-await it('донорка чужої анкети не читає ані показаної, ані прихованої', async () => {
-  await assertFails(get(ref(db(SELF_SERVE), `profileDetails/${CARD}`)));
+// Донорка теж читач стрічки: вона відкриває її, щоб знайти агенцію, клініку
+// чи батьків, і без контактів така картка не відповідає на її питання. Роль
+// читача межу більше не проводить — її проводить `feedDate` картки, яку
+// читають, і рівно так само, як для будь-якого іншого читача.
+await it('донорка читає показану анкету, а прихованої — ні', async () => {
+  await assertSucceeds(get(ref(db(SELF_SERVE), `profileDetails/${CARD}`)));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `profileContacts/${CARD}`)));
+  await assertFails(get(ref(db(SELF_SERVE), `profileDetails/${HIDDEN_CARD}`)));
   await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
 });
 
