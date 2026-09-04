@@ -360,7 +360,11 @@ describe('решта вузлів не стає другим місцем для
 
   it('profileWorkflow лишається внутрішнім і не тримає getInTouch/publish/lastLogin', () => {
     ADMIN_UIDS.forEach(uid => expect(rules.profileWorkflow['.read']).toContain(uid));
-    expect(rules.profileWorkflow['.read']).not.toContain('accessLevel');
+    // Діапазонні запити авторизуються на рівні колекції, тому делегований
+    // matching+write/add доступ мусить бути присутній і в кореневому правилі.
+    expect(rules.profileWorkflow['.read']).toContain("contains('matching')");
+    expect(rules.profileWorkflow['.read']).toContain("contains('view&write')");
+    expect(rules.profileWorkflow['.read']).toContain('canCreateProfiles');
     const read = rules.profileWorkflow.$uid['.read'];
     expect(read).toContain("contains('matching')");
     expect(read).toContain("contains('view&write')");

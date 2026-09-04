@@ -23,6 +23,8 @@ describe('донорка не гортає стрічку інших донор�
     expect(listProfileRoles({ userRole: 'ed' })).toEqual(['ed']);
     expect(listProfileRoles({ role: ['ed', 'ag'] })).toEqual(['ed', 'ag']);
     expect(listProfileRoles({ userRole: 'ag', role: 'agency' })).toEqual(['ag']);
+    expect(listProfileRoles({ userRole: 'donor' })).toEqual(['ed']);
+    expect(listProfileRoles({ role: 'до' })).toEqual(['ed']);
     expect(listProfileRoles({})).toEqual([]);
   });
 

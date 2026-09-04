@@ -2948,8 +2948,9 @@ const EQUAL_TO_SEARCH_TARGETS = {
   ),
   name: { node: PROFILE_NODES.matchingCards, field: 'name' },
   surname: { node: PROFILE_NODES.profileDetails, field: 'surname' },
-  // Дата в стрічці — це і є `lastLogin2` під новим іменем.
-  lastLogin2: { node: PROFILE_NODES.matchingCards, field: MATCHING_CARD_FEED_FIELD },
+  // `feedDate` описує публікацію, а не останній вхід: у чернеток й
+  // схованих анкет він відсутній/ложний. Канонічна дата живе у technical.
+  lastLogin2: { node: PROFILE_NODES.profileTechnical, field: 'lastLogin' },
   lastAction: { node: PROFILE_NODES.profileWorkflow, field: 'lastAction' },
   cycleStatus: { node: PROFILE_NODES.profileWorkflow, field: 'cycleStatus' },
   lastCycle: { node: PROFILE_NODES.profileWorkflow, field: 'lastCycle' },
@@ -3793,6 +3794,11 @@ export const updateProfileRole = async (userId, nextRole) => {
 
   const previous = (await readProfileFromNodes(id, { includeTechnical: true })) || {};
   await updateDataInRealtimeDB(id, { userRole: role, role }, 'update');
+  // Для ролі картка — не необовʼязкова проєкція: її читають і правила доступу.
+  // Звичайний autosync навмисно best-effort, тому цей рольовий шлях повторює
+  // збірку й вимагає успішного запису, щоб UI міг відкотити зміну.
+  const saved = (await readProfileFromNodes(id, { includeTechnical: true })) || previous;
+  await syncMatchingCardIndex(id, { ...saved, userRole: role, role }, { throwOnError: true });
   await syncUserSearchKeyIndex(
     id,
     { userRole: previous.userRole, role: previous.role },
@@ -4250,6 +4256,7 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
     return projection;
   } catch (error) {
     console.error('[matchingCards] не вдалося оновити урізану картку', { userId: id, error });
+    if (options.throwOnError) throw error;
     return null;
   }
 };
@@ -8393,9 +8400,18 @@ export const fetchPaginatedUsers = async (
       return { users: {}, lastKey: null, hasMore: false };
     }
 
-    let fetchedUsers = Object.entries(snapshot.val())
+    const projectedUsers = Object.entries(snapshot.val())
       .map(([id, card]) => [id, expandMatchingCard(id, card) || { userId: id }]);
-    const rawNextKey = fetchedUsers.length > PAGE_SIZE ? fetchedUsers[PAGE_SIZE][0] : null;
+    const rawNextKey = projectedUsers.length > PAGE_SIZE ? projectedUsers[PAGE_SIZE][0] : null;
+
+    // matchingCards достатньо для показу, але не для всіх legacy-фільтрів (група
+    // крові, кількість полів, коментарі, lastAction). Фільтруємо лише після
+    // гідратації, інакше валідні кандидати відсікаються до повного читання.
+    const hydrated = await Promise.all(projectedUsers.map(async ([id, projection]) => {
+      const profile = await fetchUserById(id);
+      return [id, { ...projection, ...(profile || {}) }];
+    }));
+    let fetchedUsers = hydrated;
 
     const noExplicitFilters =
       (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
@@ -8425,19 +8441,7 @@ export const fetchPaginatedUsers = async (
       return acc;
     }, {});
 
-    const userIds = Object.keys(paginatedUsers);
-    const userResults = await Promise.all(userIds.map(id => fetchUserById(id)));
-
-    const usersData = {};
-    userResults.forEach((data, idx) => {
-      const id = userIds[idx];
-      if (data) usersData[id] = data;
-    });
-
-    const finalUsers = userIds.reduce((acc, id) => {
-      acc[id] = { ...paginatedUsers[id], ...(usersData[id] || {}) };
-      return acc;
-    }, {});
+    const finalUsers = paginatedUsers;
 
     return {
       users: finalUsers,
@@ -8743,8 +8747,9 @@ export const mergeDuplicateUsers = async () => {
 
       await updateProfileNodesInRTDB(mergedUsers[primaryUser].userId, mergedUsers[primaryUser], 'update');
 
-      const db = getDatabase();
-      await remove(ref2(db, `users/${donorUser}`));
+      // Той самий шлях видалення, що й для ручного видалення картки: усі
+      // канонічні вузли, searchId і searchKey. Помилка має зупинити merge.
+      await removeCardAndSearchId(donorUser, { notify: false, throwOnError: true });
       console.log(`Deleted donor user: ${donorUser}`);
     }
 
@@ -8757,8 +8762,9 @@ export const mergeDuplicateUsers = async () => {
   }
 };
 
-export const removeCardAndSearchId = async userId => {
+export const removeCardAndSearchId = async (userId, options = {}) => {
   const db = getDatabase();
+  const { notify = true, throwOnError = false } = options;
 
   try {
     // Значення, за якими анкету знаходили, беруться з вузлів — і тільки з них.
@@ -8834,15 +8840,16 @@ export const removeCardAndSearchId = async userId => {
     clearEmptySearchQueryCache();
     clearMatchingSearchResultCache();
 
-    if (deletedFields.length) {
+    if (notify && deletedFields.length) {
       toast.success(`Видалені дані:\n${deletedFields.join('\n')}`, {
         style: { whiteSpace: 'pre-line' },
       });
-    } else {
+    } else if (notify) {
       toast.success(`Картку видалено: ${userId}`);
     }
   } catch (error) {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
+    if (throwOnError) throw error;
   }
 };
 /**
@@ -8856,7 +8863,7 @@ export const removeCardAndSearchId = async userId => {
  */
 export const fetchAllUsersFromRTDB = async () => {
   try {
-    const usersData = (await loadProfilesFromNodesForIndexing()) || {};
+    const usersData = (await loadProfilesFromNodesForIndexing({ forceRefresh: true })) || {};
 
     // Формуємо масив пар [userId, userObject]
     const mergedUsersArray = Object.keys(usersData).map(userId => [

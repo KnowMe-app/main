@@ -1,5 +1,7 @@
 const PROFILE_ROLE_ALIASES = Object.freeze(Object.assign(Object.create(null), {
   ed: 'ed',
+  donor: 'ed',
+  'до': 'ed',
   'egg donor': 'ed',
   egg_donor: 'ed',
   sm: 'sm',

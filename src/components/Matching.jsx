@@ -1688,6 +1688,9 @@ const Matching = () => {
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
+  // localStorage — лише оптимістичний кеш. До відповіді з профільних вузлів він
+  // може належати попередній сесії, тому default-дека чекає канонічну роль.
+  const [viewerRoleResolved, setViewerRoleResolved] = useState(false);
   const [currentCanCreateProfiles, setCurrentCanCreateProfiles] = useState(() => localStorage.getItem('canCreateProfiles') === 'true');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
@@ -2536,6 +2539,7 @@ const Matching = () => {
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       if (user) {
+        setViewerRoleResolved(false);
         localStorage.setItem('ownerId', user.uid);
         setOwnerId(user.uid);
         const initialOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid });
@@ -2557,6 +2561,7 @@ const Matching = () => {
 
             setCurrentAccessLevel(accessLevel);
             setCurrentUserRole(userRole);
+            setViewerRoleResolved(true);
             setCurrentCanCreateProfiles(canCreateProfiles);
             setCurrentAdditionalAccessRules(additionalAccessRules);
             setCurrentSearchKeySetKeys(searchKeySetKeys);
@@ -2597,6 +2602,7 @@ const Matching = () => {
             console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetsOfExactUser', fallbackSearchKeySetKeys);
             setCurrentAccessLevel(cachedAccessLevel);
             setCurrentUserRole(cachedUserRole);
+            setViewerRoleResolved(true);
             setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
             setCurrentSearchKeySetKeys(fallbackSearchKeySetKeys);
           }
@@ -2620,6 +2626,7 @@ const Matching = () => {
         setSharedComments({});
         setCurrentAccessLevel('');
         setCurrentUserRole('');
+        setViewerRoleResolved(false);
         setCurrentAdditionalAccessRules('');
         setCurrentSearchKeySetKeys([]);
         resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
@@ -5063,6 +5070,7 @@ const Matching = () => {
 
   const filteredUsers = useMemo(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
+    if (viewMode === 'default' && !viewerRoleResolved) return EMPTY_USERS;
     if (debugShowAllIndexedCards && isIndexedDebugTestUser) return users;
     // Пошук — не стрічка, і фільтри його не звужують. Чіпи описують, кого
     // показувати в деці; запит називає конкретну людину, і сховати її через
@@ -5096,6 +5104,7 @@ const Matching = () => {
     searchRevealCount,
     users,
     viewMode,
+    viewerRoleResolved,
     visibleUsers,
   ]);
   // Counted off the already-loaded cache, so every chip tap in the drawer

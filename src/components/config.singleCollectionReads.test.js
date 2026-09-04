@@ -56,7 +56,7 @@ describe('single legacy collection reads', () => {
 
     // Експорт теж переїхав на вузли: та сама збірка, що й в індексації, тож
     // вивантажене й проіндексоване не можуть розійтись.
-    expect(fetchAllUsersFromRTDBBody).toContain('loadProfilesFromNodesForIndexing()');
+    expect(fetchAllUsersFromRTDBBody).toContain('loadProfilesFromNodesForIndexing({ forceRefresh: true })');
     expect(fetchAllUsersFromRTDBBody).not.toContain("get(ref2(database, 'users'))");
     expect(fetchAllUsersFromRTDBBody).not.toContain('mergeUserCollectionData');
     // Читачі, що качали колекцію заради показу, прибрані разом із їхніми
