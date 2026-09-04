@@ -58,6 +58,7 @@ import {
   resolveProfileFormBlock,
   PROFILE_FORM_BLOCK_IDS,
 } from './profileFormNodeBlocks';
+import { appendEmptyFieldRow, canAppendFieldRow } from 'utils/profileFieldRows';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -2994,7 +2995,11 @@ ${entries.join('\n')}`;
                           <FaArrowRight size={14} />
                         </SearchIdBackendButton>
                       )}
-                      {(value || value === '') && (
+                      {/* Рядок, який видно, має бути й чим прибрати — зокрема
+                          щойно доданий кнопкою «+» і ще не заповнений. Раніше
+                          умова пропускала `undefined`/`null`, тобто дірку в
+                          масиві прибрати було нічим. */}
+                      {(
                           <ClearButton
                           type="button"
                           onPointerDownCapture={e => {
@@ -3321,10 +3326,7 @@ ${entries.join('\n')}`;
             )}
 
             {field.name !== 'lastAction' &&
-              state[field.name] &&
-              (Array.isArray(state[field.name])
-                ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== ''
-                : true) &&
+              canAppendFieldRow(state[field.name]) &&
               ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3) ||
                 !Array.isArray(field.options)) && (
                 <Button
@@ -3338,15 +3340,16 @@ ${entries.join('\n')}`;
                     if (!state.myComment?.trim()) {
                       handleDelKeyValue('myComment');
                     }
-                    setState(prevState => {
-                      const updatedField =
-                        Array.isArray(prevState[field.name]) && prevState[field.name].length > 0
-                          ? [...prevState[field.name], '']
-                          : [prevState[field.name], ''];
-                      const newState = { ...prevState, [field.name]: updatedField };
-                      submitWithNormalization(newState, 'overwrite');
-                      return newState;
-                    });
+                    // Зберігати нема чого: новий рядок ще порожній. Раніше тут
+                    // стояв запис, і поле ставало масивом з порожнім хвостом від
+                    // самого лише дотику до «+» — а з того часу, як порожня
+                    // остання версія означає «поле стерли», це коштувало б
+                    // анкеті імені. Значення поїде в базу з першим же
+                    // заповненим символом: інпут зберігається на `blur`.
+                    setState(prevState => ({
+                      ...prevState,
+                      [field.name]: appendEmptyFieldRow(prevState[field.name]),
+                    }));
                   }}
                 >
                   +

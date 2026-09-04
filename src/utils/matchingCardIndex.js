@@ -1,4 +1,5 @@
 import { normalizePublish } from './reactionPriority';
+import { hasCurrentValue } from 'components/getCurrentValue';
 import {
   deriveSurnameShort,
   deriveRh,
@@ -137,7 +138,19 @@ const collectFieldValues = value => {
 const projectionValue = value => {
   if (value !== null && typeof value === 'object') {
     const values = collectFieldValues(value);
-    return values.length ? values : undefined;
+    if (!values.length) return undefined;
+    // Стерте поле лишає по собі позначку, а не зникає безслідно.
+    //
+    // `collectFieldValues` знімає порожні значення — і разом з ними знімало
+    // єдине, чим стирання відрізняється від його відсутності. Людина прибирала
+    // імʼя, у вузлі лишалось `['Оксана', '']`, а в картку їхало `['Оксана']` —
+    // і рядок стрічки показував далі те, чого в анкеті вже немає, тоді як
+    // відкрита анкета показувала порожньо. Дві відповіді на одне питання.
+    //
+    // Тому історія лишається історією (усі непорожні версії — картка єдине
+    // місце, де живе `name`, і зводити її до одного значення означало б
+    // втратити решту), а порожня остання версія доїжджає позначкою.
+    return hasCurrentValue(value) ? values : [...values, ''];
   }
   const scalar = trimmed(value);
   return scalar || undefined;
@@ -429,6 +442,12 @@ const sameProjectionValue = (left, right) => {
   const rightIsObject = right !== null && typeof right === 'object';
   if (leftIsObject !== rightIsObject) return false;
   if (!leftIsObject) return left === right;
+
+  // Позначка стирання — теж різниця, і саме та, яку легко не помітити:
+  // `['Оксана']` і `['Оксана', '']` дають однакові непорожні значення, тож без
+  // цієї перевірки писач вважав би картку незміненою і не доніс би до бази
+  // те, що поле прибрали.
+  if (hasCurrentValue(left) !== hasCurrentValue(right)) return false;
 
   const leftValues = collectFieldValues(left);
   const rightValues = collectFieldValues(right);
