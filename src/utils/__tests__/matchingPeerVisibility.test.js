@@ -79,6 +79,27 @@ describe('правило діє у стрічці, але не в пошуку �
     expect(merged.map(user => user.userId)).toEqual(['ag1']);
   });
 
+  it('не втрачає ознаки початкового доступу, коли та сама картка є у public feed', () => {
+    const merged = mergeMatchingCandidateUsers({
+      users: [donor('granted', { name: 'Оновлена картка' })],
+      additionalAccessUsers: [donor('granted', {
+        __matchingAccessAllowed: true,
+        __matchingAccessInitialBatch: true,
+      })],
+      hasAdditionalAccessRules: true,
+      viewMode: 'default',
+      viewerRole: 'ed',
+      viewerId: 'own',
+    });
+
+    expect(merged).toEqual([expect.objectContaining({
+      userId: 'granted',
+      name: 'Оновлена картка',
+      __matchingAccessAllowed: true,
+      __matchingAccessInitialBatch: true,
+    })]);
+  });
+
   it('видача пошуку показує їх — там питають про конкретну людину', () => {
     const merged = mergeMatchingCandidateUsers({
       users,

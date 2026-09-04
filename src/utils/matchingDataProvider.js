@@ -614,6 +614,8 @@ export const fetchMatchingIndexedCandidates = async ({
   accessScopedIndexReader = getIndexedIdsByRules,
   viewMode = 'default',
   ownerId = '',
+  viewerRole = '',
+  viewerId = '',
   useIndexIdCache = true,
 } = {}) => {
   const filterGroups = buildMatchingIndexFilterGroups({ filters });
@@ -636,6 +638,41 @@ export const fetchMatchingIndexedCandidates = async ({
     searchKeySetKeys,
     searchKeySetsOfExactUser: searchKeySetKeys,
   });
+
+  // An index only knows ids, so it cannot account for the donor deck rule until
+  // after hydration. Keep walking the complete id list here: callers must receive
+  // `limit` cards that can actually reach the screen, and the returned offset must
+  // point after every rejected peer rather than after the first raw id slice.
+  const hydrateVisiblePage = async ids => {
+    const users = [];
+    const pageIds = [];
+    let cursor = safeOffset;
+
+    while (cursor < ids.length && users.length < safeLimit) {
+      const sliced = sliceIndexedBaseIds({
+        ids,
+        offset: cursor,
+        limit: safeLimit - users.length,
+        excludedSet,
+      });
+      if (!sliced.pageIds.length) {
+        cursor = sliced.nextOffset;
+        break;
+      }
+      const hydrated = await hydrateOrderedUsers({ ids: sliced.pageIds, hydrateUsersByIds });
+      const visible = keepDonorCounterpartyCards({ users: hydrated, viewerRole, viewerId });
+      users.push(...visible);
+      pageIds.push(...visible.map(user => user.userId).filter(Boolean));
+      cursor = sliced.nextOffset;
+    }
+
+    return {
+      pageIds,
+      users,
+      nextOffset: cursor,
+      hasMore: sliceIndexedBaseIds({ ids, offset: cursor, limit: 1, excludedSet }).pageIds.length > 0,
+    };
+  };
 
   const readCachedPage = () => {
     if (!useIndexIdCache || accessScoped) return null;
@@ -660,17 +697,17 @@ export const fetchMatchingIndexedCandidates = async ({
       offset: safeOffset,
       limit: safeLimit,
     });
-    const users = await hydrateOrderedUsers({ ids: cachedPage.pageIds, hydrateUsersByIds });
+    const visiblePage = await hydrateVisiblePage(cachedPage.allIds);
     return {
       usedIndex: true,
       usedIndexIdCache: true,
       cacheKey,
       userIds: cachedPage.allIds,
       paginationInputIds: cachedPage.allIds,
-      pageIds: cachedPage.pageIds,
-      users,
-      nextOffset: cachedPage.nextOffset,
-      hasMore: cachedPage.hasMore,
+      pageIds: visiblePage.pageIds,
+      users: visiblePage.users,
+      nextOffset: visiblePage.nextOffset,
+      hasMore: visiblePage.hasMore,
       filterGroups,
     };
   }
@@ -783,13 +820,7 @@ export const fetchMatchingIndexedCandidates = async ({
       meta: cacheMeta,
     });
   }
-  const { pageIds, nextOffset, hasMore } = sliceIndexedBaseIds({
-    ids: allMatchingIds,
-    offset: safeOffset,
-    limit: safeLimit,
-    excludedSet,
-  });
-  const users = await hydrateOrderedUsers({ ids: pageIds, hydrateUsersByIds });
+  const { pageIds, users, nextOffset, hasMore } = await hydrateVisiblePage(allMatchingIds);
 
   return {
     usedIndex: true,
