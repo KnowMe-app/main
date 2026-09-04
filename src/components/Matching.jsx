@@ -205,7 +205,7 @@ import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { useAppSettings } from 'hooks/useAppSettings';
-import { hidePeerDonorCards, isDonorViewer } from 'utils/matchingPeerVisibility';
+import { keepDonorCounterpartyCards, isDonorViewer } from 'utils/matchingPeerVisibility';
 import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
@@ -1688,6 +1688,10 @@ const Matching = () => {
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
+  // Роль читача потрібна не лише деці, а й дочитуванню сторінок: інакше запас
+  // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
+  const currentUserRoleRef = useRef(currentUserRole);
+  currentUserRoleRef.current = currentUserRole;
   const [currentCanCreateProfiles, setCurrentCanCreateProfiles] = useState(() => localStorage.getItem('canCreateProfiles') === 'true');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
@@ -2856,6 +2860,11 @@ const Matching = () => {
       filterMainFn: filterMain,
       fetchMatchingCardsPage,
       hydrateUsersByIds: ids => fetchUsersByIds(ids),
+      // Дека донорки — це самі контрагенти, і рахувати запас треба по них.
+      // Інакше сторінка джерела виглядає повною з карток, які на екран не
+      // потраплять: відлік обіцяв би дві картки, а дорахувати їх було б нічим.
+      viewerRole: currentUserRoleRef.current,
+      viewerId: getOwnerId(),
       onPart,
       onDiagnosticEvent: recordInitialLoadDiagnostic,
     }),
@@ -2918,7 +2927,11 @@ const Matching = () => {
         const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
         const scopedUsers = (loaded.users || [])
           .filter(user => user?.userId && !publicIds.has(user.userId))
-          .map(user => ({ ...user, __matchingAccessAllowed: true }));
+          // Пачка з входу — голова деки: вона вже на екрані, коли перша
+          // сторінка стрічки тільки їде. Позначка розводить її з тими наданими
+          // картками, які дочитуються після кінця стрічки, — тим місце в хвості,
+          // де читач і чекає на приріст (`mergeMatchingCandidateUsers`).
+          .map(user => ({ ...user, __matchingAccessAllowed: true, __matchingAccessInitialBatch: true }));
         loadedScopedCards = scopedUsers.length > 0;
         additionalAccessUsersRef.current = scopedUsers;
         setAdditionalAccessUsers(scopedUsers);
@@ -4919,7 +4932,7 @@ const Matching = () => {
   // Лічильник публічних карток має рахувати те саме, що видно на екрані:
   // інакше цикл відліку обіцяв би дві картки, а дорахувати їх на екрані було б
   // нічим — картки колег до нього не доходять.
-  const publicVisibleUsers = useMemo(() => hidePeerDonorCards({
+  const publicVisibleUsers = useMemo(() => keepDonorCounterpartyCards({
     users: applyMatchingUiFiltersToUsers({
       users,
       filters,
@@ -6632,12 +6645,17 @@ const Matching = () => {
         || searchRefineValue;
       return `Уточнення «${spec.label} · ${label}» не лишило нічого зі знайдених (${visibleUsers.length})`;
     }
-    // Донорці стрічка не показує чужих донорок, і на порожньому екрані про це
+    // Донорці стрічка показує самих контрагентів, і на порожньому екрані про це
     // треба сказати вголос: інакше «немає доступних профілів» читається як
     // «застосунок порожній», хоча анкети є — просто не для цієї ролі. Пошук при
     // цьому працює, і рядок про це нагадує.
-    if (!isReactionTab && !isSearching && isDonorViewer(currentUserRole) && users.length > 0) {
-      return 'У стрічці немає анкет інших ролей — анкети донорок вона не показує. Конкретну людину можна знайти пошуком';
+    //
+    // Умови «щось таки завантажилось» тут немає навмисно: картки колег
+    // відсіюються вже на сторінці джерела (`fetchChunk`), щоб не гортати за
+    // читачку те, чого вона не побачить, — тож `users` у неї буває порожній
+    // саме тоді, коли пояснення й потрібне.
+    if (!isReactionTab && !isSearching && isDonorViewer(currentUserRole)) {
+      return 'У стрічці немає анкет агенцій, клінік чи батьків — інших вона донорці не показує. Конкретну людину можна знайти пошуком';
     }
     return 'Немає доступних профілів';
   };

@@ -1,4 +1,4 @@
-import { hidePeerDonorCards } from './matchingPeerVisibility';
+import { keepDonorCounterpartyCards } from './matchingPeerVisibility';
 
 const isTruthyReactionValue = value => {
   if (typeof value === 'boolean') return value;
@@ -248,9 +248,9 @@ export const mergeMatchingCandidateUsers = ({
   ownDislikeUsers = {},
   favoriteUsers = ownFavoriteUsers,
   dislikeUsers = ownDislikeUsers,
-  // Хто дивиться. Потрібно рівно для одного правила: донорка не гортає стрічку
-  // інших донорок (`hidePeerDonorCards`). До пошуку й вкладок реакцій воно не
-  // застосовується — там читачка питає про конкретну людину.
+  // Хто дивиться. Потрібно рівно для одного правила: у стрічці донорки лишаються
+  // самі контрагенти (`keepDonorCounterpartyCards`). До пошуку й вкладок реакцій
+  // воно не застосовується — там читачка питає про конкретну людину.
   viewerRole = '',
   viewerId = '',
 } = {}) => {
@@ -263,15 +263,38 @@ export const mergeMatchingCandidateUsers = ({
   const canInjectCandidate = user => canShowMatchingUser(user, { isAdmin });
 
   if (isDefaultMode) {
-    const defaultCandidates = hasAdditionalAccessRules
-      ? [
-        ...baseUsers,
-        ...additionalAccessUsers.filter(user => user?.userId && canInjectCandidate(user)),
-      ]
-      : baseUsers;
-    const byId = new Map(defaultCandidates.map(user => [user.userId, user]));
+    // Надана картка потрапляє в загальний список лише разом зі стрічкою.
+    //
+    // Правила додаткового доступу — це фільтр («ці роки, ця група крові»), а не
+    // перелік окремо відкритих анкет, і читались вони по індексу, який знає всі
+    // анкети, зокрема неопубліковані. Тобто в деку за замовчуванням заїжджали
+    // картки, яких у стрічці немає за визначенням: у `matchingCards` вони без
+    // `feedDate`, і жоден інший читач їх там не побачить. `feedDate` —
+    // допуск до стрічки, і надання доступу не робить із фільтра винятку з
+    // нього: неопублікована анкета лишається тим, що знаходить точковий пошук
+    // за контактом, а не тим, що гортають у загальному списку.
+    const grantedFeedCards = hasAdditionalAccessRules
+      ? additionalAccessUsers.filter(user => (
+        user?.userId && canInjectCandidate(user) && normalizePublish(user.publish)
+      ))
+      : [];
 
-    return hidePeerDonorCards({
+    // Хвіст списку належить пагінації.
+    //
+    // Надані картки вантажаться однією пачкою на вході й доливаються лише тоді,
+    // коли загальна стрічка вичерпалась. Поки вони стояли після деки, кожна
+    // дописана сторінка лягала **над** ними: унизу нічого не змінювалось, і
+    // «Додано 2 картки — вони в кінці списку» було неправдою — приріст
+    // знаходився тільки прокруткою вгору. Тож пачка з входу — це голова деки,
+    // як і власні чернетки, а хвіст лишається за сторінками, які приїжджають
+    // потім (зокрема за наданими картками, дочитаними після кінця стрічки).
+    const grantedHead = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch === true);
+    const grantedTail = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch !== true);
+    const byId = new Map(
+      [...grantedHead, ...baseUsers, ...grantedTail].map(user => [user.userId, user])
+    );
+
+    return keepDonorCounterpartyCards({
       users: Array.from(byId.values()).filter(
         user => user?.userId && !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
       ),
