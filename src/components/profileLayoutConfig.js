@@ -4,6 +4,7 @@ import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { CONTACT_FIELDS, getContactValues } from './contactMethods';
 import { normalizeProfileRole } from '../utils/profileRole';
+import { derivedValueTexts, translateProfileLabel } from '../utils/profileTexts';
 
 const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 'none', 'немає', 'нет']);
 
@@ -37,17 +38,23 @@ export const shouldRenderField = value => Boolean(normalizeDisplayValue(value));
 const YES_TOKENS = new Set(['yes', 'true']);
 const NO_TOKENS = new Set(['no', 'false']);
 
-const yesNoLabel = (rawValue, yesText, noText) => {
+// Відповідь «так/ні» рахує застосунок, а не вводить людина, — тож і мова в неї
+// та сама, що й у підпису поруч. Раніше вона була жорстко українською, і в
+// англійському інтерфейсі виходило «Own kids: є».
+const yesNoLabel = (rawValue, kind, language) => {
   const normalized = normalizeDisplayValue(rawValue).toLowerCase();
   if (!normalized) return '';
+  const [yesText, noText] = derivedValueTexts(kind, language);
   if (YES_TOKENS.has(normalized)) return yesText;
   if (NO_TOKENS.has(normalized)) return noText;
+  // Значення, введене людиною («вдова», «цивільний шлюб»), лишається як є:
+  // перекладати вміст анкети — це вже не підстановка, а редагування.
   return normalizeDisplayValue(rawValue);
 };
 
-export const maritalStatusLabel = value => yesNoLabel(value, 'заміжня', 'не заміжня');
-export const glassesLabel = value => yesNoLabel(value, 'так', 'ні');
-const ownKidsBooleanLabel = value => yesNoLabel(value, 'є', 'немає');
+export const maritalStatusLabel = (value, language) => yesNoLabel(value, 'marital', language);
+export const glassesLabel = (value, language) => yesNoLabel(value, 'yesNo', language);
+const ownKidsBooleanLabel = (value, language) => yesNoLabel(value, 'ownKids', language);
 
 // blood is stored as one combined field ("3+", "2", "+", "AB-", roman numerals,
 // Ukrainian "І" instead of Latin "I", verbose Rh words, etc). Parse it into an
@@ -108,13 +115,13 @@ export const getProfileRole = user => {
   return 'other';
 };
 
-export const getRoleLabel = role => {
-  if (role === 'ed') return 'Egg donor';
-  if (role === 'ag') return 'Agency';
-  if (role === 'ip') return 'Intended parents';
-  if (role === 'sm') return 'Surrogate mother';
-  if (role === 'cl') return 'Client';
-  return 'Profile';
+export const getRoleLabel = (role, language) => {
+  if (role === 'ed') return translateProfileLabel('Egg donor', language);
+  if (role === 'ag') return translateProfileLabel('Agency', language);
+  if (role === 'ip') return translateProfileLabel('Intended parents', language);
+  if (role === 'sm') return translateProfileLabel('Surrogate mother', language);
+  if (role === 'cl') return translateProfileLabel('Client', language);
+  return translateProfileLabel('Profile', language);
 };
 
 /**
@@ -208,9 +215,12 @@ const field = (key, label, valueGetter, sourceKeys, { resolved = false } = {}) =
   sourceKeys: sourceKeys || [key],
   resolved,
 });
-const valueFor = (user, item) => {
+const valueFor = (user, item, language) => {
   if (!item.valueGetter) return normalizeDisplayValue(user?.[item.key]);
-  const result = item.valueGetter(user);
+  // Мова доїжджає до самого гетера: підставлені «так/ні» рахуються тут, і
+  // рахувати їх іншою мовою, ніж підпис поруч, — це і є та неузгодженість,
+  // через яку в англійському макеті стояло «Own kids: є».
+  const result = item.valueGetter(user, language);
   if (item.resolved) return typeof result === 'string' ? result.trim() : normalizeDisplayValue(result);
   return normalizeDisplayValue(result);
 };
@@ -218,10 +228,14 @@ const isExcluded = (item, excludeKeys = []) => {
   const excluded = new Set(excludeKeys || []);
   return [item.key, ...(item.sourceKeys || [])].some(key => excluded.has(key));
 };
-const toDisplayFields = (items, user, excludeKeys = []) =>
+const toDisplayFields = (items, user, excludeKeys = [], language) =>
   items
     .filter(item => !isExcluded(item, excludeKeys))
-    .map(item => ({ ...item, value: valueFor(user, item) }))
+    .map(item => ({
+      ...item,
+      label: translateProfileLabel(item.label, language),
+      value: valueFor(user, item, language),
+    }))
     .filter(item => (item.resolved ? Boolean(item.value) : shouldRenderField(item.value)));
 
 export const bmiValue = user => {
@@ -242,9 +256,9 @@ const ownKidsValue = user => {
   return raw;
 };
 
-const ownKidsDisplayValue = user => ownKidsBooleanLabel(ownKidsValue(user));
-const maritalStatusDisplayValue = user => maritalStatusLabel(user?.maritalStatus);
-const glassesDisplayValue = user => glassesLabel(user?.glasses);
+const ownKidsDisplayValue = (user, language) => ownKidsBooleanLabel(ownKidsValue(user), language);
+const maritalStatusDisplayValue = (user, language) => maritalStatusLabel(user?.maritalStatus, language);
+const glassesDisplayValue = (user, language) => glassesLabel(user?.glasses, language);
 
 const donorExperienceValue = user => {
   const exp = normalizeDisplayValue(user?.experience || user?.donationExperience || user?.previousDonation);
@@ -375,11 +389,11 @@ const sectionConfig = {
   ],
 };
 
-export const getHeroFields = (user, role = getProfileRole(user), { excludeKeys = [] } = {}) =>
-  toDisplayFields(heroFields[role] || heroFields.other, user, excludeKeys).slice(0, 6);
+export const getHeroFields = (user, role = getProfileRole(user), { excludeKeys = [], language } = {}) =>
+  toDisplayFields(heroFields[role] || heroFields.other, user, excludeKeys, language).slice(0, 6);
 
-export const getQuickFacts = (user, role = getProfileRole(user), { excludeKeys = [] } = {}) =>
-  toDisplayFields(quickFacts[role] || quickFacts.other, user, excludeKeys).slice(0, 8);
+export const getQuickFacts = (user, role = getProfileRole(user), { excludeKeys = [], language } = {}) =>
+  toDisplayFields(quickFacts[role] || quickFacts.other, user, excludeKeys, language).slice(0, 8);
 
 const contactFields = CONTACT_FIELDS.map(key =>
   field(
@@ -389,14 +403,19 @@ const contactFields = CONTACT_FIELDS.map(key =>
   )
 );
 
-export const getProfileSections = (user, role = getProfileRole(user), { excludeKeys = [] } = {}) => {
+export const getProfileSections = (user, role = getProfileRole(user), { excludeKeys = [], language } = {}) => {
   const sections = (sectionConfig[role] || sectionConfig.other).map(section => ({
     ...section,
-    fields: toDisplayFields(section.fields, user, excludeKeys),
+    // `variant` лишається ключем розкладки, а `title` перекладається — тож
+    // рендер і далі впізнає блок за варіантом, а не за написом на ньому.
+    title: translateProfileLabel(section.title, language),
+    fields: toDisplayFields(section.fields, user, excludeKeys, language),
   })).filter(section => section.fields.length > 0);
 
-  const contacts = toDisplayFields(contactFields, user, excludeKeys);
-  if (contacts.length > 0) sections.push({ title: 'Contacts', fields: contacts, variant: 'contacts' });
+  const contacts = toDisplayFields(contactFields, user, excludeKeys, language);
+  if (contacts.length > 0) {
+    sections.push({ title: translateProfileLabel('Contacts', language), fields: contacts, variant: 'contacts' });
+  }
   return sections;
 };
 

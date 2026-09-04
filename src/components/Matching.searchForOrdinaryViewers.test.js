@@ -83,7 +83,20 @@ describe('пошук у matching для читача без повного до�
   // результат і ще й рахуються в чіпі «Знайдено N».
   it('власні чернетки не підмішуються у відповідь на запит', () => {
     const source = matchingSource();
-    expect(source).toContain("users: viewMode === 'search'\n      ? users\n      : [...users, ...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS)],");
+    expect(source).toContain("users: viewMode === 'search'\n      ? users\n      : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],");
+  });
+
+  // Хвіст списку належить пагінації: там стоять відлік і сентинел, і саме туди
+  // дивиться читач, чекаючи на порцію. Чернетка в хвості означала б, що дописана
+  // сторінка лягає над нею — унизу нічого не змінюється.
+  it('чернетки стоять перед декою, щоб дописана сторінка лягала в кінець', () => {
+    const source = matchingSource();
+    const merge = source.slice(
+      source.indexOf('const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({'),
+      source.indexOf('additionalAccessUsers,\n    sharedReactionCandidateUsers,'),
+    );
+    expect(merge).toContain('personalCreateProfiles : EMPTY_USERS), ...users]');
+    expect(merge).not.toContain('[...users, ...(initialPublicWindowComplete');
   });
 
   it('у стрічці власні чернетки лишаються', () => {

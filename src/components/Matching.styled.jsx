@@ -1,5 +1,11 @@
 import styled, { css, keyframes } from 'styled-components';
 import { color } from './styles';
+import {
+  NOTE_META_LINE_HEIGHT,
+  NOTE_META_SIZE,
+  NOTE_TEXT_LINE_HEIGHT,
+  NOTE_TEXT_SIZE,
+} from './noteTypography';
 
 const STACK_CARD_RADIUS = '18px';
 
@@ -198,6 +204,9 @@ export const CommentInput = styled.textarea`
   height: 16px;
   min-height: 16px;
   line-height: 16px;
+  /* Розмір нотатки — спільний з публічним коментарем; у рядку стрічки поле
+     лишається на своїй висоті, тож розмір задається окремо там, де воно
+     стоїть поруч із публічним записом (див. NoteField нижче). */
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
@@ -1213,7 +1222,10 @@ export const ModernSection = styled.section`
 export const ModernSectionTitle = styled.h3`
   margin: 0 0 8px;
   color: var(--matching-section-title);
-  font-size: clamp(20px, 4.8vw, 22px);
+  /* Нотатки — це помітка на полях анкети, а не її дані, тож їхній блок
+     говорить тихіше за «Основне» чи «Зовнішність». Ритм картки при цьому
+     лишається: колір і накреслення ті самі, змінюється тільки розмір. */
+  font-size: ${({ $quiet }) => ($quiet ? '15px' : 'clamp(20px, 4.8vw, 22px)')};
   font-weight: 700;
   letter-spacing: 0.2px;
 `;
@@ -2124,5 +2136,78 @@ export const RefineKeyMenuItem = styled.button`
     margin-left: auto;
     font-size: 10px;
     opacity: 0.7;
+  }
+`;
+
+
+/* ------------------------------------------------------------------
+ * Нотатки на картці: приватна й публічна в одному блоці
+ *
+ * Досі це були дві повноцінні секції — з власними рамками, фоном і
+ * заголовком на 20–22px кожна. Тобто нотатка важила стільки ж, скільки
+ * «Основне» чи «Зовнішність», хоч вона не дані анкети, а помітка на полях.
+ * Два таких блоки поспіль і давали те «занадто здорове», з якого почалась
+ * ця правка.
+ *
+ * Тепер блок один, а хто бачить запис — каже не окрема секція, а смужка
+ * ліворуч і підпис над текстом: приглушена й «Бачите тільки ви» в
+ * приватного, акцентна й «Бачать усі» в публічного. Кольору тут рівно
+ * стільки, скільки треба, щоб відрізнити ці два стани, — другого акценту
+ * картка не отримує.
+ * ------------------------------------------------------------------ */
+
+export const NoteLanes = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+export const NoteLane = styled.div`
+  padding-left: 10px;
+  border-left: 2px solid ${({ $public }) => ($public
+    ? 'color-mix(in srgb, var(--matching-accent) 55%, transparent)'
+    : 'color-mix(in srgb, var(--matching-muted-text) 26%, transparent)')};
+
+  & + & {
+    padding-top: 10px;
+    border-top: 1px solid var(--matching-section-border);
+  }
+`;
+
+export const NoteLaneHead = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: ${NOTE_META_SIZE};
+  line-height: ${NOTE_META_LINE_HEIGHT};
+  color: var(--matching-muted-text);
+
+  b {
+    font-weight: 600;
+    color: var(--matching-header-text);
+  }
+`;
+
+export const NoteLaneHint = styled.span`
+  opacity: 0.7;
+`;
+
+/**
+ * Поле приватної нотатки. Той самий `CommentInput`, але з типографікою
+ * нотатки: у рядку стрічки поле лишається однорядковим, а тут воно стоїть
+ * поруч із публічним записом і мусить читатись однаково з ним.
+ */
+export const NoteField = styled(CommentInput)`
+  padding: 0;
+  height: auto;
+  min-height: calc(${NOTE_TEXT_SIZE} * ${NOTE_TEXT_LINE_HEIGHT});
+  font-size: ${NOTE_TEXT_SIZE};
+  line-height: ${NOTE_TEXT_LINE_HEIGHT};
+  color: var(--matching-header-text);
+
+  &::placeholder {
+    color: var(--matching-muted-text);
+    opacity: 0.75;
   }
 `;

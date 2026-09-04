@@ -37,6 +37,12 @@ const MIGRATED_EDITOR = 'migratedEditorUid0000000000';
 // акаунт бачить стрічку — і саме на ньому перевіряється, що поза стрічкою він
 // не бачить нічого, крім картки.
 const ORDINARY_VIEWER = 'ordinaryViewerUid000000000';
+// Той самий звичайний користувач, але його роль не доїхала в legacy `users`:
+// запис туди відхилили правами, і `persistUserWithFallback` поклав анкету у
+// вузли профілю. Роль такого акаунта живе в `matchingCards/{uid}/role` — і поки
+// правила шукали її тільки в `users`, показана анкета відкривалась йому
+// урізаною: картка є, а ні прізвища, ні контактів немає.
+const NODE_ROLE_VIEWER = 'nodeRoleViewerUid000000000';
 
 const CARD = 'someOtherProfileId000000000';
 // Анкета без ключа стрічки: картка є, але в стрічку не потрапляє.
@@ -91,6 +97,8 @@ await testEnv.withSecurityRulesDisabled(async context => {
   await set(ref(db, 'matchingCards'), {
     [CARD]: { name: 'Картка', surnameShort: 'К.', feedDate: '2026-08-25' },
     [PROFILE_OWNER]: { name: 'Власниця', feedDate: '2026-08-20' },
+    // Акаунт без запису в legacy: роль лежить лише тут.
+    [NODE_ROLE_VIEWER]: { name: 'Агенція без legacy', role: 'ag' },
     // Ключа стрічки немає — анкети немає і в стрічці.
     [HIDDEN_CARD]: { name: 'Прихована', surnameShort: 'П.', city: 'Київ' },
   });
@@ -868,6 +876,43 @@ await it('показану анкету читає як завжди — і де
 await it('на прихованій анкеті не отримує ані деталей, ані контактів', async () => {
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+// Роль читача правила шукали тільки в legacy `users`, тоді як рівень доступу —
+// і в `users`, і в `profileTechnical`. Акаунт, чия анкета цілком переїхала у
+// вузли, через це не проходив за роллю взагалі: показана анкета відкривалась
+// йому без прізвища й контактів, і відмову ніхто не бачив — код ковтає її
+// навмисно, щоб анкета без контактів усе-таки відкрилась.
+await it('роль із нових вузлів відкриває показану анкету так само, як legacy-роль', async () => {
+  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
+});
+
+await it('роль із нових вузлів не відкриває анкету поза стрічкою', async () => {
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+// Донорка лишається доноркою, де б не лежала її роль: `ed` у нових вузлах не
+// має відкривати те, що закрите для `ed` у legacy.
+await it('роль ed у нових вузлах приватних вузлів не відкриває', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ed'));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag'));
+});
+
+// Legacy-роль лишається головною: акаунт, якому в `users` записали `ed`, не
+// обходить межу через нові вузли.
+await it('legacy-роль ed не перекривається роллю з нових вузлів', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `users/${NODE_ROLE_VIEWER}`), { name: 'Донорка', userRole: 'ed' }));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `users/${NODE_ROLE_VIEWER}`), null));
 });
 
 await it('legacy-картка без дати у feedDate не відкриває приватні вузли', async () => {

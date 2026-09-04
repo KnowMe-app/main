@@ -131,4 +131,27 @@ describe('поза стрічкою звичайний читач не прос�
 
     expect(requested).not.toContain(`profileTechnical/${CARD_ID}`);
   });
+
+  // Правила бази вимагають до `feedDate` ще й роль читача, і код цієї умови не
+  // повторює — тобто відмова можлива на анкеті, яку код вважає відкритою.
+  // `readProfileNodePart` ковтає її навмисно, і назовні це виглядає як анкета
+  // без прізвища й контактів. Мовчати про таке не можна: це рівно та скарга,
+  // з якою прийшли — «feedDate є, а видно урізане».
+  it('називає причину, коли показана анкета приїхала без деталей', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const nodes = {
+      [`matchingCards/${CARD_ID}`]: { name: 'Показана', feedDate: '2026-09-01' },
+      [`profileDetails/${CARD_ID}`]: null,
+      [`profileContacts/${CARD_ID}`]: null,
+    };
+    mockGet.mockImplementation(async path => snapshotOf(nodes[String(path)] ?? null));
+
+    await readProfileFromNodes(CARD_ID);
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('картка в стрічці'),
+      expect.objectContaining({ userId: CARD_ID }),
+    );
+    warn.mockRestore();
+  });
 });

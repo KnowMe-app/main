@@ -12,6 +12,11 @@ import {
   ClickableId,
   CommentBox,
   CommentInput,
+  NoteField,
+  NoteLane,
+  NoteLaneHead,
+  NoteLaneHint,
+  NoteLanes,
   Container,
   FilterContainer,
   FilterDrawerBody,
@@ -200,6 +205,7 @@ import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { useAppSettings } from 'hooks/useAppSettings';
+import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import {
@@ -758,12 +764,15 @@ async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserI
   return searchKeySetKeys;
 }
 
-const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) => {
+// `field` дозволяє тому самому полю жити у двох типографіках: у рядку стрічки
+// воно однорядкове, а на картці стоїть поруч із публічним коментарем і мусить
+// читатись однаково з ним (`NoteField`).
+const ResizableCommentInput = ({ value, onChange, onBlur, onClick, field: Field = CommentInput, ...rest }) => {
   const ref = useRef(null);
   const autoResize = useAutoResize(ref, value);
 
   return (
-    <CommentInput
+    <Field
       {...rest}
       rows={1}
       ref={ref}
@@ -843,11 +852,12 @@ const CONTACT_ICONS = {
   otherLink: FaGlobe,
 };
 
-const getContactLabel = key => ({
-  otherLink: 'Other link',
-}[key] || key.charAt(0).toUpperCase() + key.slice(1));
+const getContactLabel = (key, language) => translateProfileLabel(
+  { otherLink: 'Other link' }[key] || key.charAt(0).toUpperCase() + key.slice(1),
+  language,
+);
 
-const ProfileContactLinks = ({ user, role }) => {
+const ProfileContactLinks = ({ user, role, language }) => {
   const entries = getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key));
   if (!entries.length) return null;
 
@@ -865,8 +875,8 @@ const ProfileContactLinks = ({ user, role }) => {
             target="_blank"
             rel="noopener noreferrer"
             $role={role}
-            title={`${getContactLabel(entry.key)}: ${displayValue}`}
-            aria-label={`${getContactLabel(entry.key)}: ${displayValue}`}
+            title={`${getContactLabel(entry.key, language)}: ${displayValue}`}
+            aria-label={`${getContactLabel(entry.key, language)}: ${displayValue}`}
           >
             <Icon />
             <span>{displayValue}</span>
@@ -1014,9 +1024,15 @@ const SwipeableCard = ({
     return () => clearTimeout(t);
   }, [dir]);
 
+  // Мова картки — та сама, що обрана в меню трьох крапок. Читається тут, а не
+  // в кожному гетері окремо: інакше половина рядка йшла б однією мовою, а
+  // половина — тією, яку модуль вважав за замовчуванням.
+  const { language } = useAppSettings();
   const profileName = getProfileName(user);
-  const roleLabel = getRoleLabel(resolvedRole);
-  const isGenericProfileRole = roleLabel === 'Profile';
+  const roleLabel = getRoleLabel(resolvedRole, language);
+  // Роль без назви — це `Profile`/`Анкета`; порівнюємо з кодом, а не з написом,
+  // бо напис залежить від мови.
+  const isGenericProfileRole = resolvedRole === 'other';
   const name = profileName || '';
   const age = getProfileAge(user);
   const title = [name, age].filter(Boolean).join(', ');
@@ -1038,11 +1054,11 @@ const SwipeableCard = ({
     'c_section',
     'cesareanSection',
   ];
-  const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys });
+  const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys, language });
   const usedSummaryFieldKeys = collectProfileFieldKeys(heroFields);
-  const bodyHeroFields = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
+  const bodyHeroFields = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys], language });
   const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);
-  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys, ...MATCHING_HIDDEN_CONTACT_KEYS] });
+  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys, ...MATCHING_HIDDEN_CONTACT_KEYS], language });
   const bio = getProfileBio(user);
   const initials = name
     .split(/\s+/)
@@ -1254,7 +1270,7 @@ const SwipeableCard = ({
           {sections.filter(section => section.variant !== 'contacts').map(section => (
             <ModernSection key={section.title}>
               <ModernSectionTitle>{section.title}</ModernSectionTitle>
-              {section.variant === 'chips' || section.title === 'Appearance' ? (
+              {section.variant === 'chips' ? (
                 <ProfileChips fields={section.fields} role={resolvedRole} />
               ) : (
                 <ProfileFieldRows fields={section.fields} />
@@ -1264,42 +1280,58 @@ const SwipeableCard = ({
           {sections.filter(section => section.variant === 'contacts').map(section => (
             <ModernSection key={section.title}>
               <ModernContactDetails onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-                <ModernContactSummary>Show contacts</ModernContactSummary>
-                <ProfileContactLinks user={user} role={resolvedRole} />
+                <ModernContactSummary>{profileUiText('showContacts', language)}</ModernContactSummary>
+                <ProfileContactLinks user={user} role={resolvedRole} language={language} />
               </ModernContactDetails>
             </ModernSection>
           ))}
-          <ModernSection>
-            <ModernSectionTitle>My personal comment</ModernSectionTitle>
-            <CommentBox>
-              <ResizableCommentInput
-                plain
-                placeholder="Мій приватний коментар / пам'ятка для себе"
-                value={commentValue || ''}
-                onClick={e => e.stopPropagation()}
-                onChange={e => onCommentChange && onCommentChange(e.target.value)}
-                onBlur={onCommentBlur}
-              />
-              {sharedCommentTexts.map((text, idx) => (
-                <SharedCommentText key={`${user.userId}-shared-comment-${idx}`}>
-                  {text}
-                </SharedCommentText>
-              ))}
-              {isAdmin && (
-                <ClickableId onClick={onAdminEdit}>
-                  ID: {user.userId ? user.userId.slice(0, 5) : ''}
-                </ClickableId>
+          {/* Приватна нотатка й публічний запис — одна секція, дві доріжки.
+              Це два записи про одну людину, зроблені в одному місці; двома
+              повноцінними блоками вони важили стільки ж, скільки дані анкети,
+              і читались як два різні застосунки — у кожного свій розмір
+              шрифту й свій плейсхолдер. Хто бачить запис, каже смужка ліворуч
+              і підпис над текстом, а не окрема рамка. */}
+          <ModernSection onClick={e => e.stopPropagation()}>
+            <ModernSectionTitle $quiet>{profileUiText('notes', language)}</ModernSectionTitle>
+            <NoteLanes>
+              <NoteLane>
+                <NoteLaneHead>
+                  <b>{profileUiText('personalNote', language)}</b>
+                  <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
+                </NoteLaneHead>
+                <CommentBox>
+                  <ResizableCommentInput
+                    plain
+                    field={NoteField}
+                    placeholder={profileUiText('personalNotePlaceholder', language)}
+                    value={commentValue || ''}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => onCommentChange && onCommentChange(e.target.value)}
+                    onBlur={onCommentBlur}
+                  />
+                  {sharedCommentTexts.map((text, idx) => (
+                    <SharedCommentText key={`${user.userId}-shared-comment-${idx}`}>
+                      {text}
+                    </SharedCommentText>
+                  ))}
+                  {isAdmin && (
+                    <ClickableId onClick={onAdminEdit}>
+                      ID: {user.userId ? user.userId.slice(0, 5) : ''}
+                    </ClickableId>
+                  )}
+                </CommentBox>
+              </NoteLane>
+              {publicCommentSlot && (
+                <NoteLane $public>
+                  <NoteLaneHead>
+                    <b>{profileUiText('publicComment', language)}</b>
+                    <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
+                  </NoteLaneHead>
+                  {publicCommentSlot}
+                </NoteLane>
               )}
-            </CommentBox>
+            </NoteLanes>
           </ModernSection>
-          {/* Секція «My personal comment» вище — це приватна нотатка переглядача. Публічні
-              коментарі бачать усі, тож вони стоять окремо і зі своїм підписом. */}
-          {publicCommentSlot && (
-            <ModernSection onClick={e => e.stopPropagation()}>
-              <ModernSectionTitle>Public comment</ModernSectionTitle>
-              {publicCommentSlot}
-            </ModernSection>
-          )}
         </ModernProfileBody>
         </ModernProfileScroll>
         {/* Реакції на урізану проєкцію не вішаються: разом із реакцією
@@ -1352,6 +1384,21 @@ const readQueryFromUrl = () => {
     return '';
   }
 };
+// Скільки живе підсумок порції в кінці списку. Достатньо, щоб його прочитали,
+// і замало, щоб він перетворився на постійний напис.
+const MATCHING_BATCH_SUMMARY_VISIBLE_MS = 6000;
+
+// «1 картка», «2 картки», «5 карток» — рядок читає людина, і число в ньому
+// однозначне, тож форма слова має з ним збігатись.
+const pluralizeCards = count => {
+  const tail = Math.abs(Number(count) || 0) % 100;
+  if (tail >= 11 && tail <= 14) return 'карток';
+  const last = tail % 10;
+  if (last === 1) return 'картка';
+  if (last >= 2 && last <= 4) return 'картки';
+  return 'карток';
+};
+
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
 const MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS = 2;
@@ -1412,10 +1459,11 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 // same 4/5 box - vertical shots get cropped like everything else so the columns
 // stay level - and neither the comment nor the location appears here.
 const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, diagnosticsSlot }) => {
+  const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const photo = getProfilePhotos(user)[0];
-  const facts = useMemo(() => renderProfileFacts(user), [user]);
+  const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
   const roleCode = getRoleCode(getProfileRole(user));
 
   return (
@@ -1459,7 +1507,7 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
           </GalleryHideButton>
         </>
         )}
-        {roleCode && <GalleryRoleCode title={getRoleLabel(getProfileRole(user))}>{roleCode}</GalleryRoleCode>}
+        {roleCode && <GalleryRoleCode title={getRoleLabel(getProfileRole(user), language)}>{roleCode}</GalleryRoleCode>}
       </GalleryPhotoBox>
       <GalleryName>
         {name}
@@ -1951,6 +1999,14 @@ const Matching = () => {
   // Поточний цикл відліку: скільки карток він пообіцяв і скільки спроб уже зробив.
   // null — циклу немає, кінець списку може знову запропонувати відлік.
   const [throttledCycle, setThrottledCycle] = useState(null);
+  // Підсумок останньої порції: скільки карток вона справді додала і коли.
+  //
+  // Відлік добігає нуля, картки лягають у кінець — і кінець списку знову
+  // виглядає так само, як за секунду до того. Читач бачив блимання лічильника,
+  // а не результат, і мусив прокручувати вгору, щоб дізнатись, чи взагалі щось
+  // приїхало. Тепер порція називає себе сама, на тому ж місці, де щойно був
+  // відлік.
+  const [lastBatchSummary, setLastBatchSummary] = useState(null);
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
@@ -4876,9 +4932,16 @@ const Matching = () => {
     // не результати пошуку: доливати їх до відповіді на запит означає показати
     // читачеві його ж чернетки замість того, кого він шукав, і ще й порахувати
     // їх у «Знайдено N».
+    //
+    // Чернетки йдуть **перед** декою, а не після неї. Хвіст списку належить
+    // пагінації: саме туди дивиться читач, коли чекає на порцію, і саме там
+    // стоять відлік і сентинел. Поки чернетки лежали в хвості, дописана
+    // сторінка лягала над ними — унизу нічого не змінювалось, і приріст
+    // знаходився тільки прокруткою вгору. Чернетки ж не пагінуються: їх
+    // фіксована жменя, і місце їм на початку, як власним карткам.
     users: viewMode === 'search'
       ? users
-      : [...users, ...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS)],
+      : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],
     additionalAccessUsers,
     sharedReactionCandidateUsers,
     isAdmin,
@@ -6625,6 +6688,23 @@ const Matching = () => {
   const showFeedLoadCountdown = canOfferMoreFeedCards && scrolledDownSinceLoad;
   const showFeedLoadPrompt = canOfferMoreFeedCards && !scrolledDownSinceLoad;
 
+  // Підсумок живе кілька секунд і зникає сам: це відповідь на щойно зроблений
+  // жест, а не постійний напис у кінці списку.
+  useEffect(() => {
+    if (!lastBatchSummary) return undefined;
+    const timer = setTimeout(() => setLastBatchSummary(null), MATCHING_BATCH_SUMMARY_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [lastBatchSummary]);
+
+  const feedBatchSummaryText = lastBatchSummary && !throttledCycle && !loading
+    ? (lastBatchSummary.added > 0
+      ? `Додано ${lastBatchSummary.added} ${pluralizeCards(lastBatchSummary.added)} — вони в кінці списку`
+      : 'Порція не дала нових карток — під ці фільтри більше нічого не підійшло')
+    : '';
+  // Окремим рядком підсумок показується лише там, де запрошення немає: інакше
+  // два написи про одне й те саме стояли б один під одним.
+  const showStandaloneBatchSummary = Boolean(feedBatchSummaryText) && !showFeedLoadPrompt && detailIndex === null;
+
   // Жест витрачено: наступна порція вимагатиме нового. Знімаємо прапорець ще до
   // запиту, інакше відлік перезапустився б сам, поки картки їдуть.
   const disarmFeedPaging = React.useCallback(() => {
@@ -6634,9 +6714,11 @@ const Matching = () => {
 
   const handleThrottledFeedLoad = React.useCallback(() => {
     disarmFeedPaging();
+    setLastBatchSummary(null);
     setThrottledCycle({
       target: publicCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH,
       startPagedCardsLength: pagedCardsLengthRef.current,
+      startPublicCardsLength: publicCardsLengthRef.current,
       attempts: 1,
     });
     endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
@@ -6657,6 +6739,13 @@ const Matching = () => {
       (!hasMore && !additionalHasMore) ||
       throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS
     ) {
+      // Цикл закінчився — і мусить сказати, чим саме. Нуль так само вартий
+      // рядка, як і двійка: «під ці фільтри більше нічого не підійшло» — це
+      // відповідь, а мовчазний кінець списку — ні.
+      setLastBatchSummary({
+        added: Math.max(0, publicCardsLength - throttledCycle.startPublicCardsLength),
+        at: Date.now(),
+      });
       setThrottledCycle(null);
       return;
     }
@@ -7185,15 +7274,23 @@ const Matching = () => {
                   </ActionButton>
                 </FeedNotice>
               )}
+              {showStandaloneBatchSummary && (
+                <FeedCountdown data-testid="feed-batch-summary">
+                  <FeedCountdownHint>{feedBatchSummaryText}</FeedCountdownHint>
+                </FeedCountdown>
+              )}
               {showFeedLoadPrompt && (
                 <FeedCountdown>
                   <FeedLoadPromptButton type="button" onClick={handleArmFeedPaging}>
                     {`Показати ще ${MATCHING_THROTTLED_LOAD_BATCH}`}
                   </FeedLoadPromptButton>
-                  <FeedCountdownHint>
-                    {lastLoadAddedNothing
+                  {/* Підсумок щойно завершеної порції говорить із того самого
+                      місця, де стоїть наступний жест: спершу «що приїхало», і
+                      лише коли сказати нема чого — звична підказка. */}
+                  <FeedCountdownHint data-testid={feedBatchSummaryText ? 'feed-batch-summary' : undefined}>
+                    {feedBatchSummaryText || (lastLoadAddedNothing
                       ? 'Минула порція не дала нових карток — під ці фільтри більше нічого не підійшло'
-                      : 'Прокрутіть донизу, щоб запустити відлік'}
+                      : 'Прокрутіть донизу, щоб запустити відлік')}
                   </FeedCountdownHint>
                 </FeedCountdown>
               )}
@@ -7294,6 +7391,7 @@ const Matching = () => {
                       }}
                       publicCommentSlot={(
                         <PublicCommentBlock
+                          flush
                           profileId={user.userId}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           viewerId={auth.currentUser?.uid || ''}

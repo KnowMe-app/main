@@ -398,7 +398,7 @@ export const ProfileDotsMenu = ({
           <ItemIcon><FaGlobe /></ItemIcon>
           <span>
             <ItemLabel>Мова</ItemLabel>
-            <ItemDescription>Мова документів і правил</ItemDescription>
+            <ItemDescription>Мова документів, правил і карток анкет</ItemDescription>
           </span>
           <SegmentedControl role="group" aria-label="Перемкнути мову">
             <SegmentedOption

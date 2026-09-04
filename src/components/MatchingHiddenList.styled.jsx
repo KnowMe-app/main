@@ -1,4 +1,10 @@
 import styled, { css, keyframes } from 'styled-components';
+import {
+  NOTE_META_LINE_HEIGHT,
+  NOTE_META_SIZE,
+  NOTE_TEXT_LINE_HEIGHT,
+  NOTE_TEXT_SIZE,
+} from './noteTypography';
 
 export const Wrap = styled.div`
   display: flex;
@@ -579,12 +585,19 @@ export const ToastUndo = styled.button`
  * itself stays borderless apart from a hairline rule under it.
  * ------------------------------------------------------------------ */
 
+/**
+ * `$flush` — блок стоїть у доріжці нотаток на картці, де відступ ліворуч уже
+ * дає смужка доріжки. У рядку стрічки відступу немає кому дати: там публічні
+ * записи стоять під нотаткою в заокругленій плашці й тримають її внутрішній
+ * край, інакше два сусідні тексти зсунуті один відносно одного.
+ */
 export const PublicComments = styled.div`
-  margin-top: 8px;
+  margin-top: ${({ $flush }) => ($flush ? '0' : '8px')};
+  padding-left: ${({ $flush }) => ($flush ? '0' : '10px')};
 `;
 
 export const CommentEntry = styled.div`
-  padding: 4px 10px 4px;
+  padding: 3px 0;
   border-left: ${({ $failed }) => ($failed
     ? '1px solid color-mix(in srgb, #d64545 70%, transparent)'
     : '1px solid transparent')};
@@ -595,8 +608,8 @@ export const CommentMeta = styled.div`
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: ${NOTE_META_SIZE};
+  line-height: ${NOTE_META_LINE_HEIGHT};
   color: var(--matching-muted-text);
 
   b {
@@ -606,8 +619,8 @@ export const CommentMeta = styled.div`
 
 export const CommentText = styled.p`
   margin: 1px 0 0;
-  font-size: 12.3px;
-  line-height: 1.5;
+  font-size: ${NOTE_TEXT_SIZE};
+  line-height: ${NOTE_TEXT_LINE_HEIGHT};
   color: var(--matching-header-text);
   white-space: pre-wrap;
   word-break: break-word;
@@ -656,7 +669,7 @@ export const CommentsMoreButton = styled.button`
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin: 4px 0 0 10px;
+  margin: 4px 0 0;
   padding: 0;
   border: 0;
   background: none;
@@ -672,21 +685,24 @@ export const CommentsMoreButton = styled.button`
   }
 `;
 
+// Запрошення написати — це той самий текст нотатки, лише ще не написаний. Тож
+// і виглядає воно як плейсхолдер приватного поля поруч, а не як окрема кнопка:
+// різні розміри в двох сусідніх порожніх полях і читались як недоробка.
 export const AddCommentTrigger = styled.div`
-  margin-top: 6px;
-  padding: 6px 10px;
+  margin-top: 4px;
+  padding: 2px 0;
   border: 0;
   background: none;
-  font-size: 12.3px;
-  line-height: 1.5;
+  font-size: ${NOTE_TEXT_SIZE};
+  line-height: ${NOTE_TEXT_LINE_HEIGHT};
   color: var(--matching-muted-text);
   opacity: 0.75;
   cursor: text;
 `;
 
 export const CommentEditor = styled.div`
-  margin-top: 6px;
-  padding: 0 10px;
+  margin-top: 4px;
+  padding: 0;
 `;
 
 export const CommentEditorHead = styled.div`
@@ -694,8 +710,8 @@ export const CommentEditorHead = styled.div`
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: ${NOTE_META_SIZE};
+  line-height: ${NOTE_META_LINE_HEIGHT};
   color: var(--matching-muted-text);
 `;
 
@@ -710,7 +726,7 @@ export const CommentVisibilityNote = styled.span`
 
 export const CommentStatus = styled.span`
   display: block;
-  margin: 3px 10px 0 0;
+  margin: 3px 0 0;
   text-align: right;
   font-size: 11px;
   color: var(--matching-muted-text);
@@ -730,8 +746,8 @@ export const PublicCommentInput = styled.textarea`
   overflow-y: auto;
   background: transparent;
   font: inherit;
-  font-size: 12.3px;
-  line-height: 1.5;
+  font-size: ${NOTE_TEXT_SIZE};
+  line-height: ${NOTE_TEXT_LINE_HEIGHT};
   color: var(--matching-header-text);
 
   &:focus {

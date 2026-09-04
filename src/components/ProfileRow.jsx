@@ -21,6 +21,8 @@ import {
   getRoleLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
+import { profileUiText, translateProfileLabel } from '../utils/profileTexts';
+import { useAppSettings } from '../hooks/useAppSettings';
 import { getContactEntries } from './contactMethods';
 import * as S from './MatchingHiddenList.styled';
 
@@ -34,9 +36,12 @@ import * as S from './MatchingHiddenList.styled';
 const CSECTION_KEYS = ['cSection', 'csection', 'c_section', 'cesareanSection'];
 const UA_COUNTRY_VALUES = new Set(['україна', 'ukraine', 'ua']);
 
+// Підписи канонічно англійські — так само, як у решті розкладки анкети, — і
+// перекладаються на показі. Бренди (Telegram, Viber) не перекладаються ніколи:
+// це власні назви, а не підписи.
 export const CONTACT_LABELS = {
-  phone: 'Телефон',
-  email: 'Пошта',
+  phone: 'Phone',
+  email: 'Email',
   telegram: 'Telegram',
   instagram: 'Instagram',
   whatsapp: 'WhatsApp',
@@ -46,23 +51,23 @@ export const CONTACT_LABELS = {
   linkedin: 'LinkedIn',
   youtube: 'YouTube',
   twitter: 'X',
-  website: 'Сайт',
-  otherLink: 'Посилання',
+  website: 'Website',
+  otherLink: 'Other link',
   ameblo: 'Ameblo',
 };
 
 const GRID_FIELD_DEFS = [
-  { key: 'education', label: 'Освіта' },
-  { key: 'clothingSize', label: 'Одяг' },
-  { key: 'shoeSize', label: 'Взуття' },
-  { key: 'race', label: 'Раса' },
-  { key: 'eyeColor', label: 'Очі' },
-  { key: 'hair', label: 'Волосся', combined: ['hairColor', 'hairStructure'] },
-  { key: 'faceShape', label: 'Обличчя' },
-  { key: 'noseShape', label: 'Ніс' },
-  { key: 'lipsShape', label: 'Губи' },
-  { key: 'chin', label: 'Підборіддя' },
-  { key: 'bodyType', label: 'Фігура' },
+  { key: 'education', label: 'Education' },
+  { key: 'clothingSize', label: 'Clothing' },
+  { key: 'shoeSize', label: 'Shoe' },
+  { key: 'race', label: 'Race' },
+  { key: 'eyeColor', label: 'Eyes' },
+  { key: 'hair', label: 'Hair', combined: ['hairColor', 'hairStructure'] },
+  { key: 'faceShape', label: 'Face shape' },
+  { key: 'noseShape', label: 'Nose' },
+  { key: 'lipsShape', label: 'Lips' },
+  { key: 'chin', label: 'Chin' },
+  { key: 'bodyType', label: 'Body type' },
 ];
 
 const INITIAL_GRADIENTS = [
@@ -160,11 +165,12 @@ export const formatPhoneDisplay = raw => {
   return trimmed.startsWith('+') ? trimmed : `+${digits}`;
 };
 
-export const getContactLabel = key => CONTACT_LABELS[key] || (key.charAt(0).toUpperCase() + key.slice(1));
+export const getContactLabel = (key, language) =>
+  translateProfileLabel(CONTACT_LABELS[key] || (key.charAt(0).toUpperCase() + key.slice(1)), language);
 
 const GRID_WIDE_VALUE_LENGTH = 22;
 
-export const buildGridRows = user => {
+export const buildGridRows = (user, language) => {
   const rows = [];
   GRID_FIELD_DEFS.forEach(def => {
     if (def.combined) {
@@ -175,12 +181,12 @@ export const buildGridRows = user => {
       if (valA && !isOtherValue(valA)) parts.push({ field: keyA, value: valA });
       if (valB && !isOtherValue(valB)) parts.push({ field: keyB, value: valB });
       if (!parts.length) return;
-      rows.push({ label: def.label, parts });
+      rows.push({ label: translateProfileLabel(def.label, language), parts });
       return;
     }
     const value = normalizeDisplayValue(user?.[def.key]);
     if (!value || isOtherValue(value)) return;
-    rows.push({ label: def.label, parts: [{ field: def.key, value }] });
+    rows.push({ label: translateProfileLabel(def.label, language), parts: [{ field: def.key, value }] });
   });
   rows.forEach(row => {
     const valueLength = row.parts.map(part => part.value).join(', ').length;
@@ -195,7 +201,7 @@ export const buildGridRows = user => {
 // The metrics line: `172/59 BMI 20 не заміжня O+ пологів 1, останні 21.02.23`.
 // Spec §5 asks that the fields an active filter narrowed on come first, so the
 // caller passes those metric keys and everything else keeps the default order.
-export const renderFacts = (user, priorityKeys = []) => {
+export const renderFacts = (user, priorityKeys = [], language) => {
   const nodes = [];
 
   const height = normalizeDisplayValue(user?.height);
@@ -217,7 +223,7 @@ export const renderFacts = (user, priorityKeys = []) => {
     );
   }
 
-  const maritalDisplay = maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus));
+  const maritalDisplay = maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), language);
   if (maritalDisplay) {
     nodes.push(<S.Fact key="marital">{maritalDisplay}</S.Fact>);
   }
@@ -227,7 +233,7 @@ export const renderFacts = (user, priorityKeys = []) => {
   if (cSectionValue) {
     nodes.push(
       <S.Fact key="cs">
-        КС <b>{formatCSectionValue(cSectionValue)}</b>
+        {profileUiText('factCSection', language)} <b>{formatCSectionValue(cSectionValue)}</b>
       </S.Fact>
     );
   }
@@ -241,13 +247,13 @@ export const renderFacts = (user, priorityKeys = []) => {
   if (ownKids) {
     const isZeroBirths = /^0+$/.test(ownKids.trim());
     if (isZeroBirths) {
-      nodes.push(<S.Fact key="births">без пологів</S.Fact>);
+      nodes.push(<S.Fact key="births">{profileUiText('factNoBirths', language)}</S.Fact>);
     } else {
       const formattedDate = formatDeliveryDate(normalizeDisplayValue(user?.lastDelivery));
       nodes.push(
         <S.Fact key="births">
-          пологів <b>{ownKids}</b>
-          {formattedDate && <>, останні <b>{formattedDate}</b></>}
+          {profileUiText('factBirths', language)} <b>{ownKids}</b>
+          {formattedDate && <>, {profileUiText('factLastDelivery', language)} <b>{formattedDate}</b></>}
         </S.Fact>
       );
     }
@@ -296,6 +302,7 @@ export const NoteBlock = ({ text }) => {
 };
 
 export const ContactsSection = ({ user, onOpened }) => {
+  const { language } = useAppSettings();
   const entries = useMemo(
     () => getContactEntries(user).filter(entry => entry.key !== 'vk'),
     [user]
@@ -316,8 +323,8 @@ export const ContactsSection = ({ user, onOpened }) => {
           });
         }}
       >
-        Контакти
-        {!open && <S.ContactsStatus>показати</S.ContactsStatus>}
+        {translateProfileLabel('Contacts', language)}
+        {!open && <S.ContactsStatus>{profileUiText('show', language)}</S.ContactsStatus>}
       </S.ContactsHeader>
       {open && (
         <S.ContactsBody>
@@ -328,7 +335,7 @@ export const ContactsSection = ({ user, onOpened }) => {
               target={entry.key === 'phone' || entry.key === 'email' ? undefined : '_blank'}
               rel={entry.key === 'phone' || entry.key === 'email' ? undefined : 'noopener noreferrer'}
             >
-              <span>{getContactLabel(entry.key)}</span>
+              <span>{getContactLabel(entry.key, language)}</span>
               {entry.key === 'phone' ? formatPhoneDisplay(entry.value) : entry.value}
             </S.ContactRow>
           ))}
@@ -473,7 +480,12 @@ export const CommentBlock = ({ text, onSave }) => {
 const COMMENT_MIN_ROWS = 1;
 const COMMENT_MAX_ROWS = 6;
 const COMMENT_SAVED_STATUS_MS = 3000;
-export const PUBLIC_COMMENT_VISIBILITY_NOTE = 'Загальнодоступний коментар';
+// Хто побачить запис, тепер каже підпис над доріжкою («Публічний коментар ·
+// Бачать усі»), тож у порожньому полі лишається робота, а не попередження:
+// запрошення написати. Стара константа лишається — рядок стрічки й тести
+// звертаються до неї за замовчуванням, — але текст у ній іде мовою інтерфейсу.
+export const publicCommentPlaceholder = language => profileUiText('publicCommentPlaceholder', language);
+export const PUBLIC_COMMENT_VISIBILITY_NOTE = publicCommentPlaceholder();
 
 const autoGrowComment = el => {
   if (!el) return;
@@ -499,7 +511,7 @@ const formatCommentDate = timestamp => {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getFullYear()).slice(2)}`;
 };
 
-const CommentComposer = ({ initialText, onCancel, onCommit }) => {
+const CommentComposer = ({ initialText, onCancel, onCommit, language }) => {
   const ref = useRef(null);
   const cancelledRef = useRef(false);
   const [draft, setDraft] = useState(initialText || '');
@@ -519,7 +531,7 @@ const CommentComposer = ({ initialText, onCancel, onCommit }) => {
         ref={ref}
         rows={COMMENT_MIN_ROWS}
         value={draft}
-        placeholder={PUBLIC_COMMENT_VISIBILITY_NOTE}
+        placeholder={publicCommentPlaceholder(language)}
         onTouchStart={e => e.stopPropagation()}
         onChange={e => {
           setDraft(e.target.value);
@@ -551,6 +563,8 @@ export const PublicCommentBlock = ({
   profileId,
   comments = [],
   viewerId,
+  // Блок живе у двох місцях із різними відступами — див. `PublicComments`.
+  flush = false,
   // Адмін відповідає за публічні записи про третіх осіб, тож редагує і знімає
   // будь-який із них, не тільки власний.
   canModerate = false,
@@ -558,6 +572,7 @@ export const PublicCommentBlock = ({
   onUpdate,
   onDelete,
 }) => {
+  const { language } = useAppSettings();
   const [editing, setEditing] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [savedAt, setSavedAt] = useState(0);
@@ -630,7 +645,7 @@ export const PublicCommentBlock = ({
   const visibleRows = expanded ? rows : rows.slice(0, 2);
 
   return (
-    <S.PublicComments onClick={e => e.stopPropagation()}>
+    <S.PublicComments $flush={flush} onClick={e => e.stopPropagation()}>
       {visibleRows.map(comment => {
         const isOwn = Boolean(viewerId) && comment.authorId === viewerId;
         const canEdit = isOwn || canModerate;
@@ -642,6 +657,7 @@ export const PublicCommentBlock = ({
           return (
             <CommentComposer
               key={comment.id}
+              language={language}
               initialText={comment.text}
               onCancel={() => setEditing(null)}
               onCommit={text => submit(editing.draftId, text, comment.id)}
@@ -708,6 +724,7 @@ export const PublicCommentBlock = ({
 
       {editing?.commentId === null ? (
         <CommentComposer
+          language={language}
           initialText=""
           onCancel={() => setEditing(null)}
           onCommit={text => submit(editing.draftId, text, null)}
@@ -723,7 +740,7 @@ export const PublicCommentBlock = ({
             setEditing({ commentId: null, draftId: `draft-${Date.now()}` });
           }}
         >
-          {PUBLIC_COMMENT_VISIBILITY_NOTE}
+          {publicCommentPlaceholder(language)}
         </S.AddCommentTrigger>
       )}
 
@@ -773,6 +790,9 @@ const ProfileRow = ({
   // деталей показує ту саму проєкцію, але з фото на весь екран, тож дотик має
   // що відкрити.
   const isLimited = user?.__limitedProfile === true;
+  // Рядок стрічки говорить тією ж мовою, що й картка: підписи полів і слова,
+  // які застосунок підставляє сам («пологів», «КС», «не заміжня»).
+  const { language } = useAppSettings();
   const name = getProfileName(user);
   const rowRole = getProfileRole(user);
   const roleCode = getRoleCode(rowRole);
@@ -782,10 +802,10 @@ const ProfileRow = ({
   const photo = photos[0];
   const bio = getProfileBio(user);
   const facts = useMemo(
-    () => (isLimited ? [] : renderFacts(user, priorityMetricKeys || [])),
-    [isLimited, user, priorityMetricKeys]
+    () => (isLimited ? [] : renderFacts(user, priorityMetricKeys || [], language)),
+    [isLimited, language, user, priorityMetricKeys]
   );
-  const gridRows = useMemo(() => (isLimited ? [] : buildGridRows(user)), [isLimited, user]);
+  const gridRows = useMemo(() => (isLimited ? [] : buildGridRows(user, language)), [isLimited, language, user]);
   const contactEntries = useMemo(
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
     [isLimited, user]
@@ -853,7 +873,7 @@ const ProfileRow = ({
               {name}
               {age && <>, {age}</>}
             </S.Name>
-            {roleCode && <S.RoleCode title={getRoleLabel(rowRole)}>{roleCode}</S.RoleCode>}
+            {roleCode && <S.RoleCode title={getRoleLabel(rowRole, language)}>{roleCode}</S.RoleCode>}
           </S.NameRow>
           {hasLocation && (
             <S.Location>
