@@ -895,7 +895,7 @@ await it('роль із нових вузлів не відкриває анке
 
 // Донорка лишається доноркою, де б не лежала її роль: `ed` у нових вузлах не
 // має відкривати те, що закрите для `ed` у legacy.
-await it('роль ed у нових вузлах приватних вузлів не відкриває', async () => {
+await it('роль ed у картці приватних вузлів не відкриває', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ed'));
   await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
@@ -904,15 +904,50 @@ await it('роль ed у нових вузлах приватних вузлів
     set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag'));
 });
 
-// Legacy-роль лишається головною: акаунт, якому в `users` записали `ed`, не
-// обходить межу через нові вузли.
-await it('legacy-роль ed не перекривається роллю з нових вузлів', async () => {
+// Роль із картки головніша за legacy: саме її пише застосунок, коли людина
+// змінює роль у власній анкеті, і саме вона має вирішувати. Legacy лишається
+// відповіддю для акаунтів, чия картка ролі ще не має.
+await it('роль із картки перекриває стару legacy-роль', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `users/${NODE_ROLE_VIEWER}`), { name: 'Колишня донорка', userRole: 'ed' }));
+  // Картка каже `ag` — межа відкрита, попри `ed` у дзеркалі.
+  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
+
+  // І навпаки: перехід у `ed` закриває межу, хоч би що лежало в legacy.
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const seed = context.database();
+    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ed');
+    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), { name: 'Агенція', userRole: 'ag' });
+  });
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const seed = context.database();
+    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag');
+    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), null);
+  });
+});
+
+// Картка з кількома ролями рядком не є — тоді відповідає legacy, як і раніше.
+await it('картка з кількома ролями лишає рішення за legacy-роллю', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const seed = context.database();
+    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), ['ed', 'ag']);
+    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), { name: 'Агенція', userRole: 'ag' });
+  });
+  await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
+
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `users/${NODE_ROLE_VIEWER}`), { name: 'Донорка', userRole: 'ed' }));
   await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
-  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
-  await testEnv.withSecurityRulesDisabled(context =>
-    set(ref(context.database(), `users/${NODE_ROLE_VIEWER}`), null));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const seed = context.database();
+    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag');
+    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), null);
+  });
 });
 
 await it('legacy-картка без дати у feedDate не відкриває приватні вузли', async () => {

@@ -205,6 +205,7 @@ import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { useAppSettings } from 'hooks/useAppSettings';
+import { hidePeerDonorCards, isDonorViewer } from 'utils/matchingPeerVisibility';
 import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
@@ -4915,16 +4916,23 @@ const Matching = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const publicVisibleUsers = useMemo(() => applyMatchingUiFiltersToUsers({
-    users,
-    filters,
-    filterMainFn: filterMain,
-    favoriteUsers,
-    dislikeUsers,
-    excludeReactionUsers: viewMode === 'default',
-    roleIndexSets,
-    viewMode,
-  }), [dislikeUsers, favoriteUsers, filters, roleIndexSets, users, viewMode]);
+  // Лічильник публічних карток має рахувати те саме, що видно на екрані:
+  // інакше цикл відліку обіцяв би дві картки, а дорахувати їх на екрані було б
+  // нічим — картки колег до нього не доходять.
+  const publicVisibleUsers = useMemo(() => hidePeerDonorCards({
+    users: applyMatchingUiFiltersToUsers({
+      users,
+      filters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: viewMode === 'default',
+      roleIndexSets,
+      viewMode,
+    }),
+    viewerRole: viewMode === 'default' ? currentUserRole : '',
+    viewerId: ownerId,
+  }), [currentUserRole, dislikeUsers, favoriteUsers, filters, ownerId, roleIndexSets, users, viewMode]);
 
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
@@ -4951,6 +4959,8 @@ const Matching = () => {
     ownDislikeUsers,
     favoriteUsers,
     dislikeUsers,
+    viewerRole: currentUserRole,
+    viewerId: ownerId,
   }), [
     additionalAccessUsers,
     dislikeUsers,
@@ -4964,6 +4974,8 @@ const Matching = () => {
     users,
     personalCreateProfiles,
     viewMode,
+    currentUserRole,
+    ownerId,
   ]);
 
   const reactionTabUsers = useMemo(() => {
@@ -6619,6 +6631,13 @@ const Matching = () => {
       const label = spec.buckets?.find(bucket => bucket.value === searchRefineValue)?.label
         || searchRefineValue;
       return `Уточнення «${spec.label} · ${label}» не лишило нічого зі знайдених (${visibleUsers.length})`;
+    }
+    // Донорці стрічка не показує чужих донорок, і на порожньому екрані про це
+    // треба сказати вголос: інакше «немає доступних профілів» читається як
+    // «застосунок порожній», хоча анкети є — просто не для цієї ролі. Пошук при
+    // цьому працює, і рядок про це нагадує.
+    if (!isReactionTab && !isSearching && isDonorViewer(currentUserRole) && users.length > 0) {
+      return 'У стрічці немає анкет інших ролей — анкети донорок вона не показує. Конкретну людину можна знайти пошуком';
     }
     return 'Немає доступних профілів';
   };

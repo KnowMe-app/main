@@ -226,7 +226,15 @@ describe('profileContacts — власне правило, і воно йде з
     const read = rules.profileContacts['.read'];
     ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
     expect(read).not.toContain('accessLevel');
-    expect(rules.profileContacts['.indexOn']).toBeUndefined();
+  });
+
+  // Індекси зʼявились разом із точним пошуком по вузлах: контакти шукаються
+  // там, де вони лежать, а не в legacy `users`. Читати колекцію цілком це
+  // право не дає — `.read` вище лишився суперадмінським, тож індекси
+  // обслуговують лише його ж запити.
+  it('індексує контактні поля, за якими шукає точний пошук', () => {
+    const indexOn = rules.profileContacts['.indexOn'];
+    expect(indexOn).toEqual(expect.arrayContaining(['phone', 'email', 'telegram', 'instagram']));
   });
 
   it('читає та сама аудиторія, що й картки стрічки, плюс власник анкети', () => {

@@ -1,3 +1,5 @@
+import { hidePeerDonorCards } from './matchingPeerVisibility';
+
 const isTruthyReactionValue = value => {
   if (typeof value === 'boolean') return value;
   return Boolean(value);
@@ -246,6 +248,11 @@ export const mergeMatchingCandidateUsers = ({
   ownDislikeUsers = {},
   favoriteUsers = ownFavoriteUsers,
   dislikeUsers = ownDislikeUsers,
+  // Хто дивиться. Потрібно рівно для одного правила: донорка не гортає стрічку
+  // інших донорок (`hidePeerDonorCards`). До пошуку й вкладок реакцій воно не
+  // застосовується — там читачка питає про конкретну людину.
+  viewerRole = '',
+  viewerId = '',
 } = {}) => {
   const isDefaultMode = viewMode === 'default';
   const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
@@ -264,9 +271,13 @@ export const mergeMatchingCandidateUsers = ({
       : baseUsers;
     const byId = new Map(defaultCandidates.map(user => [user.userId, user]));
 
-    return Array.from(byId.values()).filter(
-      user => user?.userId && !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
-    );
+    return hidePeerDonorCards({
+      users: Array.from(byId.values()).filter(
+        user => user?.userId && !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
+      ),
+      viewerRole,
+      viewerId,
+    });
   }
 
   const byId = new Map(baseUsers.map(user => [user.userId, user]));

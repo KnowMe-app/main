@@ -35,13 +35,17 @@ describe('shared card storage and overlay visibility', () => {
     });
   });
 
-  it('routes a published push-id card to users based on its existing record', async () => {
-    get.mockResolvedValue(snapshotOf({ userId: '-push-id-20-chars---' }));
-    await expect(getCardLegacyCollection('-push-id-20-chars---')).resolves.toBe('users');
+  // Legacy-тіло має рівно анкета акаунта, і про це каже сам id — довгий це
+  // Firebase-Auth UID. Читання `users/{id}` тут більше немає: у вебі не
+  // лишилось жодного читання цієї колекції.
+  it('routes an account profile to users by the shape of its id alone', async () => {
+    await expect(getCardLegacyCollection('firebaseAuthUid0123456789012')).resolves.toBe('users');
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('reports no legacy body for a card that lives only in the profile nodes', async () => {
-    get.mockResolvedValue(snapshotOf(null));
     await expect(getCardLegacyCollection('TG0016')).resolves.toBeNull();
+    await expect(getCardLegacyCollection('-push-id-20-chars---')).resolves.toBeNull();
+    expect(get).not.toHaveBeenCalled();
   });
 });

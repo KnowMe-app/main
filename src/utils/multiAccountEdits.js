@@ -86,21 +86,21 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
   };
 };
 
-// Куди дзеркалити запис — єдине питання, заради якого веб ще заглядає в
-// legacy-колекцію. Не щоб узяти звідти дані (їх він бере з вузлів), а щоб не
-// завести там нового тіла: анкети, створені у вебі, живуть лише у вузлах, і
-// дзеркало для мобільного застосунку їм не потрібне. Довгий id — це
-// Firebase-Auth UID, тобто анкета акаунта, яку мобільний застосунок читає; для
-// короткого відповідь дає наявність самого запису.
+// Куди дзеркалити запис. Не щоб узяти звідти дані — їх веб бере з вузлів, — а
+// щоб не завести в legacy нового тіла: анкети, створені у вебі, живуть лише у
+// вузлах.
+//
+// Відповідь дає сам id, без жодного читання: довгий — це Firebase-Auth UID,
+// тобто анкета акаунта; короткий — картка, заведена в застосунку, і
+// legacy-тіла вона не має. Раніше на короткому id тут стояло читання
+// `users/{id}` — останнє в цьому файлі й одне з останніх у вебі; тепер читань
+// legacy-колекції в коді немає взагалі.
 //
 // `null` означає «legacy-тіла немає»: писати таку анкету треба лише у вузли.
 export const getCardLegacyCollection = async cardUserId => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return null;
-  if (isLongFormatUserId(normalizedCardId)) return 'users';
-
-  const usersSnapshot = await get(ref2(database, `users/${normalizedCardId}`));
-  return usersSnapshot.exists() ? 'users' : null;
+  return isLongFormatUserId(normalizedCardId) ? 'users' : null;
 };
 
 export const getCanonicalCard = async cardUserId => {

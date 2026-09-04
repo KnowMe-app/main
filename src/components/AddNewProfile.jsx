@@ -26,7 +26,6 @@ import {
   removeCardAndSearchId,
   fetchAllUsersFromRTDB,
   fetchFilteredUsersByPage,
-  indexLastLogin,
   fetchUsersByLastActionPaged,
   addStimulationShortcutId,
   removeStimulationShortcutId,
@@ -1216,7 +1215,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const EDIT_PROFILE_USER_ID_KEY = 'addNewProfileEditUserId';
   const PREVIOUS_LIST_STATE_KEY = 'addNewProfilePreviousListState';
   const defaultSelectedIndexJobs = {
-    lastLogin: true,
     stimulationShortcuts: true,
     searchKeyUsersAll: false,
     searchKeySetReindex: false,
@@ -5777,16 +5775,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('Cache cleared');
   };
 
-  const runLastLoginIndexing = async () => {
-    toast.loading('Indexing lastLogin2 0%', { id: 'index-lastlogin-progress' });
-    await indexLastLogin(progress => {
-      toast.loading(`Indexing lastLogin2 ${progress}%`, {
-        id: 'index-lastlogin-progress',
-      });
-    });
-    toast.success('lastLogin2 indexed', { id: 'index-lastlogin-progress' });
-  };
-
   const toggleSearchKeyIndexSelection = indexKey => {
     setSelectedSearchKeyIndexes(prev => ({
       ...prev,
@@ -6138,7 +6126,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
 
     if (
-      !selectedIndexJobs.lastLogin &&
       !selectedIndexJobs.stimulationShortcuts &&
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
@@ -6151,10 +6138,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     try {
-      if (selectedIndexJobs.lastLogin) {
-        await runLastLoginIndexing();
-      }
-
       if (selectedIndexJobs.stimulationShortcuts) {
         await runStimulationShortcutIndexing();
       }
@@ -7435,16 +7418,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
               <IndexModal>
                 <IndexModalList>
-                  <SearchScopeLabel>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedIndexJobs.lastLogin)}
-                      onChange={() => toggleIndexJobSelection('lastLogin')}
-                    />
-                    <SearchScopeLabelTextGroup>
-                      <span>Індексувати lastLogin</span>
-                    </SearchScopeLabelTextGroup>
-                  </SearchScopeLabel>
                   <SearchScopeLabel>
                     <input
                       type="checkbox"
