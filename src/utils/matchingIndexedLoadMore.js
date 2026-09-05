@@ -20,6 +20,7 @@ export const collectMatchingIndexedLoadMorePage = async ({
   let finalHasMore = false;
   let cursorStuck = false;
   let pageCalls = 0;
+  let budgetedPageCalls = 0;
   let stopReason = '';
   let usedIndex = false;
   let deferReason = '';
@@ -29,7 +30,7 @@ export const collectMatchingIndexedLoadMorePage = async ({
   let fetchedCardsCount = 0;
   let safetyFilteredOutCount = 0;
 
-  while (collected.length < requestedLimit && pageCalls < maxPages) {
+  while (collected.length < requestedLimit && budgetedPageCalls < maxPages) {
     pageCalls += 1;
     if (typeof window !== 'undefined' && window.matchingLoadStats) {
       window.matchingLoadStats.backfillPages = (Number(window.matchingLoadStats.backfillPages) || 0) + 1;
@@ -93,6 +94,12 @@ export const collectMatchingIndexedLoadMorePage = async ({
     finalOffset = nextOffset;
     finalHasMore = lastHasMore;
 
+    // A provider call deliberately hydrates only a bounded window. If that
+    // window consists entirely of missing/peer profiles, its advancing cursor
+    // is continuation work rather than an empty UI attempt. Do not spend the
+    // collector's page allowance until a call yields cards (or terminates).
+    if (indexedUsers.length || !lastHasMore || cursorStuck) budgetedPageCalls += 1;
+
     if (!lastHasMore) {
       stopReason = 'source_exhausted';
       break;
@@ -111,7 +118,7 @@ export const collectMatchingIndexedLoadMorePage = async ({
     offset = nextOffset;
   }
 
-  if (!stopReason && pageCalls >= maxPages && collected.length < requestedLimit) stopReason = 'max_pages_reached';
+  if (!stopReason && budgetedPageCalls >= maxPages && collected.length < requestedLimit) stopReason = 'max_pages_reached';
 
   return {
     collected,
@@ -119,6 +126,7 @@ export const collectMatchingIndexedLoadMorePage = async ({
     finalHasMore,
     cursorStuck,
     pageCalls,
+    budgetedPageCalls,
     stale: false,
     usedIndex,
     // Індекс не дав нічого і не був використаний — читати деку доведеться
