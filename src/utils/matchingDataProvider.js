@@ -617,6 +617,7 @@ export const fetchMatchingIndexedCandidates = async ({
   viewerRole = '',
   viewerId = '',
   useIndexIdCache = true,
+  maxHydrationPages = 2,
 } = {}) => {
   const filterGroups = buildMatchingIndexFilterGroups({ filters });
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
@@ -640,15 +641,20 @@ export const fetchMatchingIndexedCandidates = async ({
   });
 
   // An index only knows ids, so it cannot account for the donor deck rule until
-  // after hydration. Keep walking the complete id list here: callers must receive
-  // `limit` cards that can actually reach the screen, and the returned offset must
-  // point after every rejected peer rather than after the first raw id slice.
+  // after hydration. Backfill only a small, resumable window: sparse indexes must
+  // not turn one UI request into an unbounded sequence of profile reads.
   const hydrateVisiblePage = async ids => {
     const users = [];
     const pageIds = [];
     let cursor = safeOffset;
+    let hydratedPages = 0;
+    const safeMaxHydrationPages = Math.max(1, Math.floor(Number(maxHydrationPages) || 1));
 
-    while (cursor < ids.length && users.length < safeLimit) {
+    while (
+      cursor < ids.length
+      && users.length < safeLimit
+      && hydratedPages < safeMaxHydrationPages
+    ) {
       const sliced = sliceIndexedBaseIds({
         ids,
         offset: cursor,
@@ -660,6 +666,7 @@ export const fetchMatchingIndexedCandidates = async ({
         break;
       }
       const hydrated = await hydrateOrderedUsers({ ids: sliced.pageIds, hydrateUsersByIds });
+      hydratedPages += 1;
       const visible = keepDonorCounterpartyCards({ users: hydrated, viewerRole, viewerId });
       users.push(...visible);
       pageIds.push(...visible.map(user => user.userId).filter(Boolean));
