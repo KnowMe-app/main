@@ -2560,17 +2560,21 @@ const Matching = () => {
             const userRole = profile?.userRole || profile?.role || '';
             const canCreateProfiles = profile?.canCreateProfiles === true;
             const additionalAccessRules = profile?.additionalAccessRules || '';
+
+            // The public deck only needs the role. Do not hold it behind search-key
+            // discovery or the additional-access profile refresh below.
+            setCurrentUserRole(userRole);
+            localStorage.setItem('userRole', userRole);
+            setCurrentUserRoleResolved(true);
             const searchKeySetKeys = await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);
 
             console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetKeys', searchKeySetKeys);
 
             setCurrentAccessLevel(accessLevel);
-            setCurrentUserRole(userRole);
             setCurrentCanCreateProfiles(canCreateProfiles);
             setCurrentAdditionalAccessRules(additionalAccessRules);
             setCurrentSearchKeySetKeys(searchKeySetKeys);
             localStorage.setItem('accessLevel', accessLevel);
-            localStorage.setItem('userRole', userRole);
             localStorage.setItem('canCreateProfiles', canCreateProfiles ? 'true' : 'false');
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
             localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
@@ -2600,18 +2604,15 @@ const Matching = () => {
             const cachedUserRole = localStorage.getItem('userRole') || '';
             const cachedAdditionalAccessRules = localStorage.getItem('additionalAccessRules') || '';
             const cachedSearchKeySetKeys = normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '');
+            setCurrentUserRole(cachedUserRole);
+            setCurrentUserRoleResolved(true);
             const fallbackSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(cachedSearchKeySetKeys, user.uid)
               ? cachedSearchKeySetKeys
               : await resolveAdditionalSearchKeySetKeysForMatching(null, user.uid);
             console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetsOfExactUser', fallbackSearchKeySetKeys);
             setCurrentAccessLevel(cachedAccessLevel);
-            setCurrentUserRole(cachedUserRole);
             setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
             setCurrentSearchKeySetKeys(fallbackSearchKeySetKeys);
-          } finally {
-            // An empty role is still a resolved profile result. Initial loading is
-            // gated on this flag so a cold session cannot cache an unscoped deck.
-            setCurrentUserRoleResolved(true);
           }
         };
 
@@ -3352,6 +3353,10 @@ const Matching = () => {
     setInitialPublicWindowComplete(false);
     resetReactionPaginationState();
     if (initialLoadInFlightRef.current) {
+      // The queued replacement owns the deck now. The active request may finish,
+      // but it must not apply state or repopulate the default-list cache.
+      loadInitialVersionRef.current += 1;
+      initialRequestIdRef.current += 1;
       pendingDefaultReloadRef.current = true;
       return;
     }
@@ -4951,9 +4956,16 @@ const Matching = () => {
 
   const initialRoleLoadedRef = useRef(null);
   useEffect(() => {
-    if (viewModeRef.current === 'favorites' || viewModeRef.current === 'dislikes') return;
     if (!currentUserRoleResolved || initialRoleLoadedRef.current === currentUserRole) return;
+    const previousRole = initialRoleLoadedRef.current;
     initialRoleLoadedRef.current = currentUserRole;
+    if (previousRole !== null && previousRole !== currentUserRole) {
+      clearMatchingCache('matching viewer role changed');
+      clearMatchingCardsPageInFlight();
+    }
+    // Role visibility applies only to the default deck. In particular, a profile
+    // response must not replace a search submitted while that response was pending.
+    if (viewModeRef.current !== 'default') return;
     reloadDefault();
     // reloadDefault is intentionally not a dependency: mode/source switches call explicit handlers,
     // while reaction-state changes must not retrigger the default deck loader.

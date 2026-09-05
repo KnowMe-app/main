@@ -145,7 +145,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     expect(second.pageIds).toEqual(['user00000000000000000003']);
   });
 
-  it('backfills donor index pages past peers on both fresh and cached reads', async () => {
+  it('bounds donor backfill and resumes past rejected peers on cached reads', async () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const roles = {
       user00000000000000000001: 'ed',
@@ -164,12 +164,14 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     };
 
     const fresh = await fetchMatchingIndexedCandidates(request);
-    const cached = await fetchMatchingIndexedCandidates(request);
+    const cached = await fetchMatchingIndexedCandidates({ ...request, offset: fresh.nextOffset });
 
-    expect(fresh.users.map(user => user.userId)).toEqual(['user00000000000000000003']);
-    expect(fresh.nextOffset).toBe(3);
+    expect(fresh.users).toEqual([]);
+    expect(fresh.nextOffset).toBe(2);
+    expect(fresh.hasMore).toBe(true);
     expect(cached.users.map(user => user.userId)).toEqual(['user00000000000000000003']);
     expect(cached.nextOffset).toBe(3);
+    expect(hydrateUsersByIds).toHaveBeenCalledTimes(3);
   });
 
   it('rereads bucket after matching index TTL expires', async () => {
