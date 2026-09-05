@@ -1716,25 +1716,51 @@ export const GalleryGrid = styled.div`
   padding: 2px 0 4px;
 `;
 
+// Плитка — картка з рамкою, а не гола фотографія з підписом. Смужка ролі вгорі
+// заміняє двобуквений код, який стояв на фото і який доводилось розшифровувати.
+export const GALLERY_ROLE_COLORS = {
+  ed: '#c95b83',
+  ag: '#4d86c9',
+  ip: '#3f9b8e',
+  sm: '#8a5ec2',
+  cl: '#4a9bc9',
+};
+
 export const GalleryTile = styled.div`
   position: relative;
   min-width: 0;
   cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 16px;
+  background: var(--matching-card-bg);
+  display: flex;
+  flex-direction: column;
+  align-self: start;
   opacity: ${({ $muted }) => ($muted ? 0.5 : 1)};
+
+  ${({ $role }) => GALLERY_ROLE_COLORS[$role] && css`
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 3px;
+      z-index: 1;
+      background: ${GALLERY_ROLE_COLORS[$role]};
+    }
+  `}
 `;
 
+// Пропорція залежить від ролі: донорці зовнішність — це дані, тож їй лишається
+// портретний 4/5; агенції фото нічого не вирішує, і 4/3 забирає менше екрана.
 export const GalleryPhotoBox = styled.div`
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 5;
-  border-radius: 10px;
+  aspect-ratio: ${({ $portrait }) => ($portrait ? '4 / 5' : '4 / 3')};
   overflow: hidden;
   background: var(--matching-section-bg);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 18px;
 
   img {
     width: 100%;
@@ -1744,55 +1770,16 @@ export const GalleryPhotoBox = styled.div`
   }
 `;
 
-// The heart sits on top of the photo, so it carries its own scrim - without it
-// the icon disappears on a bright shot.
-export const GalleryHeartButton = styled.button`
+export const GalleryPhotoCount = styled.span`
   position: absolute;
-  top: 6px;
   right: 6px;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 14px;
-  background: rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : '#fff')};
-
-  &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
-    outline-offset: 2px;
-  }
-`;
-
-/* Приховати — дія такого ж рангу, як «в обране», тож і кнопка така сама, поруч.
- * Досі плитка пропонувала лише серце, і сховати картку можна було, тільки
- * відкривши анкету. */
-export const GalleryHideButton = styled(GalleryHeartButton)`
-  top: 40px;
-  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : '#fff')};
-`;
-
-/* Дволітерний код ролі. Стоїть у нижньому кутку фото, щоб не сперечатися за
- * місце з кнопками вгорі. */
-export const GalleryRoleCode = styled.span`
-  position: absolute;
-  left: 6px;
   bottom: 6px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: 10.5px;
+  font-weight: 700;
   line-height: 1.4;
 `;
 
@@ -1810,8 +1797,22 @@ export const GalleryHiddenBadge = styled.span`
   border: 1px solid var(--matching-card-border);
 `;
 
+export const GalleryBody = styled.div`
+  padding: 9px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+`;
+
+export const GalleryNameRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+`;
+
 export const GalleryName = styled.div`
-  margin-top: 6px;
   font-size: 14px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -1819,6 +1820,46 @@ export const GalleryName = styled.div`
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+`;
+
+export const GalleryRoleTag = styled.span`
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: ${({ $role }) => GALLERY_ROLE_COLORS[$role] || 'var(--matching-muted-text)'};
+  background: ${({ $role }) => (GALLERY_ROLE_COLORS[$role]
+    ? `color-mix(in srgb, ${GALLERY_ROLE_COLORS[$role]} 18%, transparent)`
+    : 'var(--matching-chip-bg)')};
+  border: 1px solid ${({ $role }) => (GALLERY_ROLE_COLORS[$role]
+    ? `color-mix(in srgb, ${GALLERY_ROLE_COLORS[$role]} 42%, transparent)`
+    : 'var(--matching-card-border)')};
+`;
+
+/* Локації в плитці не було зовсім — а це перше, про що питають, коли шукають
+ * агенцію чи клініку. */
+export const GalleryLocation = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--matching-muted-text);
+  white-space: nowrap;
+  overflow: hidden;
+
+  svg {
+    flex: 0 0 auto;
+    fill: currentColor;
+  }
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 `;
 
 export const GalleryFacts = styled.div`
@@ -1826,9 +1867,39 @@ export const GalleryFacts = styled.div`
   font-size: 12px;
   line-height: 1.45;
   color: var(--matching-muted-text);
+  opacity: ${({ $soft }) => ($soft ? 0.72 : 1)};
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+`;
+
+/* Дії стоять під текстом, а не поверх фото: плитка без фотографії інакше
+ * лишалась би взагалі без кнопок — саме так вона й поводилась досі. */
+export const GalleryActions = styled.div`
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+`;
+
+export const GalleryActionButton = styled.button`
+  flex: 1 1 0;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  border: 1px solid ${({ $on }) => ($on ? 'var(--matching-accent)' : 'var(--matching-card-border)')};
+  background: ${({ $on }) => ($on
+    ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'
+    : 'rgba(255, 255, 255, 0.03)')};
+  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : 'var(--matching-muted-text)')};
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
+    outline-offset: 2px;
+  }
 `;
 
 export const FeedSentinel = styled.div`

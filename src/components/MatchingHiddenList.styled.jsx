@@ -39,6 +39,17 @@ export const List = styled.div`
   padding: 2px 0 4px;
 `;
 
+// Смужка ролі на лівому краї — те, що лишилось від плитки з ініціалами.
+// Колір несе те саме «хто це», але не забирає ані ширини, ані уваги; для
+// анкети без ролі смужки просто немає.
+export const ROLE_STRIPE_COLORS = {
+  ed: '#c95b83',
+  ag: '#4d86c9',
+  ip: '#3f9b8e',
+  sm: '#8a5ec2',
+  cl: '#4a9bc9',
+};
+
 export const Card = styled.div`
   position: relative;
   background: var(--matching-card-bg);
@@ -46,7 +57,20 @@ export const Card = styled.div`
   border-radius: 20px;
   padding: 11px;
   cursor: pointer;
+  overflow: hidden;
   transition: opacity 200ms ease, transform 200ms ease;
+
+  ${({ $role }) => ROLE_STRIPE_COLORS[$role] && css`
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: ${ROLE_STRIPE_COLORS[$role]};
+    }
+  `}
 `;
 
 export const Top = styled.div`
@@ -60,21 +84,34 @@ export const Top = styled.div`
 // harder than any colour does, so the avatar box is pinned - fixed width, fixed
 // height, and a min-height on the row's top block so a short body can't shrink it.
 export const Photo = styled.div`
-  width: 58px;
-  height: 58px;
-  min-height: 58px;
-  max-height: 58px;
+  position: relative;
+  width: 64px;
+  height: 64px;
+  min-height: 64px;
+  max-height: 64px;
   aspect-ratio: 1 / 1;
   border-radius: 16px;
   flex: 0 0 auto;
   background-size: cover;
   background-position: center;
-  display: grid;
-  place-items: center;
   color: #fff;
   font-weight: 700;
   font-size: 14px;
   overflow: hidden;
+`;
+
+/* Скільки фото в анкеті — видно з рядка, ще до її відкриття. */
+export const PhotoCount = styled.span`
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.5;
 `;
 
 export const Body = styled.div`
@@ -83,7 +120,7 @@ export const Body = styled.div`
 `;
 
 export const Name = styled.div`
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 650;
   letter-spacing: -0.015em;
   color: var(--matching-header-text);
@@ -103,6 +140,25 @@ export const RoleCode = styled.span`
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;
+`;
+
+/* Роль словом і в кольорі своєї ролі. Двобуквений код лишився там, де ширини
+ * справді немає — на плитці галереї; у рядку її вистачає на «Агенція». */
+export const RoleTag = styled.span`
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: ${({ $role }) => ROLE_STRIPE_COLORS[$role] || 'var(--matching-muted-text)'};
+  background: ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
+    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 18%, transparent)`
+    : 'var(--matching-chip-bg)')};
+  border: 1px solid ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
+    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 42%, transparent)`
+    : 'var(--matching-card-border)')};
 `;
 
 export const NameRow = styled.div`
@@ -139,8 +195,8 @@ export const FactsRow = styled.div`
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
   color: var(--matching-header-text);
-  opacity: 0.82;
-  margin-top: 5px;
+  opacity: ${({ $soft }) => ($soft ? 0.62 : 0.82)};
+  margin-top: ${({ $soft }) => ($soft ? '2px' : '5px')};
   line-height: 1.5;
 `;
 
@@ -185,9 +241,9 @@ export const TopButtonsRow = styled.div`
 `;
 
 const ctrlButtonBase = css`
-  width: 42px;
-  height: 26px;
-  border-radius: 9px;
+  width: 44px;
+  height: 34px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -596,6 +652,40 @@ export const PublicComments = styled.div`
   padding-left: ${({ $flush }) => ($flush ? '0' : '10px')};
 `;
 
+export const ReviewsGateButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  margin-top: 8px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--matching-muted-text);
+  font: inherit;
+  font-size: 12.3px;
+  cursor: pointer;
+  text-align: left;
+
+  svg {
+    flex: 0 0 auto;
+    opacity: 0.8;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
 export const CommentEntry = styled.div`
   padding: 3px 0;
   border-left: ${({ $failed }) => ($failed
@@ -604,21 +694,26 @@ export const CommentEntry = styled.div`
   cursor: ${({ $editable }) => ($editable ? 'text' : 'pointer')};
 `;
 
+/* Підпис стоїть під написаним, а не над ним: три відгуки поспіль інакше
+ * читаються як стовпчик імен, під кожним з яких десь лежить текст. */
 export const CommentMeta = styled.div`
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-top: 2px;
   font-size: ${NOTE_META_SIZE};
   line-height: ${NOTE_META_LINE_HEIGHT};
   color: var(--matching-muted-text);
 
   b {
     font-weight: 700;
+    color: var(--matching-header-text);
+    opacity: 0.75;
   }
 `;
 
 export const CommentText = styled.p`
-  margin: 1px 0 0;
+  margin: 0;
   font-size: ${NOTE_TEXT_SIZE};
   line-height: ${NOTE_TEXT_LINE_HEIGHT};
   color: var(--matching-header-text);

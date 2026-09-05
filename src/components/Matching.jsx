@@ -82,14 +82,18 @@ import {
   MatchingTopBar,
   FilterApplyButton,
   SearchField,
+  GalleryActionButton,
+  GalleryActions,
+  GalleryBody,
   GalleryFacts,
-  GalleryHideButton,
-  GalleryRoleCode,
   GalleryGrid,
-  GalleryHeartButton,
   GalleryHiddenBadge,
+  GalleryLocation,
   GalleryName,
+  GalleryNameRow,
   GalleryPhotoBox,
+  GalleryPhotoCount,
+  GalleryRoleTag,
   GalleryTile,
   LayoutToggleButton,
   DetailBar,
@@ -192,12 +196,12 @@ import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
 import ProfileRow, {
   PublicCommentBlock,
-  getGradientFor as getProfileGradientFor,
-  getInitials as getProfileInitials,
+  PublicCommentsGate,
   renderFacts as renderProfileFacts,
+  splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaRegHeart, FaEye, FaEyeSlash, FaUndoAlt } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -1457,20 +1461,33 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
   }, 0);
 };
 
-// Spec §6: the gallery is the "what do they look like" mode. Every tile is the
-// same 4/5 box - vertical shots get cropped like everything else so the columns
-// stay level - and neither the comment nor the location appears here.
+// Плитка галереї — це картка, а не рамка під фото.
+//
+// Рамка 4/5 стояла тут завжди, і анкета без фото діставала пів екрана під дві
+// літери власного ж імені, яке лежить рядком нижче. Тепер фото малюється лише
+// тоді, коли воно є, а плитка без нього просто нижча — різна висота колонок
+// дешевша за порожнечу. Пропорція залежить від ролі: донорці зовнішність — це
+// дані, тож портретні 4/5 лишаються їй, решті вистачає 4/3.
+//
+// Локація й дії переїхали з фото в тіло картки: поверх знімка вони жили тільки
+// тому, що іншого місця не було.
 const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, diagnosticsSlot }) => {
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
-  const photo = getProfilePhotos(user)[0];
+  const photos = getProfilePhotos(user);
+  const photo = photos[0];
+  const role = getProfileRole(user);
+  const roleWord = role === 'other' ? '' : getRoleLabel(role, language);
+  const location = getProfileLocation(user);
   const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
-  const roleCode = getRoleCode(getProfileRole(user));
+  const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
+  const isLimited = Boolean(user?.__limitedProfile);
 
   return (
     <GalleryTile
       $muted={isHidden}
+      $role={role}
       onClick={() => onOpen(user)}
       role="button"
       tabIndex={0}
@@ -1480,50 +1497,73 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
         onOpen(user);
       }}
     >
-      <GalleryPhotoBox style={photo ? undefined : { backgroundImage: getProfileGradientFor(user.userId) }}>
-        {photo
-          ? <img src={photo} alt="" loading="lazy" decoding="async" />
-          : getProfileInitials(name)}
-        {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
-        {!user?.__limitedProfile && (
-        <>
-          <GalleryHeartButton
-            type="button"
-            $on={isFavorite}
-            aria-label="В обране"
-            aria-pressed={isFavorite}
-            title="В обране"
-            onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
-          >
-            {isFavorite ? <FaHeart /> : <FaRegHeart />}
-          </GalleryHeartButton>
-          <GalleryHideButton
-            type="button"
-            $on={isHidden}
-            aria-label={isHidden ? 'Повернути зі схованих' : 'Приховати'}
-            aria-pressed={isHidden}
-            title={isHidden ? 'Повернути зі схованих' : 'Приховати'}
-            onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
-          >
-            {isHidden ? <FaEye /> : <FaEyeSlash />}
-          </GalleryHideButton>
-        </>
+      {photo && (
+        <GalleryPhotoBox $portrait={role === 'ed'}>
+          <img src={photo} alt="" loading="lazy" decoding="async" />
+          {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
+          {photos.length > 1 && <GalleryPhotoCount>{photos.length}</GalleryPhotoCount>}
+        </GalleryPhotoBox>
+      )}
+      <GalleryBody>
+        <GalleryNameRow>
+          <GalleryName>
+            {name}
+            {age && <>, {age}</>}
+          </GalleryName>
+          {roleWord && <GalleryRoleTag $role={role}>{roleWord}</GalleryRoleTag>}
+        </GalleryNameRow>
+        {location && (
+          <GalleryLocation>
+            <FaMapMarkerAlt aria-hidden="true" />
+            <span>{location}</span>
+          </GalleryLocation>
         )}
-        {roleCode && <GalleryRoleCode title={getRoleLabel(getProfileRole(user), language)}>{roleCode}</GalleryRoleCode>}
-      </GalleryPhotoBox>
-      <GalleryName>
-        {name}
-        {age && <>, {age}</>}
-      </GalleryName>
-      <GalleryFacts>
-        {facts.map((node, idx) => (
-          <React.Fragment key={node.key}>
-            {idx > 0 && ' '}
-            {node}
-          </React.Fragment>
-        ))}
-      </GalleryFacts>
-      {diagnosticsSlot}
+        {bodyFacts.length > 0 && (
+          <GalleryFacts>
+            {bodyFacts.map((node, idx) => (
+              <React.Fragment key={node.key}>
+                {idx > 0 && ' '}
+                {node}
+              </React.Fragment>
+            ))}
+          </GalleryFacts>
+        )}
+        {reproFacts.length > 0 && (
+          <GalleryFacts $soft>
+            {reproFacts.map((node, idx) => (
+              <React.Fragment key={node.key}>
+                {idx > 0 && ' '}
+                {node}
+              </React.Fragment>
+            ))}
+          </GalleryFacts>
+        )}
+        {!isLimited && (
+          <GalleryActions>
+            <GalleryActionButton
+              type="button"
+              $on={isFavorite}
+              aria-label="В обране"
+              aria-pressed={isFavorite}
+              title="В обране"
+              onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+            >
+              {isFavorite ? <FaHeart /> : <FaRegHeart />}
+            </GalleryActionButton>
+            <GalleryActionButton
+              type="button"
+              $on={isHidden}
+              aria-label={isHidden ? 'Повернути зі схованих' : 'Приховати'}
+              aria-pressed={isHidden}
+              title={isHidden ? 'Повернути зі схованих' : 'Приховати'}
+              onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
+            >
+              {isHidden ? <FaUndoAlt /> : <FaTimes />}
+            </GalleryActionButton>
+          </GalleryActions>
+        )}
+        {diagnosticsSlot}
+      </GalleryBody>
     </GalleryTile>
   );
 }, (prev, next) => (
@@ -1630,6 +1670,7 @@ const Matching = () => {
   // Spec §8: public records about a profile, readable by everyone signed in.
   // Kept apart from `comments`, which holds this viewer's own private note.
   const [publicComments, setPublicComments] = useState({});
+  const [publicCommentsLoading, setPublicCommentsLoading] = useState({});
   const publicCommentsRequestedRef = useRef(new Set());
   const [viewerName, setViewerName] = useState('');
   // Spec §9: admin-only data diagnostics. Both the flag and the module it pulls
@@ -6844,32 +6885,40 @@ const Matching = () => {
     setScrolledDownSinceLoad(true);
   }, []);
 
-  // Коментарі читаються рівно для того, що зараз їх показує, і жодного id не
-  // питають двічі.
+  // Коментарі читає лише відкрита анкета — там блок видно одразу, тож питати
+  // його на місці нема сенсу.
   //
-  // Показують їх двоє: рядки списку — і відкрита анкета. Плитка галереї не
-  // показує (`GalleryCard` не має `commentSlot`), тож у режимі галереї стрічка
-  // не читає нічого — але відкрити анкету з галереї можна, і тоді читаємо саме
-  // її одну.
-  useEffect(() => {
-    if (!ownerId) return;
-    const visibleIds = detailOpen
-      ? [activeProfile?.userId]
-      : (viewLayout === 'list'
-        ? feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT).map(user => user?.userId)
-        : []);
-    const pendingIds = visibleIds
-      .filter(Boolean)
-      .filter(id => !publicCommentsRequestedRef.current.has(id));
-    if (!pendingIds.length) return;
-    pendingIds.forEach(id => publicCommentsRequestedRef.current.add(id));
-    fetchPublicProfileComments(pendingIds)
-      .then(result => setPublicComments(previous => ({ ...previous, ...result })))
+  // Стрічка не читає нічого. Раніше вона брала коментарі наперед для цілої
+  // першої сторінки списку — запит на кожне відкриття стрічки заради блока, під
+  // яким у більшості анкет порожньо. Тепер у рядку стоїть кнопка
+  // «Перевірити наявність відгуків» (`PublicCommentsGate`), і читання коштує
+  // рівно стільки разів, скільки її натиснули.
+  const requestPublicComments = React.useCallback(profileId => {
+    const id = String(profileId || '').trim();
+    if (!id || publicCommentsRequestedRef.current.has(id)) return;
+    publicCommentsRequestedRef.current.add(id);
+    setPublicCommentsLoading(previous => ({ ...previous, [id]: true }));
+    fetchPublicProfileComments([id])
+      .then(result => {
+        // Порожня відповідь — теж відповідь: без неї кнопка лишалась би на
+        // місці, і людина тиснула б її знову за тим самим порожнім списком.
+        setPublicComments(previous => ({ ...previous, [id]: result?.[id] || [] }));
+      })
       .catch(error => {
-        pendingIds.forEach(id => publicCommentsRequestedRef.current.delete(id));
+        publicCommentsRequestedRef.current.delete(id);
         console.error('[Matching] Failed to load public comments', error);
-      });
-  }, [activeProfile?.userId, detailOpen, feedSource, ownerId, viewLayout]);
+      })
+      .finally(() => setPublicCommentsLoading(previous => {
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      }));
+  }, []);
+
+  useEffect(() => {
+    if (!ownerId || !detailOpen) return;
+    requestPublicComments(activeProfile?.userId);
+  }, [activeProfile?.userId, detailOpen, ownerId, requestPublicComments]);
 
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
     const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
@@ -7314,9 +7363,12 @@ const Matching = () => {
                       onSwipeLeft={toggleRowHidden}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
                       commentSlot={(
-                        <PublicCommentBlock
+                        <PublicCommentsGate
                           profileId={user.userId}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
+                          loaded={Boolean(publicComments[user.userId])}
+                          loading={Boolean(publicCommentsLoading[user.userId])}
+                          onRequest={requestPublicComments}
                           viewerId={auth.currentUser?.uid || ''}
                           canModerate={isAdmin}
                           onCreate={handleCreatePublicComment}
@@ -7332,7 +7384,7 @@ const Matching = () => {
                         onClick: toggleRowFavorite,
                       }}
                       secondaryAction={{
-                        icon: dislikeUsers[user.userId] ? <FaEye size={13} /> : <FaEyeSlash size={13} />,
+                        icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
                         title: dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати',
                         active: Boolean(dislikeUsers[user.userId]),
                         onClick: toggleRowHidden,

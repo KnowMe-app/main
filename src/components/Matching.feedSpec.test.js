@@ -84,12 +84,22 @@ describe('matching row structure', () => {
     expect(rowStyles()).toContain('font-variant-numeric: tabular-nums;');
   });
 
-  it('pins the avatar box so no row differs in height', () => {
+  // Плитка й далі фіксована — рядок з фото не мусить бути вищим за сусідній з
+  // фото. Але малюється вона тільки коли фото є: запасний квадрат з ініціалами
+  // повторював імʼя, що стоїть поруч, і забирав ширину в анкети, якій і без
+  // того нічого показати.
+  it('pins the avatar box so no row with a photo differs in height', () => {
     const styles = rowStyles();
     const photo = styles.slice(styles.indexOf('export const Photo = styled.div`'));
-    expect(photo).toContain('height: 58px;');
-    expect(photo).toContain('min-height: 58px;');
-    expect(photo).toContain('max-height: 58px;');
+    expect(photo).toContain('height: 64px;');
+    expect(photo).toContain('min-height: 64px;');
+    expect(photo).toContain('max-height: 64px;');
+  });
+
+  it('draws no avatar box at all when the profile has no photo', () => {
+    const row = read('ProfileRow.jsx');
+    expect(row).toContain('{photo && (');
+    expect(row).not.toContain('{!photo && getInitials(name)}');
   });
 
   it('clamps a comment to two lines', () => {
