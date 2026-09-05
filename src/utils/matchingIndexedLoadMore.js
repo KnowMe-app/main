@@ -29,8 +29,15 @@ export const collectMatchingIndexedLoadMorePage = async ({
   let pageIdsCount = 0;
   let fetchedCardsCount = 0;
   let safetyFilteredOutCount = 0;
+  // Keep continuation reads finite while still letting sparse index windows
+  // advance without consuming the smaller UI page budget.
+  const maxPageCalls = maxPages * 2;
 
-  while (collected.length < requestedLimit && budgetedPageCalls < maxPages) {
+  while (
+    collected.length < requestedLimit
+    && budgetedPageCalls < maxPages
+    && pageCalls < maxPageCalls
+  ) {
     pageCalls += 1;
     if (typeof window !== 'undefined' && window.matchingLoadStats) {
       window.matchingLoadStats.backfillPages = (Number(window.matchingLoadStats.backfillPages) || 0) + 1;
@@ -118,7 +125,8 @@ export const collectMatchingIndexedLoadMorePage = async ({
     offset = nextOffset;
   }
 
-  if (!stopReason && budgetedPageCalls >= maxPages && collected.length < requestedLimit) stopReason = 'max_pages_reached';
+  if (pageCalls >= maxPageCalls && collected.length < requestedLimit) stopReason = 'max_page_calls_reached';
+  else if (!stopReason && budgetedPageCalls >= maxPages && collected.length < requestedLimit) stopReason = 'max_pages_reached';
 
   return {
     collected,

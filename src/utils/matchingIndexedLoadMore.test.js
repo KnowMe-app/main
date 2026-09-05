@@ -128,4 +128,28 @@ describe('collectMatchingIndexedLoadMorePage', () => {
     expect(result.finalOffset).toBe(4);
     expect(result.finalHasMore).toBe(false);
   });
+
+  it('обмежує загальну кількість викликів для нескінченних порожніх вікон', async () => {
+    const fetchMatchingIndexedCandidates = jest.fn(({ offset }) => Promise.resolve({
+      usedIndex: true,
+      users: [],
+      userIds: [`missing-${offset}`],
+      nextOffset: offset + 1,
+      hasMore: true,
+    }));
+
+    const result = await collectMatchingIndexedLoadMorePage({
+      requestedLimit: 1,
+      maxPages: 2,
+      fetchMatchingIndexedCandidates,
+      hydrateUsersByIds: jest.fn(),
+    });
+
+    expect(fetchMatchingIndexedCandidates).toHaveBeenCalledTimes(4);
+    expect(result.pageCalls).toBe(4);
+    expect(result.budgetedPageCalls).toBe(0);
+    expect(result.finalOffset).toBe(4);
+    expect(result.finalHasMore).toBe(true);
+    expect(result.stopReason).toBe('max_page_calls_reached');
+  });
 });
