@@ -22,5 +22,17 @@
     "context7@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ]
   }
 }

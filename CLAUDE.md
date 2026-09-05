@@ -20,6 +20,11 @@ CI=true npx react-scripts test --testPathPattern "cardIndex" --watchAll=false   
 npm run test:rules        # сценарії доступу в емуляторі RTDB (потрібна Java)
 ```
 
+У веб-сесії залежності ставить `SessionStart`-хук (`.claude/hooks/session-start.sh`) —
+контейнер клонує репозиторій без `node_modules`, і без цього кроку `npm run lint:js`
+бере глобальний eslint з образу (v10), який не читає `eslintConfig` з `package.json`,
+і падає на порожньому місці. Локально хук — no-op (перевіряє `CLAUDE_CODE_REMOTE`).
+
 `npm run test:rules` піднімає емулятор через `firebase-tools` і прогоняє
 `scripts/rulesEmulatorTests.mjs` — понад сто перевірок доступу. **Це єдиний спосіб
 дізнатись, що `database.rules.json` узагалі можна задеплоїти:** мова правил має власний
