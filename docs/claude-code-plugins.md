@@ -81,8 +81,9 @@
 | `hookify.no-users-read.local.md` | у код додається `get(ref(database, 'users…` | `/users` — legacy-дзеркало, з нього не читають; таблиця, куди що переїхало |
 | `hookify.matching-card-schema.local.md` | правка `matchingCardIndex.js` або `profileNodeSchema.js` | поле картки живе в трьох місцях; `$other: false` відхиляє запис мовчки |
 | `hookify.push-to-main-deploys.local.md` | `git push … main` | пуш у `main` — це деплой; і чого він **не** зробить |
+| `hookify.prettier-mass-reformat.local.md` | `prettier … --write` | масове форматування ламає 19 сюїт понад базові 7 — заміряно, не гіпотеза |
 
-Усі чотири прогнані через `hooks/pretooluse.py` самого плагіна: спрацьовують на
+Усі прогнані через `hooks/pretooluse.py` самого плагіна: спрацьовують на
 цільових шляхах і мовчать на решті. Запис у `/users` (`update(ref(database,
 'users'), …)`) навмисно **не** ловиться — писати в дзеркало можна, не можна лише
 читати.
