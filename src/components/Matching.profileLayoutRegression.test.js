@@ -13,7 +13,11 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('<ProfileContactLinks user={user} role={resolvedRole} language={language} />');
     // Напис під замком тепер іде мовою інтерфейсу, тож перевіряється сам слот,
     // а не англійський рядок у ньому.
-    expect(matchingSource).toContain("<ModernContactSummary>{profileUiText('showContacts', language)}</ModernContactSummary>");
+    expect(matchingSource).toContain("{profileUiText('showContacts', language)}");
+    // Згорнутий рядок показує ще й значки тих каналів, які в анкеті заповнені,
+    // — інакше він нічого не повідомляє, поки його не розгорнули.
+    expect(matchingSource).toContain('<ModernContactHints aria-hidden="true">');
+    expect(matchingSource).toContain('const contactHintIcons = getContactEntries(user)');
     expect(matchingSource).toContain('href={entry.href}');
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone');
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.viberFromPhone');

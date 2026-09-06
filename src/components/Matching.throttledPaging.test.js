@@ -178,10 +178,12 @@ describe('публічні коментарі', () => {
   // Блок один, доріжки дві: приватна нотатка й публічний запис розділені не
   // рамкою, а підписом і смужкою — але порядок лишається той самий, і приватне
   // не може опинитись під виглядом публічного.
+  // Спільної шапки «Нотатки» над доріжками немає: підпис над кожною вже каже
+  // і що це, і хто це побачить.
   it('тримає публічні коментарі окремо від приватної нотатки', () => {
     const source = matching();
     const card = source.slice(
-      source.indexOf("<ModernSectionTitle $quiet>{profileUiText('notes', language)}</ModernSectionTitle>"),
+      source.indexOf('<NoteLanes>'),
       source.indexOf('</ModernProfileBody>'),
     );
     expect(card).toContain("{profileUiText('personalNote', language)}");

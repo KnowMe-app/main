@@ -53,6 +53,9 @@ import {
   ModernHero,
   ModernHeroContent,
   ModernHeroFacts,
+  ModernContactHints,
+  ModernPhotoStrip,
+  ModernPhotoThumb,
   ModernHeroFallbackMark,
   ModernHeroImage,
   ModernHeroLocation,
@@ -1066,6 +1069,10 @@ const SwipeableCard = ({
   const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);
   const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys, ...MATCHING_HIDDEN_CONTACT_KEYS], language });
   const bio = getProfileBio(user);
+  const contactHintIcons = getContactEntries(user)
+    .filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key))
+    .map(entry => ({ key: entry.key, Icon: CONTACT_ICONS[entry.key] || FaGlobe }))
+    .slice(0, 4);
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -1243,13 +1250,28 @@ const SwipeableCard = ({
             ))}
           </div>
         )}
+        {allPhotos.length > 1 && (
+          <ModernPhotoStrip onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+            {allPhotos.map((item, index) => (
+              <ModernPhotoThumb
+                key={`${user.userId}-thumb-${index}`}
+                type="button"
+                $active={item === activeHeroPhoto}
+                style={{ backgroundImage: `url(${item})` }}
+                aria-label={`Фото ${index + 1} з ${allPhotos.length}`}
+                aria-pressed={item === activeHeroPhoto}
+                onClick={event => { event.stopPropagation(); setActiveHeroPhoto(item); }}
+              />
+            ))}
+          </ModernPhotoStrip>
+        )}
         {shouldShowHeroContent && (
           <ModernHeroContent>
             {title && <ModernHeroTitle>{title}</ModernHeroTitle>}
             {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
             {heroFields.length > 0 && (
-              <ModernHeroFacts>
-                {heroFields.slice(0, 6).map(item => {
+              <ModernHeroFacts $columns={Math.min(4, heroFields.length)}>
+                {heroFields.map(item => {
                   const fact = formatHeroFact(item);
                   return (
                     <ModernFactPill key={`hero-${item.key}`}>
@@ -1286,7 +1308,12 @@ const SwipeableCard = ({
           {sections.filter(section => section.variant === 'contacts').map(section => (
             <ModernSection key={section.title}>
               <ModernContactDetails onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-                <ModernContactSummary>{profileUiText('showContacts', language)}</ModernContactSummary>
+                <ModernContactSummary>
+                  {profileUiText('showContacts', language)}
+                  <ModernContactHints aria-hidden="true">
+                    {contactHintIcons.map(({ key, Icon }) => <Icon key={key} />)}
+                  </ModernContactHints>
+                </ModernContactSummary>
                 <ProfileContactLinks user={user} role={resolvedRole} language={language} />
               </ModernContactDetails>
             </ModernSection>
@@ -1298,7 +1325,9 @@ const SwipeableCard = ({
               шрифту й свій плейсхолдер. Хто бачить запис, каже смужка ліворуч
               і підпис над текстом, а не окрема рамка. */}
           <ModernSection onClick={e => e.stopPropagation()}>
-            <ModernSectionTitle $quiet>{profileUiText('notes', language)}</ModernSectionTitle>
+            {/* Спільної шапки «Нотатки» більше немає: підпис над кожною
+                доріжкою вже каже і що це, і хто це побачить, а третій
+                заголовок над ними лише повторював слово. */}
             <NoteLanes>
               <NoteLane>
                 <NoteLaneHead>

@@ -88,6 +88,11 @@ const UK_BY_EN_LABEL = {
   'Donation count': 'Кількість донацій',
   Donations: 'Донації',
   'C-section': 'Кесарів розтин',
+  // Підписи під комірками смуги показників: там чверть ширини екрана, і
+  // «Кількість пологів» у ній лишилось би трьома крапками.
+  Births: 'Пологів',
+  'Last birth': 'Останні',
+  Caesarean: 'Кесарів',
 
   // ролі
   'Egg donor': 'Донорка яйцеклітин',
@@ -146,9 +151,13 @@ const UI_TEXTS = {
   personalNote: { en: 'Private note', uk: 'Приватна нотатка' },
   personalNoteHint: { en: 'Only you see it', uk: 'Бачите тільки ви' },
   personalNotePlaceholder: { en: 'A note for yourself', uk: 'Нотатка для себе' },
-  publicComment: { en: 'Public comment', uk: 'Публічний коментар' },
+  // «Нотатка», а не «коментар»: приватна й публічна доріжки стоять поруч і
+  // роблять те саме — це запис про людину, — тож і називатись мусять однаково,
+  // а різницю несе слово «публічна». Поле анкети `publicComment` при цьому
+  // лишається як є: перейменування підпису не зачіпає назви ключа в базі.
+  publicComment: { en: 'Public note', uk: 'Публічна нотатка' },
   publicCommentHint: { en: 'Everyone sees it', uk: 'Бачать усі' },
-  publicCommentPlaceholder: { en: 'Add a public comment', uk: 'Додати публічний коментар' },
+  publicCommentPlaceholder: { en: 'Add a public note', uk: 'Додати публічну нотатку' },
   notes: { en: 'Notes', uk: 'Нотатки' },
 
   // Рядок метрик під іменем: слова в ньому теж складає застосунок.

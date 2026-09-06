@@ -43,11 +43,21 @@ describe('profileLayoutConfig', () => {
 
     expect(getProfileRole(user)).toBe('ed');
     expect(getProfilePhotos(user)).toEqual(['hero.jpg', 'gallery.jpg']);
-    expect(hero.map(field => field.key)).toEqual(['height', 'weight', 'bmi', 'blood', 'experience']);
-    expect(hero.find(field => field.key === 'experience')?.label).toBe('Exp');
+    // Пологи, останні й кесарів стоять у смузі показників поруч із тілом:
+    // для участі в програмі вони важать не менше за зріст та ІМТ, а лежали
+    // рядками в «Основному», де їх доводилось вишукувати.
+    expect(hero.map(field => field.key)).toEqual(['height', 'weight', 'bmi', 'blood', 'ownKids', 'cSection', 'experience']);
+    expect(hero.find(field => field.key === 'experience')?.label).toBe('Donations');
+    // `ownKids` у формі — це «Кількість пологів», тож число лишається числом:
+    // «є / немає» ховало і його, і сам сенс поля.
+    expect(hero.find(field => field.key === 'ownKids')?.label).toBe('Births');
     expect(quickFacts.map(field => field.key)).toEqual([]);
-    expect(sections.map(section => section.title)).toEqual(expect.arrayContaining(['Appearance', 'Main information', 'Donation experience']));
-    expect(detailKeys).toEqual(expect.arrayContaining(['breastSize', 'ownKids', 'education', 'cSection']));
+    // «Donation experience» тут більше не збирається: досвід донацій і кесарів
+    // переїхали у смугу показників, а решта полів секції в цій анкеті порожня —
+    // і порожня секція не малюється.
+    expect(sections.map(section => section.title)).toEqual(expect.arrayContaining(['Appearance', 'Main information']));
+    expect(sections.map(section => section.title)).not.toContain('Donation experience');
+    expect(detailKeys).toEqual(expect.arrayContaining(['breastSize', 'education']));
     expect(detailKeys).not.toEqual(expect.arrayContaining(hero.map(field => field.key)));
     expect(shouldRenderField(user.emptyValue)).toBe(false);
   });

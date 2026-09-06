@@ -101,9 +101,13 @@ describe('Matching shared reaction card UI', () => {
     expect(matchingSource).not.toContain('<LoadMoreButton');
     expect(matchingSource).not.toContain('ModernGallery');
     expect(matchingSource).not.toContain('Gallery</ModernSectionTitle>');
-    expect(styledSource).toContain('height: 55%;');
+    // Фото більше не забирає 55% екрана: під ним стоїть стрічка мініатюр, і
+    // висоту віддано тому, заради чого анкету відкривають.
+    expect(styledSource).toContain('height: 38%;');
     expect(styledSource).toContain('top: 14px;\n  left: 14px;');
-    expect(styledSource).toContain('& + &::before');
+    // Смуга показників стала сіткою на два ряди — донорці їх тепер вісім, —
+    // тож роздільник малює сама комірка, а не пара сусідів у потоці.
+    expect(styledSource).toContain('&:not(:nth-child(4n + 1))::before');
     expect(styledSource).toContain('width: 1px;');
     expect(styledSource).toContain('flex: 1 1 0;');
   });

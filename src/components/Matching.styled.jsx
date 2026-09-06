@@ -42,8 +42,14 @@ const matchingThemeVars = css`
   --matching-hero-bottom: ${({ $themeMode }) => ($themeMode === 'light'
     ? 'linear-gradient(180deg, rgba(22, 22, 22, 0) 0%, rgba(22, 22, 22, 0.22) 100%)'
     : 'linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%)')};
-  --matching-rail-bg: transparent;
-  --matching-rail-border: transparent;
+  /* Панель дій мала прозорий фон, і два кола висіли просто над текстом
+   * анкети — на «Показати контакти» й на «Про себе». Тепер вона має власне
+   * дно: прозоре зверху, щоб не різати картку лінією, і суцільне під самими
+   * кнопками, щоб під ними нічого не читалось. */
+  --matching-rail-bg: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'linear-gradient(180deg, rgba(250, 250, 248, 0) 0%, #FAFAF8 38%)'
+    : 'linear-gradient(180deg, rgba(12, 10, 9, 0) 0%, rgba(12, 10, 9, 0.94) 34%, #0c0a09 100%)')};
+  --matching-rail-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
   --matching-action-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#211b16')};
   --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8791A' : '#fff8ec')};
   --matching-action-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 8px 18px rgba(22, 22, 22, 0.10)' : '0 8px 18px rgba(0, 0, 0, 0.22)')};
@@ -1019,8 +1025,8 @@ export const ModernProfileScroll = styled.div`
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: clamp(330px, 55%, 470px);
-  height: 55%;
+  min-height: clamp(240px, 38%, 340px);
+  height: 38%;
   background: var(--matching-hero-fallback);
   background-size: cover;
   background-position: center 18%;
@@ -1041,6 +1047,38 @@ export const ModernHero = styled.div`
   &:focus-visible {
     outline: 3px solid rgba(232, 121, 26, 0.75);
     outline-offset: -5px;
+  }
+`;
+
+export const ModernPhotoStrip = styled.div`
+  display: flex;
+  gap: 7px;
+  padding: 10px 16px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+export const ModernPhotoThumb = styled.button`
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 11px;
+  border: 1px solid var(--matching-contact-border);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  overflow: hidden;
+  outline: ${({ $active }) => ($active ? '2px solid var(--matching-accent)' : 'none')};
+  outline-offset: 1px;
+
+  &:focus-visible {
+    outline: 2px solid var(--matching-accent);
+    outline-offset: 2px;
   }
 `;
 
@@ -1134,7 +1172,8 @@ export const ModernHeroLocation = styled.p`
 `;
 
 export const ModernHeroFacts = styled.div`
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(${({ $columns }) => $columns || 4}, minmax(0, 1fr));
   align-items: stretch;
   gap: 0;
   margin-top: 12px;
@@ -1147,7 +1186,6 @@ export const ModernHeroFacts = styled.div`
 
 export const ModernFactPill = styled.span`
   position: relative;
-  flex: 1 1 0;
   min-width: 0;
   min-height: 54px;
   display: inline-flex;
@@ -1161,13 +1199,25 @@ export const ModernFactPill = styled.span`
   text-shadow: none;
   line-height: 1;
 
-  & + &::before {
+  &:not(:nth-child(4n + 1))::before {
     content: '';
     position: absolute;
     left: 0;
     top: 9px;
     bottom: 9px;
     width: 1px;
+    background: var(--matching-contact-border);
+  }
+
+  /* Другий ряд відділяється від першого лінією, а не відступом: рамка в
+     смуги одна, і розрив усередині неї читався б як дві різні смуги. */
+  &:nth-child(n + 5)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 1px;
     background: var(--matching-contact-border);
   }
 
@@ -1310,21 +1360,42 @@ export const ModernMoreButton = styled.button`
   cursor: pointer;
 `;
 
+/* Значки наявних каналів у згорнутому рядку. Тільки підказка «є куди писати»,
+ * тож вони не клікабельні — сам контакт відкривається розгортанням. */
+export const ModernContactHints = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--matching-contact-text);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.85;
+
+  svg {
+    display: block;
+  }
+`;
+
 export const ModernContactDetails = styled.details`
   margin: 0;
   padding: 0;
 `;
 
+/* Згорнутий блок контактів займав пів екрана під один напис у 22 px — і це
+ * при тому, що згорнутий він нічого не повідомляє. Тепер це рядок у 48 px:
+ * підпис звичайного розміру, а праворуч — значки тих каналів, які в анкеті
+ * справді заповнені, тож ще до розгортання видно, чи є куди писати. */
 export const ModernContactSummary = styled.summary`
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
+  min-height: 48px;
   margin: 0;
   color: var(--matching-section-title);
-  font-size: clamp(20px, 4.8vw, 22px);
-  font-weight: 700;
-  letter-spacing: 0.2px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.1px;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -1335,6 +1406,7 @@ export const ModernContactSummary = styled.summary`
 
   &::after {
     content: '⌄';
+    margin-left: auto;
     color: var(--matching-accent);
     font-size: 16px;
     line-height: 1;
