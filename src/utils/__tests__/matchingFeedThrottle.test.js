@@ -3,6 +3,7 @@ import {
   MATCHING_THROTTLED_LOAD_BATCH,
   MATCHING_THROTTLED_LOAD_DELAY_MS,
   formatMatchingCountdown,
+  matchingCountdownProgress,
   quantizeMatchingCountdown,
 } from '../matchingFeedThrottle';
 
@@ -12,31 +13,34 @@ describe('пауза між сторінками стрічки matching', () =>
     expect(MATCHING_THROTTLED_LOAD_BATCH).toBe(2);
   });
 
-  it('показує секунди і три розряди мілісекунд', () => {
-    expect(formatMatchingCountdown(10000)).toBe('10.000');
-    expect(formatMatchingCountdown(9847)).toBe('09.847');
-    expect(formatMatchingCountdown(1005)).toBe('01.005');
-    expect(formatMatchingCountdown(999)).toBe('00.999');
-  });
-
-  it('тримає сталу ширину на всьому шляху відліку', () => {
-    // Без нуля попереду «10.000» і «9.950» різної довжини, і на переході через
-    // десяту секунду весь рядок смикається вбік.
-    const widths = new Set(
-      [10000, 9950, 5000, 999, 0].map(ms => formatMatchingCountdown(ms).length),
-    );
-    expect(widths.size).toBe(1);
+  // Мілісекунди звідси прибрані: у кінці стрічки крутився `02.700`, який
+  // мінявся двадцять разів на секунду, а підпис поруч казав фіксоване
+  // «за 10 с» — два числа, які між собою не збігались.
+  it('показує цілі секунди, округлені вгору', () => {
+    expect(formatMatchingCountdown(10000)).toBe('10');
+    expect(formatMatchingCountdown(9847)).toBe('10');
+    expect(formatMatchingCountdown(1005)).toBe('2');
+    expect(formatMatchingCountdown(999)).toBe('1');
   });
 
   it('доходить рівно до нуля і не йде нижче', () => {
-    expect(formatMatchingCountdown(0)).toBe('00.000');
-    expect(formatMatchingCountdown(-500)).toBe('00.000');
+    expect(formatMatchingCountdown(0)).toBe('0');
+    expect(formatMatchingCountdown(-500)).toBe('0');
   });
 
   it('не ламається на сміттєвому вводі', () => {
-    expect(formatMatchingCountdown(undefined)).toBe('00.000');
-    expect(formatMatchingCountdown(null)).toBe('00.000');
-    expect(formatMatchingCountdown(NaN)).toBe('00.000');
+    expect(formatMatchingCountdown(undefined)).toBe('0');
+    expect(formatMatchingCountdown(null)).toBe('0');
+    expect(formatMatchingCountdown(NaN)).toBe('0');
+  });
+
+  it('дає частку минулого часу для смужки', () => {
+    expect(matchingCountdownProgress(10000, 10000)).toBe(0);
+    expect(matchingCountdownProgress(5000, 10000)).toBe(0.5);
+    expect(matchingCountdownProgress(0, 10000)).toBe(1);
+    // Час, «більший» за тривалість, і сміття не виносять смужку за межі.
+    expect(matchingCountdownProgress(99999, 10000)).toBe(0);
+    expect(matchingCountdownProgress(NaN, 10000)).toBe(1);
   });
 
   it('прив\'язує показане значення до кроку, а не до моменту кадру', () => {

@@ -64,14 +64,24 @@ export const quantizeMatchingCountdown = (remainingMs, tickMs = MATCHING_COUNTDO
 };
 
 /**
- * `СС.мс` — секунди й три розряди мілісекунд, як на секундоміри.
+ * Скільки секунд лишилось — цілим числом.
  *
- * Секунди доповнені нулем навмисне: без цього «10.000» і «9.950» різної
- * довжини, і на переході з десятої секунди на девʼяту весь рядок смикається
- * вбік. Ширину тримає ще й моноширинний шрифт циферблата.
+ * Показувати мілісекунди тут було зайвим: у кінці стрічки крутився
+ * `02.700`, який змінювався двадцять разів на секунду, а підпис поруч
+ * казав фіксоване «за 10 с» — два числа, які між собою не збігались, і
+ * жодне з них не було відповіддю на питання «скільки ще чекати».
+ *
+ * Округлення вгору: поки лишилась хоч частка секунди, чесно показувати «1»,
+ * а не «0» біля списку, який ще не завантажився.
  */
 export const formatMatchingCountdown = remainingMs => {
   const safeMs = Math.max(0, Math.round(Number(remainingMs) || 0));
-  const seconds = Math.floor(safeMs / 1000);
-  return `${String(seconds).padStart(2, '0')}.${String(safeMs % 1000).padStart(3, '0')}`;
+  return String(Math.ceil(safeMs / 1000));
+};
+
+/** Частка минулого часу — нею малюється смужка під числом. */
+export const matchingCountdownProgress = (remainingMs, durationMs) => {
+  const total = Math.max(1, Number(durationMs) || 0);
+  const remaining = Math.min(total, Math.max(0, Number(remainingMs) || 0));
+  return 1 - remaining / total;
 };

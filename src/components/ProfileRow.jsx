@@ -17,12 +17,13 @@ import {
   maritalStatusLabel,
   getBloodGroupDisplay,
   getProfileRole,
-  getRoleLabel,
+  getRoleShortLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { profileUiText, translateProfileLabel } from '../utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { getContactEntries } from './contactMethods';
+import { formatProfileCountOrDate, formatProfileDate } from '../utils/profileDate';
 import * as S from './MatchingHiddenList.styled';
 
 // The one profile row shared by the hidden-list screen and the matching feed's
@@ -103,32 +104,17 @@ export const getInitials = name => {
 
 const resolveCSectionKey = user => CSECTION_KEYS.find(key => normalizeDisplayValue(user?.[key])) || 'csection';
 
-const pad2 = value => String(value).padStart(2, '0');
+// Розбір і формат дат живуть у `utils/profileDate`: їх читає ще й розкладка
+// анкети, а вона живить цей самий рядок.
+export const formatDeliveryDate = formatProfileDate;
 
-// Delivery dates come in from different sources in different shapes - ISO
-// (from newer records), dotted dd.mm.yyyy/dd.mm.yy, or slashed dd/mm/yyyy.
-// Parse whichever one matches and always render dd.mm.yy.
-const parseDeliveryDate = raw => {
-  const value = String(raw || '').trim();
-  if (!value) return null;
-  let match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (match) return { d: match[3], mo: match[2], y: match[1] };
-  match = value.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
-  if (match) return { d: pad2(match[1]), mo: pad2(match[2]), y: match[3] };
-  match = value.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2})$/);
-  if (match) return { d: pad2(match[1]), mo: pad2(match[2]), y: `20${match[3]}` };
-  return null;
-};
-
-export const formatDeliveryDate = raw => {
-  const parsed = parseDeliveryDate(raw);
-  return parsed ? `${parsed.d}.${parsed.mo}.${parsed.y.slice(2)}` : '';
-};
-
-const CSECTION_ZERO_VALUES = new Set(['не було', 'немає', 'no', '-', '0']);
+const CSECTION_ZERO_VALUES = new Set(['не було', 'немає', 'нема', 'no', '-', '0']);
 const formatCSectionValue = raw => {
   const trimmed = String(raw || '').trim();
-  return CSECTION_ZERO_VALUES.has(trimmed.toLowerCase()) ? '0' : trimmed;
+  if (CSECTION_ZERO_VALUES.has(trimmed.toLowerCase())) return '0';
+  // У частині анкет у полі кесаревого лежить дата операції. Сирою вона
+  // друкувалась в ISO — поруч із «останні 11.03.26» у форматі дд.мм.рр.
+  return formatProfileCountOrDate(trimmed);
 };
 
 const OTHER_VALUES = new Set(['other', 'інше', 'иное']);
@@ -841,10 +827,11 @@ const ProfileRow = ({
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const rowRole = getProfileRole(user);
-  // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати, і саме
-  // цей код разом із плиткою ініціалів робив рядок агенції нечитабельним.
-  // Код лишається в `getRoleCode` — його читають фільтри й плитка галереї.
-  const roleWord = rowRole === 'other' ? '' : getRoleLabel(rowRole, language);
+  // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати. Але
+  // словом коротким: повне «Донорка яйцеклітин» стояло в одному рядку з
+  // іменем, не стискалось — і імʼя обрізалось до «Яна …». Тепер підпис іде
+  // нижче, поруч із локацією, і в короткій формі.
+  const roleWord = getRoleShortLabel(rowRole, language);
   const age = getProfileAge(user);
   const location = getLocationLine(user);
   const photos = getProfilePhotos(user);
@@ -924,18 +911,22 @@ const ProfileRow = ({
           </S.Photo>
         )}
         <S.Body>
-          <S.NameRow>
-            <S.Name>
-              {name}
-              {age && <>, {age}</>}
-            </S.Name>
-            {roleWord && <S.RoleTag $role={rowRole}>{roleWord}</S.RoleTag>}
-          </S.NameRow>
-          {hasLocation && (
-            <S.Location>
-              <FaMapMarkerAlt aria-hidden="true" />
-              <span>{location}</span>
-            </S.Location>
+          {/* Імʼя володіє рядком одноосібно — це головне, що в ньому є, і
+              нічого поруч не мусить забирати в нього ширину. */}
+          <S.Name>
+            {name}
+            {age && <>, {age}</>}
+          </S.Name>
+          {(roleWord || hasLocation) && (
+            <S.MetaRow>
+              {roleWord && <S.RoleTag $role={rowRole}>{roleWord}</S.RoleTag>}
+              {hasLocation && (
+                <S.Location>
+                  <FaMapMarkerAlt aria-hidden="true" />
+                  <span>{location}</span>
+                </S.Location>
+              )}
+            </S.MetaRow>
           )}
           {!isUnfilled && facts.length > 0 ? (
             <>

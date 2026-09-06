@@ -105,9 +105,10 @@ describe('Matching shared reaction card UI', () => {
     // висоту віддано тому, заради чого анкету відкривають.
     expect(styledSource).toContain('height: 38%;');
     expect(styledSource).toContain('top: 14px;\n  left: 14px;');
-    // Смуга показників стала сіткою на два ряди — донорці їх тепер вісім, —
-    // тож роздільник малює сама комірка, а не пара сусідів у потоці.
-    expect(styledSource).toContain('&:not(:nth-child(4n + 1))::before');
+    // Смуга показників переноситься в два ряди, а комірки розтягуються, щоб
+    // останній ряд не лишав порожнього місця. Роздільник малює сама комірка.
+    expect(styledSource).toContain('&:not(:first-child)::before');
+    expect(styledSource).toContain('flex: 1 1 22%;');
     expect(styledSource).toContain('width: 1px;');
     expect(styledSource).toContain('flex: 1 1 0;');
   });

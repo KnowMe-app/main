@@ -20,27 +20,28 @@ describe('FeedLoadCountdown', () => {
 
   const dial = () => screen.getByTestId('feed-load-countdown-dial').textContent;
 
-  it('починає з повних десяти секунд і показує мілісекунди', () => {
+  it('починає з повних десяти секунд', () => {
     renderCountdown();
-    expect(dial()).toBe('10.000');
+    expect(dial()).toBe('10с');
   });
 
-  it('відраховує назад рівними кроками', () => {
+  it('відраховує назад цілими секундами', () => {
     renderCountdown();
     advance(2500);
-    expect(dial()).toBe('07.500');
+    expect(dial()).toBe('8с');
     advance(7000);
-    expect(dial()).toBe('00.500');
+    expect(dial()).toBe('1с');
   });
 
-  it('не міняє ширину рядка на переході через десяту секунду', () => {
-    // Секунди доповнені нулем: інакше «10.000» і «9.950» різної довжини, і на
-    // цьому переході циферблат смикався вбік.
+  // Мілісекунди прибрані: число мінялось двадцять разів на секунду, а підпис
+  // поруч називав своє, фіксоване. Ширину тепер тримає сам циферблат
+  // (`min-width` у стилях), а не нуль перед числом.
+  it('не смикається на переході через десяту секунду', () => {
     renderCountdown();
-    const atStart = dial().length;
     advance(100);
-    expect(dial()).toBe('09.900');
-    expect(dial()).toHaveLength(atStart);
+    expect(dial()).toBe('10с');
+    advance(1000);
+    expect(dial()).toBe('9с');
   });
 
   it('просить наступну порцію рівно один раз, коли дійшов нуля', () => {
@@ -71,21 +72,26 @@ describe('FeedLoadCountdown', () => {
     const onElapsed = jest.fn();
     const { rerender } = renderCountdown({ onElapsed, cycleKey: 5 });
     advance(8000);
-    expect(dial()).toBe('02.000');
+    expect(dial()).toBe('2с');
 
     rerender(
       <FeedLoadCountdown durationMs={10000} batchSize={2} cycleKey={7} onElapsed={onElapsed} />,
     );
-    expect(dial()).toBe('10.000');
+    expect(dial()).toBe('10с');
 
     // Ті дві секунди, що лишались до перезапуску, вже нічого не запускають.
     advance(2000);
     expect(onElapsed).not.toHaveBeenCalled();
   });
 
-  it('каже, скільки карток і коли саме буде', () => {
+  // Підпис більше не називає власного числа секунд: воно було фіксованим і з
+  // відліком поруч не збігалось — «02.700» під написом «за 10 с».
+  it('каже, скільки карток буде, і не сперечається з відліком', () => {
     renderCountdown({ batchSize: 2, durationMs: 10000 });
-    expect(screen.getByText('Наступні 2 картки завантажаться за 10 с')).toBeInTheDocument();
+    expect(screen.getByText('Наступні 2 картки завантажаться автоматично')).toBeInTheDocument();
+    advance(7000);
+    expect(dial()).toBe('3с');
+    expect(screen.getByText('Наступні 2 картки завантажаться автоматично')).toBeInTheDocument();
   });
 
   it('не запускає нічого після розмонтування', () => {

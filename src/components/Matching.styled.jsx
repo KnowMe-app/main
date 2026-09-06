@@ -46,9 +46,7 @@ const matchingThemeVars = css`
    * анкети — на «Показати контакти» й на «Про себе». Тепер вона має власне
    * дно: прозоре зверху, щоб не різати картку лінією, і суцільне під самими
    * кнопками, щоб під ними нічого не читалось. */
-  --matching-rail-bg: ${({ $themeMode }) => ($themeMode === 'light'
-    ? 'linear-gradient(180deg, rgba(250, 250, 248, 0) 0%, #FAFAF8 38%)'
-    : 'linear-gradient(180deg, rgba(12, 10, 9, 0) 0%, rgba(12, 10, 9, 0.94) 34%, #0c0a09 100%)')};
+  --matching-rail-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#17120e')};
   --matching-rail-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
   --matching-action-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#211b16')};
   --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8791A' : '#fff8ec')};
@@ -1172,8 +1170,8 @@ export const ModernHeroLocation = styled.p`
 `;
 
 export const ModernHeroFacts = styled.div`
-  display: grid;
-  grid-template-columns: repeat(${({ $columns }) => $columns || 4}, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 0;
   margin-top: 12px;
@@ -1186,6 +1184,7 @@ export const ModernHeroFacts = styled.div`
 
 export const ModernFactPill = styled.span`
   position: relative;
+  flex: 1 1 22%;
   min-width: 0;
   min-height: 54px;
   display: inline-flex;
@@ -1199,7 +1198,7 @@ export const ModernFactPill = styled.span`
   text-shadow: none;
   line-height: 1;
 
-  &:not(:nth-child(4n + 1))::before {
+  &:not(:first-child)::before {
     content: '';
     position: absolute;
     left: 0;
@@ -1404,54 +1403,56 @@ export const ModernContactSummary = styled.summary`
     display: none;
   }
 
-  &::after {
-    content: '⌄';
-    margin-left: auto;
+  .contacts-chevron {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
     color: var(--matching-accent);
-    font-size: 16px;
-    line-height: 1;
     transition: transform 0.18s ease;
   }
 
   ${ModernContactDetails}[open] & {
-    margin-bottom: 8px;
+    margin-bottom: 4px;
   }
 
-  ${ModernContactDetails}[open] &::after {
+  ${ModernContactDetails}[open] & .contacts-chevron {
     transform: rotate(180deg);
   }
 `;
 
 export const ModernContactLinks = styled.div`
   display: flex;
-  padding: 0 12px 12px;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  padding: 0;
 `;
 
 export const ModernContactLink = styled.a`
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: var(--matching-card-bg);
-  border: none;
+  gap: 11px;
+  min-height: 44px;
+  padding: 4px 2px;
+  border-top: 1px solid var(--matching-contact-border);
+  background: transparent;
   color: var(--matching-contact-text);
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
   text-decoration: none;
+
+  &:first-child {
+    border-top: none;
+  }
 
   svg {
     flex: 0 0 auto;
-    width: 14px;
-    height: 14px;
+    width: 17px;
+    height: 17px;
     color: var(--matching-accent);
   }
 
   span {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1782,10 +1783,18 @@ export const FeedList = styled.div`
 // Spec §6: one grid, one tile shape. A vertical photo is cropped to the same
 // 4/5 box as every other so the columns stay level while images stream in.
 export const GalleryGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 2px 0 4px;
+`;
+
+export const GalleryColumn = styled.div`
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 `;
 
 // Плитка — картка з рамкою, а не гола фотографія з підписом. Смужка ролі вгорі
@@ -1995,9 +2004,13 @@ export const FeedCountdown = styled.div`
 `;
 
 export const FeedCountdownDial = styled.div`
-  display: grid;
-  place-items: center;
-  min-width: 104px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  /* Ширина фіксована, бо число міняється: без цього «10 с» і «9 с» різної
+     довжини, і на переході рядок смикається вбік. */
+  min-width: 76px;
   padding: 7px 14px;
   border: 1px solid var(--matching-chip-border);
   border-radius: 999px;
@@ -2010,6 +2023,33 @@ export const FeedCountdownDial = styled.div`
   font-size: 17px;
   font-weight: 700;
   line-height: 1.1;
+
+  i {
+    font-family: var(--km-font);
+    font-style: normal;
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.6;
+  }
+`;
+
+/* Смужка під числом: скільки паузи вже минуло. Раніше замість неї стояли
+   мілісекунди, які мигтіли двадцять разів на секунду. */
+export const FeedCountdownBar = styled.div`
+  width: 108px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--matching-chip-border);
+`;
+
+export const FeedCountdownBarFill = styled.div`
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--matching-accent);
+  transform-origin: left center;
+  will-change: transform;
 `;
 
 export const FeedCountdownHint = styled.div`

@@ -327,3 +327,39 @@ const isTechnicalSanitizedField = key => technicalSanitizedFieldNames.includes(k
 export const sanitizeTechnicalPayload = payload => Object.fromEntries(
   Object.entries(payload || {}).filter(([key]) => !isTechnicalSanitizedField(key))
 );
+
+/**
+ * Переклад значень, вибраних зі списку.
+ *
+ * У формі кожен варіант уже лежить парою: `placeholder` — англійською,
+ * `ukrainian` — українською. А в анкеті показувалось те, що зберіг вибір, —
+ * тож поруч із українськими підписами стояли «Hazel», «Fair», «Thick»,
+ * «Triangle», «European» і «Освіта: Yes».
+ *
+ * Правило «текст, який ввела людина, не перекладається ніколи» від цього не
+ * страждає: словник будується по конкретних полях і містить лише їхні
+ * варіанти, тож вільний текст просто не має чого зіставити.
+ */
+const buildFieldValueDictionaries = () => {
+  const byField = {};
+  [...pickerFields, ...pickerFieldsExtended].forEach(field => {
+    const variants = [...(field?.options || []), ...(field?.modalOptions || [])];
+    if (!field?.name || variants.length === 0) return;
+    const dictionary = byField[field.name] || (byField[field.name] = new Map());
+    variants.forEach(variant => {
+      const en = String(variant?.placeholder ?? '').trim();
+      const uk = String(variant?.ukrainian ?? '').trim();
+      if (en && uk) dictionary.set(en.toLowerCase(), uk);
+    });
+  });
+  return byField;
+};
+
+let fieldValueDictionaries = null;
+
+export const translateFieldValue = (fieldName, value) => {
+  const text = String(value ?? '').trim();
+  if (!text || !fieldName) return text;
+  if (!fieldValueDictionaries) fieldValueDictionaries = buildFieldValueDictionaries();
+  return fieldValueDictionaries[fieldName]?.get(text.toLowerCase()) || text;
+};

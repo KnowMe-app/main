@@ -1,8 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FeedCountdown, FeedCountdownDial, FeedCountdownHint } from './Matching.styled';
+import {
+  FeedCountdown,
+  FeedCountdownBar,
+  FeedCountdownBarFill,
+  FeedCountdownDial,
+  FeedCountdownHint,
+} from './Matching.styled';
 import {
   MATCHING_COUNTDOWN_TICK_MS,
   formatMatchingCountdown,
+  matchingCountdownProgress,
   quantizeMatchingCountdown,
 } from '../utils/matchingFeedThrottle';
 
@@ -42,14 +49,19 @@ export const FeedLoadCountdown = ({ durationMs, batchSize, cycleKey, onElapsed }
 
   // Числа не озвучуються: відлік оновлюється двадцять разів на секунду, і жива
   // область читала б його вголос без кінця. Що відбувається, каже підпис.
+  //
+  // Підпис більше не називає власного числа секунд: воно було фіксованим і не
+  // збігалось із тим, що показував відлік поруч.
   return (
     <FeedCountdown data-testid="feed-load-countdown">
       <FeedCountdownDial data-testid="feed-load-countdown-dial" aria-hidden="true">
         {formatMatchingCountdown(quantizeMatchingCountdown(remainingMs))}
+        <i>с</i>
       </FeedCountdownDial>
-      <FeedCountdownHint>
-        {`Наступні ${batchSize} картки завантажаться за ${Math.round(durationMs / 1000)} с`}
-      </FeedCountdownHint>
+      <FeedCountdownBar aria-hidden="true">
+        <FeedCountdownBarFill style={{ transform: `scaleX(${matchingCountdownProgress(remainingMs, durationMs)})` }} />
+      </FeedCountdownBar>
+      <FeedCountdownHint>{`Наступні ${batchSize} картки завантажаться автоматично`}</FeedCountdownHint>
     </FeedCountdown>
   );
 };

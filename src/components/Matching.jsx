@@ -89,6 +89,7 @@ import {
   GalleryActions,
   GalleryBody,
   GalleryFacts,
+  GalleryColumn,
   GalleryGrid,
   GalleryHiddenBadge,
   GalleryLocation,
@@ -204,7 +205,7 @@ import ProfileRow, {
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaEye, FaEyeSlash, FaUndoAlt } from 'react-icons/fa';
+import { FaRegHeart, FaEye, FaEyeSlash, FaUndoAlt, FaChevronDown } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -228,6 +229,7 @@ import {
   getProfileSections,
   getRoleCode,
   getRoleLabel,
+  getRoleShortLabel,
 } from './profileLayoutConfig';
 import {
   cacheFavoriteUsers,
@@ -351,6 +353,11 @@ const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
 const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: '' });
 const MATCHING_REACTION_IDLE_STYLE = { background: 'rgba(247, 147, 30, 0.95)' };
+// «Сховати» — дія без акценту: колір тут витрачається лише на «в обране».
+const MATCHING_DISLIKE_IDLE_STYLE = {
+  background: 'var(--matching-card-bg)',
+  border: '1px solid var(--matching-card-border)',
+};
 
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => {
@@ -934,14 +941,14 @@ const ProfileContactLinks = ({ user, role, language }) => {
   );
 };
 
-const ProfileBio = ({ text }) => {
+const ProfileBio = ({ text, language }) => {
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
   const shouldCollapse = text.length > 230;
   const displayText = shouldCollapse && !expanded ? `${text.slice(0, 230).trim()}…` : text;
   return (
     <ModernSection>
-      <ModernSectionTitle>About</ModernSectionTitle>
+      <ModernSectionTitle>{profileUiText('about', language)}</ModernSectionTitle>
       <ModernBioText>{displayText}</ModernBioText>
       {shouldCollapse && (
         <ModernMoreButton
@@ -964,13 +971,14 @@ const HERO_FACT_UNITS = {
   weight: 'kg',
 };
 
-const formatHeroFact = item => {
+const formatHeroFact = (item, language) => {
   const rawValue = String(item?.value || '').trim();
-  const preferredUnit = HERO_FACT_UNITS[item?.key];
+  const rawUnit = HERO_FACT_UNITS[item?.key];
+  const preferredUnit = rawUnit ? translateProfileLabel(rawUnit, language) : rawUnit;
   if (!rawValue) return { value: '', unit: preferredUnit || '' };
 
-  if (preferredUnit) {
-    const withoutUnit = rawValue.replace(new RegExp(`\\s*${preferredUnit}$`, 'i'), '').trim();
+  if (rawUnit) {
+    const withoutUnit = rawValue.replace(new RegExp(`\\s*${rawUnit}$`, 'i'), '').trim();
     return { value: withoutUnit || rawValue, unit: preferredUnit };
   }
 
@@ -1270,9 +1278,9 @@ const SwipeableCard = ({
             {title && <ModernHeroTitle>{title}</ModernHeroTitle>}
             {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
             {heroFields.length > 0 && (
-              <ModernHeroFacts $columns={Math.min(4, heroFields.length)}>
+              <ModernHeroFacts>
                 {heroFields.map(item => {
-                  const fact = formatHeroFact(item);
+                  const fact = formatHeroFact(item, language);
                   return (
                     <ModernFactPill key={`hero-${item.key}`}>
                       <span className="fact-value">{fact.value}</span>
@@ -1288,10 +1296,10 @@ const SwipeableCard = ({
           <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
-          <ProfileBio text={bio} />
+          <ProfileBio text={bio} language={language} />
           {bodyHeroFields.length > 0 && (
             <ModernSection>
-              <ModernSectionTitle>Key details</ModernSectionTitle>
+              <ModernSectionTitle>{profileUiText('keyDetails', language)}</ModernSectionTitle>
               <ProfileChips fields={bodyHeroFields} role={resolvedRole} />
             </ModernSection>
           )}
@@ -1313,6 +1321,9 @@ const SwipeableCard = ({
                   <ModernContactHints aria-hidden="true">
                     {contactHintIcons.map(({ key, Icon }) => <Icon key={key} />)}
                   </ModernContactHints>
+                  <span className="contacts-chevron" aria-hidden="true">
+                    <FaChevronDown size={16} />
+                  </span>
                 </ModernContactSummary>
                 <ProfileContactLinks user={user} role={resolvedRole} language={language} />
               </ModernContactDetails>
@@ -1376,7 +1387,7 @@ const SwipeableCard = ({
         {!user?.__limitedProfile && (
         <ModernActionRail>
           <span ref={dislikeButtonWrapRef}>
-            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
+            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
           </span>
           <span ref={favoriteButtonWrapRef}>
             <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
@@ -1507,7 +1518,7 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
   const photos = getProfilePhotos(user);
   const photo = photos[0];
   const role = getProfileRole(user);
-  const roleWord = role === 'other' ? '' : getRoleLabel(role, language);
+  const roleWord = getRoleShortLabel(role, language);
   const location = getProfileLocation(user);
   const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
   const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
@@ -1534,18 +1545,20 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
         </GalleryPhotoBox>
       )}
       <GalleryBody>
-        <GalleryNameRow>
-          <GalleryName>
-            {name}
-            {age && <>, {age}</>}
-          </GalleryName>
-          {roleWord && <GalleryRoleTag $role={role}>{roleWord}</GalleryRoleTag>}
-        </GalleryNameRow>
-        {location && (
-          <GalleryLocation>
-            <FaMapMarkerAlt aria-hidden="true" />
-            <span>{location}</span>
-          </GalleryLocation>
+        <GalleryName>
+          {name}
+          {age && <>, {age}</>}
+        </GalleryName>
+        {(roleWord || location) && (
+          <GalleryNameRow>
+            {roleWord && <GalleryRoleTag $role={role}>{roleWord}</GalleryRoleTag>}
+            {location && (
+              <GalleryLocation>
+                <FaMapMarkerAlt aria-hidden="true" />
+                <span>{location}</span>
+              </GalleryLocation>
+            )}
+          </GalleryNameRow>
         )}
         {bodyFacts.length > 0 && (
           <GalleryFacts>
@@ -7361,17 +7374,23 @@ const Matching = () => {
             <FeedWrap>
               {feedRows.length > 0 && viewLayout === 'gallery' && (
                 <GalleryGrid>
-                  {feedRows.map(user => (
-                    <GalleryCard
-                      key={user.userId}
-                      user={user}
-                      isFavorite={Boolean(favoriteUsers[user.userId])}
-                      isHidden={Boolean(dislikeUsers[user.userId])}
-                      onOpen={openDetailFor}
-                      onToggleFavorite={toggleRowFavorite}
-                      onToggleHidden={toggleRowHidden}
-                      diagnosticsSlot={renderDiagnosticsFor(user)}
-                    />
+                  {[0, 1].map(columnIndex => (
+                    <GalleryColumn key={`gallery-column-${columnIndex}`}>
+                      {feedRows
+                        .filter((user, index) => index % 2 === columnIndex)
+                        .map(user => (
+                          <GalleryCard
+                            key={user.userId}
+                            user={user}
+                            isFavorite={Boolean(favoriteUsers[user.userId])}
+                            isHidden={Boolean(dislikeUsers[user.userId])}
+                            onOpen={openDetailFor}
+                            onToggleFavorite={toggleRowFavorite}
+                            onToggleHidden={toggleRowHidden}
+                            diagnosticsSlot={renderDiagnosticsFor(user)}
+                          />
+                        ))}
+                    </GalleryColumn>
                   ))}
                 </GalleryGrid>
               )}
