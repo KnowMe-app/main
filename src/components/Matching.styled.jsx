@@ -42,8 +42,14 @@ const matchingThemeVars = css`
   --matching-hero-bottom: ${({ $themeMode }) => ($themeMode === 'light'
     ? 'linear-gradient(180deg, rgba(22, 22, 22, 0) 0%, rgba(22, 22, 22, 0.22) 100%)'
     : 'linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%)')};
-  --matching-rail-bg: transparent;
-  --matching-rail-border: transparent;
+  /* Панель дій мала прозорий фон, і два кола висіли просто над текстом
+   * анкети — на «Показати контакти» й на «Про себе». Тепер вона має власне
+   * дно: прозоре зверху, щоб не різати картку лінією, і суцільне під самими
+   * кнопками, щоб під ними нічого не читалось. */
+  --matching-rail-bg: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'linear-gradient(180deg, rgba(250, 250, 248, 0) 0%, #FAFAF8 38%)'
+    : 'linear-gradient(180deg, rgba(12, 10, 9, 0) 0%, rgba(12, 10, 9, 0.94) 34%, #0c0a09 100%)')};
+  --matching-rail-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
   --matching-action-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#211b16')};
   --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8791A' : '#fff8ec')};
   --matching-action-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 8px 18px rgba(22, 22, 22, 0.10)' : '0 8px 18px rgba(0, 0, 0, 0.22)')};
@@ -1019,8 +1025,8 @@ export const ModernProfileScroll = styled.div`
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: clamp(330px, 55%, 470px);
-  height: 55%;
+  min-height: clamp(240px, 38%, 340px);
+  height: 38%;
   background: var(--matching-hero-fallback);
   background-size: cover;
   background-position: center 18%;
@@ -1041,6 +1047,38 @@ export const ModernHero = styled.div`
   &:focus-visible {
     outline: 3px solid rgba(232, 121, 26, 0.75);
     outline-offset: -5px;
+  }
+`;
+
+export const ModernPhotoStrip = styled.div`
+  display: flex;
+  gap: 7px;
+  padding: 10px 16px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+export const ModernPhotoThumb = styled.button`
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 11px;
+  border: 1px solid var(--matching-contact-border);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  overflow: hidden;
+  outline: ${({ $active }) => ($active ? '2px solid var(--matching-accent)' : 'none')};
+  outline-offset: 1px;
+
+  &:focus-visible {
+    outline: 2px solid var(--matching-accent);
+    outline-offset: 2px;
   }
 `;
 
@@ -1134,7 +1172,8 @@ export const ModernHeroLocation = styled.p`
 `;
 
 export const ModernHeroFacts = styled.div`
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(${({ $columns }) => $columns || 4}, minmax(0, 1fr));
   align-items: stretch;
   gap: 0;
   margin-top: 12px;
@@ -1147,7 +1186,6 @@ export const ModernHeroFacts = styled.div`
 
 export const ModernFactPill = styled.span`
   position: relative;
-  flex: 1 1 0;
   min-width: 0;
   min-height: 54px;
   display: inline-flex;
@@ -1161,13 +1199,25 @@ export const ModernFactPill = styled.span`
   text-shadow: none;
   line-height: 1;
 
-  & + &::before {
+  &:not(:nth-child(4n + 1))::before {
     content: '';
     position: absolute;
     left: 0;
     top: 9px;
     bottom: 9px;
     width: 1px;
+    background: var(--matching-contact-border);
+  }
+
+  /* Другий ряд відділяється від першого лінією, а не відступом: рамка в
+     смуги одна, і розрив усередині неї читався б як дві різні смуги. */
+  &:nth-child(n + 5)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 1px;
     background: var(--matching-contact-border);
   }
 
@@ -1310,21 +1360,42 @@ export const ModernMoreButton = styled.button`
   cursor: pointer;
 `;
 
+/* Значки наявних каналів у згорнутому рядку. Тільки підказка «є куди писати»,
+ * тож вони не клікабельні — сам контакт відкривається розгортанням. */
+export const ModernContactHints = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--matching-contact-text);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.85;
+
+  svg {
+    display: block;
+  }
+`;
+
 export const ModernContactDetails = styled.details`
   margin: 0;
   padding: 0;
 `;
 
+/* Згорнутий блок контактів займав пів екрана під один напис у 22 px — і це
+ * при тому, що згорнутий він нічого не повідомляє. Тепер це рядок у 48 px:
+ * підпис звичайного розміру, а праворуч — значки тих каналів, які в анкеті
+ * справді заповнені, тож ще до розгортання видно, чи є куди писати. */
 export const ModernContactSummary = styled.summary`
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
+  min-height: 48px;
   margin: 0;
   color: var(--matching-section-title);
-  font-size: clamp(20px, 4.8vw, 22px);
-  font-weight: 700;
-  letter-spacing: 0.2px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.1px;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -1335,6 +1406,7 @@ export const ModernContactSummary = styled.summary`
 
   &::after {
     content: '⌄';
+    margin-left: auto;
     color: var(--matching-accent);
     font-size: 16px;
     line-height: 1;
@@ -1716,25 +1788,51 @@ export const GalleryGrid = styled.div`
   padding: 2px 0 4px;
 `;
 
+// Плитка — картка з рамкою, а не гола фотографія з підписом. Смужка ролі вгорі
+// заміняє двобуквений код, який стояв на фото і який доводилось розшифровувати.
+export const GALLERY_ROLE_COLORS = {
+  ed: '#c95b83',
+  ag: '#4d86c9',
+  ip: '#3f9b8e',
+  sm: '#8a5ec2',
+  cl: '#4a9bc9',
+};
+
 export const GalleryTile = styled.div`
   position: relative;
   min-width: 0;
   cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 16px;
+  background: var(--matching-card-bg);
+  display: flex;
+  flex-direction: column;
+  align-self: start;
   opacity: ${({ $muted }) => ($muted ? 0.5 : 1)};
+
+  ${({ $role }) => GALLERY_ROLE_COLORS[$role] && css`
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 3px;
+      z-index: 1;
+      background: ${GALLERY_ROLE_COLORS[$role]};
+    }
+  `}
 `;
 
+// Пропорція залежить від ролі: донорці зовнішність — це дані, тож їй лишається
+// портретний 4/5; агенції фото нічого не вирішує, і 4/3 забирає менше екрана.
 export const GalleryPhotoBox = styled.div`
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 5;
-  border-radius: 10px;
+  aspect-ratio: ${({ $portrait }) => ($portrait ? '4 / 5' : '4 / 3')};
   overflow: hidden;
   background: var(--matching-section-bg);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 18px;
 
   img {
     width: 100%;
@@ -1744,55 +1842,16 @@ export const GalleryPhotoBox = styled.div`
   }
 `;
 
-// The heart sits on top of the photo, so it carries its own scrim - without it
-// the icon disappears on a bright shot.
-export const GalleryHeartButton = styled.button`
+export const GalleryPhotoCount = styled.span`
   position: absolute;
-  top: 6px;
   right: 6px;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 14px;
-  background: rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : '#fff')};
-
-  &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
-    outline-offset: 2px;
-  }
-`;
-
-/* Приховати — дія такого ж рангу, як «в обране», тож і кнопка така сама, поруч.
- * Досі плитка пропонувала лише серце, і сховати картку можна було, тільки
- * відкривши анкету. */
-export const GalleryHideButton = styled(GalleryHeartButton)`
-  top: 40px;
-  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : '#fff')};
-`;
-
-/* Дволітерний код ролі. Стоїть у нижньому кутку фото, щоб не сперечатися за
- * місце з кнопками вгорі. */
-export const GalleryRoleCode = styled.span`
-  position: absolute;
-  left: 6px;
   bottom: 6px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: 10.5px;
+  font-weight: 700;
   line-height: 1.4;
 `;
 
@@ -1810,8 +1869,22 @@ export const GalleryHiddenBadge = styled.span`
   border: 1px solid var(--matching-card-border);
 `;
 
+export const GalleryBody = styled.div`
+  padding: 9px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+`;
+
+export const GalleryNameRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+`;
+
 export const GalleryName = styled.div`
-  margin-top: 6px;
   font-size: 14px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -1819,6 +1892,46 @@ export const GalleryName = styled.div`
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+`;
+
+export const GalleryRoleTag = styled.span`
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: ${({ $role }) => GALLERY_ROLE_COLORS[$role] || 'var(--matching-muted-text)'};
+  background: ${({ $role }) => (GALLERY_ROLE_COLORS[$role]
+    ? `color-mix(in srgb, ${GALLERY_ROLE_COLORS[$role]} 18%, transparent)`
+    : 'var(--matching-chip-bg)')};
+  border: 1px solid ${({ $role }) => (GALLERY_ROLE_COLORS[$role]
+    ? `color-mix(in srgb, ${GALLERY_ROLE_COLORS[$role]} 42%, transparent)`
+    : 'var(--matching-card-border)')};
+`;
+
+/* Локації в плитці не було зовсім — а це перше, про що питають, коли шукають
+ * агенцію чи клініку. */
+export const GalleryLocation = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--matching-muted-text);
+  white-space: nowrap;
+  overflow: hidden;
+
+  svg {
+    flex: 0 0 auto;
+    fill: currentColor;
+  }
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 `;
 
 export const GalleryFacts = styled.div`
@@ -1826,9 +1939,39 @@ export const GalleryFacts = styled.div`
   font-size: 12px;
   line-height: 1.45;
   color: var(--matching-muted-text);
+  opacity: ${({ $soft }) => ($soft ? 0.72 : 1)};
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+`;
+
+/* Дії стоять під текстом, а не поверх фото: плитка без фотографії інакше
+ * лишалась би взагалі без кнопок — саме так вона й поводилась досі. */
+export const GalleryActions = styled.div`
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+`;
+
+export const GalleryActionButton = styled.button`
+  flex: 1 1 0;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  border: 1px solid ${({ $on }) => ($on ? 'var(--matching-accent)' : 'var(--matching-card-border)')};
+  background: ${({ $on }) => ($on
+    ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'
+    : 'rgba(255, 255, 255, 0.03)')};
+  color: ${({ $on }) => ($on ? 'var(--matching-accent)' : 'var(--matching-muted-text)')};
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
+    outline-offset: 2px;
+  }
 `;
 
 export const FeedSentinel = styled.div`

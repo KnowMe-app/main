@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaChevronDown, FaMapMarkerAlt, FaPencilAlt } from 'react-icons/fa';
+import { FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -17,7 +17,6 @@ import {
   maritalStatusLabel,
   getBloodGroupDisplay,
   getProfileRole,
-  getRoleCode,
   getRoleLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
@@ -676,6 +675,7 @@ export const PublicCommentBlock = ({
               else setExpanded(true);
             }}
           >
+            <S.CommentText $clip={!expanded}>{comment.text}</S.CommentText>
             <S.CommentMeta>
               <b>{getInitials(comment.authorName) || '—'}</b>
               <span>{formatCommentDate(comment.createdAt)}</span>
@@ -705,7 +705,6 @@ export const PublicCommentBlock = ({
                 </S.CommentDelete>
               )}
             </S.CommentMeta>
-            <S.CommentText $clip={!expanded}>{comment.text}</S.CommentText>
           </S.CommentEntry>
         );
       })}
@@ -753,6 +752,53 @@ export const PublicCommentBlock = ({
   );
 };
 
+// Другий рядок фактів — це не «решта», а окрема відповідь: скільки пологів,
+// коли останні, чи був кесарів. Тіло (зріст, вага, ІМТ, група) читають, щоб
+// відсіяти, а це — щоб зважити, тож вони й не мусять стояти впритул.
+const REPRO_FACT_KEYS = ['births', 'cs', 'marital'];
+
+export const splitFactsByGroup = (facts = []) => [
+  facts.filter(node => !REPRO_FACT_KEYS.includes(node.key)),
+  facts.filter(node => REPRO_FACT_KEYS.includes(node.key)),
+];
+
+export const REVIEWS_GATE_LABEL = 'Перевірити наявність відгуків';
+
+/**
+ * Відгуки в стрічці — на вимогу, а не наперед.
+ *
+ * Досі стрічка читала публічні коментарі одразу для першої сторінки карток —
+ * запит на кожне відкриття списку заради блока, під яким у більшості анкет
+ * порожньо. Тепер рядок показує кнопку, і читання коштує рівно стільки разів,
+ * скільки її натиснули.
+ *
+ * Це ще й відповідь на питання «а звідки в картці стрічки коментарі»: нізвідки
+ * — `matchingCards` про них не знає й не мусить. Схему чіпати не довелось.
+ */
+export const PublicCommentsGate = ({
+  profileId,
+  comments,
+  loaded,
+  loading,
+  onRequest,
+  ...blockProps
+}) => {
+  if (loaded) {
+    return <PublicCommentBlock profileId={profileId} comments={comments} {...blockProps} />;
+  }
+
+  return (
+    <S.ReviewsGateButton
+      type="button"
+      disabled={loading}
+      onClick={e => { e.stopPropagation(); onRequest(profileId); }}
+    >
+      <FaRegCommentDots aria-hidden="true" />
+      <span>{loading ? 'Шукаємо відгуки…' : REVIEWS_GATE_LABEL}</span>
+    </S.ReviewsGateButton>
+  );
+};
+
 // A row counts as "unfilled" once its marital status is the only fact it has to
 // show - a bare "заміжня"/"не заміжня" isn't informative enough on its own.
 const isWeakOnlyFact = facts => facts.length === 1 && facts[0].key === 'marital';
@@ -795,7 +841,10 @@ const ProfileRow = ({
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const rowRole = getProfileRole(user);
-  const roleCode = getRoleCode(rowRole);
+  // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати, і саме
+  // цей код разом із плиткою ініціалів робив рядок агенції нечитабельним.
+  // Код лишається в `getRoleCode` — його читають фільтри й плитка галереї.
+  const roleWord = rowRole === 'other' ? '' : getRoleLabel(rowRole, language);
   const age = getProfileAge(user);
   const location = getLocationLine(user);
   const photos = getProfilePhotos(user);
@@ -805,6 +854,10 @@ const ProfileRow = ({
     () => (isLimited ? [] : renderFacts(user, priorityMetricKeys || [], language)),
     [isLimited, language, user, priorityMetricKeys]
   );
+  // Один рядок фактів переносився посеред самого факту («пологів 3, останні
+  // 19.10.25» тікало на другий рядок), і зачепитись оку не було за що. Тіло
+  // лишається зверху, пологи й кесарів ідуть окремим, приглушеним рядком.
+  const [bodyFacts, reproFacts] = useMemo(() => splitFactsByGroup(facts), [facts]);
   const gridRows = useMemo(() => (isLimited ? [] : buildGridRows(user, language)), [isLimited, language, user]);
   const contactEntries = useMemo(
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
@@ -855,25 +908,28 @@ const ProfileRow = ({
 
   return (
     <S.Card
+      $role={rowRole}
       onClick={handleRowClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
       <S.Top>
-        <S.Photo
-          style={photo
-            ? { backgroundImage: `url(${photo})` }
-            : { backgroundImage: getGradientFor(user.userId) }}
-        >
-          {!photo && getInitials(name)}
-        </S.Photo>
+        {/* Плитки з ініціалами більше немає: вона повторювала імʼя, яке стоїть
+            за пів сантиметра праворуч, і забирала 58 px ширини в анкети, якій
+            і без того нічого показати. Немає фото — рядок починається з імені,
+            а «хто це» несе смужка ролі на лівому краї картки. */}
+        {photo && (
+          <S.Photo style={{ backgroundImage: `url(${photo})` }}>
+            {photos.length > 1 && <S.PhotoCount>{photos.length}</S.PhotoCount>}
+          </S.Photo>
+        )}
         <S.Body>
           <S.NameRow>
             <S.Name>
               {name}
               {age && <>, {age}</>}
             </S.Name>
-            {roleCode && <S.RoleCode title={getRoleLabel(rowRole, language)}>{roleCode}</S.RoleCode>}
+            {roleWord && <S.RoleTag $role={rowRole}>{roleWord}</S.RoleTag>}
           </S.NameRow>
           {hasLocation && (
             <S.Location>
@@ -882,14 +938,28 @@ const ProfileRow = ({
             </S.Location>
           )}
           {!isUnfilled && facts.length > 0 ? (
-            <S.FactsRow>
-              {facts.map((node, idx) => (
-                <React.Fragment key={node.key}>
-                  {idx > 0 && ' '}
-                  {node}
-                </React.Fragment>
-              ))}
-            </S.FactsRow>
+            <>
+              {bodyFacts.length > 0 && (
+                <S.FactsRow>
+                  {bodyFacts.map((node, idx) => (
+                    <React.Fragment key={node.key}>
+                      {idx > 0 && ' '}
+                      {node}
+                    </React.Fragment>
+                  ))}
+                </S.FactsRow>
+              )}
+              {reproFacts.length > 0 && (
+                <S.FactsRow $soft>
+                  {reproFacts.map((node, idx) => (
+                    <React.Fragment key={node.key}>
+                      {idx > 0 && ' '}
+                      {node}
+                    </React.Fragment>
+                  ))}
+                </S.FactsRow>
+              )}
+            </>
           ) : isUnfilled && (
             <S.EmptyNote>Анкета не заповнена</S.EmptyNote>
           )}
@@ -933,7 +1003,7 @@ const ProfileRow = ({
               </S.EditButton>
             )}
           </S.TopButtonsRow>
-          {!isLimited && (
+          {!isLimited && totalCount > 0 && (
           <S.ChevronButton
             type="button"
             $open={expanded}

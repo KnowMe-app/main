@@ -165,8 +165,12 @@ describe('публічні коментарі', () => {
   it('показує їх і у відкритій анкеті, не лише в рядку списку', () => {
     // Досі блок жив тільки в рядках стрічки: у самій анкеті була лише приватна
     // нотатка переглядача («Мій коментар»), і публічних коментарів не було видно.
+    //
+    // Тепер місця два, але блоки різні: анкета показує коментарі одразу, а
+    // рядок стрічки — кнопку, яка їх питає (`PublicCommentsGate`).
     const source = matching();
-    expect(source.match(/<PublicCommentBlock/g)).toHaveLength(2);
+    expect(source.match(/<PublicCommentBlock/g)).toHaveLength(1);
+    expect(source.match(/<PublicCommentsGate/g)).toHaveLength(1);
     expect(source).toContain('publicCommentSlot={(');
     expect(source).toContain("{profileUiText('publicComment', language)}");
   });
@@ -174,10 +178,12 @@ describe('публічні коментарі', () => {
   // Блок один, доріжки дві: приватна нотатка й публічний запис розділені не
   // рамкою, а підписом і смужкою — але порядок лишається той самий, і приватне
   // не може опинитись під виглядом публічного.
+  // Спільної шапки «Нотатки» над доріжками немає: підпис над кожною вже каже
+  // і що це, і хто це побачить.
   it('тримає публічні коментарі окремо від приватної нотатки', () => {
     const source = matching();
     const card = source.slice(
-      source.indexOf("<ModernSectionTitle $quiet>{profileUiText('notes', language)}</ModernSectionTitle>"),
+      source.indexOf('<NoteLanes>'),
       source.indexOf('</ModernProfileBody>'),
     );
     expect(card).toContain("{profileUiText('personalNote', language)}");
@@ -187,16 +193,20 @@ describe('публічні коментарі', () => {
       .toBeLessThan(card.indexOf('{publicCommentSlot}'));
   });
 
-  it('читає коментарі для відкритої анкети, а не тільки для списку', () => {
-    // Раніше ефект виходив на `detailOpen`, тож у відкритій анкеті читати не було
-    // чого — і в галереї, звідки анкету теж відкривають, поготів.
+  it('читає коментарі відкритої анкети сам, а для стрічки — лише на дотик', () => {
+    // Стрічка не питає коментарів наперед: раніше вона брала їх для цілої
+    // першої сторінки списку — запит на кожне відкриття стрічки заради блока,
+    // під яким у більшості анкет порожньо. Лишився єдиний випадок читання без
+    // дотику — відкрита анкета, де блок видно одразу.
     const source = matching();
     const effect = source.slice(
-      source.indexOf('const visibleIds = detailOpen'),
-      source.indexOf('fetchPublicProfileComments(pendingIds)'),
+      source.indexOf('const requestPublicComments = React.useCallback'),
+      source.indexOf('const handleCreatePublicComment'),
     );
-    expect(effect).toContain('[activeProfile?.userId]');
-    expect(effect).toContain("viewLayout === 'list'");
+    expect(effect).toContain('fetchPublicProfileComments([id])');
+    expect(effect).toContain('if (!ownerId || !detailOpen) return;');
+    expect(effect).toContain('requestPublicComments(activeProfile?.userId);');
+    expect(effect).not.toContain("viewLayout === 'list'");
   });
 });
 
@@ -331,8 +341,10 @@ describe('перший екран зі стрічкового кеша', () => {
 
 describe('дії та роль на картці стрічки', () => {
   it('дає плитці і кнопку «приховати», а не лише серце', () => {
+    // Кнопки переїхали з фото в тіло плитки: поверх знімка вони жили тільки
+    // тому, що іншого місця не було, — і плитка без фото лишалась без них.
     const source = read('Matching.jsx');
-    expect(source).toContain('<GalleryHideButton');
+    expect(source.match(/<GalleryActionButton/g)).toHaveLength(2);
     expect(source).toContain('onToggleHidden={toggleRowHidden}');
   });
 
@@ -342,8 +354,15 @@ describe('дії та роль на картці стрічки', () => {
     expect(read('ProfileRow.jsx')).toContain('{secondaryAction && !isLimited && (');
   });
 
-  it('показує дволітерний код ролі на обох виглядах', () => {
-    expect(read('Matching.jsx')).toContain('<GalleryRoleCode');
-    expect(read('ProfileRow.jsx')).toContain('<S.RoleCode');
+  // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати, і саме
+  // цей код разом із плиткою ініціалів робив рядок агенції нечитабельним.
+  it('показує роль словом на обох виглядах', () => {
+    expect(read('Matching.jsx')).toContain('<GalleryRoleTag');
+    expect(read('ProfileRow.jsx')).toContain('<S.RoleTag');
+  });
+
+  it('не повертає двобуквений код у стрічку', () => {
+    expect(read('Matching.jsx')).not.toContain('<GalleryRoleCode');
+    expect(read('ProfileRow.jsx')).not.toContain('<S.RoleCode');
   });
 });

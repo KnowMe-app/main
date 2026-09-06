@@ -251,6 +251,17 @@ const ownKidsValue = user => {
 };
 
 const ownKidsDisplayValue = (user, language) => ownKidsBooleanLabel(ownKidsValue(user), language);
+
+// `ownKids` у формі підписане «Кількість пологів» (`formFields.js`), а звідси
+// йшло через «є/немає»: анкета з одними пологами показувала «Власні діти: є»,
+// і число, і сенс губились разом. Рядок стрічки те саме поле читав чесно —
+// «пологів 1», — тож два екрани розходились на одному полі.
+const birthsCountValue = user => normalizeDisplayValue(user?.ownKids);
+
+// Кесарів розтин лежить під чотирма іменами в анкетах різних поколінь.
+const cSectionValue = user => normalizeDisplayValue(
+  user?.cSection || user?.csection || user?.c_section || user?.cesareanSection
+);
 const maritalStatusDisplayValue = (user, language) => maritalStatusLabel(user?.maritalStatus, language);
 const glassesDisplayValue = (user, language) => glassesLabel(user?.glasses, language);
 
@@ -267,7 +278,10 @@ const heroFields = {
     field('weight', 'Weight'),
     field('bmi', 'BMI', bmiValue, ['bmi']),
     field('blood', 'Blood/Rh', getBloodGroupDisplay, ['blood'], { resolved: true }),
-    field('experience', 'Exp', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
+    field('ownKids', 'Births', birthsCountValue, ['ownKids']),
+    field('lastDelivery', 'Last birth'),
+    field('cSection', 'Caesarean', cSectionValue, ['cSection', 'csection', 'c_section', 'cesareanSection']),
+    field('experience', 'Donations', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
   ],
   ip: [
     field('country', 'Country'),
@@ -384,7 +398,7 @@ const sectionConfig = {
 };
 
 export const getHeroFields = (user, role = getProfileRole(user), { excludeKeys = [], language } = {}) =>
-  toDisplayFields(heroFields[role] || heroFields.other, user, excludeKeys, language).slice(0, 6);
+  toDisplayFields(heroFields[role] || heroFields.other, user, excludeKeys, language).slice(0, 8);
 
 export const getQuickFacts = (user, role = getProfileRole(user), { excludeKeys = [], language } = {}) =>
   toDisplayFields(quickFacts[role] || quickFacts.other, user, excludeKeys, language).slice(0, 8);
