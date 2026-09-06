@@ -52,7 +52,7 @@ describe('видача пошуку гортається так само, як �
     // Перша порція виросла, ціна довгого скролу — ні.
     const source = matching();
     expect(source).toContain("endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });");
-    expect(source).toContain('`Показати ще ${MATCHING_THROTTLED_LOAD_BATCH}`');
+    expect(source).toContain(`\`Показати ще \${MATCHING_THROTTLED_LOAD_BATCH}\``);
   });
 
   it('уточнення переживає новий запит — воно умова, а не сито', () => {
