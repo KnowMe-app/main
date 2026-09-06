@@ -204,7 +204,7 @@ import ProfileRow, {
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaEye, FaEyeSlash, FaUndoAlt } from 'react-icons/fa';
+import { FaRegHeart, FaUndoAlt } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -226,7 +226,6 @@ import {
   getProfilePhotos,
   getProfileRole,
   getProfileSections,
-  getRoleCode,
   getRoleLabel,
 } from './profileLayoutConfig';
 import {

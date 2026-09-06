@@ -77,7 +77,7 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
       source.indexOf('export const fetchUserComments')
     );
 
-    expect(readerBody).toContain('`${COMMENTS_ROOT_PATH}/${ownerId}`');
+    expect(readerBody).toContain(`\`\${COMMENTS_ROOT_PATH}/\${ownerId}\``);
     expect(readerBody).not.toContain('get(ref2(database, COMMENTS_ROOT_PATH))');
     expect(readerBody).toContain('OWNER_COMMENTS_SUBTREE_TTL_MS');
     expect(source).toContain('export const invalidateOwnerCommentsCache');

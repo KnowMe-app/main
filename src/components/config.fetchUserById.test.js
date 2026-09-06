@@ -15,7 +15,7 @@ describe('fetchUserById', () => {
   it('reads the profile nodes and nothing else', () => {
     expect(body).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
     expect(body).not.toContain('withLegacy');
-    expect(body).not.toContain('users/${userId}');
+    expect(body).not.toContain(`users/\${userId}`);
   });
 
   it('hydrates photos on the one path it has', () => {
