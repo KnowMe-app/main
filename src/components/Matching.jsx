@@ -205,7 +205,7 @@ import ProfileRow, {
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaEye, FaEyeSlash, FaUndoAlt, FaChevronDown } from 'react-icons/fa';
+import { FaRegHeart, FaUndoAlt, FaChevronDown } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -227,7 +227,6 @@ import {
   getProfilePhotos,
   getProfileRole,
   getProfileSections,
-  getRoleCode,
   getRoleLabel,
   getRoleShortLabel,
 } from './profileLayoutConfig';
@@ -1772,9 +1771,10 @@ const Matching = () => {
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
-  const [currentUserRoleResolved, setCurrentUserRoleResolved] = useState(
-    () => Boolean((localStorage.getItem('userRole') || '').trim())
-  );
+  // A cached role is useful for rendering, but it cannot start a deck: the
+  // authenticated profile also owns the shared reaction scope that must be
+  // snapshotted by the initial request.
+  const [currentUserRoleResolved, setCurrentUserRoleResolved] = useState(false);
   // Роль читача потрібна не лише деці, а й дочитуванню сторінок: інакше запас
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
@@ -2630,6 +2630,7 @@ const Matching = () => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
         setOwnerId(user.uid);
+        setCurrentUserRoleResolved(false);
         const initialOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid });
         setMultiDataOwnerIds(initialOwnerIds);
         debugSharedReactionsLog(user.uid, 'initial ownerIds before profile access load', {
@@ -2643,12 +2644,27 @@ const Matching = () => {
             const userRole = profile?.userRole || profile?.role || '';
             const canCreateProfiles = profile?.canCreateProfiles === true;
             const additionalAccessRules = profile?.additionalAccessRules || '';
+            const rawMultiDataAccessUserIds = profile?.[MULTI_DATA_ACCESS_FIELD];
+            const accessOwnerIds = parseMultiDataAccessUserIds(rawMultiDataAccessUserIds);
+            const resolvedOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile });
 
-            // The public deck only needs the role. Do not hold it behind search-key
-            // discovery or the additional-access profile refresh below.
+            // The public deck needs the role and the reaction owners together.
+            // Install both before resolving it, while leaving the unrelated
+            // search-key discovery and additional-access refresh asynchronous.
+            setMultiDataOwnerIds(resolvedOwnerIds);
             setCurrentUserRole(userRole);
             localStorage.setItem('userRole', userRole);
             setCurrentUserRoleResolved(true);
+            debugSharedReactionsLog(user.uid, 'ownerIds read from multiDataAccessUserIds', {
+              rawMultiDataAccessUserIds,
+              sharedOwnerIds: accessOwnerIds,
+              ownerIds: resolvedOwnerIds,
+              paths: accessOwnerIds.map(sharedOwnerId => ({
+                favorites: `multiData/favorites/${sharedOwnerId}`,
+                dislikes: `multiData/dislikes/${sharedOwnerId}`,
+                comments: `${COMMENTS_ROOT_PATH}/${sharedOwnerId}`,
+              })),
+            });
             const searchKeySetKeys = await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);
 
             console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetKeys', searchKeySetKeys);
@@ -2661,20 +2677,6 @@ const Matching = () => {
             localStorage.setItem('canCreateProfiles', canCreateProfiles ? 'true' : 'false');
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
             localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
-            const rawMultiDataAccessUserIds = profile?.[MULTI_DATA_ACCESS_FIELD];
-            const accessOwnerIds = parseMultiDataAccessUserIds(rawMultiDataAccessUserIds);
-            const resolvedOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile });
-            debugSharedReactionsLog(user.uid, 'ownerIds read from multiDataAccessUserIds', {
-              rawMultiDataAccessUserIds,
-              sharedOwnerIds: accessOwnerIds,
-              ownerIds: resolvedOwnerIds,
-              paths: accessOwnerIds.map(sharedOwnerId => ({
-                favorites: `multiData/favorites/${sharedOwnerId}`,
-                dislikes: `multiData/dislikes/${sharedOwnerId}`,
-                comments: `${COMMENTS_ROOT_PATH}/${sharedOwnerId}`,
-              })),
-            });
-            setMultiDataOwnerIds(resolvedOwnerIds);
             const freshCache = await ensureFreshAdditionalMatchingProfile({
               accessUserId: user.uid,
               reason: 'auth-state-sync',

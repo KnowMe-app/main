@@ -19,7 +19,7 @@ describe('single legacy collection reads', () => {
     );
 
     expect(body).toContain('await readProfileFromNodes(id)');
-    expect(body).not.toContain('get(ref2(database, `users/${id}`))');
+    expect(body).not.toContain(`get(ref2(database, \`users/\${id}\`))`);
     expect(body).not.toContain('mergeUserCollectionData');
   });
 
@@ -30,7 +30,7 @@ describe('single legacy collection reads', () => {
     );
 
     expect(body).toContain('readProfileFromNodes(userId)');
-    expect(body).not.toContain('get(ref2(database, `users/${userId}`))');
+    expect(body).not.toContain(`get(ref2(database, \`users/\${userId}\`))`);
     expect(body).not.toContain('mergeUserCollectionData');
   });
 

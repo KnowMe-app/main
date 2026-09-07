@@ -18,6 +18,18 @@ describe('Matching shared reaction card UI', () => {
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
   });
 
+  it('resolves shared reaction owners before allowing the initial deck request', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+    const ownerInstall = source.indexOf('setMultiDataOwnerIds(resolvedOwnerIds);');
+    const roleResolution = source.indexOf('setCurrentUserRoleResolved(true);', ownerInstall);
+    const searchKeyLookup = source.indexOf('await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);', roleResolution);
+
+    expect(ownerInstall).toBeGreaterThan(-1);
+    expect(roleResolution).toBeGreaterThan(ownerInstall);
+    expect(searchKeyLookup).toBeGreaterThan(roleResolution);
+    expect(source).toContain('const [currentUserRoleResolved, setCurrentUserRoleResolved] = useState(false);');
+  });
+
 
   it('hydrates uncached reaction cards with photos', () => {
     const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');

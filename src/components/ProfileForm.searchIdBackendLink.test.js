@@ -27,7 +27,7 @@ describe('стрілка «відкрити запис searchId»', () => {
   });
 
   it('читає рівно один ключ і не сканує вузол searchId', () => {
-    expect(source).toContain('refDb(database, `searchId/${searchIdRecordKey}`)');
+    expect(source).toContain(`refDb(database, \`searchId/\${searchIdRecordKey}\`)`);
     expect(source).not.toContain("refDb(database, 'searchId')");
     expect(source).not.toContain('orderByKey');
   });
@@ -40,7 +40,7 @@ describe('стрілка «відкрити запис searchId»', () => {
       'utf8',
     );
     expect(mutations).toContain('buildSearchIdRecordKey({ [field]: value })');
-    expect(mutations).toContain('ref(database, `searchId/${key}`)');
+    expect(mutations).toContain(`ref(database, \`searchId/\${key}\`)`);
   });
 
   it('ключ збігається з тим, під яким значення реально лежить у базі', () => {

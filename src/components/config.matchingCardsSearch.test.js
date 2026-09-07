@@ -100,7 +100,7 @@ describe('урізана проєкція пошукового влучання'
   );
 
   it('читає опубліковану картку стрічки', () => {
-    expect(projection).toContain('`${MATCHING_CARDS_ROOT}/${userId}`');
+    expect(projection).toContain(`\`\${MATCHING_CARDS_ROOT}/\${userId}\``);
   });
 
   it('до legacy-колекції не ходить узагалі', () => {
