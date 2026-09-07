@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
-import { FaFacebookF, FaInstagram, FaPhoneVolume, FaTelegramPlane, FaVk } from 'react-icons/fa';
+import { FaFacebookF, FaInstagram, FaTelegramPlane, FaVk } from 'react-icons/fa';
+import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { FaXTwitter } from 'react-icons/fa6';
@@ -310,7 +311,7 @@ export const SearchFilters = ({
           { val: 'instagram', label: <span style={contactIconStyle} title="Instagram"><FaInstagram /></span> },
           { val: 'ameblo', label: <span style={contactIconStyle} title="Ameblo">AB</span> },
           { val: 'facebook', label: <span style={contactIconStyle} title="Facebook"><FaFacebookF /></span> },
-          { val: 'phone', label: <span style={contactIconStyle} title="Телефон"><FaPhoneVolume /></span> },
+          { val: 'phone', label: <span style={contactIconStyle} title="Телефон"><PhoneHandsetIcon /></span> },
           { val: 'telegram', label: <span style={contactIconStyle} title="Telegram"><FaTelegramPlane /></span> },
           {
             val: 'telegram2',

@@ -10,7 +10,8 @@ import {
   FaLinkedin,
   FaYoutube,
 } from 'react-icons/fa';
-import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
+import { FaXTwitter } from 'react-icons/fa6';
+import { PhoneHandsetIcon } from '../icons/PhoneHandsetIcon';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
@@ -62,7 +63,7 @@ export const fieldContacts = (data, parentKey = '') => {
     youtube: <FaYoutube style={iconStyle} />,
     twitter: <FaXTwitter style={iconStyle} />,
     otherLink: <FaGlobe style={iconStyle} />,
-    phone: <FaPhoneVolume style={iconStyle} />,
+    phone: <PhoneHandsetIcon style={iconStyle} />,
     email: <MdEmail style={iconStyle} />,
   };
 
@@ -389,7 +390,7 @@ export const fieldContactsIcons = (
                 }
           }
         >
-          {phoneAsIcon ? <FaPhoneVolume style={iconStyle} /> : `+${processedVal}`}
+          {phoneAsIcon ? <PhoneHandsetIcon style={iconStyle} /> : `+${processedVal}`}
         </a>
         <a
           href={links.telegramFromPhone(`+${val}`)}

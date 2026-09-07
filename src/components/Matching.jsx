@@ -206,7 +206,8 @@ import ProfileRow, {
 } from './ProfileRow';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown } from 'react-icons/fa';
-import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
+import { FaXTwitter } from 'react-icons/fa6';
+import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
@@ -851,7 +852,7 @@ const ProfileFieldRows = ({ fields }) => {
 };
 
 const CONTACT_ICONS = {
-  phone: FaPhoneVolume,
+  phone: PhoneHandsetIcon,
   email: MdEmail,
   telegram: FaTelegramPlane,
   whatsapp: FaWhatsapp,
