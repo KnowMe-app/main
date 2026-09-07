@@ -112,6 +112,9 @@ export const BtnDislike = ({
   ownFavoriteUsers,
   setOwnFavoriteUsers,
   customStyle = {},
+  // Знак «сховати» задає екран: у матчингу це хрестик, той самий, що в рядку
+  // стрічки. Великий палець донизу лишається там, де він і був.
+  icon: Icon = FaThumbsDown,
   inactiveIconColor = '#fff',
   activeIconColor = color.reactionIdleIcon,
   iconSize = 18,
@@ -193,7 +196,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaThumbsDown size={iconSize} color={isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor} />
+      <Icon size={iconSize} color={isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor} />
     </button>
   );
 };

@@ -168,10 +168,18 @@ export const NameRow = styled.div`
   min-width: 0;
 `;
 
-export const Location = styled.div`
-  font-size: 12px;
-  color: var(--matching-muted-text);
+export const MetaRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   margin-top: 3px;
+`;
+
+export const Location = styled.div`
+  font-size: 12.5px;
+  color: var(--matching-muted-text);
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -653,16 +661,17 @@ export const PublicComments = styled.div`
 `;
 
 export const ReviewsGateButton = styled.button`
-  display: flex;
+  display: inline-flex;
+  align-self: flex-start;
   align-items: center;
-  gap: 7px;
-  width: 100%;
-  min-height: 34px;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 30px;
   margin-top: 8px;
-  padding: 0 10px;
+  padding: 0 11px;
   box-sizing: border-box;
   border: 1px solid var(--matching-card-border);
-  border-radius: 11px;
+  border-radius: 999px;
   background: transparent;
   color: var(--matching-muted-text);
   font: inherit;

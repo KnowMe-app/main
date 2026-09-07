@@ -94,6 +94,16 @@ const UK_BY_EN_LABEL = {
   'Last birth': 'Останні',
   Caesarean: 'Кесарів',
 
+  // Одиниці смуги показників. Стояли жорстко англійськими поруч з
+  // українськими підписами сусідніх комірок — «180 cm» і «24 імт» в одному ряду.
+  cm: 'см',
+  kg: 'кг',
+
+  // Короткі назви ролей для стрічки — повні лишаються вище.
+  Donor: 'Донорка',
+  Parents: 'Батьки',
+  Surrogate: 'Сурогатна',
+
   // ролі
   'Egg donor': 'Донорка яйцеклітин',
   Agency: 'Агенція',
@@ -159,6 +169,8 @@ const UI_TEXTS = {
   publicCommentHint: { en: 'Everyone sees it', uk: 'Бачать усі' },
   publicCommentPlaceholder: { en: 'Add a public note', uk: 'Додати публічну нотатку' },
   notes: { en: 'Notes', uk: 'Нотатки' },
+  about: { en: 'About', uk: 'Про себе' },
+  keyDetails: { en: 'Key details', uk: 'Головне' },
 
   // Рядок метрик під іменем: слова в ньому теж складає застосунок.
   factCSection: { en: 'CS', uk: 'КС' },

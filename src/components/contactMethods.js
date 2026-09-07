@@ -1,4 +1,5 @@
 import { getCurrentValue } from './getCurrentValue';
+import { isEmptyPlaceholder } from '../utils/emptyValues';
 
 export const CONTACT_FIELDS = [
   'phone',
@@ -125,9 +126,12 @@ const valueList = value => {
 };
 
 export const getContactValues = (data, key) => {
+  // «нема», «немає», «-» — це порожнє поле, а не контакт. Досі такий рядок
+  // проходив як значення, і в анкеті стояло «LinkedIn: Нема» поруч зі
+  // значком каналу, у який нема куди писати.
   const values = valueList(data?.[key])
     .map(value => (typeof value === 'string' ? value.trim() : value))
-    .filter(value => value !== null && value !== undefined && String(value).trim() !== '');
+    .filter(value => value !== null && value !== undefined && !isEmptyPlaceholder(value));
 
   if (key === 'telegram') {
     return values.filter(value => !isHiddenTelegramValue(value));

@@ -3,10 +3,15 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { CONTACT_FIELDS, getContactValues } from './contactMethods';
+import { translateFieldValue } from './formFields';
 import { normalizeProfileRole } from '../utils/profileRole';
-import { derivedValueTexts, translateProfileLabel } from '../utils/profileTexts';
+import { derivedValueTexts, resolveProfileLanguage, translateProfileLabel } from '../utils/profileTexts';
+import { EMPTY_PLACEHOLDER_VALUES } from '../utils/emptyValues';
+import { formatProfileCountOrDate, formatProfileDate } from '../utils/profileDate';
 
-const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 'none', 'немає', 'нет']);
+// Набір живе окремим модулем: його читають і контакти, які цей файл сам
+// імпортує, — тримати його тут означало б коло в імпортах.
+const EMPTY_VALUES = EMPTY_PLACEHOLDER_VALUES;
 
 // Поточне значення поля тут не своє: правило одне на весь застосунок і живе в
 // `getCurrentValue` — масив у полі це історія, і поточне в ній останнє. Свій
@@ -131,6 +136,27 @@ const ROLE_CODES = { ed: 'ED', sm: 'SM', ip: 'IP', ag: 'AG', cl: 'CL' };
 
 export const getRoleCode = role => ROLE_CODES[String(role || '').trim().toLowerCase()] || '';
 
+/**
+ * Коротка назва ролі — та, що вміщається поруч з іменем.
+ *
+ * `getRoleLabel` дає повну («Донорка яйцеклітин»), і в анкеті це правильно: там
+ * під неї є ширина. У рядку стрічки та сама назва з'їдала імʼя, бо підпис
+ * ролі не стискається, а імʼя стискається. Роль без короткої форми підпису не
+ * отримує зовсім — краще нічого, ніж обрізаний хвіст.
+ */
+const SHORT_ROLE_LABELS = {
+  ed: 'Donor',
+  ag: 'Agency',
+  ip: 'Parents',
+  sm: 'Surrogate',
+  cl: 'Client',
+};
+
+export const getRoleShortLabel = (role, language) => {
+  const key = SHORT_ROLE_LABELS[String(role || '').trim().toLowerCase()];
+  return key ? translateProfileLabel(key, language) : '';
+};
+
 const getEmailName = user => {
   const email = normalizeDisplayValue(user?.email);
   if (!email) return '';
@@ -222,14 +248,27 @@ const isExcluded = (item, excludeKeys = []) => {
   const excluded = new Set(excludeKeys || []);
   return [item.key, ...(item.sourceKeys || [])].some(key => excluded.has(key));
 };
+// Значення, вибране зі списку, показується мовою інтерфейсу — пара для нього
+// вже лежить у формі. Вільний текст словнику не відповідає й лишається як є.
+const localizeFieldValue = (item, value, language) => {
+  if (item.resolved || resolveProfileLanguage(language) !== 'uk') return value;
+  return String(value)
+    .split(', ')
+    .map(part => translateFieldValue(item.key, part))
+    .join(', ');
+};
+
 const toDisplayFields = (items, user, excludeKeys = [], language) =>
   items
     .filter(item => !isExcluded(item, excludeKeys))
-    .map(item => ({
-      ...item,
-      label: translateProfileLabel(item.label, language),
-      value: valueFor(user, item, language),
-    }))
+    .map(item => {
+      const value = valueFor(user, item, language);
+      return {
+        ...item,
+        label: translateProfileLabel(item.label, language),
+        value: localizeFieldValue(item, value, language),
+      };
+    })
     .filter(item => (item.resolved ? Boolean(item.value) : shouldRenderField(item.value)));
 
 export const bmiValue = user => {
@@ -259,9 +298,9 @@ const ownKidsDisplayValue = (user, language) => ownKidsBooleanLabel(ownKidsValue
 const birthsCountValue = user => normalizeDisplayValue(user?.ownKids);
 
 // Кесарів розтин лежить під чотирма іменами в анкетах різних поколінь.
-const cSectionValue = user => normalizeDisplayValue(
+const cSectionValue = user => formatProfileCountOrDate(normalizeDisplayValue(
   user?.cSection || user?.csection || user?.c_section || user?.cesareanSection
-);
+));
 const maritalStatusDisplayValue = (user, language) => maritalStatusLabel(user?.maritalStatus, language);
 const glassesDisplayValue = (user, language) => glassesLabel(user?.glasses, language);
 
@@ -279,7 +318,7 @@ const heroFields = {
     field('bmi', 'BMI', bmiValue, ['bmi']),
     field('blood', 'Blood/Rh', getBloodGroupDisplay, ['blood'], { resolved: true }),
     field('ownKids', 'Births', birthsCountValue, ['ownKids']),
-    field('lastDelivery', 'Last birth'),
+    field('lastDelivery', 'Last birth', user => formatProfileDate(normalizeDisplayValue(user?.lastDelivery)), ['lastDelivery']),
     field('cSection', 'Caesarean', cSectionValue, ['cSection', 'csection', 'c_section', 'cesareanSection']),
     field('experience', 'Donations', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
   ],
