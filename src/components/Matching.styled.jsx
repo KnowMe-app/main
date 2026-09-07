@@ -1175,7 +1175,9 @@ export const ModernHeroFacts = styled.div`
   align-items: stretch;
   gap: 0;
   margin-top: 12px;
+  width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
   overflow: hidden;
   border: 1px solid var(--matching-contact-border);
   border-radius: 16px;
@@ -1185,6 +1187,7 @@ export const ModernHeroFacts = styled.div`
 export const ModernFactPill = styled.span`
   position: relative;
   flex: 1 1 22%;
+  box-sizing: border-box;
   min-width: 0;
   min-height: 54px;
   display: inline-flex;
@@ -1817,7 +1820,6 @@ export const GalleryTile = styled.div`
   background: var(--matching-card-bg);
   display: flex;
   flex-direction: column;
-  align-self: start;
   opacity: ${({ $muted }) => ($muted ? 0.5 : 1)};
 
   ${({ $role }) => GALLERY_ROLE_COLORS[$role] && css`
