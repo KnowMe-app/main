@@ -463,6 +463,22 @@ export const ContactsStatus = styled.span`
   color: var(--matching-muted-text);
 `;
 
+/* Контакти, розгорнуті просто в рядку стрічки. Ціль дотику на всю ширину —
+ * `ContactRow` уже така, — тож блок лише відділяє їх від фактів картки. */
+export const RowContacts = styled.div`
+  margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px solid var(--matching-card-border);
+`;
+
+export const RowContactsNote = styled.div`
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  font-size: 12.3px;
+  color: var(--matching-muted-text);
+`;
+
 export const ContactsBody = styled.div`
   padding: 0 11px;
   background: var(--matching-card-bg);

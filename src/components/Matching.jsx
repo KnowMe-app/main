@@ -5735,8 +5735,8 @@ const Matching = () => {
 
   const ensureFullProfile = React.useCallback(user => {
     const userId = user?.userId;
-    if (!userId || !isMatchingSummaryCard(user)) return;
-    if (fullProfileRequestsRef.current.has(userId)) return;
+    if (!userId || !isMatchingSummaryCard(user)) return Promise.resolve();
+    if (fullProfileRequestsRef.current.has(userId)) return Promise.resolve();
     fullProfileRequestsRef.current.add(userId);
 
     // Картку, яку вже відкривали, читати вдруге нема за чим: повна анкета
@@ -5752,10 +5752,10 @@ const Matching = () => {
     const cached = getCompleteCachedProfile(userId);
     if (cached) {
       setFullProfileByUserId(previous => ({ ...previous, [userId]: cached }));
-      return;
+      return Promise.resolve();
     }
 
-    fetchUsersByIds([userId])
+    return fetchUsersByIds([userId])
       .then(hydrated => {
         const profile = hydrated?.[userId];
         if (!profile) return;
@@ -6719,6 +6719,21 @@ const Matching = () => {
     });
   }, [ensureFullProfile]);
 
+  const [rowContactsLoading, setRowContactsLoading] = useState({});
+
+  const handleRequestRowContacts = React.useCallback(user => {
+    const userId = user?.userId;
+    if (!userId) return;
+    setRowContactsLoading(previous => ({ ...previous, [userId]: true }));
+    Promise.resolve(ensureFullProfile(user)).finally(() => {
+      setRowContactsLoading(previous => {
+        const next = { ...previous };
+        delete next[userId];
+        return next;
+      });
+    });
+  }, [ensureFullProfile]);
+
   const handleRowContactsOpened = React.useCallback(user => {
     if (!user?.userId || !ownerId) return;
     const trackKey = `${ownerId}:${user.userId}`;
@@ -7408,6 +7423,8 @@ const Matching = () => {
                       onOpen={openDetailFor}
                       onEditProfile={handleRowEditProfile}
                       onContactsOpened={handleRowContactsOpened}
+                      onRequestContacts={handleRequestRowContacts}
+                      contactsLoading={Boolean(rowContactsLoading[user.userId])}
                       priorityMetricKeys={priorityMetricKeys}
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}

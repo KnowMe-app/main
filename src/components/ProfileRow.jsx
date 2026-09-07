@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
+import { FaChevronDown, FaMapMarkerAlt, FaPaperPlane, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -802,6 +802,8 @@ const ProfileRow = ({
   onOpen,
   onEditProfile,
   onContactsOpened,
+  onRequestContacts,
+  contactsLoading = false,
   clientComment,
   onCommentSave,
   primaryAction,
@@ -854,6 +856,27 @@ const ProfileRow = ({
 
   const hasLocation = Boolean(location);
   const isUnfilled = !isLimited && !hasLocation && (facts.length === 0 || isWeakOnlyFact(facts));
+
+  // Кнопка контактів малюється завжди й нічого не читає наперед: у картці
+  // стрічки контактів немає, бо вони живуть в окремому вузлі за межею
+  // приватності. Дотик запускає те саме читання анкети, що й відкрита картка,
+  // — і всі перевірки права відбуваються там, а не тут.
+  const [contactsOpen, setContactsOpen] = useState(false);
+
+  // Дедуплікацію рядок на себе не бере: нею відає той, хто читає анкету
+  // (`ensureFullProfile`), і він же знімає позначку, коли читання впало. Свій
+  // прапорець «уже просили» зробив би кнопку мертвою рівно після невдалої
+  // спроби — тобто саме тоді, коли повторити й треба.
+  const toggleContacts = () => {
+    setContactsOpen(open => {
+      const next = !open;
+      if (next) {
+        if (onRequestContacts) onRequestContacts(user);
+        if (onContactsOpened) onContactsOpened(user);
+      }
+      return next;
+    });
+  };
 
   const touchStartRef = useRef(null);
   const swipedRef = useRef(false);
@@ -983,6 +1006,18 @@ const ProfileRow = ({
                 {secondaryAction.icon}
               </S.RowActionButton>
             )}
+            {onRequestContacts && !isLimited && (
+              <S.RowActionButton
+                type="button"
+                $on={contactsOpen}
+                title="Контакти"
+                aria-label="Контакти"
+                aria-expanded={contactsOpen}
+                onClick={e => { e.stopPropagation(); toggleContacts(); }}
+              >
+                <FaPaperPlane size={13} />
+              </S.RowActionButton>
+            )}
             {isAdmin && onEditProfile && !isLimited && (
               <S.EditButton
                 type="button"
@@ -1008,6 +1043,28 @@ const ProfileRow = ({
           )}
         </S.Ctrl>
       </S.Top>
+
+      {contactsOpen && (
+        <S.RowContacts onClick={e => e.stopPropagation()}>
+          {contactEntries.length > 0 ? (
+            contactEntries.map(entry => (
+              <S.ContactRow
+                key={`${entry.key}-${entry.index}`}
+                href={entry.href}
+                target={entry.key === 'phone' || entry.key === 'email' ? undefined : '_blank'}
+                rel={entry.key === 'phone' || entry.key === 'email' ? undefined : 'noopener noreferrer'}
+              >
+                <span>{getContactLabel(entry.key, language)}</span>
+                {entry.key === 'phone' ? formatPhoneDisplay(entry.value) : entry.value}
+              </S.ContactRow>
+            ))
+          ) : (
+            <S.RowContactsNote>
+              {contactsLoading ? 'Шукаємо контакти…' : 'Контактів немає або вони закриті'}
+            </S.RowContactsNote>
+          )}
+        </S.RowContacts>
+      )}
 
       {commentSlot !== undefined
         ? commentSlot
