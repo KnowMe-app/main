@@ -23,8 +23,11 @@ import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { profileUiText, translateProfileLabel } from '../utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { getContactEntries } from './contactMethods';
-import { formatProfileCountOrDate, formatProfileDate } from '../utils/profileDate';
+import { formatProfileCountOrDate } from '../utils/profileDate';
+import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import * as S from './MatchingHiddenList.styled';
+import { PublishDot } from './Matching.styled';
+import { isMatchingCardPublished } from '../utils/matchingCardIndex';
 
 // The one profile row shared by the hidden-list screen and the matching feed's
 // list mode (spec §0/§5). It owns the row's visual structure only - avatar,
@@ -104,10 +107,6 @@ export const getInitials = name => {
 
 const resolveCSectionKey = user => CSECTION_KEYS.find(key => normalizeDisplayValue(user?.[key])) || 'csection';
 
-// Розбір і формат дат живуть у `utils/profileDate`: їх читає ще й розкладка
-// анкети, а вона живить цей самий рядок.
-export const formatDeliveryDate = formatProfileDate;
-
 const CSECTION_ZERO_VALUES = new Set(['не було', 'немає', 'нема', 'no', '-', '0']);
 const formatCSectionValue = raw => {
   const trimmed = String(raw || '').trim();
@@ -183,7 +182,7 @@ export const buildGridRows = (user, language) => {
   return rows;
 };
 
-// The metrics line: `172/59 BMI 20 не заміжня O+ пологів 1, останні 21.02.23`.
+// The metrics line: `172/59 BMI 20 не заміжня O+ пологи 1, 18 міс тому`.
 // Spec §5 asks that the fields an active filter narrowed on come first, so the
 // caller passes those metric keys and everything else keeps the default order.
 export const renderFacts = (user, priorityKeys = [], language) => {
@@ -234,11 +233,14 @@ export const renderFacts = (user, priorityKeys = [], language) => {
     if (isZeroBirths) {
       nodes.push(<S.Fact key="births">{profileUiText('factNoBirths', language)}</S.Fact>);
     } else {
-      const formattedDate = formatDeliveryDate(normalizeDisplayValue(user?.lastDelivery));
+      // Не дата, а давність: точний день пологів у рядку стрічки нічого не
+      // вирішує, а називає подію з життя людини. Питання читача — чи встигла
+      // жінка відновитись, і на нього відповідає «18 міс тому».
+      const recency = formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), language);
       nodes.push(
         <S.Fact key="births">
           {profileUiText('factBirths', language)} <b>{ownKids}</b>
-          {formattedDate && <>, {profileUiText('factLastDelivery', language)} <b>{formattedDate}</b></>}
+          {recency && <>, <b>{recency}</b> {profileUiText('factAgo', language)}</>}
         </S.Fact>
       );
     }
@@ -797,6 +799,7 @@ const SWIPE_DOMINANCE = 1.35;
 const ProfileRow = ({
   user,
   isAdmin,
+  onTogglePublish,
   expanded,
   onToggleExpand,
   onOpen,
@@ -862,6 +865,10 @@ const ProfileRow = ({
   // приватності. Дотик запускає те саме читання анкети, що й відкрита картка,
   // — і всі перевірки права відбуваються там, а не тут.
   const [contactsOpen, setContactsOpen] = useState(false);
+
+  // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
+  // такого ключа немає (див. `isMatchingCardPublished`).
+  const isPublished = isMatchingCardPublished(user);
 
   // Дедуплікацію рядок на себе не бере: нею відає той, хто читає анкету
   // (`ensureFullProfile`), і він же знімає позначку, коли читання впало. Свій
@@ -979,7 +986,19 @@ const ProfileRow = ({
           )}
         </S.Body>
         <S.Ctrl>
-          <S.TopButtonsRow>
+          <S.RowActionStack>
+            {/* Цятка публікації — перша в стовпчику: це не дія над карткою, а
+                її стан, і адмін читає його одним поглядом по всьому списку. */}
+            {isAdmin && onTogglePublish && !isLimited && (
+              <PublishDot
+                type="button"
+                $published={isPublished}
+                title={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
+                aria-label={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
+                aria-pressed={isPublished}
+                onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
+              />
+            )}
             {primaryAction && !isLimited && (
               <S.RowActionButton
                 type="button"
@@ -1028,7 +1047,7 @@ const ProfileRow = ({
                 <FaPencilAlt size={12} />
               </S.EditButton>
             )}
-          </S.TopButtonsRow>
+          </S.RowActionStack>
           {!isLimited && totalCount > 0 && (
           <S.ChevronButton
             type="button"
@@ -1102,6 +1121,7 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.expanded === next.expanded
   && prev.clientComment === next.clientComment
   && prev.isAdmin === next.isAdmin
+  && prev.onTogglePublish === next.onTogglePublish
   && prev.primaryAction?.active === next.primaryAction?.active
   && prev.secondaryAction?.active === next.secondaryAction?.active
   && prev.priorityMetricKeys === next.priorityMetricKeys

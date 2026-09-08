@@ -97,6 +97,7 @@ import {
   GalleryNameRow,
   GalleryPhotoBox,
   GalleryPhotoCount,
+  GalleryPublishDot,
   GalleryRoleTag,
   GalleryTile,
   LayoutToggleButton,
@@ -176,8 +177,11 @@ import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_ORDER_FIELD,
+  isMatchingCardPublished,
   isMatchingSummaryCard,
 } from '../utils/matchingCardIndex';
+import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
+import { estimateGalleryTileHeight, splitIntoBalancedColumns } from '../utils/galleryColumns';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { orderMatchingSearchResults } from '../utils/matchingSearchResultOrder';
 import {
@@ -609,6 +613,14 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
 });
 
 const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];
+
+// Оптимістичне значення `feedDate` для цятки публікації: справжнє дорахує
+// писач (`buildMatchingCardProjection`), а екран не має чекати на нього, щоб
+// перефарбувати крапку.
+const todayFeedDate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
 
 const sanitizeCardForBackend = card => {
   if (!card || typeof card !== 'object') return card;
@@ -1511,7 +1523,7 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 //
 // Локація й дії переїхали з фото в тіло картки: поверх знімка вони жили тільки
 // тому, що іншого місця не було.
-const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, diagnosticsSlot }) => {
+const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, diagnosticsSlot }) => {
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
@@ -1523,6 +1535,7 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
   const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
   const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
   const isLimited = Boolean(user?.__limitedProfile);
+  const isPublished = isMatchingCardPublished(user);
 
   return (
     <GalleryTile
@@ -1537,8 +1550,18 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
         onOpen(user);
       }}
     >
+      {isAdmin && onTogglePublish && (
+        <GalleryPublishDot
+          type="button"
+          $published={isPublished}
+          title={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
+          aria-label={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
+          aria-pressed={isPublished}
+          onClick={event => { event.stopPropagation(); onTogglePublish(user); }}
+        />
+      )}
       {photo && (
-        <GalleryPhotoBox $portrait={role === 'ed'}>
+        <GalleryPhotoBox>
           <img src={photo} alt="" loading="lazy" decoding="async" />
           {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
           {photos.length > 1 && <GalleryPhotoCount>{photos.length}</GalleryPhotoCount>}
@@ -1612,8 +1635,10 @@ const GalleryCard = React.memo(({ user, isFavorite, isHidden, onOpen, onToggleFa
   prev.user === next.user
   && prev.isFavorite === next.isFavorite
   && prev.isHidden === next.isHidden
+  && prev.isAdmin === next.isAdmin
   && prev.diagnosticsSlot === next.diagnosticsSlot
   && prev.onToggleHidden === next.onToggleHidden
+  && prev.onTogglePublish === next.onTogglePublish
 ));
 
 const Matching = () => {
@@ -2194,13 +2219,35 @@ const Matching = () => {
       check();
     }), [getMatchingMultiDataOwnerIds]);
 
-  const togglePublish = async user => {
-    if (!isAdmin) return;
-    const newValue = !user.publish;
+  /**
+   * Цятка адміна: показати анкету в стрічці або прибрати з неї.
+   *
+   * Стан питається в картки (`isMatchingCardPublished`), а не в `publish`:
+   * `publish` живе в анкеті, а в проєкції його немає — тобто в стрічці кожна
+   * цятка була б червоною, і перший же дотик «публікував» уже опубліковану.
+   *
+   * Пишеться при цьому саме `publish`: писач сам перекладе його у `feedDate`
+   * картки (`refreshMatchingCardAfterProfileWrite` →
+   * `buildMatchingCardProjection`), і два стани «поза стрічкою» — «сховали» і
+   * «ще не публікували» — розрізняє він, а не цей обробник.
+   *
+   * Локально ключ картки міняється одразу обома іменами: перемальовує цятку
+   * саме `feedDate`, і без нього вона лишалась би старого кольору до
+   * перечитування стрічки.
+   */
+  const togglePublish = React.useCallback(async user => {
+    if (!isAdmin || !user?.userId) return;
+    const newValue = !isMatchingCardPublished(user);
     setUsers(prev =>
-      prev.map(u =>
-        u.userId === user.userId ? { ...u, publish: newValue } : u
-      )
+      prev.map(u => (u.userId === user.userId
+        ? {
+          ...u,
+          publish: newValue,
+          [MATCHING_CARD_FEED_FIELD]: newValue
+            ? (normalizeFeedDateValue(u[MATCHING_CARD_FEED_FIELD]) || todayFeedDate())
+            : false,
+        }
+        : u))
     );
     try {
       const backendPayload = sanitizeCardForBackend({ publish: newValue });
@@ -2209,7 +2256,7 @@ const Matching = () => {
     } catch (err) {
       console.error('Failed to toggle publish', err);
     }
-  };
+  }, [isAdmin]);
 
   // Spec §1: a non-empty query replaces the feed's contents with the results,
   // which the same filters then narrow - there is no second filtering branch.
@@ -6580,13 +6627,25 @@ const Matching = () => {
     setFilterGroupSelect(previous => ({ token: previous.token + 1, name: spec.filterName, value }));
   }, [isSearching, refineKey, resetFilterGroup]);
 
-  // Рядок доречний лише на довгій видачі: на десяти знайдених він тільки
-  // забирає висоту, бо їх видно всі й так. Активне значення тримає рядок на
-  // екрані завжди — інакше зняти його не було б чим.
+  /*
+   * Коли рядок уточнення на екрані.
+   *
+   * У видачі пошуку — на довгій: десять знайдених видно й так, а рядок над
+   * ними лише забирає висоту.
+   *
+   * У стрічці — щойно в ній є перша картка. Поріг у 24 стояв і тут, але стрічка
+   * віддає першу сторінку по десять: рядок не зʼявлявся взагалі, доки читач не
+   * прогорне вниз, підвантажить другу сторінку й **повернеться вгору**. Тобто
+   * інструмент, яким звужують видачу, знаходився випадково — і саме тоді, коли
+   * звужувати вже пізно.
+   *
+   * Смикання, від якого стеріг поріг, від цього не повертається: рядок
+   * зʼявляється один раз, з першою карткою, і далі лишається на місці.
+   */
   const showRefineBar = Boolean(refineActiveValue) || (
     isSearching
       ? searchRefinedUsers.length >= REFINE_MIN_RESULTS
-      : viewMode === 'default' && visibleUsers.length >= REFINE_MIN_RESULTS
+      : viewMode === 'default' && visibleUsers.length > 0
   );
 
   // Ключ без індексу `searchKey` у стрічці не пропонується: там ключ мусить
@@ -7095,6 +7154,29 @@ const Matching = () => {
     [feedSource, withLazyPhotos],
   );
 
+  /**
+   * Дві колонки галереї — за висотою, а не через одну.
+   *
+   * Плитка з фото важить утричі більше за плитку без нього, тож поділ парних і
+   * непарних розводив колонки: одна закінчувалась на середині екрана, а картки
+   * другої йшли далі стовпчиком, з порожнечею збоку. Висота не міряється, а
+   * оцінюється з того, що плитка справді малює (`splitIntoBalancedColumns`).
+   */
+  const galleryColumns = useMemo(
+    () => splitIntoBalancedColumns(feedRows, user => estimateGalleryTileHeight({
+      hasPhoto: getProfilePhotos(user).length > 0,
+      // Рівно ті рядки, які малює плитка: імʼя, рядок ролі й локації та до двох
+      // рядків метрик. Рахуються вони наявністю полів, а не збиранням фактів:
+      // будувати вузли ста карток заради оцінки висоти дорожче за саму сітку.
+      textLines: 1
+        + (getProfileRole(user) || getProfileLocation(user) ? 1 : 0)
+        + (user?.height || user?.weight || user?.bmi || user?.rh ? 1 : 0)
+        + (user?.ownKids || user?.maritalStatus || user?.csection || user?.cSection ? 1 : 0),
+      hasActions: !user?.__limitedProfile,
+    })),
+    [feedRows],
+  );
+
   const matchingMenuActions = [
     {
       key: 'viewLayout',
@@ -7392,19 +7474,20 @@ const Matching = () => {
             <FeedWrap>
               {feedRows.length > 0 && viewLayout === 'gallery' && (
                 <GalleryGrid>
-                  {[0, 1].map(columnIndex => (
+                  {galleryColumns.map((columnRows, columnIndex) => (
                     <GalleryColumn key={`gallery-column-${columnIndex}`}>
-                      {feedRows
-                        .filter((user, index) => index % 2 === columnIndex)
+                      {columnRows
                         .map(user => (
                           <GalleryCard
                             key={user.userId}
                             user={user}
+                            isAdmin={isAdmin}
                             isFavorite={Boolean(favoriteUsers[user.userId])}
                             isHidden={Boolean(dislikeUsers[user.userId])}
                             onOpen={openDetailFor}
                             onToggleFavorite={toggleRowFavorite}
                             onToggleHidden={toggleRowHidden}
+                            onTogglePublish={togglePublish}
                             diagnosticsSlot={renderDiagnosticsFor(user)}
                           />
                         ))}
@@ -7419,6 +7502,7 @@ const Matching = () => {
                       key={user.userId}
                       user={user}
                       isAdmin={isAdmin}
+                      onTogglePublish={togglePublish}
                       expanded={expandedRowIds.has(user.userId)}
                       onToggleExpand={handleToggleRowExpand}
                       onOpen={openDetailFor}

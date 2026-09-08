@@ -19,6 +19,20 @@ const collectKeys = fields => [...new Set(fields.flatMap(field => [field.key, ..
 const sectionFieldKeys = sections => sections.flatMap(section => section.fields.map(field => field.key));
 
 describe('profileLayoutConfig', () => {
+  it('останні пологи стоять у смузі давністю, а не датою', () => {
+    // Точний день пологів — подія з життя людини, і в картці, відкритій усім,
+    // йому не місце. Питання читача — скільки минуло.
+    const born = new Date();
+    born.setMonth(born.getMonth() - 14);
+    const iso = `${born.getFullYear()}-${String(born.getMonth() + 1).padStart(2, '0')}-${String(born.getDate()).padStart(2, '0')}`;
+    const hero = getHeroFields({ userRole: 'ed', ownKids: '2', lastDelivery: iso }, 'ed');
+    const cell = hero.find(field => field.key === 'lastDelivery');
+
+    expect(cell?.label).toBe('Since birth');
+    expect(cell?.value).toBe('14 mo');
+    expect(cell?.value).not.toMatch(/\d{2}\.\d{2}\.\d{2}/);
+  });
+
   it('builds egg donor photo, hero facts, and donor groups while hiding empty fields', () => {
     const user = {
       userRole: 'ed',
@@ -49,8 +63,9 @@ describe('profileLayoutConfig', () => {
     expect(hero.map(field => field.key)).toEqual(['height', 'weight', 'bmi', 'blood', 'ownKids', 'cSection', 'experience']);
     expect(hero.find(field => field.key === 'experience')?.label).toBe('Donations');
     // `ownKids` у формі — це «Кількість пологів», тож число лишається числом:
-    // «є / немає» ховало і його, і сам сенс поля.
-    expect(hero.find(field => field.key === 'ownKids')?.label).toBe('Births');
+    // «є / немає» ховало і його, і сам сенс поля. Підпис теж каже саме про
+    // пологи: «Births» читалось як «діти», яких це поле не рахує.
+    expect(hero.find(field => field.key === 'ownKids')?.label).toBe('Deliveries');
     expect(quickFacts.map(field => field.key)).toEqual([]);
     // «Donation experience» тут більше не збирається: досвід донацій і кесарів
     // переїхали у смугу показників, а решта полів секції в цій анкеті порожня —

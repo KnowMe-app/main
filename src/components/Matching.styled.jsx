@@ -915,6 +915,54 @@ export const AdminToggle = styled.div`
   cursor: pointer;
 `;
 
+/*
+ * Цятка публікації — кнопка адміна, і вона повернулась у самі картки.
+ *
+ * Червона/зелена крапка у кутку картки була єдиним місцем, де видно й
+ * перемикається стан «анкета в стрічці». Після переїзду на нову сітку вона
+ * лишилась тільки у відкритій картці, тобто відповісти «а чи опублікована ця»
+ * можна було, лише відкривши анкету — по одній.
+ *
+ * Стан читається з `feedDate` самої картки (`isMatchingCardPublished`), а не з
+ * `publish`: у проєкції такого ключа немає, і на ньому цятка була б червоною
+ * для всієї стрічки.
+ *
+ * Обвідка кольору картки — щоб крапка лишалась видимою і на світлому фото, і
+ * на темному.
+ */
+export const PublishDot = styled.button`
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+
+  &::before {
+    content: '';
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--matching-card-bg);
+    background: ${({ $published }) => ($published ? '#2f9e44' : '#e03131')};
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
+/** Та сама цятка, але в кутку плитки галереї — над фото. */
+export const GalleryPublishDot = styled(PublishDot)`
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+`;
+
 export const Id = styled.div`
   position: absolute;
   right: 10px;
@@ -1836,12 +1884,16 @@ export const GalleryTile = styled.div`
   `}
 `;
 
-// Пропорція залежить від ролі: донорці зовнішність — це дані, тож їй лишається
-// портретний 4/5; агенції фото нічого не вирішує, і 4/3 забирає менше екрана.
+// Пропорція одна на всі ролі — портретний 4/5.
+//
+// Була різна: агенції давали 4/3, бо «фото нічого не вирішує». На екрані це
+// читалось не як економія, а як другий сорт: у двох колонках поруч стояли
+// картки з фото різної висоти, і сітка виглядала зламаною. Ширина в колонках
+// однакова, тож однакова пропорція — це ще й однакова висота фото.
 export const GalleryPhotoBox = styled.div`
   position: relative;
   width: 100%;
-  aspect-ratio: ${({ $portrait }) => ($portrait ? '4 / 5' : '4 / 3')};
+  aspect-ratio: 4 / 5;
   overflow: hidden;
   background: var(--matching-section-bg);
 

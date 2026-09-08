@@ -420,6 +420,55 @@ describe('fetchMatchingIndexedCandidates bounded bucket reads', () => {
     expect(result.usedIndex).toBe(true);
   });
 
+  it('порожній бакет індексу віддає деку пагінації, а не показує порожню видачу', async () => {
+    // `searchKey/users/country` будується окремим прогоном, і в базі його може
+    // ще не бути. Порожній вузол давав порожній перетин — і фільтр «Other»
+    // показував «Немає доступних профілів» на деці, де рядок уточнення щойно
+    // рахував по країнах десятки карток.
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    mockFirebaseGet.mockResolvedValue(makeSnapshot(null));
+    const hydrateUsersByIds = jest.fn();
+
+    const result = await fetchMatchingIndexedCandidates({
+      filters: { country: { ua: false, other: true, unknown: false } },
+      limit: 5,
+      hydrateUsersByIds,
+    });
+
+    expect(result.usedIndex).toBe(false);
+    expect(result.reason).toBe('exclude-only-index-plan');
+    expect(hydrateUsersByIds).not.toHaveBeenCalled();
+  });
+
+  it('порожня група вибуває з плану, а селективна лишається', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+
+    mockFirebaseGet.mockImplementation(async path => {
+      if (path === 'searchKey/users/role/ag') {
+        return makeSnapshot({
+          user00000000000000000001: true,
+          user00000000000000000002: true,
+        });
+      }
+      // Індекс країни ще не побудований.
+      return makeSnapshot(null);
+    });
+
+    const result = await fetchMatchingIndexedCandidates({
+      filters: {
+        userRole: { ag: true, ed: false, ip: false, other: false },
+        country: { ua: false, other: true, unknown: false },
+      },
+      limit: 5,
+      hydrateUsersByIds,
+    });
+
+    // Кандидатів назвала роль; країну відсіє пост-фільтр по гідратованих картках.
+    expect(result.usedIndex).toBe(true);
+    expect(result.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002']);
+  });
+
   it('віддає деку звичайній пагінації, коли жодна група не влізла в межу', async () => {
     const { fetchMatchingIndexedCandidates, MATCHING_SEARCH_KEY_BUCKET_READ_CAP } = loadModule();
     mockFirebaseGet.mockResolvedValue(makeSnapshot(makeIds(MATCHING_SEARCH_KEY_BUCKET_READ_CAP + 1, 'wide')));

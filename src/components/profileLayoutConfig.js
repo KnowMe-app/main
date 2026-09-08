@@ -7,7 +7,8 @@ import { translateFieldValue } from './formFields';
 import { normalizeProfileRole } from '../utils/profileRole';
 import { derivedValueTexts, resolveProfileLanguage, translateProfileLabel } from '../utils/profileTexts';
 import { EMPTY_PLACEHOLDER_VALUES } from '../utils/emptyValues';
-import { formatProfileCountOrDate, formatProfileDate } from '../utils/profileDate';
+import { formatProfileCountOrDate } from '../utils/profileDate';
+import { formatDeliveryRecency } from '../utils/deliveryRecency';
 
 // Набір живе окремим модулем: його читають і контакти, які цей файл сам
 // імпортує, — тримати його тут означало б коло в імпортах.
@@ -317,8 +318,11 @@ const heroFields = {
     field('weight', 'Weight'),
     field('bmi', 'BMI', bmiValue, ['bmi']),
     field('blood', 'Blood/Rh', getBloodGroupDisplay, ['blood'], { resolved: true }),
-    field('ownKids', 'Births', birthsCountValue, ['ownKids']),
-    field('lastDelivery', 'Last birth', user => formatProfileDate(normalizeDisplayValue(user?.lastDelivery)), ['lastDelivery']),
+    field('ownKids', 'Deliveries', birthsCountValue, ['ownKids']),
+    // Комірка каже «як давно», а не «коли»: точна дата пологів — це подія з
+    // життя конкретної людини, а читачеві потрібен строк відновлення. Після
+    // двох років рахунок іде роками (`formatDeliveryRecency`).
+    field('lastDelivery', 'Since birth', (user, language) => formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), language), ['lastDelivery'], { resolved: true }),
     field('cSection', 'Caesarean', cSectionValue, ['cSection', 'csection', 'c_section', 'cesareanSection']),
     field('experience', 'Donations', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
   ],

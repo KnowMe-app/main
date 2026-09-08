@@ -205,6 +205,22 @@ export const listDroppedProjectionFields = (data, projection) => {
 // писач індексу беруть його звідти, тож аватар у них не може розійтись.
 export { resolveMatchingCardAvatarFromProfile };
 
+/**
+ * Чи стоїть картка в стрічці — питання, на яке відповідає сама картка.
+ *
+ * Стани три, і два з них означають «поза стрічкою»: дата — показана, `false` —
+ * сховали навмисно, ключа немає — ще не публікували. Тому питати `publish`
+ * першим не можна: у проєкції його немає взагалі, і кожна картка стрічки
+ * виглядала б неопублікованою. `publish` лишається відкотом для повної анкети,
+ * куди `expandMatchingCard` перекладає `feedDate` назад.
+ */
+export const isMatchingCardPublished = card => {
+  if (!card || typeof card !== 'object') return false;
+  const raw = card[MATCHING_CARD_FEED_FIELD];
+  if (raw === undefined || raw === null) return normalizePublish(card.publish);
+  return typeof raw === 'string' && raw.trim() !== '';
+};
+
 /** Чи стоїть у полі `publish` явне «ні». */
 const isPublishExplicitlyDenied = data => {
   const publish = data?.publish;
