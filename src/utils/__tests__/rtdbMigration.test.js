@@ -27,6 +27,7 @@ import {
   flattenOwnerValueToString,
 } from '../rtdbMigrationDerive';
 import { MATCHING_CARD_FORBIDDEN_FIELDS } from '../profileNodeSchema';
+import { getCurrentValue } from 'components/getCurrentValue';
 
 const OWNER = 'ADMIN_UID';
 
@@ -474,6 +475,98 @@ describe('Contacts', () => {
       newUsersValue: '+999',
       reason: 'SOURCE_CONFLICT',
     }));
+  });
+});
+
+describe('стерте поле', () => {
+  // Порожня остання версія — це «поле стерли», і по обидва боки міграції воно
+  // мусить лишатись стертим. Перевірка тут одна на всі випадки: `getCurrentValue`
+  // — те саме, чим анкету читає застосунок.
+  const currentPhone = state => getCurrentValue(state.targets.profileContacts.P1?.phone);
+
+  it('переносить позначку стирання разом з історією', () => {
+    const state = stateWith({ P1: { phone: ['+380', ''] } }, {});
+    runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+380', '']);
+    expect(currentPhone(state)).toBeUndefined();
+  });
+
+  it('не воскрешає номер значенням із сусідньої колекції', () => {
+    // Стирання записане в `newUsers`, а `users` тримає старий номер. У злитті
+    // значення з `users` іде останнім — і без позначки стирання номер, який
+    // людина прибрала, ставав поточним назад.
+    const state = stateWith({ P1: { phone: '+381' } }, { P1: { phone: ['+380', ''] } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(currentPhone(state)).toBeUndefined();
+    expect(state.targets.profileContacts.P1.phone.slice(-1)).toEqual(['']);
+    // Історія лишається історією: жодне значення не викинуто.
+    expect(state.targets.profileContacts.P1.phone).toEqual(expect.arrayContaining(['+380', '+381']));
+    expect(plan.warningsByCode.ERASURE_PRESERVED).toBe(1);
+  });
+
+  it('бачить стирання і тоді, коли від нього лишився сам порожній рядок', () => {
+    // `phone: ''` — це теж стерте поле, просто без історії. Поріг порожнечі
+    // такий запис не переносить, і без окремої перевірки значення сусідньої
+    // колекції їхало б у новий вузол одне-однісіньке.
+    const state = stateWith({ P1: { phone: '' } }, { P1: { phone: ['+380'] } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+380', '']);
+    expect(currentPhone(state)).toBeUndefined();
+    expect(plan.warningsByCode.ERASURE_PRESERVED).toBe(1);
+  });
+
+  it('порожній синонім при живому канонічному ключі стиранням не рахується', () => {
+    // `state: ''` — не значення поля, а порожній синонім; `region` заповнений,
+    // і ховати його нема за чим.
+    const state = stateWith({ P1: { region: 'Київська', state: '' } }, { P1: { region: 'Київська' } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(card(state, 'P1').region).toBe('Київська');
+  });
+
+  it('не чіпає поле, яке ніхто не стирав', () => {
+    const state = stateWith({ P1: { phone: '+380' } }, { P1: { phone: ['+381'] } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+381', '+380']);
+    expect(plan.warningsByCode.ERASURE_PRESERVED).toBeUndefined();
+  });
+
+  it('лишає людині мапу з іменованими ключами замість того, щоб вигадати їй форму', () => {
+    // Історія версій — це масив; `{ primary: … }` нею не є, і дописати в неї
+    // позначку стирання означало б вигадати форму значення. Поле не переїжджає
+    // і їде у звіт — але й номер із нього назовні не потрапляє.
+    const state = stateWith({ P1: { phone: '' } }, { P1: { phone: { primary: '+380' } } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1).toBeUndefined();
+    expect(state.workingNewUsers.P1).toEqual({ phone: { primary: '+380' } });
+    expect(plan.conflicts).toContainEqual(expect.objectContaining({
+      profileId: 'P1',
+      field: 'phone',
+      reason: 'ERASED_IN_OTHER_COLLECTION',
+    }));
+  });
+
+  it('картка стрічки доносить стирання так само, як контакти', () => {
+    // `name` живе тільки в картці, і саме вона показує рядок стрічки.
+    const state = stateWith({ P1: { name: 'Оксана' } }, { P1: { name: ['Оксана', ''] } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(getCurrentValue(card(state, 'P1').name)).toBeUndefined();
+  });
+
+  it('повторний прогін не змінює вже перенесене значення', () => {
+    const state = stateWith({ P1: { phone: '+381' } }, { P1: { phone: ['+380', ''] } });
+    runMigrationGroup(state, 'profileContacts');
+    const migrated = state.targets.profileContacts.P1.phone;
+
+    runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(migrated);
   });
 });
 

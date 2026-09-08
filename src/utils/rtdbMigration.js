@@ -57,6 +57,7 @@ import {
   flattenOwnerValueToString,
 } from './rtdbMigrationDerive';
 import { isListLikeValue, mergeUserFieldValue } from './mergeUserCollections';
+import { hasCurrentValue } from 'components/getCurrentValue';
 
 /** Кнопки міграції, у порядку, в якому їх задумано натискати. */
 export const MIGRATION_GROUPS = Object.freeze([
@@ -532,8 +533,61 @@ const isSuccess = outcome => outcome === 'copied'
   // Злитий список теж доїхав — обидва джерела віддали в нього своє.
   || outcome === 'merged';
 
+/**
+ * Чи каже ця копія анкети, що поле стерли.
+ *
+ * Стирання в анкеті пишеться не видаленням ключа, а порожньою **поточною**
+ * версією поля: `['+380…', '']` або просто `''`. Людина бачить у своїй анкеті
+ * порожній рядок і розраховує, що порожній він і для інших, — саме це читає
+ * `hasCurrentValue`, і саме на цьому тримається приватність номера, який
+ * прибрали.
+ *
+ * Ключ обирається так само, як у `planDirectField`: перший непорожній синонім,
+ * а коли непорожніх немає — поле стерте. Порожній синонім поруч із заповненим
+ * канонічним ключем (`state: ''` при живому `region`) стиранням не рахується:
+ * значенням поля він не є.
+ */
+const saysFieldErased = (source, field) => {
+  if (!source || typeof source !== 'object') return false;
+
+  const present = sourceKeysFor(field).filter(
+    key => Object.prototype.hasOwnProperty.call(source, key),
+  );
+  if (!present.length) return false;
+
+  const sourceKey = present.find(key => hasMeaningfulValue(source[key]));
+  if (!sourceKey) return true;
+
+  return !hasCurrentValue(source[sourceKey]);
+};
+
+/**
+ * Дописати позначку стирання в кінець історії поля.
+ *
+ * Скаляр стає масивом версій — рівно тим, який записала б сама анкета, коли
+ * значення спершу було, а потім його прибрали. Обʼєкт із числовими ключами —
+ * це той самий масив з дірками (так RTDB віддає пропущені індекси), тож він
+ * розкладається в порядку ключів, а не в порядку вставки.
+ *
+ * Мапа з іменованими ключами історією версій не є, і дописати в неї позначку
+ * означало б вигадати форму. Такий випадок повертає `null` — рішення ухвалює
+ * людина.
+ */
+const withErasureMarker = value => {
+  if (Array.isArray(value)) return [...value, ''];
+
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (!keys.length || !keys.every(key => /^\d+$/.test(key))) return null;
+    const ordered = keys.slice().sort((left, right) => Number(left) - Number(right));
+    return [...ordered.map(key => value[key]), ''];
+  }
+
+  return [value, ''];
+};
+
 /** Пряме поле: значення переноситься як є, без зміни типу (§20). */
-const planDirectField = (ctx, { profileId, field, source, sourceCollection }) => {
+const planDirectField = (ctx, { profileId, field, source, sourceCollection, erased = false }) => {
   const present = sourceKeysFor(field).filter(
     key => Object.prototype.hasOwnProperty.call(source, key),
   );
@@ -566,7 +620,50 @@ const planDirectField = (ctx, { profileId, field, source, sourceCollection }) =>
   // `25.08.2026` і `2026-08-25` різні рядки, дві копії тієї самої анкети
   // дають конфлікт на рівному місці, а сортування рядком ставить крапкові
   // дати не туди.
-  const value = normalizeLegacyDates(deepClone(source[sourceKey]));
+  let value = normalizeLegacyDates(deepClone(source[sourceKey]));
+
+  /*
+   * Сусідня колекція каже, що поле стерли, а ця ще тримає значення.
+   *
+   * Живе значення тут не «свіжіше» — воно просто не знає про стирання. Дві
+   * копії анкети зливаються в один список версій (`mergeUserFieldValue`), і
+   * останній елемент того списку — це те, що побачать усі. Порядок у злитті
+   * сталий: значення з `users` іде останнім, бо саме воно роками читалось як
+   * поточне. Тож стирання, записане в `newUsers`, опинялось усередині списку —
+   * і номер, який людина прибрала, ставав поточним назад. Те саме робив і
+   * поріг порожнечі: копія, у якій лишився сам `''`, не переносилась узагалі,
+   * і значення сусідньої колекції їхало в новий вузол одне-однісіньке.
+   *
+   * Історію ми не викидаємо — вона й далі лежить версіями, — але останньою
+   * версією стає позначка стирання. Приватність тут важить більше за повноту
+   * показу: сховане значення адмін бачить у формі й може вписати назад, а
+   * розданий номер назад не забереш.
+   */
+  if (erased && hasCurrentValue(value)) {
+    const marked = withErasureMarker(value);
+
+    if (!marked) {
+      addConflict(ctx, {
+        profileId,
+        targetGroup: ctx.group,
+        field,
+        reason: 'ERASED_IN_OTHER_COLLECTION',
+        incomingSource: sourceCollection,
+        incomingValue: value,
+      });
+      return;
+    }
+
+    addWarning(ctx, {
+      code: 'ERASURE_PRESERVED',
+      profileId,
+      field,
+      collection: sourceCollection,
+      targetGroup: ctx.group,
+      kept: marked,
+    });
+    value = marked;
+  }
 
   const outcome = offerValue(ctx, { profileId, field, value, sourceCollection });
 
@@ -971,6 +1068,20 @@ export const planMigrationGroup = (state, group, options = {}) => {
       });
     }
 
+    /*
+     * Стирання — факт про анкету, а не про копію.
+     *
+     * Порожня поточна версія стоїть в одній колекції, а значення, яке вона
+     * скасовує, — в іншій, тож питати треба обидві до того, як почнеться
+     * прохід по них. Питаємо саме початкові копії: робоча втрачає перенесені
+     * ключі, і на другому прогоні тієї самої групи стирання зникло б із поля
+     * зору, а разом із ним і позначка в цілі.
+     */
+    const erasedFields = new Set(directFields.filter(field => (
+      saysFieldErased(state.originalUsers?.[profileId], field)
+      || saysFieldErased(state.originalNewUsers?.[profileId], field)
+    )));
+
     passes.forEach(([sourceCollection, source, derivationSource]) => {
       if (!source || typeof source !== 'object') return;
 
@@ -985,7 +1096,13 @@ export const planMigrationGroup = (state, group, options = {}) => {
         return;
       }
 
-      directFields.forEach(field => planDirectField(ctx, { profileId, field, source, sourceCollection }));
+      directFields.forEach(field => planDirectField(ctx, {
+        profileId,
+        field,
+        source,
+        sourceCollection,
+        erased: erasedFields.has(field),
+      }));
 
       if (group === 'matchingCards') {
         planMatchingDerivedFields(ctx, {
