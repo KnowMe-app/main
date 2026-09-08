@@ -1510,6 +1510,69 @@ export const ModernContactLink = styled.a`
   }
 `;
 
+/*
+ * Контакти в картці — щонайбільше два рядки.
+ *
+ * Раніше кожен спосіб звʼязку займав власний рядок із текстом, а
+ * автоматичні посилання на Telegram, Viber і WhatsApp — які будуються з того
+ * самого номера — стояли ще й **після** всіх контактів, трьома порожніми
+ * рядками з самими іконками. Тобто найкоротший шлях до людини лежав найдалі
+ * від її номера.
+ *
+ * Тепер номер і три кнопки біля нього — один рядок; решта (пошта, ніки,
+ * посилання) — другий, самими іконками. Читати довгий нік не треба, у нього
+ * треба тапнути; що саме за іконкою, каже `title`.
+ */
+export const ContactPrimaryRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-top: 1px solid var(--matching-contact-border);
+
+  &:first-child {
+    border-top: none;
+  }
+
+  > a:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+`;
+
+export const ContactIconRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: ${({ $standalone }) => ($standalone ? '8px 0 2px' : '0')};
+  border-top: ${({ $standalone }) => ($standalone ? '1px solid var(--matching-contact-border)' : 'none')};
+`;
+
+export const ContactIconLink = styled.a`
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  border: 1px solid var(--matching-contact-border);
+  background: transparent;
+  color: var(--matching-accent);
+  text-decoration: none;
+
+  svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
 export const ModernDesktopNavButton = styled.button`
   position: absolute;
   top: 0;

@@ -3,6 +3,7 @@ import { hasCurrentValue } from 'components/getCurrentValue';
 import {
   deriveSurnameShort,
   deriveRh,
+  hasMeaningfulValue,
   deriveRole,
   normalizeFeedDateValue,
   resolveMatchingCardAvatarFromProfile,
@@ -423,8 +424,10 @@ export const expandMatchingCard = (userId, card) => {
     ...rest,
     userId: id,
     // Повного прізвища в картці немає; стрічка показує ініціал там, де раніше
-    // показувала прізвище.
-    ...(trimmed(surnameShort) ? { surname: surnameShort } : {}),
+    // показувала прізвище. Ініціалів у картці буває кілька — по одному на
+    // версію прізвища, зі стиранням у кінці, — тож список їде списком: звести
+    // його до рядка тут означало б показати «К.,М.,» замість поточного «М.».
+    ...(hasMeaningfulValue(surnameShort) ? { surname: surnameShort } : {}),
     ...(blood ? { blood } : {}),
     // Ключ стрічки є датою — картка показана; немає ключа — ні. `publish`
     // ставиться лише в першому випадку: `normalizePublish` читає відсутнє

@@ -6,6 +6,7 @@ import {
   shouldRenderField,
 } from './profileLayoutConfig';
 import { deriveSurnameShort } from '../utils/profileFieldDerive';
+import { getCurrentValue } from './getCurrentValue';
 
 /*
  * Одне правило на всю картку: показане значення — останнє в полі.
@@ -54,11 +55,15 @@ describe('картка показує поточне значення поля, 
 
   // Ініціал у рядку стрічки читає те саме поточне значення: інакше картка
   // показувала б «К.» від прізвища, якого в анкеті вже немає.
-  it('ініціал стрічки теж бере останню версію', () => {
+  it('ініціал стрічки показує останню версію, а картка тримає всі', () => {
+    // Однакові ініціали не двояться, різні лишаються обидва — показує рядок
+    // усе одно останній (`getCurrentValue`).
     expect(deriveSurnameShort(['Коваленко', 'Ковальчук'])).toEqual({ value: 'К.' });
+    expect(deriveSurnameShort(['Коваленко', 'Марчук'])).toEqual({ value: ['К.', 'М.'] });
     // Стерте прізвище — це «немає значення», а не «не вдалось вивести»:
-    // попередження тут вело б шукати поламані дані там, де їх немає.
-    expect(deriveSurnameShort(['Коваленко', ''])).toEqual({ value: undefined });
+    // позначка стирання доїжджає в кінці історії, і саме її бачить показ.
+    expect(deriveSurnameShort(['Коваленко', ''])).toEqual({ value: ['К.', ''] });
+    expect(getCurrentValue(deriveSurnameShort(['Коваленко', '']).value)).toBeUndefined();
     expect(deriveSurnameShort({ nested: { deep: true } }))
       .toEqual({ value: undefined, warning: 'UNRESOLVED_SURNAME' });
   });

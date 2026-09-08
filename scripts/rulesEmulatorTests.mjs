@@ -169,6 +169,18 @@ await it('звичайний користувач точково читає й �
     set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-08-25'));
 });
 
+// Прізвище в картці лежить скороченим — і скороченими лежать **усі** його
+// версії: `['К.', 'М.']`, зі стиранням порожнім рядком у кінці. Тож правило
+// приймає і рядок, і список рядків, а межу довжини тримає на кожному елементі.
+await it('картка приймає список ініціалів прізвища й тримає межу довжини', async () => {
+  await assertSucceeds(
+    set(ref(db(SUPERADMIN), `matchingCards/${CARD}/surnameShort`), ['К.', 'М.', '']));
+  await assertFails(
+    set(ref(db(SUPERADMIN), `matchingCards/${CARD}/surnameShort`), ['К.', 'занадто довгий ініціал прізвища']));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/surnameShort`), 'К.'));
+});
+
 await it('неопублікована анкета не віддає ані деталей, ані контактів', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/feedDate`), null));

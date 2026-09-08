@@ -43,6 +43,9 @@ import {
   ModernChip,
   ModernChipGrid,
   ModernContactDetails,
+  ContactIconLink,
+  ContactIconRow,
+  ContactPrimaryRow,
   ModernContactLinks,
   ModernContactLink,
   ModernContactSummary,
@@ -885,70 +888,97 @@ const getContactLabel = (key, language) => translateProfileLabel(
   language,
 );
 
+/**
+ * Три швидкі кнопки, які будуються з самого номера.
+ *
+ * Ніякого нового контакту вони не несуть: це той самий телефон, відкритий у
+ * месенджері. Тому й стоять вони біля номера, а не окремим переліком у кінці
+ * блока, де читались як три порожні контакти.
+ */
+const PHONE_QUICK_LINKS = [
+  { key: 'telegram', Icon: FaTelegramPlane, label: 'Telegram', build: CONTACT_LINK_BUILDERS.telegramFromPhone },
+  { key: 'viber', Icon: FaViber, label: 'Viber', build: CONTACT_LINK_BUILDERS.viberFromPhone },
+  { key: 'whatsapp', Icon: FaWhatsapp, label: 'WhatsApp', build: CONTACT_LINK_BUILDERS.whatsappFromPhone },
+];
+
+const contactDisplayValue = entry => {
+  const valueText = String(entry?.value || '').trim();
+  return entry?.key === 'phone' ? `+${valueText.replace(/\s/g, '')}` : valueText;
+};
+
+const isExternalContact = key => key !== 'phone' && key !== 'email';
+
+/**
+ * Блок контактів картки — номер у першому рядку, решта в другому.
+ *
+ * Повністю читається лише телефон: його переписують, диктують і звіряють.
+ * Пошта й ніки читання не потребують — у них тапають, — а текстом вони
+ * забирали по рядку кожен і розтягували блок на пів екрана. Що саме за
+ * іконкою, каже `title`, тож значення не зникає, а лише перестає займати рядок.
+ *
+ * Номерів у анкеті буває кілька — тоді перших рядків стільки ж, по одному на
+ * номер: кожен зі своїми кнопками месенджерів.
+ */
 const ProfileContactLinks = ({ user, role, language }) => {
   const entries = getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key));
   if (!entries.length) return null;
 
+  const phones = entries.filter(entry => entry.key === 'phone');
+  const others = entries.filter(entry => entry.key !== 'phone');
+
   return (
     <ModernContactLinks onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-      {entries.map(entry => {
-        const Icon = CONTACT_ICONS[entry.key] || FaGlobe;
-        const valueText = String(entry.value || '').trim();
-        const displayValue = entry.key === 'phone' ? `+${valueText.replace(/\s/g, '')}` : valueText;
-
+      {phones.map(entry => {
+        const displayValue = contactDisplayValue(entry);
         return (
-          <ModernContactLink
-            key={`${entry.key}-${entry.index}-${valueText}`}
-            href={entry.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            $role={role}
-            title={`${getContactLabel(entry.key, language)}: ${displayValue}`}
-            aria-label={`${getContactLabel(entry.key, language)}: ${displayValue}`}
-          >
-            <Icon />
-            <span>{displayValue}</span>
-          </ModernContactLink>
+          <ContactPrimaryRow key={`phone-${entry.index}-${entry.value}`}>
+            <ModernContactLink
+              href={entry.href}
+              $role={role}
+              title={`${getContactLabel('phone', language)}: ${displayValue}`}
+              aria-label={`${getContactLabel('phone', language)}: ${displayValue}`}
+            >
+              <PhoneHandsetIcon />
+              <span>{displayValue}</span>
+            </ModernContactLink>
+            <ContactIconRow>
+              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => (
+                <ContactIconLink
+                  key={`phone-${key}-${entry.index}`}
+                  href={build(entry.value)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`${label}: ${displayValue}`}
+                  aria-label={`${label}: ${displayValue}`}
+                >
+                  <Icon />
+                </ContactIconLink>
+              ))}
+            </ContactIconRow>
+          </ContactPrimaryRow>
         );
       })}
-      {getContactEntries({
-        telegram: [],
-        phone: user?.phone,
-      }).filter(entry => entry.key === 'phone').flatMap(entry => [
-        <ModernContactLink
-          key={`phone-telegram-${entry.index}`}
-          href={CONTACT_LINK_BUILDERS.telegramFromPhone(entry.value)}
-          target="_blank"
-          rel="noopener noreferrer"
-          $role={role}
-          title="Telegram from phone"
-          aria-label="Telegram from phone"
-        >
-          <FaTelegramPlane />
-        </ModernContactLink>,
-        <ModernContactLink
-          key={`phone-viber-${entry.index}`}
-          href={CONTACT_LINK_BUILDERS.viberFromPhone(entry.value)}
-          target="_blank"
-          rel="noopener noreferrer"
-          $role={role}
-          title="Viber from phone"
-          aria-label="Viber from phone"
-        >
-          <FaViber />
-        </ModernContactLink>,
-        <ModernContactLink
-          key={`phone-whatsapp-${entry.index}`}
-          href={CONTACT_LINK_BUILDERS.whatsappFromPhone(entry.value)}
-          target="_blank"
-          rel="noopener noreferrer"
-          $role={role}
-          title="WhatsApp from phone"
-          aria-label="WhatsApp from phone"
-        >
-          <FaWhatsapp />
-        </ModernContactLink>,
-      ])}
+      {others.length > 0 && (
+        <ContactIconRow $standalone>
+          {others.map(entry => {
+            const Icon = CONTACT_ICONS[entry.key] || FaGlobe;
+            const displayValue = contactDisplayValue(entry);
+            const label = `${getContactLabel(entry.key, language)}: ${displayValue}`;
+            return (
+              <ContactIconLink
+                key={`${entry.key}-${entry.index}-${entry.value}`}
+                href={entry.href}
+                target={isExternalContact(entry.key) ? '_blank' : undefined}
+                rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
+                title={label}
+                aria-label={label}
+              >
+                <Icon />
+              </ContactIconLink>
+            );
+          })}
+        </ContactIconRow>
+      )}
     </ModernContactLinks>
   );
 };

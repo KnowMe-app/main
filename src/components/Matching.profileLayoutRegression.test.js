@@ -24,6 +24,20 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone');
   });
 
+  it('тримає блок контактів у двох рядках: номер з кнопками і решта іконками', () => {
+    const matchingSource = source();
+
+    // Кнопки месенджерів будуються з номера, тож і стоять біля номера — а не
+    // трьома порожніми рядками після всіх контактів.
+    expect(matchingSource).toContain('<ContactPrimaryRow key={');
+    expect(matchingSource).toContain('PHONE_QUICK_LINKS.map(({ key, Icon, label, build })');
+    // Повністю читається лише телефон; решта — іконки, значення яких лишається
+    // в підказці, а не займає рядок.
+    expect(matchingSource).toContain('const others = entries.filter(entry => entry.key !== \'phone\');');
+    expect(matchingSource).toContain('<ContactIconRow $standalone>');
+    expect(matchingSource).toContain('title={label}');
+  });
+
   it('hides VK contacts from matching cards for every viewer, including admins', () => {
     const matchingSource = source();
 
