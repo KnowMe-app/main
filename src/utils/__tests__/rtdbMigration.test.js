@@ -19,6 +19,7 @@ import {
 import {
   deriveSurnameShort,
   deriveRh,
+  deriveBloodGroup,
   deriveAvatar,
   deriveRole,
   deriveFeedDate,
@@ -89,6 +90,14 @@ describe('rh', () => {
   it('мовчить, коли резусу в значенні просто немає', () => {
     expect(deriveRh('2')).toEqual({ value: undefined });
     expect(deriveRh(undefined)).toEqual({ value: undefined });
+  });
+
+  it('не дістає резус зі стертої групи', () => {
+    // Кандидати збираються з усіх версій, тож попередній запис віддавав резус
+    // і після стирання — картка показувала «+» там, де у відкритій анкеті вже
+    // порожньо.
+    expect(deriveRh(['2+', ''])).toEqual({ value: undefined });
+    expect(deriveBloodGroup(['2+', ''])).toEqual({ value: undefined });
   });
 });
 
@@ -557,6 +566,70 @@ describe('стерте поле', () => {
     runMigrationGroup(state, 'matchingCards');
 
     expect(getCurrentValue(card(state, 'P1').name)).toBeUndefined();
+  });
+
+  it('позначку стирання доносить кожен вузол, а не самі контакти', () => {
+    // Правило одне на всі поля: остання версія порожня — значить, значення
+    // прибрали, і саме порожнеча має доїхати в новий вузол. Перевірка тут
+    // навмисно широка: групи різні, а поведінка мусить бути та сама.
+    const erased = value => [value, ''];
+    const state = stateWith({
+      P1: {
+        name: erased('Оксана'),
+        city: erased('Київ'),
+        surname: erased('Коваленко'),
+        photos: erased('https://photo'),
+        lastAction: erased('2026-01-01'),
+        language: erased('ua'),
+        createdAt: erased('01.01.2020'),
+        phone: erased('+380'),
+      },
+    }, {});
+
+    ['matchingCards', 'profileDetails', 'profileWorkflow', 'profileTechnical', 'profileContacts']
+      .forEach(group => runMigrationGroup(state, group));
+
+    expect(card(state, 'P1').name).toEqual(['Оксана', '']);
+    expect(card(state, 'P1').city).toEqual(['Київ', '']);
+    expect(state.targets.profileDetails.P1.surname).toEqual(['Коваленко', '']);
+    expect(state.targets.profileDetails.P1.photos).toEqual(['https://photo', '']);
+    expect(state.targets.profileWorkflow.P1.lastAction).toEqual(['2026-01-01', '']);
+    expect(state.targets.profileTechnical.P1.language).toEqual(['ua', '']);
+    // Нормалізація дати міняє написання версії, а не хвіст історії.
+    expect(state.targets.profileTechnical.P1.createdAt).toEqual(['2020-01-01', '']);
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+380', '']);
+  });
+
+  it('похідні картки теж мовчать про стерте', () => {
+    // Похідна не має куди покласти позначку — вона скаляр, і на `rh` у правилах
+    // стоїть `+`/`-`. Тож стирання тут виражається відсутністю ключа: картка
+    // не носить ані ініціала стертого прізвища, ані резуса стертої групи.
+    const state = stateWith({ P1: { city: 'Київ', surname: ['Коваленко', ''], blood: ['2+', ''] } }, {});
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(card(state, 'P1')).not.toHaveProperty('surnameShort');
+    expect(card(state, 'P1')).not.toHaveProperty('rh');
+  });
+
+  it('стерту позначку адміна не воскрешає зведення до рядка', () => {
+    // `flattenOwnerValueToString` знімає порожні елементи, тож `['1 вересня', '']`
+    // стало б «1 вересня» — прибрана нотатка приїхала б у `multiData` живою.
+    const state = stateWith({}, { P1: { getInTouch: ['2026-09-01', ''] } });
+    const plan = runMigrationGroup(state, 'getInTouch', { ownerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'getInTouch')).toEqual({});
+    expect(plan.warningsByCode.ERASED_SOURCE_VALUE).toBe(1);
+    // Міграція — не прибирання: джерело лишається людині.
+    expect(state.workingNewUsers.P1).toEqual({ getInTouch: ['2026-09-01', ''] });
+  });
+
+  it('набір кодів у позначці адміна стиранням не є', () => {
+    // Масив у `writer` — це набір («Т, Ik»), а не історія: остання версія в
+    // ньому заповнена, і зводити його до рядка можна далі.
+    const state = stateWith({}, { P1: { writer: ['Т', 'Ik'] } });
+    runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'writer')).toEqual({ [OWNER]: { P1: 'Т, Ik' } });
   });
 
   it('повторний прогін не змінює вже перенесене значення', () => {

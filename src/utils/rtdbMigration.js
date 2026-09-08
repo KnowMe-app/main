@@ -921,6 +921,29 @@ const planOwnerValueField = (ctx, { field, profileId, source, sourceCollection, 
     return;
   }
 
+  /*
+   * Позначку стирання тут читають так само, як усюди: остання версія порожня —
+   * значить, нотатку прибрали.
+   *
+   * Зводити такий запис до рядка не можна: `join` знімає порожні елементи
+   * (`['1 вересня', '']` стало б «1 вересня»), і прибрана нотатка приїжджала б
+   * у `multiData` живою. Місця під саму позначку тут немає — база приймає в це
+   * поле лише рядок, а порожній рядок від відсутності ключа не відрізняється, —
+   * тож поле не переїжджає взагалі й лишається людині, як і будь-яке інше
+   * порожнє значення.
+   */
+  if (isListLikeValue(raw) && !hasCurrentValue(raw)) {
+    ctx.counters.skippedEmpty += 1;
+    addWarning(ctx, {
+      code: 'ERASED_SOURCE_VALUE',
+      profileId,
+      field,
+      collection: sourceCollection,
+      targetGroup: ctx.group,
+    });
+    return;
+  }
+
   // Дата «звʼязатись» у старих даних написана двома способами; після переїзду
   // вона одна, інакше сортування за значенням ставило б крапкові дати не туди.
   const normalized = normalizeLegacyDates(deepClone(raw));

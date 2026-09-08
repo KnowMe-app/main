@@ -97,6 +97,13 @@ const bloodCandidates = value => {
 export const deriveRh = rawBlood => {
   if (!hasMeaningfulValue(rawBlood)) return { value: undefined };
 
+  // Групу крові стерли: у полі лишився масив версій, остання з яких порожня.
+  // Кандидати ж збираються з **усіх** версій, тож попередній запис віддавав
+  // резус і далі — картка показувала «+» там, де у відкритій анкеті вже
+  // порожньо. Стерте значення — це відповідь «немає», а не привід дістати
+  // попереднє (те саме правило, що й у `deriveSurnameShort`).
+  if (!hasCurrentValue(rawBlood)) return { value: undefined };
+
   const found = new Set();
   bloodCandidates(rawBlood).forEach(candidate => {
     const match = RH_PATTERN.exec(candidate);
@@ -121,6 +128,9 @@ const BLOOD_GROUP_PATTERN = /^([1-4])\s*[+-]?$/;
  */
 export const deriveBloodGroup = rawBlood => {
   if (!hasMeaningfulValue(rawBlood)) return { value: undefined };
+
+  // Стерте лишається стертим — з тієї ж причини, що й у резусі.
+  if (!hasCurrentValue(rawBlood)) return { value: undefined };
 
   const found = new Set();
   bloodCandidates(rawBlood).forEach(candidate => {
