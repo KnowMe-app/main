@@ -49,33 +49,81 @@ const firstVisibleCharacter = text => {
 };
 
 /**
- * `surnameShort` — ініціал прізвища з крапкою. Повне прізвище живе в
+ * Версії поля списком — масив або обʼєкт із числовими ключами (так RTDB
+ * віддає масив з дірками). Скаляр — це історія з однієї версії.
+ */
+const toVersionList = value => {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (keys.length && keys.every(key => /^\d+$/.test(key))) {
+      return keys.slice().sort((left, right) => Number(left) - Number(right)).map(key => value[key]);
+    }
+    return null;
+  }
+  return [value];
+};
+
+/**
+ * `surnameShort` — прізвище, скорочене до ініціала. Повне живе в
  * `profileDetails`, у стрічку воно не потрапляє взагалі.
+ *
+ * Скорочуються **всі** версії, а не лише поточна: анкета тримає історію поля,
+ * і картка — єдине місце, де від прізвища взагалі щось лишається. Тож де в
+ * анкеті `['Коваленко', 'Марчук']`, у картці `['К.', 'М.']` — а показує рядок
+ * стрічки, як і всюди, останню версію (`getCurrentValue`).
+ *
+ * Стирання доїжджає позначкою в кінці, а не зникненням ключа: порожня остання
+ * версія — це відповідь «прізвища немає», і саме її має показати картка.
+ * Ховати заодно й попередні ініціали сенсу немає: літера — не прізвище, а
+ * картка й так відкрита кожному авторизованому.
  *
  * Регістр не міняється: «перший видимий символ» — це саме той символ, що в
  * даних. Приводити «van Beethoven» до «V.» — це рішення про відображення, а
- * міграція таких рішень не ухвалює.
+ * похідна таких рішень не ухвалює.
  */
 export const deriveSurnameShort = rawSurname => {
   if (!hasMeaningfulValue(rawSurname)) return { value: undefined };
 
-  // Прізвище стерли: у полі лишився масив версій, остання з яких порожня.
-  // `hasMeaningfulValue` бачить у ньому попередні записи й каже «значення є» —
-  // але поточного значення немає, а це не те саме, що «не вдалось вивести».
-  // Плутати їх не можна: попередження про невиведене прізвище вело б шукати
-  // поламані дані там, де людина просто стерла своє.
-  if (!hasCurrentValue(rawSurname)) return { value: undefined };
-
-  const display = displayString(rawSurname);
-  if (!display) {
-    // Значення є, але дістати з нього рядок для показу не вдалось. Вигадувати
-    // ініціал з обʼєкта не можна — і повне прізвище лишається чекати Profiles.
+  const versions = toVersionList(rawSurname);
+  if (!versions) {
+    // Мапа з іменованими ключами історією версій не є — з неї ініціал не
+    // виводять, і повне прізвище лишається чекати `profileDetails`.
     return { value: undefined, warning: 'UNRESOLVED_SURNAME' };
   }
 
-  const initial = firstVisibleCharacter(display);
-  if (!initial) return { value: undefined, warning: 'UNRESOLVED_SURNAME' };
-  return { value: `${initial}.` };
+  const initials = [];
+  let unresolved = false;
+  versions.forEach(version => {
+    // Дірка в масиві — пропущена версія, а не стерте значення: RTDB так віддає
+    // масив із `null` усередині. Її просто немає.
+    if (version === undefined || version === null) return;
+    const display = displayString(version);
+    if (!display) {
+      // Порожня версія — це стирання, і про нього каже `hasCurrentValue` нижче.
+      // А от версія, у якій щось є, але рядка з неї не дістати, — це вже
+      // питання до даних, і його чути у звіті.
+      if (hasMeaningfulValue(version)) unresolved = true;
+      return;
+    }
+    const initial = firstVisibleCharacter(display);
+    if (!initial) {
+      unresolved = true;
+      return;
+    }
+    initials.push(`${initial}.`);
+  });
+
+  // Однакові ініціали не двояться: «Коваленко → Ковальчук» дає одну «К.», а не
+  // дві. Те саме робить проєкція з рештою полів (`projectionValue`).
+  const unique = [...new Set(initials)];
+  if (!unique.length) return { value: undefined, warning: unresolved ? 'UNRESOLVED_SURNAME' : undefined };
+
+  // Прізвище стерли: попередні ініціали лишаються історією, а остання версія
+  // порожня — рівно так, як це записано в самій анкеті.
+  if (!hasCurrentValue(rawSurname)) return { value: [...unique, ''] };
+
+  return { value: unique.length === 1 ? unique[0] : unique };
 };
 
 const RH_PATTERN = /([+-])\s*$/;
@@ -96,6 +144,13 @@ const bloodCandidates = value => {
  */
 export const deriveRh = rawBlood => {
   if (!hasMeaningfulValue(rawBlood)) return { value: undefined };
+
+  // Групу крові стерли: у полі лишився масив версій, остання з яких порожня.
+  // Кандидати ж збираються з **усіх** версій, тож попередній запис віддавав
+  // резус і далі — картка показувала «+» там, де у відкритій анкеті вже
+  // порожньо. Стерте значення — це відповідь «немає», а не привід дістати
+  // попереднє (те саме правило, що й у `deriveSurnameShort`).
+  if (!hasCurrentValue(rawBlood)) return { value: undefined };
 
   const found = new Set();
   bloodCandidates(rawBlood).forEach(candidate => {
@@ -121,6 +176,9 @@ const BLOOD_GROUP_PATTERN = /^([1-4])\s*[+-]?$/;
  */
 export const deriveBloodGroup = rawBlood => {
   if (!hasMeaningfulValue(rawBlood)) return { value: undefined };
+
+  // Стерте лишається стертим — з тієї ж причини, що й у резусі.
+  if (!hasCurrentValue(rawBlood)) return { value: undefined };
 
   const found = new Set();
   bloodCandidates(rawBlood).forEach(candidate => {

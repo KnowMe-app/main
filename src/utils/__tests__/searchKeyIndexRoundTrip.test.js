@@ -131,6 +131,7 @@ const PROFILES = {
     weight: '58',
     csection: 'cs0',
     phone: '+380501112233',
+    country: 'Ukraine',
     lastAction: '2025-03-01',
     getInTouch: '2025-04-01',
   },
@@ -143,6 +144,7 @@ const PROFILES = {
     height: '172',
     weight: '70',
     csection: 'cs1',
+    country: 'Poland',
     email: 'agency@example.com',
   },
   [uid('RhOnly')]: {
@@ -454,12 +456,28 @@ describe('the filters that used to have no index at all', () => {
 
   it('answers a country filter from the index', async () => {
     const filters = { country: { ua: true, other: false, unknown: false } };
+    const expected = expectedByPostFilter(filters);
+
     const { usedIndex, userIds } = await readCandidates(filters);
 
     expect(usedIndex).toBe(true);
-    // Nobody in the fixture has a country, so the index correctly returns nobody -
-    // and the post-filter agrees.
-    expect(expectedByPostFilter(filters)).toEqual([]);
-    expect(userIds).toEqual([]);
+    expect(expected).toEqual([uid('Filled')]);
+    expect([...userIds].sort()).toEqual(expected);
+  });
+
+  it('порожній бакет країни віддає деку пагінації, а не порожню видачу', async () => {
+    // Індекс країни будується окремим прогоном, і поки бакет порожній,
+    // порожній перетин виглядав як відповідь «таких анкет немає»: фільтр
+    // показував порожню стрічку там, де карток десятки. Тепер група, яка не
+    // назвала жодного кандидата, вибуває з плану — деку веде пагінація, а
+    // відсіює пост-фільтр, і відповідь від цього не міняється.
+    mockStore.delete(`${INDEX_ROOT}/country/other/${uid('Agency')}`);
+    const filters = { country: { ua: false, other: true, unknown: false } };
+
+    const { usedIndex } = await readCandidates(filters);
+
+    expect(usedIndex).toBe(false);
+    // Пост-фільтр і далі знає відповідь: картка з країною поза Україною є.
+    expect(expectedByPostFilter(filters)).toEqual([uid('Agency')]);
   });
 });

@@ -799,7 +799,38 @@ export const fetchMatchingIndexedCandidates = async ({
   // по кожній показаній картці, тож викинута група й далі відкидає своє, просто
   // після гідратації, а не до неї. Round-trip тест тримає цю рівність.
   const overflowedGroups = plannedGroups.filter((group, index) => idSets[index]?.overflowed);
-  const selectiveIdSets = idSets.map(result => (result?.overflowed ? null : result));
+  /*
+   * Порожній include — це «індекс про це не знає», а не «таких анкет немає».
+   *
+   * Індекси `searchKey` будуються окремим прогоном, і новіші з них
+   * (`country`, `bmi`) у базі можуть бути ще не побудовані. Порожній вузол
+   * бакета давав порожній перетин — і фільтр по країні показував «Немає
+   * доступних профілів» на деці, де сам рядок уточнення щойно рахував
+   * «Ukraine 23, Other 19». Той самий вигляд мала б і збита індексація.
+   *
+   * Тож група, яка не назвала жодного кандидата, вибуває з плану так само, як
+   * та, що вперлась у межу читання: відкидати вона й далі відкидає, але вже
+   * пост-фільтром, по гідратованих картках. Відповідь від цього не міняється —
+   * `applyMatchingSearchKeyFilters` є повним двійником індексного плану, —
+   * міняється лише ціна: дека йде звичайною пагінацією.
+   */
+  const unbuiltGroups = plannedGroups.filter((group, index) => (
+    idSets[index]?.mode === 'include'
+    && !idSets[index]?.overflowed
+    && idSets[index]?.ids instanceof Set
+    && idSets[index].ids.size === 0
+  ));
+  const selectiveIdSets = idSets.map(result => (
+    result?.overflowed || (result?.mode === 'include' && result?.ids instanceof Set && result.ids.size === 0)
+      ? null
+      : result
+  ));
+  if (unbuiltGroups.length) {
+    console.info('[Matching][indexedProvider] індекс не назвав жодного кандидата — група лишається пост-фільтру', {
+      cacheKey,
+      groups: unbuiltGroups.map(group => ({ indexName: group.indexName, readMode: group.readMode })),
+    });
+  }
   if (overflowedGroups.length) {
     console.info('[Matching][indexedProvider] групи поза межею читання лишаються пост-фільтру', {
       cacheKey,

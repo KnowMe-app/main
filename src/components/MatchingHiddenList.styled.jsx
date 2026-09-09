@@ -243,15 +243,24 @@ export const Ctrl = styled.div`
   flex: 0 0 auto;
 `;
 
-export const TopButtonsRow = styled.div`
+/*
+ * Кнопки рядка стоять стовпчиком, а не в ряд.
+ *
+ * У ряд вони займали ~190 px ширини на 360-піксельному екрані — більше за
+ * половину рядка, — і платило за це імʼя: «Виктория И., 32» ставало
+ * «Виктори…». Стовпчик коштує висоти, але висота в списку дешева: рядок і так
+ * тримає фото 64 px і два рядки метрик, а ширина в ньому — єдине, чого бракує.
+ */
+export const RowActionStack = styled.div`
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 5px;
 `;
 
 const ctrlButtonBase = css`
-  width: 44px;
-  height: 34px;
-  border-radius: 11px;
+  width: 38px;
+  height: 30px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;

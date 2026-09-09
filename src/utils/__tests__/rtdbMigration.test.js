@@ -19,6 +19,7 @@ import {
 import {
   deriveSurnameShort,
   deriveRh,
+  deriveBloodGroup,
   deriveAvatar,
   deriveRole,
   deriveFeedDate,
@@ -27,6 +28,7 @@ import {
   flattenOwnerValueToString,
 } from '../rtdbMigrationDerive';
 import { MATCHING_CARD_FORBIDDEN_FIELDS } from '../profileNodeSchema';
+import { getCurrentValue } from 'components/getCurrentValue';
 
 const OWNER = 'ADMIN_UID';
 
@@ -41,11 +43,19 @@ describe('surnameShort', () => {
     expect(deriveSurnameShort('Smith')).toEqual({ value: 'S.' });
   });
 
-  it('бере поточне значення з масиву версій, а не перше-ліпше', () => {
-    // Той самий резолвер, яким UI показує «поточне» значення: остання
-    // непорожня версія. Інакше в стрічці стояв би ініціал прізвища, яке адмін
-    // уже виправив.
-    expect(deriveSurnameShort(['Стара', 'Нова'])).toEqual({ value: 'Н.' });
+  it('скорочує всі версії прізвища, а не лише поточну', () => {
+    // Картка — єдине місце, де від прізвища взагалі щось лишається, тож
+    // історія в ній лишається історією: показує рядок стрічки останню версію
+    // (`getCurrentValue`), а сама картка тримає всі.
+    expect(deriveSurnameShort(['Стара', 'Нова'])).toEqual({ value: ['С.', 'Н.'] });
+    // Однакові ініціали не двояться.
+    expect(deriveSurnameShort(['Коваленко', 'Ковальчук'])).toEqual({ value: 'К.' });
+  });
+
+  it('доносить стирання прізвища позначкою в кінці', () => {
+    expect(deriveSurnameShort(['Коваленко', ''])).toEqual({ value: ['К.', ''] });
+    // Порожнє поле без історії — це не стирання, а відсутність значення.
+    expect(deriveSurnameShort('')).toEqual({ value: undefined });
   });
 
   it('не ріже сурогатну пару навпіл', () => {
@@ -88,6 +98,14 @@ describe('rh', () => {
   it('мовчить, коли резусу в значенні просто немає', () => {
     expect(deriveRh('2')).toEqual({ value: undefined });
     expect(deriveRh(undefined)).toEqual({ value: undefined });
+  });
+
+  it('не дістає резус зі стертої групи', () => {
+    // Кандидати збираються з усіх версій, тож попередній запис віддавав резус
+    // і після стирання — картка показувала «+» там, де у відкритій анкеті вже
+    // порожньо.
+    expect(deriveRh(['2+', ''])).toEqual({ value: undefined });
+    expect(deriveBloodGroup(['2+', ''])).toEqual({ value: undefined });
   });
 });
 
@@ -474,6 +492,164 @@ describe('Contacts', () => {
       newUsersValue: '+999',
       reason: 'SOURCE_CONFLICT',
     }));
+  });
+});
+
+describe('стерте поле', () => {
+  // Порожня остання версія — це «поле стерли», і по обидва боки міграції воно
+  // мусить лишатись стертим. Перевірка тут одна на всі випадки: `getCurrentValue`
+  // — те саме, чим анкету читає застосунок.
+  const currentPhone = state => getCurrentValue(state.targets.profileContacts.P1?.phone);
+
+  it('переносить позначку стирання разом з історією', () => {
+    const state = stateWith({ P1: { phone: ['+380', ''] } }, {});
+    runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+380', '']);
+    expect(currentPhone(state)).toBeUndefined();
+  });
+
+  it('не воскрешає номер значенням із сусідньої колекції', () => {
+    // Стирання записане в `newUsers`, а `users` тримає старий номер. У злитті
+    // значення з `users` іде останнім — і без позначки стирання номер, який
+    // людина прибрала, ставав поточним назад.
+    const state = stateWith({ P1: { phone: '+381' } }, { P1: { phone: ['+380', ''] } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(currentPhone(state)).toBeUndefined();
+    expect(state.targets.profileContacts.P1.phone.slice(-1)).toEqual(['']);
+    // Історія лишається історією: жодне значення не викинуто.
+    expect(state.targets.profileContacts.P1.phone).toEqual(expect.arrayContaining(['+380', '+381']));
+    expect(plan.warningsByCode.ERASURE_PRESERVED).toBe(1);
+  });
+
+  it('бачить стирання і тоді, коли від нього лишився сам порожній рядок', () => {
+    // `phone: ''` — це теж стерте поле, просто без історії. Поріг порожнечі
+    // такий запис не переносить, і без окремої перевірки значення сусідньої
+    // колекції їхало б у новий вузол одне-однісіньке.
+    const state = stateWith({ P1: { phone: '' } }, { P1: { phone: ['+380'] } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+380', '']);
+    expect(currentPhone(state)).toBeUndefined();
+    expect(plan.warningsByCode.ERASURE_PRESERVED).toBe(1);
+  });
+
+  it('порожній синонім при живому канонічному ключі стиранням не рахується', () => {
+    // `state: ''` — не значення поля, а порожній синонім; `region` заповнений,
+    // і ховати його нема за чим.
+    const state = stateWith({ P1: { region: 'Київська', state: '' } }, { P1: { region: 'Київська' } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(card(state, 'P1').region).toBe('Київська');
+  });
+
+  it('не чіпає поле, яке ніхто не стирав', () => {
+    const state = stateWith({ P1: { phone: '+380' } }, { P1: { phone: ['+381'] } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+381', '+380']);
+    expect(plan.warningsByCode.ERASURE_PRESERVED).toBeUndefined();
+  });
+
+  it('лишає людині мапу з іменованими ключами замість того, щоб вигадати їй форму', () => {
+    // Історія версій — це масив; `{ primary: … }` нею не є, і дописати в неї
+    // позначку стирання означало б вигадати форму значення. Поле не переїжджає
+    // і їде у звіт — але й номер із нього назовні не потрапляє.
+    const state = stateWith({ P1: { phone: '' } }, { P1: { phone: { primary: '+380' } } });
+    const plan = runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1).toBeUndefined();
+    expect(state.workingNewUsers.P1).toEqual({ phone: { primary: '+380' } });
+    expect(plan.conflicts).toContainEqual(expect.objectContaining({
+      profileId: 'P1',
+      field: 'phone',
+      reason: 'ERASED_IN_OTHER_COLLECTION',
+    }));
+  });
+
+  it('картка стрічки доносить стирання так само, як контакти', () => {
+    // `name` живе тільки в картці, і саме вона показує рядок стрічки.
+    const state = stateWith({ P1: { name: 'Оксана' } }, { P1: { name: ['Оксана', ''] } });
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(getCurrentValue(card(state, 'P1').name)).toBeUndefined();
+  });
+
+  it('позначку стирання доносить кожен вузол, а не самі контакти', () => {
+    // Правило одне на всі поля: остання версія порожня — значить, значення
+    // прибрали, і саме порожнеча має доїхати в новий вузол. Перевірка тут
+    // навмисно широка: групи різні, а поведінка мусить бути та сама.
+    const erased = value => [value, ''];
+    const state = stateWith({
+      P1: {
+        name: erased('Оксана'),
+        city: erased('Київ'),
+        surname: erased('Коваленко'),
+        photos: erased('https://photo'),
+        lastAction: erased('2026-01-01'),
+        language: erased('ua'),
+        createdAt: erased('01.01.2020'),
+        phone: erased('+380'),
+      },
+    }, {});
+
+    ['matchingCards', 'profileDetails', 'profileWorkflow', 'profileTechnical', 'profileContacts']
+      .forEach(group => runMigrationGroup(state, group));
+
+    expect(card(state, 'P1').name).toEqual(['Оксана', '']);
+    expect(card(state, 'P1').city).toEqual(['Київ', '']);
+    expect(state.targets.profileDetails.P1.surname).toEqual(['Коваленко', '']);
+    expect(state.targets.profileDetails.P1.photos).toEqual(['https://photo', '']);
+    expect(state.targets.profileWorkflow.P1.lastAction).toEqual(['2026-01-01', '']);
+    expect(state.targets.profileTechnical.P1.language).toEqual(['ua', '']);
+    // Нормалізація дати міняє написання версії, а не хвіст історії.
+    expect(state.targets.profileTechnical.P1.createdAt).toEqual(['2020-01-01', '']);
+    expect(state.targets.profileContacts.P1.phone).toEqual(['+380', '']);
+  });
+
+  it('похідні картки доносять стирання так, як дозволяє їхня форма', () => {
+    // `surnameShort` — історія версій, тож позначка стирання лягає в її кінець,
+    // а попередні ініціали лишаються: показує рядок стрічки все одно останню
+    // версію. `rh` — скаляр (у правилах на ньому `+`/`-`), покласти позначку
+    // нікуди, і стирання виражається відсутністю ключа.
+    const state = stateWith({ P1: { city: 'Київ', surname: ['Коваленко', ''], blood: ['2+', ''] } }, {});
+    runMigrationGroup(state, 'matchingCards');
+
+    expect(card(state, 'P1').surnameShort).toEqual(['К.', '']);
+    expect(getCurrentValue(card(state, 'P1').surnameShort)).toBeUndefined();
+    expect(card(state, 'P1')).not.toHaveProperty('rh');
+  });
+
+  it('стерту позначку адміна не воскрешає зведення до рядка', () => {
+    // `flattenOwnerValueToString` знімає порожні елементи, тож `['1 вересня', '']`
+    // стало б «1 вересня» — прибрана нотатка приїхала б у `multiData` живою.
+    const state = stateWith({}, { P1: { getInTouch: ['2026-09-01', ''] } });
+    const plan = runMigrationGroup(state, 'getInTouch', { ownerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'getInTouch')).toEqual({});
+    expect(plan.warningsByCode.ERASED_SOURCE_VALUE).toBe(1);
+    // Міграція — не прибирання: джерело лишається людині.
+    expect(state.workingNewUsers.P1).toEqual({ getInTouch: ['2026-09-01', ''] });
+  });
+
+  it('набір кодів у позначці адміна стиранням не є', () => {
+    // Масив у `writer` — це набір («Т, Ik»), а не історія: остання версія в
+    // ньому заповнена, і зводити його до рядка можна далі.
+    const state = stateWith({}, { P1: { writer: ['Т', 'Ik'] } });
+    runMigrationGroup(state, 'writer', { ownerUid: OWNER });
+
+    expect(getOwnerValuePatch(state, 'writer')).toEqual({ [OWNER]: { P1: 'Т, Ik' } });
+  });
+
+  it('повторний прогін не змінює вже перенесене значення', () => {
+    const state = stateWith({ P1: { phone: '+381' } }, { P1: { phone: ['+380', ''] } });
+    runMigrationGroup(state, 'profileContacts');
+    const migrated = state.targets.profileContacts.P1.phone;
+
+    runMigrationGroup(state, 'profileContacts');
+
+    expect(state.targets.profileContacts.P1.phone).toEqual(migrated);
   });
 });
 

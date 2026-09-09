@@ -25,7 +25,11 @@ export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 export const CARDS_CACHE_VERSION = 5;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
-export const MATCHING_INDEX_CACHE_VERSION = 1;
+// Версія 2 скидає списки id, збережені тоді, коли порожній бакет `searchKey`
+// вважався відповіддю «таких анкет немає»: у браузерах, де фільтр по країні
+// встиг спрацювати до виправлення, лежить порожній повний список — і кеш
+// показував би ту саму порожню деку далі (`fetchMatchingIndexedCandidates`).
+export const MATCHING_INDEX_CACHE_VERSION = 2;
 export const MATCHING_SUMMARY_CARDS_CACHE_VERSION = 1;
 export const MATCHING_SUMMARY_CARDS_MAX = 2000;
 const MATCHING_LOCAL_STORAGE_KEYS = new Set([

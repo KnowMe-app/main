@@ -100,7 +100,10 @@
         ".validate": "!newData.exists() || root.child('profileDetails').child($uid).exists() || root.child('profileTechnical').child($uid).exists() || root.child('profileContacts').child($uid).exists() || root.child('profileWorkflow').child($uid).exists() || root.child('users').child($uid).exists()",
         "name": {},
         "surnameShort": {
-          ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 20)"
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 20) || newData.hasChildren()",
+          "$version": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          }
         },
         "birth": {},
         "city": {},

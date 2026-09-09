@@ -3,6 +3,7 @@ import { hasCurrentValue } from 'components/getCurrentValue';
 import {
   deriveSurnameShort,
   deriveRh,
+  hasMeaningfulValue,
   deriveRole,
   normalizeFeedDateValue,
   resolveMatchingCardAvatarFromProfile,
@@ -204,6 +205,22 @@ export const listDroppedProjectionFields = (data, projection) => {
 // Вибір основного фото живе поруч з рештою похідних — і офлайн-міграція, і
 // писач індексу беруть його звідти, тож аватар у них не може розійтись.
 export { resolveMatchingCardAvatarFromProfile };
+
+/**
+ * Чи стоїть картка в стрічці — питання, на яке відповідає сама картка.
+ *
+ * Стани три, і два з них означають «поза стрічкою»: дата — показана, `false` —
+ * сховали навмисно, ключа немає — ще не публікували. Тому питати `publish`
+ * першим не можна: у проєкції його немає взагалі, і кожна картка стрічки
+ * виглядала б неопублікованою. `publish` лишається відкотом для повної анкети,
+ * куди `expandMatchingCard` перекладає `feedDate` назад.
+ */
+export const isMatchingCardPublished = card => {
+  if (!card || typeof card !== 'object') return false;
+  const raw = card[MATCHING_CARD_FEED_FIELD];
+  if (raw === undefined || raw === null) return normalizePublish(card.publish);
+  return typeof raw === 'string' && raw.trim() !== '';
+};
 
 /** Чи стоїть у полі `publish` явне «ні». */
 const isPublishExplicitlyDenied = data => {
@@ -407,8 +424,10 @@ export const expandMatchingCard = (userId, card) => {
     ...rest,
     userId: id,
     // Повного прізвища в картці немає; стрічка показує ініціал там, де раніше
-    // показувала прізвище.
-    ...(trimmed(surnameShort) ? { surname: surnameShort } : {}),
+    // показувала прізвище. Ініціалів у картці буває кілька — по одному на
+    // версію прізвища, зі стиранням у кінці, — тож список їде списком: звести
+    // його до рядка тут означало б показати «К.,М.,» замість поточного «М.».
+    ...(hasMeaningfulValue(surnameShort) ? { surname: surnameShort } : {}),
     ...(blood ? { blood } : {}),
     // Ключ стрічки є датою — картка показана; немає ключа — ні. `publish`
     // ставиться лише в першому випадку: `normalizePublish` читає відсутнє
