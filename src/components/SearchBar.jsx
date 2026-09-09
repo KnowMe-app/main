@@ -17,6 +17,7 @@ import {
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput, normalizeSearchDateComparableValue } from '../utils/searchKeyUtils';
+import { isMatchingSummaryCard } from '../utils/matchingCardIndex';
 
 const SearchIcon = (
   <svg
@@ -837,13 +838,13 @@ const shouldUseExactFieldValidation = (key, expected, options = {}) => {
 };
 
 /**
- * Поля, якими урізана проєкція може підтвердити збіг.
+ * Поля, якими проєкція картки може підтвердити збіг.
  *
- * `fetchLimitedProfileById` віддає картку стрічки: контактів у ній немає
- * взагалі, а прізвище лежить скороченим (`surnameShort`). Решта — це те, що
- * картка несе повністю, і саме воно ще має сенс перевіряти.
+ * Картка стрічки не несе ані контактів, ані повного прізвища: замість нього в
+ * ній `surnameShort` — сам лише ініціал. Решта — це те, що вона несе повністю,
+ * і саме воно ще має сенс перевіряти.
  */
-const LIMITED_PROJECTION_VERIFIABLE_FIELDS = new Set([
+const CARD_PROJECTION_VERIFIABLE_FIELDS = new Set([
   'userId',
   'name',
   'birth',
@@ -851,6 +852,18 @@ const LIMITED_PROJECTION_VERIFIABLE_FIELDS = new Set([
   'city',
   'country',
 ]);
+
+/**
+ * Проєкція — це і урізана видача, і картка стрічки.
+ *
+ * Позначки дві, бо шляхи різні: `__limitedProfile` ставить
+ * `fetchLimitedProfileById` читачеві без службового доступу, `__matchingSummary`
+ * — `expandMatchingCard` на видачі `cardsOnly`, тобто на сторінці matching
+ * геть усім. Але поля в них ті самі, тож і перевіряти їх треба однаково:
+ * поки питали лише перший прапорець, читач зі службовим доступом губив на цій
+ * перевірці кожне влучання, крім імені (див. `doesCardMatchSearchParams`).
+ */
+const isCardProjection = card => Boolean(card?.__limitedProfile) || isMatchingSummaryCard(card);
 
 const getCardFieldValues = (card, key) => {
   if (!card || !key) return [];
@@ -895,17 +908,24 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
     return options.forcePartialUserIdSearch ? cardUserId.startsWith(expectedUserId) : cardUserId === expectedUserId;
   }
 
-  // Урізаній видачі нема чим підтвердити збіг за контактом: у проєкції немає
-  // ані пошти, ані телефона, ані лінків, а прізвище в ній скорочене. Перевірка
+  // Проєкції нема чим підтвердити збіг за контактом: у картці немає ані пошти,
+  // ані телефона, ані лінків, а прізвище в ній скорочене до ініціала. Перевірка
   // поля викидала через це геть усе, що знайшлось за контактом, — знайдене в
-  // `searchId` не доходило до екрана, і звичайний читач бачив «Не знайшов»
-  // на будь-який запит, крім імені.
+  // `searchId` не доходило до екрана, і читач бачив «Не знайшов» на будь-який
+  // запит, крім імені.
   //
-  // Підтвердження тут дає сам ключ індексу: урізаний пошук читає точний
+  // Спершу виняток дали самій лише урізаній видачі — і тим самим лишили в силі
+  // рівно ту саму поломку для всіх інших: сторінка matching просить `cardsOnly`
+  // геть усім, тож читач зі службовим доступом отримував ту саму картку з
+  // `surnameShort` і губив на цій перевірці і прізвище, і телефон, і пошту.
+  // «Бугаренко» знаходилось у `searchId`, читалось із картки — і зникало тут.
+  //
+  // Підтвердження дає сам ключ індексу: пошук читає точний
   // `searchId/{поле}_{значення}` і більше нічого (скан по префіксу й широкий
-  // fallback йому вимкнені в `searchUsersOnly`), тож id, що лежить у такому
-  // ключі, — це вже точний збіг зі значенням запиту.
-  if (card?.__limitedProfile && !LIMITED_PROJECTION_VERIFIABLE_FIELDS.has(key)) return true;
+  // fallback вимкнені в `searchUsersOnly` — урізаному читачеві завжди, решті на
+  // точному запиті), тож id, що лежить у такому ключі, — це вже точний збіг зі
+  // значенням запиту.
+  if (isCardProjection(card) && !CARD_PROJECTION_VERIFIABLE_FIELDS.has(key)) return true;
 
   const expected = normalizeComparableSearchValue(key, value);
   if (!expected) return true;
