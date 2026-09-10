@@ -79,4 +79,25 @@ describe('посилання в консоль Firebase', () => {
     expect(source).toContain('buildRtdbConsoleLink');
     expect(source).not.toContain('console.firebase.google.com');
   });
+
+  /**
+   * Публічні нотатки лежать в окремому корені `comments/{id}`, а не в анкеті —
+   * найчастіше питання про них саме «де вони, я їх не бачу в profileDetails».
+   * Стрілка біля блока відповідає на нього, тож вона мусить: вести на той самий
+   * корінь, що й писач (`PUBLIC_COMMENTS_ROOT_PATH`), і зʼявлятись лише адміну з
+   * увімкненим EXT — читачеві стрічки в консолі Firebase робити нічого.
+   */
+  it('веде на корінь публічних нотаток, а не в анкету', () => {
+    expect(new URL(buildRtdbConsoleLink(['comments', 'AA3012'])).pathname)
+      .toMatch(/\/data\/~2Fcomments~2FAA3012$/);
+  });
+
+  it('показує стрілку публічних нотаток лише адміну з увімкненим тумблером', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('isAdmin && backendLinksEnabled && profileId');
+    expect(source).toContain('buildRtdbConsoleLink([PUBLIC_COMMENTS_ROOT_PATH, profileId])');
+    expect(source).toContain('backendHref={publicCommentsBackendHref(user.userId)}');
+    expect(source).not.toContain('console.firebase.google.com');
+  });
 });

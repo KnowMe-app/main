@@ -126,6 +126,7 @@ import {
   fetchPublicProfileComments,
   updatePublicProfileComment,
   COMMENTS_ROOT_PATH,
+  PUBLIC_COMMENTS_ROOT_PATH,
   fetchUsersByIds,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
@@ -186,6 +187,10 @@ import {
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { estimateGalleryTileHeight, splitIntoBalancedColumns } from '../utils/galleryColumns';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
+import { readBackendLinksEnabled } from '../utils/backendLinksMode';
+// Формат адреси в консолі Firebase живе в одному місці: власна копія вже одного
+// разу розійшлась із чужою на слеші після `/data` і мовчки вела в корінь бази.
+import { buildRtdbConsoleLink } from './profileFormNodeBlocks';
 import { orderMatchingSearchResults } from '../utils/matchingSearchResultOrder';
 import {
   MATCHING_FIRST_PAGE_BATCH,
@@ -1857,6 +1862,18 @@ const Matching = () => {
     canCreateProfiles: currentCanCreateProfiles,
   });
   const isAdmin = access.isAdmin;
+
+  // Стрілка «відкрити вузол у Firebase» біля публічних нотаток: та сама службова
+  // навігація, що в блоках форми анкети, і той самий тумблер (EXT на
+  // `AddNewProfile`). Читається один раз на монтування — `/add` і `/matching` це
+  // різні маршрути, тож повернення сюди після перемикання тумблера й так
+  // перемонтовує сторінку.
+  const [backendLinksEnabled] = useState(readBackendLinksEnabled);
+  const publicCommentsBackendHref = React.useCallback(profileId => (
+    isAdmin && backendLinksEnabled && profileId
+      ? buildRtdbConsoleLink([PUBLIC_COMMENTS_ROOT_PATH, profileId])
+      : ''
+  ), [backendLinksEnabled, isAdmin]);
 
   // Не-адмін гортає стрічку з паузою: замість того, щоб підвантажити наступну
   // сторінку одразу, сентинел лише вмикає відлік, і поки той іде — до бекенду не
@@ -7547,6 +7564,7 @@ const Matching = () => {
                       commentSlot={(
                         <PublicCommentsGate
                           profileId={user.userId}
+                          backendHref={publicCommentsBackendHref(user.userId)}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           loaded={Boolean(publicComments[user.userId])}
                           loading={Boolean(publicCommentsLoading[user.userId])}
@@ -7707,6 +7725,7 @@ const Matching = () => {
                         <PublicCommentBlock
                           flush
                           profileId={user.userId}
+                          backendHref={publicCommentsBackendHref(user.userId)}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           viewerId={auth.currentUser?.uid || ''}
                           canModerate={isAdmin}

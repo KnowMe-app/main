@@ -13,6 +13,7 @@ const setup = (props = {}) => {
       viewerId="viewer-1"
       comments={props.comments || []}
       canModerate={props.canModerate || false}
+      backendHref={props.backendHref || ''}
       onCreate={onCreate}
       onUpdate={onUpdate}
       onDelete={onDelete}
@@ -199,5 +200,24 @@ describe('quick public comment', () => {
       ],
     });
     expect(screen.getByText('ІК')).toBeInTheDocument();
+  });
+
+  // Публічні нотатки лежать не в анкеті, а в окремому корені `comments/{id}`, і
+  // саме тому їх не видно там, де адмін звик дивитись на дані анкети. Стрілка
+  // існує, щоб відповісти на це за один клік, — але лише коли її просили.
+  describe('стрілка в бекенд', () => {
+    const link = () => screen.queryByLabelText('Відкрити публічні нотатки анкети у Firebase');
+
+    it('не показується без адреси — тумблер вимкнено або читач не адмін', () => {
+      setup({ comments: [ownComment] });
+      expect(link()).not.toBeInTheDocument();
+    });
+
+    it('веде рівно на той вузол, у якому лежить нотатка', () => {
+      setup({ backendHref: 'https://console.example/data/~2Fcomments~2Fprofile-1' });
+      expect(link()).toHaveAttribute('href', 'https://console.example/data/~2Fcomments~2Fprofile-1');
+      expect(link()).toHaveAttribute('target', '_blank');
+      expect(link()).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    });
   });
 });
