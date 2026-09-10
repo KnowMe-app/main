@@ -1,7 +1,12 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { PublicCommentBlock, PUBLIC_COMMENT_VISIBILITY_NOTE } from './ProfileRow';
+import {
+  PublicCommentBlock,
+  PublicCommentsGate,
+  PUBLIC_COMMENT_VISIBILITY_NOTE,
+  REVIEWS_GATE_LABEL,
+} from './ProfileRow';
 
 const setup = (props = {}) => {
   const onCreate = props.onCreate || jest.fn().mockResolvedValue(undefined);
@@ -219,5 +224,25 @@ describe('quick public comment', () => {
       expect(link()).toHaveAttribute('target', '_blank');
       expect(link()).toHaveAttribute('rel', expect.stringContaining('noopener'));
     });
+  });
+});
+
+describe('public comments read gate', () => {
+  it('keeps the backend shortcut available before comments are loaded', () => {
+    const onRequest = jest.fn();
+    render(
+      <PublicCommentsGate
+        profileId="profile-1"
+        comments={[]}
+        loaded={false}
+        loading={false}
+        onRequest={onRequest}
+        backendHref="https://console.example/data/~2Fcomments~2Fprofile-1"
+      />
+    );
+
+    expect(screen.getByLabelText('Відкрити публічні нотатки анкети у Firebase'))
+      .toHaveAttribute('href', 'https://console.example/data/~2Fcomments~2Fprofile-1');
+    expect(screen.getByText(REVIEWS_GATE_LABEL)).toBeInTheDocument();
   });
 });
