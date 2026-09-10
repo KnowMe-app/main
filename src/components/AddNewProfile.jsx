@@ -6383,9 +6383,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         stats.alreadyPublic ? `вже були публічними: ${stats.alreadyPublic}` : '',
         removePrivate ? `прибрано приватних: ${stats.removed}` : 'приватні нотатки лишились',
         stats.failed ? `не вдалося: ${stats.failed}` : '',
+        stats.unreadableOwnerIds?.length
+          ? `не прочитано власників: ${stats.unreadableOwnerIds.join(', ')}`
+          : '',
       ].filter(Boolean).join(', ');
 
-      if (stats.failed) toast.error(`Перенос завершено з помилками — ${details}`, { id: toastId, duration: 12000 });
+      if (stats.failed || stats.unreadableOwnerIds?.length) {
+        toast.error(`Перенос завершено з помилками — ${details}`, { id: toastId, duration: 12000 });
+      }
       else if (!stats.total && !stats.alreadyPublic) {
         toast.success(
           `Переносити нічого: TG-карток з коментарями не знайдено (переглянуто карток: ${stats.profileIds.length})`,

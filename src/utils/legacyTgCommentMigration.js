@@ -3,11 +3,11 @@ import {
   auth,
   deleteCommentByOwner,
   fetchOwnerCommentsSubtree,
-  fetchPublicProfileComments,
-  readOwnerWriterMap,
+  fetchPublicProfileCommentsStrict,
+  readOwnerWriterMapStrict,
 } from 'components/config';
 import { getCurrentValue } from 'components/getCurrentValue';
-import { ADMIN_UIDS, isAdminUid } from './accessLevel';
+import { isAdminUid } from './accessLevel';
 
 /**
  * Відгуки про TG-картки лежать не там, де мали б.
@@ -86,23 +86,21 @@ export const normalizeCommentTextKey = text => String(text || '')
 export const resolveWriterName = value => String(getCurrentValue(value) || '').trim();
 
 /**
- * Власники, чиї нотатки перевіряє міграція.
+ * Власник, чиї імпортовані нотатки перевіряє міграція.
  *
  * Читати корінь `multiData/comments` не можна — правила дають лише піддерево
- * названого власника, — тож список власників мусить бути явним. У ньому:
- * той, хто тисне кнопку; обидва адміни; і `stFMfZ8CqQX05L8vK9Yse6FdYIh1` —
- * власник, під яким імпорт з таблиці складає і коментарі, і дизлайки
+ * названого власника. Ним є `stFMfZ8CqQX05L8vK9Yse6FdYIh1` — власник, під
+ * яким імпорт з таблиці складає і коментарі, і дизлайки
  * (`EXCEL_COMMENTS_OWNER_ID` в `AddNewProfile.jsx`), тобто найімовірніше місце,
- * де відгуки TG-карток і лежать.
+ * де відгуки TG-карток і лежать. Інші власники навмисно не підтримуються:
+ * TG-id сам по собі не доводить, що нотатка була частиною імпорту.
  */
 export const LEGACY_IMPORT_COMMENT_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 
-export const resolveMigrationOwnerIds = (extraOwnerIds = [], viewerId = '') => [...new Set([
-  String(viewerId || '').trim(),
-  ...ADMIN_UIDS,
-  LEGACY_IMPORT_COMMENT_OWNER_ID,
-  ...(extraOwnerIds || []).map(id => String(id || '').trim()),
-].filter(Boolean))];
+// The importer's subtree is the provenance marker.  Admin subtrees contain
+// ordinary private notes and must never be inferred to be import data merely
+// because their target card happens to have a TG id.
+export const resolveMigrationOwnerIds = () => [LEGACY_IMPORT_COMMENT_OWNER_ID];
 
 /**
  * План переносу — окремо від самого переносу.
@@ -124,6 +122,9 @@ export const planLegacyTgCommentMigration = ({
   const skipped = { notTg: 0, emptyText: 0 };
 
   Object.entries(privateComments || {}).forEach(([ownerId, ownerComments]) => {
+    // Only the fixed spreadsheet-import owner is a reliable legacy marker.
+    // Notes under admins' ordinary owner IDs may be genuinely private.
+    if (ownerId !== LEGACY_IMPORT_COMMENT_OWNER_ID) return;
     Object.entries(ownerComments || {}).forEach(([cardId, entry]) => {
       if (!isTgLegacyUserId(cardId)) {
         skipped.notTg += 1;
@@ -216,12 +217,10 @@ const removePrivateOriginals = async entry => {
  * Перенести відгуки TG-карток з особистих нотаток у публічні коментарі.
  *
  * @param {Object} params
- * @param {string[]} [params.ownerIds] додаткові власники нотаток (окрім типових)
  * @param {boolean} [params.removePrivate] прибирати приватний оригінал після переносу
  * @param {Function} [params.onProgress] `({ processed, total })`
  */
 export const migrateLegacyTgCommentsToPublic = async ({
-  ownerIds = [],
   removePrivate = true,
   onProgress,
 } = {}) => {
@@ -231,7 +230,7 @@ export const migrateLegacyTgCommentsToPublic = async ({
   // питати про нього базу посеред пачки записів пізно.
   if (!isAdminUid(viewerId)) throw new Error('Міграцію коментарів запускає лише адмін');
 
-  const owners = resolveMigrationOwnerIds(ownerIds, viewerId);
+  const owners = resolveMigrationOwnerIds();
   const privateComments = {};
   const writers = {};
   const unreadableOwnerIds = [];
@@ -240,13 +239,13 @@ export const migrateLegacyTgCommentsToPublic = async ({
     try {
       const [comments, writerMap] = await Promise.all([
         fetchOwnerCommentsSubtree(ownerId),
-        readOwnerWriterMap(ownerId),
+        readOwnerWriterMapStrict(ownerId),
       ]);
       privateComments[ownerId] = comments || {};
       writers[ownerId] = writerMap || {};
     } catch (error) {
-      // Чужий власник читається лише адміном, і відмова тут — не поломка
-      // міграції, а відповідь «сюди тобі не можна». Решта власників їде далі.
+      // Без обох піддерев походження й авторство не перевірені, тому жоден
+      // запис цього власника не планується і тим більше не видаляється.
       console.warn('[legacyTgComments] піддерево власника не прочитано', { ownerId, error });
       unreadableOwnerIds.push(ownerId);
     }
@@ -254,7 +253,7 @@ export const migrateLegacyTgCommentsToPublic = async ({
 
   const profileIds = listTgProfileIds(privateComments);
   const existingPublicComments = profileIds.length
-    ? await fetchPublicProfileComments(profileIds)
+    ? await fetchPublicProfileCommentsStrict(profileIds)
     : {};
 
   const { entries, duplicates, skipped } = planLegacyTgCommentMigration({
@@ -331,7 +330,7 @@ export const copyPublicCommentsBetweenCards = async ({ sourceProfileId, targetPr
   if (!viewerId) throw new Error('User not authenticated');
   if (!isAdminUid(viewerId)) throw new Error('Публічні коментарі між картками переносить лише адмін');
 
-  const byProfile = await fetchPublicProfileComments([source, target]);
+  const byProfile = await fetchPublicProfileCommentsStrict([source, target]);
   const targetKeys = new Set((byProfile[target] || []).map(comment => normalizeCommentTextKey(comment?.text)));
 
   let copied = 0;

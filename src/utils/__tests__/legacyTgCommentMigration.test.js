@@ -3,8 +3,8 @@ jest.mock('components/config', () => ({
   auth: { currentUser: { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' } },
   deleteCommentByOwner: jest.fn(),
   fetchOwnerCommentsSubtree: jest.fn(),
-  fetchPublicProfileComments: jest.fn(),
-  readOwnerWriterMap: jest.fn(),
+  fetchPublicProfileCommentsStrict: jest.fn(),
+  readOwnerWriterMapStrict: jest.fn(),
 }));
 
 const {
@@ -12,8 +12,8 @@ const {
   auth,
   deleteCommentByOwner,
   fetchOwnerCommentsSubtree,
-  fetchPublicProfileComments,
-  readOwnerWriterMap,
+  fetchPublicProfileCommentsStrict,
+  readOwnerWriterMapStrict,
 } = require('components/config');
 
 const {
@@ -93,8 +93,8 @@ describe('план переносу', () => {
   // `writer` це правило теж накриває: стерта означає «автора не знаємо».
   it('бере поточну версію writer, а не першу-ліпшу', () => {
     const { entries } = plan({
-      privateComments: { [ADMIN]: { TG0001: { text: 'відгук', updatedAt: 5 } } },
-      writers: { [ADMIN]: { TG0001: ['Стара агенція', 'Деліверінг дрімз'] } },
+      privateComments: { [IMPORTER]: { TG0001: { text: 'відгук', updatedAt: 5 } } },
+      writers: { [IMPORTER]: { TG0001: ['Стара агенція', 'Деліверінг дрімз'] } },
     });
 
     expect(entries[0].authorName).toBe('Деліверінг дрімз');
@@ -102,8 +102,8 @@ describe('план переносу', () => {
 
   it('стерта позначка writer лишає відгук без імені, а не з попереднім', () => {
     const { entries } = plan({
-      privateComments: { [ADMIN]: { TG0001: { text: 'відгук', updatedAt: 5 } } },
-      writers: { [ADMIN]: { TG0001: ['Деліверінг дрімз', ''] } },
+      privateComments: { [IMPORTER]: { TG0001: { text: 'відгук', updatedAt: 5 } } },
+      writers: { [IMPORTER]: { TG0001: ['Деліверінг дрімз', ''] } },
     });
 
     expect(entries[0].authorName).toBe('');
@@ -122,20 +122,28 @@ describe('план переносу', () => {
   it('той самий текст у двох власників їде однією копією, а прибрати треба обидва оригінали', () => {
     const { entries } = plan({
       privateComments: {
-        [ADMIN]: { TG0001: { text: 'Відгук', updatedAt: 5 } },
         [IMPORTER]: { TG0001: { text: 'відгук ', updatedAt: 6 } },
       },
     });
 
     expect(entries).toHaveLength(1);
-    expect(entries[0].ownerIds).toEqual([ADMIN, IMPORTER]);
+    expect(entries[0].ownerIds).toEqual([IMPORTER]);
+  });
+
+  it('не публікує особисту нотатку адміна навіть на TG-картці', () => {
+    const { entries } = plan({
+      privateComments: { [ADMIN]: { TG0001: { text: 'Особиста нотатка', updatedAt: 5 } } },
+      writers: { [ADMIN]: { TG0001: 'Адмін' } },
+    });
+
+    expect(entries).toEqual([]);
   });
 
   // Міграцію запускають з телефона, і половина її може не доїхати. Другий
   // запуск мусить домалювати решту, а не подвоїти вже перенесене.
   it('уже перенесений відгук удруге не пишеться', () => {
     const { entries, duplicates } = plan({
-      privateComments: { [ADMIN]: { TG0001: { text: 'Відгук  з таблиці', updatedAt: 5 } } },
+      privateComments: { [IMPORTER]: { TG0001: { text: 'Відгук  з таблиці', updatedAt: 5 } } },
       existingPublicComments: { TG0001: [{ text: 'відгук з таблиці' }] },
     });
 
@@ -149,8 +157,8 @@ describe('перенос', () => {
     auth.currentUser = { uid: ADMIN };
     addPublicProfileCommentAs.mockReset().mockResolvedValue({ id: 'c1' });
     deleteCommentByOwner.mockReset().mockResolvedValue(true);
-    fetchPublicProfileComments.mockReset().mockResolvedValue({});
-    readOwnerWriterMap.mockReset().mockResolvedValue({});
+    fetchPublicProfileCommentsStrict.mockReset().mockResolvedValue({});
+    readOwnerWriterMapStrict.mockReset().mockResolvedValue({});
     fetchOwnerCommentsSubtree.mockReset().mockResolvedValue({});
   });
 
@@ -158,7 +166,7 @@ describe('перенос', () => {
     fetchOwnerCommentsSubtree.mockImplementation(async ownerId => (ownerId === IMPORTER
       ? { TG0001: { text: 'відгук', updatedAt: 7 } }
       : {}));
-    readOwnerWriterMap.mockImplementation(async ownerId => (ownerId === IMPORTER
+    readOwnerWriterMapStrict.mockImplementation(async ownerId => (ownerId === IMPORTER
       ? { TG0001: 'Деліверінг дрімз' }
       : {}));
 
@@ -209,6 +217,26 @@ describe('перенос', () => {
     expect(stats.unreadableOwnerIds).toEqual([IMPORTER]);
   });
 
+  it('не пише й не видаляє, якщо writer імпортера не вдалося перевірити', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ TG0001: { text: 'відгук', updatedAt: 7 } });
+    readOwnerWriterMapStrict.mockRejectedValue(new Error('NETWORK_ERROR'));
+
+    const stats = await migrateLegacyTgCommentsToPublic();
+
+    expect(stats.unreadableOwnerIds).toEqual([IMPORTER]);
+    expect(addPublicProfileCommentAs).not.toHaveBeenCalled();
+    expect(deleteCommentByOwner).not.toHaveBeenCalled();
+  });
+
+  it('перериває перенос до запису, якщо публічні відгуки не прочитались', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ TG0001: { text: 'відгук', updatedAt: 7 } });
+    fetchPublicProfileCommentsStrict.mockRejectedValue(new Error('NETWORK_ERROR'));
+
+    await expect(migrateLegacyTgCommentsToPublic()).rejects.toThrow('NETWORK_ERROR');
+    expect(addPublicProfileCommentAs).not.toHaveBeenCalled();
+    expect(deleteCommentByOwner).not.toHaveBeenCalled();
+  });
+
   // Записи від чужого імені — право самих лише адмінів, і питати про нього
   // базу посеред пачки записів пізно.
   it('не адмін міграцію не запускає', async () => {
@@ -222,11 +250,11 @@ describe('перенос публічних відгуків між дублік
   beforeEach(() => {
     auth.currentUser = { uid: ADMIN };
     addPublicProfileCommentAs.mockReset().mockResolvedValue({ id: 'c1' });
-    fetchPublicProfileComments.mockReset();
+    fetchPublicProfileCommentsStrict.mockReset();
   });
 
   it('копіює відгук на другу картку, зберігаючи автора й дату', async () => {
-    fetchPublicProfileComments.mockResolvedValue({
+    fetchPublicProfileCommentsStrict.mockResolvedValue({
       TG0001: [{ text: 'відгук', authorId: 'legacy-tg-1', authorName: 'Деліверінг дрімз', createdAt: 7 }],
       'ID0009': [],
     });
@@ -247,7 +275,7 @@ describe('перенос публічних відгуків між дублік
   });
 
   it('те, що на картці вже є, вдруге не пишеться', async () => {
-    fetchPublicProfileComments.mockResolvedValue({
+    fetchPublicProfileCommentsStrict.mockResolvedValue({
       TG0001: [{ text: 'Відгук ', authorId: 'legacy-tg-1', createdAt: 7 }],
       'ID0009': [{ text: 'відгук', authorId: 'legacy-tg-1', createdAt: 7 }],
     });

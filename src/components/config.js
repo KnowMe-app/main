@@ -1109,6 +1109,23 @@ export const fetchPublicProfileComments = async (profileIds = []) => {
   return Object.fromEntries(entries);
 };
 
+/**
+ * The destructive migration/copy flows must distinguish an empty subtree from
+ * a failed read.  Keep the forgiving reader above for ordinary card UI, but
+ * let this variant reject if even one requested profile cannot be verified.
+ */
+export const fetchPublicProfileCommentsStrict = async (profileIds = []) => {
+  const ids = Array.from(new Set((profileIds || []).filter(Boolean)));
+  const entries = await Promise.all(ids.map(async profileId => {
+    const snap = await firebaseGet(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
+    if (!snap.exists()) return [profileId, []];
+    return [profileId, sortPublicComments(
+      Object.entries(snap.val() || {}).map(([id, comment]) => normalizePublicComment(id, comment))
+    )];
+  }));
+  return Object.fromEntries(entries);
+};
+
 export const addPublicProfileComment = async ({ profileId, text, authorName = '' }) => {
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
@@ -3715,6 +3732,23 @@ export const setOwnerGetInTouch = (ownerId, profileId, value) => (
 );
 
 export const readOwnerWriterMap = ownerId => readOwnerValueMap(OWNER_WRITER_PATH, ownerId);
+
+/** Uncached, error-propagating writer read for destructive migrations. */
+export const readOwnerWriterMapStrict = async ownerId => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return {};
+  invalidateOwnerValueMap(OWNER_WRITER_PATH, owner);
+  const snapshot = await get(ref2(database, `${OWNER_WRITER_PATH}/${owner}`));
+  if (!snapshot.exists()) return {};
+  const map = {};
+  Object.entries(snapshot.val() || {}).forEach(([key, value]) => {
+    if (value === null || value === undefined) return;
+    if (isLegacyOwnerValueGroup(value)) {
+      Object.keys(value).forEach(profileId => { map[profileId] = key; });
+    } else map[key] = value;
+  });
+  return map;
+};
 
 export const invalidateOwnerWriterMap = ownerId => invalidateOwnerValueMap(OWNER_WRITER_PATH, ownerId);
 

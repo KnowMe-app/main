@@ -41,12 +41,12 @@ describe('smallCard comment UI fixes', () => {
 describe('публічні відгуки в блоці картки', () => {
   const source = fs.readFileSync(path.join(__dirname, 'renderTopBlock.js'), 'utf8');
 
-  it('читає відгуки картки в тому самому колі, що й нотатки', () => {
-    expect(source).toContain('fetchPublicProfileComments([cardData.userId])');
-    expect(source).toContain('setPublicComments(publicByProfile?.[cardData.userId] || [])');
-    // Порожня картка скидає обидва списки — інакше відгуки попередньої
-    // лишились би висіти під наступною.
+  it('читає відгуки лише після явного запиту й одразу скидає стару картку', () => {
+    expect(source).toContain('const loadPublicComments = async event => {');
+    expect(source).toContain('fetchPublicProfileComments([profileId])');
+    expect(source).toContain('Показати публічні відгуки');
     expect(source).toContain('setPublicComments([]);');
+    expect(source).toContain('setPublicCommentsLoaded(false);');
   });
 
   it('показує відгук окремим рядком, помітно іншим за нотатку', () => {

@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
 
 jest.mock('../config', () => ({
-  auth: { currentUser: { uid: 'admin-1' } },
+  auth: { currentUser: { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' } },
   fetchPublicProfileComments: jest.fn(),
   fetchUserComment: jest.fn(),
   saveMyCardComment: jest.fn(),

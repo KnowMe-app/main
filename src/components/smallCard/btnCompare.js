@@ -4,6 +4,7 @@ import { auth, fetchPublicProfileComments, fetchUserComment, saveMyCardComment }
 import { setLocalComment } from '../../utils/commentsStorage';
 import { copyPublicCommentsBetweenCards } from '../../utils/legacyTgCommentMigration';
 import { handleSubmitAll } from './actions';
+import { isAdminUid } from '../../utils/accessLevel';
 
 let latestCompareRequest = 0;
 const pendingCardSaves = new Map();
@@ -186,8 +187,10 @@ export const btnCompare = (
       const uniqueCurrent = [...currentSet].filter(value => !nextSet.has(value));
       const uniqueNext = [...nextSet].filter(value => !currentSet.has(value));
       const isUserId = key === 'userId';
-      const canCopyCurrent = !isUserId && currentSet.size > 0;
-      const canCopyNext = !isUserId && nextSet.size > 0;
+      const canCopyKey = !isUserId
+        && (key !== PUBLIC_COMMENTS_KEY || isAdminUid(auth.currentUser?.uid));
+      const canCopyCurrent = canCopyKey && currentSet.size > 0;
+      const canCopyNext = canCopyKey && nextSet.size > 0;
       const cellStyle = { width: '40%', whiteSpace: 'normal', wordBreak: 'break-word' };
       return (
         <tr key={key}>

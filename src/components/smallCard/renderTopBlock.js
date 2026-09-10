@@ -1351,6 +1351,8 @@ export const TopBlock = ({
   // але не сусіди по суті: нотатка належить тому, хто її написав, а відгук —
   // усій базі, і читається він одним запитом на картку, а не по власниках.
   const [publicComments, setPublicComments] = React.useState([]);
+  const [publicCommentsLoaded, setPublicCommentsLoaded] = React.useState(false);
+  const publicCommentsRequestRef = React.useRef(0);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
     if (!userData) return null;
@@ -1403,9 +1405,12 @@ export const TopBlock = ({
   }, []);
 
   React.useEffect(() => {
+    publicCommentsRequestRef.current += 1;
+    // A reused card must never display or act on the previous profile's rows.
+    setBackendMultiComments([]);
+    setPublicComments([]);
+    setPublicCommentsLoaded(false);
     if (!cardData?.userId) {
-      setBackendMultiComments([]);
-      setPublicComments([]);
       return;
     }
     let isMounted = true;
@@ -1413,21 +1418,30 @@ export const TopBlock = ({
       const viewerId = auth.currentUser?.uid;
       const viewerProfile = viewerId ? (getCard(viewerId) || await fetchUserById(viewerId)) : null;
       const ownerIds = resolveMatchingMultiDataOwnerIds({ viewerId, profile: viewerProfile });
-      // Обидва сховища питаються в одному колі: рядок коментарів мусить
-      // зʼявитись цілим, а не добудуватись відгуками через мить після нотаток.
-      const [allByCard, publicByProfile] = await Promise.all([
-        fetchAllCommentsByCardId(cardData.userId, ownerIds),
-        fetchPublicProfileComments([cardData.userId]),
-      ]);
+      const allByCard = await fetchAllCommentsByCardId(cardData.userId, ownerIds);
       if (!isMounted) return;
       setBackendMultiComments(allByCard);
-      setPublicComments(publicByProfile?.[cardData.userId] || []);
     };
     loadAllComments();
     return () => {
       isMounted = false;
     };
   }, [cardData?.userId]);
+
+  const loadPublicComments = async event => {
+    event?.stopPropagation();
+    const profileId = cardData?.userId;
+    if (!profileId || publicCommentsLoaded) return;
+    const requestId = ++publicCommentsRequestRef.current;
+    try {
+      const publicByProfile = await fetchPublicProfileComments([profileId]);
+      if (publicCommentsRequestRef.current !== requestId) return;
+      setPublicComments(publicByProfile?.[profileId] || []);
+      setPublicCommentsLoaded(true);
+    } catch (error) {
+      toast.error(`Не вдалося завантажити публічні відгуки: ${error?.message || error}`);
+    }
+  };
 
   React.useEffect(() => {
     if (!cardData?.userId || userPhotoUrls.length > 0) {
@@ -2214,6 +2228,11 @@ export const TopBlock = ({
             )}
           </div>
         ))}
+        {!publicCommentsLoaded && (
+          <button type="button" style={modalCancelButtonStyle} onClick={loadPublicComments}>
+            Показати публічні відгуки
+          </button>
+        )}
         {publicComments.map(comment => {
           const canModify = canModifyPublicComment(comment);
           return (
@@ -2257,7 +2276,9 @@ export const TopBlock = ({
                   aria-label="Видалити публічний відгук"
                   onClick={event => {
                     event.stopPropagation();
-                    setCommentToDelete({ kind: 'public', commentId: comment.id, text: comment.text });
+                    setCommentToDelete({
+                      kind: 'public', commentId: comment.id, text: comment.text, authorId: comment.authorId,
+                    });
                   }}
                 >
                   ×
