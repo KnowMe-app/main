@@ -546,6 +546,24 @@ const CommentComposer = ({ initialText, onCancel, onCommit, language }) => {
   );
 };
 
+// Єдине представлення службового переходу потрібне і до, і після читання
+// коментарів. Так unloaded-гейт не ховає переданий йому `backendHref`, а вигляд
+// та поведінка стрілки не розходяться між двома станами.
+const PublicCommentsBackendLink = ({ backendHref }) => (backendHref ? (
+  <S.CommentBackendRow>
+    <S.CommentBackendLink
+      href={backendHref}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Відкрити публічні нотатки анкети у Firebase"
+      aria-label="Відкрити публічні нотатки анкети у Firebase"
+      onClick={e => e.stopPropagation()}
+    >
+      <FaArrowRight size={12} />
+    </S.CommentBackendLink>
+  </S.CommentBackendRow>
+) : null);
+
 export const PublicCommentBlock = ({
   profileId,
   comments = [],
@@ -637,20 +655,7 @@ export const PublicCommentBlock = ({
 
   return (
     <S.PublicComments $flush={flush} onClick={e => e.stopPropagation()}>
-      {backendHref && (
-        <S.CommentBackendRow>
-          <S.CommentBackendLink
-            href={backendHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Відкрити публічні нотатки анкети у Firebase"
-            aria-label="Відкрити публічні нотатки анкети у Firebase"
-            onClick={e => e.stopPropagation()}
-          >
-            <FaArrowRight size={12} />
-          </S.CommentBackendLink>
-        </S.CommentBackendRow>
-      )}
+      <PublicCommentsBackendLink backendHref={backendHref} />
       {visibleRows.map(comment => {
         const isOwn = Boolean(viewerId) && comment.authorId === viewerId;
         const canEdit = isOwn || canModerate;
@@ -794,14 +799,17 @@ export const PublicCommentsGate = ({
   }
 
   return (
-    <S.ReviewsGateButton
-      type="button"
-      disabled={loading}
-      onClick={e => { e.stopPropagation(); onRequest(profileId); }}
-    >
-      <FaRegCommentDots aria-hidden="true" />
-      <span>{loading ? 'Шукаємо відгуки…' : REVIEWS_GATE_LABEL}</span>
-    </S.ReviewsGateButton>
+    <>
+      <PublicCommentsBackendLink backendHref={blockProps.backendHref} />
+      <S.ReviewsGateButton
+        type="button"
+        disabled={loading}
+        onClick={e => { e.stopPropagation(); onRequest(profileId); }}
+      >
+        <FaRegCommentDots aria-hidden="true" />
+        <span>{loading ? 'Шукаємо відгуки…' : REVIEWS_GATE_LABEL}</span>
+      </S.ReviewsGateButton>
+    </>
   );
 };
 
