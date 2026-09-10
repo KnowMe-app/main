@@ -9,7 +9,25 @@
 // surname_…» на стрілці до бекенду.
 
 jest.mock('firebase/app', () => ({ initializeApp: () => ({}) }));
-jest.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: null }) }));
+
+// Тост бачить лише адмін, тож і сесія в тесті адмінська.
+const ADMIN_UID = '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2';
+const mockAuth = { currentUser: { uid: ADMIN_UID } };
+jest.mock('firebase/auth', () => ({ getAuth: () => mockAuth }));
+
+const mockToasts = [];
+jest.mock('react-hot-toast', () => {
+  const record = (type, message, options) => {
+    mockToasts.push({ type, message, options });
+  };
+  const toast = (message, options) => record('default', message, options);
+  toast.error = (message, options) => record('error', message, options);
+  toast.success = (message, options) => record('success', message, options);
+  toast.loading = (message, options) => record('loading', message, options);
+  toast.dismiss = () => {};
+  toast.custom = (message, options) => record('custom', message, options);
+  return { __esModule: true, default: toast, toast, Toaster: () => null };
+});
 jest.mock('firebase/firestore', () => ({
   getFirestore: () => ({}),
   collection: () => ({}),
@@ -36,6 +54,8 @@ jest.mock('firebase/storage', () => ({
 const mockStore = {};
 const mockReads = [];
 const mockWrites = [];
+// Наступний запис у `searchId` падає з цією помилкою й скидається на `null`.
+const mockWriteFailure = { error: null };
 jest.mock('firebase/database', () => ({
   getDatabase: () => ({}),
   ref: (_db, path) => path,
@@ -48,6 +68,11 @@ jest.mock('firebase/database', () => ({
     };
   },
   update: async (_path, payload) => {
+    if (mockWriteFailure.error) {
+      const failure = mockWriteFailure.error;
+      mockWriteFailure.error = null;
+      throw failure;
+    }
     mockWrites.push(payload);
     Object.assign(mockStore, payload);
   },
@@ -79,6 +104,9 @@ const resetBackend = () => {
   Object.keys(mockStore).forEach(key => delete mockStore[key]);
   mockReads.length = 0;
   mockWrites.length = 0;
+  mockToasts.length = 0;
+  mockWriteFailure.error = null;
+  mockAuth.currentUser = { uid: ADMIN_UID };
 };
 
 // Позначка про підтверджений ключ живе в модулі й між тестами не скидається,
@@ -171,6 +199,59 @@ describe('підтверджений ключ не перечитується щ
 
     expect(mockReads).toEqual(['surname_аветісян']);
     expect(mockStore.surname_аветісян).toBe(cardId);
+  });
+});
+
+describe('відмова індексації видима, а не самий лише console.error', () => {
+  // Мовчазний `catch` тут і був причиною, чому дірку в індексі помічали вже
+  // по дірці в пошуку: анкета зберігалась, ключ не писався, екран мовчав.
+  it('показує адмінові тост із ключем і причиною', async () => {
+    const cardId = nextCardId();
+    mockWriteFailure.error = new Error('PERMISSION_DENIED');
+
+    await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
+
+    expect(mockToasts).toHaveLength(1);
+    expect(mockToasts[0].type).toBe('error');
+    expect(mockToasts[0].message).toContain('surname_аветісян');
+    expect(mockToasts[0].message).toContain('PERMISSION_DENIED');
+  });
+
+  it('не памʼятає ключ, який не записався, — наступне збереження пробує знову', async () => {
+    const cardId = nextCardId();
+    mockWriteFailure.error = new Error('PERMISSION_DENIED');
+    await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
+
+    mockReads.length = 0;
+    await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
+
+    expect(mockReads).toEqual(['surname_аветісян']);
+    expect(mockStore.surname_аветісян).toBe(cardId);
+  });
+
+  it('однакові відмови не складають вежу з тостів', async () => {
+    // Кандидатів в одному збереженні десяток; стабільний id підміняє
+    // попереднє повідомлення замість того, щоб додати ще одне.
+    const cardId = nextCardId();
+    mockWriteFailure.error = new Error('PERMISSION_DENIED');
+    await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
+    mockWriteFailure.error = new Error('PERMISSION_DENIED');
+    await syncUserSearchIdIndex(cardId, {}, { userId: cardId, name: 'Анастасія' });
+
+    expect(mockToasts).toHaveLength(2);
+    expect(new Set(mockToasts.map(entry => entry.options?.id))).toEqual(
+      new Set(['searchId-index-failure']),
+    );
+  });
+
+  it('донорці на реєстрації нічого не показує', async () => {
+    const cardId = nextCardId();
+    mockAuth.currentUser = { uid: 'DONOR_UID' };
+    mockWriteFailure.error = new Error('PERMISSION_DENIED');
+
+    await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
+
+    expect(mockToasts).toEqual([]);
   });
 });
 

@@ -4714,6 +4714,36 @@ const rememberConfirmedSearchIdEntry = entryToken => {
   confirmedSearchIdEntries.add(entryToken);
 };
 
+/**
+ * Відмова індексації мусить бути видимою.
+ *
+ * `updateSearchId` навмисно не валить збереження анкети: індекс — прискорення
+ * пошуку, а не частина запису, і `PERMISSION_DENIED` на одному ключі не має
+ * коштувати людині набраної анкети. Але поки відмова жила самим лише
+ * `console.error`, ненаписаний ключ помічали вже по дірці в пошуку — через
+ * тижні, стрілкою до бекенду й питанням «чому анкета з прізвищем не
+ * знаходиться за прізвищем».
+ *
+ * Тост бачить той, хто заводить дані руками: адмінка — те місце, де на відмову
+ * можна зреагувати (перечитати правила, перезберегти картку). На реєстрації
+ * донорки цей текст не означає нічого, тож там відмову й далі ловить
+ * `console.warn` в `authProfilePersistence`.
+ *
+ * Ідентифікатор у тоста стабільний: кандидатів в одному збереженні буває
+ * десяток, і react-hot-toast замінює попереднє повідомлення замість того, щоб
+ * скласти вежу з однакових.
+ */
+const SEARCH_ID_INDEX_FAILURE_TOAST_ID = 'searchId-index-failure';
+const reportSearchIdIndexFailure = ({ searchIdKey, action, error }) => {
+  if (!isAdminUid(auth.currentUser?.uid)) return;
+
+  const details = error?.message || String(error);
+  const verb = action === 'remove' ? 'Не знято' : 'Не записано';
+  toast.error(`${verb} ключ пошуку ${searchIdKey || 'searchId'}\n${details}`, {
+    id: SEARCH_ID_INDEX_FAILURE_TOAST_ID,
+  });
+};
+
 // Функція для оновлення або видалення пар у searchId
 export const updateSearchId = async (searchKey, searchValue, userId, action) => {
   if (isDev) {
@@ -4721,6 +4751,9 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     console.log('searchValue!!!!!!!!! :>> ', searchValue);
     console.log('action!!!!!!!!!!! :>> ', action);
   }
+  // Ключ потрібен і в `catch`: без нього тост каже «щось не записалось», а це
+  // та сама мовчанка, тільки гучніша.
+  let failedSearchIdKey = '';
   try {
     if (!searchValue || !searchKey || !userId) {
       console.error('Invalid parameters provided:', { searchKey, searchValue, userId });
@@ -4736,6 +4769,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
     const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
     const entryToken = searchIdEntryToken(searchIdKey, userId);
+    failedSearchIdKey = searchIdKey;
     if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
     if (action === 'add') {
@@ -4805,6 +4839,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     }
   } catch (error) {
     console.error('Error in updateSearchId:', error);
+    reportSearchIdIndexFailure({ searchIdKey: failedSearchIdKey, action, error });
   }
 };
 
