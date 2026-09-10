@@ -2,7 +2,7 @@ import React from 'react';
 import toast from 'react-hot-toast';
 import { auth, fetchPublicProfileComments, fetchUserComment, saveMyCardComment } from '../config';
 import { setLocalComment } from '../../utils/commentsStorage';
-import { copyPublicCommentsBetweenCards } from '../../utils/legacyTgCommentMigration';
+import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentMigration';
 import { handleSubmitAll } from './actions';
 
 let latestCompareRequest = 0;

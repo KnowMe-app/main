@@ -17,26 +17,44 @@ const {
 } = require('components/config');
 
 const {
+  LEGACY_COMMENT_AUTHOR_ID_PREFIX,
   LEGACY_IMPORT_COMMENT_OWNER_ID,
+  LEGACY_IMPORT_ID_PREFIXES,
   copyPublicCommentsBetweenCards,
-  isTgLegacyUserId,
+  isLegacyImportUserId,
+  isPermissionDeniedFailure,
   makeLegacyCommentAuthorId,
-  migrateLegacyTgCommentsToPublic,
-  planLegacyTgCommentMigration,
+  migrateLegacyImportCommentsToPublic,
+  planLegacyImportCommentMigration,
   resolveMigrationOwnerIds,
-} = require('../legacyTgCommentMigration');
+} = require('../legacyImportCommentMigration');
 
 const ADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const IMPORTER = LEGACY_IMPORT_COMMENT_OWNER_ID;
 
-describe('розпізнавання TG-карток', () => {
-  it('бере рівно `TG` великими й далі самі цифри', () => {
-    expect(isTgLegacyUserId('TG0001')).toBe(true);
-    expect(isTgLegacyUserId(' TG12 ')).toBe(true);
-    expect(isTgLegacyUserId('tg0001')).toBe(false);
-    expect(isTgLegacyUserId('TGA001')).toBe(false);
-    expect(isTgLegacyUserId('ID0001')).toBe(false);
-    expect(isTgLegacyUserId('')).toBe(false);
+describe('розпізнавання карток партії', () => {
+  it('бере рівно префікс великими й далі самі цифри', () => {
+    expect(isLegacyImportUserId('TG0001')).toBe(true);
+    expect(isLegacyImportUserId(' TG12 ')).toBe(true);
+    expect(isLegacyImportUserId('tg0001')).toBe(false);
+    expect(isLegacyImportUserId('TGA001')).toBe(false);
+    expect(isLegacyImportUserId('')).toBe(false);
+  });
+
+  // Партії дві, і кожна кнопка бачить рівно свою: перенос ID-карток не мусить
+  // чіпати TG-карток, і навпаки.
+  it('партії не перетинаються', () => {
+    expect(isLegacyImportUserId('ID0001')).toBe(false);
+    expect(isLegacyImportUserId('ID0001', 'ID')).toBe(true);
+    expect(isLegacyImportUserId('TG0001', 'ID')).toBe(false);
+    expect(LEGACY_IMPORT_ID_PREFIXES).toEqual(['TG', 'ID']);
+  });
+
+  // Префікс іде в регулярку, тож усе, що нею бути не може, відхиляється до
+  // першого запиту: інакше `.` мовчки розширив би перенос на чужі картки.
+  it('не пускає префікс, який не є великими літерами', () => {
+    expect(() => isLegacyImportUserId('TG0001', 'T.')).toThrow('великих літер');
+    expect(() => isLegacyImportUserId('TG0001', '')).toThrow('великих літер');
   });
 });
 
@@ -52,25 +70,31 @@ describe('синтетичний автор', () => {
   // синтетичний id таким, яким його не може виявитись жоден живий акаунт.
   it('не може збігтися з uid живого акаунта', () => {
     const id = makeLegacyCommentAuthorId('Деліверінг дрімз');
-    expect(id.startsWith('legacy-tg-')).toBe(true);
+    expect(id.startsWith(LEGACY_COMMENT_AUTHOR_ID_PREFIX)).toBe(true);
     expect(id).toMatch(/-/);
+  });
+
+  // Партії в префіксі автора немає навмисно: та сама агенція писала і про TG-,
+  // і про ID-картки — це одна людина, а не дві.
+  it('не тягне за собою партію картки', () => {
+    expect(LEGACY_COMMENT_AUTHOR_ID_PREFIX).not.toMatch(/tg|id/i);
   });
 });
 
 describe('план переносу', () => {
-  const plan = params => planLegacyTgCommentMigration({
+  const plan = params => planLegacyImportCommentMigration({
     privateComments: {},
     writers: {},
     existingPublicComments: {},
     ...params,
   });
 
-  it('бере коментар TG-картки, підписує його автором з writer і зберігає дату', () => {
+  it('бере коментар картки партії, підписує його автором з writer і зберігає дату', () => {
     const { entries, skipped } = plan({
       privateComments: {
         [IMPORTER]: {
           TG0001: { text: 'Зняли з підготовки до переносу', updatedAt: 1785492679190 },
-          ID0007: { text: 'Не TG — не наша справа', updatedAt: 1 },
+          ID0007: { text: 'Інша партія — не ця кнопка', updatedAt: 1 },
           TG0002: { text: '   ', updatedAt: 2 },
         },
       },
@@ -86,7 +110,7 @@ describe('план переносу', () => {
       createdAt: 1785492679190,
       ownerIds: [IMPORTER],
     }]);
-    expect(skipped).toEqual({ notTg: 1, emptyText: 1 });
+    expect(skipped).toEqual({ otherPrefix: 1, emptyText: 1 });
   });
 
   // Масив у полі анкети — історія, і поточне значення в ній останнє. Позначку
@@ -162,7 +186,7 @@ describe('перенос', () => {
       ? { TG0001: 'Деліверінг дрімз' }
       : {}));
 
-    const stats = await migrateLegacyTgCommentsToPublic();
+    const stats = await migrateLegacyImportCommentsToPublic();
 
     expect(addPublicProfileCommentAs).toHaveBeenCalledWith({
       profileId: 'TG0001',
@@ -175,21 +199,78 @@ describe('перенос', () => {
     expect(stats).toMatchObject({ total: 1, written: 1, removed: 1, failed: 0 });
   });
 
+  // Кнопка на партію: `ID💬` мусить бачити ID-картки й не чіпати TG-карток —
+  // інакше два переноси стали б одним, запущеним двічі.
+  it('переносить ту партію, яку назвали, і лише її', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({
+      TG0001: { text: 'відгук про TG', updatedAt: 7 },
+      ID0001: { text: 'відгук про ID', updatedAt: 8 },
+    });
+
+    const stats = await migrateLegacyImportCommentsToPublic({ prefix: 'ID' });
+
+    expect(addPublicProfileCommentAs).toHaveBeenCalledTimes(1);
+    expect(addPublicProfileCommentAs).toHaveBeenCalledWith(expect.objectContaining({
+      profileId: 'ID0001',
+      text: 'відгук про ID',
+    }));
+    expect(stats).toMatchObject({ prefix: 'ID', total: 1, written: 1 });
+    expect(stats.profileIds).toEqual(['ID0001']);
+  });
+
+  it('той самий автор в обох партіях лишається однією людиною', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({
+      TG0001: { text: 'перший', updatedAt: 7 },
+      ID0001: { text: 'другий', updatedAt: 8 },
+    });
+    readOwnerWriterMap.mockResolvedValue({ TG0001: 'Деліверінг дрімз', ID0001: 'Деліверінг дрімз' });
+
+    await migrateLegacyImportCommentsToPublic({ prefix: 'TG' });
+    await migrateLegacyImportCommentsToPublic({ prefix: 'ID' });
+
+    const [tgCall, idCall] = addPublicProfileCommentAs.mock.calls.map(([payload]) => payload);
+    expect(tgCall.authorId).toBe(idCall.authorId);
+  });
+
   it('невдалий публічний запис не коштує приватного оригіналу', async () => {
     fetchOwnerCommentsSubtree.mockResolvedValue({ TG0001: { text: 'відгук', updatedAt: 7 } });
     addPublicProfileCommentAs.mockRejectedValue(new Error('PERMISSION_DENIED'));
 
-    const stats = await migrateLegacyTgCommentsToPublic();
+    const stats = await migrateLegacyImportCommentsToPublic();
 
     expect(deleteCommentByOwner).not.toHaveBeenCalled();
     expect(stats.written).toBe(0);
     expect(stats.failed).toBeGreaterThan(0);
   });
 
+  // Звіт «перенесено 0/1» без причини не каже нічого, а причина майже завжди
+  // одна: правила бази ще не викочені (їх не викочує CI).
+  it('називає відмову бази причиною, а не мовчить про неї', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ TG0001: { text: 'відгук', updatedAt: 7 } });
+    const denied = new Error('PERMISSION_DENIED: Permission denied');
+    denied.code = 'PERMISSION_DENIED';
+    addPublicProfileCommentAs.mockRejectedValue(denied);
+
+    const stats = await migrateLegacyImportCommentsToPublic();
+
+    expect(stats.permissionDenied).toBe(true);
+    expect(stats.failures[0]).toMatchObject({ profileId: 'TG0001', code: 'PERMISSION_DENIED' });
+  });
+
+  it('інша помилка за відмову бази не видається', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ TG0001: { text: 'відгук', updatedAt: 7 } });
+    addPublicProfileCommentAs.mockRejectedValue(new Error('Порожній коментар не зберігається'));
+
+    const stats = await migrateLegacyImportCommentsToPublic();
+
+    expect(stats.permissionDenied).toBe(false);
+    expect(isPermissionDeniedFailure(stats.failures[0])).toBe(false);
+  });
+
   it('копія лишає приватну нотатку на місці', async () => {
     fetchOwnerCommentsSubtree.mockResolvedValue({ TG0001: { text: 'відгук', updatedAt: 7 } });
 
-    const stats = await migrateLegacyTgCommentsToPublic({ removePrivate: false });
+    const stats = await migrateLegacyImportCommentsToPublic({ removePrivate: false });
 
     expect(addPublicProfileCommentAs).toHaveBeenCalledTimes(1);
     expect(deleteCommentByOwner).not.toHaveBeenCalled();
@@ -202,7 +283,7 @@ describe('перенос', () => {
       return {};
     });
 
-    const stats = await migrateLegacyTgCommentsToPublic();
+    const stats = await migrateLegacyImportCommentsToPublic();
 
     expect(fetchOwnerCommentsSubtree.mock.calls.map(([ownerId]) => ownerId))
       .toEqual(resolveMigrationOwnerIds([], ADMIN));
@@ -213,7 +294,7 @@ describe('перенос', () => {
   // базу посеред пачки записів пізно.
   it('не адмін міграцію не запускає', async () => {
     auth.currentUser = { uid: 'ordinaryViewerUid000000000' };
-    await expect(migrateLegacyTgCommentsToPublic()).rejects.toThrow('лише адмін');
+    await expect(migrateLegacyImportCommentsToPublic()).rejects.toThrow('лише адмін');
     expect(fetchOwnerCommentsSubtree).not.toHaveBeenCalled();
   });
 });
