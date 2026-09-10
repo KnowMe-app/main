@@ -143,4 +143,26 @@ describe('public comment storage', () => {
     expect(comment.$other['.validate']).toBe(false);
     expect(rules.rules.replies).toBeDefined();
   });
+
+  // Перенесені відгуки (`utils/legacyTgCommentMigration`) написані людьми без
+  // акаунта, тож автора їм ставить адмін. Це окремий шлях запису саме тому, що
+  // звичайний `addPublicProfileComment` мусить і далі підписувати рівно того,
+  // хто пише, — а дату перенесений відгук приносить свою, не годинника.
+  it('records a comment for an author with no account only through the admin path', () => {
+    const config = read('config.js');
+    const fnBody = config.slice(
+      config.indexOf('export const addPublicProfileCommentAs'),
+      config.indexOf('export const updatePublicProfileComment'),
+    );
+
+    expect(fnBody).toContain('isAdminUid(user.uid)');
+    expect(fnBody).toContain('authorId: resolvedAuthorId');
+    expect(fnBody).not.toContain('serverTimestamp()');
+
+    const ownAuthorBody = config.slice(
+      config.indexOf('export const addPublicProfileComment ='),
+      config.indexOf('export const addPublicProfileCommentAs'),
+    );
+    expect(ownAuthorBody).toContain('authorId: user.uid,');
+  });
 });

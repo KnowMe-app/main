@@ -1142,6 +1142,65 @@ export const addPublicProfileComment = async ({ profileId, text, authorName = ''
   };
 };
 
+// Публічний запис від імені того, хто акаунта не має.
+//
+// Звичайний `addPublicProfileComment` підписує запис тим, хто його пише, і
+// правило бази вимагає рівно цього: на створенні `authorId` мусить дорівнювати
+// `auth.uid`. Але відгуки, зібрані до появи застосунку (картки з коротким id
+// на кшталт `TG0001`), написані людьми, які акаунта не заводили: підписати їх
+// адміном, який запускає міграцію, означало б збрехати про автора, а викинути
+// автора — втратити єдине, що про нього відомо: імʼя з позначки `writer`.
+//
+// Тому `authorId` тут — синтетичний (`makeLegacyCommentAuthorId`), і правило
+// пускає такий запис лише адміну (`comments/$profileId/$commentId/authorId`).
+// Наслідок свідомий: власником запису не стає ніхто — редагувати й знімати
+// його може тільки адмін, як і будь-який інший чужий відгук.
+//
+// `createdAt` береться з переносу, а не з годинника: відгук написано тоді, коли
+// його записали, і порядок у стрічці мусить це показувати.
+export const addPublicProfileCommentAs = async ({
+  profileId,
+  text,
+  authorId,
+  authorName = '',
+  createdAt,
+}) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('User not authenticated');
+  if (!isAdminUid(user.uid)) throw new Error('Публічний запис від чужого імені створює лише адмін');
+  if (!profileId) throw new Error('profileId обовʼязковий');
+
+  const trimmed = String(text || '').trim();
+  if (!trimmed) throw new Error('Порожній коментар не зберігається');
+  if (trimmed.length > PUBLIC_COMMENT_MAX_LENGTH) {
+    throw new Error(`Коментар довший за ${PUBLIC_COMMENT_MAX_LENGTH} символів`);
+  }
+
+  const resolvedAuthorId = String(authorId || '').trim() || user.uid;
+  const resolvedAuthorName = String(authorName || '').slice(0, 200);
+  const resolvedCreatedAt = Number(createdAt) > 0 ? Number(createdAt) : Date.now();
+
+  const commentRef = push(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
+  await set(commentRef, {
+    text: trimmed,
+    authorId: resolvedAuthorId,
+    authorName: resolvedAuthorName,
+    createdAt: resolvedCreatedAt,
+    updatedAt: null,
+    visibility: 'public',
+  });
+
+  return {
+    id: commentRef.key,
+    text: trimmed,
+    authorId: resolvedAuthorId,
+    authorName: resolvedAuthorName,
+    createdAt: resolvedCreatedAt,
+    updatedAt: null,
+    visibility: 'public',
+  };
+};
+
 // authorId and createdAt are immutable after creation, so an edit only ever
 // touches the text and the updatedAt stamp - the rules reject anything else.
 export const updatePublicProfileComment = async ({ profileId, commentId, text }) => {
@@ -1348,6 +1407,22 @@ const readOwnerCommentsSubtree = async ownerId => {
 export const invalidateOwnerCommentsCache = ownerId => {
   if (ownerId) ownerCommentsSubtreeCache.delete(ownerId);
   else ownerCommentsSubtreeCache.clear();
+};
+
+/**
+ * Піддерево коментарів одного власника цілком — для міграції.
+ *
+ * Те саме читання, що й у пачки, але без кеша: міграція переносить записи
+ * назовсім, і коментар, який вона не побачила через TTL, лишився б приватним
+ * назавжди. Власник тут теж рівно один — корінь `multiData/comments` через усіх
+ * власників не читається нізвідки, і звідси теж.
+ */
+export const fetchOwnerCommentsSubtree = async ownerId => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return {};
+  invalidateOwnerCommentsCache(owner);
+  incrementMatchingLoadStat('commentsSubtreeReads');
+  return readOwnerCommentsSubtree(owner);
 };
 
 export const fetchUserComments = async (ownerId, cardIds = []) => {

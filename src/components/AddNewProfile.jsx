@@ -145,6 +145,10 @@ import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllFilterSetIndexes } from 'utils/filterSetsIndex';
 import { buildMatchingCardsPayloadFromCollections } from 'utils/matchingCardIndex';
 import {
+  LEGACY_IMPORT_COMMENT_OWNER_ID,
+  migrateLegacyTgCommentsToPublic,
+} from 'utils/legacyTgCommentMigration';
+import {
   PROFILE_NODE_NAMES,
   mergeProfileNodeCollections,
   describeLocalIndexingSources,
@@ -1049,7 +1053,11 @@ const logProfileRestoreStep = (step, payload = {}) => {
   });
 };
 
-const EXCEL_COMMENTS_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
+// Власник, під яким імпорт з таблиці складає нотатки й дизлайки. Значення
+// живе поруч із міграцією TG-коментарів (`legacyTgCommentMigration`): саме в
+// цьому піддереві вона потім шукає відгуки, які імпорт поклав у приватні
+// нотатки, тож два різні рядки тут означали б тихо порожню міграцію.
+const EXCEL_COMMENTS_OWNER_ID = LEGACY_IMPORT_COMMENT_OWNER_ID;
 
 const extractSurnameAndName = fullName => {
   const value = String(fullName ?? '')
@@ -6334,6 +6342,73 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  /**
+   * Перенос відгуків TG-карток з приватних нотаток у публічні коментарі.
+   *
+   * Картки з id виду `TG0001` завели імпортом з таблиці, і текст відгуку поїхав
+   * разом з анкетою — але поїхав у `multiData/comments`, тобто в особисту
+   * нотатку того, хто імпортував. Насправді це відгук агенції про донорку:
+   * бачити його мусить кожен, хто відкриє анкету. Розбір, що саме переносити і
+   * від чийого імені, — у `utils/legacyTgCommentMigration`; тут лише кнопка,
+   * підтвердження і звіт.
+   */
+  const [isTgCommentsMigrating, setIsTgCommentsMigrating] = useState(false);
+
+  const handleMigrateTgComments = async () => {
+    if (!isAdmin || isTgCommentsMigrating) return;
+
+    if (!window.confirm(
+      'Перенести коментарі TG-карток у публічні відгуки?\n\n'
+        + 'Автором стане той, хто записаний у полі writer; повторний запуск нічого не дублює.',
+    )) return;
+
+    // Перенести чи скопіювати — питання не про дані, а про довіру до одного
+    // прогону: приватний оригінал прибирається лише після вдалого публічного
+    // запису, але побачити результат перед прибиранням — законне бажання.
+    const removePrivate = window.confirm(
+      'Прибрати приватні коментарі після переносу?\n\n'
+        + 'OK — перенести (приватна нотатка зникає).\n'
+        + 'Скасувати — скопіювати (нотатка лишається на місці).',
+    );
+
+    const toastId = 'migrate-tg-comments-progress';
+    setIsTgCommentsMigrating(true);
+    toast.loading('Перенос коментарів TG-карток...', { id: toastId });
+    try {
+      const stats = await migrateLegacyTgCommentsToPublic({
+        removePrivate,
+        onProgress: ({ processed, total }) => {
+          toast.loading(`Перенос коментарів TG-карток: ${processed}/${total}`, { id: toastId });
+        },
+      });
+
+      const details = [
+        `перенесено ${stats.written}/${stats.total}`,
+        stats.alreadyPublic ? `вже були публічними: ${stats.alreadyPublic}` : '',
+        removePrivate ? `прибрано приватних: ${stats.removed}` : 'приватні нотатки лишились',
+        stats.failed ? `не вдалося: ${stats.failed}` : '',
+      ].filter(Boolean).join(', ');
+
+      if (stats.failed) toast.error(`Перенос завершено з помилками — ${details}`, { id: toastId, duration: 12000 });
+      else if (!stats.total && !stats.alreadyPublic) {
+        toast.success(
+          `Переносити нічого: TG-карток з коментарями не знайдено (переглянуто карток: ${stats.profileIds.length})`,
+          { id: toastId, duration: 8000 },
+        );
+      } else toast.success(`Коментарі перенесено — ${details}`, { id: toastId, duration: 8000 });
+
+      console.log('[AddNewProfile] TG comments migration', stats);
+    } catch (error) {
+      console.error('[AddNewProfile] TG comments migration failed', error);
+      toast.error(`Помилка переносу коментарів: ${error?.message || 'невідома помилка'}`, {
+        id: toastId,
+        duration: 10000,
+      });
+    } finally {
+      setIsTgCommentsMigrating(false);
+    }
+  };
+
   useEffect(() => {
     if (!searchIdAndSearchKeyOnlyMode) {
       setShowSearchKeyIndexPanel(false);
@@ -7345,6 +7420,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {...createLongPressHandlers('Збирає matchingCards.json локально для ручного імпорту — або будує вузол одразу на бекенді')}
                 >
                   {isMatchingCardsIndexing ? '...' : 'Картки'}
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
+                  onClick={handleMigrateTgComments}
+                  disabled={isTgCommentsMigrating}
+                  title="Перенести коментарі TG-карток у публічні відгуки"
+                  {...createLongPressHandlers(
+                    'Переносить приватні коментарі карток TG… у публічні відгуки: автор — з поля writer, текст лишається той самий',
+                  )}
+                >
+                  {isTgCommentsMigrating ? '...' : 'TG💬'}
                 </Button>
               )}
               {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
