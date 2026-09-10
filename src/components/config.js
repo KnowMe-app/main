@@ -3967,7 +3967,7 @@ export const updateProfileNodesInRTDB = async (userId, uploadedInfo, condition, 
           // адмін бачить обидві й сам вирішує, чи стару зносити. Ключ
           // знімається вище — коли поле стерли навмисно.
 
-          // Додаємо нові значення, яких не було в старому масиві
+          // Індексуємо всі подані значення, а не лише нові для анкети.
           for (const value of newValues) {
             let cleanedValue = value;
 
@@ -3978,12 +3978,11 @@ export const updateProfileNodesInRTDB = async (userId, uploadedInfo, condition, 
 
             // console.log('cleanedValue :>> ', cleanedValue);
 
-            // Додаємо новий ID, якщо його ще немає в currentValues
-            if (!currentValues.includes(cleanedValue)) {
-              console.log('currentValues :>> ', currentValues);
-              console.log('cleanedValue :>> ', cleanedValue);
-              await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'); // Додаємо новий ID
-            }
+            // Так само, як у `syncUserSearchIdIndex`: наявність значення в
+            // анкеті нічого не каже про наявність ключа в індексі, тож
+            // порівняння з `currentValues` тут більше не вирішує, писати чи ні.
+            // Повтори не коштують читань — їх знімає `confirmedSearchIdEntries`.
+            await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add');
           }
         }
       }
@@ -4693,6 +4692,28 @@ export const getMedicationPhotos = async userId => {
   }
 };
 
+/**
+ * Пара «ключ індексу → анкета», яку вже підтвердив цей таб.
+ *
+ * Писачі індексу питають `searchId` про кожне значення анкети, а не лише про
+ * щойно змінене (див. `syncUserSearchIdIndex`), і автозбереження форми бʼє по
+ * них щоразу, коли людина виходить із поля. Підтверджений ключ вдруге не
+ * перечитується: перший прохід коштує одне читання на значення, решта — нуль.
+ * Памʼять живе в табі й нічого не стверджує про базу наперед: `remove` свій
+ * запис знімає, а після перезавантаження перевірка починається спочатку.
+ */
+const confirmedSearchIdEntries = new Set();
+// Адмінська сесія живе годинами й проходить тисячі карток, тож памʼять має
+// стелю. Переповнення просто скидає її: далі буде зайве читання, а не помилка.
+const CONFIRMED_SEARCH_ID_ENTRIES_LIMIT = 20000;
+const searchIdEntryToken = (searchIdKey, userId) => `${searchIdKey}\u0000${userId}`;
+const rememberConfirmedSearchIdEntry = entryToken => {
+  if (confirmedSearchIdEntries.size >= CONFIRMED_SEARCH_ID_ENTRIES_LIMIT) {
+    confirmedSearchIdEntries.clear();
+  }
+  confirmedSearchIdEntries.add(entryToken);
+};
+
 // Функція для оновлення або видалення пар у searchId
 export const updateSearchId = async (searchKey, searchValue, userId, action) => {
   if (isDev) {
@@ -4714,9 +4735,12 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     const normalizedValue = normalizeSearchIdInput(searchKey, searchValue).toLowerCase();
     const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
     const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
+    const entryToken = searchIdEntryToken(searchIdKey, userId);
     if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
     if (action === 'add') {
+      if (confirmedSearchIdEntries.has(entryToken)) return;
+
       const searchIdSnapshot = await get(searchIdRef);
 
       if (searchIdSnapshot.exists()) {
@@ -4741,7 +4765,14 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
         await update(ref2(database, 'searchId'), { [searchIdKey]: userId });
         if (isDev) console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
       }
+
+      // Позначка ставиться лише тут — після того, як запис у базі відбувся або
+      // виявився вже наявним. Виняток вище (`catch`) сюди не доходить, тож
+      // ключ, який не записався, наступне збереження спробує знову.
+      rememberConfirmedSearchIdEntry(entryToken);
     } else if (action === 'remove') {
+      confirmedSearchIdEntries.delete(entryToken);
+
       const searchIdSnapshot = await get(searchIdRef);
 
       if (searchIdSnapshot.exists()) {
@@ -4825,11 +4856,17 @@ export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}
       }
     }
 
+    // Питання «чи це значення вже в індексі» ставиться індексу, а не анкеті.
+    // Поки тут стояло `!prevCandidates.has(candidate)`, писач вважав ключ
+    // наявним просто тому, що значення вже лежало в анкеті, — і прізвище, яке
+    // потрапило в анкету повз індексатор (імпорт, міграція, збережений
+    // овнерлей, відмова бази на попередній спробі), не індексувалось уже
+    // ніколи: повторне збереження тієї ж анкети щоразу бачило «не змінилось».
+    // Ціну одного читання на значення тримає `confirmedSearchIdEntries`
+    // всередині `updateSearchId`.
     for (const candidate of nextCandidates) {
-      if (!prevCandidates.has(candidate)) {
-        // eslint-disable-next-line no-await-in-loop
-        await updateSearchId(key, candidate, userId, 'add');
-      }
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchId(key, candidate, userId, 'add');
     }
   }
 };

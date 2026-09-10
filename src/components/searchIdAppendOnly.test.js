@@ -19,7 +19,7 @@ describe('searchId доповнюється, а не переписується'
   it('писач анкети більше не знімає значення, яке замінили', () => {
     const replacementBranch = slice(
       'const newValues = normalizeIndexedValues(uploadedInfo[key]);',
-      '// Додаємо нові значення, яких не було в старому масиві',
+      '// Індексуємо всі подані значення, а не лише нові для анкети.',
     );
     expect(replacementBranch).not.toContain('updateSearchId');
   });
