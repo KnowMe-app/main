@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaChevronDown, FaMapMarkerAlt, FaPaperPlane, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPaperPlane, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -552,6 +552,10 @@ export const PublicCommentBlock = ({
   viewerId,
   // Блок живе у двох місцях із різними відступами — див. `PublicComments`.
   flush = false,
+  // Адреса вузла `comments/{profileId}` у консолі Firebase. Складає її та сторона,
+  // що знає і читача, і режим (`Matching`), — сам блок не вирішує, кому службова
+  // навігація належить: порожній рядок означає «не показувати».
+  backendHref = '',
   // Адмін відповідає за публічні записи про третіх осіб, тож редагує і знімає
   // будь-який із них, не тільки власний.
   canModerate = false,
@@ -633,6 +637,20 @@ export const PublicCommentBlock = ({
 
   return (
     <S.PublicComments $flush={flush} onClick={e => e.stopPropagation()}>
+      {backendHref && (
+        <S.CommentBackendRow>
+          <S.CommentBackendLink
+            href={backendHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Відкрити публічні нотатки анкети у Firebase"
+            aria-label="Відкрити публічні нотатки анкети у Firebase"
+            onClick={e => e.stopPropagation()}
+          >
+            <FaArrowRight size={12} />
+          </S.CommentBackendLink>
+        </S.CommentBackendRow>
+      )}
       {visibleRows.map(comment => {
         const isOwn = Boolean(viewerId) && comment.authorId === viewerId;
         const canEdit = isOwn || canModerate;

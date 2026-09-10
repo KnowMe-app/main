@@ -685,6 +685,28 @@ export const PublicComments = styled.div`
   padding-left: ${({ $flush }) => ($flush ? '0' : '10px')};
 `;
 
+// Стрілка «відкрити comments/{id} у Firebase» — та сама службова навігація, що в
+// блоках форми анкети, і виглядає вона так само: сам лише значок біля правого
+// краю. Стоїть у власному рядку над записами, а не поверх них: текст нотатки йде
+// на всю ширину, і накладена стрілка перекривала б перший рядок на вузькому
+// екрані. Показує її лише адмін з увімкненим EXT — див. `utils/backendLinksMode`.
+export const CommentBackendRow = styled.div`
+  display: flex;
+  justify-content: flex-end;
+`;
+
+export const CommentBackendLink = styled.a`
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  color: var(--matching-muted-text);
+  opacity: 0.7;
+
+  &:hover {
+    opacity: 1;
+  }
+`;
+
 export const ReviewsGateButton = styled.button`
   display: inline-flex;
   align-self: flex-start;

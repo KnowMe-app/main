@@ -58,6 +58,9 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+// Batch 26 §8: тумблер стрілок «перейти до вузла в Firebase». Ключ спільний з тими,
+// хто ці стрілки показує, — див. `utils/backendLinksMode`.
+import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
 import { normalizePhoneState } from './inputValidations';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, ModalGhostButton } from './InfoModal';
@@ -862,11 +865,6 @@ const SaveModalActionTitle = styled.strong`
 
 
 const PROFILE_RESTORE_LOG_PREFIX = '[ProfileRestore]';
-// Batch 26 §8: whether ProfileForm/TopBlock show their backend-navigation arrows (the ones that
-// jump a field straight to where it's stored in Firebase) - off by default, so the profile-card
-// edit page stays uncluttered until an admin actually needs to inspect the backend, and persisted
-// so the choice survives a reload the same way the other toolbar toggles here do.
-const PROFILE_FORM_EXTENDED_MODE_KEY = 'profileFormExtendedMode';
 const LOAD_DEBUG_LOG_PREFIX = '[AddNewProfileLoad]';
 const CONTACT_EXPORT_LOG_PREFIX = '[ContactsExport]';
 const CONTACT_EXPORT_DEBUG_USER_ID = '-Ots_t0kim8mWxe7BT_P';
@@ -1243,9 +1241,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isExcelImporting, setIsExcelImporting] = useState(false);
   const [isJsonImporting, setIsJsonImporting] = useState(false);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
-  const [extendedMode, setExtendedMode] = useState(() => (
-    typeof localStorage !== 'undefined' && localStorage.getItem(PROFILE_FORM_EXTENDED_MODE_KEY) === 'true'
-  ));
+  const [extendedMode, setExtendedMode] = useState(readBackendLinksEnabled);
   const excelImportInputRef = useRef(null);
   const jsonImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
