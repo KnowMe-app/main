@@ -10,17 +10,22 @@ import { getCurrentValue } from 'components/getCurrentValue';
 import { ADMIN_UIDS, isAdminUid } from './accessLevel';
 
 /**
- * Відгуки про TG-картки лежать не там, де мали б.
+ * Відгуки про картки, заведені імпортом, лежать не там, де мали б.
  *
- * Картки з id виду `TG0001` заведені імпортом з таблиці: разом з анкетою в базу
- * поїхав і текст відгуку — але поїхав він у `multiData/comments/{ownerId}/{cardId}`,
- * тобто в **особисту** нотатку того, хто імпортував. А насправді це відгук
- * агенції про донорку: його писала не адміністраторка «собі на памʼять», і
- * бачити його мусить кожен, хто відкриє анкету, а не один власник нотатки.
+ * Картки з id виду `TG0001` і `ID0001` заведені імпортом з таблиці: разом з
+ * анкетою в базу поїхав і текст відгуку — але поїхав він у
+ * `multiData/comments/{ownerId}/{cardId}`, тобто в **особисту** нотатку того,
+ * хто імпортував. А насправді це відгук агенції про донорку: його писала не
+ * адміністраторка «собі на памʼять», і бачити його мусить кожен, хто відкриє
+ * анкету, а не один власник нотатки.
  *
  * Публічні відгуки живуть у власному дереві `comments/{profileId}/{commentId}`
  * (див. `PUBLIC_COMMENTS_ROOT_PATH` у `config.js`) — туди цей модуль їх і
  * переносить, не заводячи ані третього сховища, ані окремої форми запису.
+ *
+ * Партія карток задається префіксом id (`TG`, `ID`), і це параметр, а не дві
+ * копії коду: партії відрізняються самим лише префіксом, тож друга копія
+ * розійшлася б з першою на першій же правці.
  *
  * Дві речі, яких перенос зробити не може, і тому вони вирішені явно:
  *
@@ -36,10 +41,27 @@ import { ADMIN_UIDS, isAdminUid } from './accessLevel';
  *     (`normalizeCommentTextKey`) і вдруге не пишеться.
  */
 
-/** `TG` великими й далі самі цифри — рівно те, чим імпорт назвав ці картки. */
-export const TG_LEGACY_USER_ID_PATTERN = /^TG\d+$/;
+/** Партії карток, заведених імпортом: префікс id і далі самі цифри. */
+export const LEGACY_IMPORT_ID_PREFIXES = Object.freeze(['TG', 'ID']);
 
-export const isTgLegacyUserId = userId => TG_LEGACY_USER_ID_PATTERN.test(String(userId || '').trim());
+export const DEFAULT_LEGACY_IMPORT_ID_PREFIX = LEGACY_IMPORT_ID_PREFIXES[0];
+
+/**
+ * Префікс іде в регулярку, тож приймається лише те, що нею бути не може:
+ * самі великі літери. Інакше довільний рядок з `.` чи `|` мовчки розширив би
+ * перенос на картки, яких ніхто не називав.
+ */
+export const makeLegacyImportUserIdPattern = prefix => {
+  const normalized = String(prefix || '').trim();
+  if (!/^[A-Z]+$/.test(normalized)) {
+    throw new Error(`Префікс партії має бути з великих літер, а не «${prefix}»`);
+  }
+  return new RegExp(`^${normalized}\\d+$`);
+};
+
+export const isLegacyImportUserId = (userId, prefix = DEFAULT_LEGACY_IMPORT_ID_PREFIX) => (
+  makeLegacyImportUserIdPattern(prefix).test(String(userId || '').trim())
+);
 
 /**
  * Синтетичний автор — не uid і не може ним стати.
@@ -47,8 +69,11 @@ export const isTgLegacyUserId = userId => TG_LEGACY_USER_ID_PATTERN.test(String(
  * Firebase-Auth UID — це 28 символів [A-Za-z0-9], тож префікс із дефісом
  * гарантує, що синтетичний id не збігається з жодним живим акаунтом: ані
  * «власним» відгук не стане нікому, ані чужий акаунт не отримає чужих слів.
+ *
+ * Партії картки в цьому префіксі немає навмисно: та сама агенція писала і про
+ * TG-картки, і про ID-картки, і в обох партіях це одна людина, а не дві.
  */
-export const LEGACY_COMMENT_AUTHOR_ID_PREFIX = 'legacy-tg-';
+export const LEGACY_COMMENT_AUTHOR_ID_PREFIX = 'legacy-author-';
 
 /**
  * Один автор — один id, і між запусками він не змінюється.
@@ -93,7 +118,7 @@ export const resolveWriterName = value => String(getCurrentValue(value) || '').t
  * той, хто тисне кнопку; обидва адміни; і `stFMfZ8CqQX05L8vK9Yse6FdYIh1` —
  * власник, під яким імпорт з таблиці складає і коментарі, і дизлайки
  * (`EXCEL_COMMENTS_OWNER_ID` в `AddNewProfile.jsx`), тобто найімовірніше місце,
- * де відгуки TG-карток і лежать.
+ * де відгуки імпортованих карток і лежать.
  */
 export const LEGACY_IMPORT_COMMENT_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 
@@ -108,25 +133,29 @@ export const resolveMigrationOwnerIds = (extraOwnerIds = [], viewerId = '') => [
  * План переносу — окремо від самого переносу.
  *
  * Рішення тут ухвалюються без жодного запиту, тому їх видно тестам поштучно:
- * що поїде, що вже публічне, що не TG, що порожнє. Запис лише виконує план.
+ * що поїде, що вже публічне, що не з цієї партії, що порожнє. Запис лише
+ * виконує план.
  *
  * @param {Object} params
  * @param {Object} params.privateComments `{ ownerId: { cardId: { text, updatedAt } } }`
  * @param {Object} params.writers `{ ownerId: { cardId: writer } }`
  * @param {Object} params.existingPublicComments `{ profileId: [{ text }] }`
+ * @param {string} [params.prefix] префікс партії карток (`TG`, `ID`)
  */
-export const planLegacyTgCommentMigration = ({
+export const planLegacyImportCommentMigration = ({
   privateComments = {},
   writers = {},
   existingPublicComments = {},
+  prefix = DEFAULT_LEGACY_IMPORT_ID_PREFIX,
 } = {}) => {
+  const pattern = makeLegacyImportUserIdPattern(prefix);
   const byProfileAndText = new Map();
-  const skipped = { notTg: 0, emptyText: 0 };
+  const skipped = { otherPrefix: 0, emptyText: 0 };
 
   Object.entries(privateComments || {}).forEach(([ownerId, ownerComments]) => {
     Object.entries(ownerComments || {}).forEach(([cardId, entry]) => {
-      if (!isTgLegacyUserId(cardId)) {
-        skipped.notTg += 1;
+      if (!pattern.test(String(cardId || '').trim())) {
+        skipped.otherPrefix += 1;
         return;
       }
 
@@ -193,12 +222,18 @@ export const planLegacyTgCommentMigration = ({
   return { entries, duplicates, skipped };
 };
 
-/** Картки, чиї відгуки перенос узагалі розглядає. */
-export const listTgProfileIds = (privateComments = {}) => [...new Set(
-  Object.values(privateComments || {})
-    .flatMap(ownerComments => Object.keys(ownerComments || {}))
-    .filter(isTgLegacyUserId),
-)].sort();
+/** Картки партії, чиї відгуки перенос узагалі розглядає. */
+export const listLegacyImportProfileIds = (
+  privateComments = {},
+  prefix = DEFAULT_LEGACY_IMPORT_ID_PREFIX,
+) => {
+  const pattern = makeLegacyImportUserIdPattern(prefix);
+  return [...new Set(
+    Object.values(privateComments || {})
+      .flatMap(ownerComments => Object.keys(ownerComments || {}))
+      .filter(cardId => pattern.test(String(cardId || '').trim())),
+  )].sort();
+};
 
 const removePrivateOriginals = async entry => {
   const removed = [];
@@ -213,18 +248,35 @@ const removePrivateOriginals = async entry => {
 };
 
 /**
- * Перенести відгуки TG-карток з особистих нотаток у публічні коментарі.
+ * Відмова бази — найімовірніша причина невдалого переносу, і причина ця не в
+ * коді: правило `comments/$profileId/$commentId/authorId` пускає чужого автора
+ * лише адміну, а правила викочуються **руками** (`firebase deploy --only
+ * database`). Поки вони не в проді, кожен запис відповідає `PERMISSION_DENIED`,
+ * і сказати це людині мусить сам перенос — інакше звіт «перенесено 0/1» не
+ * пояснює нічого.
+ */
+export const isPermissionDeniedFailure = failure => (
+  /permission[_\s]?denied/i.test(`${failure?.code || ''} ${failure?.message || ''}`)
+);
+
+/**
+ * Перенести відгуки імпортованих карток з особистих нотаток у публічні.
  *
  * @param {Object} params
+ * @param {string} [params.prefix] префікс партії карток (`TG`, `ID`)
  * @param {string[]} [params.ownerIds] додаткові власники нотаток (окрім типових)
  * @param {boolean} [params.removePrivate] прибирати приватний оригінал після переносу
  * @param {Function} [params.onProgress] `({ processed, total })`
  */
-export const migrateLegacyTgCommentsToPublic = async ({
+export const migrateLegacyImportCommentsToPublic = async ({
+  prefix = DEFAULT_LEGACY_IMPORT_ID_PREFIX,
   ownerIds = [],
   removePrivate = true,
   onProgress,
 } = {}) => {
+  // Кидається до першого запиту: хибний префікс мусить упасти тут, а не
+  // обернутись тихим «переносити нічого».
+  makeLegacyImportUserIdPattern(prefix);
   const viewerId = auth.currentUser?.uid;
   if (!viewerId) throw new Error('User not authenticated');
   // Перенос пише відгуки від чужого імені — це право самих лише адмінів, і
@@ -247,20 +299,21 @@ export const migrateLegacyTgCommentsToPublic = async ({
     } catch (error) {
       // Чужий власник читається лише адміном, і відмова тут — не поломка
       // міграції, а відповідь «сюди тобі не можна». Решта власників їде далі.
-      console.warn('[legacyTgComments] піддерево власника не прочитано', { ownerId, error });
+      console.warn('[legacyImportComments] піддерево власника не прочитано', { ownerId, error });
       unreadableOwnerIds.push(ownerId);
     }
   }));
 
-  const profileIds = listTgProfileIds(privateComments);
+  const profileIds = listLegacyImportProfileIds(privateComments, prefix);
   const existingPublicComments = profileIds.length
     ? await fetchPublicProfileComments(profileIds)
     : {};
 
-  const { entries, duplicates, skipped } = planLegacyTgCommentMigration({
+  const { entries, duplicates, skipped } = planLegacyImportCommentMigration({
     privateComments,
     writers,
     existingPublicComments,
+    prefix,
   });
 
   const total = entries.length;
@@ -285,7 +338,13 @@ export const migrateLegacyTgCommentsToPublic = async ({
       // eslint-disable-next-line no-await-in-loop
       if (removePrivate) removed += (await removePrivateOriginals(entry)).length;
     } catch (error) {
-      failures.push({ profileId: entry.profileId, message: error?.message || String(error) });
+      // Код відмови зберігається окремо від тексту: саме за ним звіт відрізняє
+      // «правила не викочені» від решти помилок.
+      failures.push({
+        profileId: entry.profileId,
+        code: error?.code || '',
+        message: error?.message || String(error),
+      });
     }
     processed += 1;
     onProgress?.({ processed, total });
@@ -299,12 +358,14 @@ export const migrateLegacyTgCommentsToPublic = async ({
   }
 
   return {
+    prefix,
     total,
     written,
     removed,
     alreadyPublic: duplicates.length,
     failed: failures.length,
     failures,
+    permissionDenied: failures.some(isPermissionDeniedFailure),
     skipped,
     profileIds,
     ownerIds: owners,

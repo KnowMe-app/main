@@ -11,14 +11,14 @@ jest.mock('../config', () => ({
   saveMyCardComment: jest.fn(),
 }));
 
-jest.mock('../../utils/legacyTgCommentMigration', () => ({
+jest.mock('../../utils/legacyImportCommentMigration', () => ({
   copyPublicCommentsBetweenCards: jest.fn(),
 }));
 
 jest.mock('./actions', () => ({ handleSubmitAll: jest.fn() }));
 
 const { fetchPublicProfileComments, fetchUserComment } = require('../config');
-const { copyPublicCommentsBetweenCards } = require('../../utils/legacyTgCommentMigration');
+const { copyPublicCommentsBetweenCards } = require('../../utils/legacyImportCommentMigration');
 const { btnCompare } = require('./btnCompare');
 
 // Порівняння дублікатів переносило поля анкети й особисту нотатку, а публічні

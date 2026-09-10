@@ -144,7 +144,7 @@ describe('public comment storage', () => {
     expect(rules.rules.replies).toBeDefined();
   });
 
-  // Перенесені відгуки (`utils/legacyTgCommentMigration`) написані людьми без
+  // Перенесені відгуки (`utils/legacyImportCommentMigration`) написані людьми без
   // акаунта, тож автора їм ставить адмін. Це окремий шлях запису саме тому, що
   // звичайний `addPublicProfileComment` мусить і далі підписувати рівно того,
   // хто пише, — а дату перенесений відгук приносить свою, не годинника.
