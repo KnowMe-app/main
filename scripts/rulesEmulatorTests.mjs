@@ -839,6 +839,34 @@ await it('автор знімає власний відгук', async () => {
   await assertSucceeds(remove(ref(db(SELF_SERVE), `comments/${CARD}/c2`)));
 });
 
+// Відгуки, зібрані до появи застосунку, писали люди без акаунта: справжнього
+// `authorId` у них немає, і підписати їх адміном, який запускає перенос, — це
+// приписати йому чужі слова. Тому адмін (і тільки він) заводить запис із
+// синтетичним автором; звичайний читач так само лишається здатним підписати
+// лише себе.
+await it('адмін заводить відгук від імені автора без акаунта', () =>
+  assertSucceeds(set(ref(db(SUPERADMIN), `comments/${CARD}/legacy1`), {
+    text: 'відгук з таблиці', authorId: 'legacy-tg-abc123', authorName: 'Деліверінг дрімз',
+    createdAt: 5, visibility: 'public',
+  })));
+
+await it('звичайний користувач синтетичного автора не вигадує', () =>
+  assertFails(set(ref(db(SELF_SERVE), `comments/${CARD}/legacy2`), {
+    text: 'не мій відгук', authorId: 'legacy-tg-abc123', createdAt: 6, visibility: 'public',
+  })));
+
+// Право створити запис із чужим авторством не робить авторство змінюваним:
+// перенос лише заводить запис, переписати автора не може навіть адмін.
+await it('перенесений відгук не змінює автора й після переносу', async () => {
+  await assertSucceeds(update(ref(db(SUPERADMIN), `comments/${CARD}/legacy1`), {
+    text: 'відгук з таблиці, вичитаний', updatedAt: 7,
+  }));
+  await assertFails(update(ref(db(SUPERADMIN), `comments/${CARD}/legacy1`), {
+    authorId: SUPERADMIN,
+  }));
+  await assertSucceeds(remove(ref(db(SUPERADMIN), `comments/${CARD}/legacy1`)));
+});
+
 describe('історія пошуку — один ряд на запит');
 
 await it('власниця пише запит із ключем від тексту', () =>

@@ -45,8 +45,11 @@ import {
   getUserStorageAvatarPhotoFiles,
   setUserComment as persistUserComment,
   fetchAllCommentsByCardId,
+  fetchPublicProfileComments,
   updateCommentByOwner,
+  updatePublicProfileComment,
   deleteCommentByOwner,
+  deletePublicProfileComment,
 } from '../config';
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
@@ -467,6 +470,35 @@ const commentDeleteButtonStyle = {
   color: '#ffb4b4',
   fontSize: '14px',
   fontWeight: 700,
+};
+
+// Публічний відгук стоїть у тому самому списку, що й чужі нотатки, і саме тому
+// мусить бути видно, що він **інший**: нотатку бачать кілька адмінів, відгук —
+// кожен авторизований користувач бази. Різниця показана трьома речами одразу
+// (значок глобуса замість людини, зелена смуга збоку, імʼя автора в рядку), бо
+// самого кольору мало: поплутати ці два рядки означає правити публічний запис
+// про людину, думаючи, що правиш нотатку «собі».
+const publicCommentRowStyle = {
+  ...multiCommentRowStyle,
+  paddingLeft: '4px',
+  borderLeft: '2px solid #7fd1a8',
+};
+
+const publicCommentStyle = {
+  ...multiCommentStyle,
+  fontStyle: 'normal',
+  color: '#cdeedd',
+};
+
+const publicCommentBadgeStyle = {
+  ...commentAuthorButtonStyle,
+  color: '#7fd1a8',
+  cursor: 'default',
+};
+
+const publicCommentAuthorStyle = {
+  fontWeight: 700,
+  color: '#7fd1a8',
 };
 
 const inlineModalOverlayStyle = {
@@ -1315,6 +1347,10 @@ export const TopBlock = ({
   const containerRef = useRef(null);
   const [needsOwnSurface, setNeedsOwnSurface] = useState(false);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
+  // Публічні відгуки про цю людину — `comments/{profileId}`. Сусіди по списку,
+  // але не сусіди по суті: нотатка належить тому, хто її написав, а відгук —
+  // усій базі, і читається він одним запитом на картку, а не по власниках.
+  const [publicComments, setPublicComments] = React.useState([]);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
     if (!userData) return null;
@@ -1369,6 +1405,7 @@ export const TopBlock = ({
   React.useEffect(() => {
     if (!cardData?.userId) {
       setBackendMultiComments([]);
+      setPublicComments([]);
       return;
     }
     let isMounted = true;
@@ -1376,9 +1413,15 @@ export const TopBlock = ({
       const viewerId = auth.currentUser?.uid;
       const viewerProfile = viewerId ? (getCard(viewerId) || await fetchUserById(viewerId)) : null;
       const ownerIds = resolveMatchingMultiDataOwnerIds({ viewerId, profile: viewerProfile });
-      const allByCard = await fetchAllCommentsByCardId(cardData.userId, ownerIds);
+      // Обидва сховища питаються в одному колі: рядок коментарів мусить
+      // зʼявитись цілим, а не добудуватись відгуками через мить після нотаток.
+      const [allByCard, publicByProfile] = await Promise.all([
+        fetchAllCommentsByCardId(cardData.userId, ownerIds),
+        fetchPublicProfileComments([cardData.userId]),
+      ]);
       if (!isMounted) return;
       setBackendMultiComments(allByCard);
+      setPublicComments(publicByProfile?.[cardData.userId] || []);
     };
     loadAllComments();
     return () => {
@@ -1484,7 +1527,46 @@ export const TopBlock = ({
 
   const submitOptions = { onSubmitHistorySnapshot };
 
+  // Хто може правити публічний відгук: його автор і адмін — рівно те саме коло,
+  // що й у правилі бази на `comments/{profileId}/{commentId}`. Чужий відгук у
+  // цьому списку читається, але не відкривається на правку.
+  const canModifyPublicComment = comment => (
+    isAdmin || (Boolean(comment?.authorId) && comment.authorId === (auth.currentUser?.uid || ''))
+  );
+
+  const savePublicComment = async () => {
+    const prepared = editableComment.trim();
+    const commentId = selectedComment?.commentId || '';
+    if (!commentId) {
+      toast.error('Не обрано відгук для редагування');
+      return;
+    }
+    try {
+      // Порожній текст — це і є зняття запису: інакше відгук нічим не
+      // прибрати, і він лишався б назавжди (те саме правило, що й у стрічці).
+      const updated = await updatePublicProfileComment({
+        profileId: cardData.userId,
+        commentId,
+        text: prepared,
+      });
+      setPublicComments(prev => (updated
+        ? prev.map(item => (item.id === commentId
+          ? { ...item, text: updated.text, updatedAt: updated.updatedAt }
+          : item))
+        : prev.filter(item => item.id !== commentId)));
+      toast.success(updated ? 'Публічний відгук збережено' : 'Публічний відгук видалено');
+      setIsCommentModalOpen(false);
+      setSelectedComment(null);
+    } catch (error) {
+      toast.error(`Не вдалося зберегти публічний відгук: ${error?.message || error}`);
+    }
+  };
+
   const saveMultiComment = async () => {
+    if (selectedComment?.kind === 'public') {
+      await savePublicComment();
+      return;
+    }
     const prepared = editableComment.trim();
     const targetCommentId = selectedComment?.commentId || '';
     const currentUid = auth.currentUser?.uid || '';
@@ -1549,6 +1631,20 @@ export const TopBlock = ({
   };
 
   const handleDeleteComment = async comment => {
+    if (comment?.kind === 'public') {
+      if (!canModifyPublicComment(comment)) {
+        toast.error('Видалення недоступне');
+        return;
+      }
+      try {
+        await deletePublicProfileComment({ profileId: cardData.userId, commentId: comment.commentId });
+        setPublicComments(prev => prev.filter(item => item.id !== comment.commentId));
+        toast.success('Публічний відгук видалено');
+      } catch (error) {
+        toast.error(`Не вдалося видалити публічний відгук: ${error?.message || error}`);
+      }
+      return;
+    }
     if (!isAdmin || !comment?.ownerId) {
       toast.error('Видалення недоступне');
       return;
@@ -2118,6 +2214,58 @@ export const TopBlock = ({
             )}
           </div>
         ))}
+        {publicComments.map(comment => {
+          const canModify = canModifyPublicComment(comment);
+          return (
+            <div key={`public-${comment.id}`} style={publicCommentRowStyle}>
+              <span
+                style={publicCommentBadgeStyle}
+                title="Публічний відгук — його бачить кожен користувач бази"
+                aria-label="Публічний відгук"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                  <path d="M3 12h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <path
+                    d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <div
+                style={{ ...publicCommentStyle, cursor: canModify ? 'pointer' : 'default' }}
+                title={canModify ? 'Редагувати публічний відгук' : 'Публічний відгук'}
+                onClick={event => {
+                  event.stopPropagation();
+                  if (!canModify) return;
+                  setSelectedComment({ kind: 'public', commentId: comment.id, text: comment.text });
+                  setEditableComment(comment.text);
+                  setIsCommentModalOpen(true);
+                }}
+              >
+                {`${formatCommentDate(comment.createdAt) || '--.--.----'} - `}
+                <span style={publicCommentAuthorStyle}>{comment.authorName || 'без імені'}</span>
+                {`: ${comment.text}`}
+              </div>
+              {canModify && (
+                <button
+                  type="button"
+                  style={commentDeleteButtonStyle}
+                  title="Видалити публічний відгук"
+                  aria-label="Видалити публічний відгук"
+                  onClick={event => {
+                    event.stopPropagation();
+                    setCommentToDelete({ kind: 'public', commentId: comment.id, text: comment.text });
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
       {isPhotosModalOpen && (() => {
         const photosModalContent = (
@@ -2176,7 +2324,12 @@ export const TopBlock = ({
             style={inlineModalCardStyle}
             onClick={event => event.stopPropagation()}
           >
-            <strong>Коментар з multiData</strong>
+            {/* Заголовок каже, що саме зараз правиться: у списку рядки стоять
+                поруч, а наслідок правки в них різний — нотатку бачать адміни,
+                відгук бачать усі. */}
+            <strong>
+              {selectedComment?.kind === 'public' ? 'Публічний відгук — його бачать усі' : 'Коментар з multiData'}
+            </strong>
             <textarea
               value={editableComment}
               onChange={event => setEditableComment(event.target.value)}
@@ -2215,7 +2368,9 @@ export const TopBlock = ({
           >
             <strong>Підтвердження видалення</strong>
             <div style={deleteModalTextStyle}>
-              Ви впевнені, що хочете видалити цей коментар?
+              {commentToDelete?.kind === 'public'
+                ? 'Видалити публічний відгук? Його більше не побачить ніхто.'
+                : 'Ви впевнені, що хочете видалити цей коментар?'}
             </div>
             <div style={inlineModalActionsStyle}>
               <button

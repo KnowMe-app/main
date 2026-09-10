@@ -34,3 +34,47 @@ describe('smallCard comment UI fixes', () => {
     expect(source).not.toContain('fetchAllCommentsByCardId(cardData.userId);');
   });
 });
+
+// Публічний відгук лежить в іншому сховищі, ніж нотатка адміна, і має інші
+// наслідки: нотатку бачать кілька адмінів, відгук — уся база. У списку вони
+// стоять поруч, тож різницю мусить нести і рядок, і кожен шлях запису.
+describe('публічні відгуки в блоці картки', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'renderTopBlock.js'), 'utf8');
+
+  it('читає відгуки картки в тому самому колі, що й нотатки', () => {
+    expect(source).toContain('fetchPublicProfileComments([cardData.userId])');
+    expect(source).toContain('setPublicComments(publicByProfile?.[cardData.userId] || [])');
+    // Порожня картка скидає обидва списки — інакше відгуки попередньої
+    // лишились би висіти під наступною.
+    expect(source).toContain('setPublicComments([]);');
+  });
+
+  it('показує відгук окремим рядком, помітно іншим за нотатку', () => {
+    expect(source).toContain('{publicComments.map(comment => {');
+    expect(source).toContain('style={publicCommentRowStyle}');
+    expect(source).toContain('Публічний відгук — його бачить кожен користувач бази');
+    // Три ознаки одразу: смуга збоку, власний колір тексту й імʼя автора.
+    expect(source).toContain('borderLeft: \'2px solid #7fd1a8\'');
+    expect(source).toContain('style={publicCommentAuthorStyle}');
+  });
+
+  it('правка й видалення відгуку йдуть у публічне дерево, а не в нотатку власника', () => {
+    const saveBody = source.slice(
+      source.indexOf('const savePublicComment = async () => {'),
+      source.indexOf('const saveMultiComment = async () => {'),
+    );
+    expect(saveBody).toContain('updatePublicProfileComment({');
+    expect(saveBody).not.toContain('updateCommentByOwner');
+
+    expect(source).toContain("if (selectedComment?.kind === 'public') {");
+    expect(source).toContain("if (comment?.kind === 'public') {");
+    expect(source).toContain('deletePublicProfileComment({ profileId: cardData.userId, commentId: comment.commentId })');
+  });
+
+  it('чужий відгук читається, але не відкривається на правку', () => {
+    // Те саме коло, що й у правилі бази: автор і адмін, більше ніхто.
+    expect(source).toContain('const canModifyPublicComment = comment => (');
+    expect(source).toContain("isAdmin || (Boolean(comment?.authorId) && comment.authorId === (auth.currentUser?.uid || ''))");
+    expect(source).toContain('if (!canModify) return;');
+  });
+});

@@ -1,7 +1,8 @@
 import React from 'react';
 import toast from 'react-hot-toast';
-import { auth, fetchUserComment, saveMyCardComment } from '../config';
+import { auth, fetchPublicProfileComments, fetchUserComment, saveMyCardComment } from '../config';
 import { setLocalComment } from '../../utils/commentsStorage';
+import { copyPublicCommentsBetweenCards } from '../../utils/legacyTgCommentMigration';
 import { handleSubmitAll } from './actions';
 
 let latestCompareRequest = 0;
@@ -34,6 +35,14 @@ const combineComments = (legacyValue, storedValue) => [legacyValue, storedValue]
   .map(value => String(value || '').trim())
   .filter(Boolean)
   .join('\n\n');
+
+// Публічні відгуки — не поле картки, а окреме дерево `comments/{profileId}`,
+// тож у таблиці порівняння вони стоять під власним ключем. Раніше їх тут не
+// було взагалі: злиття дублікатів переносило поля й особисту нотатку, а
+// відгуки лишались на картці, яку закривають, — тобто зникали з очей разом з
+// нею. Значення в рядку — самі тексти; переносить їх окремий шлях, який
+// зберігає автора й дату (`copyPublicCommentsBetweenCards`).
+const PUBLIC_COMMENTS_KEY = 'publicComments';
 
 const formatValue = val => {
   if (Array.isArray(val)) return new Set(val.map(String));
@@ -72,8 +81,27 @@ export const btnCompare = (
     'shoeSize', 'street', 'whiteList', 'blackList',
   ];
 
-  const copyValue = async (key, sourceValue, targetUserId) => {
+  const copyValue = async (key, sourceValue, targetUserId, sourceUserId) => {
     if (!targetUserId) return;
+
+    if (key === PUBLIC_COMMENTS_KEY) {
+      if (!sourceUserId) return;
+      try {
+        const { copied, skipped } = await copyPublicCommentsBetweenCards({
+          sourceProfileId: sourceUserId,
+          targetProfileId: targetUserId,
+        });
+        toast.success(
+          skipped
+            ? `Публічних коментарів скопійовано: ${copied} (вже були на картці: ${skipped})`
+            : `Публічних коментарів скопійовано: ${copied}`,
+        );
+      } catch (error) {
+        const details = error?.message || String(error);
+        toast.error(`Не вдалося скопіювати публічні коментарі: ${details}`);
+      }
+      return;
+    }
 
     if (key === 'myComment') {
       const commentOwnerId = auth.currentUser?.uid;
@@ -121,19 +149,28 @@ export const btnCompare = (
     const currentUserRaw = entries[index]?.[1] || {};
     const nextUserRaw = entries[index + 1]?.[1] || {};
     const ownerId = auth.currentUser?.uid;
-    const [currentCommentResult, nextCommentResult] = await Promise.all([
+    const [currentCommentResult, nextCommentResult, publicByProfile] = await Promise.all([
       ownerId && currentUserRaw.userId ? fetchUserComment(ownerId, currentUserRaw.userId) : null,
       ownerId && nextUserRaw.userId ? fetchUserComment(ownerId, nextUserRaw.userId) : null,
+      fetchPublicProfileComments([currentUserRaw.userId, nextUserRaw.userId].filter(Boolean)),
     ]);
     if (requestId !== latestCompareRequest) return;
+
+    // Тексти — лише для показу різниці; переносить відгуки не ця таблиця, а
+    // `copyPublicCommentsBetweenCards`, яка читає їх наново разом з автором.
+    const publicCommentTexts = profileId => (publicByProfile?.[profileId] || [])
+      .map(comment => String(comment?.text || '').trim())
+      .filter(Boolean);
 
     const currentUser = {
       ...currentUserRaw,
       myComment: combineComments(currentUserRaw.myComment, currentCommentResult?.text),
+      [PUBLIC_COMMENTS_KEY]: publicCommentTexts(currentUserRaw.userId),
     };
     const nextUser = {
       ...nextUserRaw,
       myComment: combineComments(nextUserRaw.myComment, nextCommentResult?.text),
+      [PUBLIC_COMMENTS_KEY]: publicCommentTexts(nextUserRaw.userId),
     };
     const filteredKeys = new Set([
       ...Object.keys(currentUser).filter(key => !delKeys.includes(key) && key !== 'duplicate'),
@@ -157,13 +194,17 @@ export const btnCompare = (
           <td style={{ width: '20%', whiteSpace: 'normal', wordBreak: 'break-word' }}>{key}</td>
           <td
             style={{ ...cellStyle, cursor: canCopyCurrent ? 'pointer' : 'default' }}
-            onClick={canCopyCurrent ? () => copyValue(key, currentUser[key], nextUser.userId) : undefined}
+            onClick={canCopyCurrent
+              ? () => copyValue(key, currentUser[key], nextUser.userId, currentUser.userId)
+              : undefined}
           >
             {uniqueCurrent.join(', ')}
           </td>
           <td
             style={{ ...cellStyle, cursor: canCopyNext ? 'pointer' : 'default' }}
-            onClick={canCopyNext ? () => copyValue(key, nextUser[key], currentUser.userId) : undefined}
+            onClick={canCopyNext
+              ? () => copyValue(key, nextUser[key], currentUser.userId, nextUser.userId)
+              : undefined}
           >
             {uniqueNext.join(', ')}
           </td>
