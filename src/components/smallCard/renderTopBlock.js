@@ -147,7 +147,6 @@ const topBlockHeaderLayoutStyle = {
   display: 'flex',
   alignItems: 'flex-start',
   gap: '8px',
-  marginBottom: '6px',
   minWidth: 0,
 };
 
@@ -188,7 +187,6 @@ const topButtonsRowStyle = {
   alignItems: 'center',
   gap: '5px',
   flexWrap: 'wrap',
-  marginBottom: '5px',
   minWidth: 0,
 };
 
@@ -275,7 +273,7 @@ const identityMetaStyle = {
 };
 
 const cardHeaderStyle = {
-  marginBottom: '5px',
+  marginBottom: '4px',
   minWidth: 0,
 };
 
@@ -323,16 +321,23 @@ const roleBadgeStyle = role => ({
   lineHeight: 1.4,
 });
 
+// Секції картки колись стояли напівпрозорими білими коробками поверх градієнта:
+// фон, якого майже не видно, але який усе одно ріже блок на прямокутники й
+// краде ширину під власні падінги. Місце секції тепер тримають відступ і
+// волосяна лінія — на будь-якому кольорі деки вони читаються як структура, а
+// сам текст лишається на градієнті, заради якого картку й фарбують.
+const sectionDividerStyle = {
+  borderTop: '1px solid rgba(255, 255, 255, 0.16)',
+  marginTop: '7px',
+  paddingTop: '7px',
+};
+
 const statusRowStyle = {
+  ...sectionDividerStyle,
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'stretch',
-  gap: '6px',
-  padding: '6px',
-  borderRadius: '8px',
-  background: 'rgba(255,255,255,0.08)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  margin: '5px 0',
+  gap: '5px',
   boxSizing: 'border-box',
   width: '100%',
   minWidth: 0,
@@ -350,12 +355,15 @@ const getInTouchStatusItemStyle = {
   ...statusItemStyle,
 };
 
+// Виняток із правила вище: це не секція, а редактор, який зʼявляється на дотик
+// і мусить читатись як окрема поверхня, поки відкритий.
 const roleEditorStyle = {
   width: '100%',
   padding: '4px 6px',
+  margin: '3px 0 1px',
   borderRadius: '8px',
-  background: 'rgba(0,0,0,0.12)',
-  border: '1px solid rgba(255,255,255,0.14)',
+  background: 'rgba(0, 0, 0, 0.16)',
+  border: '1px solid rgba(255, 255, 255, 0.12)',
   boxSizing: 'border-box',
   minWidth: 0,
 };
@@ -364,6 +372,7 @@ const bioSectionStyle = {
   display: 'flex',
   flexDirection: 'column',
   gap: '3px',
+  marginTop: '6px',
   minWidth: 0,
 };
 
@@ -371,7 +380,7 @@ const bioRowStyle = {
   display: 'flex',
   alignItems: 'center',
   flexWrap: 'wrap',
-  gap: '4px',
+  gap: '3px 7px',
   fontSize: '12px',
   minWidth: 0,
 };
@@ -382,13 +391,36 @@ const factChipStyle = {
   gap: '3px',
   minWidth: 0,
   maxWidth: '100%',
-  padding: '1px 5px',
-  borderRadius: '999px',
-  background: 'rgba(255,255,255,0.08)',
-  border: '1px solid rgba(255,255,255,0.08)',
   lineHeight: 1.35,
   overflowWrap: 'anywhere',
 };
+
+// Без пігулок межу між фактами тримає крапка — той самий роздільник, що вже
+// стоїть між датою й id у шапці, тож картка не вчить читача двох різних мов.
+const factSeparatorStyle = {
+  opacity: 0.4,
+  lineHeight: 1,
+  userSelect: 'none',
+};
+
+// Крапка їде разом із фактом, який відкриває, а не стоїть окремим елементом
+// ряду: інакше перенос рядка лишав би її висіти в кінці попереднього.
+const factWithSeparatorStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '7px',
+  minWidth: 0,
+  maxWidth: '100%',
+};
+
+const joinBioFacts = facts => facts.filter(Boolean).map((fact, index) => (
+  index === 0 ? fact : (
+    <span key={`fact-${fact.key}`} style={factWithSeparatorStyle}>
+      <span style={factSeparatorStyle} aria-hidden="true">·</span>
+      {fact}
+    </span>
+  )
+));
 
 const contactsSectionStyle = {
   display: 'flex',
@@ -403,14 +435,10 @@ const contactsSectionStyle = {
 };
 
 const commentsSectionStyle = {
-  marginTop: '5px',
-  padding: '4px 6px',
-  borderRadius: '7px',
-  background: 'rgba(255,255,255,0.07)',
+  ...sectionDividerStyle,
   display: 'flex',
   flexDirection: 'column',
-  gap: '3px',
-  minHeight: '36px',
+  gap: '4px',
   height: 'auto',
   overflow: 'visible',
   boxSizing: 'border-box',
@@ -445,19 +473,26 @@ const multiCommentStyle = {
 };
 
 const multiCommentRowStyle = {
-  marginTop: '2px',
   display: 'flex',
-  alignItems: 'center',
-  gap: '5px',
+  alignItems: 'flex-start',
+  gap: '6px',
   minWidth: 0,
+};
+
+// Дата в рядку — орієнтир, а не зміст: вона стоїть першою в кожному коментарі,
+// і повна яскравість забирає увагу в тексту, заради якого рядок і читають.
+const commentDateStyle = {
+  opacity: 0.6,
+  fontWeight: 600,
 };
 
 const commentAuthorButtonStyle = {
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '20px',
-  height: '20px',
+  width: '18px',
+  height: '18px',
+  flex: '0 0 18px',
   border: 'none',
   background: 'transparent',
   color: '#f3dfab',
@@ -480,7 +515,7 @@ const commentDeleteButtonStyle = {
 // про людину, думаючи, що правиш нотатку «собі».
 const publicCommentRowStyle = {
   ...multiCommentRowStyle,
-  paddingLeft: '4px',
+  paddingLeft: '6px',
   borderLeft: '2px solid #7fd1a8',
 };
 
@@ -501,15 +536,52 @@ const publicCommentAuthorStyle = {
   color: '#7fd1a8',
 };
 
-const publicCommentsLoadButtonStyle = {
-  marginTop: '3px',
-  padding: '2px 7px',
+// Кнопка лишилась одна — на повтор після відмови. Звичайний шлях кнопки не
+// має: відгуки приїжджають разом із карткою.
+const publicCommentsRetryButtonStyle = {
+  alignSelf: 'flex-start',
+  padding: '2px 9px',
   border: '1px solid rgba(127, 209, 168, 0.55)',
-  borderRadius: '8px',
-  background: 'rgba(0, 0, 0, 0.12)',
+  borderRadius: '999px',
+  background: 'transparent',
   color: '#cdeedd',
   cursor: 'pointer',
   fontSize: '11px',
+  lineHeight: 1.5,
+};
+
+// Відгуки читаються на кожну відкриту картку, тож ціну цього читання тримає
+// памʼять таба — рівно те саме, що `ownerCommentsSubtreeCache` робить для
+// нотаток: список карток згортають, розгортають і перемальовують десятки разів
+// за сеанс, і без кеша кожен показ коштував би ще одного запиту на картку.
+//
+// Кеш живе тут, а не в `config.js`, навмисно: тим самим
+// `fetchPublicProfileCommentsStrict` перенос легасі-відгуків питає базу, чи
+// цей текст у ній уже є, і відповідь із памʼяті означала б другу копію відгуку.
+const PUBLIC_COMMENTS_MEMORY_TTL_MS = 2 * 60 * 1000;
+const publicCommentsMemoryCache = new Map();
+
+const readPublicCommentsCached = (profileId, { force = false } = {}) => {
+  const cached = publicCommentsMemoryCache.get(profileId);
+  if (!force && cached && Date.now() - cached.cachedAt <= PUBLIC_COMMENTS_MEMORY_TTL_MS) {
+    return cached.promise;
+  }
+  const promise = fetchPublicProfileCommentsStrict([profileId])
+    .then(byProfile => byProfile?.[profileId] || [])
+    .catch(error => {
+      // Відмова в кеші не лишається: інакше наступна картка тієї ж людини
+      // отримала б ту саму помилку, не спробувавши читання ще раз.
+      publicCommentsMemoryCache.delete(profileId);
+      throw error;
+    });
+  publicCommentsMemoryCache.set(profileId, { promise, cachedAt: Date.now() });
+  return promise;
+};
+
+// Свій же запис робить кеш застарілим: правку й зняття відгуку видно одразу,
+// а не через строк памʼяті.
+const dropCachedPublicComments = profileId => {
+  publicCommentsMemoryCache.delete(profileId);
 };
 
 const inlineModalOverlayStyle = {
@@ -1362,7 +1434,7 @@ export const TopBlock = ({
   // але не сусіди по суті: нотатка належить тому, хто її написав, а відгук —
   // усій базі, і читається він одним запитом на картку, а не по власниках.
   const [publicComments, setPublicComments] = React.useState([]);
-  const [publicCommentsLoaded, setPublicCommentsLoaded] = React.useState(false);
+  const [publicCommentsFailed, setPublicCommentsFailed] = React.useState(false);
   const [publicCommentsLoading, setPublicCommentsLoading] = React.useState(false);
   const publicCommentsRequestRef = React.useRef(0);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
@@ -1421,7 +1493,7 @@ export const TopBlock = ({
     // мають лишатися клікабельними, поки новий запит ще в дорозі.
     setBackendMultiComments([]);
     setPublicComments([]);
-    setPublicCommentsLoaded(false);
+    setPublicCommentsFailed(false);
     setPublicCommentsLoading(false);
     publicCommentsRequestRef.current += 1;
     if (!cardData?.userId) {
@@ -1442,24 +1514,42 @@ export const TopBlock = ({
     };
   }, [cardData?.userId]);
 
-  const loadPublicComments = async event => {
-    event?.stopPropagation();
+  // Відгуки приїжджають разом із карткою, а не на окремий дотик: блок картки —
+  // робоче місце адміністраторки, і «що про цю людину вже написали» вона мусить
+  // бачити відкритою карткою, а не перевіряти кнопкою. Кнопка лишилась одна — на
+  // повтор після відмови.
+  const loadPublicComments = React.useCallback(async ({ force = false } = {}) => {
     const profileId = cardData?.userId;
-    if (!profileId || publicCommentsLoaded || publicCommentsLoading) return;
+    if (!profileId) return;
     const requestId = publicCommentsRequestRef.current + 1;
     publicCommentsRequestRef.current = requestId;
+    setPublicCommentsFailed(false);
     setPublicCommentsLoading(true);
     try {
-      const publicByProfile = await fetchPublicProfileCommentsStrict([profileId]);
+      const comments = await readPublicCommentsCached(profileId, { force });
       if (publicCommentsRequestRef.current !== requestId) return;
-      setPublicComments(publicByProfile?.[profileId] || []);
-      setPublicCommentsLoaded(true);
+      setPublicComments(comments);
     } catch (error) {
       if (publicCommentsRequestRef.current !== requestId) return;
-      toast.error(`Не вдалося завантажити публічні відгуки: ${error?.message || error}`);
+      setPublicCommentsFailed(true);
+      // Читання падає одразу для всіх карток списку (найчастіше це невикочені
+      // правила), тож тост має стабільний id: сказати про це досить один раз,
+      // а не десятком однакових вікон одне на одному.
+      toast.error(`Не вдалося завантажити публічні відгуки: ${error?.message || error}`, {
+        id: 'public-comments-load-failed',
+      });
     } finally {
       if (publicCommentsRequestRef.current === requestId) setPublicCommentsLoading(false);
     }
+  }, [cardData?.userId]);
+
+  React.useEffect(() => {
+    loadPublicComments();
+  }, [loadPublicComments]);
+
+  const retryPublicComments = event => {
+    event?.stopPropagation();
+    loadPublicComments({ force: true });
   };
 
   React.useEffect(() => {
@@ -1582,6 +1672,7 @@ export const TopBlock = ({
         commentId,
         text: prepared,
       });
+      dropCachedPublicComments(cardData.userId);
       setPublicComments(prev => (updated
         ? prev.map(item => (item.id === commentId
           ? { ...item, text: updated.text, updatedAt: updated.updatedAt }
@@ -1671,6 +1762,7 @@ export const TopBlock = ({
       }
       try {
         await deletePublicProfileComment({ profileId: cardData.userId, commentId: comment.commentId });
+        dropCachedPublicComments(cardData.userId);
         setPublicComments(prev => prev.filter(item => item.id !== comment.commentId));
         toast.success('Публічний відгук видалено');
       } catch (error) {
@@ -2160,20 +2252,32 @@ export const TopBlock = ({
         )}
       </div>
       <div style={bioSectionStyle}>
+        {/* Два рядки, а не один на перенос: хто людина (вік, статус, група,
+            метрики) і що з нею вже було (пологи, регіон). Ділити рядок віддали
+            не переносу, а змісту — інакше крапка-роздільник регулярно лишалась
+            висіти першою в новому рядку. */}
         <div style={bioRowStyle}>
-          {cardData.birth && (
-            <span style={factChipStyle}>
-              {/* У базі дата лежить у `РРРР-ММ-ДД`; людині вона показується
-                  крапками — так само, як усюди в застосунку. */}
-              {formatDateToDisplay(cardData.birth)} {fieldBirth(cardData.birth)}
-            </span>
-          )}
-          {identityMeta.length > 0 && (
-            <div style={{ ...factChipStyle, ...identityMetaStyle }}>{identityMeta}</div>
-          )}
-          {deliveryInfo && <div style={factChipStyle}>{deliveryInfo}</div>}
-          {region && <div style={factChipStyle}>{region}</div>}
+          {joinBioFacts([
+            cardData.birth && (
+              <span key="birth" style={factChipStyle}>
+                {/* У базі дата лежить у `РРРР-ММ-ДД`; людині вона показується
+                    крапками — так само, як усюди в застосунку. */}
+                {formatDateToDisplay(cardData.birth)} {fieldBirth(cardData.birth)}
+              </span>
+            ),
+            identityMeta.length > 0 && (
+              <div key="identity" style={{ ...factChipStyle, ...identityMetaStyle }}>{identityMeta}</div>
+            ),
+          ])}
         </div>
+        {(deliveryInfo || region) && (
+          <div style={bioRowStyle}>
+            {joinBioFacts([
+              deliveryInfo && <div key="delivery" style={factChipStyle}>{deliveryInfo}</div>,
+              region && <div key="region" style={factChipStyle}>{region}</div>,
+            ])}
+          </div>
+        )}
         {renderOverlayEntries(['birth', 'maritalStatus', 'blood', 'height', 'weight'])}
         {renderOverlayEntries(['lastDelivery', 'ownKids'])}
         {renderOverlayEntries('region')}
@@ -2229,7 +2333,8 @@ export const TopBlock = ({
                 setIsCommentModalOpen(true);
               }}
             >
-              {`${formatCommentDate(comment.lastAction) || '--.--.----'} - ${comment.text}`}
+              <span style={commentDateStyle}>{`${formatCommentDate(comment.lastAction) || '--.--.----'} · `}</span>
+              {comment.text}
             </div>
             {isAdmin && comment.ownerId && (
               <button
@@ -2247,15 +2352,15 @@ export const TopBlock = ({
             )}
           </div>
         ))}
-        {!publicCommentsLoaded && (
+        {publicCommentsFailed && (
           <button
             type="button"
-            style={publicCommentsLoadButtonStyle}
-            onClick={loadPublicComments}
+            style={publicCommentsRetryButtonStyle}
+            onClick={retryPublicComments}
             disabled={publicCommentsLoading}
-            title="Завантажити публічні відгуки"
+            title="Повторити читання публічних відгуків"
           >
-            {publicCommentsLoading ? 'Завантаження…' : '🌐 Відгуки'}
+            {publicCommentsLoading ? 'Завантаження…' : '🌐 Показати відгуки'}
           </button>
         )}
         {publicComments.map(comment => {
@@ -2289,7 +2394,7 @@ export const TopBlock = ({
                   setIsCommentModalOpen(true);
                 }}
               >
-                {`${formatCommentDate(comment.createdAt) || '--.--.----'} - `}
+                <span style={commentDateStyle}>{`${formatCommentDate(comment.createdAt) || '--.--.----'} · `}</span>
                 <span style={publicCommentAuthorStyle}>{comment.authorName || 'без імені'}</span>
                 {`: ${comment.text}`}
               </div>
