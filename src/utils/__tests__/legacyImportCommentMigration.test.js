@@ -133,6 +133,32 @@ describe('план переносу', () => {
     expect(entries).toEqual([]);
   });
 
+  // Партія з таблиці (`handleExcelProfilesUpload`) записує картку, коментар і
+  // дизлайк — і жодного `writer`. Гейт для неї означав би «перенести
+  // неможливо», тож знімає його не код, а людина.
+  it('віддає відкинуте назад — з текстом, а не самим числом', () => {
+    const { entries, skipped, unverified } = plan({
+      privateComments: { [IMPORTER]: { ID0001: { text: 'відгук з таблиці', updatedAt: 5 } } },
+      prefix: 'ID',
+    });
+
+    expect(entries).toEqual([]);
+    expect(skipped.unverifiedWriter).toBe(1);
+    expect(unverified).toEqual([{ profileId: 'ID0001', ownerId: IMPORTER, text: 'відгук з таблиці' }]);
+  });
+
+  it('з дозволу переносить і нотатку без writer — без вигаданого імені автора', () => {
+    const { entries, skipped } = plan({
+      privateComments: { [IMPORTER]: { ID0001: { text: 'відгук з таблиці', updatedAt: 5 } } },
+      prefix: 'ID',
+      allowMissingWriter: true,
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ profileId: 'ID0001', authorName: '' });
+    expect(skipped.unverifiedWriter).toBe(0);
+  });
+
   it('позначка іншого власника не верифікує приватну нотатку цього власника', () => {
     const { entries } = plan({
       privateComments: { [IMPORTER]: { TG0001: { text: 'відгук', updatedAt: 5 } } },
@@ -234,6 +260,53 @@ describe('перенос', () => {
 
     const [tgCall, idCall] = addPublicProfileCommentAs.mock.calls.map(([payload]) => payload);
     expect(tgCall.authorId).toBe(idCall.authorId);
+  });
+
+  // 25 нотаток, кожна пропущена через відсутній `writer`, виглядали як порожня
+  // база: «переносити нічого». Тепер це питання до людини, а не мовчазна
+  // відмова, — і питається воно з текстами в руках.
+  it('питає людину про нотатки без writer і переносить їх з її дозволу', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ ID0001: { text: 'відгук з таблиці', updatedAt: 7 } });
+    readOwnerWriterMapStrict.mockResolvedValue({});
+    const confirmMissingWriter = jest.fn().mockResolvedValue(true);
+
+    const stats = await migrateLegacyImportCommentsToPublic({ prefix: 'ID', confirmMissingWriter });
+
+    expect(confirmMissingWriter).toHaveBeenCalledWith(expect.objectContaining({
+      prefix: 'ID',
+      count: 1,
+      samples: [{ profileId: 'ID0001', text: 'відгук з таблиці' }],
+    }));
+    expect(addPublicProfileCommentAs).toHaveBeenCalledWith(expect.objectContaining({
+      profileId: 'ID0001',
+      authorName: '',
+    }));
+    expect(stats).toMatchObject({ written: 1, includedWithoutWriter: true });
+  });
+
+  it('без дозволу не публікує нічого, але каже, скільки відкинув', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ ID0001: { text: 'відгук з таблиці', updatedAt: 7 } });
+    readOwnerWriterMapStrict.mockResolvedValue({});
+    const confirmMissingWriter = jest.fn().mockResolvedValue(false);
+
+    const stats = await migrateLegacyImportCommentsToPublic({ prefix: 'ID', confirmMissingWriter });
+
+    expect(addPublicProfileCommentAs).not.toHaveBeenCalled();
+    expect(deleteCommentByOwner).not.toHaveBeenCalled();
+    expect(stats).toMatchObject({ written: 0, unverified: 1, includedWithoutWriter: false });
+    expect(stats.profileIds).toEqual(['ID0001']);
+  });
+
+  // Мовчазний прогін (без callback) лишається обережним: не спитавши — не
+  // публікує.
+  it('без запитувача нотатку без writer не публікує', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ ID0001: { text: 'відгук з таблиці', updatedAt: 7 } });
+    readOwnerWriterMapStrict.mockResolvedValue({});
+
+    const stats = await migrateLegacyImportCommentsToPublic({ prefix: 'ID' });
+
+    expect(addPublicProfileCommentAs).not.toHaveBeenCalled();
+    expect(stats.unverified).toBe(1);
   });
 
   it('невдалий публічний запис не коштує приватного оригіналу', async () => {

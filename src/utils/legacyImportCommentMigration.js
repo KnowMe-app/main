@@ -154,10 +154,14 @@ export const planLegacyImportCommentMigration = ({
   writers = {},
   existingPublicComments = {},
   prefix = DEFAULT_LEGACY_IMPORT_ID_PREFIX,
+  allowMissingWriter = false,
 } = {}) => {
   const pattern = makeLegacyImportUserIdPattern(prefix);
   const byProfileAndText = new Map();
   const skipped = { otherPrefix: 0, emptyText: 0, unverifiedWriter: 0 };
+  // Не лише лічильник: відкинуте показується людині, яка вирішує, публікувати
+  // його чи ні. Саме число «пропущено 25» цього рішення ухвалити не дає.
+  const unverified = [];
 
   Object.entries(privateComments || {}).forEach(([ownerId, ownerComments]) => {
     Object.entries(ownerComments || {}).forEach(([cardId, entry]) => {
@@ -175,9 +179,16 @@ export const planLegacyImportCommentMigration = ({
       // Сам префікс картки не доводить, що нотатка приїхала з імпорту.
       // `writer` — збережена імпортером ознака джерела; без неї приватний
       // текст може бути звичайною особистою нотаткою й публікувати його не можна.
+      //
+      // Але доказ цей є не в кожної партії: імпорт з таблиці
+      // (`handleExcelProfilesUpload`) записує картку, коментар і дизлайк — і
+      // жодного `writer`. Для такої партії гейт означав би «перенести
+      // неможливо», тому його знімає не код, а людина: `allowMissingWriter`
+      // ставиться лише після підтвердження, у якому видно самі тексти.
       const writerName = resolveWriterName(writers?.[ownerId]?.[cardId]);
-      if (!writerName) {
+      if (!writerName && !allowMissingWriter) {
         skipped.unverifiedWriter += 1;
+        unverified.push({ profileId: cardId, ownerId, text });
         return;
       }
 
@@ -223,7 +234,7 @@ export const planLegacyImportCommentMigration = ({
       else entries.push(entry);
     });
 
-  return { entries, duplicates, skipped };
+  return { entries, duplicates, skipped, unverified };
 };
 
 /** Картки партії, чиї відгуки перенос узагалі розглядає. */
@@ -270,12 +281,16 @@ export const isPermissionDeniedFailure = failure => (
  * @param {string} [params.prefix] префікс партії карток (`TG`, `ID`)
  * @param {string[]} [params.ownerIds] додаткові власники метаданих `writer`
  * @param {boolean} [params.removePrivate] прибирати приватний оригінал після переносу
+ * @param {boolean} [params.allowMissingWriter] публікувати й нотатки без `writer`
+ * @param {Function} [params.confirmMissingWriter] `({ count, samples })` → чи публікувати такі
  * @param {Function} [params.onProgress] `({ processed, total })`
  */
 export const migrateLegacyImportCommentsToPublic = async ({
   prefix = DEFAULT_LEGACY_IMPORT_ID_PREFIX,
   ownerIds = [],
   removePrivate = true,
+  allowMissingWriter = false,
+  confirmMissingWriter,
   onProgress,
 } = {}) => {
   // Кидається до першого запиту: хибний префікс мусить упасти тут, а не
@@ -316,12 +331,34 @@ export const migrateLegacyImportCommentsToPublic = async ({
     ? await fetchPublicProfileCommentsStrict(profileIds)
     : {};
 
-  const { entries, duplicates, skipped } = planLegacyImportCommentMigration({
+  const planFor = allowed => planLegacyImportCommentMigration({
     privateComments,
     writers,
     existingPublicComments,
     prefix,
+    allowMissingWriter: allowed,
   });
+
+  let plan = planFor(allowMissingWriter);
+  let includedWithoutWriter = allowMissingWriter;
+
+  // Партія без жодного `writer` — це не «переносити нічого», а питання до
+  // людини: опублікувати ці нотатки чи ні. Питається воно один раз на прогін,
+  // уже з прочитаними даними, і показує самі тексти — бо рішення тут саме про
+  // них, а не про число.
+  if (!allowMissingWriter && plan.unverified.length && confirmMissingWriter) {
+    const approved = await confirmMissingWriter({
+      prefix,
+      count: plan.unverified.length,
+      samples: plan.unverified.slice(0, 3).map(({ profileId, text }) => ({ profileId, text })),
+    });
+    if (approved) {
+      plan = planFor(true);
+      includedWithoutWriter = true;
+    }
+  }
+
+  const { entries, duplicates, skipped } = plan;
 
   const total = entries.length;
   const failures = [];
@@ -366,6 +403,8 @@ export const migrateLegacyImportCommentsToPublic = async ({
 
   return {
     prefix,
+    includedWithoutWriter,
+    unverified: plan.unverified.length,
     total,
     written,
     removed,

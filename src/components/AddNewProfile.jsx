@@ -6379,6 +6379,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const stats = await migrateLegacyImportCommentsToPublic({
         prefix,
         removePrivate,
+        // Нотатка без позначки `writer` нічим не доводить, що вона з імпорту, а
+        // не особиста, — і мовчки публікувати таку не можна. Але й мовчки
+        // відкидати теж: партія з таблиці `writer` не отримує взагалі, тож
+        // гейт означав би «ця кнопка ніколи нічого не перенесе». Тому питаємо,
+        // показуючи самі тексти: рішення тут саме про них.
+        confirmMissingWriter: ({ count, samples }) => window.confirm(
+          `У ${count} карток ${prefix}… немає позначки writer — довести, що це відгук `
+            + 'агенції, а не Ваша особиста нотатка, нема чим.\n\n'
+            + 'Опублікувати їх? Ці тексти побачить кожен користувач бази:\n\n'
+            + samples
+              .map(({ profileId, text }) => `• ${profileId}: ${text.slice(0, 120)}${text.length > 120 ? '…' : ''}`)
+              .join('\n')
+            + (count > samples.length ? `\n…і ще ${count - samples.length}` : ''),
+        ),
         onProgress: ({ processed, total }) => {
           toast.loading(`Перенос коментарів ${prefix}-карток: ${processed}/${total}`, { id: toastId });
         },
@@ -6410,10 +6424,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           duration: stats.permissionDenied ? 20000 : 12000,
         });
       } else if (!stats.total && !stats.alreadyPublic) {
+        // «Не знайдено» — це неправда, коли картки знайшлись і відсіялись:
+        // 25 нотаток, кожна пропущена через відсутній `writer`, виглядали як
+        // порожня база, і розбиратись довелось не звіту, а людині.
+        const skippedText = [
+          stats.unverified ? `без позначки writer — ${stats.unverified}` : '',
+          stats.skipped?.emptyText ? `порожніх — ${stats.skipped.emptyText}` : '',
+        ].filter(Boolean).join(', ');
         toast.success(
-          `Переносити нічого: карток ${prefix}… з коментарями не знайдено `
-            + `(переглянуто карток: ${stats.profileIds.length})`,
-          { id: toastId, duration: 8000 },
+          `Нічого не перенесено. Карток ${prefix}… з нотатками: ${stats.profileIds.length}`
+            + (skippedText ? `; пропущено: ${skippedText}` : ''),
+          { id: toastId, duration: 10000 },
         );
       } else toast.success(`Коментарі перенесено — ${details}`, { id: toastId, duration: 8000 });
 
