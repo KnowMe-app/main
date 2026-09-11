@@ -122,10 +122,17 @@ export const resolveWriterName = value => String(getCurrentValue(value) || '').t
  */
 export const LEGACY_IMPORT_COMMENT_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 
-export const resolveMigrationOwnerIds = (extraOwnerIds = [], viewerId = '') => [...new Set([
+// Лише піддерево імпортера доводить походження відгуку. Адмінські піддерева
+// містять також звичайні приватні нотатки й не мають потрапляти до міграції.
+export const resolveMigrationOwnerIds = () => [LEGACY_IMPORT_COMMENT_OWNER_ID];
+
+// `writer` записується під uid користувача, який зберігав анкету, а не
+// обов'язково під власником імпортованого коментаря. Тому джерела метаданих
+// автора ширші за безпечне джерело самих коментарів.
+export const resolveMigrationWriterOwnerIds = (extraOwnerIds = [], viewerId = '') => [...new Set([
+  LEGACY_IMPORT_COMMENT_OWNER_ID,
   String(viewerId || '').trim(),
   ...ADMIN_UIDS,
-  LEGACY_IMPORT_COMMENT_OWNER_ID,
   ...(extraOwnerIds || []).map(id => String(id || '').trim()),
 ].filter(Boolean))];
 
@@ -261,7 +268,7 @@ export const isPermissionDeniedFailure = failure => (
  *
  * @param {Object} params
  * @param {string} [params.prefix] префікс партії карток (`TG`, `ID`)
- * @param {string[]} [params.ownerIds] додаткові власники нотаток (окрім типових)
+ * @param {string[]} [params.ownerIds] додаткові власники метаданих `writer`
  * @param {boolean} [params.removePrivate] прибирати приватний оригінал після переносу
  * @param {Function} [params.onProgress] `({ processed, total })`
  */
@@ -281,18 +288,14 @@ export const migrateLegacyImportCommentsToPublic = async ({
   if (!isAdminUid(viewerId)) throw new Error('Міграцію коментарів запускає лише адмін');
 
   const owners = resolveMigrationOwnerIds(ownerIds, viewerId);
+  const writerOwners = resolveMigrationWriterOwnerIds(ownerIds, viewerId);
   const privateComments = {};
-  const writers = {};
   const unreadableOwnerIds = [];
 
   await Promise.all(owners.map(async ownerId => {
     try {
-      const [comments, writerMap] = await Promise.all([
-        fetchOwnerCommentsSubtree(ownerId),
-        readOwnerWriterMapStrict(ownerId),
-      ]);
+      const comments = await fetchOwnerCommentsSubtree(ownerId);
       privateComments[ownerId] = comments || {};
-      writers[ownerId] = writerMap || {};
     } catch (error) {
       // Чужий власник читається лише адміном, і відмова тут — не поломка
       // міграції, а відповідь «сюди тобі не можна». Решта власників їде далі.
@@ -300,6 +303,13 @@ export const migrateLegacyImportCommentsToPublic = async ({
       unreadableOwnerIds.push(ownerId);
     }
   }));
+
+  // Помилка читання тут не є «writer відсутній»: без надійної атрибуції
+  // міграція не повинна ані публікувати, ані видаляти приватний оригінал.
+  const writerMaps = await Promise.all(writerOwners.map(readOwnerWriterMapStrict));
+  const writers = {
+    [LEGACY_IMPORT_COMMENT_OWNER_ID]: Object.assign({}, ...writerMaps),
+  };
 
   const profileIds = listLegacyImportProfileIds(privateComments, prefix);
   const existingPublicComments = profileIds.length

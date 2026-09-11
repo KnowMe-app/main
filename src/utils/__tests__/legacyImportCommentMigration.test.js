@@ -294,7 +294,7 @@ describe('перенос', () => {
     expect(stats.unreadableOwnerIds).toEqual([IMPORTER]);
   });
 
-  it('не публікує й не видаляє записи власника, якщо його writer не прочитано', async () => {
+  it('перериває перенос і нічого не видаляє, якщо writer не прочитано', async () => {
     fetchOwnerCommentsSubtree.mockImplementation(async ownerId => (ownerId === IMPORTER
       ? { TG0001: { text: 'приватна нотатка', updatedAt: 7 } }
       : {}));
@@ -303,11 +303,29 @@ describe('перенос', () => {
       return {};
     });
 
-    const stats = await migrateLegacyImportCommentsToPublic();
+    await expect(migrateLegacyImportCommentsToPublic()).rejects.toThrow('writer unavailable');
 
-    expect(stats.unreadableOwnerIds).toEqual([IMPORTER]);
     expect(addPublicProfileCommentAs).not.toHaveBeenCalled();
     expect(deleteCommentByOwner).not.toHaveBeenCalled();
+  });
+
+  it('бере writer з адмінського піддерева, але коментар — лише з піддерева імпортера', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({
+      TG0001: { text: 'імпортований відгук', updatedAt: 7 },
+    });
+    readOwnerWriterMapStrict.mockImplementation(async ownerId => (ownerId === ADMIN
+      ? { TG0001: 'Агенція з адмінського writer' }
+      : {}));
+
+    await migrateLegacyImportCommentsToPublic();
+
+    expect(fetchOwnerCommentsSubtree).toHaveBeenCalledTimes(1);
+    expect(fetchOwnerCommentsSubtree).toHaveBeenCalledWith(IMPORTER);
+    expect(addPublicProfileCommentAs).toHaveBeenCalledWith(expect.objectContaining({
+      profileId: 'TG0001',
+      authorName: 'Агенція з адмінського writer',
+      authorId: makeLegacyCommentAuthorId('Агенція з адмінського writer'),
+    }));
   });
 
   it('перериває міграцію, якщо публічні відгуки не вдалося перевірити', async () => {
