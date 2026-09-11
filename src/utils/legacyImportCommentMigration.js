@@ -95,6 +95,27 @@ export const makeLegacyCommentAuthorId = seed => {
   return `${LEGACY_COMMENT_AUTHOR_ID_PREFIX}${hash.toString(36)}${source.length.toString(36)}`;
 };
 
+/**
+ * Автор партії — коли автора немає в самих нотатках.
+ *
+ * `writer` доводить походження нотатки, але записує його не кожен імпорт:
+ * партія з таблиці (`handleExcelProfilesUpload`) кладе картку, коментар і
+ * дизлайк, і жодної позначки. Проте походження в неї доведене інакше й
+ * надійніше за позначку: ці нотатки лежать у піддереві імпортера
+ * (`LEGACY_IMPORT_COMMENT_OWNER_ID`) — тому самому, куди імпорт їх і поклав, —
+ * а особисті нотатки адміністраторки живуть під її власним uid, якого міграція
+ * не читає взагалі (`resolveMigrationOwnerIds`).
+ *
+ * Тож автор такої партії — сама партія: відгук підписується її префіксом, а не
+ * вигаданим імʼям і не адміном, який тиснув кнопку. Партія без запису тут
+ * лишається під гейтом: TG-картки позначку мають, і підміняти її нема чого.
+ */
+export const LEGACY_IMPORT_BATCH_WRITERS = Object.freeze({ ID: 'ID' });
+
+export const resolveBatchWriterName = prefix => (
+  LEGACY_IMPORT_BATCH_WRITERS[String(prefix || '').trim()] || ''
+);
+
 /** Ключ звірки «цей текст уже перенесено»: пробіли й регістр тут не різниця. */
 export const normalizeCommentTextKey = text => String(text || '')
   .replace(/\s+/g, ' ')
@@ -157,6 +178,7 @@ export const planLegacyImportCommentMigration = ({
   allowMissingWriter = false,
 } = {}) => {
   const pattern = makeLegacyImportUserIdPattern(prefix);
+  const batchWriterName = resolveBatchWriterName(prefix);
   const byProfileAndText = new Map();
   const skipped = { otherPrefix: 0, emptyText: 0, unverifiedWriter: 0 };
   // Не лише лічильник: відкинуте показується людині, яка вирішує, публікувати
@@ -182,10 +204,12 @@ export const planLegacyImportCommentMigration = ({
       //
       // Але доказ цей є не в кожної партії: імпорт з таблиці
       // (`handleExcelProfilesUpload`) записує картку, коментар і дизлайк — і
-      // жодного `writer`. Для такої партії гейт означав би «перенести
-      // неможливо», тому його знімає не код, а людина: `allowMissingWriter`
+      // жодного `writer`. Такій партії автора дає вона сама
+      // (`LEGACY_IMPORT_BATCH_WRITERS`) — походження там доводить піддерево
+      // імпортера, а не позначка. Партія без такого запису лишається під
+      // гейтом, і знімає його не код, а людина: `allowMissingWriter`
       // ставиться лише після підтвердження, у якому видно самі тексти.
-      const writerName = resolveWriterName(writers?.[ownerId]?.[cardId]);
+      const writerName = resolveWriterName(writers?.[ownerId]?.[cardId]) || batchWriterName;
       if (!writerName && !allowMissingWriter) {
         skipped.unverifiedWriter += 1;
         unverified.push({ profileId: cardId, ownerId, text });
