@@ -1,104 +1,85 @@
-import { MATCHING_SEARCH_ID_PREFIXES } from '../matchingSearchPrefixes';
 import {
   buildSearchIdCandidateKeys,
-  resolveSearchIdValueShape,
   splitSearchIdCandidateKeys,
 } from '../searchKeyUtils';
 import { encodeKey } from '../searchIndexCandidates';
 
-// Те, з чим matching кличе індекс: усі префікси плюс варіант «УК СМ».
 // Те, з чим індекс кличе адмін: варіант «УК СМ» будується лише для нього.
 const ADMIN_OPTIONS = { includeVariants: true, includePrefixMatches: true, includeUkSmVariant: true };
 // І те, з чим його кличуть усі інші: набране — звичайний текст.
 const OPTIONS = { includeVariants: true, includePrefixMatches: true };
 
+const exactKeyFor = rawValue => encodeKey(rawValue).toLowerCase();
+
 const keysFor = (rawValue, options = OPTIONS) => buildSearchIdCandidateKeys(
-  encodeKey(rawValue).toLowerCase(),
+  exactKeyFor(rawValue),
   rawValue,
-  MATCHING_SEARCH_ID_PREFIXES,
   options,
 );
 
-const stageFor = rawValue => splitSearchIdCandidateKeys(keysFor(rawValue), rawValue);
+const stageFor = (rawValue, options = OPTIONS) =>
+  splitSearchIdCandidateKeys(keysFor(rawValue, options), exactKeyFor(rawValue));
 
 /**
- * Пошук читає індекс точковими `get` — по одному на кандидата. Кандидатів
- * будується стільки, скільки в індексі полів, ще й подвоєних варіантом
- * «УК СМ»: три десятки читань на запит, з яких влучає одне.
+ * Пошук читає індекс точковими `get` — по одному на кандидата.
  *
- * Черга не викидає жодного ключа — вона лише відкладає ті, яких не може бути
- * за формою запиту. Тому «не знайшов» коштує рівно стільки ж, скільки коштував
- * раніше, а влучний пошук — на порядок менше.
+ * Поки поле стояло в ключі (`{поле}_{значення}`), кандидатів будувалось
+ * стільки, скільки в індексі полів, ще й подвоєних варіантом «УК СМ»: три
+ * десятки читань на запит, з яких влучало одне. Тепер ключ — саме значення,
+ * тож кандидат на запит один, а черга ділить не поля, а **написання**: точне
+ * набране проти здогадок про нього.
+ *
+ * Друга черга не викидається — вона читається, коли перша не знайшла нічого.
  */
 describe('черга кандидатів searchId', () => {
-  it('розпізнає форму запиту', () => {
-    expect(resolveSearchIdValueShape('Sm.kiev.ukr@gmail.com')).toBe('email');
-    expect(resolveSearchIdValueShape('0505990799')).toBe('phone');
-    expect(resolveSearchIdValueShape('+38 (050) 599-07-99')).toBe('phone');
-    expect(resolveSearchIdValueShape('Дорошенко')).toBe('text');
-    expect(resolveSearchIdValueShape('')).toBe('text');
+  it('на звичайний запит — один ключ, одне читання', () => {
+    expect(keysFor('Sm.kiev.ukr@gmail.com')).toEqual(['sm_dot_kiev_dot_ukr_at_gmail_dot_com']);
+    expect(keysFor('Дорошенко')).toEqual(['дорошенко']);
   });
 
-  it('пошту шукає в пошті — одним читанням замість півтора десятка', () => {
-    const all = keysFor('Sm.kiev.ukr@gmail.com');
-    const { primary, fallback } = stageFor('Sm.kiev.ukr@gmail.com');
+  it('перша черга — точне набране, друга — здогадки про написання', () => {
+    const all = keysFor('0505990799');
+    const { primary, fallback } = stageFor('0505990799');
 
-    expect(primary).toEqual(['email_sm_dot_kiev_dot_ukr_at_gmail_dot_com']);
-    expect(all.length).toBeGreaterThan(10);
+    expect(primary).toEqual(['0505990799']);
+    // Номер, набраний із нуля, шукається ще й у міжнародній формі.
+    expect(fallback).toContain('380505990799');
     // Жоден ключ не загублено: відкладені читаються, коли перша черга порожня.
     expect([...primary, ...fallback].sort()).toEqual([...new Set(all)].sort());
-  });
-
-  it('телефон шукає в телефоні', () => {
-    const { primary } = stageFor('0505990799');
-
-    expect(primary.length).toBeGreaterThan(0);
-    expect(primary.every(key => key.startsWith('phone_'))).toBe(true);
-  });
-
-  it('текст не питає ані пошти, ані телефону — там його бути не може', () => {
-    const { primary, fallback } = stageFor('Дорошенко');
-
-    expect(primary).toContain('name_дорошенко');
-    expect(primary).toContain('surname_дорошенко');
-    expect(primary.some(key => key.startsWith('email_'))).toBe(false);
-    expect(fallback.some(key => key.startsWith('email_'))).toBe(true);
   });
 
   // «УК СМ» — робоча приставка адміна: тільки він заводить анкети, підписані
   // нею, і тільки йому має сенс шукати те саме без неї (і навпаки). Для решти
   // набране — звичайний текст, і додумувати до нього приставку означало б
-  // подвоїти читання індексу заради ключів, яких у цього читача не буває.
+  // зайве читання індексу заради ключа, якого в цього читача не буває.
   it('приставку «УК СМ» додумує лише адмінові', () => {
     const ukSm = encodeKey('УК СМ ').toLowerCase();
 
     expect(keysFor('Дорошенко').some(key => key.includes(ukSm))).toBe(false);
-    expect(keysFor('Дорошенко', ADMIN_OPTIONS)).toContain(`name_${ukSm}дорошенко`);
+    expect(keysFor('Дорошенко', ADMIN_OPTIONS)).toContain(`${ukSm}дорошенко`);
   });
 
-  it('в адмінській черзі варіант лишається там, де він буває — в імені та прізвищі', () => {
+  it('варіант «УК СМ» стоїть у другій черзі — набране важливіше за здогадку', () => {
     const ukSm = encodeKey('УК СМ ').toLowerCase();
-    const { primary } = splitSearchIdCandidateKeys(keysFor('Дорошенко', ADMIN_OPTIONS), 'Дорошенко');
+    const { primary, fallback } = stageFor('Дорошенко', ADMIN_OPTIONS);
 
-    expect(primary).toContain(`name_${ukSm}дорошенко`);
-    expect(primary).toContain(`surname_${ukSm}дорошенко`);
-    // В інстаграмі чи телеграмі імені з позначкою агентства не буває — такі
-    // ключі йдуть у другу чергу, а не в кожен пошук.
-    expect(primary.some(key => key.startsWith(`instagram_${ukSm}`))).toBe(false);
+    expect(primary).toEqual(['дорошенко']);
+    expect(fallback).toContain(`${ukSm}дорошенко`);
   });
 
   it('запит, що сам починається з «УК СМ», шукається як є', () => {
     const ukSm = encodeKey('УК СМ ').toLowerCase();
-    const keys = keysFor('УК СМ Дорошенко');
+    const { primary, fallback } = stageFor('УК СМ Дорошенко', ADMIN_OPTIONS);
 
-    expect(keys).toContain(`name_${ukSm}дорошенко`);
     // Приставку не зрізають: набране — це значення, а не інструкція.
-    expect(keys).not.toContain('name_дорошенко');
+    expect(primary).toEqual([`${ukSm}дорошенко`]);
+    // Але адмінові пропонується й те саме без приставки — другою чергою.
+    expect(fallback).toContain('дорошенко');
   });
 
   it('не лишає першу чергу порожньою — інакше пошук нічого б не спитав', () => {
-    const keys = ['email_щось'];
-    const { primary, fallback } = splitSearchIdCandidateKeys(keys, 'Дорошенко');
+    const keys = ['щось'];
+    const { primary, fallback } = splitSearchIdCandidateKeys(keys, 'інше');
 
     expect(primary).toEqual(keys);
     expect(fallback).toEqual([]);

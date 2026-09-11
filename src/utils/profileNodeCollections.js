@@ -99,9 +99,12 @@ export const describeLocalIndexingSources = (sources = {}) => {
   return {
     loadedNodes,
     hasLegacy,
-    // Картка стрічки й деталі — це те, з чого беруться майже всі індекси.
-    // Без них локальна збірка дасть майже порожній результат.
-    isUsable: loadedNodes.includes('matchingCards') || loadedNodes.includes('profileDetails') || hasLegacy,
+    // Будь-який вузол анкети вартий індексації: контакти живуть у
+    // `profileContacts`, і `searchId`, зібраний із самих лише контактів, — це
+    // повний індекс контактів, а не «майже порожній результат». Поки тут
+    // питались тільки картка й деталі, вибір самого `profileContacts` мовчки
+    // вважався «нічого не завантажено», і кнопка не робила нічого.
+    isUsable: loadedNodes.length > 0 || hasLegacy,
     isLegacyOnly: !loadedNodes.length && hasLegacy,
   };
 };

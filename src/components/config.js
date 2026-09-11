@@ -41,14 +41,22 @@ import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
 import { getExplicitlyDeletedKeys, getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
+import { PROFILE_DRAFTS_INDEX_NODE, collectDraftProfilesForIndexing } from '../utils/profileDraftIndexing';
 import {
   SEARCH_ID_INDEXED_FIELDS,
+  SEARCH_ID_ROOT,
+  appendSearchIdEntryId,
   buildSearchIdCandidateKeys,
+  buildSearchIdEntryPath,
   buildSearchIdRecordKey,
+  buildSearchIdValueKey,
   getEqualToCandidates,
+  getSearchIdPrefixes,
   makeSearchKeyValue,
   normalizeSearchIdInput,
   normalizeSearchDateComparableValue,
+  readSearchIdEntryMatches,
+  removeSearchIdEntryId,
   shouldSkipBroadFallbackForExactSearchId,
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
@@ -291,6 +299,29 @@ export const loadProfilesFromNodesForIndexing = async (options = {}) => {
   return Object.keys(profiles).length ? profiles : null;
 };
 
+/**
+ * Чернетки під індексацію — окремим читанням і тільки для `searchId`.
+ *
+ * У `searchKey` і `matchingCards` їм не місце: там живе стрічка, а чернетка в
+ * стрічку не потрапляє нізвідки (див. правило про загальний список). У
+ * `searchId` — навпаки: саме туди її кладе `saveCreateProfileMutation`, і саме
+ * звідти перевіряється «чи такий контакт уже заведено».
+ *
+ * Читання кореня `multiData/profileMutations` має лише адмін — а перебудова
+ * індексу і є адмінською операцією. Відмова не валить перебудову: краще індекс
+ * без чернеток, ніж жодного, але мовчати про це не можна.
+ */
+export const loadProfileDraftsForIndexing = async () => {
+  try {
+    const snapshot = await get(ref2(database, PROFILE_DRAFTS_INDEX_NODE));
+    if (!snapshot.exists()) return {};
+    return collectDraftProfilesForIndexing(snapshot.val());
+  } catch (error) {
+    console.warn('[config] Чернетки не прочитано, індекс збереться без них', error);
+    return {};
+  }
+};
+
 // Відмова в правах приходить то кодом, то текстом — залежно від виклику.
 const isSearchIdPermissionDenied = error => {
   const code = String(error?.code || '').toLowerCase();
@@ -302,15 +333,14 @@ const isSearchIdPermissionDenied = error => {
 };
 
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
-  const uniqueIds = new Set();
-  const { includePrefixMatches = true, rawSearchValue = '' } = options;
-  const addIds = value => {
-    const ids = Array.isArray(value) ? value : [value];
-
-    ids.forEach(id => {
-      if (id) {
-        uniqueIds.add(id);
-      }
+  const matchedFieldsById = new Map();
+  const { includePrefixMatches = true, fields, exactSearchKey = '' } = options;
+  const addEntry = entryValue => {
+    readSearchIdEntryMatches(entryValue, fields).forEach(({ id, field }) => {
+      if (!id) return;
+      const knownFields = matchedFieldsById.get(id) || new Set();
+      if (field) knownFields.add(field);
+      matchedFieldsById.set(id, knownFields);
     });
   };
 
@@ -319,19 +349,19 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
     incrementMatchingLoadStat('searchIdKeyReads', keys.length);
     await Promise.all(
       keys.map(async searchKey => {
-        const searchEntrySnapshot = await get(ref2(database, `searchId/${searchKey}`));
+        const searchEntrySnapshot = await get(ref2(database, `${SEARCH_ID_ROOT}/${searchKey}`));
         if (!searchEntrySnapshot.exists()) return;
 
-        addIds(searchEntrySnapshot.val());
+        addEntry(searchEntrySnapshot.val());
       })
     );
   };
 
-  // Перша черга — ключі, які відповідають формі запиту; друга потрібна лише
-  // тоді, коли перша не знайшла нічого. Див. `splitSearchIdCandidateKeys`.
-  const { primary, fallback } = splitSearchIdCandidateKeys(searchKeys, rawSearchValue);
+  // Перша черга — точне набране; друга потрібна лише тоді, коли перша не
+  // знайшла нічого. Див. `splitSearchIdCandidateKeys`.
+  const { primary, fallback } = splitSearchIdCandidateKeys(searchKeys, exactSearchKey);
   await readKeys(primary);
-  if (!uniqueIds.size) await readKeys(fallback);
+  if (!matchedFieldsById.size) await readKeys(fallback);
 
   const uniqueSearchKeys = [...new Set(searchKeys)];
 
@@ -349,7 +379,7 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
         try {
           const prefixMatchesSnapshot = await get(
             query(
-              ref2(database, 'searchId'),
+              ref2(database, SEARCH_ID_ROOT),
               orderByKey(),
               startAt(searchKey),
               endAt(`${searchKey}\uf8ff`),
@@ -359,7 +389,7 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
           if (!prefixMatchesSnapshot.exists()) return;
 
           prefixMatchesSnapshot.forEach(matchSnapshot => {
-            addIds(matchSnapshot.val());
+            addEntry(matchSnapshot.val());
           });
         } catch (error) {
           // Будь-яка інша помилка — не про права, і ховати її не можна.
@@ -369,7 +399,15 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
     );
   }
 
-  return [...uniqueIds];
+  // Поле збігу повертається разом з id: у новій формі індексу воно лежить у
+  // значенні, і це єдине місце, де його ще видно. Далі з нього робиться підпис
+  // видачі («знайдено за instagram»), який раніше давав сам ключ.
+  return {
+    userIds: [...matchedFieldsById.keys()],
+    matchedFieldsById: new Map(
+      [...matchedFieldsById].map(([id, fieldSet]) => [id, [...fieldSet]]),
+    ),
+  };
 };
 
 const PDF_SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
@@ -2538,13 +2576,14 @@ const searchBySearchIdUsers = async (
   options = {},
   { limitedFields = false, cardsOnly = false } = {},
 ) => {
-  const searchKeys = buildSearchIdCandidateKeys(
-    modifiedSearchValue,
-    rawSearchValue,
-    searchIdPrefixes,
-    options,
-  );
-  const userIds = await collectUserIdsBySearchIdKeys(searchKeys, { ...options, rawSearchValue });
+  const searchKeys = buildSearchIdCandidateKeys(modifiedSearchValue, rawSearchValue, options);
+  // Звуження до поля більше не вирішує, скільки буде читань: ключ один на
+  // значення, а перелік полів лише відсіює прочитане.
+  const { userIds, matchedFieldsById } = await collectUserIdsBySearchIdKeys(searchKeys, {
+    ...options,
+    fields: getSearchIdPrefixes(searchIdPrefixes),
+    exactSearchKey: String(modifiedSearchValue || '').toLowerCase(),
+  });
   const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
 
   await Promise.all(
@@ -2552,6 +2591,10 @@ const searchBySearchIdUsers = async (
       if (uniqueUserIds.has(id)) return;
       uniqueUserIds.add(id);
       await addHit(id, users);
+      // Поле збігу доносить сам індекс — з картки його не видно: у проєкції
+      // немає ані пошти, ані телефона, а прізвище скорочене до ініціала.
+      const matchedFields = matchedFieldsById.get(id);
+      if (users[id] && matchedFields?.length) users[id].__searchIdFields = matchedFields;
     })
   );
 };
@@ -2601,13 +2644,19 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   // `addCardHit` — чому видача matching просить саме проєкцію.
   const {
     searchIdPrefixes,
+    // Поле, яке `SearchBar` розпізнав у набраному: воно вирішує, якою
+    // нормалізацією шукати значення (телефон — цифрами, посилання — хендлом).
+    searchIdDetectedField,
     allowTelegramPrefixMatches = false,
     enabledSearchKeys,
     limitedFields = false,
     cardsOnly = false,
   } = options;
   const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;
-  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
+  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, {
+    searchIdPrefixes,
+    searchIdDetectedField,
+  });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   // «УК СМ» у значенні — робоча приставка адміна: тільки він заводить анкети,
   // підписані нею, і тільки йому має сенс шукати те саме без неї (і навпаки).
@@ -2765,14 +2814,15 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   // анкета не знаходилась, доки хтось її не відредагує.
   await syncUserSearchIdIndex(newUserId, {}, newUser);
 
-  if (searchMeta?.searchIdKey) {
-    const { searchIdKey } = searchMeta;
-    const searchIdUpdates = { [searchIdKey]: newUserId };
+  if (searchMeta?.searchIdKey && searchMeta?.searchIdField) {
+    const { searchIdKey, searchIdField } = searchMeta;
+    // Шлях у новій формі — `{значення}/{поле}`, тож глибокий `update` дописує
+    // саме своє поле й не зносить сусідніх, які вже лежать під цим значенням.
+    const searchIdUpdates = { [`${searchIdKey}/${searchIdField}`]: newUserId };
 
     if (parsedQuery?.handle) {
-      const normalizedHandle = parsedQuery.handle.toLowerCase();
-      const handleKey = `telegram_${encodeKey(normalizedHandle)}`;
-      searchIdUpdates[handleKey] = newUserId;
+      const handleKey = buildSearchIdValueKey('telegram', parsedQuery.handle);
+      if (handleKey) searchIdUpdates[`${handleKey}/telegram`] = newUserId;
     }
 
     await update(searchIdRef, searchIdUpdates);
@@ -2952,13 +3002,12 @@ const executeSearchBySearchIdIndex = async (
   searchIdPrefixes,
   options = {},
 ) => {
-  const searchKeys = buildSearchIdCandidateKeys(
-    modifiedSearchValue,
-    rawSearchValue,
-    searchIdPrefixes,
-    options,
-  );
-  const userIds = await collectUserIdsBySearchIdKeys(searchKeys, { ...options, rawSearchValue });
+  const searchKeys = buildSearchIdCandidateKeys(modifiedSearchValue, rawSearchValue, options);
+  const { userIds } = await collectUserIdsBySearchIdKeys(searchKeys, {
+    ...options,
+    fields: getSearchIdPrefixes(searchIdPrefixes),
+    exactSearchKey: String(modifiedSearchValue || '').toLowerCase(),
+  });
 
   await Promise.all(
     userIds.map(async userId => {
@@ -3143,6 +3192,7 @@ const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUs
 export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) => {
   const {
     searchIdPrefixes,
+    searchIdDetectedField,
     equalToKeys,
     forceEqualToAllCards = false,
     forceSearchKeyBucket = false,
@@ -3153,7 +3203,10 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
   } = options;
   const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch);
   if (isDev) console.log('searchUsersCollectionInRTDB → searchedValue:', searchedValue);
-  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
+  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, {
+    searchIdPrefixes,
+    searchIdDetectedField,
+  });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   // Приставка «УК СМ» — адмінська; для решти набране є звичайним текстом.
   const includeUkSmVariant = isAdminUid(auth.currentUser?.uid);
@@ -4813,39 +4866,34 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       return;
     }
 
-    const normalizedValue = normalizeSearchIdInput(searchKey, searchValue).toLowerCase();
-    const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
-    const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
-    const entryToken = searchIdEntryToken(searchIdKey, userId);
-    failedSearchIdKey = searchIdKey;
-    if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
+    // Запис іде в `searchId/{значення}/{поле}`: ключ — саме значення, а поле
+    // лежить усередині нього. Дописування одного поля не чіпає сусідніх, тож
+    // два писачі, у яких збіглось значення (чиєсь імʼя і чийсь нікнейм), одне
+    // одного не перетирають.
+    const valueKey = buildSearchIdValueKey(searchKey, searchValue);
+    if (!valueKey) {
+      if (isDev) console.log('Порожнє значення після нормалізації :>> ', { searchKey, searchValue });
+      return;
+    }
+
+    const searchIdPath = buildSearchIdEntryPath(valueKey, searchKey);
+    const searchIdRef = ref2(database, searchIdPath);
+    const entryToken = searchIdEntryToken(searchIdPath, userId);
+    failedSearchIdKey = `${valueKey}/${searchKey}`;
+    if (isDev) console.log('searchIdPath in updateSearchId :>> ', searchIdPath);
 
     if (action === 'add') {
       if (confirmedSearchIdEntries.has(entryToken)) return;
 
       const searchIdSnapshot = await get(searchIdRef);
+      const existingValue = searchIdSnapshot.exists() ? searchIdSnapshot.val() : null;
+      const updatedValue = appendSearchIdEntryId(existingValue, userId);
 
-      if (searchIdSnapshot.exists()) {
-        const existingValue = searchIdSnapshot.val();
-
-        if (Array.isArray(existingValue)) {
-          if (!existingValue.includes(userId)) {
-            const updatedValue = [...existingValue, userId];
-            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            if (isDev) console.log(`Додано userId до масиву: ${searchIdKey}:`, updatedValue);
-          } else {
-            if (isDev) console.log(`userId вже існує в масиві для ключа: ${searchIdKey}`);
-          }
-        } else if (existingValue !== userId) {
-          const updatedValue = [existingValue, userId];
-          await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-          if (isDev) console.log(`Перетворено значення на масив і додано userId: ${searchIdKey}:`, updatedValue);
-        } else {
-          if (isDev) console.log(`Ключ вже містить userId: ${searchIdKey}`);
-        }
-      } else {
-        await update(ref2(database, 'searchId'), { [searchIdKey]: userId });
-        if (isDev) console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
+      if (JSON.stringify(updatedValue) !== JSON.stringify(existingValue)) {
+        await update(ref2(database, `${SEARCH_ID_ROOT}/${valueKey}`), { [searchKey]: updatedValue });
+        if (isDev) console.log(`Записано ${searchIdPath} :>> `, updatedValue);
+      } else if (isDev) {
+        console.log(`Ключ уже містить userId: ${searchIdPath}`);
       }
 
       // Позначка ставиться лише тут — після того, як запис у базі відбувся або
@@ -4856,31 +4904,21 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       confirmedSearchIdEntries.delete(entryToken);
 
       const searchIdSnapshot = await get(searchIdRef);
+      if (!searchIdSnapshot.exists()) {
+        if (isDev) console.log(`Ключ не знайдено для видалення: ${searchIdPath}`);
+        return;
+      }
 
-      if (searchIdSnapshot.exists()) {
-        const existingValue = searchIdSnapshot.val();
+      const updatedValue = removeSearchIdEntryId(searchIdSnapshot.val(), userId);
 
-        if (Array.isArray(existingValue)) {
-          const updatedValue = existingValue.filter(id => id !== userId);
-
-          if (updatedValue.length === 1) {
-            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue[0] });
-            if (isDev) console.log(`Оновлено значення ключа до одиничного значення: ${searchIdKey}:`, updatedValue[0]);
-          } else if (updatedValue.length === 0) {
-            await remove(searchIdRef);
-            if (isDev) console.log(`Видалено ключ: ${searchIdKey}`);
-          } else {
-            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            if (isDev) console.log(`Оновлено масив ключа: ${searchIdKey}:`, updatedValue);
-          }
-        } else if (existingValue === userId) {
-          await remove(searchIdRef);
-          if (isDev) console.log(`Видалено ключ, що мав одиничне значення: ${searchIdKey}`);
-        } else {
-          if (isDev) console.log(`userId не знайдено для видалення: ${searchIdKey}`);
-        }
+      if (updatedValue === null) {
+        // Порожнє поле знімається цілком; коли полів більше не лишилось, база
+        // прибирає й сам ключ значення.
+        await remove(searchIdRef);
+        if (isDev) console.log(`Видалено ${searchIdPath}`);
       } else {
-        if (isDev) console.log(`Ключ не знайдено для видалення: ${searchIdKey}`);
+        await update(ref2(database, `${SEARCH_ID_ROOT}/${valueKey}`), { [searchKey]: updatedValue });
+        if (isDev) console.log(`Оновлено ${searchIdPath} :>> `, updatedValue);
       }
     } else {
       console.error('Unknown action provided:', action);
@@ -6737,6 +6775,12 @@ const toPlainObjectFromSetMap = indexMap =>
     return acc;
   }, {});
 
+/**
+ * Індекс `searchId` у новій формі: `{значення}: { поле: id | [id, ...] }`.
+ *
+ * `toPlainObjectFromSetMap` спускається вглиб сам, тож вкладеність тут коштує
+ * рівно один додатковий рівень мапи — і нічого більше.
+ */
 export const buildSearchIdIndexPayloadFromCollections = collectionsMap => {
   const searchIdMap = {};
 
@@ -6750,11 +6794,15 @@ export const buildSearchIdIndexPayloadFromCollections = collectionsMap => {
         );
         candidates.forEach(candidate => {
           if (!candidate) return;
-          const searchIdKey = `${key}_${encodeKey(String(candidate).toLowerCase())}`;
-          if (!searchIdMap[searchIdKey]) {
-            searchIdMap[searchIdKey] = new Set();
+          const valueKey = encodeKey(String(candidate)).toLowerCase();
+          if (!valueKey) return;
+          if (!searchIdMap[valueKey]) {
+            searchIdMap[valueKey] = {};
           }
-          searchIdMap[searchIdKey].add(userId);
+          if (!searchIdMap[valueKey][key]) {
+            searchIdMap[valueKey][key] = new Set();
+          }
+          searchIdMap[valueKey][key].add(userId);
         });
       });
     });
@@ -7944,78 +7992,21 @@ export const fetchUsersBySearchKeyBloodPaged = options => fetchUsersBySearchKeyP
 // За відсутності активних searchKey-груп цей самий loader читає default-list у порядку getInTouch.
 export const fetchUsersByDefaultGetInTouchPaged = options => fetchUsersBySearchKeyPaged(options);
 
-// export const updateSearchId = async (searchKey, searchValue, userId, action) => {
-//   console.log('searchKey!!!!!!!!! :>> ', searchKey);
-//   console.log('searchValue!!!!!!!!! :>> ', searchValue);
-//   console.log('action!!!!!!!!!!! :>> ', action);
-
-//   if (!searchValue || !searchKey || !userId) {
-//     console.error('Invalid parameters provided:', { searchKey, searchValue, userId });
-//     return;
-//   }
-
-//   const searchIdKey = `${searchKey}_${encodeKey(searchValue)}`;
-//   const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
-//   console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
-
-//   try {
-//     await runTransaction(searchIdRef, currentData => {
-//       if (action === 'add') {
-//         if (currentData === null) {
-//           // Ключ ще не існує, ставимо одразу userId
-//           return userId;
-//         } else if (Array.isArray(currentData)) {
-//           // Якщо це масив, перевіряємо чи вже є userId
-//           if (!currentData.includes(userId)) {
-//             currentData.push(userId);
-//           }
-//           return currentData;
-//         } else {
-//           // Якщо це одиничне значення, але не масив
-//           if (currentData !== userId) {
-//             return [currentData, userId];
-//           }
-//           return currentData;
-//         }
-//       } else if (action === 'remove') {
-//         if (currentData === null) {
-//           // Нема чого видаляти
-//           return currentData;
-//         } else if (Array.isArray(currentData)) {
-//           const updatedValue = currentData.filter(id => id !== userId);
-//           if (updatedValue.length === 1) {
-//             return updatedValue[0]; // Залишився один елемент - повертаємо його як одиничне значення
-//           } else if (updatedValue.length === 0) {
-//             return null; // Видаляємо ключ
-//           } else {
-//             return updatedValue;
-//           }
-//         } else {
-//           // Якщо одиничне значення
-//           if (currentData === userId) {
-//             return null; // Видаляємо ключ
-//           }
-//           return currentData;
-//         }
-//       } else {
-//         console.error('Unknown action provided:', action);
-//         return currentData;
-//       }
-//     }, {
-//       applyLocally: false // Якщо не потрібне локальне застосування
-//     });
-
-//     console.log(`Операція '${action}' успішно виконана для ключа ${searchIdKey}.`);
-//   } catch (error) {
-//     console.error('Error in updateSearchId with transaction:', error);
-//   }
-// };
+// Тут довго лежала закоментована транзакційна версія `updateSearchId`. Її
+// прибрано разом зі старою формою ключа (`{поле}_{значення}`): вона писала
+// id просто в ключ, тобто описувала індекс, якого більше немає. Актуальна
+// форма — `searchId/{значення}/{поле}`, див. `docs/searchId-index.md`.
 
 export const createSearchIds = async onProgress => {
   // Те саме джерело, що й у решти індексацій: контакти, за якими будується
   // `searchId`, живуть у `profileContacts`, а не в legacy-анкеті.
-  const usersData = await loadProfilesFromNodesForIndexing();
-  if (!usersData) return;
+  const profilesData = await loadProfilesFromNodesForIndexing();
+  const draftsData = await loadProfileDraftsForIndexing();
+  if (!profilesData && !Object.keys(draftsData).length) return;
+
+  // Анкета перекриває чернетку: після публікації id той самий, і значення
+  // треба брати з того, що вже лежить у вузлах.
+  const usersData = { ...draftsData, ...(profilesData || {}) };
 
   const userIds = Object.keys(usersData);
   if (isDev) console.log('userIds :>> ', userIds);
@@ -8075,18 +8066,34 @@ export const removeSearchId = async userId => {
   const db = getDatabase();
 
   // Отримуємо всі пари в searchId
-  const searchIdSnapshot = await get(ref2(db, `searchId`));
+  const searchIdSnapshot = await get(ref2(db, SEARCH_ID_ROOT));
 
   if (searchIdSnapshot.exists()) {
-    const searchIdData = searchIdSnapshot.val();
+    const searchIdData = searchIdSnapshot.val() || {};
 
-    // Перебираємо всі ключі у searchId
-    const keysToRemove = Object.keys(searchIdData).filter(key => searchIdData[key] === userId);
+    // Ключ — це значення, а id лежать у полях під ним, тож знімається поле, а
+    // не ключ: за тим самим значенням може стояти ще чиясь анкета.
+    const updates = {};
+    Object.entries(searchIdData).forEach(([valueKey, entryValue]) => {
+      if (!entryValue || typeof entryValue !== 'object' || Array.isArray(entryValue)) {
+        // Запис у старій формі (ключ із префіксом) — знімається цілком.
+        if (readSearchIdEntryMatches(entryValue).some(match => match.id === userId)) {
+          updates[valueKey] = null;
+        }
+        return;
+      }
 
-    // Видаляємо пари, що відповідають userId
-    for (const key of keysToRemove) {
-      await remove(ref2(db, `searchId/${key}`));
-      console.log(`Видалено пару в searchId: ${key}`);
+      Object.entries(entryValue).forEach(([field, fieldValue]) => {
+        const nextValue = removeSearchIdEntryId(fieldValue, userId);
+        if (JSON.stringify(nextValue ?? null) !== JSON.stringify(fieldValue ?? null)) {
+          updates[`${valueKey}/${field}`] = nextValue;
+        }
+      });
+    });
+
+    if (Object.keys(updates).length) {
+      await update(ref2(db, SEARCH_ID_ROOT), updates);
+      console.log(`Знято з searchId записів: ${Object.keys(updates).length}`);
     }
   }
 

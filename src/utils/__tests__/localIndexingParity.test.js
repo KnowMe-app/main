@@ -51,6 +51,28 @@ describe('локальний вхід індексації читає ті са�
     expect(describeLocalIndexingSources({}).isUsable).toBe(false);
   });
 
+  it('будь-який вузол анкети вартий індексації, не лише картка й деталі', () => {
+    // `searchId`, зібраний із самих лише контактів, — це повний індекс
+    // контактів, а не «майже порожній результат». Поки тут питались тільки
+    // картка й деталі, вибір самого `profileContacts` мовчки вважався
+    // «нічого не завантажено», і кнопка не робила нічого.
+    ['profileContacts', 'profileWorkflow', 'profileTechnical'].forEach(node => {
+      const sources = describeLocalIndexingSources({ [node]: { a: { phone: '380671112233' } } });
+      expect(sources.isUsable).toBe(true);
+      expect(sources.loadedNodes).toEqual([node]);
+    });
+  });
+
+  it('чернетки йдуть у searchId і тільки в нього', () => {
+    // У `searchKey` і `matchingCards` їм не місце: там живе стрічка, а
+    // чернетка в стрічку не потрапляє нізвідки.
+    expect(addNewProfileSource).toContain('collectDraftProfilesForIndexing');
+    expect(addNewProfileSource).toContain('drafts ? { ...collectionsMap, drafts } : collectionsMap');
+    expect(addNewProfileSource).toMatch(
+      /buildSearchKeyIndexPayloadFromCollections\(collectionsMap, indexTypes\)/,
+    );
+  });
+
   it('картки, зібрані локально, збігаються з тим, що збирає бекенд', () => {
     // Той самий набір вузлів, та сама зведена мапа — і, отже, та сама проєкція.
     const nodes = {

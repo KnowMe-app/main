@@ -67,14 +67,22 @@ jest.mock('firebase/database', () => ({
       val: () => mockStore[key],
     };
   },
-  update: async (_path, payload) => {
+  // Запис іде в `searchId/{значення}` дочірнім полем, тож мок мусить зводити
+  // шлях і ключ payload докупи — інакше сховище тесту не відрізнить
+  // `аветісян/surname` від будь-якого іншого `surname`.
+  update: async (path, payload) => {
     if (mockWriteFailure.error) {
       const failure = mockWriteFailure.error;
       mockWriteFailure.error = null;
       throw failure;
     }
-    mockWrites.push(payload);
-    Object.assign(mockStore, payload);
+    const base = String(path).replace(/^searchId\/?/, '');
+    const scoped = Object.entries(payload).reduce((acc, [key, value]) => {
+      acc[base ? `${base}/${key}` : key] = value;
+      return acc;
+    }, {});
+    mockWrites.push(scoped);
+    Object.assign(mockStore, scoped);
   },
   remove: async path => {
     const key = String(path).replace('searchId/', '');
@@ -125,7 +133,7 @@ describe('searchId індексує за станом індексу, а не з
 
     await syncUserSearchIdIndex(cardId, { surname: 'Аветісян' }, { userId: cardId, surname: 'Аветісян' });
 
-    expect(mockStore).toEqual({ surname_аветісян: cardId });
+    expect(mockStore).toEqual({ 'аветісян/surname': cardId });
   });
 
   it('індексує всі версії поля-історії, а не лише останню', async () => {
@@ -140,28 +148,28 @@ describe('searchId індексує за станом індексу, а не з
     );
 
     expect(mockStore).toEqual({
-      surname_коваленко: cardId,
-      surname_аветісян: cardId,
+      'коваленко/surname': cardId,
+      'аветісян/surname': cardId,
     });
   });
 
   it('не переписує ключ, який уже містить цю анкету', async () => {
     const cardId = nextCardId();
-    mockStore.surname_аветісян = cardId;
+    mockStore['аветісян/surname'] = cardId;
 
     await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
 
-    expect(mockReads).toEqual(['surname_аветісян']);
+    expect(mockReads).toEqual(['аветісян/surname']);
     expect(mockWrites).toEqual([]);
   });
 
   it('дописує анкету до ключа, який уже належить іншій', async () => {
     const cardId = nextCardId();
-    mockStore.surname_аветісян = 'OTHER';
+    mockStore['аветісян/surname'] = 'OTHER';
 
     await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
 
-    expect(mockStore.surname_аветісян).toEqual(['OTHER', cardId]);
+    expect(mockStore['аветісян/surname']).toEqual(['OTHER', cardId]);
   });
 });
 
@@ -174,7 +182,7 @@ describe('підтверджений ключ не перечитується щ
     const profile = { userId: cardId, surname: 'Аветісян' };
 
     await syncUserSearchIdIndex(cardId, {}, profile);
-    expect(mockReads).toEqual(['surname_аветісян']);
+    expect(mockReads).toEqual(['аветісян/surname']);
 
     mockReads.length = 0;
     await syncUserSearchIdIndex(cardId, profile, profile);
@@ -192,13 +200,13 @@ describe('підтверджений ключ не перечитується щ
       { userId: cardId },
       { surname: 'Аветісян' },
     );
-    expect(mockStore.surname_аветісян).toBeUndefined();
+    expect(mockStore['аветісян/surname']).toBeUndefined();
 
     mockReads.length = 0;
     await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
 
-    expect(mockReads).toEqual(['surname_аветісян']);
-    expect(mockStore.surname_аветісян).toBe(cardId);
+    expect(mockReads).toEqual(['аветісян/surname']);
+    expect(mockStore['аветісян/surname']).toBe(cardId);
   });
 });
 
@@ -213,7 +221,7 @@ describe('відмова індексації видима, а не самий �
 
     expect(mockToasts).toHaveLength(1);
     expect(mockToasts[0].type).toBe('error');
-    expect(mockToasts[0].message).toContain('surname_аветісян');
+    expect(mockToasts[0].message).toContain('аветісян/surname');
     expect(mockToasts[0].message).toContain('PERMISSION_DENIED');
   });
 
@@ -225,8 +233,8 @@ describe('відмова індексації видима, а не самий �
     mockReads.length = 0;
     await syncUserSearchIdIndex(cardId, {}, { userId: cardId, surname: 'Аветісян' });
 
-    expect(mockReads).toEqual(['surname_аветісян']);
-    expect(mockStore.surname_аветісян).toBe(cardId);
+    expect(mockReads).toEqual(['аветісян/surname']);
+    expect(mockStore['аветісян/surname']).toBe(cardId);
   });
 
   it('однакові відмови не складають вежу з тостів', async () => {

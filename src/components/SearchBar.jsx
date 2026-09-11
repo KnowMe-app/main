@@ -524,8 +524,14 @@ const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   };
 };
 
-const getTelegramPrefixMatchOptions = (value, prefix) => {
-  if (prefix !== 'telegram') return {};
+/**
+ * Дозвіл на збіг за початком значення потрібен самому лише `telegram`, тож
+ * питання тут одне: чи є `telegram` серед полів, у яких шукаємо. Приймається і
+ * одне поле, і список — після злиття ключів пошук іде одразу по всіх.
+ */
+const getTelegramPrefixMatchOptions = (value, prefixes) => {
+  const prefixList = Array.isArray(prefixes) ? prefixes : [prefixes];
+  if (!prefixList.includes('telegram')) return {};
   const parsedUkTrigger = parseUkTriggerQuery(String(value || ''));
   return parsedUkTrigger?.searchPair?.telegram ? { allowTelegramPrefixMatches: true } : {};
 };
@@ -1022,6 +1028,9 @@ const isSearchPerfDebugEnabled = () => {
 
 const SEARCH_CACHE_SCOPE_OPTION_KEYS = [
   'searchIdPrefixes',
+  // Розпізнане поле змінює нормалізацію набраного, тобто й сам ключ індексу —
+  // тож два пошуки з різним полем не можуть ділити один запис кеша.
+  'searchIdDetectedField',
   'searchKeyFields',
   'equalToKeys',
   'forceEqualToAllCards',
@@ -1382,6 +1391,32 @@ const SearchBar = ({
     });
   };
 
+  /**
+   * Підпис видачі — з того самого запису, який і дав id.
+   *
+   * Поки пошук ішов по префіксах, поле знав сам виклик: один префікс — один
+   * запит. Тепер запит один, а поле приходить із індексу (`__searchIdFields`),
+   * і `fallbackField` лишається тільки для записів у старій формі, де поля в
+   * значенні ще немає.
+   */
+  const mergeSearchIdResultByMatchedField = (acc, res, { fallbackField, value }) => {
+    if (!res || Object.keys(res).length === 0) return;
+
+    const entries = Array.isArray(res)
+      ? res.filter(Boolean).map(card => [card.userId, card])
+      : ('userId' in res ? [[res.userId, res]] : Object.entries(res));
+
+    entries.forEach(([userId, card]) => {
+      if (!userId || !card) return;
+      const [matchedField] = card.__searchIdFields || [];
+      acc[userId] = attachSearchDebugMeta(card, {
+        mode: 'searchId',
+        key: matchedField || fallbackField,
+        value,
+      });
+    });
+  };
+
   const buildRepeatedSearchContext = value => {
     const rawValue = typeof value === 'string' ? value : '';
     const trimmedValue = rawValue.trim();
@@ -1600,25 +1635,37 @@ const SearchBar = ({
         { mode: 'searchId', stage: 'combined' },
       );
 
-      const searchIdResults = await Promise.all(
-        prefixesToIterate.map(prefix =>
-          cachedSearch(
-            { searchId: searchIdInput },
-            {
-              forceEqualToAllCards: false,
-              searchIdPrefixes: [prefix],
-              ...getTelegramPrefixMatchOptions(searchIdInput, prefix),
-            },
-          )
+      // Один пошук на всі поля, а не пошук на кожне поле.
+      //
+      // Поки ключ індексу був `{поле}_{значення}`, інакше й не виходило: щоб
+      // дізнатись, чи лежить набране в `instagram`, треба було прочитати саме
+      // `instagram_…`. Звідси й був перебір — чотирнадцять окремих пошуків,
+      // кожен зі своїм читанням, кешем і гідратацією, з яких влучав один.
+      // Тепер ключ один на значення, а поле віддає сам запис — тож перебір
+      // згорнувся в один запит, а підпис видачі дає `__searchIdFields`.
+      // Порожній перелік полів — це «шукати в `searchId` не треба», а не
+      // «шукати в усіх». Поки виклик був на кожне поле, порожній перелік сам
+      // собою не давав жодного виклику; тепер виклик один, тож умову видно.
+      const searchIdResult = prefixesToIterate.length
+        ? await cachedSearch(
+          { searchId: searchIdInput },
+          {
+            forceEqualToAllCards: false,
+            searchIdPrefixes: prefixesToIterate,
+            searchIdDetectedField: primarySearchIdPrefix,
+            ...getTelegramPrefixMatchOptions(searchIdInput, prefixesToIterate),
+          },
         )
-      );
+        : null;
       if (isStaleRequest()) return { found: false, results: resultMap };
 
-      searchIdResults.forEach((searchIdResult, index) => {
-        if (!searchIdResult || Object.keys(searchIdResult).length === 0) return;
+      if (searchIdResult && Object.keys(searchIdResult).length > 0) {
         foundCombinedResults = true;
-        mergeSearchResultMap(resultMap, searchIdResult, { mode: 'searchId', key: prefixesToIterate[index], value: searchIdInput });
-      });
+        mergeSearchIdResultByMatchedField(resultMap, searchIdResult, {
+          fallbackField: primarySearchIdPrefix,
+          value: searchIdInput,
+        });
+      }
     }
 
     if (isSearchEnabled('searchKey')) {
@@ -1844,27 +1891,27 @@ const SearchBar = ({
         applyState({}, requestId);
         applyUsers({}, requestId);
       }
-      const mergeSearchResult = (acc, res, meta = null) => {
-        mergeSearchResultMap(acc, res, meta);
-      };
-
       let finalRes = null;
       if (platform === 'searchId') {
         const prefixesToIterate = primarySearchIdPrefixes || fallbackSearchIdPrefixes;
+        const [detectedSearchIdField] = prefixesToIterate;
         const aggregatedResults = {};
 
-        const prefixResults = await Promise.all(
-          prefixesToIterate.map(prefix =>
-            cachedSearch(result, {
-              forceEqualToAllCards: false,
-              searchIdPrefixes: [prefix],
-              ...getTelegramPrefixMatchOptions(id, prefix),
-            })
-          )
-        );
+        // Один запит на всі поля: ключ індексу — саме значення, а поле віддає
+        // сам запис. Перебір префіксів тут давав по пошуку на поле. Порожній
+        // перелік лишається відмовою від пошуку, а не дозволом на всі поля.
+        const searchIdResult = prefixesToIterate.length
+          ? await cachedSearch(result, {
+            forceEqualToAllCards: false,
+            searchIdPrefixes: prefixesToIterate,
+            searchIdDetectedField: detectedSearchIdField,
+            ...getTelegramPrefixMatchOptions(id, prefixesToIterate),
+          })
+          : null;
 
-        prefixResults.forEach((partialRes, index) => {
-          mergeSearchResult(aggregatedResults, partialRes, { mode: 'searchId', key: prefixesToIterate[index], value: id });
+        mergeSearchIdResultByMatchedField(aggregatedResults, searchIdResult, {
+          fallbackField: detectedSearchIdField,
+          value: id,
         });
 
         if (Object.keys(aggregatedResults).length > 0) {

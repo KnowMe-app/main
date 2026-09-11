@@ -746,11 +746,32 @@ await it('заповнює власні деталі, контакти й тех
 await it('індексує власну анкету — і старі значення, і нові', async () => {
   // Пошук по контакту тримається на цих індексах. Якби їх могла писати лише
   // адміністрація, самостійно заведена анкета не знаходилась би взагалі.
+  //
+  // Ключ — саме значення, а поле лежить у ньому: `searchId/{значення}/{поле}`.
   await assertSucceeds(set(ref(db(SELF_SERVE), `searchKey/users/role/ed/${SELF_SERVE}`), true));
-  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380671112233`), SELF_SERVE));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380671112233/phone`), SELF_SERVE));
   // Старе значення лишається в індексі поруч із новим: змінена пошта — не
   // зникла пошта, анкету шукають і ті, хто знає лише старий контакт.
-  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380500000000`), SELF_SERVE));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380500000000/phone`), SELF_SERVE));
+});
+
+await it('те саме значення в іншому полі — інший запис, а не конфлікт', async () => {
+  // Саме заради цього поле й переїхало в значення: нікнейм, що збігся з
+  // чужим імʼям, лягає поруч, а не поверх.
+  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380671112233/other`), SELF_SERVE));
+});
+
+await it('поле поза переліком індексованих не пишеться', async () => {
+  // Перелік полів у правилах — те саме, що `$other: false` у картці: інакше
+  // під значенням накопичується будь-що, і читач індексу отримує сміття.
+  await assertFails(set(ref(db(SELF_SERVE), `searchId/380671112233/moreInfo`), SELF_SERVE));
+});
+
+await it('не переписує чужий id у своєму полі', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `searchId/380999999999/phone`), CARD));
+  await assertFails(set(ref(db(SELF_SERVE), `searchId/380999999999/phone`), SELF_SERVE));
+  // Дописатись поруч — можна: у значення може вести не одна анкета.
+  await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380999999999/phone`), [CARD, SELF_SERVE]));
 });
 
 describe('searchId — точковий резолв усім, перелік індексу тільки адміну');
@@ -760,6 +781,9 @@ await it('будь-хто авторизований читає один клю�
   // ключ будується з самого значення, тож перелік вузла для цього не потрібен.
   await assertSucceeds(get(ref(db(SELF_SERVE), 'searchId/380671112233')));
   await assertSucceeds(get(ref(db(MATCHING_EDITOR), 'searchId/380671112233')));
+  // Одним читанням приходять усі поля цього значення — саме тому пошук і
+  // коштує один запит, а не по запиту на поле.
+  await assertSucceeds(get(ref(db(MATCHING_EDITOR), 'searchId/380671112233/phone')));
 });
 
 await it('перелічити індекс цілим вузлом може тільки суперадмін', async () => {

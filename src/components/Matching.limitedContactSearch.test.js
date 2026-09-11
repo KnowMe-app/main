@@ -1,6 +1,6 @@
 // Звичайний читач шукає за поштою й бачить нуль.
 //
-// Знайти анкету він міг: `searchId/{поле}_{значення}` відкритий кожному
+// Знайти анкету він міг: `searchId/{значення}` відкритий кожному
 // авторизованому, а картку стрічки з `feedDate` — тим паче. Ламалось на
 // останньому кроці: SearchBar перевіряє знайдене на збіг із запитом, а в
 // урізаній проєкції немає ані пошти, ані телефона, ані лінків — і прізвище в
@@ -51,7 +51,9 @@ const MATCHING_CARD = {
 // Префікс `mock` — вимога jest: лише такі змінні фабрика мока може бачити.
 const mockReadPaths = [];
 const mockDatabase = {
-  'searchId/email_sm_dot_do_dot_kiev_at_gmail_dot_com': '-OaBcDeFgHiJkLmNoPqR',
+  // Ключ — саме значення, поле лежить у ньому: одне читання віддає всі поля
+  // цього значення, а звуження до `email` відсіює вже прочитане.
+  'searchId/sm_dot_do_dot_kiev_at_gmail_dot_com': { email: '-OaBcDeFgHiJkLmNoPqR' },
   'matchingCards/-OaBcDeFgHiJkLmNoPqR': MATCHING_CARD,
 };
 
