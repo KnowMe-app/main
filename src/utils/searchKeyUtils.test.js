@@ -57,6 +57,22 @@ describe('форма запису індексу', () => {
     });
   });
 
+  it('не обрізає номер, у якому 380380 є початком самого значення', () => {
+    expect(describeSearchIdRecord({ phone: '+380380972435' })).toEqual({
+      field: 'phone',
+      valueKey: '380380972435',
+      path: 'searchId/380380972435/phone',
+    });
+  });
+
+  it('прибирає 380 лише зі справді продубльованого повного коду країни', () => {
+    expect(describeSearchIdRecord({ phone: '+380380671112233' })).toEqual({
+      field: 'phone',
+      valueKey: '380671112233',
+      path: 'searchId/380671112233/phone',
+    });
+  });
+
   it('одне читання віддає всі поля значення — і те, яким збіглось', () => {
     const entry = { name: 'AA0001', surname: ['AA0002', 'AA0003'] };
 

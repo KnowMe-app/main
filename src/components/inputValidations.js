@@ -233,6 +233,12 @@ export const formatEmail = email => {
     return valueToUpdate;
   };
 
+// Подвійний код України виправляємо лише у повному номері: сама послідовність
+// `380380` на початку ще не доводить дублювання. Інакше, наприклад,
+// `380380972435` втрачав три цифри й індексувався як `380972435`.
+const removeDuplicatedUkraineCode = digits =>
+  (/^380380\d{9}$/.test(digits) ? `380${digits.slice(6)}` : digits);
+
 export const normalizePhoneValue = number => {
   const digitsOnly = removeSpaceAndNewLine(removeNotNumbers(String(number ?? '')));
 
@@ -244,8 +250,9 @@ export const normalizePhoneValue = number => {
     return digitsOnly;
   }
 
-  if (digitsOnly.startsWith('380380')) {
-    return `380${digitsOnly.slice(6)}`;
+  const withoutDuplicatedUkraineCode = removeDuplicatedUkraineCode(digitsOnly);
+  if (withoutDuplicatedUkraineCode !== digitsOnly) {
+    return withoutDuplicatedUkraineCode;
   }
 
   if (digitsOnly.startsWith('3800')) {
@@ -297,8 +304,9 @@ export const normalizePhoneState = currentState => {
     let cleaned = removeNotNumbers(number);
     cleaned = removeSpaceAndNewLine(cleaned);
   
-    if (cleaned.startsWith('380380')) {
-      cleaned = '380' + cleaned.slice(6);
+    const withoutDuplicatedUkraineCode = removeDuplicatedUkraineCode(cleaned);
+    if (withoutDuplicatedUkraineCode !== cleaned) {
+      cleaned = withoutDuplicatedUkraineCode;
     }
     // Check if the number starts with '3800', then remove one zero
     else if (cleaned.startsWith('3800')) {
