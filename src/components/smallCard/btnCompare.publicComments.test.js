@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
 
 jest.mock('../config', () => ({
-  auth: { currentUser: { uid: 'admin-1' } },
+  auth: { currentUser: { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' } },
   fetchPublicProfileComments: jest.fn(),
   fetchUserComment: jest.fn(),
   saveMyCardComment: jest.fn(),
@@ -17,7 +17,7 @@ jest.mock('../../utils/legacyImportCommentMigration', () => ({
 
 jest.mock('./actions', () => ({ handleSubmitAll: jest.fn() }));
 
-const { fetchPublicProfileComments, fetchUserComment } = require('../config');
+const { auth, fetchPublicProfileComments, fetchUserComment } = require('../config');
 const { copyPublicCommentsBetweenCards } = require('../../utils/legacyImportCommentMigration');
 const { btnCompare } = require('./btnCompare');
 
@@ -43,6 +43,7 @@ describe('btnCompare — публічні відгуки в таблиці ду�
   };
 
   beforeEach(() => {
+    auth.currentUser = { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' };
     fetchUserComment.mockReset().mockResolvedValue(null);
     copyPublicCommentsBetweenCards.mockReset().mockResolvedValue({ copied: 1, skipped: 0 });
     fetchPublicProfileComments.mockReset().mockResolvedValue({
@@ -76,5 +77,13 @@ describe('btnCompare — публічні відгуки в таблиці ду�
     await openCompareTable();
 
     expect(screen.queryByText('publicComments')).not.toBeInTheDocument();
+  });
+
+  it('не пропонує неадміну копіювати публічні відгуки', async () => {
+    auth.currentUser = { uid: 'ordinary-editor' };
+    await openCompareTable();
+
+    fireEvent.click(screen.getByText('Зняли з підготовки до переносу'));
+    expect(copyPublicCommentsBetweenCards).not.toHaveBeenCalled();
   });
 });

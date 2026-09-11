@@ -6391,12 +6391,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         stats.failed ? `не вдалося: ${stats.failed}` : '',
       ].filter(Boolean).join(', ');
 
-      if (stats.failed) {
+      if (stats.failed || stats.unreadableOwnerIds.length) {
         console.error('[AddNewProfile] legacy comments migration failures', stats.failures);
         // Звіт «перенесено 0/1» без причини не каже нічого, а причина майже
         // завжди одна й та сама — правила бази ще не викочені, бо CI їх не
         // викочує. Тому вона названа прямо в тості, разом з командою.
-        const reason = stats.permissionDenied
+        const reason = stats.unreadableOwnerIds.length
+          ? `Не прочитано власників: ${stats.unreadableOwnerIds.join(', ')}. Їхні записи не змінено.`
+          : stats.permissionDenied
           ? 'База відмовила (PERMISSION_DENIED): правила ще не викочені — npx firebase deploy --only database'
           : stats.failures[0]?.message || '';
         toast.error(`Перенос завершено з помилками — ${details}.\n${reason}`.trim(), {

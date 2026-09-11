@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { auth, fetchPublicProfileComments, fetchUserComment, saveMyCardComment } from '../config';
 import { setLocalComment } from '../../utils/commentsStorage';
 import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentMigration';
+import { isAdminUid } from '../../utils/accessLevel';
 import { handleSubmitAll } from './actions';
 
 let latestCompareRequest = 0;
@@ -186,8 +187,9 @@ export const btnCompare = (
       const uniqueCurrent = [...currentSet].filter(value => !nextSet.has(value));
       const uniqueNext = [...nextSet].filter(value => !currentSet.has(value));
       const isUserId = key === 'userId';
-      const canCopyCurrent = !isUserId && currentSet.size > 0;
-      const canCopyNext = !isUserId && nextSet.size > 0;
+      const canCopyPublicComments = key !== PUBLIC_COMMENTS_KEY || isAdminUid(auth.currentUser?.uid);
+      const canCopyCurrent = !isUserId && canCopyPublicComments && currentSet.size > 0;
+      const canCopyNext = !isUserId && canCopyPublicComments && nextSet.size > 0;
       const cellStyle = { width: '40%', whiteSpace: 'normal', wordBreak: 'break-word' };
       return (
         <tr key={key}>
