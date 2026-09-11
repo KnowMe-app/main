@@ -7,6 +7,7 @@ import {
   updateDataInRealtimeDB,
   updateProfileNodesInRTDB,
   updateDataInFiresoreDB,
+  pruneSearchIdValues,
   syncUserSearchIdIndex,
   fetchUserComment,
   saveMyCardComment,
@@ -589,7 +590,7 @@ const EditProfile = () => {
     [navigate, location.pathname],
   );
 
-  async function remoteUpdate({ updatedState, overwrite, delCondition, deletedKeys = [] }) {
+  async function remoteUpdate({ updatedState, overwrite, delCondition, deletedKeys = [], removedIndexValues }) {
     const editorUserId = auth.currentUser?.uid;
     const canWriteMain = isAdminUid(editorUserId);
     let commentSaveFailed = false;
@@ -749,6 +750,11 @@ const EditProfile = () => {
       }
     }
 
+    // Після запису: писачі вище дописують у `searchId` усе, що є в payload.
+    if (updatedState?.userId && removedIndexValues) {
+      await pruneSearchIdValues(updatedState.userId, removedIndexValues, updatedState);
+    }
+
     const syncedState = commentSaveFailed
       ? { ...updatedState, myComment: lastSyncedSnapshotRef.current?.myComment ?? '' }
       : updatedState;
@@ -756,7 +762,7 @@ const EditProfile = () => {
   }
 
 
-  const enqueueProfileSync = useCallback(({ updatedState, overwrite, delCondition, deletedKeys, submitSeq }) => {
+  const enqueueProfileSync = useCallback(({ updatedState, overwrite, delCondition, deletedKeys, removedIndexValues, submitSeq }) => {
     const queuedUserId = updatedState?.userId;
     const queuedGeneration = profileSyncGenerationRef.current;
     activeSyncCountRef.current += 1;
@@ -768,6 +774,7 @@ const EditProfile = () => {
         overwrite,
         delCondition,
         deletedKeys,
+        removedIndexValues,
       });
 
       const finalSnapshot = prepareSyncedSnapshot(syncedSnapshot || updatedState, deletedKeys);
@@ -904,7 +911,7 @@ const EditProfile = () => {
     refreshOverlays();
   }, [userId, refreshOverlays, currentUid, isAdmin, location.key]);
 
-  const handleSubmit = async (newState, overwrite, delCondition, submitSource) => {
+  const handleSubmit = async (newState, overwrite, delCondition, submitSource, removedIndexValues) => {
     const submitState = newState || state || {};
 
     debugProfileSave('handleSubmit:start', {
@@ -956,6 +963,7 @@ const EditProfile = () => {
       overwrite,
       delCondition,
       deletedKeys,
+      removedIndexValues,
       submitSeq,
     });
   };
@@ -1092,6 +1100,12 @@ const EditProfile = () => {
     const capturedDelCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
       ? undefined
       : { [fieldName]: removedValue };
+    // Поле пережило видалення однієї версії — значить `delCondition` не
+    // ставиться (він зносить поле цілком), і про прибране значення індекс
+    // інакше не дізнається взагалі. Знімається рівно воно.
+    const capturedRemovedIndexValues = capturedDelCondition
+      ? undefined
+      : { [fieldName]: [removedValue] };
 
     liveFieldsRef.current = capturedNewState;
     setState(capturedNewState);
@@ -1112,7 +1126,13 @@ const EditProfile = () => {
       delCondition: capturedDelCondition,
     });
 
-    const submitPromise = handleSubmit(capturedNewState, 'overwrite', capturedDelCondition, 'handleClear');
+    const submitPromise = handleSubmit(
+      capturedNewState,
+      'overwrite',
+      capturedDelCondition,
+      'handleClear',
+      capturedRemovedIndexValues,
+    );
     if (!hasIndex) {
       clearDeletingFieldAfterSubmit(fieldName, submitPromise);
     }

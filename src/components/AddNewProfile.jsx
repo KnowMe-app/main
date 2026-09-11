@@ -32,6 +32,7 @@ import {
   replaceStimulationShortcutIds,
   fetchStimulationShortcutIds,
   filterMain,
+  pruneSearchIdValues,
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
   createMatchingCardsIndex,
@@ -1865,6 +1866,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     overwrite,
     delCondition,
     deletedKeys,
+    removedIndexValues,
     optimisticCard,
     hasNewState,
     formattedLastDelivery,
@@ -1902,8 +1904,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         // The index root follows the id format; writing a profile into both roots
         // is what left account ids scattered across the shared card index.
         // syncUserSearchKeyIndex resolves the root from the id.
+        // `deletedKeys` — четвертим аргументом, як і в `EditProfile`: без нього
+        // `syncUserSearchIdIndex` не знімає нічого взагалі (знімати вона вміє
+        // лише те, що прийшло сюди), і стертий контакт лишався в `searchId`
+        // назавжди. Для анкети акаунта (довгий id) це був єдиний шанс:
+        // `updateDataInRealtimeDB` індексу не чіпає.
         await Promise.all([
-          syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
+          syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState, deletedKeys),
           syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
         ]);
       } catch (indexError) {
@@ -2021,6 +2028,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         await updateProfileNodesInRTDB(syncedState.userId, cleanedState, 'update');
       }
     }
+
+    // Після запису, а не до: писачі вище дописують у `searchId` усе, що є в
+    // payload, і прибране значення довелось би знімати двічі.
+    if (syncedState?.userId && removedIndexValues) {
+      await pruneSearchIdValues(syncedState.userId, removedIndexValues, syncedState);
+    }
   }
 
   // Chains every write onto the same promise so they execute strictly in
@@ -2099,7 +2112,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return queuedSync;
   };
 
-  const handleSubmit = (newState, overwrite, delCondition) => {
+  const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
@@ -2185,6 +2198,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       overwrite,
       delCondition,
       deletedKeys,
+      removedIndexValues,
       optimisticCard,
       localCardState,
       removeKeys,
@@ -2302,6 +2316,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const isArray = Array.isArray(prevState[fieldName]);
     const newState = { ...prevState };
     let delCondition;
+    // Значення, яке прибрали, лишивши поле живим. `delCondition` тут не
+    // годиться: він зносить поле цілком (`payload[key] = null`), а решта
+    // версій чинні. Індекс же мусить про це дізнатись — інакше ✕ на одній
+    // версії правив анкету, а пошук за прибраним номером і далі приводив сюди.
+    let removedIndexValues;
 
     if (isArray) {
       const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
@@ -2315,8 +2334,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         delCondition = { [fieldName]: removedValue };
       } else if (normalizedFilteredArray.length === 1) {
         newState[fieldName] = normalizedFilteredArray[0];
+        removedIndexValues = { [fieldName]: [removedValue] };
       } else {
         newState[fieldName] = normalizedFilteredArray;
+        removedIndexValues = { [fieldName]: [removedValue] };
       }
     } else {
       const removedValue = prevState[fieldName];
@@ -2330,7 +2351,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (delCondition) {
       pendingDeletedKeysRef.current.add(fieldName);
     }
-    handleSubmit(newState, 'overwrite', delCondition);
+    handleSubmit(newState, 'overwrite', delCondition, removedIndexValues);
   };
 
   const handleDelKeyValue = fieldName => {
