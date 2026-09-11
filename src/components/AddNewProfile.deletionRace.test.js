@@ -42,7 +42,11 @@ describe('handleClear/handleDelKeyValue read/write liveFieldsRef synchronously i
     expect(fnBody.indexOf('liveFieldsRef.current = newState;')).toBeLessThan(
       fnBody.indexOf('setState(newState);')
     );
-    expect(fnBody).toContain("handleSubmit(newState, 'overwrite', delCondition);");
+    // Четвертим аргументом їде прибрана версія масиву: поле лишається,
+    // а значення мусить піти з `searchId` (див. searchIdAppendOnly.test.js).
+    expect(fnBody).toContain(
+      "handleSubmit(newState, 'overwrite', delCondition, removedIndexValues);"
+    );
   });
 
   it('handleDelKeyValue reads liveFieldsRef.current directly, writes it back, then calls handleSubmit', () => {
@@ -63,7 +67,7 @@ describe('handleClear/handleDelKeyValue read/write liveFieldsRef synchronously i
 
   it('handleSubmit keeps liveFieldsRef in sync with its own optimistic setState(optimisticCard) call', () => {
     const fnBody = extractFnBody(
-      'const handleSubmit = (newState, overwrite, delCondition) => {',
+      'const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {',
       'const handleExit = async () => {'
     );
 
@@ -131,7 +135,7 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
     expect(remoteUpdateBody).toContain('saveOverlayForUserCard(');
 
     const handleSubmitBody = source.slice(
-      source.indexOf('const handleSubmit = (newState, overwrite, delCondition) => {'),
+      source.indexOf('const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {'),
       source.indexOf('const handleExit = async () => {')
     );
     expect(handleSubmitBody).not.toContain('saveOverlayForUserCard(');
@@ -140,7 +144,7 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
   it('every write is chained onto syncQueueRef so submissions execute in strict order', () => {
     const enqueueBody = source.slice(
       source.indexOf('const enqueueProfileSync = params => {'),
-      source.indexOf('const handleSubmit = (newState, overwrite, delCondition) => {')
+      source.indexOf('const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {')
     );
 
     expect(enqueueBody).toContain('syncQueueRef.current');

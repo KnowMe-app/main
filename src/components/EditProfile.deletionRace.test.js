@@ -41,7 +41,9 @@ describe('handleClear/handleDelKeyValue read/write liveFieldsRef synchronously i
       fnBody.indexOf('setState(capturedNewState);')
     );
     expect(fnBody).toContain(
-      "handleSubmit(capturedNewState, 'overwrite', capturedDelCondition, 'handleClear')"
+      // Пʼятим аргументом їде прибрана версія масиву: поле лишається,
+      // а значення мусить піти з `searchId` (див. searchIdAppendOnly.test.js).
+      "handleSubmit(\n      capturedNewState,\n      'overwrite',\n      capturedDelCondition,\n      'handleClear',\n      capturedRemovedIndexValues,\n    )"
     );
   });
 
@@ -63,7 +65,7 @@ describe('handleClear/handleDelKeyValue read/write liveFieldsRef synchronously i
 
   it('handleSubmit keeps liveFieldsRef in sync with its own optimistic setState(updatedState) call', () => {
     const fnBody = extractFnBody(
-      'const handleSubmit = async (newState, overwrite, delCondition, submitSource) => {',
+      'const handleSubmit = async (newState, overwrite, delCondition, submitSource, removedIndexValues) => {',
       'const handleFieldFocus = fieldName => {'
     );
 

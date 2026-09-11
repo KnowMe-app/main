@@ -4992,6 +4992,48 @@ export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}
   }
 };
 
+/**
+ * Зняти з індексу значення, яке прибрали з поля, лишивши саме поле.
+ *
+ * Хрестик біля однієї версії масиву — це теж «цього номера в анкети більше
+ * немає», і пошук за ним не має приводити сюди. Але занулити поле, як це
+ * робить `deletedKeys`, тут не можна: решта версій чинні, — тож знімаються
+ * рівно ті значення, які прибрали, і лише ті, яких у новій анкеті вже немає.
+ * Поки цього шляху не було, ✕ на одній версії правив анкету й мовчки лишав
+ * старий ключ у `searchId`: пошук за прибраним номером і далі приводив на цю
+ * картку, а знімалось значення тільки тоді, коли воно було в полі останнім.
+ *
+ * Значення береться те, яке прибрали, а не різниця «було/стало»: локальна
+ * картка може бути старішою за базу, і зводити індекс до неї означало б
+ * зносити ключі, яких адміністраторка на екрані не бачила.
+ *
+ * Порожній рядок сюди не доходить ніколи, і це навмисно: `['Оксана', '']` —
+ * це позначка стирання, тобто те, як «стирає» не-адмін, а не-адмін пише
+ * овнерлей і до індексу не дістається взагалі. Кандидатів у порожнього рядка
+ * немає, тож навіть ✕ на самій позначці нічого з індексу не знімає.
+ */
+export const pruneSearchIdValues = async (userId, removedValuesByKey = {}, nextData = {}) => {
+  if (!userId) return;
+
+  for (const [key, removedValues] of Object.entries(removedValuesByKey || {})) {
+    if (!keysToCheck.includes(key)) continue;
+
+    const survivingCandidates = new Set(
+      extractIndexableFieldValues(nextData?.[key]).flatMap(value => buildSearchIndexCandidates(key, value))
+    );
+    const staleCandidates = new Set(
+      extractIndexableFieldValues(removedValues)
+        .flatMap(value => buildSearchIndexCandidates(key, value))
+        .filter(candidate => !survivingCandidates.has(candidate))
+    );
+
+    for (const candidate of staleCandidates) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchId(key, candidate, userId, 'remove');
+    }
+  }
+};
+
 const normalizeBloodIndexValue = rawValue => {
   const normalized = String(rawValue || '')
     .trim()
