@@ -49,7 +49,7 @@ import {
 // Перелік індексованих полів і формат ключа беремо з того самого модуля, яким
 // індексується анкета: локальна копія встигла розійтися з ним (не було
 // `ameblo`), а ключ, побудований інакше, вказував би не на той вузол.
-import { SEARCH_ID_INDEXED_FIELDS, buildSearchIdRecordKey } from 'utils/searchKeyUtils';
+import { SEARCH_ID_INDEXED_FIELDS, describeSearchIdRecord, readSearchIdEntryIds } from 'utils/searchKeyUtils';
 import { MULTI_DATA_ACCESS_FIELD } from 'utils/multiDataAccess';
 import {
   groupProfileFormFieldsByBlock,
@@ -423,21 +423,15 @@ const HIDDEN_FOR_CL_PP_FIELDS = new Set([
 ]);
 const canOpenSearchIdBackendShortcut = (fieldName, value) =>
   (fieldName === 'userId' || SEARCH_ID_INDEXED_FIELDS.has(fieldName)) && String(value ?? '').trim();
-const searchIdRecordContainsUserId = (recordValue, userId) => {
-  if (!userId) return false;
-  if (Array.isArray(recordValue)) return recordValue.includes(userId);
-  if (recordValue && typeof recordValue === 'object') {
-    return Object.values(recordValue).includes(userId);
-  }
-  return recordValue === userId;
-};
+const searchIdRecordContainsUserId = (recordValue, userId) =>
+  Boolean(userId) && readSearchIdEntryIds(recordValue).includes(userId);
 
 // Посилання в консоль будує один спільний хелпер — той самий, що й для
 // заголовків блоків. Дві копії форматування вже розійшлися одна з одною, і
 // саме в цьому був зламаний слеш після `/data`.
 const buildUsersBackendUrl = userId => (userId ? buildRtdbConsoleLink(['users', userId]) : '');
-const buildSearchIdBackendUrl = searchIdRecordKey =>
-  (searchIdRecordKey ? buildRtdbConsoleLink(['searchId', searchIdRecordKey]) : '');
+const buildSearchIdBackendUrl = (searchIdRecordKey, searchIdField) =>
+  (searchIdRecordKey ? buildRtdbConsoleLink(['searchId', searchIdRecordKey, searchIdField].filter(Boolean)) : '');
 const SEARCH_KEY_ROOT = 'searchKey';
 const normalizeSearchKeyPayload = payload => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
@@ -2764,21 +2758,26 @@ ${entries.join('\n')}`;
     }
 
     // Ключ у `searchId` детермінований: індексація анкети будує його тим самим
-    // `buildSearchIdRecordKey`. Тому шукати його скануванням не треба — і не
+    // `describeSearchIdRecord`. Тому шукати його скануванням не треба — і не
     // можна: правила бази дають читання на `searchId/$key`, а не на `searchId`,
     // тож будь-який запит по кореню вузла завжди падав з Permission denied.
-    const searchIdRecordKey = buildSearchIdRecordKey({ [fieldName]: value });
+    // Ключ — це значення, а поле лежить у ньому, тож читається саме
+    // `searchId/{значення}/{поле}`: сусідні поля того самого значення до цієї
+    // анкети стосунку не мають.
+    const searchIdRecord = describeSearchIdRecord({ [fieldName]: value });
 
-    if (!searchIdRecordKey) {
+    if (!searchIdRecord) {
       toast.error(`Не вдалося побудувати ключ searchId для ${fieldName}.`);
       return;
     }
 
+    const { valueKey: searchIdRecordKey, field: searchIdField, path: searchIdPath } = searchIdRecord;
+
     try {
-      const snapshot = await get(refDb(database, `searchId/${searchIdRecordKey}`));
+      const snapshot = await get(refDb(database, searchIdPath));
 
       if (!snapshot.exists()) {
-        toast.error(`У backend searchId немає запису ${searchIdRecordKey}.`);
+        toast.error(`У backend searchId немає запису ${searchIdRecordKey}/${searchIdField}.`);
         return;
       }
 
@@ -2786,10 +2785,10 @@ ${entries.join('\n')}`;
       // Якщо в ньому чужий id, це теж відповідь на питання «де мої дані»,
       // тому вузол відкриваємо, але кажемо про розбіжність вголос.
       if (!searchIdRecordContainsUserId(snapshot.val(), userId)) {
-        toast(`Запис ${searchIdRecordKey} не містить userId ${userId}; відкриваю його.`);
+        toast(`Запис ${searchIdRecordKey}/${searchIdField} не містить userId ${userId}; відкриваю його.`);
       }
 
-      window.open(buildSearchIdBackendUrl(searchIdRecordKey), '_blank', 'noopener,noreferrer');
+      window.open(buildSearchIdBackendUrl(searchIdRecordKey, searchIdField), '_blank', 'noopener,noreferrer');
     } catch (error) {
       const details = error?.message || String(error);
       toast.error(`Не вдалося відкрити searchId backend.\n${details}`);

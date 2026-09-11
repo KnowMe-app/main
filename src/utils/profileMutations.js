@@ -5,7 +5,11 @@ import { buildOverlayFromDraft, getOverlaysForCard } from './multiAccountEdits';
 import { buildProfileNodePatch } from './profileNodeWriter';
 import {
   SEARCH_ID_INDEXED_FIELDS,
-  buildSearchIdRecordKey,
+  appendSearchIdEntryId,
+  buildSearchIdClaimKey,
+  buildSearchIdEntryPath,
+  describeSearchIdRecord,
+  readSearchIdEntryIds,
 } from './searchKeyUtils';
 
 export const PROFILE_MUTATIONS_ROOT = 'multiData/profileMutations';
@@ -66,12 +70,20 @@ export const getEffectiveProfile = ({ baseProfile, mutation } = {}) => {
 
 export const reserveProfileCardId = () => push(ref(database, PROFILE_MUTATIONS_ROOT)).key;
 
-const getSearchIdKeys = (data, { contactsOnly = false } = {}) => Object.entries(cleanObject(data))
+/**
+ * Значення чернетки, які мають опинитись в індексі, — разом із полем.
+ *
+ * Поле тепер частина запису (`searchId/{значення}/{поле}`), а не частина
+ * ключа, тож воно носиться поруч зі значенням: за ним і пишеться id, і
+ * звіряється зайнятість. Заявка на унікальність лишається в старій формі
+ * `{поле}_{значення}` — див. `buildSearchIdClaimKey`.
+ */
+const getSearchIdRecords = (data, { contactsOnly = false } = {}) => Object.entries(cleanObject(data))
   .filter(([field]) => SEARCH_ID_INDEXED_FIELDS.has(field) && (!contactsOnly || (field !== 'name' && field !== 'surname')))
   .flatMap(([field, rawValue]) => (Array.isArray(rawValue) ? rawValue : [rawValue])
-    .map(value => buildSearchIdRecordKey({ [field]: value }))
+    .map(value => describeSearchIdRecord({ [field]: value }))
     .filter(Boolean))
-  .filter((value, index, values) => values.indexOf(value) === index);
+  .filter((record, index, records) => records.findIndex(item => item.path === record.path) === index);
 
 const hashKey = value => {
   let hash = 2166136261;
@@ -82,28 +94,27 @@ const hashKey = value => {
   return (hash >>> 0).toString(36);
 };
 
+const keyByteLength = key => new TextEncoder().encode(key).length;
+
 // RTDB limits a child key to 768 UTF-8 bytes. Claims need only be stable and
 // collision-resistant within their field, so bound pathological form values.
-const getIdentityClaimKey = key => (
-  new TextEncoder().encode(key).length <= 700 ? key : `${key.split('_', 1)[0]}_hash_${hashKey(key)}`
-);
-
-const appendIndexId = (value, cardId) => {
-  const ids = (Array.isArray(value) ? value : [value]).filter(Boolean);
-  if (!ids.includes(cardId)) ids.push(cardId);
-  return ids.length === 1 ? ids[0] : ids;
+const getIdentityClaimKey = ({ field, valueKey }) => {
+  const claimKey = buildSearchIdClaimKey(field, valueKey);
+  return keyByteLength(claimKey) <= 700 ? claimKey : `${field}_hash_${hashKey(claimKey)}`;
 };
 
 const claimProfileIdentities = async ({ cardId, data }) => {
-  const searchKeys = getSearchIdKeys(data, { contactsOnly: true });
-  const keys = searchKeys.map(getIdentityClaimKey);
-  const indexedValues = await Promise.all(searchKeys
-    .filter(key => new TextEncoder().encode(key).length <= 768)
-    .map(key => get(ref(database, `searchId/${key}`))));
-  const canonicalConflict = indexedValues.some(snapshot => {
-    const value = snapshot.val();
-    return (Array.isArray(value) ? value : [value]).filter(Boolean).some(id => id !== cardId);
-  });
+  const searchRecords = getSearchIdRecords(data, { contactsOnly: true });
+  const keys = searchRecords.map(getIdentityClaimKey);
+  // Зайнятість питається саме того поля, у якому лежить значення. Раніше ключ
+  // ніс поле в собі, тож інакше й не виходило; тепер під одним значенням
+  // можуть стояти різні поля — і чужий нікнейм, що збігся з номером, не має
+  // означати «такий телефон уже є».
+  const indexedValues = await Promise.all(searchRecords
+    .filter(record => keyByteLength(record.valueKey) <= 768)
+    .map(record => get(ref(database, buildSearchIdEntryPath(record.valueKey, record.field)))));
+  const canonicalConflict = indexedValues.some(snapshot =>
+    readSearchIdEntryIds(snapshot.val()).some(id => id !== cardId));
   if (canonicalConflict) throw new Error('DUPLICATE_PROFILE');
   const acquiredKeys = [];
   try {
@@ -136,11 +147,13 @@ const releaseProfileIdentities = (cardId, keys) => Promise.all((keys || []).map(
 )));
 
 const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
-  getSearchIdKeys(profile)
-    .filter(key => new TextEncoder().encode(key).length <= 768)
-    .map(key => runTransaction(ref(database, `searchId/${key}`), current => appendIndexId(current, cardId), {
-      applyLocally: false,
-    })),
+  getSearchIdRecords(profile)
+    .filter(record => keyByteLength(record.valueKey) <= 768)
+    .map(record => runTransaction(
+      ref(database, buildSearchIdEntryPath(record.valueKey, record.field)),
+      current => appendSearchIdEntryId(current, cardId),
+      { applyLocally: false },
+    )),
 );
 
 export const saveCreateProfileMutation = async ({

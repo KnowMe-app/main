@@ -157,6 +157,10 @@ import {
   mergeProfileNodeCollections,
   describeLocalIndexingSources,
 } from 'utils/profileNodeCollections';
+import {
+  PROFILE_DRAFTS_INDEX_NODE,
+  collectDraftProfilesForIndexing,
+} from 'utils/profileDraftIndexing';
 import { buildFullCardKeyMap } from 'utils/cardKeyMap';
 import {
   LAST_ACTION2_FILTER,
@@ -1274,6 +1278,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * лежать ті самі вузли, тільки прочитані з файлів.
    */
   const [localNodeFiles, setLocalNodeFiles] = useState({});
+  const [localDraftProfiles, setLocalDraftProfiles] = useState({});
   const localNodeFilesInputRef = useRef(null);
   const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
     const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
@@ -5803,7 +5808,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * б хіба що по дірках у пошуку.
    */
   const runLocalSearchIndexesWithCollections = useCallback(
-    async ({ usersData, nodeFiles, indexTypes }) => {
+    async ({ usersData, nodeFiles, draftsData, indexTypes }) => {
       const { profiles, stats } = mergeProfileNodeCollections({
         ...(nodeFiles || {}),
         users: usersData || {},
@@ -5812,13 +5817,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Колекція у вебі одна, тож і мапа одна: розділення на деки прибрано.
       const collectionsMap = { profiles };
 
-      const searchIdPayload = buildSearchIdIndexPayloadFromCollections(collectionsMap);
+      // Чернетки йдуть лише в `searchId`. У `searchKey` їм не місце: за тими
+      // бакетами будується стрічка, а чернетка в стрічку не потрапляє — і
+      // перебудова індексу не той шлях, яким вона б туди потрапила вперше.
+      const drafts = draftsData && Object.keys(draftsData).length ? draftsData : null;
+      const searchIdPayload = buildSearchIdIndexPayloadFromCollections(
+        drafts ? { ...collectionsMap, drafts } : collectionsMap,
+      );
       const searchKeyPayload = buildSearchKeyIndexPayloadFromCollections(collectionsMap, indexTypes);
 
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       downloadJsonFile(`searchId-index-${stamp}.json`, searchIdPayload);
       downloadJsonFile(`searchKey-index-${stamp}.json`, searchKeyPayload);
-      return stats;
+      return { ...stats, drafts: drafts ? Object.keys(drafts).length : 0 };
     },
     [downloadJsonFile],
   );
@@ -5860,6 +5871,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         downloadJsonFile(`${node}-${stamp}.json`, value);
         return [node, Object.keys(value).length];
       }));
+
+      // Чернетки лежать не у вузлах анкет, а в `multiData/profileMutations` —
+      // і без них локально зібраний `searchId` знищив би записи, якими
+      // чернетки боронять себе від дубля.
+      const draftsSnapshot = await get(ref(database, PROFILE_DRAFTS_INDEX_NODE));
+      const drafts = draftsSnapshot.exists()
+        ? collectDraftProfilesForIndexing(draftsSnapshot.val())
+        : {};
+      downloadJsonFile(`profileMutations-${stamp}.json`, drafts);
+      loaded.push(['чернетки', Object.keys(drafts).length]);
 
       toast.success(
         `Вузли завантажено — ${loaded.map(([node, count]) => `${node}: ${count}`).join(', ')}`,
@@ -5932,22 +5953,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!files.length) return;
 
     const next = {};
+    const nextDrafts = {};
     const unknown = [];
 
     await Promise.all(files.map(async file => {
-      const node = PROFILE_NODE_NAMES.find(name => file.name.includes(name));
-      if (!node) {
+      // Чернетки — окремий файл і окреме призначення: вони йдуть тільки в
+      // `searchId`, тож у мапу вузлів анкет не потрапляють.
+      const isDraftsFile = file.name.includes('profileMutations');
+      const node = isDraftsFile ? null : PROFILE_NODE_NAMES.find(name => file.name.includes(name));
+      if (!node && !isDraftsFile) {
         unknown.push(file.name);
         return;
       }
       try {
         const parsed = JSON.parse(await file.text());
+        if (isDraftsFile) {
+          // Файл може бути і вже зведеною мапою чернеток, і сирим вузлом
+          // `{хто завів: {id: мутація}}` — другий зводиться тим самим кодом,
+          // що й на бекенді.
+          const isRawMutations = Object.values(parsed || {}).some(value =>
+            value && typeof value === 'object' && Object.values(value).some(item => item?.operation));
+          Object.assign(nextDrafts, isRawMutations ? collectDraftProfilesForIndexing(parsed) : parsed);
+          return;
+        }
         // Файл може бути і вмістом вузла, і експортом із обгорткою.
         next[node] = parsed?.[node] && typeof parsed[node] === 'object' ? parsed[node] : parsed;
       } catch (error) {
         unknown.push(`${file.name} (не JSON)`);
       }
     }));
+
+    if (Object.keys(nextDrafts).length) {
+      setLocalDraftProfiles(current => ({ ...current, ...nextDrafts }));
+      toast.success(`Прочитано чернеток: ${Object.keys(nextDrafts).length}`);
+    }
 
     if (Object.keys(next).length) {
       setLocalNodeFiles(current => ({ ...current, ...next }));
@@ -6047,12 +6086,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const stats = await runLocalSearchIndexesWithCollections({
         usersData: pendingLocalUsersData,
         nodeFiles: localNodeFiles,
+        draftsData: localDraftProfiles,
         indexTypes: pendingLocalIndexTypes,
       });
       console.info('[localIndex] зібрано анкет', stats);
       toast.success(
         `Локальні JSON індекси завантажено: анкет ${stats.total}, з них із вузлів ${stats.fromNodes}`
-          + (stats.legacyOnly ? `, лише з legacy ${stats.legacyOnly}` : ''),
+          + (stats.legacyOnly ? `, лише з legacy ${stats.legacyOnly}` : '')
+          + (stats.drafts ? `, чернеток ${stats.drafts}` : ''),
         { id: toastId, duration: 8000 },
       );
       setShowLocalIndexModal(false);
@@ -6064,6 +6105,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     pendingLocalUsersData,
     pendingLocalIndexTypes,
     localNodeFiles,
+    localDraftProfiles,
     runLocalSearchIndexesWithCollections,
   ]);
 
@@ -7777,11 +7819,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             </p>
             <LocalIndexActions>
               <button type="button" onClick={handleDownloadProfileNodesForLocalIndex}>
-                1) Викачати вузли анкет (matchingCards, profileDetails, …)
+                1) Викачати вузли анкет (matchingCards, profileDetails, …) і чернетки
               </button>
               <button type="button" onClick={handlePickLocalNodeFiles}>
                 2) Обрати файли вузлів {localIndexSources.loadedNodes.length
                   ? `✅ ${localIndexSources.loadedNodes.join(', ')}`
+                  : ''}{Object.keys(localDraftProfiles).length
+                  ? ` + чернетки (${Object.keys(localDraftProfiles).length})`
                   : ''}
               </button>
               <button type="button" onClick={handleDownloadCollectionsForLocalIndex}>

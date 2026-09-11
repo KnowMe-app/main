@@ -16,7 +16,8 @@
 ### Пошук читає повні анкети, і всі одразу
 
 `searchBySearchIdUsers` (`src/components/config.js`) резолвить запит у список id
-через `searchId` — це дешево, кілька читань ключів. А далі:
+через `searchId` — це дешево, одне читання ключа (`searchId/{значення}`, поле лежить
+усередині запису). А далі:
 
 ```js
 await Promise.all(userIds.map(async id => { ... await addSearchHit(id, users); }));

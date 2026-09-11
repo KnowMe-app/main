@@ -60,6 +60,17 @@ describe('індекси будуються з нових вузлів', () => {
     expect(builder).toContain('await loadProfilesFromNodesForIndexing()');
   });
 
+  it('searchId будується ще й з чернеток — у вузлах їх немає', () => {
+    // Чернетка живе в `multiData/profileMutations` і картки стрічки не має,
+    // тож зведення з вузлів її не бачить. Перебудова без неї зносила б рівно
+    // ті записи, якими чернетка боронить себе від дубля.
+    const builder = sliceFn('export const createSearchIds', 'export const');
+    expect(builder).toContain('await loadProfileDraftsForIndexing()');
+    expect(configSource).toContain('PROFILE_DRAFTS_INDEX_NODE');
+    // Анкета перекриває чернетку: після публікації id той самий.
+    expect(builder).toContain('{ ...draftsData, ...(profilesData || {}) }');
+  });
+
   it('картки стрічки перебудовуються з вузлів', () => {
     const builder = sliceFn(
       'export const createMatchingCardsIndex',

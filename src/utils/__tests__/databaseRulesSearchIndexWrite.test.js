@@ -29,9 +29,24 @@ describe('права, без яких нова анкета не потрапл�
   });
 
   describe('searchId — спільний вузол, тож право дане по формі запису', () => {
-    const write = rules.searchId.$key['.write'];
-    const validate = rules.searchId.$key['.validate'];
-    const indexValidate = rules.searchId.$key.$index['.validate'];
+    // Ключ — саме значення, а id лежать у полі під ним
+    // (`searchId/{значення}/{поле}`), тож форма запису перевіряється на полі.
+    const write = rules.searchId.$key.$field['.write'];
+    const validate = rules.searchId.$key.$field['.validate'];
+    const indexValidate = rules.searchId.$key.$field.$index['.validate'];
+
+    it('ключ тримає поля, а не id', () => {
+      expect(rules.searchId.$key['.validate']).toBe('newData.hasChildren()');
+    });
+
+    it('приймає лише ті поля, які індексує застосунок', () => {
+      // Той самий принцип, що й `$other: false` у картці стрічки: інакше під
+      // значенням накопичується будь-що, і читач індексу отримує сміття.
+      expect(validate).toContain('$field.matches(');
+      ['phone', 'email', 'name', 'surname', 'telegram'].forEach(field => {
+        expect(validate).toContain(field);
+      });
+    });
 
     it('дозволяє завести ключ, якого ще немає, власним uid', () => {
       // Унікальні поля — пошта, телефон, соцмережі — дають саме такий ключ.
@@ -85,8 +100,8 @@ describe('права, без яких нова анкета не потрапл�
     // `.validate` діє на всіх, тож без цієї гілки масова переіндексація
     // впала б на першому ж записі, який зсуває позиції масиву.
     EDITOR_LEVELS.forEach(level => {
-      expect(rules.searchId.$key['.validate']).toContain(level);
-      expect(rules.searchId.$key.$index['.validate']).toContain(level);
+      expect(rules.searchId.$key.$field['.validate']).toContain(level);
+      expect(rules.searchId.$key.$field.$index['.validate']).toContain(level);
       expect(rules.searchKeySets.$keySet['.write']).toContain(level);
       // Ті самі права, що вже є на картку стрічки: `makeNewUser` створює
       // анкету і всі три індекси одним заходом.

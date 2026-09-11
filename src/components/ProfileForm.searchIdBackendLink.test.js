@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { SEARCH_ID_INDEXED_FIELDS, buildSearchIdRecordKey } from 'utils/searchKeyUtils';
+import { SEARCH_ID_INDEXED_FIELDS, buildSearchIdRecordKey, describeSearchIdRecord } from 'utils/searchKeyUtils';
 
 const rules = JSON.parse(
   fs.readFileSync(path.join(__dirname, '../../database.rules.json'), 'utf8'),
@@ -26,32 +26,37 @@ describe('стрілка «відкрити запис searchId»', () => {
     expect(rules['.read']).toBe(false);
   });
 
-  it('читає рівно один ключ і не сканує вузол searchId', () => {
-    expect(source).toContain(`refDb(database, \`searchId/\${searchIdRecordKey}\`)`);
+  it('читає рівно один запис і не сканує вузол searchId', () => {
+    // Читається `searchId/{значення}/{поле}`: сусідні поля того самого
+    // значення до цієї анкети стосунку не мають.
+    expect(source).toContain('refDb(database, searchIdPath)');
     expect(source).not.toContain("refDb(database, 'searchId')");
     expect(source).not.toContain('orderByKey');
   });
 
   it('будує ключ тим самим хелпером, що й індексація анкети', () => {
-    expect(source).toContain('buildSearchIdRecordKey({ [fieldName]: value })');
+    expect(source).toContain('describeSearchIdRecord({ [fieldName]: value })');
 
     const mutations = fs.readFileSync(
       path.join(__dirname, '../utils/profileMutations.js'),
       'utf8',
     );
-    expect(mutations).toContain('buildSearchIdRecordKey({ [field]: value })');
-    expect(mutations).toContain(`ref(database, \`searchId/\${key}\`)`);
+    expect(mutations).toContain('describeSearchIdRecord({ [field]: value })');
+    expect(mutations).toContain('buildSearchIdEntryPath(record.valueKey, record.field)');
   });
 
   it('ключ збігається з тим, під яким значення реально лежить у базі', () => {
     // Телефон нормалізується до індексного вигляду, а `@` в ключі екранується:
-    // саме так значення й потрапило у вузол при збереженні анкети.
+    // саме так значення й потрапило у вузол при збереженні анкети. Ключ — саме
+    // значення; поле веде вглиб (`searchId/{значення}/{поле}`).
     expect(buildSearchIdRecordKey({ phone: '+38 050 327 74 13' }))
       .toBe(buildSearchIdRecordKey({ phone: '+380503277413' }));
     expect(buildSearchIdRecordKey({ instagram: '@viktoriyail4enko' }))
-      .toBe('instagram__at_viktoriyail4enko');
+      .toBe('_at_viktoriyail4enko');
+    expect(describeSearchIdRecord({ instagram: '@viktoriyail4enko' }).path)
+      .toBe('searchId/_at_viktoriyail4enko/instagram');
     expect(buildSearchIdRecordKey({ instagram: 'https://instagram.com/viktoriyail4enko' }))
-      .toBe('instagram_https:_slash__slash_instagram_dot_com_slash_viktoriyail4enko');
+      .toBe('https:_slash__slash_instagram_dot_com_slash_viktoriyail4enko');
   });
 
   it('мовчить, коли ключ із поля не будується', () => {
@@ -61,7 +66,7 @@ describe('стрілка «відкрити запис searchId»', () => {
 
   it('пропонує стрілку рівно для полів, які потрапляють в індекс', () => {
     // Локальна копія списку встигла розійтися з індексом і губила `ameblo`.
-    expect(source).toContain("import { SEARCH_ID_INDEXED_FIELDS, buildSearchIdRecordKey } from 'utils/searchKeyUtils';");
+    expect(source).toContain("import { SEARCH_ID_INDEXED_FIELDS, describeSearchIdRecord, readSearchIdEntryIds } from 'utils/searchKeyUtils';");
     expect(source).not.toMatch(/const SEARCH_ID_INDEXED_FIELDS = new Set\(/);
     expect(SEARCH_ID_INDEXED_FIELDS.has('ameblo')).toBe(true);
   });

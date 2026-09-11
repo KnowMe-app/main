@@ -148,18 +148,34 @@ export const normalizeSearchIdInput = (searchKey, rawValue) => {
   return baseValue.replace(/\s+/g, ' ');
 };
 
-export const normalizeExactSearchIdInput = (rawValue, searchIdPrefixes) => {
+/**
+ * Нормалізація набраного — на моменті введення, а не на кожному полі індексу.
+ *
+ * Ключ індексу тепер один на значення, тож питання «якою нормалізацією його
+ * шукати» теж лишилось одне. Відповідає на нього `SearchBar`: він уже розбирає
+ * набране парсерами і знає, що це телефон, посилання чи текст, і передає це
+ * поле сюди (`searchIdDetectedField`). Раніше нормалізація вибиралась за
+ * префіксом і тільки коли префікс був рівно один — тобто на звичайному пошуку
+ * не вибиралась ніколи, і телефон, набраний із пробілами, не знаходився.
+ */
+export const normalizeExactSearchIdInput = (rawValue, searchIdPrefixes, searchIdDetectedField) => {
   const baseValue = String(rawValue || '').trim();
   if (!baseValue) return '';
 
+  const fallbackValue = baseValue.replace(/\s+/g, ' ');
+
+  if (isSearchIdIndexedField(searchIdDetectedField)) {
+    return normalizeSearchIdInput(searchIdDetectedField, baseValue) || fallbackValue;
+  }
+
   const normalizedPrefixes = getSearchIdPrefixes(searchIdPrefixes);
   if (normalizedPrefixes.length !== 1) {
-    return baseValue.replace(/\s+/g, ' ');
+    return fallbackValue;
   }
 
   const [onlyPrefix] = normalizedPrefixes;
   const normalizedValue = normalizeSearchIdInput(onlyPrefix, baseValue);
-  return normalizedValue || baseValue.replace(/\s+/g, ' ');
+  return normalizedValue || fallbackValue;
 };
 
 
@@ -202,14 +218,22 @@ export const normalizeSearchDateComparableValue = value => {
 
 const normalizePhoneSearchIdValue = rawValue => normalizePhoneValue(rawValue);
 
-export const buildSearchIdCandidateKeys = (
-  modifiedSearchValue,
-  rawSearchValue,
-  searchIdPrefixes,
-  options = {},
-) => {
+const UK_SM_KEY_PART = encodeKey('УК СМ ').toLowerCase();
+
+/**
+ * Кандидати — це варіанти **значення**, а не перебір полів.
+ *
+ * Поки ключ був `{поле}_{значення}`, цей перебір давав по ключу на кожне поле
+ * індексу: текстовий запит коштував чотирнадцять точкових читань, з яких
+ * влучало щонайбільше одне. Поле тепер лежить усередині значення, тож перебору
+ * немає — лишились самі варіанти написання, і їх одиниці.
+ *
+ * Перший кандидат — точне набране (вже нормалізоване `makeSearchKeyValue` за
+ * полем, яке розпізнав `SearchBar`). Решта — здогадки про написання, і читає їх
+ * `collectUserIdsBySearchIdKeys` лише тоді, коли точне нічого не знайшло.
+ */
+export const buildSearchIdCandidateKeys = (modifiedSearchValue, rawSearchValue, options = {}) => {
   const normalizedValue = String(modifiedSearchValue || '').toLowerCase();
-  const rawValue = String(rawSearchValue || '').trim();
   if (!normalizedValue) return [];
 
   const {
@@ -219,117 +243,52 @@ export const buildSearchIdCandidateKeys = (
     // запит із нею — звичайний текст: шукається рівно те, що набрали.
     includeUkSmVariant = false,
   } = options;
-  const ukSmPrefix = encodeKey('УК СМ ').toLowerCase();
-  const hasUkSm = normalizedValue.startsWith(ukSmPrefix);
-  const prefixesToCheck = getSearchIdPrefixes(searchIdPrefixes);
 
-  return prefixesToCheck.flatMap(prefix => {
-    if (prefix === 'phone') {
-      const hasPhoneLabel = /(?:^|\b)(?:phone|телефон|тел|номер|моб)\b/i.test(rawValue);
-      const hasLetters = /[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(rawValue);
-      const digitsOnly = rawValue.replace(/\D/g, '');
-      const isShortNumericFragment = digitsOnly.length > 0 && digitsOnly.length < 4;
+  const searchKeys = [normalizedValue];
 
-      if ((hasLetters && !hasPhoneLabel) || isShortNumericFragment) {
-        return [];
-      }
-    }
+  if (includeAdaptedPhoneVariant) {
+    // Телефон, набраний у будь-якому написанні, шукається ще й у тій формі, у
+    // якій його зберігає бекенд.
+    const adaptedPhoneKey = encodeKey(normalizePhoneSearchIdValue(rawSearchValue)).toLowerCase();
+    const rawPhoneKey = encodeKey(String(rawSearchValue || '').trim()).toLowerCase();
+    searchKeys.push(adaptedPhoneKey, rawPhoneKey);
+  }
 
-    if (prefix === 'phone' && includeAdaptedPhoneVariant) {
-      const adaptedPhoneValue = normalizePhoneSearchIdValue(rawSearchValue);
-      const adaptedPhoneKey = encodeKey(adaptedPhoneValue).toLowerCase();
-      const rawPhoneKey = encodeKey(String(rawSearchValue || '').trim()).toLowerCase();
-      const valuesToCheck = [...new Set([adaptedPhoneKey, rawPhoneKey].filter(Boolean))];
-      return valuesToCheck.map(value => `${prefix}_${value}`);
-    }
-
-    const searchKeys = [`${prefix}_${normalizedValue}`];
-
-    if (!includeVariants) {
-      return searchKeys;
-    }
-
+  if (includeVariants) {
     if (includeUkSmVariant) {
-      if (hasUkSm) {
-        searchKeys.push(`${prefix}_${normalizedValue.slice(ukSmPrefix.length)}`);
-      } else {
-        searchKeys.push(`${prefix}_${ukSmPrefix}${normalizedValue}`);
-      }
+      searchKeys.push(normalizedValue.startsWith(UK_SM_KEY_PART)
+        ? normalizedValue.slice(UK_SM_KEY_PART.length)
+        : `${UK_SM_KEY_PART}${normalizedValue}`);
     }
 
     if (normalizedValue.startsWith('0')) {
-      searchKeys.push(`${prefix}_38${normalizedValue}`);
+      searchKeys.push(`38${normalizedValue}`);
     }
     if (normalizedValue.startsWith('+')) {
-      searchKeys.push(`${prefix}_${normalizedValue.slice(1)}`);
+      searchKeys.push(normalizedValue.slice(1));
     }
+  }
 
-    return searchKeys;
-  });
+  return [...new Set(searchKeys.filter(Boolean))];
 };
 
 /**
- * Черга кандидатів: спершу ті ключі, які взагалі можуть існувати.
+ * Дві черги: точне набране і здогадки про написання.
  *
- * `buildSearchIdCandidateKeys` перебирає всі префікси індексу і на кожен ще й
- * додає варіант «УК СМ». Для запиту з одним `@` це три десятки точкових читань,
- * з яких влучає рівно одне: пошта не лежить ані в `name_`, ані в `phone_`, ані
- * тим паче в `instagram_ук_см_…`. Решта — трафік, за який ніхто не отримує
- * жодного id.
- *
- * Тому ключі діляться на дві черги за формою самого запиту, а не за здогадками
- * про дані: рядок із `@` — це пошта, рядок з самих цифр — телефон, решта — усе,
- * крім них. Друга черга не викидається: вона читається, коли перша не знайшла
- * нічого, тож «не знайшов» коштує рівно стільки ж, скільки коштував раніше, а
- * влучний пошук — на порядок менше.
- *
- * Варіант «УК СМ» лишається в першій черзі тільки для `name`/`surname`: це
- * позначка в імені, і в пошті чи телефоні їй узятись нізвідки.
+ * Друга черга не викидається — вона читається, коли перша не знайшла нічого,
+ * тож «не знайшов» коштує стільки ж, скільки коштував раніше, а влучний
+ * пошук — одне читання.
  */
-const UK_SM_KEY_PART = encodeKey('УК СМ ').toLowerCase();
-const UK_SM_NATIVE_PREFIXES = new Set(['name', 'surname']);
+export const splitSearchIdCandidateKeys = (searchKeys, exactSearchKey = '') => {
+  const uniqueKeys = [...new Set(searchKeys || [])].filter(Boolean);
+  if (!uniqueKeys.length) return { primary: [], fallback: [] };
 
-const getSearchIdKeyPrefix = searchKey => {
-  const separatorIndex = String(searchKey || '').indexOf('_');
-  return separatorIndex > 0 ? searchKey.slice(0, separatorIndex) : '';
-};
+  const exactKey = String(exactSearchKey || '').toLowerCase() || uniqueKeys[0];
+  const primary = uniqueKeys.filter(searchKey => searchKey === exactKey);
+  const fallback = uniqueKeys.filter(searchKey => searchKey !== exactKey);
 
-const isUkSmVariantKey = searchKey => {
-  const prefix = getSearchIdKeyPrefix(searchKey);
-  return Boolean(prefix) && searchKey.slice(prefix.length + 1).startsWith(UK_SM_KEY_PART);
-};
-
-/** Форма запиту: `@` — пошта, самі цифри — телефон, решта — текст. */
-export const resolveSearchIdValueShape = rawSearchValue => {
-  const value = String(rawSearchValue || '').trim();
-  if (!value) return 'text';
-  if (value.includes('@')) return 'email';
-  if (/\d/.test(value) && !/[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(value)) return 'phone';
-  return 'text';
-};
-
-const isPrefixWorthTrying = (prefix, shape) => {
-  if (shape === 'email') return prefix === 'email';
-  if (shape === 'phone') return prefix === 'phone';
-  return prefix !== 'email' && prefix !== 'phone';
-};
-
-export const splitSearchIdCandidateKeys = (searchKeys, rawSearchValue) => {
-  const shape = resolveSearchIdValueShape(rawSearchValue);
-  const primary = [];
-  const fallback = [];
-
-  [...new Set(searchKeys || [])].filter(Boolean).forEach(searchKey => {
-    const prefix = getSearchIdKeyPrefix(searchKey);
-    const isNativeUkSm = UK_SM_NATIVE_PREFIXES.has(prefix);
-    const worthTrying = isPrefixWorthTrying(prefix, shape)
-      && (isNativeUkSm || !isUkSmVariantKey(searchKey));
-
-    (worthTrying ? primary : fallback).push(searchKey);
-  });
-
-  // Форма нічого не відсіяла — ділити нема чого, інакше друга черга лишиться
-  // порожньою, а перша не звузиться.
+  // Точного серед кандидатів немає — ділити нема чого, інакше перша черга
+  // лишиться порожньою.
   if (!primary.length) return { primary: fallback, fallback: [] };
 
   return { primary, fallback };
@@ -345,7 +304,96 @@ export const shouldSkipBroadFallbackForExactSearchId = searchKey => {
   return true;
 };
 
-export const buildSearchIdRecordKey = searchedValue => {
+/**
+ * Ключ індексу — саме значення, а поле живе **у значенні**.
+ *
+ *   searchId/{значення}/{поле} = id | [id, ...]
+ *
+ * Довго ключ був `{поле}_{значення}`, і це коштувало по читанню на кожне поле:
+ * пошук не знає, у якому полі лежить набране, тож питав усі шістнадцять —
+ * чотирнадцять точкових читань на кожен текстовий запит, а для адміна ще й
+ * стільки ж діапазонних сканів під частковий збіг. Форма запиту відсіювала
+ * лише пошту й телефон.
+ *
+ * Тепер запит читає **один** ключ, а поле вибирається вже в прочитаному
+ * значенні — тож звуження пошуку до поля (`searchIdPrefixes`), підпис «знайдено
+ * за instagram» і діагностика лишаються, але коштують нуль запитів.
+ *
+ * Ціна злиття виміряна на експорті бази: з 77 394 різних значень лише 246
+ * лежать більш ніж в одному полі, і 232 з них — це пара `name`/`surname`
+ * (Олена-імʼя та Олена-прізвище). Видача від злиття не меншає ніколи —
+ * обʼєднання завжди надмножина.
+ */
+export const SEARCH_ID_ROOT = 'searchId';
+
+/** Ключ вузла `searchId` для значення поля: нормалізація поля + кодування. */
+export const buildSearchIdValueKey = (field, rawValue) => {
+  if (!isSearchIdIndexedField(field)) return '';
+  const normalizedValue = normalizeSearchIdInput(field, rawValue);
+  if (!normalizedValue) return '';
+  return encodeKey(normalizedValue).toLowerCase();
+};
+
+/** Повний шлях до списку id одного поля. */
+export const buildSearchIdEntryPath = (valueKey, field) =>
+  (valueKey && field ? `${SEARCH_ID_ROOT}/${valueKey}/${field}` : '');
+
+/**
+ * Ключ заявки на унікальність (`multiData/profileIdentityClaims`).
+ *
+ * Він лишається у старій формі `{поле}_{значення}` навмисно: заявки живуть
+ * своїм вузлом і своїм життям, і перейменування ключа означало б, що всі вже
+ * подані заявки перестають упізнаватись — тобто дві чернетки з тим самим
+ * телефоном знову змогли б існувати одночасно.
+ */
+export const buildSearchIdClaimKey = (field, valueKey) =>
+  (field && valueKey ? `${field}_${valueKey}` : '');
+
+const asIdList = value => {
+  if (Array.isArray(value)) return value.flat(Infinity).filter(id => typeof id === 'string' && id);
+  return typeof value === 'string' && value ? [value] : [];
+};
+
+/**
+ * Розгорнути значення ключа в пари «id → поле, у якому збіглось».
+ *
+ * Рядок або масив замість обʼєкта — це запис у старій формі (ключ із
+ * префіксом). Читати його теж треба: під час переходу обидві форми лежать
+ * поруч, і мовчки губити знайдене — гірше, ніж віддати його без назви поля.
+ */
+export const readSearchIdEntryMatches = (entryValue, fields) => {
+  const allowedFields = Array.isArray(fields) && fields.length ? new Set(fields) : null;
+
+  if (entryValue && typeof entryValue === 'object' && !Array.isArray(entryValue)) {
+    return Object.entries(entryValue)
+      .filter(([field]) => !allowedFields || allowedFields.has(field))
+      .flatMap(([field, value]) => asIdList(value).map(id => ({ id, field })));
+  }
+
+  return asIdList(entryValue).map(id => ({ id, field: '' }));
+};
+
+export const readSearchIdEntryIds = (entryValue, fields) => [
+  ...new Set(readSearchIdEntryMatches(entryValue, fields).map(match => match.id)),
+];
+
+/** Додати id до значення поля, не чіпаючи вже наявні. */
+export const appendSearchIdEntryId = (currentValue, userId) => {
+  const ids = asIdList(currentValue);
+  if (ids.includes(userId)) return ids.length === 1 ? ids[0] : ids;
+  const nextIds = [...ids, userId];
+  return nextIds.length === 1 ? nextIds[0] : nextIds;
+};
+
+/** Зняти id зі значення поля. `null` означає «поля більше немає». */
+export const removeSearchIdEntryId = (currentValue, userId) => {
+  const nextIds = asIdList(currentValue).filter(id => id !== userId);
+  if (!nextIds.length) return null;
+  return nextIds.length === 1 ? nextIds[0] : nextIds;
+};
+
+/** Поле й ключ для однієї пари «поле: значення». */
+export const describeSearchIdRecord = searchedValue => {
   if (!searchedValue || typeof searchedValue !== 'object' || Array.isArray(searchedValue)) {
     return null;
   }
@@ -357,26 +405,31 @@ export const buildSearchIdRecordKey = searchedValue => {
   if (!SEARCH_ID_INDEXED_FIELDS.has(searchKey)) return null;
   if (typeof searchValue !== 'string') return null;
 
-  const normalizedSearchValue = normalizeSearchIdInput(searchKey, searchValue);
-  if (!normalizedSearchValue) return null;
+  const valueKey = buildSearchIdValueKey(searchKey, searchValue);
+  if (!valueKey) return null;
 
-  return `${searchKey}_${encodeKey(normalizedSearchValue).toLowerCase()}`;
+  return { field: searchKey, valueKey, path: buildSearchIdEntryPath(valueKey, searchKey) };
 };
 
+export const buildSearchIdRecordKey = searchedValue => describeSearchIdRecord(searchedValue)?.valueKey || null;
+
 export const makeSearchKeyValue = (searchedValue, options = {}) => {
-  const { searchIdPrefixes } = options;
+  const { searchIdPrefixes, searchIdDetectedField } = options;
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
   const normalizedSearchValue = searchKey === 'searchId'
-    ? normalizeExactSearchIdInput(searchValue, searchIdPrefixes)
+    ? normalizeExactSearchIdInput(searchValue, searchIdPrefixes, searchIdDetectedField)
     : normalizeSearchIdInput(searchKey, searchValue);
   const modifiedSearchValue = encodeKey(normalizedSearchValue);
-  const searchIdKey = buildSearchIdRecordKey({ [searchKey]: searchValue });
+  // Поле потрібне разом із ключем: у новій формі індексу воно і є тим, куди
+  // лягає id (`searchId/{значення}/{поле}`).
+  const searchIdRecord = describeSearchIdRecord({ [searchKey]: searchValue });
 
   return {
     searchKey,
     searchValue: normalizedSearchValue,
     modifiedSearchValue,
-    searchIdKey,
+    searchIdKey: searchIdRecord?.valueKey || null,
+    searchIdField: searchIdRecord?.field || '',
   };
 };
 
