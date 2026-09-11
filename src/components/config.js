@@ -1075,6 +1075,27 @@ export const PUBLIC_COMMENTS_ROOT_PATH = 'comments';
 export const PUBLIC_COMMENT_REPLIES_ROOT_PATH = 'replies';
 export const PUBLIC_COMMENT_MAX_LENGTH = 2000;
 
+/**
+ * Перенесеному відгуку межа в 2000 знаків не підходить, і послабити її можна
+ * лише адміну.
+ *
+ * 2000 — це межа для того, хто пише коментар **зараз**: стільки вистачає на
+ * відгук і не вистачає на зловживання. Але перенос з приватних нотаток
+ * (`utils/legacyImportCommentMigration`) не пише новий текст, а рятує вже
+ * написаний — довгий опис випадку, який агенція вела місяцями. Обрізати його
+ * означає загубити частину відгуку, а розрізати на два записи — вдати, що
+ * авторка писала двічі.
+ *
+ * Тому довший текст приймається тільки від адмінів — тих самих двох uid, яким
+ * правило вже дозволяє назвати чужого автора. Для решти межа лишається
+ * колишня, і тримає її не код, а `database.rules.json`.
+ */
+export const PUBLIC_COMMENT_ADMIN_MAX_LENGTH = 10000;
+
+export const resolvePublicCommentMaxLength = uid => (
+  isAdminUid(uid) ? PUBLIC_COMMENT_ADMIN_MAX_LENGTH : PUBLIC_COMMENT_MAX_LENGTH
+);
+
 const normalizePublicComment = (id, value) => ({
   id,
   text: typeof value?.text === 'string' ? value.text : '',
@@ -1123,8 +1144,9 @@ export const addPublicProfileComment = async ({ profileId, text, authorName = ''
 
   const trimmed = String(text || '').trim();
   if (!trimmed) throw new Error('Порожній коментар не зберігається');
-  if (trimmed.length > PUBLIC_COMMENT_MAX_LENGTH) {
-    throw new Error(`Коментар довший за ${PUBLIC_COMMENT_MAX_LENGTH} символів`);
+  const maxLength = resolvePublicCommentMaxLength(user.uid);
+  if (trimmed.length > maxLength) {
+    throw new Error(`Коментар довший за ${maxLength} символів (${trimmed.length})`);
   }
 
   const listRef = ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`);
@@ -1179,8 +1201,9 @@ export const addPublicProfileCommentAs = async ({
 
   const trimmed = String(text || '').trim();
   if (!trimmed) throw new Error('Порожній коментар не зберігається');
-  if (trimmed.length > PUBLIC_COMMENT_MAX_LENGTH) {
-    throw new Error(`Коментар довший за ${PUBLIC_COMMENT_MAX_LENGTH} символів`);
+  const maxLength = resolvePublicCommentMaxLength(user.uid);
+  if (trimmed.length > maxLength) {
+    throw new Error(`Коментар довший за ${maxLength} символів (${trimmed.length})`);
   }
 
   const resolvedAuthorId = String(authorId || '').trim() || user.uid;
@@ -1220,8 +1243,9 @@ export const updatePublicProfileComment = async ({ profileId, commentId, text })
     await remove(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`));
     return null;
   }
-  if (trimmed.length > PUBLIC_COMMENT_MAX_LENGTH) {
-    throw new Error(`Коментар довший за ${PUBLIC_COMMENT_MAX_LENGTH} символів`);
+  const maxLength = resolvePublicCommentMaxLength(user.uid);
+  if (trimmed.length > maxLength) {
+    throw new Error(`Коментар довший за ${maxLength} символів (${trimmed.length})`);
   }
 
   await update(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`), {

@@ -119,6 +119,8 @@ describe('matching row structure', () => {
   });
 });
 
+const ADMIN_UIDS = ['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J010v4CDyD2'];
+
 describe('public comment storage', () => {
   it('keeps public records apart from the private per-owner note', () => {
     const config = read('config.js');
@@ -137,6 +139,10 @@ describe('public comment storage', () => {
     expect(comment['.write']).toContain("newData.child('authorId').val() === auth.uid");
     expect(comment.text['.validate']).toContain('newData.val().length >= 1');
     expect(comment.text['.validate']).toContain('newData.val().length <= 2000');
+    // Друга межа — для перенесених відгуків, і вона теж межа: довший текст
+    // приймається лише від адмінів і лише до 10000.
+    expect(comment.text['.validate']).toContain('newData.val().length <= 10000');
+    ADMIN_UIDS.forEach(uid => expect(comment.text['.validate']).toContain(uid));
     expect(comment.authorId['.validate']).toContain('data.val() === newData.val()');
     expect(comment.createdAt['.validate']).toContain('data.val() === newData.val()');
     expect(comment.visibility['.validate']).toBe("newData.val() === 'public'");
@@ -156,6 +162,10 @@ describe('public comment storage', () => {
     );
 
     expect(fnBody).toContain('isAdminUid(user.uid)');
+    // Межу довжини теж питає uid: перенесений відгук не мусить обриватись на
+    // 2000 знаків, а межа звичайного коментаря не мусить зникати для всіх.
+    expect(fnBody).toContain('resolvePublicCommentMaxLength(user.uid)');
+    expect(config).toContain('export const PUBLIC_COMMENT_ADMIN_MAX_LENGTH = 10000;');
     expect(fnBody).toContain('authorId: resolvedAuthorId');
     expect(fnBody).not.toContain('serverTimestamp()');
 
