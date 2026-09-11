@@ -1088,25 +1088,32 @@ const normalizePublicComment = (id, value) => ({
 const sortPublicComments = comments =>
   [...comments].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 
-export const fetchPublicProfileComments = async (profileIds = []) => {
+const readPublicProfileComments = async profileIds => {
   const ids = Array.from(new Set((profileIds || []).filter(Boolean)));
   if (!ids.length) return {};
 
   const entries = await Promise.all(ids.map(async profileId => {
-    try {
-      const snap = await firebaseGet(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
-      if (!snap.exists()) return [profileId, []];
-      const value = snap.val() || {};
-      return [profileId, sortPublicComments(
-        Object.entries(value).map(([id, comment]) => normalizePublicComment(id, comment))
-      )];
-    } catch (error) {
-      console.error('Error fetching public comments:', error);
-      return [profileId, []];
-    }
+    const snap = await firebaseGet(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
+    if (!snap.exists()) return [profileId, []];
+    const value = snap.val() || {};
+    return [profileId, sortPublicComments(
+      Object.entries(value).map(([id, comment]) => normalizePublicComment(id, comment))
+    )];
   }));
 
   return Object.fromEntries(entries);
+};
+
+/** Для запису/видалення: помилка читання не є порожнім списком. */
+export const fetchPublicProfileCommentsStrict = profileIds => readPublicProfileComments(profileIds);
+
+export const fetchPublicProfileComments = async (profileIds = []) => {
+  try {
+    return await readPublicProfileComments(profileIds);
+  } catch (error) {
+    console.error('Error fetching public comments:', error);
+    return Object.fromEntries((profileIds || []).filter(Boolean).map(profileId => [profileId, []]));
+  }
 };
 
 export const addPublicProfileComment = async ({ profileId, text, authorName = '' }) => {
@@ -3715,6 +3722,23 @@ export const setOwnerGetInTouch = (ownerId, profileId, value) => (
 );
 
 export const readOwnerWriterMap = ownerId => readOwnerValueMap(OWNER_WRITER_PATH, ownerId);
+
+/** Міграція не має права підміняти непрочитаний writer порожнім значенням. */
+export const readOwnerWriterMapStrict = async ownerId => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return {};
+  invalidateOwnerValueMap(OWNER_WRITER_PATH, owner);
+  const snapshot = await get(ref2(database, `${OWNER_WRITER_PATH}/${owner}`));
+  if (!snapshot.exists()) return {};
+  const map = {};
+  Object.entries(snapshot.val() || {}).forEach(([key, value]) => {
+    if (value === null || value === undefined) return;
+    if (isLegacyOwnerValueGroup(value)) {
+      Object.keys(value).forEach(profileId => { map[profileId] = key; });
+    } else map[key] = value;
+  });
+  return map;
+};
 
 export const invalidateOwnerWriterMap = ownerId => invalidateOwnerValueMap(OWNER_WRITER_PATH, ownerId);
 

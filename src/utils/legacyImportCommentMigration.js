@@ -3,8 +3,8 @@ import {
   auth,
   deleteCommentByOwner,
   fetchOwnerCommentsSubtree,
-  fetchPublicProfileComments,
-  readOwnerWriterMap,
+  fetchPublicProfileCommentsStrict,
+  readOwnerWriterMapStrict,
 } from 'components/config';
 import { getCurrentValue } from 'components/getCurrentValue';
 import { ADMIN_UIDS, isAdminUid } from './accessLevel';
@@ -150,7 +150,7 @@ export const planLegacyImportCommentMigration = ({
 } = {}) => {
   const pattern = makeLegacyImportUserIdPattern(prefix);
   const byProfileAndText = new Map();
-  const skipped = { otherPrefix: 0, emptyText: 0 };
+  const skipped = { otherPrefix: 0, emptyText: 0, unverifiedWriter: 0 };
 
   Object.entries(privateComments || {}).forEach(([ownerId, ownerComments]) => {
     Object.entries(ownerComments || {}).forEach(([cardId, entry]) => {
@@ -165,6 +165,15 @@ export const planLegacyImportCommentMigration = ({
         return;
       }
 
+      // Сам префікс картки не доводить, що нотатка приїхала з імпорту.
+      // `writer` — збережена імпортером ознака джерела; без неї приватний
+      // текст може бути звичайною особистою нотаткою й публікувати його не можна.
+      const writerName = resolveWriterName(writers?.[ownerId]?.[cardId]);
+      if (!writerName) {
+        skipped.unverifiedWriter += 1;
+        return;
+      }
+
       const textKey = normalizeCommentTextKey(text);
       const key = `${cardId}::${textKey}`;
       const existing = byProfileAndText.get(key);
@@ -176,7 +185,6 @@ export const planLegacyImportCommentMigration = ({
         return;
       }
 
-      const writerName = resolveWriterName(writers?.[ownerId]?.[cardId]);
       byProfileAndText.set(key, {
         profileId: cardId,
         text,
@@ -187,17 +195,6 @@ export const planLegacyImportCommentMigration = ({
         ownerIds: [ownerId],
       });
     });
-  });
-
-  // Імʼя автора могло лишитись у позначці іншого власника — картку писала одна
-  // людина, а нотатку з відгуком імпортували під іншим id.
-  byProfileAndText.forEach(entry => {
-    if (entry.authorName) return;
-    const fallbackOwnerId = Object.keys(writers || {})
-      .find(ownerId => resolveWriterName(writers[ownerId]?.[entry.profileId]));
-    if (!fallbackOwnerId) return;
-    entry.authorName = resolveWriterName(writers[fallbackOwnerId][entry.profileId]);
-    entry.authorId = makeLegacyCommentAuthorId(entry.authorName);
   });
 
   const publicTextKeys = new Map();
@@ -292,7 +289,7 @@ export const migrateLegacyImportCommentsToPublic = async ({
     try {
       const [comments, writerMap] = await Promise.all([
         fetchOwnerCommentsSubtree(ownerId),
-        readOwnerWriterMap(ownerId),
+        readOwnerWriterMapStrict(ownerId),
       ]);
       privateComments[ownerId] = comments || {};
       writers[ownerId] = writerMap || {};
@@ -306,7 +303,7 @@ export const migrateLegacyImportCommentsToPublic = async ({
 
   const profileIds = listLegacyImportProfileIds(privateComments, prefix);
   const existingPublicComments = profileIds.length
-    ? await fetchPublicProfileComments(profileIds)
+    ? await fetchPublicProfileCommentsStrict(profileIds)
     : {};
 
   const { entries, duplicates, skipped } = planLegacyImportCommentMigration({
@@ -392,7 +389,7 @@ export const copyPublicCommentsBetweenCards = async ({ sourceProfileId, targetPr
   if (!viewerId) throw new Error('User not authenticated');
   if (!isAdminUid(viewerId)) throw new Error('Публічні коментарі між картками переносить лише адмін');
 
-  const byProfile = await fetchPublicProfileComments([source, target]);
+  const byProfile = await fetchPublicProfileCommentsStrict([source, target]);
   const targetKeys = new Set((byProfile[target] || []).map(comment => normalizeCommentTextKey(comment?.text)));
 
   let copied = 0;
