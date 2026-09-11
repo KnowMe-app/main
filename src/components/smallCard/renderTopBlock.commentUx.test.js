@@ -42,11 +42,18 @@ describe('публічні відгуки в блоці картки', () => {
   const source = fs.readFileSync(path.join(__dirname, 'renderTopBlock.js'), 'utf8');
 
   it('читає відгуки лише після явного запиту, а не для кожної картки стрічки', () => {
-    expect(source).toContain('fetchPublicProfileComments([profileId])');
+    expect(source).toContain('fetchPublicProfileCommentsStrict([profileId])');
     expect(source).toContain('onClick={loadPublicComments}');
     // Порожня картка скидає обидва списки — інакше відгуки попередньої
     // лишились би висіти під наступною.
     expect(source).toContain('setPublicComments([]);');
+  });
+
+  it('лишає кнопку доступною для повтору після помилки читання', () => {
+    expect(source).toContain('setPublicCommentsLoaded(true);');
+    expect(source).toContain('catch (error) {');
+    expect(source).toContain('Не вдалося завантажити публічні відгуки');
+    expect(source).toContain('setPublicCommentsLoading(false)');
   });
 
   it('показує відгук окремим рядком, помітно іншим за нотатку', () => {

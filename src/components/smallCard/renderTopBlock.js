@@ -45,7 +45,7 @@ import {
   getUserStorageAvatarPhotoFiles,
   setUserComment as persistUserComment,
   fetchAllCommentsByCardId,
-  fetchPublicProfileComments,
+  fetchPublicProfileCommentsStrict,
   updateCommentByOwner,
   updatePublicProfileComment,
   deleteCommentByOwner,
@@ -1363,6 +1363,8 @@ export const TopBlock = ({
   // усій базі, і читається він одним запитом на картку, а не по власниках.
   const [publicComments, setPublicComments] = React.useState([]);
   const [publicCommentsLoaded, setPublicCommentsLoaded] = React.useState(false);
+  const [publicCommentsLoading, setPublicCommentsLoading] = React.useState(false);
+  const publicCommentsRequestRef = React.useRef(0);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
     if (!userData) return null;
@@ -1420,6 +1422,8 @@ export const TopBlock = ({
     setBackendMultiComments([]);
     setPublicComments([]);
     setPublicCommentsLoaded(false);
+    setPublicCommentsLoading(false);
+    publicCommentsRequestRef.current += 1;
     if (!cardData?.userId) {
       return;
     }
@@ -1441,12 +1445,21 @@ export const TopBlock = ({
   const loadPublicComments = async event => {
     event?.stopPropagation();
     const profileId = cardData?.userId;
-    if (!profileId || publicCommentsLoaded) return;
-    const publicByProfile = await fetchPublicProfileComments([profileId]);
-    // Поки запит ішов, цей екземпляр міг уже показувати іншу анкету.
-    if (cardData?.userId !== profileId) return;
-    setPublicComments(publicByProfile?.[profileId] || []);
-    setPublicCommentsLoaded(true);
+    if (!profileId || publicCommentsLoaded || publicCommentsLoading) return;
+    const requestId = publicCommentsRequestRef.current + 1;
+    publicCommentsRequestRef.current = requestId;
+    setPublicCommentsLoading(true);
+    try {
+      const publicByProfile = await fetchPublicProfileCommentsStrict([profileId]);
+      if (publicCommentsRequestRef.current !== requestId) return;
+      setPublicComments(publicByProfile?.[profileId] || []);
+      setPublicCommentsLoaded(true);
+    } catch (error) {
+      if (publicCommentsRequestRef.current !== requestId) return;
+      toast.error(`Не вдалося завантажити публічні відгуки: ${error?.message || error}`);
+    } finally {
+      if (publicCommentsRequestRef.current === requestId) setPublicCommentsLoading(false);
+    }
   };
 
   React.useEffect(() => {
@@ -2239,9 +2252,10 @@ export const TopBlock = ({
             type="button"
             style={publicCommentsLoadButtonStyle}
             onClick={loadPublicComments}
+            disabled={publicCommentsLoading}
             title="Завантажити публічні відгуки"
           >
-            🌐 Відгуки
+            {publicCommentsLoading ? 'Завантаження…' : '🌐 Відгуки'}
           </button>
         )}
         {publicComments.map(comment => {
