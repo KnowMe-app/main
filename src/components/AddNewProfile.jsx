@@ -6400,7 +6400,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ? `Не прочитано власників: ${stats.unreadableOwnerIds.join(', ')}. Їхні записи не змінено.`
           : stats.permissionDenied
           ? 'База відмовила (PERMISSION_DENIED): правила ще не викочені — npx firebase deploy --only database'
-          : stats.failures[0]?.message || '';
+          // Картку теж називаємо: коли з пачки падає одна, шукати її очима по
+          // всій партії — це та сама робота, що вже зроблена тут.
+          : stats.failures[0]
+          ? `${stats.failures[0].profileId}: ${stats.failures[0].message}`
+          : '';
         toast.error(`Перенос завершено з помилками — ${details}.\n${reason}`.trim(), {
           id: toastId,
           duration: stats.permissionDenied ? 20000 : 12000,

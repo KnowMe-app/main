@@ -867,6 +867,28 @@ await it('перенесений відгук не змінює автора й 
   await assertSucceeds(remove(ref(db(SUPERADMIN), `comments/${CARD}/legacy1`)));
 });
 
+// 2000 знаків — межа для того, хто пише коментар зараз. Перенесений відгук
+// нового тексту не пише, а рятує вже написаний: довгий опис випадку, який
+// агенція вела місяцями. Обрізати його — загубити частину відгуку, розрізати
+// надвоє — вдати, що авторка писала двічі. Тому довший текст приймається, але
+// лише від адміна, і лише до другої межі.
+await it('адмін переносить відгук, довший за межу звичайного коментаря', () =>
+  assertSucceeds(set(ref(db(SUPERADMIN), `comments/${CARD}/legacyLong`), {
+    text: 'я'.repeat(2500), authorId: 'legacy-author-abc123', createdAt: 8, visibility: 'public',
+  })));
+
+await it('звичайний користувач довшого за 2000 не пише', () =>
+  assertFails(set(ref(db(SELF_SERVE), `comments/${CARD}/tooLong`), {
+    text: 'я'.repeat(2500), authorId: SELF_SERVE, createdAt: 9, visibility: 'public',
+  })));
+
+await it('друга межа теж межа — навіть адміну', async () => {
+  await assertFails(set(ref(db(SUPERADMIN), `comments/${CARD}/wayTooLong`), {
+    text: 'я'.repeat(10001), authorId: 'legacy-author-abc123', createdAt: 10, visibility: 'public',
+  }));
+  await assertSucceeds(remove(ref(db(SUPERADMIN), `comments/${CARD}/legacyLong`)));
+});
+
 describe('історія пошуку — один ряд на запит');
 
 await it('власниця пише запит із ключем від тексту', () =>
