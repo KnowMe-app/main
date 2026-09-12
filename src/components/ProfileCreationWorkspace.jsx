@@ -20,6 +20,7 @@ import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
+  getStackedCardViews,
   buildOverlayFromDraft,
   getOverlayHistoryForCard,
   getOverlaysForCard,
@@ -415,18 +416,15 @@ const IDENTITY_CLAIMING_PREFILL_FIELDS = new Set(
   [...PROFILE_SEARCH_PREFILL_FIELDS].filter(field => field !== 'name' && field !== 'surname')
 );
 
-// Що читач бачить у формі доповнення: рівно ті поля картки, які ця форма й
-// показує. Значення кладеться сирим — масив версій лишається масивом, бо
-// доповнюють саме історію («ще один номер»), а не зведене поточне значення.
+// Що читач бачить у формі доповнення: рівно поточні значення тих полів картки,
+// які ця форма показує. Масив у канонічній картці є історією версій, а не
+// переліком контактів; останній порожній елемент означає видалене поле.
 export const buildOverlayPrefill = (canonical, cardUserId) => CREATE_FORM_SECTIONS
   .flatMap(section => section.fields)
   .reduce((result, fieldName) => {
-    const value = canonical?.[fieldName];
-    const values = (Array.isArray(value) ? value : [value])
-      .map(item => (item === null || item === undefined ? '' : item))
-      .filter(item => String(item).trim() !== '');
-    if (!values.length) return result;
-    result[fieldName] = Array.isArray(value) ? values : values[0];
+    const value = getCurrentValue(canonical?.[fieldName]);
+    if (value === null || value === undefined || String(value).trim() === '') return result;
+    result[fieldName] = value;
     return result;
   }, { userId: cardUserId });
 
@@ -455,6 +453,7 @@ export const ProfileCreationWorkspace = () => {
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchExecuted, setSearchExecuted] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
   const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
@@ -661,6 +660,7 @@ export const ProfileCreationWorkspace = () => {
     setSearch(previous => typeof value === 'function' ? value(previous) : value);
     setSearchResults([]);
     setSearchExecuted(false);
+    setSearchLoading(false);
     setSearchNotFound(false);
     setSearchFailed(false);
   };
@@ -730,8 +730,20 @@ export const ProfileCreationWorkspace = () => {
       // що вже принесла видача пошуку.
       console.warn('[ProfileCreationWorkspace] canonical card unavailable', error);
     }
-    setOverlayTarget({ userId: profile.userId, canonical });
-    const nextDraft = buildOverlayPrefill(canonical, profile.userId);
+    const canonicalPrefill = buildOverlayPrefill(canonical, profile.userId);
+    let overlays = {};
+    try {
+      overlays = await getOverlaysForCard(profile.userId);
+    } catch (error) {
+      console.warn('[ProfileCreationWorkspace] existing overlay unavailable', error);
+    }
+    const { stacked, baseWithoutOwnOverlay } = getStackedCardViews({
+      canonical: canonicalPrefill,
+      overlaysByEditor: overlays,
+      editorUserId: uid,
+    });
+    setOverlayTarget({ userId: profile.userId, canonical: baseWithoutOwnOverlay });
+    const nextDraft = stacked;
     persistedDraftRef.current = nextDraft;
     draftRef.current = nextDraft;
     resetDraftOverlayState(null);
@@ -766,6 +778,8 @@ export const ProfileCreationWorkspace = () => {
     }
     if (typeof intent.createFromQuery === 'string' && intent.createFromQuery.trim()) {
       entryIntentRef.current = true;
+      navigate(`${location.pathname}${location.search || ''}`, { replace: true, state: null });
+      if (searchParams.get('cardId')) return;
       // Контакт, за яким стрічка вже показала чужу картку, у нову не
       // підставляється: він зайнятий, і база відхилила б збереження ще до
       // того, як людина щось допише.
@@ -1468,8 +1482,10 @@ export const ProfileCreationWorkspace = () => {
           }}
           onSearchExecuted={() => {
             setSearchExecuted(true);
+            setSearchLoading(true);
             setSearchFailed(false);
           }}
+          onSearchSettled={() => setSearchLoading(false)}
           // Історію пише лише завершений пошук, а не прогони на паузах у наборі.
           onSearchCommitted={value => addMatchingSearchQuery(value)}
           onSearchError={() => {
@@ -1480,6 +1496,7 @@ export const ProfileCreationWorkspace = () => {
             setSearchResults([]);
             setSearchNotFound(false);
             setSearchExecuted(false);
+            setSearchLoading(false);
             setSearchFailed(false);
           }}
           storageKey="profileCreationSearchQuery"
@@ -1542,7 +1559,7 @@ export const ProfileCreationWorkspace = () => {
         <Actions>
           <Button
             $primary
-            disabled={!search.trim() || !searchExecuted || searchFailed}
+            disabled={!search.trim() || !searchExecuted || searchLoading || searchFailed}
             onClick={() => startNew(search, { allowContactPrefill: !hasExistingMatches })}
           >
             <FiPlus size={20} aria-hidden="true" /> {hasExistingMatches ? 'Створити нову картку' : 'Додати профіль'}

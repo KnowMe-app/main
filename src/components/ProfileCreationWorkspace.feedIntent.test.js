@@ -2,7 +2,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
+import { buildOverlayPrefill, ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import {
   fetchDislikeUsers,
   fetchFavoriteUsers,
@@ -140,8 +140,8 @@ describe('доповнення знайденої картки зі стрічк
   it('відкриває форму доповнення одразу, без другого пошуку', async () => {
     render(<ProfileCreationWorkspace />);
 
-    await screen.findByDisplayValue('380501112233');
-    expect(screen.getByDisplayValue('380930001122')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('380930001122')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('380501112233')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('Бугаренко')).toBeInTheDocument();
     expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false });
   });
@@ -165,15 +165,14 @@ describe('доповнення знайденої картки зі стрічк
 
   it('записує в оверлей лише дописане, а не підставлене з картки', async () => {
     render(<ProfileCreationWorkspace />);
-    const existing = await screen.findByDisplayValue('380501112233');
+    const existing = await screen.findByDisplayValue('380930001122');
 
     fireEvent.blur(existing);
     await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalled());
     expect(saveOverlayForUserCard.mock.calls.at(-1)[0].fields).toEqual({});
 
-    const added = screen.getByDisplayValue('380930001122');
-    fireEvent.change(added, { target: { value: '380670009988' } });
-    fireEvent.blur(added);
+    fireEvent.change(existing, { target: { value: '380670009988' } });
+    fireEvent.blur(existing);
 
     await waitFor(() => expect(saveOverlayForUserCard.mock.calls.length).toBeGreaterThan(1));
     expect(saveOverlayForUserCard.mock.calls.at(-1)[0]).toEqual(expect.objectContaining({
@@ -181,6 +180,24 @@ describe('доповнення знайденої картки зі стрічк
       editorUserId: 'editor-1',
       fields: { phone: { added: ['380670009988'] } },
     }));
+  });
+
+  it('відновлює власне попереднє доповнення і не стирає його незмінним blur', async () => {
+    getOverlaysForCard.mockResolvedValue({
+      'editor-1': {
+        editorUserId: 'editor-1',
+        fields: { phone: { added: ['380670009988'] } },
+      },
+    });
+    render(<ProfileCreationWorkspace />);
+
+    const previousAddition = await screen.findByDisplayValue('380670009988');
+    fireEvent.blur(previousAddition);
+
+    await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalled());
+    expect(saveOverlayForUserCard.mock.calls.at(-1)[0].fields).toEqual({
+      phone: { added: ['380670009988'] },
+    });
   });
 
   // Оновлена сторінка — той самий намір: адресу форма поставила собі сама.
@@ -198,6 +215,16 @@ describe('доповнення знайденої картки зі стрічк
     render(<ProfileCreationWorkspace />);
 
     expect(await screen.findByText('Картка без імені')).toBeInTheDocument();
+  });
+});
+
+describe('приватність версій у доповненні', () => {
+  it('показує лише поточну версію та поважає маркер видалення', () => {
+    expect(buildOverlayPrefill({ phone: ['old-number', 'new-number'] }, 'card')).toEqual({
+      userId: 'card',
+      phone: 'new-number',
+    });
+    expect(buildOverlayPrefill({ phone: ['old-number', ''] }, 'card')).toEqual({ userId: 'card' });
   });
 });
 

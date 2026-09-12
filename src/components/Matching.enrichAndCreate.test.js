@@ -8,7 +8,7 @@ describe('Matching: продовження пошуку без другого п
   const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
   it('веде «Створити нову» просто у форму нової картки, з набраним і станом видачі', () => {
-    expect(source).toContain("state: { createFromQuery: searchQuery.trim(), queryMatchedCards: searchRefinedUsers.length }");
+    expect(source).toContain("state: { createFromQuery: searchQuery.trim(), queryMatchedCards: visibleUsers.length }");
     expect(source).not.toContain("state: { query: searchQuery.trim() }");
   });
 
@@ -16,6 +16,8 @@ describe('Matching: продовження пошуку без другого п
     expect(source).toContain("navigate('/matching/create-profile', { state: { enrichCardId: user.userId } })");
     // Адмін правит картку олівцем, тож другої кнопки з тим самим наслідком
     // у його рядку немає.
+    expect(source).toContain('onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}');
+    expect(source).toContain("user.__profileMutationOperation === 'create'");
     expect(source).toContain('onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}');
   });
 

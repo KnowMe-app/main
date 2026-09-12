@@ -216,7 +216,7 @@ import ProfileRow, {
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch, FaPlus } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown } from 'react-icons/fa';
 import { FaXTwitter } from 'react-icons/fa6';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
@@ -1058,6 +1058,7 @@ const SwipeableCard = ({
   onCommentBlur,
   publicCommentSlot = null,
   onAdminEdit,
+  onEnrich,
   debugRejectReasons = [],
   showDebugRejectReasons = false,
   debugFilteredOutReason = '',
@@ -1433,6 +1434,11 @@ const SwipeableCard = ({
             галереї й рядок списку ховають ці кнопки з тієї ж причини. */}
         {!user?.__limitedProfile && (
         <ModernActionRail>
+          {onEnrich && (
+            <ActionButton type="button" onClick={event => { event.stopPropagation(); onEnrich(user); }} aria-label="Доповнити дані" title="Доповнити дані">
+              <FaPlus />
+            </ActionButton>
+          )}
           <span ref={dislikeButtonWrapRef}>
             <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
           </span>
@@ -1558,7 +1564,7 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 //
 // Локація й дії переїхали з фото в тіло картки: поверх знімка вони жили тільки
 // тому, що іншого місця не було.
-const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, diagnosticsSlot }) => {
+const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, onEnrich, diagnosticsSlot }) => {
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
@@ -1640,6 +1646,11 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
         )}
         {!isLimited && (
           <GalleryActions>
+            {onEnrich && (
+              <GalleryActionButton type="button" aria-label="Доповнити дані" title="Доповнити дані" onClick={event => { event.stopPropagation(); onEnrich(user); }}>
+                <FaPlus />
+              </GalleryActionButton>
+            )}
             <GalleryActionButton
               type="button"
               $on={isFavorite}
@@ -1672,6 +1683,7 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
   && prev.isHidden === next.isHidden
   && prev.isAdmin === next.isAdmin
   && prev.diagnosticsSlot === next.diagnosticsSlot
+  && prev.onEnrich === next.onEnrich
   && prev.onToggleHidden === next.onToggleHidden
   && prev.onTogglePublish === next.onTogglePublish
 ));
@@ -6597,7 +6609,7 @@ const Matching = () => {
       onSelect: () => {
         saveScrollPosition();
         navigate('/matching/create-profile', {
-          state: { createFromQuery: searchQuery.trim(), queryMatchedCards: searchRefinedUsers.length },
+          state: { createFromQuery: searchQuery.trim(), queryMatchedCards: visibleUsers.length },
         });
       },
     },
@@ -6608,7 +6620,7 @@ const Matching = () => {
       count: similarUsers.length,
       onSelect: () => setSearchTab('similar'),
     },
-  ], [navigate, searchQuery, searchRefinedUsers.length, similarUsers.length]);
+  ], [navigate, searchQuery, searchRefinedUsers.length, similarUsers.length, visibleUsers.length]);
 
   // Згорнутий ряд показує три чіпи, решта ховається за «+N». Але «+N» тепер
   // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
@@ -6866,6 +6878,10 @@ const Matching = () => {
   const handleRowEnrichProfile = React.useCallback(user => {
     if (!user?.userId) return;
     saveScrollPosition();
+    if (user.__profileMutationOperation === 'create') {
+      navigate(`/matching/create-profile?cardId=${encodeURIComponent(user.userId)}`);
+      return;
+    }
     navigate('/matching/create-profile', { state: { enrichCardId: user.userId } });
     // saveScrollPosition reads a ref and never changes identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -7557,6 +7573,7 @@ const Matching = () => {
                             onToggleFavorite={toggleRowFavorite}
                             onToggleHidden={toggleRowHidden}
                             onTogglePublish={togglePublish}
+                            onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
                             diagnosticsSlot={renderDiagnosticsFor(user)}
                           />
                         ))}
@@ -7776,6 +7793,7 @@ const Matching = () => {
                         saveScrollPosition();
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}
+                      onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
                       showDebugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser}
                       debugFilteredOutReason={(() => {
                         const canShowDebug = getCanShowMatchingUserDebug(user, { isAdmin });
