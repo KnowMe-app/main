@@ -2199,6 +2199,76 @@ export const FeedLoadPromptButton = styled.button`
   }
 `;
 
+/* ------------------------------------------------------------------ *
+ * Міні-картка набраного: перший рядок видачі
+ *
+ * Пошук відповідає на питання «де ця людина», і відповідей у нього дві: ось
+ * знайдені картки — або такої ще немає, заведіть. Друга відповідь стояла чіпом
+ * над видачею, тобто там, де її читають як фільтр; а набране, яке вона мала б
+ * нести в нову картку, читач бачив аж у формі. Тепер це рядок видачі: у ньому
+ * видно, чим саме розпізнано набране і в яке поле воно ляже.
+ * ------------------------------------------------------------------ */
+
+export const QueryDraftCard = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 9px;
+  padding: 10px 12px;
+  border: 1px dashed color-mix(in srgb, var(--matching-accent) 55%, transparent);
+  border-radius: 16px;
+  background: var(--matching-card-bg, #fff);
+  box-sizing: border-box;
+`;
+
+export const QueryDraftBody = styled.div`
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+`;
+
+export const QueryDraftLabel = styled.span`
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--matching-muted-text);
+`;
+
+export const QueryDraftValue = styled.span`
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--matching-header-text);
+  overflow-wrap: anywhere;
+`;
+
+export const QueryDraftNote = styled.span`
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--matching-muted-text);
+`;
+
+// Кнопка стоїть поруч із набраним, а не смугою під ним: це одна з відповідей
+// видачі, а не заклик до дії на весь екран.
+export const QueryDraftButton = styled.button`
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 7px 14px;
+  border: 1px solid var(--matching-accent);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--matching-accent);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover { background: color-mix(in srgb, var(--matching-accent) 12%, transparent); }
+  &:focus-visible { outline: 2px solid var(--matching-accent); outline-offset: 2px; }
+`;
+
 export const FeedNotice = styled.div`
   padding: 24px 12px;
   text-align: center;

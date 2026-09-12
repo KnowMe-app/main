@@ -11,10 +11,14 @@ jest.mock('firebase/database', () => ({
 
 jest.mock('components/config', () => ({
   database: { app: 'db' },
+  updateSearchId: jest.fn(async () => undefined),
 }));
+
+const { updateSearchId } = require('components/config');
 
 const {
   applyOverlayToCard,
+  collectOverlayIndexValues,
   buildOverlayFromDraft,
   getCanonicalCard,
   getOverlayForUserCard,
@@ -120,6 +124,43 @@ describe('multiAccountEdits storage structure', () => {
       expect.objectContaining({ path: 'multiData/editsContributors/card-1' }),
       { 'editor-1': expect.any(Number) },
     );
+  });
+
+  // Дописане в доповненні мусить знаходитись пошуком: читач знає цей номер
+  // саме тому, що шукав за ним людину, і без індексу наступний такий пошук
+  // знову не знайде нічого — а знайде лише привід завести дубль.
+  it('індексує дописані доповненням значення на картку, яку доповнюють', async () => {
+    get.mockResolvedValueOnce({ exists: () => false });
+
+    await saveOverlayForUserCard({
+      editorUserId: 'editor-1',
+      cardUserId: 'card-1',
+      fields: {
+        phone: { added: ['380505553344'] },
+        surname: { from: '', to: 'Бугаренко' },
+        // Поле поза індексом пошуку в індекс і не їде.
+        city: { added: ['Київ'] },
+        // Прибране в оверлеї ще не прибране в анкеті: ключ знімає лише явний
+        // намір адміна, а не пропозиція читача.
+        email: { removed: ['a@b.c'] },
+      },
+    });
+
+    expect(updateSearchId.mock.calls).toEqual([
+      ['phone', '380505553344', 'card-1', 'add'],
+      ['surname', 'Бугаренко', 'card-1', 'add'],
+    ]);
+  });
+
+  it('бере з оверлея лише додане, у формі «поле + значення»', () => {
+    expect(collectOverlayIndexValues({
+      phone: { added: ['111', '111', ''] },
+      name: { from: 'Оксана', to: 'Ксенія' },
+      note: { added: ['текст'] },
+    })).toEqual([
+      { field: 'phone', value: '111' },
+      { field: 'name', value: 'Ксенія' },
+    ]);
   });
 
   it('loads all overlays from a card directory', async () => {

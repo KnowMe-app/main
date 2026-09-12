@@ -3,8 +3,9 @@ import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import { isLongFormatUserId } from 'utils/userIdFormat';
 import { mergeProfileNodes } from 'utils/profileNodeMerge';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
+import { SEARCH_ID_INDEXED_FIELDS } from 'utils/searchKeyUtils';
 
-import { database } from 'components/config';
+import { database, updateSearchId } from 'components/config';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -171,6 +172,40 @@ export const buildOverlayFromDraft = (canonical, draft) => {
   return overlayFields;
 };
 
+/**
+ * Значення, які доповнення подало в картку, — разом із полем.
+ *
+ * Оверлей — це те, що читач знає про людину понад картку, і знає він це
+ * зазвичай саме тому, що шукав її за цим значенням. Тож дописаний телефон має
+ * потрапити в `searchId`: інакше наступний пошук за ним не знаходить нічого, і
+ * той самий читач заводить дубль тієї самої людини.
+ *
+ * Береться лише те, що доповнення **додає**: `added` і нове значення заміни.
+ * `removed` в індексі не чіпається навмисно — прибране в оверлеї ще не прибране
+ * в анкеті, а знімає ключ лише явний намір адміна (див. `pruneSearchIdValues`).
+ */
+export const collectOverlayIndexValues = (fields = {}) =>
+  Object.entries(normalizeOverlayFields(fields)).flatMap(([fieldName, change]) => {
+    if (!isPlainObject(change) || !SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return [];
+    const values = 'to' in change ? [change.to] : normalizeArray(change.added);
+    return uniq(values.map(value => String(value ?? '').trim()).filter(Boolean))
+      .map(value => ({ field: fieldName, value }));
+  });
+
+/**
+ * Індексується весь поточний оверлей, а не сама лише різниця цього збереження:
+ * значення, яке не записалось першого разу (правила, мережа), інакше не
+ * потрапило б у пошук уже ніколи. Ціну повторів тримає памʼять таба всередині
+ * `updateSearchId`, а відмова там не валить збереження — доповнення дорожче за
+ * ключ індексу.
+ */
+const indexOverlayValuesInSearchId = async ({ cardUserId, fields }) => {
+  for (const { field, value } of collectOverlayIndexValues(fields)) {
+    // eslint-disable-next-line no-await-in-loop
+    await updateSearchId(field, value, cardUserId, 'add');
+  }
+};
+
 export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields }) => {
   if (!editorUserId || !cardUserId) return;
 
@@ -217,6 +252,10 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
   await set(cardRef, { fields: sanitized, updatedAt: Date.now(), cardUserId: normalizedCardId, editorUserId });
 
   await rememberCardContributor({ cardUserId: normalizedCardId, editorUserId });
+
+  // Після запису оверлея, а не до нього: право дописати id у `searchId` дають
+  // правила саме за наявністю оверлея цього редактора на цій картці.
+  await indexOverlayValuesInSearchId({ cardUserId: normalizedCardId, fields: sanitized });
 
   await appendOverlayHistory({
     cardUserId: normalizedCardId,
@@ -266,6 +305,41 @@ export const getCardContributorIds = async cardUserId => {
   }
 
   return Array.from(contributors).filter(Boolean);
+};
+
+/**
+ * Власне доповнення читача до кількох карток — і більше нічого.
+ *
+ * Видача пошуку мусить показувати те, що читач сам дописав у знайдену картку:
+ * інакше він доповнює її, шукає вдруге й бачить ту саму картку без своїх даних —
+ * тобто не знає, чи його правка взагалі збереглась. Чужих оверлеїв тут немає
+ * навмисно: рядок видачі показує картку плюс власне доповнення, а не зведення
+ * всіх редакторів (його показує форма, і лише тому, хто її відкрив).
+ *
+ * Читається рівно вузол `{картка}/{редактор}`, по одному на показану знайдену
+ * картку, і лише в режимі пошуку: у стрічці рядків сотні, і читання «на кожну
+ * картку» там коштує рівно те, від чого стрічку відмивали
+ * (`docs/matching-feed-traffic.md`). Відмова читання — це порожній оверлей, а
+ * не поламана видача.
+ */
+export const getOwnOverlayFieldsForCards = async ({ editorUserId, cardUserIds = [] }) => {
+  if (!editorUserId) return {};
+
+  const ids = uniq(cardUserIds.map(normalizeCardKey).filter(Boolean));
+  if (!ids.length) return {};
+
+  const entries = await Promise.all(ids.map(async cardUserId => {
+    try {
+      const snapshot = await get(ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}/fields`));
+      const fields = snapshot?.exists?.() ? snapshot.val() : null;
+      return [cardUserId, isPlainObject(fields) ? normalizeOverlayFields(fields) : {}];
+    } catch (error) {
+      console.warn('[multiAccountEdits] own overlay unavailable', cardUserId, error);
+      return [cardUserId, {}];
+    }
+  }));
+
+  return Object.fromEntries(entries);
 };
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {

@@ -16,7 +16,10 @@ describe('matching feed structure', () => {
   it('keeps the query in the URL and debounces it by 250ms', () => {
     const source = matching();
     expect(source).toContain('const MATCHING_SEARCH_DEBOUNCE_MS = 250;');
-    expect(source).toContain("const MATCHING_QUERY_PARAM = 'q';");
+    // Імʼя параметра живе в одному місці на весь застосунок: форма створення
+    // будує ним адресу повернення до видачі (`buildMatchingSearchPath`).
+    expect(source).toContain('const MATCHING_QUERY_PARAM = MATCHING_SEARCH_QUERY_PARAM;');
+    expect(source).toContain("from 'utils/matchingSearchLocation'");
     expect(source).toContain('debounceMs={MATCHING_SEARCH_DEBOUNCE_MS}');
   });
 
@@ -33,7 +36,12 @@ describe('matching feed structure', () => {
     // Пошук і далі не звужується чіпами — але показується вікном, а не цілком:
     // 400 знайдених це 400 рядків у DOM і стільки ж гідратацій.
     expect(memo).toContain("if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);");
-    expect(source).toContain("const feedSource = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;");
+    expect(source).toContain("const feedSourceWithoutOwnEdits = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;");
+    // Поверх списку лягає лише власне доповнення читача — і лише там, де воно є:
+    // порожня мапа віддає той самий масив, бо від нього залежать і гідратація
+    // фото, і пагінація, і шар деталей.
+    expect(source).toContain('if (!Object.keys(ownOverlayFieldsByCardId).length) return feedSourceWithoutOwnEdits;');
+    expect(source).toContain('return applyOverlayToCard(user, fields);');
   });
 
   it('opens the detail layer over the feed with a history entry to pop', () => {

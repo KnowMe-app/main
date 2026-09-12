@@ -11,6 +11,7 @@ jest.mock('firebase/database', () => ({
 
 jest.mock('components/config', () => ({
   database: { app: 'db' },
+  updateSearchId: jest.fn(async () => undefined),
 }));
 
 const {

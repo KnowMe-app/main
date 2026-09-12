@@ -43,6 +43,11 @@ const ORDINARY_VIEWER = 'ordinaryViewerUid000000000';
 // правила шукали її тільки в `users`, показана анкета відкривалась йому
 // урізаною: картка є, а ні прізвища, ні контактів немає.
 const NODE_ROLE_VIEWER = 'nodeRoleViewerUid000000000';
+// Читачка, якій дозволено заводити картки (`canCreateProfiles`), але рівня
+// доступу їй ніхто не давав. Саме такий акаунт доповнює знайдену картку своїм
+// оверлеєм — і саме на ньому перевіряється, що дописане нею значення потрапляє
+// в `searchId`, а решта індексу лишається їй закритою.
+const CARD_CREATOR = 'cardCreatorUid000000000000';
 
 const CARD = 'someOtherProfileId000000000';
 // Анкета без ключа стрічки: картка є, але в стрічку не потрапляє.
@@ -90,6 +95,7 @@ await testEnv.withSecurityRulesDisabled(async context => {
     [PROFILE_OWNER]: { name: 'Власниця', userRole: 'ed' },
     [OUTSIDER]: { name: 'Стороння', userRole: 'ed' },
     [SELF_SERVE]: { name: 'Донорка', userRole: 'ed' },
+    [CARD_CREATOR]: { name: 'Заводить картки', userRole: 'ag', canCreateProfiles: true },
     [ORDINARY_VIEWER]: { name: 'Агенція', userRole: 'ag' },
     [CARD]: { name: 'Картка' },
     [HIDDEN_CARD]: { name: 'Прихована', publish: false },
@@ -772,6 +778,44 @@ await it('не переписує чужий id у своєму полі', async
   await assertFails(set(ref(db(SELF_SERVE), `searchId/380999999999/phone`), SELF_SERVE));
   // Дописатись поруч — можна: у значення може вести не одна анкета.
   await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380999999999/phone`), [CARD, SELF_SERVE]));
+});
+
+// Доповнення знайденої картки (`multiData/edits/{картка}/{редактор}`) — це те,
+// що читач знає про людину понад картку, і знає він це зазвичай саме тому, що
+// шукав її за цим значенням. Тож дописане має потрапити в `searchId`: інакше
+// наступний пошук за ним не знаходить нічого, і той самий читач заводить дубль.
+// Право дає рівно наявність власного оверлея на цій картці — не рівень доступу
+// й не сам лише `canCreateProfiles`.
+describe('searchId — дописане в доповненні індексується його автором');
+
+await it('редактор з оверлеєм заводить ключ на картку, яку доповнює', async () => {
+  await testEnv.withSecurityRulesDisabled(context => set(
+    ref(context.database(), `multiData/edits/${CARD}/${CARD_CREATOR}`),
+    { cardUserId: CARD, editorUserId: CARD_CREATOR, updatedAt: 1, fields: { phone: { added: ['380505553344'] } } },
+  ));
+  await assertSucceeds(set(ref(db(CARD_CREATOR), 'searchId/380505553344/phone'), CARD));
+});
+
+await it('дописується поруч із уже наявним id, не чіпаючи його', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), 'searchId/380505553345/phone'), HIDDEN_CARD));
+  await assertSucceeds(set(ref(db(CARD_CREATOR), 'searchId/380505553345/phone'), [HIDDEN_CARD, CARD]));
+  // Замістити чужий id своєю карткою оверлей не дозволяє: він додає значення,
+  // а не переписує індекс.
+  await assertFails(set(ref(db(CARD_CREATOR), 'searchId/380505553345/phone'), CARD));
+});
+
+// Писач індексу пише не `set` на поле, а `update` на значення
+// (`update(searchId/{значення}, { [поле]: id })`) — саме цією формою правило й
+// перевіряється, інакше емулятор підтверджував би те, чого застосунок не робить.
+await it('тією самою формою запису, що й писач індексу', async () => {
+  await assertSucceeds(update(ref(db(CARD_CREATOR), 'searchId/380505553348'), { phone: CARD }));
+  await assertFails(update(ref(db(CARD_CREATOR), 'searchId/380505553349'), { phone: HIDDEN_CARD }));
+});
+
+await it('без оверлея на картці ключ на неї не заводиться', async () => {
+  await assertFails(set(ref(db(CARD_CREATOR), 'searchId/380505553346/phone'), HIDDEN_CARD));
+  // І оверлей одного редактора не дає права писати від імені іншого.
+  await assertFails(set(ref(db(SELF_SERVE), 'searchId/380505553347/phone'), CARD));
 });
 
 describe('searchId — точковий резолв усім, перелік індексу тільки адміну');

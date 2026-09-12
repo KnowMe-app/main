@@ -75,7 +75,10 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('const saveDraftAsCard = async () =>');
     expect(source).toContain('await acceptCreateProfileMutation({');
     expect(source).toContain('Зберегти чернетку');
-    expect(source).toContain('<GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>');
+    // «Закрити» лишилось одне — але кнопкою головного розміру воно більше не є:
+    // поля зберігають себе самі, тож вихід не має важити стільки ж, скільки
+    // публікація чернетки.
+    expect(source).toContain('<CloseButton disabled={saving} onClick={closeEditor}>Закрити</CloseButton>');
   });
 
   it('waits for blur autosave and publishes the accepted base at its latest revision', () => {
