@@ -56,6 +56,29 @@ const hasField = name => fieldNames().includes(name);
 describe('блоки форми анкети', () => {
   beforeEach(() => localStorage.clear());
 
+  it('доступні кнопки додавання й очищення зберігають поведінку поля', () => {
+    const setState = jest.fn();
+    const handleClear = jest.fn();
+    renderForm({ setState, handleClear });
+
+    const nameInput = screen.getByRole('textbox', { name: "Ім’я" });
+    expect(nameInput.value).toBe('Анна');
+    fireEvent.click(screen.getByRole('button', { name: "Додати значення: Ім’я" }));
+    const updater = setState.mock.calls[setState.mock.calls.length - 1][0];
+    expect(updater({ name: 'Анна' }).name).toEqual(['Анна', undefined]);
+
+    fireEvent.click(screen.getByRole('button', { name: "Очистити Ім’я" }));
+    expect(handleClear).toHaveBeenCalledWith('name');
+  });
+
+  it('позначає окремі значення масиву й очищає саме вибраний рядок', () => {
+    const handleClear = jest.fn();
+    renderForm({ state: { userId: 'AC00042', name: ['Анна', 'Марія'] }, handleClear });
+    expect(screen.getByRole('textbox', { name: 'Ім’я — 2' }).value).toBe('Марія');
+    fireEvent.click(screen.getByRole('button', { name: 'Прибрати Ім’я — 2' }));
+    expect(handleClear).toHaveBeenCalledWith('name', 1);
+  });
+
   it('підписує блок вузлом без id анкети', () => {
     renderForm();
 

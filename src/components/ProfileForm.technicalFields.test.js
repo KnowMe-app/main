@@ -23,7 +23,7 @@ describe('ProfileForm technical settings', () => {
     expect(source).not.toContain('TechnicalFieldsTitle');
     expect(source).toContain('aria-expanded={block.isOpen}');
     expect(source).toContain('onClick={() => toggleProfileFormBlock(block.id)}');
-    expect(source).toContain('{block.isOpen && block.fields.map(');
+    expect(source).toContain('{block.isOpen && <FieldsGrid>{block.fields.map(');
   });
 
   it('зводить блоки за шляхом, тож той самий вузол не малюється двічі', () => {

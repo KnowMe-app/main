@@ -110,6 +110,7 @@ export const getFieldsToRender = state => {
 };
 
 const PROFILE_FORM_FIELDS_TO_HIDE = new Set(['getInTouch']);
+const COMPACT_PROFILE_FIELDS = new Set(['birth', 'region', 'city', 'height', 'weight', 'blood']);
 const PROFILE_FORM_TECHNICAL_FIELDS = new Set([
   'accessLevel',
   'canCreateProfiles',
@@ -2851,6 +2852,7 @@ ${entries.join('\n')}`;
               <InputField
                 fieldName="ppTechnicalInput"
                 name="ppTechnicalInput"
+                aria-label="Швидке введення контактів і технічних даних"
                 as="textarea"
                 ref={ppTechnicalInputRef}
                 rows={1}
@@ -2896,7 +2898,7 @@ ${entries.join('\n')}`;
             )}
           </BlockHeaderRow>
           {block.isOpen && block.hint && <BlockHint>{block.hint}</BlockHint>}
-          {block.isOpen && block.fields.map((field, index) => {
+          {block.isOpen && <FieldsGrid>{block.fields.map(field => {
           const overlayEntries = getOverlayEntriesForField(field.name);
           const hasOverlaySuggestions = overlayEntries.length > 0;
           // Поле, пришпилене до чужого блоку, називає свій справжній вузол саме
@@ -2918,7 +2920,7 @@ ${entries.join('\n')}`;
               ? formatDateToDisplay(state[field.name])
               : state[field.name] || '';
           return (
-            <React.Fragment key={index}>
+            <FieldGroup key={field.name} $compact={COMPACT_PROFILE_FIELDS.has(field.name) && !Array.isArray(state[field.name]) && !hasOverlaySuggestions}>
             {foreignNodeLabel && <FieldNodeNote>{foreignNodeLabel}</FieldNodeNote>}
             <PickerContainer
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
@@ -2941,6 +2943,8 @@ ${entries.join('\n')}`;
                         ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                         name={`${field.name}-${idx}`}
+                        aria-label={`${getFieldDisplayLabel(field)} — ${idx + 1}`}
+                        placeholder={getFieldPlaceholderText(field)}
                         value={value || ''}
                         $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
                         onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
@@ -3001,6 +3005,7 @@ ${entries.join('\n')}`;
                       {(
                           <ClearButton
                           type="button"
+                          aria-label={`Прибрати ${getFieldDisplayLabel(field)} — ${idx + 1}`}
                           onPointerDownCapture={e => {
                             console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
                               eventType: e.type,
@@ -3067,6 +3072,7 @@ ${entries.join('\n')}`;
                   {field.name === 'accessLevel' ? (
                     <AccessLevelSelect
                       name={field.name}
+                      aria-label={getFieldDisplayLabel(field)}
                       value={state[field.name] || ''}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
                       onChange={e => {
@@ -3102,6 +3108,7 @@ ${entries.join('\n')}`;
                         fieldName={field.name}
                         ref={additionalAccessRulesRef}
                         name={field.name}
+                        aria-label={getFieldDisplayLabel(field)}
                         value={displayValue}
                         placeholder={ADDITIONAL_ACCESS_TEMPLATE}
                         readOnly
@@ -3119,6 +3126,8 @@ ${entries.join('\n')}`;
                     ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
+                    aria-label={getFieldDisplayLabel(field)}
+                    placeholder={getFieldPlaceholderText(field)}
                     value={displayValue}
                     $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
                     onFocus={() => {
@@ -3264,6 +3273,7 @@ ${entries.join('\n')}`;
                   {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
                       type="button"
+                      aria-label={`Очистити ${getFieldDisplayLabel(field)}`}
                       onPointerDownCapture={e => {
                         console.log('[ProfileSaveDebug] ProfileForm clear pointer down', {
                           eventType: e.type,
@@ -3329,10 +3339,12 @@ ${entries.join('\n')}`;
               ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3) ||
                 !Array.isArray(field.options)) && (
                 <Button
+                  type="button"
+                  aria-label={`Додати значення: ${getFieldDisplayLabel(field)}`}
                   style={{
                     display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
                     alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
-                    marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
+                    marginBottom: '2px',
                     marginLeft: 0,
                   }}
                   onClick={() => {
@@ -3455,6 +3467,7 @@ ${entries.join('\n')}`;
                     <InputField
                       fieldName={field.name}
                       name={`overlay-${field.name}-${idx}`}
+                      aria-label={`Пропозиція: ${getFieldDisplayLabel(field)}`}
                       value={entry.value}
                       readOnly
                       $isOverlaySuggestion
@@ -3463,6 +3476,7 @@ ${entries.join('\n')}`;
                     />
                     <ClearButton
                       type="button"
+                      aria-label={`Відхилити пропозицію: ${getFieldDisplayLabel(field)}`}
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => handleOverlayDismiss(field.name, entry)}
                     >
@@ -3480,14 +3494,15 @@ ${entries.join('\n')}`;
               </OverlayEntryRow>
             ))}
             </PickerContainer>
-            </React.Fragment>
+            </FieldGroup>
           );
-          })}
+          })}</FieldsGrid>}
         </TechnicalFieldsSection>
       ))}
       <KeyValueRow>
         <CustomInput
           placeholder="ключ"
+          aria-label="Назва додаткового поля"
           value={customField.key}
           onChange={e => setCustomField(prev => ({ ...prev, key: e.target.value }))}
           onBlur={() => {
@@ -3499,6 +3514,7 @@ ${entries.join('\n')}`;
         <Colon>:</Colon>
         <CustomInput
           placeholder="значення"
+          aria-label="Значення додаткового поля"
           value={customField.value}
           onChange={e => setCustomField(prev => ({ ...prev, value: e.target.value }))}
           onKeyDown={e => {
@@ -3695,6 +3711,19 @@ const TechnicalFieldsSection = styled.section`
   border-top: 1px solid var(--km-border);
 `;
 
+const FieldsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 6px))), 1fr));
+  gap: 10px 12px;
+  margin-top: 10px;
+
+`;
+
+const FieldGroup = styled.div`
+  min-width: 0;
+  grid-column: ${({ $compact }) => ($compact ? 'auto' : '1 / -1')};
+`;
+
 const BlockHeaderRow = styled.div`
   display: flex;
   align-items: center;
@@ -3766,7 +3795,7 @@ const BlockHint = styled.p`
 // Поле, показане не у своєму блоці, називає свій вузол просто над собою.
 const FieldNodeNote = styled.p`
   width: 100%;
-  margin: 6px 0 -4px;
+  margin: 0 0 4px;
   color: var(--km-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
@@ -3786,20 +3815,21 @@ const PickerContainer = styled.div`
 
 const InputDiv = styled.div`
   display: flex;
-  align-items: center;
+  flex-direction: column-reverse;
+  align-items: stretch;
+  gap: 4px;
   position: relative;
-  margin: 6px 0;
-  padding: 6px 0;
-  background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
+  margin: 0;
+  padding: 0;
+  --field-bg: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
     return uiTokens.colors.cardBg;
   }};
-  border-bottom: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
-    if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
-    if ($isOverlaySuggestion) return `1px solid ${uiTokens.colors.borderFocus}`;
-    if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
-    return `1px solid ${uiTokens.colors.border}`;
+  --field-border: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
+    if ($isDeletedOverlay) return uiTokens.colors.danger;
+    if ($isOverlaySuggestion || $isHighlighted) return uiTokens.colors.borderFocus;
+    return uiTokens.colors.border;
   }};
   border-radius: 0;
   box-sizing: border-box;
@@ -3809,27 +3839,28 @@ const InputDiv = styled.div`
   height: auto;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
   margin-top: ${({ $isArrayValueItem, $isFirstArrayValueItem }) =>
-    $isArrayValueItem && !$isFirstArrayValueItem ? '16px' : '6px'};
-
-  &:focus-within {
-    border-bottom-color: ${uiTokens.colors.borderFocus};
-    box-shadow: none;
-  }
+    $isArrayValueItem && !$isFirstArrayValueItem ? '8px' : '0'};
 `;
 
 const FieldMainRow = styled.div`
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   width: 100%;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+
+  > ${InputDiv} {
+    flex: 1 1 140px;
+    width: auto;
+  }
 `;
 
 const OverlayEntryRow = styled.div`
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   width: 100%;
   gap: 8px;
+  margin-top: 8px;
 `;
 
 const InputField = styled.input`
@@ -3850,18 +3881,28 @@ const InputField = styled.input`
   min-width: 0;
   pointer-events: auto;
   color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? uiTokens.colors.textSecondary : uiTokens.colors.textPrimary)};
-  height: 100%;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
   resize: vertical;
   background: transparent;
-  font-size: ${uiTokens.typography.fontSizeMd};
-  font-weight: 500;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
   line-height: 1.35;
-  padding-top: 2px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-right: 8px;
+  &[readonly] { cursor: pointer; }
+
+  @media (pointer: coarse) {
+    font-size: 16px;
+  }
   ${({ as, fieldName }) => {
     const baseFieldName = resolveFieldNameBase(fieldName);
     if (as === 'textarea' && (baseFieldName === ADDITIONAL_ACCESS_FIELD || baseFieldName === MULTI_DATA_ACCESS_FIELD)) {
       return css`
-        min-height: 28px;
+        min-height: 36px;
         max-height: 84px;
         resize: vertical;
       `;
@@ -3875,7 +3916,8 @@ const InputField = styled.input`
     return null;
   }}
   &::placeholder {
-    color: transparent;
+    color: ${uiTokens.colors.textSecondary};
+    opacity: 0.7;
   }
 `;
 
@@ -3891,8 +3933,7 @@ const AccessLevelSelect = styled.select`
   padding-left: 10px;
   padding-right: 24px;
   background: transparent;
-  min-height: 100%;
-  height: 100%;
+  min-height: 36px;
   color: ${({ value }) => (value ? uiTokens.colors.textPrimary : uiTokens.colors.textSecondary)};
   cursor: pointer;
   font-size: ${uiTokens.typography.fontSizeMd};
@@ -3910,20 +3951,17 @@ const AccessLevelSelect = styled.select`
 `;
 
 const Hint = styled.label`
-  position: absolute;
-  padding-left: 10px;
-  display: flex;
-  align-items: center;
-  top: 0;
-  transform: translateY(-100%);
+  position: static;
+  padding-left: 2px;
   transition: color 0.2s ease;
-  color: ${({ isActive }) => (isActive ? uiTokens.colors.accent : uiTokens.colors.textSecondary)};
+  color: ${uiTokens.colors.textSecondary};
   pointer-events: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: ${uiTokens.typography.fontSizeSm};
-  line-height: 1.25;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
 `;
 
 const Placeholder = styled.label`
@@ -3940,6 +3978,16 @@ const InputFieldContainer = styled.div`
   width: 100%;
   min-width: 0;
   height: auto;
+  min-height: 38px;
+  border: 1px solid var(--field-border, ${uiTokens.colors.border});
+  border-radius: 8px;
+  background: var(--field-bg, ${uiTokens.colors.cardBg});
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: ${uiTokens.colors.borderFocus};
+    box-shadow: 0 0 0 3px rgba(232, 121, 26, 0.1);
+  }
   &::before {
     content: ${({ fieldName, value }) => {
       const baseFieldName = resolveFieldNameBase(fieldName);
@@ -3960,10 +4008,8 @@ const InputFieldContainer = styled.div`
 `;
 
 const SearchIdBackendButton = styled.button`
-  position: absolute;
-  right: ${({ $rightOffset }) => $rightOffset || '0px'};
-  top: 50%;
-  transform: translateY(-50%);
+  position: relative;
+  flex: 0 0 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3972,19 +4018,21 @@ const SearchIdBackendButton = styled.button`
   cursor: pointer;
   color: var(--km-accent);
   font-size: 16px;
-  width: 35px;
-  height: 35px;
+  width: 30px;
+  height: 32px;
   padding: 0;
   z-index: 1;
 
   &:hover {
     color: var(--km-text);
   }
+  &:focus-visible { outline: 2px solid ${uiTokens.colors.borderFocus}; outline-offset: -2px; }
 `;
 
 const ClearButton = styled.button`
-  position: absolute;
-  right: 0px;
+  position: relative;
+  flex: 0 0 30px;
+  margin-right: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3995,7 +4043,8 @@ const ClearButton = styled.button`
   font-size: 16px;
   width: 32px;
   height: 32px;
-  border-radius: 999px;
+  border-radius: 6px;
+  &:focus-visible { outline: 2px solid ${uiTokens.colors.borderFocus}; outline-offset: -2px; }
   &:hover {
     color: ${uiTokens.colors.textPrimary};
     background: rgba(255, 140, 0, 0.12);
@@ -4348,22 +4397,22 @@ const KeyValueRow = styled.div`
   align-items: center;
   position: relative;
   margin: 6px 0;
-  padding: 8px 0;
+  padding: 2px 4px;
   background-color: ${({ $isDeletedOverlay }) =>
     $isDeletedOverlay ? uiTokens.colors.mutedBg : uiTokens.colors.cardBg};
-  border-bottom: ${({ $isHighlighted, $isDeletedOverlay }) => {
+  border: ${({ $isHighlighted, $isDeletedOverlay }) => {
     if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
     if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
     return `1px solid ${uiTokens.colors.border}`;
   }};
-  border-radius: 0;
+  border-radius: 8px;
   box-sizing: border-box;
   width: 100%;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 
   &:focus-within {
-    border-bottom-color: ${uiTokens.colors.borderFocus};
-    box-shadow: none;
+    border-color: ${uiTokens.colors.borderFocus};
+    box-shadow: 0 0 0 3px rgba(232, 121, 26, 0.1);
   }
 `;
 
@@ -4374,7 +4423,15 @@ const CustomInput = styled.input`
   padding-left: 10px;
   max-width: 100%;
   min-width: 0;
-  height: 100%;
+  min-height: 36px;
+  background: transparent;
+  color: ${uiTokens.colors.textPrimary};
+  font: inherit;
+  font-size: 14px;
+
+  @media (pointer: coarse) {
+    font-size: 16px;
+  }
 `;
 
 const Colon = styled.span`
@@ -4387,6 +4444,9 @@ const ButtonGroup = styled.div`
   margin-left: 0;
   box-sizing: border-box;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  max-width: 100%;
+  margin-bottom: 2px;
 `;
 
 const Button = styled.button`
@@ -4394,12 +4454,12 @@ const Button = styled.button`
   height: 34px;
   min-height: 34px;
   padding: 0 8px;
-  border: 1px solid var(--km-accent-mid);
-  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
-  color: #fff;
-  border-radius: 999px;
+  border: 1px solid ${uiTokens.colors.border};
+  background: ${uiTokens.colors.cardBg};
+  color: ${uiTokens.colors.accent};
+  border-radius: 8px;
   cursor: pointer;
-  font-size: ${({ $compactText }) => ($compactText ? "10px" : "12px")};
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   flex: 0 0 auto;
@@ -4408,8 +4468,13 @@ const Button = styled.button`
   white-space: nowrap;
 
   &:hover {
-    filter: brightness(1.04);
-    box-shadow: 0 8px 22px rgba(232, 121, 26, 0.28);
+    border-color: ${uiTokens.colors.borderFocus};
+    background: rgba(232, 121, 26, 0.08);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${uiTokens.colors.borderFocus};
+    outline-offset: 2px;
   }
 
   &:active {
