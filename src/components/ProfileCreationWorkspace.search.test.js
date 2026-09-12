@@ -11,7 +11,8 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
     expect(source).toContain('onSearchError={() => {');
     // Знайдене більше не вимикає створення: дубль стереже зайнятість контакту
     // в базі, а не ця кнопка. Вимикає її лише незавершений чи впалий пошук.
-    expect(source).toContain("disabled={!search.trim() || !searchExecuted || searchFailed}");
+    expect(source).toContain("disabled={!search.trim() || !searchExecuted || searchLoading || searchFailed}");
+    expect(source).toContain('onSearchSettled={() => setSearchLoading(false)}');
   });
 
   it('records every executed search in the shared search history, like Matching and AddNewProfile', () => {

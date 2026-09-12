@@ -1145,6 +1145,7 @@ const SearchBar = ({
   setSearch: externalSetSearch,
   onClear,
   onSearchExecuted,
+  onSearchSettled,
   onSearchCommitted,
   onSearchError,
   wrapperStyle = {},
@@ -2261,6 +2262,10 @@ const SearchBar = ({
       applyUsers({}, requestId);
       onSearchError && onSearchError(error);
       return undefined;
+    } finally {
+      if (activeSearchRequestRef.current === requestId && onSearchSettled) {
+        onSearchSettled(query);
+      }
     }
   };
 
