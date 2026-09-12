@@ -18,7 +18,11 @@ describe('ProfileCreationWorkspace shared drafts', () => {
   it('offers every matching shared draft from search instead of a duplicate card', () => {
     expect(source).toContain('findMatchingProfileMutations(sharedMutations, detectSearchParams(search))');
     expect(source).toContain('Цей контакт уже є у спільній чернетці. Відкрийте її та додайте свої правки.');
-    expect(source).toContain('matchingOwnDrafts.length > 0 || matchingSharedDrafts.length > 0');
+    // Спільна чернетка рахується знайденим нарівні з карткою: від цього
+    // залежить підпис кнопки створення й те, чи підставляти в нову картку
+    // набраний контакт (він уже стоїть у знайденій чернетці).
+    expect(source).toContain('const hasExistingMatches = searchResults.length > 0');
+    expect(source).toContain('|| matchingSharedDrafts.length > 0;');
     expect(source).toContain('Спільні чернетки');
   });
 

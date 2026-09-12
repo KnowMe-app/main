@@ -4,12 +4,14 @@ import path from 'path';
 describe('ProfileCreationWorkspace search-before-create flow', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
 
-  it('reuses Matching search primitives and blocks creation until a completed not-found search', () => {
-    expect(source).toContain("import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config'");
+  it('reuses Matching search primitives and keeps creation available once a search completed', () => {
+    expect(source).toContain("import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, readProfileFromNodes, searchUsersOnly } from './config'");
     expect(source).toContain("import SearchBar, { detectSearchParams } from './SearchBar'");
     expect(source).toContain('searchFunc={searchUsersOnly}');
     expect(source).toContain('onSearchError={() => {');
-    expect(source).toContain('!searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || matchingOwnDrafts.length > 0');
+    // Знайдене більше не вимикає створення: дубль стереже зайнятість контакту
+    // в базі, а не ця кнопка. Вимикає її лише незавершений чи впалий пошук.
+    expect(source).toContain("disabled={!search.trim() || !searchExecuted || searchFailed}");
   });
 
   it('records every executed search in the shared search history, like Matching and AddNewProfile', () => {
@@ -23,7 +25,7 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
   });
 
   it('prefills the new private card from the detected search field', () => {
-    expect(source).toContain('const detected = detectSearchParams(search)');
+    expect(source).toContain("const detected = detectSearchParams(typeof queryText === 'string' ? queryText : search)");
     expect(source).toContain('const nextDraft = { userId: cardId, ...initialSearchData }');
     expect(source).toContain('setDraft(nextDraft)');
   });

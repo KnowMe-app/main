@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 
-import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, searchUsersOnly } from './config';
+import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, readProfileFromNodes, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
+import { getCurrentValue } from './getCurrentValue';
 import PageNavMenu from './PageNavMenu';
 import { fieldContacts } from './smallCard/fieldContacts';
 import { FieldComment } from './smallCard/FieldComment';
@@ -396,6 +397,39 @@ const isSharedDraft = (mutation, viewerUid, isAdmin) => Boolean(
 
 const FORM_FIELD_NAMES = new Set(CREATE_FORM_SECTIONS.flatMap(section => section.fields));
 
+// Підпис людини — це поточне значення поля, а не вся його історія. Масив у полі
+// анкети тримає версії, і поточна серед них остання (`getCurrentValue`), тож
+// зведене «Віолетта,Василіса Б.» читалось як дві людини в одному рядку.
+// Історію видно тому, хто редагує поле, — у самій формі, а не в заголовку.
+export const describeProfileName = (...values) => values
+  .map(value => String(getCurrentValue(value) ?? '').trim())
+  .filter(Boolean)
+  .join(' ');
+
+// Поля, які претендують на зайнятість контакту (`claimProfileIdentities` бере
+// все індексоване, крім імені та прізвища). Підставляти таке значення в НОВУ
+// картку, коли пошук уже показав чужу з цим самим контактом, означає завести
+// дубль, який база все одно відхилить, — і показати людині відмову замість
+// форми. Імʼя та прізвище підставляються завжди: вони нічого не займають.
+const IDENTITY_CLAIMING_PREFILL_FIELDS = new Set(
+  [...PROFILE_SEARCH_PREFILL_FIELDS].filter(field => field !== 'name' && field !== 'surname')
+);
+
+// Що читач бачить у формі доповнення: рівно ті поля картки, які ця форма й
+// показує. Значення кладеться сирим — масив версій лишається масивом, бо
+// доповнюють саме історію («ще один номер»), а не зведене поточне значення.
+export const buildOverlayPrefill = (canonical, cardUserId) => CREATE_FORM_SECTIONS
+  .flatMap(section => section.fields)
+  .reduce((result, fieldName) => {
+    const value = canonical?.[fieldName];
+    const values = (Array.isArray(value) ? value : [value])
+      .map(item => (item === null || item === undefined ? '' : item))
+      .filter(item => String(item).trim() !== '');
+    if (!values.length) return result;
+    result[fieldName] = Array.isArray(value) ? values : values[0];
+    return result;
+  }, { userId: cardUserId });
+
 const describeAuthor = (authorId, authors) => {
   const author = authors?.[authorId] || {};
   return [author.name, author.surname].filter(Boolean).join(' ') || authorId || '—';
@@ -403,6 +437,7 @@ const describeAuthor = (authorId, authors) => {
 
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [uid, setUid] = useState('');
   const [access, setAccess] = useState(null);
@@ -416,6 +451,7 @@ export const ProfileCreationWorkspace = () => {
   const [showDraftHistory, setShowDraftHistory] = useState(false);
   const [overlayTarget, setOverlayTarget] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [overlayLoading, setOverlayLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchExecuted, setSearchExecuted] = useState(false);
@@ -581,7 +617,7 @@ export const ProfileCreationWorkspace = () => {
     }
   }, [activeMutation?.cardId, mutations, sharedMutations, searchParams, openMutation]);
 
-  const startNew = () => {
+  const startNew = (queryText, { allowContactPrefill = true } = {}) => {
     const cardId = reserveProfileCardId();
     // reserveProfileCardId only allocates a key locally - nothing is written
     // to the backend yet. Without an immediate save below, a draft that is
@@ -592,8 +628,13 @@ export const ProfileCreationWorkspace = () => {
     activeMutationRef.current = mutation;
     setActiveMutation(mutation);
     setOverlayTarget(null);
-    const detected = detectSearchParams(search);
-    const initialSearchData = PROFILE_SEARCH_PREFILL_FIELDS.has(detected?.key) && detected?.value
+    // Набране приходить або з рядка цього екрана, або з наміру, з яким сюди
+    // прийшли зі стрічки, — і другий випадок трапляється раніше, ніж рядок
+    // встигає щось показати.
+    const detected = detectSearchParams(typeof queryText === 'string' ? queryText : search);
+    const mayPrefillDetectedField = PROFILE_SEARCH_PREFILL_FIELDS.has(detected?.key)
+      && (allowContactPrefill || !IDENTITY_CLAIMING_PREFILL_FIELDS.has(detected.key));
+    const initialSearchData = mayPrefillDetectedField && detected?.value
       ? { [detected.key]: detected.value }
       : {};
     const nextDraft = { userId: cardId, ...initialSearchData };
@@ -638,6 +679,13 @@ export const ProfileCreationWorkspace = () => {
     searchExecuted ? findMatchingProfileMutations(sharedMutations, detectSearchParams(search)) : []
   ), [search, searchExecuted, sharedMutations]);
 
+  // Чи показав пошук хоч щось: знайдену картку або чернетку. Від цього
+  // залежить не право створити нову, а підпис кнопки й те, чи підставляти в
+  // нову картку набраний контакт (він може бути вже зайнятий знайденою).
+  const hasExistingMatches = searchResults.length > 0
+    || matchingOwnDrafts.length > 0
+    || matchingSharedDrafts.length > 0;
+
   const closeEditor = () => {
     setDraft(null);
     setActiveMutation(null);
@@ -652,20 +700,81 @@ export const ProfileCreationWorkspace = () => {
     if (uid && accessRef.current) refresh(uid, accessRef.current);
   };
 
-  const startExistingProfileOverlay = profile => {
+  /**
+   * Форма доповнення знайденої картки.
+   *
+   * Порожньою вона була навмисно — щоб жодне значення картки не поїхало назад
+   * у базу як «правка» читача. Але доповнювати наосліп нічого: людина не
+   * бачила, який номер у картці вже є, і дописувала той самий. Тепер форма
+   * показує картку, а «правкою» стає лише різниця: писач порівнює введене з
+   * канонічним значенням (`buildOverlayFromDraft`), тож підставлене й не
+   * змінене не дає жодного поля оверлея.
+   *
+   * Картку для цього читаємо — тією самою воронкою, що й усюди
+   * (`readProfileFromNodes`): саме вона й вирішує, скільки полів цьому
+   * читачеві видно, і показувати більше за неї форма не вміє. Читання
+   * коштує один круг на натиснуту кнопку, а не на картку в списку.
+   */
+  const startExistingProfileOverlay = async profile => {
     if (!profile?.userId) return;
 
-    // Deliberately start with an empty form instead of copying the search result.
-    // Every value entered here is private data owned by the current editor and is
-    // persisted as an overlay, never as a replacement for the canonical card.
     setActiveMutation(null);
-    setOverlayTarget({ userId: profile.userId, canonical: profile });
-    const nextDraft = { userId: profile.userId, myComment: '' };
+    setOverlayLoading(true);
+    setSearchParams({ cardId: profile.userId, overlay: '1' });
+    let canonical = profile;
+    try {
+      const full = await readProfileFromNodes(profile.userId, { includeWorkflow: false });
+      if (full) canonical = { ...profile, ...full };
+    } catch (error) {
+      // Відмова означає лише «більше не видно» — форма відкривається з тим,
+      // що вже принесла видача пошуку.
+      console.warn('[ProfileCreationWorkspace] canonical card unavailable', error);
+    }
+    setOverlayTarget({ userId: profile.userId, canonical });
+    const nextDraft = buildOverlayPrefill(canonical, profile.userId);
     persistedDraftRef.current = nextDraft;
+    draftRef.current = nextDraft;
     resetDraftOverlayState(null);
     setDraft(nextDraft);
-    setSearchParams({ cardId: profile.userId, overlay: '1' });
+    setOverlayLoading(false);
   };
+
+  /**
+   * Намір, з яким сюди прийшли зі стрічки, виконується одразу.
+   *
+   * Обидві кнопки там уже знають, чого хоче читач: «Доповнити дані» — цю
+   * картку, «Створити нову» — картку з набраного. Екран пошуку між ними й
+   * відповіддю був зайвим кроком, ще й з іншою розкладкою тієї самої видачі:
+   * читач шукав удруге те, що щойно знайшов.
+   *
+   * Намір виконується один раз на вхід — інакше закрита форма відкривалась би
+   * знову від кожного перемальовування.
+   */
+  const entryIntentRef = useRef(false);
+  useEffect(() => {
+    if (!uid || !access || entryIntentRef.current) return;
+    const intent = location.state || {};
+    // Адреса форми доповнення теж є наміром: `?cardId=...&overlay=1` вона
+    // ставила собі сама, але після оновлення сторінки ніхто її не читав — і
+    // замість відкритої форми людина діставала екран пошуку.
+    const reopenedOverlayCardId = searchParams.get('overlay') === '1' ? searchParams.get('cardId') : '';
+    const enrichCardId = intent.enrichCardId || reopenedOverlayCardId;
+    if (enrichCardId) {
+      entryIntentRef.current = true;
+      void startExistingProfileOverlay({ userId: enrichCardId });
+      return;
+    }
+    if (typeof intent.createFromQuery === 'string' && intent.createFromQuery.trim()) {
+      entryIntentRef.current = true;
+      // Контакт, за яким стрічка вже показала чужу картку, у нову не
+      // підставляється: він зайнятий, і база відхилила б збереження ще до
+      // того, як людина щось допише.
+      startNew(intent.createFromQuery.trim(), { allowContactPrefill: !intent.queryMatchedCards });
+    }
+    // startNew / startExistingProfileOverlay перестворюються щорендеру, а намір
+    // і так виконується рівно раз.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [access, location.state, searchParams, uid]);
 
   // Kept in sync via effects below so the async save path always reads the
   // latest values instead of a stale closure captured at render time.
@@ -1096,8 +1205,6 @@ export const ProfileCreationWorkspace = () => {
     return () => { active = false; };
   }, [access?.isAdmin, activeMutation?.createdBy, draftHistory, draftOverlays]);
 
-  const updateDraftField = (fieldName, value) => setDraft(previous => ({ ...(previous || {}), [fieldName]: value }));
-
   // One chronological tree per field. The current value remains above it; all
   // changes follow newest first, leaving the original value at the bottom.
   const renderFieldTimeline = (fieldName, currentValues, label) => {
@@ -1202,13 +1309,13 @@ export const ProfileCreationWorkspace = () => {
     </FieldRow>;
   };
 
+  // Заголовок називає ту саму людину, що й рядок стрічки. Без імені їх двоє
+  // різних: нова картка ще нічия, а знайдена — чиясь, тільки імені в ній не
+  // видно (або не показано цьому читачеві), і «Новий профіль» над нею брехав би.
   const draftName = useMemo(() => (
-    [draft?.surname, draft?.name, draft?.fathersname]
-      .flatMap(value => toFieldValues(value))
-      .map(value => String(value ?? '').trim())
-      .filter(Boolean)
-      .join(' ') || 'Новий профіль'
-  ), [draft]);
+    describeProfileName(draft?.surname, draft?.name, draft?.fathersname)
+      || (overlayTarget ? 'Картка без імені' : 'Новий профіль')
+  ), [draft, overlayTarget]);
   const draftRole = draft?.role || draft?.userRole || '';
 
   const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Шукаємо профіль', [access]);
@@ -1228,9 +1335,9 @@ export const ProfileCreationWorkspace = () => {
           {draftRole && <Status $variant="private">{draftRole}</Status>}
           {reviewingAsAdmin && pendingEditsCount > 0 && <Status $variant="overlay">{pendingEditsCount} непідтверджених правок</Status>}
         </DraftBadges>
-        {!overlayTarget && <DraftName>{draftName}</DraftName>}
+        <DraftName>{draftName}</DraftName>
         {overlayTarget
-          ? <Meta>Дані буде збережено як ваш оверлей для {overlayTarget.userId}. Оригінальна картка не завантажується і не змінюється.</Meta>
+          ? <Meta>Ви доповнюєте цю картку. Те, що ви допишете, не змінює її саму — доповнення лишається вашим, доки адміністратор його не прийме.</Meta>
           : access.isAdmin
             ? <>
               <TechnicalMeta>
@@ -1309,13 +1416,18 @@ export const ProfileCreationWorkspace = () => {
             : 'Для кожного поля показано окреме дерево: актуальне значення вгорі, оригінальне — внизу.'}
         </Meta>}
       </ReviewCard>}
+      {/* «Ваш коментар» має означати одне й те саме скрізь — особисту нотатку,
+          яку бачить лише той, хто її написав (`multiData/comments`). Тут це
+          поле їхало в оверлей, тобто до адміністратора, а підпис під ним
+          («що варто знати адміністратору») пояснював технічний шлях запису
+          замість того, щоб назвати річ. Тепер тут той самий редактор нотатки,
+          що й у стрічці та у власній чернетці, а вже написане в оверлеї
+          переїжджає в нотатку при першому відкритті. */}
       {overlayTarget && <CommentCard>
         <FieldLabel>Ваш коментар</FieldLabel>
-        <FieldTextArea
-          value={draft?.myComment || ''}
-          placeholder="Що варто знати адміністратору про цей профіль"
-          onChange={e => updateDraftField('myComment', e.target.value)}
-          onBlur={e => commitFieldValue('myComment', e.target.value)}
+        <FieldComment
+          userData={{ ...draft, userId: overlayTarget.userId }}
+          onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
         />
       </CommentCard>}
       {CREATE_FORM_SECTIONS.map(section => (
@@ -1342,7 +1454,7 @@ export const ProfileCreationWorkspace = () => {
           <GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>
         </Actions>
       </Card>
-    </> : <>
+    </> : overlayLoading ? <Card><Meta>Відкриваємо картку…</Meta></Card> : <>
       {!access.isAdmin && <SearchSection aria-label="Пошук профілю">
         <SearchBar
           searchFunc={searchUsersOnly}
@@ -1396,35 +1508,44 @@ export const ProfileCreationWorkspace = () => {
           ))}. Шукає одразу серед опублікованих карток (searchId) і серед чернеток, які ще не прийняв адміністратор.
         </TechnicalMeta>}
         {searchResults.map(profile => <SearchResult key={profile.userId}>
-          <span><strong>{[profile.name, profile.surname].filter(Boolean).join(' ') || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
+          <span><strong>{describeProfileName(profile.name, profile.surname) || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
           <span>
             <Status>Вже існує</Status>
-            <Button onClick={() => startExistingProfileOverlay(profile)}>Додати власні дані</Button>
+            <Button onClick={() => startExistingProfileOverlay(profile)}>Доповнити дані</Button>
           </span>
         </SearchResult>)}
         {matchingOwnDrafts.map(mutation => <SearchResult key={mutation.cardId}>
           <span>
-            <strong>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Ваша чернетка'}</strong>
+            <strong>{describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Ваша чернетка'}</strong>
             <Meta>Цей контакт уже є у вашій картці, що очікує перевірки.</Meta>
           </span>
           <Button onClick={() => openMutation(mutation)}>Відкрити чернетку</Button>
         </SearchResult>)}
         {matchingSharedDrafts.map(mutation => <SearchResult key={mutation.cardId}>
           <span>
-            <strong>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Спільна чернетка'}</strong>
+            <strong>{describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Спільна чернетка'}</strong>
             <Meta>Цей контакт уже є у спільній чернетці. Відкрийте її та додайте свої правки.</Meta>
           </span>
           <Button onClick={() => openMutation(mutation)}>Відкрити чернетку</Button>
         </SearchResult>)}
         {searchExecuted && searchNotFound && matchingOwnDrafts.length === 0 && matchingSharedDrafts.length === 0 && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
+        {/* Знайдене більше не замикає створення.
+            Кнопка була вимкнена, щойно пошук хоч щось показав, — і людина, якій
+            жодна зі знайдених карток не підходила, лишалась без виходу: екран
+            відповідав «такі вже є», а завести свою було нічим. Дубль стереже не
+            ця кнопка, а зайнятість контакту в базі (`DUPLICATE_PROFILE`), і
+            стереже вона його однаково — хоч із цього екрана, хоч зі стрічки. */}
+        {searchExecuted && !searchFailed && hasExistingMatches && <Meta>
+          Жодна зі знайдених карток не про цю людину? Заведіть нову — знайдені лишаться на місці.
+        </Meta>}
         {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
         <Actions>
           <Button
             $primary
-            disabled={!search.trim() || !searchExecuted || !searchNotFound || searchFailed || searchResults.length > 0 || matchingOwnDrafts.length > 0 || matchingSharedDrafts.length > 0}
-            onClick={startNew}
+            disabled={!search.trim() || !searchExecuted || searchFailed}
+            onClick={() => startNew(search, { allowContactPrefill: !hasExistingMatches })}
           >
-            <FiPlus size={20} aria-hidden="true" /> Додати профіль
+            <FiPlus size={20} aria-hidden="true" /> {hasExistingMatches ? 'Створити нову картку' : 'Додати профіль'}
           </Button>
         </Actions>
       </SearchSection>}

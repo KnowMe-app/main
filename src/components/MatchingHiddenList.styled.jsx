@@ -742,6 +742,15 @@ export const ReviewsGateButton = styled.button`
   }
 `;
 
+/* «Доповнити дані» — сусід кнопки відгуків і навмисно її ж форми: обидві стоять
+ * під карткою й обидві ведуть до того самого рядка, тільки одна питає, що про
+ * людину написали інші, а друга — дописує те, що знає читач. Відрізняє її колір
+ * рамки: наслідок у них різний, а місце сусіднє. */
+export const EnrichGateButton = styled(ReviewsGateButton)`
+  border-color: color-mix(in srgb, var(--matching-accent) 45%, var(--matching-card-border));
+  color: var(--matching-accent);
+`;
+
 export const CommentEntry = styled.div`
   padding: 3px 0;
   border-left: ${({ $failed }) => ($failed
