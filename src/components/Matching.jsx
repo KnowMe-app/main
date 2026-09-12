@@ -6588,9 +6588,17 @@ const Matching = () => {
       key: 'create',
       label: 'Створити нову',
       title: 'Створити картку з цього запиту',
+      // Чіп несе намір, а не адресу екрана пошуку. Раніше він вів на
+      // `create-profile` із самим лише `state.query`, якого той екран не
+      // читав, — і читач, який щойно переглянув видачу, потрапляв у другий
+      // пошук за тим самим набраним, тільки з іншою розкладкою відповіді.
+      // Тепер запит їде разом із тим, що вже відомо про видачу, і форма нової
+      // картки відкривається одразу.
       onSelect: () => {
         saveScrollPosition();
-        navigate('/matching/create-profile', { state: { query: searchQuery.trim() } });
+        navigate('/matching/create-profile', {
+          state: { createFromQuery: searchQuery.trim(), queryMatchedCards: searchRefinedUsers.length },
+        });
       },
     },
     {
@@ -6848,6 +6856,20 @@ const Matching = () => {
     rowContactViewKeysRef.current.add(trackKey);
     void addContactViewUser(user.userId, ownerId);
   }, [ownerId]);
+
+  // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
+  // адмін пише в саму картку (олівцем, `/edit`), а решта читачів складають
+  // власний оверлей у формі створення — інакше в рядку стояли б дві кнопки з
+  // однаковим написом і різним наслідком.
+  // Картку туди не передаємо — там її прочитає та сама воронка
+  // (`readProfileFromNodes`), що й вирішує, скільки полів цьому читачеві видно.
+  const handleRowEnrichProfile = React.useCallback(user => {
+    if (!user?.userId) return;
+    saveScrollPosition();
+    navigate('/matching/create-profile', { state: { enrichCardId: user.userId } });
+    // saveScrollPosition reads a ref and never changes identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
 
   const handleRowEditProfile = React.useCallback(user => {
     saveScrollPosition();
@@ -7561,6 +7583,7 @@ const Matching = () => {
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
+                      onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
                       commentSlot={(
                         <PublicCommentsGate
                           profileId={user.userId}

@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPaperPlane, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPaperPlane, FaPencilAlt, FaRegCommentDots, FaUserPlus } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -774,6 +774,7 @@ export const splitFactsByGroup = (facts = []) => [
 ];
 
 export const REVIEWS_GATE_LABEL = 'Перевірити наявність відгуків';
+export const ENRICH_GATE_LABEL = 'Доповнити дані';
 
 /**
  * Відгуки в стрічці — на вимогу, а не наперед.
@@ -840,6 +841,7 @@ const ProfileRow = ({
   priorityMetricKeys,
   commentSlot,
   diagnosticsSlot,
+  onEnrich,
   onSwipeRight,
   onSwipeLeft,
 }) => {
@@ -1111,6 +1113,25 @@ const ProfileRow = ({
         </S.RowContacts>
       )}
 
+      {/* Знайдена картка — це ще не відповідь: читач або питає про людину
+          (відгуки), або сам дописує те, що про неї знає. Досі під карткою
+          стояло лише перше, і другий шлях починався аж на окремому екрані
+          пошуку — тим самим, з якого читач щойно прийшов. Кнопка веде просто
+          в форму доповнення цієї картки.
+
+          Показується вона й на урізаній картці (`isLimited`): доповнювати
+          можна саме те, чого читач не бачить, і право на це не залежить від
+          того, скільки полів картки йому відкрито. */}
+      {onEnrich && (
+        <S.EnrichGateButton
+          type="button"
+          onClick={e => { e.stopPropagation(); onEnrich(user); }}
+        >
+          <FaUserPlus aria-hidden="true" />
+          <span>{ENRICH_GATE_LABEL}</span>
+        </S.EnrichGateButton>
+      )}
+
       {commentSlot !== undefined
         ? commentSlot
         : <CommentBlock text={clientComment} onSave={value => onCommentSave(user, value)} />}
@@ -1153,6 +1174,7 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.priorityMetricKeys === next.priorityMetricKeys
   && prev.commentSlot === next.commentSlot
   && prev.diagnosticsSlot === next.diagnosticsSlot
+  && prev.onEnrich === next.onEnrich
   && prev.onSwipeRight === next.onSwipeRight
   && prev.onSwipeLeft === next.onSwipeLeft
 ));
