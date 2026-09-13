@@ -99,9 +99,25 @@ describe('matching row structure', () => {
   it('pins the avatar box so no row with a photo differs in height', () => {
     const styles = rowStyles();
     const photo = styles.slice(styles.indexOf('export const Photo = styled.div`'));
-    expect(photo).toContain('height: 64px;');
-    expect(photo).toContain('min-height: 64px;');
-    expect(photo).toContain('max-height: 64px;');
+    expect(photo).toContain('height: 52px;');
+    expect(photo).toContain('min-height: 52px;');
+    expect(photo).toContain('max-height: 52px;');
+  });
+
+  /*
+   * Відступ від лівого краю в картці рівно один, і він під самим імʼям.
+   *
+   * Рядок метрик стояв у колонці поруч із фото — тобто зсунутим відносно всього,
+   * що нижче: контактів, «усіх даних», нотаток, ряду рішень. Разом із плиткою
+   * фото це давало в одній картці три різні ліві межі. Тепер метрики стоять під
+   * шапкою, на всю ширину, і заразом перестали переноситись на третій рядок.
+   */
+  it('ставить метрики під шапкою, а не в колонці поруч із фото', () => {
+    const row = read('ProfileRow.jsx');
+    const top = row.indexOf('</S.Top>');
+    expect(top).toBeGreaterThan(-1);
+    expect(row.indexOf('<S.FactsRow>')).toBeGreaterThan(top);
+    expect(row.slice(row.indexOf('<S.Body>'), top)).not.toContain('<S.FactsRow');
   });
 
   it('draws no avatar box at all when the profile has no photo', () => {

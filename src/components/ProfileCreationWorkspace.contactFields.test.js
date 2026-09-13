@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import {
   buildOverlayPrefill,
   collectExtraContactFields,
@@ -29,5 +32,27 @@ describe('контакти форми доповнення', () => {
       tiktok: 'nick',
       viber: '380501112233',
     });
+  });
+});
+
+/*
+ * Шапка форми доповнення показує контакти тим самим представленням, що й решта
+ * застосунку (`ContactLinks`): номер повністю плюс три кнопки месенджерів,
+ * зібрані з нього ж, а решта каналів — значками.
+ *
+ * Своє в неї було рівно одне: кожен канал окремим рядком, значок плюс ніком
+ * текстом. Ті самі ніки стоять у полях форми просто під шапкою — виходило по
+ * дві копії кожного: вгорі показати, внизу правити.
+ */
+describe('представлення контактів у шапці форми', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
+
+  it('бере спільне представлення, а не власний список рядків', () => {
+    expect(source).toContain('<ContactLinks entries={summaryContactEntries}');
+    expect(source).not.toContain('fieldContacts');
+  });
+
+  it('складає перелік тими самими правилами, що й рядок стрічки', () => {
+    expect(source).toContain('getContactEntries(summaryContacts)');
   });
 });

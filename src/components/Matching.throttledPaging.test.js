@@ -176,11 +176,16 @@ describe('публічні коментарі', () => {
   });
 
   // Блок один, доріжки дві: приватна нотатка й публічний запис розділені не
-  // рамкою, а підписом і смужкою — але порядок лишається той самий, і приватне
-  // не може опинитись під виглядом публічного.
+  // рамкою, а підписом і смужкою, і приватне не може опинитись під виглядом
+  // публічного.
   // Спільної шапки «Нотатки» над доріжками немає: підпис над кожною вже каже
   // і що це, і хто це побачить.
-  it('тримає публічні коментарі окремо від приватної нотатки', () => {
+  //
+  // Публічне стоїть **над** власним: відгук читають, а нотатку пишуть, і
+  // відповідь має стояти над полем для власного запису. Поки порядок був
+  // зворотний, читач писав свою нотатку, ще не побачивши, що про цю людину вже
+  // написали інші. Той самий порядок — у рядку стрічки (`RowNotes`).
+  it('тримає публічні коментарі окремо від приватної нотатки — і над нею', () => {
     const source = matching();
     const card = source.slice(
       source.indexOf('<NoteLanes>'),
@@ -189,8 +194,8 @@ describe('публічні коментарі', () => {
     expect(card).toContain("{profileUiText('personalNote', language)}");
     expect(card).toContain("{profileUiText('personalNoteHint', language)}");
     expect(card).toContain("{profileUiText('publicCommentHint', language)}");
-    expect(card.indexOf("profileUiText('personalNotePlaceholder', language)"))
-      .toBeLessThan(card.indexOf('{publicCommentSlot}'));
+    expect(card.indexOf('{publicCommentSlot}'))
+      .toBeLessThan(card.indexOf("profileUiText('personalNotePlaceholder', language)"));
   });
 
   it('читає коментарі відкритої анкети сам, а для стрічки — лише на дотик', () => {

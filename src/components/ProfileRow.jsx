@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots, FaUserPlus } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -20,7 +20,8 @@ import {
   getRoleShortLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
-import { profileUiText, translateProfileLabel } from '../utils/profileTexts';
+import { profileUiText, resolveProfileLanguage, translateProfileLabel } from '../utils/profileTexts';
+import { translateFieldValue } from './formFields';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { getContactEntries } from './contactMethods';
 import { PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
@@ -156,23 +157,44 @@ export const getContactLabel = (key, language) =>
 
 const GRID_WIDE_VALUE_LENGTH = 22;
 
+/**
+ * Значення сітки — тією самою мовою, що й підпис поруч.
+ *
+ * Підписи тут перекладались, а значення — ні, і рядок стрічки казав
+ * «Раса: European», «Волосся: Fair, Straight», «Фігура: Hourglass»: половина
+ * комірки українською, половина англійською. Варіанти цих полів вибирають зі
+ * списку, і пара до кожного вже лежить у формі (`formFields`), тож перекладає
+ * їх те саме `translateFieldValue`, що й відкрита картка анкети
+ * (`localizeFieldValue` у `profileLayoutConfig`) — не другий словник, а той
+ * самий. Вільний текст словнику не відповідає й лишається як є: те, що ввела
+ * людина, не перекладається ніколи.
+ */
+const localizeGridValue = (field, value, language) => {
+  if (resolveProfileLanguage(language) !== 'uk') return value;
+  return String(value)
+    .split(', ')
+    .map(part => translateFieldValue(field, part))
+    .join(', ');
+};
+
 export const buildGridRows = (user, language) => {
   const rows = [];
+  const cell = (field, value) => ({ field, value: localizeGridValue(field, value, language) });
   GRID_FIELD_DEFS.forEach(def => {
     if (def.combined) {
       const [keyA, keyB] = def.combined;
       const valA = normalizeDisplayValue(user?.[keyA]);
       const valB = normalizeDisplayValue(user?.[keyB]);
       const parts = [];
-      if (valA && !isOtherValue(valA)) parts.push({ field: keyA, value: valA });
-      if (valB && !isOtherValue(valB)) parts.push({ field: keyB, value: valB });
+      if (valA && !isOtherValue(valA)) parts.push(cell(keyA, valA));
+      if (valB && !isOtherValue(valB)) parts.push(cell(keyB, valB));
       if (!parts.length) return;
       rows.push({ label: translateProfileLabel(def.label, language), parts });
       return;
     }
     const value = normalizeDisplayValue(user?.[def.key]);
     if (!value || isOtherValue(value)) return;
-    rows.push({ label: translateProfileLabel(def.label, language), parts: [{ field: def.key, value }] });
+    rows.push({ label: translateProfileLabel(def.label, language), parts: [cell(def.key, value)] });
   });
   rows.forEach(row => {
     const valueLength = row.parts.map(part => part.value).join(', ').length;
@@ -885,38 +907,32 @@ export const ENRICH_GATE_LABEL = 'Доповнити дані';
  *
  * Досі стрічка читала публічні коментарі одразу для першої сторінки карток —
  * запит на кожне відкриття списку заради блока, під яким у більшості анкет
- * порожньо. Тепер рядок показує кнопку, і читання коштує рівно стільки разів,
- * скільки її натиснули.
+ * порожньо. Тепер читання починає дотик, і коштує воно рівно стільки разів,
+ * скільки натиснули значок відгуків у ряду рішень.
  *
  * Це ще й відповідь на питання «а звідки в картці стрічки коментарі»: нізвідки
  * — `matchingCards` про них не знає й не мусить. Схему чіпати не довелось.
+ *
+ * Сам жест сюди більше не входить: кнопка переїхала в ряд рішень унизу картки,
+ * до олівця й реакцій, і гейт лишився тим, чим він і був по суті, — вмістом,
+ * який цей жест відкриває. Поки кнопка жила тут, вона стояла окремим широким
+ * рядком з написом, і три рішення про ту саму людину малювались у трьох різних
+ * місцях картки.
  */
 export const PublicCommentsGate = ({
   profileId,
   comments,
   loaded,
   loading,
-  onRequest,
   ...blockProps
-}) => {
-  if (loaded) {
-    return <PublicCommentBlock profileId={profileId} comments={comments} {...blockProps} />;
-  }
-
-  return (
-    <>
-      <PublicCommentsBackendLink backendHref={blockProps.backendHref} />
-      <S.ReviewsGateButton
-        type="button"
-        disabled={loading}
-        onClick={e => { e.stopPropagation(); onRequest(profileId); }}
-      >
-        <FaRegCommentDots aria-hidden="true" />
-        <span>{loading ? 'Шукаємо відгуки…' : REVIEWS_GATE_LABEL}</span>
-      </S.ReviewsGateButton>
-    </>
-  );
-};
+}) => (
+  <>
+    <PublicCommentsBackendLink backendHref={blockProps.backendHref} />
+    {loaded
+      ? <PublicCommentBlock profileId={profileId} comments={comments} {...blockProps} />
+      : <S.ReviewsGateNote>{loading ? 'Шукаємо відгуки…' : 'Не вдалося прочитати відгуки'}</S.ReviewsGateNote>}
+  </>
+);
 
 // A row counts as "unfilled" once its marital status is the only fact it has to
 // show - a bare "заміжня"/"не заміжня" isn't informative enough on its own.
@@ -948,9 +964,14 @@ const ProfileRow = ({
   secondaryAction,
   priorityMetricKeys,
   commentSlot,
-  // Відгуки про людину (публічні) — окремий слот від власної нотатки: під
-  // карткою стоять обидва, і сплутати їх не можна.
+  // Відгуки про людину (публічні) — окремий слот від власної нотатки: у
+  // плашці нотаток стоять обидва, і сплутати їх не можна. Слот — це самий
+  // лише вміст; жест, який його відкриває, стоїть у ряду рішень і приходить
+  // окремо (`reviewsAction`), бо читання починається з дотику.
   reviewsSlot,
+  // `{ count, loading, onRequest }` — усе, чого ряду треба про відгуки: скільки
+  // їх (коли вже прочитані), чи триває читання і кого просити його почати.
+  reviewsAction,
   diagnosticsSlot,
   onEnrich,
   onSwipeRight,
@@ -1021,6 +1042,35 @@ const ProfileRow = ({
   // (`ensureFullProfile`), і він же знімає позначку, коли читання впало. Свій
   // прапорець «уже просили» зробив би кнопку мертвою рівно після невдалої
   // спроби — тобто саме тоді, коли повторити й треба.
+  /*
+   * Олівець у ряду рішень — один на обидві ролі.
+   *
+   * Читач із правом заводити картки ним *дописує* знайдену анкету
+   * (`onEnrich`), адмін — відкриває її на редагування (`onEditProfile`). Жест
+   * той самий і наслідок той самий — «правити цю анкету», — тож і кнопка одна;
+   * різняться вони лише тим, куди ведуть, і це каже підпис. Досі це були дві
+   * різні кнопки в різних кутках картки: широкий рядок «Доповнити дані» під
+   * фактами й значок олівця в стовпчику праворуч.
+   */
+  const editAction = useMemo(() => {
+    if (onEnrich) return { title: ENRICH_GATE_LABEL, onClick: onEnrich };
+    if (isAdmin && onEditProfile && !isLimited) return { title: 'Редагувати анкету', onClick: onEditProfile };
+    return null;
+  }, [isAdmin, isLimited, onEditProfile, onEnrich]);
+
+  // Відгуки відкриваються тим самим жестом, що й контакти: перший дотик просить
+  // їх прочитати, другий — згортає. Свого прапорця «вже просили» рядок і тут не
+  // тримає (див. `toggleContacts`): читання, яке впало, мусить бути можливо
+  // повторити.
+  const [reviewsOpen, setReviewsOpen] = useState(false);
+  const toggleReviews = () => {
+    setReviewsOpen(open => {
+      const next = !open;
+      if (next && reviewsAction?.onRequest) reviewsAction.onRequest(user.userId);
+      return next;
+    });
+  };
+
   const toggleContacts = () => {
     setContactsOpen(open => {
       const next = !open;
@@ -1105,32 +1155,6 @@ const ProfileRow = ({
               )}
             </S.MetaRow>
           )}
-          {!isUnfilled && facts.length > 0 ? (
-            <>
-              {bodyFacts.length > 0 && (
-                <S.FactsRow>
-                  {bodyFacts.map((node, idx) => (
-                    <React.Fragment key={node.key}>
-                      {idx > 0 && ' '}
-                      {node}
-                    </React.Fragment>
-                  ))}
-                </S.FactsRow>
-              )}
-              {reproFacts.length > 0 && (
-                <S.FactsRow $soft>
-                  {reproFacts.map((node, idx) => (
-                    <React.Fragment key={node.key}>
-                      {idx > 0 && ' '}
-                      {node}
-                    </React.Fragment>
-                  ))}
-                </S.FactsRow>
-              )}
-            </>
-          ) : isUnfilled && (
-            <S.EmptyNote>Анкета не заповнена</S.EmptyNote>
-          )}
         </S.Body>
         <S.Ctrl>
           <S.RowActionStack>
@@ -1158,16 +1182,6 @@ const ProfileRow = ({
                 <PhoneHandsetIcon size={13} />
               </S.RowActionButton>
             )}
-            {isAdmin && onEditProfile && !isLimited && (
-              <S.EditButton
-                type="button"
-                title="Редагувати анкету"
-                aria-label="Редагувати анкету"
-                onClick={e => { e.stopPropagation(); onEditProfile(user); }}
-              >
-                <FaPencilAlt size={12} />
-              </S.EditButton>
-            )}
           </S.RowActionStack>
           {!isLimited && hiddenFieldCount > 0 && (
           <S.ChevronButton
@@ -1183,6 +1197,40 @@ const ProfileRow = ({
           )}
         </S.Ctrl>
       </S.Top>
+
+      {/* Метрики — на всю ширину картки, а не в колонці поруч із фото.
+          Поруч із фото їм лишалось десь дві третини рядка, і «пологи 4, 6 міс
+          тому» переносилось на третій рядок там, де на повну ширину стає двох.
+          А головне — ліва межа: усе, що нижче (контакти, «всі дані», нотатки,
+          ряд рішень), починається від краю картки, і рядок метрик посеред них
+          був єдиним зсунутим. Відступ лишився рівно один і очевидний — під
+          саме імʼя, поруч із фото. */}
+      {!isUnfilled && facts.length > 0 ? (
+        <>
+          {bodyFacts.length > 0 && (
+            <S.FactsRow>
+              {bodyFacts.map((node, idx) => (
+                <React.Fragment key={node.key}>
+                  {idx > 0 && ' '}
+                  {node}
+                </React.Fragment>
+              ))}
+            </S.FactsRow>
+          )}
+          {reproFacts.length > 0 && (
+            <S.FactsRow $soft>
+              {reproFacts.map((node, idx) => (
+                <React.Fragment key={node.key}>
+                  {idx > 0 && ' '}
+                  {node}
+                </React.Fragment>
+              ))}
+            </S.FactsRow>
+          )}
+        </>
+      ) : isUnfilled && (
+        <S.EmptyNote>Анкета не заповнена</S.EmptyNote>
+      )}
 
       {contactsOpen && (
         <S.RowContacts onClick={e => e.stopPropagation()}>
@@ -1219,65 +1267,96 @@ const ProfileRow = ({
         </S.More>
       )}
 
-      {/* Знайдена картка — це ще не відповідь: читач або питає про людину
-          (відгуки), або сам дописує те, що про неї знає. Досі під карткою
-          стояло лише перше, і другий шлях починався аж на окремому екрані
-          пошуку — тим самим, з якого читач щойно прийшов. Кнопка веде просто
-          в форму доповнення цієї картки.
+      {/* Нотатки — одна плашка на дві доріжки: спершу те, що про людину
+          написали інші, під ним — те, що дописує читач.
 
-          Показується вона й на урізаній картці (`isLimited`): доповнювати
-          можна саме те, чого читач не бачить, і право на це не залежить від
-          того, скільки полів картки йому відкрито. */}
-      {onEnrich && (
-        <S.EnrichGateButton
-          type="button"
-          onClick={e => { e.stopPropagation(); onEnrich(user); }}
-        >
-          <FaUserPlus aria-hidden="true" />
-          <span>{ENRICH_GATE_LABEL}</span>
-        </S.EnrichGateButton>
-      )}
+          Порядок саме такий, бо публічний відгук читають, а нотатку пишуть:
+          відповідь має стояти над полем для власного запису, а не під ним.
+          Той самий порядок — у відкритій картці анкети (`NoteLanes`).
 
-      {reviewsSlot}
-
-      {/* Власна нотатка стоїть відкритим полем, а не за кнопкою: читач гортає
+          Власна нотатка стоїть відкритим полем, а не за кнопкою: читач гортає
           список, аби вирішити, і те, що він про цю людину вже знає, має бути
           видно тут само, де рішення — без жодного дотику. Ввести її теж має
           коштувати один дотик: поле вже на місці, курсор ставиться туди, куди
           тапнули. */}
-      {commentSlot !== undefined
-        ? commentSlot
-        : <CommentBlock text={clientComment} onSave={value => onCommentSave(user, value)} />}
+      <S.RowNotes onClick={e => e.stopPropagation()}>
+        {reviewsOpen && reviewsSlot && (
+          <>
+            {reviewsSlot}
+            <S.RowNotesDivider aria-hidden="true" />
+          </>
+        )}
+        {commentSlot !== undefined
+          ? commentSlot
+          : <CommentBlock text={clientComment} onSave={value => onCommentSave(user, value)} />}
+      </S.RowNotes>
 
-      {/* Реакції — під нотаткою: спершу все, що картка каже про людину, потім
-          те, що читач про неї записав, і аж тоді жест. У ряд, а не стовпчиком:
-          це два кроки одного рішення, і рядок їх так і показує. */}
-      {!isLimited && (primaryAction || secondaryAction) && (
+      {/* Ряд рішень — останній у картці: спершу все, що вона каже про людину,
+          потім те, що читач про неї записав, і аж тоді жест.
+
+          Порядок у ряду сталий: олівець (дописати анкету) → серце й хрестик →
+          відгуки. Ліворуч те, що читач робить із карткою, праворуч — те, про
+          що він її питає; реакції посередині стоять парою в спільній рамці,
+          бо це два боки одного вибору, а не два незалежні значки.
+
+          Підписів у ряду немає: три з цих кнопок раніше були широкими рядками
+          з написами («Доповнити дані», «Перевірити наявність відгуків»), і
+          картка з трьох фактів займала пів екрана. Що робить кожна, каже
+          `title` і `aria-label` — саме їх читає й екранний диктор. */}
+      {(editAction || reviewsAction || (!isLimited && (primaryAction || secondaryAction))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
-          {primaryAction && (
+          {editAction && (
             <S.RowFooterButton
               type="button"
-              $accent={Boolean(primaryAction.accent)}
-              $on={Boolean(primaryAction.active)}
-              title={primaryAction.title}
-              aria-label={primaryAction.title}
-              aria-pressed={primaryAction.active}
-              onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
+              title={editAction.title}
+              aria-label={editAction.title}
+              onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
             >
-              {primaryAction.icon}
+              <FaPencilAlt size={13} />
             </S.RowFooterButton>
           )}
-          {secondaryAction && (
+          {!isLimited && (primaryAction || secondaryAction) && (
+            <S.RowReactionPair data-testid="row-reactions">
+              {primaryAction && (
+                <S.RowActionButton
+                  type="button"
+                  $accent={Boolean(primaryAction.accent)}
+                  $on={Boolean(primaryAction.active)}
+                  title={primaryAction.title}
+                  aria-label={primaryAction.title}
+                  aria-pressed={primaryAction.active}
+                  onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
+                >
+                  {primaryAction.icon}
+                </S.RowActionButton>
+              )}
+              {secondaryAction && (
+                <S.RowActionButton
+                  type="button"
+                  $accent={Boolean(secondaryAction.accent)}
+                  $on={Boolean(secondaryAction.active)}
+                  title={secondaryAction.title}
+                  aria-label={secondaryAction.title}
+                  aria-pressed={secondaryAction.active}
+                  onClick={e => { e.stopPropagation(); secondaryAction.onClick(user); }}
+                >
+                  {secondaryAction.icon}
+                </S.RowActionButton>
+              )}
+            </S.RowReactionPair>
+          )}
+          {reviewsAction && (
             <S.RowFooterButton
               type="button"
-              $accent={Boolean(secondaryAction.accent)}
-              $on={Boolean(secondaryAction.active)}
-              title={secondaryAction.title}
-              aria-label={secondaryAction.title}
-              aria-pressed={secondaryAction.active}
-              onClick={e => { e.stopPropagation(); secondaryAction.onClick(user); }}
+              $on={reviewsOpen}
+              disabled={Boolean(reviewsAction.loading)}
+              title={REVIEWS_GATE_LABEL}
+              aria-label={REVIEWS_GATE_LABEL}
+              aria-expanded={reviewsOpen}
+              onClick={e => { e.stopPropagation(); toggleReviews(); }}
             >
-              {secondaryAction.icon}
+              <FaRegCommentDots size={13} />
+              {reviewsAction.count > 0 && <b>{reviewsAction.count}</b>}
             </S.RowFooterButton>
           )}
         </S.RowFooterActions>
@@ -1306,10 +1385,16 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.priorityMetricKeys === next.priorityMetricKeys
   && prev.commentSlot === next.commentSlot
   && prev.reviewsSlot === next.reviewsSlot
+  // Дія звіряється по значенню, а не по посиланню: об'єкт складається на
+  // кожен рендер списку, і звірка по посиланню означала б «завжди інша».
+  && prev.reviewsAction?.count === next.reviewsAction?.count
+  && prev.reviewsAction?.loading === next.reviewsAction?.loading
+  && prev.reviewsAction?.onRequest === next.reviewsAction?.onRequest
   && prev.canViewContacts === next.canViewContacts
   && prev.contactsLoading === next.contactsLoading
   && prev.diagnosticsSlot === next.diagnosticsSlot
   && prev.onEnrich === next.onEnrich
+  && prev.onEditProfile === next.onEditProfile
   && prev.onSwipeRight === next.onSwipeRight
   && prev.onSwipeLeft === next.onSwipeLeft
 ));

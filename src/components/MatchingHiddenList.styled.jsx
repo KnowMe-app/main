@@ -75,9 +75,8 @@ export const Card = styled.div`
 
 export const Top = styled.div`
   display: flex;
-  gap: 11px;
-  align-items: flex-start;
-  min-height: 58px;
+  gap: 10px;
+  align-items: center;
 `;
 
 // Spec §5 correction 3: one row of a different height breaks the list's rhythm
@@ -85,12 +84,12 @@ export const Top = styled.div`
 // height, and a min-height on the row's top block so a short body can't shrink it.
 export const Photo = styled.div`
   position: relative;
-  width: 64px;
-  height: 64px;
-  min-height: 64px;
-  max-height: 64px;
+  width: 52px;
+  height: 52px;
+  min-height: 52px;
+  max-height: 52px;
   aspect-ratio: 1 / 1;
-  border-radius: 16px;
+  border-radius: 14px;
   flex: 0 0 auto;
   background-size: cover;
   background-position: center;
@@ -204,7 +203,7 @@ export const FactsRow = styled.div`
   font-size: 12.5px;
   color: var(--matching-header-text);
   opacity: ${({ $soft }) => ($soft ? 0.62 : 0.82)};
-  margin-top: ${({ $soft }) => ($soft ? '2px' : '5px')};
+  margin-top: ${({ $soft }) => ($soft ? '1px' : '8px')};
   line-height: 1.5;
 `;
 
@@ -215,8 +214,24 @@ export const EmptyNote = styled.div`
   line-height: 1.5;
 `;
 
+/*
+ * Факт рядка метрик — і риска, що відділяє його від сусіднього.
+ *
+ * Розділювача тут довго не було видно, і причина була не в дизайні: у
+ * `content` стояв `'\\00A0·'`, тобто нелегальна вісімкова послідовність усередині
+ * тегованого шаблона. JS віддає на такий шматок `undefined`, styled-components
+ * відкидає порожній шматок — і **весь** набір правил `Fact` не доїжджав до
+ * сторінки взагалі. Тож ні крапки між фактами, ні `font-style` з цього блока
+ * ніколи не діяли. Escape-послідовності в цьому файлі більше немає взагалі, а
+ * що правила доїжджають — тримає тест (`ProfileRow.factSeparator.test.js`):
+ * помилка ця мовчазна, жодного попередження ні в збірці, ні в консолі.
+ *
+ * Сам розділювач — вертикальна риска, а не крапка: «не заміжня пологи 2» без
+ * неї читалось одним фактом, а риска ділить рядок на стовпці, які око бере
+ * одним поглядом. Курсив лишається: рядок метрик так відрізняється від підписів
+ * навколо, і саме таким його бачить читач сьогодні.
+ */
 export const Fact = styled.i`
-  font-style: normal;
   white-space: nowrap;
   display: inline-block;
 
@@ -224,14 +239,22 @@ export const Fact = styled.i`
     font-weight: 650;
   }
 
+  /* Риска належить факту, а не проміжку між фактами: усередині самого факту
+     стоїть nowrap, тож від свого значення вона не відірветься, а перенестись
+     рядок може по пробілу перед наступним фактом. */
   &::after {
-    content: '\00A0·';
-    color: var(--matching-muted-text);
-    opacity: 0.6;
+    content: '';
+    display: inline-block;
+    width: 1px;
+    height: 0.92em;
+    margin: 0 1px 0 6px;
+    vertical-align: -0.14em;
+    background: currentColor;
+    opacity: 0.3;
   }
 
   &:last-child::after {
-    content: '';
+    display: none;
   }
 `;
 
@@ -326,13 +349,14 @@ export const ChevronButton = styled.button`
   }
 `;
 
+/* Підкладку й заокруглення тримає плашка RowNotes, у якій нотатка лежить, а не
+   сама нотатка: доріжок у плашці дві, і два фони поспіль малювали б сходинку
+   на межі між ними. */
 export const Note = styled.p`
   font-size: 12.3px;
   color: var(--matching-header-text);
-  background: var(--matching-section-bg);
-  border-radius: 14px;
-  padding: 8px 10px;
-  margin: 9px 0 0;
+  padding: 6px 0;
+  margin: 0;
   line-height: 1.5;
 
   /* Нижній відступ обрізаному тексту знімається навмисно: line-clamp ріже
@@ -350,8 +374,8 @@ export const Note = styled.p`
   ${({ $hidden }) => $hidden && css`
     position: absolute;
     top: 0;
-    left: 11px;
-    right: 11px;
+    left: 21px;
+    right: 21px;
     margin: 0;
     visibility: hidden;
     pointer-events: none;
@@ -373,10 +397,9 @@ export const CommentInput = styled.textarea`
   font: inherit;
   font-size: 12.3px;
   color: var(--matching-header-text);
-  padding: 8px 10px;
-  margin: 9px 0 0;
+  padding: 6px 0;
+  margin: 0;
   line-height: 1.5;
-  border-radius: 14px;
 
   &::placeholder {
     color: var(--matching-muted-text);
@@ -384,12 +407,10 @@ export const CommentInput = styled.textarea`
   }
 
   /* Порожнє поле теж має бути видно як поле: під ним стоять реакції, і без
-     власної підкладки рядок «Додати коментар» читався як підпис до них. */
-  background: var(--matching-section-bg);
-
+     підкладки рядок «Додати коментар» читався як підпис до них. Підкладку
+     дає плашка RowNotes — одну на обидві доріжки, а не по одній на кожну. */
   &:focus {
     outline: 0;
-    background: var(--matching-section-bg);
   }
 `;
 
@@ -397,7 +418,7 @@ export const SelfDescription = styled.p`
   font-size: 12.3px;
   font-style: italic;
   color: var(--matching-muted-text);
-  padding: 0 10px;
+  padding: 0;
   margin: 9px 0 0;
   line-height: 1.5;
   max-height: none;
@@ -416,7 +437,7 @@ export const NoteMore = styled.span`
   font-weight: 700;
   line-height: 0.8;
   color: var(--matching-muted-text);
-  margin: 4px 0 0 10px;
+  margin: 0 0 4px;
   cursor: pointer;
   letter-spacing: 1px;
 `;
@@ -425,13 +446,15 @@ export const More = styled.div`
   margin-top: 9px;
 `;
 
+/* Та сама плашка, що й у нотаток, і з тим самим внутрішнім краєм: два
+   вкладені блоки з різними відступами ламали ліву межу картки посередині. */
 export const Grid = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0 14px;
-  background: var(--matching-section-bg);
+  background: var(--matching-inset-bg);
   border-radius: 14px;
-  padding: 9px 11px;
+  padding: 8px 10px;
 `;
 
 export const GridRow = styled.p`
@@ -752,14 +775,16 @@ export const ToastUndo = styled.button`
  * ------------------------------------------------------------------ */
 
 /**
- * `$flush` — блок стоїть у доріжці нотаток на картці, де відступ ліворуч уже
- * дає смужка доріжки. У рядку стрічки відступу немає кому дати: там публічні
- * записи стоять під нотаткою в заокругленій плашці й тримають її внутрішній
- * край, інакше два сусідні тексти зсунуті один відносно одного.
+ * Власного відступу ліворуч у блока немає — ні тут, ні там.
+ *
+ * Обидва його місця вже дають край: у картці — смужка доріжки нотаток, у
+ * рядку стрічки — плашка `RowNotes`, спільна з власною нотаткою. Поки він
+ * додавав свої 10 px поверх чужого краю, публічний запис стояв зсунутим
+ * відносно нотатки просто під ним — на тій самій картці, у тій самій плашці.
  */
 export const PublicComments = styled.div`
-  margin-top: ${({ $flush }) => ($flush ? '0' : '8px')};
-  padding-left: ${({ $flush }) => ($flush ? '0' : '10px')};
+  margin-top: 0;
+  padding-left: 0;
 `;
 
 // Стрілка «відкрити comments/{id} у Firebase» — та сама службова навігація, що в
@@ -784,48 +809,15 @@ export const CommentBackendLink = styled.a`
   }
 `;
 
-export const ReviewsGateButton = styled.button`
-  display: inline-flex;
-  align-self: flex-start;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  min-height: 30px;
-  margin-top: 8px;
-  padding: 0 11px;
-  box-sizing: border-box;
-  border: 1px solid var(--matching-card-border);
-  border-radius: 999px;
-  background: transparent;
+/* Доки відгуки їдуть — і якщо не доїхали. Кнопка вже натиснута, доріжка вже
+ * розгорнута, тож мовчати тут не можна: порожня плашка виглядала б відповіддю
+ * «відгуків немає», якою вона ще не є. */
+export const ReviewsGateNote = styled.div`
+  padding: 6px 0;
+  font-size: ${NOTE_TEXT_SIZE};
+  line-height: ${NOTE_TEXT_LINE_HEIGHT};
   color: var(--matching-muted-text);
-  font: inherit;
-  font-size: 12.3px;
-  cursor: pointer;
-  text-align: left;
-
-  svg {
-    flex: 0 0 auto;
-    opacity: 0.8;
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.6;
-  }
-
-  &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
-    outline-offset: 1px;
-  }
-`;
-
-/* «Доповнити дані» — сусід кнопки відгуків і навмисно її ж форми: обидві стоять
- * під карткою й обидві ведуть до того самого рядка, тільки одна питає, що про
- * людину написали інші, а друга — дописує те, що знає читач. Відрізняє її колір
- * рамки: наслідок у них різний, а місце сусіднє. */
-export const EnrichGateButton = styled(ReviewsGateButton)`
-  border-color: color-mix(in srgb, var(--matching-accent) 45%, var(--matching-card-border));
-  color: var(--matching-accent);
+  opacity: 0.8;
 `;
 
 export const CommentEntry = styled.div`
@@ -994,24 +986,96 @@ export const PublicCommentInput = styled.textarea`
 `;
 
 /*
- * Реакції стоять унизу картки, в один ряд.
+ * Один ряд рішень унизу картки: олівець, пара «лайк/дизлайк», відгуки.
  *
- * У стовпчику праворуч вони були найближчими до імені — тобто там, де читач
- * ще тільки розбирає, хто це, — і тиснулись раніше, ніж він устигав дочитати
- * рядок. Знизу ж вони стоять після всього, що картка має сказати, і після
- * власної нотатки: спершу рішення, потім жест. Решта значків (цятка
- * публікації, контакти, олівець) лишається стовпчиком праворуч — це не
- * рішення про людину, а службові дії над карткою.
+ * Досі рішень було три місця: дві широкі кнопки з написами під фактами
+ * («Доповнити дані», «Перевірити наявність відгуків»), стовпчик службових
+ * значків праворуч і сам ряд реакцій. Кожна з них важила рядок, і картка з
+ * трьох фактів займала пів екрана. Тепер це один ряд значків: підпис у них
+ * несе `title`/`aria-label`, а зрозумілість — форма й порядок.
+ *
+ * Порядок сталий: спершу «дописати те, що знаю» (олівець), потім рішення про
+ * людину (серце й хрестик), і аж тоді питання про неї («що написали інші»).
+ * Ліворуч — те, що робить із карткою читач, праворуч — те, що йому показують.
  */
 export const RowFooterActions = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 9px;
+  margin-top: 10px;
 `;
 
 export const RowFooterButton = styled(RowActionButton)`
   flex: 1 1 0;
   width: auto;
   height: 34px;
+
+  b {
+    font-size: 11px;
+    font-weight: 700;
+  }
+`;
+
+/*
+ * Серце й хрестик — одна пара, і виглядати вона мусить парою.
+ *
+ * Порізно вони читались як два незалежні значки серед інших значків ряду, і
+ * «протилежність» рішення доводилось згадувати. Спільна рамка з волосяною
+ * рискою всередині каже це формою: два стани одного вибору. Рамку тримає
+ * обгортка, а кнопки всередині лишаються без власної — інакше на межі
+ * малювалось би дві лінії поруч.
+ */
+export const RowReactionPair = styled.div`
+  display: flex;
+  align-items: center;
+  flex: 2 1 0;
+  height: 34px;
+  border: 1px solid var(--matching-card-border);
+  border-radius: 10px;
+  overflow: hidden;
+
+  > button {
+    flex: 1 1 0;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  > button + button {
+    border-left: 1px solid var(--matching-card-border);
+  }
+`;
+
+/*
+ * Нотатки рядка — одна плашка на дві доріжки.
+ *
+ * Публічні відгуки й власна нотатка — це два записи про ту саму людину, і
+ * читають їх разом. Двома окремими блоками вони стояли з різними відступами
+ * ліворуч (10 px у відгуків, 10 px усередині поля нотатки, 11 px у кнопок
+ * поруч) — і ліва межа картки ламалась тричі на трьох сусідніх рядках. Тепер
+ * обидві доріжки лежать в одній плашці, з одним внутрішнім краєм.
+ *
+ * Публічне — зверху, власне — під ним: спершу те, що про людину знають інші,
+ * і аж тоді те, що читач дописує сам. Той самий порядок, що й у відкритій
+ * картці.
+ */
+export const RowNotes = styled.div`
+  margin-top: 10px;
+  padding: 2px 10px;
+  border-radius: 14px;
+  background: var(--matching-inset-bg);
+`;
+
+/* Опис «про себе» стоїть під сіткою «всі дані» і тримає її внутрішній край. */
+export const MoreNote = styled.div`
+  padding: 0 10px;
+`;
+
+/* Волосяна риска між доріжками: відгуки й нотатка лежать в одній плашці, і
+   сплутати їх не можна. */
+export const RowNotesDivider = styled.div`
+  height: 1px;
+  margin: 6px 0;
+  background: var(--matching-card-border);
 `;

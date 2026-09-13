@@ -1368,7 +1368,22 @@ const SwipeableCard = ({
             {/* Спільної шапки «Нотатки» більше немає: підпис над кожною
                 доріжкою вже каже і що це, і хто це побачить, а третій
                 заголовок над ними лише повторював слово. */}
+            {/* Публічне — зверху, власне — під ним.
+                Порядок був зворотний, і читач писав свою нотатку, ще не
+                побачивши, що про цю людину вже написали інші: відповідь стояла
+                під полем для питання. Той самий порядок тепер і в рядку стрічки
+                (`RowNotes` у `ProfileRow`) — два екрани не можуть казати різне
+                про ті самі два записи. */}
             <NoteLanes>
+              {publicCommentSlot && (
+                <NoteLane $public>
+                  <NoteLaneHead>
+                    <b>{profileUiText('publicComment', language)}</b>
+                    <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
+                  </NoteLaneHead>
+                  {publicCommentSlot}
+                </NoteLane>
+              )}
               <NoteLane>
                 <NoteLaneHead>
                   <b>{profileUiText('personalNote', language)}</b>
@@ -1396,15 +1411,6 @@ const SwipeableCard = ({
                   )}
                 </CommentBox>
               </NoteLane>
-              {publicCommentSlot && (
-                <NoteLane $public>
-                  <NoteLaneHead>
-                    <b>{profileUiText('publicComment', language)}</b>
-                    <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
-                  </NoteLaneHead>
-                  {publicCommentSlot}
-                </NoteLane>
-              )}
             </NoteLanes>
           </ModernSection>
         </ModernProfileBody>
@@ -7286,6 +7292,20 @@ const Matching = () => {
     requestPublicComments(activeProfile?.userId);
   }, [activeProfile?.userId, detailOpen, ownerId, requestPublicComments]);
 
+  /**
+   * Усе, чого ряду рішень треба знати про відгуки цієї картки.
+   *
+   * Значок у ряду каже, скільки їх, і сам починає читання; вміст приїжджає
+   * окремим слотом. Сама пам'ять таба лишається тут, у стрічки: рядок свого
+   * «вже просили» не тримає навмисно — читання, яке впало, мусить бути можливо
+   * повторити (`requestPublicComments` знімає позначку саме на помилці).
+   */
+  const buildRowReviewsAction = React.useCallback(profileId => ({
+    count: (publicComments[profileId] || EMPTY_PUBLIC_COMMENTS).length,
+    loading: Boolean(publicCommentsLoading[profileId]),
+    onRequest: requestPublicComments,
+  }), [publicComments, publicCommentsLoading, requestPublicComments]);
+
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
     const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
     setPublicComments(previous => ({
@@ -7845,7 +7865,6 @@ const Matching = () => {
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                           loaded={Boolean(publicComments[user.userId])}
                           loading={Boolean(publicCommentsLoading[user.userId])}
-                          onRequest={requestPublicComments}
                           viewerId={auth.currentUser?.uid || ''}
                           canModerate={isAdmin}
                           onCreate={handleCreatePublicComment}
@@ -7853,6 +7872,7 @@ const Matching = () => {
                           onDelete={handleDeletePublicComment}
                         />
                       )}
+                      reviewsAction={buildRowReviewsAction(user.userId)}
                       primaryAction={{
                         icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
                         title: 'В обране',

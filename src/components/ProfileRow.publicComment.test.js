@@ -5,7 +5,6 @@ import {
   PublicCommentBlock,
   PublicCommentsGate,
   PUBLIC_COMMENT_VISIBILITY_NOTE,
-  REVIEWS_GATE_LABEL,
 } from './ProfileRow';
 
 const setup = (props = {}) => {
@@ -227,22 +226,48 @@ describe('quick public comment', () => {
   });
 });
 
+// Жест, який відкриває відгуки, стоїть у ряду рішень унизу картки — разом з
+// олівцем і реакціями. Гейт лишився самим вмістом: він каже, що читання триває,
+// і показує записи, щойно вони доїхали.
 describe('public comments read gate', () => {
   it('keeps the backend shortcut available before comments are loaded', () => {
-    const onRequest = jest.fn();
     render(
       <PublicCommentsGate
         profileId="profile-1"
         comments={[]}
         loaded={false}
-        loading={false}
-        onRequest={onRequest}
+        loading
         backendHref="https://console.example/data/~2Fcomments~2Fprofile-1"
       />
     );
 
     expect(screen.getByLabelText('Відкрити публічні нотатки анкети у Firebase'))
       .toHaveAttribute('href', 'https://console.example/data/~2Fcomments~2Fprofile-1');
-    expect(screen.getByText(REVIEWS_GATE_LABEL)).toBeInTheDocument();
+  });
+
+  it('говорить, що читання триває, а не вдає порожній список', () => {
+    render(<PublicCommentsGate profileId="profile-1" comments={[]} loaded={false} loading />);
+    expect(screen.getByText('Шукаємо відгуки…')).toBeInTheDocument();
+  });
+
+  // Порожня плашка виглядала б відповіддю «відгуків немає», якою вона ще не є:
+  // читання впало, і сказати про це має сам блок, бо кнопку вже натиснули.
+  it('не мовчить, коли читання не вдалося', () => {
+    render(<PublicCommentsGate profileId="profile-1" comments={[]} loaded={false} loading={false} />);
+    expect(screen.getByText('Не вдалося прочитати відгуки')).toBeInTheDocument();
+  });
+
+  it('показує самі записи, щойно вони доїхали', () => {
+    render(
+      <PublicCommentsGate
+        profileId="profile-1"
+        loaded
+        loading={false}
+        viewerId="viewer-1"
+        comments={[{ id: 'c1', text: 'відгук', authorId: 'viewer-2', authorName: 'Ігор Ковальчук', createdAt: Date.now() }]}
+      />
+    );
+    expect(screen.getByText('відгук')).toBeInTheDocument();
+    expect(screen.queryByText('Шукаємо відгуки…')).not.toBeInTheDocument();
   });
 });
