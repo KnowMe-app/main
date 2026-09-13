@@ -17,6 +17,8 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
+import { buildMatchingSearchPath, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
+import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleShortLabel } from './profileLayoutConfig';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -91,6 +93,12 @@ const GhostButton = styled(Button)`
   color: var(--km-muted);
   box-shadow: none;
   &:hover:not(:disabled) { background: color-mix(in srgb, var(--km-muted) 12%, transparent); border-color: var(--km-border); }
+`;
+// «Закрити» — вихід, а не дія форми: поля зберігають себе самі, тож головною
+// кнопкою екрана воно не є і розміру головної кнопки не має. Ширина — по
+// напису, висота — менша за поле вводу.
+const CloseButton = styled(GhostButton)`
+  min-height:38px; padding:8px 16px; border-radius:12px; font-size:14px; border-color:var(--km-border);
 `;
 const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:22px; background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
@@ -247,6 +255,20 @@ const EditMeta = styled.div`display:flex; flex-wrap:wrap; gap:3px 9px; font-size
 const EditHint = styled.div`font-size:11px; font-weight:700; color:var(--km-accent);`;
 const DraftHeaderCard = styled(Card)`display:grid; gap:10px; margin:0 0 14px;`;
 const DraftBadges = styled.div`display:flex; flex-wrap:wrap; align-items:center; gap:8px;`;
+// Верхній блок — це картка людини, а не самі лише імʼя з прізвищем: під ними
+// стояла памʼятка про те, як влаштований оверлей, і жодного факту про людину.
+// Тепер тут рівно те, за чим картку впізнають у стрічці — фото, роль, вік,
+// локація й контакти.
+const DraftIdentity = styled.div`display:flex; align-items:center; gap:14px; min-width:0;`;
+const DraftIdentityText = styled.div`min-width:0; display:grid; gap:4px;`;
+const DraftAvatar = styled.img`
+  width:56px; height:56px; flex:0 0 56px; border-radius:18px; object-fit:cover; background:var(--km-bg);
+`;
+const DraftAvatarFallback = styled.span`
+  width:56px; height:56px; flex:0 0 56px; display:grid; place-items:center; border-radius:18px;
+  background:var(--km-accent-light); color:var(--km-accent); font:800 22px/1 var(--km-font);
+`;
+const DraftFacts = styled(Meta)`margin:0;`;
 const DraftName = styled.h2`margin:0; font-size:clamp(20px, 5.5vw, 24px); line-height:1.2; overflow-wrap:anywhere;`;
 const DraftContacts = styled.div`
   display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; font-size:14px; line-height:1.5;
@@ -686,7 +708,30 @@ export const ProfileCreationWorkspace = () => {
     || matchingOwnDrafts.length > 0
     || matchingSharedDrafts.length > 0;
 
+  /**
+   * Закрита форма повертає туди, звідки її відкрили.
+   *
+   * Відкривають її з рядка видачі пошуку — і закриття мусить вести назад до тих
+   * самих знайдених карток, уже з дописаним. Доти воно лишало читача на
+   * власному екрані пошуку майстерні: той самий запит довелось би набирати
+   * вдруге, ще й в іншій розкладці відповіді.
+   *
+   * Адреса приходить у намірі (`state.returnTo`); після перезавантаження
+   * сторінки наміру вже немає, тож запит береться з того ж сховища, з якого
+   * його читає сам рядок пошуку.
+   */
+  const returnToOpener = () => {
+    const returnTo = location.state?.returnTo || entryReturnToRef.current;
+    navigate(returnTo || buildMatchingSearchPath(readStoredMatchingSearchQuery()));
+  };
+
   const closeEditor = () => {
+    // Черга адміна живе на цьому ж екрані, тож для неї «закрити» — це
+    // повернутись до списку, а не піти зі сторінки.
+    if (!accessRef.current?.isAdmin) {
+      returnToOpener();
+      return;
+    }
     setDraft(null);
     setActiveMutation(null);
     setOverlayTarget(null);
@@ -742,7 +787,11 @@ export const ProfileCreationWorkspace = () => {
       overlaysByEditor: overlays,
       editorUserId: uid,
     });
-    setOverlayTarget({ userId: profile.userId, canonical: baseWithoutOwnOverlay });
+    // `canonical` — це база для порівняння правок, і в ній лише поля форми:
+    // все, чого форма не показує, не має права поїхати в оверлей. Але верхньому
+    // блоку потрібна сама картка — роль, вік, локація, фото, — тож вона їде
+    // поруч і використовується лише на показ.
+    setOverlayTarget({ userId: profile.userId, canonical: baseWithoutOwnOverlay, card: canonical });
     const nextDraft = stacked;
     persistedDraftRef.current = nextDraft;
     draftRef.current = nextDraft;
@@ -763,9 +812,13 @@ export const ProfileCreationWorkspace = () => {
    * знову від кожного перемальовування.
    */
   const entryIntentRef = useRef(false);
+  // Намір читається один раз, а `state` слідом стирається (інакше закрита форма
+  // відкривалась би знову) — тож адресу повернення треба запамʼятати тут.
+  const entryReturnToRef = useRef('');
   useEffect(() => {
     if (!uid || !access || entryIntentRef.current) return;
     const intent = location.state || {};
+    if (typeof intent.returnTo === 'string' && intent.returnTo) entryReturnToRef.current = intent.returnTo;
     // Адреса форми доповнення теж є наміром: `?cardId=...&overlay=1` вона
     // ставила собі сама, але після оновлення сторінки ніхто її не читав — і
     // замість відкритої форми людина діставала екран пошуку.
@@ -1330,9 +1383,36 @@ export const ProfileCreationWorkspace = () => {
     describeProfileName(draft?.surname, draft?.name, draft?.fathersname)
       || (overlayTarget ? 'Картка без імені' : 'Новий профіль')
   ), [draft, overlayTarget]);
-  const draftRole = draft?.role || draft?.userRole || '';
 
-  const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Шукаємо профіль', [access]);
+  /**
+   * Факти, за якими картку впізнають: роль, вік, локація.
+   *
+   * Беруться вони з тієї самої картки, яку показує форма (канонічна + те, що вже
+   * набрали), і тими самими геттерами, що й рядок стрічки, — інакше та сама
+   * людина називалась би тут інакше, ніж у видачі, з якої сюди прийшли.
+   */
+  const summaryCard = useMemo(
+    () => ({ ...(overlayTarget?.card || overlayTarget?.canonical || {}), ...(draft || {}) }),
+    [draft, overlayTarget],
+  );
+  const draftRoleLabel = getRoleShortLabel(getProfileRole(summaryCard)) || '';
+  const draftFacts = useMemo(() => {
+    const age = getProfileAge(summaryCard);
+    return [
+      draftRoleLabel,
+      age ? `${age}` : '',
+      getProfileLocation(summaryCard),
+    ].filter(Boolean).join(' · ');
+  }, [draftRoleLabel, summaryCard]);
+  const draftPhoto = getProfilePhotos(summaryCard)[0] || '';
+  const draftInitial = (draftName.trim()[0] || '?').toUpperCase();
+
+  // Екран називається тим, чим він є, — місцем, де заводять картку. «Шукаємо
+  // профіль» обіцяло другий пошук, і саме так його й читали: форма, закрившись,
+  // висаджувала читача на екран пошуку, з якого він щойно прийшов. Пошук живе в
+  // стрічці; тут його рядок лишається рівно для одного питання — чи не заведена
+  // ця людина вже (карткою чи чужою чернеткою, якої стрічка не показує).
+  const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Додати профіль', [access]);
   if (!access) return <Page><Shell>Завантаження…</Shell></Page>;
 
   return <Page><Shell>
@@ -1342,31 +1422,39 @@ export const ProfileCreationWorkspace = () => {
     </Header>
     {draft ? <>
       <DraftHeaderCard>
-        <DraftBadges>
-          <Status $variant={overlayTarget || editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
-            {overlayTarget ? 'Власні дані' : editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+        {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише
+            там, де воно щось означає: у власній чернетці й у черзі адміна.
+            Над доповненням знайденої картки стояв підпис «Власні дані», який не
+            називав ані людини, ані стану, — і разом з памʼяткою про те, як
+            влаштований оверлей, з'їдав увесь перший екран форми. */}
+        {!overlayTarget && <DraftBadges>
+          <Status $variant={editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
+            {editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
           </Status>
-          {draftRole && <Status $variant="private">{draftRole}</Status>}
           {reviewingAsAdmin && pendingEditsCount > 0 && <Status $variant="overlay">{pendingEditsCount} непідтверджених правок</Status>}
-        </DraftBadges>
-        <DraftName>{draftName}</DraftName>
-        {overlayTarget
-          ? <Meta>Ви доповнюєте цю картку. Те, що ви допишете, не змінює її саму — доповнення лишається вашим, доки адміністратор його не прийме.</Meta>
-          : access.isAdmin
-            ? <>
-              <TechnicalMeta>
-                cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
-                {activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}
-              </TechnicalMeta>
-              {activeMutation.createdBy && <TechnicalMeta>
-                Автор:{' '}
-                <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>
-                  {describeAuthor(activeMutation.createdBy, historyAuthors)}
-                </AuthorLink>
-              </TechnicalMeta>}
-              <DraftContacts>{fieldContacts(draft)}</DraftContacts>
-            </>
-            : null}
+        </DraftBadges>}
+        <DraftIdentity>
+          {draftPhoto
+            ? <DraftAvatar src={draftPhoto} alt="" />
+            : <DraftAvatarFallback aria-hidden="true">{draftInitial}</DraftAvatarFallback>}
+          <DraftIdentityText>
+            <DraftName>{draftName}</DraftName>
+            {draftFacts && <DraftFacts>{draftFacts}</DraftFacts>}
+          </DraftIdentityText>
+        </DraftIdentity>
+        <DraftContacts>{fieldContacts(summaryCard)}</DraftContacts>
+        {!overlayTarget && access.isAdmin && <>
+          <TechnicalMeta>
+            cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
+            {activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}
+          </TechnicalMeta>
+          {activeMutation.createdBy && <TechnicalMeta>
+            Автор:{' '}
+            <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>
+              {describeAuthor(activeMutation.createdBy, historyAuthors)}
+            </AuthorLink>
+          </TechnicalMeta>}
+        </>}
         {editingSharedDraft && <Meta>
           Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну.
           Ваші зміни зберігаються окремо, у вашому оверлеї, і стають видимими наступному редактору.
@@ -1465,7 +1553,7 @@ export const ProfileCreationWorkspace = () => {
               {saving ? 'Збереження…' : 'Зберегти чернетку'}
             </SaveButton>
           )}
-          <GhostButton disabled={saving} onClick={closeEditor}>Закрити</GhostButton>
+          <CloseButton disabled={saving} onClick={closeEditor}>Закрити</CloseButton>
         </Actions>
       </Card>
     </> : overlayLoading ? <Card><Meta>Відкриваємо картку…</Meta></Card> : <>
@@ -1507,7 +1595,8 @@ export const ProfileCreationWorkspace = () => {
           inputAriaLabel="Пошук профілю"
         />
         <SearchHint>
-          Шукайте за ім’ям, прізвищем, телефоном, email або посиланням на соцмережі — Telegram, Instagram, Facebook, TikTok, VK та інші.
+          Перевірте, чи цієї людини ще немає: за ім’ям, прізвищем, телефоном, email або посиланням на соцмережі.
+          Тут видно й чернетки, яких стрічка ще не показує.
         </SearchHint>
         <DisclosureToggle
           type="button"

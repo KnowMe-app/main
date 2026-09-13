@@ -97,8 +97,9 @@ jest.mock('utils/multiAccountEdits', () => ({
 
 let mockLocationState = {};
 let mockSearchParams = '';
+const mockNavigate = jest.fn();
 jest.mock('react-router-dom', () => ({
-  useNavigate: () => jest.fn(),
+  useNavigate: () => mockNavigate,
   useLocation: () => ({ pathname: '/matching/create-profile', state: mockLocationState }),
   useSearchParams: () => [new URLSearchParams(mockSearchParams), jest.fn()],
 }));
@@ -115,6 +116,8 @@ const canonicalCard = {
 beforeEach(() => {
   mockLocationState = {};
   mockSearchParams = '';
+  mockNavigate.mockClear();
+  localStorage.clear();
   fetchUserById.mockResolvedValue({ canCreateProfiles: true });
   fetchUsersByIds.mockResolvedValue({});
   fetchFavoriteUsers.mockResolvedValue({});
@@ -208,6 +211,60 @@ describe('доповнення знайденої картки зі стрічк
 
     expect(await screen.findByDisplayValue('Бугаренко')).toBeInTheDocument();
     expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false });
+  });
+
+  // Форму відкривають із рядка видачі — і закриття мусить вести назад до тих
+  // самих знайдених карток, уже з дописаним. Доти воно лишало читача на
+  // власному екрані пошуку майстерні: той самий запит довелось би набирати
+  // вдруге, ще й в іншій розкладці відповіді.
+  it('закриття повертає до видачі пошуку, з якої картку відкрили', async () => {
+    mockLocationState = { enrichCardId: 'card-9', returnTo: '/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE' };
+    render(<ProfileCreationWorkspace />);
+
+    await screen.findByDisplayValue('Бугаренко');
+    fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE');
+  });
+
+  // Після оновлення сторінки наміру вже немає — запит береться з того ж
+  // сховища, з якого його читає сам рядок пошуку.
+  it('після оновлення сторінки повертає за збереженим запитом', async () => {
+    mockLocationState = {};
+    mockSearchParams = 'cardId=card-9&overlay=1';
+    localStorage.setItem('matchingSearchQuery', 'Бугаренко');
+    render(<ProfileCreationWorkspace />);
+
+    await screen.findByDisplayValue('Бугаренко');
+    fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE');
+  });
+
+  // Перший екран форми мусить називати людину, а не влаштування оверлея.
+  it('не показує ані підпису «Власні дані», ані памʼятки про доповнення', async () => {
+    render(<ProfileCreationWorkspace />);
+
+    await screen.findByDisplayValue('Бугаренко');
+    expect(screen.queryByText('Власні дані')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ви доповнюєте цю картку/)).not.toBeInTheDocument();
+  });
+
+  // Верхній блок був скороченою карткою з самих лише імені й прізвища — тобто
+  // не казав про людину нічого, чого не сказала б форма під ним.
+  it('показує у верхньому блоці роль, вік і локацію картки', async () => {
+    readProfileFromNodes.mockResolvedValue({
+      ...canonicalCard,
+      role: 'sm',
+      birth: '1988-08-01',
+      country: 'Україна',
+      city: 'Київ',
+    });
+    render(<ProfileCreationWorkspace />);
+
+    await screen.findByDisplayValue('Бугаренко');
+    expect(screen.getByText(/Surrogate/)).toBeInTheDocument();
+    expect(screen.getByText(/Київ/)).toBeInTheDocument();
   });
 
   it('відкриває форму навіть тоді, коли картку прочитати не вдалося', async () => {

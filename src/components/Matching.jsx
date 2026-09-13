@@ -85,6 +85,12 @@ import {
   FeedNotice,
   FeedSentinel,
   FeedWrap,
+  QueryDraftBody,
+  QueryDraftButton,
+  QueryDraftCard,
+  QueryDraftLabel,
+  QueryDraftNote,
+  QueryDraftValue,
   MatchingTopBar,
   FilterApplyButton,
   SearchField,
@@ -149,10 +155,11 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite, toggleFavoriteUser } from './smallCard/btnFavorite';
 import { BtnDislike, toggleDislikeUser } from './smallCard/btnDislike';
-import SearchBar, { getSearchCacheKeyForParams } from './SearchBar';
+import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import { buildMatchingFilterChips } from './SearchFilters';
+import { getFieldLabel, pickerFields } from './formFields';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import {
@@ -225,6 +232,12 @@ import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
+import { applyOverlayToCard, getOwnOverlayFieldsForCards } from 'utils/multiAccountEdits';
+import {
+  buildMatchingSearchPath,
+  MATCHING_SEARCH_QUERY_PARAM,
+  MATCHING_SEARCH_STORAGE_KEY,
+} from 'utils/matchingSearchLocation';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { keepDonorCounterpartyCards, isDonorViewer } from 'utils/matchingPeerVisibility';
 import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
@@ -1475,7 +1488,7 @@ const EMPTY_USERS = [];
 const MAX_FILTER_CHIPS = 3;
 // Spec §2: the screen switches state a beat after typing stops, not on Enter.
 const MATCHING_SEARCH_DEBOUNCE_MS = 250;
-const MATCHING_QUERY_PARAM = 'q';
+const MATCHING_QUERY_PARAM = MATCHING_SEARCH_QUERY_PARAM;
 const readQueryFromUrl = () => {
   try {
     return new URLSearchParams(window.location.search).get(MATCHING_QUERY_PARAM) || '';
@@ -1502,7 +1515,7 @@ const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
 const MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS = 2;
 const SCROLL_Y_KEY = 'matchingScrollY';
-const SEARCH_KEY = 'matchingSearchQuery';
+const SEARCH_KEY = MATCHING_SEARCH_STORAGE_KEY;
 
 // Spec §4: the list/gallery choice is a persistent per-device preference, kept
 // under its own namespaced key so it survives a reload and never collides with
@@ -1866,6 +1879,20 @@ const Matching = () => {
   const [additionalHasMore, setAdditionalHasMore] = useState(false);
   const additionalHasMoreRef = useRef(false);
   const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
+  // Власні доповнення до знайдених карток: `{ [cardId]: fields }`. Питаються
+  // лише про показані знайдені картки й лише раз на таб — памʼять запитаних id
+  // нижче стереже, щоб перемальовування не коштувало другого круга.
+  const [ownOverlayFieldsByCardId, setOwnOverlayFieldsByCardId] = useState({});
+  const requestedOwnOverlayIdsRef = useRef(new Set());
+  // Позначка ставиться в тілі ефекту, а не лише знімається в прибиранні: у
+  // StrictMode React монтує сторінку двічі, і прибирання першого монтування
+  // залишало позначку знятою назавжди — відповідь про доповнення приходила вже
+  // «розмонтованій» сторінці й мовчки викидалась.
+  const ownOverlaysMountedRef = useRef(true);
+  useEffect(() => {
+    ownOverlaysMountedRef.current = true;
+    return () => { ownOverlaysMountedRef.current = false; };
+  }, []);
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({
     uid: auth.currentUser?.uid,
@@ -5397,7 +5424,67 @@ const Matching = () => {
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
   // from it can never disagree about which card is which.
-  const feedSource = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;
+  const feedSourceWithoutOwnEdits = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;
+
+  /**
+   * Знайдена картка показується разом із тим, що читач сам у неї дописав.
+   *
+   * Доповнення (`multiData/edits/{картка}/{читач}`) — це шар поверх картки, а не
+   * її правка: сама картка лишається такою, якою її бачать усі. Але поки видача
+   * показувала саму лише картку, доповнення виглядало як загублене — читач
+   * дописував прізвище, шукав удруге ту саму людину й бачив той самий ініціал.
+   * Тепер шар лягає зверху рівно там, де його автор і має бачити: у власній
+   * видачі, у власному табі.
+   *
+   * Порожня мапа віддає той самий масив, а не його копію: від `feedSource`
+   * залежить і гідратація фото, і пагінація, і шар деталей.
+   */
+  const feedSource = useMemo(() => {
+    if (!Object.keys(ownOverlayFieldsByCardId).length) return feedSourceWithoutOwnEdits;
+    return feedSourceWithoutOwnEdits.map(user => {
+      const fields = user?.userId ? ownOverlayFieldsByCardId[user.userId] : null;
+      if (!fields || !Object.keys(fields).length) return user;
+      return applyOverlayToCard(user, fields);
+    });
+  }, [feedSourceWithoutOwnEdits, ownOverlayFieldsByCardId]);
+
+  /**
+   * Читається лише те, що на екрані, і лише в пошуку.
+   *
+   * Доповнювати картку вміє той, кому дозволено заводити картки, і саме його
+   * рядок несе кнопку «Доповнити дані» — тож і питати про доповнення є сенс
+   * лише в нього. Адмін правит картку напряму, олівцем, і зайвого круга на
+   * кожну знайдену картку не платить.
+   */
+  useEffect(() => {
+    const editorUserId = auth.currentUser?.uid;
+    if (!isSearching || isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+
+    const requested = requestedOwnOverlayIdsRef.current;
+    const cardUserIds = feedSourceWithoutOwnEdits
+      .map(user => user?.userId)
+      .filter(userId => userId && !requested.has(userId));
+    if (!cardUserIds.length) return undefined;
+
+    cardUserIds.forEach(userId => requested.add(userId));
+    getOwnOverlayFieldsForCards({ editorUserId, cardUserIds })
+      .then(fieldsByCardId => {
+        // Порожні відповіді в стан не йдуть: інакше кожен пошук перемальовував
+        // би видачу мапою з самих лише порожніх обʼєктів.
+        const found = Object.entries(fieldsByCardId).filter(([, fields]) => Object.keys(fields || {}).length);
+        if (!ownOverlaysMountedRef.current || !found.length) return;
+        setOwnOverlayFieldsByCardId(previous => ({ ...previous, ...Object.fromEntries(found) }));
+      })
+      .catch(error => console.warn('[Matching] own overlays unavailable', error));
+
+    // Скасування тут не за чим: запит уже позначений як зроблений, і скасувати
+    // його означало б викинути відповідь назавжди. Саме так воно й було —
+    // прапорець `cancelled` знімався на кожному перезапуску ефекту (а видача
+    // перебудовується щоразу, коли приїжджає наступна її частина), тож
+    // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
+    // Лишається одна причина не писати в стан — розмонтована сторінка.
+    return undefined;
+  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
@@ -6586,6 +6673,51 @@ const Matching = () => {
   // counts read straight off the already-loaded cache (§10), never re-queried.
   // The app has three collections; the spec's "✕" and "Приховані" name the same
   // one here, so it renders once.
+  /**
+   * Набране як заготовка нової картки.
+   *
+   * Поле вибирає той самий розпізнавач, що й пошук (`detectSearchParams`): він
+   * уміє і телефон, і нікнейм, і посилання, а те, чого не розпізнав, називає
+   * імʼям — тож поле в заготовці завжди те саме, у яке потім ляже значення.
+   *
+   * Контакт, за яким пошук уже показав чужу картку, у нову не підставляється:
+   * він зайнятий, і перше ж автозбереження впало б на `DUPLICATE_PROFILE`. Про
+   * це заготовка каже прямо, а не мовчки відкриває порожню форму.
+   */
+  const queryDraft = useMemo(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return null;
+
+    const detected = detectSearchParams(trimmed);
+    const field = detected?.key || 'name';
+    const value = detected?.value || trimmed;
+    const label = getFieldLabel(pickerFields.find(item => item?.name === field)) || 'Запит';
+    const claimsIdentity = field !== 'name' && field !== 'surname' && field !== 'userId';
+    const taken = claimsIdentity && visibleUsers.length > 0;
+
+    return {
+      field,
+      value,
+      label,
+      note: taken
+        ? 'Це значення вже стоїть у знайденій картці — нова відкриється без нього'
+        : '',
+    };
+  }, [searchQuery, visibleUsers.length]);
+
+  const handleCreateFromQuery = React.useCallback(() => {
+    saveScrollPosition();
+    navigate('/matching/create-profile', {
+      state: {
+        createFromQuery: searchQuery.trim(),
+        queryMatchedCards: visibleUsers.length,
+        returnTo: buildMatchingSearchPath(searchQuery),
+      },
+    });
+    // saveScrollPosition reads a ref and never changes identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate, searchQuery, visibleUsers.length]);
+
   const searchChips = useMemo(() => [
     {
       key: 'results',
@@ -6605,13 +6737,9 @@ const Matching = () => {
       // читав, — і читач, який щойно переглянув видачу, потрапляв у другий
       // пошук за тим самим набраним, тільки з іншою розкладкою відповіді.
       // Тепер запит їде разом із тим, що вже відомо про видачу, і форма нової
-      // картки відкривається одразу.
-      onSelect: () => {
-        saveScrollPosition();
-        navigate('/matching/create-profile', {
-          state: { createFromQuery: searchQuery.trim(), queryMatchedCards: visibleUsers.length },
-        });
-      },
+      // картки відкривається одразу — тим самим шляхом, що й заготовка першим
+      // рядком видачі.
+      onSelect: handleCreateFromQuery,
     },
     {
       key: 'similar',
@@ -6620,7 +6748,7 @@ const Matching = () => {
       count: similarUsers.length,
       onSelect: () => setSearchTab('similar'),
     },
-  ], [navigate, searchQuery, searchRefinedUsers.length, similarUsers.length, visibleUsers.length]);
+  ], [handleCreateFromQuery, searchRefinedUsers.length, similarUsers.length]);
 
   // Згорнутий ряд показує три чіпи, решта ховається за «+N». Але «+N» тепер
   // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
@@ -6878,14 +7006,17 @@ const Matching = () => {
   const handleRowEnrichProfile = React.useCallback(user => {
     if (!user?.userId) return;
     saveScrollPosition();
+    // Адреса видачі їде разом із наміром: закрита форма повертає рівно до тих
+    // самих знайдених карток, а не на порожній екран пошуку.
+    const returnTo = buildMatchingSearchPath(searchQuery);
     if (user.__profileMutationOperation === 'create') {
-      navigate(`/matching/create-profile?cardId=${encodeURIComponent(user.userId)}`);
+      navigate(`/matching/create-profile?cardId=${encodeURIComponent(user.userId)}`, { state: { returnTo } });
       return;
     }
-    navigate('/matching/create-profile', { state: { enrichCardId: user.userId } });
+    navigate('/matching/create-profile', { state: { enrichCardId: user.userId, returnTo } });
     // saveScrollPosition reads a ref and never changes identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]);
+  }, [navigate, searchQuery]);
 
   const handleRowEditProfile = React.useCallback(user => {
     saveScrollPosition();
@@ -7557,6 +7688,27 @@ const Matching = () => {
             />
           ) : (
             <FeedWrap>
+              {/* Перший рядок видачі — сама відповідь «такої ще немає»: набране
+                  вже розкладене в поле картки, і кнопка веде просто у форму з
+                  ним. Доти ця відповідь жила чіпом над видачею, тобто там, де
+                  її читають фільтром, а в яке поле ляже набране, читач бачив
+                  аж у формі. */}
+              {isSearching && queryDraft && access.canCreateProfiles && (
+                <QueryDraftCard data-testid="query-draft-card">
+                  <QueryDraftBody>
+                    <QueryDraftLabel>{queryDraft.label}</QueryDraftLabel>
+                    <QueryDraftValue>{queryDraft.value}</QueryDraftValue>
+                    {queryDraft.note && <QueryDraftNote>{queryDraft.note}</QueryDraftNote>}
+                  </QueryDraftBody>
+                  <QueryDraftButton
+                    type="button"
+                    onClick={handleCreateFromQuery}
+                    title="Створити картку з набраного"
+                  >
+                    Створити
+                  </QueryDraftButton>
+                </QueryDraftCard>
+              )}
               {feedRows.length > 0 && viewLayout === 'gallery' && (
                 <GalleryGrid>
                   {galleryColumns.map((columnRows, columnIndex) => (
