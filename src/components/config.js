@@ -36,6 +36,7 @@ import {
   isTypingContinuation,
   normalizeSearchQuery,
   shouldStoreSearchQuery,
+  toSearchQueryRows,
 } from '../utils/searchQueryStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
@@ -656,6 +657,58 @@ export const addContactViewUser = async (userId, ownerId) => {
 // ряді, а щойно збережений початок ланцюга прибирає його ж продовження.
 let lastRecordedSearchQuery = null;
 
+/**
+ * Власна історія пошуку, прочитана один раз на таб.
+ *
+ * Її читає підказник рядка пошуку. Ряд лежить під власним UID (правило RTDB
+ * `auth.uid == $ownerId`), тож читання не залежить ні від ролі, ні від рівня
+ * доступу — і саме тому підказки працюють у всіх, а не лише в адмінів.
+ *
+ * Памʼять таба тут не прикраса: підказки потрібні на кожен натиснутий символ,
+ * а історія за сеанс міняється лише тим, що допише сам читач — і саме це
+ * дописане кладеться в кеш поруч із записом у базу (`rememberSearchQueryLocally`).
+ */
+let ownSearchQueriesCache = { ownerId: '', rows: null, promise: null };
+
+export const rememberSearchQueryLocally = (ownerId, query) => {
+  const normalized = normalizeSearchQuery(query);
+  if (!normalized || !ownerId || ownSearchQueriesCache.ownerId !== ownerId || !ownSearchQueriesCache.rows) return;
+  const lowered = normalized.toLowerCase();
+  const rows = ownSearchQueriesCache.rows.filter(row => row.query.toLowerCase() !== lowered);
+  ownSearchQueriesCache = {
+    ...ownSearchQueriesCache,
+    rows: [...rows, { query: normalized, updatedAt: Date.now(), count: 1 }],
+  };
+};
+
+export const fetchOwnSearchQueries = async (ownerId, { force = false } = {}) => {
+  const owner = String(ownerId || auth.currentUser?.uid || '').trim();
+  if (!owner) return [];
+  if (!force && ownSearchQueriesCache.ownerId === owner && ownSearchQueriesCache.rows) {
+    return ownSearchQueriesCache.rows;
+  }
+  if (!force && ownSearchQueriesCache.ownerId === owner && ownSearchQueriesCache.promise) {
+    return ownSearchQueriesCache.promise;
+  }
+
+  const promise = get(ref2(database, `${SEARCH_QUERIES_ROOT_PATH}/${owner}`))
+    .then(snapshot => {
+      const rows = toSearchQueryRows(snapshot.exists() ? snapshot.val() : {});
+      ownSearchQueriesCache = { ownerId: owner, rows, promise: null };
+      return rows;
+    })
+    .catch(error => {
+      // Відмова тут не варта ані тосту, ані порожнього екрана: підказки —
+      // зручність, і без них рядок пошуку працює так само, як працював.
+      console.warn('[searchQueries] history unavailable', error);
+      ownSearchQueriesCache = { ownerId: owner, rows: [], promise: null };
+      return [];
+    });
+
+  ownSearchQueriesCache = { ownerId: owner, rows: null, promise };
+  return promise;
+};
+
 export const addMatchingSearchQuery = async searchQuery => {
   try {
     const owner = auth.currentUser;
@@ -694,6 +747,7 @@ export const addMatchingSearchQuery = async searchQuery => {
     });
 
     lastRecordedSearchQuery = { ownerId: owner.uid, query: normalizedQuery, key: queryKey, at: now };
+    rememberSearchQueryLocally(owner.uid, normalizedQuery);
   } catch (error) {
     console.error('Error adding matching search query:', error);
   }

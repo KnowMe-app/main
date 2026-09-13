@@ -444,7 +444,7 @@ const normalizeSearchKeyPayload = payload => {
 };
 const ADDITIONAL_RULE_LABELS = {
   age: 'Вік',
-  csection: 'КС',
+  csection: 'КР',
   bloodGroup: 'Кров',
   rh: 'Резус',
   maritalStatus: 'Сімейний стан',

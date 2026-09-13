@@ -343,15 +343,23 @@ describe('дії та роль на картці стрічки', () => {
   it('дає плитці і кнопку «приховати», а не лише серце', () => {
     // Кнопки переїхали з фото в тіло плитки: поверх знімка вони жили тільки
     // тому, що іншого місця не було, — і плитка без фото лишалась без них.
+    // Рахувати їх число не варто: поруч із двома реакціями там стоїть ще й
+    // «Доповнити дані», і кожна нова дія ламала перевірку, яка про неї не
+    // питає. Питання тут одне — чи є в плитці саме «приховати».
     const source = read('Matching.jsx');
-    expect(source.match(/<GalleryActionButton/g)).toHaveLength(2);
+    expect(source).toContain('<GalleryActionButton');
+    expect(source).toContain("aria-label={isHidden ? 'Повернути зі схованих' : 'Приховати'}");
     expect(source).toContain('onToggleHidden={toggleRowHidden}');
   });
 
   it('дає те саме рядку списку', () => {
     const source = read('Matching.jsx');
     expect(source).toContain('secondaryAction={{');
-    expect(read('ProfileRow.jsx')).toContain('{secondaryAction && !isLimited && (');
+    // Реакції рядка стоять унизу картки, під власною нотаткою, і в один ряд —
+    // тому й перевіряється саме нижній ряд, а не стовпчик праворуч.
+    const rowSource = read('ProfileRow.jsx');
+    expect(rowSource).toContain('<S.RowFooterActions');
+    expect(rowSource).toContain('{secondaryAction && (');
   });
 
   // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати, і саме

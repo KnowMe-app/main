@@ -1925,6 +1925,9 @@ export const GalleryTile = styled.div`
   position: relative;
   min-width: 0;
   cursor: pointer;
+  ${({ $single }) => $single && css`
+    border-radius: 18px;
+  `}
   overflow: hidden;
   border: 1px solid var(--matching-card-border);
   border-radius: 16px;
@@ -1959,6 +1962,13 @@ export const GalleryPhotoBox = styled.div`
   aspect-ratio: 4 / 5;
   overflow: hidden;
   background: var(--matching-section-bg);
+
+  /* Одна картка на екран: фото тримає ту саму пропорцію, але не вище за
+     екран — інакше підпис із імʼям опинявся б за його краєм, і картку
+     довелось би гортати, щоб дізнатись, хто на ній. */
+  ${({ $single }) => $single && css`
+    max-height: 68vh;
+  `}
 
   img {
     width: 100%;

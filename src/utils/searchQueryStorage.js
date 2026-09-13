@@ -188,3 +188,64 @@ export const buildSearchQueryMigrationPlan = (allSearchQueries = {}) => {
 
   return { updates, report };
 };
+
+/**
+ * Підказки до набраного — з власної історії пошуку.
+ *
+ * Історія лежить у базі (`multiData/searchQueries/{ownerId}`), а не в кеші
+ * браузера, і саме тому підказки переживають і чищення кеша, і інший пристрій:
+ * набране один раз більше не доводиться набирати вдруге по літері. Кеш тут
+ * лишається пришвидшенням, а не джерелом.
+ *
+ * Порядок: спершу ті, що **починаються** з набраного (їх дописують, а не
+ * шукають заново), потім ті, що його містять; усередині кожної групи — за
+ * кількістю повторів, далі за свіжістю. Сам набраний рядок підказкою не буває:
+ * підказувати те, що вже в полі, нема сенсу.
+ */
+export const SEARCH_SUGGESTION_LIMIT = 8;
+
+export const toSearchQueryRows = entries => {
+  if (Array.isArray(entries)) {
+    return entries
+      .map(entry => (typeof entry === 'string'
+        ? { query: entry, updatedAt: 0, count: 1 }
+        : { query: readEntryText(entry), updatedAt: Number(entry?.updatedAt) || 0, count: Number(entry?.count) || 1 }))
+      .filter(row => row.query);
+  }
+  return Object.entries(entries || {})
+    .map(([key, value]) => ({
+      query: readEntryText(value) || decodeSearchQueryKey(key),
+      updatedAt: readEntryTime(key, value),
+      count: Number(value?.count) > 0 ? Number(value.count) : 1,
+    }))
+    .filter(row => row.query);
+};
+
+export const buildSearchSuggestions = (entries, typed = '', limit = SEARCH_SUGGESTION_LIMIT) => {
+  const needle = normalizeSearchQuery(typed).toLowerCase();
+  if (!needle) return [];
+
+  const seen = new Set();
+  return toSearchQueryRows(entries)
+    .map(row => {
+      const text = normalizeSearchQuery(row.query);
+      const lowered = text.toLowerCase();
+      if (!text || lowered === needle) return null;
+      const rank = lowered.startsWith(needle) ? 0 : (lowered.includes(needle) ? 1 : -1);
+      if (rank < 0) return null;
+      return { ...row, query: text, rank };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.rank - right.rank
+      || right.count - left.count
+      || right.updatedAt - left.updatedAt
+      || left.query.localeCompare(right.query))
+    .filter(row => {
+      const lowered = row.query.toLowerCase();
+      if (seen.has(lowered)) return false;
+      seen.add(lowered);
+      return true;
+    })
+    .slice(0, Math.max(0, limit))
+    .map(row => row.query);
+};

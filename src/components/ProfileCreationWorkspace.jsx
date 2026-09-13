@@ -9,7 +9,8 @@ import { FaEllipsisV } from 'react-icons/fa';
 import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, readProfileFromNodes, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
-import { getCurrentValue } from './getCurrentValue';
+import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
+import { CONTACT_FIELDS } from './contactMethods';
 import BackButton from './BackButton';
 import InfoModal from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
@@ -466,6 +467,18 @@ const CREATE_FORM_SECTIONS = [
   { key: 'comment', title: '💬 Публічний коментар', fields: ['publicComment'] },
 ];
 
+/**
+ * Канал звʼязку, який у картці є, а рядка в анкеті не має.
+ *
+ * Верхній блок показує **всі** контакти картки, а форма — лише перелічені
+ * вище, тож збережений Viber (чи будь-який інший канал поза списком) було
+ * видно вгорі й ніде не можна було виправити: контакт наче є, а поля для
+ * нього немає. Такі канали дописуються в кінець блока контактів — по рядку на
+ * той, що в цій картці справді заповнений.
+ */
+export const collectExtraContactFields = card => CONTACT_FIELDS
+  .filter(fieldName => !CREATE_FORM_SECTION_FIELDS.has(fieldName) && hasCurrentValue(card?.[fieldName]));
+
 // A draft opened by somebody who is neither its author nor an admin. Those
 // two write into the draft itself; everyone else contributes through their
 // own overlay.
@@ -473,7 +486,8 @@ const isSharedDraft = (mutation, viewerUid, isAdmin) => Boolean(
   mutation?.createdBy && viewerUid && mutation.createdBy !== viewerUid && !isAdmin
 );
 
-const FORM_FIELD_NAMES = new Set(CREATE_FORM_SECTIONS.flatMap(section => section.fields));
+const CREATE_FORM_SECTION_FIELDS = new Set(CREATE_FORM_SECTIONS.flatMap(section => section.fields));
+const FORM_FIELD_NAMES = CREATE_FORM_SECTION_FIELDS;
 
 // Підпис людини — це поточне значення поля, а не вся його історія. Масив у полі
 // анкети тримає версії, і поточна серед них остання (`getCurrentValue`), тож
@@ -496,8 +510,13 @@ const IDENTITY_CLAIMING_PREFILL_FIELDS = new Set(
 // Що читач бачить у формі доповнення: рівно поточні значення тих полів картки,
 // які ця форма показує. Масив у канонічній картці є історією версій, а не
 // переліком контактів; останній порожній елемент означає видалене поле.
-export const buildOverlayPrefill = (canonical, cardUserId) => CREATE_FORM_SECTIONS
-  .flatMap(section => section.fields)
+export const buildOverlayPrefill = (canonical, cardUserId) => [
+  ...CREATE_FORM_SECTIONS.flatMap(section => section.fields),
+  // Канали звʼязку, яких у переліку секцій немає, підставляються так само:
+  // інакше рядок для такого контакту порівнював би введене з порожнечею і
+  // вважав би підставлене значення правкою читача.
+  ...collectExtraContactFields(canonical),
+]
   .reduce((result, fieldName) => {
     const value = getCurrentValue(canonical?.[fieldName]);
     if (value === null || value === undefined || String(value).trim() === '') return result;
@@ -1605,6 +1624,24 @@ export const ProfileCreationWorkspace = () => {
       getProfileLocation(summaryCard),
     ].filter(Boolean).join(' · ');
   }, [draftRoleLabel, summaryCard]);
+  /**
+   * Контакти шапки — рівно ті, що стоять у полях форми нижче.
+   *
+   * `fieldContacts` малює сире поле, тобто **всю історію** значень, і стерте
+   * значення (`['nick', '']`) стояло там живим контактом: TikTok видно вгорі,
+   * а в полі під ним порожньо, бо поле показує поточне значення. Шапка й
+   * анкета мусять казати одне й те саме, тож тут лишається поточне значення —
+   * як і всюди на показі (`getCurrentValue`).
+   */
+  const summaryContacts = useMemo(() => CONTACT_FIELDS.reduce((result, fieldName) => {
+    const value = getCurrentValue(summaryCard?.[fieldName]);
+    if (value === null || value === undefined || String(value).trim() === '') return result;
+    result[fieldName] = value;
+    return result;
+  }, {}), [summaryCard]);
+  // Канали, які в картці є, а рядка в анкеті не мають, дописуються в кінець
+  // блока контактів — інакше виправити їх немає де.
+  const extraContactFields = useMemo(() => collectExtraContactFields(draft), [draft]);
   const draftPhoto = getProfilePhotos(summaryCard)[0] || '';
   const draftInitial = (draftName.trim()[0] || '?').toUpperCase();
 
@@ -1679,7 +1716,7 @@ export const ProfileCreationWorkspace = () => {
             {draftFacts && <DraftFacts>{draftFacts}</DraftFacts>}
           </DraftIdentityText>
         </DraftIdentity>
-        <DraftContacts>{fieldContacts(summaryCard)}</DraftContacts>
+        <DraftContacts>{fieldContacts(summaryContacts)}</DraftContacts>
         {!overlayTarget && access.isAdmin && <>
           <TechnicalMeta>
             cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
@@ -1773,6 +1810,9 @@ export const ProfileCreationWorkspace = () => {
         <FormSectionCard key={section.key}>
           <FormSectionTitle>{section.title}</FormSectionTitle>
           {section.fields.map(fieldName => renderCreateField(fieldName))}
+          {section.key === 'contacts' && extraContactFields.map(fieldName => (
+            renderCreateField(fieldName, { allowUnknown: true })
+          ))}
         </FormSectionCard>
       ))}
       {extraEditedFields.length > 0 && <FormSectionCard>

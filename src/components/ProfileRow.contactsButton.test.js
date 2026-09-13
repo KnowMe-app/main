@@ -71,12 +71,27 @@ describe('кнопка контактів у рядку стрічки', () => {
     expect(screen.getByText('Шукаємо контакти…')).toBeInTheDocument();
   });
 
-  it('показує контакти, щойно анкета доїхала', () => {
+  // Номер читають очима — його переписують і диктують, — тож він стоїть
+  // рядком повністю. Решта каналів у тапають, і кожен з них коштував цілого
+  // рядка; тепер вони йдуть значками, а значення лишається в підказці.
+  it('показує контакти, щойно анкета доїхала: номер текстом, решта значками', () => {
     renderRow(hydratedCard, { onRequestContacts: jest.fn() });
     fireEvent.click(screen.getByTitle('Контакти'));
 
-    expect(screen.getByText('oksana')).toBeInTheDocument();
+    expect(screen.getByText('+380 50 111 22 33')).toBeInTheDocument();
+    expect(screen.getByTitle('Telegram: oksana')).toBeInTheDocument();
     expect(screen.queryByText('Шукаємо контакти…')).not.toBeInTheDocument();
+  });
+
+  // Три швидкі кнопки збираються з самого номера й стоять біля нього: нового
+  // контакту вони не несуть.
+  it('поруч із номером дає месенджери, зібрані з нього ж', () => {
+    renderRow(hydratedCard, { onRequestContacts: jest.fn() });
+    fireEvent.click(screen.getByTitle('Контакти'));
+
+    expect(screen.getByTitle('Telegram: +380 50 111 22 33')).toHaveAttribute('href', 'https://t.me/380501112233');
+    expect(screen.getByTitle('Viber: +380 50 111 22 33')).toHaveAttribute('href', 'viber://chat?number=%2B380501112233');
+    expect(screen.getByTitle('WhatsApp: +380 50 111 22 33')).toHaveAttribute('href', 'https://wa.me/380501112233');
   });
 
   it('коли читання скінчилось і контактів немає — каже саме це', () => {
@@ -94,5 +109,23 @@ describe('кнопка контактів у рядку стрічки', () => {
   it('без обробника кнопки немає — списку схованих вона ні до чого', () => {
     renderRow(feedCard);
     expect(screen.queryByTitle('Контакти')).not.toBeInTheDocument();
+  });
+
+  // Картка поза стрічкою, на яку читач права не має, контактів не віддасть —
+  // ані кнопці, ані розгорнутому блоку. Значок при цьому обіцяв, що віддасть,
+  // і кожен дотик коштував круга до бази заради «Контактів немає або вони
+  // закриті». Хто саме має право, вирішує `canOfferProfileContacts`.
+  it('не пропонує контактів там, де права на них немає', () => {
+    renderRow(feedCard, { onRequestContacts: jest.fn(), canViewContacts: false });
+    expect(screen.queryByTitle('Контакти')).not.toBeInTheDocument();
+  });
+
+  // Розгорнутий блок «усі дані» другим списком контакти не показує: поки він
+  // це робив, у чернетці той самий номер стояв двічі.
+  it('не дублює контакти в блоці «показати всі дані»', () => {
+    renderRow(hydratedCard, { onRequestContacts: jest.fn(), expanded: true });
+    fireEvent.click(screen.getByTitle('Контакти'));
+
+    expect(screen.getAllByText('+380 50 111 22 33')).toHaveLength(1);
   });
 });

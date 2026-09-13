@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
 import { createCache } from '../hooks/cardsCache';
@@ -18,6 +18,8 @@ import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput, normalizeSearchDateComparableValue } from '../utils/searchKeyUtils';
 import { isMatchingSummaryCard } from '../utils/matchingCardIndex';
+import { buildSearchSuggestions } from '../utils/searchQueryStorage';
+import { fetchOwnSearchQueries } from './config';
 
 const SearchIcon = (
   <svg
@@ -1179,6 +1181,38 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
+  /**
+   * Підказки беруться з історії, яка лежить у базі, а не в кеші браузера.
+   *
+   * Кеш чистять — і разом з ним зникала вся допомога при наборі: те саме
+   * прізвище доводилось набирати вдруге по літері. У базі ж історія власних
+   * запитів лишається (`multiData/searchQueries/{ownerId}`, читає її сам
+   * власник), тож підказки переживають і чищення кеша, і зміну пристрою.
+   *
+   * Читається вона лінько — на перший дотик до поля — і один раз на таб
+   * (памʼять тримає `fetchOwnSearchQueries`): підказка потрібна на кожен
+   * натиснутий символ, а історія за сеанс міняється лише тим, що допише сам
+   * читач.
+   */
+  const [backendQueries, setBackendQueries] = useState(null);
+  const backendQueriesRequestedRef = useRef(false);
+  const ensureBackendQueries = useCallback(() => {
+    if (backendQueriesRequestedRef.current) return;
+    backendQueriesRequestedRef.current = true;
+    Promise.resolve(fetchOwnSearchQueries())
+      .then(rows => setBackendQueries(Array.isArray(rows) ? rows : []))
+      .catch(() => setBackendQueries([]));
+  }, []);
+
+  const suggestions = useMemo(() => buildSearchSuggestions(
+    [
+      ...(backendQueries || []),
+      // Локальна історія — це найсвіжіше з того самого: щойно набране ще може
+      // не доїхати до бази, а підказати його треба вже.
+      ...history.map(query => ({ query, updatedAt: Date.now(), count: 1 })),
+    ],
+    search,
+  ), [backendQueries, history, search]);
   const perfDebugEnabledRef = useRef(isSearchPerfDebugEnabled());
 
   useEffect(() => {
@@ -2295,14 +2329,20 @@ const SearchBar = ({
           placeholder={placeholder}
           aria-label={inputAriaLabel}
           value={search || ''}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => {
+            ensureBackendQueries();
+            setSearch(e.target.value);
+          }}
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               writeData(search, { committed: true });
             }
           }}
-          onFocus={() => setShowHistory(true)}
+          onFocus={() => {
+            ensureBackendQueries();
+            setShowHistory(true);
+          }}
           onBlur={() => {
             setTimeout(() => setShowHistory(false), 100);
             writeData(search, { committed: true });
@@ -2323,7 +2363,34 @@ const SearchBar = ({
           </ClearButton>
         )}
       </InputFieldContainer>
-      {showHistory && history.length > 0 && (
+      {/* Набране веде до підказок, порожнє поле — до останніх запитів. Це
+          один і той самий список і те саме джерело; різниця лише в тому, що
+          підказка вже знає, з чого починається потрібний рядок. Хрестик стоїть
+          тільки біля локального ряду: у базі історія — це журнал, і знімати з
+          нього рядки дотиком до підказки не можна. */}
+      {showHistory && search.trim() && suggestions.length > 0 && (
+        <HistoryList>
+          {suggestions.map(item => (
+            <HistoryItem
+              key={`suggestion-${item}`}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => {
+                if (!item.startsWith('!')) setSearch(item);
+                setShowHistory(false);
+                writeData(item, { committed: true });
+              }}
+            >
+              <span>{item}</span>
+              {history.includes(item) && (
+                <HistoryRemove onClick={e => removeFromHistory(item, e)}>
+                  &times;
+                </HistoryRemove>
+              )}
+            </HistoryItem>
+          ))}
+        </HistoryList>
+      )}
+      {showHistory && !search.trim() && history.length > 0 && (
         <HistoryList>
           {history.map(item => (
             <HistoryItem
