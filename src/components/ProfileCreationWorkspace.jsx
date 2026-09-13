@@ -10,11 +10,12 @@ import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fe
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
-import { CONTACT_FIELDS } from './contactMethods';
+import { CONTACT_FIELDS, getContactEntries } from './contactMethods';
 import BackButton from './BackButton';
 import InfoModal from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { fieldContacts } from './smallCard/fieldContacts';
+import { ContactLinks } from './ProfileRow';
+import { useAppSettings } from '../hooks/useAppSettings';
 import { FieldComment } from './smallCard/FieldComment';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
@@ -321,9 +322,18 @@ const DraftAvatarFallback = styled.span`
 `;
 const DraftFacts = styled(Meta)`margin:0;`;
 const DraftName = styled.h2`margin:0; font-size:clamp(20px, 5.5vw, 24px); line-height:1.2; overflow-wrap:anywhere;`;
+/*
+ * Контакти шапки — тим самим представленням, що й усюди (`ContactLinks`).
+ *
+ * Своє в неї було рівно одне: кожен канал — окремим рядком, значок плюс ніком
+ * текстом. Ті самі ніки стоять у полях форми просто під шапкою, і виходило по
+ * дві копії кожного: вгорі показати, внизу правити. Тепер угорі лишається те,
+ * заради чого шапку й читають, — номер повністю (його диктують і звіряють) з
+ * трьома кнопками месенджерів, зібраними з нього ж, а решта каналів значками;
+ * що саме за значком, каже підказка, а повний нік — поле під ним.
+ */
 const DraftContacts = styled.div`
-  display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; font-size:14px; line-height:1.5;
-  color:var(--km-text); a { color:inherit; }
+  font-size:14px; line-height:1.5; color:var(--km-text);
 `;
 
 // Two controls per proposal, both icons, both on the right of its value:
@@ -562,6 +572,8 @@ const describeAuthor = (authorId, authors) => {
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  // Підписи контактів у шапці — тією ж мовою, що й решта анкети.
+  const { language } = useAppSettings();
   const [searchParams, setSearchParams] = useSearchParams();
   const [uid, setUid] = useState('');
   const [access, setAccess] = useState(null);
@@ -1627,11 +1639,15 @@ export const ProfileCreationWorkspace = () => {
   /**
    * Контакти шапки — рівно ті, що стоять у полях форми нижче.
    *
-   * `fieldContacts` малює сире поле, тобто **всю історію** значень, і стерте
-   * значення (`['nick', '']`) стояло там живим контактом: TikTok видно вгорі,
-   * а в полі під ним порожньо, бо поле показує поточне значення. Шапка й
-   * анкета мусять казати одне й те саме, тож тут лишається поточне значення —
-   * як і всюди на показі (`getCurrentValue`).
+   * Сире поле анкети — це **вся історія** значень, і стерте значення
+   * (`['nick', '']`) стояло тут живим контактом: TikTok видно вгорі, а в полі
+   * під ним порожньо, бо поле показує поточне значення. Шапка й анкета мусять
+   * казати одне й те саме, тож сюди лягає поточне значення — як і всюди на
+   * показі (`getCurrentValue`).
+   *
+   * Перелік із них складає `getContactEntries` — те саме, що й у рядку стрічки:
+   * малює їх спільне представлення, і своїх правил «що таке контакт» шапка не
+   * має.
    */
   const summaryContacts = useMemo(() => CONTACT_FIELDS.reduce((result, fieldName) => {
     const value = getCurrentValue(summaryCard?.[fieldName]);
@@ -1639,6 +1655,10 @@ export const ProfileCreationWorkspace = () => {
     result[fieldName] = value;
     return result;
   }, {}), [summaryCard]);
+  const summaryContactEntries = useMemo(
+    () => getContactEntries(summaryContacts).filter(entry => entry.key !== 'vk'),
+    [summaryContacts],
+  );
   // Канали, які в картці є, а рядка в анкеті не мають, дописуються в кінець
   // блока контактів — інакше виправити їх немає де.
   const extraContactFields = useMemo(() => collectExtraContactFields(draft), [draft]);
@@ -1716,7 +1736,9 @@ export const ProfileCreationWorkspace = () => {
             {draftFacts && <DraftFacts>{draftFacts}</DraftFacts>}
           </DraftIdentityText>
         </DraftIdentity>
-        <DraftContacts>{fieldContacts(summaryContacts)}</DraftContacts>
+        <DraftContacts>
+          <ContactLinks entries={summaryContactEntries} language={language} />
+        </DraftContacts>
         {!overlayTarget && access.isAdmin && <>
           <TechnicalMeta>
             cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}

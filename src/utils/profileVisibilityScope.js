@@ -1,6 +1,7 @@
 import { canAccessMatchingByLevel, isAdminUid } from './accessLevel';
 import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
 import { normalizeFeedDateValue } from './profileFieldDerive';
+import { normalizePublish } from './reactionPriority';
 
 /**
  * Скільки анкети віддавати читачеві, коли картки немає в стрічці.
@@ -26,12 +27,34 @@ import { normalizeFeedDateValue } from './profileFieldDerive';
  * який колись розширять.
  */
 
-/** Чи ця картка в стрічці. Питання про картку, а не про читача. */
-export const isCardInMatchingFeed = card => Boolean(
-  card
-  && typeof card === 'object'
-  && normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD]),
-);
+/**
+ * Чи ця картка в стрічці. Питання про картку, а не про читача.
+ *
+ * Форм у картки дві, і питати доводиться обидві. Сира проєкція з
+ * `matchingCards` несе `feedDate`: дата — показана, `false` — сховали, ключа
+ * немає — не публікували. Але рядок стрічки бачить картку вже розгорнутою, а
+ * `expandMatchingCard` перекладає той ключ у `publish` і `lastLogin2` — під
+ * тими іменами його читає решта стрічки, — і `feedDate` у розгорнутій картці
+ * немає взагалі.
+ *
+ * Поки тут питали сам лише `feedDate`, кожен рядок стрічки виходив «поза
+ * стрічкою»: `canOfferProfileContacts` не давав кнопки контактів **жодній**
+ * картці, і трубка зникла з усієї стрічки в усіх, крім адмінів і власників
+ * службового доступу, яких ця межа не стосується взагалі.
+ *
+ * Суворість формату при цьому лишається тією самою в обох формах: право дає
+ * саме **дата** (`normalizeFeedDateValue`), бо так само її питає і правило бази.
+ * Рядок, який датою не є, права не дає — інакше застосунок малював би кнопку
+ * під читання, яке база відхилить.
+ */
+export const isCardInMatchingFeed = card => {
+  if (!card || typeof card !== 'object') return false;
+  const raw = card[MATCHING_CARD_FEED_FIELD];
+  if (raw !== undefined && raw !== null) return Boolean(normalizeFeedDateValue(raw));
+  // Розгорнута картка (і повна анкета): та сама дата під старим іменем. Явне
+  // `publish: false` — це «сховали», і давня дата поруч цього не скасовує.
+  return normalizePublish(card.publish) && Boolean(normalizeFeedDateValue(card.lastLogin2));
+};
 
 /** Кому анкета відкрита без огляду на те, чи вона в стрічці. */
 export const canReadProfileOutsideFeed = ({ profileId, viewerId, accessLevel } = {}) => {

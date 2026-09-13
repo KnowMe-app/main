@@ -2,10 +2,12 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  canOfferProfileContacts,
   canReadProfileOutsideFeed,
   isCardInMatchingFeed,
   scopeProfileNodesToViewer,
 } from '../profileVisibilityScope';
+import { expandMatchingCard } from '../matchingCardIndex';
 
 const ADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const ORDINARY = 'ordinaryViewerUid000000000';
@@ -36,6 +38,31 @@ describe('поза стрічкою видно саму картку', () => {
     expect(isCardInMatchingFeed({ feedDate: '   ' })).toBe(false);
     expect(isCardInMatchingFeed({ feedDate: 'not-a-date' })).toBe(false);
     expect(isCardInMatchingFeed(null)).toBe(false);
+  });
+
+  /*
+   * Рядок стрічки бачить картку вже розгорнутою, а `expandMatchingCard`
+   * перекладає `feedDate` у `publish` і `lastLogin2` — під тими іменами його
+   * читає решта стрічки. Поки тут питали сам лише `feedDate`, **кожен** рядок
+   * стрічки виходив «поза стрічкою», і `canOfferProfileContacts` не давав
+   * кнопки контактів жодній картці: трубка зникла з усієї стрічки в усіх, крім
+   * адмінів і власників службового доступу, яких ця межа не стосується.
+   */
+  it('те саме питання до розгорнутої картки, де ключ уже перекладено', () => {
+    const expanded = expandMatchingCard(CARD_ID, { name: 'Показана', feedDate: '2026-08-25' });
+
+    expect(expanded.feedDate).toBeUndefined();
+    expect(isCardInMatchingFeed(expanded)).toBe(true);
+    expect(canOfferProfileContacts({ card: { ...expanded, userId: CARD_ID }, viewerId: ORDINARY, accessLevel: '' }))
+      .toBe(true);
+  });
+
+  it('а схована картка контактів не пропонує й розгорнутою', () => {
+    const expanded = expandMatchingCard(CARD_ID, { name: 'Схована', feedDate: false });
+
+    expect(isCardInMatchingFeed(expanded)).toBe(false);
+    expect(canOfferProfileContacts({ card: { ...expanded, userId: CARD_ID }, viewerId: ORDINARY, accessLevel: '' }))
+      .toBe(false);
   });
 
   it('показану анкету звичайний користувач бачить цілком', () => {
