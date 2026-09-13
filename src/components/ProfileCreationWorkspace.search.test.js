@@ -21,8 +21,7 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
 
   it('offers to reopen every matching own draft instead of creating a duplicate', () => {
     expect(source).toContain('findMatchingProfileMutations(mutations, detectSearchParams(search))');
-    expect(source).toContain('Цей контакт уже є у вашій картці, що очікує перевірки.');
-    expect(source).toContain('Відкрити чернетку');
+    expect(source).toContain('Ваша чернетка, чекає на перевірку');
   });
 
   it('prefills the new private card from the detected search field', () => {
@@ -31,12 +30,35 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
     expect(source).toContain('setDraft(nextDraft)');
   });
 
-  it('shows which indexed keys are used to find existing cards', () => {
+  // Пошук і далі ходить по індексованих полях — але перелік ключів більше не
+  // стоїть на екрані: він відповідав на питання, якого читач не ставив, і разом
+  // із памʼяткою про чернетки з'їдав увесь перший екран. Лишився рядок пошуку й
+  // один рядок пояснення.
+  it('searches the indexed keys without explaining the index on screen', () => {
     expect(source).toContain("import { getSearchIdIndexedFields } from 'utils/searchKeyUtils'");
     expect(source).toContain('const PROFILE_SEARCH_ID_PREFIXES = getSearchIdIndexedFields()');
-    expect(source).toContain("const PROFILE_SEARCH_KEYS = ['userId', ...PROFILE_SEARCH_ID_PREFIXES]");
     expect(source).toContain('const PROFILE_SEARCH_OPTIONS = { searchIdPrefixes: PROFILE_SEARCH_ID_PREFIXES }');
     expect(source).toContain('searchOptions={PROFILE_SEARCH_OPTIONS}');
-    expect(source).toContain('Пошук карток виконується за ключами:');
+    expect(source).not.toContain('Пошук карток виконується за ключами:');
+    expect(source).not.toContain('Технічні деталі пошуку');
+    expect(source).toContain('Почніть із відомого контакту людини');
+  });
+
+  // Відповідь «такої ще немає» — перший рядок видачі, а не кнопка під трьома
+  // абзацами підказок у кінці екрана: розкладка тут та сама, що й у стрічці.
+  it('offers the new card as the first row of the results, the way the feed does', () => {
+    expect(source).toContain('<QueryDraftCard data-testid="query-draft-card">');
+    expect(source).toContain('const queryDraft = useMemo(() => {');
+    expect(source).toContain("const detected = detectSearchParams(trimmed);");
+    expect(source).toContain('onClick={() => startNew(search, { allowContactPrefill: !hasExistingMatches })}');
+  });
+
+  // Екран називається власними картками — і показує їх, а не порожнечу, поки
+  // в рядку пошуку нічого не набрано.
+  it('lists the cards this user created when nothing is typed yet', () => {
+    expect(source).toContain('loadOwnProfileMutations(userId, { includeAccepted: true })');
+    expect(source).toContain('setOwnCreatedCards(items)');
+    expect(source).toContain('<span>Мої картки</span>');
+    expect(source).toContain('Ви ще не завели жодної картки.');
   });
 });

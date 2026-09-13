@@ -79,11 +79,19 @@ describe('пошук у matching для читача без повного до�
   });
 
   // Власні чернетки доливаються до стрічки, бо не чекають погодження адміном.
-  // Але відповідь на пошуковий запит — не стрічка: там вони читаються як
-  // результат і ще й рахуються в чіпі «Знайдено N».
-  it('власні чернетки не підмішуються у відповідь на запит', () => {
+  // Але відповідь на пошуковий запит — не стрічка: пачкою вони туди не йдуть,
+  // інакше читач дістав би свої картки замість тієї людини, яку шукав, ще й
+  // порахованими в чіпі «Знайдено N».
+  //
+  // Виняток один і він точковий: чернетка, яка збіглася з набраним. Її в
+  // `searchId` немає взагалі, тож пошук її не знаходив — і людина, яка щойно
+  // завела картку з цієї ж видачі, поверталась у видачу без неї.
+  it('у відповідь на запит ідуть лише ті власні чернетки, що з ним збіглися', () => {
     const source = matchingSource();
-    expect(source).toContain("users: viewMode === 'search'\n      ? users\n      : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],");
+    expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...users]\n      : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],");
+    expect(source).toContain('const personalDraftSearchMatches = useMemo(() => {');
+    expect(source).toContain('const detected = detectSearchParams(searchQuery.trim());');
+    expect(source).toContain('findMatchingProfileMutations(');
   });
 
   // Хвіст списку належить пагінації: там стоять відлік і сентинел, і саме туди

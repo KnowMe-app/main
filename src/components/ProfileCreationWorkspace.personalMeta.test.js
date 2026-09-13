@@ -103,7 +103,7 @@ jest.mock('react-router-dom', () => ({
 const openOwnDraft = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити чернетку' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
   await screen.findByPlaceholderText('Додайте свій коментар');
 };
 

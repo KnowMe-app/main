@@ -232,6 +232,7 @@ import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
+import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { applyOverlayToCard, getOwnOverlayFieldsForCards } from 'utils/multiAccountEdits';
 import {
   buildMatchingSearchPath,
@@ -5209,6 +5210,28 @@ const Matching = () => {
     viewerId: ownerId,
   }), [currentUserRole, dislikeUsers, favoriteUsers, filters, ownerId, roleIndexSets, users, viewMode]);
 
+  /**
+   * Власна чернетка, яку питали по імені чи контакту, — теж відповідь пошуку.
+   *
+   * Чернетки немає в `searchId`, тож жоден запит її не знаходить, і людина,
+   * яка щойно завела картку з цієї ж видачі, поверталась у видачу без неї:
+   * екран відповідав «такої немає» на те, що вона сама щойно створила. Доливати
+   * ж у видачу **всі** власні чернетки не можна — це показало б читачеві його
+   * ж картки замість тієї людини, яку він шукав, і порахувало б їх у
+   * «Знайдено N». Тож сюди потрапляють лише ті, що збіглися з набраним, — тим
+   * самим розпізнавачем поля, що й сам пошук.
+   */
+  const personalDraftSearchMatches = useMemo(() => {
+    if (viewMode !== 'search') return EMPTY_USERS;
+    const detected = detectSearchParams(searchQuery.trim());
+    if (!detected?.key) return EMPTY_USERS;
+    const matches = findMatchingProfileMutations(
+      personalCreateProfiles.map(profile => ({ cardId: profile.userId, data: profile })),
+      detected,
+    );
+    return matches.length ? matches.map(item => item.data) : EMPTY_USERS;
+  }, [personalCreateProfiles, searchQuery, viewMode]);
+
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
     // погодження адміном, щоб зʼявитись у власника в стрічці. Але стрічка — це
@@ -5223,7 +5246,7 @@ const Matching = () => {
     // знаходився тільки прокруткою вгору. Чернетки ж не пагінуються: їх
     // фіксована жменя, і місце їм на початку, як власним карткам.
     users: viewMode === 'search'
-      ? users
+      ? [...personalDraftSearchMatches, ...users]
       : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],
     additionalAccessUsers,
     sharedReactionCandidateUsers,
@@ -5245,6 +5268,7 @@ const Matching = () => {
     isAdmin,
     initialPublicWindowComplete,
     parsedAdditionalAccessRules,
+    personalDraftSearchMatches,
     sharedReactionCandidateUsers,
     users,
     personalCreateProfiles,

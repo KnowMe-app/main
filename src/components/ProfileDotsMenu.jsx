@@ -302,8 +302,11 @@ export const ProfileDotsMenu = ({
     // Matching is open to every signed-in user: search is available to all, and a
     // viewer without matching access gets the limited projection of what it finds.
     { path: '/matching', label: 'Matching', description: 'Пошук і порівняння анкет', icon: <FaUsers /> },
+    // Пункт названий місцем, а не дією: за ним лежать картки, які завів цей
+    // читач, і лише потім — рядок, яким заводять наступну. «Додати профіль»
+    // обіцяло форму, тож вертатись туди по вже заведену картку не було підстав.
     ...((isAdmin || resolvedAccess.canCreateProfiles)
-      ? [{ path: '/matching/create-profile', label: isAdmin ? 'Нові профілі' : 'Додати профіль', description: isAdmin ? 'Перевірка нових карток' : 'Створити приватну картку', icon: <MdPersonAddAlt1 /> }]
+      ? [{ path: '/matching/create-profile', label: isAdmin ? 'Нові профілі' : 'Створені мною', description: isAdmin ? 'Перевірка нових карток' : 'Ваші картки та створення нових', icon: <MdPersonAddAlt1 /> }]
       : []),
     ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),

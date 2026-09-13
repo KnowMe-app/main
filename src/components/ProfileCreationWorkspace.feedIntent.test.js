@@ -213,18 +213,25 @@ describe('доповнення знайденої картки зі стрічк
     expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false });
   });
 
-  // Форму відкривають із рядка видачі — і закриття мусить вести назад до тих
+  // Форму відкривають із рядка видачі — і повернення мусить вести назад до тих
   // самих знайдених карток, уже з дописаним. Доти воно лишало читача на
   // власному екрані пошуку майстерні: той самий запит довелось би набирати
   // вдруге, ще й в іншій розкладці відповіді.
-  it('закриття повертає до видачі пошуку, з якої картку відкрили', async () => {
+  //
+  // Кнопки «Закрити» внизу форми більше немає: повернення — це стрілка в шапці,
+  // той самий жест, що й апаратна кнопка телефона. `replace` тут навмисний —
+  // запис історії, яким форма відкрилась, уже знято.
+  it('повернення веде до видачі пошуку, з якої картку відкрили', async () => {
     mockLocationState = { enrichCardId: 'card-9', returnTo: '/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE' };
     render(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
-    fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
 
-    expect(mockNavigate).toHaveBeenCalledWith('/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE');
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(
+      '/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE',
+      { replace: true },
+    ));
   });
 
   // Після оновлення сторінки наміру вже немає — запит береться з того ж
@@ -236,9 +243,12 @@ describe('доповнення знайденої картки зі стрічк
     render(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
-    fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
 
-    expect(mockNavigate).toHaveBeenCalledWith('/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE');
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(
+      '/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE',
+      { replace: true },
+    ));
   });
 
   // Перший екран форми мусить називати людину, а не влаштування оверлея.

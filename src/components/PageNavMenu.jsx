@@ -12,29 +12,50 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-import { isAdminUid } from 'utils/accessLevel';
+import {
+  isAdminUid,
+  readStoredAccessLevel,
+  readStoredCanCreateProfiles,
+  resolveAccess,
+} from 'utils/accessLevel';
 
+// Кожен пункт названий тим правом, яке відкриває його маршрут у `App.jsx`.
+// Пункт без права тут був не просто зайвим рядком: не-адмін, якому меню
+// показувало Budget/Invoice/Documents/Parties, натискав їх і потрапляв у
+// порожній `Routes` — застосунок лишав його на тому ж екрані без жодного
+// пояснення. Меню тепер перелічує рівно ті екрани, куди цей читач справді
+// може зайти.
 const NAV_LINKS = [
-  { path: '/add', label: 'Add profile' },
+  { path: '/add', label: 'Add profile', right: 'canAccessAdd' },
   { path: '/matching', label: 'Matching' },
+  // «Створені мною» — той самий екран, що й `ProfileDotsMenu` називає так само:
+  // підпис мусить обіцяти читачеві його власні картки, а не дію «додати».
+  { path: '/matching/create-profile', label: 'Створені мною', right: 'canCreateProfiles' },
   { path: '/my-profile', label: 'My profile' },
-  { path: '/flow', label: 'Flow' },
-  { path: '/budget', label: 'Budget' },
-  { path: '/invoices', label: 'Invoice' },
-  { path: '/documents', label: 'Documents' },
-  { path: '/parties', label: 'Parties' },
+  { path: '/flow', label: 'Flow', right: 'isAdmin' },
+  { path: '/budget', label: 'Budget', right: 'isAdmin' },
+  { path: '/invoices', label: 'Invoice', right: 'canAccessInvoices' },
+  { path: '/documents', label: 'Documents', right: 'canAccessInvoices' },
+  { path: '/parties', label: 'Parties', right: 'canAccessInvoices' },
   // Інструмент міграції RTDB читає локальні копії обох колекцій цілком, тобто показує
   // контакти всіх анкет. Маршрут адмінський (App.jsx), тож і пункт меню показуємо лише
-  // адміну - решта пунктів тут без гейта, бо ведуть на звичайні робочі сторінки.
-  { path: '/rtdb-migration', label: 'RTDB migration', adminOnly: true },
+  // адміну.
+  { path: '/rtdb-migration', label: 'RTDB migration', right: 'isAdmin' },
 ];
 
 // Права тут беруться з того ж localStorage, куди їх кладе App при вході: меню рендериться
-// всередині чужих сторінок і власного доступу до профілю не має.
+// всередині чужих сторінок і власного доступу до профілю не має. Рахує їх та сама
+// `resolveAccess`, що й `App` для маршрутів, — інакше меню й `Routes` розійшлись би.
 const visibleLinks = () => {
   const ownerId = typeof localStorage !== 'undefined' ? localStorage.getItem('ownerId') : null;
-  const isAdmin = isAdminUid(ownerId);
-  return NAV_LINKS.filter(link => !link.adminOnly || isAdmin);
+  const access = resolveAccess({
+    uid: ownerId,
+    accessLevel: readStoredAccessLevel(),
+    userRole: typeof localStorage !== 'undefined' ? localStorage.getItem('userRole') : '',
+    canCreateProfiles: readStoredCanCreateProfiles(),
+  });
+  const rights = { ...access, isAdmin: isAdminUid(ownerId) };
+  return NAV_LINKS.filter(link => !link.right || rights[link.right]);
 };
 
 const Wrap = styled.div`

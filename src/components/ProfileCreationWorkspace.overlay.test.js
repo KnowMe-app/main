@@ -96,7 +96,7 @@ const openSharedDraft = async () => {
   loadSharedProfileMutations.mockResolvedValue([sharedDraft]);
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити чернетку' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
   await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(2));
 };
 

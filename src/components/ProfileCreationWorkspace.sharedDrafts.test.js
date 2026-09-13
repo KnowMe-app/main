@@ -17,7 +17,7 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('offers every matching shared draft from search instead of a duplicate card', () => {
     expect(source).toContain('findMatchingProfileMutations(sharedMutations, detectSearchParams(search))');
-    expect(source).toContain('Цей контакт уже є у спільній чернетці. Відкрийте її та додайте свої правки.');
+    expect(source).toContain('Спільна чернетка, можна додати правки');
     // Спільна чернетка рахується знайденим нарівні з карткою: від цього
     // залежить підпис кнопки створення й те, чи підставляти в нову картку
     // набраний контакт (він уже стоїть у знайденій чернетці).
@@ -75,10 +75,12 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain('const saveDraftAsCard = async () =>');
     expect(source).toContain('await acceptCreateProfileMutation({');
     expect(source).toContain('Зберегти чернетку');
-    // «Закрити» лишилось одне — але кнопкою головного розміру воно більше не є:
-    // поля зберігають себе самі, тож вихід не має важити стільки ж, скільки
-    // публікація чернетки.
-    expect(source).toContain('<CloseButton disabled={saving} onClick={closeEditor}>Закрити</CloseButton>');
+    // Під анкетою лишилась рівно одна дія — публікація чернетки, і лише в
+    // адміна. «Закрити» переїхало у стрілку в шапці: вихід — це жест «назад»,
+    // а не кнопка серед дій анкети, і тепер його роблять однаково стрілка,
+    // «назад» браузера й апаратна кнопка телефона.
+    expect(source).not.toContain('Закрити</CloseButton>');
+    expect(source).toContain('{!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Card>');
   });
 
   it('waits for blur autosave and publishes the accepted base at its latest revision', () => {
@@ -107,10 +109,16 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).toContain(editorNavigation);
   });
 
-  it('uses the shared dots navigation and does not claim drafts are private', () => {
-    expect(source).toContain("import PageNavMenu from './PageNavMenu';");
-    // Title first, "⋮" after it - the same header row every other page uses.
-    expect(source).toContain('<HeaderCopy><Title>{heading}</Title></HeaderCopy>\n      <PageNavMenu />');
+  // Меню тут те саме, що й на решті сторінок анкет (`ProfileDotsMenu`), і саме
+  // тому, що воно знає права читача. `PageNavMenu` їх не питав: не-адмін бачив
+  // Budget/Invoice/Documents/Parties, натискав — і лишався на місці, бо
+  // маршруту в `App` для нього немає.
+  it('uses the access-aware profile menu and does not claim drafts are private', () => {
+    expect(source).not.toContain("import PageNavMenu from './PageNavMenu';");
+    expect(source).toContain("import { ProfileDotsMenu } from './ProfileDotsMenu';");
+    // Стрілка ліворуч, заголовок, «⋮» праворуч — один рядок шапки.
+    expect(source).toContain('<HeaderCopy><Title>{heading}</Title></HeaderCopy>');
+    expect(source).toContain('<BackButton onClick={draft || overlayLoading ? requestCloseEditor : () => goBackOrTo(navigate, MATCHING_PATH)} />');
     expect(source).not.toContain('Картки зберігаються приватно до рішення адміністратора.');
     expect(source).not.toContain('<MatchingButton');
   });
