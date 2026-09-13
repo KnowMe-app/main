@@ -51,6 +51,33 @@ export const canReadProfileOutsideFeed = ({ profileId, viewerId, accessLevel } =
 };
 
 /**
+ * Власна чернетка картки (`multiData/profileMutations`, `operation: 'create'`).
+ *
+ * Тіла в решті вузлів вона ще не має, тож питання «чи є картка в стрічці» до
+ * неї не стосується: усе, що в ній є, — це те, що читач сам і набрав, і
+ * ховати від нього власний набір нема сенсу.
+ */
+export const isOwnProfileDraftCard = card => String(card?.__profileMutationOperation || '') === 'create';
+
+/**
+ * Чи є сенс пропонувати цьому читачеві контакти цієї картки.
+ *
+ * Питання те саме, що й у `scopeProfileNodesToViewer`, лише задане **до**
+ * малювання кнопки, а не після читання вузлів. Картка поза стрічкою, на яку
+ * читач права не має, контактів не віддасть — ані кнопці, ані розгорнутому
+ * блоку, — а сам значок обіцяв, що віддасть: кожне натискання коштувало круга
+ * до бази заради напису «Контактів немає або вони закриті». Правила
+ * додаткового доступу (`additionalAccessRules`) тут нічого не змінюють: вони
+ * доливають картки в деку, а `profileContacts` відкриває лише `feedDate`.
+ */
+export const canOfferProfileContacts = ({ card, viewerId, accessLevel } = {}) => {
+  if (!card || typeof card !== 'object') return false;
+  if (isOwnProfileDraftCard(card)) return true;
+  if (isCardInMatchingFeed(card)) return true;
+  return canReadProfileOutsideFeed({ profileId: card.userId, viewerId, accessLevel });
+};
+
+/**
  * Зводить прочитані вузли до того, що цьому читачеві справді належить бачити.
  *
  * Повертає ті самі частини, якщо анкета показана або читач має на неї право

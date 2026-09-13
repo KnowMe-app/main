@@ -335,11 +335,16 @@ export const Note = styled.p`
   margin: 9px 0 0;
   line-height: 1.5;
 
-  ${({ $clip }) => $clip && css`
+  /* Нижній відступ обрізаному тексту знімається навмисно: line-clamp ріже
+     по рядках, а overflow ховає все за межами padding-box — тож у ті 8 px
+     знизу встигав пролізти верх наступного рядка, і під нотаткою стояла
+     смужка півлітер. Повітря під текстом дає сам значок «…». */
+  ${({ $clip, $lines = 2 }) => $clip && css`
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: ${$lines};
     -webkit-box-orient: vertical;
     overflow: hidden;
+    padding-bottom: 0;
   `}
 
   ${({ $hidden }) => $hidden && css`
@@ -377,6 +382,10 @@ export const CommentInput = styled.textarea`
     color: var(--matching-muted-text);
     opacity: 0.7;
   }
+
+  /* Порожнє поле теж має бути видно як поле: під ним стоять реакції, і без
+     власної підкладки рядок «Додати коментар» читався як підпис до них. */
+  background: var(--matching-section-bg);
 
   &:focus {
     outline: 0;
@@ -492,6 +501,74 @@ export const ContactsBody = styled.div`
   padding: 0 11px;
   background: var(--matching-card-bg);
   border-top: 1px solid var(--matching-section-bg);
+`;
+
+/*
+ * Контакти рядка: номер повністю, решта — значками.
+ *
+ * Повністю читається лише телефон: його переписують, диктують і звіряють.
+ * Пошта й ніки читання не потребують — у них тапають, — а текстом вони
+ * забирали по рядку кожен і розтягували рядок стрічки на пів екрана. Що саме
+ * за значком, каже `title`, тож значення не зникає, а лише перестає займати
+ * рядок. Та сама розкладка, що й у відкритій картці.
+ */
+export const ContactPhoneRow = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 6px 0;
+`;
+
+export const ContactPhoneLink = styled.a`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--matching-accent);
+  text-decoration: none;
+
+  &:active {
+    opacity: 0.6;
+  }
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+`;
+
+export const ContactIconRow = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  ${({ $standalone }) => $standalone && css`
+    padding: 6px 0 2px;
+  `}
+`;
+
+export const ContactIconLink = styled.a`
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--matching-card-border);
+  background: var(--matching-card-bg);
+  color: var(--matching-muted-text);
+  text-decoration: none;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  &:active {
+    opacity: 0.6;
+  }
 `;
 
 export const ContactRow = styled.a`
@@ -914,4 +991,27 @@ export const PublicCommentInput = styled.textarea`
     outline: 0;
     border-bottom-color: color-mix(in srgb, var(--matching-accent) 45%, transparent);
   }
+`;
+
+/*
+ * Реакції стоять унизу картки, в один ряд.
+ *
+ * У стовпчику праворуч вони були найближчими до імені — тобто там, де читач
+ * ще тільки розбирає, хто це, — і тиснулись раніше, ніж він устигав дочитати
+ * рядок. Знизу ж вони стоять після всього, що картка має сказати, і після
+ * власної нотатки: спершу рішення, потім жест. Решта значків (цятка
+ * публікації, контакти, олівець) лишається стовпчиком праворуч — це не
+ * рішення про людину, а службові дії над карткою.
+ */
+export const RowFooterActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+`;
+
+export const RowFooterButton = styled(RowActionButton)`
+  flex: 1 1 0;
+  width: auto;
+  height: 34px;
 `;

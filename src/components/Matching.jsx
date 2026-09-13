@@ -217,19 +217,18 @@ import {
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
+import { canOfferProfileContacts } from '../utils/profileVisibilityScope';
 import ProfileRow, {
   PublicCommentBlock,
   PublicCommentsGate,
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch, FaPlus } from 'react-icons/fa';
+import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaRegSquare, FaStethoscope, FaSyncAlt, FaSearch, FaPlus } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown } from 'react-icons/fa';
-import { FaXTwitter } from 'react-icons/fa6';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
-import { MdEmail } from 'react-icons/md';
-import { SiTiktok } from 'react-icons/si';
-import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
+import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
+import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
@@ -885,47 +884,15 @@ const ProfileFieldRows = ({ fields }) => {
   );
 };
 
-const CONTACT_ICONS = {
-  phone: PhoneHandsetIcon,
-  email: MdEmail,
-  telegram: FaTelegramPlane,
-  whatsapp: FaWhatsapp,
-  viber: FaViber,
-  facebook: FaFacebookF,
-  instagram: FaInstagram,
-  tiktok: SiTiktok,
-  vk: FaVk,
-  linkedin: FaLinkedin,
-  youtube: FaYoutube,
-  twitter: FaXTwitter,
-  website: FaGlobe,
-  otherLink: FaGlobe,
-};
-
 const getContactLabel = (key, language) => translateProfileLabel(
   { otherLink: 'Other link' }[key] || key.charAt(0).toUpperCase() + key.slice(1),
   language,
 );
 
-/**
- * Три швидкі кнопки, які будуються з самого номера.
- *
- * Ніякого нового контакту вони не несуть: це той самий телефон, відкритий у
- * месенджері. Тому й стоять вони біля номера, а не окремим переліком у кінці
- * блока, де читались як три порожні контакти.
- */
-const PHONE_QUICK_LINKS = [
-  { key: 'telegram', Icon: FaTelegramPlane, label: 'Telegram', build: CONTACT_LINK_BUILDERS.telegramFromPhone },
-  { key: 'viber', Icon: FaViber, label: 'Viber', build: CONTACT_LINK_BUILDERS.viberFromPhone },
-  { key: 'whatsapp', Icon: FaWhatsapp, label: 'WhatsApp', build: CONTACT_LINK_BUILDERS.whatsappFromPhone },
-];
-
 const contactDisplayValue = entry => {
   const valueText = String(entry?.value || '').trim();
   return entry?.key === 'phone' ? `+${valueText.replace(/\s/g, '')}` : valueText;
 };
-
-const isExternalContact = key => key !== 'phone' && key !== 'email';
 
 /**
  * Блок контактів картки — номер у першому рядку, решта в другому.
@@ -980,7 +947,7 @@ const ProfileContactLinks = ({ user, role, language }) => {
       {others.length > 0 && (
         <ContactIconRow $standalone>
           {others.map(entry => {
-            const Icon = CONTACT_ICONS[entry.key] || FaGlobe;
+            const Icon = getContactIcon(entry.key);
             const displayValue = contactDisplayValue(entry);
             const label = `${getContactLabel(entry.key, language)}: ${displayValue}`;
             return (
@@ -1522,8 +1489,21 @@ const SEARCH_KEY = MATCHING_SEARCH_STORAGE_KEY;
 // under its own namespaced key so it survives a reload and never collides with
 // `viewMode` (which selects the *collection* - all / favourites / hidden).
 const MATCHING_VIEW_LAYOUT_KEY = 'km.matching.view';
-const MATCHING_VIEW_LAYOUTS = ['list', 'gallery'];
+// Три розкладки одного й того самого списку: рядок, дві колонки і одна картка
+// на всю ширину екрана. Остання потрібна там, де вирішує фото: у двох
+// колонках воно завбільшки з ніготь, а рядок узагалі показує його плиткою.
+const MATCHING_VIEW_LAYOUTS = ['list', 'gallery', 'single'];
 const MATCHING_DEFAULT_VIEW_LAYOUT = 'list';
+export const MATCHING_VIEW_LAYOUT_LABELS = {
+  list: 'Режим списку',
+  gallery: 'Режим галереї',
+  single: 'Одна картка на екран',
+};
+/** Наступна розкладка по колу — один жест перебирає всі три. */
+export const nextMatchingViewLayout = current => {
+  const index = MATCHING_VIEW_LAYOUTS.indexOf(current);
+  return MATCHING_VIEW_LAYOUTS[(index + 1) % MATCHING_VIEW_LAYOUTS.length];
+};
 const getStoredMatchingViewLayout = () => {
   try {
     const stored = localStorage.getItem(MATCHING_VIEW_LAYOUT_KEY);
@@ -1578,7 +1558,7 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 //
 // Локація й дії переїхали з фото в тіло картки: поверх знімка вони жили тільки
 // тому, що іншого місця не було.
-const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, onEnrich, diagnosticsSlot }) => {
+const GalleryCard = React.memo(({ user, single = false, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, onEnrich, diagnosticsSlot }) => {
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
@@ -1595,6 +1575,7 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
   return (
     <GalleryTile
       $muted={isHidden}
+      $single={single}
       $role={role}
       onClick={() => onOpen(user)}
       role="button"
@@ -1616,7 +1597,7 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
         />
       )}
       {photo && (
-        <GalleryPhotoBox>
+        <GalleryPhotoBox $single={single}>
           <img src={photo} alt="" loading="lazy" decoding="async" />
           {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
           {photos.length > 1 && <GalleryPhotoCount>{photos.length}</GalleryPhotoCount>}
@@ -1693,6 +1674,7 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
   );
 }, (prev, next) => (
   prev.user === next.user
+  && prev.single === next.single
   && prev.isFavorite === next.isFavorite
   && prev.isHidden === next.isHidden
   && prev.isAdmin === next.isAdmin
@@ -1735,7 +1717,7 @@ const Matching = () => {
   const [viewLayout, setViewLayout] = useState(getStoredMatchingViewLayout);
   const toggleViewLayout = React.useCallback(() => {
     setViewLayout(current => {
-      const next = current === 'gallery' ? 'list' : 'gallery';
+      const next = nextMatchingViewLayout(current);
       try {
         localStorage.setItem(MATCHING_VIEW_LAYOUT_KEY, next);
       } catch {
@@ -7013,6 +6995,31 @@ const Matching = () => {
     });
   }, [ensureFullProfile]);
 
+  /**
+   * Власна нотатка, збережена просто з рядка стрічки.
+   *
+   * Той самий запис, що й у відкритій картці (`multiData/comments/{owner}`), і
+   * той самий локальний кеш — інакше нотатка, написана в списку, зникала б при
+   * відкритті картки й навпаки.
+   */
+  const handleRowCommentSave = React.useCallback(async (user, value) => {
+    const cardId = user?.userId;
+    if (!cardId || !ownerId || !auth.currentUser) return;
+    const text = String(value ?? '');
+    commentsRef.current = { ...commentsRef.current, [cardId]: text };
+    setComments(prev => ({ ...prev, [cardId]: text }));
+    try {
+      const res = await saveMyCardComment(cardId, text, ownerId);
+      dispatchedCommentSaveRef.current = { cardId, text };
+      setLocalComment(ownerId, cardId, text, res?.lastAction);
+      dispatchedCommentSaveRef.current = null;
+    } catch (error) {
+      dispatchedCommentSaveRef.current = null;
+      const details = error?.message || String(error);
+      toast.error(`Не вдалося зберегти коментар: ${details}`);
+    }
+  }, [ownerId]);
+
   const handleRowContactsOpened = React.useCallback(user => {
     if (!user?.userId || !ownerId) return;
     const trackKey = `${ownerId}:${user.userId}`;
@@ -7395,6 +7402,20 @@ const Matching = () => {
   );
 
   /**
+   * Власні нотатки — для всіх рядків списку, а не для самої активної картки.
+   *
+   * У списку поле нотатки стоїть відкритим у кожному рядку, тож порожнім воно
+   * має бути тільки там, де нотатки справді немає: інакше читач дописував би
+   * поверх власного запису, якого не бачить. Ціна при цьому не росте з
+   * кількістю рядків — від восьми карток `fetchUserComments` читає піддерево
+   * власника одним запитом і кешує його (`docs/matching-feed-traffic.md`).
+   */
+  useEffect(() => {
+    if (viewLayout !== 'list' || !feedRows.length) return;
+    void loadCommentsFor(feedRows, { activeOnly: false });
+  }, [feedRows, loadCommentsFor, viewLayout]);
+
+  /**
    * Дві колонки галереї — за висотою, а не через одну.
    *
    * Плитка з фото важить утричі більше за плитку без нього, тож поділ парних і
@@ -7417,12 +7438,20 @@ const Matching = () => {
     [feedRows],
   );
 
+  // Кнопка називає те, куди веде, а не те, де стоїмо: так один значок
+  // перебирає всі три розкладки, і читач бачить наступну наперед.
+  const nextViewLayout = nextMatchingViewLayout(viewLayout);
+  const nextViewLayoutLabel = MATCHING_VIEW_LAYOUT_LABELS[nextViewLayout];
+  const nextViewLayoutIcon = nextViewLayout === 'list'
+    ? <FaListUl />
+    : nextViewLayout === 'gallery' ? <FaThLarge /> : <FaRegSquare />;
+
   const matchingMenuActions = [
     {
       key: 'viewLayout',
-      label: viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї',
+      label: nextViewLayoutLabel,
       description: 'Перемкнути вигляд стрічки',
-      icon: viewLayout === 'gallery' ? <FaListUl /> : <FaThLarge />,
+      icon: nextViewLayoutIcon,
       onClick: toggleViewLayout,
     },
     ...(isAdmin ? [{
@@ -7668,10 +7697,10 @@ const Matching = () => {
             <LayoutToggleButton
               type="button"
               onClick={toggleViewLayout}
-              aria-label={viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї'}
-              title={viewLayout === 'gallery' ? 'Режим списку' : 'Режим галереї'}
+              aria-label={nextViewLayoutLabel}
+              title={nextViewLayoutLabel}
             >
-              {viewLayout === 'gallery' ? <FaListUl /> : <FaThLarge />}
+              {nextViewLayoutIcon}
             </LayoutToggleButton>
           </ChipsRow>
           {showRefineBar && (
@@ -7757,6 +7786,31 @@ const Matching = () => {
                   ))}
                 </GalleryGrid>
               )}
+              {/* Третя розкладка: та сама плитка, але одна на всю ширину. Це
+                  режим для того, хто дивиться на фото, — у двох колонках воно
+                  завбільшки з ніготь, а в рядку стоїть квадратиком збоку. */}
+              {feedRows.length > 0 && viewLayout === 'single' && (
+                <GalleryGrid>
+                  <GalleryColumn>
+                    {feedRows.map(user => (
+                      <GalleryCard
+                        key={user.userId}
+                        user={user}
+                        single
+                        isAdmin={isAdmin}
+                        isFavorite={Boolean(favoriteUsers[user.userId])}
+                        isHidden={Boolean(dislikeUsers[user.userId])}
+                        onOpen={openDetailFor}
+                        onToggleFavorite={toggleRowFavorite}
+                        onToggleHidden={toggleRowHidden}
+                        onTogglePublish={togglePublish}
+                        onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                        diagnosticsSlot={renderDiagnosticsFor(user)}
+                      />
+                    ))}
+                  </GalleryColumn>
+                </GalleryGrid>
+              )}
               {feedRows.length > 0 && viewLayout === 'list' && (
                 <FeedList>
                   {feedRows.map(user => (
@@ -7771,13 +7825,20 @@ const Matching = () => {
                       onEditProfile={handleRowEditProfile}
                       onContactsOpened={handleRowContactsOpened}
                       onRequestContacts={handleRequestRowContacts}
+                      canViewContacts={canOfferProfileContacts({
+                        card: user,
+                        viewerId: ownerId,
+                        accessLevel: currentAccessLevel,
+                      })}
                       contactsLoading={Boolean(rowContactsLoading[user.userId])}
                       priorityMetricKeys={priorityMetricKeys}
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
                       onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
-                      commentSlot={(
+                      clientComment={comments[user.userId] || ''}
+                      onCommentSave={handleRowCommentSave}
+                      reviewsSlot={(
                         <PublicCommentsGate
                           profileId={user.userId}
                           backendHref={publicCommentsBackendHref(user.userId)}

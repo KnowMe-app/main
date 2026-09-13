@@ -19,9 +19,14 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('<ModernContactHints aria-hidden="true">');
     expect(matchingSource).toContain('const contactHintIcons = getContactEntries(user)');
     expect(matchingSource).toContain('href={entry.href}');
-    expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone');
-    expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.viberFromPhone');
-    expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone');
+    // Самі будівники швидких кнопок переїхали в спільний набір значків
+    // (`contactIcons`) — той самий і для картки, і для рядка стрічки, — але
+    // будуються вони так само з номера.
+    const iconsSource = fs.readFileSync(path.join(__dirname, 'contactIcons.jsx'), 'utf8');
+    expect(iconsSource).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone');
+    expect(iconsSource).toContain('CONTACT_LINK_BUILDERS.viberFromPhone');
+    expect(iconsSource).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone');
+    expect(matchingSource).toContain("import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';");
   });
 
   it('тримає блок контактів у двох рядках: номер з кнопками і решта іконками', () => {

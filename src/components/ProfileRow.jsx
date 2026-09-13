@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPaperPlane, FaPencilAlt, FaRegCommentDots, FaUserPlus } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots, FaUserPlus } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -23,6 +23,8 @@ import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { profileUiText, translateProfileLabel } from '../utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { getContactEntries } from './contactMethods';
+import { PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
+import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { formatProfileCountOrDate } from '../utils/profileDate';
 import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import * as S from './MatchingHiddenList.styled';
@@ -288,6 +290,72 @@ export const NoteBlock = ({ text }) => {
   );
 };
 
+/**
+ * Контакти однієї картки: номер у першому рядку, решта — значками в другому.
+ *
+ * Номер читають очима: його переписують, диктують і звіряють, тож він стоїть
+ * повністю, а поруч із ним — три швидкі кнопки, зібрані з нього ж (Telegram,
+ * Viber, WhatsApp). Нового контакту вони не несуть, тому й стоять біля номера,
+ * а не окремим переліком. Пошта й ніки читання не потребують — у них тапають, —
+ * і кожен з них коштував цілого рядка; тепер вони йдуть значками під номером.
+ * Що саме за значком, каже `title`.
+ */
+export const ContactLinks = ({ entries, language }) => {
+  const phones = entries.filter(entry => entry.key === 'phone');
+  const others = entries.filter(entry => entry.key !== 'phone');
+
+  return (
+    <>
+      {phones.map(entry => {
+        const displayValue = formatPhoneDisplay(entry.value);
+        const phoneLabel = `${getContactLabel('phone', language)}: ${displayValue}`;
+        return (
+          <S.ContactPhoneRow key={`phone-${entry.index}-${entry.value}`}>
+            <S.ContactPhoneLink href={entry.href} title={phoneLabel} aria-label={phoneLabel}>
+              <PhoneHandsetIcon aria-hidden="true" />
+              <span>{displayValue}</span>
+            </S.ContactPhoneLink>
+            <S.ContactIconRow>
+              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => (
+                <S.ContactIconLink
+                  key={`phone-${key}-${entry.index}`}
+                  href={build(entry.value)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`${label}: ${displayValue}`}
+                  aria-label={`${label}: ${displayValue}`}
+                >
+                  <Icon />
+                </S.ContactIconLink>
+              ))}
+            </S.ContactIconRow>
+          </S.ContactPhoneRow>
+        );
+      })}
+      {others.length > 0 && (
+        <S.ContactIconRow $standalone>
+          {others.map(entry => {
+            const Icon = getContactIcon(entry.key);
+            const label = `${getContactLabel(entry.key, language)}: ${entry.value}`;
+            return (
+              <S.ContactIconLink
+                key={`${entry.key}-${entry.index}-${entry.value}`}
+                href={entry.href}
+                target={isExternalContact(entry.key) ? '_blank' : undefined}
+                rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
+                title={label}
+                aria-label={label}
+              >
+                <Icon />
+              </S.ContactIconLink>
+            );
+          })}
+        </S.ContactIconRow>
+      )}
+    </>
+  );
+};
+
 export const ContactsSection = ({ user, onOpened }) => {
   const { language } = useAppSettings();
   const entries = useMemo(
@@ -315,17 +383,7 @@ export const ContactsSection = ({ user, onOpened }) => {
       </S.ContactsHeader>
       {open && (
         <S.ContactsBody>
-          {entries.map(entry => (
-            <S.ContactRow
-              key={`${entry.key}-${entry.index}`}
-              href={entry.href}
-              target={entry.key === 'phone' || entry.key === 'email' ? undefined : '_blank'}
-              rel={entry.key === 'phone' || entry.key === 'email' ? undefined : 'noopener noreferrer'}
-            >
-              <span>{getContactLabel(entry.key, language)}</span>
-              {entry.key === 'phone' ? formatPhoneDisplay(entry.value) : entry.value}
-            </S.ContactRow>
-          ))}
+          <ContactLinks entries={entries} language={language} />
         </S.ContactsBody>
       )}
     </S.ContactsBlock>
@@ -351,10 +409,26 @@ const getCaretOffsetFromClick = e => {
   return null;
 };
 
-const autoResizeTextarea = el => {
+// Скільки рядків власної нотатки видно без розгортання. Поле починається з
+// одного рядка й росте разом із текстом, але не безкінечно: під ним стоять
+// реакції, і довга нотатка відсувала б їх за край екрана. Далі — «…».
+export const COMMENT_VISIBLE_ROWS = 4;
+
+const autoResizeTextarea = (el, maxRows = 0) => {
   if (!el) return;
   el.style.height = 'auto';
-  el.style.height = `${el.scrollHeight}px`;
+  if (!maxRows) {
+    el.style.height = `${el.scrollHeight}px`;
+    el.style.overflowY = 'hidden';
+    return;
+  }
+  const style = window.getComputedStyle(el);
+  const lineHeight = parseFloat(style.lineHeight) || 18;
+  const vertical = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+  const maxHeight = lineHeight * maxRows + vertical;
+  const next = Math.min(el.scrollHeight, maxHeight);
+  el.style.height = `${next}px`;
+  el.style.overflowY = el.scrollHeight > next + 1 ? 'auto' : 'hidden';
 };
 
 // The client's own note about a row. Always editable, no page-wide edit mode.
@@ -371,6 +445,10 @@ export const CommentBlock = ({ text, onSave }) => {
   const [draft, setDraft] = useState(text || '');
   const [measureText, setMeasureText] = useState(text || '');
   const [mode, setMode] = useState('input');
+  // Розгорнуте поле лишається розгорнутим, поки читач сам його не згорне:
+  // «…» — це його рішення про цю картку, а не стан набору тексту.
+  const [expanded, setExpanded] = useState(false);
+  const [clipped, setClipped] = useState(false);
 
   useEffect(() => {
     lastSavedRef.current = text || '';
@@ -385,8 +463,11 @@ export const CommentBlock = ({ text, onSave }) => {
   }, [measureText]);
 
   useLayoutEffect(() => {
-    if (mode === 'input') autoResizeTextarea(textareaRef.current);
-  }, [mode, draft]);
+    if (mode !== 'input') return;
+    const el = textareaRef.current;
+    autoResizeTextarea(el, expanded ? 0 : COMMENT_VISIBLE_ROWS);
+    setClipped(Boolean(el) && !expanded && el.scrollHeight - el.clientHeight > 1);
+  }, [mode, draft, expanded]);
 
   useLayoutEffect(() => {
     if (mode !== 'input' || pendingCaretRef.current == null) return;
@@ -417,17 +498,30 @@ export const CommentBlock = ({ text, onSave }) => {
 
   if (mode === 'clamped') {
     return (
-      <S.Note
-        ref={measureRef}
-        $clip
-        onClick={e => {
-          e.stopPropagation();
-          pendingCaretRef.current = getCaretOffsetFromClick(e) ?? draft.length;
-          setMode('input');
-        }}
-      >
-        {text}
-      </S.Note>
+      <>
+        <S.Note
+          ref={measureRef}
+          $clip
+          $lines={COMMENT_VISIBLE_ROWS}
+          onClick={e => {
+            e.stopPropagation();
+            pendingCaretRef.current = getCaretOffsetFromClick(e) ?? draft.length;
+            setExpanded(true);
+            setMode('input');
+          }}
+        >
+          {text}
+        </S.Note>
+        <S.NoteMore
+          onClick={e => {
+            e.stopPropagation();
+            setExpanded(true);
+            setMode('input');
+          }}
+        >
+          …
+        </S.NoteMore>
+      </>
     );
   }
 
@@ -443,7 +537,7 @@ export const CommentBlock = ({ text, onSave }) => {
         onChange={e => {
           const { value } = e.target;
           setDraft(value);
-          autoResizeTextarea(e.target);
+          autoResizeTextarea(e.target, expanded ? 0 : COMMENT_VISIBLE_ROWS);
           scheduleSave(value);
         }}
         onBlur={e => {
@@ -451,7 +545,17 @@ export const CommentBlock = ({ text, onSave }) => {
           setMeasureText(e.target.value);
         }}
       />
-      <S.Note ref={measureRef} $clip $hidden aria-hidden="true">{measureText}</S.Note>
+      {clipped && (
+        <S.NoteMore
+          onClick={e => {
+            e.stopPropagation();
+            setExpanded(true);
+          }}
+        >
+          …
+        </S.NoteMore>
+      )}
+      <S.Note ref={measureRef} $clip $lines={COMMENT_VISIBLE_ROWS} $hidden aria-hidden="true">{measureText}</S.Note>
     </>
   );
 };
@@ -833,6 +937,10 @@ const ProfileRow = ({
   onEditProfile,
   onContactsOpened,
   onRequestContacts,
+  // Чи цьому читачеві взагалі є що тут відкривати. Питання вирішує той, хто
+  // знає і картку, і читача (`canOfferProfileContacts` у Matching), — рядок
+  // лише виконує рішення.
+  canViewContacts = true,
   contactsLoading = false,
   clientComment,
   onCommentSave,
@@ -840,6 +948,9 @@ const ProfileRow = ({
   secondaryAction,
   priorityMetricKeys,
   commentSlot,
+  // Відгуки про людину (публічні) — окремий слот від власної нотатки: під
+  // карткою стоять обидва, і сплутати їх не можна.
+  reviewsSlot,
   diagnosticsSlot,
   onEnrich,
   onSwipeRight,
@@ -883,8 +994,6 @@ const ProfileRow = ({
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
     [isLimited, user]
   );
-  const totalCount = gridRows.length + contactEntries.length;
-
   const hasLocation = Boolean(location);
   const isUnfilled = !isLimited && !hasLocation && (facts.length === 0 || isWeakOnlyFact(facts));
 
@@ -893,6 +1002,16 @@ const ProfileRow = ({
   // приватності. Дотик запускає те саме читання анкети, що й відкрита картка,
   // — і всі перевірки права відбуваються там, а не тут.
   const [contactsOpen, setContactsOpen] = useState(false);
+  // Кнопки немає там, де за нею нічого не стоїть. Картка поза стрічкою, на яку
+  // читач не має права, контактів не віддасть — ані кнопці, ані розгорнутому
+  // блоку, — а сам значок обіцяв, що віддасть, і кожне натискання коштувало
+  // круга до бази заради «Контактів немає або вони закриті».
+  const showContactsButton = Boolean(onRequestContacts) && !isLimited && canViewContacts;
+
+  // Скільки полів ховає стрілка. Контакти рахуються тут лише тоді, коли саме
+  // цей блок їх і показує: інакше число обіцяло б під стрілкою те, що лежить
+  // під сусідньою кнопкою.
+  const hiddenFieldCount = gridRows.length + (showContactsButton ? 0 : contactEntries.length);
 
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
@@ -1027,33 +1146,7 @@ const ProfileRow = ({
                 onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
               />
             )}
-            {primaryAction && !isLimited && (
-              <S.RowActionButton
-                type="button"
-                $accent={Boolean(primaryAction.accent)}
-                $on={Boolean(primaryAction.active)}
-                title={primaryAction.title}
-                aria-label={primaryAction.title}
-                aria-pressed={primaryAction.active}
-                onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
-              >
-                {primaryAction.icon}
-              </S.RowActionButton>
-            )}
-            {secondaryAction && !isLimited && (
-              <S.RowActionButton
-                type="button"
-                $accent={Boolean(secondaryAction.accent)}
-                $on={Boolean(secondaryAction.active)}
-                title={secondaryAction.title}
-                aria-label={secondaryAction.title}
-                aria-pressed={secondaryAction.active}
-                onClick={e => { e.stopPropagation(); secondaryAction.onClick(user); }}
-              >
-                {secondaryAction.icon}
-              </S.RowActionButton>
-            )}
-            {onRequestContacts && !isLimited && (
+            {showContactsButton && (
               <S.RowActionButton
                 type="button"
                 $on={contactsOpen}
@@ -1062,7 +1155,7 @@ const ProfileRow = ({
                 aria-expanded={contactsOpen}
                 onClick={e => { e.stopPropagation(); toggleContacts(); }}
               >
-                <FaPaperPlane size={13} />
+                <PhoneHandsetIcon size={13} />
               </S.RowActionButton>
             )}
             {isAdmin && onEditProfile && !isLimited && (
@@ -1076,7 +1169,7 @@ const ProfileRow = ({
               </S.EditButton>
             )}
           </S.RowActionStack>
-          {!isLimited && totalCount > 0 && (
+          {!isLimited && hiddenFieldCount > 0 && (
           <S.ChevronButton
             type="button"
             $open={expanded}
@@ -1084,7 +1177,7 @@ const ProfileRow = ({
             title="Показати всі дані"
             onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
           >
-            <b>{totalCount}</b>
+            <b>{hiddenFieldCount}</b>
             <FaChevronDown size={11} />
           </S.ChevronButton>
           )}
@@ -1094,23 +1187,36 @@ const ProfileRow = ({
       {contactsOpen && (
         <S.RowContacts onClick={e => e.stopPropagation()}>
           {contactEntries.length > 0 ? (
-            contactEntries.map(entry => (
-              <S.ContactRow
-                key={`${entry.key}-${entry.index}`}
-                href={entry.href}
-                target={entry.key === 'phone' || entry.key === 'email' ? undefined : '_blank'}
-                rel={entry.key === 'phone' || entry.key === 'email' ? undefined : 'noopener noreferrer'}
-              >
-                <span>{getContactLabel(entry.key, language)}</span>
-                {entry.key === 'phone' ? formatPhoneDisplay(entry.value) : entry.value}
-              </S.ContactRow>
-            ))
+            <ContactLinks entries={contactEntries} language={language} />
           ) : (
             <S.RowContactsNote>
               {contactsLoading ? 'Шукаємо контакти…' : 'Контактів немає або вони закриті'}
             </S.RowContactsNote>
           )}
         </S.RowContacts>
+      )}
+
+      {expanded && !isLimited && (
+        <S.More onClick={e => e.stopPropagation()}>
+          {gridRows.length > 0 && (
+            <S.Grid>
+              {gridRows.map(row => (
+                <S.GridRow key={row.label} $wide={row.wide}>
+                  {row.label}: <b>{row.parts.map(part => part.value).join(', ')}</b>
+                </S.GridRow>
+              ))}
+            </S.Grid>
+          )}
+          <NoteBlock text={bio} />
+          {/* Контакти тут другим списком не йдуть: їх показує кнопка з
+              трубкою, і поки блок «усі дані» дублював їх, у чернетці той
+              самий номер стояв двічі — раз під кнопкою, раз під стрілкою.
+              Там, де кнопки немає (список прихованих), блок лишається
+              єдиним місцем, звідки контакти видно. */}
+          {!showContactsButton && canViewContacts && (
+            <ContactsSection user={user} onOpened={onContactsOpened} />
+          )}
+        </S.More>
       )}
 
       {/* Знайдена картка — це ще не відповідь: читач або питає про людину
@@ -1132,27 +1238,53 @@ const ProfileRow = ({
         </S.EnrichGateButton>
       )}
 
+      {reviewsSlot}
+
+      {/* Власна нотатка стоїть відкритим полем, а не за кнопкою: читач гортає
+          список, аби вирішити, і те, що він про цю людину вже знає, має бути
+          видно тут само, де рішення — без жодного дотику. Ввести її теж має
+          коштувати один дотик: поле вже на місці, курсор ставиться туди, куди
+          тапнули. */}
       {commentSlot !== undefined
         ? commentSlot
         : <CommentBlock text={clientComment} onSave={value => onCommentSave(user, value)} />}
 
+      {/* Реакції — під нотаткою: спершу все, що картка каже про людину, потім
+          те, що читач про неї записав, і аж тоді жест. У ряд, а не стовпчиком:
+          це два кроки одного рішення, і рядок їх так і показує. */}
+      {!isLimited && (primaryAction || secondaryAction) && (
+        <S.RowFooterActions onClick={e => e.stopPropagation()}>
+          {primaryAction && (
+            <S.RowFooterButton
+              type="button"
+              $accent={Boolean(primaryAction.accent)}
+              $on={Boolean(primaryAction.active)}
+              title={primaryAction.title}
+              aria-label={primaryAction.title}
+              aria-pressed={primaryAction.active}
+              onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
+            >
+              {primaryAction.icon}
+            </S.RowFooterButton>
+          )}
+          {secondaryAction && (
+            <S.RowFooterButton
+              type="button"
+              $accent={Boolean(secondaryAction.accent)}
+              $on={Boolean(secondaryAction.active)}
+              title={secondaryAction.title}
+              aria-label={secondaryAction.title}
+              aria-pressed={secondaryAction.active}
+              onClick={e => { e.stopPropagation(); secondaryAction.onClick(user); }}
+            >
+              {secondaryAction.icon}
+            </S.RowFooterButton>
+          )}
+        </S.RowFooterActions>
+      )}
+
       {diagnosticsSlot}
 
-      {expanded && !isLimited && (
-        <S.More onClick={e => e.stopPropagation()}>
-          {gridRows.length > 0 && (
-            <S.Grid>
-              {gridRows.map(row => (
-                <S.GridRow key={row.label} $wide={row.wide}>
-                  {row.label}: <b>{row.parts.map(part => part.value).join(', ')}</b>
-                </S.GridRow>
-              ))}
-            </S.Grid>
-          )}
-          <NoteBlock text={bio} />
-          <ContactsSection user={user} onOpened={onContactsOpened} />
-        </S.More>
-      )}
     </S.Card>
   );
 };
@@ -1173,6 +1305,9 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.secondaryAction?.active === next.secondaryAction?.active
   && prev.priorityMetricKeys === next.priorityMetricKeys
   && prev.commentSlot === next.commentSlot
+  && prev.reviewsSlot === next.reviewsSlot
+  && prev.canViewContacts === next.canViewContacts
+  && prev.contactsLoading === next.contactsLoading
   && prev.diagnosticsSlot === next.diagnosticsSlot
   && prev.onEnrich === next.onEnrich
   && prev.onSwipeRight === next.onSwipeRight

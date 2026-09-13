@@ -1,11 +1,13 @@
 import {
   buildSearchQueryMigrationPlan,
+  buildSearchSuggestions,
   decodePushKeyTimestamp,
   decodeSearchQueryKey,
   encodeSearchQueryKey,
   isTypingContinuation,
   normalizeSearchQuery,
   shouldStoreSearchQuery,
+  toSearchQueryRows,
 } from '../searchQueryStorage';
 
 const OWNER = 'ownerUid00000000000000000';
@@ -132,5 +134,33 @@ describe('час зі старого push-ключа', () => {
 
   it('для ключа не з push() часу немає', () => {
     expect(decodePushKeyTimestamp('армандо')).toBeNull();
+  });
+});
+
+// Підказки при наборі беруться з тієї самої історії, що лежить у базі, — саме
+// тому вони переживають чищення кеша браузера.
+describe('buildSearchSuggestions', () => {
+  const entries = {
+    марія: { query: 'Марія', updatedAt: 10, count: 1 },
+    'марія коваленко': { query: 'Марія Коваленко', updatedAt: 20, count: 5 },
+    'оксана марія': { query: 'Оксана Марія', updatedAt: 30, count: 9 },
+    петро: { query: 'Петро', updatedAt: 40, count: 2 },
+  };
+
+  it('спершу ті, що починаються з набраного, а вже потім ті, що його містять', () => {
+    expect(buildSearchSuggestions(entries, 'марія')).toEqual(['Марія Коваленко', 'Оксана Марія']);
+  });
+
+  it('сам набраний рядок підказкою не буває', () => {
+    expect(buildSearchSuggestions(entries, 'Петро')).toEqual([]);
+  });
+
+  it('порожній запит підказок не дає', () => {
+    expect(buildSearchSuggestions(entries, '   ')).toEqual([]);
+  });
+
+  it('однакові рядки з різних джерел не двояться', () => {
+    const merged = [...toSearchQueryRows(entries), { query: 'марія коваленко', updatedAt: 99, count: 1 }];
+    expect(buildSearchSuggestions(merged, 'мар')).toEqual(['Марія Коваленко', 'Марія', 'Оксана Марія']);
   });
 });
