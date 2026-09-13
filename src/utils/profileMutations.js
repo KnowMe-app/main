@@ -306,12 +306,21 @@ export const loadProfileMutation = async (creatorUid, cardId) => {
   return snapshot.exists() ? snapshot.val() : null;
 };
 
-export const loadOwnProfileMutations = async creatorUid => {
+/**
+ * Картки, які завів цей користувач.
+ *
+ * Прийняту адміном картку (`accepted`) за замовчуванням не віддаємо: у стрічці
+ * вона вже стоїть звичайною анкетою, і долити її туди вдруге означало б
+ * показати дубль. Але на екрані «Створені мною» питання інше — «що я тут
+ * завів», — і відповідь без опублікованих карток була б неповною: людина
+ * заводила картку, її прийняли, і зі списку вона зникала без сліду.
+ */
+export const loadOwnProfileMutations = async (creatorUid, { includeAccepted = false } = {}) => {
   if (!creatorUid) return [];
   const snapshot = await get(ref(database, getProfileMutationPath(creatorUid)));
   if (!snapshot.exists()) return [];
   return Object.values(snapshot.val() || {}).filter(item => (
-    item && item.createdBy === creatorUid && item.status !== 'accepted'
+    item && item.createdBy === creatorUid && (includeAccepted || item.status !== 'accepted')
   ));
 };
 

@@ -35,14 +35,23 @@ jest.mock('./config', () => ({
 }));
 jest.mock('./smallCard/FieldComment', () => ({ FieldComment: () => null }));
 
-// Drafts no longer appear in an always-visible list - they only surface
-// through a search match. This stub stands in for the real SearchBar: it
-// exposes just enough of the search flow (a not-found search) so "Додати
-// профіль" becomes clickable, the same way it would after a real search.
+// This stub stands in for the real SearchBar: it exposes just enough of the
+// search flow (a completed, not-found search) for the first row of the results
+// - the new-card draft - to become clickable, the same way it would after a
+// real search.
 jest.mock('./SearchBar', () => ({
   __esModule: true,
-  default: ({ setSearch, setUserNotFound, onSearchExecuted }) => (
-    <button type="button" onClick={() => { setSearch('0501234567'); setUserNotFound(true); onSearchExecuted(); }}>
+  default: ({ setSearch, setUserNotFound, onSearchExecuted, onSearchSettled }) => (
+    <button
+      type="button"
+      onClick={() => {
+        setSearch('0501234567');
+        setUserNotFound(true);
+        onSearchExecuted();
+        // Пошук, що не завершився, лишає заготовку вимкненою — як і в житті.
+        onSearchSettled();
+      }}
+    >
       Шукати (тест)
     </button>
   ),
@@ -115,7 +124,7 @@ it('persists a brand new draft immediately, without waiting for a field blur', a
   render(<ProfileCreationWorkspace />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
-  fireEvent.click(await screen.findByRole('button', { name: /Додати профіль/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /Створити/ }));
 
   await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalledWith(expect.objectContaining({
     cardId: 'new-card-1',

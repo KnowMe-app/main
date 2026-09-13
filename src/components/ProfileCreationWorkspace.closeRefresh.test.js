@@ -131,7 +131,9 @@ it('re-fetches the review queue when the editor is closed, so the card reflects 
   await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
 
   const queueCallsBeforeClose = loadAllCreateProfileMutations.mock.calls.length;
-  fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+  // Кнопки «Закрити» внизу форми не стало — повернення живе стрілкою в шапці,
+  // тим самим жестом, що й апаратна кнопка телефона.
+  fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
 
   await waitFor(() => expect(loadAllCreateProfileMutations.mock.calls.length).toBeGreaterThan(queueCallsBeforeClose));
   expect(await screen.findByText("Ім'я9")).toBeInTheDocument();

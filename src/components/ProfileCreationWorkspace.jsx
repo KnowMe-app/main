@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
-import { FiChevronDown, FiClock, FiFolder, FiInfo, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
+import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
+import { FaEllipsisV } from 'react-icons/fa';
 
 import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, readProfileFromNodes, searchUsersOnly } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue } from './getCurrentValue';
-import PageNavMenu from './PageNavMenu';
+import BackButton from './BackButton';
+import InfoModal from './InfoModal';
+import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { fieldContacts } from './smallCard/fieldContacts';
 import { FieldComment } from './smallCard/FieldComment';
 import { BtnFavorite } from './smallCard/btnFavorite';
@@ -17,7 +20,8 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
-import { buildMatchingSearchPath, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
+import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
+import { goBackOrTo } from 'utils/appBackNavigation';
 import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleShortLabel } from './profileLayoutConfig';
 import {
   applyOverlayToCard,
@@ -59,12 +63,24 @@ const Page = styled.main`
 `;
 const Shell = styled.div`max-width: 920px; margin: 0 auto;`;
 // Same title row as every other page's header (AdminPageHeader / KmTopbar):
-// title on the left, the "⋮" page switcher pinned to the right, one row at any
-// width - never the left-of-title placement this page used to have.
+// title on the left, the "⋮" menu pinned to the right, one row at any width -
+// never the left-of-title placement this page used to have. Перед заголовком
+// стоїть стрілка «назад» — той самий елемент, що й у шарі деталей стрічки.
 const Header = styled.header`
-  display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:28px;
+  display:flex; align-items:center; gap:12px; margin-bottom:28px;
 `;
-const HeaderCopy = styled.div`min-width:0;`;
+// Заголовок забирає вільне місце, щоб стрілка лишалась ліворуч, а «⋮» — праворуч,
+// одним рядком на будь-якій ширині.
+const HeaderCopy = styled.div`min-width:0; flex:1 1 auto;`;
+// Той самий «⋮», що й на решті сторінок анкет: 34 px, рамка, заокруглення.
+const MenuButton = styled.button`
+  width:34px; height:34px; flex:0 0 34px; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--km-border); border-radius:10px; background:var(--km-card); color:var(--km-muted);
+  font-size:18px; line-height:1; cursor:pointer;
+  transition:background-color .18s ease, border-color .18s ease, color .18s ease;
+  &:hover { background:var(--km-accent-light); border-color:var(--km-accent); color:var(--km-accent); }
+  &:focus-visible { outline:none; border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
+`;
 const Title = styled.h1`
   margin:0; font-size:clamp(28px, 7vw, 34px); line-height:1.1; font-weight:800; letter-spacing:-.03em;
 `;
@@ -87,19 +103,11 @@ const SaveButton = styled(Button)`
   color: #fff;
   box-shadow: 0 10px 24px var(--km-accent-ring);
 `;
-const GhostButton = styled(Button)`
-  background: transparent;
-  border-color: transparent;
-  color: var(--km-muted);
-  box-shadow: none;
-  &:hover:not(:disabled) { background: color-mix(in srgb, var(--km-muted) 12%, transparent); border-color: var(--km-border); }
-`;
-// «Закрити» — вихід, а не дія форми: поля зберігають себе самі, тож головною
-// кнопкою екрана воно не є і розміру головної кнопки не має. Ширина — по
-// напису, висота — менша за поле вводу.
-const CloseButton = styled(GhostButton)`
-  min-height:38px; padding:8px 16px; border-radius:12px; font-size:14px; border-color:var(--km-border);
-`;
+// «Закрити» внизу форми не стало: вихід — це жест «назад», а не кнопка серед
+// дій анкети. Доти їх було два з різним наслідком — кнопка вела до видачі
+// пошуку, апаратна кнопка телефона поверталась на порожній екран майстерні.
+// Тепер обидва знімають один і той самий запис історії (`goBackOrTo`), а
+// стрілка в шапці — це рівно той візуал, що вже стоїть у шарі деталей стрічки.
 const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:22px; background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
 const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere;`;
@@ -116,18 +124,60 @@ const Status = styled.span`
   background: ${({ $variant }) => STATUS_VARIANT_BACKGROUND[$variant] || 'var(--km-accent-light)'};
   color: ${({ $variant }) => STATUS_VARIANT_COLOR[$variant] || 'var(--km-accent)'};
 `;
+// Екран питає рівно одне — чи є вже така людина, — тож на ньому стоїть рядок
+// пошуку й один рядок пояснення. Технічні деталі («пошук виконується за
+// ключами…»), памʼятки про чернетки й три різні підказки під кнопкою жили тут
+// раніше: разом вони з'їдали перший екран, а відповідали на питання, якого
+// читач не ставив.
 const SearchSection = styled.section`
-  padding:24px; margin-bottom:30px; border:1px solid var(--km-border); border-radius:24px; background:var(--km-card);
+  padding:20px; margin-bottom:18px; border:1px solid var(--km-border); border-radius:24px; background:var(--km-card);
   box-shadow:var(--km-shadow), inset 0 1px 0 rgba(255,255,255,.04);
-  > div[style] { min-height:58px !important; margin:0 0 12px !important; padding:10px 16px !important; border-radius:17px !important; background:color-mix(in srgb, var(--km-bg) 62%, var(--km-card)) !important; }
+  > div[style] { min-height:58px !important; margin:0 !important; padding:10px 16px !important; border-radius:17px !important; background:color-mix(in srgb, var(--km-bg) 62%, var(--km-card)) !important; }
   > div[style]:hover { border-color:color-mix(in srgb, var(--km-accent) 45%, var(--km-border)); }
   textarea { font-size:16px; line-height:1.4; }
-  ${Actions} ${Button} { min-height:56px; min-width:220px; box-shadow:0 8px 20px var(--km-accent-ring); }
-  ${Actions} ${Button}:disabled { box-shadow:none; }
-  @media (max-width:600px) { padding:22px 20px; ${Actions} ${Button} { width:100%; } }
+  @media (max-width:600px) { padding:18px 16px; }
 `;
 const TechnicalMeta = styled(Meta)`font-size:12px; code { color:var(--km-text); }`;
-const SearchHint = styled(Meta)`font-style:italic; font-size:13px; margin:0 0 14px;`;
+const SearchHint = styled(Meta)`font-size:13px; margin:12px 2px 0;`;
+
+// --- Видача пошуку ---------------------------------------------------------
+// Розкладка та сама, що й у стрічці: спершу заготовка нової картки з набраного,
+// далі знайдені картки й чернетки. Читач приходить сюди тим самим жестом і
+// дістає ту саму відповідь, лише на екрані власних карток.
+const QueryDraftCard = styled.div`
+  display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:12px 14px; box-sizing:border-box;
+  border:1px dashed color-mix(in srgb, var(--km-accent) 55%, transparent); border-radius:16px; background:var(--km-card);
+`;
+const QueryDraftBody = styled.div`flex:1 1 auto; min-width:0; display:grid; gap:2px;`;
+const QueryDraftLabel = styled.span`font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--km-muted);`;
+const QueryDraftValue = styled.span`font-size:15px; font-weight:700; line-height:1.3; color:var(--km-text); overflow-wrap:anywhere;`;
+const QueryDraftNote = styled.span`font-size:12px; line-height:1.4; color:var(--km-muted);`;
+const QueryDraftButton = styled.button`
+  flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:7px 14px;
+  border:1px solid var(--km-accent); border-radius:12px; background:transparent; color:var(--km-accent);
+  font:700 13px/1 var(--km-font); white-space:nowrap; cursor:pointer;
+  &:hover:not(:disabled) { background:var(--km-accent-light); }
+  &:focus-visible { outline:2px solid var(--km-accent); outline-offset:2px; }
+  &:disabled { opacity:.45; cursor:not-allowed; }
+`;
+// Рядок видачі — картка людини: ініціал, імʼя, факти про неї й одна дія.
+const ResultCard = styled.div`
+  display:flex; align-items:center; gap:12px; margin:0 0 10px; padding:12px 14px; box-sizing:border-box;
+  border:1px solid var(--km-border); border-radius:16px; background:var(--km-card);
+  @media (max-width:400px) { flex-wrap:wrap; > button { width:100%; } }
+`;
+const ResultAvatar = styled.span`
+  width:42px; height:42px; flex:0 0 42px; display:grid; place-items:center; border-radius:14px; overflow:hidden;
+  background:var(--km-accent-light); color:var(--km-accent); font:800 17px/1 var(--km-font);
+  img { width:100%; height:100%; object-fit:cover; }
+`;
+const ResultBody = styled.div`flex:1 1 auto; min-width:0; display:grid; gap:3px;`;
+const ResultName = styled.span`font-size:15.5px; font-weight:700; line-height:1.3; color:var(--km-text); overflow-wrap:anywhere;`;
+const ResultMeta = styled.span`font-size:12.5px; line-height:1.4; color:var(--km-muted); overflow-wrap:anywhere;`;
+const ResultAction = styled(QueryDraftButton)`border-color:var(--km-border); color:var(--km-text);
+  &:hover:not(:disabled) { border-color:var(--km-accent); color:var(--km-accent); }
+`;
+const ResultsSection = styled.section`margin-bottom:26px;`;
 const DisclosureToggle = styled.button`
   display:inline-flex; align-items:center; gap:6px; margin:10px 0 2px; padding:0; border:none; background:transparent;
   color:var(--km-muted); font:700 12px/1 var(--km-font); cursor:pointer;
@@ -383,7 +433,6 @@ export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestor
     </VersionMeta>
   </VersionRow>;
 };
-const SearchResult = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 0; border-top:1px solid var(--km-border); min-width:0; > span:first-child { min-width:0; overflow-wrap:anywhere; }`;
 const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
 const Count = styled.span`min-width:28px; height:28px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; border-radius:999px; background:color-mix(in srgb, var(--km-muted) 14%, var(--km-card)); color:var(--km-text); letter-spacing:0;`;
 const EmptyState = styled(Card)`min-height:170px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:7px; margin:0;`;
@@ -397,8 +446,14 @@ const ProfileCard = styled(Card)`
 `;
 const PROFILE_SEARCH_PREFILL_FIELDS = new Set(['name', 'surname', 'phone', 'email', 'telegram', 'instagram', 'facebook', 'tiktok']);
 const PROFILE_SEARCH_ID_PREFIXES = getSearchIdIndexedFields();
-const PROFILE_SEARCH_KEYS = ['userId', ...PROFILE_SEARCH_ID_PREFIXES];
+// Перелік ключів більше не показується на екрані — читачеві він нічого не
+// пояснював, — але пошук і далі ходить рівно по них.
 const PROFILE_SEARCH_OPTIONS = { searchIdPrefixes: PROFILE_SEARCH_ID_PREFIXES };
+// Той самий такт, що й у стрічці: видача приїжджає сама, за мить після того,
+// як набирати перестали. Без цього рядок чекав на Enter або вихід із поля —
+// і екран мовчав у відповідь на набране, хоч поруч у стрічці той самий рядок
+// відповідав одразу.
+const PROFILE_SEARCH_DEBOUNCE_MS = 250;
 
 // Deliberately minimal: just enough to identify who this is and how to reach
 // them, plus one public note. Everything else pickerFields knows about
@@ -450,6 +505,36 @@ export const buildOverlayPrefill = (canonical, cardUserId) => CREATE_FORM_SECTIO
     return result;
   }, { userId: cardUserId });
 
+/**
+ * Рядок видачі — картка людини, а не сирий id.
+ *
+ * Доти знайдене показувалось як імʼя плюс `userId` під ним: id нічого не каже
+ * про людину, а факти, за якими картку впізнають у стрічці (роль, вік,
+ * локація, фото), не показувались узагалі — тож два однойменні результати були
+ * нерозрізненні. Розкладка тут та сама, що й у рядку стрічки, аби знайдене
+ * виглядало однаково, звідки б його не відкрили.
+ */
+const ProfileResultCard = ({ card, name, note, status, statusVariant, actionLabel, onAction }) => {
+  const facts = [
+    getRoleShortLabel(getProfileRole(card)),
+    getProfileAge(card) ? String(getProfileAge(card)) : '',
+    getProfileLocation(card),
+  ].filter(Boolean).join(' · ');
+  const photo = getProfilePhotos(card)[0] || '';
+  return <ResultCard>
+    <ResultAvatar>
+      {photo ? <img src={photo} alt="" /> : (String(name || '').trim()[0] || '?').toUpperCase()}
+    </ResultAvatar>
+    <ResultBody>
+      <ResultName>{name}</ResultName>
+      {facts ? <ResultMeta>{facts}</ResultMeta> : null}
+      {note ? <ResultMeta>{note}</ResultMeta> : null}
+      {status ? <span><Status $variant={statusVariant}>{status}</Status></span> : null}
+    </ResultBody>
+    <ResultAction type="button" onClick={onAction}>{actionLabel}</ResultAction>
+  </ResultCard>;
+};
+
 const describeAuthor = (authorId, authors) => {
   const author = authors?.[authorId] || {};
   return [author.name, author.surname].filter(Boolean).join(' ') || authorId || '—';
@@ -462,6 +547,10 @@ export const ProfileCreationWorkspace = () => {
   const [uid, setUid] = useState('');
   const [access, setAccess] = useState(null);
   const [mutations, setMutations] = useState([]);
+  // Усе, що цей читач тут завів, — разом із уже прийнятими картками. Черга
+  // адміна й пошук по чернетках беруть `mutations` (неприйняті), а список
+  // «Створені мною» — саме це.
+  const [ownCreatedCards, setOwnCreatedCards] = useState([]);
   const [sharedMutations, setSharedMutations] = useState([]);
   const [draft, setDraft] = useState(null);
   const [activeMutation, setActiveMutation] = useState(null);
@@ -478,7 +567,7 @@ export const ProfileCreationWorkspace = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
-  const [showSearchKeysDetail, setShowSearchKeysDetail] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
   const draftRef = useRef(draft);
@@ -500,16 +589,19 @@ export const ProfileCreationWorkspace = () => {
   );
 
   const refresh = useCallback(async (userId, resolvedAccess) => {
-    const items = resolvedAccess.isAdmin
-      ? await loadAllCreateProfileMutations()
-      : await loadOwnProfileMutations(userId);
-    setMutations(sortByRecency(items));
-
     if (resolvedAccess.isAdmin) {
+      setMutations(sortByRecency(await loadAllCreateProfileMutations()));
       // loadAllCreateProfileMutations already returns every author's drafts.
+      setOwnCreatedCards([]);
       setSharedMutations([]);
       return;
     }
+
+    // Один запит на обидва списки: прийняті картки потрібні лише списку
+    // «Створені мною», а чернетки — і йому, і пошуку по власних чернетках.
+    const items = sortByRecency(await loadOwnProfileMutations(userId, { includeAccepted: true }));
+    setOwnCreatedCards(items);
+    setMutations(items.filter(item => item.status !== 'accepted'));
 
     // Drafts of other users are a widened read that the backend rules still
     // have to allow; until they do, a denial must leave the user's own
@@ -592,7 +684,9 @@ export const ProfileCreationWorkspace = () => {
     setActiveMutation(mutation);
     setShowDraftHistory(false);
     draftBaseRef.current = getEffectiveProfile({ mutation }) || { userId: mutation.cardId };
-    setSearchParams({ cardId: mutation.cardId });
+    // Адреса форми — це та сама сторінка, а не новий крок: запис в історії
+    // кладе ефект нижче, один на відкриту форму, і саме його знімає «назад».
+    setSearchParams({ cardId: mutation.cardId }, { replace: true });
     await refreshDraftOverlays();
   }, [refreshDraftOverlays, setSearchParams]);
 
@@ -663,7 +757,7 @@ export const ProfileCreationWorkspace = () => {
     persistedDraftRef.current = nextDraft;
     resetDraftOverlayState(nextDraft);
     setDraft(nextDraft);
-    setSearchParams({ cardId });
+    setSearchParams({ cardId }, { replace: true });
     persistDraft(nextDraft).catch(error => reportSaveError(error, describeSaveError(error)));
   };
 
@@ -709,34 +803,81 @@ export const ProfileCreationWorkspace = () => {
     || matchingSharedDrafts.length > 0;
 
   /**
+   * Перший рядок видачі — заготовка нової картки, рівно як у стрічці.
+   *
+   * Поле вибирає той самий розпізнавач, що й пошук (`detectSearchParams`), тож
+   * читач бачить, куди ляже набране, ще до того, як відкриє форму. Раніше
+   * відповідь «такої ще немає» жила кнопкою під трьома абзацами підказок у
+   * кінці екрана — тобто там, куди треба було доскролити.
+   *
+   * Контакт, за яким пошук уже показав чужу картку, у нову не підставляється:
+   * він зайнятий, і перше ж автозбереження впало б на `DUPLICATE_PROFILE`.
+   */
+  const queryDraft = useMemo(() => {
+    const trimmed = search.trim();
+    if (!trimmed) return null;
+    const detected = detectSearchParams(trimmed);
+    const field = detected?.key || 'name';
+    const value = detected?.value || trimmed;
+    const claimsIdentity = field !== 'name' && field !== 'surname' && field !== 'userId';
+    // Поле, якого немає в `pickerFields` (наприклад, `userId`), підпису не має —
+    // і питати його в `getFieldLabel` нічим.
+    const fieldDefinition = pickerFields.find(item => item?.name === field);
+    return {
+      field,
+      value,
+      label: (fieldDefinition && getFieldLabel(fieldDefinition)) || 'Запит',
+      note: claimsIdentity && hasExistingMatches
+        ? 'Це значення вже стоїть у знайденій картці — нова відкриється без нього'
+        : '',
+    };
+  }, [hasExistingMatches, search]);
+
+  /**
    * Закрита форма повертає туди, звідки її відкрили.
    *
-   * Відкривають її з рядка видачі пошуку — і закриття мусить вести назад до тих
-   * самих знайдених карток, уже з дописаним. Доти воно лишало читача на
-   * власному екрані пошуку майстерні: той самий запит довелось би набирати
-   * вдруге, ще й в іншій розкладці відповіді.
+   * Відкривають її з двох місць, і «назад» мусить розрізняти їх. З рядка видачі
+   * пошуку у стрічці — тоді закриття веде назад до тих самих знайдених карток,
+   * уже з дописаним: доти воно лишало читача на власному екрані пошуку
+   * майстерні, і той самий запит довелось би набирати вдруге. А зі списку
+   * власних карток на цьому ж екрані — тоді форма є шаром над списком, і
+   * закриття вертає до списку, а не виштовхує у стрічку.
    *
    * Адреса приходить у намірі (`state.returnTo`); після перезавантаження
    * сторінки наміру вже немає, тож запит береться з того ж сховища, з якого
    * його читає сам рядок пошуку.
    */
-  const returnToOpener = () => {
-    const returnTo = location.state?.returnTo || entryReturnToRef.current;
-    navigate(returnTo || buildMatchingSearchPath(readStoredMatchingSearchQuery()));
-  };
+  const openerPath = () => (
+    location.state?.returnTo || entryReturnToRef.current || buildMatchingSearchPath(readStoredMatchingSearchQuery())
+  );
+
+  // Чи відкрили форму з іншого екрана. Ознак дві, і обидві ставить вхід: намір
+  // зі стрічки (`enrichCardId`/`createFromQuery`, він же відновлюється з адреси
+  // після перезавантаження) і адреса повернення, що приїхала разом із ним.
+  //
+  // Самого наміру мало: власну чернетку стрічка відкриває просто адресою
+  // `?cardId=…`, наміру в ній немає — і закриття такої форми висаджувало читача
+  // на список власних карток замість видачі, з якої він її й відкрив.
+  const openedFromAnotherScreen = () => (
+    entryIntentRef.current || Boolean(location.state?.returnTo || entryReturnToRef.current)
+  );
 
   const closeEditor = () => {
-    // Черга адміна живе на цьому ж екрані, тож для неї «закрити» — це
-    // повернутись до списку, а не піти зі сторінки.
-    if (!accessRef.current?.isAdmin) {
-      returnToOpener();
+    // `replace` тут навмисний: запис історії, яким відкрилась форма, уже знято
+    // (див. ефект нижче), і цей перехід стає на його місце замість того, щоб
+    // дописати ще один крок «назад» у нікуди.
+    if (!accessRef.current?.isAdmin && openedFromAnotherScreen()) {
+      navigate(openerPath(), { replace: true });
       return;
     }
+    // Черга адміна й список власних карток живуть на цьому ж екрані, тож для
+    // них «назад» — це повернутись до списку, а не піти зі сторінки.
     setDraft(null);
     setActiveMutation(null);
+    activeMutationRef.current = null;
     setOverlayTarget(null);
     resetDraftOverlayState(null);
-    setSearchParams({});
+    setSearchParams({}, { replace: true });
     // The list cards (name, status, revision, updatedAt) were snapshotted
     // when the workspace loaded and never touched again - saves made while
     // the editor was open only updated the open draft's own refs. Without
@@ -744,6 +885,66 @@ export const ProfileCreationWorkspace = () => {
     // a full page reload re-runs the auth effect.
     if (uid && accessRef.current) refresh(uid, accessRef.current);
   };
+
+  // Стрілка в шапці й апаратна кнопка «назад» мусять дати один наслідок, тож
+  // стрілка форму не закриває — вона знімає той самий запис історії, який
+  // поклало відкриття форми, і закриває форму вже `popstate`. Це рівно той
+  // механізм, яким закривається шар деталей у стрічці; доти тут була кнопка
+  // «Закрити» внизу екрана, а апаратна кнопка тим часом вела кудись інде.
+  const formHistoryStateRef = useRef(false);
+  const closeEditorRef = useRef(() => {});
+  closeEditorRef.current = closeEditor;
+  const requestCloseEditor = () => {
+    if (formHistoryStateRef.current && typeof window !== 'undefined' && window.history.state?.profileCreationForm) {
+      formHistoryStateRef.current = false;
+      window.history.back();
+      return;
+    }
+    closeEditor();
+  };
+
+  // Вихід із акаунта живе в тому ж меню, що й на решті сторінок анкет, тож і
+  // робить те саме: знімає ознаки сесії й веде на власну анкету.
+  const handleExit = async () => {
+    try {
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('ownerId');
+      setShowProfileMenu(false);
+      navigate('/my-profile');
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  // Відкрита форма кладе в історію рівно один запис; апаратна кнопка «назад»
+  // (і «назад» браузера) його знімає — саме це й закриває форму.
+  const formOpen = Boolean(draft) || overlayLoading;
+  useEffect(() => {
+    if (!formOpen) return undefined;
+    window.history.pushState({ profileCreationForm: true }, '');
+    formHistoryStateRef.current = true;
+    const handlePopState = () => {
+      formHistoryStateRef.current = false;
+      closeEditorRef.current();
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      // Знімаємо лише той запис, який поклали самі. Якщо форма пішла кудись
+      // навігацією (закриття у стрічку, перехід до автора), історія вже
+      // рушила далі, і `back()` тут скасував би саме той перехід.
+      if (formHistoryStateRef.current && window.history.state?.profileCreationForm) {
+        formHistoryStateRef.current = false;
+        window.history.back();
+      }
+      formHistoryStateRef.current = false;
+    };
+    // closeEditorRef завжди тримає свіжу функцію — ефект лишається на один
+    // цикл «форма відкрита / закрита».
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formOpen]);
 
   /**
    * Форма доповнення знайденої картки.
@@ -765,7 +966,7 @@ export const ProfileCreationWorkspace = () => {
 
     setActiveMutation(null);
     setOverlayLoading(true);
-    setSearchParams({ cardId: profile.userId, overlay: '1' });
+    setSearchParams({ cardId: profile.userId, overlay: '1' }, { replace: true });
     let canonical = profile;
     try {
       const full = await readProfileFromNodes(profile.userId, { includeWorkflow: false });
@@ -1407,19 +1608,55 @@ export const ProfileCreationWorkspace = () => {
   const draftPhoto = getProfilePhotos(summaryCard)[0] || '';
   const draftInitial = (draftName.trim()[0] || '?').toUpperCase();
 
-  // Екран називається тим, чим він є, — місцем, де заводять картку. «Шукаємо
-  // профіль» обіцяло другий пошук, і саме так його й читали: форма, закрившись,
-  // висаджувала читача на екран пошуку, з якого він щойно прийшов. Пошук живе в
-  // стрічці; тут його рядок лишається рівно для одного питання — чи не заведена
-  // ця людина вже (карткою чи чужою чернеткою, якої стрічка не показує).
-  const heading = useMemo(() => access?.isAdmin ? 'Нові профілі' : 'Додати профіль', [access]);
+  // Екран називається тим, що на ньому лежить, — картками, які завів цей читач.
+  // «Додати профіль» називало дію, а не місце: людина, яка щойно завела картку,
+  // не мала підстав вертатись сюди по неї, бо підпис нічого про неї не обіцяв.
+  // Пошук тут лишається рівно для одного питання — чи не заведена ця людина вже
+  // (карткою чи чужою чернеткою, якої стрічка не показує), і відповідь на нього
+  // розкладена так само, як у стрічці: заготовка нової картки першим рядком,
+  // знайдене — під нею.
+  //
+  // Відкрита форма — це вже не список, і шапка каже, що саме відкрито: назва
+  // екрана над чужою карткою читалась як обіцянка, що це одна з моїх.
+  const heading = useMemo(() => {
+    if (overlayTarget) return 'Доповнення картки';
+    if (draft) return 'Чернетка';
+    return access?.isAdmin ? 'Нові профілі' : 'Створені мною';
+  }, [access, draft, overlayTarget]);
   if (!access) return <Page><Shell>Завантаження…</Shell></Page>;
 
   return <Page><Shell>
     <Header>
+      {/* Стрілка веде туди ж, куди апаратна кнопка телефона: у формі — назад до
+          того, з чого її відкрили, у списку — на попередній екран. */}
+      <BackButton onClick={draft || overlayLoading ? requestCloseEditor : () => goBackOrTo(navigate, MATCHING_PATH)} />
       <HeaderCopy><Title>{heading}</Title></HeaderCopy>
-      <PageNavMenu />
+      {/* Меню тут те саме, що й на решті сторінок анкет: воно знає права читача
+          і не пропонує йому екранів, куди `App` його все одно не пустить.
+          `PageNavMenu` перелічував Budget/Invoice/Documents/Parties кожному —
+          не-адмін натискав їх і лишався на місці без жодного пояснення. */}
+      <MenuButton
+        type="button"
+        aria-label="Відкрити меню профілю"
+        title="Відкрити меню профілю"
+        onClick={() => setShowProfileMenu(true)}
+      >
+        <FaEllipsisV />
+      </MenuButton>
     </Header>
+    {showProfileMenu && <InfoModal
+      onClose={() => setShowProfileMenu(false)}
+      text="dotsMenu"
+      Context={() => (
+        <ProfileDotsMenu
+          navigate={navigate}
+          isAdmin={access.isAdmin}
+          access={access}
+          onExit={handleExit}
+          onSelect={() => setShowProfileMenu(false)}
+        />
+      )}
+    />}
     {draft ? <>
       <DraftHeaderCard>
         {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише
@@ -1545,116 +1782,142 @@ export const ProfileCreationWorkspace = () => {
       {/* Every field already saves itself on blur, so the old Зберегти /
           Прийняти / Відхилити row said nothing about what actually happened.
           What is left is the one step that is not automatic: turning the
-          finished draft into a card. */}
-      <Card>
+          finished draft into a card. «Закрити» звідси пішло до стрілки в
+          шапці: вихід — це жест «назад», а не дія серед дій анкети. */}
+      {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Card>
         <Actions>
-          {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && (
-            <SaveButton disabled={saving} onClick={saveDraftAsCard}>
-              {saving ? 'Збереження…' : 'Зберегти чернетку'}
-            </SaveButton>
-          )}
-          <CloseButton disabled={saving} onClick={closeEditor}>Закрити</CloseButton>
+          <SaveButton disabled={saving} onClick={saveDraftAsCard}>
+            {saving ? 'Збереження…' : 'Зберегти чернетку'}
+          </SaveButton>
         </Actions>
-      </Card>
+      </Card>}
     </> : overlayLoading ? <Card><Meta>Відкриваємо картку…</Meta></Card> : <>
-      {!access.isAdmin && <SearchSection aria-label="Пошук профілю">
-        <SearchBar
-          searchFunc={searchUsersOnly}
-          search={search}
-          setSearch={updateSearch}
-          setUsers={applySearchUsers}
-          setState={applySearchState}
-          setUserNotFound={value => {
-            setSearchNotFound(Boolean(value));
-            if (value) setSearchResults([]);
-          }}
-          onSearchExecuted={() => {
-            setSearchExecuted(true);
-            setSearchLoading(true);
-            setSearchFailed(false);
-          }}
-          onSearchSettled={() => setSearchLoading(false)}
-          // Історію пише лише завершений пошук, а не прогони на паузах у наборі.
-          onSearchCommitted={value => addMatchingSearchQuery(value)}
-          onSearchError={() => {
-            setSearchFailed(true);
-            setSearchNotFound(false);
-          }}
-          onClear={() => {
-            setSearchResults([]);
-            setSearchNotFound(false);
-            setSearchExecuted(false);
-            setSearchLoading(false);
-            setSearchFailed(false);
-          }}
-          storageKey="profileCreationSearchQuery"
-          searchOptions={PROFILE_SEARCH_OPTIONS}
-          wrapperStyle={{ width: '100%' }}
-          leftIcon={<FiSearch size={21} aria-hidden="true" />}
-          placeholder="Пошук профілю"
-          inputAriaLabel="Пошук профілю"
-        />
-        <SearchHint>
-          Перевірте, чи цієї людини ще немає: за ім’ям, прізвищем, телефоном, email або посиланням на соцмережі.
-          Тут видно й чернетки, яких стрічка ще не показує.
-        </SearchHint>
-        <DisclosureToggle
-          type="button"
-          aria-expanded={showSearchKeysDetail}
-          onClick={() => setShowSearchKeysDetail(previous => !previous)}
-        >
-          <FiInfo aria-hidden="true" /> Технічні деталі пошуку
-          <FiChevronDown aria-hidden="true" style={{ transform: showSearchKeysDetail ? 'rotate(180deg)' : 'none' }} />
-        </DisclosureToggle>
-        {showSearchKeysDetail && <TechnicalMeta>
-          Пошук карток виконується за ключами: {PROFILE_SEARCH_KEYS.map((key, index) => (
-            <React.Fragment key={key}>
-              {index > 0 ? ', ' : ''}<code>{key}</code>
-            </React.Fragment>
-          ))}. Шукає одразу серед опублікованих карток (searchId) і серед чернеток, які ще не прийняв адміністратор.
-        </TechnicalMeta>}
-        {searchResults.map(profile => <SearchResult key={profile.userId}>
-          <span><strong>{describeProfileName(profile.name, profile.surname) || 'Профіль знайдено'}</strong><Meta>{profile.userId}</Meta></span>
-          <span>
-            <Status>Вже існує</Status>
-            <Button onClick={() => startExistingProfileOverlay(profile)}>Доповнити дані</Button>
-          </span>
-        </SearchResult>)}
-        {matchingOwnDrafts.map(mutation => <SearchResult key={mutation.cardId}>
-          <span>
-            <strong>{describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Ваша чернетка'}</strong>
-            <Meta>Цей контакт уже є у вашій картці, що очікує перевірки.</Meta>
-          </span>
-          <Button onClick={() => openMutation(mutation)}>Відкрити чернетку</Button>
-        </SearchResult>)}
-        {matchingSharedDrafts.map(mutation => <SearchResult key={mutation.cardId}>
-          <span>
-            <strong>{describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Спільна чернетка'}</strong>
-            <Meta>Цей контакт уже є у спільній чернетці. Відкрийте її та додайте свої правки.</Meta>
-          </span>
-          <Button onClick={() => openMutation(mutation)}>Відкрити чернетку</Button>
-        </SearchResult>)}
-        {searchExecuted && searchNotFound && matchingOwnDrafts.length === 0 && matchingSharedDrafts.length === 0 && <Meta>Профіль не знайдено. Можна створити нову приватну картку.</Meta>}
-        {/* Знайдене більше не замикає створення.
-            Кнопка була вимкнена, щойно пошук хоч щось показав, — і людина, якій
-            жодна зі знайдених карток не підходила, лишалась без виходу: екран
-            відповідав «такі вже є», а завести свою було нічим. Дубль стереже не
-            ця кнопка, а зайнятість контакту в базі (`DUPLICATE_PROFILE`), і
-            стереже вона його однаково — хоч із цього екрана, хоч зі стрічки. */}
-        {searchExecuted && !searchFailed && hasExistingMatches && <Meta>
-          Жодна зі знайдених карток не про цю людину? Заведіть нову — знайдені лишаться на місці.
-        </Meta>}
-        {searchExecuted && searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
-        <Actions>
-          <Button
-            $primary
-            disabled={!search.trim() || !searchExecuted || searchLoading || searchFailed}
-            onClick={() => startNew(search, { allowContactPrefill: !hasExistingMatches })}
-          >
-            <FiPlus size={20} aria-hidden="true" /> {hasExistingMatches ? 'Створити нову картку' : 'Додати профіль'}
-          </Button>
-        </Actions>
-      </SearchSection>}
+      {!access.isAdmin && <>
+        {/* Екран питає одне — чи є вже така людина, — і має для цього один
+            рядок і один рядок пояснення. Розкривний перелік пошукових ключів,
+            памʼятка про чернетки й три підказки під кнопкою жили тут раніше:
+            разом вони з'їдали перший екран, відповідаючи на питання, якого
+            ніхто не ставив. */}
+        <SearchSection aria-label="Пошук анкети">
+          <SearchBar
+            searchFunc={searchUsersOnly}
+            search={search}
+            setSearch={updateSearch}
+            setUsers={applySearchUsers}
+            setState={applySearchState}
+            setUserNotFound={value => {
+              setSearchNotFound(Boolean(value));
+              if (value) setSearchResults([]);
+            }}
+            onSearchExecuted={() => {
+              setSearchExecuted(true);
+              setSearchLoading(true);
+              setSearchFailed(false);
+            }}
+            onSearchSettled={() => setSearchLoading(false)}
+            // Історію пише лише завершений пошук, а не прогони на паузах у наборі.
+            onSearchCommitted={value => addMatchingSearchQuery(value)}
+            onSearchError={() => {
+              setSearchFailed(true);
+              setSearchNotFound(false);
+            }}
+            onClear={() => {
+              setSearchResults([]);
+              setSearchNotFound(false);
+              setSearchExecuted(false);
+              setSearchLoading(false);
+              setSearchFailed(false);
+            }}
+            storageKey="profileCreationSearchQuery"
+            searchOptions={PROFILE_SEARCH_OPTIONS}
+            debounceMs={PROFILE_SEARCH_DEBOUNCE_MS}
+            wrapperStyle={{ width: '100%' }}
+            leftIcon={<FiSearch size={21} aria-hidden="true" />}
+            placeholder="Телефон, email, нік або посилання"
+            inputAriaLabel="Пошук анкети"
+          />
+          <SearchHint>
+            Почніть із відомого контакту людини — телефона, пошти, ніка чи посилання на соцмережу.
+            Перевіримо, чи така анкета вже існує.
+          </SearchHint>
+        </SearchSection>
+        {searchExecuted ? <ResultsSection aria-label="Результати пошуку">
+          {/* Перший рядок видачі — заготовка нової картки, як і у стрічці:
+              набране вже розкладене в поле, і кнопка веде просто у форму з ним. */}
+          {queryDraft && <QueryDraftCard data-testid="query-draft-card">
+            <QueryDraftBody>
+              <QueryDraftLabel>{queryDraft.label}</QueryDraftLabel>
+              <QueryDraftValue>{queryDraft.value}</QueryDraftValue>
+              {queryDraft.note && <QueryDraftNote>{queryDraft.note}</QueryDraftNote>}
+            </QueryDraftBody>
+            {/* Знайдене не замикає створення: кнопка була вимкнена, щойно пошук
+                хоч щось показав, — і людина, якій жодна зі знайдених карток не
+                підходила, лишалась без виходу. Дубль стереже зайнятість контакту
+                в базі (`DUPLICATE_PROFILE`), а не вимкнена кнопка. */}
+            <QueryDraftButton
+              type="button"
+              disabled={!search.trim() || !searchExecuted || searchLoading || searchFailed}
+              onClick={() => startNew(search, { allowContactPrefill: !hasExistingMatches })}
+            >
+              <FiPlus size={16} aria-hidden="true" /> {hasExistingMatches ? 'Створити нову' : 'Створити'}
+            </QueryDraftButton>
+          </QueryDraftCard>}
+          {searchLoading && <Meta>Шукаємо…</Meta>}
+          {searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
+          {searchResults.map(profile => <ProfileResultCard
+            key={profile.userId}
+            card={profile}
+            name={describeProfileName(profile.name, profile.surname) || 'Профіль знайдено'}
+            status="Вже існує"
+            actionLabel="Доповнити дані"
+            onAction={() => startExistingProfileOverlay(profile)}
+          />)}
+          {matchingOwnDrafts.map(mutation => <ProfileResultCard
+            key={mutation.cardId}
+            card={mutation.data}
+            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Ваша чернетка'}
+            note="Ваша чернетка, чекає на перевірку"
+            actionLabel="Відкрити"
+            onAction={() => openMutation(mutation)}
+          />)}
+          {matchingSharedDrafts.map(mutation => <ProfileResultCard
+            key={mutation.cardId}
+            card={mutation.data}
+            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Спільна чернетка'}
+            note="Спільна чернетка, можна додати правки"
+            actionLabel="Відкрити"
+            onAction={() => openMutation(mutation)}
+          />)}
+          {!searchLoading && !searchFailed && !hasExistingMatches && searchNotFound
+            && <Meta>Такої анкети ще немає — заведіть її першим рядком.</Meta>}
+        </ResultsSection> : <>
+          {/* Порожній рядок пошуку — це не порожній екран: назва обіцяє власні
+              картки, і вони тут і лежать, разом із уже прийнятими. */}
+          <SectionHeader>
+            <span>Мої картки</span>
+            <Count aria-label={`${ownCreatedCards.length} карток`}>{ownCreatedCards.length}</Count>
+          </SectionHeader>
+          {ownCreatedCards.length === 0 ? <EmptyState>
+            <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
+            <EmptyTitle>Ви ще не завели жодної картки.</EmptyTitle>
+            <Meta>Почніть із контакту: пошук покаже, чи є така людина в базі, а перший рядок видачі заведе нову картку.</Meta>
+          </EmptyState> : ownCreatedCards.map(mutation => {
+            const published = mutation.status === 'accepted';
+            return <ProfileResultCard
+              key={mutation.cardId}
+              card={mutation.data}
+              name={describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Без імені'}
+              status={published ? 'Опубліковано' : mutation.status === 'private' ? 'Приватна' : 'Очікує перевірки'}
+              statusVariant={published ? undefined : mutation.status === 'private' ? 'private' : 'overlay'}
+              note={mutation.updatedAt ? `Оновлено ${new Date(mutation.updatedAt).toLocaleString('uk-UA')}` : ''}
+              actionLabel={published ? 'Доповнити' : 'Відкрити'}
+              onAction={() => (published
+                ? startExistingProfileOverlay({ userId: mutation.cardId })
+                : openMutation(mutation))}
+            />;
+          })}
+        </>}
+      </>}
       {access.isAdmin && <>
         <SectionHeader>
           <span>Черга на перевірку</span>

@@ -30,7 +30,7 @@ describe('ProfileDotsMenu logout confirmation', () => {
   ])('does not show profile creation when the profile permission is %s', (_case, profile) => {
     renderMenu({ access: resolveAccess({ uid: 'user-id', canCreateProfiles: profile.canCreateProfiles === true }) });
 
-    expect(screen.queryByRole('menuitem', { name: /Додати профіль/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Створені мною/ })).toBeNull();
   });
 
   it('shows profile creation from the persisted page access source and navigates to its route', () => {
@@ -42,7 +42,7 @@ describe('ProfileDotsMenu logout confirmation', () => {
     });
     renderMenu({ access: pageAccess, navigate });
 
-    fireEvent.click(screen.getByRole('menuitem', { name: /Додати профіль/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Створені мною/ }));
 
     expect(navigate).toHaveBeenCalledWith('/matching/create-profile');
   });
@@ -56,7 +56,7 @@ describe('ProfileDotsMenu logout confirmation', () => {
     });
     renderMenu({ access: pageAccess });
 
-    expect(screen.queryByRole('menuitem', { name: /Додати профіль/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Створені мною/ })).toBeNull();
   });
   it('does not end the session until logout is confirmed', async () => {
     const onExit = jest.fn().mockResolvedValue(undefined);
