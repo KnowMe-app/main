@@ -6,6 +6,7 @@ import {
   NOTE_TEXT_LINE_HEIGHT,
   NOTE_TEXT_SIZE,
 } from './noteTypography';
+import { getRoleColor } from './matchingRoleColors';
 
 const STACK_CARD_RADIUS = '18px';
 
@@ -1049,7 +1050,19 @@ export const OwnerStatusMessage = styled.p`
   padding: 0 10px;
 `;
 
+/*
+ * Колір ролі відкрита картка бере так само, як рядок стрічки.
+ *
+ * Досі не брала взагалі: плашка ролі малювалась сірим (`--matching-muted-text`),
+ * а решта картки — нейтральними токенами теми, тож відкрита анкета виглядала
+ * знебарвленою поруч зі списком, де роль одразу видно смужкою й плашкою. Тепер
+ * оболонка оголошує `--matching-role-accent` один раз, а плашка, заголовки
+ * секцій і смуга метрик просто його читають — кольору додалось, а місць, де
+ * його треба тримати в парі, не побільшало. Анкета без ролі лишається
+ * нейтральною: змінна тоді дорівнює звичайному акценту теми.
+ */
 export const ModernProfileShell = styled.div`
+  --matching-role-accent: ${({ $role }) => getRoleColor($role) || 'var(--matching-accent)'};
   position: relative;
   height: 100%;
   background: var(--matching-shell-bg);
@@ -1170,7 +1183,7 @@ export const ModernHeroContent = styled.div`
   box-sizing: border-box;
   padding: 14px 14px 12px;
   background: var(--matching-card-bg);
-  border-bottom: 1px solid var(--matching-section-border);
+  border-bottom: 1px solid color-mix(in srgb, var(--matching-role-accent) 30%, var(--matching-section-border));
   color: var(--matching-chip-text);
   text-shadow: none;
 `;
@@ -1189,8 +1202,8 @@ export const ModernRoleBadge = styled.span`
   padding: 5px 10px;
   border-radius: 999px;
   color: #FFFFFF;
-  background: var(--matching-muted-text);
-  box-shadow: 0 8px 18px rgba(232, 121, 26, 0.18);
+  background: var(--matching-role-accent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--matching-role-accent) 32%, transparent);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.7px;
@@ -1284,8 +1297,11 @@ export const ModernFactPill = styled.span`
     white-space: nowrap;
   }
 
+  /* Число метрики — кольором ролі: смуга метрик стоїть першою під іменем, і
+     саме її читають найперше. Підпис під числом лишається приглушеним, тож
+     кольору в смузі рівно стільки, скільки в ній значення. */
   .fact-value {
-    color: var(--matching-chip-text);
+    color: color-mix(in srgb, var(--matching-role-accent) 72%, var(--matching-chip-text));
     font-size: clamp(14px, 3.8vw, 18px);
     font-weight: 750;
     letter-spacing: -0.2px;
@@ -1325,8 +1341,26 @@ export const ModernSection = styled.section`
 `;
 
 export const ModernSectionTitle = styled.h3`
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 8px;
   color: var(--matching-section-title);
+
+  /* Заголовки секцій ішли суцільним сірим стовпчиком згори донизу, і картка
+     читалась як роздрукована відомість. Коротка риска кольором ролі дає
+     кожному з них початок — той самий жест, що й смужка ролі на краї рядка
+     стрічки. */
+  &::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 3px;
+    align-self: stretch;
+    min-height: 0.9em;
+    border-radius: 2px;
+    background: var(--matching-role-accent);
+    opacity: 0.85;
+  }
   /* Нотатки — це помітка на полях анкети, а не її дані, тож їхній блок
      говорить тихіше за «Основне» чи «Зовнішність». Ритм картки при цьому
      лишається: колір і накреслення ті самі, змінюється тільки розмір. */
@@ -2537,6 +2571,22 @@ export const NoteLanes = styled.div`
   gap: 10px;
 `;
 
+/*
+ * У рядку стрічки смужка їде у відступ картки, а не всередину неї ($flush).
+ *
+ * Ліва межа картки одна, і текст нотатки мусить починатись рівно там, де імʼя,
+ * факти й контакти. Досі доріжки стояли у власній заокругленій плашці з
+ * підкладкою, і разом із такою ж плашкою «всіх даних» вони були єдиними
+ * заокругленими блоками в картці, яка вся інша — фото на всю ширину й пласкі
+ * секції через волосяну риску. Плашки знято (див. `RowNotes` у
+ * `MatchingHiddenList.styled`), а щоб прибрана підкладка не забрала з собою й
+ * саму ознаку «хто це побачить», смужка лишилась — але винесена в поле картки,
+ * тож текст повертається на спільну ліву межу.
+ *
+ * У відкритій картці цієї потреби немає: там доріжки лежать усередині
+ * `ModernSection`, у якої власні відступи, — тож зсув вмикається прапорцем, а
+ * не стає загальним правилом.
+ */
 export const NoteLane = styled.div`
   padding-left: 10px;
   border-left: 2px solid ${({ $public }) => ($public
@@ -2547,6 +2597,12 @@ export const NoteLane = styled.div`
     padding-top: 10px;
     border-top: 1px solid var(--matching-section-border);
   }
+
+  /* Зсув доріжки в поле картки — рядок стрічки. Пояснення над компонентом:
+     всередині шаблона styled зворотні лапки закривають його. */
+  ${({ $flush }) => $flush && css`
+    margin-left: -12px;
+  `}
 `;
 
 export const NoteLaneHead = styled.div`

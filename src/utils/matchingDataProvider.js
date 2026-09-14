@@ -1297,12 +1297,24 @@ const getFilterMainInputsForMatchingView = ({
   };
 };
 
+/**
+ * Картки, які реакція не прибирає з деки просто зараз.
+ *
+ * Лайк і дизлайк — це відповідь на питання «чи ця людина мені цікава», і
+ * відповідь мусить бути записана. Але картка, яка зникає з екрана в мить
+ * натискання, забирає з собою й саму можливість подивитись, кого щойно
+ * вподобав: у відкритій картці на її місце миттю приїжджала наступна анкета,
+ * а в списку рядок просто випадав з-під пальця. Тому картка, на яку читач
+ * відповів у цьому ж перегляді, лишається на місці — з уже позначеною
+ * кнопкою, — а з деки йде аж тоді, коли дека збереться заново.
+ */
 export const applyMatchingUiFiltersToUsers = ({
   users,
   filters,
   favoriteUsers = {},
   dislikeUsers = {},
   excludeReactionUsers = false,
+  keepReactedUserIds = null,
   roleIndexSets,
   viewMode = 'default',
   filterMainFn = passthroughFilterMain,
@@ -1338,7 +1350,8 @@ export const applyMatchingUiFiltersToUsers = ({
     .filter(u => u?.__matchingAccessAllowed === true || u?.publish !== false)
     .filter(u => (
       !excludeReactionUsers ||
-      (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
+      (!favoriteUsers[u.userId] && !dislikeUsers[u.userId]) ||
+      Boolean(keepReactedUserIds?.has?.(u.userId))
     ));
 
   return baseUsers;

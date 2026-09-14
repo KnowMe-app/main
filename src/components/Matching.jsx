@@ -1029,7 +1029,11 @@ const SwipeableCard = ({
   setOwnFavoriteUsers,
   ownDislikeUsers,
   setOwnDislikeUsers,
-  handleRemove,
+  // Реакція сталася — картку треба **лишити** на екрані до наступної збірки
+  // деки, а не прибрати з неї. Досі тут стояв `handleRemove`, який викидав
+  // анкету зі списку тієї ж миті: лайк у відкритій картці гортав на наступну
+  // людину, і подивитись, кого щойно вподобав, було вже ніде.
+  onReacted,
   togglePublish,
   multiDataOwnerId,
   onNavigate,
@@ -1083,6 +1087,15 @@ const SwipeableCard = ({
   const age = getProfileAge(user);
   const title = [name, age].filter(Boolean).join(', ');
   const shouldShowRoleBadge = !isGenericProfileRole;
+  // Те саме рішення, що й у рядку стрічки: спершу доповнення (його має той,
+  // хто заводить картки), потім редагування (його має адмін). Урізаній
+  // проєкції не належить ні те, ні те — правити в ній нема чого.
+  const editProfileAction = useMemo(() => {
+    if (user?.__limitedProfile) return null;
+    if (onEnrich) return { title: 'Доповнити дані', onClick: () => onEnrich(user) };
+    if (isAdmin && onAdminEdit) return { title: 'Редагувати анкету', onClick: onAdminEdit };
+    return null;
+  }, [isAdmin, onAdminEdit, onEnrich, user]);
   const locationInfo = getProfileLocation(user);
   const identityAndLocationKeys = [
     'name',
@@ -1241,7 +1254,7 @@ const SwipeableCard = ({
       $activeProfile
       style={showDebugOverlay && debugFilteredOutReason ? { opacity: 0.58, filter: 'grayscale(0.85)' } : undefined}
     >
-      <ModernProfileShell>
+      <ModernProfileShell $role={resolvedRole}>
         <ModernProfileScroll>
         <ModernHero
           $image={activeHeroPhoto}
@@ -1424,16 +1437,28 @@ const SwipeableCard = ({
           {/* Олівець, а не плюс: жест той самий, що й у рядку стрічки, —
               «правити цю анкету», — а плюс обіцяв щось додати до списку. Два
               екрани не можуть малювати одну дію двома різними значками. */}
-          {onEnrich && (
-            <ActionButton type="button" onClick={event => { event.stopPropagation(); onEnrich(user); }} aria-label="Доповнити дані" title="Доповнити дані">
+          {/* Олівець один на обидві ролі — рівно як у рядку стрічки
+              (`editAction` у `ProfileRow`): читач із правом заводити картки
+              ним дописує анкету (`onEnrich`), адмін відкриває її на
+              редагування (`onAdminEdit`). Адмінові його тут не було зовсім:
+              жест, який у списку працював, у відкритій картці не робив
+              нічого, а єдиним входом у редагування лишався дрібний напис
+              «ID: 12345» під нотаткою. */}
+          {editProfileAction && (
+            <ActionButton
+              type="button"
+              onClick={event => { event.stopPropagation(); editProfileAction.onClick(); }}
+              aria-label={editProfileAction.title}
+              title={editProfileAction.title}
+            >
               <FaPencilAlt />
             </ActionButton>
           )}
           <span ref={dislikeButtonWrapRef}>
-            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
+            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
           </span>
           <span ref={favoriteButtonWrapRef}>
-            <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
+            <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
           </span>
         </ModernActionRail>
         )}
@@ -2223,14 +2248,40 @@ const Matching = () => {
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
-  const handleRemove = id => {
-    setUsers(prev => prev.filter(u => u.userId !== id));
-    setAdditionalAccessUsers(prev => prev.filter(u => u.userId !== id));
-    setSharedReactionCandidateUsers(prev => prev.filter(u => u.userId !== id));
-  };
+  /**
+   * Картки, на які читач відповів у цьому перегляді деки.
+   *
+   * Реакція записується одразу, а картка лишається на місці до наступної
+   * збірки деки (`keepReactedUserIds` у `applyMatchingUiFiltersToUsers`).
+   * Досі було навпаки: лайк у відкритій картці прибирав анкету з-під пальця
+   * тієї ж миті — на її місце приїжджала наступна, і подивитись, кого щойно
+   * вподобав (чи виправити промах), було вже ніде. У списку рядок так само
+   * випадав з-під свайпу.
+   *
+   * Набір живе рівно стільки, скільки поточна дека: зміна режиму або фільтрів
+   * збирає її заново, і там реакції вже діють — саме цього читач і чекає,
+   * повернувшись до стрічки.
+   */
+  const [stickyReactedUserIds, setStickyReactedUserIds] = useState(() => new Set());
+  const rememberReactedCard = React.useCallback(userId => {
+    if (!userId) return;
+    setStickyReactedUserIds(previous => {
+      if (previous.has(userId)) return previous;
+      const next = new Set(previous);
+      next.add(userId);
+      return next;
+    });
+  }, []);
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+
+  // Дека зібралась заново — реакції, зроблені в попередній, більше її не
+  // тримають. Саме це читач і має на увазі під «наступного разу картки вже не
+  // буде»: він перемкнув режим, звузив фільтри або повернувся до стрічки.
+  useEffect(() => {
+    setStickyReactedUserIds(previous => (previous.size ? new Set() : previous));
+  }, [viewMode, filters]);
   useEffect(() => {
     matchingProfileStateRef.current = {
       ownerId,
@@ -5210,12 +5261,13 @@ const Matching = () => {
       favoriteUsers,
       dislikeUsers,
       excludeReactionUsers: viewMode === 'default',
+      keepReactedUserIds: stickyReactedUserIds,
       roleIndexSets,
       viewMode,
     }),
     viewerRole: viewMode === 'default' ? currentUserRole : '',
     viewerId: ownerId,
-  }), [currentUserRole, dislikeUsers, favoriteUsers, filters, ownerId, roleIndexSets, users, viewMode]);
+  }), [currentUserRole, dislikeUsers, favoriteUsers, filters, ownerId, roleIndexSets, stickyReactedUserIds, users, viewMode]);
 
   /**
    * Власна чернетка, яку питали по імені чи контакту, — теж відповідь пошуку.
@@ -5387,6 +5439,7 @@ const Matching = () => {
       favoriteUsers,
       dislikeUsers,
       excludeReactionUsers: viewMode === 'default',
+      keepReactedUserIds: stickyReactedUserIds,
       roleIndexSets,
       viewMode,
     });
@@ -5400,6 +5453,7 @@ const Matching = () => {
     roleIndexSets,
     searchRefinedUsers,
     searchRevealCount,
+    stickyReactedUserIds,
     users,
     viewMode,
     visibleUsers,
@@ -7131,6 +7185,7 @@ const Matching = () => {
 
   const toggleRowFavorite = React.useCallback(user => {
     if (!user?.userId) return;
+    rememberReactedCard(user.userId);
     const canonicalUser = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId);
     void toggleFavoriteUser({
       userId: user.userId,
@@ -7147,7 +7202,7 @@ const Matching = () => {
       setOwnDislikeUsers,
       multiDataOwnerId: ownerId,
     });
-  }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, withLazyPhotos]);
+  }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, withLazyPhotos]);
 
   const resolveEmptyFeedMessage = () => {
     // An empty group is a different problem from "nothing matched", and saying so
@@ -7471,6 +7526,7 @@ const Matching = () => {
 
   const toggleRowHidden = React.useCallback(user => {
     if (!user?.userId) return;
+    rememberReactedCard(user.userId);
     const canonicalUser = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId);
     void toggleDislikeUser({
       userId: user.userId,
@@ -7485,7 +7541,7 @@ const Matching = () => {
       setOwnFavoriteUsers,
       multiDataOwnerId: ownerId,
     });
-  }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, withLazyPhotos]);
+  }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, withLazyPhotos]);
 
   /**
    * Шар доповнення накладається ще раз — уже поверх догідратованої анкети.
@@ -8061,7 +8117,7 @@ const Matching = () => {
                       setDislikeUsers={setDislikeUsers}
                       ownDislikeUsers={ownDislikeUsers}
                       setOwnDislikeUsers={setOwnDislikeUsers}
-                      handleRemove={handleRemove}
+                      onReacted={rememberReactedCard}
                       togglePublish={togglePublish}
                       multiDataOwnerId={ownerId}
                       onNavigate={navigateActiveProfile}

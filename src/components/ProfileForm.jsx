@@ -58,7 +58,7 @@ import {
   resolveProfileFormBlock,
   PROFILE_FORM_BLOCK_IDS,
 } from './profileFormNodeBlocks';
-import { appendEmptyFieldRow, canAppendFieldRow } from 'utils/profileFieldRows';
+import { appendEmptyFieldRow, canAppendFieldRow, fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -3335,6 +3335,7 @@ ${entries.join('\n')}`;
             )}
 
             {field.name !== 'lastAction' &&
+              fieldAcceptsMultipleValues(field.name) &&
               canAppendFieldRow(state[field.name]) &&
               ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3) ||
                 !Array.isArray(field.options)) && (

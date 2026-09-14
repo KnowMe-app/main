@@ -369,13 +369,20 @@ describe('дії та роль на картці стрічки', () => {
 
   // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати, і саме
   // цей код разом із плиткою ініціалів робив рядок агенції нечитабельним.
+  // У рядку списку це слово переїхало на сам знімок — туди, де його малює й
+  // відкрита картка, — а чіпа під іменем більше немає взагалі.
   it('показує роль словом на обох виглядах', () => {
     expect(read('Matching.jsx')).toContain('<GalleryRoleTag');
-    expect(read('ProfileRow.jsx')).toContain('<S.RoleTag');
+    const rowSource = read('ProfileRow.jsx');
+    expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{roleWord}</S.PhotoRoleBadge>');
+    expect(rowSource).not.toContain('<S.RoleTag');
   });
 
-  it('не повертає двобуквений код у стрічку', () => {
+  // Двобуквений код лишився рівно одним запасним варіантом: знімка немає, тож
+  // плашці ролі нема на чому лежати, а роль усе одно треба сказати. У плитці
+  // галереї, де слово вміщається, коду немає й далі.
+  it('повертає двобуквений код лише там, де немає фото', () => {
     expect(read('Matching.jsx')).not.toContain('<GalleryRoleCode');
-    expect(read('ProfileRow.jsx')).not.toContain('<S.RoleCode');
+    expect(read('ProfileRow.jsx')).toContain('{!photo && roleCode && <S.RoleCode');
   });
 });

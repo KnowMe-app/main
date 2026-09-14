@@ -17,6 +17,7 @@ import {
   maritalStatusLabel,
   getBloodGroupDisplay,
   getProfileRole,
+  getRoleCode,
   getRoleShortLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
@@ -1000,6 +1001,11 @@ const ProfileRow = ({
   // іменем, не стискалось — і імʼя обрізалось до «Яна …». Тепер підпис іде
   // нижче, поруч із локацією, і в короткій формі.
   const roleWord = getRoleShortLabel(rowRole, language);
+  // Дволітерний код — запасний варіант рівно для випадку «ролі знаємо, а
+  // знімка немає»: плашці ролі тоді нема на чому лежати, а знати, хто перед
+  // тобою, треба до відкриття анкети так само. У рядку імені ширини під
+  // «Донорка яйцеклітин» немає — там і стоїть «ED».
+  const roleCode = getRoleCode(rowRole);
   const age = getProfileAge(user);
   const location = getLocationLine(user);
   const photos = getProfilePhotos(user);
@@ -1032,10 +1038,21 @@ const ProfileRow = ({
   // круга до бази заради «Контактів немає або вони закриті».
   const showContactsButton = Boolean(onRequestContacts) && !isLimited && canViewContacts;
 
-  // Скільки полів ховає стрілка. Контакти рахуються тут лише тоді, коли саме
-  // цей блок їх і показує: інакше число обіцяло б під стрілкою те, що лежить
-  // під сусідньою кнопкою.
-  const hiddenFieldCount = gridRows.length + (showContactsButton ? 0 : contactEntries.length);
+  // Стрілка стоїть у кожному нефільтрованому рядку й числа біля себе не несе.
+  //
+  // Число там було, і воно брехало: рахувалось воно по `gridRows`, а ті
+  // збираються з тієї ж проєкції `matchingCards`, у якій освіти, зовнішності й
+  // контактів немає взагалі — вони приїжджають аж на дотик до стрілки
+  // (`ensureFullProfile`). Тобто підпис обіцяв «0» або «2» рівно там, де під
+  // стрілкою лежав десяток полів, а в уже відкритій картці міняв своє значення
+  // просто тому, що анкета приїхала. Порахувати чесно тут нічим: рядок не знає
+  // анкети, доки її не прочитає.
+  //
+  // Тому стрілка тепер саме стрілка: «розгорнути й дозавантажити». І стоїть
+  // вона в кожному повному рядку, а не лише там, де проєкція вже щось показує,
+  // — інакше картка без жодного зайвого поля в проєкції ховала б і саму
+  // можливість прочитати анкету.
+  const canExpandDetails = !isLimited;
 
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
@@ -1138,26 +1155,32 @@ const ProfileRow = ({
       {photo && (
         <S.Photo>
           <img src={photo} alt="" loading="lazy" decoding="async" />
+          {/* Роль лежить на знімку — там само, де її малює відкрита картка
+              (`ModernRoleBadge`). Під іменем вона стояла чіпом і забирала
+              ширину в локації; а два екрани не можуть казати про ту саму річ
+              у двох різних місцях. */}
+          {roleWord && <S.PhotoRoleBadge $role={rowRole}>{roleWord}</S.PhotoRoleBadge>}
           {photos.length > 1 && <S.PhotoCount>{photos.length}</S.PhotoCount>}
         </S.Photo>
       )}
       <S.Top>
         <S.Body>
-          {/* Імʼя володіє рядком одноосібно — це головне, що в ньому є, і
-              нічого поруч не мусить забирати в нього ширину. */}
-          <S.Name>
-            {name}
-            {age && <>, {age}</>}
-          </S.Name>
-          {(roleWord || hasLocation) && (
+          {/* Імʼя володіє рядком майже одноосібно: поруч із ним стає хіба
+              дволітерний код ролі, і лише там, де знімка немає — тобто де
+              плашці ролі нема на чому лежати. */}
+          <S.NameRow>
+            <S.Name>
+              {name}
+              {age && <>, {age}</>}
+            </S.Name>
+            {!photo && roleCode && <S.RoleCode $role={rowRole}>{roleCode}</S.RoleCode>}
+          </S.NameRow>
+          {hasLocation && (
             <S.MetaRow>
-              {roleWord && <S.RoleTag $role={rowRole}>{roleWord}</S.RoleTag>}
-              {hasLocation && (
-                <S.Location>
-                  <FaMapMarkerAlt aria-hidden="true" />
-                  <span>{location}</span>
-                </S.Location>
-              )}
+              <S.Location>
+                <FaMapMarkerAlt aria-hidden="true" />
+                <span>{location}</span>
+              </S.Location>
             </S.MetaRow>
           )}
         </S.Body>
@@ -1188,7 +1211,7 @@ const ProfileRow = ({
               </S.RowActionButton>
             )}
           </S.RowActionStack>
-          {!isLimited && hiddenFieldCount > 0 && (
+          {canExpandDetails && (
           <S.ChevronButton
             type="button"
             $open={expanded}
@@ -1196,7 +1219,6 @@ const ProfileRow = ({
             title="Показати всі дані"
             onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
           >
-            <b>{hiddenFieldCount}</b>
             <FaChevronDown size={11} />
           </S.ChevronButton>
           )}
@@ -1269,6 +1291,12 @@ const ProfileRow = ({
           {!showContactsButton && canViewContacts && (
             <ContactsSection user={user} onOpened={onContactsOpened} />
           )}
+          {/* Стрілка тепер стоїть у кожному рядку, тож розгорнути можна й
+              картку, анкета якої ще їде (або в якій цих полів просто немає).
+              Порожній блок читався б як поламаний — краще сказати словом. */}
+          {gridRows.length === 0 && !bio && (
+            <S.RowContactsNote>Додаткових даних немає</S.RowContactsNote>
+          )}
         </S.More>
       )}
 
@@ -1289,7 +1317,7 @@ const ProfileRow = ({
           тапнули. */}
       <S.RowNotes onClick={e => e.stopPropagation()}>
         {reviewsOpen && reviewsSlot && (
-          <NoteLane $public>
+          <NoteLane $flush $public>
             <NoteLaneHead>
               <b>{profileUiText('publicComment', language)}</b>
               <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
@@ -1297,7 +1325,7 @@ const ProfileRow = ({
             {reviewsSlot}
           </NoteLane>
         )}
-        <NoteLane>
+        <NoteLane $flush>
           <NoteLaneHead>
             <b>{profileUiText('personalNote', language)}</b>
             <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>

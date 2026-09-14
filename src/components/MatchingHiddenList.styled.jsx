@@ -5,6 +5,8 @@ import {
   NOTE_TEXT_LINE_HEIGHT,
   NOTE_TEXT_SIZE,
 } from './noteTypography';
+// Кольори ролей спільні з відкритою карткою — див. `matchingRoleColors`.
+import { ROLE_STRIPE_COLORS } from './matchingRoleColors';
 
 export const Wrap = styled.div`
   display: flex;
@@ -42,13 +44,7 @@ export const List = styled.div`
 // Смужка ролі на лівому краї — те, що лишилось від плитки з ініціалами.
 // Колір несе те саме «хто це», але не забирає ані ширини, ані уваги; для
 // анкети без ролі смужки просто немає.
-export const ROLE_STRIPE_COLORS = {
-  ed: '#c95b83',
-  ag: '#4d86c9',
-  ip: '#3f9b8e',
-  sm: '#8a5ec2',
-  cl: '#4a9bc9',
-};
+export { ROLE_STRIPE_COLORS };
 
 export const CARD_PADDING = '11px';
 
@@ -113,6 +109,45 @@ export const Photo = styled.div`
   }
 `;
 
+/*
+ * Роль — на фото, як у відкритій картці.
+ *
+ * Підпис ролі стояв рядком нижче, поруч із локацією, і там він змагався за
+ * ширину з містом; а головне — два екрани казали про ту саму річ різними
+ * місцями: у відкритій анкеті роль лежить плашкою на знімку
+ * (`ModernRoleBadge`), у списку — сірим чіпом під іменем. Тепер там і там це
+ * та сама плашка в кольорі своєї ролі, у тому самому куті.
+ *
+ * Підкладка напівпрозора й темна, а не суцільний колір ролі: під нею живе
+ * знімок, і колір мусить читатись поверх будь-якого — світлого й темного
+ * однаково. Сам колір ролі несе текст і тонка рамка.
+ */
+export const PhotoRoleBadge = styled.span`
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  z-index: 2;
+  max-width: calc(100% - 18px);
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(6px);
+  border: 1px solid ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
+    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 70%, transparent)`
+    : 'rgba(255, 255, 255, 0.3)')};
+  color: ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
+    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 55%, #ffffff)`
+    : '#fff')};
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
 /* Скільки фото в анкеті — видно з рядка, ще до її відкриття. */
 export const PhotoCount = styled.span`
   position: absolute;
@@ -147,9 +182,14 @@ export const Name = styled.div`
 export const RoleCode = styled.span`
   flex: 0 0 auto;
   padding: 1px 5px;
-  border: 1px solid var(--matching-card-border);
+  border: 1px solid ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
+    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 45%, transparent)`
+    : 'var(--matching-card-border)')};
   border-radius: 5px;
-  color: var(--matching-muted-text);
+  color: ${({ $role }) => ROLE_STRIPE_COLORS[$role] || 'var(--matching-muted-text)'};
+  background: ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
+    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 14%, transparent)`
+    : 'transparent')};
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -345,17 +385,13 @@ export const EditButton = styled.button`
   }
 `;
 
+/* Числа біля стрілки немає — див. `canExpandDetails` у `ProfileRow`. Разом із
+   ним пішло й правило для `b`: рахувати під стрілкою нічого. */
 export const ChevronButton = styled.button`
   ${ctrlButtonBase}
   border: 1px solid var(--matching-card-border);
   background: var(--matching-card-bg);
   color: var(--matching-muted-text);
-
-  b {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--matching-muted-text);
-  }
 
   svg {
     transition: transform 180ms ease;
@@ -474,17 +510,17 @@ export const NoteMore = styled.span`
 
 export const More = styled.div`
   margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px solid var(--matching-card-border);
 `;
 
-/* Та сама плашка, що й у нотаток, і з тим самим внутрішнім краєм: два
-   вкладені блоки з різними відступами ламали ліву межу картки посередині. */
+/* Пласка секція на спільній лівій межі — так само, як нотатки (`RowNotes`) і
+   контакти: заокруглених плашок усередині рядка більше немає взагалі, тож і
+   тут лишились самі дані. */
 export const Grid = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0 14px;
-  background: var(--matching-inset-bg);
-  border-radius: 14px;
-  padding: 8px 10px;
 `;
 
 export const GridRow = styled.p`
@@ -1090,16 +1126,28 @@ export const RowReactionPair = styled.div`
  * і аж тоді те, що читач дописує сам. Той самий порядок, що й у відкритій
  * картці.
  */
+/*
+ * Нотатки в рядку — пласка секція, а не плашка.
+ *
+ * Заокруглена підкладка тут була, і у відкритій картці вона читалась добре: та
+ * картка стоїть на екрані одна, і плашка ділить її на блоки. У списку все
+ * навпаки — рядок сам по собі вже заокруглена картка з фото на всю ширину, і
+ * вкладена в неї друга заокруглена коробка з іншим фоном виглядала наліпкою:
+ * єдине закруглення в картці, де всі інші секції (контакти, «всі дані») —
+ * пласкі й розділені волосяною рискою. Тепер нотатки розділені так само, а
+ * «хто побачить запис» каже смужка доріжки (`NoteLane` з `$flush`) і підпис
+ * над нею.
+ */
 export const RowNotes = styled.div`
   margin-top: 10px;
-  padding: 2px 10px;
-  border-radius: 14px;
-  background: var(--matching-inset-bg);
+  padding-top: 9px;
+  border-top: 1px solid var(--matching-card-border);
 `;
 
-/* Опис «про себе» стоїть під сіткою «всі дані» і тримає її внутрішній край. */
+/* Опис «про себе» стоїть під сіткою «всі дані» і тримає ту саму ліву межу, що
+   й вона, — тобто межу самої картки. */
 export const MoreNote = styled.div`
-  padding: 0 10px;
+  padding: 0;
 `;
 
 /* Межу між доріжками тримає сама доріжка (`NoteLane` у `Matching.styled`):
