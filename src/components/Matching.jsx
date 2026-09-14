@@ -1517,6 +1517,29 @@ const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
 const MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS = 2;
 const SCROLL_Y_KEY = 'matchingScrollY';
+// Картка, на якій читач зупинився: якір відновлення позиції. Живе стільки ж,
+// скільки й сам піксель, — рівно один перехід.
+const SCROLL_ANCHOR_KEY = 'matchingScrollAnchorId';
+// Скільки кадрів відновлення чекає на свій рядок. Стрічка повертається з кеша
+// не в один рендер, і якір з'являється в DOM пізніше за перші картки; але
+// чекати без кінця теж не можна — анкети могло вже й не бути в деці.
+const SCROLL_ANCHOR_MAX_ATTEMPTS = 40;
+
+// Рядок картки за її id. `CSS.escape` є не скрізь (старі webview, частина
+// тестових середовищ), а id картки — це або UID Firebase, або `TG0001`, тобто
+// літери, цифри й дефіс: там екранувати нема чого, і запасний варіант нічого
+// не втрачає.
+const findCardNodeById = cardId => {
+  if (!cardId || typeof document === 'undefined') return null;
+  const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+    ? CSS.escape(cardId)
+    : String(cardId).replace(/["\\]/g, '\\$&');
+  try {
+    return document.querySelector(`[data-card-id="${escaped}"]`);
+  } catch {
+    return null;
+  }
+};
 const SEARCH_KEY = MATCHING_SEARCH_STORAGE_KEY;
 
 // Spec §4: the list/gallery choice is a persistent per-device preference, kept
@@ -1611,6 +1634,9 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
     <GalleryTile
       $muted={isHidden}
       $role={role}
+      // Той самий якір, що й у рядку списку: розкладка не має впливати на те,
+      // куди читач повернеться.
+      data-card-id={user?.userId}
       onClick={() => onOpen(user)}
       role="button"
       tabIndex={0}
@@ -1912,6 +1938,16 @@ const Matching = () => {
   // залишало позначку знятою назавжди — відповідь про доповнення приходила вже
   // «розмонтованій» сторінці й мовчки викидалась.
   const ownOverlaysMountedRef = useRef(true);
+  // Читання власного доповнення «на дотик» живе в рефі, щоб `ensureFullProfile`
+  // лишався без залежностей: його ідентичність тримає половину обробників
+  // сторінки, і перестворювати їх щоразу, коли приїхав черговий оверлей,
+  // означало б перемальовувати всю стрічку.
+  const ensureOwnOverlayRef = useRef(() => {});
+  // Про які картки вже питали саме цим шляхом. Окремо від
+  // `requestedOwnOverlayIdsRef`: та памʼять належить стрічці й лишається
+  // поставленою й після порожньої відповіді, а дотик мусить мати право
+  // спитати про картку, якої перелік не називав.
+  const touchedOwnOverlayIdsRef = useRef(new Set());
   useEffect(() => {
     ownOverlaysMountedRef.current = true;
     return () => { ownOverlaysMountedRef.current = false; };
@@ -1925,6 +1961,7 @@ const Matching = () => {
     setOwnOverlayFieldsByCardId({});
     setOwnOverlayCardIds(null);
     requestedOwnOverlayIdsRef.current = new Set();
+    touchedOwnOverlayIdsRef.current = new Set();
   }, [ownerId]);
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({
@@ -2245,8 +2282,27 @@ const Matching = () => {
   // приїхало. Тепер порція називає себе сама, на тому ж місці, де щойно був
   // відлік.
   const [lastBatchSummary, setLastBatchSummary] = useState(null);
+  /**
+   * Куди читач дивився — це рядок, а не піксель.
+   *
+   * Піксельна позиція сама по собі не відновлює нічого: стрічка повертається
+   * з кеша порціями, і `scrollTo(0, 4000)` по списку, у якому зараз десять
+   * рядків, упирається в його кінець — а позначку «вже відновили» знімає
+   * назавжди. Далі приїжджає решта карток, і читач опиняється там, звідки все
+   * починалось: на початку списку. Тому поруч із пікселем лежить id картки, на
+   * якій він зупинився, і саме її рядок відновлення шукає в DOM.
+   *
+   * Піксель лишається запасним: анкету могли прибрати з деки (реакція,
+   * звужений фільтр), і тоді краще стати приблизно там, ніж угорі.
+   */
+  const lastSeenCardIdRef = useRef('');
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
+    if (lastSeenCardIdRef.current) {
+      sessionStorage.setItem(SCROLL_ANCHOR_KEY, lastSeenCardIdRef.current);
+    } else {
+      sessionStorage.removeItem(SCROLL_ANCHOR_KEY);
+    }
   };
   /**
    * Картки, на які читач відповів у цьому перегляді деки.
@@ -2329,21 +2385,60 @@ const Matching = () => {
     };
   }, []);
 
+  /**
+   * Повернення до стрічки стає там, де читач її лишив.
+   *
+   * Відновлення тут було, і воно не працювало: одна спроба на першому ж
+   * рендері, у якому в деці є бодай одна картка. А дека повертається порціями
+   * — спершу те, що встиг віддати кеш, потім решта, — тож `scrollTo` по
+   * короткому ще списку впирався в його кінець, позначка «відновили» знімалась
+   * назавжди, і людина, яка гортала до шістдесятої картки, поверталась на
+   * початок списку.
+   *
+   * Тепер орієнтир — рядок тієї картки, яку читач останньою дивився
+   * (`data-card-id`), а не піксель: рядки різної висоти, і фото в них
+   * догідратовуються вже після відновлення. Спроба повторюється покадрово,
+   * доки той рядок не з'явиться в DOM — або доки не вичерпається стеля, після
+   * якої лишається піксель як приблизна відповідь.
+   */
   useLayoutEffect(() => {
-    if (restoreRef.current || loading || users.length === 0) return;
+    if (restoreRef.current || users.length === 0) return undefined;
     const savedY = sessionStorage.getItem(SCROLL_Y_KEY);
-    if (savedY !== null) {
-      requestAnimationFrame(() => {
-        window.scrollTo(0, Number(savedY));
-        // Відновлення позиції — не жест читача. Посуваємо орієнтир одразу, щоб
-        // подія скролу, яка зараз прийде, не зарахувалась як прокрутка донизу і
-        // не завела відлік сама.
-        scrollPositionRef.current = Number(savedY);
-        restoreRef.current = true;
-        sessionStorage.removeItem(SCROLL_Y_KEY);
-      });
-    }
-  }, [loading, users]);
+    const savedAnchorId = sessionStorage.getItem(SCROLL_ANCHOR_KEY);
+    if (savedY === null && !savedAnchorId) return undefined;
+
+    let frame = 0;
+    let attempts = 0;
+
+    // Відновлення позиції — не жест читача. Орієнтир посувається одразу, щоб
+    // подія скролу, яка зараз прийде, не зарахувалась як прокрутка донизу і не
+    // завела відлік сама.
+    const settle = () => {
+      scrollPositionRef.current = window.scrollY;
+      restoreRef.current = true;
+      sessionStorage.removeItem(SCROLL_Y_KEY);
+      sessionStorage.removeItem(SCROLL_ANCHOR_KEY);
+    };
+
+    const tryRestore = () => {
+      attempts += 1;
+      const anchor = findCardNodeById(savedAnchorId);
+      if (anchor) {
+        anchor.scrollIntoView({ block: 'center' });
+        settle();
+        return;
+      }
+      if (savedAnchorId && attempts < SCROLL_ANCHOR_MAX_ATTEMPTS) {
+        frame = requestAnimationFrame(tryRestore);
+        return;
+      }
+      if (savedY !== null) window.scrollTo(0, Number(savedY));
+      settle();
+    };
+
+    frame = requestAnimationFrame(tryRestore);
+    return () => cancelAnimationFrame(frame);
+  }, [users]);
 
   const getOwnerId = () => auth.currentUser?.uid || localStorage.getItem('ownerId');
   const getMatchingMultiDataOwnerIds = React.useCallback(() => {
@@ -5569,6 +5664,51 @@ const Matching = () => {
   }, [access.canCreateProfiles, isAdmin, ownerId]);
 
   /**
+   * Власне доповнення до однієї картки, про яку читач спитав прямо.
+   *
+   * Шар доповнення (`multiData/edits/{картка}/{читач}`) мусить лягти на картку
+   * скрізь, де його автор цю картку бачить. У стрічці «де бачить» вирішує
+   * перелік власних доповнень — інакше кожен з її сотень рядків коштував би
+   * вузла. Але перелік не всезнаючий: у базі він лежить під
+   * `multiData/editsByEditor`, правила на який викочуються руками, а поза базою
+   * — у памʼяті цього браузера. Тож на іншому пристрої (і всюди, поки правила
+   * не викотили) перелік мовчить, і дописаний телефон видно було рівно в одному
+   * місці — у формі доповнення, яка читає вузол напряму. Людина дописала номер,
+   * повернулась до списку й побачила ту саму картку без нього.
+   *
+   * Дотик знімає це питання, не платячи за стрічку: відкрита картка,
+   * розгорнутий рядок і натиснута трубка — це три явні «покажи мені цю
+   * анкету», і кожне з них уже коштує читання вузлів анкети. Ще один вузол на
+   * той самий дотик стрічку не здорожчує, бо дотиків стільки, скільки їх
+   * зробила людина, а не скільки рядків у списку.
+   */
+  useEffect(() => {
+    const editorUserId = ownerId;
+    if (isAdmin || !access.canCreateProfiles || !editorUserId) {
+      ensureOwnOverlayRef.current = () => {};
+      return;
+    }
+
+    ensureOwnOverlayRef.current = cardUserId => {
+      if (!cardUserId || touchedOwnOverlayIdsRef.current.has(cardUserId)) return;
+      touchedOwnOverlayIdsRef.current.add(cardUserId);
+      getOwnOverlayFieldsForCards({ editorUserId, cardUserIds: [cardUserId] })
+        .then(fieldsByCardId => {
+          const fields = fieldsByCardId?.[cardUserId];
+          if (!fields || !Object.keys(fields).length) return;
+          if (!ownOverlaysMountedRef.current || ownOverlayOwnerIdRef.current !== editorUserId) return;
+          setOwnOverlayFieldsByCardId(previous => ({ ...previous, [cardUserId]: fields }));
+        })
+        .catch(error => {
+          // Читання, яке впало, мусить бути можливо повторити наступним дотиком:
+          // відмова тут — це мережа або невикочені правила, а не «шару немає».
+          touchedOwnOverlayIdsRef.current.delete(cardUserId);
+          console.warn('[Matching] own overlay unavailable', cardUserId, error);
+        });
+    };
+  }, [access.canCreateProfiles, isAdmin, ownerId]);
+
+  /**
    * Читається лише те, що на екрані, — і в стрічці лише те, що читач дописував.
    *
    * Шар доповнення (`multiData/edits/{картка}/{читач}`) мусить лягти на картку
@@ -6062,7 +6202,17 @@ const Matching = () => {
 
   const ensureFullProfile = React.useCallback(user => {
     const userId = user?.userId;
-    if (!userId || !isMatchingSummaryCard(user)) return Promise.resolve();
+    if (!userId) return Promise.resolve();
+    // Читач сам попросив саме цю картку — відкрив її, розгорнув рядок або
+    // натиснув трубку. Питання «чи лежить тут моє доповнення» коштує тут один
+    // вузол на дотик, і поставити його треба незалежно від переліку власних
+    // доповнень: перелік живе в `multiData/editsByEditor`, правила на який
+    // викочуються руками, тож на чужому пристрої (або поки їх не викотили) він
+    // мовчить — і дописаний телефон не з'являвся ніде, крім самої форми
+    // доповнення. Стрічка перелік і далі питає: там рядків сотні, і читати
+    // вузол на кожен з них — рівно те, від чого її відмивали.
+    ensureOwnOverlayRef.current(userId);
+    if (!isMatchingSummaryCard(user)) return Promise.resolve();
     if (fullProfileRequestsRef.current.has(userId)) return Promise.resolve();
     fullProfileRequestsRef.current.add(userId);
 
@@ -7041,6 +7191,11 @@ const Matching = () => {
     const index = feedSource.findIndex(candidate => candidate?.userId === user?.userId);
     if (index === -1) return;
     feedScrollTopRef.current = window.scrollY;
+    // Відкрита картка — і є те місце, куди читач схоче повернутись. Якір
+    // ставиться тут, а не в момент переходу: з відкритої картки можна піти
+    // далі (олівець, редагування анкети), і тоді сторінка розмонтується вже
+    // з неї.
+    lastSeenCardIdRef.current = user?.userId || '';
     setActiveProfileIndex(index);
     setDetailOpen(true);
   }, [feedSource]);
@@ -7090,8 +7245,19 @@ const Matching = () => {
   useLayoutEffect(() => {
     if (detailOpen) return;
     const savedTop = feedScrollTopRef.current;
-    if (!savedTop) return;
-    requestAnimationFrame(() => window.scrollTo(0, savedTop));
+    const anchorId = lastSeenCardIdRef.current;
+    if (!savedTop && !anchorId) return;
+    requestAnimationFrame(() => {
+      // Рядок тієї самої картки — точніше за піксель: поки шар був відкритий,
+      // у стрічку могла долягти чергова порція, а в рядках — догідратуватись
+      // фото, і висота списку над збереженою позицією вже інша.
+      const anchor = findCardNodeById(anchorId);
+      if (anchor) {
+        anchor.scrollIntoView({ block: 'center' });
+        return;
+      }
+      if (savedTop) window.scrollTo(0, savedTop);
+    });
   }, [detailOpen]);
 
   const handleToggleRowExpand = React.useCallback(userId => {
@@ -7163,6 +7329,7 @@ const Matching = () => {
   // (`readProfileFromNodes`), що й вирішує, скільки полів цьому читачеві видно.
   const handleRowEnrichProfile = React.useCallback(user => {
     if (!user?.userId) return;
+    lastSeenCardIdRef.current = user.userId;
     saveScrollPosition();
     // Адреса видачі їде разом із наміром: закрита форма повертає рівно до тих
     // самих знайдених карток, а не на порожній екран пошуку.
@@ -7177,6 +7344,7 @@ const Matching = () => {
   }, [navigate, searchQuery]);
 
   const handleRowEditProfile = React.useCallback(user => {
+    lastSeenCardIdRef.current = user?.userId || '';
     saveScrollPosition();
     navigate(`/edit/${user.userId}`, { state: user });
     // saveScrollPosition reads a ref and never changes identity.
@@ -7461,6 +7629,82 @@ const Matching = () => {
       [profileId]: (previous[profileId] || []).filter(comment => comment.id !== commentId),
     }));
   }, []);
+
+  /**
+   * Слот відгуків — один на всі списки, що показують рядок стрічки.
+   *
+   * Вміст той самий і в деці, і серед прихованих: відгук про людину не
+   * залежить від того, з якого списку на неї дивляться. Збирався він досі
+   * просто в розмітці стрічки, тож список прихованих показати його не міг
+   * взагалі — там рядок не отримував ані слота, ані значка.
+   */
+  const buildRowReviewsSlot = React.useCallback(profileId => (
+    <PublicCommentsGate
+      profileId={profileId}
+      backendHref={publicCommentsBackendHref(profileId)}
+      comments={publicComments[profileId] || EMPTY_PUBLIC_COMMENTS}
+      loaded={Boolean(publicComments[profileId])}
+      loading={Boolean(publicCommentsLoading[profileId])}
+      viewerId={auth.currentUser?.uid || ''}
+      canModerate={isAdmin}
+      onCreate={handleCreatePublicComment}
+      onUpdate={handleUpdatePublicComment}
+      onDelete={handleDeletePublicComment}
+    />
+  ), [
+    handleCreatePublicComment,
+    handleDeletePublicComment,
+    handleUpdatePublicComment,
+    isAdmin,
+    publicComments,
+    publicCommentsBackendHref,
+    publicCommentsLoading,
+  ]);
+
+  /**
+   * Усе, що рядок прихованої картки вміє понад «повернути».
+   *
+   * Контакти, відгуки, олівець і «в обране» — ті самі дії й ті самі сховища,
+   * що й у стрічці: рядок один на два списки, тож і рішення в ньому мусять
+   * бути одні. Межа приватності при цьому питається так само поіменно
+   * (`canOfferProfileContacts`) — прихованість картки прав на контакти не
+   * додає й не віднімає.
+   *
+   * «В обране» стоїть у парі з «повернути» навмисно: лайк прихованої анкети
+   * і є її поверненням — реакція знімає дизлайк, — тож два боки одного вибору
+   * лишаються в одній рамці, як серце з хрестиком у стрічці.
+   */
+  const buildHiddenRowExtras = React.useCallback(user => ({
+    onEnrich: !isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined,
+    onRequestContacts: handleRequestRowContacts,
+    canViewContacts: canOfferProfileContacts({
+      card: user,
+      viewerId: ownerId,
+      accessLevel: currentAccessLevel,
+    }),
+    contactsLoading: Boolean(rowContactsLoading[user.userId]),
+    reviewsAction: buildRowReviewsAction(user.userId),
+    reviewsSlot: buildRowReviewsSlot(user.userId),
+    secondaryAction: {
+      icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
+      title: 'В обране',
+      accent: true,
+      active: Boolean(favoriteUsers[user.userId]),
+      onClick: toggleRowFavorite,
+    },
+  }), [
+    access.canCreateProfiles,
+    buildRowReviewsAction,
+    buildRowReviewsSlot,
+    currentAccessLevel,
+    favoriteUsers,
+    handleRequestRowContacts,
+    handleRowEnrichProfile,
+    isAdmin,
+    ownerId,
+    rowContactsLoading,
+    toggleRowFavorite,
+  ]);
 
   useEffect(() => {
     if (!diagnosticsEnabled || !isAdmin || diagnosticsModule) return;
@@ -7880,7 +8124,10 @@ const Matching = () => {
           {viewMode === 'dislikes' && viewLayout === 'list' ? (
             <MatchingHiddenList
               ownerId={ownerId}
-              users={filteredUsers}
+              // Ті самі догідратовані рядки, що й у стрічці: без повної анкети
+              // кнопці контактів у прихованому рядку не було б що показати, а
+              // власне доповнення не лягло б на картку.
+              users={feedRows}
               hasMore={hasMore}
               loading={loading}
               loadMore={loadMore}
@@ -7892,6 +8139,7 @@ const Matching = () => {
               onGoToFeed={handleDefaultModeClick}
               onEditProfile={handleRowEditProfile}
               onOpenProfile={openDetailFor}
+              buildRowExtras={buildHiddenRowExtras}
             />
           ) : (
             <FeedWrap>
@@ -7967,20 +8215,7 @@ const Matching = () => {
                       onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
                       clientComment={comments[user.userId] || ''}
                       onCommentSave={handleRowCommentSave}
-                      reviewsSlot={(
-                        <PublicCommentsGate
-                          profileId={user.userId}
-                          backendHref={publicCommentsBackendHref(user.userId)}
-                          comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
-                          loaded={Boolean(publicComments[user.userId])}
-                          loading={Boolean(publicCommentsLoading[user.userId])}
-                          viewerId={auth.currentUser?.uid || ''}
-                          canModerate={isAdmin}
-                          onCreate={handleCreatePublicComment}
-                          onUpdate={handleUpdatePublicComment}
-                          onDelete={handleDeletePublicComment}
-                        />
-                      )}
+                      reviewsSlot={buildRowReviewsSlot(user.userId)}
                       reviewsAction={buildRowReviewsAction(user.userId)}
                       primaryAction={{
                         icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
@@ -8156,6 +8391,7 @@ const Matching = () => {
                         }
                       }}
                       onAdminEdit={() => {
+                        lastSeenCardIdRef.current = user.userId || '';
                         saveScrollPosition();
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}

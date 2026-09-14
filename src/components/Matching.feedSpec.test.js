@@ -45,11 +45,17 @@ describe('matching feed structure', () => {
     expect(source).toContain('return applyOverlayToCard(user, fields);');
   });
 
+  // Закриття шару повертає читача на ту саму картку. Піксель, знятий на
+  // відкритті, для цього вже не годиться сам по собі: поки шар був відкритий,
+  // у стрічку могла долягти чергова порція, а в рядках — догідратуватись фото,
+  // тож висота списку над збереженою позицією вже інша. Орієнтир — рядок
+  // картки; піксель лишається запасним.
   it('opens the detail layer over the feed with a history entry to pop', () => {
     const source = matching();
     expect(source).toContain("window.history.pushState({ matchingDetail: true }, '');");
     expect(source).toContain("window.addEventListener('popstate', handlePopState);");
-    expect(source).toContain('requestAnimationFrame(() => window.scrollTo(0, savedTop));');
+    expect(source).toContain('const anchor = findCardNodeById(anchorId);');
+    expect(source).toContain('if (savedTop) window.scrollTo(0, savedTop);');
   });
 
   it('never loads more from the detail layer, only from the feed sentinel', () => {

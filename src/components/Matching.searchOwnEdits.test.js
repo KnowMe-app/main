@@ -51,6 +51,31 @@ describe('список показує власне доповнення чита
     expect(source).toContain('const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));');
   });
 
+  // Перелік власних доповнень не всезнаючий: у базі він лежить під
+  // `multiData/editsByEditor`, правила на який викочуються руками, а поза базою
+  // — у памʼяті цього браузера. Тож на іншому пристрої (і всюди, поки правила
+  // не викотили) дописане було видно рівно в одному місці — у самій формі
+  // доповнення. Дотик до картки знімає це питання й не платить за стрічку.
+  it('питає про доповнення й тоді, коли читач відкрив саме цю картку', () => {
+    expect(source).toContain('ensureOwnOverlayRef.current(userId);');
+    expect(source).toContain('getOwnOverlayFieldsForCards({ editorUserId, cardUserIds: [cardUserId] })');
+    // Питання ставиться до перевірки «це проєкція?»: дотик означає «покажи цю
+    // анкету» незалежно від того, чи треба ще дочитувати вузли.
+    const ensureFullProfile = source.slice(
+      source.indexOf('const ensureFullProfile = React.useCallback(user => {'),
+      source.indexOf('const withLazyPhotos = React.useCallback(user => {'),
+    );
+    expect(ensureFullProfile.indexOf('ensureOwnOverlayRef.current(userId);'))
+      .toBeLessThan(ensureFullProfile.indexOf('if (!isMatchingSummaryCard(user)) return Promise.resolve();'));
+    // Памʼять дотиків окрема від памʼяті стрічки: та лишається поставленою й
+    // після порожньої відповіді, а дотик мусить мати право спитати про картку,
+    // якої перелік не називав. Відмова знімає позначку — читання, яке впало,
+    // повторюється наступним дотиком.
+    expect(source).toContain('touchedOwnOverlayIdsRef.current.has(cardUserId)');
+    expect(source).toContain('touchedOwnOverlayIdsRef.current.delete(cardUserId);');
+    expect(source).toContain('touchedOwnOverlayIdsRef.current = new Set();');
+  });
+
   it('накладає доповнення на картку, а не переписує кеш', () => {
     expect(source).toContain('return applyOverlayToCard(user, fields);');
     // Кеш карток лишається кешем карток: оверлей лягає на показ, а не в

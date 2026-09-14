@@ -31,7 +31,6 @@ const matchingThemeVars = css`
    * Змінна --matching-section-bg для цього не годиться: у світлій темі вона
    * дорівнює фону самої картки, тож плашки на ній не видно було взагалі — поле
    * «Додати коментар» читалось як підпис до кнопок під ним, а не як поле. */
-  --matching-inset-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#F5F4F1' : 'rgba(255, 255, 255, 0.045)')};
   --matching-section-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
   --matching-section-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 10px 24px rgba(22, 22, 22, 0.06)' : '0 12px 28px rgba(0, 0, 0, 0.18)')};
   --matching-section-title: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#ffd18a')};

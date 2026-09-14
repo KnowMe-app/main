@@ -1143,6 +1143,9 @@ const ProfileRow = ({
   return (
     <S.Card
       $role={rowRole}
+      // Якір для відновлення позиції: повернувшись до стрічки, сторінка шукає
+      // саме цей рядок, а не піксель (див. `SCROLL_ANCHOR_KEY` у `Matching`).
+      data-card-id={user?.userId}
       onClick={handleRowClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
