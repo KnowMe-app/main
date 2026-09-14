@@ -42,3 +42,19 @@ export const canAppendFieldRow = currentValue => {
   if (currentValue.length === 0) return false;
   return !isEmptyFieldRow(currentValue[currentValue.length - 1]);
 };
+
+/**
+ * Поля, у яких версій не буває: запис у них один за самою своєю природою.
+ *
+ * Масив у полі анкети — це історія («телефон був той, став цей»), і «+»
+ * відкриває рядок під наступну версію. Але коментар версій не має: він один,
+ * його розширюють або звужують, правлячи той самий текст, — і «+» біля нього
+ * обіцяв те, чого в застосунку немає. Гірше: дописаний другий рядок поїхав би
+ * в базу другою версією, а показували б скрізь (`getCurrentValue`) саму лише
+ * останню — тобто перша половина відгуку мовчки зникала б з усіх екранів,
+ * лишаючись у базі.
+ */
+const SINGLE_VALUE_FIELD_NAMES = new Set(['publicComment', 'myComment']);
+
+/** Чи має сенс у цього поля друга версія. */
+export const fieldAcceptsMultipleValues = fieldName => !SINGLE_VALUE_FIELD_NAMES.has(fieldName);

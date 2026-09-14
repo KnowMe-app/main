@@ -1,4 +1,5 @@
 import { canAccessMatchingByLevel, isAdminUid } from './accessLevel';
+import { getAvailableContactFields } from 'components/contactMethods';
 import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
 import { normalizeFeedDateValue } from './profileFieldDerive';
 import { normalizePublish } from './reactionPriority';
@@ -83,6 +84,26 @@ export const canReadProfileOutsideFeed = ({ profileId, viewerId, accessLevel } =
 export const isOwnProfileDraftCard = card => String(card?.__profileMutationOperation || '') === 'create';
 
 /**
+ * Чи контакт уже лежить у самій картці, яку тримає застосунок.
+ *
+ * Питання про право має сенс доти, доки за ним стоїть круг до бази. Але
+ * значення, яке вже на руках, тим кругом не приїжджало: у кеш карток контакти
+ * не кладуть узагалі (`sanitizeMatchingCardForCache` — саме тому, що право на
+ * них тримається на `feedDate` і протухає без відома браузера), а проєкція
+ * стрічки їх не несе. Лишається рівно одне джерело — сам читач: власна
+ * чернетка й власне доповнення (`multiData/edits/{картка}/{читач}`), яке
+ * лягає на картку перед показом.
+ *
+ * І саме тут кнопка зникала. Доповнюють здебільшого картку, знайдену за
+ * контактом, — тобто неопубліковану, — і `feedDate` у неї немає. Людина
+ * дописувала телефон, поверталась до списку, і трубки в рядку не було: право
+ * питали в бази, якій цього номера ніхто й не збирався показувати. Ховати від
+ * читача те, що він сам і набрав, сенсу немає, а мовчазної відмови бази тут
+ * бути не може — читати нема чого.
+ */
+const cardAlreadyCarriesContacts = card => getAvailableContactFields(card).length > 0;
+
+/**
  * Чи є сенс пропонувати цьому читачеві контакти цієї картки.
  *
  * Питання те саме, що й у `scopeProfileNodesToViewer`, лише задане **до**
@@ -97,6 +118,7 @@ export const canOfferProfileContacts = ({ card, viewerId, accessLevel } = {}) =>
   if (!card || typeof card !== 'object') return false;
   if (isOwnProfileDraftCard(card)) return true;
   if (isCardInMatchingFeed(card)) return true;
+  if (cardAlreadyCarriesContacts(card)) return true;
   return canReadProfileOutsideFeed({ profileId: card.userId, viewerId, accessLevel });
 };
 

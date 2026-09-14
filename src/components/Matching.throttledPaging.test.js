@@ -105,13 +105,17 @@ describe('стеля на порожні спроби не має бути гл�
     expect(source).toContain('Минула порція не дала нових карток');
   });
 
+  // Відновлення позиції — не прокрутка донизу, і завести відлік воно не має
+  // права. Орієнтир посувається на фактичну позицію, бо стати на рядок якоря
+  // (`scrollIntoView`) — це вже не той піксель, що лежав у сховищі.
   it('не рахує відновлення позиції за жест читача', () => {
     const source = matching();
     const restore = source.slice(
-      source.indexOf('window.scrollTo(0, Number(savedY));'),
-      source.indexOf('restoreRef.current = true;'),
+      source.indexOf('    const settle = () => {'),
+      source.indexOf('    const tryRestore = () => {'),
     );
-    expect(restore).toContain('scrollPositionRef.current = Number(savedY);');
+    expect(restore).toContain('scrollPositionRef.current = window.scrollY;');
+    expect(restore).toContain('restoreRef.current = true;');
   });
 });
 
@@ -369,13 +373,20 @@ describe('дії та роль на картці стрічки', () => {
 
   // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати, і саме
   // цей код разом із плиткою ініціалів робив рядок агенції нечитабельним.
+  // У рядку списку це слово переїхало на сам знімок — туди, де його малює й
+  // відкрита картка, — а чіпа під іменем більше немає взагалі.
   it('показує роль словом на обох виглядах', () => {
     expect(read('Matching.jsx')).toContain('<GalleryRoleTag');
-    expect(read('ProfileRow.jsx')).toContain('<S.RoleTag');
+    const rowSource = read('ProfileRow.jsx');
+    expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{roleWord}</S.PhotoRoleBadge>');
+    expect(rowSource).not.toContain('<S.RoleTag');
   });
 
-  it('не повертає двобуквений код у стрічку', () => {
+  // Двобуквений код лишився рівно одним запасним варіантом: знімка немає, тож
+  // плашці ролі нема на чому лежати, а роль усе одно треба сказати. У плитці
+  // галереї, де слово вміщається, коду немає й далі.
+  it('повертає двобуквений код лише там, де немає фото', () => {
     expect(read('Matching.jsx')).not.toContain('<GalleryRoleCode');
-    expect(read('ProfileRow.jsx')).not.toContain('<S.RoleCode');
+    expect(read('ProfileRow.jsx')).toContain('{!photo && roleCode && <S.RoleCode');
   });
 });

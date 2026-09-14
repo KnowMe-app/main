@@ -75,6 +75,21 @@ const MatchingHiddenList = ({
   onGoToFeed,
   onEditProfile,
   onOpenProfile,
+  /**
+   * Решта рішень про картку — контакти, відгуки, доповнення, «в обране».
+   *
+   * Прихована картка — це не архів, у якому нічого не можна: читач заходить
+   * сюди саме щоб згадати, що́ з цією людиною сталося, і рівно там же вирішити,
+   * чи повертати її. Досі рядок пропонував одну-єдину кнопку «повернути»: щоб
+   * перечитати відгуки, звірити номер телефону чи дописати те, що з'ясувалось,
+   * доводилось спершу повернути анкету в стрічку й шукати її там.
+   *
+   * Самі ці рішення живуть у стрічки — там і памʼять про прочитані відгуки, і
+   * читання анкети, і межа приватності контактів, — тож список їх не повторює,
+   * а просить одним викликом на рядок. Немає його — лишається «повернути», як
+   * і було.
+   */
+  buildRowExtras,
 }) => {
   const [expandedIds, setExpandedIds] = useState(() => loadPersistedExpandedIds());
   const [photosByUserId, setPhotosByUserId] = useState({});
@@ -316,6 +331,7 @@ const MatchingHiddenList = ({
               onContactsOpened={handleContactsOpened}
               clientComment={commentsByUserId[user.userId] || ''}
               onCommentSave={handleCommentSave}
+              {...(buildRowExtras ? buildRowExtras(user) : null)}
             />
           ))}
 

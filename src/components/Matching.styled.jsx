@@ -6,6 +6,7 @@ import {
   NOTE_TEXT_LINE_HEIGHT,
   NOTE_TEXT_SIZE,
 } from './noteTypography';
+import { getRoleColor } from './matchingRoleColors';
 
 const STACK_CARD_RADIUS = '18px';
 
@@ -30,7 +31,6 @@ const matchingThemeVars = css`
    * Змінна --matching-section-bg для цього не годиться: у світлій темі вона
    * дорівнює фону самої картки, тож плашки на ній не видно було взагалі — поле
    * «Додати коментар» читалось як підпис до кнопок під ним, а не як поле. */
-  --matching-inset-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#F5F4F1' : 'rgba(255, 255, 255, 0.045)')};
   --matching-section-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
   --matching-section-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 10px 24px rgba(22, 22, 22, 0.06)' : '0 12px 28px rgba(0, 0, 0, 0.18)')};
   --matching-section-title: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#ffd18a')};
@@ -1049,7 +1049,19 @@ export const OwnerStatusMessage = styled.p`
   padding: 0 10px;
 `;
 
+/*
+ * Колір ролі відкрита картка бере так само, як рядок стрічки.
+ *
+ * Досі не брала взагалі: плашка ролі малювалась сірим (`--matching-muted-text`),
+ * а решта картки — нейтральними токенами теми, тож відкрита анкета виглядала
+ * знебарвленою поруч зі списком, де роль одразу видно смужкою й плашкою. Тепер
+ * оболонка оголошує `--matching-role-accent` один раз, а плашка, заголовки
+ * секцій і смуга метрик просто його читають — кольору додалось, а місць, де
+ * його треба тримати в парі, не побільшало. Анкета без ролі лишається
+ * нейтральною: змінна тоді дорівнює звичайному акценту теми.
+ */
 export const ModernProfileShell = styled.div`
+  --matching-role-accent: ${({ $role }) => getRoleColor($role) || 'var(--matching-accent)'};
   position: relative;
   height: 100%;
   background: var(--matching-shell-bg);
@@ -1170,7 +1182,7 @@ export const ModernHeroContent = styled.div`
   box-sizing: border-box;
   padding: 14px 14px 12px;
   background: var(--matching-card-bg);
-  border-bottom: 1px solid var(--matching-section-border);
+  border-bottom: 1px solid color-mix(in srgb, var(--matching-role-accent) 30%, var(--matching-section-border));
   color: var(--matching-chip-text);
   text-shadow: none;
 `;
@@ -1189,8 +1201,8 @@ export const ModernRoleBadge = styled.span`
   padding: 5px 10px;
   border-radius: 999px;
   color: #FFFFFF;
-  background: var(--matching-muted-text);
-  box-shadow: 0 8px 18px rgba(232, 121, 26, 0.18);
+  background: var(--matching-role-accent);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--matching-role-accent) 32%, transparent);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.7px;
@@ -1284,8 +1296,11 @@ export const ModernFactPill = styled.span`
     white-space: nowrap;
   }
 
+  /* Число метрики — кольором ролі: смуга метрик стоїть першою під іменем, і
+     саме її читають найперше. Підпис під числом лишається приглушеним, тож
+     кольору в смузі рівно стільки, скільки в ній значення. */
   .fact-value {
-    color: var(--matching-chip-text);
+    color: color-mix(in srgb, var(--matching-role-accent) 72%, var(--matching-chip-text));
     font-size: clamp(14px, 3.8vw, 18px);
     font-weight: 750;
     letter-spacing: -0.2px;
@@ -1325,8 +1340,26 @@ export const ModernSection = styled.section`
 `;
 
 export const ModernSectionTitle = styled.h3`
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 8px;
   color: var(--matching-section-title);
+
+  /* Заголовки секцій ішли суцільним сірим стовпчиком згори донизу, і картка
+     читалась як роздрукована відомість. Коротка риска кольором ролі дає
+     кожному з них початок — той самий жест, що й смужка ролі на краї рядка
+     стрічки. */
+  &::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 3px;
+    align-self: stretch;
+    min-height: 0.9em;
+    border-radius: 2px;
+    background: var(--matching-role-accent);
+    opacity: 0.85;
+  }
   /* Нотатки — це помітка на полях анкети, а не її дані, тож їхній блок
      говорить тихіше за «Основне» чи «Зовнішність». Ритм картки при цьому
      лишається: колір і накреслення ті самі, змінюється тільки розмір. */
@@ -2537,6 +2570,23 @@ export const NoteLanes = styled.div`
   gap: 10px;
 `;
 
+/*
+ * Доріжка нотатки. У відкритій картці її позначає смужка ліворуч, у рядку
+ * стрічки ($flush) — самий лише підпис над текстом.
+ *
+ * Різниця не в смаку, а в тому, що ліва межа рядка вже зайнята: там від краю
+ * до краю йде смужка ролі (`Card` у `MatchingHiddenList.styled`). Друга
+ * вертикальна риска поруч із нею читалась би як продовження тієї самої, а
+ * зсунути доріжку вглиб означало б відсунути текст нотатки від імені й фактів,
+ * які починаються від краю картки.
+ *
+ * Спроба «винести смужку у відступ картки» (`margin-left: -12px`) вирішувала
+ * вирівнювання й мовчки губила саму смужку: відступ картки — 11 px, тож риска
+ * лягала рівно під її власну рамку й не малювалась узагалі. Правило, якого не
+ * видно, — гірше за його відсутність: код обіцяє ознаку, якої на екрані немає.
+ * Тож у рядку її немає явно, а «хто це побачить» каже підпис
+ * (`NoteLaneHead`) — те саме, що й у відкритій картці, тільки словом.
+ */
 export const NoteLane = styled.div`
   padding-left: 10px;
   border-left: 2px solid ${({ $public }) => ($public
@@ -2547,6 +2597,14 @@ export const NoteLane = styled.div`
     padding-top: 10px;
     border-top: 1px solid var(--matching-section-border);
   }
+
+  /* Рядок стрічки: ані риски, ані відступу — текст нотатки стоїть на тій
+     самій лівій межі, що й імʼя, факти й контакти. Пояснення над компонентом:
+     всередині шаблона styled зворотні лапки закривають його. */
+  ${({ $flush }) => $flush && css`
+    padding-left: 0;
+    border-left: 0;
+  `}
 `;
 
 export const NoteLaneHead = styled.div`
