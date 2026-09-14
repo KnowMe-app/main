@@ -133,7 +133,7 @@ describe('відгуки в рядку стрічки', () => {
     fireEvent.click(screen.getByTitle(REVIEWS_GATE_LABEL));
 
     const reviews = screen.getByTestId('reviews');
-    const note = screen.getByPlaceholderText('Додати коментар');
+    const note = screen.getByPlaceholderText('A note for yourself');
     expect(standsBefore(reviews, note)).toBe(true);
   });
 });

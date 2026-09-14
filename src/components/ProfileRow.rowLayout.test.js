@@ -34,7 +34,7 @@ describe('розкладка рядка стрічки', () => {
       secondaryAction: { icon: <span>✕</span>, title: 'Приховати', active: false, onClick: jest.fn() },
     });
 
-    const note = screen.getByPlaceholderText('Додати коментар');
+    const note = screen.getByPlaceholderText('A note for yourself');
     const favorite = screen.getByTitle('В обране');
     const hide = screen.getByTitle('Приховати');
 
@@ -49,7 +49,18 @@ describe('розкладка рядка стрічки', () => {
   // що він про цю людину вже знає, має бути видно тут само, де рішення.
   it('поле власної нотатки відкрите й порожнє, поки нотатки немає', () => {
     renderRow();
-    expect(screen.getByPlaceholderText('Додати коментар')).toHaveValue('');
+    expect(screen.getByPlaceholderText('A note for yourself')).toHaveValue('');
+  });
+
+  // Хто побачить запис, каже підпис над доріжкою — той самий, що й у
+  // відкритій картці. Поки його не було, порожнє поле казало «Додати
+  // коментар» і про видимість мовчало.
+  it('підписує доріжку власної нотатки так само, як відкрита картка', () => {
+    renderRow();
+    // Мова тут за замовчуванням англійська — підпис бере її з того самого
+    // словника, що й відкрита картка (`profileTexts`), а не з рядка в коді.
+    expect(screen.getByText('Private note')).toBeInTheDocument();
+    expect(screen.getByText('Only you see it')).toBeInTheDocument();
   });
 
   it('урізаній проєкції реакцій не дає', () => {

@@ -224,15 +224,15 @@ import ProfileRow, {
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
-import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaRegSquare, FaStethoscope, FaSyncAlt, FaSearch, FaPlus } from 'react-icons/fa';
-import { FaRegHeart, FaUndoAlt, FaChevronDown } from 'react-icons/fa';
+import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
+import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
 import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
-import { applyOverlayToCard, getOwnOverlayFieldsForCards } from 'utils/multiAccountEdits';
+import { applyOverlayToCard, getOwnOverlayCardIds, getOwnOverlayFieldsForCards } from 'utils/multiAccountEdits';
 import {
   buildMatchingSearchPath,
   MATCHING_SEARCH_QUERY_PARAM,
@@ -1421,9 +1421,12 @@ const SwipeableCard = ({
             галереї й рядок списку ховають ці кнопки з тієї ж причини. */}
         {!user?.__limitedProfile && (
         <ModernActionRail>
+          {/* Олівець, а не плюс: жест той самий, що й у рядку стрічки, —
+              «правити цю анкету», — а плюс обіцяв щось додати до списку. Два
+              екрани не можуть малювати одну дію двома різними значками. */}
           {onEnrich && (
             <ActionButton type="button" onClick={event => { event.stopPropagation(); onEnrich(user); }} aria-label="Доповнити дані" title="Доповнити дані">
-              <FaPlus />
+              <FaPencilAlt />
             </ActionButton>
           )}
           <span ref={dislikeButtonWrapRef}>
@@ -1495,17 +1498,18 @@ const SEARCH_KEY = MATCHING_SEARCH_STORAGE_KEY;
 // under its own namespaced key so it survives a reload and never collides with
 // `viewMode` (which selects the *collection* - all / favourites / hidden).
 const MATCHING_VIEW_LAYOUT_KEY = 'km.matching.view';
-// Три розкладки одного й того самого списку: рядок, дві колонки і одна картка
-// на всю ширину екрана. Остання потрібна там, де вирішує фото: у двох
-// колонках воно завбільшки з ніготь, а рядок узагалі показує його плиткою.
-const MATCHING_VIEW_LAYOUTS = ['list', 'gallery', 'single'];
+// Дві розкладки одного й того самого списку: картка на всю ширину і дві
+// колонки. Третьої — «одна картка на екран» — більше немає: вона показувала
+// велике фото й під ним три факти з парою кнопок, тобто коштувала цілий екран
+// за менше, ніж каже рядок списку. Велике фото переїхало в сам рядок: тепер
+// його показує та розкладка, яка поруч із ним ще й розповідає про людину.
+const MATCHING_VIEW_LAYOUTS = ['list', 'gallery'];
 const MATCHING_DEFAULT_VIEW_LAYOUT = 'list';
 export const MATCHING_VIEW_LAYOUT_LABELS = {
   list: 'Режим списку',
   gallery: 'Режим галереї',
-  single: 'Одна картка на екран',
 };
-/** Наступна розкладка по колу — один жест перебирає всі три. */
+/** Наступна розкладка по колу — один жест перебирає обидві. */
 export const nextMatchingViewLayout = current => {
   const index = MATCHING_VIEW_LAYOUTS.indexOf(current);
   return MATCHING_VIEW_LAYOUTS[(index + 1) % MATCHING_VIEW_LAYOUTS.length];
@@ -1564,7 +1568,7 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 //
 // Локація й дії переїхали з фото в тіло картки: поверх знімка вони жили тільки
 // тому, що іншого місця не було.
-const GalleryCard = React.memo(({ user, single = false, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, onEnrich, diagnosticsSlot }) => {
+const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, onEnrich, diagnosticsSlot }) => {
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
@@ -1581,7 +1585,6 @@ const GalleryCard = React.memo(({ user, single = false, isAdmin, isFavorite, isH
   return (
     <GalleryTile
       $muted={isHidden}
-      $single={single}
       $role={role}
       onClick={() => onOpen(user)}
       role="button"
@@ -1603,7 +1606,7 @@ const GalleryCard = React.memo(({ user, single = false, isAdmin, isFavorite, isH
         />
       )}
       {photo && (
-        <GalleryPhotoBox $single={single}>
+        <GalleryPhotoBox>
           <img src={photo} alt="" loading="lazy" decoding="async" />
           {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
           {photos.length > 1 && <GalleryPhotoCount>{photos.length}</GalleryPhotoCount>}
@@ -1649,7 +1652,7 @@ const GalleryCard = React.memo(({ user, single = false, isAdmin, isFavorite, isH
           <GalleryActions>
             {onEnrich && (
               <GalleryActionButton type="button" aria-label="Доповнити дані" title="Доповнити дані" onClick={event => { event.stopPropagation(); onEnrich(user); }}>
-                <FaPlus />
+                <FaPencilAlt />
               </GalleryActionButton>
             )}
             <GalleryActionButton
@@ -1680,7 +1683,6 @@ const GalleryCard = React.memo(({ user, single = false, isAdmin, isFavorite, isH
   );
 }, (prev, next) => (
   prev.user === next.user
-  && prev.single === next.single
   && prev.isFavorite === next.isFavorite
   && prev.isHidden === next.isHidden
   && prev.isAdmin === next.isAdmin
@@ -1868,11 +1870,15 @@ const Matching = () => {
   const [additionalHasMore, setAdditionalHasMore] = useState(false);
   const additionalHasMoreRef = useRef(false);
   const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
-  // Власні доповнення до знайдених карток: `{ [cardId]: fields }`. Питаються
-  // лише про показані знайдені картки й лише раз на таб — памʼять запитаних id
-  // нижче стереже, щоб перемальовування не коштувало другого круга.
+  // Власні доповнення до карток: `{ [cardId]: fields }`. Питаються лише про
+  // показані картки й лише раз на таб — памʼять запитаних id нижче стереже,
+  // щоб перемальовування не коштувало другого круга.
   const [ownOverlayFieldsByCardId, setOwnOverlayFieldsByCardId] = useState({});
   const requestedOwnOverlayIdsRef = useRef(new Set());
+  // Які картки цей читач узагалі доповнював (`multiData/editsByEditor` плюс
+  // памʼять браузера). Один запит на таб — і стрічка знає, у котрих зі своїх
+  // сотень рядків є що накладати, не читаючи вузол на кожен.
+  const [ownOverlayCardIds, setOwnOverlayCardIds] = useState(null);
   // Позначка ставиться в тілі ефекту, а не лише знімається в прибиранні: у
   // StrictMode React монтує сторінку двічі, і прибирання першого монтування
   // залишало позначку знятою назавжди — відповідь про доповнення приходила вже
@@ -5439,43 +5445,89 @@ const Matching = () => {
   const feedSourceWithoutOwnEdits = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;
 
   /**
-   * Знайдена картка показується разом із тим, що читач сам у неї дописав.
+   * Картка показується разом із тим, що читач сам у неї дописав.
    *
    * Доповнення (`multiData/edits/{картка}/{читач}`) — це шар поверх картки, а не
-   * її правка: сама картка лишається такою, якою її бачать усі. Але поки видача
-   * показувала саму лише картку, доповнення виглядало як загублене — читач
-   * дописував прізвище, шукав удруге ту саму людину й бачив той самий ініціал.
-   * Тепер шар лягає зверху рівно там, де його автор і має бачити: у власній
-   * видачі, у власному табі.
-   *
+   * її правка: сама картка лишається такою, якою її бачать усі. Але поки список
+   * показував саму лише картку, доповнення виглядало як загублене — читач
+   * дописував телефон, вертався до списку й бачив ту саму картку без нього, а
+   * прибраний у шарі хибний контакт стояв у ній як стояв. Тепер шар лягає
+   * зверху скрізь, де його автор цю картку бачить: і у видачі пошуку, і в
+   * стрічці, і в шарі деталей.
+   */
+  const withOwnEdits = React.useCallback(user => {
+    const fields = user?.userId ? ownOverlayFieldsByCardId[user.userId] : null;
+    if (!fields || !Object.keys(fields).length) return user;
+    return applyOverlayToCard(user, fields);
+  }, [ownOverlayFieldsByCardId]);
+
+  /**
    * Порожня мапа віддає той самий масив, а не його копію: від `feedSource`
    * залежить і гідратація фото, і пагінація, і шар деталей.
    */
   const feedSource = useMemo(() => {
     if (!Object.keys(ownOverlayFieldsByCardId).length) return feedSourceWithoutOwnEdits;
-    return feedSourceWithoutOwnEdits.map(user => {
-      const fields = user?.userId ? ownOverlayFieldsByCardId[user.userId] : null;
-      if (!fields || !Object.keys(fields).length) return user;
-      return applyOverlayToCard(user, fields);
-    });
-  }, [feedSourceWithoutOwnEdits, ownOverlayFieldsByCardId]);
+    return feedSourceWithoutOwnEdits.map(withOwnEdits);
+  }, [feedSourceWithoutOwnEdits, ownOverlayFieldsByCardId, withOwnEdits]);
 
   /**
-   * Читається лише те, що на екрані, і лише в пошуку.
+   * Перелік власних доповнень — раз на таб.
+   *
+   * Це і є те, чим стрічка відрізняється від видачі пошуку: у видачі рядків
+   * десяток, і питати про кожен можна прямо, а в стрічці їх сотні. Питання
+   * «у котрих із них лежить мій шар» коштує один запит
+   * (`multiData/editsByEditor` плюс памʼять браузера), і вже за ним читаються
+   * самі шари — стільки, скільки читач насправді дописував.
    *
    * Доповнювати картку вміє той, кому дозволено заводити картки, і саме його
-   * рядок несе кнопку «Доповнити дані» — тож і питати про доповнення є сенс
-   * лише в нього. Адмін правит картку напряму, олівцем, і зайвого круга на
-   * кожну знайдену картку не платить.
+   * рядок несе олівець «Доповнити дані» — тож і питати є сенс лише в нього.
+   * Адмін править картку напряму, і його правка їде в саму картку.
    */
   useEffect(() => {
-    const editorUserId = auth.currentUser?.uid;
-    if (!isSearching || isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+    // Читач береться з `ownerId`, а не з `auth.currentUser`: на першому рендері
+    // сторінки того ще немає, а перезапустити ефект нема на що — рівень
+    // доступу відтоді не змінюється. Саме так перелік і не читався б узагалі.
+    const editorUserId = ownerId;
+    if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+
+    getOwnOverlayCardIds(editorUserId)
+      .then(ids => {
+        if (!ownOverlaysMountedRef.current) return;
+        setOwnOverlayCardIds(new Set(ids));
+      })
+      .catch(error => console.warn('[Matching] own overlay index unavailable', error));
+
+    return undefined;
+  }, [access.canCreateProfiles, isAdmin, ownerId]);
+
+  /**
+   * Читається лише те, що на екрані, — і в стрічці лише те, що читач дописував.
+   *
+   * Шар доповнення (`multiData/edits/{картка}/{читач}`) мусить лягти на картку
+   * скрізь, де його автор цю картку бачить: людина дописала телефон, і
+   * повернувшись до загального списку, очікує побачити там саме його, а не
+   * картку без нього. Так само зі стертим у шарі полем — прибраний хибний
+   * контакт не має вертатись у рядок.
+   *
+   * Ціна при цьому різна в двох режимах, і саме тому їх тут два. Видача пошуку
+   * — це десяток рядків на явний запит, тож про кожен з них можна спитати
+   * прямо. Стрічка ж гортається сотнями рядків, і читання «на кожну картку»
+   * коштує рівно те, від чого її відмивали
+   * (`docs/matching-feed-traffic.md`), — тож вона питає лише про ті картки,
+   * які перелік власних доповнень уже назвав.
+   */
+  useEffect(() => {
+    const editorUserId = ownerId;
+    if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+    // Поки перелік не приїхав, стрічка не питає нічого: інакше перший її
+    // рендер устиг би зробити той самий круг на кожен рядок.
+    if (!isSearching && !ownOverlayCardIds) return undefined;
 
     const requested = requestedOwnOverlayIdsRef.current;
     const cardUserIds = feedSourceWithoutOwnEdits
       .map(user => user?.userId)
-      .filter(userId => userId && !requested.has(userId));
+      .filter(userId => userId && !requested.has(userId))
+      .filter(userId => isSearching || ownOverlayCardIds.has(userId));
     if (!cardUserIds.length) return undefined;
 
     cardUserIds.forEach(userId => requested.add(userId));
@@ -5496,7 +5548,7 @@ const Matching = () => {
     // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
     // Лишається одна причина не писати в стан — розмонтована сторінка.
     return undefined;
-  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching]);
+  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownerId]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
@@ -5995,7 +6047,7 @@ const Matching = () => {
     return merged;
   }, [fullProfileByUserId, photoCacheByUserId]);
 
-  const activeProfileWithLazyPhotos = withLazyPhotos(activeProfile);
+  const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));
 
   useEffect(() => {
     if (activeProfile) ensureFullProfile(activeProfile);
@@ -7416,9 +7468,18 @@ const Matching = () => {
     });
   }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
 
+  /**
+   * Шар доповнення накладається ще раз — уже поверх догідратованої анкети.
+   *
+   * `withLazyPhotos` накриває картку повною анкетою (`{ ...user, ...fullProfile }`),
+   * а та приїжджає з бази такою, якою її бачать усі: без дописаного читачем
+   * телефону і з тим самим хибним контактом, якого він у себе прибрав. Тож
+   * після злиття шар кладеться вдруге — накладання ідемпотентне: додане вже
+   * на місці, прибране знімається знову.
+   */
   const feedRows = useMemo(
-    () => feedSource.map(user => withLazyPhotos(user)),
-    [feedSource, withLazyPhotos],
+    () => feedSource.map(user => withOwnEdits(withLazyPhotos(user))),
+    [feedSource, withLazyPhotos, withOwnEdits],
   );
 
   /**
@@ -7459,12 +7520,10 @@ const Matching = () => {
   );
 
   // Кнопка називає те, куди веде, а не те, де стоїмо: так один значок
-  // перебирає всі три розкладки, і читач бачить наступну наперед.
+  // перебирає обидві розкладки, і читач бачить наступну наперед.
   const nextViewLayout = nextMatchingViewLayout(viewLayout);
   const nextViewLayoutLabel = MATCHING_VIEW_LAYOUT_LABELS[nextViewLayout];
-  const nextViewLayoutIcon = nextViewLayout === 'list'
-    ? <FaListUl />
-    : nextViewLayout === 'gallery' ? <FaThLarge /> : <FaRegSquare />;
+  const nextViewLayoutIcon = nextViewLayout === 'list' ? <FaListUl /> : <FaThLarge />;
 
   const matchingMenuActions = [
     {
@@ -7804,31 +7863,6 @@ const Matching = () => {
                         ))}
                     </GalleryColumn>
                   ))}
-                </GalleryGrid>
-              )}
-              {/* Третя розкладка: та сама плитка, але одна на всю ширину. Це
-                  режим для того, хто дивиться на фото, — у двох колонках воно
-                  завбільшки з ніготь, а в рядку стоїть квадратиком збоку. */}
-              {feedRows.length > 0 && viewLayout === 'single' && (
-                <GalleryGrid>
-                  <GalleryColumn>
-                    {feedRows.map(user => (
-                      <GalleryCard
-                        key={user.userId}
-                        user={user}
-                        single
-                        isAdmin={isAdmin}
-                        isFavorite={Boolean(favoriteUsers[user.userId])}
-                        isHidden={Boolean(dislikeUsers[user.userId])}
-                        onOpen={openDetailFor}
-                        onToggleFavorite={toggleRowFavorite}
-                        onToggleHidden={toggleRowHidden}
-                        onTogglePublish={togglePublish}
-                        onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
-                        diagnosticsSlot={renderDiagnosticsFor(user)}
-                      />
-                    ))}
-                  </GalleryColumn>
                 </GalleryGrid>
               )}
               {feedRows.length > 0 && viewLayout === 'list' && (

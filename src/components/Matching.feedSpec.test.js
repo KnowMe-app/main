@@ -41,6 +41,7 @@ describe('matching feed structure', () => {
     // порожня мапа віддає той самий масив, бо від нього залежать і гідратація
     // фото, і пагінація, і шар деталей.
     expect(source).toContain('if (!Object.keys(ownOverlayFieldsByCardId).length) return feedSourceWithoutOwnEdits;');
+    expect(source).toContain('return feedSourceWithoutOwnEdits.map(withOwnEdits);');
     expect(source).toContain('return applyOverlayToCard(user, fields);');
   });
 
@@ -92,16 +93,21 @@ describe('matching row structure', () => {
     expect(rowStyles()).toContain('font-variant-numeric: tabular-nums;');
   });
 
-  // Плитка й далі фіксована — рядок з фото не мусить бути вищим за сусідній з
-  // фото. Але малюється вона тільки коли фото є: запасний квадрат з ініціалами
-  // повторював імʼя, що стоїть поруч, і забирав ширину в анкети, якій і без
-  // того нічого показати.
-  it('pins the avatar box so no row with a photo differs in height', () => {
+  // Фото стоїть перед усім текстом і на всю ширину картки — саме його в
+  // списку й гортають, а плиткою 52 px збоку воно не показувало нічого.
+  // Пропорція портретна, а стеля висоти лишає на екрані й імʼя з метриками:
+  // рядок не має коштувати гортання, щоб дізнатись, хто на фото. Малюється
+  // фото й далі тільки коли воно є: запасний квадрат з ініціалами повторював
+  // імʼя, що стоїть просто під ним.
+  it('gives the photo the full card width, ahead of the text', () => {
     const styles = rowStyles();
     const photo = styles.slice(styles.indexOf('export const Photo = styled.div`'));
-    expect(photo).toContain('height: 52px;');
-    expect(photo).toContain('min-height: 52px;');
-    expect(photo).toContain('max-height: 52px;');
+    expect(photo).toContain('aspect-ratio: 4 / 5;');
+    expect(photo).toContain('max-height: 58vh;');
+    // Від краю до краю картки: підкладку знімає відʼємний відступ на її
+    // власне поле, а не окреме правило десь поруч.
+    expect(photo).toContain('margin: -${CARD_PADDING} -${CARD_PADDING} 9px;');
+    expect(photo).toContain('object-fit: cover;');
   });
 
   /*

@@ -10,15 +10,37 @@ import { applyOverlayToCard } from 'utils/multiAccountEdits';
 // оверлей лежав у `multiData/edits`, а видача малювала саму лише картку. Звідси
 // й друге: набране в пошуку значення не знаходило картку взагалі, бо дописане
 // не потрапляло в `searchId`.
-describe('видача пошуку показує власне доповнення читача', () => {
+describe('список показує власне доповнення читача', () => {
   const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-  it('питає про доповнення лише показані знайдені картки й лише того, хто їх пише', () => {
-    expect(source).toContain("if (!isSearching || isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;");
+  it('питає про доповнення лише показані картки й лише того, хто їх пише', () => {
+    expect(source).toContain("if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;");
+    // Читач — це `ownerId`, а не `auth.currentUser`: на першому рендері того
+    // ще немає, а перезапустити ефект нема на що, тож перелік не читався б
+    // узагалі.
+    expect(source).toContain('const editorUserId = ownerId;');
     expect(source).toContain('getOwnOverlayFieldsForCards({ editorUserId, cardUserIds })');
     // Памʼять запитаних id: перемальовування видачі не коштує другого круга.
     expect(source).toContain('const requested = requestedOwnOverlayIdsRef.current;');
     expect(source).toContain('cardUserIds.forEach(userId => requested.add(userId));');
+  });
+
+  // Стрічка — це сотні рядків, і читання «на кожну картку» тут коштує рівно
+  // те, від чого її відмивали. Тож вона питає лише про ті картки, які перелік
+  // власних доповнень (`multiData/editsByEditor` плюс памʼять браузера) уже
+  // назвав, а видача пошуку — про всі показані.
+  it('у стрічці питає лише про картки з переліку власних доповнень', () => {
+    expect(source).toContain("if (!isSearching && !ownOverlayCardIds) return undefined;");
+    expect(source).toContain('.filter(userId => isSearching || ownOverlayCardIds.has(userId));');
+    expect(source).toContain('getOwnOverlayCardIds(editorUserId)');
+  });
+
+  // Повна анкета приїжджає такою, якою її бачать усі, і накриває собою картку
+  // (`{ ...user, ...fullProfile }`). Тож шар кладеться ще раз — уже поверх неї,
+  // — інакше дописаний телефон зникав би рівно тоді, коли контакти й читають.
+  it('кладе шар і поверх догідратованої анкети', () => {
+    expect(source).toContain('() => feedSource.map(user => withOwnEdits(withLazyPhotos(user))),');
+    expect(source).toContain('const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));');
   });
 
   it('накладає доповнення на картку, а не переписує кеш', () => {

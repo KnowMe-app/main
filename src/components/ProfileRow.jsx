@@ -29,7 +29,10 @@ import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { formatProfileCountOrDate } from '../utils/profileDate';
 import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import * as S from './MatchingHiddenList.styled';
-import { PublishDot } from './Matching.styled';
+// Доріжки нотаток беруться з розкладки відкритої картки, а не описуються тут
+// удруге: у рядку стрічки й у картці стоять ті самі два записи — публічний
+// відгук і власна нотатка, — і два екрани не можуть казати про них різне.
+import { NoteLane, NoteLaneHead, NoteLaneHint, PublishDot } from './Matching.styled';
 import { isMatchingCardPublished } from '../utils/matchingCardIndex';
 
 // The one profile row shared by the hidden-list screen and the matching feed's
@@ -458,7 +461,7 @@ const autoResizeTextarea = (el, maxRows = 0) => {
 // one renders as plain clipped text first so it doesn't fight the row's
 // tap-to-expand, and the first tap both expands it and turns it into a textarea
 // with the caret at the tap point.
-export const CommentBlock = ({ text, onSave }) => {
+export const CommentBlock = ({ text, onSave, placeholder }) => {
   const measureRef = useRef(null);
   const textareaRef = useRef(null);
   const saveTimerRef = useRef(null);
@@ -520,7 +523,7 @@ export const CommentBlock = ({ text, onSave }) => {
 
   if (mode === 'clamped') {
     return (
-      <>
+      <S.CommentLane>
         <S.Note
           ref={measureRef}
           $clip
@@ -543,17 +546,17 @@ export const CommentBlock = ({ text, onSave }) => {
         >
           …
         </S.NoteMore>
-      </>
+      </S.CommentLane>
     );
   }
 
   return (
-    <>
+    <S.CommentLane>
       <S.CommentInput
         ref={textareaRef}
         rows={1}
         value={draft}
-        placeholder="Додати коментар"
+        placeholder={placeholder || 'Додати коментар'}
         onClick={e => e.stopPropagation()}
         onTouchStart={e => e.stopPropagation()}
         onChange={e => {
@@ -578,7 +581,7 @@ export const CommentBlock = ({ text, onSave }) => {
         </S.NoteMore>
       )}
       <S.Note ref={measureRef} $clip $lines={COMMENT_VISIBLE_ROWS} $hidden aria-hidden="true">{measureText}</S.Note>
-    </>
+    </S.CommentLane>
   );
 };
 
@@ -1127,16 +1130,18 @@ const ProfileRow = ({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Фото стоїть перед усім текстом і на всю ширину картки: у списку
+          гортають саме його, а плиткою 52 px збоку воно не показувало нічого.
+          Плитки з ініціалами тут немає й не було: вона повторювала імʼя, яке
+          стоїть рядком нижче. Немає фото — рядок починається з імені, а «хто
+          це» несе смужка ролі на лівому краї картки. */}
+      {photo && (
+        <S.Photo>
+          <img src={photo} alt="" loading="lazy" decoding="async" />
+          {photos.length > 1 && <S.PhotoCount>{photos.length}</S.PhotoCount>}
+        </S.Photo>
+      )}
       <S.Top>
-        {/* Плитки з ініціалами більше немає: вона повторювала імʼя, яке стоїть
-            за пів сантиметра праворуч, і забирала 58 px ширини в анкети, якій
-            і без того нічого показати. Немає фото — рядок починається з імені,
-            а «хто це» несе смужка ролі на лівому краї картки. */}
-        {photo && (
-          <S.Photo style={{ backgroundImage: `url(${photo})` }}>
-            {photos.length > 1 && <S.PhotoCount>{photos.length}</S.PhotoCount>}
-          </S.Photo>
-        )}
         <S.Body>
           {/* Імʼя володіє рядком одноосібно — це головне, що в ньому є, і
               нічого поруч не мусить забирати в нього ширину. */}
@@ -1268,7 +1273,10 @@ const ProfileRow = ({
       )}
 
       {/* Нотатки — одна плашка на дві доріжки: спершу те, що про людину
-          написали інші, під ним — те, що дописує читач.
+          написали інші, під ним — те, що дописує читач. Доріжки ті самі, що
+          й у відкритій картці, разом із підписом над кожною: хто побачить
+          запис, має бути сказано там, де його пишуть, а не лише в порожньому
+          полі — «Додати коментар» про це мовчало.
 
           Порядок саме такий, бо публічний відгук читають, а нотатку пишуть:
           відповідь має стояти над полем для власного запису, а не під ним.
@@ -1281,14 +1289,29 @@ const ProfileRow = ({
           тапнули. */}
       <S.RowNotes onClick={e => e.stopPropagation()}>
         {reviewsOpen && reviewsSlot && (
-          <>
+          <NoteLane $public>
+            <NoteLaneHead>
+              <b>{profileUiText('publicComment', language)}</b>
+              <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
+            </NoteLaneHead>
             {reviewsSlot}
-            <S.RowNotesDivider aria-hidden="true" />
-          </>
+          </NoteLane>
         )}
-        {commentSlot !== undefined
-          ? commentSlot
-          : <CommentBlock text={clientComment} onSave={value => onCommentSave(user, value)} />}
+        <NoteLane>
+          <NoteLaneHead>
+            <b>{profileUiText('personalNote', language)}</b>
+            <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
+          </NoteLaneHead>
+          {commentSlot !== undefined
+            ? commentSlot
+            : (
+              <CommentBlock
+                text={clientComment}
+                placeholder={profileUiText('personalNotePlaceholder', language)}
+                onSave={value => onCommentSave(user, value)}
+              />
+            )}
+        </NoteLane>
       </S.RowNotes>
 
       {/* Ряд рішень — останній у картці: спершу все, що вона каже про людину,
