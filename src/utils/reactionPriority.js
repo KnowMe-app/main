@@ -253,6 +253,13 @@ export const mergeMatchingCandidateUsers = ({
   // воно не застосовується — там читачка питає про конкретну людину.
   viewerRole = '',
   viewerId = '',
+  // Картки, на які читач відповів у цьому ж перегляді деки. Реакція записана,
+  // але картка лишається на екрані до наступної збірки — інакше вона зникає
+  // з-під пальця тієї ж миті, і подивитись, кого щойно вподобав (чи виправити
+  // промах), уже ніде. Друге, симетричне правило стоїть у
+  // `applyMatchingUiFiltersToUsers`: обидва прибирання реакцій мусять знати
+  // про цей набір, бо дека проходить крізь них по черзі.
+  keepReactedUserIds = null,
 } = {}) => {
   const isDefaultMode = viewMode === 'default';
   const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
@@ -312,9 +319,10 @@ export const mergeMatchingCandidateUsers = ({
     });
 
     return keepDonorCounterpartyCards({
-      users: Array.from(byId.values()).filter(
-        user => user?.userId && !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
-      ),
+      users: Array.from(byId.values()).filter(user => user?.userId && (
+        (!favoriteUsers[user.userId] && !dislikeUsers[user.userId])
+        || Boolean(keepReactedUserIds?.has?.(user.userId))
+      )),
       viewerRole,
       viewerId,
     });

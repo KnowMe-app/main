@@ -1454,10 +1454,16 @@ const SwipeableCard = ({
               <FaPencilAlt />
             </ActionButton>
           )}
-          <span ref={dislikeButtonWrapRef}>
+          {/* Позначка «на цю картку вже відповіли» ставиться **до** самої
+              реакції, а не з її зворотного виклику: `onRemove` спрацьовує вже
+              після того, як зміна списку вподобаних перемалювала сторінку, і
+              картку встигало вичистити прибирання в `users` — тобто позначка
+              приходила рівно на один рендер пізніше, ніж треба. Рядок стрічки
+              робить так само: спершу памʼять, потім запис. */}
+          <span ref={dislikeButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
             <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
           </span>
-          <span ref={favoriteButtonWrapRef}>
+          <span ref={favoriteButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
             <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
           </span>
         </ModernActionRail>
@@ -2622,16 +2628,30 @@ const Matching = () => {
     });
   }, [additionalAccessUsers, sharedReactionCandidateUsers, users]);
 
+  /*
+   * Реакція вичищає картку і з самої деки — але не ту, на яку щойно відповіли.
+   *
+   * Це третє, найжорсткіше з прибирань: воно не фільтрує показ, а **викидає**
+   * картку зі стану `users`, тож повернути її до наступного завантаження вже
+   * нема звідки. Саме воно й забирало анкету з-під пальця: два інші прибирання
+   * (`mergeMatchingCandidateUsers` і `applyMatchingUiFiltersToUsers`) уже
+   * знали про `stickyReactedUserIds`, картка проходила крізь них — і все одно
+   * зникала, бо до них просто не доходила.
+   *
+   * Виняток тут нічого не послаблює: щойно дека збереться заново, набір
+   * порожній, і ті самі два фільтри приберуть картку без цього ефекту.
+   */
   useEffect(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') {
       return;
     }
     setUsers(prev =>
-      prev.filter(
-        u => !favoriteUsers[u.userId] && !dislikeUsers[u.userId]
-      )
+      prev.filter(u => (
+        (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
+        || stickyReactedUserIds.has(u.userId)
+      ))
     );
-  }, [favoriteUsers, dislikeUsers, viewMode]);
+  }, [favoriteUsers, dislikeUsers, stickyReactedUserIds, viewMode]);
 
 
 
@@ -5413,6 +5433,11 @@ const Matching = () => {
     dislikeUsers,
     viewerRole: currentUserRole,
     viewerId: ownerId,
+    // Реакція прибирає картку двічі — тут і в `applyMatchingUiFiltersToUsers`,
+    // — тож набір «відповіли просто зараз» мусять знати обидва прибирання.
+    // Поки його знало лише друге, картка все одно зникала з-під пальця: до
+    // фільтрів вона просто не доходила.
+    keepReactedUserIds: stickyReactedUserIds,
   }), [
     additionalAccessUsers,
     dislikeUsers,
@@ -5424,6 +5449,7 @@ const Matching = () => {
     parsedAdditionalAccessRules,
     personalDraftSearchMatches,
     sharedReactionCandidateUsers,
+    stickyReactedUserIds,
     users,
     personalCreateProfiles,
     viewMode,
