@@ -1879,6 +1879,9 @@ const Matching = () => {
   // памʼять браузера). Один запит на таб — і стрічка знає, у котрих зі своїх
   // сотень рядків є що накладати, не читаючи вузол на кожен.
   const [ownOverlayCardIds, setOwnOverlayCardIds] = useState(null);
+  const [ownOverlayStateOwnerId, setOwnOverlayStateOwnerId] = useState(ownerId);
+  const ownOverlayOwnerIdRef = useRef(ownerId);
+  ownOverlayOwnerIdRef.current = ownerId;
   // Позначка ставиться в тілі ефекту, а не лише знімається в прибиранні: у
   // StrictMode React монтує сторінку двічі, і прибирання першого монтування
   // залишало позначку знятою назавжди — відповідь про доповнення приходила вже
@@ -1888,6 +1891,16 @@ const Matching = () => {
     ownOverlaysMountedRef.current = true;
     return () => { ownOverlaysMountedRef.current = false; };
   }, []);
+  // Сеанс Firebase може змінитися в іншій вкладці без перемонтування маршруту.
+  // Не переносимо ані приватні поля, ані пам'ять уже прочитаних карток між uid.
+  // Окремий owner стан також не дає старим полям потрапити навіть у перший
+  // render нового власника, до синхронного прибирання layout-effect.
+  useLayoutEffect(() => {
+    setOwnOverlayStateOwnerId(ownerId);
+    setOwnOverlayFieldsByCardId({});
+    setOwnOverlayCardIds(null);
+    requestedOwnOverlayIdsRef.current = new Set();
+  }, [ownerId]);
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({
     uid: auth.currentUser?.uid,
@@ -5456,10 +5469,11 @@ const Matching = () => {
    * стрічці, і в шарі деталей.
    */
   const withOwnEdits = React.useCallback(user => {
+    if (ownOverlayStateOwnerId !== ownerId) return user;
     const fields = user?.userId ? ownOverlayFieldsByCardId[user.userId] : null;
     if (!fields || !Object.keys(fields).length) return user;
     return applyOverlayToCard(user, fields);
-  }, [ownOverlayFieldsByCardId]);
+  }, [ownOverlayFieldsByCardId, ownOverlayStateOwnerId, ownerId]);
 
   /**
    * Порожня мапа віддає той самий масив, а не його копію: від `feedSource`
@@ -5492,7 +5506,7 @@ const Matching = () => {
 
     getOwnOverlayCardIds(editorUserId)
       .then(ids => {
-        if (!ownOverlaysMountedRef.current) return;
+        if (!ownOverlaysMountedRef.current || ownOverlayOwnerIdRef.current !== editorUserId) return;
         setOwnOverlayCardIds(new Set(ids));
       })
       .catch(error => console.warn('[Matching] own overlay index unavailable', error));
@@ -5521,13 +5535,14 @@ const Matching = () => {
     if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
     // Поки перелік не приїхав, стрічка не питає нічого: інакше перший її
     // рендер устиг би зробити той самий круг на кожен рядок.
-    if (!isSearching && !ownOverlayCardIds) return undefined;
+    const currentOwnerOverlayCardIds = ownOverlayStateOwnerId === editorUserId ? ownOverlayCardIds : null;
+    if (!isSearching && !currentOwnerOverlayCardIds) return undefined;
 
     const requested = requestedOwnOverlayIdsRef.current;
     const cardUserIds = feedSourceWithoutOwnEdits
       .map(user => user?.userId)
       .filter(userId => userId && !requested.has(userId))
-      .filter(userId => isSearching || ownOverlayCardIds.has(userId));
+      .filter(userId => isSearching || currentOwnerOverlayCardIds.has(userId));
     if (!cardUserIds.length) return undefined;
 
     cardUserIds.forEach(userId => requested.add(userId));
@@ -5536,7 +5551,7 @@ const Matching = () => {
         // Порожні відповіді в стан не йдуть: інакше кожен пошук перемальовував
         // би видачу мапою з самих лише порожніх обʼєктів.
         const found = Object.entries(fieldsByCardId).filter(([, fields]) => Object.keys(fields || {}).length);
-        if (!ownOverlaysMountedRef.current || !found.length) return;
+        if (!ownOverlaysMountedRef.current || ownOverlayOwnerIdRef.current !== editorUserId || !found.length) return;
         setOwnOverlayFieldsByCardId(previous => ({ ...previous, ...Object.fromEntries(found) }));
       })
       .catch(error => console.warn('[Matching] own overlays unavailable', error));
@@ -5548,7 +5563,7 @@ const Matching = () => {
     // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
     // Лишається одна причина не писати в стан — розмонтована сторінка.
     return undefined;
-  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownerId]);
+  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
@@ -7116,9 +7131,12 @@ const Matching = () => {
 
   const toggleRowFavorite = React.useCallback(user => {
     if (!user?.userId) return;
+    const canonicalUser = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId);
     void toggleFavoriteUser({
       userId: user.userId,
-      userData: user,
+      // Реакція пише картку в загальний кеш. Приватний оверлей існує лише для
+      // показу його автору й не має переживати відхилення правки в цьому кеші.
+      userData: canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId },
       favoriteUsers,
       setFavoriteUsers,
       ownFavoriteUsers,
@@ -7129,7 +7147,7 @@ const Matching = () => {
       setOwnDislikeUsers,
       multiDataOwnerId: ownerId,
     });
-  }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
+  }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, withLazyPhotos]);
 
   const resolveEmptyFeedMessage = () => {
     // An empty group is a different problem from "nothing matched", and saying so
@@ -7453,9 +7471,10 @@ const Matching = () => {
 
   const toggleRowHidden = React.useCallback(user => {
     if (!user?.userId) return;
+    const canonicalUser = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId);
     void toggleDislikeUser({
       userId: user.userId,
-      userData: user,
+      userData: canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId },
       dislikeUsers,
       setDislikeUsers,
       ownDislikeUsers,
@@ -7466,7 +7485,7 @@ const Matching = () => {
       setOwnFavoriteUsers,
       multiDataOwnerId: ownerId,
     });
-  }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId]);
+  }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, withLazyPhotos]);
 
   /**
    * Шар доповнення накладається ще раз — уже поверх догідратованої анкети.

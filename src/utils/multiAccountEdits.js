@@ -418,7 +418,15 @@ export const getOwnOverlayFieldsForCards = async ({ editorUserId, cardUserIds = 
     try {
       const snapshot = await get(ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}/fields`));
       const fields = snapshot?.exists?.() ? snapshot.val() : null;
-      return [cardUserId, isPlainObject(fields) ? normalizeOverlayFields(fields) : {}];
+      const normalizedFields = isPlainObject(fields) ? normalizeOverlayFields(fields) : {};
+      // Старі оверлеї з'явилися раніше за обернений індекс. Пошук усе ще
+      // читає їх напряму, тож використай це відкриття як ледачу міграцію:
+      // наступне повернення до звичайної стрічки вже знайде цю картку через
+      // `editsByEditor` (а цей браузер — ще й через локальну пам'ять).
+      if (Object.keys(normalizedFields).length) {
+        await rememberOwnOverlayCard({ editorUserId, cardUserId });
+      }
+      return [cardUserId, normalizedFields];
     } catch (error) {
       console.warn('[multiAccountEdits] own overlay unavailable', cardUserId, error);
       return [cardUserId, {}];

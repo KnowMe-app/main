@@ -30,9 +30,17 @@ describe('список показує власне доповнення чита
   // власних доповнень (`multiData/editsByEditor` плюс памʼять браузера) уже
   // назвав, а видача пошуку — про всі показані.
   it('у стрічці питає лише про картки з переліку власних доповнень', () => {
-    expect(source).toContain("if (!isSearching && !ownOverlayCardIds) return undefined;");
-    expect(source).toContain('.filter(userId => isSearching || ownOverlayCardIds.has(userId));');
+    expect(source).toContain("if (!isSearching && !currentOwnerOverlayCardIds) return undefined;");
+    expect(source).toContain('.filter(userId => isSearching || currentOwnerOverlayCardIds.has(userId));');
     expect(source).toContain('getOwnOverlayCardIds(editorUserId)');
+  });
+
+  it('не приймає приватний стан або відповідь від попереднього власника', () => {
+    expect(source).toContain('requestedOwnOverlayIdsRef.current = new Set();');
+    expect(source).toContain('setOwnOverlayFieldsByCardId({});');
+    expect(source).toContain('setOwnOverlayCardIds(null);');
+    expect(source).toContain('ownOverlayOwnerIdRef.current !== editorUserId');
+    expect(source).toContain('if (ownOverlayStateOwnerId !== ownerId) return user;');
   });
 
   // Повна анкета приїжджає такою, якою її бачать усі, і накриває собою картку
@@ -52,6 +60,7 @@ describe('список показує власне доповнення чита
       source.indexOf('const renderedCards = filteredUsers;'),
     );
     expect(overlayMemo).not.toContain('updateCard(');
+    expect(source).toContain('userData: canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId },');
   });
 
   // Стрічка з ініціалом прізвища — це те, що видно поза стрічкою; дописане

@@ -19,6 +19,7 @@ const { updateSearchId } = require('components/config');
 const {
   applyOverlayToCard,
   getOwnOverlayCardIds,
+  getOwnOverlayFieldsForCards,
   collectOverlayIndexValues,
   buildOverlayFromDraft,
   getCanonicalCard,
@@ -126,6 +127,25 @@ describe('multiAccountEdits storage structure', () => {
     get.mockRejectedValueOnce(new Error('PERMISSION_DENIED'));
 
     await expect(getOwnOverlayCardIds('editor-1')).resolves.toContain('card-local');
+  });
+
+  it('backfills the inverse index when search discovers a legacy overlay', async () => {
+    get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ phone: { added: ['380501112233'] } }),
+    });
+
+    await expect(getOwnOverlayFieldsForCards({
+      editorUserId: 'editor-1',
+      cardUserIds: ['card-legacy'],
+    })).resolves.toEqual({
+      'card-legacy': { phone: { added: ['380501112233'] } },
+    });
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/editsByEditor/editor-1' }),
+      { 'card-legacy': expect.any(Number) },
+    );
   });
 
   it('appends one removal entry to the admin history when a value is cleared', async () => {
