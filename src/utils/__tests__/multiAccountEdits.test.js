@@ -18,6 +18,7 @@ const { updateSearchId } = require('components/config');
 
 const {
   applyOverlayToCard,
+  getOwnOverlayCardIds,
   collectOverlayIndexValues,
   buildOverlayFromDraft,
   getCanonicalCard,
@@ -84,6 +85,47 @@ describe('multiAccountEdits storage structure', () => {
         fields: { name: { from: 'old', to: 'new' } },
       }),
     );
+  });
+
+  /*
+   * Перелік власних доповнень — те, чим стрічка платить за показ шару.
+   *
+   * Оверлеї лежать під карткою, тож без цього переліку питання «у котрих із
+   * цих сотень рядків є мій шар» коштує читання на кожен рядок. Пишеться він
+   * тим самим збереженням, що й сам оверлей, і під власним uid редактора.
+   */
+  it('records the card in the editor own overlay index', async () => {
+    await saveOverlayForUserCard({
+      editorUserId: 'editor-1',
+      cardUserId: 'card-1',
+      fields: { phone: { added: ['380501112233'] } },
+    });
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/editsByEditor/editor-1' }),
+      { 'card-1': expect.any(Number) },
+    );
+  });
+
+  // Оверлей прибрали — картка йде з переліку: інакше стрічка читала б вузол,
+  // якого вже немає, на кожному відкритті списку.
+  it('drops the card from the index when the overlay is removed', async () => {
+    await removeOverlayForUserCard({ editorUserId: 'editor-1', cardUserId: 'card-1' });
+
+    expect(remove).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'multiData/editsByEditor/editor-1/card-1',
+    }));
+  });
+
+  // Правила бази викочуються руками, тож вузла переліку може ще не бути.
+  // Відмова читання — це не порожня відповідь: лишається памʼять браузера про
+  // те, що дописали в ньому самому.
+  it('falls back to the browser memory when the index node is unreadable', async () => {
+    const { rememberOwnOverlayCardLocally } = require('../ownOverlayCardsStorage');
+    rememberOwnOverlayCardLocally('editor-1', 'card-local');
+    get.mockRejectedValueOnce(new Error('PERMISSION_DENIED'));
+
+    await expect(getOwnOverlayCardIds('editor-1')).resolves.toContain('card-local');
   });
 
   it('appends one removal entry to the admin history when a value is cleared', async () => {

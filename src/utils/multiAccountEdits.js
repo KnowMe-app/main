@@ -4,6 +4,11 @@ import { isLongFormatUserId } from 'utils/userIdFormat';
 import { mergeProfileNodes } from 'utils/profileNodeMerge';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
 import { SEARCH_ID_INDEXED_FIELDS } from 'utils/searchKeyUtils';
+import {
+  forgetOwnOverlayCardLocally,
+  readOwnOverlayCardIds,
+  rememberOwnOverlayCardLocally,
+} from 'utils/ownOverlayCardsStorage';
 
 import { database, updateSearchId } from 'components/config';
 
@@ -27,6 +32,12 @@ const EDITS_HISTORY_ROOT = 'multiData/editsHistory';
 // to tell who worked on it. Those editors must keep access to the card they
 // helped build, so their ids are recorded here once and never removed.
 const EDITS_CONTRIBUTORS_ROOT = 'multiData/editsContributors';
+// Перелік карток, які доповнював один читач, — під його власним uid.
+//
+// Оверлеї лежать під карткою, тож без цього вузла питання «що я дописував»
+// коштує читання на кожен рядок стрічки. Пишеться він best-effort, як і
+// журнал: доповнення дорожче за свій індекс.
+const EDITS_BY_EDITOR_ROOT = 'multiData/editsByEditor';
 const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt', 'cacheVersion']);
 
 const isPlainObject = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -66,12 +77,14 @@ const cleanupOverlayIfOnlyTechnicalFields = async ({ editorUserId, cardUserId })
   const fieldsSnapshot = await get(ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}/fields`));
   if (!fieldsSnapshot?.exists?.()) {
     await remove(editorRef);
+    await forgetOwnOverlayCard({ cardUserId, editorUserId });
     return;
   }
 
   const fieldNames = Object.keys(fieldsSnapshot.val() || {});
   if (shouldDropOverlayByFieldNames(fieldNames)) {
     await remove(editorRef);
+    await forgetOwnOverlayCard({ cardUserId, editorUserId });
   }
 };
 
@@ -238,6 +251,7 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 
   if (shouldDropOverlayByFieldNames(Object.keys(sanitized))) {
     await remove(cardRef);
+    await forgetOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId });
     return;
   }
 
@@ -253,6 +267,8 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 
   await rememberCardContributor({ cardUserId: normalizedCardId, editorUserId });
 
+  await rememberOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId });
+
   // Після запису оверлея, а не до нього: право дописати id у `searchId` дають
   // правила саме за наявністю оверлея цього редактора на цій картці.
   await indexOverlayValuesInSearchId({ cardUserId: normalizedCardId, fields: sanitized });
@@ -263,6 +279,76 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
     action: 'edit',
     fields: diffOverlayFields(previousFields, sanitized),
   });
+};
+
+/**
+ * Позначка «цю картку я доповнював» — і в базі, і в памʼяті пристрою.
+ *
+ * Стрічка питає її, щоб не читати оверлей на кожен свій рядок: питання
+ * «у яких із цих карток лежить мій шар» коштує один запит за списком, а не
+ * сотню за вузлами. Запис best-effort: доповнення вже збережене, і втрата
+ * позначки коштує лише того, що шар не ляже на рядок стрічки — у видачі
+ * пошуку й у формі він видно однаково.
+ *
+ * Локальна копія ставиться завжди й першою: правила бази викочуються руками,
+ * і поки нового вузла в них немає, тільки вона й лишається.
+ */
+export const rememberOwnOverlayCard = async ({ editorUserId, cardUserId }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId || !editorUserId) return false;
+
+  rememberOwnOverlayCardLocally(editorUserId, normalizedCardId);
+
+  try {
+    await update(ref2(database, `${EDITS_BY_EDITOR_ROOT}/${editorUserId}`), {
+      [normalizedCardId]: Date.now(),
+    });
+    return true;
+  } catch (error) {
+    console.warn('[multiAccountEdits] own overlay index unavailable', error);
+    return false;
+  }
+};
+
+export const forgetOwnOverlayCard = async ({ editorUserId, cardUserId }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId || !editorUserId) return;
+
+  forgetOwnOverlayCardLocally(editorUserId, normalizedCardId);
+
+  try {
+    await remove(ref2(database, `${EDITS_BY_EDITOR_ROOT}/${editorUserId}/${normalizedCardId}`));
+  } catch (error) {
+    console.warn('[multiAccountEdits] own overlay index cleanup failed', error);
+  }
+};
+
+/**
+ * Картки, у яких у цього читача лежить власний шар.
+ *
+ * Відповідь зводиться з двох джерел, і жодне з них не повне саме по собі:
+ * вузол `editsByEditor` знає дописане з будь-якого пристрою, але зʼявляється
+ * лише після ручного викочування правил; `localStorage` знає дописане в цьому
+ * браузері — зокрема й до того викочування. Відмова читання не порожній
+ * список, а просто менше знань: лишається локальна памʼять.
+ */
+export const getOwnOverlayCardIds = async editorUserId => {
+  if (!editorUserId) return [];
+
+  const ids = new Set(readOwnOverlayCardIds(editorUserId));
+
+  try {
+    const snapshot = await get(ref2(database, `${EDITS_BY_EDITOR_ROOT}/${editorUserId}`));
+    if (snapshot?.exists?.()) {
+      Object.entries(snapshot.val() || {}).forEach(([cardUserId, value]) => {
+        if (value) ids.add(cardUserId);
+      });
+    }
+  } catch (error) {
+    console.warn('[multiAccountEdits] own overlay index unreadable', error);
+  }
+
+  return Array.from(ids).filter(Boolean);
 };
 
 // Best-effort by design, like the journal: an editor's save must not fail
@@ -628,6 +714,7 @@ export const removeOverlayForUserCard = async ({ editorUserId, cardUserId }) => 
   if (!normalizedCardId) return;
 
   await remove(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
+  await forgetOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId });
 };
 
 export const acceptOverlayForUserCard = async ({

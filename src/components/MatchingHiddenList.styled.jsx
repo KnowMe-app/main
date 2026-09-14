@@ -50,16 +50,20 @@ export const ROLE_STRIPE_COLORS = {
   cl: '#4a9bc9',
 };
 
+export const CARD_PADDING = '11px';
+
 export const Card = styled.div`
   position: relative;
   background: var(--matching-card-bg);
   border: 1px solid var(--matching-card-border);
   border-radius: 20px;
-  padding: 11px;
+  padding: ${CARD_PADDING};
   cursor: pointer;
   overflow: hidden;
   transition: opacity 200ms ease, transform 200ms ease;
 
+  /* Смужка ролі лежить поверх фото: воно тепер починається від самого краю
+     картки, а смужка — це те, як рядок каже «хто це» ще до імені. */
   ${({ $role }) => ROLE_STRIPE_COLORS[$role] && css`
     &::before {
       content: '';
@@ -68,6 +72,7 @@ export const Card = styled.div`
       top: 0;
       bottom: 0;
       width: 3px;
+      z-index: 1;
       background: ${ROLE_STRIPE_COLORS[$role]};
     }
   `}
@@ -79,38 +84,47 @@ export const Top = styled.div`
   align-items: center;
 `;
 
-// Spec §5 correction 3: one row of a different height breaks the list's rhythm
-// harder than any colour does, so the avatar box is pinned - fixed width, fixed
-// height, and a min-height on the row's top block so a short body can't shrink it.
+/*
+ * Фото — перше в картці й на всю її ширину.
+ *
+ * Плиткою 52 px збоку від імені воно не показувало нічого: на зріст очей і
+ * форму обличчя такого квадратика не вистачає, а саме за ними цей список і
+ * гортають. Велике фото до того жило в окремій розкладці «одна картка на
+ * екран», де під ним стояли три факти й пара кнопок — цілий екран за менше,
+ * ніж каже рядок. Тепер воно стоїть тут, а все, що картка розповідає про
+ * людину, лишається під ним.
+ *
+ * Пропорція портретна (4/5), а стеля висоти тримає рядок у межах екрана:
+ * імʼя й метрики мусять бути видно разом із фото, без гортання.
+ */
 export const Photo = styled.div`
   position: relative;
-  width: 52px;
-  height: 52px;
-  min-height: 52px;
-  max-height: 52px;
-  aspect-ratio: 1 / 1;
-  border-radius: 14px;
-  flex: 0 0 auto;
-  background-size: cover;
-  background-position: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
+  margin: -${CARD_PADDING} -${CARD_PADDING} 9px;
+  aspect-ratio: 4 / 5;
+  max-height: 58vh;
+  background: var(--matching-section-bg);
   overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
 `;
 
 /* Скільки фото в анкеті — видно з рядка, ще до її відкриття. */
 export const PhotoCount = styled.span`
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  padding: 1px 5px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5);
+  right: 7px;
+  bottom: 7px;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
-  line-height: 1.5;
+  line-height: 1.4;
 `;
 
 export const Body = styled.div`
@@ -353,11 +367,11 @@ export const ChevronButton = styled.button`
    сама нотатка: доріжок у плашці дві, і два фони поспіль малювали б сходинку
    на межі між ними. */
 export const Note = styled.p`
-  font-size: 12.3px;
+  font-size: ${NOTE_TEXT_SIZE};
   color: var(--matching-header-text);
   padding: 6px 0;
   margin: 0;
-  line-height: 1.5;
+  line-height: ${NOTE_TEXT_LINE_HEIGHT};
 
   /* Нижній відступ обрізаному тексту знімається навмисно: line-clamp ріже
      по рядках, а overflow ховає все за межами padding-box — тож у ті 8 px
@@ -395,11 +409,15 @@ export const CommentInput = styled.textarea`
   overflow: hidden;
   background: transparent;
   font: inherit;
-  font-size: 12.3px;
+  /* Та сама типографіка, що й у публічного запису поруч: дві доріжки однієї
+     плашки роблять те саме — це запис про людину, — і різний кегль у них
+     читався як недоробка, а не як різниця сенсу. Різницю несуть підпис над
+     доріжкою і колір її смужки. */
+  font-size: ${NOTE_TEXT_SIZE};
   color: var(--matching-header-text);
   padding: 6px 0;
   margin: 0;
-  line-height: 1.5;
+  line-height: ${NOTE_TEXT_LINE_HEIGHT};
 
   &::placeholder {
     color: var(--matching-muted-text);
@@ -1072,10 +1090,6 @@ export const MoreNote = styled.div`
   padding: 0 10px;
 `;
 
-/* Волосяна риска між доріжками: відгуки й нотатка лежать в одній плашці, і
-   сплутати їх не можна. */
-export const RowNotesDivider = styled.div`
-  height: 1px;
-  margin: 6px 0;
-  background: var(--matching-card-border);
-`;
+/* Межу між доріжками тримає сама доріжка (`NoteLane` у `Matching.styled`):
+   у рядку стрічки й у відкритій картці стоять ті самі дві доріжки, тож і
+   риска між ними мусить бути одна на два екрани, а не своя тут. */

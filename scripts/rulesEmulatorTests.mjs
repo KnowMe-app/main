@@ -818,6 +818,35 @@ await it('без оверлея на картці ключ на неї не за
   await assertFails(set(ref(db(SELF_SERVE), 'searchId/380505553347/phone'), CARD));
 });
 
+// Перелік власних доповнень (`multiData/editsByEditor/{редактор}`) — це
+// відповідь на питання «у яких картках лежить мій шар». Стрічка ставить його
+// раз на таб замість читання оверлея на кожен свій рядок, тож вузол мусить
+// читатись самим редактором — і тільки ним: список карток, які людина
+// доповнювала, розповідає, кого вона шукала.
+describe('editsByEditor — власний перелік доповнених карток');
+
+await it('редактор веде власний перелік і читає його', async () => {
+  await assertSucceeds(update(ref(db(CARD_CREATOR), `multiData/editsByEditor/${CARD_CREATOR}`), { [CARD]: 1 }));
+  await assertSucceeds(get(ref(db(CARD_CREATOR), `multiData/editsByEditor/${CARD_CREATOR}`)));
+  // Знімається позначка тим самим правом: оверлей прибрали — картка йде з
+  // переліку, інакше стрічка читала б вузол, якого вже немає.
+  await assertSucceeds(remove(ref(db(CARD_CREATOR), `multiData/editsByEditor/${CARD_CREATOR}/${CARD}`)));
+});
+
+await it('чужого переліку не читає й не пише', async () => {
+  await assertFails(get(ref(db(SELF_SERVE), `multiData/editsByEditor/${CARD_CREATOR}`)));
+  await assertFails(update(ref(db(SELF_SERVE), `multiData/editsByEditor/${CARD_CREATOR}`), { [CARD]: 1 }));
+  await assertFails(get(ref(db(MATCHING_EDITOR), `multiData/editsByEditor/${CARD_CREATOR}`)));
+});
+
+await it('у переліку лежить сама лише мітка часу', async () => {
+  // Вміст шару читається з `multiData/edits`, а тут стоять самі id: інакше
+  // перелік застаріває окремо від оверлея й показує в стрічці те, чого в
+  // ньому вже немає.
+  await assertFails(set(ref(db(CARD_CREATOR), `multiData/editsByEditor/${CARD_CREATOR}/${CARD}`), { phone: '380501112233' }));
+  await assertSucceeds(set(ref(db(CARD_CREATOR), `multiData/editsByEditor/${CARD_CREATOR}/${CARD}`), 1764000000000));
+});
+
 describe('searchId — точковий резолв усім, перелік індексу тільки адміну');
 
 await it('будь-хто авторизований читає один ключ індексу', async () => {
