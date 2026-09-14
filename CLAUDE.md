@@ -41,6 +41,66 @@ npm run test:rules        # сценарії доступу в емулятор�
 не через мок, а тому що описував поведінку, якої в коді ще не було («стерте поле не
 показувати»). Полагодив його код, а не тест.
 
+## Візуальний дебаг у браузері
+
+Частина того, що ламається в матчингу, тестами не ловиться взагалі: правило, яке
+мовчки не доїжджає до сторінки; картка, що зникає з-під пальця; смужка, яку код
+малює під рамкою й тому не видно. Це перевіряється очима — і перевіряється
+локально, живим застосунком, а не задеплоєним: у проді стоїть старий код.
+
+**У веб-сесії для цього все є.** В оточенні контейнера лежать і конфіг Firebase
+(`REACT_APP_API_KEY`, `REACT_APP_AUTH_DOMAIN`, `REACT_APP_DATABASE_URL`,
+`REACT_APP_PROJECT_ID`, `REACT_APP_STORAGE_BUCKET`,
+`REACT_APP_MESSAGING_SENDER_ID`, `REACT_APP_APP_ID`), і доступ до тестового
+акаунта (`MIGRATION_EMAIL`, `MIGRATION_PASSWORD`). Файлу `.env` при цьому немає
+й не треба: CRA читає ці змінні просто з оточення, тож `npm start` піднімає
+застосунок, підключений до справжньої бази `webringitapp`.
+
+**Значень цих змінних не друкуйте** — ані в лог, ані в звіт. `env | grep`
+пісочниця відхиляє сама (`Credential Materialization`), і це правильно: у
+скрипті вони беруться з `process.env` і нікуди більше не потрапляють.
+
+```bash
+BROWSER=none PORT=3000 npm start &     # http://localhost:3000/main/ (basename="/main")
+npm install --no-save playwright-core  # Chromium уже в образі, качати нічого
+```
+
+Три речі, на яких цей шлях ламався, і кожна коштувала окремого розбору:
+
+- **Форма входу живе на `/login`, а не на `/`.** На корені стоїть
+  `PrivacyPolicy` (або `AddNewProfile` — залежно від прав), і чекати там на
+  `input[name="email"]` можна вічно.
+- **Chromium треба явно пускати через агентський проксі — і вкоротити йому
+  ClientHello.** Сам він `HTTPS_PROXY` не підхоплює, а з повним ClientHello
+  релей рве тунель: `identitytoolkit.googleapis.com` віддає
+  `ERR_CONNECTION_RESET`, Firebase каже `auth/network-request-failed`, і
+  зовні це виглядає як невірний пароль (хоч той самий POST з `curl` дає 200).
+  Робочий набір: `proxy: { server: process.env.HTTPS_PROXY, bypass:
+  'localhost,127.0.0.1,::1' }` плюс аргументи `--no-sandbox --disable-http2
+  --disable-quic --ignore-certificate-errors --ssl-version-max=tls1.2
+  --disable-features=EncryptedClientHello,PostQuantumKyber,TLS13EarlyData`.
+  Байпас для `localhost` обов'язковий — інакше дев-сервер відповідає 405.
+- **Успіх логіну доводить екран, а не таймер.** `waitForTimeout(15000)` не
+  гарантує нічого й тихо пускає сценарій далі з порожньою сесією. Ознака
+  успіху — що поле пароля **зникло** (`state: 'detached'`); якщо форма лишилась,
+  на ній стоїть помилка, і її текст треба прочитати й показати, а не проковтнути.
+
+Селектори форми: `input[name="email"]`, `input[name="password"]`,
+`input[name="userRole"][value="ag"]`, `#login-terms`, кнопка `text=Вхід /
+Реєстрація`. Виконуваний Chromium — `/opt/pw-browsers/chromium-*/chrome-linux/chrome`
+(номер збірки змінюється, беріть за маскою). `playwright-core` — CommonJS, тож в
+ESM він імпортується дефолтним імпортом, а не `import { chromium }`.
+
+Далі, вже на `/matching`, є ще дві пастки саме цього екрана:
+
+- **`role="dialog"` на сторінці два** — панель фільтрів (`aria-label="Фільтри
+  matching"`) і відкрита картка (`aria-label="Профіль"`). Селектор без
+  `aria-label` ловить не ту, і кнопка картки «не знаходиться» там, де вона є.
+- **Рядок стрічки не відкривається кліком у будь-яке місце**: усередині нього
+  діти, що глушать подію (нотатка, ряд рішень, контакти). Клікайте по фото або
+  по імені. Самі рядки й плитки несуть `data-card-id` — за ним зручно і шукати
+  конкретну картку, і звіряти, чи вона лишилась у деці після реакції.
+
 ## Деплой
 
 Пуш у `main` запускає `.github/workflows/deploy.yml`: install → lint → build → gh-pages.
