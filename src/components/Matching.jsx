@@ -5484,7 +5484,10 @@ const Matching = () => {
    * Адмін править картку напряму, і його правка їде в саму картку.
    */
   useEffect(() => {
-    const editorUserId = auth.currentUser?.uid;
+    // Читач береться з `ownerId`, а не з `auth.currentUser`: на першому рендері
+    // сторінки того ще немає, а перезапустити ефект нема на що — рівень
+    // доступу відтоді не змінюється. Саме так перелік і не читався б узагалі.
+    const editorUserId = ownerId;
     if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
 
     getOwnOverlayCardIds(editorUserId)
@@ -5495,7 +5498,7 @@ const Matching = () => {
       .catch(error => console.warn('[Matching] own overlay index unavailable', error));
 
     return undefined;
-  }, [access.canCreateProfiles, isAdmin]);
+  }, [access.canCreateProfiles, isAdmin, ownerId]);
 
   /**
    * Читається лише те, що на екрані, — і в стрічці лише те, що читач дописував.
@@ -5514,7 +5517,7 @@ const Matching = () => {
    * які перелік власних доповнень уже назвав.
    */
   useEffect(() => {
-    const editorUserId = auth.currentUser?.uid;
+    const editorUserId = ownerId;
     if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
     // Поки перелік не приїхав, стрічка не питає нічого: інакше перший її
     // рендер устиг би зробити той самий круг на кожен рядок.
@@ -5545,7 +5548,7 @@ const Matching = () => {
     // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
     // Лишається одна причина не писати в стан — розмонтована сторінка.
     return undefined;
-  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds]);
+  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownerId]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {

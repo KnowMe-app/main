@@ -385,11 +385,16 @@ export const Note = styled.p`
     padding-bottom: 0;
   `}
 
+  /* Невидимий близнюк поля, яким міряється, чи текст обрізався. Міряти він
+     мусить рівно ту ширину, що й саме поле, тож і лежить він у тій самій
+     доріжці (CommentLane нижче), а не відлічує піксели від краю картки:
+     відступ доріжки вже змінювався раз, і разом із ним мовчки роз'їжджалась
+     міра. */
   ${({ $hidden }) => $hidden && css`
     position: absolute;
     top: 0;
-    left: 21px;
-    right: 21px;
+    left: 0;
+    right: 0;
     margin: 0;
     visibility: hidden;
     pointer-events: none;
@@ -430,6 +435,13 @@ export const CommentInput = styled.textarea`
   &:focus {
     outline: 0;
   }
+`;
+
+/* Доріжка власної нотатки: саме поле, «…» і невидима міра до нього. Потрібна
+   вона рівно заради міри — та лежить абсолютом і мусить мати за що зачепитись
+   саме тут, а не за картку цілком. */
+export const CommentLane = styled.div`
+  position: relative;
 `;
 
 export const SelfDescription = styled.p`

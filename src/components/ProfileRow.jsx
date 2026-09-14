@@ -523,7 +523,7 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
 
   if (mode === 'clamped') {
     return (
-      <>
+      <S.CommentLane>
         <S.Note
           ref={measureRef}
           $clip
@@ -546,12 +546,12 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
         >
           …
         </S.NoteMore>
-      </>
+      </S.CommentLane>
     );
   }
 
   return (
-    <>
+    <S.CommentLane>
       <S.CommentInput
         ref={textareaRef}
         rows={1}
@@ -581,7 +581,7 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
         </S.NoteMore>
       )}
       <S.Note ref={measureRef} $clip $lines={COMMENT_VISIBLE_ROWS} $hidden aria-hidden="true">{measureText}</S.Note>
-    </>
+    </S.CommentLane>
   );
 };
 

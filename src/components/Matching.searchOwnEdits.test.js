@@ -15,6 +15,10 @@ describe('список показує власне доповнення чита
 
   it('питає про доповнення лише показані картки й лише того, хто їх пише', () => {
     expect(source).toContain("if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;");
+    // Читач — це `ownerId`, а не `auth.currentUser`: на першому рендері того
+    // ще немає, а перезапустити ефект нема на що, тож перелік не читався б
+    // узагалі.
+    expect(source).toContain('const editorUserId = ownerId;');
     expect(source).toContain('getOwnOverlayFieldsForCards({ editorUserId, cardUserIds })');
     // Памʼять запитаних id: перемальовування видачі не коштує другого круга.
     expect(source).toContain('const requested = requestedOwnOverlayIdsRef.current;');
