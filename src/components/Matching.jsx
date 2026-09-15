@@ -1017,6 +1017,7 @@ const formatHeroFact = (item, language) => {
 
 const SwipeableCard = ({
   user,
+  reactionUserData,
   photo,
   role,
   isAgency,
@@ -1430,10 +1431,10 @@ const SwipeableCard = ({
             </ActionButton>
           )}
           <span ref={dislikeButtonWrapRef}>
-            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
+            <BtnDislike userId={user.userId} userData={reactionUserData || { userId: user.userId }} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
           </span>
           <span ref={favoriteButtonWrapRef}>
-            <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
+            <BtnFavorite userId={user.userId} userData={reactionUserData || { userId: user.userId }} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
           </span>
         </ModernActionRail>
         )}
@@ -5536,7 +5537,7 @@ const Matching = () => {
     // Поки перелік не приїхав, стрічка не питає нічого: інакше перший її
     // рендер устиг би зробити той самий круг на кожен рядок.
     const currentOwnerOverlayCardIds = ownOverlayStateOwnerId === editorUserId ? ownOverlayCardIds : null;
-    if (!isSearching && !currentOwnerOverlayCardIds) return undefined;
+    if (!currentOwnerOverlayCardIds) return undefined;
 
     const requested = requestedOwnOverlayIdsRef.current;
     const cardUserIds = feedSourceWithoutOwnEdits
@@ -5546,7 +5547,11 @@ const Matching = () => {
     if (!cardUserIds.length) return undefined;
 
     cardUserIds.forEach(userId => requested.add(userId));
-    getOwnOverlayFieldsForCards({ editorUserId, cardUserIds })
+    getOwnOverlayFieldsForCards({
+      editorUserId,
+      cardUserIds,
+      rememberedCardUserIds: currentOwnerOverlayCardIds,
+    })
       .then(fieldsByCardId => {
         // Порожні відповіді в стан не йдуть: інакше кожен пошук перемальовував
         // би видачу мапою з самих лише порожніх обʼєктів.
@@ -6063,6 +6068,12 @@ const Matching = () => {
   }, [fullProfileByUserId, photoCacheByUserId]);
 
   const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));
+  const activeCanonicalProfile = feedSourceWithoutOwnEdits.find(
+    candidate => candidate?.userId === activeProfile?.userId,
+  );
+  const activeReactionUserData = activeCanonicalProfile
+    ? withLazyPhotos(activeCanonicalProfile)
+    : (activeProfile?.userId ? { userId: activeProfile.userId } : null);
 
   useEffect(() => {
     if (activeProfile) ensureFullProfile(activeProfile);
@@ -8049,6 +8060,7 @@ const Matching = () => {
                     </ModernDesktopNavButton>
                     <SwipeableCard
                       user={user}
+                      reactionUserData={activeReactionUserData}
                       photo={photo}
                       role={role}
                       isAgency={isAgency}

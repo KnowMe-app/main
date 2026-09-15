@@ -130,6 +130,9 @@ describe('multiAccountEdits storage structure', () => {
   });
 
   it('backfills the inverse index when search discovers a legacy overlay', async () => {
+    // A stalled best-effort migration must not stall the overlay that was
+    // already read and is ready to render.
+    update.mockImplementationOnce(() => new Promise(() => {}));
     get.mockResolvedValueOnce({
       exists: () => true,
       val: () => ({ phone: { added: ['380501112233'] } }),
@@ -146,6 +149,23 @@ describe('multiAccountEdits storage structure', () => {
       expect.objectContaining({ path: 'multiData/editsByEditor/editor-1' }),
       { 'card-legacy': expect.any(Number) },
     );
+  });
+
+  it('does not rewrite an inverse index entry that search already remembers', async () => {
+    get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ phone: { added: ['380501112233'] } }),
+    });
+
+    await expect(getOwnOverlayFieldsForCards({
+      editorUserId: 'editor-1',
+      cardUserIds: ['card-current'],
+      rememberedCardUserIds: new Set(['card-current']),
+    })).resolves.toEqual({
+      'card-current': { phone: { added: ['380501112233'] } },
+    });
+
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('appends one removal entry to the admin history when a value is cleared', async () => {

@@ -408,7 +408,11 @@ export const getCardContributorIds = async cardUserId => {
  * (`docs/matching-feed-traffic.md`). Відмова читання — це порожній оверлей, а
  * не поламана видача.
  */
-export const getOwnOverlayFieldsForCards = async ({ editorUserId, cardUserIds = [] }) => {
+export const getOwnOverlayFieldsForCards = async ({
+  editorUserId,
+  cardUserIds = [],
+  rememberedCardUserIds = new Set(readOwnOverlayCardIds(editorUserId)),
+}) => {
   if (!editorUserId) return {};
 
   const ids = uniq(cardUserIds.map(normalizeCardKey).filter(Boolean));
@@ -423,8 +427,10 @@ export const getOwnOverlayFieldsForCards = async ({ editorUserId, cardUserIds = 
       // читає їх напряму, тож використай це відкриття як ледачу міграцію:
       // наступне повернення до звичайної стрічки вже знайде цю картку через
       // `editsByEditor` (а цей браузер — ще й через локальну пам'ять).
-      if (Object.keys(normalizedFields).length) {
-        await rememberOwnOverlayCard({ editorUserId, cardUserId });
+      if (Object.keys(normalizedFields).length && !rememberedCardUserIds.has(cardUserId)) {
+        // Міграція не затримує вже прочитаний оверлей: індекс — лише
+        // оптимізація наступного відкриття, а не частина відповіді пошуку.
+        void rememberOwnOverlayCard({ editorUserId, cardUserId });
       }
       return [cardUserId, normalizedFields];
     } catch (error) {

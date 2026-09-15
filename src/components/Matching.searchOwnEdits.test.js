@@ -19,7 +19,7 @@ describe('список показує власне доповнення чита
     // ще немає, а перезапустити ефект нема на що, тож перелік не читався б
     // узагалі.
     expect(source).toContain('const editorUserId = ownerId;');
-    expect(source).toContain('getOwnOverlayFieldsForCards({ editorUserId, cardUserIds })');
+    expect(source).toContain('rememberedCardUserIds: currentOwnerOverlayCardIds,');
     // Памʼять запитаних id: перемальовування видачі не коштує другого круга.
     expect(source).toContain('const requested = requestedOwnOverlayIdsRef.current;');
     expect(source).toContain('cardUserIds.forEach(userId => requested.add(userId));');
@@ -30,7 +30,7 @@ describe('список показує власне доповнення чита
   // власних доповнень (`multiData/editsByEditor` плюс памʼять браузера) уже
   // назвав, а видача пошуку — про всі показані.
   it('у стрічці питає лише про картки з переліку власних доповнень', () => {
-    expect(source).toContain("if (!isSearching && !currentOwnerOverlayCardIds) return undefined;");
+    expect(source).toContain('if (!currentOwnerOverlayCardIds) return undefined;');
     expect(source).toContain('.filter(userId => isSearching || currentOwnerOverlayCardIds.has(userId));');
     expect(source).toContain('getOwnOverlayCardIds(editorUserId)');
   });
@@ -61,6 +61,8 @@ describe('список показує власне доповнення чита
     );
     expect(overlayMemo).not.toContain('updateCard(');
     expect(source).toContain('userData: canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId },');
+    expect(source).toContain('reactionUserData={activeReactionUserData}');
+    expect(source).toContain('userData={reactionUserData || { userId: user.userId }}');
   });
 
   // Стрічка з ініціалом прізвища — це те, що видно поза стрічкою; дописане
