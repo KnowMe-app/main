@@ -70,10 +70,10 @@ describe('Matching redesigned profile regressions', () => {
     // мови інтерфейсу, і порівняння з англійським рядком мовчки ламало б бейдж
     // під українською.
     expect(matchingSource).toContain("const isGenericProfileRole = resolvedRole === 'other';");
-    expect(matchingSource).toContain('const shouldShowRoleBadge = !isGenericProfileRole;');
+    expect(matchingSource).toContain('const shouldShowRoleBadge = !isGenericProfileRole && Boolean(roleCode);');
     expect(matchingSource).toContain("const name = profileName || '';");
     expect(matchingSource).toContain('{title && <ModernHeroTitle>{title}</ModernHeroTitle>}');
-    expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}');
+    expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleCode}</ModernRoleBadge>}');
   });
 
   it('renders editor-created Firebase list values without breaking matching', () => {

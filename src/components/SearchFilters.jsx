@@ -24,10 +24,13 @@ export const MATCHING_FILTER_GROUPS = [
     {
       filterName: 'userRole',
       label: 'Тип профілю',
+      // Роль називає той самий дволітерний код, що й плашка на картці
+      // (`getRoleCode`). Тут стояли слова — «ДО», «Агентства», «Батьки», — і
+      // чіп фільтра казав про роль одне, а картка під ним інше.
       options: [
-        { val: 'ed', label: 'ДО' },
-        { val: 'ag', label: 'Агентства' },
-        { val: 'ip', label: 'Батьки' },
+        { val: 'ed', label: 'ED' },
+        { val: 'ag', label: 'AG' },
+        { val: 'ip', label: 'IP' },
         { val: 'other', label: '?' },
       ],
     },

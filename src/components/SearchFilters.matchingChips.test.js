@@ -65,7 +65,7 @@ describe('matching active-filter chips', () => {
     expect(chips).toEqual([
       // Two real values off (the "?" doesn't count), so the "крім" branch wins
       // over listing what is left - that is the spec's stated precedence.
-      { filterName: 'userRole', groupLabel: 'Тип профілю', text: 'Тип профілю: крім Агентства, Батьки', danger: false },
+      { filterName: 'userRole', groupLabel: 'Тип профілю', text: 'Тип профілю: крім AG, IP', danger: false },
       { filterName: 'age', groupLabel: 'Age', text: 'Age: крім ≤25', danger: false },
     ]);
   });

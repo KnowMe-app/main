@@ -601,30 +601,71 @@ export const ContactsBody = styled.div`
  * за значком, каже `title`, тож значення не зникає, а лише перестає займати
  * рядок. Та сама розкладка, що й у відкритій картці.
  */
+/*
+ * Контакти стоять на одній вертикалі — і між собою, і з усім, що вище.
+ *
+ * Значок кожного каналу лежить у рамці 28 px, і саме ця рамка тримає ліву межу
+ * блока: номер телефону починається з такої самої рамки, тож його значок, рядок
+ * значків месенджерів під ним і рамки решти каналів стоять один під одним. Поки
+ * значок телефону малювався голими 13 px, він починався там, де в рамок
+ * починається сама рамка, а не малюнок усередині, — і кожен наступний рядок
+ * контактів виглядав зсунутим праворуч на півсантиметра.
+ *
+ * Відступи між рядками — 4 px: контактів у картці буває п'ять-шість, і на
+ * колишніх 6 px згори й знизу блок розтягувався на пів екрана там, де читають
+ * його одним поглядом.
+ */
 export const ContactPhoneRow = styled.div`
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 10px;
-  padding: 6px 0;
+  gap: 4px 8px;
+  padding: 2px 0;
+`;
+
+/*
+ * Рамка навколо значка каналу — спільна межа для всіх рядків контактів.
+ *
+ * Кожна змінна тут має запасну: цей самий блок контактів малює й форма
+ * доповнення картки, а вона поза матчингом, і `--matching-*` там не оголошені.
+ * Невідома змінна в скороченому записі `border` робить нечинним увесь запис —
+ * тож рамки там не було взагалі, і рядок значків виглядав зсунутим праворуч
+ * рівно на те, на скільки малюнок відступає від краю своєї (невидимої) рамки.
+ */
+const contactIconBox = css`
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--matching-card-border, var(--km-border, #E8E8E2));
+  background: var(--matching-card-bg, var(--km-card, #FFFFFF));
+  box-sizing: border-box;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+`;
+
+export const ContactIconBadge = styled.span`
+  ${contactIconBox};
+  color: var(--matching-muted-text, var(--km-muted, #7A7A72));
 `;
 
 export const ContactPhoneLink = styled.a`
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--matching-accent);
+  color: var(--matching-accent, var(--km-accent, #E8791A));
   text-decoration: none;
 
   &:active {
     opacity: 0.6;
-  }
-
-  svg {
-    width: 13px;
-    height: 13px;
   }
 `;
 
@@ -634,26 +675,14 @@ export const ContactIconRow = styled.div`
   flex-wrap: wrap;
   gap: 6px;
   ${({ $standalone }) => $standalone && css`
-    padding: 6px 0 2px;
+    padding: 2px 0 0;
   `}
 `;
 
 export const ContactIconLink = styled.a`
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--matching-card-border);
-  background: var(--matching-card-bg);
-  color: var(--matching-muted-text);
+  ${contactIconBox};
+  color: var(--matching-muted-text, var(--km-muted, #7A7A72));
   text-decoration: none;
-
-  svg {
-    width: 13px;
-    height: 13px;
-  }
 
   &:active {
     opacity: 0.6;

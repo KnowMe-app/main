@@ -170,13 +170,37 @@ describe('публічні коментарі', () => {
     // Досі блок жив тільки в рядках стрічки: у самій анкеті була лише приватна
     // нотатка переглядача («Мій коментар»), і публічних коментарів не було видно.
     //
-    // Тепер місця два, але блоки різні: анкета показує коментарі одразу, а
-    // рядок стрічки — кнопку, яка їх питає (`PublicCommentsGate`).
+    // Тепер блок один на обидва місця: і відкрита анкета, і картка списку
+    // показують те саме поле для власного відгуку, а прочитані чужі приїжджають
+    // у нього ж. Окремого «гейта», який до читання малював замість поля напис,
+    // більше немає.
     const source = matching();
-    expect(source.match(/<PublicCommentBlock/g)).toHaveLength(1);
-    expect(source.match(/<PublicCommentsGate/g)).toHaveLength(1);
+    expect(source.match(/<PublicCommentBlock/g)).toHaveLength(2);
+    expect(source).not.toContain('<PublicCommentsGate');
     expect(source).toContain('publicCommentSlot={(');
     expect(source).toContain("{profileUiText('publicComment', language)}");
+  });
+
+  // Дві доріжки нотаток стоять у картці будь-якої розкладки: розкладка міняє
+  // те, як картку показують, а не те, що про людину вже записали. Поки плитка
+  // галереї їх не мала, читач там не бачив власної нотатки — і дописував
+  // поверх запису, якого не видно.
+  it('показує обидві доріжки і в плитці галереї', () => {
+    const source = matching();
+    const tile = source.slice(source.indexOf('const GalleryCard'), source.indexOf('const Matching = () =>'));
+    expect(tile).toContain('<ProfileNotes');
+    expect(tile).toContain('publicSlot={reviewsSlot}');
+    expect(tile).toContain('<CommentBlock');
+    // І той самий значок, яким рядок просить прочитати чужі відгуки.
+    expect(tile).toContain('aria-label={REVIEWS_GATE_LABEL}');
+  });
+
+  // Нотатка видна всім показаним карткам, а не самій активній: інакше читач
+  // дописував би поверх власного запису, якого не бачить. Ціна не росте з
+  // кількістю карток — піддерево власника читається одним запитом.
+  it('читає власні нотатки для обох розкладок', () => {
+    expect(matching()).toContain("void loadCommentsFor(feedRows, { activeOnly: false });");
+    expect(matching()).not.toContain("if (viewLayout !== 'list' || !feedRows.length) return;");
   });
 
   // Блок один, доріжки дві: приватна нотатка й публічний запис розділені не
@@ -371,21 +395,21 @@ describe('дії та роль на картці стрічки', () => {
     expect(rowSource).toContain('{secondaryAction && (');
   });
 
-  // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати, і саме
-  // цей код разом із плиткою ініціалів робив рядок агенції нечитабельним.
-  // У рядку списку це слово переїхало на сам знімок — туди, де його малює й
-  // відкрита картка, — а чіпа під іменем більше немає взагалі.
-  it('показує роль словом на обох виглядах', () => {
+  // Роль позначає дволітерний код, і той самий на обох виглядах: словом вона
+  // казалась по-різному на кожному екрані й мінялась разом із мовою
+  // інтерфейсу — «Донорка» в рядку, «Донорка яйцектилін» у відкритій картці,
+  // «Donor» англійською. Плашка лишилась на знімку, чіпа під іменем немає.
+  it('показує роль кодом на обох виглядах', () => {
     expect(read('Matching.jsx')).toContain('<GalleryRoleTag');
     const rowSource = read('ProfileRow.jsx');
-    expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{roleWord}</S.PhotoRoleBadge>');
+    expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{roleCode}</S.PhotoRoleBadge>');
     expect(rowSource).not.toContain('<S.RoleTag');
   });
 
-  // Двобуквений код лишився рівно одним запасним варіантом: знімка немає, тож
-  // плашці ролі нема на чому лежати, а роль усе одно треба сказати. У плитці
-  // галереї, де слово вміщається, коду немає й далі.
-  it('повертає двобуквений код лише там, де немає фото', () => {
+  // Там, де знімка немає, плашці ролі нема на чому лежати — код переїжджає в
+  // рядок імені. Це той самий код, що й на плашці, тож окремого компонента під
+  // нього в плитці галереї немає й далі.
+  it('ставить код у рядок імені там, де немає фото', () => {
     expect(read('Matching.jsx')).not.toContain('<GalleryRoleCode');
     expect(read('ProfileRow.jsx')).toContain('{!photo && roleCode && <S.RoleCode');
   });

@@ -12,6 +12,13 @@ describe('estimateGalleryTileHeight', () => {
     expect(estimateGalleryTileHeight({ textLines: 4 }))
       .toBeGreaterThan(estimateGalleryTileHeight({ textLines: 1 }));
   });
+
+  // Плашка нотаток стоїть у кожній повній плитці й важить більше за рядок
+  // тексту: колонки розʼїжджались би рівно на різницю в кількості плиток.
+  it('рахує плашку нотаток', () => {
+    expect(estimateGalleryTileHeight({ textLines: 1, hasNotes: true }))
+      .toBeGreaterThan(estimateGalleryTileHeight({ textLines: 1 }));
+  });
 });
 
 describe('splitIntoBalancedColumns', () => {

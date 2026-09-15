@@ -11,6 +11,7 @@ import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pic
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
 import { CONTACT_FIELDS, getContactEntries } from './contactMethods';
+import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 import BackButton from './BackButton';
 import InfoModal from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
@@ -24,7 +25,7 @@ import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
 import { goBackOrTo } from 'utils/appBackNavigation';
-import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleShortLabel } from './profileLayoutConfig';
+import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode } from './profileLayoutConfig';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -545,7 +546,7 @@ export const buildOverlayPrefill = (canonical, cardUserId) => [
  */
 const ProfileResultCard = ({ card, name, note, status, statusVariant, actionLabel, onAction }) => {
   const facts = [
-    getRoleShortLabel(getProfileRole(card)),
+    getRoleCode(getProfileRole(card)),
     getProfileAge(card) ? String(getProfileAge(card)) : '',
     getProfileLocation(card),
   ].filter(Boolean).join(' · ');
@@ -1553,6 +1554,13 @@ export const ProfileCreationWorkspace = () => {
     if (!field) return null;
     const value = draft?.[fieldName] || '';
     const isTextArea = fieldName === 'moreInfo_main' || fieldName === 'publicComment';
+    // «+» відкриває рядок під **наступну версію** поля («телефон був той, став
+    // цей»). У коментаря версій не буває: він один, його розширюють або
+    // звужують, правлячи той самий текст. Дописаний другий рядок поїхав би в
+    // базу другою версією, а показувалась би скрізь сама лише остання — тобто
+    // перша половина відгуку мовчки зникла б з усіх екранів. Правило тут те
+    // саме, що й у формі анкети (`fieldAcceptsMultipleValues`).
+    const canAddAnotherValue = fieldAcceptsMultipleValues(fieldName);
     const label = getFieldLabel(field) || fieldName;
     const currentValues = toFieldValues(value).map(item => String(item ?? '').trim()).filter(Boolean);
 
@@ -1585,7 +1593,7 @@ export const ProfileCreationWorkspace = () => {
               />
               <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
-            <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
+            {canAddAnotherValue && <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       ) : (
@@ -1600,7 +1608,7 @@ export const ProfileCreationWorkspace = () => {
               />
               <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
-            <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>
+            {canAddAnotherValue && <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       )}
@@ -1627,7 +1635,7 @@ export const ProfileCreationWorkspace = () => {
     () => ({ ...(overlayTarget?.card || overlayTarget?.canonical || {}), ...(draft || {}) }),
     [draft, overlayTarget],
   );
-  const draftRoleLabel = getRoleShortLabel(getProfileRole(summaryCard)) || '';
+  const draftRoleLabel = getRoleCode(getProfileRole(summaryCard));
   const draftFacts = useMemo(() => {
     const age = getProfileAge(summaryCard);
     return [
