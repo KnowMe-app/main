@@ -56,3 +56,28 @@ describe('представлення контактів у шапці форми
     expect(source).toContain('getContactEntries(summaryContacts)');
   });
 });
+
+/*
+ * «+» під полем відкриває рядок під **наступну версію** значення («телефон був
+ * той, став цей»). У коментаря версій не буває: він один, його розширюють або
+ * звужують, правлячи той самий текст. Дописаний другий рядок поїхав би в базу
+ * другою версією, а показувалась би скрізь сама лише остання — тобто перша
+ * половина відгуку мовчки зникла б з усіх екранів, лишаючись у базі. Форма
+ * анкети це правило знала (`fieldAcceptsMultipleValues`), а форма доповнення —
+ * ні, і «+» біля публічного коментаря стояв.
+ */
+describe('другий рядок пропонується лише там, де версії бувають', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
+
+  it('питає про це те саме правило, що й форма анкети', () => {
+    expect(source).toContain("import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';");
+    expect(source).toContain('const canAddAnotherValue = fieldAcceptsMultipleValues(fieldName);');
+  });
+
+  it('жодна кнопка «+» не малюється без цієї перевірки', () => {
+    const addButtons = source.match(/<AddValueButton/g) || [];
+    const guarded = source.match(/\{canAddAnotherValue && <AddValueButton/g) || [];
+    expect(addButtons).toHaveLength(guarded.length);
+    expect(addButtons.length).toBeGreaterThan(0);
+  });
+});

@@ -219,13 +219,16 @@ import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
 import { canOfferProfileContacts } from '../utils/profileVisibilityScope';
 import ProfileRow, {
+  CommentBlock,
   PublicCommentBlock,
-  PublicCommentsGate,
+  ProfileNotes,
+  REVIEWS_GATE_LABEL,
+  describeReviewsState,
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
+import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
 import { getContactEntries } from './contactMethods';
@@ -239,7 +242,7 @@ import {
   MATCHING_SEARCH_STORAGE_KEY,
 } from 'utils/matchingSearchLocation';
 import { useAppSettings } from 'hooks/useAppSettings';
-import { keepDonorCounterpartyCards, isDonorViewer } from 'utils/matchingPeerVisibility';
+import { keepDonorCounterpartyCards, isDonorViewer, viewerRoleSignature } from 'utils/matchingPeerVisibility';
 import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
@@ -253,8 +256,7 @@ import {
   getProfilePhotos,
   getProfileRole,
   getProfileSections,
-  getRoleLabel,
-  getRoleShortLabel,
+  getRoleCode,
 } from './profileLayoutConfig';
 import {
   cacheFavoriteUsers,
@@ -1079,14 +1081,17 @@ const SwipeableCard = ({
   // половина — тією, яку модуль вважав за замовчуванням.
   const { language } = useAppSettings();
   const profileName = getProfileName(user);
-  const roleLabel = getRoleLabel(resolvedRole, language);
+  // Плашка ролі несе той самий дволітерний код, що й рядок стрічки: словом
+  // («Донорка яйцеклітин») вона казала про ту саму роль інакше, ніж список, і
+  // мовою інтерфейсу — тобто дві назви на дві мови на одну річ.
+  const roleCode = getRoleCode(resolvedRole);
   // Роль без назви — це `Profile`/`Анкета`; порівнюємо з кодом, а не з написом,
   // бо напис залежить від мови.
   const isGenericProfileRole = resolvedRole === 'other';
   const name = profileName || '';
   const age = getProfileAge(user);
   const title = [name, age].filter(Boolean).join(', ');
-  const shouldShowRoleBadge = !isGenericProfileRole;
+  const shouldShowRoleBadge = !isGenericProfileRole && Boolean(roleCode);
   // Те саме рішення, що й у рядку стрічки: спершу доповнення (його має той,
   // хто заводить картки), потім редагування (його має адмін). Урізаній
   // проєкції не належить ні те, ні те — правити в ній нема чого.
@@ -1267,7 +1272,7 @@ const SwipeableCard = ({
         >
           {!activeHeroPhoto && initials && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
-          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}
+          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleCode}</ModernRoleBadge>}
         </ModernHero>
         {showDebugOverlay && (debugFilteredOutReason || debugReasons.length > 0) && (
           <div style={{ margin: '10px 14px 0', padding: '8px 10px', borderRadius: 10, background: '#5a1325', color: '#fff', fontSize: 12, fontWeight: 700 }}>
@@ -1530,6 +1535,14 @@ const SCROLL_ANCHOR_KEY = 'matchingScrollAnchorId';
 // не в один рендер, і якір з'являється в DOM пізніше за перші картки; але
 // чекати без кінця теж не можна — анкети могло вже й не бути в деці.
 const SCROLL_ANCHOR_MAX_ATTEMPTS = 40;
+// Скільки список чекає на відновлення позиції, перш ніж проявитись там, де він
+// є. Трохи більше за стелю спроб вище: та рахує кадри, ця — час, і збігтись
+// вони не мусять.
+const SCROLL_RESTORE_REVEAL_MS = 1000;
+// Скільки кадрів поспіль список має лишатись незмінним, щоб вважати його
+// зібраним. Порція з однієї картки приїжджає першою, і без цього очікування
+// відновлення завершувалось саме на ній.
+const SCROLL_ANCHOR_STABLE_FRAMES = 8;
 
 // Рядок картки за її id. `CSS.escape` є не скрізь (старі webview, частина
 // тестових середовищ), а id картки — це або UID Firebase, або `TG0001`, тобто
@@ -1622,14 +1635,32 @@ const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
 //
 // Локація й дії переїхали з фото в тіло картки: поверх знімка вони жили тільки
 // тому, що іншого місця не було.
-const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, onToggleFavorite, onToggleHidden, onTogglePublish, onEnrich, diagnosticsSlot }) => {
+const GalleryCard = React.memo(({
+  user,
+  isAdmin,
+  isFavorite,
+  isHidden,
+  onOpen,
+  onToggleFavorite,
+  onToggleHidden,
+  onTogglePublish,
+  onEnrich,
+  clientComment,
+  onCommentSave,
+  reviewsSlot,
+  reviewsAction,
+  diagnosticsSlot,
+}) => {
   const { language } = useAppSettings();
+  // Той самий жест, що й у рядку списку: значок просить прочитати чужі відгуки,
+  // а поле для власного стоїть у доріжці без нього.
+  const [reviewsRequested, setReviewsRequested] = useState(false);
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const photos = getProfilePhotos(user);
   const photo = photos[0];
   const role = getProfileRole(user);
-  const roleWord = getRoleShortLabel(role, language);
+  const roleCode = getRoleCode(role);
   const location = getProfileLocation(user);
   const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
   const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
@@ -1674,9 +1705,9 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
           {name}
           {age && <>, {age}</>}
         </GalleryName>
-        {(roleWord || location) && (
+        {(roleCode || location) && (
           <GalleryNameRow>
-            {roleWord && <GalleryRoleTag $role={role}>{roleWord}</GalleryRoleTag>}
+            {roleCode && <GalleryRoleTag $role={role}>{roleCode}</GalleryRoleTag>}
             {location && (
               <GalleryLocation>
                 <FaMapMarkerAlt aria-hidden="true" />
@@ -1732,7 +1763,46 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
             >
               {isHidden ? <FaUndoAlt /> : <FaTimes />}
             </GalleryActionButton>
+            {reviewsAction && (
+              <GalleryActionButton
+                type="button"
+                $on={reviewsRequested}
+                disabled={Boolean(reviewsAction.loading)}
+                aria-label={REVIEWS_GATE_LABEL}
+                title={REVIEWS_GATE_LABEL}
+                onClick={event => {
+                  event.stopPropagation();
+                  setReviewsRequested(true);
+                  reviewsAction.onRequest(user.userId);
+                }}
+              >
+                <FaRegCommentDots />
+                {reviewsAction.count > 0 && <b>{reviewsAction.count}</b>}
+              </GalleryActionButton>
+            )}
           </GalleryActions>
+        )}
+        {/* Ті самі дві доріжки, що й у рядку списку: розкладка міняє те, як
+            картку показують, а не те, що про людину вже записали. Поки плитка
+            їх не мала, читач у галереї не бачив власної нотатки — і дописував
+            поверх запису, якого не видно. */}
+        {!isLimited && onCommentSave && (
+          <ProfileNotes
+            language={language}
+            publicSlot={reviewsSlot}
+            reviewsStatus={describeReviewsState({
+              requested: reviewsRequested,
+              loading: Boolean(reviewsAction?.loading),
+              loaded: Boolean(reviewsAction?.loaded),
+            })}
+            privateSlot={(
+              <CommentBlock
+                text={clientComment}
+                placeholder={profileUiText('personalNotePlaceholder', language)}
+                onSave={value => onCommentSave(user, value)}
+              />
+            )}
+          />
         )}
         {diagnosticsSlot}
       </GalleryBody>
@@ -1743,6 +1813,11 @@ const GalleryCard = React.memo(({ user, isAdmin, isFavorite, isHidden, onOpen, o
   && prev.isFavorite === next.isFavorite
   && prev.isHidden === next.isHidden
   && prev.isAdmin === next.isAdmin
+  && prev.clientComment === next.clientComment
+  && prev.reviewsSlot === next.reviewsSlot
+  && prev.reviewsAction?.count === next.reviewsAction?.count
+  && prev.reviewsAction?.loading === next.reviewsAction?.loading
+  && prev.reviewsAction?.loaded === next.reviewsAction?.loaded
   && prev.diagnosticsSlot === next.diagnosticsSlot
   && prev.onEnrich === next.onEnrich
   && prev.onToggleHidden === next.onToggleHidden
@@ -2270,6 +2345,18 @@ const Matching = () => {
     setLoading(false);
   }, []);
   const restoreRef = useRef(false);
+  /**
+   * Чи список зараз чекає на відновлення позиції.
+   *
+   * Поки він чекає, його не видно: інакше читач бачить вершину списку й аж за
+   * мить — той рядок, з якого пішов. Стан заводиться ще до першого рендера
+   * (позначки в `sessionStorage` вже лежать), тож вершина не встигає
+   * намалюватись жодного разу.
+   */
+  const [scrollRestorePending, setScrollRestorePending] = useState(() => {
+    if (typeof sessionStorage === 'undefined') return false;
+    return Boolean(sessionStorage.getItem(SCROLL_ANCHOR_KEY) || sessionStorage.getItem(SCROLL_Y_KEY));
+  });
   const scrollPositionRef = useRef(0);
   // Чи прокрутив читач стрічку донизу відтоді, як приїхала остання порція.
   // Ref читають обробники, стан — рендер; тримаємо обидва в парі.
@@ -2303,6 +2390,14 @@ const Matching = () => {
    */
   const lastSeenCardIdRef = useRef('');
   const saveScrollPosition = () => {
+    // Порожній запис поверх збереженої позиції — це її стирання, а не
+    // збереження. Стрічка на самому початку й без жодної переглянутої картки
+    // нічого не важить, і писати про неї нічого: єдине, що такий запис робив, —
+    // зносив орієнтир, з яким сюди щойно збирались повернутись. У режимі
+    // розробки React ставить і знімає ефекти двічі, тож цей «розмонтаж» на
+    // порожньому місці приходив рівно в кадрі монтування — і відновлення
+    // позиції не працювало взагалі, тобто перевірити його наживо було ніяк.
+    if (!lastSeenCardIdRef.current && !scrollPositionRef.current) return;
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
     if (lastSeenCardIdRef.current) {
       sessionStorage.setItem(SCROLL_ANCHOR_KEY, lastSeenCardIdRef.current);
@@ -2411,10 +2506,16 @@ const Matching = () => {
     if (restoreRef.current || users.length === 0) return undefined;
     const savedY = sessionStorage.getItem(SCROLL_Y_KEY);
     const savedAnchorId = sessionStorage.getItem(SCROLL_ANCHOR_KEY);
-    if (savedY === null && !savedAnchorId) return undefined;
+    if (savedY === null && !savedAnchorId) {
+      // Відновлювати нема чого — отже, й ховати список нема від чого.
+      setScrollRestorePending(false);
+      return undefined;
+    }
 
     let frame = 0;
     let attempts = 0;
+    let lastRowCount = -1;
+    let stableFrames = 0;
 
     // Відновлення позиції — не жест читача. Орієнтир посувається одразу, щоб
     // подія скролу, яка зараз прийде, не зарахувалась як прокрутка донизу і не
@@ -2424,14 +2525,38 @@ const Matching = () => {
       restoreRef.current = true;
       sessionStorage.removeItem(SCROLL_Y_KEY);
       sessionStorage.removeItem(SCROLL_ANCHOR_KEY);
+      setScrollRestorePending(false);
     };
 
+    /**
+     * Знайти рядок мало — треба ще дочекатись, доки список перестане рости.
+     *
+     * Дека повертається порціями, і найперша з них буває з однієї картки — тієї
+     * самої, яку шукаємо. `scrollIntoView` по такому списку ставить її на
+     * початок екрана й оголошує відновлення завершеним, а решта карток
+     * приїжджає вже після й зсуває її вниз: читач опиняється на вершині
+     * списку — рівно там, звідки він не хотів починати. Тож якір центрується
+     * щокадрово, а відновлення завершується аж тоді, коли кількість рядків не
+     * змінюється кілька кадрів поспіль (або коли вичерпалась стеля спроб).
+     */
     const tryRestore = () => {
       attempts += 1;
+      const rows = document.querySelectorAll('[data-card-id]').length;
+      if (rows === lastRowCount) {
+        stableFrames += 1;
+      } else {
+        stableFrames = 0;
+        lastRowCount = rows;
+      }
+
       const anchor = findCardNodeById(savedAnchorId);
       if (anchor) {
         anchor.scrollIntoView({ block: 'center' });
-        settle();
+        if (stableFrames >= SCROLL_ANCHOR_STABLE_FRAMES || attempts >= SCROLL_ANCHOR_MAX_ATTEMPTS) {
+          settle();
+          return;
+        }
+        frame = requestAnimationFrame(tryRestore);
         return;
       }
       if (savedAnchorId && attempts < SCROLL_ANCHOR_MAX_ATTEMPTS) {
@@ -2445,6 +2570,22 @@ const Matching = () => {
     frame = requestAnimationFrame(tryRestore);
     return () => cancelAnimationFrame(frame);
   }, [users]);
+
+  /**
+   * Стеля очікування: список не ховається довше, ніж триває саме відновлення.
+   *
+   * Якір може не приїхати взагалі — картку прибрали з деки, фільтр звузили,
+   * дека не догрузилась, — і тоді відновлення закінчується пікселем або не
+   * закінчується зовсім. Ховати список після цього нема сенсу: краще показати
+   * його там, де він є, ніж лишити людину перед порожнім екраном. Відлік іде
+   * від першої картки: поки деки немає, ховати нічого.
+   */
+  const hasRenderedRows = users.length > 0;
+  useEffect(() => {
+    if (!scrollRestorePending || !hasRenderedRows) return undefined;
+    const timer = setTimeout(() => setScrollRestorePending(false), SCROLL_RESTORE_REVEAL_MS);
+    return () => clearTimeout(timer);
+  }, [hasRenderedRows, scrollRestorePending]);
 
   const getOwnerId = () => auth.currentUser?.uid || localStorage.getItem('ownerId');
   const getMatchingMultiDataOwnerIds = React.useCallback(() => {
@@ -2806,7 +2947,10 @@ const Matching = () => {
         currentSearchKeySetKeys: searchKeySetsOfExactUser,
       };
       setCurrentAccessLevel(prev => (prev === accessLevel ? prev : accessLevel));
-      setCurrentUserRole(prev => (prev === userRole ? prev : userRole));
+      // Та сама роль у новому масиві — це не зміна ролі: тримаємо попереднє
+      // значення, щоб памʼять про вже зібрану деку (`initialRoleLoadedRef`) і
+      // мемо, що залежать від ролі, не перебудовувались на порожньому місці.
+      setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
       setCurrentAdditionalAccessRules(prev => (prev === additionalAccessRules ? prev : additionalAccessRules));
       setCurrentSearchKeySetKeys(prev => (
         getSearchKeySetsOfExactUserSignature(prev) === getSearchKeySetsOfExactUserSignature(searchKeySetsOfExactUser)
@@ -2960,7 +3104,7 @@ const Matching = () => {
             // Install both before resolving it, while leaving the unrelated
             // search-key discovery and additional-access refresh asynchronous.
             setMultiDataOwnerIds(resolvedOwnerIds);
-            setCurrentUserRole(userRole);
+            setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
             localStorage.setItem('userRole', userRole);
             setCurrentUserRoleResolved(true);
             debugSharedReactionsLog(user.uid, 'ownerIds read from multiDataAccessUserIds', {
@@ -5347,12 +5491,25 @@ const Matching = () => {
     viewMode,
   ]);
 
+  /**
+   * Роль, під яку зібрано деку, — підписом, а не посиланням.
+   *
+   * Роль читача приїжджає двічі: з відповіді на профіль доступу і з наступного
+   * оновлення того самого профілю. Значення те саме, а масив щоразу новий
+   * (`['ag', 'ed']`), і порівняння по посиланню читало це як зміну ролі: кеш
+   * скидався, стрічка вантажилась удруге — скелетон → картки → скелетон →
+   * картки. `null` тут означає «деку ще не вантажили» й лишається окремим від
+   * порожньої ролі: у читача без ролі підпис теж порожній, а деку йому все
+   * одно треба зібрати.
+   */
   const initialRoleLoadedRef = useRef(null);
   useEffect(() => {
-    if (!currentUserRoleResolved || initialRoleLoadedRef.current === currentUserRole) return;
+    if (!currentUserRoleResolved) return;
+    const nextRoleSignature = viewerRoleSignature(currentUserRole);
     const previousRole = initialRoleLoadedRef.current;
-    initialRoleLoadedRef.current = currentUserRole;
-    if (previousRole !== null && previousRole !== currentUserRole) {
+    if (previousRole === nextRoleSignature) return;
+    initialRoleLoadedRef.current = nextRoleSignature;
+    if (previousRole !== null) {
       clearMatchingCache('matching viewer role changed');
       clearMatchingCardsPageInFlight();
     }
@@ -7582,8 +7739,9 @@ const Matching = () => {
   // Стрічка не читає нічого. Раніше вона брала коментарі наперед для цілої
   // першої сторінки списку — запит на кожне відкриття стрічки заради блока, під
   // яким у більшості анкет порожньо. Тепер у рядку стоїть кнопка
-  // «Перевірити наявність відгуків» (`PublicCommentsGate`), і читання коштує
-  // рівно стільки разів, скільки її натиснули.
+  // «Перевірити наявність відгуків» (`reviewsAction` у ряду рішень), і читання
+  // коштує рівно стільки разів, скільки її натиснули. Поле для власного
+  // відгуку при цьому стоїть відкритим і читань не потребує — воно пише.
   const requestPublicComments = React.useCallback(profileId => {
     const id = String(profileId || '').trim();
     if (!id || publicCommentsRequestedRef.current.has(id)) return;
@@ -7622,6 +7780,10 @@ const Matching = () => {
   const buildRowReviewsAction = React.useCallback(profileId => ({
     count: (publicComments[profileId] || EMPTY_PUBLIC_COMMENTS).length,
     loading: Boolean(publicCommentsLoading[profileId]),
+    // Чи відповідь узагалі приїхала. Порожня доріжка сама по собі про це вже
+    // не каже: поле для власного відгуку стоїть у ній завжди, тож «нічого не
+    // прочитали» і «прочитали, відгуків немає» виглядали б однаково.
+    loaded: Boolean(publicComments[profileId]),
     onRequest: requestPublicComments,
   }), [publicComments, publicCommentsLoading, requestPublicComments]);
 
@@ -7657,20 +7819,26 @@ const Matching = () => {
   }, []);
 
   /**
-   * Слот відгуків — один на всі списки, що показують рядок стрічки.
+   * Слот відгуків — один на всі списки й на обидві розкладки.
    *
-   * Вміст той самий і в деці, і серед прихованих: відгук про людину не
-   * залежить від того, з якого списку на неї дивляться. Збирався він досі
-   * просто в розмітці стрічки, тож список прихованих показати його не міг
-   * взагалі — там рядок не отримував ані слота, ані значка.
+   * Вміст той самий і в деці, і в плитці галереї, і серед прихованих: відгук
+   * про людину не залежить від того, з якого списку на неї дивляться.
+   * Збирався він досі просто в розмітці стрічки, тож список прихованих
+   * показати його не міг узагалі — там рядок не отримував ані слота, ані
+   * значка.
+   *
+   * Це той самий блок, що й у відкритій анкеті: поле для власного відгуку
+   * стоїть у ньому завжди, а прочитані чужі приїжджають у `comments`, щойно
+   * їх попросили значком у ряду рішень. Окремого «гейта», який до читання
+   * показував замість поля напис, більше немає — написати відгук не мусить
+   * починатися з читання чужих.
    */
   const buildRowReviewsSlot = React.useCallback(profileId => (
-    <PublicCommentsGate
+    <PublicCommentBlock
+      flush
       profileId={profileId}
       backendHref={publicCommentsBackendHref(profileId)}
       comments={publicComments[profileId] || EMPTY_PUBLIC_COMMENTS}
-      loaded={Boolean(publicComments[profileId])}
-      loading={Boolean(publicCommentsLoading[profileId])}
       viewerId={auth.currentUser?.uid || ''}
       canModerate={isAdmin}
       onCreate={handleCreatePublicComment}
@@ -7684,7 +7852,6 @@ const Matching = () => {
     isAdmin,
     publicComments,
     publicCommentsBackendHref,
-    publicCommentsLoading,
   ]);
 
   /**
@@ -7828,18 +7995,19 @@ const Matching = () => {
   );
 
   /**
-   * Власні нотатки — для всіх рядків списку, а не для самої активної картки.
+   * Власні нотатки — для всіх показаних карток, а не для самої активної.
    *
-   * У списку поле нотатки стоїть відкритим у кожному рядку, тож порожнім воно
-   * має бути тільки там, де нотатки справді немає: інакше читач дописував би
-   * поверх власного запису, якого не бачить. Ціна при цьому не росте з
-   * кількістю рядків — від восьми карток `fetchUserComments` читає піддерево
-   * власника одним запитом і кешує його (`docs/matching-feed-traffic.md`).
+   * Поле нотатки стоїть відкритим у кожній картці обох розкладок, тож порожнім
+   * воно має бути тільки там, де нотатки справді немає: інакше читач дописував
+   * би поверх власного запису, якого не бачить. Ціна при цьому не росте з
+   * кількістю карток — від восьми `fetchUserComments` читає піддерево власника
+   * одним запитом і кешує його (`docs/matching-feed-traffic.md`), тож плитка
+   * галереї коштує рівно стільки ж, скільки список.
    */
   useEffect(() => {
-    if (viewLayout !== 'list' || !feedRows.length) return;
+    if (!feedRows.length) return;
     void loadCommentsFor(feedRows, { activeOnly: false });
-  }, [feedRows, loadCommentsFor, viewLayout]);
+  }, [feedRows, loadCommentsFor]);
 
   /**
    * Дві колонки галереї — за висотою, а не через одну.
@@ -7860,6 +8028,9 @@ const Matching = () => {
         + (user?.height || user?.weight || user?.bmi || user?.rh ? 1 : 0)
         + (user?.ownKids || user?.maritalStatus || user?.csection || user?.cSection ? 1 : 0),
       hasActions: !user?.__limitedProfile,
+      // Плашка нотаток стоїть у кожній повній плитці — і важить вона більше за
+      // будь-який окремий рядок тексту.
+      hasNotes: !user?.__limitedProfile,
     })),
     [feedRows],
   );
@@ -8191,7 +8362,7 @@ const Matching = () => {
                 </QueryDraftCard>
               )}
               {feedRows.length > 0 && viewLayout === 'gallery' && (
-                <GalleryGrid>
+                <GalleryGrid $restoringScroll={scrollRestorePending}>
                   {galleryColumns.map((columnRows, columnIndex) => (
                     <GalleryColumn key={`gallery-column-${columnIndex}`}>
                       {columnRows
@@ -8207,6 +8378,10 @@ const Matching = () => {
                             onToggleHidden={toggleRowHidden}
                             onTogglePublish={togglePublish}
                             onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                            clientComment={comments[user.userId] || ''}
+                            onCommentSave={handleRowCommentSave}
+                            reviewsSlot={buildRowReviewsSlot(user.userId)}
+                            reviewsAction={buildRowReviewsAction(user.userId)}
                             diagnosticsSlot={renderDiagnosticsFor(user)}
                           />
                         ))}
@@ -8215,7 +8390,7 @@ const Matching = () => {
                 </GalleryGrid>
               )}
               {feedRows.length > 0 && viewLayout === 'list' && (
-                <FeedList>
+                <FeedList $restoringScroll={scrollRestorePending}>
                   {feedRows.map(user => (
                     <ProfileRow
                       key={user.userId}

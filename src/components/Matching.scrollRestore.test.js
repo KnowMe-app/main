@@ -38,6 +38,41 @@ describe('стрічка повертається туди, де її лишил
     expect(source).toContain('return () => cancelAnimationFrame(frame);');
   });
 
+  /*
+   * Знайти рядок мало: найперша порція деки буває з однієї картки — і саме з
+   * тієї, яку шукали. `scrollIntoView` по такому списку ставив її на початок
+   * екрана й оголошував відновлення завершеним, а решта карток приїжджала вже
+   * після й зсувала її вниз: читач опинявся на вершині списку.
+   */
+  it('чекає, доки список перестане рости', () => {
+    expect(source).toContain('const SCROLL_ANCHOR_STABLE_FRAMES = 8;');
+    expect(source).toContain('if (stableFrames >= SCROLL_ANCHOR_STABLE_FRAMES || attempts >= SCROLL_ANCHOR_MAX_ATTEMPTS) {');
+  });
+
+  /*
+   * І поки він росте, його не видно: інакше читач бачить вершину списку, а за
+   * мить — той рядок, з якого пішов. Саме цей стрибок і був видно, коли він
+   * повертався з форми доповнення до видачі пошуку.
+   */
+  it('ховає список, доки позиція не стала на місце', () => {
+    expect(source).toContain('const [scrollRestorePending, setScrollRestorePending] = useState(() => {');
+    expect(source).toContain('<FeedList $restoringScroll={scrollRestorePending}>');
+    expect(source).toContain('<GalleryGrid $restoringScroll={scrollRestorePending}>');
+    expect(source).toContain('setScrollRestorePending(false);');
+    // Стеля очікування: якір може не приїхати взагалі, і тоді список
+    // проявляється там, де він є, — порожній екран гірший за неточну позицію.
+    expect(source).toContain('const SCROLL_RESTORE_REVEAL_MS = 1000;');
+  });
+
+  /*
+   * Порожній запис поверх збереженої позиції — це її стирання. Стрічка на
+   * початку й без жодної переглянутої картки не важить нічого, а зносила саме
+   * той орієнтир, з яким сюди щойно збирались повернутись.
+   */
+  it('не стирає збереженої позиції порожнім записом', () => {
+    expect(source).toContain('if (!lastSeenCardIdRef.current && !scrollPositionRef.current) return;');
+  });
+
   it('рядок і плитка несуть той самий якір', () => {
     expect(rowSource).toContain('data-card-id={user?.userId}');
     expect(source).toContain('data-card-id={user?.userId}');

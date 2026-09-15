@@ -1681,7 +1681,13 @@ export const ModernActionRail = styled.div`
   background: var(--matching-rail-bg);
   border-top: 1px solid var(--matching-rail-border);
 
-  & > span {
+  /* Смужка подій не ловить — вона лише тло під кнопками, — а от кожна кнопка
+     в ній ловить. Поки виняток стояв на самих лише span (у них загорнуті
+     реакції), олівець лишався прозорим для дотику: він тут прямий нащадок-
+     button, тож натискання проходило крізь нього в анкету під смужкою, і
+     жест, який у рядку стрічки працював, у відкритій картці не робив геть
+     нічого. */
+  & > * {
     pointer-events: auto;
   }
 
@@ -1925,11 +1931,27 @@ export const FeedWrap = styled.div`
   box-sizing: border-box;
 `;
 
+/*
+ * Поки позиція ще не відновлена, списку на екрані немає.
+ *
+ * Повернення до стрічки ставить її на той самий рядок, з якого читач пішов, —
+ * але не в тому ж кадрі: дека приїжджає порціями, і потрібний рядок з'являється
+ * в DOM пізніше за перші картки (`SCROLL_ANCHOR_MAX_ATTEMPTS`). Усі ці кадри
+ * список малювався з самого початку, і читач бачив стрибок: вершина списку, а
+ * за мить — правильне місце. Тепер він не бачить ані вершини, ані стрибка:
+ * список проявляється вже на своєму місці. Місце він при цьому займає (саме
+ * `visibility`, а не `display`) — інакше відновлювати позицію не було б по чому.
+ */
+const restoringScroll = css`
+  visibility: hidden;
+`;
+
 export const FeedList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 9px;
   padding: 2px 0 4px;
+  ${({ $restoringScroll }) => $restoringScroll && restoringScroll};
 `;
 
 // Spec §6: one grid, one tile shape. A vertical photo is cropped to the same
@@ -1939,6 +1961,7 @@ export const GalleryGrid = styled.div`
   align-items: flex-start;
   gap: 10px;
   padding: 2px 0 4px;
+  ${({ $restoringScroll }) => $restoringScroll && restoringScroll};
 `;
 
 export const GalleryColumn = styled.div`

@@ -18,7 +18,6 @@ import {
   getBloodGroupDisplay,
   getProfileRole,
   getRoleCode,
-  getRoleShortLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { profileUiText, resolveProfileLanguage, translateProfileLabel } from '../utils/profileTexts';
@@ -144,16 +143,30 @@ export const getLocationLine = user => {
   return [city, secondary].filter(Boolean).join(', ');
 };
 
+// Значення, у якому, крім цифр, самі лише розділювачі номера. Усе інше —
+// текст, який ввела людина («0501112233 Оксана»), і різати його на цифри не
+// можна: з нього вийшов би номер, якого ніхто не набирав.
+const PHONE_PUNCTUATION_ONLY = /^[+\d\s()\-.]+$/;
+
+/**
+ * Номер показується суцільним рядком, без пробілів і дужок.
+ *
+ * Пробіли в номері бувають двох походжень: свої, які малював цей код, і чужі —
+ * ті, з якими номер лежить у базі. Перших тут більше немає, а другі знімаються:
+ * номер читають, диктують і звіряють з іншим номером, і для всіх трьох справ
+ * однаковий вигляд важливіший за групування трійками. Свої пробіли ще й
+ * розʼїжджались із чужими — той самий номер виглядав по-різному залежно від
+ * того, як його колись зберегли.
+ */
 export const formatPhoneDisplay = raw => {
   const trimmed = String(raw || '').trim();
   if (!trimmed) return '';
-  if (/\s/.test(trimmed)) return trimmed;
-  const digits = trimmed.replace(/[^\d]/g, '');
+  if (!PHONE_PUNCTUATION_ONLY.test(trimmed)) return trimmed.replace(/\s+/g, ' ');
+  const digits = trimmed.replace(/\D/g, '');
   if (!digits) return trimmed;
-  if (digits.length === 12 && digits.startsWith('380')) {
-    return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`;
-  }
-  return trimmed.startsWith('+') ? trimmed : `+${digits}`;
+  // «+» дописується лише там, де він щось означає: у міжнародного номера.
+  // Місцевий запис (`0671234567`) лишається як є — «+0671234567» не набереться.
+  return trimmed.startsWith('+') || digits.length >= 11 ? `+${digits}` : digits;
 };
 
 export const getContactLabel = (key, language) =>
@@ -338,7 +351,11 @@ export const ContactLinks = ({ entries, language }) => {
         return (
           <S.ContactPhoneRow key={`phone-${entry.index}-${entry.value}`}>
             <S.ContactPhoneLink href={entry.href} title={phoneLabel} aria-label={phoneLabel}>
-              <PhoneHandsetIcon aria-hidden="true" />
+              {/* Значок номера лежить у такій самій рамці, як значки решти
+                  каналів: ліва межа блока контактів одна на всі рядки. */}
+              <S.ContactIconBadge aria-hidden="true">
+                <PhoneHandsetIcon />
+              </S.ContactIconBadge>
               <span>{displayValue}</span>
             </S.ContactPhoneLink>
             <S.ContactIconRow>
@@ -907,36 +924,53 @@ export const REVIEWS_GATE_LABEL = 'Перевірити наявність ві�
 export const ENRICH_GATE_LABEL = 'Доповнити дані';
 
 /**
- * Відгуки в стрічці — на вимогу, а не наперед.
+ * Дві доріжки нотаток — одна плашка, і стоїть вона в кожній картці.
  *
- * Досі стрічка читала публічні коментарі одразу для першої сторінки карток —
- * запит на кожне відкриття списку заради блока, під яким у більшості анкет
- * порожньо. Тепер читання починає дотик, і коштує воно рівно стільки разів,
- * скільки натиснули значок відгуків у ряду рішень.
+ * Публічний відгук і власна нотатка — це два записи про ту саму людину, і
+ * читають їх разом; тому і в рядку стрічки, і в плитці галереї, і у відкритій
+ * картці вони йдуть парою, у сталому порядку: публічне зверху (відгук читають),
+ * власне знизу (нотатку пишуть).
  *
- * Це ще й відповідь на питання «а звідки в картці стрічки коментарі»: нізвідки
- * — `matchingCards` про них не знає й не мусить. Схему чіпати не довелось.
- *
- * Сам жест сюди більше не входить: кнопка переїхала в ряд рішень унизу картки,
- * до олівця й реакцій, і гейт лишився тим, чим він і був по суті, — вмістом,
- * який цей жест відкриває. Поки кнопка жила тут, вона стояла окремим широким
- * рядком з написом, і три рішення про ту саму людину малювались у трьох різних
- * місцях картки.
+ * Обидва поля стоять **без умови**. Написати відгук — це рішення читача, а не
+ * наслідок того, що він спершу натиснув «перевірити»: поки поле відкривала
+ * кнопка, лишити запис можна було тільки заради того, щоб спершу прочитати
+ * чужі. Читання чужих лишається на дотик і далі (`reviewsAction` у ряду
+ * рішень): відгуки живуть в окремому вузлі, і запит на кожен рядок списку
+ * коштував би сторінку читань заради блока, під яким у більшості анкет порожньо.
  */
-export const PublicCommentsGate = ({
-  profileId,
-  comments,
-  loaded,
-  loading,
-  ...blockProps
-}) => (
-  <>
-    <PublicCommentsBackendLink backendHref={blockProps.backendHref} />
-    {loaded
-      ? <PublicCommentBlock profileId={profileId} comments={comments} {...blockProps} />
-      : <S.ReviewsGateNote>{loading ? 'Шукаємо відгуки…' : 'Не вдалося прочитати відгуки'}</S.ReviewsGateNote>}
-  </>
+export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus }) => (
+  <S.RowNotes onClick={e => e.stopPropagation()}>
+    <NoteLane $flush $public>
+      <NoteLaneHead>
+        <b>{profileUiText('publicComment', language)}</b>
+        <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
+      </NoteLaneHead>
+      {publicSlot}
+      {reviewsStatus && <S.ReviewsGateNote>{reviewsStatus}</S.ReviewsGateNote>}
+    </NoteLane>
+    <NoteLane $flush>
+      <NoteLaneHead>
+        <b>{profileUiText('personalNote', language)}</b>
+        <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
+      </NoteLaneHead>
+      {privateSlot}
+    </NoteLane>
+  </S.RowNotes>
 );
+
+/**
+ * Що сказати про читання відгуків, крім самих відгуків.
+ *
+ * Поле для власного запису стоїть на місці завжди, тож порожня доріжка більше
+ * не означає «ще не читали»: це може бути і «читання триває», і «читання
+ * впало». Мовчати про останнє не можна — читач натиснув кнопку й має право
+ * знати, що відповіді не було.
+ */
+export const describeReviewsState = ({ requested, loading, loaded }) => {
+  if (loading) return 'Шукаємо відгуки…';
+  if (requested && !loaded) return 'Не вдалося прочитати відгуки';
+  return '';
+};
 
 // A row counts as "unfilled" once its marital status is the only fact it has to
 // show - a bare "заміжня"/"не заміжня" isn't informative enough on its own.
@@ -996,15 +1030,11 @@ const ProfileRow = ({
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const rowRole = getProfileRole(user);
-  // Роль пишеться словом, а не кодом: «AG» доводилось розшифровувати. Але
-  // словом коротким: повне «Донорка яйцеклітин» стояло в одному рядку з
-  // іменем, не стискалось — і імʼя обрізалось до «Яна …». Тепер підпис іде
-  // нижче, поруч із локацією, і в короткій формі.
-  const roleWord = getRoleShortLabel(rowRole, language);
-  // Дволітерний код — запасний варіант рівно для випадку «ролі знаємо, а
-  // знімка немає»: плашці ролі тоді нема на чому лежати, а знати, хто перед
-  // тобою, треба до відкриття анкети так само. У рядку імені ширини під
-  // «Донорка яйцеклітин» немає — там і стоїть «ED».
+  // Роль позначає дволітерний код — і на знімку, і в рядку імені, коли знімка
+  // немає. Словом вона тут стояла («Донорка», «Agency»), і слово розходилось
+  // саме з собою: у рядку одне, у відкритій картці інше, у фільтрах третє, а
+  // зміна мови інтерфейсу міняла всі три. Код той самий, яким роль лежить у
+  // даних, і однаковий на всіх екранах матчингу.
   const roleCode = getRoleCode(rowRole);
   const age = getProfileAge(user);
   const location = getLocationLine(user);
@@ -1078,17 +1108,15 @@ const ProfileRow = ({
     return null;
   }, [isAdmin, isLimited, onEditProfile, onEnrich]);
 
-  // Відгуки відкриваються тим самим жестом, що й контакти: перший дотик просить
-  // їх прочитати, другий — згортає. Свого прапорця «вже просили» рядок і тут не
-  // тримає (див. `toggleContacts`): читання, яке впало, мусить бути можливо
-  // повторити.
-  const [reviewsOpen, setReviewsOpen] = useState(false);
-  const toggleReviews = () => {
-    setReviewsOpen(open => {
-      const next = !open;
-      if (next && reviewsAction?.onRequest) reviewsAction.onRequest(user.userId);
-      return next;
-    });
+  // Значок відгуків більше нічого не розгортає — він просить їх прочитати.
+  // Доріжка з полем стоїть на місці й без нього, тож «згорнути» означало б
+  // прибрати поле, у яке читач саме зібрався писати. Повторний дотик — це
+  // повтор читання: `requestPublicComments` знімає позначку «вже просили» саме
+  // на помилці, тож те, що впало, можна спробувати ще раз.
+  const [reviewsRequested, setReviewsRequested] = useState(false);
+  const requestReviews = () => {
+    setReviewsRequested(true);
+    if (reviewsAction?.onRequest) reviewsAction.onRequest(user.userId);
   };
 
   const toggleContacts = () => {
@@ -1162,7 +1190,7 @@ const ProfileRow = ({
               (`ModernRoleBadge`). Під іменем вона стояла чіпом і забирала
               ширину в локації; а два екрани не можуть казати про ту саму річ
               у двох різних місцях. */}
-          {roleWord && <S.PhotoRoleBadge $role={rowRole}>{roleWord}</S.PhotoRoleBadge>}
+          {roleCode && <S.PhotoRoleBadge $role={rowRole}>{roleCode}</S.PhotoRoleBadge>}
           {photos.length > 1 && <S.PhotoCount>{photos.length}</S.PhotoCount>}
         </S.Photo>
       )}
@@ -1305,45 +1333,34 @@ const ProfileRow = ({
 
       {/* Нотатки — одна плашка на дві доріжки: спершу те, що про людину
           написали інші, під ним — те, що дописує читач. Доріжки ті самі, що
-          й у відкритій картці, разом із підписом над кожною: хто побачить
-          запис, має бути сказано там, де його пишуть, а не лише в порожньому
-          полі — «Додати коментар» про це мовчало.
+          й у відкритій картці та в плитці галереї, разом із підписом над
+          кожною: хто побачить запис, має бути сказано там, де його пишуть, а
+          не лише в порожньому полі — «Додати коментар» про це мовчало.
 
-          Порядок саме такий, бо публічний відгук читають, а нотатку пишуть:
-          відповідь має стояти над полем для власного запису, а не під ним.
-          Той самий порядок — у відкритій картці анкети (`NoteLanes`).
-
-          Власна нотатка стоїть відкритим полем, а не за кнопкою: читач гортає
-          список, аби вирішити, і те, що він про цю людину вже знає, має бути
-          видно тут само, де рішення — без жодного дотику. Ввести її теж має
-          коштувати один дотик: поле вже на місці, курсор ставиться туди, куди
-          тапнули. */}
-      <S.RowNotes onClick={e => e.stopPropagation()}>
-        {reviewsOpen && reviewsSlot && (
-          <NoteLane $flush $public>
-            <NoteLaneHead>
-              <b>{profileUiText('publicComment', language)}</b>
-              <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
-            </NoteLaneHead>
-            {reviewsSlot}
-          </NoteLane>
-        )}
-        <NoteLane $flush>
-          <NoteLaneHead>
-            <b>{profileUiText('personalNote', language)}</b>
-            <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
-          </NoteLaneHead>
-          {commentSlot !== undefined
-            ? commentSlot
-            : (
-              <CommentBlock
-                text={clientComment}
-                placeholder={profileUiText('personalNotePlaceholder', language)}
-                onSave={value => onCommentSave(user, value)}
-              />
-            )}
-        </NoteLane>
-      </S.RowNotes>
+          Обидві стоять відкритим полем, а не за кнопкою: читач гортає список,
+          аби вирішити, і лишити запис — що власний, що публічний — має
+          коштувати один дотик просто тут. Публічну доріжку досі відкривала
+          кнопка «перевірити відгуки», тобто написати відгук можна було лише
+          дорогою до чужих. Читання чужих на дотику й лишилось: `reviewsSlot`
+          несе прочитане, а поки його не просили, у доріжці стоїть саме поле. */}
+      <ProfileNotes
+        language={language}
+        publicSlot={reviewsSlot}
+        reviewsStatus={describeReviewsState({
+          requested: reviewsRequested,
+          loading: Boolean(reviewsAction?.loading),
+          loaded: Boolean(reviewsAction?.loaded),
+        })}
+        privateSlot={commentSlot !== undefined
+          ? commentSlot
+          : (
+            <CommentBlock
+              text={clientComment}
+              placeholder={profileUiText('personalNotePlaceholder', language)}
+              onSave={value => onCommentSave(user, value)}
+            />
+          )}
+      />
 
       {/* Ряд рішень — останній у картці: спершу все, що вона каже про людину,
           потім те, що читач про неї записав, і аж тоді жест.
@@ -1402,12 +1419,11 @@ const ProfileRow = ({
           {reviewsAction && (
             <S.RowFooterButton
               type="button"
-              $on={reviewsOpen}
+              $on={reviewsRequested}
               disabled={Boolean(reviewsAction.loading)}
               title={REVIEWS_GATE_LABEL}
               aria-label={REVIEWS_GATE_LABEL}
-              aria-expanded={reviewsOpen}
-              onClick={e => { e.stopPropagation(); toggleReviews(); }}
+              onClick={e => { e.stopPropagation(); requestReviews(); }}
             >
               <FaRegCommentDots size={13} />
               {reviewsAction.count > 0 && <b>{reviewsAction.count}</b>}

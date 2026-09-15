@@ -72,13 +72,15 @@ describe('кнопка контактів у рядку стрічки', () => {
   });
 
   // Номер читають очима — його переписують і диктують, — тож він стоїть
-  // рядком повністю. Решта каналів у тапають, і кожен з них коштував цілого
-  // рядка; тепер вони йдуть значками, а значення лишається в підказці.
+  // рядком повністю й суцільним, без пробілів: однаковий вигляд важить більше
+  // за групування трійками, а пробіли в базі в різних анкет різні. Решта
+  // каналів у тапають, і кожен з них коштував цілого рядка; тепер вони йдуть
+  // значками, а значення лишається в підказці.
   it('показує контакти, щойно анкета доїхала: номер текстом, решта значками', () => {
     renderRow(hydratedCard, { onRequestContacts: jest.fn() });
     fireEvent.click(screen.getByTitle('Контакти'));
 
-    expect(screen.getByText('+380 50 111 22 33')).toBeInTheDocument();
+    expect(screen.getByText('+380501112233')).toBeInTheDocument();
     expect(screen.getByTitle('Telegram: oksana')).toBeInTheDocument();
     expect(screen.queryByText('Шукаємо контакти…')).not.toBeInTheDocument();
   });
@@ -89,9 +91,9 @@ describe('кнопка контактів у рядку стрічки', () => {
     renderRow(hydratedCard, { onRequestContacts: jest.fn() });
     fireEvent.click(screen.getByTitle('Контакти'));
 
-    expect(screen.getByTitle('Telegram: +380 50 111 22 33')).toHaveAttribute('href', 'https://t.me/380501112233');
-    expect(screen.getByTitle('Viber: +380 50 111 22 33')).toHaveAttribute('href', 'viber://chat?number=%2B380501112233');
-    expect(screen.getByTitle('WhatsApp: +380 50 111 22 33')).toHaveAttribute('href', 'https://wa.me/380501112233');
+    expect(screen.getByTitle('Telegram: +380501112233')).toHaveAttribute('href', 'https://t.me/380501112233');
+    expect(screen.getByTitle('Viber: +380501112233')).toHaveAttribute('href', 'viber://chat?number=%2B380501112233');
+    expect(screen.getByTitle('WhatsApp: +380501112233')).toHaveAttribute('href', 'https://wa.me/380501112233');
   });
 
   it('коли читання скінчилось і контактів немає — каже саме це', () => {
@@ -126,6 +128,6 @@ describe('кнопка контактів у рядку стрічки', () => {
     renderRow(hydratedCard, { onRequestContacts: jest.fn(), expanded: true });
     fireEvent.click(screen.getByTitle('Контакти'));
 
-    expect(screen.getAllByText('+380 50 111 22 33')).toHaveLength(1);
+    expect(screen.getAllByText('+380501112233')).toHaveLength(1);
   });
 });

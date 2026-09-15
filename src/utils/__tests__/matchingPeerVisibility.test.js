@@ -5,6 +5,7 @@ import {
   isDonorViewer,
   keepDonorCounterpartyCards,
   listProfileRoles,
+  viewerRoleSignature,
 } from '../matchingPeerVisibility';
 import { mergeMatchingCandidateUsers } from '../reactionPriority';
 
@@ -157,5 +158,31 @@ describe('дочитування сторінок рахує те, що доно
   // би дві картки, а дорахувати їх на екрані було б нічим.
   it('фільтр сторінки джерела застосовує те саме правило', () => {
     expect(providerSource).toContain('filterSourceUsers: sourceUsers => keepDonorCounterpartyCards({');
+  });
+});
+
+/**
+ * Роль читача приїжджає двічі — і другий раз новим масивом із тим самим
+ * вмістом. Поки її звіряли по посиланню, стрічка вважала це зміною ролі:
+ * скидала кеш і вантажилась удруге, тобто малювала скелетон, картки, знову
+ * скелетон і знову картки.
+ */
+describe('підпис ролі читача', () => {
+  it('однаковий для того самого набору ролей, як би його не подали', () => {
+    expect(viewerRoleSignature(['ag', 'ed'])).toBe(viewerRoleSignature(['ed', 'ag']));
+    // Рядок із localStorage і масив із бази — це та сама роль.
+    expect(viewerRoleSignature('ag,ed')).toBe(viewerRoleSignature(['ag', 'ed']));
+    expect(viewerRoleSignature(' AG , ed ')).toBe(viewerRoleSignature(['ag', 'ed']));
+  });
+
+  it('розрізняє різні набори', () => {
+    expect(viewerRoleSignature(['ag'])).not.toBe(viewerRoleSignature(['ed']));
+    expect(viewerRoleSignature(['ag'])).not.toBe(viewerRoleSignature(['ag', 'ed']));
+  });
+
+  it('порожня роль дає порожній підпис', () => {
+    expect(viewerRoleSignature('')).toBe('');
+    expect(viewerRoleSignature(undefined)).toBe('');
+    expect(viewerRoleSignature([])).toBe('');
   });
 });

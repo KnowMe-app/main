@@ -96,29 +96,39 @@ describe('ряд рішень у рядку стрічки', () => {
 
 // Відгуки читаються на дотик, а не наперед: `matchingCards` про них не знає, і
 // запит на кожен рядок списку коштував би сторінку читань заради блока, під
-// яким у більшості анкет порожньо.
+// яким у більшості анкет порожньо. Саме ж поле для власного відгуку читань не
+// потребує — воно пише, — тож стоїть на місці без жодного дотику.
 describe('відгуки в рядку стрічки', () => {
   const reviewsSlot = <div data-testid="reviews">відгук</div>;
 
-  it('мовчить, поки значок не натиснули', () => {
+  it('тримає доріжку відгуків відкритою, але сама нічого не читає', () => {
     const onRequest = jest.fn();
     renderRow({ reviewsSlot, reviewsAction: { count: 0, loading: false, onRequest } });
 
     expect(onRequest).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('reviews')).not.toBeInTheDocument();
+    expect(screen.getByTestId('reviews')).toBeInTheDocument();
   });
 
-  it('перший дотик просить прочитати, другий згортає', () => {
+  it('дотиком просить прочитати чужі відгуки', () => {
     const onRequest = jest.fn();
     renderRow({ reviewsSlot, reviewsAction: { count: 0, loading: false, onRequest } });
 
-    const button = screen.getByTitle(REVIEWS_GATE_LABEL);
-    fireEvent.click(button);
+    fireEvent.click(screen.getByTitle(REVIEWS_GATE_LABEL));
     expect(onRequest).toHaveBeenCalledWith(card.userId);
-    expect(screen.getByTestId('reviews')).toBeInTheDocument();
+  });
 
-    fireEvent.click(button);
-    expect(screen.queryByTestId('reviews')).not.toBeInTheDocument();
+  // Читання, яке впало, мусить сказати про себе: порожня доріжка тепер означає
+  // «відгуків немає», бо поле для власного запису стоїть у ній завжди.
+  it('не мовчить, коли читання не дало відповіді', () => {
+    renderRow({ reviewsSlot, reviewsAction: { count: 0, loading: false, loaded: false, onRequest: jest.fn() } });
+
+    fireEvent.click(screen.getByTitle(REVIEWS_GATE_LABEL));
+    expect(screen.getByText('Не вдалося прочитати відгуки')).toBeInTheDocument();
+  });
+
+  it('каже, що читання триває', () => {
+    renderRow({ reviewsSlot, reviewsAction: { count: 0, loading: true, onRequest: jest.fn() } });
+    expect(screen.getByText('Шукаємо відгуки…')).toBeInTheDocument();
   });
 
   it('називає кількість прочитаних відгуків просто на значку', () => {
@@ -130,7 +140,6 @@ describe('відгуки в рядку стрічки', () => {
   // мусить стояти над полем для власного запису, а не під ним.
   it('кладе відгуки над полем власної нотатки', () => {
     renderRow({ reviewsSlot, reviewsAction: { count: 1, loading: false, onRequest: jest.fn() } });
-    fireEvent.click(screen.getByTitle(REVIEWS_GATE_LABEL));
 
     const reviews = screen.getByTestId('reviews');
     const note = screen.getByPlaceholderText('A note for yourself');

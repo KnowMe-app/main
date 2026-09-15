@@ -24,6 +24,14 @@ const PHOTO_ASPECT_HEIGHT = 1.25;
 const TILE_BASE_HEIGHT = 0.16;
 const TEXT_LINE_HEIGHT = 0.06;
 const ACTIONS_HEIGHT = 0.12;
+/**
+ * Плашка нотаток — два підписи й два поля, і висота в неї стала.
+ *
+ * Важить вона більше за будь-який окремий рядок плитки, тож оцінка мусить про
+ * неї знати: інакше колонки розʼїжджаються рівно на стільки плашок, на скільки
+ * в одній колонці більше карток.
+ */
+const NOTES_HEIGHT = 0.3;
 
 /**
  * Груба висота плитки в частках її ширини.
@@ -36,10 +44,12 @@ export const estimateGalleryTileHeight = ({
   hasPhoto = false,
   textLines = 0,
   hasActions = false,
+  hasNotes = false,
 } = {}) => TILE_BASE_HEIGHT
   + (hasPhoto ? PHOTO_ASPECT_HEIGHT : 0)
   + Math.max(0, textLines) * TEXT_LINE_HEIGHT
-  + (hasActions ? ACTIONS_HEIGHT : 0);
+  + (hasActions ? ACTIONS_HEIGHT : 0)
+  + (hasNotes ? NOTES_HEIGHT : 0);
 
 /**
  * Розкласти плитки по колонках, тримаючи їх однакової висоти.

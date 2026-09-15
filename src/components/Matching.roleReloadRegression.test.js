@@ -19,6 +19,19 @@ describe('Matching role reload regressions', () => {
     expect(overlapBranch).toContain('initialRequestIdRef.current += 1;');
   });
 
+  // Той самий набір ролей у новому масиві — це не зміна ролі. Поки звірка йшла
+  // по посиланню, друга відповідь про профіль доступу скидала кеш і вантажила
+  // деку вдруге: читач бачив скелетон, картки, знову скелетон і знову картки.
+  it('звіряє роль читача підписом, а не посиланням', () => {
+    const roleEffect = source.slice(
+      source.indexOf('const initialRoleLoadedRef'),
+      source.indexOf('// Лічильник публічних карток')
+    );
+    expect(roleEffect).toContain('const nextRoleSignature = viewerRoleSignature(currentUserRole);');
+    expect(roleEffect).toContain('if (previousRole === nextRoleSignature) return;');
+    expect(roleEffect).not.toContain('initialRoleLoadedRef.current === currentUserRole');
+  });
+
   it('does not replace a search when role resolution completes', () => {
     const roleEffect = source.slice(
       source.indexOf('const initialRoleLoadedRef'),

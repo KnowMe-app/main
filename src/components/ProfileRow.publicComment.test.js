@@ -3,8 +3,8 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import {
   PublicCommentBlock,
-  PublicCommentsGate,
   PUBLIC_COMMENT_VISIBILITY_NOTE,
+  describeReviewsState,
 } from './ProfileRow';
 
 const setup = (props = {}) => {
@@ -226,48 +226,35 @@ describe('quick public comment', () => {
   });
 });
 
-// Жест, який відкриває відгуки, стоїть у ряду рішень унизу картки — разом з
-// олівцем і реакціями. Гейт лишився самим вмістом: він каже, що читання триває,
-// і показує записи, щойно вони доїхали.
-describe('public comments read gate', () => {
-  it('keeps the backend shortcut available before comments are loaded', () => {
-    render(
-      <PublicCommentsGate
-        profileId="profile-1"
-        comments={[]}
-        loaded={false}
-        loading
-        backendHref="https://console.example/data/~2Fcomments~2Fprofile-1"
-      />
-    );
-
-    expect(screen.getByLabelText('Відкрити публічні нотатки анкети у Firebase'))
-      .toHaveAttribute('href', 'https://console.example/data/~2Fcomments~2Fprofile-1');
+// Жест, який просить прочитати чужі відгуки, стоїть у ряду рішень унизу
+// картки — разом з олівцем і реакціями. Сам блок від нього не залежить: поле
+// для власного відгуку стоїть відкритим, а стан читання доріжка описує словами.
+describe('стан читання відгуків', () => {
+  it('каже, що читання триває', () => {
+    expect(describeReviewsState({ requested: true, loading: true, loaded: false })).toBe('Шукаємо відгуки…');
   });
 
-  it('говорить, що читання триває, а не вдає порожній список', () => {
-    render(<PublicCommentsGate profileId="profile-1" comments={[]} loaded={false} loading />);
-    expect(screen.getByText('Шукаємо відгуки…')).toBeInTheDocument();
-  });
-
-  // Порожня плашка виглядала б відповіддю «відгуків немає», якою вона ще не є:
-  // читання впало, і сказати про це має сам блок, бо кнопку вже натиснули.
+  // Порожня доріжка виглядала б відповіддю «відгуків немає», якою вона ще не є:
+  // читання впало, і сказати про це має сам рядок, бо кнопку вже натиснули.
   it('не мовчить, коли читання не вдалося', () => {
-    render(<PublicCommentsGate profileId="profile-1" comments={[]} loaded={false} loading={false} />);
-    expect(screen.getByText('Не вдалося прочитати відгуки')).toBeInTheDocument();
+    expect(describeReviewsState({ requested: true, loading: false, loaded: false }))
+      .toBe('Не вдалося прочитати відгуки');
   });
 
-  it('показує самі записи, щойно вони доїхали', () => {
-    render(
-      <PublicCommentsGate
-        profileId="profile-1"
-        loaded
-        loading={false}
-        viewerId="viewer-1"
-        comments={[{ id: 'c1', text: 'відгук', authorId: 'viewer-2', authorName: 'Ігор Ковальчук', createdAt: Date.now() }]}
-      />
-    );
-    expect(screen.getByText('відгук')).toBeInTheDocument();
-    expect(screen.queryByText('Шукаємо відгуки…')).not.toBeInTheDocument();
+  it('мовчить там, де читання ще не просили', () => {
+    expect(describeReviewsState({ requested: false, loading: false, loaded: false })).toBe('');
+  });
+
+  it('мовчить, коли відповідь приїхала: далі говорять самі записи', () => {
+    expect(describeReviewsState({ requested: true, loading: false, loaded: true })).toBe('');
+  });
+});
+
+// Поле для власного відгуку стоїть у блоці завжди — навіть у картці, чужих
+// відгуків якої ще не читали: написати відгук не мусить починатися з читання.
+describe('поле відгуку без жодного читання', () => {
+  it('пропонує написати відгук у порожньому блоці', () => {
+    setup({ comments: [] });
+    expect(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
   });
 });

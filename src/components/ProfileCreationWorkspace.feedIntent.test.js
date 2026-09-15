@@ -273,7 +273,8 @@ describe('доповнення знайденої картки зі стрічк
     render(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
-    expect(screen.getByText(/Surrogate/)).toBeInTheDocument();
+    // Роль тут — той самий дволітерний код, що й на картці у стрічці.
+    expect(screen.getByText(/SM/)).toBeInTheDocument();
     expect(screen.getByText(/Київ/)).toBeInTheDocument();
   });
 
