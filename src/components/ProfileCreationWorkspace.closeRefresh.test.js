@@ -6,6 +6,7 @@ import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
 import { getOverlayHistoryForCard, getOverlaysForCard } from 'utils/multiAccountEdits';
 import { loadAllCreateProfileMutations, loadOwnProfileMutations, saveCreateProfileMutation } from 'utils/profileMutations';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 // Regression test for: an admin opens a draft from the review queue, edits a
 // field, and closes the editor. The queue card for that draft was rendered
@@ -29,6 +30,10 @@ jest.mock('./config', () => ({
   searchUsersOnly: jest.fn(),
   addMatchingSearchQuery: jest.fn(),
 }));
+
+// Приватна нотатка стоїть у парі з публічною в кожній відкритій чернетці, а
+// читає вона власний вузол `multiData/comments` — сюїта не про неї.
+jest.mock('./smallCard/FieldComment', () => ({ FieldComment: () => null }));
 
 jest.mock('./SearchBar', () => ({
   __esModule: true,
@@ -118,6 +123,9 @@ beforeEach(() => {
   });
   loadAllCreateProfileMutations.mockImplementation(async () => [saved ? editedDraft : originalDraft]);
 });
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 it('re-fetches the review queue when the editor is closed, so the card reflects the just-saved edit', async () => {
   render(<ProfileCreationWorkspace />);

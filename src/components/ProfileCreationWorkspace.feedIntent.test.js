@@ -19,6 +19,7 @@ import {
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
 import { getOverlayHistoryForCard, getOverlaysForCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -134,6 +135,9 @@ beforeEach(() => {
   saveCreateProfileMutation.mockResolvedValue({ cardId: 'new-card', revision: 1, createdBy: 'editor-1' });
 });
 
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
+
 describe('доповнення знайденої картки зі стрічки', () => {
   beforeEach(() => {
     mockLocationState = { enrichCardId: 'card-9' };
@@ -163,7 +167,7 @@ describe('доповнення знайденої картки зі стрічк
   it('лишає особистий коментар тим самим особистим коментарем, що й у стрічці', async () => {
     render(<ProfileCreationWorkspace />);
 
-    expect(await screen.findByPlaceholderText('Додайте свій коментар')).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
   });
 
   it('записує в оверлей лише дописане, а не підставлене з картки', async () => {

@@ -21,6 +21,8 @@ import {
 } from 'firebase/auth';
 import Photos from './Photos';
 import InfoModal from './InfoModal';
+import { uiText } from 'utils/uiTranslations';
+import { useAppSettings } from 'hooks/useAppSettings';
 import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
@@ -377,6 +379,9 @@ const getStoredAuthenticatedOwnerId = () => (
 );
 
 export const MyProfile = () => {
+  // «Мій профіль» — той самий набір полів, що й картка в матчингу, тож і мова
+  // в нього та сама: підписи, чіпи варіантів, заголовки блоків і тости.
+  const { language } = useAppSettings();
   const [state, setState] = useState(() => readMyProfileDraft() || {});
   const navigate = useNavigate();
   const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
@@ -600,9 +605,9 @@ export const MyProfile = () => {
       await updateProfileRole(targetUserId, role);
     } catch (error) {
       console.warn('Failed to change profile role.', error);
-      toast.error('Не вдалося змінити роль — спробуйте ще раз');
+      toast.error(uiText('Не вдалося змінити роль — спробуйте ще раз', language));
     }
-  }, [normalizedRole, userId]);
+  }, [language, normalizedRole, userId]);
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
   const sections = useMemo(() => baseSections.map(section => {
     if (section.key !== 'personal' || !isProfileAccessConfirmed || section.fields.includes('email')) {
@@ -991,8 +996,8 @@ export const MyProfile = () => {
     if (!missingFieldNames.length) return true;
 
     const firstMissingField = missingFieldNames[0];
-    const firstMissingFieldLabel = getFieldLabel(fieldsMap.get(firstMissingField)) || firstMissingField;
-    toast.error(`Заповніть обов’язкове поле: ${firstMissingFieldLabel}`);
+    const firstMissingFieldLabel = getFieldLabel(fieldsMap.get(firstMissingField), language) || firstMissingField;
+    toast.error(uiText('Заповніть обов’язкове поле: {label}', language, { label: firstMissingFieldLabel }));
     scrollToSection(getSectionKeyByField(firstMissingField));
     return false;
   };
@@ -1016,10 +1021,10 @@ export const MyProfile = () => {
     try {
       await saveState(nextState, { directFields: ['publish'] });
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
-      toast.success('Анкету опубліковано');
+      toast.success(uiText('Анкету опубліковано', language));
     } catch (error) {
       console.error('publish error', error);
-      toast.error('Не вдалося опублікувати анкету. Спробуйте ще раз');
+      toast.error(uiText('Не вдалося опублікувати анкету. Спробуйте ще раз', language));
     }
   };
 
@@ -1039,10 +1044,10 @@ export const MyProfile = () => {
 
     try {
       await saveState(nextState, { directFields: ['publish'] });
-      toast.success('Анкету приховано');
+      toast.success(uiText('Анкету приховано', language));
     } catch (error) {
       console.error('hide profile error', error);
-      toast.error('Не вдалося приховати анкету. Спробуйте ще раз');
+      toast.error(uiText('Не вдалося приховати анкету. Спробуйте ще раз', language));
     }
   };
 
@@ -1063,7 +1068,7 @@ export const MyProfile = () => {
       && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
 
     return <Field key={name}>
-      <Label>{getFieldLabel(field)}</Label>
+      <Label>{getFieldLabel(field, language)}</Label>
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <>
           <ChipRow>
@@ -1086,7 +1091,7 @@ export const MyProfile = () => {
                 }}
                 type="button"
               >
-                {getOptionLabel(option)}
+                {getOptionLabel(option, language)}
               </Chip>;
             })}
             {canUseCustomOption ? (
@@ -1101,7 +1106,7 @@ export const MyProfile = () => {
                 }}
                 type="button"
               >
-                Свій варіант
+                {uiText('Свій варіант', language)}
               </Chip>
             ) : null}
           </ChipRow>
@@ -1111,7 +1116,7 @@ export const MyProfile = () => {
                 <Input
                   value={val}
                   $missing={missing[name]}
-                  placeholder="Введіть свій варіант"
+                  placeholder={uiText('Введіть свій варіант', language)}
                   onChange={e => updateFieldValue(name, e.target.value, field)}
                   onBlur={e => saveFieldValue(name, e.target.value, field)}
                 />
@@ -1120,7 +1125,7 @@ export const MyProfile = () => {
                     type="button"
                     onMouseDown={event => event.preventDefault()}
                     onClick={() => clearFieldValue(name, field)}
-                    aria-label="Очистити поле"
+                    aria-label={uiText('Очистити поле', language)}
                   >
                     <FiX size={16} />
                   </ClearFieldButton>
@@ -1134,7 +1139,7 @@ export const MyProfile = () => {
           <TextArea
             value={val}
             $missing={missing[name]}
-            placeholder={getFieldPlaceholder(field)}
+            placeholder={getFieldPlaceholder(field, language)}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
           />
@@ -1143,7 +1148,7 @@ export const MyProfile = () => {
               type="button"
               onMouseDown={event => event.preventDefault()}
               onClick={() => clearFieldValue(name, field)}
-              aria-label="Очистити поле"
+              aria-label={uiText('Очистити поле', language)}
             >
               <FiX size={16} />
             </ClearFieldButton>
@@ -1154,7 +1159,7 @@ export const MyProfile = () => {
           <Input
             value={val}
             $missing={missing[name]}
-            placeholder={getFieldPlaceholder(field)}
+            placeholder={getFieldPlaceholder(field, language)}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
           />
@@ -1163,7 +1168,7 @@ export const MyProfile = () => {
               type="button"
               onMouseDown={event => event.preventDefault()}
               onClick={() => clearFieldValue(name, field)}
-              aria-label="Очистити поле"
+              aria-label={uiText('Очистити поле', language)}
             >
               <FiX size={16} />
             </ClearFieldButton>
@@ -1185,16 +1190,16 @@ export const MyProfile = () => {
             onClick={handleAuthBadgeClick}
           >
             ● {isProfileAccessConfirmed
-              ? (state.publish === true ? 'Опублікована' : 'Прихована')
-              : 'Логін не відбувся'}
+              ? uiText(state.publish === true ? 'Опублікована' : 'Прихована', language)
+              : uiText('Логін не відбувся', language)}
           </StatusBadge>
-          <DotsButton type='button' aria-label='Відкрити меню профілю' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
+          <DotsButton type='button' aria-label={uiText('Відкрити меню профілю', language)} onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
         </div>
       </Topbar>
 
       <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>Заповнено анкету</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено анкету', language)}</span>
         <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
       </div>
       <div style={{ height: 5, background: 'var(--border)', borderRadius: 99 }}>
@@ -1224,7 +1229,7 @@ export const MyProfile = () => {
     {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
       <Header>
         <div>🔐</div>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Доступ до анкети</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText('Доступ до анкети', language)}</div>
       </Header>
       <FieldGroup>
         <Field>
@@ -1239,7 +1244,7 @@ export const MyProfile = () => {
               type="email"
               name="email"
               value={state.email || ''}
-              placeholder="Введіть емейл"
+              placeholder={uiText('Введіть емейл', language)}
               autoComplete="email"
               onChange={e => {
                 const value = e.target.value;
@@ -1264,7 +1269,7 @@ export const MyProfile = () => {
                     return nextState;
                   });
                 }}
-                aria-label="Очистити email"
+                aria-label={uiText('Очистити email', language)}
               >
                 <FiX size={16} />
               </ClearFieldButton>
@@ -1278,7 +1283,7 @@ export const MyProfile = () => {
               type={showPassword ? 'text' : 'password'}
               name="password"
               value={state.password || ''}
-              placeholder="Придумайте / введіть пароль"
+              placeholder={uiText('Придумайте / введіть пароль', language)}
               autoComplete="new-password"
               onChange={e => {
                 const value = e.target.value;
@@ -1290,7 +1295,7 @@ export const MyProfile = () => {
                 });
               }}
             />
-            <PasswordToggleButton type="button" onClick={() => setShowPassword(prev => !prev)} aria-label={showPassword ? 'Приховати пароль' : 'Показати пароль'}>
+            <PasswordToggleButton type="button" onClick={() => setShowPassword(prev => !prev)} aria-label={uiText(showPassword ? 'Приховати пароль' : 'Показати пароль', language)}>
               {showPassword ? <FaEyeSlash /> : <FaEye />}
             </PasswordToggleButton>
           </FieldControl>
@@ -1308,16 +1313,16 @@ export const MyProfile = () => {
             }}
           />
           <TermsText>
-            <label htmlFor="my-profile-terms">Я підтверджую згоду з умовами програми. </label>
-            <TermsButton type="button" onClick={() => navigate('/policy')}>Умови</TermsButton>
+            <label htmlFor="my-profile-terms">{uiText('Я підтверджую згоду з умовами програми. ', language)}</label>
+            <TermsButton type="button" onClick={() => navigate('/policy')}>{uiText('Умови', language)}</TermsButton>
           </TermsText>
         </TermsRow>
-        <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm}>Підтвердити і продовжити</AuthActionButton>
+        <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm}>{uiText('Підтвердити і продовжити', language)}</AuthActionButton>
       </FieldGroup>
     </AuthCard>}
 
     <RoleCard>
-      <RoleCardTitle>Хто ви</RoleCardTitle>
+      <RoleCardTitle>{uiText('Хто ви', language)}</RoleCardTitle>
       <RoleOptions>
         {MY_PROFILE_ROLE_OPTIONS.map(option => (
           <RoleOption
@@ -1327,15 +1332,15 @@ export const MyProfile = () => {
             aria-pressed={selectedRole === option.value}
             onClick={() => changeUserRole(option.value)}
           >
-            {option.label}
+            {uiText(option.label, language)}
           </RoleOption>
         ))}
       </RoleOptions>
-      <RoleHint>Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.</RoleHint>
+      <RoleHint>{uiText('Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.', language)}</RoleHint>
     </RoleCard>
 
     <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{uiText('Додайте до 5 фото. Перше — головне', language)}</p>
       <Photos
         state={{ ...state, userId }}
         setState={next => {
@@ -1357,8 +1362,8 @@ export const MyProfile = () => {
       return (
       <SectionCard key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
-          <div>{section.title.split(' ')[0]}</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{section.title.replace(/^\S+\s/, '')}</div>
+          <div>{uiText(section.title, language).split(' ')[0]}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText(section.title, language).replace(/^\S+\s/, '')}</div>
           <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? '#2E9B55' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? '#EBF8EF' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
             {sectionProgress[section.key]?.filled || 0}/{sectionProgress[section.key]?.total || section.fields.length}
           </div>
@@ -1380,9 +1385,9 @@ export const MyProfile = () => {
 
     <SubmitWrap>
       <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
-        {state.publish ? 'Приховати анкету' : 'Опублікувати анкету'}
+        {uiText(state.publish ? 'Приховати анкету' : 'Опублікувати анкету', language)}
       </SubmitBtn>
-      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.</p>
+      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.', language)}</p>
     </SubmitWrap>
   </Page>;
 };

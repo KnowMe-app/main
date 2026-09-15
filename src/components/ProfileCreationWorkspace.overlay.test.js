@@ -6,6 +6,7 @@ import { HistoricalFieldEdit, ProfileCreationWorkspace } from './ProfileCreation
 import { buildFieldVersionHistory } from 'utils/draftFieldEdits';
 import { applyOverlayToCard, buildOverlayFromDraft, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -103,6 +104,9 @@ const openSharedDraft = async () => {
 beforeEach(() => {
   jest.clearAllMocks();
 });
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('ProfileCreationWorkspace repeatable field behavior', () => {
   it('removes one of several visible values instead of restoring persisted history', async () => {

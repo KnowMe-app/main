@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 /**
  * Екран називається тим, що на ньому лежить, — картками, які завів цей читач.
@@ -109,6 +110,9 @@ beforeEach(() => {
   loadOwnProfileMutations.mockResolvedValue([DRAFT, PUBLISHED]);
   loadSharedProfileMutations.mockResolvedValue([]);
 });
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 it('називає екран власними картками і показує їх без жодного пошуку', async () => {
   render(<ProfileCreationWorkspace />);

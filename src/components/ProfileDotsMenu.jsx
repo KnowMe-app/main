@@ -5,6 +5,7 @@ import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProj
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { useAppSettings } from 'hooks/useAppSettings';
+import { uiText } from 'utils/uiTranslations';
 import {
   ModalActionRow,
   ModalDangerButton,
@@ -219,7 +220,7 @@ export const ProfileDotsMenu = ({
   onSelect,
   beforeNavigate,
   extraActions,
-  extraActionsLabel = 'Ще',
+  extraActionsLabel,
 }) => {
   const location = useLocation();
   const { themeMode, setThemeMode, language, setLanguage } = useAppSettings();
@@ -272,9 +273,9 @@ export const ProfileDotsMenu = ({
         aria-describedby="logout-confirmation-description"
       >
         <LogoutIcon aria-hidden="true"><FaSignOutAlt /></LogoutIcon>
-        <ModalTitle id="logout-confirmation-title">Вийти з акаунта?</ModalTitle>
+        <ModalTitle id="logout-confirmation-title">{uiText('Вийти з акаунта?', language)}</ModalTitle>
         <ModalText id="logout-confirmation-description">
-          Ви точно хочете завершити поточну сесію?
+          {uiText('Ви точно хочете завершити поточну сесію?', language)}
         </ModalText>
         <ModalActionRow>
           <ModalGhostButton
@@ -283,10 +284,10 @@ export const ProfileDotsMenu = ({
             disabled={isLoggingOut}
             onClick={() => setIsLogoutConfirmationOpen(false)}
           >
-            Ні, залишитися
+            {uiText('Ні, залишитися', language)}
           </ModalGhostButton>
           <ModalDangerButton type="button" disabled={isLoggingOut} onClick={handleLogout}>
-            {isLoggingOut ? 'Виходимо…' : 'Так, вийти'}
+            {uiText(isLoggingOut ? 'Виходимо…' : 'Так, вийти', language)}
           </ModalDangerButton>
         </ModalActionRow>
       </LogoutConfirmation>
@@ -294,19 +295,24 @@ export const ProfileDotsMenu = ({
   }
 
   const navItems = [
-    { path: '/my-profile', label: 'Мій профіль', icon: <FaRegUser /> },
-    ...(isAdmin ? [{ path: '/my-profile-old', label: 'Старий профіль', icon: <FaUserEdit /> }] : []),
+    { path: '/my-profile', label: uiText('Мій профіль', language), icon: <FaRegUser /> },
+    ...(isAdmin ? [{ path: '/my-profile-old', label: uiText('Старий профіль', language), icon: <FaUserEdit /> }] : []),
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessAdd)
-      ? [{ path: '/add', label: 'Додати анкету', description: 'Адмін-додавання профілів', icon: <MdPersonAddAlt1 /> }]
+      ? [{ path: '/add', label: uiText('Додати анкету', language), description: uiText('Адмін-додавання профілів', language), icon: <MdPersonAddAlt1 /> }]
       : []),
     // Matching is open to every signed-in user: search is available to all, and a
     // viewer without matching access gets the limited projection of what it finds.
-    { path: '/matching', label: 'Matching', description: 'Пошук і порівняння анкет', icon: <FaUsers /> },
+    { path: '/matching', label: 'Matching', description: uiText('Пошук і порівняння анкет', language), icon: <FaUsers /> },
     // Пункт названий місцем, а не дією: за ним лежать картки, які завів цей
     // читач, і лише потім — рядок, яким заводять наступну. «Додати профіль»
     // обіцяло форму, тож вертатись туди по вже заведену картку не було підстав.
     ...((isAdmin || resolvedAccess.canCreateProfiles)
-      ? [{ path: '/matching/create-profile', label: isAdmin ? 'Нові профілі' : 'Створені мною', description: isAdmin ? 'Перевірка нових карток' : 'Ваші картки та створення нових', icon: <MdPersonAddAlt1 /> }]
+      ? [{
+        path: '/matching/create-profile',
+        label: uiText(isAdmin ? 'Нові профілі' : 'Створені мною', language),
+        description: uiText(isAdmin ? 'Перевірка нових карток' : 'Ваші картки та створення нових', language),
+        icon: <MdPersonAddAlt1 />,
+      }]
       : []),
     ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),
@@ -315,18 +321,18 @@ export const ProfileDotsMenu = ({
     ...(isAdmin ? [{ path: '/parties', label: 'Parties', description: 'Manage clinics, couples and other case parties', icon: <FaAddressBook /> }] : []),
     // Маршрут інструменту міграції існує тільки для адмінів (App.jsx), і досі туди
     // можна було потрапити лише вбивши адресу руками.
-    ...(isAdmin ? [{ path: '/rtdb-migration', label: 'Міграція RTDB', description: 'Розкласти анкети по нових вузлах', icon: <FaDatabase /> }] : []),
+    ...(isAdmin ? [{ path: '/rtdb-migration', label: uiText('Міграція RTDB', language), description: uiText('Розкласти анкети по нових вузлах', language), icon: <FaDatabase /> }] : []),
   ];
 
   return (
-    <MenuShell role="menu" aria-label="Навігаційне меню профілю">
+    <MenuShell role="menu" aria-label={uiText('Навігаційне меню профілю', language)}>
       <MenuHeader>
-        <MenuTitle>Меню профілю</MenuTitle>
-        <MenuSubtitle>Швидка навігація, дії з анкетою та налаштування акаунта.</MenuSubtitle>
+        <MenuTitle>{uiText('Меню профілю', language)}</MenuTitle>
+        <MenuSubtitle>{uiText('Швидка навігація, дії з анкетою та налаштування акаунта.', language)}</MenuSubtitle>
       </MenuHeader>
 
       <MenuSection>
-        <SectionLabel>Навігація</SectionLabel>
+        <SectionLabel>{uiText('Навігація', language)}</SectionLabel>
         {navItems.map(item => {
           const active = location.pathname === item.path;
           return (
@@ -342,7 +348,7 @@ export const ProfileDotsMenu = ({
                 <ItemLabel>{item.label}</ItemLabel>
                 {item.description ? <ItemDescription>{item.description}</ItemDescription> : null}
               </span>
-              {active ? <ActivePill>зараз</ActivePill> : null}
+              {active ? <ActivePill>{uiText('зараз', language)}</ActivePill> : null}
             </MenuItem>
           );
         })}
@@ -350,7 +356,7 @@ export const ProfileDotsMenu = ({
 
       {extraActions?.length ? (
         <MenuSection>
-          <SectionLabel>{extraActionsLabel}</SectionLabel>
+          <SectionLabel>{extraActionsLabel || uiText('Ще', language)}</SectionLabel>
           {extraActions.map(item => (
             <MenuItem
               key={item.key}
@@ -364,28 +370,28 @@ export const ProfileDotsMenu = ({
                 <ItemLabel>{item.label}</ItemLabel>
                 {item.description ? <ItemDescription>{item.description}</ItemDescription> : null}
               </span>
-              {item.active ? <ActivePill>увімкнено</ActivePill> : null}
+              {item.active ? <ActivePill>{uiText('увімкнено', language)}</ActivePill> : null}
             </MenuItem>
           ))}
         </MenuSection>
       ) : null}
 
       <MenuSection>
-        <SectionLabel>Налаштування</SectionLabel>
+        <SectionLabel>{uiText('Налаштування', language)}</SectionLabel>
         <SettingRow>
           <ItemIcon>{themeMode === 'dark' ? <FaMoon /> : <FaSun />}</ItemIcon>
           <span>
-            <ItemLabel>Тема</ItemLabel>
-            <ItemDescription>Оформлення застосунку</ItemDescription>
+            <ItemLabel>{uiText('Тема', language)}</ItemLabel>
+            <ItemDescription>{uiText('Оформлення застосунку', language)}</ItemDescription>
           </span>
-          <SegmentedControl role="group" aria-label="Перемкнути тему">
+          <SegmentedControl role="group" aria-label={uiText('Перемкнути тему', language)}>
             <SegmentedOption
               type="button"
               $active={themeMode === 'light'}
               aria-pressed={themeMode === 'light'}
               onClick={() => setThemeMode('light')}
             >
-              <FaSun aria-hidden="true" /> Світла
+              <FaSun aria-hidden="true" /> {uiText('Світла', language)}
             </SegmentedOption>
             <SegmentedOption
               type="button"
@@ -393,17 +399,17 @@ export const ProfileDotsMenu = ({
               aria-pressed={themeMode === 'dark'}
               onClick={() => setThemeMode('dark')}
             >
-              <FaMoon aria-hidden="true" /> Темна
+              <FaMoon aria-hidden="true" /> {uiText('Темна', language)}
             </SegmentedOption>
           </SegmentedControl>
         </SettingRow>
         <SettingRow>
           <ItemIcon><FaGlobe /></ItemIcon>
           <span>
-            <ItemLabel>Мова</ItemLabel>
-            <ItemDescription>Мова документів, правил і карток анкет</ItemDescription>
+            <ItemLabel>{uiText('Мова', language)}</ItemLabel>
+            <ItemDescription>{uiText('Мова документів, правил і карток анкет', language)}</ItemDescription>
           </span>
-          <SegmentedControl role="group" aria-label="Перемкнути мову">
+          <SegmentedControl role="group" aria-label={uiText('Перемкнути мову', language)}>
             <SegmentedOption
               type="button"
               $active={language === 'uk'}
@@ -426,13 +432,13 @@ export const ProfileDotsMenu = ({
 
       {(onDeleteProfile || onViewProfile) && (
         <MenuSection>
-          <SectionLabel>Анкета</SectionLabel>
+          <SectionLabel>{uiText('Анкета', language)}</SectionLabel>
           {onViewProfile && (
             <MenuItem type="button" role="menuitem" onClick={() => handleAction(onViewProfile)}>
               <ItemIcon><FaEye /></ItemIcon>
               <span>
-                <ItemLabel>Переглянути анкету</ItemLabel>
-                <ItemDescription>Відкрити інструкцію перегляду у застосунку</ItemDescription>
+                <ItemLabel>{uiText('Переглянути анкету', language)}</ItemLabel>
+                <ItemDescription>{uiText('Відкрити інструкцію перегляду у застосунку', language)}</ItemDescription>
               </span>
             </MenuItem>
           )}
@@ -440,8 +446,8 @@ export const ProfileDotsMenu = ({
             <MenuItem type="button" role="menuitem" $danger onClick={() => handleAction(onDeleteProfile)}>
               <ItemIcon $danger><FaTrashAlt /></ItemIcon>
               <span>
-                <ItemLabel>Видалити анкету</ItemLabel>
-                <ItemDescription>Надіслати запит на видалення профілю</ItemDescription>
+                <ItemLabel>{uiText('Видалити анкету', language)}</ItemLabel>
+                <ItemDescription>{uiText('Надіслати запит на видалення профілю', language)}</ItemDescription>
               </span>
             </MenuItem>
           )}
@@ -450,7 +456,7 @@ export const ProfileDotsMenu = ({
 
       {(showVerifyEmail || isSessionActive) && (
         <MenuSection>
-          <SectionLabel>Акаунт</SectionLabel>
+          <SectionLabel>{uiText('Акаунт', language)}</SectionLabel>
           {showVerifyEmail && !isEmailVerified && (
             <VerifyWrap>
               <VerifyEmail />
@@ -460,8 +466,8 @@ export const ProfileDotsMenu = ({
             <MenuItem type="button" role="menuitem" $danger onClick={() => setIsLogoutConfirmationOpen(true)}>
               <ItemIcon $danger><FaSignOutAlt /></ItemIcon>
               <span>
-                <ItemLabel>Вийти</ItemLabel>
-                <ItemDescription>Завершити поточну сесію</ItemDescription>
+                <ItemLabel>{uiText('Вийти', language)}</ItemLabel>
+                <ItemDescription>{uiText('Завершити поточну сесію', language)}</ItemDescription>
               </span>
             </MenuItem>
           )}

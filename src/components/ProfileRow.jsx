@@ -22,6 +22,7 @@ import {
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { profileUiText, resolveProfileLanguage, translateProfileLabel } from '../utils/profileTexts';
 import { translateFieldValue } from './formFields';
+import { uiText } from 'utils/uiTranslations';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { getContactEntries } from './contactMethods';
 import { PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
@@ -480,6 +481,7 @@ const autoResizeTextarea = (el, maxRows = 0) => {
 // tap-to-expand, and the first tap both expands it and turns it into a textarea
 // with the caret at the tap point.
 export const CommentBlock = ({ text, onSave, placeholder }) => {
+  const { language } = useAppSettings();
   const measureRef = useRef(null);
   const textareaRef = useRef(null);
   const saveTimerRef = useRef(null);
@@ -574,7 +576,7 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
         ref={textareaRef}
         rows={1}
         value={draft}
-        placeholder={placeholder || 'Додати коментар'}
+        placeholder={placeholder || uiText('Додати коментар', language)}
         onClick={e => e.stopPropagation()}
         onTouchStart={e => e.stopPropagation()}
         onChange={e => {
@@ -619,7 +621,6 @@ const COMMENT_SAVED_STATUS_MS = 3000;
 // запрошення написати. Стара константа лишається — рядок стрічки й тести
 // звертаються до неї за замовчуванням, — але текст у ній іде мовою інтерфейсу.
 export const publicCommentPlaceholder = language => profileUiText('publicCommentPlaceholder', language);
-export const PUBLIC_COMMENT_VISIBILITY_NOTE = publicCommentPlaceholder();
 
 const autoGrowComment = el => {
   if (!el) return;
@@ -702,8 +703,8 @@ const PublicCommentsBackendLink = ({ backendHref }) => (backendHref ? (
       href={backendHref}
       target="_blank"
       rel="noopener noreferrer"
-      title="Відкрити публічні нотатки анкети у Firebase"
-      aria-label="Відкрити публічні нотатки анкети у Firebase"
+      title={uiText('Відкрити публічні нотатки анкети у Firebase')}
+      aria-label={uiText('Відкрити публічні нотатки анкети у Firebase')}
       onClick={e => e.stopPropagation()}
     >
       <FaArrowRight size={12} />
@@ -753,9 +754,9 @@ export const PublicCommentBlock = ({
     try {
       await onDelete(profileId, commentId);
     } catch {
-      setFailedNotice('Не вдалось видалити — спробуйте ще раз');
+      setFailedNotice(uiText('Не вдалось видалити — спробуйте ще раз', language));
     }
-  }, [onDelete, profileId]);
+  }, [language, onDelete, profileId]);
 
   const submit = useCallback(async (draftId, text, commentId) => {
     const trimmed = String(text || '').trim();
@@ -845,21 +846,21 @@ export const PublicCommentBlock = ({
                     void submit(comment.id, comment.text, comment.commentId);
                   }}
                 >
-                  Повторити
+                  {uiText('Повторити', language)}
                 </S.CommentRetry>
               )}
               {canRemove && (
                 <S.CommentDelete
                   type="button"
                   $confirming={confirmingDelete === comment.id}
-                  aria-label={confirmingDelete === comment.id ? 'Підтвердити видалення' : 'Видалити коментар'}
+                  aria-label={uiText(confirmingDelete === comment.id ? 'Підтвердити видалення' : 'Видалити коментар', language)}
                   onClick={e => {
                     e.stopPropagation();
                     if (confirmingDelete === comment.id) void removeComment(comment.id);
                     else setConfirmingDelete(comment.id);
                   }}
                 >
-                  {confirmingDelete === comment.id ? 'Видалити?' : '×'}
+                  {confirmingDelete === comment.id ? uiText('Видалити?', language) : '×'}
                 </S.CommentDelete>
               )}
             </S.CommentMeta>
@@ -904,7 +905,7 @@ export const PublicCommentBlock = ({
       {failedNotice && <S.CommentStatus aria-live="polite">{failedNotice}</S.CommentStatus>}
 
       {savedAt > 0 && (
-        <S.CommentStatus aria-live="polite">Збережено {formatCommentClock(savedAt)}</S.CommentStatus>
+        <S.CommentStatus aria-live="polite">{uiText('Збережено {time}', language, { time: formatCommentClock(savedAt) })}</S.CommentStatus>
       )}
     </S.PublicComments>
   );
@@ -920,8 +921,14 @@ export const splitFactsByGroup = (facts = []) => [
   facts.filter(node => REPRO_FACT_KEYS.includes(node.key)),
 ];
 
-export const REVIEWS_GATE_LABEL = 'Перевірити наявність відгуків';
-export const ENRICH_GATE_LABEL = 'Доповнити дані';
+/*
+ * Підписи жестів у ряду рішень. Вони не показуються словами — їх несуть
+ * `title` і `aria-label`, — але читає їх і людина, і екранний диктор, тож ідуть
+ * вони мовою інтерфейсу. Виклик без аргументу віддає українську за
+ * замовчуванням лише тоді, коли мова інтерфейсу українська.
+ */
+export const reviewsGateLabel = language => uiText('Перевірити наявність відгуків', language);
+export const enrichGateLabel = language => uiText('Доповнити дані', language);
 
 /**
  * Дві доріжки нотаток — одна плашка, і стоїть вона в кожній картці.
@@ -946,7 +953,7 @@ export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus 
         <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
       </NoteLaneHead>
       {publicSlot}
-      {reviewsStatus && <S.ReviewsGateNote>{reviewsStatus}</S.ReviewsGateNote>}
+      {reviewsStatus && <S.ReviewsGateNote aria-live="polite">{reviewsStatus}</S.ReviewsGateNote>}
     </NoteLane>
     <NoteLane $flush>
       <NoteLaneHead>
@@ -965,10 +972,18 @@ export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus 
  * не означає «ще не читали»: це може бути і «читання триває», і «читання
  * впало». Мовчати про останнє не можна — читач натиснув кнопку й має право
  * знати, що відповіді не було.
+ *
+ * **Відповідь «відгуків немає» — теж відповідь, і вона лишається на екрані.**
+ * Доти дотик до значка давав «Шукаємо відгуки…» на частку секунди й тишу
+ * після: людина бачила, як напис блимнув і зник, і не знала, чи прочитано
+ * бодай щось. Тепер прочитана порожнеча каже про себе рядком під полем
+ * запису — тим самим приглушеним написом, тобто місця в рядку не додається,
+ * а невідповіді більше немає.
  */
-export const describeReviewsState = ({ requested, loading, loaded }) => {
-  if (loading) return 'Шукаємо відгуки…';
-  if (requested && !loaded) return 'Не вдалося прочитати відгуки';
+export const describeReviewsState = ({ requested, loading, loaded, count = 0 }, language) => {
+  if (loading) return uiText('Шукаємо відгуки…', language);
+  if (requested && !loaded) return uiText('Не вдалося прочитати відгуки', language);
+  if (loaded && !count) return uiText('Публічних відгуків ще немає', language);
   return '';
 };
 
@@ -1103,10 +1118,10 @@ const ProfileRow = ({
    * фактами й значок олівця в стовпчику праворуч.
    */
   const editAction = useMemo(() => {
-    if (onEnrich) return { title: ENRICH_GATE_LABEL, onClick: onEnrich };
-    if (isAdmin && onEditProfile && !isLimited) return { title: 'Редагувати анкету', onClick: onEditProfile };
+    if (onEnrich) return { title: enrichGateLabel(language), onClick: onEnrich };
+    if (isAdmin && onEditProfile && !isLimited) return { title: uiText('Редагувати анкету', language), onClick: onEditProfile };
     return null;
-  }, [isAdmin, isLimited, onEditProfile, onEnrich]);
+  }, [isAdmin, isLimited, language, onEditProfile, onEnrich]);
 
   // Значок відгуків більше нічого не розгортає — він просить їх прочитати.
   // Доріжка з полем стоїть на місці й без нього, тож «згорнути» означало б
@@ -1223,8 +1238,8 @@ const ProfileRow = ({
               <PublishDot
                 type="button"
                 $published={isPublished}
-                title={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
-                aria-label={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
+                title={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+                aria-label={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
                 aria-pressed={isPublished}
                 onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
               />
@@ -1233,8 +1248,8 @@ const ProfileRow = ({
               <S.RowActionButton
                 type="button"
                 $on={contactsOpen}
-                title="Контакти"
-                aria-label="Контакти"
+                title={uiText('Контакти', language)}
+                aria-label={uiText('Контакти', language)}
                 aria-expanded={contactsOpen}
                 onClick={e => { e.stopPropagation(); toggleContacts(); }}
               >
@@ -1246,8 +1261,8 @@ const ProfileRow = ({
           <S.ChevronButton
             type="button"
             $open={expanded}
-            aria-label="Показати всі дані"
-            title="Показати всі дані"
+            aria-label={uiText('Показати всі дані', language)}
+            title={uiText('Показати всі дані', language)}
             onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
           >
             <FaChevronDown size={11} />
@@ -1287,7 +1302,7 @@ const ProfileRow = ({
           )}
         </>
       ) : isUnfilled && (
-        <S.EmptyNote>Анкета не заповнена</S.EmptyNote>
+        <S.EmptyNote>{uiText('Анкета не заповнена', language)}</S.EmptyNote>
       )}
 
       {contactsOpen && (
@@ -1296,7 +1311,7 @@ const ProfileRow = ({
             <ContactLinks entries={contactEntries} language={language} />
           ) : (
             <S.RowContactsNote>
-              {contactsLoading ? 'Шукаємо контакти…' : 'Контактів немає або вони закриті'}
+              {uiText(contactsLoading ? 'Шукаємо контакти…' : 'Контактів немає або вони закриті', language)}
             </S.RowContactsNote>
           )}
         </S.RowContacts>
@@ -1326,7 +1341,7 @@ const ProfileRow = ({
               картку, анкета якої ще їде (або в якій цих полів просто немає).
               Порожній блок читався б як поламаний — краще сказати словом. */}
           {gridRows.length === 0 && !bio && (
-            <S.RowContactsNote>Додаткових даних немає</S.RowContactsNote>
+            <S.RowContactsNote>{uiText('Додаткових даних немає', language)}</S.RowContactsNote>
           )}
         </S.More>
       )}
@@ -1350,7 +1365,8 @@ const ProfileRow = ({
           requested: reviewsRequested,
           loading: Boolean(reviewsAction?.loading),
           loaded: Boolean(reviewsAction?.loaded),
-        })}
+          count: reviewsAction?.count || 0,
+        }, language)}
         privateSlot={commentSlot !== undefined
           ? commentSlot
           : (
@@ -1421,8 +1437,8 @@ const ProfileRow = ({
               type="button"
               $on={reviewsRequested}
               disabled={Boolean(reviewsAction.loading)}
-              title={REVIEWS_GATE_LABEL}
-              aria-label={REVIEWS_GATE_LABEL}
+              title={reviewsGateLabel(language)}
+              aria-label={reviewsGateLabel(language)}
               onClick={e => { e.stopPropagation(); requestReviews(); }}
             >
               <FaRegCommentDots size={13} />

@@ -2,6 +2,7 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import SearchRefineBar from './SearchRefineBar';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 const birthForAge = age => `01.01.${new Date().getFullYear() - age}`;
 
@@ -28,6 +29,9 @@ const setup = (props = {}) => {
   );
   return { ...utils, onChangeKey, onSelectValue };
 };
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('рядок дофільтрації', () => {
   it('показує значення з числами — тап наосліп не має сенсу', () => {

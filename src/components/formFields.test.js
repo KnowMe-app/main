@@ -39,3 +39,38 @@ describe('запис не відбирає поля за назвою', () => {
     expect(sanitizeTechnicalPayload(payload)).toEqual(payload);
   });
 });
+
+/**
+ * Підписи полів знають мову — але лише там, де її передали.
+ *
+ * Ті самі поля малює десяток екранів поза матчингом (анкета адміна,
+ * редагування, імпорт), і вони лишаються українськими, як були: мова тут —
+ * необовʼязковий аргумент, а не глобальний стан.
+ */
+describe('мова підписів полів', () => {
+  const field = { name: 'surname', label: 'Прізвище', ukrainian: 'Прізвище', placeholder: 'Іваненко' };
+
+  it('без мови віддає підпис таким, яким він лежить у формі', () => {
+    expect(formFields.getFieldLabel(field)).toBe('Прізвище');
+    expect(formFields.getFieldPlaceholder(field)).toBe('Іваненко');
+  });
+
+  it('англійською перекладає і підпис, і приклад значення', () => {
+    expect(formFields.getFieldLabel(field, 'en')).toBe('Surname');
+    expect(formFields.getFieldPlaceholder(field, 'en')).toBe('Ivanenko');
+  });
+
+  it('українською лишає той самий підпис', () => {
+    expect(formFields.getFieldLabel(field, 'uk')).toBe('Прізвище');
+  });
+
+  // Варіант списку вже лежить парою: `placeholder` англійською, `ukrainian` —
+  // українською. Перекладати його словником не треба.
+  it('варіант списку бере англійський бік із самої пари', () => {
+    const option = { placeholder: 'Oval', ukrainian: 'Овальне' };
+
+    expect(formFields.getOptionLabel(option)).toBe('Овальне');
+    expect(formFields.getOptionLabel(option, 'uk')).toBe('Овальне');
+    expect(formFields.getOptionLabel(option, 'en')).toBe('Oval');
+  });
+});

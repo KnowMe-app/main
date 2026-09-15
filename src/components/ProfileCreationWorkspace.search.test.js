@@ -1,5 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('ProfileCreationWorkspace search-before-create flow', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
@@ -58,7 +62,7 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
   it('lists the cards this user created when nothing is typed yet', () => {
     expect(source).toContain('loadOwnProfileMutations(userId, { includeAccepted: true })');
     expect(source).toContain('setOwnCreatedCards(items)');
-    expect(source).toContain('<span>Мої картки</span>');
+    expect(source).toContain("<span>{uiText('Мої картки', language)}</span>");
     expect(source).toContain('Ви ще не завели жодної картки.');
   });
 });

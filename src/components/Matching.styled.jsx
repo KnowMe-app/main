@@ -1088,12 +1088,19 @@ export const ModernProfileScroll = styled.div`
 
 export const ModernHero = styled.div`
   position: relative;
-  /* 240 px лишали від портретного фото тільки вузьку горизонтальну смугу:
-   * cover обрізав обличчя вже під очима. Повертаємо фотографії достатню
-   * висоту, але не старі 55% — дані анкети й мініатюри лишаються поруч і
-   * доступні в тій самій прокрутці. */
-  min-height: clamp(320px, 46%, 420px);
-  height: 46%;
+  /* Висоту фото задає **пропорція знімка**, а не частка екрана.
+   *
+   * Частка й була причиною того, що у відкритій картці видно саме чоло: 46%
+   * висоти при повній ширині — це смуга, ширша за висоту, а всі знімки в
+   * анкетах портретні, тож cover зрізав обличчя вже під очима. Тепер
+   * оболонка тримає портретні 4/5 — ту саму пропорцію, що й фото в рядку
+   * стрічки, — і обличчя вміщається цілком. Стеля лишилась, щоб на високому
+   * екрані фото не з'їло всю картку: під ним у тій самій прокрутці стоять
+   * мініатюри, імʼя й метрики. */
+  aspect-ratio: 4 / 5;
+  height: auto;
+  min-height: clamp(320px, 52%, 460px);
+  max-height: min(64dvh, 560px);
   background: var(--matching-hero-fallback);
   background-size: cover;
   background-position: center 18%;
@@ -1155,7 +1162,10 @@ export const ModernHeroImage = styled.img`
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 16%;
+  /* 16% притискало вікно кадру до самої маківки. Обличчя на селфі стоїть
+   * трохи нижче, тож вікно зсунуто до нього — а не до центру знімка, де в
+   * портреті вже плечі. */
+  object-position: center 24%;
   display: block;
 `;
 
@@ -2616,13 +2626,17 @@ export const NoteLanes = styled.div`
  */
 export const NoteLane = styled.div`
   padding-left: 10px;
+  /* Кожна змінна тут із запасною: ту саму пару доріжок малює й форма
+     доповнення картки, а вона поза матчингом, де --matching-* не оголошені, —
+     і невідома змінна в скороченому записі border робить нечинним увесь
+     запис, тобто смужки на екрані просто не було б. */
   border-left: 2px solid ${({ $public }) => ($public
-    ? 'color-mix(in srgb, var(--matching-accent) 55%, transparent)'
-    : 'color-mix(in srgb, var(--matching-muted-text) 26%, transparent)')};
+    ? 'color-mix(in srgb, var(--matching-accent, var(--km-accent, #e8791a)) 55%, transparent)'
+    : 'color-mix(in srgb, var(--matching-muted-text, var(--km-muted, #8a8178)) 26%, transparent)')};
 
   & + & {
     padding-top: 10px;
-    border-top: 1px solid var(--matching-section-border);
+    border-top: 1px solid var(--matching-section-border, var(--km-border, rgba(0, 0, 0, 0.1)));
   }
 
   /* Рядок стрічки: ані риски, ані відступу — текст нотатки стоїть на тій
@@ -2641,11 +2655,11 @@ export const NoteLaneHead = styled.div`
   margin-bottom: 3px;
   font-size: ${NOTE_META_SIZE};
   line-height: ${NOTE_META_LINE_HEIGHT};
-  color: var(--matching-muted-text);
+  color: var(--matching-muted-text, var(--km-muted, #8a8178));
 
   b {
     font-weight: 600;
-    color: var(--matching-header-text);
+    color: var(--matching-header-text, var(--km-text, #2c261f));
   }
 `;
 

@@ -2,6 +2,7 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
 import ProfileRow from './ProfileRow';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 const card = {
   userId: 'ID0002',
@@ -27,6 +28,9 @@ const renderRow = (props = {}) => render(
 // Реакції стоять після всього, що картка каже про людину, і після власної
 // нотатки: спершу рішення, потім жест. У стовпчику праворуч вони тиснулись
 // раніше, ніж читач устигав дочитати рядок.
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
+
 describe('розкладка рядка стрічки', () => {
   it('тримає реакції нижче за нотатку, в одному ряду', () => {
     renderRow({
@@ -34,7 +38,7 @@ describe('розкладка рядка стрічки', () => {
       secondaryAction: { icon: <span>✕</span>, title: 'Приховати', active: false, onClick: jest.fn() },
     });
 
-    const note = screen.getByPlaceholderText('A note for yourself');
+    const note = screen.getByPlaceholderText('Нотатка для себе');
     const favorite = screen.getByTitle('В обране');
     const hide = screen.getByTitle('Приховати');
 
@@ -49,7 +53,7 @@ describe('розкладка рядка стрічки', () => {
   // що він про цю людину вже знає, має бути видно тут само, де рішення.
   it('поле власної нотатки відкрите й порожнє, поки нотатки немає', () => {
     renderRow();
-    expect(screen.getByPlaceholderText('A note for yourself')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Нотатка для себе')).toHaveValue('');
   });
 
   // Хто побачить запис, каже підпис над доріжкою — той самий, що й у
@@ -57,10 +61,10 @@ describe('розкладка рядка стрічки', () => {
   // коментар» і про видимість мовчало.
   it('підписує доріжку власної нотатки так само, як відкрита картка', () => {
     renderRow();
-    // Мова тут за замовчуванням англійська — підпис бере її з того самого
-    // словника, що й відкрита картка (`profileTexts`), а не з рядка в коді.
-    expect(screen.getByText('Private note')).toBeInTheDocument();
-    expect(screen.getByText('Only you see it')).toBeInTheDocument();
+    // Підпис береться з того самого словника, що й у відкритій картці
+    // (`profileTexts`), а не з рядка в коді, — тож іде мовою інтерфейсу.
+    expect(screen.getByText('Приватна нотатка')).toBeInTheDocument();
+    expect(screen.getByText('Бачите тільки ви')).toBeInTheDocument();
   });
 
   it('урізаній проєкції реакцій не дає', () => {

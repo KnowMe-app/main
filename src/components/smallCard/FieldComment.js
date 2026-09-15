@@ -42,7 +42,11 @@ const buildCommentBackendUrl = (ownerId, cardId) => {
 
 // Персональний коментар поточного адміна до картки — зберігається в
 // multiData/comments/{ownerId}/{cardId}, а не прямо в самій картці (users).
-export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMigrated }) => {
+// `placeholder` передає той екран, який стоїть поруч з іншими доріжками нотаток
+// (форма доповнення картки): підпис у порожньому полі мусить бути той самий, що
+// в стрічці й у відкритій картці, — два сусідні порожні поля з різними
+// запрошеннями читаються як два різні механізми.
+export const FieldComment = ({ userData, extendedMode = false, placeholder, onLegacyCommentMigrated }) => {
   const textareaRef = useRef(null);
   const [text, setText] = useState('');
   const autoResize = useAutoResize(textareaRef, text);
@@ -150,7 +154,7 @@ export const FieldComment = ({ userData, extendedMode = false, onLegacyCommentMi
     >
       <textarea
         ref={textareaRef}
-        placeholder="Додайте свій коментар"
+        placeholder={placeholder || 'Додайте свій коментар'}
         value={text}
         onChange={e => {
           dirtyRef.current = true;

@@ -7,6 +7,8 @@ import { SiTiktok } from 'react-icons/si';
 import { FaXTwitter } from 'react-icons/fa6';
 import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
+import { uiText } from 'utils/uiTranslations';
+import { useAppSettings } from '../hooks/useAppSettings';
 
 const FiltersCard = styled.div`
   background: var(--matching-section-bg, var(--km-card));
@@ -108,33 +110,58 @@ export const MATCHING_FILTER_GROUPS = [
 // The "?" option (no data on record) is deliberately left out of the "крім"
 // count: dropping unknowns is a different intent from excluding a real value,
 // and a group where only "?" is off reads as "лише заповнені".
-export const buildMatchingFilterChipLabel = (group, values) => {
+export const buildMatchingFilterChipLabel = (group, values, language) => {
   const options = group.options || [];
   if (!values || typeof values !== 'object') return null;
 
   const off = options.filter(option => !values[option.val]);
   if (!off.length) return null;
 
+  // Підпис групи й слова-звʼязки в чіпі йдуть мовою інтерфейсу: чіп стоїть
+  // поруч із рештою шапки матчингу, і «Статус: крім Married» посеред
+  // англійського екрана читалось як половина речення чужою мовою.
+  const groupName = uiText(group.label, language);
   const on = options.filter(option => values[option.val]);
-  if (!on.length) return { text: `${group.label}: нічого`, danger: true };
+  if (!on.length) return { text: uiText('{group}: нічого', language, { group: groupName }), danger: true };
 
   const offWithoutUnknown = off.filter(option => option.label !== '?');
-  if (!offWithoutUnknown.length) return { text: `${group.label}: лише заповнені`, danger: false };
+  if (!offWithoutUnknown.length) {
+    return { text: uiText('{group}: лише заповнені', language, { group: groupName }), danger: false };
+  }
 
   if (offWithoutUnknown.length <= 2) {
-    return { text: `${group.label}: крім ${offWithoutUnknown.map(option => option.label).join(', ')}`, danger: false };
+    return {
+      text: uiText('{group}: крім {values}', language, {
+        group: groupName,
+        values: offWithoutUnknown.map(option => option.label).join(', '),
+      }),
+      danger: false,
+    };
   }
   if (on.length <= 2) {
-    return { text: `${group.label}: ${on.map(option => option.label).join(', ')}`, danger: false };
+    return {
+      text: uiText('{group}: {values}', language, {
+        group: groupName,
+        values: on.map(option => option.label).join(', '),
+      }),
+      danger: false,
+    };
   }
-  return { text: `${group.label}: ${on.length} з ${options.length}`, danger: false };
+  return {
+    text: uiText('{group}: {shown} з {total}', language, {
+      group: groupName,
+      shown: on.length,
+      total: options.length,
+    }),
+    danger: false,
+  };
 };
 
-export const buildMatchingFilterChips = filters => MATCHING_FILTER_GROUPS
+export const buildMatchingFilterChips = (filters, language) => MATCHING_FILTER_GROUPS
   .map(group => {
-    const label = buildMatchingFilterChipLabel(group, filters?.[group.filterName]);
+    const label = buildMatchingFilterChipLabel(group, filters?.[group.filterName], language);
     if (!label) return null;
-    return { filterName: group.filterName, groupLabel: group.label, ...label };
+    return { filterName: group.filterName, groupLabel: uiText(group.label, language), ...label };
   })
   .filter(Boolean);
 
@@ -148,6 +175,7 @@ export const SearchFilters = ({
   bloodSearchKeyMode = false,
   reactionFilterOptions,
 }) => {
+  const { language } = useAppSettings();
   let groups = [];
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
   const reactionOptions = reactionFilterOptions || (bloodSearchKeyMode
@@ -387,7 +415,7 @@ export const SearchFilters = ({
       {groups.map(group => (
         <CheckboxGroup
           key={group.filterName}
-          label={group.label}
+          label={mode === 'matching' ? uiText(group.label, language) : group.label}
           filterName={group.filterName}
           options={group.options}
           filters={filters}

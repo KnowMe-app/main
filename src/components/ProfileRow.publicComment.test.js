@@ -3,9 +3,10 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import {
   PublicCommentBlock,
-  PUBLIC_COMMENT_VISIBILITY_NOTE,
+  publicCommentPlaceholder,
   describeReviewsState,
 } from './ProfileRow';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 const setup = (props = {}) => {
   const onCreate = props.onCreate || jest.fn().mockResolvedValue(undefined);
@@ -35,22 +36,25 @@ const removeComment = async () => {
 };
 
 const openComposer = () => {
-  fireEvent.click(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE));
+  fireEvent.click(screen.getByText(publicCommentPlaceholder()));
   return screen.getByRole('textbox');
 };
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('quick public comment', () => {
   it('offers a plain line of text, not a field, until it is clicked', () => {
     setup();
-    expect(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
+    expect(screen.getByText(publicCommentPlaceholder())).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('labels the field as a publicly visible comment before any text is typed', () => {
     setup();
     const field = openComposer();
-    expect(field).toHaveAttribute('placeholder', PUBLIC_COMMENT_VISIBILITY_NOTE);
-    expect(screen.queryByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).not.toBeInTheDocument();
+    expect(field).toHaveAttribute('placeholder', publicCommentPlaceholder());
+    expect(screen.queryByText(publicCommentPlaceholder())).not.toBeInTheDocument();
     expect(field).toHaveValue('');
   });
 
@@ -67,7 +71,7 @@ describe('quick public comment', () => {
     const field = openComposer();
     fireEvent.change(field, { target: { value: '   ' } });
     fireEvent.blur(field);
-    expect(await screen.findByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
+    expect(await screen.findByText(publicCommentPlaceholder())).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -77,7 +81,7 @@ describe('quick public comment', () => {
     fireEvent.change(field, { target: { value: 'не зберігати' } });
     fireEvent.keyDown(field, { key: 'Escape' });
     fireEvent.blur(field);
-    expect(await screen.findByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
+    expect(await screen.findByText(publicCommentPlaceholder())).toBeInTheDocument();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -245,8 +249,25 @@ describe('стан читання відгуків', () => {
     expect(describeReviewsState({ requested: false, loading: false, loaded: false })).toBe('');
   });
 
-  it('мовчить, коли відповідь приїхала: далі говорять самі записи', () => {
-    expect(describeReviewsState({ requested: true, loading: false, loaded: true })).toBe('');
+  it('мовчить, коли відгуки приїхали: далі говорять самі записи', () => {
+    expect(describeReviewsState({ requested: true, loading: false, loaded: true, count: 2 })).toBe('');
+  });
+
+  // Прочитана порожнеча — теж відповідь, і вона лишається на екрані. Доти дотик
+  // до значка давав «Шукаємо відгуки…» на частку секунди й тишу після: напис
+  // блимав і зникав, а чи прочитано бодай щось — лишалось невідомим.
+  it('каже, що відгуків немає, коли прочитана відповідь порожня', () => {
+    expect(describeReviewsState({ requested: true, loading: false, loaded: true, count: 0 }))
+      .toBe('Публічних відгуків ще немає');
+  });
+
+  // Англійський бік — тими самими словами: доріжка стоїть у стрічці, і мову
+  // вона бере ту саму, що й решта картки.
+  it('говорить мовою інтерфейсу', () => {
+    expect(describeReviewsState({ requested: true, loading: true, loaded: false }, 'en'))
+      .toBe('Looking for public notes…');
+    expect(describeReviewsState({ requested: true, loading: false, loaded: true, count: 0 }, 'en'))
+      .toBe('No public notes yet');
   });
 });
 
@@ -255,6 +276,6 @@ describe('стан читання відгуків', () => {
 describe('поле відгуку без жодного читання', () => {
   it('пропонує написати відгук у порожньому блоці', () => {
     setup({ comments: [] });
-    expect(screen.getByText(PUBLIC_COMMENT_VISIBILITY_NOTE)).toBeInTheDocument();
+    expect(screen.getByText(publicCommentPlaceholder())).toBeInTheDocument();
   });
 });

@@ -156,8 +156,8 @@ describe('Matching initial loading error diagnostics', () => {
     expect(reporter).toContain('setLoadError(diagnosticWithTrace);\n    loadingRef.current = false;\n    loadingStateRef.current = false;\n    setLoading(false);');
     expect(errorUi).toContain('role="alert"');
     expect(errorUi).toContain('{loadError.userMessage}');
-    expect(errorUi).toContain('Код: {loadError.code}');
-    expect(errorUi).toContain('Етап: {loadError.requestLabel}');
+    expect(errorUi).toContain("{uiText('Код:', language)} {loadError.code}");
+    expect(errorUi).toContain("{uiText('Етап:', language)} {loadError.requestLabel}");
     expect(errorUi).toContain('Спробувати ще раз');
     expect(errorUi).toContain('JSON.stringify(loadError, null, 2)');
     expect(errorUi).not.toContain('<MatchingSkeleton />');
