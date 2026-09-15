@@ -270,6 +270,26 @@ const FieldChip = styled.button`
   color: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-muted)')};
 `;
 const NotesCard = styled(Card)`display:grid; gap:10px;`;
+/*
+ * Приватна нотатка малюється чужим компонентом (`FieldComment` — той самий, що
+ * в картці адміна), і всередині в неї гола `textarea` з рамкою браузера. Поруч
+ * із публічною, яку малює ця сама форма, це виглядало як два різні механізми:
+ * одне поле заокруглене й залите, друге — квадратна коробка. Пара мусить
+ * виглядати парою, тож оболонка приводить внутрішнє поле до вигляду сусіднього.
+ */
+const NoteFieldShell = styled.div`
+  textarea {
+    width:100%; box-sizing:border-box; min-height:74px;
+    background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:14px;
+    padding:13px 40px 13px 16px; font:600 15.5px/1.4 var(--km-font); color:var(--km-text);
+    outline:none; resize:vertical;
+    transition:border-color 150ms ease, box-shadow 150ms ease;
+  }
+  textarea:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
+  /* Хрестик усередині поля — той самий жест, що й у решти рядків форми. */
+  button { color:var(--km-muted); }
+  button:hover { color:var(--km-accent); }
+`;
 const ReviewCard = styled(Card)`background:color-mix(in srgb, var(--km-accent-mid) 8%, var(--km-card));`;
 const AuthorLink = styled.button`
   padding:0; border:0; background:none; color:var(--km-accent); font:inherit; text-decoration:underline; cursor:pointer;
@@ -1877,11 +1897,13 @@ export const ProfileCreationWorkspace = () => {
               <b>{profileUiText('personalNote', language)}</b>
               <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
             </NoteLaneHead>
-            <FieldComment
-              userData={{ ...draft, userId: overlayTarget ? overlayTarget.userId : (draft.userId || activeMutation.cardId) }}
-              placeholder={profileUiText('personalNotePlaceholder', language)}
-              onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
-            />
+            <NoteFieldShell>
+              <FieldComment
+                userData={{ ...draft, userId: overlayTarget ? overlayTarget.userId : (draft.userId || activeMutation.cardId) }}
+                placeholder={profileUiText('personalNotePlaceholder', language)}
+                onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
+              />
+            </NoteFieldShell>
           </NoteLane>
         </NoteLanes>
       </NotesCard>
