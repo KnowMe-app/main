@@ -1088,8 +1088,12 @@ export const ModernProfileScroll = styled.div`
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: clamp(240px, 38%, 340px);
-  height: 38%;
+  /* 240 px лишали від портретного фото тільки вузьку горизонтальну смугу:
+   * cover обрізав обличчя вже під очима. Повертаємо фотографії достатню
+   * висоту, але не старі 55% — дані анкети й мініатюри лишаються поруч і
+   * доступні в тій самій прокрутці. */
+  min-height: clamp(320px, 46%, 420px);
+  height: 46%;
   background: var(--matching-hero-fallback);
   background-size: cover;
   background-position: center 18%;
