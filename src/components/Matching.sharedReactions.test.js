@@ -113,9 +113,11 @@ describe('Matching shared reaction card UI', () => {
     expect(matchingSource).not.toContain('<LoadMoreButton');
     expect(matchingSource).not.toContain('ModernGallery');
     expect(matchingSource).not.toContain('Gallery</ModernSectionTitle>');
-    // Фото більше не забирає 55% екрана: під ним стоїть стрічка мініатюр, і
-    // висоту віддано тому, заради чого анкету відкривають.
-    expect(styledSource).toContain('height: 38%;');
+    // Фото більше не забирає старі 55% екрана, але й не стискається до
+    // неінформативної смуги: 320 px вистачає, щоб cover не лишав саме чоло.
+    // Під ним стоїть стрічка мініатюр, а дані доступні в тій самій прокрутці.
+    expect(styledSource).toContain('min-height: clamp(320px, 46%, 420px);');
+    expect(styledSource).toContain('height: 46%;');
     expect(styledSource).toContain('top: 14px;\n  left: 14px;');
     // Смуга показників переноситься в два ряди, а комірки розтягуються, щоб
     // останній ряд не лишав порожнього місця. Роздільник малює сама комірка.
