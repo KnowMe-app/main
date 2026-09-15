@@ -235,7 +235,7 @@ import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
-import { applyOverlayToCard, getOwnOverlayCardIds, getOwnOverlayFieldsForCards } from 'utils/multiAccountEdits';
+import { applyOverlayToCard, getOwnOverlayCardIndex, getOwnOverlayFieldsForCards } from 'utils/multiAccountEdits';
 import {
   buildMatchingSearchPath,
   MATCHING_SEARCH_QUERY_PARAM,
@@ -1019,6 +1019,7 @@ const formatHeroFact = (item, language) => {
 
 const SwipeableCard = ({
   user,
+  canonicalUserData,
   photo,
   role,
   isAgency,
@@ -1466,10 +1467,10 @@ const SwipeableCard = ({
               приходила рівно на один рендер пізніше, ніж треба. Рядок стрічки
               робить так само: спершу памʼять, потім запис. */}
           <span ref={dislikeButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
-            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
+            <BtnDislike userId={user.userId} userData={canonicalUserData} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
           </span>
           <span ref={favoriteButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
-            <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
+            <BtnFavorite userId={user.userId} userData={canonicalUserData} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
           </span>
         </ModernActionRail>
         )}
@@ -2011,6 +2012,10 @@ const Matching = () => {
   // памʼять браузера). Один запит на таб — і стрічка знає, у котрих зі своїх
   // сотень рядків є що накладати, не читаючи вузол на кожен.
   const [ownOverlayCardIds, setOwnOverlayCardIds] = useState(null);
+  // На відміну від переліку вище, тут лише підтверджені Firebase id. Локальна
+  // позначка могла лишитися після відхиленого правилами запису й не повинна
+  // забороняти повторну best-effort міграцію оберненого індексу.
+  const [remoteOwnOverlayCardIds, setRemoteOwnOverlayCardIds] = useState(null);
   const [ownOverlayStateOwnerId, setOwnOverlayStateOwnerId] = useState(ownerId);
   const ownOverlayOwnerIdRef = useRef(ownerId);
   ownOverlayOwnerIdRef.current = ownerId;
@@ -2041,6 +2046,7 @@ const Matching = () => {
     setOwnOverlayStateOwnerId(ownerId);
     setOwnOverlayFieldsByCardId({});
     setOwnOverlayCardIds(null);
+    setRemoteOwnOverlayCardIds(null);
     requestedOwnOverlayIdsRef.current = new Set();
     touchedOwnOverlayIdsRef.current = new Set();
   }, [ownerId]);
@@ -5836,10 +5842,11 @@ const Matching = () => {
     const editorUserId = ownerId;
     if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
 
-    getOwnOverlayCardIds(editorUserId)
-      .then(ids => {
+    getOwnOverlayCardIndex(editorUserId)
+      .then(({ cardUserIds, remoteCardUserIds }) => {
         if (!ownOverlaysMountedRef.current || ownOverlayOwnerIdRef.current !== editorUserId) return;
-        setOwnOverlayCardIds(new Set(ids));
+        setOwnOverlayCardIds(new Set(cardUserIds));
+        setRemoteOwnOverlayCardIds(new Set(remoteCardUserIds));
       })
       .catch(error => console.warn('[Matching] own overlay index unavailable', error));
 
@@ -5913,7 +5920,8 @@ const Matching = () => {
     // Поки перелік не приїхав, стрічка не питає нічого: інакше перший її
     // рендер устиг би зробити той самий круг на кожен рядок.
     const currentOwnerOverlayCardIds = ownOverlayStateOwnerId === editorUserId ? ownOverlayCardIds : null;
-    if (!isSearching && !currentOwnerOverlayCardIds) return undefined;
+    const currentRemoteOverlayCardIds = ownOverlayStateOwnerId === editorUserId ? remoteOwnOverlayCardIds : null;
+    if (!currentOwnerOverlayCardIds || !currentRemoteOverlayCardIds) return undefined;
 
     const requested = requestedOwnOverlayIdsRef.current;
     const cardUserIds = feedSourceWithoutOwnEdits
@@ -5923,7 +5931,11 @@ const Matching = () => {
     if (!cardUserIds.length) return undefined;
 
     cardUserIds.forEach(userId => requested.add(userId));
-    getOwnOverlayFieldsForCards({ editorUserId, cardUserIds })
+    getOwnOverlayFieldsForCards({
+      editorUserId,
+      cardUserIds,
+      remotelyIndexedCardUserIds: currentRemoteOverlayCardIds,
+    })
       .then(fieldsByCardId => {
         // Порожні відповіді в стан не йдуть: інакше кожен пошук перемальовував
         // би видачу мапою з самих лише порожніх обʼєктів.
@@ -5940,7 +5952,7 @@ const Matching = () => {
     // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
     // Лишається одна причина не писати в стан — розмонтована сторінка.
     return undefined;
-  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId]);
+  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId, remoteOwnOverlayCardIds]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
@@ -8514,6 +8526,8 @@ const Matching = () => {
           <Grid>
             {activeProfileWithLazyPhotos ? (() => {
               const user = activeProfileWithLazyPhotos;
+              const canonicalUser = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId);
+              const canonicalUserData = canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId };
               const photos = getProfilePhotos(user);
               const photo = photos[0];
               const role = getProfileRole(user);
@@ -8541,6 +8555,7 @@ const Matching = () => {
                     </ModernDesktopNavButton>
                     <SwipeableCard
                       user={user}
+                      canonicalUserData={canonicalUserData}
                       photo={photo}
                       role={role}
                       isAgency={isAgency}

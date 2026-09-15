@@ -19,7 +19,7 @@ describe('список показує власне доповнення чита
     // ще немає, а перезапустити ефект нема на що, тож перелік не читався б
     // узагалі.
     expect(source).toContain('const editorUserId = ownerId;');
-    expect(source).toContain('getOwnOverlayFieldsForCards({ editorUserId, cardUserIds })');
+    expect(source).toContain('remotelyIndexedCardUserIds: currentRemoteOverlayCardIds,');
     // Памʼять запитаних id: перемальовування видачі не коштує другого круга.
     expect(source).toContain('const requested = requestedOwnOverlayIdsRef.current;');
     expect(source).toContain('cardUserIds.forEach(userId => requested.add(userId));');
@@ -28,11 +28,12 @@ describe('список показує власне доповнення чита
   // Стрічка — це сотні рядків, і читання «на кожну картку» тут коштує рівно
   // те, від чого її відмивали. Тож вона питає лише про ті картки, які перелік
   // власних доповнень (`multiData/editsByEditor` плюс памʼять браузера) уже
-  // назвав, а видача пошуку — про всі показані.
+  // назвав, а видача пошуку чекає на цей перелік, щоб не переписувати вже
+  // наявні позначки під час ледачої міграції.
   it('у стрічці питає лише про картки з переліку власних доповнень', () => {
-    expect(source).toContain("if (!isSearching && !currentOwnerOverlayCardIds) return undefined;");
+    expect(source).toContain('if (!currentOwnerOverlayCardIds || !currentRemoteOverlayCardIds) return undefined;');
     expect(source).toContain('.filter(userId => isSearching || currentOwnerOverlayCardIds.has(userId));');
-    expect(source).toContain('getOwnOverlayCardIds(editorUserId)');
+    expect(source).toContain('getOwnOverlayCardIndex(editorUserId)');
   });
 
   it('не приймає приватний стан або відповідь від попереднього власника', () => {
@@ -86,6 +87,12 @@ describe('список показує власне доповнення чита
     );
     expect(overlayMemo).not.toContain('updateCard(');
     expect(source).toContain('userData: canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId },');
+  });
+
+  it('передає канонічну картку реакціям у відкритих деталях', () => {
+    expect(source).toContain('canonicalUserData={canonicalUserData}');
+    expect(source).toContain('<BtnDislike userId={user.userId} userData={canonicalUserData}');
+    expect(source).toContain('<BtnFavorite userId={user.userId} userData={canonicalUserData}');
   });
 
   // Стрічка з ініціалом прізвища — це те, що видно поза стрічкою; дописане

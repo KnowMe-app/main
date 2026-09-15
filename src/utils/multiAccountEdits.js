@@ -332,24 +332,35 @@ export const forgetOwnOverlayCard = async ({ editorUserId, cardUserId }) => {
  * браузері — зокрема й до того викочування. Відмова читання не порожній
  * список, а просто менше знань: лишається локальна памʼять.
  */
-export const getOwnOverlayCardIds = async editorUserId => {
-  if (!editorUserId) return [];
+export const getOwnOverlayCardIndex = async editorUserId => {
+  if (!editorUserId) return { cardUserIds: [], remoteCardUserIds: [] };
 
   const ids = new Set(readOwnOverlayCardIds(editorUserId));
+  const remoteIds = new Set();
 
   try {
     const snapshot = await get(ref2(database, `${EDITS_BY_EDITOR_ROOT}/${editorUserId}`));
     if (snapshot?.exists?.()) {
       Object.entries(snapshot.val() || {}).forEach(([cardUserId, value]) => {
-        if (value) ids.add(cardUserId);
+        if (value) {
+          ids.add(cardUserId);
+          remoteIds.add(cardUserId);
+        }
       });
     }
   } catch (error) {
     console.warn('[multiAccountEdits] own overlay index unreadable', error);
   }
 
-  return Array.from(ids).filter(Boolean);
+  return {
+    cardUserIds: Array.from(ids).filter(Boolean),
+    remoteCardUserIds: Array.from(remoteIds).filter(Boolean),
+  };
 };
+
+export const getOwnOverlayCardIds = async editorUserId => (
+  await getOwnOverlayCardIndex(editorUserId)
+).cardUserIds;
 
 // Best-effort by design, like the journal: an editor's save must not fail
 // because the roster could not be written.
@@ -408,11 +419,16 @@ export const getCardContributorIds = async cardUserId => {
  * (`docs/matching-feed-traffic.md`). Відмова читання — це порожній оверлей, а
  * не поламана видача.
  */
-export const getOwnOverlayFieldsForCards = async ({ editorUserId, cardUserIds = [] }) => {
+export const getOwnOverlayFieldsForCards = async ({
+  editorUserId,
+  cardUserIds = [],
+  remotelyIndexedCardUserIds = [],
+}) => {
   if (!editorUserId) return {};
 
   const ids = uniq(cardUserIds.map(normalizeCardKey).filter(Boolean));
   if (!ids.length) return {};
+  const remotelyIndexedIds = new Set(Array.from(remotelyIndexedCardUserIds || [], normalizeCardKey));
 
   const entries = await Promise.all(ids.map(async cardUserId => {
     try {
@@ -423,8 +439,10 @@ export const getOwnOverlayFieldsForCards = async ({ editorUserId, cardUserIds = 
       // читає їх напряму, тож використай це відкриття як ледачу міграцію:
       // наступне повернення до звичайної стрічки вже знайде цю картку через
       // `editsByEditor` (а цей браузер — ще й через локальну пам'ять).
-      if (Object.keys(normalizedFields).length) {
-        await rememberOwnOverlayCard({ editorUserId, cardUserId });
+      if (Object.keys(normalizedFields).length && !remotelyIndexedIds.has(cardUserId)) {
+        // Міграція best-effort і не є частиною читання: шар уже знайдено, тож
+        // не затримуй його показ ще одним мережевим кругом заради індексу.
+        void rememberOwnOverlayCard({ editorUserId, cardUserId });
       }
       return [cardUserId, normalizedFields];
     } catch (error) {
