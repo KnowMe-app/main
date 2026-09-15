@@ -18,6 +18,7 @@ const { updateSearchId } = require('components/config');
 
 const {
   applyOverlayToCard,
+  getOwnOverlayCardIndex,
   getOwnOverlayCardIds,
   getOwnOverlayFieldsForCards,
   collectOverlayIndexValues,
@@ -129,6 +130,20 @@ describe('multiAccountEdits storage structure', () => {
     await expect(getOwnOverlayCardIds('editor-1')).resolves.toContain('card-local');
   });
 
+  it('distinguishes local markers from remotely confirmed index entries', async () => {
+    const { rememberOwnOverlayCardLocally } = require('../ownOverlayCardsStorage');
+    rememberOwnOverlayCardLocally('editor-index-sources', 'card-local-only');
+    get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ 'card-remote': 123 }),
+    });
+
+    await expect(getOwnOverlayCardIndex('editor-index-sources')).resolves.toEqual({
+      cardUserIds: expect.arrayContaining(['card-local-only', 'card-remote']),
+      remoteCardUserIds: ['card-remote'],
+    });
+  });
+
   it('backfills the inverse index when search discovers a legacy overlay', async () => {
     get.mockResolvedValueOnce({
       exists: () => true,
@@ -146,6 +161,39 @@ describe('multiAccountEdits storage structure', () => {
       expect.objectContaining({ path: 'multiData/editsByEditor/editor-1' }),
       { 'card-legacy': expect.any(Number) },
     );
+  });
+
+  it('does not rewrite an inverse index entry that is already remembered', async () => {
+    get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ phone: { added: ['380501112233'] } }),
+    });
+
+    await getOwnOverlayFieldsForCards({
+      editorUserId: 'editor-1',
+      cardUserIds: ['card-current'],
+      remotelyIndexedCardUserIds: new Set(['card-current']),
+    });
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('does not block an overlay read on the best-effort index backfill', async () => {
+    get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ phone: { added: ['380501112233'] } }),
+    });
+    let finishBackfill;
+    update.mockImplementationOnce(() => new Promise(resolve => { finishBackfill = resolve; }));
+
+    await expect(getOwnOverlayFieldsForCards({
+      editorUserId: 'editor-1',
+      cardUserIds: ['card-legacy'],
+      remotelyIndexedCardUserIds: new Set(),
+    })).resolves.toEqual({
+      'card-legacy': { phone: { added: ['380501112233'] } },
+    });
+    finishBackfill();
   });
 
   it('appends one removal entry to the admin history when a value is cleared', async () => {
